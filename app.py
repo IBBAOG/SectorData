@@ -48,7 +48,7 @@ c2.metric("Quantidade Total (mil m³)", f"{metricas.get('quantidade_total', 0.0)
 c3.metric("Anos Disponíveis",          f"{metricas.get('anos_distintos', 0)}")
 
 # ─── Download ─────────────────────────────────────────────────────────────────
-with st.expander("⬇️ Exportar dados", expanded=False):
+with st.expander("Exportar dados", expanded=False):
     ecol1, ecol2, ecol3 = st.columns(3)
     if not df_ano.empty:
         ecol1.download_button(

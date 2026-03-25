@@ -68,7 +68,7 @@ elif len(datas) == 1:
     data_inicio = data_fim = datas[0]
     st.sidebar.info(f"Período disponível: {_fmt_data(datas[0])}")
 else:
-    st.sidebar.warning("⚠️ Não foi possível carregar o período.")
+    st.sidebar.warning("Não foi possível carregar o período.")
     data_inicio = data_fim = None
 
 regioes  = st.sidebar.multiselect("Região",  opcoes.get("regioes", []), default=[])
@@ -77,8 +77,8 @@ mercados = st.sidebar.multiselect("Mercado", opcoes.get("mercados", []),default=
 
 st.sidebar.markdown("---")
 col1, col2 = st.sidebar.columns(2)
-aplicar = col1.button("🔍 Aplicar", use_container_width=True)
-limpar  = col2.button("🔄 Limpar",  use_container_width=True)
+aplicar = col1.button("Aplicar", use_container_width=True)
+limpar  = col2.button("Limpar",  use_container_width=True)
 
 if limpar:
     st.cache_data.clear()
@@ -91,7 +91,7 @@ filtros_sidebar = {
 if aplicar or "ms_filtros_ativos" not in st.session_state:
     st.session_state["ms_filtros_ativos"] = filtros_sidebar
     if aplicar:
-        st.toast("Filtros aplicados!", icon="✅")
+        st.toast("Filtros aplicados!")
 
 filtros = st.session_state["ms_filtros_ativos"]
 
@@ -162,9 +162,11 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str):
         font=_FONT,
         title_font=_FONT,
         yaxis=dict(ticksuffix="%", range=[y_lo, y_hi], tickfont=_FONT, title_font=_FONT,
-                   showgrid=False, zeroline=False),
+                   showgrid=False, zeroline=False,
+                   showline=True, linecolor="#000000", linewidth=1),
         xaxis=dict(tickfont=_FONT, title_font=_FONT,
-                   showgrid=False, zeroline=False),
+                   showgrid=False, zeroline=False,
+                   showline=True, linecolor="#000000", linewidth=1),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=_FONT),
         plot_bgcolor="white",
         height=300,
@@ -209,13 +211,13 @@ def _secao(produto: str, titulo_secao: str, tem_trr: bool = True):
 
 
 # ─── Seções por combustível ───────────────────────────────────────────────────
-_secao("Diesel B",         "🛢️ Diesel B",         tem_trr=True)
-_secao("Gasolina C",       "⛽ Gasolina C",        tem_trr=False)
-_secao("Etanol Hidratado", "🌿 Etanol Hidratado",  tem_trr=False)
+_secao("Diesel B",         "Diesel B",         tem_trr=True)
+_secao("Gasolina C",       "Gasolina C",       tem_trr=False)
+_secao("Etanol Hidratado", "Etanol Hidratado", tem_trr=False)
 
 # ─── Download ─────────────────────────────────────────────────────────────────
 if not df_serie.empty:
-    with st.expander("⬇️ Exportar dados", expanded=False):
+    with st.expander("Exportar dados", expanded=False):
         st.download_button(
             "Série completa (CSV)",
             df_serie.to_csv(index=False).encode("utf-8"),

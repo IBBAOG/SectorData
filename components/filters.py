@@ -54,7 +54,7 @@ def render_sidebar_filtros(opcoes: dict) -> dict:
         st.sidebar.info(f"Período disponível: {_fmt_data(datas[0])}")
     else:
         # sem datas disponíveis — mostra aviso e passa None
-        st.sidebar.warning("⚠️ Não foi possível carregar o período. Verifique a conexão com o banco.")
+        st.sidebar.warning("Não foi possível carregar o período. Verifique a conexão com o banco.")
         data_inicio = data_fim = None
 
     # ── Outros filtros ─────────────────────────────────────────────────────────
@@ -67,8 +67,8 @@ def render_sidebar_filtros(opcoes: dict) -> dict:
     st.sidebar.markdown("---")
 
     col1, col2 = st.sidebar.columns(2)
-    aplicar = col1.button("🔍 Aplicar", use_container_width=True)
-    limpar  = col2.button("🔄 Limpar",  use_container_width=True)
+    aplicar = col1.button("Aplicar", use_container_width=True)
+    limpar  = col2.button("Limpar",  use_container_width=True)
 
     if limpar:
         st.cache_data.clear()
@@ -87,7 +87,7 @@ def render_sidebar_filtros(opcoes: dict) -> dict:
     if aplicar or "filtros_ativos" not in st.session_state:
         st.session_state["filtros_ativos"] = filtros_sidebar
         if aplicar:
-            st.toast("Filtros aplicados!", icon="✅")
+            st.toast("Filtros aplicados!")
 
     if "ultima_atualizacao" not in st.session_state or aplicar:
         st.session_state["ultima_atualizacao"] = datetime.now().strftime("%d/%m/%Y %H:%M")
