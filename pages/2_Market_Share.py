@@ -16,8 +16,8 @@ aplicar_estilo()
 requer_login()
 
 # ─── Constantes ───────────────────────────────────────────────────────────────
-CORES = {"Vibra": "#f26522", "Raizen": "#1a1a1a", "Ipiranga": "#fbbf24"}
-PLAYERS = ["Vibra", "Ipiranga", "Raizen"]
+CORES = {"Vibra": "#f26522", "Raizen": "#1a1a1a", "Ipiranga": "#fbbf24", "Others": "#94a3b8"}
+TODOS_PLAYERS = ["Vibra", "Ipiranga", "Raizen", "Others"]
 
 MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
             "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
@@ -71,6 +71,9 @@ else:
     st.sidebar.warning("Não foi possível carregar o período.")
     data_inicio = data_fim = None
 
+competidores = st.sidebar.multiselect(
+    "Competidores", TODOS_PLAYERS, default=TODOS_PLAYERS
+)
 regioes  = st.sidebar.multiselect("Região",  opcoes.get("regioes", []), default=[])
 ufs      = st.sidebar.multiselect("UF",      opcoes.get("ufs", []),     default=[])
 mercados = st.sidebar.multiselect("Mercado", opcoes.get("mercados", []),default=[])
@@ -86,6 +89,7 @@ if limpar:
 
 filtros_sidebar = {
     "data_inicio": data_inicio, "data_fim": data_fim,
+    "competidores": competidores or TODOS_PLAYERS,
     "regioes": regioes, "ufs": ufs, "mercados": mercados,
 }
 if aplicar or "ms_filtros_ativos" not in st.session_state:
@@ -110,10 +114,11 @@ if not df_serie.empty:
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
-def _linha_ms(produto: str, segmento: str | None, titulo: str):
+def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
     """
     Cria gráfico de linha de market share temporal.
     segmento=None → agrega todos os segmentos (Total).
+    players → lista de empresas a exibir.
     """
     if df_serie.empty:
         return None
@@ -126,17 +131,15 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str):
     if df.empty:
         return None
 
-    # Para Total: somar todos os segmentos por (date, classificacao) antes de calcular %
-    df = (
-        df.groupby(["date", "classificacao"], as_index=False)["quantidade"].sum()
-    )
+    # Agrega por (date, classificacao) — necessário para o gráfico Total
+    df = df.groupby(["date", "classificacao"], as_index=False)["quantidade"].sum()
 
-    # % sobre o total de todas as empresas naquele mês (inclui Others no denominador)
+    # % sobre o total de TODAS as empresas naquele mês (denominador inclui Others)
     totais = df.groupby("date")["quantidade"].sum().rename("total")
     df = df.join(totais, on="date")
     df["pct"] = df["quantidade"] / df["total"] * 100
 
-    df = df[df["classificacao"].isin(PLAYERS)].sort_values("date")
+    df = df[df["classificacao"].isin(players)].sort_values("date")
     if df.empty:
         return None
 
@@ -144,7 +147,7 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str):
     y_min = df["pct"].min()
     y_max = df["pct"].max()
     spread = y_max - y_min if y_max > y_min else 1.0
-    pad = spread * 0.20                          # 20% de margem acima e abaixo
+    pad = spread * 0.20
     y_lo = max(0.0,   y_min - pad)
     y_hi = min(100.0, y_max + pad)
 
@@ -166,7 +169,7 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str):
 
     # Data label apenas no último ponto de cada linha
     ultima_data = df["date"].max()
-    for player in PLAYERS:
+    for player in players:
         ultimo = df[(df["classificacao"] == player) & (df["date"] == ultima_data)]
         if ultimo.empty:
             continue
@@ -199,32 +202,30 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str):
     return fig
 
 
-def _secao(produto: str, titulo_secao: str, tem_trr: bool = True):
+def _secao(produto: str, titulo_secao: str, players: list, tem_trr: bool = True):
     """Renderiza uma seção completa de gráficos para um combustível."""
     st.markdown(f"### {titulo_secao}")
 
     if tem_trr:
-        # 2 × 2
         c1, c2 = st.columns(2)
         c3, c4 = st.columns(2)
         pares = [
-            (c1, "Retail",  f"Retail"),
-            (c2, "B2B",     f"B2B"),
-            (c3, "TRR",     f"TRR"),
-            (c4, None,      f"Total"),
+            (c1, "Retail", "Retail"),
+            (c2, "B2B",    "B2B"),
+            (c3, "TRR",    "TRR"),
+            (c4, None,     "Total"),
         ]
     else:
-        # Linha 1: Retail | B2B — Linha 2: Total (largura inteira)
         c1, c2 = st.columns(2)
         c3, _ = st.columns([1, 1])
         pares = [
-            (c1, "Retail", f"Retail"),
-            (c2, "B2B",    f"B2B"),
-            (c3, None,     f"Total"),
+            (c1, "Retail", "Retail"),
+            (c2, "B2B",    "B2B"),
+            (c3, None,     "Total"),
         ]
 
     for col, seg, label in pares:
-        fig = _linha_ms(produto, seg, label)
+        fig = _linha_ms(produto, seg, label, players)
         with col:
             if fig:
                 st.plotly_chart(fig, use_container_width=True)
@@ -235,9 +236,11 @@ def _secao(produto: str, titulo_secao: str, tem_trr: bool = True):
 
 
 # ─── Seções por combustível ───────────────────────────────────────────────────
-_secao("Diesel B",         "Diesel B",         tem_trr=True)
-_secao("Gasolina C",       "Gasolina C",       tem_trr=False)
-_secao("Etanol Hidratado", "Etanol Hidratado", tem_trr=False)
+players_ativos = filtros.get("competidores") or TODOS_PLAYERS
+
+_secao("Diesel B",         "Diesel B",         players=players_ativos, tem_trr=True)
+_secao("Gasolina C",       "Gasolina C",       players=players_ativos, tem_trr=False)
+_secao("Etanol Hidratado", "Etanol Hidratado", players=players_ativos, tem_trr=False)
 
 # ─── Download ─────────────────────────────────────────────────────────────────
 if not df_serie.empty:
