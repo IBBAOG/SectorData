@@ -148,11 +148,20 @@ def carregar_todos(filtros: dict):
 def carregar_dados_pivot(anos=(), meses=(), classificacoes=()):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_dados_pivot", {
+        params = {
             "p_anos":           list(anos) or None,
             "p_meses":          list(meses) or None,
             "p_classificacoes": list(classificacoes) or None,
-        }).execute()
-        return pd.DataFrame(resp.data)
+        }
+        PAGE = 1000
+        all_data = []
+        offset = 0
+        while True:
+            resp = supabase.rpc("get_dados_pivot", params).range(offset, offset + PAGE - 1).execute()
+            all_data.extend(resp.data)
+            if len(resp.data) < PAGE:
+                break
+            offset += PAGE
+        return pd.DataFrame(all_data)
     except Exception:
         return pd.DataFrame()
