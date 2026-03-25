@@ -154,16 +154,19 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str):
         color_discrete_map=CORES,
         labels={"date": "", "pct": "Market Share (%)", "classificacao": ""},
     )
-    _FONT = dict(family="Arial", size=10, color="#000000")
+    _FONT = dict(family="Arial", size=14, color="#000000")
 
     fig.update_traces(mode="lines+markers", marker_size=3, line_width=2)
     fig.update_layout(
         margin=dict(t=40, b=10, l=10, r=10),
         font=_FONT,
         title_font=_FONT,
-        yaxis=dict(ticksuffix="%", range=[y_lo, y_hi], tickfont=_FONT, title_font=_FONT),
-        xaxis=dict(tickfont=_FONT, title_font=_FONT),
+        yaxis=dict(ticksuffix="%", range=[y_lo, y_hi], tickfont=_FONT, title_font=_FONT,
+                   showgrid=False, zeroline=False),
+        xaxis=dict(tickfont=_FONT, title_font=_FONT,
+                   showgrid=False, zeroline=False),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=_FONT),
+        plot_bgcolor="white",
         height=300,
         hovermode="x unified",
     )
