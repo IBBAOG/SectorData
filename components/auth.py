@@ -36,7 +36,7 @@ def login():
     col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        st.image(LOGO_URL, width=80)
+        st.image(LOGO_URL, width=180)
         st.markdown("### Acesse sua conta")
         st.markdown("Entre com suas credenciais para continuar.")
         st.markdown("---")
@@ -70,7 +70,7 @@ def logout():
         )
         st.sidebar.markdown("<br>", unsafe_allow_html=True)
 
-    if st.sidebar.button("🚪 Sair", use_container_width=True):
+    if st.sidebar.button("Sair", use_container_width=True):
         st.session_state.clear()
         st.rerun()
 
