@@ -126,7 +126,12 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str):
     if df.empty:
         return None
 
-    # % sobre o total daquele produto+segmento em cada mês (inclui Others no denominador)
+    # Para Total: somar todos os segmentos por (date, classificacao) antes de calcular %
+    df = (
+        df.groupby(["date", "classificacao"], as_index=False)["quantidade"].sum()
+    )
+
+    # % sobre o total de todas as empresas naquele mês (inclui Others no denominador)
     totais = df.groupby("date")["quantidade"].sum().rename("total")
     df = df.join(totais, on="date")
     df["pct"] = df["quantidade"] / df["total"] * 100
