@@ -14,19 +14,19 @@ def aplicar_estilo():
         background-color: #ffffff;
     }
 
-    /* Sidebar branca */
+    /* Sidebar */
     section[data-testid="stSidebar"] {
         background-color: #fafafa;
         border-right: 1px solid #e0e0e0;
     }
 
-    /* Tag laranja nos multiselect selecionados */
+    /* Tags laranja nos multiselect selecionados */
     section[data-testid="stSidebar"] .stMultiSelect span[data-baseweb="tag"] {
         background-color: #f26522 !important;
         color: #ffffff !important;
     }
 
-    /* Botões laranja */
+    /* Botões laranja — usados na sidebar e na tela de login */
     .stButton > button {
         background-color: #f26522 !important;
         color: #ffffff !important;

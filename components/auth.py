@@ -2,6 +2,7 @@ import streamlit as st
 from supabase import create_client
 import os
 from dotenv import load_dotenv
+from components.style import aplicar_estilo
 
 load_dotenv()
 
@@ -14,24 +15,7 @@ LOGO_URL = "https://raw.githubusercontent.com/IBBAOG/SectorData/main/assets/logo
 
 def login():
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-    st.markdown("""
-    <style>
-    #MainMenu { visibility: hidden; }
-    footer { visibility: hidden; }
-    .stButton > button {
-        background-color: #f26522 !important;
-        color: #ffffff !important;
-        border: none !important;
-        border-radius: 6px !important;
-        font-weight: 600 !important;
-        width: 100% !important;
-    }
-    .stButton > button:hover {
-        background-color: #d4561a !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    aplicar_estilo()
 
     col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
