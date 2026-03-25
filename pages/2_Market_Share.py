@@ -156,9 +156,33 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str):
     )
     _FONT = dict(family="Arial", size=14, color="#000000")
 
-    fig.update_traces(mode="lines+markers", marker_size=3, line_width=2)
+    # Hover com 2 casas decimais
+    fig.update_traces(
+        mode="lines+markers",
+        marker_size=3,
+        line_width=2,
+        hovertemplate="%{fullData.name}: %{y:.2f}%<extra></extra>",
+    )
+
+    # Data label apenas no último ponto de cada linha
+    ultima_data = df["date"].max()
+    for player in PLAYERS:
+        ultimo = df[(df["classificacao"] == player) & (df["date"] == ultima_data)]
+        if ultimo.empty:
+            continue
+        fig.add_annotation(
+            x=ultima_data,
+            y=float(ultimo["pct"].iloc[0]),
+            text=f"{float(ultimo['pct'].iloc[0]):.2f}%",
+            showarrow=False,
+            xanchor="left",
+            xshift=6,
+            yanchor="middle",
+            font=dict(family="Arial", size=12, color=CORES.get(player, "#000000")),
+        )
+
     fig.update_layout(
-        margin=dict(t=40, b=10, l=10, r=10),
+        margin=dict(t=40, b=10, l=10, r=60),  # r=60 para acomodar os labels
         font=_FONT,
         title_font=_FONT,
         yaxis=dict(ticksuffix="%", range=[y_lo, y_hi], tickfont=_FONT, title_font=_FONT,
