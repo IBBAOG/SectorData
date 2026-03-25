@@ -29,7 +29,7 @@ def get_client():
     return supabase
 
 
-def _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados):
+def _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados, segmentos):
     return {
         "p_data_inicio":  data_inicio or None,
         "p_data_fim":     data_fim or None,
@@ -37,6 +37,7 @@ def _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados):
         "p_regioes_dest": list(regioes_dest) or None,
         "p_ufs_dest":     list(ufs_dest) or None,
         "p_mercados":     list(mercados) or None,
+        "p_segmentos":    list(segmentos) or None,
     }
 
 
@@ -56,70 +57,70 @@ def carregar_opcoes():
 # ─── Agregações cacheadas ─────────────────────────────────────────────────────
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_metricas(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados):
+def carregar_metricas(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados, segmentos):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_metricas", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados)).execute()
+        resp = supabase.rpc("get_metricas", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados, segmentos)).execute()
         return resp.data
     except Exception:
         return {"total_registros": 0, "quantidade_total": 0.0, "anos_distintos": 0}
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_por_ano(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados):
+def carregar_por_ano(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados, segmentos):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_qtd_por_ano", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados)).execute()
+        resp = supabase.rpc("get_qtd_por_ano", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados, segmentos)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_por_mes(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados):
+def carregar_por_mes(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados, segmentos):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_qtd_por_mes", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados)).execute()
+        resp = supabase.rpc("get_qtd_por_mes", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados, segmentos)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_por_regiao(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados):
+def carregar_por_regiao(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados, segmentos):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_qtd_por_regiao", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados)).execute()
+        resp = supabase.rpc("get_qtd_por_regiao", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados, segmentos)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_por_agente(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados):
+def carregar_por_agente(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados, segmentos):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_qtd_por_agente", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados)).execute()
+        resp = supabase.rpc("get_qtd_por_agente", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados, segmentos)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_por_produto(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados):
+def carregar_por_produto(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados, segmentos):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_qtd_por_produto", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados)).execute()
+        resp = supabase.rpc("get_qtd_por_produto", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados, segmentos)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_por_uf(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados):
+def carregar_por_uf(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados, segmentos):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_qtd_por_uf", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados)).execute()
+        resp = supabase.rpc("get_qtd_por_uf", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados, segmentos)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
@@ -136,6 +137,7 @@ def carregar_todos(filtros: dict):
         tuple(filtros.get("regioes_dest") or []),
         tuple(filtros.get("ufs_dest") or []),
         tuple(filtros.get("mercados") or []),
+        tuple(filtros.get("segmentos") or []),
     )
 
     fns = [
@@ -151,7 +153,7 @@ def carregar_todos(filtros: dict):
 
 # ─── Market Share ─────────────────────────────────────────────────────────────
 
-def _ms_params(data_inicio, data_fim, produtos, regioes, ufs, mercados):
+def _ms_params(data_inicio, data_fim, produtos, regioes, ufs, mercados, segmentos):
     return {
         "p_data_inicio": data_inicio or None,
         "p_data_fim":    data_fim or None,
@@ -159,6 +161,7 @@ def _ms_params(data_inicio, data_fim, produtos, regioes, ufs, mercados):
         "p_regioes":     list(regioes) or None,
         "p_ufs":         list(ufs) or None,
         "p_mercados":    list(mercados) or None,
+        "p_segmentos":   list(segmentos) or None,
     }
 
 
@@ -173,40 +176,40 @@ def carregar_ms_opcoes():
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_ms_totais(data_inicio, data_fim, produtos, regioes, ufs, mercados):
+def carregar_ms_totais(data_inicio, data_fim, produtos, regioes, ufs, mercados, segmentos):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_ms_totais", _ms_params(data_inicio, data_fim, produtos, regioes, ufs, mercados)).execute()
+        resp = supabase.rpc("get_ms_totais", _ms_params(data_inicio, data_fim, produtos, regioes, ufs, mercados, segmentos)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_ms_por_ano(data_inicio, data_fim, produtos, regioes, ufs, mercados):
+def carregar_ms_por_ano(data_inicio, data_fim, produtos, regioes, ufs, mercados, segmentos):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_ms_por_ano", _ms_params(data_inicio, data_fim, produtos, regioes, ufs, mercados)).execute()
+        resp = supabase.rpc("get_ms_por_ano", _ms_params(data_inicio, data_fim, produtos, regioes, ufs, mercados, segmentos)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_ms_por_mes(data_inicio, data_fim, produtos, regioes, ufs, mercados):
+def carregar_ms_por_mes(data_inicio, data_fim, produtos, regioes, ufs, mercados, segmentos):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_ms_por_mes", _ms_params(data_inicio, data_fim, produtos, regioes, ufs, mercados)).execute()
+        resp = supabase.rpc("get_ms_por_mes", _ms_params(data_inicio, data_fim, produtos, regioes, ufs, mercados, segmentos)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_ms_por_regiao(data_inicio, data_fim, produtos, regioes, ufs, mercados):
+def carregar_ms_por_regiao(data_inicio, data_fim, produtos, regioes, ufs, mercados, segmentos):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_ms_por_regiao", _ms_params(data_inicio, data_fim, produtos, regioes, ufs, mercados)).execute()
+        resp = supabase.rpc("get_ms_por_regiao", _ms_params(data_inicio, data_fim, produtos, regioes, ufs, mercados, segmentos)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
@@ -222,6 +225,7 @@ def carregar_ms_todos(filtros: dict):
         tuple(filtros.get("regioes") or []),
         tuple(filtros.get("ufs") or []),
         tuple(filtros.get("mercados") or []),
+        tuple(filtros.get("segmentos") or []),
     )
 
     fns = [carregar_ms_totais, carregar_ms_por_ano, carregar_ms_por_mes, carregar_ms_por_regiao]

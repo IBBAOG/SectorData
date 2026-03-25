@@ -40,7 +40,17 @@ df["quantidade_produto"] = pd.to_numeric(df["quantidade_produto"], errors="coerc
 # 2. Gera coluna date a partir de ano e mes
 df["date"] = pd.to_datetime(df["ano"].astype(str) + "-" + df["mes"].astype(str).str.zfill(2) + "-01").dt.strftime("%Y-%m-%d")
 
-# 3. Classificação baseada no agente_regulado
+# 3. Segmento baseado no mercado_destinatario
+MAPA_SEGMENTO = {
+    "CONSUMIDOR FINAL":                        "B2B",
+    "Posto de Combustíveis - Bandeirado":      "Retail",
+    "Posto de Combustíveis - Bandeira Branca": "Retail",
+    "TRR":                                     "TRR",
+    "TRRNI":                                   "TRR",
+}
+df["segmento"] = df["mercado_destinatario"].map(MAPA_SEGMENTO).fillna("Outros")
+
+# 4. Classificação baseada no agente_regulado
 MAPA_CLASSIFICACAO = {
     "VIBRA ENERGIA S.A":                                        "Vibra",
     "IPIRANGA PRODUTOS DE PETRÓLEO S.A":                        "Ipiranga",
@@ -51,14 +61,15 @@ MAPA_CLASSIFICACAO = {
 }
 df["classificacao"] = df["agente_regulado"].map(MAPA_CLASSIFICACAO).fillna("Others")
 
-# 4. Agrupa pelas dimensões relevantes somando a quantidade
+# 5. Agrupa pelas dimensões relevantes somando a quantidade
 COLUNAS_GRUPO = [
     "ano", "mes", "date", "agente_regulado", "nome_produto",
-    "regiao_destinatario", "uf_destino", "mercado_destinatario", "classificacao"
+    "regiao_destinatario", "uf_destino", "mercado_destinatario",
+    "classificacao", "segmento"
 ]
 df = df.groupby(COLUNAS_GRUPO, as_index=False)["quantidade_produto"].sum()
 
-# 5. Remove linhas com quantidade inválida e substitui NaN/inf por None
+# 6. Remove linhas com quantidade inválida e substitui NaN/inf por None
 df = df[df["quantidade_produto"].notna() & (df["quantidade_produto"] != float("inf"))]
 df = df.where(pd.notnull(df), None)
 

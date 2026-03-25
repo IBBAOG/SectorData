@@ -58,10 +58,11 @@ def render_sidebar_filtros(opcoes: dict) -> dict:
         data_inicio = data_fim = None
 
     # ── Outros filtros ─────────────────────────────────────────────────────────
-    agentes  = st.sidebar.multiselect("Agente Regulado",     opcoes.get("agentes", []),      default=[])
-    r_dest   = st.sidebar.multiselect("Região Destinatário", opcoes.get("regioes_dest", []), default=[])
-    uf_dest  = st.sidebar.multiselect("UF Destino",          opcoes.get("ufs_dest", []),     default=[])
-    mercados = st.sidebar.multiselect("Mercado",             opcoes.get("mercados", []),     default=[])
+    segmentos = st.sidebar.multiselect("Segmento",           ["B2B", "Retail", "TRR", "Outros"], default=[])
+    agentes   = st.sidebar.multiselect("Agente Regulado",    opcoes.get("agentes", []),      default=[])
+    r_dest    = st.sidebar.multiselect("Região Destinatário",opcoes.get("regioes_dest", []), default=[])
+    uf_dest   = st.sidebar.multiselect("UF Destino",         opcoes.get("ufs_dest", []),     default=[])
+    mercados  = st.sidebar.multiselect("Mercado",            opcoes.get("mercados", []),     default=[])
 
     st.sidebar.markdown("---")
 
@@ -76,6 +77,7 @@ def render_sidebar_filtros(opcoes: dict) -> dict:
     filtros_sidebar = {
         "data_inicio":  data_inicio,
         "data_fim":     data_fim,
+        "segmentos":    segmentos,
         "agentes":      agentes,
         "regioes_dest": r_dest,
         "ufs_dest":     uf_dest,

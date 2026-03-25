@@ -34,6 +34,16 @@ df["quantidade_produto"] = (
 )
 df["quantidade_produto"] = pd.to_numeric(df["quantidade_produto"], errors="coerce")
 
+# Segmento baseado no mercado_destinatario
+MAPA_SEGMENTO = {
+    "CONSUMIDOR FINAL":                        "B2B",
+    "Posto de Combustíveis - Bandeirado":      "Retail",
+    "Posto de Combustíveis - Bandeira Branca": "Retail",
+    "TRR":                                     "TRR",
+    "TRRNI":                                   "TRR",
+}
+df["segmento"] = df["mercado_destinatario"].map(MAPA_SEGMENTO).fillna("Outros")
+
 # Classificação
 MAPA_CLASSIFICACAO = {
     "VIBRA ENERGIA S.A":                                        "Vibra",
@@ -59,7 +69,7 @@ COLUNAS_GRUPO = [
     "ano", "mes", "date",
     "nome_produto",
     "regiao_destinatario", "uf_destino", "mercado_destinatario",
-    "classificacao"
+    "classificacao", "segmento"
 ]
 df = df.groupby(COLUNAS_GRUPO, as_index=False)["quantidade_produto"].sum()
 df = df[df["quantidade_produto"].notna() & (df["quantidade_produto"] != float("inf"))]
