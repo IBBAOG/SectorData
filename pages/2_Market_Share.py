@@ -185,7 +185,7 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
         )
 
     fig.update_layout(
-        margin=dict(t=40, b=10, l=10, r=60),  # r=60 para acomodar os labels
+        margin=dict(t=40, b=50, l=10, r=60),  # b=50 para acomodar a legenda abaixo
         font=_FONT,
         title_font=_FONT,
         yaxis=dict(ticksuffix="%", range=[y_lo, y_hi], tickfont=_FONT, title_font=_FONT,
@@ -194,7 +194,7 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
         xaxis=dict(tickfont=_FONT, title_font=_FONT,
                    showgrid=False, zeroline=False,
                    showline=True, linecolor="#000000", linewidth=1),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=_FONT),
+        legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5, font=_FONT),
         plot_bgcolor="white",
         height=300,
         hovermode="x unified",
