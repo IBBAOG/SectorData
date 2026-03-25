@@ -58,7 +58,7 @@ def login():
                 st.error("E-mail ou senha incorretos.")
 
 def logout():
-    st.sidebar.image(LOGO_URL, width=60)
+    st.sidebar.image(LOGO_URL, width=160)
     st.sidebar.markdown("---")
 
     usuario = st.session_state.get("usuario")
