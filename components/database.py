@@ -142,26 +142,3 @@ def carregar_todos(filtros: dict):
         futures = [executor.submit(fn, *args) for fn in fns]
 
     return [f.result() for f in futures]
-
-
-@st.cache_data(ttl=600, show_spinner=False)
-def carregar_dados_pivot(anos=(), meses=(), classificacoes=()):
-    try:
-        supabase = get_client()
-        params = {
-            "p_anos":           list(anos) or None,
-            "p_meses":          list(meses) or None,
-            "p_classificacoes": list(classificacoes) or None,
-        }
-        PAGE = 1000
-        all_data = []
-        offset = 0
-        while True:
-            resp = supabase.rpc("get_dados_pivot", params).range(offset, offset + PAGE - 1).execute()
-            all_data.extend(resp.data)
-            if len(resp.data) < PAGE:
-                break
-            offset += PAGE
-        return pd.DataFrame(all_data)
-    except Exception:
-        return pd.DataFrame()
