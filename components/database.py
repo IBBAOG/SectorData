@@ -2,12 +2,17 @@ import pandas as pd
 import streamlit as st
 from supabase import create_client
 import os
+import hashlib
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+# Funciona tanto local (.env) quanto no Streamlit Cloud (st.secrets)
+SUPABASE_URL = st.secrets.get("SUPABASE_URL") if hasattr(st, "secrets") else None
+SUPABASE_URL = SUPABASE_URL or os.getenv("SUPABASE_URL")
+SUPABASE_KEY = st.secrets.get("SUPABASE_KEY") if hasattr(st, "secrets") else None
+SUPABASE_KEY = SUPABASE_KEY or os.getenv("SUPABASE_KEY")
 
 
 def get_client():
@@ -31,6 +36,15 @@ def _params(filtros):
     }
 
 
+def _hash_filtros(filtros):
+    """Gera uma chave única para o conjunto de filtros para uso no cache."""
+    return hashlib.md5(
+        json.dumps(filtros, sort_keys=True, default=str).encode()
+    ).hexdigest()
+
+
+# ─── Opções dos filtros ───────────────────────────────────────────────────────
+
 @st.cache_data(ttl=3600)
 def carregar_opcoes():
     supabase = get_client()
@@ -38,50 +52,73 @@ def carregar_opcoes():
     return resp.data
 
 
-@st.cache_data(ttl=600)
+# ─── Agregações com cache por hash dos filtros ────────────────────────────────
+
 def carregar_metricas(filtros):
+    return _carregar_metricas_cached(_hash_filtros(filtros), filtros)
+
+@st.cache_data(ttl=600)
+def _carregar_metricas_cached(chave, filtros):
     supabase = get_client()
     resp = supabase.rpc("get_metricas", _params(filtros)).execute()
     return resp.data
 
 
-@st.cache_data(ttl=600)
 def carregar_por_ano(filtros):
+    return _carregar_por_ano_cached(_hash_filtros(filtros), filtros)
+
+@st.cache_data(ttl=600)
+def _carregar_por_ano_cached(chave, filtros):
     supabase = get_client()
     resp = supabase.rpc("get_qtd_por_ano", _params(filtros)).execute()
     return pd.DataFrame(resp.data)
 
 
-@st.cache_data(ttl=600)
 def carregar_por_mes(filtros):
+    return _carregar_por_mes_cached(_hash_filtros(filtros), filtros)
+
+@st.cache_data(ttl=600)
+def _carregar_por_mes_cached(chave, filtros):
     supabase = get_client()
     resp = supabase.rpc("get_qtd_por_mes", _params(filtros)).execute()
     return pd.DataFrame(resp.data)
 
 
-@st.cache_data(ttl=600)
 def carregar_por_regiao(filtros):
+    return _carregar_por_regiao_cached(_hash_filtros(filtros), filtros)
+
+@st.cache_data(ttl=600)
+def _carregar_por_regiao_cached(chave, filtros):
     supabase = get_client()
     resp = supabase.rpc("get_qtd_por_regiao", _params(filtros)).execute()
     return pd.DataFrame(resp.data)
 
 
-@st.cache_data(ttl=600)
 def carregar_por_agente(filtros):
+    return _carregar_por_agente_cached(_hash_filtros(filtros), filtros)
+
+@st.cache_data(ttl=600)
+def _carregar_por_agente_cached(chave, filtros):
     supabase = get_client()
     resp = supabase.rpc("get_qtd_por_agente", _params(filtros)).execute()
     return pd.DataFrame(resp.data)
 
 
-@st.cache_data(ttl=600)
 def carregar_por_produto(filtros):
+    return _carregar_por_produto_cached(_hash_filtros(filtros), filtros)
+
+@st.cache_data(ttl=600)
+def _carregar_por_produto_cached(chave, filtros):
     supabase = get_client()
     resp = supabase.rpc("get_qtd_por_produto", _params(filtros)).execute()
     return pd.DataFrame(resp.data)
 
 
-@st.cache_data(ttl=600)
 def carregar_por_uf(filtros):
+    return _carregar_por_uf_cached(_hash_filtros(filtros), filtros)
+
+@st.cache_data(ttl=600)
+def _carregar_por_uf_cached(chave, filtros):
     supabase = get_client()
     resp = supabase.rpc("get_qtd_por_uf", _params(filtros)).execute()
     return pd.DataFrame(resp.data)
