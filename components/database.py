@@ -125,6 +125,83 @@ def carregar_por_uf(anos, meses, agentes, regioes_dest, ufs_dest, mercados):
         return pd.DataFrame()
 
 
+# ─── Market Share ─────────────────────────────────────────────────────────────
+
+def _ms_params(anos, meses, regioes, ufs, mercados):
+    return {
+        "p_anos":     list(anos) or None,
+        "p_meses":    list(meses) or None,
+        "p_regioes":  list(regioes) or None,
+        "p_ufs":      list(ufs) or None,
+        "p_mercados": list(mercados) or None,
+    }
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def carregar_ms_opcoes():
+    try:
+        supabase = get_client()
+        resp = supabase.rpc("get_ms_opcoes_filtros", {}).execute()
+        return resp.data
+    except Exception:
+        return {}
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def carregar_ms_totais(anos, meses, regioes, ufs, mercados):
+    try:
+        supabase = get_client()
+        resp = supabase.rpc("get_ms_totais", _ms_params(anos, meses, regioes, ufs, mercados)).execute()
+        return pd.DataFrame(resp.data)
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def carregar_ms_por_ano(anos, meses, regioes, ufs, mercados):
+    try:
+        supabase = get_client()
+        resp = supabase.rpc("get_ms_por_ano", _ms_params(anos, meses, regioes, ufs, mercados)).execute()
+        return pd.DataFrame(resp.data)
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def carregar_ms_por_mes(anos, meses, regioes, ufs, mercados):
+    try:
+        supabase = get_client()
+        resp = supabase.rpc("get_ms_por_mes", _ms_params(anos, meses, regioes, ufs, mercados)).execute()
+        return pd.DataFrame(resp.data)
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def carregar_ms_por_regiao(anos, meses, regioes, ufs, mercados):
+    try:
+        supabase = get_client()
+        resp = supabase.rpc("get_ms_por_regiao", _ms_params(anos, meses, regioes, ufs, mercados)).execute()
+        return pd.DataFrame(resp.data)
+    except Exception:
+        return pd.DataFrame()
+
+
+def carregar_ms_todos(filtros: dict):
+    from concurrent.futures import ThreadPoolExecutor
+
+    args = tuple(tuple(filtros.get(k) or []) for k in [
+        "anos", "meses", "regioes", "ufs", "mercados"
+    ])
+
+    fns = [carregar_ms_totais, carregar_ms_por_ano, carregar_ms_por_mes, carregar_ms_por_regiao]
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = [executor.submit(fn, *args) for fn in fns]
+
+    return [f.result() for f in futures]
+
+
 def carregar_todos(filtros: dict):
     """Carrega todos os dados em paralelo a partir de um dict de filtros."""
     from concurrent.futures import ThreadPoolExecutor
