@@ -140,6 +140,14 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str):
     if df.empty:
         return None
 
+    # ── Escala dinâmica com margem proporcional ────────────────────────────────
+    y_min = df["pct"].min()
+    y_max = df["pct"].max()
+    spread = y_max - y_min if y_max > y_min else 1.0
+    pad = spread * 0.20                          # 20% de margem acima e abaixo
+    y_lo = max(0.0,   y_min - pad)
+    y_hi = min(100.0, y_max + pad)
+
     fig = px.line(
         df, x="date", y="pct", color="classificacao",
         title=titulo,
@@ -150,7 +158,7 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str):
     fig.update_layout(
         margin=dict(t=40, b=10, l=10, r=10),
         font=dict(family="Inter, sans-serif"),
-        yaxis=dict(ticksuffix="%", rangemode="tozero"),
+        yaxis=dict(ticksuffix="%", range=[y_lo, y_hi]),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         height=300,
         hovermode="x unified",
