@@ -1,5 +1,6 @@
 import streamlit as st
 from datetime import datetime
+from itertools import product as _product
 
 MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
             "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
@@ -14,6 +15,24 @@ def _fmt_data(d: str) -> str:
         return d
 
 
+def _resolver_datas(opcoes: dict) -> list[str]:
+    """
+    Retorna lista ordenada de datas ISO ('YYYY-MM-01').
+    Tenta primeiro o campo 'datas'; se ausente, deriva de 'anos' × 'meses'.
+    """
+    datas = sorted(opcoes.get("datas") or [])
+    if datas:
+        return datas
+
+    # fallback: produto cartesiano de anos × meses disponíveis
+    anos  = sorted(opcoes.get("anos")  or [])
+    meses = sorted(opcoes.get("meses") or [])
+    if anos and meses:
+        return sorted(f"{a:04d}-{m:02d}-01" for a, m in _product(anos, meses))
+
+    return []
+
+
 def render_sidebar_filtros(opcoes: dict) -> dict:
     """
     Renderiza os filtros na sidebar e retorna o dict de filtros ativos.
@@ -21,7 +40,8 @@ def render_sidebar_filtros(opcoes: dict) -> dict:
     st.sidebar.markdown("## Filtros")
 
     # ── Slider de período ──────────────────────────────────────────────────────
-    datas = sorted(opcoes.get("datas", []))
+    datas = _resolver_datas(opcoes)
+
     if len(datas) >= 2:
         data_inicio, data_fim = st.sidebar.select_slider(
             "Período",
@@ -31,8 +51,10 @@ def render_sidebar_filtros(opcoes: dict) -> dict:
         )
     elif len(datas) == 1:
         data_inicio = data_fim = datas[0]
-        st.sidebar.info(f"Período único: {_fmt_data(datas[0])}")
+        st.sidebar.info(f"Período disponível: {_fmt_data(datas[0])}")
     else:
+        # sem datas disponíveis — mostra aviso e passa None
+        st.sidebar.warning("⚠️ Não foi possível carregar o período. Verifique a conexão com o banco.")
         data_inicio = data_fim = None
 
     # ── Outros filtros ─────────────────────────────────────────────────────────

@@ -16,6 +16,17 @@ def _fmt_data(d: str) -> str:
     except Exception:
         return d
 
+def _resolver_datas(opcoes: dict) -> list:
+    datas = sorted(opcoes.get("datas") or [])
+    if datas:
+        return datas
+    from itertools import product as _product
+    anos  = sorted(opcoes.get("anos")  or [])
+    meses = sorted(opcoes.get("meses") or [])
+    if anos and meses:
+        return sorted(f"{a:04d}-{m:02d}-01" for a, m in _product(anos, meses))
+    return []
+
 st.set_page_config(
     page_title="Itaú BBA | Market Share",
     page_icon="https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Ita%C3%BA_logo.svg/32px-Ita%C3%BA_logo.svg.png",
@@ -54,7 +65,7 @@ opcoes = carregar_ms_opcoes()
 st.sidebar.markdown("## Filtros")
 
 # ── Slider de período ──────────────────────────────────────────────────────────
-datas = sorted(opcoes.get("datas", []))
+datas = _resolver_datas(opcoes)
 if len(datas) >= 2:
     data_inicio, data_fim = st.sidebar.select_slider(
         "Período",
@@ -64,8 +75,9 @@ if len(datas) >= 2:
     )
 elif len(datas) == 1:
     data_inicio = data_fim = datas[0]
-    st.sidebar.info(f"Período único: {_fmt_data(datas[0])}")
+    st.sidebar.info(f"Período disponível: {_fmt_data(datas[0])}")
 else:
+    st.sidebar.warning("⚠️ Não foi possível carregar o período.")
     data_inicio = data_fim = None
 
 regioes  = st.sidebar.multiselect("Região",  opcoes.get("regioes", []), default=[])
