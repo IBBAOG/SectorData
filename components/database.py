@@ -29,14 +29,14 @@ def get_client():
     return supabase
 
 
-def _params(anos, meses, agentes, regioes_dest, ufs_dest, mercados):
+def _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados):
     return {
-        "p_anos":           list(anos) or None,
-        "p_meses":          list(meses) or None,
-        "p_agentes":        list(agentes) or None,
-        "p_regioes_dest":   list(regioes_dest) or None,
-        "p_ufs_dest":       list(ufs_dest) or None,
-        "p_mercados":       list(mercados) or None,
+        "p_data_inicio":  data_inicio or None,
+        "p_data_fim":     data_fim or None,
+        "p_agentes":      list(agentes) or None,
+        "p_regioes_dest": list(regioes_dest) or None,
+        "p_ufs_dest":     list(ufs_dest) or None,
+        "p_mercados":     list(mercados) or None,
     }
 
 
@@ -53,87 +53,111 @@ def carregar_opcoes():
         return {}
 
 
-# ─── Agregações cacheadas por tupla de filtros ────────────────────────────────
+# ─── Agregações cacheadas ─────────────────────────────────────────────────────
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_metricas(anos, meses, agentes, regioes_dest, ufs_dest, mercados):
+def carregar_metricas(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_metricas", _params(anos, meses, agentes, regioes_dest, ufs_dest, mercados)).execute()
+        resp = supabase.rpc("get_metricas", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados)).execute()
         return resp.data
     except Exception:
         return {"total_registros": 0, "quantidade_total": 0.0, "anos_distintos": 0}
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_por_ano(anos, meses, agentes, regioes_dest, ufs_dest, mercados):
+def carregar_por_ano(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_qtd_por_ano", _params(anos, meses, agentes, regioes_dest, ufs_dest, mercados)).execute()
+        resp = supabase.rpc("get_qtd_por_ano", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_por_mes(anos, meses, agentes, regioes_dest, ufs_dest, mercados):
+def carregar_por_mes(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_qtd_por_mes", _params(anos, meses, agentes, regioes_dest, ufs_dest, mercados)).execute()
+        resp = supabase.rpc("get_qtd_por_mes", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_por_regiao(anos, meses, agentes, regioes_dest, ufs_dest, mercados):
+def carregar_por_regiao(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_qtd_por_regiao", _params(anos, meses, agentes, regioes_dest, ufs_dest, mercados)).execute()
+        resp = supabase.rpc("get_qtd_por_regiao", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_por_agente(anos, meses, agentes, regioes_dest, ufs_dest, mercados):
+def carregar_por_agente(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_qtd_por_agente", _params(anos, meses, agentes, regioes_dest, ufs_dest, mercados)).execute()
+        resp = supabase.rpc("get_qtd_por_agente", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_por_produto(anos, meses, agentes, regioes_dest, ufs_dest, mercados):
+def carregar_por_produto(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_qtd_por_produto", _params(anos, meses, agentes, regioes_dest, ufs_dest, mercados)).execute()
+        resp = supabase.rpc("get_qtd_por_produto", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_por_uf(anos, meses, agentes, regioes_dest, ufs_dest, mercados):
+def carregar_por_uf(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_qtd_por_uf", _params(anos, meses, agentes, regioes_dest, ufs_dest, mercados)).execute()
+        resp = supabase.rpc("get_qtd_por_uf", _params(data_inicio, data_fim, agentes, regioes_dest, ufs_dest, mercados)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
+
+
+def carregar_todos(filtros: dict):
+    """Carrega todos os dados em paralelo a partir de um dict de filtros."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    args = (
+        filtros.get("data_inicio"),
+        filtros.get("data_fim"),
+        tuple(filtros.get("agentes") or []),
+        tuple(filtros.get("regioes_dest") or []),
+        tuple(filtros.get("ufs_dest") or []),
+        tuple(filtros.get("mercados") or []),
+    )
+
+    fns = [
+        carregar_metricas, carregar_por_ano, carregar_por_mes,
+        carregar_por_regiao, carregar_por_agente, carregar_por_produto, carregar_por_uf,
+    ]
+
+    with ThreadPoolExecutor(max_workers=7) as executor:
+        futures = [executor.submit(fn, *args) for fn in fns]
+
+    return [f.result() for f in futures]
 
 
 # ─── Market Share ─────────────────────────────────────────────────────────────
 
-def _ms_params(anos, meses, regioes, ufs, mercados):
+def _ms_params(data_inicio, data_fim, regioes, ufs, mercados):
     return {
-        "p_anos":     list(anos) or None,
-        "p_meses":    list(meses) or None,
-        "p_regioes":  list(regioes) or None,
-        "p_ufs":      list(ufs) or None,
-        "p_mercados": list(mercados) or None,
+        "p_data_inicio": data_inicio or None,
+        "p_data_fim":    data_fim or None,
+        "p_regioes":     list(regioes) or None,
+        "p_ufs":         list(ufs) or None,
+        "p_mercados":    list(mercados) or None,
     }
 
 
@@ -148,40 +172,40 @@ def carregar_ms_opcoes():
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_ms_totais(anos, meses, regioes, ufs, mercados):
+def carregar_ms_totais(data_inicio, data_fim, regioes, ufs, mercados):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_ms_totais", _ms_params(anos, meses, regioes, ufs, mercados)).execute()
+        resp = supabase.rpc("get_ms_totais", _ms_params(data_inicio, data_fim, regioes, ufs, mercados)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_ms_por_ano(anos, meses, regioes, ufs, mercados):
+def carregar_ms_por_ano(data_inicio, data_fim, regioes, ufs, mercados):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_ms_por_ano", _ms_params(anos, meses, regioes, ufs, mercados)).execute()
+        resp = supabase.rpc("get_ms_por_ano", _ms_params(data_inicio, data_fim, regioes, ufs, mercados)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_ms_por_mes(anos, meses, regioes, ufs, mercados):
+def carregar_ms_por_mes(data_inicio, data_fim, regioes, ufs, mercados):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_ms_por_mes", _ms_params(anos, meses, regioes, ufs, mercados)).execute()
+        resp = supabase.rpc("get_ms_por_mes", _ms_params(data_inicio, data_fim, regioes, ufs, mercados)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_ms_por_regiao(anos, meses, regioes, ufs, mercados):
+def carregar_ms_por_regiao(data_inicio, data_fim, regioes, ufs, mercados):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_ms_por_regiao", _ms_params(anos, meses, regioes, ufs, mercados)).execute()
+        resp = supabase.rpc("get_ms_por_regiao", _ms_params(data_inicio, data_fim, regioes, ufs, mercados)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
@@ -190,32 +214,17 @@ def carregar_ms_por_regiao(anos, meses, regioes, ufs, mercados):
 def carregar_ms_todos(filtros: dict):
     from concurrent.futures import ThreadPoolExecutor
 
-    args = tuple(tuple(filtros.get(k) or []) for k in [
-        "anos", "meses", "regioes", "ufs", "mercados"
-    ])
+    args = (
+        filtros.get("data_inicio"),
+        filtros.get("data_fim"),
+        tuple(filtros.get("regioes") or []),
+        tuple(filtros.get("ufs") or []),
+        tuple(filtros.get("mercados") or []),
+    )
 
     fns = [carregar_ms_totais, carregar_ms_por_ano, carregar_ms_por_mes, carregar_ms_por_regiao]
 
     with ThreadPoolExecutor(max_workers=4) as executor:
-        futures = [executor.submit(fn, *args) for fn in fns]
-
-    return [f.result() for f in futures]
-
-
-def carregar_todos(filtros: dict):
-    """Carrega todos os dados em paralelo a partir de um dict de filtros."""
-    from concurrent.futures import ThreadPoolExecutor
-
-    args = tuple(tuple(filtros.get(k) or []) for k in [
-        "anos", "meses", "agentes", "regioes_dest", "ufs_dest", "mercados"
-    ])
-
-    fns = [
-        carregar_metricas, carregar_por_ano, carregar_por_mes,
-        carregar_por_regiao, carregar_por_agente, carregar_por_produto, carregar_por_uf,
-    ]
-
-    with ThreadPoolExecutor(max_workers=7) as executor:
         futures = [executor.submit(fn, *args) for fn in fns]
 
     return [f.result() for f in futures]

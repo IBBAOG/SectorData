@@ -1,6 +1,18 @@
 import streamlit as st
 from datetime import datetime
 
+MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
+            "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+
+
+def _fmt_data(d: str) -> str:
+    """Converte '2021-01-01' → 'Jan/2021'."""
+    try:
+        y, m = d[:4], int(d[5:7])
+        return f"{MESES_PT[m - 1]}/{y}"
+    except Exception:
+        return d
+
 
 def render_sidebar_filtros(opcoes: dict) -> dict:
     """
@@ -8,12 +20,26 @@ def render_sidebar_filtros(opcoes: dict) -> dict:
     """
     st.sidebar.markdown("## Filtros")
 
-    anos    = st.sidebar.multiselect("Ano",                 opcoes.get("anos", []),        default=[])
-    meses   = st.sidebar.multiselect("Mês",                 opcoes.get("meses", []),       default=[])
-    agentes = st.sidebar.multiselect("Agente Regulado",     opcoes.get("agentes", []),     default=[])
-    r_dest  = st.sidebar.multiselect("Região Destinatário", opcoes.get("regioes_dest", []),default=[])
-    uf_dest = st.sidebar.multiselect("UF Destino",          opcoes.get("ufs_dest", []),    default=[])
-    mercados= st.sidebar.multiselect("Mercado",             opcoes.get("mercados", []),    default=[])
+    # ── Slider de período ──────────────────────────────────────────────────────
+    datas = sorted(opcoes.get("datas", []))
+    if len(datas) >= 2:
+        data_inicio, data_fim = st.sidebar.select_slider(
+            "Período",
+            options=datas,
+            value=(datas[0], datas[-1]),
+            format_func=_fmt_data,
+        )
+    elif len(datas) == 1:
+        data_inicio = data_fim = datas[0]
+        st.sidebar.info(f"Período único: {_fmt_data(datas[0])}")
+    else:
+        data_inicio = data_fim = None
+
+    # ── Outros filtros ─────────────────────────────────────────────────────────
+    agentes  = st.sidebar.multiselect("Agente Regulado",     opcoes.get("agentes", []),      default=[])
+    r_dest   = st.sidebar.multiselect("Região Destinatário", opcoes.get("regioes_dest", []), default=[])
+    uf_dest  = st.sidebar.multiselect("UF Destino",          opcoes.get("ufs_dest", []),     default=[])
+    mercados = st.sidebar.multiselect("Mercado",             opcoes.get("mercados", []),     default=[])
 
     st.sidebar.markdown("---")
 
@@ -26,8 +52,12 @@ def render_sidebar_filtros(opcoes: dict) -> dict:
         st.rerun()
 
     filtros_sidebar = {
-        "anos": anos, "meses": meses, "agentes": agentes,
-        "regioes_dest": r_dest, "ufs_dest": uf_dest, "mercados": mercados,
+        "data_inicio":  data_inicio,
+        "data_fim":     data_fim,
+        "agentes":      agentes,
+        "regioes_dest": r_dest,
+        "ufs_dest":     uf_dest,
+        "mercados":     mercados,
     }
 
     if aplicar or "filtros_ativos" not in st.session_state:

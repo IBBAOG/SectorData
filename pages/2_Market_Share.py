@@ -4,9 +4,17 @@ import plotly.graph_objects as go
 import pandas as pd
 from components.auth import requer_login
 from components.style import aplicar_estilo
-from components.database import (
-    carregar_ms_opcoes, carregar_ms_todos,
-)
+from components.database import carregar_ms_opcoes, carregar_ms_todos
+
+MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
+            "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+
+def _fmt_data(d: str) -> str:
+    try:
+        y, m = d[:4], int(d[5:7])
+        return f"{MESES_PT[m - 1]}/{y}"
+    except Exception:
+        return d
 
 st.set_page_config(
     page_title="Itaú BBA | Market Share",
@@ -44,11 +52,25 @@ st.markdown("---")
 opcoes = carregar_ms_opcoes()
 
 st.sidebar.markdown("## Filtros")
-anos    = st.sidebar.multiselect("Ano",    opcoes.get("anos", []),    default=[])
-meses   = st.sidebar.multiselect("Mês",    opcoes.get("meses", []),   default=[])
-regioes = st.sidebar.multiselect("Região", opcoes.get("regioes", []), default=[])
-ufs     = st.sidebar.multiselect("UF",     opcoes.get("ufs", []),     default=[])
-mercados= st.sidebar.multiselect("Mercado",opcoes.get("mercados", []),default=[])
+
+# ── Slider de período ──────────────────────────────────────────────────────────
+datas = sorted(opcoes.get("datas", []))
+if len(datas) >= 2:
+    data_inicio, data_fim = st.sidebar.select_slider(
+        "Período",
+        options=datas,
+        value=(datas[0], datas[-1]),
+        format_func=_fmt_data,
+    )
+elif len(datas) == 1:
+    data_inicio = data_fim = datas[0]
+    st.sidebar.info(f"Período único: {_fmt_data(datas[0])}")
+else:
+    data_inicio = data_fim = None
+
+regioes  = st.sidebar.multiselect("Região",  opcoes.get("regioes", []), default=[])
+ufs      = st.sidebar.multiselect("UF",      opcoes.get("ufs", []),     default=[])
+mercados = st.sidebar.multiselect("Mercado", opcoes.get("mercados", []),default=[])
 
 st.sidebar.markdown("---")
 col1, col2 = st.sidebar.columns(2)
@@ -60,7 +82,11 @@ if limpar:
     st.rerun()
 
 filtros_sidebar = {
-    "anos": anos, "meses": meses, "regioes": regioes, "ufs": ufs, "mercados": mercados,
+    "data_inicio": data_inicio,
+    "data_fim":    data_fim,
+    "regioes":     regioes,
+    "ufs":         ufs,
+    "mercados":    mercados,
 }
 
 if aplicar or "ms_filtros_ativos" not in st.session_state:
