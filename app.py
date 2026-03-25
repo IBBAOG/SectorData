@@ -38,7 +38,7 @@ st.markdown("---")
 # ─── Filtros na sidebar ───────────────────────────────────────────────────────
 opcoes = carregar_opcoes()
 
-st.sidebar.markdown("## 🔽 Filtros")
+st.sidebar.markdown("## Filtros")
 anos      = st.sidebar.multiselect("Ano",                 opcoes["anos"],           default=[])
 meses     = st.sidebar.multiselect("Mês",                 opcoes["meses"],          default=[])
 agentes   = st.sidebar.multiselect("Agente Regulado",     opcoes["agentes"],        default=[])
@@ -86,7 +86,7 @@ c2.metric("Quantidade Total (mil m³)", f"{metricas['quantidade_total']:,.2f}")
 c3.metric("Anos Disponíveis",          f"{metricas['anos_distintos']}")
 
 st.markdown("---")
-st.subheader("📈 Análise de Vendas")
+st.subheader("Comercialização de Combustíveis Líquidos")
 
 # Paleta de cores Itaú
 LARANJA  = "#f26522"
