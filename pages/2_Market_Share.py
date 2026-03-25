@@ -80,9 +80,10 @@ else:
     st.sidebar.warning("⚠️ Não foi possível carregar o período.")
     data_inicio = data_fim = None
 
-regioes  = st.sidebar.multiselect("Região",  opcoes.get("regioes", []), default=[])
-ufs      = st.sidebar.multiselect("UF",      opcoes.get("ufs", []),     default=[])
-mercados = st.sidebar.multiselect("Mercado", opcoes.get("mercados", []),default=[])
+produtos = st.sidebar.multiselect("Combustível", opcoes.get("produtos", []), default=[])
+regioes  = st.sidebar.multiselect("Região",      opcoes.get("regioes", []),  default=[])
+ufs      = st.sidebar.multiselect("UF",          opcoes.get("ufs", []),      default=[])
+mercados = st.sidebar.multiselect("Mercado",     opcoes.get("mercados", []), default=[])
 
 st.sidebar.markdown("---")
 col1, col2 = st.sidebar.columns(2)
@@ -96,6 +97,7 @@ if limpar:
 filtros_sidebar = {
     "data_inicio": data_inicio,
     "data_fim":    data_fim,
+    "produtos":    produtos,
     "regioes":     regioes,
     "ufs":         ufs,
     "mercados":    mercados,
