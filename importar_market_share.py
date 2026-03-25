@@ -36,13 +36,19 @@ df["quantidade_produto"] = pd.to_numeric(df["quantidade_produto"], errors="coerc
 
 # Segmento baseado no mercado_destinatario
 MAPA_SEGMENTO = {
-    "CONSUMIDOR FINAL":                        "B2B",
-    "Posto de Combustíveis - Bandeirado":      "Retail",
-    "Posto de Combustíveis - Bandeira Branca": "Retail",
-    "TRR":                                     "TRR",
-    "TRRNI":                                   "TRR",
+    "CONSUMIDOR FINAL":                          "B2B",
+    "POSTO DE COMBUSTÍVEIS - BANDEIRADO":        "Retail",
+    "POSTO DE COMBUSTÍVEIS - BANDEIRA BRANCA":   "Retail",
+    "TRR":                                       "TRR",
+    "TRRNI":                                     "TRR",
 }
-df["segmento"] = df["mercado_destinatario"].map(MAPA_SEGMENTO).fillna("Outros")
+df["segmento"] = (
+    df["mercado_destinatario"]
+    .str.strip()
+    .str.upper()
+    .map(MAPA_SEGMENTO)
+    .fillna("Outros")
+)
 
 # Classificação
 MAPA_CLASSIFICACAO = {

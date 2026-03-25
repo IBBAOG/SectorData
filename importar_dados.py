@@ -42,13 +42,19 @@ df["date"] = pd.to_datetime(df["ano"].astype(str) + "-" + df["mes"].astype(str).
 
 # 3. Segmento baseado no mercado_destinatario
 MAPA_SEGMENTO = {
-    "CONSUMIDOR FINAL":                        "B2B",
-    "Posto de Combustíveis - Bandeirado":      "Retail",
-    "Posto de Combustíveis - Bandeira Branca": "Retail",
-    "TRR":                                     "TRR",
-    "TRRNI":                                   "TRR",
+    "CONSUMIDOR FINAL":                          "B2B",
+    "POSTO DE COMBUSTÍVEIS - BANDEIRADO":        "Retail",
+    "POSTO DE COMBUSTÍVEIS - BANDEIRA BRANCA":   "Retail",
+    "TRR":                                       "TRR",
+    "TRRNI":                                     "TRR",
 }
-df["segmento"] = df["mercado_destinatario"].map(MAPA_SEGMENTO).fillna("Outros")
+df["segmento"] = (
+    df["mercado_destinatario"]
+    .str.strip()
+    .str.upper()
+    .map(MAPA_SEGMENTO)
+    .fillna("Outros")
+)
 
 # 4. Classificação baseada no agente_regulado
 MAPA_CLASSIFICACAO = {
