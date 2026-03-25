@@ -6,7 +6,7 @@ from supabase import create_client
 
 load_dotenv()
 
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
 
 print("Carregando CSV...")
 df = pd.read_csv(
@@ -25,7 +25,10 @@ df.columns = [
     "mercado_destinatario", "quantidade_produto"
 ]
 
-# Converte quantidade para float (troca vírgula por ponto se necessário)
+# Remove colunas irrelevantes
+df = df.drop(columns=["codigo_produto", "descricao_produto", "regiao_origem", "uf_origem"])
+
+# 1. Converte quantidade para float antes de qualquer agregação
 df["quantidade_produto"] = (
     df["quantidade_produto"]
     .astype(str)
@@ -34,10 +37,29 @@ df["quantidade_produto"] = (
 )
 df["quantidade_produto"] = pd.to_numeric(df["quantidade_produto"], errors="coerce")
 
-# Remove linhas completamente vazias
-df = df.dropna(how="all")
+# 2. Gera coluna date a partir de ano e mes
+df["date"] = pd.to_datetime(df["ano"].astype(str) + "-" + df["mes"].astype(str).str.zfill(2) + "-01").dt.strftime("%Y-%m-%d")
 
-# Substitui NaN por None (compatível com JSON do Supabase)
+# 3. Classificação baseada no agente_regulado
+MAPA_CLASSIFICACAO = {
+    "VIBRA ENERGIA S.A":                                        "Vibra",
+    "IPIRANGA PRODUTOS DE PETRÓLEO S.A":                        "Ipiranga",
+    "RAIZEN S.A.":                                              "Raizen",
+    "RAIZEN MIME COMBUSTIVEIS S/A.":                            "Raizen",
+    "PETRÓLEO SABBÁ S.A.":                                      "Raizen",
+    "CENTROESTE DISTRIBUICAO DE DERIVADOS DE PETROLEO S/A":     "Raizen",
+}
+df["classificacao"] = df["agente_regulado"].map(MAPA_CLASSIFICACAO).fillna("Others")
+
+# 4. Agrupa pelas dimensões relevantes somando a quantidade
+COLUNAS_GRUPO = [
+    "ano", "mes", "date", "agente_regulado", "nome_produto",
+    "regiao_destinatario", "uf_destino", "mercado_destinatario", "classificacao"
+]
+df = df.groupby(COLUNAS_GRUPO, as_index=False)["quantidade_produto"].sum()
+
+# 5. Remove linhas com quantidade inválida e substitui NaN/inf por None
+df = df[df["quantidade_produto"].notna() & (df["quantidade_produto"] != float("inf"))]
 df = df.where(pd.notnull(df), None)
 
 print(f"Total de linhas: {len(df):,}")

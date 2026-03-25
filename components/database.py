@@ -29,25 +29,15 @@ def get_client():
     return supabase
 
 
-def _params(anos, meses, agentes, regioes_origem, ufs_origem, regioes_dest, ufs_dest, mercados):
+def _params(anos, meses, agentes, regioes_dest, ufs_dest, mercados):
     return {
         "p_anos":           list(anos) or None,
         "p_meses":          list(meses) or None,
         "p_agentes":        list(agentes) or None,
-        "p_regioes_origem": list(regioes_origem) or None,
-        "p_ufs_origem":     list(ufs_origem) or None,
         "p_regioes_dest":   list(regioes_dest) or None,
         "p_ufs_dest":       list(ufs_dest) or None,
         "p_mercados":       list(mercados) or None,
     }
-
-
-def _filtros_para_tuplas(filtros: dict):
-    """Converte valores do dict de filtros para tuplas (hasheáveis pelo Streamlit)."""
-    return tuple(tuple(filtros.get(k) or []) for k in [
-        "anos", "meses", "agentes", "regioes_origem",
-        "ufs_origem", "regioes_dest", "ufs_dest", "mercados"
-    ])
 
 
 # ─── Opções dos filtros ───────────────────────────────────────────────────────
@@ -66,84 +56,70 @@ def carregar_opcoes():
 # ─── Agregações cacheadas por tupla de filtros ────────────────────────────────
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_metricas(anos, meses, agentes, regioes_origem, ufs_origem, regioes_dest, ufs_dest, mercados):
+def carregar_metricas(anos, meses, agentes, regioes_dest, ufs_dest, mercados):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_metricas", _params(
-            anos, meses, agentes, regioes_origem, ufs_origem, regioes_dest, ufs_dest, mercados
-        )).execute()
+        resp = supabase.rpc("get_metricas", _params(anos, meses, agentes, regioes_dest, ufs_dest, mercados)).execute()
         return resp.data
     except Exception:
         return {"total_registros": 0, "quantidade_total": 0.0, "anos_distintos": 0}
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_por_ano(anos, meses, agentes, regioes_origem, ufs_origem, regioes_dest, ufs_dest, mercados):
+def carregar_por_ano(anos, meses, agentes, regioes_dest, ufs_dest, mercados):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_qtd_por_ano", _params(
-            anos, meses, agentes, regioes_origem, ufs_origem, regioes_dest, ufs_dest, mercados
-        )).execute()
+        resp = supabase.rpc("get_qtd_por_ano", _params(anos, meses, agentes, regioes_dest, ufs_dest, mercados)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_por_mes(anos, meses, agentes, regioes_origem, ufs_origem, regioes_dest, ufs_dest, mercados):
+def carregar_por_mes(anos, meses, agentes, regioes_dest, ufs_dest, mercados):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_qtd_por_mes", _params(
-            anos, meses, agentes, regioes_origem, ufs_origem, regioes_dest, ufs_dest, mercados
-        )).execute()
+        resp = supabase.rpc("get_qtd_por_mes", _params(anos, meses, agentes, regioes_dest, ufs_dest, mercados)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_por_regiao(anos, meses, agentes, regioes_origem, ufs_origem, regioes_dest, ufs_dest, mercados):
+def carregar_por_regiao(anos, meses, agentes, regioes_dest, ufs_dest, mercados):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_qtd_por_regiao", _params(
-            anos, meses, agentes, regioes_origem, ufs_origem, regioes_dest, ufs_dest, mercados
-        )).execute()
+        resp = supabase.rpc("get_qtd_por_regiao", _params(anos, meses, agentes, regioes_dest, ufs_dest, mercados)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_por_agente(anos, meses, agentes, regioes_origem, ufs_origem, regioes_dest, ufs_dest, mercados):
+def carregar_por_agente(anos, meses, agentes, regioes_dest, ufs_dest, mercados):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_qtd_por_agente", _params(
-            anos, meses, agentes, regioes_origem, ufs_origem, regioes_dest, ufs_dest, mercados
-        )).execute()
+        resp = supabase.rpc("get_qtd_por_agente", _params(anos, meses, agentes, regioes_dest, ufs_dest, mercados)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_por_produto(anos, meses, agentes, regioes_origem, ufs_origem, regioes_dest, ufs_dest, mercados):
+def carregar_por_produto(anos, meses, agentes, regioes_dest, ufs_dest, mercados):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_qtd_por_produto", _params(
-            anos, meses, agentes, regioes_origem, ufs_origem, regioes_dest, ufs_dest, mercados
-        )).execute()
+        resp = supabase.rpc("get_qtd_por_produto", _params(anos, meses, agentes, regioes_dest, ufs_dest, mercados)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def carregar_por_uf(anos, meses, agentes, regioes_origem, ufs_origem, regioes_dest, ufs_dest, mercados):
+def carregar_por_uf(anos, meses, agentes, regioes_dest, ufs_dest, mercados):
     try:
         supabase = get_client()
-        resp = supabase.rpc("get_qtd_por_uf", _params(
-            anos, meses, agentes, regioes_origem, ufs_origem, regioes_dest, ufs_dest, mercados
-        )).execute()
+        resp = supabase.rpc("get_qtd_por_uf", _params(anos, meses, agentes, regioes_dest, ufs_dest, mercados)).execute()
         return pd.DataFrame(resp.data)
     except Exception:
         return pd.DataFrame()
@@ -154,21 +130,29 @@ def carregar_todos(filtros: dict):
     from concurrent.futures import ThreadPoolExecutor
 
     args = tuple(tuple(filtros.get(k) or []) for k in [
-        "anos", "meses", "agentes", "regioes_origem",
-        "ufs_origem", "regioes_dest", "ufs_dest", "mercados"
+        "anos", "meses", "agentes", "regioes_dest", "ufs_dest", "mercados"
     ])
 
     fns = [
-        carregar_metricas,
-        carregar_por_ano,
-        carregar_por_mes,
-        carregar_por_regiao,
-        carregar_por_agente,
-        carregar_por_produto,
-        carregar_por_uf,
+        carregar_metricas, carregar_por_ano, carregar_por_mes,
+        carregar_por_regiao, carregar_por_agente, carregar_por_produto, carregar_por_uf,
     ]
 
     with ThreadPoolExecutor(max_workers=7) as executor:
         futures = [executor.submit(fn, *args) for fn in fns]
 
     return [f.result() for f in futures]
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def carregar_dados_pivot(anos=(), meses=(), classificacoes=()):
+    try:
+        supabase = get_client()
+        resp = supabase.rpc("get_dados_pivot", {
+            "p_anos":           list(anos) or None,
+            "p_meses":          list(meses) or None,
+            "p_classificacoes": list(classificacoes) or None,
+        }).execute()
+        return pd.DataFrame(resp.data)
+    except Exception:
+        return pd.DataFrame()
