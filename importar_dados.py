@@ -8,6 +8,10 @@ load_dotenv()
 
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_KEY"))
 
+print("Limpando tabela vendas...")
+supabase.table("vendas").delete().neq("id", 0).execute()
+print("Tabela limpa.")
+
 print("Carregando CSV...")
 df = pd.read_csv(
     "data/Liquidos_Vendas_Atual.csv",
