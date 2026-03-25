@@ -12,9 +12,13 @@ SUPABASE_KEY = st.secrets.get("SUPABASE_KEY") if hasattr(st, "secrets") else Non
 SUPABASE_KEY = SUPABASE_KEY or os.getenv("SUPABASE_KEY")
 
 
-@st.cache_resource
+_supabase_client = None
+
 def _get_supabase():
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
+    global _supabase_client
+    if _supabase_client is None:
+        _supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    return _supabase_client
 
 
 def get_client():
