@@ -10,7 +10,7 @@ SUPABASE_URL = SUPABASE_URL or os.getenv("SUPABASE_URL")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY") if hasattr(st, "secrets") else None
 SUPABASE_KEY = SUPABASE_KEY or os.getenv("SUPABASE_KEY")
 
-LOGO_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Ita%C3%BA_logo.svg/320px-Ita%C3%BA_logo.svg.png"
+LOGO_URL = "https://raw.githubusercontent.com/IBBAOG/SectorData/main/assets/logo.webp"
 
 def login():
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
