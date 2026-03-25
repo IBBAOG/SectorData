@@ -215,6 +215,24 @@ def carregar_ms_por_regiao(data_inicio, data_fim, produtos, regioes, ufs, mercad
         return pd.DataFrame()
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def carregar_ms_serie(data_inicio, data_fim, regioes, ufs, mercados):
+    """Série temporal completa com produto + segmento — usado nos gráficos de linha."""
+    try:
+        supabase = get_client()
+        params = {
+            "p_data_inicio": data_inicio or None,
+            "p_data_fim":    data_fim or None,
+            "p_regioes":     list(regioes) or None,
+            "p_ufs":         list(ufs) or None,
+            "p_mercados":    list(mercados) or None,
+        }
+        resp = supabase.rpc("get_ms_serie", params).execute()
+        return pd.DataFrame(resp.data)
+    except Exception:
+        return pd.DataFrame()
+
+
 def carregar_ms_todos(filtros: dict):
     from concurrent.futures import ThreadPoolExecutor
 
