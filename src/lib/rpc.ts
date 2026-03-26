@@ -176,7 +176,7 @@ async function paginatedRpc(
   fnName: string,
   filters: MarketShareFilters,
 ): Promise<MsSerieRow[]> {
-  const PAGE = 2000;
+  const PAGE = 1000;
   let offset = 0;
   const allRows: MsSerieRow[] = [];
 
