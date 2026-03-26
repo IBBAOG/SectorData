@@ -8,6 +8,7 @@ import NavBar from "../../components/NavBar";
 import PlotlyChart from "../../components/PlotlyChart";
 import PeriodSlider from "../../components/PeriodSlider";
 import CheckList from "../../components/CheckList";
+import SearchableMultiSelect from "../../components/SearchableMultiSelect";
 import RegionStateFilter from "../../components/RegionStateFilter";
 import { resolverDatas } from "../../lib/filterUtils";
 import { getSupabaseClient } from "../../lib/supabaseClient";
@@ -85,8 +86,9 @@ function buildMarketShareLine(params: {
   xMin?: string | null;
   xMax?: string | null;
   groupBy?: "classificacao" | "agente_regulado";
+  colorsOverride?: Record<string, string>;
 }): { data: PlotData[]; layout: Partial<Layout> } {
-  const { serieRows, produto, segmento = null, players, big3, xMin, xMax, groupBy = "classificacao" } = params;
+  const { serieRows, produto, segmento = null, players, big3, xMin, xMax, groupBy = "classificacao", colorsOverride } = params;
   if (!serieRows || serieRows.length === 0) return emptyPlot(300);
 
   // Filter by product + segment
@@ -149,7 +151,7 @@ function buildMarketShareLine(params: {
 
   const ultimaData = grouped[grouped.length - 1].date;
 
-  const colorsMap = big3 ? COLORS_BIG3 : COLORS_IND;
+  const colorsMap = colorsOverride ?? (big3 ? COLORS_BIG3 : COLORS_IND);
 
   const traces: PlotData[] = [];
   const annotations: Array<{
@@ -556,22 +558,22 @@ export default function MarketSharePage() {
     return COLORS_IND;
   }, [big3, appliedMode, players]);
 
-  const dieselRetail = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "Retail", players, big3, xMin, xMax, groupBy });
-  const dieselB2B    = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "B2B",    players, big3, xMin, xMax, groupBy });
-  const dieselTrR    = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "TRR",    players, big3, xMin, xMax, groupBy });
-  const dieselTotal  = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: null,     players, big3, xMin, xMax, groupBy });
-  const gasRetail    = buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: "Retail", players, big3, xMin, xMax, groupBy });
-  const gasB2B       = buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: "B2B",    players, big3, xMin, xMax, groupBy });
-  const gasTotal     = buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: null,     players, big3, xMin, xMax, groupBy });
-  const ethRetail    = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: "Retail", players, big3, xMin, xMax, groupBy });
-  const ethB2B       = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: "B2B",    players, big3, xMin, xMax, groupBy });
-  const ethTotal     = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: null,     players, big3, xMin, xMax, groupBy });
+  const dieselRetail = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "Retail", players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
+  const dieselB2B    = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "B2B",    players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
+  const dieselTrR    = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "TRR",    players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
+  const dieselTotal  = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: null,     players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
+  const gasRetail    = buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: "Retail", players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
+  const gasB2B       = buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: "B2B",    players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
+  const gasTotal     = buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: null,     players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
+  const ethRetail    = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: "Retail", players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
+  const ethB2B       = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: "B2B",    players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
+  const ethTotal     = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: null,     players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
 
   // Otto-Cycle = Gasolina C volume + Etanol Hidratado volume × 0.7
   const ottoCycleRows = useMemo(() => makeOttoCycleRows(serieRows), [serieRows]);
-  const ottoRetail = buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: "Retail", players, big3, xMin, xMax, groupBy });
-  const ottoB2B    = buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: "B2B",    players, big3, xMin, xMax, groupBy });
-  const ottoTotal  = buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: null,     players, big3, xMin, xMax, groupBy });
+  const ottoRetail = buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: "Retail", players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
+  const ottoB2B    = buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: "B2B",    players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
+  const ottoTotal  = buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: null,     players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
 
   function applyFilters() {
     if (!datas || datas.length === 0) return;
@@ -702,14 +704,22 @@ export default function MarketSharePage() {
 
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Competitors</div>
-                <CheckList
-                  label="Competitors"
-                  options={playersOptions}
-                  value={competidoresSelected}
-                  onChange={setCompetidoresSelected}
-                  allLabel="All"
-                  clearLabel="Clear"
-                />
+                {mode === "Others" ? (
+                  <SearchableMultiSelect
+                    options={playersOptions}
+                    value={competidoresSelected}
+                    onChange={setCompetidoresSelected}
+                  />
+                ) : (
+                  <CheckList
+                    label="Competitors"
+                    options={playersOptions}
+                    value={competidoresSelected}
+                    onChange={setCompetidoresSelected}
+                    allLabel="All"
+                    clearLabel="Clear"
+                  />
+                )}
               </div>
 
               <div className="sidebar-filter-section">
