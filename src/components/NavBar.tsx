@@ -28,11 +28,11 @@ export default function NavBar() {
   return (
     <nav
       id="main-navbar"
-      className="navbar navbar-expand-lg navbar-light bg-white sticky-top"
+      className="navbar navbar-expand-lg sticky-top"
     >
       <div className="container-fluid">
         <Link href="/" className="navbar-brand d-flex align-items-center">
-          <img src={LOGO_URL} alt="Itaú BBA" style={{ height: 48 }} />
+          <img src={LOGO_URL} alt="Itaú BBA" style={{ height: 48, filter: "brightness(0) invert(1)" }} />
         </Link>
 
         <div className="navbar-nav me-auto ms-3">
@@ -45,7 +45,7 @@ export default function NavBar() {
         </div>
 
         <button
-          className="btn btn-outline-secondary btn-sm"
+          className="btn btn-outline-light btn-sm"
           onClick={onLogout}
           disabled={signingOut || !supabase}
           style={{ fontFamily: "Arial", fontSize: 12 }}

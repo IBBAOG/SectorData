@@ -170,26 +170,26 @@ body {
 
 /* ─── Navigation bar ───────────────────────────────────────────────────────── */
 #main-navbar {
-  background-color: #ffffff;
-  border-bottom: 2px solid #ff5000;
+  background-color: #000512;
+  border-bottom: none;
   padding: 0 16px;
 }
 
 #main-navbar .navbar-brand {
   font-family: Arial, sans-serif;
   font-weight: 700;
-  color: #ff5000 !important;
+  color: #ffffff !important;
 }
 
 #main-navbar .nav-link {
   font-family: Arial, sans-serif;
   font-size: 14px;
-  color: #1a1a1a !important;
+  color: rgba(255, 255, 255, 0.75) !important;
 }
 
 #main-navbar .nav-link:hover,
 #main-navbar .nav-link.active {
-  color: #ff5000 !important;
+  color: #ffffff !important;
 }
 
 /* ─── Page header ──────────────────────────────────────────────────────────── */
