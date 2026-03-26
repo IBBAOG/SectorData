@@ -239,7 +239,7 @@ def _secao(produto: str, titulo_secao: str, players: list, tem_trr: bool = True)
             st.markdown(
                 f"<div style='font-family:Arial;font-size:18px;font-weight:600;"
                 f"color:#FF5000;margin-bottom:2px;'>{label}</div>"
-                f"<hr style='border:none;border-top:1px solid #BFBFBF;margin:0 70px 4px 0;'>",
+                f"<hr style='border:none;border-top:1px solid #BFBFBF;margin:0 30px 4px 0;'>",
                 unsafe_allow_html=True,
             )
             if fig:
