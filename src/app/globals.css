@@ -61,6 +61,11 @@ body {
   margin: 0 0 8px 0;
 }
 
+.chart-container .section-hr {
+  margin-left: 56px;
+  margin-right: 56px;
+}
+
 /* ─── Metric cards ────────────────────────────────────────────────────────── */
 .metric-card {
   background-color: #ffffff;

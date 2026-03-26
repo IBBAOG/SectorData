@@ -72,8 +72,10 @@ function buildMarketShareLine(params: {
   segmento?: string | null;
   players: string[];
   big3: boolean;
+  xMin?: string | null;
+  xMax?: string | null;
 }): { data: PlotData[]; layout: Partial<Layout> } {
-  const { serieRows, produto, segmento = null, players, big3 } = params;
+  const { serieRows, produto, segmento = null, players, big3, xMin, xMax } = params;
   if (!serieRows || serieRows.length === 0) return emptyPlot(300);
 
   // Filter by product + segment
@@ -203,6 +205,7 @@ function buildMarketShareLine(params: {
       linecolor: "#000000",
       linewidth: 1,
       type: "date",
+      ...(xMin || xMax ? { range: [xMin ?? undefined, xMax ?? undefined] } : {}),
     },
     legend: {
       orientation: "h",
@@ -365,78 +368,19 @@ export default function MarketSharePage() {
       ? (appliedFilters?.competidores as string[])
       : playersDefault;
 
-  const dieselRetail = buildMarketShareLine({
-    serieRows,
-    produto: "Diesel B",
-    segmento: "Retail",
-    players,
-    big3,
-  });
-  const dieselB2B = buildMarketShareLine({
-    serieRows,
-    produto: "Diesel B",
-    segmento: "B2B",
-    players,
-    big3,
-  });
-  const dieselTrR = buildMarketShareLine({
-    serieRows,
-    produto: "Diesel B",
-    segmento: "TRR",
-    players,
-    big3,
-  });
-  const dieselTotal = buildMarketShareLine({
-    serieRows,
-    produto: "Diesel B",
-    segmento: null,
-    players,
-    big3,
-  });
+  const xMin = appliedFilters?.data_inicio ?? null;
+  const xMax = appliedFilters?.data_fim ?? null;
 
-  const gasRetail = buildMarketShareLine({
-    serieRows,
-    produto: "Gasolina C",
-    segmento: "Retail",
-    players,
-    big3,
-  });
-  const gasB2B = buildMarketShareLine({
-    serieRows,
-    produto: "Gasolina C",
-    segmento: "B2B",
-    players,
-    big3,
-  });
-  const gasTotal = buildMarketShareLine({
-    serieRows,
-    produto: "Gasolina C",
-    segmento: null,
-    players,
-    big3,
-  });
-
-  const ethRetail = buildMarketShareLine({
-    serieRows,
-    produto: "Etanol Hidratado",
-    segmento: "Retail",
-    players,
-    big3,
-  });
-  const ethB2B = buildMarketShareLine({
-    serieRows,
-    produto: "Etanol Hidratado",
-    segmento: "B2B",
-    players,
-    big3,
-  });
-  const ethTotal = buildMarketShareLine({
-    serieRows,
-    produto: "Etanol Hidratado",
-    segmento: null,
-    players,
-    big3,
-  });
+  const dieselRetail = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "Retail", players, big3, xMin, xMax });
+  const dieselB2B    = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "B2B",    players, big3, xMin, xMax });
+  const dieselTrR    = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "TRR",    players, big3, xMin, xMax });
+  const dieselTotal  = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: null,     players, big3, xMin, xMax });
+  const gasRetail    = buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: "Retail", players, big3, xMin, xMax });
+  const gasB2B       = buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: "B2B",    players, big3, xMin, xMax });
+  const gasTotal     = buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: null,     players, big3, xMin, xMax });
+  const ethRetail    = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: "Retail", players, big3, xMin, xMax });
+  const ethB2B       = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: "B2B",    players, big3, xMin, xMax });
+  const ethTotal     = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: null,     players, big3, xMin, xMax });
 
   function applyFilters() {
     if (!datas || datas.length === 0) return;
