@@ -1,6 +1,5 @@
 import XLSX from "xlsx-js-style";
 import type { MsSerieRow } from "./rpc";
-import { fmtData } from "./filterUtils";
 
 const BIG3_MEMBERS = ["Vibra", "Ipiranga", "Raizen"];
 
@@ -57,8 +56,13 @@ export function downloadMarketShareExcel(
   if (!serieRows || serieRows.length === 0) return;
 
   const allDates = Array.from(new Set(serieRows.map((r) => r.date))).sort();
-  const dateHeaders = allDates.map(fmtData);
   const dateCount = allDates.length;
+
+  // Convert "YYYY-MM-DD" strings to Excel date serial numbers (days since 1899-12-30)
+  const EXCEL_EPOCH = new Date(Date.UTC(1899, 11, 30)).getTime();
+  function toExcelDate(d: string): number {
+    return (new Date(d).getTime() - EXCEL_EPOCH) / 86400000;
+  }
 
   const wb = XLSX.utils.book_new();
 
@@ -70,12 +74,17 @@ export function downloadMarketShareExcel(
     const enc = (r: number, c: number) => XLSX.utils.encode_cell({ r, c });
 
     // ── Row 0: date header ──────────────────────────────────────────────
-    aoa.push(["", ...dateHeaders]);
-    styleMap[enc(0, 0)] = { font: ARIAL10 };
+    // Use placeholder values in aoa; we'll overwrite cells with proper date types below
+    aoa.push(["", ...allDates]);
+    const blackFill = { patternType: "solid", fgColor: { rgb: "000000" } };
+    styleMap[enc(0, 0)] = {
+      font: { ...ARIAL10_BOLD, color: { rgb: "FFFFFF" } },
+      fill: blackFill,
+    };
     for (let c = 1; c <= dateCount; c++) {
       styleMap[enc(0, c)] = {
         font: { ...ARIAL10_BOLD, color: { rgb: "FFFFFF" } },
-        fill: { patternType: "solid", fgColor: { rgb: "000000" } },
+        fill: blackFill,
       };
     }
 
@@ -120,6 +129,18 @@ export function downloadMarketShareExcel(
     for (const [addr, style] of Object.entries(styleMap)) {
       if (!ws[addr]) ws[addr] = { t: "s", v: "" };
       (ws[addr] as Record<string, unknown>).s = style;
+    }
+
+    // Overwrite date cells in row 0 (cols 1+) as real Excel dates
+    for (let c = 1; c <= dateCount; c++) {
+      const addr = enc(0, c);
+      const serial = toExcelDate(allDates[c - 1]);
+      ws[addr] = {
+        t: "n",
+        v: serial,
+        z: "mmm/yyyy",
+        s: styleMap[addr],
+      };
     }
 
     ws["!cols"] = [{ wch: 14 }, ...allDates.map(() => ({ wch: 9 }))];
