@@ -77,28 +77,26 @@ def _region_state_filter(
 ) -> tuple:
     """
     Combined Region / State expander.
-    States appear as nested sub-options only when their region is checked.
+    Each region has its own checkbox; when checked, its states appear
+    indented directly below it as sub-items.
     Returns (selected_regioes, selected_ufs).
     """
     if not all_regioes:
         return [], []
 
-    # Read current checkbox states
+    # Build region → [ufs_in_data] map
+    def _ufs_for_region(reg: str) -> list:
+        mapped = REGIAO_UF_MAP.get(reg, [])
+        result = [u for u in all_ufs if u in mapped]
+        # Fallback: if mapping produced nothing, return all UFs
+        return result if result else list(all_ufs)
+
+    # Read current states (before rendering, for header label)
     sel_regioes = [r for r in all_regioes if st.session_state.get(f"_f_{reg_prefix}_{r}", False)]
-
-    # Which UFs are visible based on selected regions
-    if sel_regioes:
-        visible_ufs = []
-        for reg in sel_regioes:
-            for uf in all_ufs:
-                if uf in REGIAO_UF_MAP.get(reg, []) and uf not in visible_ufs:
-                    visible_ufs.append(uf)
-        if not visible_ufs:   # no mapping match → show all
-            visible_ufs = list(all_ufs)
-    else:
-        visible_ufs = []
-
-    sel_ufs = [u for u in visible_ufs if st.session_state.get(f"_f_{uf_prefix}_{u}", False)]
+    all_visible_ufs = []
+    for r in sel_regioes:
+        all_visible_ufs += [u for u in _ufs_for_region(r) if u not in all_visible_ufs]
+    sel_ufs = [u for u in all_visible_ufs if st.session_state.get(f"_f_{uf_prefix}_{u}", False)]
 
     # Header label
     parts = []
@@ -109,6 +107,7 @@ def _region_state_filter(
     header = "Region / State" + (f"  ·  {', '.join(parts)}" if parts else "")
 
     with st.sidebar.expander(header, expanded=False):
+        # Action buttons
         all_btn = st.button("All regions", key=f"_f_{reg_prefix}_all", use_container_width=True)
         clr_btn = st.button("Clear",       key=f"_f_{reg_prefix}_clr", use_container_width=True)
         if all_btn:
@@ -121,25 +120,28 @@ def _region_state_filter(
             for u in all_ufs:
                 st.session_state[f"_f_{uf_prefix}_{u}"] = False
             st.rerun()
+
         st.markdown(_HR, unsafe_allow_html=True)
 
-        # Region checkboxes
+        # Render each region + its states as sub-items
         for reg in all_regioes:
             st.checkbox(str(reg), key=f"_f_{reg_prefix}_{reg}")
+            reg_checked = st.session_state.get(f"_f_{reg_prefix}_{reg}", False)
+            if reg_checked:
+                ufs_here = _ufs_for_region(reg)
+                for i, uf in enumerate(ufs_here):
+                    connector = "└─" if i == len(ufs_here) - 1 else "├─"
+                    st.checkbox(
+                        f"{connector} {uf}",
+                        key=f"_f_{uf_prefix}_{uf}",
+                    )
 
-        # State sub-section — only when a region is selected
-        if sel_regioes and visible_ufs:
-            st.markdown(
-                "<div style='margin:8px 0 4px 8px;font-size:0.78em;"
-                "color:#999;font-weight:600;letter-spacing:.05em;'>STATES</div>",
-                unsafe_allow_html=True,
-            )
-            for uf in visible_ufs:
-                st.checkbox(str(uf), key=f"_f_{uf_prefix}_{uf}")
-
-    # Re-read final values
-    sel_regioes = [r for r in all_regioes  if st.session_state.get(f"_f_{reg_prefix}_{r}", False)]
-    sel_ufs     = [u for u in visible_ufs  if st.session_state.get(f"_f_{uf_prefix}_{u}", False)]
+    # Re-read final selection
+    sel_regioes = [r for r in all_regioes if st.session_state.get(f"_f_{reg_prefix}_{r}", False)]
+    all_visible_ufs = []
+    for r in sel_regioes:
+        all_visible_ufs += [u for u in _ufs_for_region(r) if u not in all_visible_ufs]
+    sel_ufs = [u for u in all_visible_ufs if st.session_state.get(f"_f_{uf_prefix}_{u}", False)]
     return sel_regioes, sel_ufs
 
 
