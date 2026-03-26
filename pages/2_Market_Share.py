@@ -195,7 +195,6 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
             nticks=10,
             showgrid=False, zeroline=False,
             showline=True, linecolor="#000000", linewidth=1,
-            minor=dict(ticks="outside", ticklen=3, nticks=20),
         ),
         xaxis=dict(
             title=dict(text="", font=_FONT),
@@ -205,7 +204,6 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
             dtick="M3",
             showgrid=False, zeroline=False,
             showline=True, linecolor="#000000", linewidth=1,
-            minor=dict(ticks="outside", ticklen=3, dtick="M1"),
         ),
         legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="center", x=0.5, font=_FONT),
         hoverlabel=dict(font=dict(family="Arial", color="#000000")),
