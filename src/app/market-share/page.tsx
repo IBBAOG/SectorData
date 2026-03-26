@@ -225,6 +225,24 @@ function buildMarketShareLine(params: {
   return { data: traces, layout };
 }
 
+// ── Otto-Cycle volume combination ────────────────────────────────────────────
+
+function makeOttoCycleRows(rows: MsSerieRow[]): MsSerieRow[] {
+  const result: MsSerieRow[] = [];
+  for (const r of rows) {
+    if (r.nome_produto === "Gasolina C") {
+      result.push({ ...r, nome_produto: "Otto-Cycle" });
+    } else if (r.nome_produto === "Etanol Hidratado") {
+      result.push({
+        ...r,
+        nome_produto: "Otto-Cycle",
+        quantidade: r.quantidade != null ? Number(r.quantidade) * 0.7 : r.quantidade,
+      });
+    }
+  }
+  return result;
+}
+
 // ── Period comparison helpers ────────────────────────────────────────────────
 
 function shiftMonth(dateStr: string, n: number): string {
@@ -501,6 +519,12 @@ export default function MarketSharePage() {
   const ethRetail    = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: "Retail", players, big3, xMin, xMax });
   const ethB2B       = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: "B2B",    players, big3, xMin, xMax });
   const ethTotal     = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: null,     players, big3, xMin, xMax });
+
+  // Otto-Cycle = Gasolina C volume + Etanol Hidratado volume × 0.7
+  const ottoCycleRows = useMemo(() => makeOttoCycleRows(serieRows), [serieRows]);
+  const ottoRetail = buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: "Retail", players, big3, xMin, xMax });
+  const ottoB2B    = buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: "B2B",    players, big3, xMin, xMax });
+  const ottoTotal  = buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: null,     players, big3, xMin, xMax });
 
   function applyFilters() {
     if (!datas || datas.length === 0) return;
@@ -873,6 +897,56 @@ export default function MarketSharePage() {
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
                         {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Etanol Hidratado", null, players, big3, latestDate)} colors={chartColors} />}
+                      </div>
+                    </div>
+                  </div>
+
+                  <hr style={{ borderTop: "1px solid #e0e0e0", margin: "20px 0" }} />
+
+                  <div style={{ marginBottom: 10 }}>
+                    <div className="section-title" style={{ color: "#1a1a1a" }}>Otto-Cycle</div>
+                    <hr className="section-hr" />
+                  </div>
+                  <div className="row g-3">
+                    <div className="col-md-6">
+                      <div className="chart-container">
+                        <div className="section-title" style={{ fontSize: 15 }}>Retail</div>
+                        <hr className="section-hr" />
+                        <PlotlyChart
+                          data={ottoRetail.data}
+                          layout={ottoRetail.layout}
+                          config={{ displayModeBar: false }}
+                          style={{ width: "calc(100% - 56px)", height: 300 }}
+                        />
+                        {latestDate && <ComparisonTable rows={buildComparisonData(ottoCycleRows, "Otto-Cycle", "Retail", players, big3, latestDate)} colors={chartColors} />}
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="chart-container">
+                        <div className="section-title" style={{ fontSize: 15 }}>B2B</div>
+                        <hr className="section-hr" />
+                        <PlotlyChart
+                          data={ottoB2B.data}
+                          layout={ottoB2B.layout}
+                          config={{ displayModeBar: false }}
+                          style={{ width: "calc(100% - 56px)", height: 300 }}
+                        />
+                        {latestDate && <ComparisonTable rows={buildComparisonData(ottoCycleRows, "Otto-Cycle", "B2B", players, big3, latestDate)} colors={chartColors} />}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="row g-3">
+                    <div className="col-md-6">
+                      <div className="chart-container">
+                        <div className="section-title" style={{ fontSize: 15 }}>Total</div>
+                        <hr className="section-hr" />
+                        <PlotlyChart
+                          data={ottoTotal.data}
+                          layout={ottoTotal.layout}
+                          config={{ displayModeBar: false }}
+                          style={{ width: "calc(100% - 56px)", height: 300 }}
+                        />
+                        {latestDate && <ComparisonTable rows={buildComparisonData(ottoCycleRows, "Otto-Cycle", null, players, big3, latestDate)} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
