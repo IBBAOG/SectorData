@@ -257,7 +257,7 @@ function getMsAtDate(
   return result;
 }
 
-type CompRow = { player: string; mom: number | null; q3m: number | null; yoy: number | null };
+type CompRow = { player: string; mom: number | null; q3m: number | null; yoy: number | null; ytd: number | null };
 
 function buildComparisonData(
   rows: MsSerieRow[],
@@ -267,10 +267,12 @@ function buildComparisonData(
   big3: boolean,
   latestDate: string,
 ): CompRow[] {
+  const prevYearDec = `${parseInt(latestDate.slice(0, 4), 10) - 1}-12-01`;
   const msNow = getMsAtDate(rows, produto, segmento, latestDate, big3);
   const msMoM = getMsAtDate(rows, produto, segmento, shiftMonth(latestDate, -1), big3);
   const ms3M  = getMsAtDate(rows, produto, segmento, shiftMonth(latestDate, -3), big3);
   const msYoY = getMsAtDate(rows, produto, segmento, shiftMonth(latestDate, -12), big3);
+  const msYtd = getMsAtDate(rows, produto, segmento, prevYearDec, big3);
   const delta = (a: Map<string, number>, b: Map<string, number>, p: string): number | null => {
     const va = a.get(p); const vb = b.get(p);
     return va !== undefined && vb !== undefined ? va - vb : null;
@@ -280,6 +282,7 @@ function buildComparisonData(
     mom: delta(msNow, msMoM, player),
     q3m: delta(msNow, ms3M, player),
     yoy: delta(msNow, msYoY, player),
+    ytd: delta(msNow, msYtd, player),
   }));
 }
 
@@ -291,38 +294,42 @@ function ComparisonTable({ rows, colors }: { rows: CompRow[]; colors: Record<str
       v === null ? "transparent" : v > 0 ? "#c8f0c8" : v < 0 ? "#f5c8c8" : "transparent",
     color: v === null ? "#bbb" : "#1a1a1a",
     textAlign: "center" as const,
-    padding: "3px 10px",
+    padding: "4px 10px",
     fontSize: 11,
     fontFamily: "Arial",
     whiteSpace: "nowrap" as const,
     fontWeight: v !== null ? 600 : 400,
+    border: "none",
   });
   const thStyle = {
     fontFamily: "Arial",
     fontSize: 10,
     fontWeight: 700,
-    color: "#777",
+    color: "#ffffff",
+    backgroundColor: "#000512",
     textAlign: "center" as const,
-    padding: "4px 10px",
-    borderBottom: "1px solid #e0e0e0",
+    padding: "5px 10px",
+    border: "none",
   };
   return (
-    <table style={{ borderCollapse: "collapse", marginTop: 2, marginLeft: 0 }}>
+    <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 2 }}>
       <thead>
         <tr>
-          <th style={{ ...thStyle, textAlign: "left", color: "#aaa", letterSpacing: "0.5px", textTransform: "uppercase" as const }}>pp</th>
+          <th style={{ ...thStyle, textAlign: "left" as const }}>pp</th>
           <th style={thStyle}>MoM</th>
           <th style={thStyle}>-3M</th>
           <th style={thStyle}>YoY</th>
+          <th style={thStyle}>YTD</th>
         </tr>
       </thead>
       <tbody>
-        {rows.map((row) => (
-          <tr key={row.player} style={{ borderBottom: "1px solid #f5f5f5" }}>
-            <td style={{ fontFamily: "Arial", fontSize: 11, color: colors[row.player] ?? "#1a1a1a", fontWeight: 700, padding: "3px 12px 3px 0", whiteSpace: "nowrap" as const }}>{row.player}</td>
+        {rows.map((row, i) => (
+          <tr key={row.player} style={i === rows.length - 1 ? { borderBottom: "2px solid #d0d0d0" } : {}}>
+            <td style={{ fontFamily: "Arial", fontSize: 11, color: colors[row.player] ?? "#1a1a1a", fontWeight: 700, padding: "4px 12px 4px 0", whiteSpace: "nowrap" as const, border: "none" }}>{row.player}</td>
             <td style={cellStyle(row.mom)}>{fmt(row.mom)}</td>
             <td style={cellStyle(row.q3m)}>{fmt(row.q3m)}</td>
             <td style={cellStyle(row.yoy)}>{fmt(row.yoy)}</td>
+            <td style={cellStyle(row.ytd)}>{fmt(row.ytd)}</td>
           </tr>
         ))}
       </tbody>
