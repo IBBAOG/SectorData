@@ -245,6 +245,27 @@ body {
 
 .rc-slider-handle {
   border-color: #ff5000 !important;
+  background-color: #ff5000 !important;
+  opacity: 1 !important;
+  box-shadow: none !important;
+}
+
+.rc-slider-handle:hover,
+.rc-slider-handle:focus,
+.rc-slider-handle-dragging {
+  border-color: #d4561a !important;
+  background-color: #d4561a !important;
+  box-shadow: 0 0 0 3px rgba(255, 80, 0, 0.15) !important;
+}
+
+.rc-slider-dot {
+  border-color: #ddd !important;
+  background-color: #ddd !important;
+}
+
+.rc-slider-dot-active {
+  border-color: #ff5000 !important;
+  background-color: #ff5000 !important;
 }
 
 /* ─── Toast ───────────────────────────────────────────────────────────────── */

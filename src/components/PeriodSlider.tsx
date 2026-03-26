@@ -87,7 +87,7 @@ export default function PeriodSlider(props: {
   } satisfies SliderProps;
 
   return (
-    <div style={{ marginBottom: 28, marginTop: 20 }}>
+    <div style={{ marginBottom: 28, marginTop: 20, paddingLeft: 10, paddingRight: 10 }}>
       <Slider range {...rangeProps} />
     </div>
   );
