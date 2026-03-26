@@ -163,8 +163,7 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
     )
 
     fig.update_traces(
-        mode="lines+markers",
-        marker_size=3,
+        mode="lines",
         line_width=2,
         hovertemplate="%{fullData.name}: %{y:.2f}%<extra></extra>",
     )
@@ -199,6 +198,8 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
         xaxis=dict(
             title=dict(text="", font=_FONT),
             tickfont=_FONT,
+            tickformat="%b-%y",
+            tickangle=90,
             showgrid=False, zeroline=False,
             showline=True, linecolor="#000000", linewidth=1,
         ),
