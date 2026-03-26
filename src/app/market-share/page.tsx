@@ -663,7 +663,7 @@ export default function MarketSharePage() {
 
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">View Mode</div>
-                <div style={{ display: "flex", gap: 16 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px" }}>
                   <label style={{ fontFamily: "Arial", fontSize: 13, cursor: "pointer" }}>
                     <input
                       type="radio"
