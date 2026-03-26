@@ -187,7 +187,7 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
 
     fig.update_layout(
         title={"text": ""},
-        margin=dict(t=10, b=90, l=10, r=60),
+        margin=dict(t=10, b=60, l=10, r=60),
         font=_FONT,
         yaxis=dict(
             title=dict(text="Market Share (%)", font=_FONT),
@@ -198,12 +198,12 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
         xaxis=dict(
             title=dict(text="", font=_FONT),
             tickfont=_FONT,
-            tickformat="%y-%b",
-            tickangle=90,
+            tickformat="%b-%y",
+            tickangle=0,
             showgrid=False, zeroline=False,
             showline=True, linecolor="#000000", linewidth=1,
         ),
-        legend=dict(orientation="h", yanchor="top", y=-0.28, xanchor="center", x=0.5, font=_FONT),
+        legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="center", x=0.5, font=_FONT),
         hoverlabel=dict(font=dict(family="Arial", color="#000000")),
         plot_bgcolor="white",
         height=300,
