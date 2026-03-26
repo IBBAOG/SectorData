@@ -620,7 +620,7 @@ export default function MarketSharePage() {
               ) : (
                 <>
                   <div style={{ marginBottom: 10 }}>
-                    <div className="section-title">Diesel B</div>
+                    <div className="section-title" style={{ color: "#1a1a1a" }}>Diesel B</div>
                     <hr className="section-hr" />
                   </div>
                   <div className="row g-3">
@@ -688,7 +688,7 @@ export default function MarketSharePage() {
                   <hr style={{ borderTop: "1px solid #e0e0e0", margin: "20px 0" }} />
 
                   <div style={{ marginBottom: 10 }}>
-                    <div className="section-title">Gasoline C</div>
+                    <div className="section-title" style={{ color: "#1a1a1a" }}>Gasoline C</div>
                     <hr className="section-hr" />
                   </div>
                   <div className="row g-3">
@@ -741,7 +741,7 @@ export default function MarketSharePage() {
                   <hr style={{ borderTop: "1px solid #e0e0e0", margin: "20px 0" }} />
 
                   <div style={{ marginBottom: 10 }}>
-                    <div className="section-title">Hydrated Ethanol</div>
+                    <div className="section-title" style={{ color: "#1a1a1a" }}>Hydrated Ethanol</div>
                     <hr className="section-hr" />
                   </div>
                   <div className="row g-3">
