@@ -225,6 +225,111 @@ function buildMarketShareLine(params: {
   return { data: traces, layout };
 }
 
+// ── Period comparison helpers ────────────────────────────────────────────────
+
+function shiftMonth(dateStr: string, n: number): string {
+  const y = parseInt(dateStr.slice(0, 4), 10);
+  const m = parseInt(dateStr.slice(5, 7), 10) - 1 + n; // 0-indexed months
+  const ny = y + Math.floor(m / 12);
+  const nm = ((m % 12) + 12) % 12;
+  return `${ny}-${String(nm + 1).padStart(2, "0")}-01`;
+}
+
+function getMsAtDate(
+  rows: MsSerieRow[],
+  produto: string,
+  segmento: string | null,
+  date: string,
+  big3: boolean,
+): Map<string, number> {
+  let filtered = rows.filter((r) => r.nome_produto === produto && r.date === date);
+  if (segmento) filtered = filtered.filter((r) => r.segmento === segmento);
+  const grp = new Map<string, number>();
+  for (const r of filtered) {
+    let cls = r.classificacao;
+    if (big3) cls = BIG3_MEMBERS.includes(cls) ? "Big-3" : cls;
+    grp.set(cls, (grp.get(cls) ?? 0) + Number(r.quantidade ?? 0));
+  }
+  const total = Array.from(grp.values()).reduce((a, b) => a + b, 0);
+  if (total <= 0) return new Map();
+  const result = new Map<string, number>();
+  for (const [cls, qty] of grp) result.set(cls, (qty / total) * 100);
+  return result;
+}
+
+type CompRow = { player: string; mom: number | null; q3m: number | null; yoy: number | null };
+
+function buildComparisonData(
+  rows: MsSerieRow[],
+  produto: string,
+  segmento: string | null,
+  players: string[],
+  big3: boolean,
+  latestDate: string,
+): CompRow[] {
+  const msNow = getMsAtDate(rows, produto, segmento, latestDate, big3);
+  const msMoM = getMsAtDate(rows, produto, segmento, shiftMonth(latestDate, -1), big3);
+  const ms3M  = getMsAtDate(rows, produto, segmento, shiftMonth(latestDate, -3), big3);
+  const msYoY = getMsAtDate(rows, produto, segmento, shiftMonth(latestDate, -12), big3);
+  const delta = (a: Map<string, number>, b: Map<string, number>, p: string): number | null => {
+    const va = a.get(p); const vb = b.get(p);
+    return va !== undefined && vb !== undefined ? va - vb : null;
+  };
+  return players.map((player) => ({
+    player,
+    mom: delta(msNow, msMoM, player),
+    q3m: delta(msNow, ms3M, player),
+    yoy: delta(msNow, msYoY, player),
+  }));
+}
+
+function ComparisonTable({ rows, colors }: { rows: CompRow[]; colors: Record<string, string> }) {
+  const fmt = (v: number | null) =>
+    v === null ? "—" : (v > 0 ? "+" : "") + v.toFixed(1);
+  const cellStyle = (v: number | null) => ({
+    backgroundColor:
+      v === null ? "transparent" : v > 0 ? "#c8f0c8" : v < 0 ? "#f5c8c8" : "transparent",
+    color: v === null ? "#bbb" : "#1a1a1a",
+    textAlign: "center" as const,
+    padding: "3px 10px",
+    fontSize: 11,
+    fontFamily: "Arial",
+    whiteSpace: "nowrap" as const,
+    fontWeight: v !== null ? 600 : 400,
+  });
+  const thStyle = {
+    fontFamily: "Arial",
+    fontSize: 10,
+    fontWeight: 700,
+    color: "#777",
+    textAlign: "center" as const,
+    padding: "4px 10px",
+    borderBottom: "1px solid #e0e0e0",
+  };
+  return (
+    <table style={{ borderCollapse: "collapse", marginTop: 2, marginLeft: 0 }}>
+      <thead>
+        <tr>
+          <th style={{ ...thStyle, textAlign: "left", color: "#aaa", letterSpacing: "0.5px", textTransform: "uppercase" as const }}>pp</th>
+          <th style={thStyle}>MoM</th>
+          <th style={thStyle}>-3M</th>
+          <th style={thStyle}>YoY</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.player} style={{ borderBottom: "1px solid #f5f5f5" }}>
+            <td style={{ fontFamily: "Arial", fontSize: 11, color: colors[row.player] ?? "#1a1a1a", fontWeight: 700, padding: "3px 12px 3px 0", whiteSpace: "nowrap" as const }}>{row.player}</td>
+            <td style={cellStyle(row.mom)}>{fmt(row.mom)}</td>
+            <td style={cellStyle(row.q3m)}>{fmt(row.q3m)}</td>
+            <td style={cellStyle(row.yoy)}>{fmt(row.yoy)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 function downloadCsv(rows: MsSerieRow[], filename: string) {
   if (!rows || rows.length === 0) return;
   const cols = Object.keys(rows[0]);
@@ -370,6 +475,14 @@ export default function MarketSharePage() {
 
   const xMin = appliedFilters?.data_inicio ?? null;
   const xMax = appliedFilters?.data_fim ?? null;
+
+  const latestDate = useMemo(() => {
+    if (appliedFilters.data_fim) return appliedFilters.data_fim;
+    if (serieRows.length === 0) return null;
+    return serieRows.reduce((max, r) => (r.date > max ? r.date : max), serieRows[0].date);
+  }, [appliedFilters.data_fim, serieRows]);
+
+  const chartColors = big3 ? COLORS_BIG3 : COLORS_IND;
 
   const dieselRetail = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "Retail", players, big3, xMin, xMax });
   const dieselB2B    = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "B2B",    players, big3, xMin, xMax });
@@ -592,6 +705,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
+                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Diesel B", "Retail", players, big3, latestDate)} colors={chartColors} />}
                       </div>
                     </div>
                     <div className="col-md-6">
@@ -606,6 +720,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
+                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Diesel B", "B2B", players, big3, latestDate)} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
@@ -623,6 +738,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
+                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Diesel B", "TRR", players, big3, latestDate)} colors={chartColors} />}
                       </div>
                     </div>
                     <div className="col-md-6">
@@ -637,6 +753,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
+                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Diesel B", null, players, big3, latestDate)} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
@@ -660,6 +777,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
+                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Gasolina C", "Retail", players, big3, latestDate)} colors={chartColors} />}
                       </div>
                     </div>
                     <div className="col-md-6">
@@ -674,6 +792,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
+                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Gasolina C", "B2B", players, big3, latestDate)} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
@@ -690,6 +809,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
+                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Gasolina C", null, players, big3, latestDate)} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
@@ -713,6 +833,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
+                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Etanol Hidratado", "Retail", players, big3, latestDate)} colors={chartColors} />}
                       </div>
                     </div>
                     <div className="col-md-6">
@@ -727,6 +848,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
+                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Etanol Hidratado", "B2B", players, big3, latestDate)} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
@@ -743,6 +865,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
+                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Etanol Hidratado", null, players, big3, latestDate)} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
