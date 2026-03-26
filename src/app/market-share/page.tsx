@@ -710,7 +710,7 @@ export default function MarketSharePage() {
                           data={dieselRetail.data}
                           layout={dieselRetail.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "100%", height: 300 }}
+                          style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
                         {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Diesel B", "Retail", players, big3, latestDate)} colors={chartColors} />}
                       </div>
@@ -725,7 +725,7 @@ export default function MarketSharePage() {
                           data={dieselB2B.data}
                           layout={dieselB2B.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "100%", height: 300 }}
+                          style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
                         {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Diesel B", "B2B", players, big3, latestDate)} colors={chartColors} />}
                       </div>
@@ -743,7 +743,7 @@ export default function MarketSharePage() {
                           data={dieselTrR.data}
                           layout={dieselTrR.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "100%", height: 300 }}
+                          style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
                         {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Diesel B", "TRR", players, big3, latestDate)} colors={chartColors} />}
                       </div>
@@ -758,7 +758,7 @@ export default function MarketSharePage() {
                           data={dieselTotal.data}
                           layout={dieselTotal.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "100%", height: 300 }}
+                          style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
                         {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Diesel B", null, players, big3, latestDate)} colors={chartColors} />}
                       </div>
@@ -782,7 +782,7 @@ export default function MarketSharePage() {
                           data={gasRetail.data}
                           layout={gasRetail.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "100%", height: 300 }}
+                          style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
                         {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Gasolina C", "Retail", players, big3, latestDate)} colors={chartColors} />}
                       </div>
@@ -797,7 +797,7 @@ export default function MarketSharePage() {
                           data={gasB2B.data}
                           layout={gasB2B.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "100%", height: 300 }}
+                          style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
                         {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Gasolina C", "B2B", players, big3, latestDate)} colors={chartColors} />}
                       </div>
@@ -814,7 +814,7 @@ export default function MarketSharePage() {
                           data={gasTotal.data}
                           layout={gasTotal.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "100%", height: 300 }}
+                          style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
                         {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Gasolina C", null, players, big3, latestDate)} colors={chartColors} />}
                       </div>
@@ -838,7 +838,7 @@ export default function MarketSharePage() {
                           data={ethRetail.data}
                           layout={ethRetail.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "100%", height: 300 }}
+                          style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
                         {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Etanol Hidratado", "Retail", players, big3, latestDate)} colors={chartColors} />}
                       </div>
@@ -853,7 +853,7 @@ export default function MarketSharePage() {
                           data={ethB2B.data}
                           layout={ethB2B.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "100%", height: 300 }}
+                          style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
                         {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Etanol Hidratado", "B2B", players, big3, latestDate)} colors={chartColors} />}
                       </div>
@@ -870,7 +870,7 @@ export default function MarketSharePage() {
                           data={ethTotal.data}
                           layout={ethTotal.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "100%", height: 300 }}
+                          style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
                         {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Etanol Hidratado", null, players, big3, latestDate)} colors={chartColors} />}
                       </div>
