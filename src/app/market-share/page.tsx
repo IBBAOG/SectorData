@@ -291,7 +291,7 @@ function ComparisonTable({ rows, colors }: { rows: CompRow[]; colors: Record<str
     v === null ? "—" : (v > 0 ? "+" : "") + v.toFixed(1);
   const cellStyle = (v: number | null) => ({
     backgroundColor:
-      v === null ? "transparent" : v > 0 ? "#c8f0c8" : v < 0 ? "#f5c8c8" : "transparent",
+      v === null ? "transparent" : v > 0 ? "#C6E8D9" : v < 0 ? "#FFDDCC" : "transparent",
     color: v === null ? "#bbb" : "#1a1a1a",
     textAlign: "center" as const,
     padding: "2px 10px",
@@ -317,7 +317,7 @@ function ComparisonTable({ rows, colors }: { rows: CompRow[]; colors: Record<str
         <tr>
           <th style={{ ...thStyle, textAlign: "left" as const, paddingLeft: 8 }}>percentage points (p.p.)</th>
           <th style={thStyle}>MoM</th>
-          <th style={thStyle}>-3M</th>
+          <th style={thStyle}>QTD</th>
           <th style={thStyle}>YoY</th>
           <th style={thStyle}>YTD</th>
         </tr>
