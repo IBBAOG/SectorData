@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { getSupabaseClient } from "../../lib/supabaseClient";
 
 const LOGO_URL =
-  "https://raw.githubusercontent.com/IBBAOG/SectorData/main/assets/logo.webp";
+  "/logo.webp";
 
 export default function LoginPage() {
   const router = useRouter();

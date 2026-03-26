@@ -443,7 +443,7 @@ export default function SalesPage() {
             <div id="sidebar">
               <div style={{ textAlign: "center" }}>
                 <img
-                  src="https://raw.githubusercontent.com/IBBAOG/SectorData/main/assets/logo.webp"
+                  src="/logo.webp"
                   alt="Itaú BBA"
                   style={{ width: "100%", maxWidth: 160, marginBottom: 16 }}
                 />
