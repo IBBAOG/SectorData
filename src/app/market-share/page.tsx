@@ -294,11 +294,11 @@ function ComparisonTable({ rows, colors }: { rows: CompRow[]; colors: Record<str
       v === null ? "transparent" : v > 0 ? "#c8f0c8" : v < 0 ? "#f5c8c8" : "transparent",
     color: v === null ? "#bbb" : "#1a1a1a",
     textAlign: "center" as const,
-    padding: "4px 10px",
+    padding: "2px 10px",
     fontSize: 11,
     fontFamily: "Arial",
     whiteSpace: "nowrap" as const,
-    fontWeight: v !== null ? 600 : 400,
+    fontWeight: 400,
     border: "none",
   });
   const thStyle = {
@@ -308,14 +308,14 @@ function ComparisonTable({ rows, colors }: { rows: CompRow[]; colors: Record<str
     color: "#ffffff",
     backgroundColor: "#000512",
     textAlign: "center" as const,
-    padding: "5px 10px",
+    padding: "4px 10px",
     border: "none",
   };
   return (
     <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 2 }}>
       <thead>
         <tr>
-          <th style={{ ...thStyle, textAlign: "left" as const }}>pp</th>
+          <th style={{ ...thStyle, textAlign: "left" as const, paddingLeft: 8 }}>percentage points (p.p.)</th>
           <th style={thStyle}>MoM</th>
           <th style={thStyle}>-3M</th>
           <th style={thStyle}>YoY</th>
@@ -325,7 +325,7 @@ function ComparisonTable({ rows, colors }: { rows: CompRow[]; colors: Record<str
       <tbody>
         {rows.map((row, i) => (
           <tr key={row.player} style={i === rows.length - 1 ? { borderBottom: "2px solid #d0d0d0" } : {}}>
-            <td style={{ fontFamily: "Arial", fontSize: 11, color: colors[row.player] ?? "#1a1a1a", fontWeight: 700, padding: "4px 12px 4px 0", whiteSpace: "nowrap" as const, border: "none" }}>{row.player}</td>
+            <td style={{ fontFamily: "Arial", fontSize: 11, color: colors[row.player] ?? "#1a1a1a", fontWeight: 600, padding: "2px 12px 2px 8px", whiteSpace: "nowrap" as const, border: "none" }}>{row.player}</td>
             <td style={cellStyle(row.mom)}>{fmt(row.mom)}</td>
             <td style={cellStyle(row.q3m)}>{fmt(row.q3m)}</td>
             <td style={cellStyle(row.yoy)}>{fmt(row.yoy)}</td>
