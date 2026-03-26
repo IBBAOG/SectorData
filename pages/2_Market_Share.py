@@ -153,12 +153,14 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
     y_lo = max(0.0,   y_min - pad)
     y_hi = min(100.0, y_max + pad)
 
+    _FONT = dict(family="Arial", size=14, color="#000000")
+
     fig = px.line(
         df, x="date", y="pct", color="classificacao",
         color_discrete_map=CORES,
         labels={"date": "", "pct": "Market Share (%)", "classificacao": ""},
+        title="",
     )
-    _FONT = dict(family="Arial", size=14, color="#000000")
 
     # Hover com 2 casas decimais
     fig.update_traces(
@@ -186,15 +188,21 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
         )
 
     fig.update_layout(
-        title=None,
+        title={"text": ""},
         margin=dict(t=10, b=50, l=10, r=60),
         font=_FONT,
-        yaxis=dict(ticksuffix="%", range=[y_lo, y_hi], tickfont=_FONT, title_font=_FONT,
-                   showgrid=False, zeroline=False,
-                   showline=True, linecolor="#000000", linewidth=1),
-        xaxis=dict(tickfont=_FONT, title_font=_FONT,
-                   showgrid=False, zeroline=False,
-                   showline=True, linecolor="#000000", linewidth=1),
+        yaxis=dict(
+            title=dict(text="Market Share (%)", font=_FONT),
+            ticksuffix="%", range=[y_lo, y_hi], tickfont=_FONT,
+            showgrid=False, zeroline=False,
+            showline=True, linecolor="#000000", linewidth=1,
+        ),
+        xaxis=dict(
+            title=dict(text="", font=_FONT),
+            tickfont=_FONT,
+            showgrid=False, zeroline=False,
+            showline=True, linecolor="#000000", linewidth=1,
+        ),
         legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5, font=_FONT),
         plot_bgcolor="white",
         height=300,
