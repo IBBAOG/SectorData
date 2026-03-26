@@ -165,7 +165,7 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
     fig.update_traces(
         mode="lines",
         line_width=2,
-        hovertemplate="%{fullData.name}: %{y:.2f}%<extra></extra>",
+        hovertemplate="%{fullData.name}: %{y:.1f}%<extra></extra>",
     )
 
     # Data label on the last point of each line
@@ -177,7 +177,7 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
         fig.add_annotation(
             x=ultima_data,
             y=float(ultimo["pct"].iloc[0]),
-            text=f"{float(ultimo['pct'].iloc[0]):.2f}%",
+            text=f"{float(ultimo['pct'].iloc[0]):.1f}%",
             showarrow=False,
             xanchor="left",
             xshift=6,
