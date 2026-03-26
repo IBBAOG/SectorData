@@ -7,7 +7,7 @@ const BIG3_MEMBERS = ["Vibra", "Ipiranga", "Raizen"];
 const PRODUCTS: { dbName: string; sheetName: string; segments: (string | null)[] }[] = [
   { dbName: "Diesel B",         sheetName: "Diesel B",         segments: ["Retail", "B2B", "TRR", null] },
   { dbName: "Gasolina C",       sheetName: "Gasoline C",       segments: ["Retail", "B2B", null] },
-  { dbName: "Etanol Hidratado", sheetName: "Hydrated Ethanol", segments: ["Retail", "B2B", null] },
+  { dbName: "Etanol Hidratado", sheetName: "Hydrous Ethanol", segments: ["Retail", "B2B", null] },
 ];
 
 /**

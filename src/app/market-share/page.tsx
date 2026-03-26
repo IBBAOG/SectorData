@@ -751,7 +751,7 @@ export default function MarketSharePage() {
                   <hr style={{ borderTop: "1px solid #e0e0e0", margin: "20px 0" }} />
 
                   <div style={{ marginBottom: 10 }}>
-                    <div className="section-title" style={{ color: "#1a1a1a" }}>Hydrated Ethanol</div>
+                    <div className="section-title" style={{ color: "#1a1a1a" }}>Hydrous Ethanol</div>
                     <hr className="section-hr" />
                   </div>
                   <div className="row g-3">
