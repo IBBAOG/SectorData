@@ -312,7 +312,7 @@ function ComparisonTable({ rows, colors }: { rows: CompRow[]; colors: Record<str
     border: "none",
   };
   return (
-    <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 2 }}>
+    <table style={{ borderCollapse: "collapse", width: "calc(100% - 56px)", marginTop: 2 }}>
       <thead>
         <tr>
           <th style={{ ...thStyle, textAlign: "left" as const, paddingLeft: 8 }}>percentage points (p.p.)</th>
@@ -325,7 +325,7 @@ function ComparisonTable({ rows, colors }: { rows: CompRow[]; colors: Record<str
       <tbody>
         {rows.map((row, i) => (
           <tr key={row.player} style={i === rows.length - 1 ? { borderBottom: "2px solid #d0d0d0" } : {}}>
-            <td style={{ fontFamily: "Arial", fontSize: 11, color: colors[row.player] ?? "#1a1a1a", fontWeight: 600, padding: "2px 12px 2px 8px", whiteSpace: "nowrap" as const, border: "none" }}>{row.player}</td>
+            <td style={{ fontFamily: "Arial", fontSize: 11, color: "#1a1a1a", fontWeight: 400, padding: "2px 12px 2px 8px", whiteSpace: "nowrap" as const, border: "none" }}>{row.player}</td>
             <td style={cellStyle(row.mom)}>{fmt(row.mom)}</td>
             <td style={cellStyle(row.q3m)}>{fmt(row.q3m)}</td>
             <td style={cellStyle(row.yoy)}>{fmt(row.yoy)}</td>
