@@ -16,8 +16,13 @@ aplicar_estilo()
 requer_login()
 
 # ─── Constants ────────────────────────────────────────────────────────────────
-COLORS = {"Vibra": "#f26522", "Raizen": "#1a1a1a", "Ipiranga": "#73C6A1", "Others": "#94a3b8"}
-ALL_PLAYERS = ["Vibra", "Ipiranga", "Raizen", "Others"]
+BIG3_MEMBERS = ["Vibra", "Ipiranga", "Raizen"]
+
+COLORS_IND  = {"Vibra": "#f26522", "Raizen": "#1a1a1a", "Ipiranga": "#73C6A1", "Others": "#94a3b8"}
+COLORS_BIG3 = {"Big-3": "#1D4ED8", "Others": "#94a3b8"}
+
+ALL_PLAYERS_IND  = ["Vibra", "Ipiranga", "Raizen", "Others"]
+ALL_PLAYERS_BIG3 = ["Big-3", "Others"]
 
 MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -53,10 +58,21 @@ st.markdown("""
 """, unsafe_allow_html=True)
 st.markdown("---")
 
-# ─── Sidebar filters ──────────────────────────────────────────────────────────
+# ─── Sidebar ──────────────────────────────────────────────────────────────────
 opcoes = carregar_ms_opcoes()
 st.sidebar.markdown("## Filters")
 
+# ── View mode toggle (takes effect immediately, no Apply needed) ──────────────
+modo_viz = st.sidebar.radio(
+    "View Mode",
+    ["Individual", "Big-3"],
+    horizontal=True,
+    key="modo_viz",
+)
+modo_big3 = modo_viz == "Big-3"
+st.sidebar.markdown("---")
+
+# ── Period slider ─────────────────────────────────────────────────────────────
 datas = _resolver_datas(opcoes)
 if len(datas) >= 2:
     data_inicio, data_fim = st.sidebar.select_slider(
@@ -71,9 +87,12 @@ else:
     st.sidebar.warning("Unable to load the period.")
     data_inicio = data_fim = None
 
+# ── Competitors (options depend on view mode) ─────────────────────────────────
+opcoes_players = ALL_PLAYERS_BIG3 if modo_big3 else ALL_PLAYERS_IND
 competidores = st.sidebar.multiselect(
-    "Competitors", ALL_PLAYERS, default=ALL_PLAYERS
+    "Competitors", opcoes_players, default=opcoes_players
 )
+
 regioes  = st.sidebar.multiselect("Region",  opcoes.get("regioes", []), default=[])
 ufs      = st.sidebar.multiselect("State",   opcoes.get("ufs", []),     default=[])
 mercados = st.sidebar.multiselect("Market",  opcoes.get("mercados", []), default=[])
@@ -89,11 +108,15 @@ if limpar:
 
 filtros_sidebar = {
     "data_inicio": data_inicio, "data_fim": data_fim,
-    "competidores": competidores or ALL_PLAYERS,
+    "competidores": competidores or opcoes_players,
     "regioes": regioes, "ufs": ufs, "mercados": mercados,
+    "modo_big3": modo_big3,
 }
 _estado_antigo = st.session_state.get("ms_filtros_ativos", {})
-if aplicar or "ms_filtros_ativos" not in st.session_state or "competidores" not in _estado_antigo:
+if (aplicar
+        or "ms_filtros_ativos" not in st.session_state
+        or "competidores" not in _estado_antigo
+        or _estado_antigo.get("modo_big3") != modo_big3):   # re-apply on mode switch
     st.session_state["ms_filtros_ativos"] = filtros_sidebar
     if aplicar:
         st.toast("Filters applied!")
@@ -110,17 +133,16 @@ with st.spinner("Loading data..."):
         tuple(filtros.get("mercados") or []),
     )
 
-
 if not df_serie.empty:
     df_serie["date"] = pd.to_datetime(df_serie["date"])
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
-def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
+def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list, big3: bool = False):
     """
     Builds a temporal market share line chart.
-    segmento=None → aggregates all segments (Total).
-    players → list of companies to display.
+    segmento=None  → aggregates all segments (Total).
+    big3=True      → merges Vibra/Ipiranga/Raizen into 'Big-3'.
     """
     if df_serie.empty:
         return None
@@ -133,10 +155,20 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
     if df.empty:
         return None
 
-    # Aggregate by (date, classificacao) — required for the Total chart
+    # Aggregate by (date, classificacao)
     df = df.groupby(["date", "classificacao"], as_index=False)["quantidade"].sum()
 
-    # % over the total of ALL companies in that month (denominator includes Others)
+    # In Big-3 mode: remap then re-aggregate
+    if big3:
+        df["classificacao"] = df["classificacao"].apply(
+            lambda x: "Big-3" if x in BIG3_MEMBERS else x
+        )
+        df = df.groupby(["date", "classificacao"], as_index=False)["quantidade"].sum()
+        colors_map = COLORS_BIG3
+    else:
+        colors_map = COLORS_IND
+
+    # % over the total of ALL companies in that month
     totais = df.groupby("date")["quantidade"].sum().rename("total")
     df = df.join(totais, on="date")
     df["pct"] = df["quantidade"] / df["total"] * 100
@@ -145,19 +177,19 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
     if df.empty:
         return None
 
-    # ── Dynamic scale with proportional padding ────────────────────────────
-    y_min = df["pct"].min()
-    y_max = df["pct"].max()
+    # ── Dynamic scale ──────────────────────────────────────────────────────
+    y_min  = df["pct"].min()
+    y_max  = df["pct"].max()
     spread = y_max - y_min if y_max > y_min else 1.0
-    pad = spread * 0.20
-    y_lo = max(0.0,   y_min - pad)
-    y_hi = min(100.0, y_max + pad)
+    pad    = spread * 0.20
+    y_lo   = max(0.0,   y_min - pad)
+    y_hi   = min(100.0, y_max + pad)
 
     _FONT = dict(family="Arial", size=12, color="#000000")
 
     fig = px.line(
         df, x="date", y="pct", color="classificacao",
-        color_discrete_map=COLORS,
+        color_discrete_map=colors_map,
         labels={"date": "", "pct": "Market Share (%)", "classificacao": ""},
         title="",
     )
@@ -182,7 +214,7 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
             xanchor="left",
             xshift=6,
             yanchor="middle",
-            font=dict(family="Arial", size=12, color=COLORS.get(player, "#000000")),
+            font=dict(family="Arial", size=12, color=colors_map.get(player, "#000000")),
         )
 
     fig.update_layout(
@@ -216,7 +248,7 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
     return fig
 
 
-def _secao(produto: str, titulo_secao: str, players: list, tem_trr: bool = True):
+def _secao(produto: str, titulo_secao: str, players: list, tem_trr: bool = True, big3: bool = False):
     """Renders a full chart section for one fuel type."""
     st.markdown(f"### {titulo_secao}")
 
@@ -239,7 +271,7 @@ def _secao(produto: str, titulo_secao: str, players: list, tem_trr: bool = True)
         ]
 
     for col, seg, label in pares:
-        fig = _linha_ms(produto, seg, label, players)
+        fig = _linha_ms(produto, seg, label, players, big3=big3)
         with col:
             st.markdown(
                 f"<div style='font-family:Arial;font-size:18px;font-weight:600;"
@@ -256,11 +288,12 @@ def _secao(produto: str, titulo_secao: str, players: list, tem_trr: bool = True)
 
 
 # ─── Sections by fuel type ────────────────────────────────────────────────────
-players_ativos = filtros.get("competidores") or ALL_PLAYERS
+players_ativos = filtros.get("competidores") or opcoes_players
+big3_ativo     = filtros.get("modo_big3", False)
 
-_secao("Diesel B",         "Diesel B",         players=players_ativos, tem_trr=True)
-_secao("Gasolina C",       "Gasoline C",       players=players_ativos, tem_trr=False)
-_secao("Etanol Hidratado", "Hydrated Ethanol", players=players_ativos, tem_trr=False)
+_secao("Diesel B",         "Diesel B",         players=players_ativos, tem_trr=True,  big3=big3_ativo)
+_secao("Gasolina C",       "Gasoline C",       players=players_ativos, tem_trr=False, big3=big3_ativo)
+_secao("Etanol Hidratado", "Hydrated Ethanol", players=players_ativos, tem_trr=False, big3=big3_ativo)
 
 # ─── Export ───────────────────────────────────────────────────────────────────
 if not df_serie.empty:
