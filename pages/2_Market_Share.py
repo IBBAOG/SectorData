@@ -122,10 +122,14 @@ filtros_sidebar = {
     "modo_big3": modo_big3,
 }
 _estado_antigo = st.session_state.get("ms_filtros_ativos", {})
-if (aplicar
-        or "ms_filtros_ativos" not in st.session_state
-        or "competidores" not in _estado_antigo
-        or _estado_antigo.get("modo_big3") != modo_big3):   # re-apply on mode switch
+_stale = (
+    "ms_filtros_ativos" not in st.session_state
+    or "competidores" not in _estado_antigo
+    or "modo_big3"     not in _estado_antigo   # missing key → old structure
+    or _estado_antigo.get("modo_big3") != modo_big3
+    or _estado_antigo.get("data_inicio") is None  # period never loaded
+)
+if aplicar or _stale:
     st.session_state["ms_filtros_ativos"] = filtros_sidebar
     if aplicar:
         st.toast("Filters applied!")

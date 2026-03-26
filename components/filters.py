@@ -5,8 +5,8 @@ from itertools import product as _product
 MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
              "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-# Standard Brazilian region → UF mapping (handles both full names and abbreviations)
-REGIAO_UF_MAP: dict[str, list[str]] = {
+# Standard Brazilian region → UF mapping (full names and abbreviations)
+REGIAO_UF_MAP = {
     "Norte":        ["AC", "AM", "AP", "PA", "RO", "RR", "TO"],
     "N":            ["AC", "AM", "AP", "PA", "RO", "RR", "TO"],
     "Nordeste":     ["AL", "BA", "CE", "MA", "PB", "PE", "PI", "RN", "SE"],
@@ -19,6 +19,8 @@ REGIAO_UF_MAP: dict[str, list[str]] = {
     "S":            ["PR", "RS", "SC"],
 }
 
+_HR = "<hr style='border:none;border-top:1px solid #e0e0e0;margin:4px 0 6px 0;'>"
+
 
 def _fmt_data(d: str) -> str:
     try:
@@ -28,7 +30,7 @@ def _fmt_data(d: str) -> str:
         return d
 
 
-def _resolver_datas(opcoes: dict) -> list[str]:
+def _resolver_datas(opcoes: dict) -> list:
     datas = sorted(opcoes.get("datas") or [])
     if datas:
         return datas
@@ -49,19 +51,18 @@ def _checkbox_filter(label: str, options: list, prefix: str) -> list:
     header = f"{label}  ·  {n} selected" if n > 0 else label
 
     with st.sidebar.expander(header, expanded=False):
-        c1, c2 = st.columns(2)
-        if c1.button("Select all", key=f"_f_{prefix}_all", use_container_width=True):
+        # Use buttons side-by-side via markdown trick (no st.columns in sidebar)
+        sel_all = st.button("Select all", key=f"_f_{prefix}_all", use_container_width=True)
+        clr_all = st.button("Clear all",  key=f"_f_{prefix}_clr", use_container_width=True)
+        if sel_all:
             for o in options:
                 st.session_state[f"_f_{prefix}_{o}"] = True
             st.rerun()
-        if c2.button("Clear all", key=f"_f_{prefix}_clr", use_container_width=True):
+        if clr_all:
             for o in options:
                 st.session_state[f"_f_{prefix}_{o}"] = False
             st.rerun()
-        st.markdown(
-            "<hr style='border:none;border-top:1px solid #e0e0e0;margin:4px 0 6px 0;'>",
-            unsafe_allow_html=True,
-        )
+        st.markdown(_HR, unsafe_allow_html=True)
         for o in options:
             st.checkbox(str(o), key=f"_f_{prefix}_{o}")
 
@@ -73,30 +74,33 @@ def _region_state_filter(
     all_ufs: list,
     reg_prefix: str = "reg",
     uf_prefix: str  = "uf",
-) -> tuple[list, list]:
+) -> tuple:
     """
     Combined Region / State expander.
-    States are nested below their parent region and only visible when the
-    region is checked. Returns (selected_regioes, selected_ufs).
+    States appear as nested sub-options only when their region is checked.
+    Returns (selected_regioes, selected_ufs).
     """
-    # Read current state (set by previous interaction)
+    if not all_regioes:
+        return [], []
+
+    # Read current checkbox states
     sel_regioes = [r for r in all_regioes if st.session_state.get(f"_f_{reg_prefix}_{r}", False)]
 
-    # Determine which UFs are visible given selected regions
+    # Which UFs are visible based on selected regions
     if sel_regioes:
-        visible_ufs: list[str] = []
+        visible_ufs = []
         for reg in sel_regioes:
             for uf in all_ufs:
                 if uf in REGIAO_UF_MAP.get(reg, []) and uf not in visible_ufs:
                     visible_ufs.append(uf)
-        if not visible_ufs:          # mapping not found → show all
+        if not visible_ufs:   # no mapping match → show all
             visible_ufs = list(all_ufs)
     else:
         visible_ufs = []
 
     sel_ufs = [u for u in visible_ufs if st.session_state.get(f"_f_{uf_prefix}_{u}", False)]
 
-    # Build header label
+    # Header label
     parts = []
     if sel_regioes:
         parts.append(f"{len(sel_regioes)} region{'s' if len(sel_regioes) > 1 else ''}")
@@ -105,40 +109,36 @@ def _region_state_filter(
     header = "Region / State" + (f"  ·  {', '.join(parts)}" if parts else "")
 
     with st.sidebar.expander(header, expanded=False):
-        c1, c2 = st.columns(2)
-        if c1.button("All regions", key=f"_f_{reg_prefix}_all", use_container_width=True):
+        all_btn = st.button("All regions", key=f"_f_{reg_prefix}_all", use_container_width=True)
+        clr_btn = st.button("Clear",       key=f"_f_{reg_prefix}_clr", use_container_width=True)
+        if all_btn:
             for r in all_regioes:
                 st.session_state[f"_f_{reg_prefix}_{r}"] = True
             st.rerun()
-        if c2.button("Clear", key=f"_f_{reg_prefix}_clr", use_container_width=True):
+        if clr_btn:
             for r in all_regioes:
                 st.session_state[f"_f_{reg_prefix}_{r}"] = False
             for u in all_ufs:
                 st.session_state[f"_f_{uf_prefix}_{u}"] = False
             st.rerun()
+        st.markdown(_HR, unsafe_allow_html=True)
 
-        st.markdown(
-            "<hr style='border:none;border-top:1px solid #e0e0e0;margin:4px 0 6px 0;'>",
-            unsafe_allow_html=True,
-        )
-
+        # Region checkboxes
         for reg in all_regioes:
             st.checkbox(str(reg), key=f"_f_{reg_prefix}_{reg}")
 
-        # State sub-section — only renders when regions are checked
+        # State sub-section — only when a region is selected
         if sel_regioes and visible_ufs:
             st.markdown(
-                "<div style='margin:8px 0 4px 14px;font-size:0.8em;"
-                "color:#888;font-weight:600;letter-spacing:.04em;'>STATES</div>",
+                "<div style='margin:8px 0 4px 8px;font-size:0.78em;"
+                "color:#999;font-weight:600;letter-spacing:.05em;'>STATES</div>",
                 unsafe_allow_html=True,
             )
             for uf in visible_ufs:
-                cols = st.columns([0.08, 0.92])
-                with cols[1]:
-                    st.checkbox(str(uf), key=f"_f_{uf_prefix}_{uf}")
+                st.checkbox(str(uf), key=f"_f_{uf_prefix}_{uf}")
 
-    # Re-read after widget block (values are stable within the same run)
-    sel_regioes = [r for r in all_regioes if st.session_state.get(f"_f_{reg_prefix}_{r}", False)]
+    # Re-read final values
+    sel_regioes = [r for r in all_regioes  if st.session_state.get(f"_f_{reg_prefix}_{r}", False)]
     sel_ufs     = [u for u in visible_ufs  if st.session_state.get(f"_f_{uf_prefix}_{u}", False)]
     return sel_regioes, sel_ufs
 
@@ -163,11 +163,11 @@ def render_sidebar_filtros(opcoes: dict) -> dict:
         st.sidebar.warning("Unable to load the period. Check the database connection.")
         data_inicio = data_fim = None
 
-    st.sidebar.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+    st.sidebar.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
     # ── Filters ────────────────────────────────────────────────────────────
-    segmentos = _checkbox_filter("Segment",           ["B2B", "Retail", "TRR", "Others"],  "seg")
-    agentes   = _checkbox_filter("Regulated Agent",   opcoes.get("agentes", []),            "agt")
+    segmentos = _checkbox_filter("Segment",           ["B2B", "Retail", "TRR", "Others"], "seg")
+    agentes   = _checkbox_filter("Regulated Agent",   opcoes.get("agentes", []),           "agt")
     r_dest, uf_dest = _region_state_filter(
         opcoes.get("regioes_dest", []),
         opcoes.get("ufs_dest", []),
@@ -194,7 +194,7 @@ def render_sidebar_filtros(opcoes: dict) -> dict:
         "agentes":      agentes,
         "regioes_dest": r_dest,
         "ufs_dest":     uf_dest,
-        "mercados":     [],          # filter removed from UI; pass empty to RPC
+        "mercados":     [],
     }
 
     if aplicar or "filtros_ativos" not in st.session_state:
