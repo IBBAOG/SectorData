@@ -177,6 +177,8 @@ async function paginatedRpc(
   filters: MarketShareFilters,
 ): Promise<MsSerieRow[]> {
   const PAGE = 2000;
+  let offset = 0;
+  const allRows: MsSerieRow[] = [];
 
   const params = {
     p_data_inicio: filters.data_inicio ?? null,
@@ -186,28 +188,14 @@ async function paginatedRpc(
     p_mercados: toListOrUndefined(filters.mercados),
   };
 
-  // First page + total count in one request
-  const { data: firstData, error: firstError, count } = await supabase
-    .rpc(fnName, params, { count: "exact" })
-    .range(0, PAGE - 1);
-  if (firstError) throw firstError;
-
-  const firstRows = (firstData ?? []) as MsSerieRow[];
-  const total = count ?? firstRows.length;
-  if (total <= PAGE) return firstRows;
-
-  // Fetch remaining pages in parallel
-  const pageCount = Math.ceil(total / PAGE);
-  const requests = Array.from({ length: pageCount - 1 }, (_, i) => {
-    const start = (i + 1) * PAGE;
-    return supabase.rpc(fnName, params).range(start, start + PAGE - 1);
-  });
-
-  const results = await Promise.all(requests);
-  const allRows = [...firstRows];
-  for (const { data, error } of results) {
+  while (true) {
+    const { data, error } = await supabase.rpc(fnName, params).range(offset, offset + PAGE - 1);
     if (error) throw error;
-    allRows.push(...((data ?? []) as MsSerieRow[]));
+    const rows = (data ?? []) as MsSerieRow[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
   }
 
   return allRows;
