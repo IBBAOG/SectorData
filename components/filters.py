@@ -95,7 +95,6 @@ def period_slider(datas: list, slider_id: str = "slider-period") -> html.Div:
             value=[0, len(datas) - 1],
             marks=marks,
             step=1,
-            tooltip={"always_visible": False, "placement": "top"},
         ),
     ], style={"marginBottom": "20px"})
 
