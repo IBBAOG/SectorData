@@ -171,35 +171,41 @@ export type MsSerieRow = {
   quantidade: number;
 };
 
-export async function rpcGetMsSerie(supabase: SupabaseClient, filters: MarketShareFilters) {
+async function paginatedRpc(
+  supabase: SupabaseClient,
+  fnName: string,
+  filters: MarketShareFilters,
+): Promise<MsSerieRow[]> {
   const PAGE = 1000;
   let offset = 0;
   const allRows: MsSerieRow[] = [];
 
-  // Replicates components/database.py pagination loop.
+  const params = {
+    p_data_inicio: filters.data_inicio ?? null,
+    p_data_fim: filters.data_fim ?? null,
+    p_regioes: toListOrUndefined(filters.regioes),
+    p_ufs: toListOrUndefined(filters.ufs),
+    p_mercados: toListOrUndefined(filters.mercados),
+  };
+
   while (true) {
-    const params = {
-      p_data_inicio: filters.data_inicio ?? null,
-      p_data_fim: filters.data_fim ?? null,
-      p_regioes: toListOrUndefined(filters.regioes),
-      p_ufs: toListOrUndefined(filters.ufs),
-      p_mercados: toListOrUndefined(filters.mercados),
-    };
-
-    const from = offset;
-    const to = offset + PAGE - 1;
-
-    const { data, error } = await supabase.rpc("get_ms_serie", params).range(from, to);
+    const { data, error } = await supabase.rpc(fnName, params).range(offset, offset + PAGE - 1);
     if (error) throw error;
     const rows = (data ?? []) as MsSerieRow[];
-
     if (!rows.length) break;
     allRows.push(...rows);
-
     if (rows.length < PAGE) break;
     offset += PAGE;
   }
 
   return allRows;
+}
+
+export async function rpcGetMsSerie(supabase: SupabaseClient, filters: MarketShareFilters) {
+  return paginatedRpc(supabase, "get_ms_serie", filters);
+}
+
+export async function rpcGetMsSerieOthers(supabase: SupabaseClient, filters: MarketShareFilters) {
+  return paginatedRpc(supabase, "get_ms_serie_others", filters);
 }
 

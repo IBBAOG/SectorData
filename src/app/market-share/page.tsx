@@ -14,6 +14,7 @@ import { getSupabaseClient } from "../../lib/supabaseClient";
 import {
   rpcGetMsOpcoesFiltros,
   rpcGetMsSerie,
+  rpcGetMsSerieOthers,
   type MarketShareFilters,
   type MsSerieRow,
 } from "../../lib/rpc";
@@ -505,11 +506,13 @@ export default function MarketSharePage() {
       mercados: appliedFilters?.mercados ?? [],
     };
 
+    const isOthers = (appliedFilters?.modo as string) === "Others";
     (async () => {
       try {
-        const rows = await rpcGetMsSerie(supabase, seriesFilters);
+        const rows = isOthers
+          ? await rpcGetMsSerieOthers(supabase, seriesFilters)
+          : await rpcGetMsSerie(supabase, seriesFilters);
         if (cancelled) return;
-        // Date conversion for plotly date axis sorting
         setSerieRows(rows ?? []);
       } finally {
         if (!cancelled) setSeriesLoading(false);
