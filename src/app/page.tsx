@@ -449,28 +449,27 @@ export default function SalesPage() {
                 />
               </div>
 
-              <hr style={{ borderTop: "1px solid #e0e0e0", marginBottom: 12 }} />
+              <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
 
               <div className="sidebar-section-label">Filters</div>
 
-              <PeriodSlider
-                datas={datas}
-                value={sliderRange}
-                onChange={setSliderRange}
-                sliderId="sales-slider-period"
-              />
+              <div className="sidebar-filter-section">
+                <div className="sidebar-filter-label">Period</div>
+                <PeriodSlider
+                  datas={datas}
+                  value={sliderRange}
+                  onChange={setSliderRange}
+                  sliderId="sales-slider-period"
+                />
+              </div>
 
-              <div style={{ border: "1px solid #e0e0e0", borderRadius: 6, padding: 12, marginBottom: 10 }}>
-                <div style={{ fontFamily: "Arial", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
-                  Segment
-                </div>
+              <div className="sidebar-filter-section">
+                <div className="sidebar-filter-label">Segment</div>
                 <CheckList label="Segment" options={SEGMENTOS} value={segSelected} onChange={setSegSelected} />
               </div>
 
-              <div style={{ border: "1px solid #e0e0e0", borderRadius: 6, padding: 12, marginBottom: 10 }}>
-                <div style={{ fontFamily: "Arial", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
-                  Regulated Agent
-                </div>
+              <div className="sidebar-filter-section">
+                <div className="sidebar-filter-label">Regulated Agent</div>
                 <CheckList
                   label="Regulated Agent"
                   options={(opcoes?.agentes ?? []) as string[]}
@@ -479,10 +478,8 @@ export default function SalesPage() {
                 />
               </div>
 
-              <div style={{ border: "1px solid #e0e0e0", borderRadius: 6, padding: 12, marginBottom: 10 }}>
-                <div style={{ fontFamily: "Arial", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
-                  Region / State
-                </div>
+              <div className="sidebar-filter-section">
+                <div className="sidebar-filter-label">Region / State</div>
                 <RegionStateFilter
                   regioes={(opcoes?.regioes_dest ?? []) as string[]}
                   ufs={(opcoes?.ufs_dest ?? []) as string[]}

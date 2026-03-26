@@ -73,19 +73,6 @@ export default function PeriodSlider(props: {
 
   return (
     <div style={{ marginBottom: 20 }}>
-      <label
-        style={{
-          fontFamily: "Arial",
-          fontSize: 13,
-          fontWeight: 600,
-          color: "#1a1a1a",
-          marginBottom: 6,
-          display: "block",
-        }}
-      >
-        Period
-      </label>
-
       <div
         style={{
           fontFamily: "Arial",

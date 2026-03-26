@@ -12,10 +12,10 @@ body {
 
 /* ─── Sidebar ─────────────────────────────────────────────────────────────── */
 #sidebar {
-  background-color: #fafafa;
-  border-right: 1px solid #e0e0e0;
+  background-color: #ffffff;
+  border-right: 1px solid #ebebeb;
   min-height: 100vh;
-  padding: 16px 12px;
+  padding: 20px 16px;
   overflow-y: auto;
 }
 
@@ -206,14 +206,36 @@ body {
   color: #888;
 }
 
-/* ─── Sidebar filters label ────────────────────────────────────────────────── */
+/* ─── Sidebar filters ──────────────────────────────────────────────────────── */
 .sidebar-section-label {
   font-family: Arial, sans-serif;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
   color: #1a1a1a;
-  margin-bottom: 8px;
-  margin-top: 8px;
+  margin-bottom: 12px;
+  margin-top: 4px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #ff5000;
+  letter-spacing: 0.2px;
+}
+
+.sidebar-filter-section {
+  padding: 12px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.sidebar-filter-section:last-of-type {
+  border-bottom: none;
+}
+
+.sidebar-filter-label {
+  font-family: Arial, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #aaaaaa;
+  margin-bottom: 10px;
 }
 
 /* ─── Range slider (rc-slider) ─────────────────────────────────────────────── */

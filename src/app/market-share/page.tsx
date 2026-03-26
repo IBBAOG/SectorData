@@ -513,47 +513,48 @@ export default function MarketSharePage() {
                   style={{ width: "100%", maxWidth: 220, marginBottom: 16 }}
                 />
               </div>
-              <hr style={{ borderTop: "1px solid #e0e0e0", marginBottom: 12 }} />
+              <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
 
               <div className="sidebar-section-label">Filters</div>
 
-              <PeriodSlider
-                datas={datas}
-                value={sliderRange}
-                onChange={setSliderRange}
-                sliderId="ms-slider-period"
-              />
+              <div className="sidebar-filter-section">
+                <div className="sidebar-filter-label">Period</div>
+                <PeriodSlider
+                  datas={datas}
+                  value={sliderRange}
+                  onChange={setSliderRange}
+                  sliderId="ms-slider-period"
+                />
+              </div>
 
-              <div style={{ border: "1px solid #e0e0e0", borderRadius: 6, padding: 12, marginBottom: 10 }}>
-                <div style={{ fontFamily: "Arial", fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-                  View Mode
-                </div>
+              <div className="sidebar-filter-section">
+                <div className="sidebar-filter-label">View Mode</div>
                 <div style={{ display: "flex", gap: 16 }}>
-                  <label style={{ fontFamily: "Arial", fontSize: 13 }}>
+                  <label style={{ fontFamily: "Arial", fontSize: 13, cursor: "pointer" }}>
                     <input
                       type="radio"
                       name="ms-mode"
                       checked={mode === "Individual"}
                       onChange={() => setMode("Individual")}
-                    />{" "}
+                      style={{ accentColor: "#ff5000", marginRight: 5 }}
+                    />
                     Individual
                   </label>
-                  <label style={{ fontFamily: "Arial", fontSize: 13 }}>
+                  <label style={{ fontFamily: "Arial", fontSize: 13, cursor: "pointer" }}>
                     <input
                       type="radio"
                       name="ms-mode"
                       checked={mode === "Big-3"}
                       onChange={() => setMode("Big-3")}
-                    />{" "}
+                      style={{ accentColor: "#ff5000", marginRight: 5 }}
+                    />
                     Big-3
                   </label>
                 </div>
               </div>
 
-              <div style={{ border: "1px solid #e0e0e0", borderRadius: 6, padding: 12, marginBottom: 10 }}>
-                <div style={{ fontFamily: "Arial", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
-                  Competitors
-                </div>
+              <div className="sidebar-filter-section">
+                <div className="sidebar-filter-label">Competitors</div>
                 <CheckList
                   label="Competitors"
                   options={playersOptions}
@@ -564,10 +565,8 @@ export default function MarketSharePage() {
                 />
               </div>
 
-              <div style={{ border: "1px solid #e0e0e0", borderRadius: 6, padding: 12, marginBottom: 10 }}>
-                <div style={{ fontFamily: "Arial", fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
-                  Region / State
-                </div>
+              <div className="sidebar-filter-section">
+                <div className="sidebar-filter-label">Region / State</div>
                 <RegionStateFilter
                   regioes={(opcoes?.regioes ?? []) as string[]}
                   ufs={(opcoes?.ufs ?? []) as string[]}
