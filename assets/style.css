@@ -1,0 +1,250 @@
+/* ─── Global ───────────────────────────────────────────────────────────────── */
+html, body {
+    font-family: Arial, sans-serif;
+    background-color: #ffffff;
+    color: #1a1a1a;
+    margin: 0;
+    padding: 0;
+}
+
+/* ─── Sidebar ──────────────────────────────────────────────────────────────── */
+#sidebar {
+    background-color: #fafafa;
+    border-right: 1px solid #e0e0e0;
+    min-height: 100vh;
+    padding: 16px 12px;
+    overflow-y: auto;
+}
+
+#sidebar .accordion-button {
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: #1a1a1a;
+    background-color: #f5f5f5;
+    padding: 8px 12px;
+}
+
+#sidebar .accordion-button:not(.collapsed) {
+    color: #FF5000;
+    background-color: #fff3ee;
+    box-shadow: none;
+}
+
+#sidebar .accordion-item {
+    border: 1px solid #e0e0e0;
+    margin-bottom: 6px;
+    border-radius: 6px !important;
+    overflow: hidden;
+}
+
+#sidebar .accordion-body {
+    padding: 8px 12px;
+    background-color: #ffffff;
+}
+
+/* ─── Section title ────────────────────────────────────────────────────────── */
+.section-title {
+    font-family: Arial, sans-serif;
+    font-size: 18px;
+    font-weight: 600;
+    color: #FF5000;
+    margin-bottom: 2px;
+}
+
+.section-hr {
+    border: none;
+    border-top: 1px solid #BFBFBF;
+    margin: 0 0 8px 0;
+}
+
+/* ─── Metric cards ─────────────────────────────────────────────────────────── */
+.metric-card {
+    background-color: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-left: 4px solid #FF5000;
+    border-radius: 8px;
+    padding: 16px 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+    text-align: center;
+}
+
+.metric-label {
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    color: #888;
+    margin-bottom: 4px;
+}
+
+.metric-value {
+    font-family: Arial, sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: #1a1a1a;
+}
+
+/* ─── Chart containers ─────────────────────────────────────────────────────── */
+.chart-container {
+    background-color: #ffffff;
+    border: 1px solid #f0f0f0;
+    border-radius: 8px;
+    padding: 8px;
+    margin-bottom: 16px;
+}
+
+/* ─── Buttons ──────────────────────────────────────────────────────────────── */
+.btn-apply {
+    background-color: #FF5000 !important;
+    border-color: #FF5000 !important;
+    color: #ffffff !important;
+    font-family: Arial, sans-serif !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    border-radius: 6px !important;
+    width: 100%;
+}
+
+.btn-apply:hover {
+    background-color: #d4561a !important;
+    border-color: #d4561a !important;
+}
+
+.btn-clear {
+    border-color: #aaaaaa !important;
+    color: #555555 !important;
+    font-family: Arial, sans-serif !important;
+    font-size: 13px !important;
+    border-radius: 6px !important;
+    width: 100%;
+}
+
+/* ─── Login page ───────────────────────────────────────────────────────────── */
+#login-container {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #f5f5f5;
+}
+
+#login-card {
+    background-color: #ffffff;
+    border-radius: 12px;
+    padding: 40px 36px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.10);
+    max-width: 400px;
+    width: 100%;
+}
+
+#login-card .form-control {
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    border-radius: 6px;
+}
+
+#login-card .form-label {
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: #1a1a1a;
+}
+
+#btn-login {
+    background-color: #FF5000 !important;
+    border-color: #FF5000 !important;
+    color: #ffffff !important;
+    font-family: Arial, sans-serif !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    border-radius: 6px !important;
+    width: 100%;
+    padding: 10px;
+}
+
+#btn-login:hover {
+    background-color: #d4561a !important;
+    border-color: #d4561a !important;
+}
+
+/* ─── Navigation bar ───────────────────────────────────────────────────────── */
+#main-navbar {
+    background-color: #ffffff;
+    border-bottom: 2px solid #FF5000;
+    padding: 0 16px;
+}
+
+#main-navbar .navbar-brand {
+    font-family: Arial, sans-serif;
+    font-weight: 700;
+    color: #FF5000 !important;
+}
+
+#main-navbar .nav-link {
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    color: #1a1a1a !important;
+}
+
+#main-navbar .nav-link:hover,
+#main-navbar .nav-link.active {
+    color: #FF5000 !important;
+}
+
+/* ─── Page header ──────────────────────────────────────────────────────────── */
+.page-header-title {
+    font-family: Arial, sans-serif;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #1a1a1a;
+}
+
+.page-header-sub {
+    font-family: Arial, sans-serif;
+    font-size: 0.85rem;
+    color: #888;
+}
+
+/* ─── Sidebar filters label ────────────────────────────────────────────────── */
+.sidebar-section-label {
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin-bottom: 8px;
+    margin-top: 8px;
+}
+
+/* ─── Range slider ─────────────────────────────────────────────────────────── */
+.rc-slider-track {
+    background-color: #FF5000 !important;
+}
+
+.rc-slider-handle {
+    border-color: #FF5000 !important;
+}
+
+/* ─── Toast ────────────────────────────────────────────────────────────────── */
+#toast-filters {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 9999;
+}
+
+/* ─── No-data alert ────────────────────────────────────────────────────────── */
+.no-data-alert {
+    font-family: Arial, sans-serif;
+    font-size: 13px;
+}
+
+/* ─── Main content area ────────────────────────────────────────────────────── */
+#page-content {
+    padding: 16px 20px;
+    background-color: #ffffff;
+    min-height: calc(100vh - 56px);
+}
+
+/* ─── dcc.Graph responsive fix ─────────────────────────────────────────────── */
+.js-plotly-plot .plotly .main-svg {
+    font-family: Arial, sans-serif !important;
+}

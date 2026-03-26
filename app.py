@@ -1,114 +1,213 @@
-import streamlit as st
-from components.auth import requer_login
-from components.style import aplicar_estilo
-from components.filters import render_sidebar_filtros
-from components.database import carregar_opcoes, carregar_todos
-from components.charts import (
-    grafico_barra_ano, grafico_linha_mes, grafico_pizza_regiao,
-    grafico_barra_uf, grafico_barra_agente, grafico_barra_produto,
+"""
+Itaú BBA Dashboard — Dash entry point.
+
+Run:  python app.py
+"""
+import os
+import secrets
+from dotenv import load_dotenv
+
+import dash
+import dash_bootstrap_components as dbc
+from dash import dcc, html, Input, Output, State, callback, no_update
+from flask import session
+from flask_caching import Cache
+
+# ── Load env ──────────────────────────────────────────────────────────────────
+load_dotenv()
+
+# ── App init ──────────────────────────────────────────────────────────────────
+app = dash.Dash(
+    __name__,
+    use_pages=True,
+    external_stylesheets=[dbc.themes.BOOTSTRAP],
+    suppress_callback_exceptions=True,
+    title="Itaú BBA | Dashboard",
+    update_title=None,
 )
 
-# ─── Config ───────────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="Itaú BBA | Dashboard",
-    page_icon="https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Ita%C3%BA_logo.svg/32px-Ita%C3%BA_logo.svg.png",
-    layout="wide",
+server = app.server
+server.secret_key = os.getenv("SECRET_KEY") or secrets.token_hex(32)
+
+# ── Flask-Caching ─────────────────────────────────────────────────────────────
+cache = Cache(config={"CACHE_TYPE": "SimpleCache"})
+cache.init_app(server)
+
+# Inject cache into database module
+from components import database as _db
+_db.set_cache(cache)
+
+# ── Constants ──────────────────────────────────────────────────────────────────
+LOGO_URL   = "https://raw.githubusercontent.com/IBBAOG/SectorData/main/assets/logo.webp"
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Login layout
+# ─────────────────────────────────────────────────────────────────────────────
+def login_layout():
+    return html.Div(
+        id="login-container",
+        children=html.Div(
+            id="login-card",
+            children=[
+                html.Div(
+                    html.Img(src=LOGO_URL, style={"width": "160px", "marginBottom": "24px"}),
+                    style={"textAlign": "center"},
+                ),
+                html.H5(
+                    "Sign in to your account",
+                    style={"fontFamily": "Arial", "fontWeight": "600", "color": "#1a1a1a", "marginBottom": "4px"},
+                ),
+                html.P(
+                    "Enter your credentials to continue.",
+                    style={"fontFamily": "Arial", "fontSize": "13px", "color": "#888", "marginBottom": "20px"},
+                ),
+                html.Hr(),
+                dbc.Label("Email", html_for="input-email"),
+                dbc.Input(id="input-email", type="email", placeholder="name@email.com",
+                          className="mb-3"),
+                dbc.Label("Password", html_for="input-password"),
+                dbc.Input(id="input-password", type="password", placeholder="••••••••",
+                          className="mb-4"),
+                dbc.Button("Continue →", id="btn-login", n_clicks=0, className="mb-2"),
+                dbc.Alert(id="login-error", is_open=False, color="danger",
+                          style={"fontSize": "13px", "marginTop": "8px"}),
+            ],
+        ),
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main authenticated layout
+# ─────────────────────────────────────────────────────────────────────────────
+def main_layout():
+    nav_links = [
+        dbc.NavItem(dbc.NavLink("Sales",        href="/",            active="exact",
+                                style={"fontFamily": "Arial", "fontSize": "14px"})),
+        dbc.NavItem(dbc.NavLink("Market Share", href="/market-share", active="exact",
+                                style={"fontFamily": "Arial", "fontSize": "14px"})),
+    ]
+
+    navbar = dbc.Navbar(
+        dbc.Container([
+            dbc.NavbarBrand(
+                html.Img(src=LOGO_URL, style={"height": "32px"}),
+                href="/",
+            ),
+            dbc.Nav(nav_links, navbar=True, className="me-auto ms-3"),
+            dbc.Nav([
+                dbc.NavItem(
+                    dbc.Button("Sign out", id="btn-logout", size="sm", outline=True,
+                               color="secondary",
+                               style={"fontFamily": "Arial", "fontSize": "12px"}),
+                ),
+            ], navbar=True),
+        ], fluid=True),
+        id="main-navbar",
+        dark=False,
+        color="white",
+        sticky="top",
+    )
+
+    return html.Div([
+        navbar,
+        dash.page_container,
+        dbc.Toast(
+            "Filters applied!",
+            id="toast-filters",
+            icon="success",
+            duration=2500,
+            is_open=False,
+        ),
+    ])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Root layout — checks session on every request
+# ─────────────────────────────────────────────────────────────────────────────
+app.layout = html.Div([
+    dcc.Location(id="url-root", refresh=True),
+    dcc.Store(id="store-auth", storage_type="session"),
+    html.Div(id="root-content"),
+])
+
+
+@callback(
+    Output("root-content", "children"),
+    Input("url-root", "pathname"),
+    Input("store-auth", "data"),
 )
+def render_root(pathname, auth_data):
+    # Allow /login path regardless
+    if pathname == "/login":
+        return login_layout()
+    # Check session token
+    token = None
+    try:
+        token = session.get("token")
+    except RuntimeError:
+        pass
+    if not token:
+        # Also check dcc.Store fallback
+        if auth_data and auth_data.get("token"):
+            token = auth_data.get("token")
+    if not token:
+        return login_layout()
+    return main_layout()
 
-aplicar_estilo()
-requer_login()
 
-# ─── Header ───────────────────────────────────────────────────────────────────
-st.markdown("""
-<div style="display:flex;align-items:center;gap:12px;margin-bottom:0.5rem;">
-    <div>
-        <div style="font-size:1.5rem;font-weight:600;color:#1a1a1a;">
-            Sales Dashboard
-        </div>
-        <div style="font-size:0.85rem;color:#888;">
-            Product volume analysis (thousand m³)
-        </div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-st.markdown("---")
+# ─────────────────────────────────────────────────────────────────────────────
+# Login callback
+# ─────────────────────────────────────────────────────────────────────────────
+@callback(
+    Output("store-auth", "data"),
+    Output("login-error", "children"),
+    Output("login-error", "is_open"),
+    Output("url-root", "href"),
+    Input("btn-login", "n_clicks"),
+    State("input-email", "value"),
+    State("input-password", "value"),
+    prevent_initial_call=True,
+)
+def handle_login(n_clicks, email, password):
+    if not n_clicks:
+        return no_update, no_update, no_update, no_update
+    if not email or not password:
+        return no_update, "Please enter your email and password.", True, no_update
+    try:
+        from supabase import create_client
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        resposta = supabase.auth.sign_in_with_password({"email": email, "password": password})
+        token    = resposta.session.access_token
+        user_email = resposta.user.email
+        # Store in Flask server-side session
+        session["token"]      = token
+        session["user_email"] = user_email
+        return {"token": token, "email": user_email}, "", False, "/"
+    except Exception:
+        return no_update, "Incorrect email or password.", True, no_update
 
-# ─── Filters ──────────────────────────────────────────────────────────────────
-opcoes  = carregar_opcoes()
-filtros = render_sidebar_filtros(opcoes)
 
-# ─── Parallel data loading ────────────────────────────────────────────────────
-with st.spinner("Loading data..."):
-    metricas, df_ano, df_mes, df_regiao, df_agente, df_produto, df_uf = carregar_todos(filtros)
+# ─────────────────────────────────────────────────────────────────────────────
+# Logout callback
+# ─────────────────────────────────────────────────────────────────────────────
+@callback(
+    Output("store-auth", "data", allow_duplicate=True),
+    Output("url-root", "href", allow_duplicate=True),
+    Input("btn-logout", "n_clicks"),
+    prevent_initial_call=True,
+)
+def handle_logout(n_clicks):
+    if not n_clicks:
+        return no_update, no_update
+    session.clear()
+    return {}, "/login"
 
-# ─── Metrics ──────────────────────────────────────────────────────────────────
-c1, c2, c3 = st.columns(3)
-c1.metric("Total Records",            f"{metricas.get('total_registros', 0):,}")
-c2.metric("Total Volume (thousand m³)", f"{metricas.get('quantidade_total', 0.0):,.2f}")
-c3.metric("Available Years",          f"{metricas.get('anos_distintos', 0)}")
 
-# ─── Export ───────────────────────────────────────────────────────────────────
-with st.expander("Export Data", expanded=False):
-    ecol1, ecol2, ecol3 = st.columns(3)
-    if not df_ano.empty:
-        ecol1.download_button(
-            "By year (CSV)", df_ano.to_csv(index=False).encode("utf-8"),
-            "volume_by_year.csv", "text/csv", use_container_width=True,
-        )
-    if not df_mes.empty:
-        ecol2.download_button(
-            "By month (CSV)", df_mes.to_csv(index=False).encode("utf-8"),
-            "volume_by_month.csv", "text/csv", use_container_width=True,
-        )
-    if not df_agente.empty:
-        ecol3.download_button(
-            "By agent (CSV)", df_agente.to_csv(index=False).encode("utf-8"),
-            "volume_by_agent.csv", "text/csv", use_container_width=True,
-        )
-
-st.markdown("---")
-st.subheader("Liquid Fuels Sales")
-
-_NO_DATA = "No data for the selected filters."
-
-# ─── Row 1: Year and Month ────────────────────────────────────────────────────
-c1, c2 = st.columns(2)
-with c1:
-    if df_ano.empty:
-        st.info(_NO_DATA)
-    else:
-        st.plotly_chart(grafico_barra_ano(df_ano), use_container_width=True)
-
-with c2:
-    if df_mes.empty:
-        st.info(_NO_DATA)
-    else:
-        st.plotly_chart(grafico_linha_mes(df_mes), use_container_width=True)
-
-# ─── Row 2: Region and State ──────────────────────────────────────────────────
-c3, c4 = st.columns(2)
-with c3:
-    if df_regiao.empty:
-        st.info(_NO_DATA)
-    else:
-        st.plotly_chart(grafico_pizza_regiao(df_regiao), use_container_width=True)
-
-with c4:
-    if df_uf.empty:
-        st.info(_NO_DATA)
-    else:
-        st.plotly_chart(grafico_barra_uf(df_uf), use_container_width=True)
-
-# ─── Row 3: Agent and Product ─────────────────────────────────────────────────
-c5, c6 = st.columns(2)
-with c5:
-    if df_agente.empty:
-        st.info(_NO_DATA)
-    else:
-        st.plotly_chart(grafico_barra_agente(df_agente), use_container_width=True)
-
-with c6:
-    if df_produto.empty:
-        st.info(_NO_DATA)
-    else:
-        st.plotly_chart(grafico_barra_produto(df_produto), use_container_width=True)
+# ─────────────────────────────────────────────────────────────────────────────
+# Entry point
+# ─────────────────────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    app.run(debug=False, host="0.0.0.0", port=8050)

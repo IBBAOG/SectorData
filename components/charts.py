@@ -2,24 +2,30 @@ import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 
-ORANGE       = "#f26522"
+ORANGE       = "#FF5000"
 DARK         = "#1a1a1a"
 GRAY         = "#666666"
 ORANGE_LIGHT = "#fde8d8"
 
+_FONT = dict(family="Arial", size=12, color="#000000")
+
 _LAYOUT_BASE = dict(
     plot_bgcolor="white",
     paper_bgcolor="white",
+    font=_FONT,
     font_color=DARK,
     title_font_color=DARK,
     margin=dict(t=40, b=20, l=10, r=10),
 )
 
-
-def _apply_axes(fig, show_x_grid=False, show_y_grid=True):
-    fig.update_xaxes(showgrid=show_x_grid, gridcolor="#f0f0f0")
-    fig.update_yaxes(showgrid=show_y_grid, gridcolor="#f0f0f0")
-    return fig
+_AXIS_STYLE = dict(
+    showgrid=False,
+    zeroline=False,
+    showline=True,
+    linecolor="#000000",
+    linewidth=1,
+    tickfont=_FONT,
+)
 
 
 def grafico_barra_ano(df: pd.DataFrame) -> go.Figure:
@@ -29,8 +35,12 @@ def grafico_barra_ano(df: pd.DataFrame) -> go.Figure:
         labels={"ano": "Year", "quantidade": "Volume (thousand m³)"},
         color_discrete_sequence=[ORANGE],
     )
-    fig.update_layout(**_LAYOUT_BASE)
-    return _apply_axes(fig, show_x_grid=False)
+    fig.update_layout(
+        **_LAYOUT_BASE,
+        xaxis=dict(**_AXIS_STYLE, title=dict(text="Year", font=_FONT)),
+        yaxis=dict(**_AXIS_STYLE, title=dict(text="Volume (thousand m³)", font=_FONT)),
+    )
+    return fig
 
 
 def grafico_linha_mes(df: pd.DataFrame) -> go.Figure:
@@ -41,8 +51,13 @@ def grafico_linha_mes(df: pd.DataFrame) -> go.Figure:
         labels={"mes": "Month", "quantidade": "Volume (thousand m³)"},
         color_discrete_sequence=[ORANGE],
     )
-    fig.update_layout(**_LAYOUT_BASE)
-    return _apply_axes(fig, show_x_grid=False)
+    fig.update_traces(line_width=2)
+    fig.update_layout(
+        **_LAYOUT_BASE,
+        xaxis=dict(**_AXIS_STYLE, title=dict(text="Month", font=_FONT)),
+        yaxis=dict(**_AXIS_STYLE, title=dict(text="Volume (thousand m³)", font=_FONT)),
+    )
+    return fig
 
 
 def grafico_pizza_regiao(df: pd.DataFrame) -> go.Figure:
@@ -51,9 +66,19 @@ def grafico_pizza_regiao(df: pd.DataFrame) -> go.Figure:
         title="Distribution by Origin Region",
         color_discrete_sequence=px.colors.sequential.Oranges_r,
     )
-    fig.update_traces(textposition="inside", textinfo="percent+label")
-    fig.update_layout(paper_bgcolor="white", font_color=DARK, title_font_color=DARK,
-                      margin=dict(t=40, b=20, l=10, r=10))
+    fig.update_traces(
+        textposition="inside",
+        textinfo="percent+label",
+        textfont=_FONT,
+        hovertemplate="%{label}: %{value:,.2f} (%{percent})<extra></extra>",
+    )
+    fig.update_layout(
+        paper_bgcolor="white",
+        font=_FONT,
+        font_color=DARK,
+        title_font_color=DARK,
+        margin=dict(t=40, b=20, l=10, r=10),
+    )
     return fig
 
 
@@ -67,10 +92,12 @@ def grafico_barra_uf(df: pd.DataFrame) -> go.Figure:
     )
     fig.update_layout(
         **_LAYOUT_BASE,
-        yaxis={"categoryorder": "total ascending"},
+        yaxis=dict(**_AXIS_STYLE, categoryorder="total ascending",
+                   title=dict(text="State", font=_FONT)),
+        xaxis=dict(**_AXIS_STYLE, title=dict(text="Volume (thousand m³)", font=_FONT)),
         coloraxis_showscale=False,
     )
-    return _apply_axes(fig, show_x_grid=False)
+    return fig
 
 
 def grafico_barra_agente(df: pd.DataFrame) -> go.Figure:
@@ -83,10 +110,12 @@ def grafico_barra_agente(df: pd.DataFrame) -> go.Figure:
     )
     fig.update_layout(
         **_LAYOUT_BASE,
-        yaxis={"categoryorder": "total ascending"},
+        yaxis=dict(**_AXIS_STYLE, categoryorder="total ascending",
+                   title=dict(text="Agent", font=_FONT)),
+        xaxis=dict(**_AXIS_STYLE, title=dict(text="Volume (thousand m³)", font=_FONT)),
         coloraxis_showscale=False,
     )
-    return _apply_axes(fig, show_x_grid=False)
+    return fig
 
 
 def grafico_barra_produto(df: pd.DataFrame) -> go.Figure:
@@ -99,7 +128,9 @@ def grafico_barra_produto(df: pd.DataFrame) -> go.Figure:
     )
     fig.update_layout(
         **_LAYOUT_BASE,
-        yaxis={"categoryorder": "total ascending"},
+        yaxis=dict(**_AXIS_STYLE, categoryorder="total ascending",
+                   title=dict(text="Product", font=_FONT)),
+        xaxis=dict(**_AXIS_STYLE, title=dict(text="Volume (thousand m³)", font=_FONT)),
         coloraxis_showscale=False,
     )
-    return _apply_axes(fig, show_x_grid=False)
+    return fig
