@@ -684,7 +684,7 @@ export default function MarketSharePage() {
           <div className="col-10">
             <div id="page-content">
               <div className="mb-2">
-                <div className="page-header-title">Liquid Fuels Market Share</div>
+                <div className="page-header-title">Brazil Fuel Distribution Market Share</div>
                 <div className="page-header-sub">
                   Temporal evolution of market share by distributor (%)
                 </div>
