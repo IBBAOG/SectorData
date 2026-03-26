@@ -15,17 +15,17 @@ st.set_page_config(
 aplicar_estilo()
 requer_login()
 
-# ─── Constantes ───────────────────────────────────────────────────────────────
-CORES = {"Vibra": "#f26522", "Raizen": "#1a1a1a", "Ipiranga": "#fbbf24", "Others": "#94a3b8"}
-TODOS_PLAYERS = ["Vibra", "Ipiranga", "Raizen", "Others"]
+# ─── Constants ────────────────────────────────────────────────────────────────
+COLORS = {"Vibra": "#f26522", "Raizen": "#1a1a1a", "Ipiranga": "#fbbf24", "Others": "#94a3b8"}
+ALL_PLAYERS = ["Vibra", "Ipiranga", "Raizen", "Others"]
 
-MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
-            "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+             "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 def _fmt_data(d: str) -> str:
     try:
         y, m = d[:4], int(d[5:7])
-        return f"{MESES_PT[m - 1]}/{y}"
+        return f"{MONTHS_EN[m - 1]}/{y}"
     except Exception:
         return d
 
@@ -40,48 +40,48 @@ def _resolver_datas(opcoes: dict) -> list:
     return []
 
 
-# ─── Cabeçalho ────────────────────────────────────────────────────────────────
+# ─── Header ───────────────────────────────────────────────────────────────────
 st.markdown("""
 <div style="margin-bottom:0.5rem;">
     <div style="font-size:1.5rem;font-weight:600;color:#1a1a1a;">
-        Market Share de Combustíveis Líquidos
+        Liquid Fuels Market Share
     </div>
     <div style="font-size:0.85rem;color:#888;">
-        Evolução temporal da participação por distribuidor (%)
+        Temporal evolution of market share by distributor (%)
     </div>
 </div>
 """, unsafe_allow_html=True)
 st.markdown("---")
 
-# ─── Filtros sidebar ──────────────────────────────────────────────────────────
+# ─── Sidebar filters ──────────────────────────────────────────────────────────
 opcoes = carregar_ms_opcoes()
-st.sidebar.markdown("## Filtros")
+st.sidebar.markdown("## Filters")
 
 datas = _resolver_datas(opcoes)
 if len(datas) >= 2:
     data_inicio, data_fim = st.sidebar.select_slider(
-        "Período", options=datas,
+        "Period", options=datas,
         value=(datas[0], datas[-1]),
         format_func=_fmt_data,
     )
 elif len(datas) == 1:
     data_inicio = data_fim = datas[0]
-    st.sidebar.info(f"Período disponível: {_fmt_data(datas[0])}")
+    st.sidebar.info(f"Available period: {_fmt_data(datas[0])}")
 else:
-    st.sidebar.warning("Não foi possível carregar o período.")
+    st.sidebar.warning("Unable to load the period.")
     data_inicio = data_fim = None
 
 competidores = st.sidebar.multiselect(
-    "Competidores", TODOS_PLAYERS, default=TODOS_PLAYERS
+    "Competitors", ALL_PLAYERS, default=ALL_PLAYERS
 )
-regioes  = st.sidebar.multiselect("Região",  opcoes.get("regioes", []), default=[])
-ufs      = st.sidebar.multiselect("UF",      opcoes.get("ufs", []),     default=[])
-mercados = st.sidebar.multiselect("Mercado", opcoes.get("mercados", []),default=[])
+regioes  = st.sidebar.multiselect("Region",  opcoes.get("regioes", []), default=[])
+ufs      = st.sidebar.multiselect("State",   opcoes.get("ufs", []),     default=[])
+mercados = st.sidebar.multiselect("Market",  opcoes.get("mercados", []), default=[])
 
 st.sidebar.markdown("---")
 col1, col2 = st.sidebar.columns(2)
-aplicar = col1.button("Aplicar", use_container_width=True)
-limpar  = col2.button("Limpar",  use_container_width=True)
+aplicar = col1.button("Apply", use_container_width=True)
+limpar  = col2.button("Clear", use_container_width=True)
 
 if limpar:
     st.cache_data.clear()
@@ -89,19 +89,19 @@ if limpar:
 
 filtros_sidebar = {
     "data_inicio": data_inicio, "data_fim": data_fim,
-    "competidores": competidores or TODOS_PLAYERS,
+    "competidores": competidores or ALL_PLAYERS,
     "regioes": regioes, "ufs": ufs, "mercados": mercados,
 }
 _estado_antigo = st.session_state.get("ms_filtros_ativos", {})
 if aplicar or "ms_filtros_ativos" not in st.session_state or "competidores" not in _estado_antigo:
     st.session_state["ms_filtros_ativos"] = filtros_sidebar
     if aplicar:
-        st.toast("Filtros aplicados!")
+        st.toast("Filters applied!")
 
 filtros = st.session_state["ms_filtros_ativos"]
 
-# ─── Carrega série completa ────────────────────────────────────────────────────
-with st.spinner("Carregando dados..."):
+# ─── Load full series ─────────────────────────────────────────────────────────
+with st.spinner("Loading data..."):
     df_serie = carregar_ms_serie(
         filtros.get("data_inicio"),
         filtros.get("data_fim"),
@@ -118,9 +118,9 @@ if not df_serie.empty:
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
     """
-    Cria gráfico de linha de market share temporal.
-    segmento=None → agrega todos os segmentos (Total).
-    players → lista de empresas a exibir.
+    Builds a temporal market share line chart.
+    segmento=None → aggregates all segments (Total).
+    players → list of companies to display.
     """
     if df_serie.empty:
         return None
@@ -133,10 +133,10 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
     if df.empty:
         return None
 
-    # Agrega por (date, classificacao) — necessário para o gráfico Total
+    # Aggregate by (date, classificacao) — required for the Total chart
     df = df.groupby(["date", "classificacao"], as_index=False)["quantidade"].sum()
 
-    # % sobre o total de TODAS as empresas naquele mês (denominador inclui Others)
+    # % over the total of ALL companies in that month (denominator includes Others)
     totais = df.groupby("date")["quantidade"].sum().rename("total")
     df = df.join(totais, on="date")
     df["pct"] = df["quantidade"] / df["total"] * 100
@@ -145,7 +145,7 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
     if df.empty:
         return None
 
-    # ── Escala dinâmica com margem proporcional ────────────────────────────────
+    # ── Dynamic scale with proportional padding ────────────────────────────
     y_min = df["pct"].min()
     y_max = df["pct"].max()
     spread = y_max - y_min if y_max > y_min else 1.0
@@ -157,12 +157,11 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
 
     fig = px.line(
         df, x="date", y="pct", color="classificacao",
-        color_discrete_map=CORES,
+        color_discrete_map=COLORS,
         labels={"date": "", "pct": "Market Share (%)", "classificacao": ""},
         title="",
     )
 
-    # Hover com 2 casas decimais
     fig.update_traces(
         mode="lines+markers",
         marker_size=3,
@@ -170,7 +169,7 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
         hovertemplate="%{fullData.name}: %{y:.2f}%<extra></extra>",
     )
 
-    # Data label apenas no último ponto de cada linha
+    # Data label on the last point of each line
     ultima_data = df["date"].max()
     for player in players:
         ultimo = df[(df["classificacao"] == player) & (df["date"] == ultima_data)]
@@ -184,7 +183,7 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
             xanchor="left",
             xshift=6,
             yanchor="middle",
-            font=dict(family="Arial", size=12, color=CORES.get(player, "#000000")),
+            font=dict(family="Arial", size=12, color=COLORS.get(player, "#000000")),
         )
 
     fig.update_layout(
@@ -213,7 +212,7 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
 
 
 def _secao(produto: str, titulo_secao: str, players: list, tem_trr: bool = True):
-    """Renderiza uma seção completa de gráficos para um combustível."""
+    """Renders a full chart section for one fuel type."""
     st.markdown(f"### {titulo_secao}")
 
     if tem_trr:
@@ -246,24 +245,24 @@ def _secao(produto: str, titulo_secao: str, players: list, tem_trr: bool = True)
             if fig:
                 st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
             else:
-                st.info("Nenhum dado para os filtros selecionados.")
+                st.info("No data for the selected filters.")
 
     st.markdown("---")
 
 
-# ─── Seções por combustível ───────────────────────────────────────────────────
-players_ativos = filtros.get("competidores") or TODOS_PLAYERS
+# ─── Sections by fuel type ────────────────────────────────────────────────────
+players_ativos = filtros.get("competidores") or ALL_PLAYERS
 
 _secao("Diesel B",         "Diesel B",         players=players_ativos, tem_trr=True)
-_secao("Gasolina C",       "Gasolina C",       players=players_ativos, tem_trr=False)
-_secao("Etanol Hidratado", "Etanol Hidratado", players=players_ativos, tem_trr=False)
+_secao("Gasolina C",       "Gasoline C",       players=players_ativos, tem_trr=False)
+_secao("Etanol Hidratado", "Hydrated Ethanol", players=players_ativos, tem_trr=False)
 
-# ─── Download ─────────────────────────────────────────────────────────────────
+# ─── Export ───────────────────────────────────────────────────────────────────
 if not df_serie.empty:
-    with st.expander("Exportar dados", expanded=False):
+    with st.expander("Export Data", expanded=False):
         st.download_button(
-            "Série completa (CSV)",
+            "Full series (CSV)",
             df_serie.to_csv(index=False).encode("utf-8"),
-            "ms_serie.csv", "text/csv",
+            "ms_series.csv", "text/csv",
             use_container_width=False,
         )

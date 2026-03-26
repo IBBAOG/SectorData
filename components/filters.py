@@ -2,29 +2,28 @@ import streamlit as st
 from datetime import datetime
 from itertools import product as _product
 
-MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
-            "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+             "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
 def _fmt_data(d: str) -> str:
-    """Converte '2021-01-01' → 'Jan/2021'."""
+    """Converts '2021-01-01' → 'Jan/2021'."""
     try:
         y, m = d[:4], int(d[5:7])
-        return f"{MESES_PT[m - 1]}/{y}"
+        return f"{MONTHS_EN[m - 1]}/{y}"
     except Exception:
         return d
 
 
 def _resolver_datas(opcoes: dict) -> list[str]:
     """
-    Retorna lista ordenada de datas ISO ('YYYY-MM-01').
-    Tenta primeiro o campo 'datas'; se ausente, deriva de 'anos' × 'meses'.
+    Returns sorted list of ISO dates ('YYYY-MM-01').
+    Tries 'datas' field first; falls back to 'anos' × 'meses' cartesian product.
     """
     datas = sorted(opcoes.get("datas") or [])
     if datas:
         return datas
 
-    # fallback: produto cartesiano de anos × meses disponíveis
     anos  = sorted(opcoes.get("anos")  or [])
     meses = sorted(opcoes.get("meses") or [])
     if anos and meses:
@@ -35,40 +34,39 @@ def _resolver_datas(opcoes: dict) -> list[str]:
 
 def render_sidebar_filtros(opcoes: dict) -> dict:
     """
-    Renderiza os filtros na sidebar e retorna o dict de filtros ativos.
+    Renders sidebar filters and returns the active filters dict.
     """
-    st.sidebar.markdown("## Filtros")
+    st.sidebar.markdown("## Filters")
 
-    # ── Slider de período ──────────────────────────────────────────────────────
+    # ── Period slider ──────────────────────────────────────────────────────
     datas = _resolver_datas(opcoes)
 
     if len(datas) >= 2:
         data_inicio, data_fim = st.sidebar.select_slider(
-            "Período",
+            "Period",
             options=datas,
             value=(datas[0], datas[-1]),
             format_func=_fmt_data,
         )
     elif len(datas) == 1:
         data_inicio = data_fim = datas[0]
-        st.sidebar.info(f"Período disponível: {_fmt_data(datas[0])}")
+        st.sidebar.info(f"Available period: {_fmt_data(datas[0])}")
     else:
-        # sem datas disponíveis — mostra aviso e passa None
-        st.sidebar.warning("Não foi possível carregar o período. Verifique a conexão com o banco.")
+        st.sidebar.warning("Unable to load the period. Check the database connection.")
         data_inicio = data_fim = None
 
-    # ── Outros filtros ─────────────────────────────────────────────────────────
-    segmentos = st.sidebar.multiselect("Segmento",           ["B2B", "Retail", "TRR", "Outros"], default=[])
-    agentes   = st.sidebar.multiselect("Agente Regulado",    opcoes.get("agentes", []),      default=[])
-    r_dest    = st.sidebar.multiselect("Região Destinatário",opcoes.get("regioes_dest", []), default=[])
-    uf_dest   = st.sidebar.multiselect("UF Destino",         opcoes.get("ufs_dest", []),     default=[])
-    mercados  = st.sidebar.multiselect("Mercado",            opcoes.get("mercados", []),     default=[])
+    # ── Other filters ──────────────────────────────────────────────────────
+    segmentos = st.sidebar.multiselect("Segment",            ["B2B", "Retail", "TRR", "Others"], default=[])
+    agentes   = st.sidebar.multiselect("Regulated Agent",   opcoes.get("agentes", []),      default=[])
+    r_dest    = st.sidebar.multiselect("Destination Region", opcoes.get("regioes_dest", []), default=[])
+    uf_dest   = st.sidebar.multiselect("Destination State",  opcoes.get("ufs_dest", []),     default=[])
+    mercados  = st.sidebar.multiselect("Market",             opcoes.get("mercados", []),     default=[])
 
     st.sidebar.markdown("---")
 
     col1, col2 = st.sidebar.columns(2)
-    aplicar = col1.button("Aplicar", use_container_width=True)
-    limpar  = col2.button("Limpar",  use_container_width=True)
+    aplicar = col1.button("Apply", use_container_width=True)
+    limpar  = col2.button("Clear", use_container_width=True)
 
     if limpar:
         st.cache_data.clear()
@@ -87,13 +85,13 @@ def render_sidebar_filtros(opcoes: dict) -> dict:
     if aplicar or "filtros_ativos" not in st.session_state:
         st.session_state["filtros_ativos"] = filtros_sidebar
         if aplicar:
-            st.toast("Filtros aplicados!")
+            st.toast("Filters applied!")
 
     if "ultima_atualizacao" not in st.session_state or aplicar:
-        st.session_state["ultima_atualizacao"] = datetime.now().strftime("%d/%m/%Y %H:%M")
+        st.session_state["ultima_atualizacao"] = datetime.now().strftime("%m/%d/%Y %H:%M")
 
     st.sidebar.markdown(
-        f"<small style='color:#aaa;'>Atualizado em {st.session_state['ultima_atualizacao']}</small>",
+        f"<small style='color:#aaa;'>Updated on {st.session_state['ultima_atualizacao']}</small>",
         unsafe_allow_html=True,
     )
 

@@ -21,15 +21,15 @@ def login():
     with col2:
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.image(LOGO_URL, width=180)
-        st.markdown("### Acesse sua conta")
-        st.markdown("Entre com suas credenciais para continuar.")
+        st.markdown("### Sign in to your account")
+        st.markdown("Enter your credentials to continue.")
         st.markdown("---")
 
-        email = st.text_input("E-mail", placeholder="nome@email.com")
-        senha = st.text_input("Senha", type="password", placeholder="••••••••")
+        email = st.text_input("Email", placeholder="name@email.com")
+        senha = st.text_input("Password", type="password", placeholder="••••••••")
 
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("Continuar →", use_container_width=True):
+        if st.button("Continue →", use_container_width=True):
             try:
                 resposta = supabase.auth.sign_in_with_password({
                     "email": email,
@@ -39,7 +39,7 @@ def login():
                 st.session_state["token"] = resposta.session.access_token
                 st.rerun()
             except Exception:
-                st.error("E-mail ou senha incorretos.")
+                st.error("Incorrect email or password.")
 
 def logout():
     st.sidebar.image(LOGO_URL, width=300)
@@ -48,13 +48,13 @@ def logout():
     usuario = st.session_state.get("usuario")
     if usuario:
         st.sidebar.markdown(
-            f"<small style='color:#666;'>Logado como<br/>"
+            f"<small style='color:#666;'>Logged in as<br/>"
             f"<b style='color:#1a1a1a;'>{usuario.email}</b></small>",
             unsafe_allow_html=True
         )
         st.sidebar.markdown("<br>", unsafe_allow_html=True)
 
-    if st.sidebar.button("Sair", use_container_width=True):
+    if st.sidebar.button("Sign out", use_container_width=True):
         st.session_state.clear()
         st.rerun()
 

@@ -2,16 +2,16 @@ import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 
-LARANJA  = "#f26522"
-ESCURO   = "#1a1a1a"
-CINZA    = "#666666"
-LARANJA_CLARO = "#fde8d8"
+ORANGE       = "#f26522"
+DARK         = "#1a1a1a"
+GRAY         = "#666666"
+ORANGE_LIGHT = "#fde8d8"
 
 _LAYOUT_BASE = dict(
     plot_bgcolor="white",
     paper_bgcolor="white",
-    font_color=ESCURO,
-    title_font_color=ESCURO,
+    font_color=DARK,
+    title_font_color=DARK,
     margin=dict(t=40, b=20, l=10, r=10),
 )
 
@@ -25,9 +25,9 @@ def _apply_axes(fig, show_x_grid=False, show_y_grid=True):
 def grafico_barra_ano(df: pd.DataFrame) -> go.Figure:
     fig = px.bar(
         df, x="ano", y="quantidade",
-        title="Quantidade por ano",
-        labels={"ano": "Ano", "quantidade": "Quantidade (mil m³)"},
-        color_discrete_sequence=[LARANJA],
+        title="Volume by Year",
+        labels={"ano": "Year", "quantidade": "Volume (thousand m³)"},
+        color_discrete_sequence=[ORANGE],
     )
     fig.update_layout(**_LAYOUT_BASE)
     return _apply_axes(fig, show_x_grid=False)
@@ -36,10 +36,10 @@ def grafico_barra_ano(df: pd.DataFrame) -> go.Figure:
 def grafico_linha_mes(df: pd.DataFrame) -> go.Figure:
     fig = px.line(
         df, x="mes", y="quantidade",
-        title="Quantidade por mês",
+        title="Volume by Month",
         markers=True,
-        labels={"mes": "Mês", "quantidade": "Quantidade (mil m³)"},
-        color_discrete_sequence=[LARANJA],
+        labels={"mes": "Month", "quantidade": "Volume (thousand m³)"},
+        color_discrete_sequence=[ORANGE],
     )
     fig.update_layout(**_LAYOUT_BASE)
     return _apply_axes(fig, show_x_grid=False)
@@ -48,11 +48,11 @@ def grafico_linha_mes(df: pd.DataFrame) -> go.Figure:
 def grafico_pizza_regiao(df: pd.DataFrame) -> go.Figure:
     fig = px.pie(
         df, names="regiao", values="quantidade",
-        title="Distribuição por região origem",
+        title="Distribution by Origin Region",
         color_discrete_sequence=px.colors.sequential.Oranges_r,
     )
     fig.update_traces(textposition="inside", textinfo="percent+label")
-    fig.update_layout(paper_bgcolor="white", font_color=ESCURO, title_font_color=ESCURO,
+    fig.update_layout(paper_bgcolor="white", font_color=DARK, title_font_color=DARK,
                       margin=dict(t=40, b=20, l=10, r=10))
     return fig
 
@@ -60,10 +60,10 @@ def grafico_pizza_regiao(df: pd.DataFrame) -> go.Figure:
 def grafico_barra_uf(df: pd.DataFrame) -> go.Figure:
     fig = px.bar(
         df, x="quantidade", y="uf", orientation="h",
-        title="Quantidade por UF origem",
-        labels={"uf": "UF", "quantidade": "Quantidade (mil m³)"},
+        title="Volume by Origin State",
+        labels={"uf": "State", "quantidade": "Volume (thousand m³)"},
         color="quantidade",
-        color_continuous_scale=[[0, LARANJA_CLARO], [1, LARANJA]],
+        color_continuous_scale=[[0, ORANGE_LIGHT], [1, ORANGE]],
     )
     fig.update_layout(
         **_LAYOUT_BASE,
@@ -76,10 +76,10 @@ def grafico_barra_uf(df: pd.DataFrame) -> go.Figure:
 def grafico_barra_agente(df: pd.DataFrame) -> go.Figure:
     fig = px.bar(
         df, x="quantidade", y="agente", orientation="h",
-        title="Quantidade por agente regulado",
-        labels={"agente": "Agente", "quantidade": "Quantidade (mil m³)"},
+        title="Volume by Regulated Agent",
+        labels={"agente": "Agent", "quantidade": "Volume (thousand m³)"},
         color="quantidade",
-        color_continuous_scale=[[0, LARANJA_CLARO], [1, LARANJA]],
+        color_continuous_scale=[[0, ORANGE_LIGHT], [1, ORANGE]],
     )
     fig.update_layout(
         **_LAYOUT_BASE,
@@ -92,10 +92,10 @@ def grafico_barra_agente(df: pd.DataFrame) -> go.Figure:
 def grafico_barra_produto(df: pd.DataFrame) -> go.Figure:
     fig = px.bar(
         df, x="quantidade", y="produto", orientation="h",
-        title="Top 20 produtos",
-        labels={"produto": "Produto", "quantidade": "Quantidade (mil m³)"},
+        title="Top 20 Products",
+        labels={"produto": "Product", "quantidade": "Volume (thousand m³)"},
         color="quantidade",
-        color_continuous_scale=[[0, LARANJA_CLARO], [1, LARANJA]],
+        color_continuous_scale=[[0, ORANGE_LIGHT], [1, ORANGE]],
     )
     fig.update_layout(
         **_LAYOUT_BASE,
