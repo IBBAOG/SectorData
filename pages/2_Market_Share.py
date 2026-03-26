@@ -204,6 +204,7 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
             showline=True, linecolor="#000000", linewidth=1,
         ),
         legend=dict(orientation="h", yanchor="top", y=-0.15, xanchor="center", x=0.5, font=_FONT),
+        hoverlabel=dict(font=dict(family="Arial", color="#000000")),
         plot_bgcolor="white",
         height=300,
         hovermode="x unified",
