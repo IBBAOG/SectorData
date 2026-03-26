@@ -5,7 +5,7 @@ from itertools import product as _product
 from components.auth import requer_login
 from components.style import aplicar_estilo
 from components.database import carregar_ms_opcoes, carregar_ms_serie
-from components.filters import _checkbox_filter
+from components.filters import _checkbox_filter, _region_state_filter
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -95,10 +95,13 @@ _mode_prefix   = "big3" if modo_big3 else "ind"
 st.sidebar.markdown(
     "<div style='height:4px'></div>", unsafe_allow_html=True
 )
-competidores = _checkbox_filter("Competitors", opcoes_players,              f"ms_comp_{_mode_prefix}")
-regioes      = _checkbox_filter("Region",      opcoes.get("regioes", []),   "ms_reg")
-ufs          = _checkbox_filter("State",       opcoes.get("ufs", []),       "ms_uf")
-mercados     = _checkbox_filter("Market",      opcoes.get("mercados", []),  "ms_mkt")
+competidores  = _checkbox_filter("Competitors", opcoes_players, f"ms_comp_{_mode_prefix}")
+regioes, ufs  = _region_state_filter(
+    opcoes.get("regioes", []),
+    opcoes.get("ufs", []),
+    reg_prefix="ms_reg",
+    uf_prefix="ms_uf",
+)
 
 st.sidebar.markdown("---")
 col1, col2 = st.sidebar.columns(2)
@@ -115,7 +118,7 @@ if limpar:
 filtros_sidebar = {
     "data_inicio": data_inicio, "data_fim": data_fim,
     "competidores": competidores if competidores else opcoes_players,
-    "regioes": regioes, "ufs": ufs, "mercados": mercados,
+    "regioes": regioes, "ufs": ufs, "mercados": [],
     "modo_big3": modo_big3,
 }
 _estado_antigo = st.session_state.get("ms_filtros_ativos", {})
