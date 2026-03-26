@@ -176,7 +176,7 @@ function buildMarketShareLine(params: {
 
   const layout: Partial<Layout> = {
     title: { text: "" },
-    margin: { t: 10, b: 80, l: 10, r: 60 },
+    margin: { t: 10, b: 80, l: 60, r: 60 },
     font: { family: "Arial", size: 12, color: "#000000" },
     yaxis: {
       title: { text: "Market Share (%)" },
