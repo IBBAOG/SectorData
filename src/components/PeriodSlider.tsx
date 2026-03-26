@@ -56,7 +56,7 @@ export default function PeriodSlider(props: {
     max,
     value,
     step: 1,
-    marks,
+    marks: {},
     onChange: (v) => {
       const arr = Array.isArray(v) ? v : [value[0], value[1]];
       onChange([arr[0] as number, arr[1] as number]);
@@ -87,7 +87,7 @@ export default function PeriodSlider(props: {
   } satisfies SliderProps;
 
   return (
-    <div style={{ marginBottom: 28, marginTop: 20, paddingLeft: 10, paddingRight: 10 }}>
+    <div style={{ marginBottom: 16, marginTop: 32, paddingLeft: 10, paddingRight: 10 }}>
       <Slider range {...rangeProps} />
     </div>
   );
