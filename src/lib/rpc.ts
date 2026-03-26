@@ -167,6 +167,7 @@ export type MsSerieRow = {
   nome_produto: string;
   segmento: string;
   classificacao: string;
+  agente_regulado?: string;
   quantidade: number;
 };
 

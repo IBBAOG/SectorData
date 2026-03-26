@@ -37,6 +37,15 @@ const COLORS_BIG3: Record<string, string> = {
 const ALL_PLAYERS_IND = ["Vibra", "Ipiranga", "Raizen", "Others"];
 const ALL_PLAYERS_BIG3 = ["Big-3", "Others"];
 
+// Plotly discrete color sequence for dynamic "Others" mode
+const PLOTLY_COLORS = [
+  "#636EFA","#EF553B","#00CC96","#AB63FA","#FFA15A",
+  "#19D3F3","#FF6692","#B6E880","#FF97FF","#FECB52",
+];
+function dynColor(i: number) { return PLOTLY_COLORS[i % PLOTLY_COLORS.length]; }
+
+type Mode = "Individual" | "Big-3" | "Others";
+
 function emptyPlot(height = 300): { data: PlotData[]; layout: Partial<Layout> } {
   return {
     data: [],
@@ -74,8 +83,9 @@ function buildMarketShareLine(params: {
   big3: boolean;
   xMin?: string | null;
   xMax?: string | null;
+  groupBy?: "classificacao" | "agente_regulado";
 }): { data: PlotData[]; layout: Partial<Layout> } {
-  const { serieRows, produto, segmento = null, players, big3, xMin, xMax } = params;
+  const { serieRows, produto, segmento = null, players, big3, xMin, xMax, groupBy = "classificacao" } = params;
   if (!serieRows || serieRows.length === 0) return emptyPlot(300);
 
   // Filter by product + segment
@@ -83,11 +93,14 @@ function buildMarketShareLine(params: {
   if (segmento) rows = rows.filter((r) => r.segmento === segmento);
   if (rows.length === 0) return emptyPlot(300);
 
-  // Aggregate by (date, classificacao) summing quantidade
+  // Aggregate by (date, player-key) summing quantidade
   const groupMap = new Map<string, number>();
   for (const r of rows) {
-    let classificacao = r.classificacao;
-    if (big3) classificacao = BIG3_MEMBERS.includes(classificacao) ? "Big-3" : classificacao;
+    let classificacao = groupBy === "agente_regulado"
+      ? (r.agente_regulado ?? r.classificacao)
+      : r.classificacao;
+    if (big3 && groupBy !== "agente_regulado")
+      classificacao = BIG3_MEMBERS.includes(classificacao) ? "Big-3" : classificacao;
     const dateKey = String(r.date);
     const key = `${dateKey}|${classificacao}`;
     groupMap.set(key, (groupMap.get(key) ?? 0) + Number(r.quantidade ?? 0));
@@ -259,13 +272,17 @@ function getMsAtDate(
   segmento: string | null,
   date: string,
   big3: boolean,
+  groupBy: "classificacao" | "agente_regulado" = "classificacao",
 ): Map<string, number> {
   let filtered = rows.filter((r) => r.nome_produto === produto && r.date === date);
   if (segmento) filtered = filtered.filter((r) => r.segmento === segmento);
   const grp = new Map<string, number>();
   for (const r of filtered) {
-    let cls = r.classificacao;
-    if (big3) cls = BIG3_MEMBERS.includes(cls) ? "Big-3" : cls;
+    let cls = groupBy === "agente_regulado"
+      ? (r.agente_regulado ?? r.classificacao)
+      : r.classificacao;
+    if (big3 && groupBy !== "agente_regulado")
+      cls = BIG3_MEMBERS.includes(cls) ? "Big-3" : cls;
     grp.set(cls, (grp.get(cls) ?? 0) + Number(r.quantidade ?? 0));
   }
   const total = Array.from(grp.values()).reduce((a, b) => a + b, 0);
@@ -284,13 +301,14 @@ function buildComparisonData(
   players: string[],
   big3: boolean,
   latestDate: string,
+  groupBy: "classificacao" | "agente_regulado" = "classificacao",
 ): CompRow[] {
   const prevYearDec = `${parseInt(latestDate.slice(0, 4), 10) - 1}-12-01`;
-  const msNow = getMsAtDate(rows, produto, segmento, latestDate, big3);
-  const msMoM = getMsAtDate(rows, produto, segmento, shiftMonth(latestDate, -1), big3);
-  const ms3M  = getMsAtDate(rows, produto, segmento, shiftMonth(latestDate, -3), big3);
-  const msYoY = getMsAtDate(rows, produto, segmento, shiftMonth(latestDate, -12), big3);
-  const msYtd = getMsAtDate(rows, produto, segmento, prevYearDec, big3);
+  const msNow = getMsAtDate(rows, produto, segmento, latestDate, big3, groupBy);
+  const msMoM = getMsAtDate(rows, produto, segmento, shiftMonth(latestDate, -1), big3, groupBy);
+  const ms3M  = getMsAtDate(rows, produto, segmento, shiftMonth(latestDate, -3), big3, groupBy);
+  const msYoY = getMsAtDate(rows, produto, segmento, shiftMonth(latestDate, -12), big3, groupBy);
+  const msYtd = getMsAtDate(rows, produto, segmento, prevYearDec, big3, groupBy);
   const delta = (a: Map<string, number>, b: Map<string, number>, p: string): number | null => {
     const va = a.get(p); const vb = b.get(p);
     return va !== undefined && vb !== undefined ? va - vb : null;
@@ -392,6 +410,7 @@ export default function MarketSharePage() {
     mercados?: string[] | null;
     competidores?: string[] | null;
     modo_big3?: boolean;
+    modo?: Mode;
   };
 
   const [checkingAuth, setCheckingAuth] = useState(true);
@@ -399,10 +418,7 @@ export default function MarketSharePage() {
 
   const datas = useMemo(() => resolverDatas(opcoes ?? {}), [opcoes]);
 
-  const [mode, setMode] = useState<"Individual" | "Big-3">("Individual");
-
-  const playersOptions = mode === "Big-3" ? ALL_PLAYERS_BIG3 : ALL_PLAYERS_IND;
-  const playersDefault = mode === "Big-3" ? ALL_PLAYERS_BIG3 : ALL_PLAYERS_IND;
+  const [mode, setMode] = useState<Mode>("Individual");
 
   const [competidoresSelected, setCompetidoresSelected] = useState<string[]>([]);
   const [regioesSelected, setRegioesSelected] = useState<string[]>([]);
@@ -415,6 +431,19 @@ export default function MarketSharePage() {
 
   const [seriesLoading, setSeriesLoading] = useState(false);
   const [serieRows, setSerieRows] = useState<MsSerieRow[]>([]);
+
+  // Unique agente_regulado values from current data (for "Others" mode)
+  const othersPlayers = useMemo(() => {
+    const seen = new Set<string>();
+    for (const r of serieRows) if (r.agente_regulado) seen.add(r.agente_regulado);
+    return Array.from(seen).sort();
+  }, [serieRows]);
+
+  const playersOptions =
+    mode === "Big-3" ? ALL_PLAYERS_BIG3 :
+    mode === "Others" ? othersPlayers :
+    ALL_PLAYERS_IND;
+  const playersDefault = playersOptions;
 
   useEffect(() => {
     let cancelled = false;
@@ -493,10 +522,19 @@ export default function MarketSharePage() {
   }, [appliedFilters, opcoes, supabase]);
 
   const big3 = appliedFilters?.modo_big3 ?? false;
+  const appliedMode: Mode = appliedFilters?.modo ?? "Individual";
+  const groupBy: "classificacao" | "agente_regulado" =
+    appliedMode === "Others" ? "agente_regulado" : "classificacao";
+
+  const appliedPlayersDefault =
+    appliedMode === "Big-3" ? ALL_PLAYERS_BIG3 :
+    appliedMode === "Others" ? othersPlayers :
+    ALL_PLAYERS_IND;
+
   const players =
     appliedFilters?.competidores && (appliedFilters?.competidores as string[]).length > 0
       ? (appliedFilters?.competidores as string[])
-      : playersDefault;
+      : appliedPlayersDefault;
 
   const xMin = appliedFilters?.data_inicio ?? null;
   const xMax = appliedFilters?.data_fim ?? null;
@@ -507,24 +545,30 @@ export default function MarketSharePage() {
     return serieRows.reduce((max, r) => (r.date > max ? r.date : max), serieRows[0].date);
   }, [appliedFilters.data_fim, serieRows]);
 
-  const chartColors = big3 ? COLORS_BIG3 : COLORS_IND;
+  const chartColors = useMemo(() => {
+    if (big3) return COLORS_BIG3;
+    if (appliedMode === "Others") {
+      return Object.fromEntries(players.map((p, i) => [p, dynColor(i)]));
+    }
+    return COLORS_IND;
+  }, [big3, appliedMode, players]);
 
-  const dieselRetail = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "Retail", players, big3, xMin, xMax });
-  const dieselB2B    = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "B2B",    players, big3, xMin, xMax });
-  const dieselTrR    = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "TRR",    players, big3, xMin, xMax });
-  const dieselTotal  = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: null,     players, big3, xMin, xMax });
-  const gasRetail    = buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: "Retail", players, big3, xMin, xMax });
-  const gasB2B       = buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: "B2B",    players, big3, xMin, xMax });
-  const gasTotal     = buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: null,     players, big3, xMin, xMax });
-  const ethRetail    = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: "Retail", players, big3, xMin, xMax });
-  const ethB2B       = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: "B2B",    players, big3, xMin, xMax });
-  const ethTotal     = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: null,     players, big3, xMin, xMax });
+  const dieselRetail = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "Retail", players, big3, xMin, xMax, groupBy });
+  const dieselB2B    = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "B2B",    players, big3, xMin, xMax, groupBy });
+  const dieselTrR    = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "TRR",    players, big3, xMin, xMax, groupBy });
+  const dieselTotal  = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: null,     players, big3, xMin, xMax, groupBy });
+  const gasRetail    = buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: "Retail", players, big3, xMin, xMax, groupBy });
+  const gasB2B       = buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: "B2B",    players, big3, xMin, xMax, groupBy });
+  const gasTotal     = buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: null,     players, big3, xMin, xMax, groupBy });
+  const ethRetail    = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: "Retail", players, big3, xMin, xMax, groupBy });
+  const ethB2B       = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: "B2B",    players, big3, xMin, xMax, groupBy });
+  const ethTotal     = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: null,     players, big3, xMin, xMax, groupBy });
 
   // Otto-Cycle = Gasolina C volume + Etanol Hidratado volume × 0.7
   const ottoCycleRows = useMemo(() => makeOttoCycleRows(serieRows), [serieRows]);
-  const ottoRetail = buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: "Retail", players, big3, xMin, xMax });
-  const ottoB2B    = buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: "B2B",    players, big3, xMin, xMax });
-  const ottoTotal  = buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: null,     players, big3, xMin, xMax });
+  const ottoRetail = buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: "Retail", players, big3, xMin, xMax, groupBy });
+  const ottoB2B    = buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: "B2B",    players, big3, xMin, xMax, groupBy });
+  const ottoTotal  = buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: null,     players, big3, xMin, xMax, groupBy });
 
   function applyFilters() {
     if (!datas || datas.length === 0) return;
@@ -542,6 +586,7 @@ export default function MarketSharePage() {
       ufs: ufsSelected ?? [],
       mercados: [],
       modo_big3: mode === "Big-3",
+      modo: mode,
     });
 
     setShowToast(true);
@@ -638,6 +683,16 @@ export default function MarketSharePage() {
                       style={{ accentColor: "#ff5000", marginRight: 5 }}
                     />
                     Big-3
+                  </label>
+                  <label style={{ fontFamily: "Arial", fontSize: 13, cursor: "pointer" }}>
+                    <input
+                      type="radio"
+                      name="ms-mode"
+                      checked={mode === "Others"}
+                      onChange={() => setMode("Others")}
+                      style={{ accentColor: "#ff5000", marginRight: 5 }}
+                    />
+                    Others
                   </label>
                 </div>
               </div>
@@ -736,7 +791,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Diesel B", "Retail", players, big3, latestDate)} colors={chartColors} />}
+                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Diesel B", "Retail", players, big3, latestDate, groupBy)} colors={chartColors} />}
                       </div>
                     </div>
                     <div className="col-md-6">
@@ -751,7 +806,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Diesel B", "B2B", players, big3, latestDate)} colors={chartColors} />}
+                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Diesel B", "B2B", players, big3, latestDate, groupBy)} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
@@ -769,7 +824,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Diesel B", "TRR", players, big3, latestDate)} colors={chartColors} />}
+                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Diesel B", "TRR", players, big3, latestDate, groupBy)} colors={chartColors} />}
                       </div>
                     </div>
                     <div className="col-md-6">
@@ -784,7 +839,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Diesel B", null, players, big3, latestDate)} colors={chartColors} />}
+                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Diesel B", null, players, big3, latestDate, groupBy)} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
@@ -808,7 +863,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Gasolina C", "Retail", players, big3, latestDate)} colors={chartColors} />}
+                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Gasolina C", "Retail", players, big3, latestDate, groupBy)} colors={chartColors} />}
                       </div>
                     </div>
                     <div className="col-md-6">
@@ -823,7 +878,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Gasolina C", "B2B", players, big3, latestDate)} colors={chartColors} />}
+                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Gasolina C", "B2B", players, big3, latestDate, groupBy)} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
@@ -840,7 +895,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Gasolina C", null, players, big3, latestDate)} colors={chartColors} />}
+                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Gasolina C", null, players, big3, latestDate, groupBy)} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
@@ -864,7 +919,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Etanol Hidratado", "Retail", players, big3, latestDate)} colors={chartColors} />}
+                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Etanol Hidratado", "Retail", players, big3, latestDate, groupBy)} colors={chartColors} />}
                       </div>
                     </div>
                     <div className="col-md-6">
@@ -879,7 +934,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Etanol Hidratado", "B2B", players, big3, latestDate)} colors={chartColors} />}
+                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Etanol Hidratado", "B2B", players, big3, latestDate, groupBy)} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
@@ -896,7 +951,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Etanol Hidratado", null, players, big3, latestDate)} colors={chartColors} />}
+                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Etanol Hidratado", null, players, big3, latestDate, groupBy)} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
@@ -918,7 +973,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(ottoCycleRows, "Otto-Cycle", "Retail", players, big3, latestDate)} colors={chartColors} />}
+                        {latestDate && <ComparisonTable rows={buildComparisonData(ottoCycleRows, "Otto-Cycle", "Retail", players, big3, latestDate, groupBy)} colors={chartColors} />}
                       </div>
                     </div>
                     <div className="col-md-6">
@@ -931,7 +986,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(ottoCycleRows, "Otto-Cycle", "B2B", players, big3, latestDate)} colors={chartColors} />}
+                        {latestDate && <ComparisonTable rows={buildComparisonData(ottoCycleRows, "Otto-Cycle", "B2B", players, big3, latestDate, groupBy)} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
@@ -946,7 +1001,7 @@ export default function MarketSharePage() {
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(ottoCycleRows, "Otto-Cycle", null, players, big3, latestDate)} colors={chartColors} />}
+                        {latestDate && <ComparisonTable rows={buildComparisonData(ottoCycleRows, "Otto-Cycle", null, players, big3, latestDate, groupBy)} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
