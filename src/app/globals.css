@@ -57,14 +57,14 @@ body {
 
 .section-hr {
   border: none;
-  border-top: 1px solid #bfbfbf;
+  border-top: 2px solid #888888;
   margin: 0 0 8px 0;
 }
 
 .chart-container .section-hr {
+  border-top: 1px solid #999999;
   margin-left: 0;
   margin-right: 56px;
-  border-top-color: #999999;
 }
 
 /* ─── Metric cards ────────────────────────────────────────────────────────── */
