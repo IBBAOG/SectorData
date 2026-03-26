@@ -227,8 +227,18 @@ def carregar_ms_serie(data_inicio, data_fim, regioes, ufs, mercados):
             "p_ufs":         list(ufs) or None,
             "p_mercados":    list(mercados) or None,
         }
-        resp = supabase.rpc("get_ms_serie", params).execute()
-        return pd.DataFrame(resp.data)
+        PAGE = 1000
+        all_rows = []
+        offset = 0
+        while True:
+            resp = supabase.rpc("get_ms_serie", params).range(offset, offset + PAGE - 1).execute()
+            if not resp.data:
+                break
+            all_rows.extend(resp.data)
+            if len(resp.data) < PAGE:
+                break
+            offset += PAGE
+        return pd.DataFrame(all_rows)
     except Exception:
         return pd.DataFrame()
 

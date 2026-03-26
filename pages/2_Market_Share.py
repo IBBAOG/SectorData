@@ -110,11 +110,6 @@ with st.spinner("Carregando dados..."):
         tuple(filtros.get("mercados") or []),
     )
 
-# ─── Diagnóstico (remover após confirmar funcionamento) ───────────────────────
-with st.expander("Diagnóstico", expanded=True):
-    st.write("**opcoes:**", opcoes)
-    st.write("**df_serie linhas:**", len(df_serie))
-    st.write("**filtros ativos:**", filtros)
 
 if not df_serie.empty:
     df_serie["date"] = pd.to_datetime(df_serie["date"])
