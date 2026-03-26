@@ -53,26 +53,37 @@ def period_slider(datas: list, slider_id: str = "slider-period") -> html.Div:
             dbc.Alert("Unable to load the period.", color="warning", className="mb-2"),
         )
 
+    # Show only January of each year as marks to avoid crowding in narrow sidebar
     marks = {}
-    step = max(1, len(datas) // 12)
+    seen_years = set()
     for i, d in enumerate(datas):
-        if i % step == 0 or i == len(datas) - 1:
-            marks[i] = {"label": _fmt_data(d), "style": {"fontSize": "10px", "writingMode": "vertical-rl", "whiteSpace": "nowrap"}}
+        try:
+            y, m = d[:4], int(d[5:7])
+            if m == 1 and y not in seen_years:
+                marks[i] = {"label": y, "style": {"fontSize": "11px", "color": "#555"}}
+                seen_years.add(y)
+        except Exception:
+            pass
+    # Always show last date
+    marks[len(datas) - 1] = {"label": _fmt_data(datas[-1]), "style": {"fontSize": "10px", "color": "#555"}}
 
     return html.Div([
-        html.Label("Period", style={"fontFamily": "Arial", "fontSize": "13px", "fontWeight": "600", "color": "#1a1a1a", "marginBottom": "4px"}),
-        dcc.RangeSlider(
-            id=slider_id,
-            min=0,
-            max=len(datas) - 1,
-            value=[0, len(datas) - 1],
-            marks=marks,
-            step=1,
-            tooltip={"always_visible": False, "placement": "bottom",
-                     "transform": "indexToDate"},
-            className="mb-4",
+        html.Label("Period", style={"fontFamily": "Arial", "fontSize": "13px",
+                                    "fontWeight": "600", "color": "#1a1a1a", "marginBottom": "4px"}),
+        html.Div(
+            dcc.RangeSlider(
+                id=slider_id,
+                min=0,
+                max=len(datas) - 1,
+                value=[0, len(datas) - 1],
+                marks=marks,
+                step=1,
+                tooltip={"always_visible": False, "placement": "top"},
+                className="mb-4",
+            ),
+            style={"paddingBottom": "20px"},
         ),
-    ], style={"marginBottom": "32px"})
+    ], style={"marginBottom": "16px"})
 
 
 def checklist_filter(label: str, options: list, checklist_id: str) -> dbc.AccordionItem:
