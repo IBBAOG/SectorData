@@ -5,6 +5,7 @@ from itertools import product as _product
 from components.auth import requer_login
 from components.style import aplicar_estilo
 from components.database import carregar_ms_opcoes, carregar_ms_serie
+from components.filters import _checkbox_filter
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -89,13 +90,15 @@ else:
 
 # ── Competitors (options depend on view mode) ─────────────────────────────────
 opcoes_players = ALL_PLAYERS_BIG3 if modo_big3 else ALL_PLAYERS_IND
-competidores = st.sidebar.multiselect(
-    "Competitors", opcoes_players, default=opcoes_players
-)
+_mode_prefix   = "big3" if modo_big3 else "ind"
 
-regioes  = st.sidebar.multiselect("Region",  opcoes.get("regioes", []), default=[])
-ufs      = st.sidebar.multiselect("State",   opcoes.get("ufs", []),     default=[])
-mercados = st.sidebar.multiselect("Market",  opcoes.get("mercados", []), default=[])
+st.sidebar.markdown(
+    "<div style='height:4px'></div>", unsafe_allow_html=True
+)
+competidores = _checkbox_filter("Competitors", opcoes_players,              f"ms_comp_{_mode_prefix}")
+regioes      = _checkbox_filter("Region",      opcoes.get("regioes", []),   "ms_reg")
+ufs          = _checkbox_filter("State",       opcoes.get("ufs", []),       "ms_uf")
+mercados     = _checkbox_filter("Market",      opcoes.get("mercados", []),  "ms_mkt")
 
 st.sidebar.markdown("---")
 col1, col2 = st.sidebar.columns(2)
@@ -103,12 +106,15 @@ aplicar = col1.button("Apply", use_container_width=True)
 limpar  = col2.button("Clear", use_container_width=True)
 
 if limpar:
+    for k in list(st.session_state.keys()):
+        if k.startswith("_f_"):
+            del st.session_state[k]
     st.cache_data.clear()
     st.rerun()
 
 filtros_sidebar = {
     "data_inicio": data_inicio, "data_fim": data_fim,
-    "competidores": competidores or opcoes_players,
+    "competidores": competidores if competidores else opcoes_players,
     "regioes": regioes, "ufs": ufs, "mercados": mercados,
     "modo_big3": modo_big3,
 }
