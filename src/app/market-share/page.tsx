@@ -804,7 +804,7 @@ export default function MarketSharePage() {
                     </div>
                   </div>
                   <div className="row g-3">
-                    <div className="col-md-12">
+                    <div className="col-md-6">
                       <div className="chart-container">
                         <div className="section-title" style={{ fontSize: 15 }}>
                           Total
@@ -860,7 +860,7 @@ export default function MarketSharePage() {
                     </div>
                   </div>
                   <div className="row g-3">
-                    <div className="col-md-12">
+                    <div className="col-md-6">
                       <div className="chart-container">
                         <div className="section-title" style={{ fontSize: 15 }}>
                           Total
