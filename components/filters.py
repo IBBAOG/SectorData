@@ -47,43 +47,57 @@ def resolver_datas(opcoes: dict) -> list:
 
 
 def period_slider(datas: list, slider_id: str = "slider-period") -> html.Div:
-    """Returns a RangeSlider component for the period selection."""
+    """
+    Returns a RangeSlider + selected-range display.
+    The display div has id  f'{slider_id}-display'  and must be updated
+    by a page-level callback (see sales.py / market_share.py).
+    """
     if not datas:
         return html.Div(
             dbc.Alert("Unable to load the period.", color="warning", className="mb-2"),
         )
 
-    # Show only January of each year as marks to avoid crowding in narrow sidebar
+    # One mark every 2 years (Jan) to avoid label overlap
     marks = {}
     seen_years = set()
     for i, d in enumerate(datas):
         try:
-            y, m = d[:4], int(d[5:7])
-            if m == 1 and y not in seen_years:
-                marks[i] = {"label": y, "style": {"fontSize": "11px", "color": "#555"}}
-                seen_years.add(y)
+            y, m = int(d[:4]), int(d[5:7])
+            if m == 1 and y % 2 == 1 and str(y) not in seen_years:
+                marks[i] = {"label": str(y),
+                            "style": {"fontSize": "10px", "color": "#888"}}
+                seen_years.add(str(y))
         except Exception:
             pass
-    # Always show last date
-    marks[len(datas) - 1] = {"label": _fmt_data(datas[-1]), "style": {"fontSize": "10px", "color": "#555"}}
+
+    start_label = _fmt_data(datas[0])
+    end_label   = _fmt_data(datas[-1])
 
     return html.Div([
         html.Label("Period", style={"fontFamily": "Arial", "fontSize": "13px",
-                                    "fontWeight": "600", "color": "#1a1a1a", "marginBottom": "4px"}),
+                                    "fontWeight": "600", "color": "#1a1a1a",
+                                    "marginBottom": "6px", "display": "block"}),
+        # Selected range display — updated by page callback
         html.Div(
-            dcc.RangeSlider(
-                id=slider_id,
-                min=0,
-                max=len(datas) - 1,
-                value=[0, len(datas) - 1],
-                marks=marks,
-                step=1,
-                tooltip={"always_visible": False, "placement": "top"},
-                className="mb-4",
-            ),
-            style={"paddingBottom": "20px"},
+            id=f"{slider_id}-display",
+            children=f"{start_label}  →  {end_label}",
+            style={
+                "fontFamily": "Arial", "fontSize": "11px", "color": "#FF5000",
+                "fontWeight": "600", "textAlign": "center",
+                "background": "#fff3ee", "borderRadius": "4px",
+                "padding": "3px 6px", "marginBottom": "8px",
+            },
         ),
-    ], style={"marginBottom": "16px"})
+        dcc.RangeSlider(
+            id=slider_id,
+            min=0,
+            max=len(datas) - 1,
+            value=[0, len(datas) - 1],
+            marks=marks,
+            step=1,
+            tooltip={"always_visible": False, "placement": "top"},
+        ),
+    ], style={"marginBottom": "20px"})
 
 
 def checklist_filter(label: str, options: list, checklist_id: str) -> dbc.AccordionItem:

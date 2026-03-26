@@ -360,6 +360,24 @@ def layout():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Callback: period slider display label
+# ─────────────────────────────────────────────────────────────────────────────
+@callback(
+    Output("ms-slider-period-display", "children"),
+    Input("ms-slider-period", "value"),
+    State("ms-store-datas", "data"),
+    prevent_initial_call=False,
+)
+def ms_update_period_display(slider_val, datas):
+    from components.filters import _fmt_data
+    if not datas or not slider_val:
+        return ""
+    start = _fmt_data(datas[slider_val[0]])
+    end   = _fmt_data(datas[slider_val[1]])
+    return f"{start}  →  {end}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Callback: UF options based on selected regions
 # ─────────────────────────────────────────────────────────────────────────────
 @callback(

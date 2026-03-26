@@ -216,6 +216,24 @@ def layout():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Callback: period slider display label
+# ─────────────────────────────────────────────────────────────────────────────
+@callback(
+    Output("sales-slider-period-display", "children"),
+    Input("sales-slider-period", "value"),
+    State("sales-store-datas", "data"),
+    prevent_initial_call=False,
+)
+def sales_update_period_display(slider_val, datas):
+    from components.filters import _fmt_data
+    if not datas or not slider_val:
+        return ""
+    start = _fmt_data(datas[slider_val[0]])
+    end   = _fmt_data(datas[slider_val[1]])
+    return f"{start}  →  {end}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Callback: show/hide UF checklist based on selected regions
 # ─────────────────────────────────────────────────────────────────────────────
 @callback(
