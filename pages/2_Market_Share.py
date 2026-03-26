@@ -186,9 +186,9 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
         )
 
     fig.update_layout(
+        title=None,
         margin=dict(t=10, b=50, l=10, r=60),
         font=_FONT,
-        title_font=_FONT,
         yaxis=dict(ticksuffix="%", range=[y_lo, y_hi], tickfont=_FONT, title_font=_FONT,
                    showgrid=False, zeroline=False,
                    showline=True, linecolor="#000000", linewidth=1),
