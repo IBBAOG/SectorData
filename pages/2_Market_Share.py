@@ -16,7 +16,7 @@ aplicar_estilo()
 requer_login()
 
 # ─── Constants ────────────────────────────────────────────────────────────────
-COLORS = {"Vibra": "#f26522", "Raizen": "#1a1a1a", "Ipiranga": "#fbbf24", "Others": "#94a3b8"}
+COLORS = {"Vibra": "#f26522", "Raizen": "#1a1a1a", "Ipiranga": "#73C6A1", "Others": "#94a3b8"}
 ALL_PLAYERS = ["Vibra", "Ipiranga", "Raizen", "Others"]
 
 MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -164,7 +164,7 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
 
     fig.update_traces(
         mode="lines",
-        line_width=2,
+        line_width=2.5,
         hovertemplate="%{fullData.name}: %{y:.1f}%<extra></extra>",
     )
 
