@@ -218,19 +218,39 @@ def layout():
 # ─────────────────────────────────────────────────────────────────────────────
 # Callback: period slider display label
 # ─────────────────────────────────────────────────────────────────────────────
-@callback(
+dash.clientside_callback(
+    """
+    function(value, datas) {
+        var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug',
+                      'Sep','Oct','Nov','Dec'];
+        function fmt(d) {
+            if (!d) return '';
+            return months[parseInt(d.substring(5,7)) - 1] + '/' + d.substring(0,4);
+        }
+        if (!value || !datas || !datas.length)
+            return window.dash_clientside.no_update;
+
+        var start = fmt(datas[value[0]]);
+        var end   = fmt(datas[value[1]]);
+
+        // Patch tooltip DOM text scoped to this slider
+        setTimeout(function() {
+            var el = document.getElementById('sales-slider-period');
+            if (!el) return;
+            var tips = el.querySelectorAll('.rc-slider-tooltip-inner');
+            if (tips.length >= 2) {
+                tips[0].textContent = start;
+                tips[1].textContent = end;
+            }
+        }, 30);
+
+        return start + '  \u2192  ' + end;
+    }
+    """,
     Output("sales-slider-period-display", "children"),
     Input("sales-slider-period", "value"),
     State("sales-store-datas", "data"),
-    prevent_initial_call=False,
 )
-def sales_update_period_display(slider_val, datas):
-    from components.filters import _fmt_data
-    if not datas or not slider_val:
-        return ""
-    start = _fmt_data(datas[slider_val[0]])
-    end   = _fmt_data(datas[slider_val[1]])
-    return f"{start}  →  {end}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
