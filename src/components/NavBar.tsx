@@ -32,7 +32,7 @@ export default function NavBar() {
     >
       <div className="container-fluid">
         <Link href="/" className="navbar-brand d-flex align-items-center">
-          <img src={LOGO_URL} alt="Itaú BBA" style={{ height: 32 }} />
+          <img src={LOGO_URL} alt="Itaú BBA" style={{ height: 48 }} />
         </Link>
 
         <div className="navbar-nav me-auto ms-3">

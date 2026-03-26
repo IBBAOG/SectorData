@@ -445,7 +445,7 @@ export default function SalesPage() {
                 <img
                   src="/logo.webp"
                   alt="Itaú BBA"
-                  style={{ width: "100%", maxWidth: 160, marginBottom: 16 }}
+                  style={{ width: "100%", maxWidth: 220, marginBottom: 16 }}
                 />
               </div>
 
