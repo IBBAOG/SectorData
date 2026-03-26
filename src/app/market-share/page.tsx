@@ -17,6 +17,7 @@ import {
   type MarketShareFilters,
   type MsSerieRow,
 } from "../../lib/rpc";
+import { downloadMarketShareExcel } from "../../lib/exportExcel";
 
 const _NO_DATA = "No data for the selected filters.";
 const BIG3_MEMBERS = ["Vibra", "Ipiranga", "Raizen"];
@@ -610,6 +611,15 @@ export default function MarketSharePage() {
                   style={{ fontFamily: "Arial" }}
                 >
                   Full series (CSV)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary btn-sm ms-2"
+                  onClick={() => downloadMarketShareExcel(serieRows, players, big3)}
+                  disabled={!serieRows || serieRows.length === 0 || seriesLoading}
+                  style={{ fontFamily: "Arial" }}
+                >
+                  Export Excel
                 </button>
               </div>
 
