@@ -155,7 +155,6 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
 
     fig = px.line(
         df, x="date", y="pct", color="classificacao",
-        title=titulo,
         color_discrete_map=CORES,
         labels={"date": "", "pct": "Market Share (%)", "classificacao": ""},
     )
@@ -187,7 +186,7 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
         )
 
     fig.update_layout(
-        margin=dict(t=40, b=50, l=10, r=60),  # b=50 para acomodar a legenda abaixo
+        margin=dict(t=10, b=50, l=10, r=60),
         font=_FONT,
         title_font=_FONT,
         yaxis=dict(ticksuffix="%", range=[y_lo, y_hi], tickfont=_FONT, title_font=_FONT,
@@ -229,6 +228,12 @@ def _secao(produto: str, titulo_secao: str, players: list, tem_trr: bool = True)
     for col, seg, label in pares:
         fig = _linha_ms(produto, seg, label, players)
         with col:
+            st.markdown(
+                f"<div style='font-family:Arial;font-size:18px;font-weight:600;"
+                f"color:#FF5000;margin-bottom:2px;'>{label}</div>"
+                f"<hr style='border:none;border-top:1px solid #BFBFBF;margin:0 0 4px 0;'>",
+                unsafe_allow_html=True,
+            )
             if fig:
                 st.plotly_chart(fig, use_container_width=True)
             else:
