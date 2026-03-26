@@ -243,7 +243,7 @@ def _secao(produto: str, titulo_secao: str, players: list, tem_trr: bool = True)
                 unsafe_allow_html=True,
             )
             if fig:
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
             else:
                 st.info("Nenhum dado para os filtros selecionados.")
 
