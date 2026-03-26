@@ -153,7 +153,7 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
     y_lo = max(0.0,   y_min - pad)
     y_hi = min(100.0, y_max + pad)
 
-    _FONT = dict(family="Arial", size=11, color="#000000")
+    _FONT = dict(family="Arial", size=12, color="#000000")
 
     fig = px.line(
         df, x="date", y="pct", color="classificacao",
@@ -182,7 +182,7 @@ def _linha_ms(produto: str, segmento: str | None, titulo: str, players: list):
             xanchor="left",
             xshift=6,
             yanchor="middle",
-            font=dict(family="Arial", size=11, color=COLORS.get(player, "#000000")),
+            font=dict(family="Arial", size=12, color=COLORS.get(player, "#000000")),
         )
 
     fig.update_layout(
