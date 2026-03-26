@@ -19,7 +19,7 @@ requer_login()
 BIG3_MEMBERS = ["Vibra", "Ipiranga", "Raizen"]
 
 COLORS_IND  = {"Vibra": "#f26522", "Raizen": "#1a1a1a", "Ipiranga": "#73C6A1", "Others": "#94a3b8"}
-COLORS_BIG3 = {"Big-3": "#1D4ED8", "Others": "#94a3b8"}
+COLORS_BIG3 = {"Big-3": "#FF5000", "Others": "#94a3b8"}
 
 ALL_PLAYERS_IND  = ["Vibra", "Ipiranga", "Raizen", "Others"]
 ALL_PLAYERS_BIG3 = ["Big-3", "Others"]
