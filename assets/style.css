@@ -86,8 +86,7 @@ html, body {
 /* ─── Chart containers ─────────────────────────────────────────────────────── */
 .chart-container {
     background-color: #ffffff;
-    border: 1px solid #f0f0f0;
-    border-radius: 8px;
+    border: none;
     padding: 8px;
     margin-bottom: 16px;
 }
