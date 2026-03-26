@@ -92,7 +92,8 @@ filtros_sidebar = {
     "competidores": competidores or TODOS_PLAYERS,
     "regioes": regioes, "ufs": ufs, "mercados": mercados,
 }
-if aplicar or "ms_filtros_ativos" not in st.session_state:
+_estado_antigo = st.session_state.get("ms_filtros_ativos", {})
+if aplicar or "ms_filtros_ativos" not in st.session_state or "competidores" not in _estado_antigo:
     st.session_state["ms_filtros_ativos"] = filtros_sidebar
     if aplicar:
         st.toast("Filtros aplicados!")
