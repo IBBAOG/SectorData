@@ -7,6 +7,7 @@ const PRODUCTS: { dbName: string; sheetName: string; segments: (string | null)[]
   { dbName: "Diesel B",         sheetName: "Diesel B",        segments: ["Retail", "B2B", "TRR", null] },
   { dbName: "Gasolina C",       sheetName: "Gasoline C",      segments: ["Retail", "B2B", null] },
   { dbName: "Etanol Hidratado", sheetName: "Hydrous Ethanol", segments: ["Retail", "B2B", null] },
+  { dbName: "Otto-Cycle",       sheetName: "Otto-Cycle",      segments: ["Retail", "B2B", null] },
 ];
 
 const ARIAL10      = { name: "Arial", sz: 10 };
@@ -55,7 +56,22 @@ export function downloadMarketShareExcel(
 ) {
   if (!serieRows || serieRows.length === 0) return;
 
-  const allDates = Array.from(new Set(serieRows.map((r) => r.date))).sort();
+  // Build Otto-Cycle rows (Gasoline C + Ethanol Hidratado * 0.7)
+  const ottoCycleRows: MsSerieRow[] = [];
+  for (const r of serieRows) {
+    if (r.nome_produto === "Gasolina C") {
+      ottoCycleRows.push({ ...r, nome_produto: "Otto-Cycle" });
+    } else if (r.nome_produto === "Etanol Hidratado") {
+      ottoCycleRows.push({
+        ...r,
+        nome_produto: "Otto-Cycle",
+        quantidade: r.quantidade != null ? Number(r.quantidade) * 0.7 : r.quantidade,
+      });
+    }
+  }
+  const rows = [...serieRows, ...ottoCycleRows];
+
+  const allDates = Array.from(new Set(rows.map((r) => r.date))).sort();
   const dateCount = allDates.length;
 
   // Convert "YYYY-MM-DD" strings to Excel date serial numbers (days since 1899-12-30)
@@ -104,7 +120,7 @@ export function downloadMarketShareExcel(
       rowIdx++;
 
       // ── Player rows (Arial 10) ───────────────────────────────────────
-      const msMap = computeMarketShare(serieRows, product.dbName, seg, players, big3);
+      const msMap = computeMarketShare(rows, product.dbName, seg, players, big3);
       for (const player of players) {
         const row: (string | number | null)[] = [player];
         for (const date of allDates) {
