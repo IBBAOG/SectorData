@@ -10,6 +10,7 @@ const LOGO_URL = "/logo.png";
 const BG_GIFS = [
   "https://media0.giphy.com/media/fy9QYx06VF8c9D3Sc3/giphy.gif",
   "https://i.pinimg.com/originals/c5/b0/c6/c5b0c6ca2a20e5fea7f938e8027b255b.gif",
+  "https://media3.giphy.com/media/4B9havABFnB2U/giphy.gif",
 ];
 const BG_URL = BG_GIFS[Math.floor(Math.random() * BG_GIFS.length)];
 
