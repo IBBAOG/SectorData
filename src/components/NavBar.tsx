@@ -7,7 +7,7 @@ import { useState } from "react";
 import { getSupabaseClient } from "../lib/supabaseClient";
 
 const LOGO_URL =
-  "/logo.webp";
+  "/logo.png";
 
 export default function NavBar() {
   const router = useRouter();

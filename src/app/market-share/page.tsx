@@ -351,7 +351,7 @@ function ComparisonTable({ rows, colors }: { rows: CompRow[]; colors: Record<str
     border: "none",
   };
   return (
-    <table style={{ borderCollapse: "collapse", marginLeft: 60, marginRight: 131, marginTop: 6, width: "calc(100% - 191px)", tableLayout: "fixed" }}>
+    <table style={{ borderCollapse: "collapse", width: "80%", margin: "6px auto 0", tableLayout: "fixed" }}>
       <colgroup>
         <col style={{ width: "30%" }} />
         <col style={{ width: "17.5%" }} />
@@ -703,7 +703,7 @@ export default function MarketSharePage() {
             <div id="sidebar">
               <div style={{ textAlign: "center" }}>
                 <img
-                  src="/logo.webp"
+                  src="/logo.png"
                   alt="Itaú BBA"
                   style={{ width: "100%", maxWidth: 220, marginBottom: 16 }}
                 />
@@ -825,7 +825,7 @@ export default function MarketSharePage() {
                           <text x="4" y="17" fontFamily="Arial" fontWeight="bold" fontSize="12" fill="#ffffff">X</text>
                         </svg>
                       )}
-                      {excelLoading ? "Gerando..." : "Market Share (.xl)"}
+                      {excelLoading ? "Gerando..." : "formated data .xl"}
                     </button>
                     <button
                       type="button"
@@ -855,7 +855,7 @@ export default function MarketSharePage() {
                           <rect x="6" y="15" width="8" height="1.5" rx="0.75" fill="#ffffff"/>
                         </svg>
                       )}
-                      {csvLoading ? "Baixando..." : "All Data (.csv)"}
+                      {csvLoading ? "Baixando..." : "all data .csv"}
                     </button>
                   </div>
                 </div>
