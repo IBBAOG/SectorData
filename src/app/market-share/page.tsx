@@ -442,6 +442,7 @@ export default function MarketSharePage() {
   const [seriesLoading, setSeriesLoading] = useState(false);
   const [serieRows, setSerieRows] = useState<MsSerieRow[]>([]);
   const [csvLoading, setCsvLoading] = useState(false);
+  const [excelLoading, setExcelLoading] = useState(false);
   const [cachedOthersPlayers, setCachedOthersPlayers] = useState<string[]>([]);
 
   // Unique agente_regulado values: from current data or cached list
@@ -804,16 +805,56 @@ export default function MarketSharePage() {
                     <button
                       type="button"
                       className="btn btn-outline-secondary btn-sm"
-                      onClick={() => downloadMarketShareExcel(serieRows, players, big3)}
-                      disabled={!serieRows || serieRows.length === 0 || seriesLoading}
+                      onClick={async () => {
+                        setExcelLoading(true);
+                        try {
+                          // Generate PNG images for every chart using Plotly
+                          const Plotly = (await import("plotly.js-dist-min")).default as { toImage: (fig: unknown, opts: unknown) => Promise<string> };
+                          const imgOpts = { format: "png", width: 780, height: 280 };
+                          const chartEntries: [string, { data: unknown[]; layout: unknown }][] = [
+                            ["dieselRetail", charts.dieselRetail],
+                            ["dieselB2B",    charts.dieselB2B],
+                            ["dieselTrR",    charts.dieselTrR],
+                            ["dieselTotal",  charts.dieselTotal],
+                            ["gasRetail",    charts.gasRetail],
+                            ["gasB2B",       charts.gasB2B],
+                            ["gasTotal",     charts.gasTotal],
+                            ["ethRetail",    charts.ethRetail],
+                            ["ethB2B",       charts.ethB2B],
+                            ["ethTotal",     charts.ethTotal],
+                            ["ottoRetail",   charts.ottoRetail],
+                            ["ottoB2B",      charts.ottoB2B],
+                            ["ottoTotal",    charts.ottoTotal],
+                          ];
+                          const chartImages: Record<string, string> = {};
+                          for (const [key, chart] of chartEntries) {
+                            try {
+                              const dataUrl = await Plotly.toImage({ data: chart.data, layout: chart.layout }, imgOpts);
+                              chartImages[key] = dataUrl.replace("data:image/png;base64,", "");
+                            } catch {
+                              // skip chart if image generation fails
+                            }
+                          }
+                          await downloadMarketShareExcel(serieRows, players, big3, chartImages);
+                        } catch (e) {
+                          console.error("Excel export failed", e);
+                        } finally {
+                          setExcelLoading(false);
+                        }
+                      }}
+                      disabled={!serieRows || serieRows.length === 0 || seriesLoading || excelLoading}
                       style={{ fontFamily: "Arial" }}
                     >
-                      {/* Excel icon */}
-                      <svg width="16" height="16" viewBox="0 0 24 24" style={{ marginRight: 5, verticalAlign: "middle" }} xmlns="http://www.w3.org/2000/svg">
-                        <rect x="2" y="2" width="20" height="20" rx="3" fill="#217346"/>
-                        <text x="4" y="17" fontFamily="Arial" fontWeight="bold" fontSize="12" fill="#ffffff">X</text>
-                      </svg>
-                      Market Share (.xl)
+                      {excelLoading ? (
+                        <span className="spinner-border spinner-border-sm me-1" role="status" />
+                      ) : (
+                        /* Excel icon */
+                        <svg width="16" height="16" viewBox="0 0 24 24" style={{ marginRight: 5, verticalAlign: "middle" }} xmlns="http://www.w3.org/2000/svg">
+                          <rect x="2" y="2" width="20" height="20" rx="3" fill="#217346"/>
+                          <text x="4" y="17" fontFamily="Arial" fontWeight="bold" fontSize="12" fill="#ffffff">X</text>
+                        </svg>
+                      )}
+                      {excelLoading ? "Gerando..." : "Market Share (.xl)"}
                     </button>
                     <button
                       type="button"
