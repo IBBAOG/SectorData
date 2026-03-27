@@ -792,6 +792,7 @@ export default function MarketSharePage() {
                       type="button"
                       className="btn btn-outline-secondary btn-sm"
                       onClick={async () => {
+                        if (!supabase) return;
                         setCsvLoading(true);
                         try {
                           const rows = await fetchAllVendas(supabase);
