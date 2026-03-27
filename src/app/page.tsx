@@ -352,7 +352,7 @@ export default function SalesPage() {
             <div id="sidebar">
               <div style={{ textAlign: "center" }}>
                 <img
-                  src="/logo.webp"
+                  src="/logo.png"
                   alt="Itaú BBA"
                   style={{ width: "100%", maxWidth: 220, marginBottom: 16 }}
                 />

@@ -91,8 +91,26 @@ export default function RegionStateFilter(props: {
 
       {visibleUfs.length > 0 && (
         <div style={{ marginTop: 10 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#aaa", fontFamily: "Arial", marginBottom: 6 }}>
-            States
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#aaa", fontFamily: "Arial" }}>
+              States
+            </div>
+            <div className="filter-chip-actions" style={{ marginBottom: 0 }}>
+              <button
+                type="button"
+                className="filter-btn-link filter-btn-link--secondary"
+                onClick={() => onUfsChange(visibleUfs.slice())}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                className="filter-btn-link filter-btn-link--secondary"
+                onClick={() => onUfsChange([])}
+              >
+                Clear
+              </button>
+            </div>
           </div>
           <div className="filter-chip-group">
             {visibleUfs.map((u) => (
