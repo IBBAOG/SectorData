@@ -11,13 +11,12 @@ const PRODUCTS: { dbName: string; sheetName: string; segments: (string | null)[]
   { dbName: "Otto-Cycle",       sheetName: "Otto-Cycle",      segments: ["Retail", "B2B", null] },
 ];
 
-// Player hex colors (no #)
 const PLAYER_COLORS: Record<string, string> = {
-  "Vibra":   "f26522",
-  "Raizen":  "1a1a1a",
-  "Ipiranga":"73C6A1",
-  "Others":  "A9A9A9",
-  "Big-3":   "FF5000",
+  "Vibra":    "f26522",
+  "Raizen":   "1a1a1a",
+  "Ipiranga": "73C6A1",
+  "Others":   "A9A9A9",
+  "Big-3":    "FF5000",
 };
 const DEFAULT_COLOR = "4472C4";
 
@@ -66,7 +65,6 @@ function toExcelDate(d: string): number {
   return (new Date(d).getTime() - EXCEL_EPOCH) / 86400000;
 }
 
-// Colors (ARGB for exceljs)
 const C = {
   headerBg: { argb: "FF000512" },
   headerFg: { argb: "FFFFFFFF" },
@@ -74,20 +72,17 @@ const C = {
   cellFg:   { argb: "FF1A1A1A" },
 };
 
-// Chart dimensions in rows
-const CHART_ROW_COUNT  = 14;
-const CHART_ROW_HEIGHT = 15; // pt
+// All rows uniform height
+const ROW_H = 14; // pt
+
+// Chart size in EMU (1 inch = 914400 EMU)
+const CHART_W_EMU = 5_486_400;  // 6 inches
+const CHART_H_EMU = 2_103_120;  // 2.3 inches
+// Rows to reserve below data for chart area
+const CHART_ROW_RESERVE = 14;
 
 // ── OOXML helpers ─────────────────────────────────────────────────────────────
 
-/**
- * Build a c:lineChart XML for one segment.
- * sheetName: the Excel sheet name (for cell references)
- * dateHeaderRow: 1-based exceljs row of the date header
- * playerRows: array of { player, row1based }
- * dateCount: number of date columns
- * chartId: unique integer for axId values (must differ per chart on a sheet)
- */
 function colLetter(colIdx: number): string {
   let result = "";
   let n = colIdx;
@@ -99,8 +94,14 @@ function colLetter(colIdx: number): string {
   return result;
 }
 
+/**
+ * Build OOXML chart XML for one segment.
+ * Charts are placed side by side below all data tables.
+ * segmentLabel is shown as the chart title.
+ */
 function buildChartXml(
   sheetName: string,
+  segmentLabel: string,
   dateHeaderRow: number,
   playerRows: { player: string; row1based: number }[],
   dateCount: number,
@@ -109,8 +110,9 @@ function buildChartXml(
 ): string {
   const firstCol = colLetter(2);
   const lastCol  = colLetter(dateCount + 1);
-  // Single-quote sheet names that contain spaces or special chars
-  const ref = (sheetName.match(/[\s'!]/) ? `'${sheetName.replace(/'/g, "''")}'` : sheetName);
+  const ref = sheetName.match(/[\s'!]/)
+    ? `'${sheetName.replace(/'/g, "''")}'`
+    : sheetName;
 
   const seriesXml = playerRows.map(({ player, row1based }, idx) => {
     const color = getPlayerColor(player);
@@ -131,8 +133,18 @@ function buildChartXml(
 <c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
               xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
               xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <c:roundedCorners val="0"/>
   <c:chart>
-    <c:autoTitleDeleted val="1"/>
+    <c:title>
+      <c:tx>
+        <c:rich>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:r><a:rPr lang="en-US" b="0" sz="900"/><a:t>${segmentLabel}</a:t></a:r></a:p>
+        </c:rich>
+      </c:tx>
+      <c:overlay val="0"/>
+    </c:title>
     <c:plotArea>
       <c:lineChart>
         <c:grouping val="standard"/>
@@ -147,6 +159,8 @@ function buildChartXml(
         <c:delete val="0"/>
         <c:axPos val="b"/>
         <c:numFmt formatCode="mmm/yyyy" sourceLinked="0"/>
+        <c:majorTickMark val="none"/>
+        <c:minorTickMark val="none"/>
         <c:crossAx val="${valAxisId}"/>
       </c:catAx>
       <c:valAx>
@@ -154,30 +168,42 @@ function buildChartXml(
         <c:scaling><c:orientation val="minMax"/></c:scaling>
         <c:delete val="0"/>
         <c:axPos val="l"/>
+        <c:majorTickMark val="none"/>
+        <c:minorTickMark val="none"/>
         <c:crossAx val="${catAxisId}"/>
       </c:valAx>
     </c:plotArea>
-    <c:legend><c:legendPos val="b"/></c:legend>
+    <c:legend><c:legendPos val="b"/><c:overlay val="0"/></c:legend>
     <c:plotVisOnly val="1"/>
   </c:chart>
+  <c:spPr>
+    <a:noFill/>
+    <a:ln><a:noFill/></a:ln>
+  </c:spPr>
 </c:chartSpace>`;
 }
 
 /**
- * Build the drawing XML for one worksheet.
- * charts: array of { chartRelId, fromRow, toRow } — all 0-indexed
- * fromCol/toCol span the full data area (0 to dateCount+1)
+ * Build drawing XML for one worksheet.
+ * Charts are placed side by side using oneCellAnchor with EMU-based horizontal offset.
+ * localChartIdx: 0-based position within the row of charts (0 = leftmost)
+ * firstChartRow0: 0-indexed row where all charts on this sheet start
  */
 function buildDrawingXml(
-  charts: { chartRelId: string; fromRow: number; toRow: number; dateCount: number }[],
+  charts: { chartRelId: string; localChartIdx: number; firstChartRow0: number }[],
 ): string {
-  const anchors = charts.map(({ chartRelId, fromRow, toRow, dateCount }, anchorIdx) => `
-  <xdr:twoCellAnchor editAs="twoCell">
-    <xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${fromRow}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
-    <xdr:to><xdr:col>${dateCount + 1}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${toRow}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
+  const anchors = charts.map(({ chartRelId, localChartIdx, firstChartRow0 }, anchorIdx) => `
+  <xdr:oneCellAnchor>
+    <xdr:from>
+      <xdr:col>0</xdr:col>
+      <xdr:colOff>${localChartIdx * CHART_W_EMU}</xdr:colOff>
+      <xdr:row>${firstChartRow0}</xdr:row>
+      <xdr:rowOff>0</xdr:rowOff>
+    </xdr:from>
+    <xdr:ext cx="${CHART_W_EMU}" cy="${CHART_H_EMU}"/>
     <xdr:graphicFrame macro="">
       <xdr:nvGraphicFramePr>
-        <xdr:cNvPr id="${anchorIdx + 2}" name="Chart ${anchorIdx + 1}"/>
+        <xdr:cNvPr id="${anchorIdx + 2}" name="Chart ${localChartIdx + 1}"/>
         <xdr:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></xdr:cNvGraphicFramePr>
       </xdr:nvGraphicFramePr>
       <xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm>
@@ -190,7 +216,7 @@ function buildDrawingXml(
       </a:graphic>
     </xdr:graphicFrame>
     <xdr:clientData/>
-  </xdr:twoCellAnchor>`).join("");
+  </xdr:oneCellAnchor>`).join("");
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
@@ -228,7 +254,7 @@ export async function downloadMarketShareExcel(
 ) {
   if (!serieRows || serieRows.length === 0) return;
 
-  // Build Otto-Cycle rows (Gasoline C + Ethanol × 0.7)
+  // Build Otto-Cycle rows
   const ottoCycleRows: MsSerieRow[] = [];
   for (const r of serieRows) {
     if (r.nome_produto === "Gasolina C") {
@@ -248,82 +274,79 @@ export async function downloadMarketShareExcel(
 
   const wb = new ExcelJS.Workbook();
 
-  // Track chart metadata for OOXML injection
-  // Each entry: { sheetIndex (1-based), sheetName, chartXml, fromRow (0-indexed), toRow (0-indexed), dateHeaderRow (1-indexed), playerRows }
   type ChartMeta = {
     sheetIndex: number;
-    sheetName: string;
     chartXml: string;
-    fromRow: number;
-    toRow: number;
+    localChartIdx: number;
+    firstChartRow0: number; // 0-indexed OOXML row
   };
   const chartMetas: ChartMeta[] = [];
-  let globalChartIdx = 0; // 0-based counter for chart IDs
+  let globalChartIdx = 0;
 
   for (let sheetIdx = 0; sheetIdx < PRODUCTS.length; sheetIdx++) {
     const product = PRODUCTS[sheetIdx];
     const ws = wb.addWorksheet(product.sheetName);
 
-    // Column widths
+    // Disable grid lines
+    ws.views = [{ showGridLines: false }];
+
     ws.getColumn(1).width = 14;
     for (let c = 2; c <= dateCount + 1; c++) {
       ws.getColumn(c).width = 9;
     }
 
-    let row = 1; // 1-based row index
+    let row = 1;
 
+    // Collect per-segment info needed to build chart XML (after all data is written)
+    const segmentInfos: {
+      segmentLabel: string;
+      dateHeaderRow: number;
+      playerRows: { player: string; row1based: number }[];
+      localChartIdx: number;
+    }[] = [];
+    let localChartIdx = 0;
+
+    // ── Phase 1: write all data tables ───────────────────────────────────────
     for (const seg of product.segments) {
       const segLabel = seg ?? "Total";
 
-      // ── Segment title ──────────────────────────────────────────────────
+      // Segment title
       ws.mergeCells(row, 1, row, dateCount + 1);
       const titleCell = ws.getCell(row, 1);
       titleCell.value = segLabel;
       titleCell.font = { name: "Arial", size: 13, bold: true, color: C.titleFg };
       titleCell.alignment = { vertical: "middle" };
-      ws.getRow(row).height = 18;
+      ws.getRow(row).height = ROW_H;
       row++;
 
-      // ── Chart placeholder rows (will hold native chart) ─────────────────
-      const chartFromRow = row - 1; // 0-indexed (for OOXML drawing anchor)
-      for (let i = 0; i < CHART_ROW_COUNT; i++) {
-        ws.getRow(row).height = CHART_ROW_HEIGHT;
-        row++;
+      // Date header
+      const dateHeaderRow = row;
+      const hRow = ws.getRow(row);
+      hRow.height = ROW_H;
+      const lbl = ws.getCell(row, 1);
+      lbl.value = "Market Share (%)";
+      lbl.font = { name: "Arial", size: 10, bold: true, color: C.headerFg };
+      lbl.fill = { type: "pattern", pattern: "solid", fgColor: C.headerBg };
+      lbl.alignment = { horizontal: "left" };
+      for (let c = 0; c < dateCount; c++) {
+        const cell = ws.getCell(row, c + 2);
+        cell.value = toExcelDate(allDates[c]);
+        cell.numFmt = "mmm/yyyy";
+        cell.font = { name: "Arial", size: 10, bold: true, color: C.headerFg };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: C.headerBg };
+        cell.alignment = { horizontal: "center" };
       }
-      const chartToRow = row - 1; // 0-indexed
+      row++;
 
-      // ── Date header ────────────────────────────────────────────────────
-      const dateHeaderRow = row; // 1-based
-      {
-        const hRow = ws.getRow(row);
-        hRow.height = 14;
-        const lbl = ws.getCell(row, 1);
-        lbl.value = "Market Share (%)";
-        lbl.font = { name: "Arial", size: 10, bold: true, color: C.headerFg };
-        lbl.fill = { type: "pattern", pattern: "solid", fgColor: C.headerBg };
-        lbl.alignment = { horizontal: "left" };
-
-        for (let c = 0; c < dateCount; c++) {
-          const cell = ws.getCell(row, c + 2);
-          cell.value = toExcelDate(allDates[c]);
-          cell.numFmt = "mmm/yyyy";
-          cell.font = { name: "Arial", size: 10, bold: true, color: C.headerFg };
-          cell.fill = { type: "pattern", pattern: "solid", fgColor: C.headerBg };
-          cell.alignment = { horizontal: "center" };
-        }
-        row++;
-      }
-
-      // ── Player rows ────────────────────────────────────────────────────
+      // Player rows
       const msMap = computeMarketShare(rows, product.dbName, seg, players, big3);
-      const playerRows: { player: string; row1based: number }[] = [];
+      const playerRowInfos: { player: string; row1based: number }[] = [];
       for (const player of players) {
         const pRow = ws.getRow(row);
-        pRow.height = 13;
+        pRow.height = ROW_H;
         const nameCell = ws.getCell(row, 1);
         nameCell.value = player;
         nameCell.font = { name: "Arial", size: 10, color: C.cellFg };
-
         for (let c = 0; c < dateCount; c++) {
           const pct = msMap.get(allDates[c])?.get(player);
           const cell = ws.getCell(row, c + 2);
@@ -331,39 +354,57 @@ export async function downloadMarketShareExcel(
           cell.font = { name: "Arial", size: 10, color: C.cellFg };
           cell.alignment = { horizontal: "center" };
         }
-        playerRows.push({ player, row1based: row });
+        playerRowInfos.push({ player, row1based: row });
         row++;
       }
 
-      // ── Build chart XML for this segment ───────────────────────────────
+      // Separator
+      ws.getRow(row).height = ROW_H;
+      row++;
+
+      segmentInfos.push({
+        segmentLabel: segLabel,
+        dateHeaderRow,
+        playerRows: playerRowInfos,
+        localChartIdx: localChartIdx++,
+      });
+    }
+
+    // ── Phase 2: chart section below all data ────────────────────────────────
+    // firstChartRow0 is the current row (0-indexed for OOXML)
+    const firstChartRow0 = row - 1; // exceljs is 1-based, OOXML is 0-based
+
+    // Reserve rows for chart height
+    for (let i = 0; i < CHART_ROW_RESERVE; i++) {
+      ws.getRow(row).height = ROW_H;
+      row++;
+    }
+
+    // Build chart XMLs for this sheet
+    for (const info of segmentInfos) {
       const catAxisId = globalChartIdx * 2 + 1;
       const valAxisId = globalChartIdx * 2 + 2;
       const chartXml = buildChartXml(
         product.sheetName,
-        dateHeaderRow,
-        playerRows,
+        info.segmentLabel,
+        info.dateHeaderRow,
+        info.playerRows,
         dateCount,
         catAxisId,
         valAxisId,
       );
       chartMetas.push({
         sheetIndex: sheetIdx + 1,
-        sheetName: product.sheetName,
         chartXml,
-        fromRow: chartFromRow,
-        toRow: chartToRow,
+        localChartIdx: info.localChartIdx,
+        firstChartRow0,
       });
       globalChartIdx++;
-
-      // ── Empty separator ────────────────────────────────────────────────
-      row++;
     }
   }
 
-  // ── Generate initial xlsx buffer via exceljs ──────────────────────────────
+  // ── Generate xlsx buffer ──────────────────────────────────────────────────
   const buffer = await wb.xlsx.writeBuffer();
-
-  // ── Open xlsx zip with JSZip ──────────────────────────────────────────────
   const zip = await JSZip.loadAsync(buffer);
 
   // ── Inject chart XML files ────────────────────────────────────────────────
@@ -372,36 +413,30 @@ export async function downloadMarketShareExcel(
   }
 
   // ── Build per-sheet drawing files ─────────────────────────────────────────
-  // Group charts by sheetIndex
   const chartsBySheet = new Map<number, typeof chartMetas>();
   for (const meta of chartMetas) {
     if (!chartsBySheet.has(meta.sheetIndex)) chartsBySheet.set(meta.sheetIndex, []);
     chartsBySheet.get(meta.sheetIndex)!.push(meta);
   }
 
-  // Chart global index by sheetIndex order
   let chartGlobalOffset = 0;
   for (let sheetIdx = 1; sheetIdx <= PRODUCTS.length; sheetIdx++) {
     const sheetCharts = chartsBySheet.get(sheetIdx) ?? [];
 
-    // Build drawing XML
-    const drawingCharts = sheetCharts.map((meta, localIdx) => ({
-      chartRelId: `rId${localIdx + 1}`,
-      chartFile: `chart${chartGlobalOffset + localIdx + 1}.xml`,
-      fromRow: meta.fromRow,
-      toRow: meta.toRow,
-      dateCount,
+    const drawingCharts = sheetCharts.map((meta, di) => ({
+      chartRelId: `rId${di + 1}`,
+      chartFile:  `chart${chartGlobalOffset + di + 1}.xml`,
+      localChartIdx: meta.localChartIdx,
+      firstChartRow0: meta.firstChartRow0,
     }));
-    const drawingXml = buildDrawingXml(drawingCharts);
-    zip.file(`xl/drawings/drawing${sheetIdx}.xml`, drawingXml);
 
-    // Build drawing rels
-    const drawingRelsXml = buildDrawingRels(
-      drawingCharts.map(({ chartRelId, chartFile }) => ({ chartRelId, chartFile }))
-    );
-    zip.file(`xl/drawings/_rels/drawing${sheetIdx}.xml.rels`, drawingRelsXml);
+    zip.file(`xl/drawings/drawing${sheetIdx}.xml`,
+      buildDrawingXml(drawingCharts));
 
-    // Build worksheet rels — append drawing rel to any existing rels
+    zip.file(`xl/drawings/_rels/drawing${sheetIdx}.xml.rels`,
+      buildDrawingRels(drawingCharts.map(({ chartRelId, chartFile }) => ({ chartRelId, chartFile }))));
+
+    // Worksheet rels — append drawing rel to any existing rels
     const wsRelsPath = `xl/worksheets/_rels/sheet${sheetIdx}.xml.rels`;
     const existingRelsFile = zip.file(wsRelsPath);
     let drawingRelId = "rId1";
@@ -420,7 +455,7 @@ export async function downloadMarketShareExcel(
     }
     zip.file(wsRelsPath, wsRelsXml);
 
-    // Inject <drawing r:id="..."/> into the worksheet XML
+    // Inject <drawing r:id="..."/> into worksheet XML
     const wsPath = `xl/worksheets/sheet${sheetIdx}.xml`;
     const wsXmlFile = zip.file(wsPath);
     if (wsXmlFile) {
@@ -441,29 +476,23 @@ export async function downloadMarketShareExcel(
   const ctFile = zip.file("[Content_Types].xml");
   if (ctFile) {
     let ctXml = await ctFile.async("string");
-
-    // Add chart content types
     for (let i = 1; i <= chartMetas.length; i++) {
-      const override = `<Override PartName="/xl/charts/chart${i}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`;
       if (!ctXml.includes(`chart${i}.xml`)) {
-        ctXml = ctXml.replace("</Types>", `${override}\n</Types>`);
+        ctXml = ctXml.replace("</Types>",
+          `<Override PartName="/xl/charts/chart${i}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>\n</Types>`);
       }
     }
-
-    // Add drawing content types
     for (let i = 1; i <= PRODUCTS.length; i++) {
-      const override = `<Override PartName="/xl/drawings/drawing${i}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`;
       if (!ctXml.includes(`drawing${i}.xml`)) {
-        ctXml = ctXml.replace("</Types>", `${override}\n</Types>`);
+        ctXml = ctXml.replace("</Types>",
+          `<Override PartName="/xl/drawings/drawing${i}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>\n</Types>`);
       }
     }
-
     zip.file("[Content_Types].xml", ctXml);
   }
 
-  // ── Generate final xlsx buffer ────────────────────────────────────────────
+  // ── Finalise ──────────────────────────────────────────────────────────────
   const finalBuffer = await zip.generateAsync({ type: "arraybuffer" });
-
   const blob = new Blob([finalBuffer], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
