@@ -74,12 +74,14 @@ const C = {
 
 // All rows uniform height
 const ROW_H = 14; // pt
+const ROW_H_EMU = ROW_H * 12700; // 177800 EMU per row (1pt = 12700 EMU)
 
 // Chart size in EMU (1 inch = 914400 EMU)
-const CHART_W_EMU = 5_486_400;  // 6 inches
-const CHART_H_EMU = 2_103_120;  // 2.3 inches
+const CHART_W_EMU = 5_486_400;   // 6 inches
+const CHART_H_EMU = 2_743_200;   // 3 inches
+const CHART_GAP_EMU = 228_600;   // 0.25 inch gap between charts
 // Rows to reserve below data for chart area
-const CHART_ROW_RESERVE = 14;
+const CHART_ROW_RESERVE = 17;
 
 // ── OOXML helpers ─────────────────────────────────────────────────────────────
 
@@ -168,6 +170,7 @@ function buildChartXml(
         <c:scaling><c:orientation val="minMax"/></c:scaling>
         <c:delete val="0"/>
         <c:axPos val="l"/>
+        <c:numFmt formatCode='0.0"%"' sourceLinked="1"/>
         <c:majorTickMark val="none"/>
         <c:minorTickMark val="none"/>
         <c:crossAx val="${catAxisId}"/>
@@ -192,14 +195,12 @@ function buildChartXml(
 function buildDrawingXml(
   charts: { chartRelId: string; localChartIdx: number; firstChartRow0: number }[],
 ): string {
-  const anchors = charts.map(({ chartRelId, localChartIdx, firstChartRow0 }, anchorIdx) => `
-  <xdr:oneCellAnchor>
-    <xdr:from>
-      <xdr:col>0</xdr:col>
-      <xdr:colOff>${localChartIdx * CHART_W_EMU}</xdr:colOff>
-      <xdr:row>${firstChartRow0}</xdr:row>
-      <xdr:rowOff>0</xdr:rowOff>
-    </xdr:from>
+  const anchors = charts.map(({ chartRelId, localChartIdx, firstChartRow0 }, anchorIdx) => {
+    const xPos = localChartIdx * (CHART_W_EMU + CHART_GAP_EMU);
+    const yPos = firstChartRow0 * ROW_H_EMU;
+    return `
+  <xdr:absoluteAnchor>
+    <xdr:pos x="${xPos}" y="${yPos}"/>
     <xdr:ext cx="${CHART_W_EMU}" cy="${CHART_H_EMU}"/>
     <xdr:graphicFrame macro="">
       <xdr:nvGraphicFramePr>
@@ -216,7 +217,8 @@ function buildDrawingXml(
       </a:graphic>
     </xdr:graphicFrame>
     <xdr:clientData/>
-  </xdr:oneCellAnchor>`).join("");
+  </xdr:absoluteAnchor>`;
+  }).join("");
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
@@ -310,8 +312,7 @@ export async function downloadMarketShareExcel(
     for (const seg of product.segments) {
       const segLabel = seg ?? "Total";
 
-      // Segment title
-      ws.mergeCells(row, 1, row, dateCount + 1);
+      // Segment title (no merge)
       const titleCell = ws.getCell(row, 1);
       titleCell.value = segLabel;
       titleCell.font = { name: "Arial", size: 13, bold: true, color: C.titleFg };
@@ -351,6 +352,7 @@ export async function downloadMarketShareExcel(
           const pct = msMap.get(allDates[c])?.get(player);
           const cell = ws.getCell(row, c + 2);
           cell.value = pct !== undefined ? Math.round(pct * 10) / 10 : null;
+          cell.numFmt = '0.0"%"';
           cell.font = { name: "Arial", size: 10, color: C.cellFg };
           cell.alignment = { horizontal: "center" };
         }
