@@ -351,7 +351,7 @@ function ComparisonTable({ rows, colors }: { rows: CompRow[]; colors: Record<str
     border: "none",
   };
   return (
-    <table style={{ borderCollapse: "collapse", width: "80%", margin: "6px auto 0", tableLayout: "fixed" }}>
+    <table style={{ borderCollapse: "collapse", width: "calc(100% - 60px)", margin: "6px 0 0 60px", tableLayout: "fixed" }}>
       <colgroup>
         <col style={{ width: "30%" }} />
         <col style={{ width: "17.5%" }} />
