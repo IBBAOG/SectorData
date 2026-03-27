@@ -99,7 +99,7 @@ export default function LoginPage() {
           <img
             src={LOGO_URL}
             alt="Itaú BBA"
-            style={{ width: 380, marginBottom: 24 }}
+            style={{ width: "100%", maxWidth: 280, marginBottom: 24 }}
           />
         </div>
 
@@ -136,6 +136,7 @@ export default function LoginPage() {
           placeholder="name@email.com"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleLogin()}
         />
 
         <label
@@ -152,6 +153,7 @@ export default function LoginPage() {
           placeholder="••••••••"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleLogin()}
         />
 
         <button
