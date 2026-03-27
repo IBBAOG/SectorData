@@ -88,6 +88,17 @@ const CHART_ROW_HEIGHT = 15; // pt
  * dateCount: number of date columns
  * chartId: unique integer for axId values (must differ per chart on a sheet)
  */
+function colLetter(colIdx: number): string {
+  let result = "";
+  let n = colIdx;
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    result = String.fromCharCode(65 + rem) + result;
+    n = Math.floor((n - 1) / 26);
+  }
+  return result;
+}
+
 function buildChartXml(
   sheetName: string,
   dateHeaderRow: number,
@@ -96,119 +107,59 @@ function buildChartXml(
   catAxisId: number,
   valAxisId: number,
 ): string {
-  // Column letters: B = col 2, up to col (dateCount+1)
-  function colLetter(colIdx: number): string {
-    // colIdx is 1-based
-    let result = "";
-    let n = colIdx;
-    while (n > 0) {
-      const rem = (n - 1) % 26;
-      result = String.fromCharCode(65 + rem) + result;
-      n = Math.floor((n - 1) / 26);
-    }
-    return result;
-  }
-  const firstDataCol = colLetter(2);           // B
-  const lastDataCol  = colLetter(dateCount + 1);
-  const safeSheet = sheetName.replace(/'/g, "''");
+  const firstCol = colLetter(2);
+  const lastCol  = colLetter(dateCount + 1);
+  // Single-quote sheet names that contain spaces or special chars
+  const ref = (sheetName.match(/[\s'!]/) ? `'${sheetName.replace(/'/g, "''")}'` : sheetName);
 
   const seriesXml = playerRows.map(({ player, row1based }, idx) => {
     const color = getPlayerColor(player);
-    return `
-    <c:ser>
-      <c:idx val="${idx}"/>
-      <c:order val="${idx}"/>
-      <c:tx>
-        <c:strRef>
-          <c:f>'${safeSheet}'!$A$${row1based}</c:f>
-          <c:strCache><c:ptCount val="1"/><c:pt idx="0"><c:v>${player}</c:v></c:pt></c:strCache>
-        </c:strRef>
-      </c:tx>
-      <c:spPr>
-        <a:ln w="19050">
-          <a:solidFill><a:srgbClr val="${color}"/></a:solidFill>
-        </a:ln>
-      </c:spPr>
-      <c:marker><c:symbol val="none"/></c:marker>
-      <c:cat>
-        <c:numRef>
-          <c:f>'${safeSheet}'!$${firstDataCol}$${dateHeaderRow}:$${lastDataCol}$${dateHeaderRow}</c:f>
-        </c:numRef>
-      </c:cat>
-      <c:val>
-        <c:numRef>
-          <c:f>'${safeSheet}'!$${firstDataCol}$${row1based}:$${lastDataCol}$${row1based}</c:f>
-        </c:numRef>
-      </c:val>
-      <c:smooth val="0"/>
-    </c:ser>`.trim();
-  }).join("\n    ");
+    return [
+      `<c:ser>`,
+      `  <c:idx val="${idx}"/><c:order val="${idx}"/>`,
+      `  <c:tx><c:strRef><c:f>${ref}!$A$${row1based}</c:f></c:strRef></c:tx>`,
+      `  <c:spPr><a:ln w="19050"><a:solidFill><a:srgbClr val="${color}"/></a:solidFill></a:ln></c:spPr>`,
+      `  <c:marker><c:symbol val="none"/></c:marker>`,
+      `  <c:cat><c:numRef><c:f>${ref}!$${firstCol}$${dateHeaderRow}:$${lastCol}$${dateHeaderRow}</c:f></c:numRef></c:cat>`,
+      `  <c:val><c:numRef><c:f>${ref}!$${firstCol}$${row1based}:$${lastCol}$${row1based}</c:f></c:numRef></c:val>`,
+      `  <c:smooth val="0"/>`,
+      `</c:ser>`,
+    ].join("\n");
+  }).join("\n");
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"
               xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
               xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <c:roundedCorners val="0"/>
   <c:chart>
     <c:autoTitleDeleted val="1"/>
     <c:plotArea>
-      <c:layout/>
       <c:lineChart>
         <c:grouping val="standard"/>
         <c:varyColors val="0"/>
         ${seriesXml}
-        <c:marker><c:symbol val="none"/></c:marker>
-        <c:smooth val="0"/>
         <c:axId val="${catAxisId}"/>
         <c:axId val="${valAxisId}"/>
       </c:lineChart>
-      <c:dateAx>
+      <c:catAx>
         <c:axId val="${catAxisId}"/>
         <c:scaling><c:orientation val="minMax"/></c:scaling>
         <c:delete val="0"/>
         <c:axPos val="b"/>
         <c:numFmt formatCode="mmm/yyyy" sourceLinked="0"/>
-        <c:tickLblPos val="nextTo"/>
-        <c:spPr>
-          <a:ln><a:noFill/></a:ln>
-        </c:spPr>
-        <c:txPr>
-          <a:bodyPr/>
-          <a:lstStyle/>
-          <a:p><a:pPr><a:defRPr sz="800" b="0"/></a:pPr></a:p>
-        </c:txPr>
         <c:crossAx val="${valAxisId}"/>
-        <c:auto val="1"/>
-        <c:baseTimeUnit val="months"/>
-      </c:dateAx>
+      </c:catAx>
       <c:valAx>
         <c:axId val="${valAxisId}"/>
         <c:scaling><c:orientation val="minMax"/></c:scaling>
         <c:delete val="0"/>
         <c:axPos val="l"/>
-        <c:numFmt formatCode="0.0&quot;%&quot;" sourceLinked="0"/>
-        <c:tickLblPos val="nextTo"/>
-        <c:spPr>
-          <a:ln><a:noFill/></a:ln>
-        </c:spPr>
-        <c:txPr>
-          <a:bodyPr/>
-          <a:lstStyle/>
-          <a:p><a:pPr><a:defRPr sz="800" b="0"/></a:pPr></a:p>
-        </c:txPr>
         <c:crossAx val="${catAxisId}"/>
       </c:valAx>
     </c:plotArea>
-    <c:legend>
-      <c:legendPos val="b"/>
-      <c:overlay val="0"/>
-    </c:legend>
+    <c:legend><c:legendPos val="b"/></c:legend>
     <c:plotVisOnly val="1"/>
   </c:chart>
-  <c:spPr>
-    <a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>
-    <a:ln><a:noFill/></a:ln>
-  </c:spPr>
 </c:chartSpace>`;
 }
 
@@ -450,22 +401,35 @@ export async function downloadMarketShareExcel(
     );
     zip.file(`xl/drawings/_rels/drawing${sheetIdx}.xml.rels`, drawingRelsXml);
 
-    // Build worksheet rels file
-    const wsRelsXml = buildSheetDrawingRel(`drawing${sheetIdx}.xml`);
-    zip.file(`xl/worksheets/_rels/sheet${sheetIdx}.xml.rels`, wsRelsXml);
+    // Build worksheet rels — append drawing rel to any existing rels
+    const wsRelsPath = `xl/worksheets/_rels/sheet${sheetIdx}.xml.rels`;
+    const existingRelsFile = zip.file(wsRelsPath);
+    let drawingRelId = "rId1";
+    let wsRelsXml: string;
+    if (existingRelsFile) {
+      const existingXml = await existingRelsFile.async("string");
+      const usedNums = [...existingXml.matchAll(/Id="rId(\d+)"/g)].map((m) => parseInt(m[1]));
+      const nextNum = usedNums.length > 0 ? Math.max(...usedNums) + 1 : 1;
+      drawingRelId = `rId${nextNum}`;
+      wsRelsXml = existingXml.replace(
+        "</Relationships>",
+        `  <Relationship Id="${drawingRelId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing${sheetIdx}.xml"/>\n</Relationships>`,
+      );
+    } else {
+      wsRelsXml = buildSheetDrawingRel(`drawing${sheetIdx}.xml`);
+    }
+    zip.file(wsRelsPath, wsRelsXml);
 
-    // Inject <drawing r:id="rId1"/> into the worksheet XML
+    // Inject <drawing r:id="..."/> into the worksheet XML
     const wsPath = `xl/worksheets/sheet${sheetIdx}.xml`;
     const wsXmlFile = zip.file(wsPath);
     if (wsXmlFile) {
       let wsXml = await wsXmlFile.async("string");
-      // Add xmlns:r if not present
-      if (!wsXml.includes('xmlns:r=')) {
-        wsXml = wsXml.replace('<worksheet ', '<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ');
+      if (!wsXml.includes("xmlns:r=")) {
+        wsXml = wsXml.replace("<worksheet ", `<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" `);
       }
-      // Inject <drawing r:id="rId1"/> before </worksheet>
-      if (!wsXml.includes('<drawing ')) {
-        wsXml = wsXml.replace('</worksheet>', '<drawing r:id="rId1"/></worksheet>');
+      if (!wsXml.includes("<drawing ")) {
+        wsXml = wsXml.replace("</worksheet>", `<drawing r:id="${drawingRelId}"/></worksheet>`);
       }
       zip.file(wsPath, wsXml);
     }
