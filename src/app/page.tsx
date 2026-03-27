@@ -258,73 +258,8 @@ export default function SalesPage() {
     setUfsSelected([]);
   }
 
-  const figAno = dfAno.length ? {
-    data: [
-      {
-        type: "bar",
-        x: dfAno.map((r) => r.ano),
-        y: dfAno.map((r) => r.quantidade),
-        marker: { color: ORANGE },
-      } as PlotData,
-    ],
-    layout: makeCartesianLayout({
-      title: "Volume by Year",
-      xTitle: "Year",
-      yTitle: "Volume (thousand m3)",
-      height: 320,
-    }),
-  } : emptyPlot();
-
-  const figMes = dfMes.length ? {
-    data: [
-      {
-        type: "scatter",
-        mode: "lines+markers",
-        x: dfMes.map((r) => r.mes),
-        y: dfMes.map((r) => r.quantidade),
-        line: { color: ORANGE, width: 2 },
-        marker: { color: ORANGE, size: 6 },
-      } as PlotData,
-    ],
-    layout: makeCartesianLayout({
-      title: "Volume by Month",
-      xTitle: "Month",
-      yTitle: "Volume (thousand m3)",
-      height: 320,
-    }),
-  } : emptyPlot();
-
-  const figRegiao = dfRegiao.length ? {
-    data: [
-      {
-        type: "pie",
-        labels: dfRegiao.map((r) => r.regiao),
-        values: dfRegiao.map((r) => r.quantidade),
-        textposition: "inside",
-        textinfo: "percent+label",
-        hovertemplate: "%{label}: %{value:,.2f} (%{percent})<extra></extra>",
-      } as unknown as PlotData,
-    ],
-    layout: {
-      paper_bgcolor: "white",
-      plot_bgcolor: "white",
-      font: { family: "Arial", size: 12, color: "#000000" },
-      margin: { t: 40, b: 20, l: 10, r: 10 },
-      height: 320,
-    } as Partial<Layout>,
-  } : emptyPlot();
-
-  const figUf = dfUf.length ? {
-    data: [
-      {
-        type: "bar",
-        orientation: "h",
-        y: dfUf.map((r) => r.uf),
-        x: dfUf.map((r) => r.quantidade),
-        marker: { color: ORANGE },
-      } as PlotData,
-    ],
-    layout: {
+  const salesCharts = useMemo(() => {
+    const hBarLayout = (yTitle: string): Partial<Layout> => ({
       paper_bgcolor: "white",
       plot_bgcolor: "white",
       font: { family: "Arial", size: 12, color: "#000000" },
@@ -337,69 +272,43 @@ export default function SalesPage() {
         showline: true,
       },
       yaxis: {
-        title: { text: "State", font: { family: "Arial" } },
+        title: { text: yTitle, font: { family: "Arial" } },
         categoryorder: "total ascending",
       },
-    } as Partial<Layout>,
-  } : emptyPlot();
+    } as Partial<Layout>);
 
-  const figAgente = dfAgente.length ? {
-    data: [
-      {
-        type: "bar",
-        orientation: "h",
-        y: dfAgente.map((r) => r.agente),
-        x: dfAgente.map((r) => r.quantidade),
-        marker: { color: ORANGE },
-      } as PlotData,
-    ],
-    layout: {
-      paper_bgcolor: "white",
-      plot_bgcolor: "white",
-      font: { family: "Arial", size: 12, color: "#000000" },
-      margin: { t: 40, b: 20, l: 10, r: 10 },
-      height: 320,
-      xaxis: {
-        title: { text: "Volume (thousand m3)", font: { family: "Arial" } },
-        showgrid: false,
-        zeroline: false,
-        showline: true,
-      },
-      yaxis: {
-        title: { text: "Agent", font: { family: "Arial" } },
-        categoryorder: "total ascending",
-      },
-    } as Partial<Layout>,
-  } : emptyPlot();
+    return {
+      figAno: dfAno.length ? {
+        data: [{ type: "bar", x: dfAno.map((r) => r.ano), y: dfAno.map((r) => r.quantidade), marker: { color: ORANGE } } as PlotData],
+        layout: makeCartesianLayout({ title: "Volume by Year", xTitle: "Year", yTitle: "Volume (thousand m3)", height: 320 }),
+      } : emptyPlot(),
 
-  const figProduto = dfProduto.length ? {
-    data: [
-      {
-        type: "bar",
-        orientation: "h",
-        y: dfProduto.map((r) => r.produto),
-        x: dfProduto.map((r) => r.quantidade),
-        marker: { color: ORANGE },
-      } as PlotData,
-    ],
-    layout: {
-      paper_bgcolor: "white",
-      plot_bgcolor: "white",
-      font: { family: "Arial", size: 12, color: "#000000" },
-      margin: { t: 40, b: 20, l: 10, r: 10 },
-      height: 320,
-      xaxis: {
-        title: { text: "Volume (thousand m3)", font: { family: "Arial" } },
-        showgrid: false,
-        zeroline: false,
-        showline: true,
-      },
-      yaxis: {
-        title: { text: "Product", font: { family: "Arial" } },
-        categoryorder: "total ascending",
-      },
-    } as Partial<Layout>,
-  } : emptyPlot();
+      figMes: dfMes.length ? {
+        data: [{ type: "scatter", mode: "lines+markers", x: dfMes.map((r) => r.mes), y: dfMes.map((r) => r.quantidade), line: { color: ORANGE, width: 2 }, marker: { color: ORANGE, size: 6 } } as PlotData],
+        layout: makeCartesianLayout({ title: "Volume by Month", xTitle: "Month", yTitle: "Volume (thousand m3)", height: 320 }),
+      } : emptyPlot(),
+
+      figRegiao: dfRegiao.length ? {
+        data: [{ type: "pie", labels: dfRegiao.map((r) => r.regiao), values: dfRegiao.map((r) => r.quantidade), textposition: "inside", textinfo: "percent+label", hovertemplate: "%{label}: %{value:,.2f} (%{percent})<extra></extra>" } as unknown as PlotData],
+        layout: { paper_bgcolor: "white", plot_bgcolor: "white", font: { family: "Arial", size: 12, color: "#000000" }, margin: { t: 40, b: 20, l: 10, r: 10 }, height: 320 } as Partial<Layout>,
+      } : emptyPlot(),
+
+      figUf: dfUf.length ? {
+        data: [{ type: "bar", orientation: "h", y: dfUf.map((r) => r.uf), x: dfUf.map((r) => r.quantidade), marker: { color: ORANGE } } as PlotData],
+        layout: hBarLayout("State"),
+      } : emptyPlot(),
+
+      figAgente: dfAgente.length ? {
+        data: [{ type: "bar", orientation: "h", y: dfAgente.map((r) => r.agente), x: dfAgente.map((r) => r.quantidade), marker: { color: ORANGE } } as PlotData],
+        layout: hBarLayout("Agent"),
+      } : emptyPlot(),
+
+      figProduto: dfProduto.length ? {
+        data: [{ type: "bar", orientation: "h", y: dfProduto.map((r) => r.produto), x: dfProduto.map((r) => r.quantidade), marker: { color: ORANGE } } as PlotData],
+        layout: hBarLayout("Product"),
+      } : emptyPlot(),
+    };
+  }, [dfAno, dfMes, dfRegiao, dfUf, dfAgente, dfProduto]);
 
   if (!supabase) {
     return (
@@ -545,8 +454,8 @@ export default function SalesPage() {
                     <div className="col-md-6">
                       <div className="chart-container">
                         <PlotlyChart
-                          data={figAno.data}
-                          layout={figAno.layout}
+                          data={salesCharts.figAno.data}
+                          layout={salesCharts.figAno.layout}
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 320 }}
                         />
@@ -555,31 +464,8 @@ export default function SalesPage() {
                     <div className="col-md-6">
                       <div className="chart-container">
                         <PlotlyChart
-                          data={figMes.data}
-                          layout={figMes.layout}
-                          config={{ displayModeBar: false }}
-                          style={{ width: "100%", height: 320 }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="row g-3">
-                    <div className="col-md-6">
-                      <div className="chart-container">
-                        <PlotlyChart
-                          data={figRegiao.data}
-                          layout={figRegiao.layout}
-                          config={{ displayModeBar: false }}
-                          style={{ width: "100%", height: 320 }}
-                        />
-                      </div>
-                    </div>
-                    <div className="col-md-6">
-                      <div className="chart-container">
-                        <PlotlyChart
-                          data={figUf.data}
-                          layout={figUf.layout}
+                          data={salesCharts.figMes.data}
+                          layout={salesCharts.figMes.layout}
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 320 }}
                         />
@@ -591,8 +477,8 @@ export default function SalesPage() {
                     <div className="col-md-6">
                       <div className="chart-container">
                         <PlotlyChart
-                          data={figAgente.data}
-                          layout={figAgente.layout}
+                          data={salesCharts.figRegiao.data}
+                          layout={salesCharts.figRegiao.layout}
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 320 }}
                         />
@@ -601,8 +487,31 @@ export default function SalesPage() {
                     <div className="col-md-6">
                       <div className="chart-container">
                         <PlotlyChart
-                          data={figProduto.data}
-                          layout={figProduto.layout}
+                          data={salesCharts.figUf.data}
+                          layout={salesCharts.figUf.layout}
+                          config={{ displayModeBar: false }}
+                          style={{ width: "100%", height: 320 }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="row g-3">
+                    <div className="col-md-6">
+                      <div className="chart-container">
+                        <PlotlyChart
+                          data={salesCharts.figAgente.data}
+                          layout={salesCharts.figAgente.layout}
+                          config={{ displayModeBar: false }}
+                          style={{ width: "100%", height: 320 }}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="chart-container">
+                        <PlotlyChart
+                          data={salesCharts.figProduto.data}
+                          layout={salesCharts.figProduto.layout}
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 320 }}
                         />

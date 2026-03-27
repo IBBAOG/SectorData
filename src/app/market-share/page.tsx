@@ -71,12 +71,6 @@ function emptyPlot(height = 300): { data: PlotData[]; layout: Partial<Layout> } 
   };
 }
 
-function toIsoDate(d: string): string {
-  // Dash/Python uses YYYY-MM-DD strings.
-  // Plotly can parse them, but we keep ISO-like strings for sorting/format.
-  return d;
-}
-
 function buildMarketShareLine(params: {
   serieRows: MsSerieRow[];
   produto: string;
@@ -171,7 +165,7 @@ function buildMarketShareLine(params: {
     traces.push({
       type: "scatter",
       mode: "lines",
-      x: series.map((s) => toIsoDate(s.date)),
+      x: series.map((s) => s.date),
       y: series.map((s) => s.pct),
       name: player,
       line: { width: 2.5, color: colorsMap[player] ?? "#000000" },
@@ -181,7 +175,7 @@ function buildMarketShareLine(params: {
     const last = series.find((s) => s.date === ultimaData);
     if (last) {
       annotations.push({
-        x: toIsoDate(ultimaData),
+        x: ultimaData,
         y: last.pct,
         text: `${last.pct.toFixed(1)}%`,
         showarrow: false,
@@ -558,22 +552,46 @@ export default function MarketSharePage() {
     return COLORS_IND;
   }, [big3, appliedMode, players]);
 
-  const dieselRetail = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "Retail", players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
-  const dieselB2B    = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "B2B",    players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
-  const dieselTrR    = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "TRR",    players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
-  const dieselTotal  = buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: null,     players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
-  const gasRetail    = buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: "Retail", players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
-  const gasB2B       = buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: "B2B",    players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
-  const gasTotal     = buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: null,     players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
-  const ethRetail    = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: "Retail", players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
-  const ethB2B       = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: "B2B",    players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
-  const ethTotal     = buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: null,     players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
-
   // Otto-Cycle = Gasolina C volume + Etanol Hidratado volume × 0.7
   const ottoCycleRows = useMemo(() => makeOttoCycleRows(serieRows), [serieRows]);
-  const ottoRetail = buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: "Retail", players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
-  const ottoB2B    = buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: "B2B",    players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
-  const ottoTotal  = buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: null,     players, big3, xMin, xMax, groupBy, colorsOverride: chartColors });
+
+  const charts = useMemo(() => {
+    const common = { players, big3, xMin, xMax, groupBy, colorsOverride: chartColors };
+    return {
+      dieselRetail: buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "Retail", ...common }),
+      dieselB2B:    buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "B2B",    ...common }),
+      dieselTrR:    buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "TRR",    ...common }),
+      dieselTotal:  buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: null,     ...common }),
+      gasRetail:    buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: "Retail", ...common }),
+      gasB2B:       buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: "B2B",    ...common }),
+      gasTotal:     buildMarketShareLine({ serieRows, produto: "Gasolina C",       segmento: null,     ...common }),
+      ethRetail:    buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: "Retail", ...common }),
+      ethB2B:       buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: "B2B",    ...common }),
+      ethTotal:     buildMarketShareLine({ serieRows, produto: "Etanol Hidratado", segmento: null,     ...common }),
+      ottoRetail:   buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: "Retail", ...common }),
+      ottoB2B:      buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: "B2B",    ...common }),
+      ottoTotal:    buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: null,     ...common }),
+    };
+  }, [serieRows, ottoCycleRows, players, big3, xMin, xMax, groupBy, chartColors]);
+
+  const compData = useMemo(() => {
+    if (!latestDate) return null;
+    return {
+      dieselRetail: buildComparisonData(serieRows, "Diesel B", "Retail", players, big3, latestDate, groupBy),
+      dieselB2B:    buildComparisonData(serieRows, "Diesel B", "B2B", players, big3, latestDate, groupBy),
+      dieselTrR:    buildComparisonData(serieRows, "Diesel B", "TRR", players, big3, latestDate, groupBy),
+      dieselTotal:  buildComparisonData(serieRows, "Diesel B", null, players, big3, latestDate, groupBy),
+      gasRetail:    buildComparisonData(serieRows, "Gasolina C", "Retail", players, big3, latestDate, groupBy),
+      gasB2B:       buildComparisonData(serieRows, "Gasolina C", "B2B", players, big3, latestDate, groupBy),
+      gasTotal:     buildComparisonData(serieRows, "Gasolina C", null, players, big3, latestDate, groupBy),
+      ethRetail:    buildComparisonData(serieRows, "Etanol Hidratado", "Retail", players, big3, latestDate, groupBy),
+      ethB2B:       buildComparisonData(serieRows, "Etanol Hidratado", "B2B", players, big3, latestDate, groupBy),
+      ethTotal:     buildComparisonData(serieRows, "Etanol Hidratado", null, players, big3, latestDate, groupBy),
+      ottoRetail:   buildComparisonData(ottoCycleRows, "Otto-Cycle", "Retail", players, big3, latestDate, groupBy),
+      ottoB2B:      buildComparisonData(ottoCycleRows, "Otto-Cycle", "B2B", players, big3, latestDate, groupBy),
+      ottoTotal:    buildComparisonData(ottoCycleRows, "Otto-Cycle", null, players, big3, latestDate, groupBy),
+    };
+  }, [serieRows, ottoCycleRows, players, big3, latestDate, groupBy]);
 
   function applyFilters() {
     if (!datas || datas.length === 0) return;
@@ -669,36 +687,18 @@ export default function MarketSharePage() {
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">View Mode</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px" }}>
-                  <label style={{ fontFamily: "Arial", fontSize: 13, cursor: "pointer" }}>
-                    <input
-                      type="radio"
-                      name="ms-mode"
-                      checked={mode === "Individual"}
-                      onChange={() => setMode("Individual")}
-                      style={{ accentColor: "#ff5000", marginRight: 5 }}
-                    />
-                    Individual
-                  </label>
-                  <label style={{ fontFamily: "Arial", fontSize: 13, cursor: "pointer" }}>
-                    <input
-                      type="radio"
-                      name="ms-mode"
-                      checked={mode === "Big-3"}
-                      onChange={() => setMode("Big-3")}
-                      style={{ accentColor: "#ff5000", marginRight: 5 }}
-                    />
-                    Big-3
-                  </label>
-                  <label style={{ fontFamily: "Arial", fontSize: 13, cursor: "pointer" }}>
-                    <input
-                      type="radio"
-                      name="ms-mode"
-                      checked={mode === "Others"}
-                      onChange={() => setMode("Others")}
-                      style={{ accentColor: "#ff5000", marginRight: 5 }}
-                    />
-                    Others
-                  </label>
+                  {(["Individual", "Big-3", "Others"] as Mode[]).map((m) => (
+                    <label key={m} className="filter-checkbox" style={{ fontSize: 13 }}>
+                      <input
+                        type="radio"
+                        name="ms-mode"
+                        checked={mode === m}
+                        onChange={() => setMode(m)}
+                        style={{ marginRight: 5 }}
+                      />
+                      {m}
+                    </label>
+                  ))}
                 </div>
               </div>
 
@@ -799,12 +799,12 @@ export default function MarketSharePage() {
                         </div>
                         <hr className="section-hr" />
                         <PlotlyChart
-                          data={dieselRetail.data}
-                          layout={dieselRetail.layout}
+                          data={charts.dieselRetail.data}
+                          layout={charts.dieselRetail.layout}
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Diesel B", "Retail", players, big3, latestDate, groupBy)} colors={chartColors} />}
+                        {compData && <ComparisonTable rows={compData.dieselRetail} colors={chartColors} />}
                       </div>
                     </div>
                     <div className="col-md-6">
@@ -814,12 +814,12 @@ export default function MarketSharePage() {
                         </div>
                         <hr className="section-hr" />
                         <PlotlyChart
-                          data={dieselB2B.data}
-                          layout={dieselB2B.layout}
+                          data={charts.dieselB2B.data}
+                          layout={charts.dieselB2B.layout}
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Diesel B", "B2B", players, big3, latestDate, groupBy)} colors={chartColors} />}
+                        {compData && <ComparisonTable rows={compData.dieselB2B} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
@@ -832,12 +832,12 @@ export default function MarketSharePage() {
                         </div>
                         <hr className="section-hr" />
                         <PlotlyChart
-                          data={dieselTrR.data}
-                          layout={dieselTrR.layout}
+                          data={charts.dieselTrR.data}
+                          layout={charts.dieselTrR.layout}
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Diesel B", "TRR", players, big3, latestDate, groupBy)} colors={chartColors} />}
+                        {compData && <ComparisonTable rows={compData.dieselTrR} colors={chartColors} />}
                       </div>
                     </div>
                     <div className="col-md-6">
@@ -847,12 +847,12 @@ export default function MarketSharePage() {
                         </div>
                         <hr className="section-hr" />
                         <PlotlyChart
-                          data={dieselTotal.data}
-                          layout={dieselTotal.layout}
+                          data={charts.dieselTotal.data}
+                          layout={charts.dieselTotal.layout}
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Diesel B", null, players, big3, latestDate, groupBy)} colors={chartColors} />}
+                        {compData && <ComparisonTable rows={compData.dieselTotal} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
@@ -871,12 +871,12 @@ export default function MarketSharePage() {
                         </div>
                         <hr className="section-hr" />
                         <PlotlyChart
-                          data={gasRetail.data}
-                          layout={gasRetail.layout}
+                          data={charts.gasRetail.data}
+                          layout={charts.gasRetail.layout}
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Gasolina C", "Retail", players, big3, latestDate, groupBy)} colors={chartColors} />}
+                        {compData && <ComparisonTable rows={compData.gasRetail} colors={chartColors} />}
                       </div>
                     </div>
                     <div className="col-md-6">
@@ -886,12 +886,12 @@ export default function MarketSharePage() {
                         </div>
                         <hr className="section-hr" />
                         <PlotlyChart
-                          data={gasB2B.data}
-                          layout={gasB2B.layout}
+                          data={charts.gasB2B.data}
+                          layout={charts.gasB2B.layout}
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Gasolina C", "B2B", players, big3, latestDate, groupBy)} colors={chartColors} />}
+                        {compData && <ComparisonTable rows={compData.gasB2B} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
@@ -903,12 +903,12 @@ export default function MarketSharePage() {
                         </div>
                         <hr className="section-hr" />
                         <PlotlyChart
-                          data={gasTotal.data}
-                          layout={gasTotal.layout}
+                          data={charts.gasTotal.data}
+                          layout={charts.gasTotal.layout}
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Gasolina C", null, players, big3, latestDate, groupBy)} colors={chartColors} />}
+                        {compData && <ComparisonTable rows={compData.gasTotal} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
@@ -927,12 +927,12 @@ export default function MarketSharePage() {
                         </div>
                         <hr className="section-hr" />
                         <PlotlyChart
-                          data={ethRetail.data}
-                          layout={ethRetail.layout}
+                          data={charts.ethRetail.data}
+                          layout={charts.ethRetail.layout}
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Etanol Hidratado", "Retail", players, big3, latestDate, groupBy)} colors={chartColors} />}
+                        {compData && <ComparisonTable rows={compData.ethRetail} colors={chartColors} />}
                       </div>
                     </div>
                     <div className="col-md-6">
@@ -942,12 +942,12 @@ export default function MarketSharePage() {
                         </div>
                         <hr className="section-hr" />
                         <PlotlyChart
-                          data={ethB2B.data}
-                          layout={ethB2B.layout}
+                          data={charts.ethB2B.data}
+                          layout={charts.ethB2B.layout}
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Etanol Hidratado", "B2B", players, big3, latestDate, groupBy)} colors={chartColors} />}
+                        {compData && <ComparisonTable rows={compData.ethB2B} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
@@ -959,12 +959,12 @@ export default function MarketSharePage() {
                         </div>
                         <hr className="section-hr" />
                         <PlotlyChart
-                          data={ethTotal.data}
-                          layout={ethTotal.layout}
+                          data={charts.ethTotal.data}
+                          layout={charts.ethTotal.layout}
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(serieRows, "Etanol Hidratado", null, players, big3, latestDate, groupBy)} colors={chartColors} />}
+                        {compData && <ComparisonTable rows={compData.ethTotal} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
@@ -981,12 +981,12 @@ export default function MarketSharePage() {
                         <div className="section-title" style={{ fontSize: 15 }}>Retail</div>
                         <hr className="section-hr" />
                         <PlotlyChart
-                          data={ottoRetail.data}
-                          layout={ottoRetail.layout}
+                          data={charts.ottoRetail.data}
+                          layout={charts.ottoRetail.layout}
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(ottoCycleRows, "Otto-Cycle", "Retail", players, big3, latestDate, groupBy)} colors={chartColors} />}
+                        {compData && <ComparisonTable rows={compData.ottoRetail} colors={chartColors} />}
                       </div>
                     </div>
                     <div className="col-md-6">
@@ -994,12 +994,12 @@ export default function MarketSharePage() {
                         <div className="section-title" style={{ fontSize: 15 }}>B2B</div>
                         <hr className="section-hr" />
                         <PlotlyChart
-                          data={ottoB2B.data}
-                          layout={ottoB2B.layout}
+                          data={charts.ottoB2B.data}
+                          layout={charts.ottoB2B.layout}
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(ottoCycleRows, "Otto-Cycle", "B2B", players, big3, latestDate, groupBy)} colors={chartColors} />}
+                        {compData && <ComparisonTable rows={compData.ottoB2B} colors={chartColors} />}
                       </div>
                     </div>
                   </div>
@@ -1009,12 +1009,12 @@ export default function MarketSharePage() {
                         <div className="section-title" style={{ fontSize: 15 }}>Total</div>
                         <hr className="section-hr" />
                         <PlotlyChart
-                          data={ottoTotal.data}
-                          layout={ottoTotal.layout}
+                          data={charts.ottoTotal.data}
+                          layout={charts.ottoTotal.layout}
                           config={{ displayModeBar: false }}
                           style={{ width: "calc(100% - 56px)", height: 300 }}
                         />
-                        {latestDate && <ComparisonTable rows={buildComparisonData(ottoCycleRows, "Otto-Cycle", null, players, big3, latestDate, groupBy)} colors={chartColors} />}
+                        {compData && <ComparisonTable rows={compData.ottoTotal} colors={chartColors} />}
                       </div>
                     </div>
                   </div>

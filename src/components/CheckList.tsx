@@ -19,26 +19,14 @@ export default function CheckList(props: {
       <div className="d-flex gap-2 mb-1">
         <button
           type="button"
-          className="btn btn-link p-0"
-          style={{
-            fontSize: 11,
-            color: "#FF5000",
-            fontFamily: "Arial",
-            fontWeight: 600,
-          }}
+          className="filter-btn-link filter-btn-link--primary"
           onClick={() => onChange(allValue)}
         >
           {props.allLabel ?? "All"}
         </button>
         <button
           type="button"
-          className="btn btn-link p-0"
-          style={{
-            fontSize: 11,
-            color: "#888",
-            fontFamily: "Arial",
-            fontWeight: 600,
-          }}
+          className="filter-btn-link filter-btn-link--secondary"
           onClick={() => onChange([])}
         >
           {props.clearLabel ?? "Clear"}
@@ -52,30 +40,19 @@ export default function CheckList(props: {
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div style={{ fontFamily: "Arial", fontSize: 12 }}>
-            {options.map((o) => (
-              <label
-                key={o}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  userSelect: "none",
+          {options.map((o) => (
+            <label key={o} className="filter-checkbox">
+              <input
+                type="checkbox"
+                checked={value.includes(o)}
+                onChange={(e) => {
+                  if (e.target.checked) onChange(Array.from(new Set([...value, o])));
+                  else onChange(value.filter((x) => x !== o));
                 }}
-              >
-                <input
-                  type="checkbox"
-                  checked={value.includes(o)}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    if (checked) onChange(Array.from(new Set([...value, o])));
-                    else onChange(value.filter((x) => x !== o));
-                  }}
-                />
-                <span>{String(o)}</span>
-              </label>
-            ))}
-          </div>
+              />
+              <span>{String(o)}</span>
+            </label>
+          ))}
         </div>
       )}
 
@@ -83,4 +60,3 @@ export default function CheckList(props: {
     </div>
   );
 }
-

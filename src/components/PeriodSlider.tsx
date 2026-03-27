@@ -3,7 +3,7 @@
 import Slider, { type SliderProps } from "rc-slider";
 import "rc-slider/assets/index.css";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useRef, useCallback } from "react";
 import { fmtData } from "../lib/filterUtils";
 
 export default function PeriodSlider(props: {
@@ -13,6 +13,19 @@ export default function PeriodSlider(props: {
   sliderId?: string;
 }) {
   const { datas, value, onChange } = props;
+
+  // Internal state for smooth dragging — only propagates on release
+  const [dragging, setDragging] = useState(false);
+  const [localRange, setLocalRange] = useState<[number, number]>(value);
+  const prevValue = useRef(value);
+
+  // Sync from parent when not dragging (e.g. after "Clear" resets)
+  if (!dragging && (prevValue.current[0] !== value[0] || prevValue.current[1] !== value[1])) {
+    prevValue.current = value;
+    setLocalRange(value);
+  }
+
+  const displayRange = dragging ? localRange : value;
 
   const marks = useMemo(() => {
     type Mark = { label: string; style: { fontSize: string; color: string } };
@@ -38,6 +51,24 @@ export default function PeriodSlider(props: {
     return m;
   }, [datas]);
 
+  const handleChange = useCallback((v: number | number[]) => {
+    const arr = Array.isArray(v) ? v : [localRange[0], localRange[1]];
+    setLocalRange([arr[0] as number, arr[1] as number]);
+  }, [localRange]);
+
+  const handleBeforeChange = useCallback(() => {
+    setDragging(true);
+  }, []);
+
+  const handleAfterChange = useCallback((v: number | number[]) => {
+    const arr = Array.isArray(v) ? v : [localRange[0], localRange[1]];
+    const final: [number, number] = [arr[0] as number, arr[1] as number];
+    setDragging(false);
+    setLocalRange(final);
+    prevValue.current = final;
+    onChange(final);
+  }, [localRange, onChange]);
+
   if (!datas || datas.length === 0) {
     return (
       <div>
@@ -54,32 +85,16 @@ export default function PeriodSlider(props: {
   const rangeProps = {
     min,
     max,
-    value,
+    value: displayRange,
     step: 1,
     marks: {},
-    onChange: (v) => {
-      const arr = Array.isArray(v) ? v : [value[0], value[1]];
-      onChange([arr[0] as number, arr[1] as number]);
-    },
+    onChange: handleChange,
+    onChangeComplete: handleAfterChange,
+    onBeforeChange: handleBeforeChange,
     handleRender: (node: React.ReactElement, info: { value: number }) => {
       const label = datas[info.value] ? fmtData(datas[info.value]) : "";
       return React.cloneElement(node, {}, (
-        <span style={{
-          position: "absolute",
-          bottom: "calc(100% + 7px)",
-          left: "50%",
-          transform: "translateX(-50%)",
-          backgroundColor: "#ff5000",
-          color: "#ffffff",
-          padding: "2px 6px",
-          borderRadius: 3,
-          fontSize: 10,
-          fontWeight: 700,
-          fontFamily: "Arial",
-          whiteSpace: "nowrap",
-          pointerEvents: "none",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
-        }}>
+        <span className="slider-handle-label">
           {label}
         </span>
       ));

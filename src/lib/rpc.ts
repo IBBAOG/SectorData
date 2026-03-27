@@ -41,10 +41,6 @@ export type MarketShareFilters = {
   mercados?: string[] | null;
 };
 
-function toListOrUndefined(v?: string[] | null): string[] | null {
-  if (!v || v.length === 0) return null;
-  return Array.from(v);
-}
 
 export async function rpcGetOpcoesFiltros(
   supabase: SupabaseClient,
@@ -183,9 +179,9 @@ async function paginatedRpc(
   const params = {
     p_data_inicio: filters.data_inicio ?? null,
     p_data_fim: filters.data_fim ?? null,
-    p_regioes: toListOrUndefined(filters.regioes),
-    p_ufs: toListOrUndefined(filters.ufs),
-    p_mercados: toListOrUndefined(filters.mercados),
+    p_regioes: toListOrNull(filters.regioes),
+    p_ufs: toListOrNull(filters.ufs),
+    p_mercados: toListOrNull(filters.mercados),
   };
 
   while (true) {
