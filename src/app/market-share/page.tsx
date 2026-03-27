@@ -698,7 +698,7 @@ export default function MarketSharePage() {
 
       <div className="container-fluid g-0">
         <div className="row g-0">
-          <div className="col-2 p-0">
+          <div className="col-2 p-0" style={{ display: "flex", flexDirection: "column" }}>
             <div id="sidebar">
               <div style={{ textAlign: "center" }}>
                 <img
