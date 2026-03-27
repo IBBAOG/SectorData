@@ -3,14 +3,14 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Layout, PlotData } from "plotly.js";
 
-import NavBar from "../../components/NavBar";
-import PlotlyChart from "../../components/PlotlyChart";
-import PeriodSlider from "../../components/PeriodSlider";
-import CheckList from "../../components/CheckList";
-import SearchableMultiSelect from "../../components/SearchableMultiSelect";
-import RegionStateFilter from "../../components/RegionStateFilter";
-import { resolverDatas } from "../../lib/filterUtils";
-import { getSupabaseClient } from "../../lib/supabaseClient";
+import NavBar from "../../../components/NavBar";
+import PlotlyChart from "../../../components/PlotlyChart";
+import PeriodSlider from "../../../components/PeriodSlider";
+import CheckList from "../../../components/CheckList";
+import SearchableMultiSelect from "../../../components/SearchableMultiSelect";
+import RegionStateFilter from "../../../components/RegionStateFilter";
+import { resolverDatas } from "../../../lib/filterUtils";
+import { getSupabaseClient } from "../../../lib/supabaseClient";
 import {
   rpcGetMsOpcoesFiltros,
   rpcGetMsSerieFast,
@@ -19,8 +19,8 @@ import {
   rpcGetOthersPlayers,
   type MarketShareFilters,
   type MsSerieRow,
-} from "../../lib/rpc";
-import { downloadMarketShareExcel } from "../../lib/exportExcel";
+} from "../../../lib/rpc";
+import { downloadMarketShareExcel } from "../../../lib/exportExcel";
 
 const _NO_DATA = "No data for the selected filters.";
 const BIG3_MEMBERS = ["Vibra", "Ipiranga", "Raizen"];
