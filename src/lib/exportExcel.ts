@@ -101,6 +101,13 @@ function colLetter(colIdx: number): string {
  * Charts are placed side by side below all data tables.
  * segmentLabel is shown as the chart title.
  */
+// Reusable Arial 10 black txPr block for axes and legend
+const ARIAL10_TXPR = `<c:txPr>
+        <a:bodyPr/>
+        <a:lstStyle/>
+        <a:p><a:pPr><a:defRPr b="0" sz="1000"><a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:latin typeface="Arial"/></a:defRPr></a:pPr></a:p>
+      </c:txPr>`;
+
 function buildChartXml(
   sheetName: string,
   segmentLabel: string,
@@ -112,9 +119,11 @@ function buildChartXml(
 ): string {
   const firstCol = colLetter(2);
   const lastCol  = colLetter(dateCount + 1);
-  const ref = sheetName.match(/[\s'!]/)
-    ? `'${sheetName.replace(/'/g, "''")}'`
-    : sheetName;
+  // Always quote sheet names that aren't pure alphanumeric/underscore
+  // This fixes "Otto-Cycle" (hyphen) and any name with spaces
+  const ref = /^[A-Za-z0-9_]+$/.test(sheetName)
+    ? sheetName
+    : `'${sheetName.replace(/'/g, "''")}'`;
 
   const seriesXml = playerRows.map(({ player, row1based }, idx) => {
     const color = getPlayerColor(player);
@@ -142,7 +151,7 @@ function buildChartXml(
         <c:rich>
           <a:bodyPr/>
           <a:lstStyle/>
-          <a:p><a:r><a:rPr lang="en-US" b="0" sz="900"/><a:t>${segmentLabel}</a:t></a:r></a:p>
+          <a:p><a:r><a:rPr lang="en-US" b="0" sz="1000"><a:solidFill><a:srgbClr val="000000"/></a:solidFill><a:latin typeface="Arial"/></a:rPr><a:t>${segmentLabel}</a:t></a:r></a:p>
         </c:rich>
       </c:tx>
       <c:overlay val="0"/>
@@ -160,9 +169,10 @@ function buildChartXml(
         <c:scaling><c:orientation val="minMax"/></c:scaling>
         <c:delete val="0"/>
         <c:axPos val="b"/>
-        <c:numFmt formatCode="mmm/yyyy" sourceLinked="0"/>
+        <c:numFmt formatCode="mmm-yy" sourceLinked="0"/>
         <c:majorTickMark val="none"/>
         <c:minorTickMark val="none"/>
+        ${ARIAL10_TXPR}
         <c:crossAx val="${valAxisId}"/>
       </c:catAx>
       <c:valAx>
@@ -170,13 +180,18 @@ function buildChartXml(
         <c:scaling><c:orientation val="minMax"/></c:scaling>
         <c:delete val="0"/>
         <c:axPos val="l"/>
-        <c:numFmt formatCode='0.0"%"' sourceLinked="1"/>
+        <c:numFmt formatCode='0.0"%"' sourceLinked="0"/>
         <c:majorTickMark val="none"/>
         <c:minorTickMark val="none"/>
+        ${ARIAL10_TXPR}
         <c:crossAx val="${catAxisId}"/>
       </c:valAx>
     </c:plotArea>
-    <c:legend><c:legendPos val="b"/><c:overlay val="0"/></c:legend>
+    <c:legend>
+      <c:legendPos val="b"/>
+      <c:overlay val="0"/>
+      ${ARIAL10_TXPR}
+    </c:legend>
     <c:plotVisOnly val="1"/>
   </c:chart>
   <c:spPr>
@@ -332,7 +347,7 @@ export async function downloadMarketShareExcel(
       for (let c = 0; c < dateCount; c++) {
         const cell = ws.getCell(row, c + 2);
         cell.value = toExcelDate(allDates[c]);
-        cell.numFmt = "mmm/yyyy";
+        cell.numFmt = "mmm-yy";
         cell.font = { name: "Arial", size: 10, bold: true, color: C.headerFg };
         cell.fill = { type: "pattern", pattern: "solid", fgColor: C.headerBg };
         cell.alignment = { horizontal: "center" };
