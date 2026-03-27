@@ -724,27 +724,13 @@ export default function MarketSharePage() {
 
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">View Mode</div>
-                <div style={{ display: "flex", gap: 0, borderBottom: "1px solid #e8e8e8" }}>
+                <div className="view-mode-tabs">
                   {(["Individual", "Big-3", "Others"] as Mode[]).map((m) => (
                     <button
                       key={m}
                       type="button"
                       onClick={() => setMode(m)}
-                      style={{
-                        flex: 1,
-                        background: "none",
-                        border: "none",
-                        borderBottom: mode === m ? "2px solid #ff5000" : "2px solid transparent",
-                        padding: "6px 4px",
-                        marginBottom: -1,
-                        fontFamily: "Arial, sans-serif",
-                        fontSize: 12,
-                        fontWeight: mode === m ? 700 : 400,
-                        color: mode === m ? "#ff5000" : "#555",
-                        cursor: "pointer",
-                        transition: "color 0.15s, border-color 0.15s",
-                        whiteSpace: "nowrap",
-                      }}
+                      className={`view-mode-btn${mode === m ? " view-mode-btn--active" : ""}`}
                     >
                       {m}
                     </button>
