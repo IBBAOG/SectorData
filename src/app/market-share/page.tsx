@@ -577,19 +577,6 @@ export default function MarketSharePage() {
 
   const compData = useMemo(() => {
     if (!latestDate) return null;
-    // DEBUG: check why comparison tables might be empty
-    const sampleRows = serieRows.filter(r => r.date === latestDate && r.nome_produto === "Diesel B");
-    const prevMonth = shiftMonth(latestDate, -1);
-    const sampleRowsPrev = serieRows.filter(r => r.date === prevMonth && r.nome_produto === "Diesel B");
-    console.log("[DEBUG compData]", {
-      latestDate,
-      prevMonth,
-      totalRows: serieRows.length,
-      sampleRowsForLatest: sampleRows.length,
-      sampleRowsForPrev: sampleRowsPrev.length,
-      sampleDates: [...new Set(serieRows.map(r => r.date))].sort().slice(-5),
-      firstRow: serieRows[0],
-    });
     return {
       dieselRetail: buildComparisonData(serieRows, "Diesel B", "Retail", players, big3, latestDate, groupBy),
       dieselB2B:    buildComparisonData(serieRows, "Diesel B", "B2B", players, big3, latestDate, groupBy),
