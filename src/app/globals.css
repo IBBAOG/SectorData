@@ -336,6 +336,57 @@ input[type="radio"] {
   cursor: pointer;
 }
 
+/* ─── Pill chips (Competitors / Region) ────────────────────────────────── */
+.filter-chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 11px;
+  border-radius: 20px;
+  border: 1.5px solid #d8d8d8;
+  background: #fff;
+  font-family: Arial, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  color: #555;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  user-select: none;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.filter-chip:hover {
+  border-color: #ff5000;
+  color: #ff5000;
+  background: rgba(255, 80, 0, 0.04);
+}
+
+.filter-chip--active {
+  border-color: #ff5000;
+  background: #ff5000;
+  color: #fff;
+  font-weight: 600;
+}
+
+.filter-chip--active:hover {
+  background: #d4561a;
+  border-color: #d4561a;
+}
+
+.filter-chip-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+
 /* ─── View Mode tab buttons ────────────────────────────────────────────────── */
 .view-mode-tabs {
   display: flex;
