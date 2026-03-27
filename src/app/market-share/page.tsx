@@ -428,13 +428,15 @@ export default function MarketSharePage() {
 
   const [seriesLoading, setSeriesLoading] = useState(false);
   const [serieRows, setSerieRows] = useState<MsSerieRow[]>([]);
+  const [cachedOthersPlayers, setCachedOthersPlayers] = useState<string[]>([]);
 
-  // Unique agente_regulado values from current data (for "Others" mode)
+  // Unique agente_regulado values: from current data or cached list
   const othersPlayers = useMemo(() => {
     const seen = new Set<string>();
     for (const r of serieRows) if (r.agente_regulado) seen.add(r.agente_regulado);
-    return Array.from(seen).sort();
-  }, [serieRows]);
+    const fromData = Array.from(seen).sort();
+    return fromData.length > 0 ? fromData : cachedOthersPlayers;
+  }, [serieRows, cachedOthersPlayers]);
 
   const playersOptions =
     mode === "Big-3" ? ALL_PLAYERS_BIG3 :
@@ -511,6 +513,12 @@ export default function MarketSharePage() {
           : await rpcGetMsSerieFast(supabase, seriesFilters);
         if (cancelled) return;
         setSerieRows(rows ?? []);
+        // Cache Others player list when loading Others data
+        if (isOthers) {
+          const seen = new Set<string>();
+          for (const r of rows ?? []) if (r.agente_regulado) seen.add(r.agente_regulado);
+          setCachedOthersPlayers(Array.from(seen).sort());
+        }
       } finally {
         if (!cancelled) setSeriesLoading(false);
       }
@@ -520,6 +528,22 @@ export default function MarketSharePage() {
       cancelled = true;
     };
   }, [appliedFilters, opcoes, supabase]);
+
+  // Pre-fetch Others player list on first load (background, no loading state)
+  useEffect(() => {
+    if (!opcoes || !supabase || cachedOthersPlayers.length > 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await rpcGetMsSerieOthers(supabase, {});
+        if (cancelled) return;
+        const seen = new Set<string>();
+        for (const r of rows) if (r.agente_regulado) seen.add(r.agente_regulado);
+        setCachedOthersPlayers(Array.from(seen).sort());
+      } catch { /* silent */ }
+    })();
+    return () => { cancelled = true; };
+  }, [opcoes, supabase, cachedOthersPlayers.length]);
 
   const big3 = appliedFilters?.modo_big3 ?? false;
   const appliedMode: Mode = appliedFilters?.modo ?? "Individual";
