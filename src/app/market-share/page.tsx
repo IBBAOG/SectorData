@@ -808,34 +808,7 @@ export default function MarketSharePage() {
                       onClick={async () => {
                         setExcelLoading(true);
                         try {
-                          // Generate PNG images for every chart using Plotly
-                          const Plotly = (await import("plotly.js-dist-min")).default as { toImage: (fig: unknown, opts: unknown) => Promise<string> };
-                          const imgOpts = { format: "png", width: 780, height: 280 };
-                          const chartEntries: [string, { data: unknown[]; layout: unknown }][] = [
-                            ["dieselRetail", charts.dieselRetail],
-                            ["dieselB2B",    charts.dieselB2B],
-                            ["dieselTrR",    charts.dieselTrR],
-                            ["dieselTotal",  charts.dieselTotal],
-                            ["gasRetail",    charts.gasRetail],
-                            ["gasB2B",       charts.gasB2B],
-                            ["gasTotal",     charts.gasTotal],
-                            ["ethRetail",    charts.ethRetail],
-                            ["ethB2B",       charts.ethB2B],
-                            ["ethTotal",     charts.ethTotal],
-                            ["ottoRetail",   charts.ottoRetail],
-                            ["ottoB2B",      charts.ottoB2B],
-                            ["ottoTotal",    charts.ottoTotal],
-                          ];
-                          const chartImages: Record<string, string> = {};
-                          for (const [key, chart] of chartEntries) {
-                            try {
-                              const dataUrl = await Plotly.toImage({ data: chart.data, layout: chart.layout }, imgOpts);
-                              chartImages[key] = dataUrl.replace("data:image/png;base64,", "");
-                            } catch {
-                              // skip chart if image generation fails
-                            }
-                          }
-                          await downloadMarketShareExcel(serieRows, players, big3, chartImages);
+                          await downloadMarketShareExcel(serieRows, players, big3);
                         } catch (e) {
                           console.error("Excel export failed", e);
                         } finally {
