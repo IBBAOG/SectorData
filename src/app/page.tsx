@@ -354,7 +354,7 @@ export default function SalesPage() {
                 <img
                   src="/logo.png"
                   alt="Itaú BBA"
-                  style={{ width: "100%", maxWidth: 220, marginBottom: 16 }}
+                  style={{ width: "100%", maxWidth: 300, marginBottom: 16 }}
                 />
               </div>
 
