@@ -154,7 +154,6 @@ function buildChartXml(
     <c:plotArea>
       <c:layout/>
       <c:lineChart>
-        <c:barDir val="bar"/>
         <c:grouping val="standard"/>
         <c:varyColors val="0"/>
         ${seriesXml}
@@ -221,14 +220,14 @@ function buildChartXml(
 function buildDrawingXml(
   charts: { chartRelId: string; fromRow: number; toRow: number; dateCount: number }[],
 ): string {
-  const anchors = charts.map(({ chartRelId, fromRow, toRow, dateCount }) => `
+  const anchors = charts.map(({ chartRelId, fromRow, toRow, dateCount }, anchorIdx) => `
   <xdr:twoCellAnchor editAs="twoCell">
     <xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${fromRow}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
     <xdr:to><xdr:col>${dateCount + 1}</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>${toRow}</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
     <xdr:graphicFrame macro="">
       <xdr:nvGraphicFramePr>
-        <xdr:cNvPr id="2" name="Chart"/>
-        <xdr:cNvGraphicFramePr/>
+        <xdr:cNvPr id="${anchorIdx + 2}" name="Chart ${anchorIdx + 1}"/>
+        <xdr:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></xdr:cNvGraphicFramePr>
       </xdr:nvGraphicFramePr>
       <xdr:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/></xdr:xfrm>
       <a:graphic>
