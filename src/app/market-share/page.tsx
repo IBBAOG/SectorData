@@ -14,7 +14,7 @@ import { resolverDatas } from "../../lib/filterUtils";
 import { getSupabaseClient } from "../../lib/supabaseClient";
 import {
   rpcGetMsOpcoesFiltros,
-  rpcGetMsSerie,
+  rpcGetMsSerieFast,
   rpcGetMsSerieOthers,
   fetchAllVendas,
   type MarketShareFilters,
@@ -507,9 +507,10 @@ export default function MarketSharePage() {
     const isOthers = (appliedFilters?.modo as string) === "Others";
     (async () => {
       try {
+        // Individual/Big-3 use pre-aggregated view (fast), Others uses full table
         const rows = isOthers
           ? await rpcGetMsSerieOthers(supabase, seriesFilters)
-          : await rpcGetMsSerie(supabase, seriesFilters);
+          : await rpcGetMsSerieFast(supabase, seriesFilters);
         if (cancelled) return;
         setSerieRows(rows ?? []);
       } finally {
