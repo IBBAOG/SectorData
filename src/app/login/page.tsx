@@ -5,8 +5,13 @@ import { useRouter } from "next/navigation";
 
 import { getSupabaseClient } from "../../lib/supabaseClient";
 
-const LOGO_URL =
-  "/logo.png";
+const LOGO_URL = "/logo.png";
+
+const BG_GIFS = [
+  "https://media0.giphy.com/media/fy9QYx06VF8c9D3Sc3/giphy.gif",
+  "https://i.pinimg.com/originals/c5/b0/c6/c5b0c6ca2a20e5fea7f938e8027b255b.gif",
+];
+const BG_URL = BG_GIFS[Math.floor(Math.random() * BG_GIFS.length)];
 
 export default function LoginPage() {
   const router = useRouter();
@@ -93,7 +98,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div id="login-container">
+    <div id="login-container" style={{ backgroundImage: `url("${BG_URL}")` }}>
       <div id="login-card">
         <div style={{ textAlign: "center" }}>
           <img
