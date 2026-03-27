@@ -56,7 +56,7 @@ export default function RegionStateFilter(props: {
       <div className="filter-chip-actions">
         <button
           type="button"
-          className="filter-btn-link filter-btn-link--primary"
+          className="filter-btn-link filter-btn-link--secondary"
           onClick={() => onRegioesChange(regioes.slice())}
         >
           {props.regAllLabel ?? "All regions"}
