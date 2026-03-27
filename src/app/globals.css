@@ -12,11 +12,13 @@ body {
 
 /* ─── Sidebar ─────────────────────────────────────────────────────────────── */
 #sidebar {
-  background-color: #F2F2F2;
+  background-color: #F8F8F8;
   border-right: 1px solid #ebebeb;
   min-height: 100vh;
+  flex: 1;
   padding: 20px 16px;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 #sidebar .accordion-button {
