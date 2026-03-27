@@ -23,7 +23,7 @@ export default function CheckList(props: {
       <div className="filter-chip-actions">
         <button
           type="button"
-          className="filter-btn-link filter-btn-link--primary"
+          className="filter-btn-link filter-btn-link--secondary"
           onClick={() => onChange(allValue)}
         >
           {props.allLabel ?? "All"}
