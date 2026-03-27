@@ -102,7 +102,7 @@ export default function PeriodSlider(props: {
   } satisfies SliderProps;
 
   return (
-    <div style={{ marginBottom: 16, marginTop: 32, paddingLeft: 10, paddingRight: 10 }}>
+    <div style={{ marginBottom: 16, marginTop: 32, paddingLeft: 18, paddingRight: 18 }}>
       <Slider range {...rangeProps} />
     </div>
   );
