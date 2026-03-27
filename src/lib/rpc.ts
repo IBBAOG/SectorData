@@ -228,25 +228,8 @@ export async function fetchAllVendas(
   return allRows;
 }
 
-/** Fast endpoint for Individual/Big-3 — pre-aggregated, no agente_regulado, no pagination needed */
-export async function rpcGetMsSerieFast(
-  supabase: SupabaseClient,
-  filters: MarketShareFilters,
-): Promise<MsSerieRow[]> {
-  try {
-    const params = {
-      p_data_inicio: filters.data_inicio ?? null,
-      p_data_fim: filters.data_fim ?? null,
-      p_regioes: toListOrNull(filters.regioes),
-      p_ufs: toListOrNull(filters.ufs),
-      p_mercados: toListOrNull(filters.mercados),
-    };
-    const { data, error } = await supabase.rpc("get_ms_serie_fast", params).range(0, 9999);
-    if (error) throw error;
-    return (data ?? []) as MsSerieRow[];
-  } catch (e) {
-    console.error("get_ms_serie_fast failed", e);
-    return [];
-  }
+/** Fast endpoint for Individual/Big-3 — pre-aggregated by classificacao, ~5 pages vs ~80 */
+export async function rpcGetMsSerieFast(supabase: SupabaseClient, filters: MarketShareFilters) {
+  return paginatedRpc(supabase, "get_ms_serie_fast", filters);
 }
 
