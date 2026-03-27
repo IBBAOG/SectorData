@@ -205,3 +205,26 @@ export async function rpcGetMsSerieOthers(supabase: SupabaseClient, filters: Mar
   return paginatedRpc(supabase, "get_ms_serie_others", filters);
 }
 
+export async function fetchAllVendas(
+  supabase: SupabaseClient,
+): Promise<Record<string, unknown>[]> {
+  const PAGE = 1000;
+  let offset = 0;
+  const allRows: Record<string, unknown>[] = [];
+
+  while (true) {
+    const { data, error } = await supabase
+      .from("vendas")
+      .select("*")
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as Record<string, unknown>[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
+  }
+
+  return allRows;
+}
+
