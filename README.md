@@ -1,36 +1,110 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Itaú BBA Dashboard
 
-## Getting Started
+A multi-module analytics dashboard built with Next.js, Supabase, and Plotly.js. Deployed on Vercel.
 
-First, run the development server:
+---
 
+## Modules
+
+| Route | File | Description |
+|-------|------|-------------|
+| `/` | `src/app/(dashboard)/page.tsx` | **Sales Dashboard** — product volume analysis (thousand m³) with filters by period, segment, agent, region/state |
+| `/market-share` | `src/app/(dashboard)/market-share/page.tsx` | **Market Share** — temporal evolution of fuel distribution market share by distributor (Individual / Big-3 / Others modes) |
+
+---
+
+## Local Setup
+
+**1. Install dependencies**
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+**2. Configure environment variables**
+```bash
+cp .env.local.example .env.local
+# Fill in your Supabase URL and anon key
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+**3. Run the dev server**
+```bash
+npm run dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open [http://localhost:3000](http://localhost:3000). You will be redirected to `/login` if not authenticated.
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## Project Structure
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+src/
+├── app/
+│   ├── layout.tsx                    # Root HTML shell (Bootstrap CSS)
+│   ├── login/page.tsx                # Login page (Supabase email/password)
+│   └── (dashboard)/                  # Route group — auth guard applied to all pages inside
+│       ├── layout.tsx                # Auth guard: redirects to /login if no session
+│       ├── page.tsx                  # Sales Dashboard
+│       ├── market-share/page.tsx     # Market Share Dashboard
+│       └── template-module/page.tsx  # Starter template for new modules
+├── components/
+│   ├── NavBar.tsx                    # Top nav — add new modules to NAV_MODULES array
+│   ├── PlotlyChart.tsx               # Plotly.js wrapper
+│   ├── PeriodSlider.tsx              # Date range slider
+│   ├── CheckList.tsx                 # Multi-select checkbox group
+│   ├── RegionStateFilter.tsx         # Cascading region/state filter
+│   └── SearchableMultiSelect.tsx     # Searchable dropdown multi-select
+├── lib/
+│   ├── supabaseClient.ts             # Supabase client singleton
+│   ├── rpc.ts                        # All Supabase RPC wrappers (grouped by module)
+│   ├── filterUtils.ts                # Date helpers, region→state map
+│   └── exportExcel.ts                # Excel export for Market Share
+└── types/
+    └── plotly.js-dist-min.d.ts       # Type shim for plotly
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+---
 
-## Deploy on Vercel
+## Authentication
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- Supabase email/password auth via `supabase.auth.signInWithPassword()`
+- All routes under `src/app/(dashboard)/` are protected by a shared layout that checks the session on mount and redirects to `/login` if unauthenticated
+- Sign out is in the NavBar
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+## Supabase RPC Functions
+
+All data fetching goes through Supabase RPC functions (PostgreSQL functions called via PostgREST). Wrappers live in `src/lib/rpc.ts`.
+
+**Sales module:** `get_opcoes_filtros`, `get_metricas`, `get_qtd_por_ano`, `get_qtd_por_mes`, `get_qtd_por_regiao`, `get_qtd_por_uf`, `get_qtd_por_agente`, `get_qtd_por_produto`
+
+**Market Share module:** `get_ms_opcoes_filtros`, `get_ms_serie_fast`, `get_ms_serie_others`, `get_others_players`
+
+SQL definitions are tracked in `supabase/migrations/`.
+
+---
+
+## Adding a New Module
+
+1. Copy `src/app/(dashboard)/template-module/` → `src/app/(dashboard)/your-module/`
+2. Rename the component inside `page.tsx`
+3. Add a nav entry in `src/components/NavBar.tsx`:
+   ```ts
+   { href: "/your-module", label: "Your Module" }
+   ```
+4. Add RPC wrappers in `src/lib/rpc.ts` under a new `// ─── MODULE: ...` section
+5. Auth is inherited automatically — no session checks needed in the page
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Framework | Next.js 16 (App Router) |
+| UI | Bootstrap 5, custom CSS |
+| Charts | Plotly.js 3 |
+| Database / Auth | Supabase (PostgreSQL + PostgREST) |
+| Deployment | Vercel |
+| Language | TypeScript 5 |

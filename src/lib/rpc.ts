@@ -1,3 +1,13 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// rpc.ts — Supabase RPC wrappers
+//
+// Convention:
+//   • Each dashboard module has its own section below.
+//   • To add a new module: create a new section, export typed wrappers for
+//     each function that calls supabase.rpc("<fn_name>", params).
+//   • Use `paginatedRpc()` for calls that may return more than 1 000 rows.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type SalesMetricas = {
@@ -41,6 +51,8 @@ export type MarketShareFilters = {
   mercados?: string[] | null;
 };
 
+
+// ─── MODULE: Sales Dashboard (/src/app/(dashboard)/page.tsx) ─────────────────
 
 export async function rpcGetOpcoesFiltros(
   supabase: SupabaseClient,
@@ -146,6 +158,8 @@ export async function rpcGetQtdPorProduto(supabase: SupabaseClient, filters: Sal
     return [];
   }
 }
+
+// ─── MODULE: Market Share (/src/app/(dashboard)/market-share/page.tsx) ───────
 
 export async function rpcGetMsOpcoesFiltros(supabase: SupabaseClient) {
   try {

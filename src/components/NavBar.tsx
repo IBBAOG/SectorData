@@ -6,8 +6,13 @@ import { useState } from "react";
 
 import { getSupabaseClient } from "../lib/supabaseClient";
 
-const LOGO_URL =
-  "/logo.png";
+const LOGO_URL = "/logo.png";
+
+// Add new modules here — each entry becomes a nav link automatically.
+const NAV_MODULES = [
+  { href: "/", label: "Sales" },
+  { href: "/market-share", label: "Market Share" },
+];
 
 export default function NavBar() {
   const router = useRouter();
@@ -36,12 +41,11 @@ export default function NavBar() {
         </Link>
 
         <div className="navbar-nav me-auto ms-3">
-          <Link href="/" className="nav-link">
-            Sales
-          </Link>
-          <Link href="/market-share" className="nav-link">
-            Market Share
-          </Link>
+          {NAV_MODULES.map((mod) => (
+            <Link key={mod.href} href={mod.href} className="nav-link">
+              {mod.label}
+            </Link>
+          ))}
         </div>
 
         <button

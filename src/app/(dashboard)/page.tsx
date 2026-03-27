@@ -1,16 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import type { Layout, PlotData } from "plotly.js";
 
-import NavBar from "../components/NavBar";
-import PlotlyChart from "../components/PlotlyChart";
-import PeriodSlider from "../components/PeriodSlider";
-import CheckList from "../components/CheckList";
-import RegionStateFilter from "../components/RegionStateFilter";
-import { resolverDatas } from "../lib/filterUtils";
-import { getSupabaseClient } from "../lib/supabaseClient";
+import NavBar from "../../components/NavBar";
+import PlotlyChart from "../../components/PlotlyChart";
+import PeriodSlider from "../../components/PeriodSlider";
+import CheckList from "../../components/CheckList";
+import RegionStateFilter from "../../components/RegionStateFilter";
+import { resolverDatas } from "../../lib/filterUtils";
+import { getSupabaseClient } from "../../lib/supabaseClient";
 import {
   type SalesFilters,
   type SalesMetricas,
@@ -22,7 +21,7 @@ import {
   rpcGetQtdPorProduto,
   rpcGetQtdPorRegiao,
   rpcGetQtdPorUf,
-} from "../lib/rpc";
+} from "../../lib/rpc";
 
 const ORANGE = "#FF5000";
 const _NO_DATA = "No data for the selected filters.";
@@ -81,12 +80,10 @@ function makeCartesianLayout(params: {
 }
 
 export default function SalesPage() {
-  const router = useRouter();
   const supabase = getSupabaseClient();
 
   const SEGMENTOS = useMemo(() => ["B2B", "Retail", "TRR", "Others"], []);
 
-  const [checkingAuth, setCheckingAuth] = useState(true);
   const [opcoes, setOpcoes] = useState<Record<string, unknown> | null>(null);
   const datas = useMemo(() => resolverDatas(opcoes ?? {}), [opcoes]);
 
@@ -123,29 +120,6 @@ export default function SalesPage() {
   const [dfProduto, setDfProduto] = useState<ProdutoRow[]>([]);
 
   useEffect(() => {
-    let cancelled = false;
-    if (!supabase) {
-      setCheckingAuth(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-    supabase.auth
-      .getSession()
-      .then(({ data }) => {
-        if (cancelled) return;
-        if (!data.session) router.replace("/login");
-      })
-      .finally(() => {
-        if (!cancelled) setCheckingAuth(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [router, supabase]);
-
-  useEffect(() => {
-    if (checkingAuth) return;
     if (!supabase) return;
     let cancelled = false;
     (async () => {
@@ -155,7 +129,7 @@ export default function SalesPage() {
     return () => {
       cancelled = true;
     };
-  }, [checkingAuth, supabase]);
+  }, [supabase]);
 
   useEffect(() => {
     if (!datas || datas.length === 0) return;
@@ -310,20 +284,7 @@ export default function SalesPage() {
     };
   }, [dfAno, dfMes, dfRegiao, dfUf, dfAgente, dfProduto]);
 
-  if (!supabase) {
-    return (
-      <div className="container" style={{ padding: 24, fontFamily: "Arial" }}>
-        <h5 style={{ fontWeight: 700 }}>Missing configuration</h5>
-        <div style={{ fontSize: 13, color: "#555" }}>
-          Add <code>NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
-          <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> to{" "}
-          <code>frontend-next/.env.local</code>.
-        </div>
-      </div>
-    );
-  }
-
-  if (checkingAuth || !opcoes) return null;
+  if (!opcoes) return null;
 
   return (
     <div>

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import type { Layout, PlotData } from "plotly.js";
 
 import NavBar from "../../components/NavBar";
@@ -409,7 +408,6 @@ function downloadCsv(rows: Record<string, unknown>[], filename: string) {
 }
 
 export default function MarketSharePage() {
-  const router = useRouter();
   const supabase = getSupabaseClient();
 
   type AppliedMarketShareFilters = {
@@ -423,7 +421,6 @@ export default function MarketSharePage() {
     modo?: Mode;
   };
 
-  const [checkingAuth, setCheckingAuth] = useState(true);
   const [opcoes, setOpcoes] = useState<Record<string, unknown> | null>(null);
 
   const datas = useMemo(() => resolverDatas(opcoes ?? {}), [opcoes]);
@@ -460,29 +457,6 @@ export default function MarketSharePage() {
   const playersDefault = playersOptions;
 
   useEffect(() => {
-    let cancelled = false;
-    if (!supabase) {
-      setCheckingAuth(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-    supabase.auth
-      .getSession()
-      .then(({ data }) => {
-        if (cancelled) return;
-        if (!data.session) router.replace("/login");
-      })
-      .finally(() => {
-        if (!cancelled) setCheckingAuth(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [router, supabase]);
-
-  useEffect(() => {
-    if (checkingAuth) return;
     if (!supabase) return;
     let cancelled = false;
     (async () => {
@@ -492,7 +466,7 @@ export default function MarketSharePage() {
     return () => {
       cancelled = true;
     };
-  }, [checkingAuth, supabase]);
+  }, [supabase]);
 
   useEffect(() => {
     if (!datas || datas.length === 0) return;
@@ -661,20 +635,7 @@ export default function MarketSharePage() {
     setUfsSelected([]);
   }
 
-  if (!supabase) {
-    return (
-      <div className="container" style={{ padding: 24, fontFamily: "Arial" }}>
-        <h5 style={{ fontWeight: 700 }}>Missing configuration</h5>
-        <div style={{ fontSize: 13, color: "#555" }}>
-          Add <code>NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
-          <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> to{" "}
-          <code>frontend-next/.env.local</code>.
-        </div>
-      </div>
-    );
-  }
-
-  if (checkingAuth || !opcoes) return null;
+  if (!opcoes) return null;
 
   return (
     <div>
