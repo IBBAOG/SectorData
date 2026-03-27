@@ -360,7 +360,7 @@ function ComparisonTable({ rows, colors }: { rows: CompRow[]; colors: Record<str
       </colgroup>
       <thead>
         <tr>
-          <th style={{ ...thStyle, textAlign: "left" as const, paddingLeft: 8 }}>percentage points (p.p.)</th>
+          <th style={{ ...thStyle, textAlign: "left" as const, paddingLeft: 8 }}>Market Share Var. (p.p.)</th>
           <th style={thStyle}>MoM</th>
           <th style={thStyle}>QTD</th>
           <th style={thStyle}>YoY</th>
