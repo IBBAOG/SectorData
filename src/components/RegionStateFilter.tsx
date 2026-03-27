@@ -41,9 +41,19 @@ export default function RegionStateFilter(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleUfs.join("|")]);
 
+  function toggleRegion(r: string) {
+    if (selectedRegioes.includes(r)) onRegioesChange(selectedRegioes.filter((x) => x !== r));
+    else onRegioesChange(Array.from(new Set([...selectedRegioes, r])));
+  }
+
+  function toggleUf(u: string) {
+    if (selectedUfs.includes(u)) onUfsChange(selectedUfs.filter((x) => x !== u));
+    else onUfsChange(Array.from(new Set([...selectedUfs, u])));
+  }
+
   return (
     <div>
-      <div className="d-flex gap-2 mb-1">
+      <div className="filter-chip-actions">
         <button
           type="button"
           className="filter-btn-link filter-btn-link--primary"
@@ -59,51 +69,45 @@ export default function RegionStateFilter(props: {
           {props.regClearLabel ?? "Clear"}
         </button>
       </div>
-      <hr style={{ margin: "4px 0 6px 0", borderTop: "1px solid #e0e0e0" }} />
 
       {regioes.length === 0 ? (
         <div style={{ fontSize: 12, color: "#888", fontFamily: "Arial" }}>
           No regions available.
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div className="filter-chip-group">
           {regioes.map((r) => (
-            <label key={r} className="filter-checkbox">
-              <input
-                type="checkbox"
-                checked={selectedRegioes.includes(r)}
-                onChange={(e) => {
-                  if (e.target.checked) onRegioesChange(Array.from(new Set([...selectedRegioes, r])));
-                  else onRegioesChange(selectedRegioes.filter((x) => x !== r));
-                }}
-              />
-              <span>{String(r)}</span>
-            </label>
+            <button
+              key={r}
+              type="button"
+              className={`filter-chip${selectedRegioes.includes(r) ? " filter-chip--active" : ""}`}
+              onClick={() => toggleRegion(r)}
+            >
+              {String(r)}
+            </button>
           ))}
         </div>
       )}
 
-      <div style={{ marginTop: 10, display: visibleUfs.length ? "block" : "none" }}>
-        <hr style={{ margin: "6px 0", borderTop: "1px solid #e0e0e0" }} />
-        <div style={{ fontSize: 11, color: "#888", marginBottom: 4, fontFamily: "Arial" }}>
-          States
+      {visibleUfs.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#aaa", fontFamily: "Arial", marginBottom: 6 }}>
+            States
+          </div>
+          <div className="filter-chip-group">
+            {visibleUfs.map((u) => (
+              <button
+                key={u}
+                type="button"
+                className={`filter-chip${selectedUfs.includes(u) ? " filter-chip--active" : ""}`}
+                onClick={() => toggleUf(u)}
+              >
+                {String(u)}
+              </button>
+            ))}
+          </div>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {visibleUfs.map((u) => (
-            <label key={u} className="filter-checkbox">
-              <input
-                type="checkbox"
-                checked={selectedUfs.includes(u)}
-                onChange={(e) => {
-                  if (e.target.checked) onUfsChange(Array.from(new Set([...selectedUfs, u])));
-                  else onUfsChange(selectedUfs.filter((x) => x !== u));
-                }}
-              />
-              <span>{String(u)}</span>
-            </label>
-          ))}
-        </div>
-      </div>
+      )}
     </div>
   );
 }
