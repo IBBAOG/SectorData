@@ -180,7 +180,7 @@ function buildChartXml(
         <c:scaling><c:orientation val="minMax"/></c:scaling>
         <c:delete val="0"/>
         <c:axPos val="l"/>
-        <c:numFmt formatCode='0.0"%"' sourceLinked="0"/>
+        <c:numFmt formatCode='0"%"' sourceLinked="0"/>
         <c:majorTickMark val="none"/>
         <c:minorTickMark val="none"/>
         ${ARIAL10_TXPR}
@@ -367,7 +367,7 @@ export async function downloadMarketShareExcel(
           const pct = msMap.get(allDates[c])?.get(player);
           const cell = ws.getCell(row, c + 2);
           cell.value = pct !== undefined ? Math.round(pct * 10) / 10 : null;
-          cell.numFmt = '0.0"%"';
+          cell.numFmt = '0"%"';
           cell.font = { name: "Arial", size: 10, color: C.cellFg };
           cell.alignment = { horizontal: "center" };
         }
@@ -516,7 +516,11 @@ export async function downloadMarketShareExcel(
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "market_share.xlsx";
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, "0");
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const yy = String(now.getFullYear()).slice(-2);
+  a.download = `IBBA - FD Market Share ${dd}-${mm}-${yy}.xlsx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
