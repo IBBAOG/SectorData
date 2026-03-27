@@ -16,6 +16,7 @@ import {
   rpcGetMsOpcoesFiltros,
   rpcGetMsSerieFast,
   rpcGetMsSerieOthers,
+  rpcGetOthersPlayers,
   type MarketShareFilters,
   type MsSerieRow,
 } from "../../lib/rpc";
@@ -529,17 +530,15 @@ export default function MarketSharePage() {
     };
   }, [appliedFilters, opcoes, supabase]);
 
-  // Pre-fetch Others player list on first load (background, no loading state)
+  // Pre-fetch Others player list on first load (lightweight, ~50 rows)
   useEffect(() => {
     if (!opcoes || !supabase || cachedOthersPlayers.length > 0) return;
     let cancelled = false;
     (async () => {
       try {
-        const rows = await rpcGetMsSerieOthers(supabase, {});
+        const players = await rpcGetOthersPlayers(supabase);
         if (cancelled) return;
-        const seen = new Set<string>();
-        for (const r of rows) if (r.agente_regulado) seen.add(r.agente_regulado);
-        setCachedOthersPlayers(Array.from(seen).sort());
+        setCachedOthersPlayers(players);
       } catch { /* silent */ }
     })();
     return () => { cancelled = true; };

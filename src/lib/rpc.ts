@@ -210,3 +210,15 @@ export async function rpcGetMsSerieFast(supabase: SupabaseClient, filters: Marke
   return paginatedRpc(supabase, "get_ms_serie_fast", filters);
 }
 
+/** Fetch distinct agente_regulado names for the Others competitor dropdown (~50 rows) */
+export async function rpcGetOthersPlayers(supabase: SupabaseClient): Promise<string[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_others_players", {});
+    if (error) throw error;
+    return ((data ?? []) as { agente_regulado: string }[]).map(r => r.agente_regulado);
+  } catch (e) {
+    console.error("get_others_players failed", e);
+    return [];
+  }
+}
+
