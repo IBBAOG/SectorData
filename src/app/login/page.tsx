@@ -99,7 +99,7 @@ export default function LoginPage() {
           <img
             src={LOGO_URL}
             alt="Itaú BBA"
-            style={{ width: 220, marginBottom: 24 }}
+            style={{ width: 340, marginBottom: 24 }}
           />
         </div>
 
