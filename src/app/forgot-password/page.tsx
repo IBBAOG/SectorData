@@ -123,7 +123,7 @@ export default function ForgotPasswordPage() {
               onClick={handleSubmit}
               disabled={submitting}
             >
-              {submitting ? "Sending..." : "Send reset link →"}
+              {submitting ? "Sending..." : "Send reset link"}
             </button>
 
             {error ? (
@@ -142,7 +142,7 @@ export default function ForgotPasswordPage() {
             href="/login"
             className="forgot-password-link"
           >
-            ← Back to login
+            Back to login
           </a>
         </div>
       </div>

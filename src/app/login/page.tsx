@@ -123,6 +123,7 @@ export default function LoginPage() {
             fontWeight: 600,
             color: "#1a1a1a",
             marginBottom: 4,
+            textAlign: "center",
           }}
         >
           Sign in to your account
@@ -133,6 +134,7 @@ export default function LoginPage() {
             fontSize: 13,
             color: "#888",
             marginBottom: 20,
+            textAlign: "center",
           }}
         >
           Enter your credentials to continue.
@@ -170,10 +172,10 @@ export default function LoginPage() {
           onKeyDown={(e) => e.key === "Enter" && handleLogin()}
         />
 
-        <div style={{ textAlign: "right", marginBottom: 16, marginTop: 6 }}>
+        <div style={{ textAlign: "center", marginBottom: 16, marginTop: 10 }}>
           <a
             href="/forgot-password"
-            className="forgot-password-link"
+            className="forgot-password-btn"
           >
             Forgot your password?
           </a>
@@ -185,7 +187,7 @@ export default function LoginPage() {
           onClick={handleLogin}
           disabled={submitting}
         >
-          {submitting ? "Signing in..." : "Continue \u2192"}
+          {submitting ? "Signing in..." : "Go!"}
         </button>
 
         {success ? (

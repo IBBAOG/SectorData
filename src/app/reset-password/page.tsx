@@ -124,7 +124,7 @@ export default function ResetPasswordPage() {
           </p>
           <div style={{ textAlign: "center" }}>
             <a href="/forgot-password" className="forgot-password-link">
-              Request a new link →
+              Request a new link
             </a>
           </div>
         </div>
@@ -206,7 +206,7 @@ export default function ResetPasswordPage() {
           onClick={handleReset}
           disabled={submitting}
         >
-          {submitting ? "Updating..." : "Update password →"}
+          {submitting ? "Updating..." : "Update password"}
         </button>
 
         {error ? (
