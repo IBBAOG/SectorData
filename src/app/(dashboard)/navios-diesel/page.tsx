@@ -32,10 +32,18 @@ const STATUS_COLORS: Record<string, string> = {
   Despachado: "#e2e3e5",
 };
 
+const STATUS_LABELS: Record<string, string> = {
+  Atracado:   "Berthed",
+  Esperado:   "Expected",
+  "Ao Largo": "Offshore",
+  Fundeado:   "Anchored",
+  Despachado: "Departed",
+};
+
 function fmtTs(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
-  return d.toLocaleString("pt-BR", {
+  return d.toLocaleString("en-US", {
     day: "2-digit", month: "2-digit", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
@@ -115,7 +123,7 @@ export default function NaviosDieselPage() {
       texts.push(
         `<b>${p.porto}</b><br>` +
         `${p.total_navios} vessels<br>` +
-        `${p.total_convertida.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} t`
+        `${p.total_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 })} t`
       );
       sizes.push(Math.max(14, Math.sqrt(p.total_navios) * 16));
     }
@@ -163,10 +171,6 @@ export default function NaviosDieselPage() {
 
     return { data, layout };
   }, [resumo]);
-
-  // Summary metrics
-  const totalVessels = resumo.reduce((s, p) => s + p.total_navios, 0);
-  const totalVolume = resumo.reduce((s, p) => s + p.total_convertida, 0);
 
   return (
     <div>
@@ -224,7 +228,7 @@ export default function NaviosDieselPage() {
           <div className="col-10">
             <div id="page-content">
               <div className="mb-2">
-                <div className="page-header-title">Navios Diesel</div>
+                <div className="page-header-title">Diesel Imports Line-Up</div>
                 <div className="page-header-sub">
                   Expected diesel vessel arrivals at Brazilian ports
                   {selectedColeta && (
@@ -235,41 +239,11 @@ export default function NaviosDieselPage() {
                 </div>
               </div>
 
-              {/* Metric Cards */}
-              <div className="row mb-3 g-3">
-                <div className="col-md-3">
-                  <div className="metric-card">
-                    <div className="metric-label">Ports</div>
-                    <div className="metric-value">{resumo.length}</div>
-                  </div>
-                </div>
-                <div className="col-md-3">
-                  <div className="metric-card">
-                    <div className="metric-label">Total Vessels</div>
-                    <div className="metric-value">{totalVessels}</div>
-                  </div>
-                </div>
-                <div className="col-md-3">
-                  <div className="metric-card">
-                    <div className="metric-label">Total Volume (t)</div>
-                    <div className="metric-value">
-                      {totalVolume.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}
-                    </div>
-                  </div>
-                </div>
-                <div className="col-md-3">
-                  <div className="metric-card">
-                    <div className="metric-label">Snapshots</div>
-                    <div className="metric-value">{coletas.length}</div>
-                  </div>
-                </div>
-              </div>
-
               <hr style={{ borderTop: "2px solid #e0e0e0", marginBottom: 12 }} />
 
               {loading ? (
                 <div className="d-flex justify-content-center my-5">
-                  <img src="/barrel_loading.png" alt="Carregando..." width={160} height={160} />
+                  <img src="/barrel_loading.png" alt="Loading..." width={160} height={160} />
                 </div>
               ) : (
                 <>
@@ -286,21 +260,6 @@ export default function NaviosDieselPage() {
                     />
                   </div>
 
-                  {/* Per-port summary bar */}
-                  <div className="row g-3 mb-3">
-                    {resumo.map((p) => (
-                      <div key={p.porto} className="col-md-3">
-                        <div className="metric-card" style={{ borderLeftColor: ORANGE }}>
-                          <div className="metric-label">{p.porto.replace("Porto de ", "")}</div>
-                          <div className="metric-value">{p.total_navios} vessels</div>
-                          <div style={{ fontSize: 11, color: "#888", fontFamily: "Arial" }}>
-                            {p.total_convertida.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} t
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
                   {/* Vessel table */}
                   <div className="chart-container" style={{ marginBottom: 16 }}>
                     <div style={{ fontFamily: "Arial", fontSize: 13, fontWeight: 700, marginBottom: 6, color: "#1a1a1a" }}>
@@ -310,7 +269,7 @@ export default function NaviosDieselPage() {
                       <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 11 }}>
                         <thead>
                           <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
-                            {["Porto", "Status", "Navio", "Qtd", "Un", "Qtd Conv.", "ETA", "Início Desc.", "Fim Desc.", "Origem", "Berço"].map((h) => (
+                            {["Port", "Status", "Vessel", "Qty", "Unit", "Conv. Qty (t)", "ETA", "Unload Start", "Unload End", "Origin", "Berth"].map((h) => (
                               <th key={h} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
                             ))}
                           </tr>
@@ -333,16 +292,16 @@ export default function NaviosDieselPage() {
                                   fontWeight: 600,
                                   backgroundColor: STATUS_COLORS[r.status] ?? "#f0f0f0",
                                 }}>
-                                  {r.status}
+                                  {STATUS_LABELS[r.status] ?? r.status}
                                 </span>
                               </td>
                               <td style={{ padding: "4px 10px" }}>{r.navio}</td>
                               <td style={{ padding: "4px 10px", textAlign: "right" }}>
-                                {r.quantidade?.toLocaleString("pt-BR", { maximumFractionDigits: 0 }) ?? "—"}
+                                {r.quantidade?.toLocaleString("en-US", { maximumFractionDigits: 0 }) ?? "—"}
                               </td>
                               <td style={{ padding: "4px 10px" }}>{r.unidade ?? "—"}</td>
                               <td style={{ padding: "4px 10px", textAlign: "right" }}>
-                                {r.quantidade_convertida?.toLocaleString("pt-BR", { maximumFractionDigits: 0 }) ?? "—"}
+                                {r.quantidade_convertida?.toLocaleString("en-US", { maximumFractionDigits: 0 }) ?? "—"}
                               </td>
                               <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtTs(r.eta)}</td>
                               <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtTs(r.inicio_descarga)}</td>
