@@ -49,6 +49,14 @@ function fmtTs(iso: string | null): string {
   });
 }
 
+function fmtDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", {
+    month: "2-digit", day: "2-digit", year: "2-digit",
+  });
+}
+
 function hoursAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
   const h = Math.floor(ms / 3_600_000);
@@ -306,9 +314,9 @@ export default function NaviosDieselPage() {
                               <td style={{ padding: "4px 10px", textAlign: "right" }}>
                                 {r.quantidade_convertida?.toLocaleString("en-US", { maximumFractionDigits: 0 }) ?? "—"}
                               </td>
-                              <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtTs(r.eta)}</td>
-                              <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtTs(r.inicio_descarga)}</td>
-                              <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtTs(r.fim_descarga)}</td>
+                              <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.eta)}</td>
+                              <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.inicio_descarga)}</td>
+                              <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.fim_descarga)}</td>
                               <td style={{ padding: "4px 10px" }}>{r.origem ?? "—"}</td>
                               <td style={{ padding: "4px 10px" }}>{r.berco ?? "—"}</td>
                             </tr>
