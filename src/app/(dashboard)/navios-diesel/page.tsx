@@ -284,11 +284,11 @@ export default function NaviosDieselPage() {
     const layout: Partial<Layout> = {
       paper_bgcolor: "white",
       plot_bgcolor: "white",
-      margin: { t: 30, b: 48, l: 10, r: 10 },
+      margin: { t: 30, b: 36, l: 72, r: 0 },
       height: 220,
       bargap: 0.3,
       yaxis: { visible: false },
-      xaxis: { tickfont: { family: "Arial", size: 12 } },
+      xaxis: { tickfont: { family: "Arial", size: 11 } },
       hoverlabel: {
         bgcolor: "rgba(255,255,255,0.95)",
         bordercolor: "rgba(180,180,180,0.5)",
@@ -482,76 +482,78 @@ export default function NaviosDieselPage() {
                 </div>
               ) : (
                 <>
-                  {/* Charts row: map | summary table | bar chart */}
+                  {/* Charts row: larger map | bar chart + aligned summary table */}
                   <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 16 }}>
-                    <div className="chart-container" style={{ flex: 1, minWidth: 0 }}>
+                    {/* Map — takes more space */}
+                    <div className="chart-container" style={{ flex: 3, minWidth: 0 }}>
                       <div style={TITLE_STYLE}>Distribution by Port</div>
                       <hr className="section-hr" />
                       <PlotlyChart
                         data={mapChart.data}
-                        layout={{ ...mapChart.layout, height: 280 }}
+                        layout={{ ...mapChart.layout, height: 320 }}
                         config={{ displayModeBar: false }}
-                        style={{ width: "100%", height: 280 }}
+                        style={{ width: "100%", height: 320 }}
                       />
                     </div>
-                    <div className="chart-container" style={{ flex: 1, minWidth: 0 }}>
-                      <div style={TITLE_STYLE}>Monthly Summary by Port</div>
-                      <hr className="section-hr" />
-                      <div style={{ overflowX: "auto" }}>
-                        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 11 }}>
-                          <thead>
-                            <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
-                              <th style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap", textAlign: "left" }}>Port</th>
-                              {portMonthlySummary.months.map(m => (
-                                <th key={m} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap", textAlign: "center" }}>
-                                  {portMonthlySummary.monthLabels[m]}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {portMonthlySummary.ports.map((porto, i) => (
-                              <tr
-                                key={porto}
-                                style={{ borderBottom: "1px solid #eee", backgroundColor: i % 2 === 0 ? "#fff" : "#fafafa" }}
-                                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
-                                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = i % 2 === 0 ? "#fff" : "#fafafa"; }}
-                              >
-                                <td style={{ padding: "6px 10px", fontWeight: 600, whiteSpace: "nowrap" }}>
-                                  {porto.replace("Porto de ", "")}
-                                </td>
-                                {portMonthlySummary.months.map(m => {
-                                  const cell = portMonthlySummary.portMap.get(porto)?.get(m);
-                                  return (
-                                    <td key={m} style={{ padding: "6px 10px", textAlign: "center" }}>
-                                      {cell ? (
-                                        <>
-                                          <div style={{ fontWeight: 700 }}>{cell.vessels} vessel{cell.vessels !== 1 ? "s" : ""}</div>
-                                          <div style={{ fontSize: 10, color: "#666" }}>
-                                            {cell.volume.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³
-                                          </div>
-                                        </>
-                                      ) : (
-                                        <span style={{ color: "#ccc" }}>—</span>
-                                      )}
-                                    </td>
-                                  );
-                                })}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                    <div className="chart-container" style={{ flex: 1, minWidth: 0 }}>
+                    {/* Bar chart + summary table in same container for alignment */}
+                    <div className="chart-container" style={{ flex: 2, minWidth: 0 }}>
                       <div style={TITLE_STYLE}>Monthly Diesel Volume (m³)</div>
                       <hr className="section-hr" />
                       <PlotlyChart
                         data={monthlyChart.data}
-                        layout={{ ...monthlyChart.layout, height: 280 }}
+                        layout={{ ...monthlyChart.layout, height: 240 }}
                         config={{ displayModeBar: false }}
-                        style={{ width: "100%", height: 280 }}
+                        style={{ width: "100%", height: 240 }}
                       />
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ ...TITLE_STYLE, fontSize: 12, marginBottom: 6 }}>Monthly Summary by Port</div>
+                        <hr className="section-hr" />
+                        <div style={{ overflowX: "auto" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 11, tableLayout: "fixed" }}>
+                            <thead>
+                              <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
+                                <th style={{ width: 72, padding: "6px 8px", fontSize: 10, fontWeight: 700, textAlign: "left" }}>Port</th>
+                                {portMonthlySummary.months.map(m => (
+                                  <th key={m} style={{ padding: "6px 4px", fontSize: 10, fontWeight: 700, textAlign: "center", whiteSpace: "nowrap" }}>
+                                    {portMonthlySummary.monthLabels[m]}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {portMonthlySummary.ports.map((porto, i) => (
+                                <tr
+                                  key={porto}
+                                  style={{ borderBottom: "1px solid #eee", backgroundColor: i % 2 === 0 ? "#fff" : "#fafafa" }}
+                                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
+                                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = i % 2 === 0 ? "#fff" : "#fafafa"; }}
+                                >
+                                  <td style={{ width: 72, padding: "5px 8px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: 10 }}>
+                                    {porto.replace("Porto de ", "")}
+                                  </td>
+                                  {portMonthlySummary.months.map(m => {
+                                    const cell = portMonthlySummary.portMap.get(porto)?.get(m);
+                                    return (
+                                      <td key={m} style={{ padding: "5px 4px", textAlign: "center" }}>
+                                        {cell ? (
+                                          <>
+                                            <div style={{ fontWeight: 700, fontSize: 11 }}>{cell.vessels}v</div>
+                                            <div style={{ fontSize: 9, color: "#666" }}>
+                                              {cell.volume.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³
+                                            </div>
+                                          </>
+                                        ) : (
+                                          <span style={{ color: "#ccc" }}>—</span>
+                                        )}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
