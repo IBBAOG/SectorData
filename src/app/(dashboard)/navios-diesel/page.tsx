@@ -243,7 +243,7 @@ export default function NaviosDieselPage() {
         coastlinecolor: "#aaa",
       } as Layout["geo"],
       paper_bgcolor: "white",
-      margin: { t: 10, b: 10, l: 0, r: 40 },
+      margin: { t: 10, b: 10, l: 0, r: 0 },
       height: 280,
       hoverlabel: {
         bgcolor: "rgba(255,255,255,0.95)",
@@ -530,17 +530,17 @@ export default function NaviosDieselPage() {
                                   onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
                                   onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = i % 2 === 0 ? "#fff" : "#fafafa"; }}
                                 >
-                                  <td style={{ width: 72, padding: "5px 8px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: 10 }}>
+                                  <td style={{ width: 72, padding: "4px 10px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: 11 }}>
                                     {porto.replace("Porto de ", "")}
                                   </td>
                                   {portMonthlySummary.months.map(m => {
                                     const cell = portMonthlySummary.portMap.get(porto)?.get(m);
                                     return (
-                                      <td key={m} style={{ padding: "5px 4px", textAlign: "center" }}>
+                                      <td key={m} style={{ padding: "4px 10px", textAlign: "center" }}>
                                         {cell ? (
                                           <>
-                                            <div style={{ fontWeight: 700, fontSize: 11 }}>{cell.vessels}v</div>
-                                            <div style={{ fontSize: 9, color: "#666" }}>
+                                            <div style={{ fontWeight: 700, fontSize: 11 }}>{cell.vessels} vessel{cell.vessels !== 1 ? "s" : ""}</div>
+                                            <div style={{ fontSize: 10, color: "#666" }}>
                                               {cell.volume.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³
                                             </div>
                                           </>
