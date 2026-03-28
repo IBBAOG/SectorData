@@ -259,3 +259,87 @@ export async function rpcGetOthersPlayers(supabase: SupabaseClient): Promise<str
   }
 }
 
+// ─── MODULE: Navios Diesel (/src/app/(dashboard)/navios-diesel/page.tsx) ─────
+
+export type NavioDieselRow = {
+  id: number;
+  collected_at: string;
+  porto: string;
+  status: string;
+  navio: string;
+  produto: string;
+  quantidade: number;
+  unidade: string;
+  quantidade_convertida: number;
+  eta: string | null;
+  inicio_descarga: string | null;
+  fim_descarga: string | null;
+  origem: string | null;
+  berco: string | null;
+};
+
+export type PortoResumo = {
+  porto: string;
+  total_navios: number;
+  total_quantidade: number;
+  total_convertida: number;
+};
+
+export async function rpcGetNdUltimaColeta(
+  supabase: SupabaseClient,
+): Promise<{ ultima_coleta: string | null }> {
+  try {
+    const { data, error } = await supabase.rpc("get_nd_ultima_coleta", {});
+    if (error) throw error;
+    return (data ?? { ultima_coleta: null }) as { ultima_coleta: string | null };
+  } catch (e) {
+    console.error("get_nd_ultima_coleta failed", e);
+    return { ultima_coleta: null };
+  }
+}
+
+export async function rpcGetNdColetasDistintas(
+  supabase: SupabaseClient,
+): Promise<string[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_nd_coletas_distintas", {});
+    if (error) throw error;
+    return (data ?? []) as string[];
+  } catch (e) {
+    console.error("get_nd_coletas_distintas failed", e);
+    return [];
+  }
+}
+
+export async function rpcGetNdNavios(
+  supabase: SupabaseClient,
+  collectedAt: string,
+): Promise<NavioDieselRow[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_nd_navios", {
+      p_collected_at: collectedAt,
+    });
+    if (error) throw error;
+    return (data ?? []) as NavioDieselRow[];
+  } catch (e) {
+    console.error("get_nd_navios failed", e);
+    return [];
+  }
+}
+
+export async function rpcGetNdResumoPortos(
+  supabase: SupabaseClient,
+  collectedAt: string,
+): Promise<PortoResumo[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_nd_resumo_portos", {
+      p_collected_at: collectedAt,
+    });
+    if (error) throw error;
+    return (data ?? []) as PortoResumo[];
+  } catch (e) {
+    console.error("get_nd_resumo_portos failed", e);
+    return [];
+  }
+}
+

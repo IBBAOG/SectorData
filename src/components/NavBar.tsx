@@ -12,6 +12,7 @@ const LOGO_URL = "/logo.png";
 const NAV_MODULES = [
   { href: "/", label: "Sales" },
   { href: "/market-share", label: "Market Share" },
+  { href: "/navios-diesel", label: "Navios Diesel" },
 ];
 
 export default function NavBar() {

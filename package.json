@@ -29,6 +29,7 @@
     "@types/react-plotly.js": "^2.6.4",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
+    "postgres": "^3.4.8",
     "typescript": "^5"
   }
 }
