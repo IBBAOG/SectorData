@@ -172,10 +172,10 @@ export default function LoginPage() {
           onKeyDown={(e) => e.key === "Enter" && handleLogin()}
         />
 
-        <div style={{ textAlign: "center", marginBottom: 16, marginTop: 10 }}>
+        <div style={{ textAlign: "center", marginBottom: 16, marginTop: 6 }}>
           <a
             href="/forgot-password"
-            className="forgot-password-btn"
+            className="forgot-password-link"
           >
             Forgot your password?
           </a>

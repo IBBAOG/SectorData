@@ -193,23 +193,6 @@ body {
   text-decoration: underline;
 }
 
-.forgot-password-btn {
-  display: inline-block;
-  font-family: Arial, sans-serif;
-  font-size: 13px;
-  font-weight: 600;
-  color: #ff5000;
-  text-decoration: none;
-  border: 1.5px solid #ff5000;
-  border-radius: 20px;
-  padding: 6px 20px;
-  transition: background-color 0.2s, color 0.2s;
-}
-
-.forgot-password-btn:hover {
-  background-color: #ff5000;
-  color: #ffffff;
-}
 
 /* ─── Navigation bar ───────────────────────────────────────────────────────── */
 #main-navbar {
