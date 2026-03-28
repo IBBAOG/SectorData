@@ -199,7 +199,7 @@ export default function NaviosDieselPage() {
       geo: {
         scope: "south america",
         resolution: 50,
-        lonaxis: { range: [-56, -30] },
+        lonaxis: { range: [-75, -20] },
         lataxis: { range: [-32, 2] },
         showland: true,
         landcolor: "#f5f5f5",
