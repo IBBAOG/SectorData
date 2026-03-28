@@ -642,6 +642,9 @@ def consolidar(*tabelas: pd.DataFrame) -> pd.DataFrame:
         )
     ]
 
+    # Padronizar nome da carga
+    result["Carga"] = "Óleo Diesel"
+
     # Converter quantidades para m³
     result = _aplicar_conversao(result)
 
