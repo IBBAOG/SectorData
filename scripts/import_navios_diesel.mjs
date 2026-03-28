@@ -49,30 +49,31 @@ function parseBRDate(raw) {
   let y = parseInt(year, 10);
   if (y < 100) y += 2000; // 2-digit year
 
-  const d = new Date(
-    y,
-    parseInt(month, 10) - 1,
-    parseInt(day, 10),
-    parseInt(hour ?? "0", 10),
-    parseInt(minute ?? "0", 10),
-    parseInt(second ?? "0", 10)
-  );
-
+  // Build ISO string with BRT offset (-03:00)
+  const pad = (n) => String(n).padStart(2, "0");
+  const iso = `${y}-${pad(parseInt(month, 10))}-${pad(parseInt(day, 10))}T${pad(parseInt(hour ?? "0", 10))}:${pad(parseInt(minute ?? "0", 10))}:${pad(parseInt(second ?? "0", 10))}-03:00`;
+  const d = new Date(iso);
   if (isNaN(d.getTime())) return null;
   return d.toISOString();
 }
 
-/** Parse "YYYY-MM-DD HH:MM" */
+/** Parse "YYYY-MM-DD HH:MM" as BRT (UTC-3) */
 function parseISOish(raw) {
   if (!raw || raw.trim() === "") return null;
-  const d = new Date(raw.trim().replace(" ", "T") + ":00");
+  const s = raw.trim();
+  // Must start with a digit (reject header rows like "Consulta")
+  if (!/^\d/.test(s)) return null;
+  const d = new Date(s.replace(" ", "T") + ":00-03:00");
   if (isNaN(d.getTime())) return null;
   return d.toISOString();
 }
 
 // ── Read and parse CSV ───────────────────────────────────────────────────────
 const csvPath = path.resolve("output/navios_diesel.csv");
-const lines = fs.readFileSync(csvPath, "utf8").split("\n");
+let csvText = fs.readFileSync(csvPath, "utf8");
+// Strip BOM if present
+if (csvText.charCodeAt(0) === 0xfeff) csvText = csvText.slice(1);
+const lines = csvText.split("\n");
 
 const records = [];
 let skipped = 0;
@@ -80,6 +81,8 @@ let skipped = 0;
 for (const line of lines) {
   const trimmed = line.trim();
   if (!trimmed) { skipped++; continue; }
+  // Skip header row
+  if (trimmed.startsWith("Consulta,") || trimmed.startsWith("Consulta\t")) { skipped++; continue; }
 
   const cols = trimmed.split(",");
   if (cols.length < 13) { skipped++; continue; }
