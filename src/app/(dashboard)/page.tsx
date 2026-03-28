@@ -69,7 +69,7 @@ function makeCartesianLayout(params: {
   const { title, xTitle, yTitle, height = 320 } = params;
   const spikeAxis = {
     showspikes: true,
-    spikemode: "across",
+    spikemode: "across" as const,
     spikedash: "solid",
     spikecolor: "#555555",
     spikethickness: 1,
@@ -266,7 +266,7 @@ export default function SalesPage() {
         zeroline: false,
         showline: true,
         showspikes: true,
-        spikemode: "across",
+        spikemode: "across" as const,
         spikedash: "solid",
         spikecolor: "#555555",
         spikethickness: 1,

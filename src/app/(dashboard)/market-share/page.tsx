@@ -222,7 +222,7 @@ function buildMarketShareLine(params: {
       type: "date",
       range: [xMin ?? dataMin, xMax ?? dataMax],
       showspikes: true,
-      spikemode: "across",
+      spikemode: "across" as const,
       spikedash: "solid",
       spikecolor: "#555555",
       spikethickness: 1,
