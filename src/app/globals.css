@@ -179,6 +179,20 @@ body {
   border-color: #d4561a !important;
 }
 
+.forgot-password-link {
+  font-family: Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ff5000;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.forgot-password-link:hover {
+  color: #d4561a;
+  text-decoration: underline;
+}
+
 /* ─── Navigation bar ───────────────────────────────────────────────────────── */
 #main-navbar {
   background-color: #000512;

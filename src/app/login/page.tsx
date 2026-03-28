@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { getSupabaseClient } from "../../lib/supabaseClient";
 
@@ -16,11 +16,17 @@ const BG_URL = BG_GIFS[Math.floor(Math.random() * BG_GIFS.length)];
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = getSupabaseClient();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(
+    searchParams.get("password_reset") === "success"
+      ? "Password updated successfully. Please sign in."
+      : null,
+  );
   const [submitting, setSubmitting] = useState(false);
   const [checking, setChecking] = useState(true);
 
@@ -154,13 +160,22 @@ export default function LoginPage() {
         </label>
         <input
           id="input-password"
-          className="form-control mb-4"
+          className="form-control"
           type="password"
           placeholder="••••••••"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleLogin()}
         />
+
+        <div style={{ textAlign: "right", marginBottom: 16, marginTop: 6 }}>
+          <a
+            href="/forgot-password"
+            className="forgot-password-link"
+          >
+            Forgot your password?
+          </a>
+        </div>
 
         <button
           id="btn-login"
@@ -170,6 +185,15 @@ export default function LoginPage() {
         >
           {submitting ? "Signing in..." : "Continue \u2192"}
         </button>
+
+        {success ? (
+          <div
+            className="alert alert-success"
+            style={{ fontSize: 13, marginTop: 8, marginBottom: 0 }}
+          >
+            {success}
+          </div>
+        ) : null}
 
         {error ? (
           <div
