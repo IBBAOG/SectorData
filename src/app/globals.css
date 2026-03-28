@@ -137,6 +137,7 @@ body {
   background-image: url("https://media0.giphy.com/media/fy9QYx06VF8c9D3Sc3/giphy.gif");
   background-size: cover;
   background-position: center;
+  position: relative;
 }
 
 /* ── Liquid Glass card ─────────────────────────────────────────────────────── */
@@ -146,45 +147,59 @@ body {
   width: 100%;
   padding: 44px 38px;
   border-radius: 24px;
-  /* Frosted milky glass — high opacity + heavy blur */
+  /* Frosted milky glass — opaque enough to read, translucent enough to see depth */
   background: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.55) 0%,
-    rgba(240, 240, 245, 0.40) 50%,
-    rgba(255, 255, 255, 0.50) 100%
+    145deg,
+    rgba(255, 255, 255, 0.78) 0%,
+    rgba(245, 245, 250, 0.68) 40%,
+    rgba(240, 240, 248, 0.72) 100%
   );
-  backdrop-filter: blur(40px) saturate(200%) brightness(1.15);
-  -webkit-backdrop-filter: blur(40px) saturate(200%) brightness(1.15);
-  /* Specular edge — top-left bright, bottom-right subtle */
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  /* Layered shadows: outer depth + inner specular highlight + inner edge glow */
+  backdrop-filter: blur(60px) saturate(180%) brightness(1.08);
+  -webkit-backdrop-filter: blur(60px) saturate(180%) brightness(1.08);
+  border: 1.5px solid rgba(255, 255, 255, 0.55);
   box-shadow:
-    0 12px 48px rgba(0, 0, 0, 0.25),
-    0 2px 8px rgba(0, 0, 0, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.15);
-  /* Prevent content from breaking the glass boundary */
+    0 12px 48px rgba(0, 0, 0, 0.22),
+    0 2px 8px rgba(0, 0, 0, 0.10),
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.2);
   overflow: hidden;
   z-index: 1;
 }
 
-/* Specular highlight band — mimics light refracting across curved glass */
+/* Specular highlight — light refracting across curved glass surface */
 #login-card::before {
   content: "";
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 50%;
+  height: 55%;
   border-radius: 24px 24px 0 0;
   background: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.35) 0%,
-    rgba(255, 255, 255, 0.08) 60%,
+    rgba(255, 255, 255, 0.45) 0%,
+    rgba(255, 255, 255, 0.12) 50%,
     transparent 100%
   );
   pointer-events: none;
   z-index: 0;
+}
+
+/* Glass distortion edge — refraction glow + displacement around border */
+#login-card::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 27px;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.5) 0%,
+    transparent 35%,
+    transparent 65%,
+    rgba(255, 255, 255, 0.2) 100%
+  );
+  z-index: -1;
+  filter: url(#glass-distortion) blur(1.5px);
 }
 
 /* Ensure all card content sits above the specular layer */

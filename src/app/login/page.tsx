@@ -108,6 +108,27 @@ export default function LoginPage() {
 
   return (
     <div id="login-container" style={{ backgroundImage: `url("${BG_URL}")` }}>
+      {/* SVG filter for glass distortion */}
+      <svg style={{ position: "absolute", width: 0, height: 0 }} aria-hidden="true">
+        <defs>
+          <filter id="glass-distortion">
+            <feTurbulence
+              type="fractalNoise"
+              baseFrequency="0.015"
+              numOctaves="3"
+              seed="2"
+              result="noise"
+            />
+            <feDisplacementMap
+              in="SourceGraphic"
+              in2="noise"
+              scale="6"
+              xChannelSelector="R"
+              yChannelSelector="G"
+            />
+          </filter>
+        </defs>
+      </svg>
       <div id="login-card">
         <div style={{ textAlign: "center" }}>
           <img
