@@ -28,10 +28,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          cp output/navios_diesel.csv /tmp/navios_diesel.csv
+          git fetch origin main
+          git reset --hard origin/main
+          cp /tmp/navios_diesel.csv output/navios_diesel.csv
           git add output/
           git diff --cached --quiet || git commit -m "dados: atualização $(date -u +'%Y-%m-%d %H:%M UTC')"
-          git pull --rebase -X theirs origin main || true
-          git add -A && git rebase --continue 2>/dev/null || true
           git push
 
       - uses: actions/setup-node@v4
