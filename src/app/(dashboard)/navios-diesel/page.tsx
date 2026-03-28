@@ -419,7 +419,7 @@ export default function NaviosDieselPage() {
                           cursor: "pointer",
                         }}
                       >
-                        {fmtTime(ts)}
+                        {fmtTime(ts)} BRT
                         <span style={{ display: "block", fontSize: 9, color: "#888" }}>
                           {hoursAgo(ts)}
                         </span>
@@ -440,7 +440,7 @@ export default function NaviosDieselPage() {
                   Expected diesel vessel arrivals at Brazilian ports
                   {selectedColeta && (
                     <span style={{ marginLeft: 12, fontSize: 11, color: "#888" }}>
-                      Last update: {fmtTs(selectedColeta)} ({hoursAgo(selectedColeta)})
+                      Last update: {fmtTs(selectedColeta)} BRT ({hoursAgo(selectedColeta)})
                     </span>
                   )}
                 </div>
@@ -491,7 +491,7 @@ export default function NaviosDieselPage() {
                         <div style={TITLE_STYLE}>Vessel Details</div>
                         <hr className="section-hr" />
                         <div style={{ fontFamily: "Arial", fontSize: 10, color: "#999" }}>
-                          {fmtTs(selectedColeta)}{selectedColeta ? ` (${hoursAgo(selectedColeta)})` : ""}
+                          {fmtTs(selectedColeta)}{selectedColeta ? ` BRT (${hoursAgo(selectedColeta)})` : ""}
                         </div>
                       </div>
                       <div style={{ overflowX: "auto" }}>
