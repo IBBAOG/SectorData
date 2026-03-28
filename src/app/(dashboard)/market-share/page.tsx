@@ -766,76 +766,88 @@ export default function MarketSharePage() {
                   </div>
                 </div>
 
-                <div style={{ border: "1px solid #d0d0d0", borderRadius: 6, padding: "10px 16px", backgroundColor: "#fafafa", minWidth: 180 }}>
-                  <div style={{ fontFamily: "Arial", fontSize: 11, fontWeight: 700, color: "#1a1a1a", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                    Export Data
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "row", gap: 8 }}>
-                    <button
-                      type="button"
-                      className="btn btn-outline-secondary btn-sm"
-                      onClick={async () => {
-                        setExcelLoading(true);
-                        try {
-                          await downloadMarketShareExcel(serieRows, players, big3);
-                        } catch (e) {
-                          console.error("Excel export failed", e);
-                        } finally {
-                          setExcelLoading(false);
-                        }
-                      }}
-                      disabled={!serieRows || serieRows.length === 0 || seriesLoading || excelLoading}
-                      style={{ fontFamily: "Arial" }}
-                    >
-                      {excelLoading ? (
-                        <img src="/barrel_loading.png" alt="Carregando..." width={16} height={16} className="me-1" />
-                      ) : (
-                        /* Excel icon */
-                        <svg width="16" height="16" viewBox="0 0 24 24" style={{ marginRight: 5, verticalAlign: "middle" }} xmlns="http://www.w3.org/2000/svg">
-                          <rect x="2" y="2" width="20" height="20" rx="3" fill="#217346"/>
-                          <text x="4" y="17" fontFamily="Arial" fontWeight="bold" fontSize="12" fill="#ffffff">X</text>
-                        </svg>
-                      )}
-                      {excelLoading ? "Gerando..." : "formated data .xl"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-outline-secondary btn-sm"
-                      onClick={async () => {
-                        if (!supabase) return;
-                        setCsvLoading(true);
-                        try {
-                          const rows = await fetchAllVendas(supabase);
-                          downloadCsv(rows, "vendas.csv");
-                        } catch (e) {
-                          console.error("Failed to fetch vendas", e);
-                        } finally {
-                          setCsvLoading(false);
-                        }
-                      }}
-                      disabled={csvLoading || seriesLoading}
-                      style={{ fontFamily: "Arial" }}
-                    >
-                      {csvLoading ? (
-                        <img src="/barrel_loading.png" alt="Carregando..." width={16} height={16} className="me-1" />
-                      ) : (
-                        /* Notepad/CSV icon */
-                        <svg width="16" height="16" viewBox="0 0 24 24" style={{ marginRight: 5, verticalAlign: "middle" }} xmlns="http://www.w3.org/2000/svg">
-                          <rect x="3" y="2" width="18" height="20" rx="2" fill="#1565C0"/>
-                          <rect x="6" y="7" width="12" height="1.5" rx="0.75" fill="#ffffff"/>
-                          <rect x="6" y="11" width="12" height="1.5" rx="0.75" fill="#ffffff"/>
-                          <rect x="6" y="15" width="8" height="1.5" rx="0.75" fill="#ffffff"/>
-                        </svg>
-                      )}
-                      {csvLoading ? "Baixando..." : "all data .csv"}
-                    </button>
-                  </div>
+                <div style={{ position: "relative", minWidth: 180 }}>
+                  {(excelLoading || csvLoading) ? (
+                    <div style={{
+                      border: "1px solid #e0e0e0",
+                      borderRadius: 10,
+                      padding: "16px 24px",
+                      backgroundColor: "rgba(255,255,255,0.95)",
+                      backdropFilter: "blur(6px)",
+                      boxShadow: "0 4px 20px rgba(0,0,0,0.08)",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 10,
+                    }}>
+                      <img src="/barrel_loading.png" alt="Carregando..." width={64} height={64} />
+                      <span style={{ fontFamily: "Arial", fontSize: 12, fontWeight: 600, color: "#555", letterSpacing: "0.3px" }}>
+                        {excelLoading ? "Gerando Excel..." : "Baixando CSV..."}
+                      </span>
+                    </div>
+                  ) : (
+                    <div style={{ border: "1px solid #d0d0d0", borderRadius: 6, padding: "10px 16px", backgroundColor: "#fafafa" }}>
+                      <div style={{ fontFamily: "Arial", fontSize: 11, fontWeight: 700, color: "#1a1a1a", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                        Export Data
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "row", gap: 8 }}>
+                        <button
+                          type="button"
+                          className="btn btn-outline-secondary btn-sm"
+                          onClick={async () => {
+                            setExcelLoading(true);
+                            try {
+                              await downloadMarketShareExcel(serieRows, players, big3);
+                            } catch (e) {
+                              console.error("Excel export failed", e);
+                            } finally {
+                              setExcelLoading(false);
+                            }
+                          }}
+                          disabled={!serieRows || serieRows.length === 0 || seriesLoading || excelLoading}
+                          style={{ fontFamily: "Arial" }}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" style={{ marginRight: 5, verticalAlign: "middle" }} xmlns="http://www.w3.org/2000/svg">
+                            <rect x="2" y="2" width="20" height="20" rx="3" fill="#217346"/>
+                            <text x="4" y="17" fontFamily="Arial" fontWeight="bold" fontSize="12" fill="#ffffff">X</text>
+                          </svg>
+                          formated data .xl
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-outline-secondary btn-sm"
+                          onClick={async () => {
+                            if (!supabase) return;
+                            setCsvLoading(true);
+                            try {
+                              const rows = await fetchAllVendas(supabase);
+                              downloadCsv(rows, "vendas.csv");
+                            } catch (e) {
+                              console.error("Failed to fetch vendas", e);
+                            } finally {
+                              setCsvLoading(false);
+                            }
+                          }}
+                          disabled={csvLoading || seriesLoading}
+                          style={{ fontFamily: "Arial" }}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" style={{ marginRight: 5, verticalAlign: "middle" }} xmlns="http://www.w3.org/2000/svg">
+                            <rect x="3" y="2" width="18" height="20" rx="2" fill="#1565C0"/>
+                            <rect x="6" y="7" width="12" height="1.5" rx="0.75" fill="#ffffff"/>
+                            <rect x="6" y="11" width="12" height="1.5" rx="0.75" fill="#ffffff"/>
+                            <rect x="6" y="15" width="8" height="1.5" rx="0.75" fill="#ffffff"/>
+                          </svg>
+                          all data .csv
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
               {seriesLoading ? (
                 <div className="d-flex justify-content-center my-5">
-                  <img src="/barrel_loading.png" alt="Carregando..." width={80} height={80} />
+                  <img src="/barrel_loading.png" alt="Carregando..." width={160} height={160} />
                 </div>
               ) : (
                 <>
