@@ -284,7 +284,7 @@ export default function NaviosDieselPage() {
     const layout: Partial<Layout> = {
       paper_bgcolor: "white",
       plot_bgcolor: "white",
-      margin: { t: 30, b: 36, l: 72, r: 0 },
+      margin: { t: 30, b: 36, l: 110, r: 0 },
       height: 220,
       bargap: 0.3,
       yaxis: { visible: false },
@@ -483,19 +483,17 @@ export default function NaviosDieselPage() {
               ) : (
                 <>
                   {/* Charts row: larger map | bar chart + aligned summary table */}
-                  <div style={{ display: "flex", gap: 16, alignItems: "stretch", marginBottom: 16 }}>
-                    {/* Map — half the row width, left-aligned */}
-                    <div className="chart-container" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+                  <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 16 }}>
+                    {/* Map — larger share of the row */}
+                    <div className="chart-container" style={{ flex: 3, minWidth: 0 }}>
                       <div style={TITLE_STYLE}>Distribution by Port</div>
                       <hr className="section-hr" />
-                      <div style={{ flex: 1, minHeight: 480 }}>
-                        <PlotlyChart
-                          data={mapChart.data}
-                          layout={{ ...mapChart.layout, height: 480, autosize: true }}
-                          config={{ displayModeBar: false, responsive: true }}
-                          style={{ width: "100%", height: "100%" }}
-                        />
-                      </div>
+                      <PlotlyChart
+                        data={mapChart.data}
+                        layout={{ ...mapChart.layout, height: 500 }}
+                        config={{ displayModeBar: false }}
+                        style={{ width: "100%", height: 500 }}
+                      />
                     </div>
                     {/* Bar chart + summary table in same container for alignment */}
                     <div className="chart-container" style={{ flex: 1, minWidth: 0 }}>
@@ -514,7 +512,7 @@ export default function NaviosDieselPage() {
                           <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 11, tableLayout: "fixed" }}>
                             <thead>
                               <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
-                                <th style={{ width: 72, padding: "6px 8px", fontSize: 10, fontWeight: 700, textAlign: "left" }}>Port</th>
+                                <th style={{ width: 110, padding: "6px 10px", fontSize: 10, fontWeight: 700, textAlign: "left" }}>Port</th>
                                 {portMonthlySummary.months.map(m => (
                                   <th key={m} style={{ padding: "6px 4px", fontSize: 10, fontWeight: 700, textAlign: "center", whiteSpace: "nowrap" }}>
                                     {portMonthlySummary.monthLabels[m]}
@@ -530,7 +528,7 @@ export default function NaviosDieselPage() {
                                   onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
                                   onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = i % 2 === 0 ? "#fff" : "#fafafa"; }}
                                 >
-                                  <td style={{ width: 72, padding: "4px 10px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: 11 }}>
+                                  <td style={{ width: 110, padding: "4px 10px", fontWeight: 600, whiteSpace: "nowrap", fontSize: 11 }}>
                                     {porto.replace("Porto de ", "")}
                                   </td>
                                   {portMonthlySummary.months.map(m => {
