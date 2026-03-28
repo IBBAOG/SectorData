@@ -247,21 +247,24 @@ export default function NaviosDieselPage() {
                 </div>
               ) : (
                 <>
+                  {/* Map + Table side by side */}
+                  <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 16 }}>
+
                   {/* Map */}
-                  <div className="chart-container" style={{ marginBottom: 16 }}>
+                  <div className="chart-container" style={{ flex: "0 0 420px" }}>
                     <div style={{ fontFamily: "Arial", fontSize: 13, fontWeight: 700, marginBottom: 6, color: "#1a1a1a" }}>
                       Port Distribution — Brazil
                     </div>
                     <PlotlyChart
                       data={mapChart.data}
-                      layout={mapChart.layout}
+                      layout={{ ...mapChart.layout, height: 420 }}
                       config={{ displayModeBar: false }}
-                      style={{ width: "100%", height: 450 }}
+                      style={{ width: "100%", height: 420 }}
                     />
                   </div>
 
                   {/* Vessel table */}
-                  <div className="chart-container" style={{ marginBottom: 16 }}>
+                  <div className="chart-container" style={{ flex: 1, minWidth: 0, marginBottom: 0 }}>
                     <div style={{ fontFamily: "Arial", fontSize: 13, fontWeight: 700, marginBottom: 6, color: "#1a1a1a" }}>
                       Vessel Details — {fmtTs(selectedColeta)}
                     </div>
@@ -314,6 +317,7 @@ export default function NaviosDieselPage() {
                       </table>
                     </div>
                   </div>
+                  </div>{/* end flex row */}
 
                   {/* Disclaimer */}
                   <div
