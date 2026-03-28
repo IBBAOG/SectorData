@@ -28,9 +28,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase origin main
           git add output/
           git diff --cached --quiet || git commit -m "dados: atualização $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git pull --rebase origin main
           git push
 
       - uses: actions/setup-node@v4
