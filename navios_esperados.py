@@ -625,6 +625,40 @@ def _aplicar_conversao(resultado: pd.DataFrame) -> pd.DataFrame:
     return resultado
 
 
+def _filtrar_datas_antigas(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Remove linhas cujas datas (Chegada, Atracação, Desatracação) são TODAS
+    anteriores a 7 dias antes da data de coleta.
+    Se pelo menos uma das datas for recente (ou estiver vazia), a linha é mantida.
+    """
+    _BRT = timezone(timedelta(hours=-3))
+    limite = datetime.now(_BRT) - timedelta(days=7)
+    colunas_data = ["Chegada", "Atracação", "Desatracação"]
+
+    def _linha_valida(row):
+        datas_presentes = []
+        for col in colunas_data:
+            val = row.get(col)
+            if pd.isna(val) or str(val).strip() == "":
+                continue
+            try:
+                dt = pd.to_datetime(str(val), dayfirst=True)
+                datas_presentes.append(dt)
+            except (ValueError, TypeError):
+                continue
+        # Se nenhuma data preenchida, manter a linha
+        if not datas_presentes:
+            return True
+        # Manter se pelo menos uma data é >= limite
+        return any(dt.replace(tzinfo=_BRT) >= limite for dt in datas_presentes)
+
+    mask = df.apply(_linha_valida, axis=1)
+    removidos = (~mask).sum()
+    if removidos > 0:
+        print(f"  Filtro de datas: {removidos} registro(s) removido(s) (datas > 7 dias atrás)")
+    return df.loc[mask]
+
+
 def consolidar(*tabelas: pd.DataFrame) -> pd.DataFrame:
     validas = [t for t in tabelas if t is not None and not t.empty]
     if not validas:
@@ -647,6 +681,9 @@ def consolidar(*tabelas: pd.DataFrame) -> pd.DataFrame:
 
     # Converter quantidades para m³
     result = _aplicar_conversao(result)
+
+    # Filtrar registros com todas as datas anteriores a 7 dias da coleta
+    result = _filtrar_datas_antigas(result)
 
     result = result.reset_index(drop=True)
     extras = [c for c in result.columns if c not in COLS_PADRAO]
