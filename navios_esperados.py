@@ -575,6 +575,14 @@ def buscar_suape() -> pd.DataFrame:
     f = f.rename(columns=rename_map)
     f["Status"] = f["Status"].str.strip()
 
+    # Excluir cabotagem: origem terminando em "-BRA" indica rota doméstica
+    if "Origem" in f.columns:
+        cabotagem = f["Origem"].str.strip().str.upper().str.endswith("-BRA").fillna(False)
+        n_cab = cabotagem.sum()
+        if n_cab > 0:
+            print(f"  Suape: {n_cab} navio(s) de cabotagem removido(s) (origem -BRA)")
+        f = f.loc[~cabotagem]
+
     # Carga: lista de produtos diesel puro por navio
     f["Carga"] = f.apply(
         lambda row: " | ".join(
