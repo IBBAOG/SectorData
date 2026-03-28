@@ -299,6 +299,34 @@ export default function NaviosDieselPage() {
     return { data, layout };
   }, [navios]);
 
+  // Build port monthly summary
+  const portMonthlySummary = useMemo(() => {
+    const portMap = new Map<string, Map<string, { vessels: number; volume: number }>>();
+    const monthsSet = new Set<string>();
+
+    for (const r of navios) {
+      if (!r.eta) continue;
+      const month = r.eta.slice(0, 7);
+      monthsSet.add(month);
+      if (!portMap.has(r.porto)) portMap.set(r.porto, new Map());
+      const mMap = portMap.get(r.porto)!;
+      if (!mMap.has(month)) mMap.set(month, { vessels: 0, volume: 0 });
+      const cell = mMap.get(month)!;
+      cell.vessels += 1;
+      cell.volume += r.quantidade_convertida ?? 0;
+    }
+
+    const months = Array.from(monthsSet).sort();
+    const ports = Array.from(portMap.keys()).sort();
+    const monthLabels: Record<string, string> = {};
+    for (const m of months) {
+      const [yr, mo] = m.split("-");
+      monthLabels[m] = new Date(Number(yr), Number(mo) - 1, 1).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+    }
+
+    return { ports, months, monthLabels, portMap };
+  }, [navios]);
+
   return (
     <div>
       <NavBar />
@@ -454,96 +482,139 @@ export default function NaviosDieselPage() {
                 </div>
               ) : (
                 <>
-                  {/* Map + Table side by side */}
+                  {/* Charts row: map + bar chart side by side */}
                   <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 16 }}>
+                    <div className="chart-container" style={{ flex: 1, minWidth: 0 }}>
+                      <div style={TITLE_STYLE}>Distribution by Port</div>
+                      <hr className="section-hr" />
+                      <PlotlyChart
+                        data={mapChart.data}
+                        layout={{ ...mapChart.layout, height: 280 }}
+                        config={{ displayModeBar: false }}
+                        style={{ width: "100%", height: 280 }}
+                      />
+                    </div>
+                    <div className="chart-container" style={{ flex: 1, minWidth: 0 }}>
+                      <div style={TITLE_STYLE}>Monthly Diesel Volume (m³)</div>
+                      <hr className="section-hr" />
+                      <PlotlyChart
+                        data={monthlyChart.data}
+                        layout={{ ...monthlyChart.layout, height: 280 }}
+                        config={{ displayModeBar: false }}
+                        style={{ width: "100%", height: 280 }}
+                      />
+                    </div>
+                  </div>
 
-                    {/* Left column: map + monthly bar chart */}
-                    <div style={{ flex: "0 0 520px", display: "flex", flexDirection: "column", gap: 12 }}>
-
-                      {/* Map */}
-                      <div className="chart-container">
-                        <div style={TITLE_STYLE}>Distribution by Port</div>
-                        <hr className="section-hr" />
-                        <PlotlyChart
-                          data={mapChart.data}
-                          layout={{ ...mapChart.layout, height: 280 }}
-                          config={{ displayModeBar: false }}
-                          style={{ width: "100%", height: 280 }}
-                        />
-                      </div>
-
-                      {/* Monthly bar chart */}
-                      <div className="chart-container">
-                        <div style={TITLE_STYLE}>Monthly Diesel Volume (m³)</div>
-                        <hr className="section-hr" />
-                        <PlotlyChart
-                          data={monthlyChart.data}
-                          layout={monthlyChart.layout}
-                          config={{ displayModeBar: false }}
-                          style={{ width: "100%", height: 220 }}
-                        />
+                  {/* Vessel Details table (full width) */}
+                  <div className="chart-container" style={{ marginBottom: 16 }}>
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={TITLE_STYLE}>Vessel Details</div>
+                      <hr className="section-hr" />
+                      <div style={{ fontFamily: "Arial", fontSize: 10, color: "#999" }}>
+                        {fmtTs(selectedColeta)}{selectedColeta ? ` BRT (${hoursAgo(selectedColeta)})` : ""}
                       </div>
                     </div>
-
-                    {/* Vessel table */}
-                    <div className="chart-container" style={{ flex: 1, minWidth: 0, marginBottom: 0 }}>
-                      <div style={{ marginBottom: 8 }}>
-                        <div style={TITLE_STYLE}>Vessel Details</div>
-                        <hr className="section-hr" />
-                        <div style={{ fontFamily: "Arial", fontSize: 10, color: "#999" }}>
-                          {fmtTs(selectedColeta)}{selectedColeta ? ` BRT (${hoursAgo(selectedColeta)})` : ""}
-                        </div>
-                      </div>
-                      <div style={{ overflowX: "auto" }}>
-                        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 11 }}>
-                          <thead>
-                            <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
-                              {["Port", "Status", "Vessel", "Qty", "Unit", "Conv. Qty (m³)", "ETA", "Unload Start", "Unload End", "Origin", "Berth"].map((h) => (
-                                <th key={h} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {navios.map((r) => (
-                              <tr
-                                key={r.id}
-                                style={{ borderBottom: "1px solid #eee" }}
-                                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
-                                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }}
-                              >
-                                <td style={{ padding: "4px 10px", fontWeight: 600 }}>{r.porto.replace("Porto de ", "")}</td>
-                                <td style={{ padding: "4px 10px" }}>
-                                  <span style={{
-                                    display: "inline-block",
-                                    padding: "2px 8px",
-                                    borderRadius: 4,
-                                    fontSize: 10,
-                                    fontWeight: 600,
-                                    backgroundColor: STATUS_COLORS[r.status] ?? "#f0f0f0",
-                                  }}>
-                                    {STATUS_LABELS[r.status] ?? r.status}
-                                  </span>
-                                </td>
-                                <td style={{ padding: "4px 10px" }}>{r.navio}</td>
-                                <td style={{ padding: "4px 10px", textAlign: "right" }}>
-                                  {r.quantidade?.toLocaleString("en-US", { maximumFractionDigits: 0 }) ?? "—"}
-                                </td>
-                                <td style={{ padding: "4px 10px" }}>{r.unidade ?? "—"}</td>
-                                <td style={{ padding: "4px 10px", textAlign: "right" }}>
-                                  {r.quantidade_convertida?.toLocaleString("en-US", { maximumFractionDigits: 0 }) ?? "—"}
-                                </td>
-                                <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.eta)}</td>
-                                <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.inicio_descarga)}</td>
-                                <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.fim_descarga)}</td>
-                                <td style={{ padding: "4px 10px" }}>{r.origem ?? "—"}</td>
-                                <td style={{ padding: "4px 10px" }}>{r.berco ?? "—"}</td>
-                              </tr>
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 11 }}>
+                        <thead>
+                          <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
+                            {["Port", "Status", "Vessel", "Qty", "Unit", "Conv. Qty (m³)", "ETA", "Unload Start", "Unload End", "Origin", "Berth"].map((h) => (
+                              <th key={h} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
                             ))}
-                          </tbody>
-                        </table>
-                      </div>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {navios.map((r) => (
+                            <tr
+                              key={r.id}
+                              style={{ borderBottom: "1px solid #eee" }}
+                              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
+                              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }}
+                            >
+                              <td style={{ padding: "4px 10px", fontWeight: 600 }}>{r.porto.replace("Porto de ", "")}</td>
+                              <td style={{ padding: "4px 10px" }}>
+                                <span style={{
+                                  display: "inline-block",
+                                  padding: "2px 8px",
+                                  borderRadius: 4,
+                                  fontSize: 10,
+                                  fontWeight: 600,
+                                  backgroundColor: STATUS_COLORS[r.status] ?? "#f0f0f0",
+                                }}>
+                                  {STATUS_LABELS[r.status] ?? r.status}
+                                </span>
+                              </td>
+                              <td style={{ padding: "4px 10px" }}>{r.navio}</td>
+                              <td style={{ padding: "4px 10px", textAlign: "right" }}>
+                                {r.quantidade?.toLocaleString("en-US", { maximumFractionDigits: 0 }) ?? "—"}
+                              </td>
+                              <td style={{ padding: "4px 10px" }}>{r.unidade ?? "—"}</td>
+                              <td style={{ padding: "4px 10px", textAlign: "right" }}>
+                                {r.quantidade_convertida?.toLocaleString("en-US", { maximumFractionDigits: 0 }) ?? "—"}
+                              </td>
+                              <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.eta)}</td>
+                              <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.inicio_descarga)}</td>
+                              <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.fim_descarga)}</td>
+                              <td style={{ padding: "4px 10px" }}>{r.origem ?? "—"}</td>
+                              <td style={{ padding: "4px 10px" }}>{r.berco ?? "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                  </div>{/* end flex row */}
+                  </div>
+
+                  {/* Monthly Summary by Port table */}
+                  <div className="chart-container" style={{ marginBottom: 16 }}>
+                    <div style={TITLE_STYLE}>Monthly Summary by Port</div>
+                    <hr className="section-hr" />
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 11 }}>
+                        <thead>
+                          <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
+                            <th style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap", textAlign: "left" }}>Port</th>
+                            {portMonthlySummary.months.map(m => (
+                              <th key={m} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap", textAlign: "center" }}>
+                                {portMonthlySummary.monthLabels[m]}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {portMonthlySummary.ports.map((porto, i) => (
+                            <tr
+                              key={porto}
+                              style={{ borderBottom: "1px solid #eee", backgroundColor: i % 2 === 0 ? "#fff" : "#fafafa" }}
+                              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
+                              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = i % 2 === 0 ? "#fff" : "#fafafa"; }}
+                            >
+                              <td style={{ padding: "6px 10px", fontWeight: 600, whiteSpace: "nowrap" }}>
+                                {porto.replace("Porto de ", "")}
+                              </td>
+                              {portMonthlySummary.months.map(m => {
+                                const cell = portMonthlySummary.portMap.get(porto)?.get(m);
+                                return (
+                                  <td key={m} style={{ padding: "6px 10px", textAlign: "center" }}>
+                                    {cell ? (
+                                      <>
+                                        <div style={{ fontWeight: 700 }}>{cell.vessels} vessel{cell.vessels !== 1 ? "s" : ""}</div>
+                                        <div style={{ fontSize: 10, color: "#666" }}>
+                                          {cell.volume.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³
+                                        </div>
+                                      </>
+                                    ) : (
+                                      <span style={{ color: "#ccc" }}>—</span>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
 
                   {/* Disclaimer */}
                   <div
