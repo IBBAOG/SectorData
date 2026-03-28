@@ -67,6 +67,13 @@ function makeCartesianLayout(params: {
   height?: number;
 }): Partial<Layout> {
   const { title, xTitle, yTitle, height = 320 } = params;
+  const spikeAxis = {
+    showspikes: true,
+    spikemode: "across",
+    spikedash: "solid",
+    spikecolor: "#555555",
+    spikethickness: 1,
+  };
   return {
     title: title ? { text: title, font: { family: "Arial" } } : undefined,
     paper_bgcolor: "white",
@@ -74,7 +81,15 @@ function makeCartesianLayout(params: {
     font: { family: "Arial", color: "#1a1a1a", size: 12 },
     margin: { t: 40, b: 20, l: 10, r: 10 },
     height,
-    xaxis: xTitle ? { ...baseAxis(), title: { text: xTitle, font: { family: "Arial" } } } : { ...baseAxis() },
+    hoverlabel: {
+      bgcolor: "rgba(255, 255, 255, 0.95)",
+      bordercolor: "rgba(180, 180, 180, 0.5)",
+      font: { family: "Arial", color: "#1a1a1a", size: 12 },
+      namelength: -1,
+    },
+    xaxis: xTitle
+      ? { ...baseAxis(), ...spikeAxis, title: { text: xTitle, font: { family: "Arial" } } }
+      : { ...baseAxis(), ...spikeAxis },
     yaxis: yTitle ? { ...baseAxis(), title: { text: yTitle, font: { family: "Arial" } } } : { ...baseAxis() },
   };
 }
@@ -239,11 +254,22 @@ export default function SalesPage() {
       font: { family: "Arial", size: 12, color: "#000000" },
       margin: { t: 40, b: 20, l: 10, r: 10 },
       height: 320,
+      hoverlabel: {
+        bgcolor: "rgba(255, 255, 255, 0.95)",
+        bordercolor: "rgba(180, 180, 180, 0.5)",
+        font: { family: "Arial", color: "#1a1a1a", size: 12 },
+        namelength: -1,
+      },
       xaxis: {
         title: { text: "Volume (thousand m3)", font: { family: "Arial" } },
         showgrid: false,
         zeroline: false,
         showline: true,
+        showspikes: true,
+        spikemode: "across",
+        spikedash: "solid",
+        spikecolor: "#555555",
+        spikethickness: 1,
       },
       yaxis: {
         title: { text: yTitle, font: { family: "Arial" } },
