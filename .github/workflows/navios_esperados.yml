@@ -31,3 +31,15 @@ jobs:
           git add output/
           git diff --cached --quiet || git commit -m "dados: atualização $(date -u +'%Y-%m-%d %H:%M UTC')"
           git push
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Importar dados para Supabase
+        run: |
+          npm install @supabase/supabase-js
+          node scripts/import_navios_diesel.mjs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

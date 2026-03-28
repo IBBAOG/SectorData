@@ -11,12 +11,20 @@ import fs from "fs";
 import path from "path";
 
 // ── Config ───────────────────────────────────────────────────────────────────
-const envText = fs.readFileSync(path.resolve(".env"), "utf8");
-const url = envText.match(/SUPABASE_URL=(.*)/)?.[1]?.trim();
-const key = envText.match(/SUPABASE_SERVICE_KEY=(.*)/)?.[1]?.trim();
+// Prefer env vars (CI), fall back to .env file (local)
+let url = process.env.SUPABASE_URL;
+let key = process.env.SUPABASE_SERVICE_KEY;
 
 if (!url || !key) {
-  console.error("❌ Missing SUPABASE_URL or SUPABASE_SERVICE_KEY in .env");
+  try {
+    const envText = fs.readFileSync(path.resolve(".env"), "utf8");
+    url = url || envText.match(/SUPABASE_URL=(.*)/)?.[1]?.trim();
+    key = key || envText.match(/SUPABASE_SERVICE_KEY=(.*)/)?.[1]?.trim();
+  } catch { /* no .env file */ }
+}
+
+if (!url || !key) {
+  console.error("❌ Missing SUPABASE_URL or SUPABASE_SERVICE_KEY (set env vars or .env)");
   process.exit(1);
 }
 
