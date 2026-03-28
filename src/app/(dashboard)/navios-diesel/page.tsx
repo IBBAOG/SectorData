@@ -18,10 +18,11 @@ import {
 const ORANGE = "#FF5000";
 
 const PORT_COORDS: Record<string, { lat: number; lon: number }> = {
-  "Porto de Santos":    { lat: -23.9543, lon: -46.3073 },
-  "Porto de Itaqui":    { lat: -2.5657,  lon: -44.3484 },
-  "Porto de Paranaguá": { lat: -25.5163, lon: -48.5228 },
-  "Porto de Suape":     { lat: -8.3943,  lon: -34.9630 },
+  "Porto de Santos":        { lat: -23.9543, lon: -46.3073 },
+  "Porto de Itaqui":        { lat: -2.5657,  lon: -44.3484 },
+  "Porto de Paranaguá":     { lat: -25.5163, lon: -48.5228 },
+  "Porto de Suape":         { lat: -8.3943,  lon: -34.9630 },
+  "Porto de São Sebastião": { lat: -23.8170, lon: -45.4170 },
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -183,18 +184,27 @@ export default function NaviosDieselPage() {
     const lons: number[] = [];
     const texts: string[] = [];
     const sizes: number[] = [];
+    const colors: string[] = [];
 
-    for (const p of resumo) {
-      const c = PORT_COORDS[p.porto];
-      if (!c) continue;
+    const resumoByPorto = new Map(resumo.map(p => [p.porto, p]));
+
+    for (const [porto, c] of Object.entries(PORT_COORDS)) {
+      const p = resumoByPorto.get(porto);
       lats.push(c.lat);
       lons.push(c.lon);
-      texts.push(
-        `<b>${p.porto}</b><br>` +
-        `${p.total_navios} vessels<br>` +
-        `${p.total_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³`
-      );
-      sizes.push(Math.max(14, Math.sqrt(p.total_navios) * 16));
+      if (p) {
+        texts.push(
+          `<b>${porto}</b><br>` +
+          `${p.total_navios} vessels<br>` +
+          `${p.total_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³`
+        );
+        sizes.push(Math.max(14, Math.sqrt(p.total_navios) * 16));
+        colors.push(ORANGE);
+      } else {
+        texts.push(`<b>${porto}</b><br>0 vessels<br>0 m³`);
+        sizes.push(9);
+        colors.push("#cccccc");
+      }
     }
 
     const data: PlotData[] = [
@@ -206,8 +216,8 @@ export default function NaviosDieselPage() {
         hoverinfo: "text",
         marker: {
           size: sizes,
-          color: ORANGE,
-          opacity: 0.75,
+          color: colors,
+          opacity: 0.85,
           line: { color: "#000512", width: 1.5 },
         },
       } as unknown as PlotData,
@@ -537,6 +547,7 @@ export default function NaviosDieselPage() {
                     </div>
                     <ul style={{ margin: 0, paddingLeft: 18 }}>
                       <li>Data is collected at 6-hour intervals and may not reflect real-time conditions or recent changes in vessel schedules.</li>
+                      <li>Ports monitored: Santos, Itaqui, Paranaguá, Suape, and São Sebastião. Ports with no vessels in the selected snapshot are shown in gray on the map.</li>
                       <li>Port locations are approximate and for reference only.</li>
                       <li>Expected ship counts are based on historical patterns and are subject to change.</li>
                       <li>This data does not account for operational delays, weather impacts, or force majeure events.</li>
