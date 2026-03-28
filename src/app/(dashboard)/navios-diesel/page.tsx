@@ -16,6 +16,7 @@ import {
 } from "../../../lib/rpc";
 
 const ORANGE = "#FF5000";
+const ORANGE_HOVER = "#FFE8D9";
 
 const PORT_COORDS: Record<string, { lat: number; lon: number }> = {
   "Porto de Santos":        { lat: -23.9543, lon: -46.3073 },
@@ -108,6 +109,9 @@ export default function NaviosDieselPage() {
   const [navios, setNavios] = useState<NavioDieselRow[]>([]);
   const [resumo, setResumo] = useState<PortoResumo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hoveredDay, setHoveredDay] = useState<string | null>(null);
+  const [hoveredColeta, setHoveredColeta] = useState<string | null>(null);
+  const [hoveredNavBtn, setHoveredNavBtn] = useState<"prev" | "next" | null>(null);
 
   // Group timestamps by day
   const coletasByDay = useMemo(() => {
@@ -320,16 +324,22 @@ export default function NaviosDieselPage() {
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
                     <button
                       type="button"
+                      className="btn-hover-transition"
                       onClick={() => { if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1); } else setCalMonth(m => m - 1); }}
-                      style={{ background: "none", border: "none", cursor: "pointer", color: ORANGE, fontSize: 16, lineHeight: 1, padding: "0 4px" }}
+                      onMouseEnter={() => setHoveredNavBtn("prev")}
+                      onMouseLeave={() => setHoveredNavBtn(null)}
+                      style={{ background: hoveredNavBtn === "prev" ? ORANGE_HOVER : "none", border: "none", borderRadius: 4, cursor: "pointer", color: ORANGE, fontSize: 16, lineHeight: 1, padding: "0 4px" }}
                     >‹</button>
                     <span style={{ fontSize: 11, fontWeight: 700, color: "#1a1a1a" }}>
                       {MONTH_NAMES[calMonth]} {calYear}
                     </span>
                     <button
                       type="button"
+                      className="btn-hover-transition"
                       onClick={() => { if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1); } else setCalMonth(m => m + 1); }}
-                      style={{ background: "none", border: "none", cursor: "pointer", color: ORANGE, fontSize: 16, lineHeight: 1, padding: "0 4px" }}
+                      onMouseEnter={() => setHoveredNavBtn("next")}
+                      onMouseLeave={() => setHoveredNavBtn(null)}
+                      style={{ background: hoveredNavBtn === "next" ? ORANGE_HOVER : "none", border: "none", borderRadius: 4, cursor: "pointer", color: ORANGE, fontSize: 16, lineHeight: 1, padding: "0 4px" }}
                     >›</button>
                   </div>
                   {/* Day-of-week headers */}
@@ -349,6 +359,7 @@ export default function NaviosDieselPage() {
                         <button
                           key={i}
                           type="button"
+                          className="btn-hover-transition"
                           disabled={!hasData}
                           onClick={() => {
                             if (!hasData) return;
@@ -356,12 +367,14 @@ export default function NaviosDieselPage() {
                             const times = coletasByDay.get(dayStr) ?? [];
                             if (times.length > 0) setSelectedColeta(times[0]);
                           }}
+                          onMouseEnter={() => { if (hasData) setHoveredDay(dayStr); }}
+                          onMouseLeave={() => setHoveredDay(null)}
                           style={{
                             padding: "4px 0",
                             margin: "1px",
                             borderRadius: 4,
                             border: "none",
-                            backgroundColor: isSelected ? ORANGE : "transparent",
+                            backgroundColor: isSelected ? ORANGE : hasData && hoveredDay === dayStr ? ORANGE_HOVER : "transparent",
                             color: isSelected ? "#fff" : hasData ? "#1a1a1a" : "#ddd",
                             fontFamily: "Arial",
                             fontSize: 10,
@@ -386,7 +399,10 @@ export default function NaviosDieselPage() {
                       <button
                         key={ts}
                         type="button"
+                        className="btn-hover-transition"
                         onClick={() => setSelectedColeta(ts)}
+                        onMouseEnter={() => setHoveredColeta(ts)}
+                        onMouseLeave={() => setHoveredColeta(null)}
                         style={{
                           display: "block",
                           width: "100%",
@@ -395,7 +411,7 @@ export default function NaviosDieselPage() {
                           marginBottom: 3,
                           borderRadius: 6,
                           border: selectedColeta === ts ? `2px solid ${ORANGE}` : "1px solid #ddd",
-                          backgroundColor: selectedColeta === ts ? "#fff5f0" : "#fff",
+                          backgroundColor: selectedColeta === ts ? "#fff5f0" : hoveredColeta === ts ? ORANGE_HOVER : "#fff",
                           fontFamily: "Arial",
                           fontSize: 11,
                           fontWeight: selectedColeta === ts ? 700 : 400,

@@ -378,6 +378,11 @@ body {
   color: #888;
 }
 
+/* ─── Button hover transition ─────────────────────────────────────────────── */
+.btn-hover-transition {
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
 /* ─── Sidebar filters ──────────────────────────────────────────────────────── */
 .sidebar-section-label {
   font-family: Arial, sans-serif;
