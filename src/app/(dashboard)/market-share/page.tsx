@@ -788,7 +788,7 @@ export default function MarketSharePage() {
                       style={{ fontFamily: "Arial" }}
                     >
                       {excelLoading ? (
-                        <span className="spinner-border spinner-border-sm me-1" role="status" />
+                        <img src="/barrel_loading.png" alt="Carregando..." width={16} height={16} className="me-1" />
                       ) : (
                         /* Excel icon */
                         <svg width="16" height="16" viewBox="0 0 24 24" style={{ marginRight: 5, verticalAlign: "middle" }} xmlns="http://www.w3.org/2000/svg">
@@ -817,7 +817,7 @@ export default function MarketSharePage() {
                       style={{ fontFamily: "Arial" }}
                     >
                       {csvLoading ? (
-                        <span className="spinner-border spinner-border-sm me-1" role="status" />
+                        <img src="/barrel_loading.png" alt="Carregando..." width={16} height={16} className="me-1" />
                       ) : (
                         /* Notepad/CSV icon */
                         <svg width="16" height="16" viewBox="0 0 24 24" style={{ marginRight: 5, verticalAlign: "middle" }} xmlns="http://www.w3.org/2000/svg">
@@ -835,7 +835,7 @@ export default function MarketSharePage() {
 
               {seriesLoading ? (
                 <div className="d-flex justify-content-center my-5">
-                  <div className="spinner-border text-warning" role="status" />
+                  <img src="/barrel_loading.png" alt="Carregando..." width={80} height={80} />
                 </div>
               ) : (
                 <>

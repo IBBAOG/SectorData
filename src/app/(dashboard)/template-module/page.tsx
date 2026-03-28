@@ -171,7 +171,7 @@ export default function MyModulePage() {
 
               {loading ? (
                 <div className="d-flex justify-content-center my-5">
-                  <div className="spinner-border text-warning" role="status" />
+                  <img src="/barrel_loading.png" alt="Carregando..." width={80} height={80} />
                 </div>
               ) : (
                 <div className="row g-3">
