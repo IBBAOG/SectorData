@@ -57,6 +57,18 @@ function fmtDate(iso: string | null): string {
   });
 }
 
+function fmtDay(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", {
+    month: "short", day: "2-digit", year: "numeric",
+  });
+}
+
+function fmtTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-US", {
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
 function hoursAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
   const h = Math.floor(ms / 3_600_000);
@@ -64,14 +76,41 @@ function hoursAgo(iso: string): string {
   return `${h} h ago`;
 }
 
+const TITLE_STYLE: React.CSSProperties = {
+  fontFamily: "Arial",
+  fontSize: 10,
+  fontWeight: 700,
+  color: ORANGE,
+  marginBottom: 4,
+};
+
 export default function NaviosDieselPage() {
   const supabase = getSupabaseClient();
 
   const [coletas, setColetas] = useState<string[]>([]);
+  const [selectedDay, setSelectedDay] = useState<string>("");
   const [selectedColeta, setSelectedColeta] = useState<string>("");
   const [navios, setNavios] = useState<NavioDieselRow[]>([]);
   const [resumo, setResumo] = useState<PortoResumo[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Group timestamps by day
+  const coletasByDay = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const ts of coletas) {
+      const day = ts.slice(0, 10);
+      if (!map.has(day)) map.set(day, []);
+      map.get(day)!.push(ts);
+    }
+    return map;
+  }, [coletas]);
+
+  const days = useMemo(() => Array.from(coletasByDay.keys()), [coletasByDay]);
+
+  const timesForDay = useMemo(
+    () => coletasByDay.get(selectedDay) ?? [],
+    [coletasByDay, selectedDay]
+  );
 
   // 1. Load available collection timestamps
   useEffect(() => {
@@ -81,7 +120,11 @@ export default function NaviosDieselPage() {
       const ts = await rpcGetNdColetasDistintas(supabase);
       if (cancelled) return;
       setColetas(ts);
-      if (ts.length > 0) setSelectedColeta(ts[0]);
+      if (ts.length > 0) {
+        const firstDay = ts[0].slice(0, 10);
+        setSelectedDay(firstDay);
+        setSelectedColeta(ts[0]);
+      }
     })();
     return () => { cancelled = true; };
   }, [supabase]);
@@ -113,7 +156,7 @@ export default function NaviosDieselPage() {
           paper_bgcolor: "white", plot_bgcolor: "white",
           xaxis: { visible: false }, yaxis: { visible: false },
           annotations: [{ text: "No data", xref: "paper" as const, yref: "paper" as const, showarrow: false, font: { size: 13, family: "Arial", color: "#888" } }],
-          height: 450, margin: { t: 10, b: 10, l: 10, r: 10 },
+          height: 380, margin: { t: 10, b: 10, l: 10, r: 10 },
         } as Partial<Layout>,
       };
     }
@@ -131,7 +174,7 @@ export default function NaviosDieselPage() {
       texts.push(
         `<b>${p.porto}</b><br>` +
         `${p.total_navios} vessels<br>` +
-        `${p.total_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 })} t`
+        `${p.total_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³`
       );
       sizes.push(Math.max(14, Math.sqrt(p.total_navios) * 16));
     }
@@ -169,7 +212,7 @@ export default function NaviosDieselPage() {
       } as Layout["geo"],
       paper_bgcolor: "white",
       margin: { t: 10, b: 10, l: 10, r: 10 },
-      height: 450,
+      height: 380,
       hoverlabel: {
         bgcolor: "rgba(255,255,255,0.95)",
         bordercolor: "rgba(180,180,180,0.5)",
@@ -179,6 +222,51 @@ export default function NaviosDieselPage() {
 
     return { data, layout };
   }, [resumo]);
+
+  // Build monthly bar chart
+  const monthlyChart = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const r of navios) {
+      if (!r.eta || r.quantidade_convertida == null) continue;
+      const month = r.eta.slice(0, 7);
+      totals.set(month, (totals.get(month) ?? 0) + r.quantidade_convertida);
+    }
+    const months = Array.from(totals.keys()).sort();
+    const labels = months.map(m => {
+      const [yr, mo] = m.split("-");
+      return new Date(Number(yr), Number(mo) - 1, 1).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+    });
+    const values = months.map(m => totals.get(m)!);
+
+    const data: PlotData[] = [{
+      type: "bar",
+      x: labels,
+      y: values,
+      marker: { color: ORANGE, opacity: 0.85 },
+      hovertemplate: "%{x}: %{y:,.0f} m³<extra></extra>",
+    } as unknown as PlotData];
+
+    const layout: Partial<Layout> = {
+      paper_bgcolor: "white",
+      plot_bgcolor: "white",
+      margin: { t: 8, b: 48, l: 60, r: 8 },
+      height: 200,
+      bargap: 0.3,
+      yaxis: {
+        tickfont: { family: "Arial", size: 9 },
+        gridcolor: "#f0f0f0",
+        title: { text: "m³", font: { family: "Arial", size: 9 } },
+      },
+      xaxis: { tickfont: { family: "Arial", size: 9 } },
+      hoverlabel: {
+        bgcolor: "rgba(255,255,255,0.95)",
+        bordercolor: "rgba(180,180,180,0.5)",
+        font: { family: "Arial", color: "#1a1a1a", size: 11 },
+      },
+    };
+
+    return { data, layout };
+  }, [navios]);
 
   return (
     <div>
@@ -197,38 +285,76 @@ export default function NaviosDieselPage() {
 
               <div className="sidebar-section-label">Snapshot</div>
 
+              {/* Day filter */}
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Collection Time</div>
-                <div style={{ maxHeight: 320, overflowY: "auto" }}>
-                  {coletas.map((ts) => (
+                <div className="sidebar-filter-label">Date</div>
+                <div style={{ maxHeight: 160, overflowY: "auto" }}>
+                  {days.map((day) => (
                     <button
-                      key={ts}
+                      key={day}
                       type="button"
-                      onClick={() => setSelectedColeta(ts)}
+                      onClick={() => {
+                        setSelectedDay(day);
+                        const times = coletasByDay.get(day) ?? [];
+                        if (times.length > 0) setSelectedColeta(times[0]);
+                      }}
                       style={{
                         display: "block",
                         width: "100%",
                         textAlign: "left",
-                        padding: "6px 10px",
-                        marginBottom: 4,
+                        padding: "5px 10px",
+                        marginBottom: 3,
                         borderRadius: 6,
-                        border: selectedColeta === ts ? `2px solid ${ORANGE}` : "1px solid #ddd",
-                        backgroundColor: selectedColeta === ts ? "#fff5f0" : "#fff",
+                        border: selectedDay === day ? `2px solid ${ORANGE}` : "1px solid #ddd",
+                        backgroundColor: selectedDay === day ? "#fff5f0" : "#fff",
                         fontFamily: "Arial",
-                        fontSize: 12,
-                        fontWeight: selectedColeta === ts ? 700 : 400,
+                        fontSize: 11,
+                        fontWeight: selectedDay === day ? 700 : 400,
                         color: "#1a1a1a",
                         cursor: "pointer",
                       }}
                     >
-                      {fmtTs(ts)}
-                      <span style={{ display: "block", fontSize: 10, color: "#888" }}>
-                        {hoursAgo(ts)}
-                      </span>
+                      {fmtDay(day + "T12:00:00")}
                     </button>
                   ))}
                 </div>
               </div>
+
+              {/* Time filter */}
+              {timesForDay.length > 0 && (
+                <div className="sidebar-filter-section">
+                  <div className="sidebar-filter-label">Collection Time</div>
+                  <div style={{ maxHeight: 160, overflowY: "auto" }}>
+                    {timesForDay.map((ts) => (
+                      <button
+                        key={ts}
+                        type="button"
+                        onClick={() => setSelectedColeta(ts)}
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          textAlign: "left",
+                          padding: "5px 10px",
+                          marginBottom: 3,
+                          borderRadius: 6,
+                          border: selectedColeta === ts ? `2px solid ${ORANGE}` : "1px solid #ddd",
+                          backgroundColor: selectedColeta === ts ? "#fff5f0" : "#fff",
+                          fontFamily: "Arial",
+                          fontSize: 11,
+                          fontWeight: selectedColeta === ts ? 700 : 400,
+                          color: "#1a1a1a",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {fmtTime(ts)}
+                        <span style={{ display: "block", fontSize: 9, color: "#888" }}>
+                          {hoursAgo(ts)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -258,73 +384,89 @@ export default function NaviosDieselPage() {
                   {/* Map + Table side by side */}
                   <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 16 }}>
 
-                  {/* Map */}
-                  <div className="chart-container" style={{ flex: "0 0 420px" }}>
-                    <div style={{ fontFamily: "Arial", fontSize: 13, fontWeight: 700, marginBottom: 6, color: "#1a1a1a" }}>
-                      Port Distribution — Brazil
-                    </div>
-                    <PlotlyChart
-                      data={mapChart.data}
-                      layout={{ ...mapChart.layout, height: 420 }}
-                      config={{ displayModeBar: false }}
-                      style={{ width: "100%", height: 420 }}
-                    />
-                  </div>
+                    {/* Left column: map + monthly bar chart */}
+                    <div style={{ flex: "0 0 420px", display: "flex", flexDirection: "column", gap: 12 }}>
 
-                  {/* Vessel table */}
-                  <div className="chart-container" style={{ flex: 1, minWidth: 0, marginBottom: 0 }}>
-                    <div style={{ fontFamily: "Arial", fontSize: 13, fontWeight: 700, marginBottom: 6, color: "#1a1a1a" }}>
-                      Vessel Details — {fmtTs(selectedColeta)}
+                      {/* Map */}
+                      <div className="chart-container">
+                        <div style={TITLE_STYLE}>Distribution by Port</div>
+                        <PlotlyChart
+                          data={mapChart.data}
+                          layout={{ ...mapChart.layout, height: 380 }}
+                          config={{ displayModeBar: false }}
+                          style={{ width: "100%", height: 380 }}
+                        />
+                      </div>
+
+                      {/* Monthly bar chart */}
+                      <div className="chart-container">
+                        <div style={TITLE_STYLE}>Monthly Diesel Volume (m³)</div>
+                        <PlotlyChart
+                          data={monthlyChart.data}
+                          layout={monthlyChart.layout}
+                          config={{ displayModeBar: false }}
+                          style={{ width: "100%", height: 200 }}
+                        />
+                      </div>
                     </div>
-                    <div style={{ overflowX: "auto" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 11 }}>
-                        <thead>
-                          <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
-                            {["Port", "Status", "Vessel", "Qty", "Unit", "Conv. Qty (m³)", "ETA", "Unload Start", "Unload End", "Origin", "Berth"].map((h) => (
-                              <th key={h} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {navios.map((r) => (
-                            <tr
-                              key={r.id}
-                              style={{ borderBottom: "1px solid #eee" }}
-                              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
-                              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }}
-                            >
-                              <td style={{ padding: "4px 10px", fontWeight: 600 }}>{r.porto.replace("Porto de ", "")}</td>
-                              <td style={{ padding: "4px 10px" }}>
-                                <span style={{
-                                  display: "inline-block",
-                                  padding: "2px 8px",
-                                  borderRadius: 4,
-                                  fontSize: 10,
-                                  fontWeight: 600,
-                                  backgroundColor: STATUS_COLORS[r.status] ?? "#f0f0f0",
-                                }}>
-                                  {STATUS_LABELS[r.status] ?? r.status}
-                                </span>
-                              </td>
-                              <td style={{ padding: "4px 10px" }}>{r.navio}</td>
-                              <td style={{ padding: "4px 10px", textAlign: "right" }}>
-                                {r.quantidade?.toLocaleString("en-US", { maximumFractionDigits: 0 }) ?? "—"}
-                              </td>
-                              <td style={{ padding: "4px 10px" }}>{r.unidade ?? "—"}</td>
-                              <td style={{ padding: "4px 10px", textAlign: "right" }}>
-                                {r.quantidade_convertida?.toLocaleString("en-US", { maximumFractionDigits: 0 }) ?? "—"}
-                              </td>
-                              <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.eta)}</td>
-                              <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.inicio_descarga)}</td>
-                              <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.fim_descarga)}</td>
-                              <td style={{ padding: "4px 10px" }}>{r.origem ?? "—"}</td>
-                              <td style={{ padding: "4px 10px" }}>{r.berco ?? "—"}</td>
+
+                    {/* Vessel table */}
+                    <div className="chart-container" style={{ flex: 1, minWidth: 0, marginBottom: 0 }}>
+                      <div style={{ marginBottom: 8 }}>
+                        <div style={TITLE_STYLE}>Vessel Details</div>
+                        <div style={{ fontFamily: "Arial", fontSize: 10, color: "#999" }}>
+                          {fmtTs(selectedColeta)}{selectedColeta ? ` (${hoursAgo(selectedColeta)})` : ""}
+                        </div>
+                      </div>
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 11 }}>
+                          <thead>
+                            <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
+                              {["Port", "Status", "Vessel", "Qty", "Unit", "Conv. Qty (m³)", "ETA", "Unload Start", "Unload End", "Origin", "Berth"].map((h) => (
+                                <th key={h} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
+                              ))}
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {navios.map((r) => (
+                              <tr
+                                key={r.id}
+                                style={{ borderBottom: "1px solid #eee" }}
+                                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
+                                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }}
+                              >
+                                <td style={{ padding: "4px 10px", fontWeight: 600 }}>{r.porto.replace("Porto de ", "")}</td>
+                                <td style={{ padding: "4px 10px" }}>
+                                  <span style={{
+                                    display: "inline-block",
+                                    padding: "2px 8px",
+                                    borderRadius: 4,
+                                    fontSize: 10,
+                                    fontWeight: 600,
+                                    backgroundColor: STATUS_COLORS[r.status] ?? "#f0f0f0",
+                                  }}>
+                                    {STATUS_LABELS[r.status] ?? r.status}
+                                  </span>
+                                </td>
+                                <td style={{ padding: "4px 10px" }}>{r.navio}</td>
+                                <td style={{ padding: "4px 10px", textAlign: "right" }}>
+                                  {r.quantidade?.toLocaleString("en-US", { maximumFractionDigits: 0 }) ?? "—"}
+                                </td>
+                                <td style={{ padding: "4px 10px" }}>{r.unidade ?? "—"}</td>
+                                <td style={{ padding: "4px 10px", textAlign: "right" }}>
+                                  {r.quantidade_convertida?.toLocaleString("en-US", { maximumFractionDigits: 0 }) ?? "—"}
+                                </td>
+                                <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.eta)}</td>
+                                <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.inicio_descarga)}</td>
+                                <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.fim_descarga)}</td>
+                                <td style={{ padding: "4px 10px" }}>{r.origem ?? "—"}</td>
+                                <td style={{ padding: "4px 10px" }}>{r.berco ?? "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
-                  </div>
                   </div>{/* end flex row */}
 
                   {/* Disclaimer */}
