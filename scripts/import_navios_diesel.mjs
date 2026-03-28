@@ -109,7 +109,14 @@ for (const line of lines) {
 
 console.log(`📊 Parsed ${records.length} records (skipped ${skipped} blank/invalid lines)`);
 
-// ── Insert into Supabase ─────────────────────────────────────────────────────
+// ── Wipe table then insert (Supabase = exact mirror of CSV) ─────────────────
+const { error: delErr } = await supabase.from("navios_diesel").delete().gte("id", 0);
+if (delErr) {
+  console.error("❌ Failed to wipe table:", delErr.message);
+  process.exit(1);
+}
+console.log("🗑️  Table wiped");
+
 const BATCH = 500;
 let inserted = 0;
 
@@ -118,7 +125,7 @@ for (let i = 0; i < records.length; i += BATCH) {
 
   const { error } = await supabase
     .from("navios_diesel")
-    .upsert(batch, { onConflict: "collected_at,porto,navio" });
+    .insert(batch);
 
   if (error) {
     console.error(`❌ Batch ${i}-${i + batch.length} failed:`, error.message);
