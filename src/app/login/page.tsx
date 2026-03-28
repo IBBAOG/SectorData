@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 import { getSupabaseClient } from "../../lib/supabaseClient";
 
@@ -16,19 +16,21 @@ const BG_URL = BG_GIFS[Math.floor(Math.random() * BG_GIFS.length)];
 
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const supabase = getSupabaseClient();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(
-    searchParams.get("password_reset") === "success"
-      ? "Password updated successfully. Please sign in."
-      : null,
-  );
+  const [success, setSuccess] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("password_reset") === "success") {
+      setSuccess("Password updated successfully. Please sign in.");
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
