@@ -280,7 +280,7 @@ export default function NaviosDieselPage() {
                       <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 11 }}>
                         <thead>
                           <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
-                            {["Port", "Status", "Vessel", "Qty", "Unit", "Conv. Qty (t)", "ETA", "Unload Start", "Unload End", "Origin", "Berth"].map((h) => (
+                            {["Port", "Status", "Vessel", "Qty", "Unit", "Conv. Qty (m³)", "ETA", "Unload Start", "Unload End", "Origin", "Berth"].map((h) => (
                               <th key={h} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
                             ))}
                           </tr>
