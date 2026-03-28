@@ -28,15 +28,18 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main
           git add output/
           git diff --cached --quiet || git commit -m "dados: atualização $(date -u +'%Y-%m-%d %H:%M UTC')"
           git push
 
       - uses: actions/setup-node@v4
+        if: always()
         with:
           node-version: '20'
 
       - name: Importar dados para Supabase
+        if: always()
         run: |
           npm install @supabase/supabase-js
           node scripts/import_navios_diesel.mjs
