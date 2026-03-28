@@ -437,6 +437,7 @@ export default function NaviosDieselPage() {
                       {/* Map */}
                       <div className="chart-container">
                         <div style={TITLE_STYLE}>Distribution by Port</div>
+                        <hr className="section-hr" />
                         <PlotlyChart
                           data={mapChart.data}
                           layout={{ ...mapChart.layout, height: 280 }}
@@ -448,6 +449,7 @@ export default function NaviosDieselPage() {
                       {/* Monthly bar chart */}
                       <div className="chart-container">
                         <div style={TITLE_STYLE}>Monthly Diesel Volume (m³)</div>
+                        <hr className="section-hr" />
                         <PlotlyChart
                           data={monthlyChart.data}
                           layout={monthlyChart.layout}
@@ -461,6 +463,7 @@ export default function NaviosDieselPage() {
                     <div className="chart-container" style={{ flex: 1, minWidth: 0, marginBottom: 0 }}>
                       <div style={{ marginBottom: 8 }}>
                         <div style={TITLE_STYLE}>Vessel Details</div>
+                        <hr className="section-hr" />
                         <div style={{ fontFamily: "Arial", fontSize: 10, color: "#999" }}>
                           {fmtTs(selectedColeta)}{selectedColeta ? ` (${hoursAgo(selectedColeta)})` : ""}
                         </div>
