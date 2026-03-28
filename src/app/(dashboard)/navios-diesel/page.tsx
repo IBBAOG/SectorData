@@ -483,17 +483,19 @@ export default function NaviosDieselPage() {
               ) : (
                 <>
                   {/* Charts row: larger map | bar chart + aligned summary table */}
-                  <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 16 }}>
-                    {/* Map — takes more space */}
-                    <div className="chart-container" style={{ flex: 3, minWidth: 0 }}>
+                  <div style={{ display: "flex", gap: 16, alignItems: "stretch", marginBottom: 16 }}>
+                    {/* Map — takes more space, stretches to full row height */}
+                    <div className="chart-container" style={{ flex: 3, minWidth: 0, display: "flex", flexDirection: "column" }}>
                       <div style={TITLE_STYLE}>Distribution by Port</div>
                       <hr className="section-hr" />
-                      <PlotlyChart
-                        data={mapChart.data}
-                        layout={{ ...mapChart.layout, height: 320 }}
-                        config={{ displayModeBar: false }}
-                        style={{ width: "100%", height: 320 }}
-                      />
+                      <div style={{ flex: 1, minHeight: 480 }}>
+                        <PlotlyChart
+                          data={mapChart.data}
+                          layout={{ ...mapChart.layout, height: 480, autosize: true }}
+                          config={{ displayModeBar: false, responsive: true }}
+                          style={{ width: "100%", height: "100%" }}
+                        />
+                      </div>
                     </div>
                     {/* Bar chart + summary table in same container for alignment */}
                     <div className="chart-container" style={{ flex: 2, minWidth: 0 }}>
