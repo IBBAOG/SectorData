@@ -1,7 +1,7 @@
 import os
 import re
 import warnings
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from io import BytesIO, StringIO
 
 import pandas as pd
@@ -663,7 +663,8 @@ def salvar_csv(resultado: pd.DataFrame) -> str:
 
     cols = [c for c in COLS_PADRAO if c in resultado.columns]
     resultado = resultado[cols].copy()
-    resultado.insert(0, "Consulta", datetime.now().strftime("%Y-%m-%d %H:%M"))
+    _BRT = timezone(timedelta(hours=-3))
+    resultado.insert(0, "Consulta", datetime.now(_BRT).strftime("%Y-%m-%d %H:%M"))
 
     arquivo_existe = os.path.isfile(caminho)
     resultado.to_csv(
