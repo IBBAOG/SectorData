@@ -482,7 +482,7 @@ export default function NaviosDieselPage() {
                 </div>
               ) : (
                 <>
-                  {/* Charts row: map + bar chart side by side */}
+                  {/* Charts row: map | summary table | bar chart */}
                   <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 16 }}>
                     <div className="chart-container" style={{ flex: 1, minWidth: 0 }}>
                       <div style={TITLE_STYLE}>Distribution by Port</div>
@@ -493,6 +493,55 @@ export default function NaviosDieselPage() {
                         config={{ displayModeBar: false }}
                         style={{ width: "100%", height: 280 }}
                       />
+                    </div>
+                    <div className="chart-container" style={{ flex: 1, minWidth: 0 }}>
+                      <div style={TITLE_STYLE}>Monthly Summary by Port</div>
+                      <hr className="section-hr" />
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 11 }}>
+                          <thead>
+                            <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
+                              <th style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap", textAlign: "left" }}>Port</th>
+                              {portMonthlySummary.months.map(m => (
+                                <th key={m} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap", textAlign: "center" }}>
+                                  {portMonthlySummary.monthLabels[m]}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {portMonthlySummary.ports.map((porto, i) => (
+                              <tr
+                                key={porto}
+                                style={{ borderBottom: "1px solid #eee", backgroundColor: i % 2 === 0 ? "#fff" : "#fafafa" }}
+                                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
+                                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = i % 2 === 0 ? "#fff" : "#fafafa"; }}
+                              >
+                                <td style={{ padding: "6px 10px", fontWeight: 600, whiteSpace: "nowrap" }}>
+                                  {porto.replace("Porto de ", "")}
+                                </td>
+                                {portMonthlySummary.months.map(m => {
+                                  const cell = portMonthlySummary.portMap.get(porto)?.get(m);
+                                  return (
+                                    <td key={m} style={{ padding: "6px 10px", textAlign: "center" }}>
+                                      {cell ? (
+                                        <>
+                                          <div style={{ fontWeight: 700 }}>{cell.vessels} vessel{cell.vessels !== 1 ? "s" : ""}</div>
+                                          <div style={{ fontSize: 10, color: "#666" }}>
+                                            {cell.volume.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³
+                                          </div>
+                                        </>
+                                      ) : (
+                                        <span style={{ color: "#ccc" }}>—</span>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                     <div className="chart-container" style={{ flex: 1, minWidth: 0 }}>
                       <div style={TITLE_STYLE}>Monthly Diesel Volume (m³)</div>
@@ -558,57 +607,6 @@ export default function NaviosDieselPage() {
                               <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.fim_descarga)}</td>
                               <td style={{ padding: "4px 10px" }}>{r.origem ?? "—"}</td>
                               <td style={{ padding: "4px 10px" }}>{r.berco ?? "—"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {/* Monthly Summary by Port table */}
-                  <div className="chart-container" style={{ marginBottom: 16 }}>
-                    <div style={TITLE_STYLE}>Monthly Summary by Port</div>
-                    <hr className="section-hr" />
-                    <div style={{ overflowX: "auto" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 11 }}>
-                        <thead>
-                          <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
-                            <th style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap", textAlign: "left" }}>Port</th>
-                            {portMonthlySummary.months.map(m => (
-                              <th key={m} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap", textAlign: "center" }}>
-                                {portMonthlySummary.monthLabels[m]}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {portMonthlySummary.ports.map((porto, i) => (
-                            <tr
-                              key={porto}
-                              style={{ borderBottom: "1px solid #eee", backgroundColor: i % 2 === 0 ? "#fff" : "#fafafa" }}
-                              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
-                              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = i % 2 === 0 ? "#fff" : "#fafafa"; }}
-                            >
-                              <td style={{ padding: "6px 10px", fontWeight: 600, whiteSpace: "nowrap" }}>
-                                {porto.replace("Porto de ", "")}
-                              </td>
-                              {portMonthlySummary.months.map(m => {
-                                const cell = portMonthlySummary.portMap.get(porto)?.get(m);
-                                return (
-                                  <td key={m} style={{ padding: "6px 10px", textAlign: "center" }}>
-                                    {cell ? (
-                                      <>
-                                        <div style={{ fontWeight: 700 }}>{cell.vessels} vessel{cell.vessels !== 1 ? "s" : ""}</div>
-                                        <div style={{ fontSize: 10, color: "#666" }}>
-                                          {cell.volume.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³
-                                        </div>
-                                      </>
-                                    ) : (
-                                      <span style={{ color: "#ccc" }}>—</span>
-                                    )}
-                                  </td>
-                                );
-                              })}
                             </tr>
                           ))}
                         </tbody>
