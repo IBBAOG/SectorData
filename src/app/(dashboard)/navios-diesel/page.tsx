@@ -243,7 +243,7 @@ export default function NaviosDieselPage() {
         coastlinecolor: "#aaa",
       } as Layout["geo"],
       paper_bgcolor: "white",
-      margin: { t: 10, b: 10, l: 10, r: 10 },
+      margin: { t: 10, b: 10, l: 0, r: 40 },
       height: 280,
       hoverlabel: {
         bgcolor: "rgba(255,255,255,0.95)",
@@ -484,8 +484,8 @@ export default function NaviosDieselPage() {
                 <>
                   {/* Charts row: larger map | bar chart + aligned summary table */}
                   <div style={{ display: "flex", gap: 16, alignItems: "stretch", marginBottom: 16 }}>
-                    {/* Map — takes more space, stretches to full row height */}
-                    <div className="chart-container" style={{ flex: 3, minWidth: 0, display: "flex", flexDirection: "column" }}>
+                    {/* Map — half the row width, left-aligned */}
+                    <div className="chart-container" style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
                       <div style={TITLE_STYLE}>Distribution by Port</div>
                       <hr className="section-hr" />
                       <div style={{ flex: 1, minHeight: 480 }}>
@@ -498,7 +498,7 @@ export default function NaviosDieselPage() {
                       </div>
                     </div>
                     {/* Bar chart + summary table in same container for alignment */}
-                    <div className="chart-container" style={{ flex: 2, minWidth: 0 }}>
+                    <div className="chart-container" style={{ flex: 1, minWidth: 0 }}>
                       <div style={TITLE_STYLE}>Monthly Diesel Volume (m³)</div>
                       <hr className="section-hr" />
                       <PlotlyChart
