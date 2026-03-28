@@ -78,7 +78,7 @@ function hoursAgo(iso: string): string {
 
 const TITLE_STYLE: React.CSSProperties = {
   fontFamily: "Arial",
-  fontSize: 10,
+  fontSize: 14,
   fontWeight: 700,
   color: ORANGE,
   marginBottom: 4,
@@ -156,7 +156,7 @@ export default function NaviosDieselPage() {
           paper_bgcolor: "white", plot_bgcolor: "white",
           xaxis: { visible: false }, yaxis: { visible: false },
           annotations: [{ text: "No data", xref: "paper" as const, yref: "paper" as const, showarrow: false, font: { size: 13, family: "Arial", color: "#888" } }],
-          height: 380, margin: { t: 10, b: 10, l: 10, r: 10 },
+          height: 280, margin: { t: 10, b: 10, l: 10, r: 10 },
         } as Partial<Layout>,
       };
     }
@@ -212,7 +212,7 @@ export default function NaviosDieselPage() {
       } as Layout["geo"],
       paper_bgcolor: "white",
       margin: { t: 10, b: 10, l: 10, r: 10 },
-      height: 380,
+      height: 280,
       hoverlabel: {
         bgcolor: "rgba(255,255,255,0.95)",
         bordercolor: "rgba(180,180,180,0.5)",
@@ -242,6 +242,9 @@ export default function NaviosDieselPage() {
       type: "bar",
       x: labels,
       y: values,
+      text: values.map(v => v.toLocaleString("en-US", { maximumFractionDigits: 0 })),
+      textposition: "outside",
+      textfont: { family: "Arial", size: 12, color: "#1a1a1a" },
       marker: { color: ORANGE, opacity: 0.85 },
       hovertemplate: "%{x}: %{y:,.0f} m³<extra></extra>",
     } as unknown as PlotData];
@@ -249,19 +252,15 @@ export default function NaviosDieselPage() {
     const layout: Partial<Layout> = {
       paper_bgcolor: "white",
       plot_bgcolor: "white",
-      margin: { t: 8, b: 48, l: 60, r: 8 },
-      height: 200,
+      margin: { t: 30, b: 48, l: 10, r: 10 },
+      height: 220,
       bargap: 0.3,
-      yaxis: {
-        tickfont: { family: "Arial", size: 9 },
-        gridcolor: "#f0f0f0",
-        title: { text: "m³", font: { family: "Arial", size: 9 } },
-      },
-      xaxis: { tickfont: { family: "Arial", size: 9 } },
+      yaxis: { visible: false },
+      xaxis: { tickfont: { family: "Arial", size: 12 } },
       hoverlabel: {
         bgcolor: "rgba(255,255,255,0.95)",
         bordercolor: "rgba(180,180,180,0.5)",
-        font: { family: "Arial", color: "#1a1a1a", size: 11 },
+        font: { family: "Arial", color: "#1a1a1a", size: 12 },
       },
     };
 
@@ -385,16 +384,16 @@ export default function NaviosDieselPage() {
                   <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 16 }}>
 
                     {/* Left column: map + monthly bar chart */}
-                    <div style={{ flex: "0 0 420px", display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div style={{ flex: "0 0 520px", display: "flex", flexDirection: "column", gap: 12 }}>
 
                       {/* Map */}
                       <div className="chart-container">
                         <div style={TITLE_STYLE}>Distribution by Port</div>
                         <PlotlyChart
                           data={mapChart.data}
-                          layout={{ ...mapChart.layout, height: 380 }}
+                          layout={{ ...mapChart.layout, height: 280 }}
                           config={{ displayModeBar: false }}
-                          style={{ width: "100%", height: 380 }}
+                          style={{ width: "100%", height: 280 }}
                         />
                       </div>
 
@@ -405,7 +404,7 @@ export default function NaviosDieselPage() {
                           data={monthlyChart.data}
                           layout={monthlyChart.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "100%", height: 200 }}
+                          style={{ width: "100%", height: 220 }}
                         />
                       </div>
                     </div>
