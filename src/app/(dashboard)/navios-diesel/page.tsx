@@ -76,6 +76,18 @@ function hoursAgo(iso: string): string {
   return `${h} h ago`;
 }
 
+const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DOW = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+
+function calCells(year: number, month: number): (number | null)[] {
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  return cells;
+}
+
 const TITLE_STYLE: React.CSSProperties = {
   fontFamily: "Arial",
   fontSize: 14,
@@ -90,6 +102,8 @@ export default function NaviosDieselPage() {
   const [coletas, setColetas] = useState<string[]>([]);
   const [selectedDay, setSelectedDay] = useState<string>("");
   const [selectedColeta, setSelectedColeta] = useState<string>("");
+  const [calMonth, setCalMonth] = useState<number>(new Date().getMonth());
+  const [calYear, setCalYear] = useState<number>(new Date().getFullYear());
   const [navios, setNavios] = useState<NavioDieselRow[]>([]);
   const [resumo, setResumo] = useState<PortoResumo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,6 +120,7 @@ export default function NaviosDieselPage() {
   }, [coletas]);
 
   const days = useMemo(() => Array.from(coletasByDay.keys()), [coletasByDay]);
+  const daysSet = useMemo(() => new Set(days), [days]);
 
   const timesForDay = useMemo(
     () => coletasByDay.get(selectedDay) ?? [],
@@ -124,6 +139,9 @@ export default function NaviosDieselPage() {
         const firstDay = ts[0].slice(0, 10);
         setSelectedDay(firstDay);
         setSelectedColeta(ts[0]);
+        const [yr, mo] = firstDay.split("-").map(Number);
+        setCalYear(yr);
+        setCalMonth(mo - 1);
       }
     })();
     return () => { cancelled = true; };
@@ -284,38 +302,68 @@ export default function NaviosDieselPage() {
 
               <div className="sidebar-section-label">Snapshot</div>
 
-              {/* Day filter */}
+              {/* Inline Calendar */}
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Date</div>
-                <div style={{ maxHeight: 160, overflowY: "auto" }}>
-                  {days.map((day) => (
+                <div style={{ fontFamily: "Arial", userSelect: "none" }}>
+                  {/* Month/Year navigation */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
                     <button
-                      key={day}
                       type="button"
-                      onClick={() => {
-                        setSelectedDay(day);
-                        const times = coletasByDay.get(day) ?? [];
-                        if (times.length > 0) setSelectedColeta(times[0]);
-                      }}
-                      style={{
-                        display: "block",
-                        width: "100%",
-                        textAlign: "left",
-                        padding: "5px 10px",
-                        marginBottom: 3,
-                        borderRadius: 6,
-                        border: selectedDay === day ? `2px solid ${ORANGE}` : "1px solid #ddd",
-                        backgroundColor: selectedDay === day ? "#fff5f0" : "#fff",
-                        fontFamily: "Arial",
-                        fontSize: 11,
-                        fontWeight: selectedDay === day ? 700 : 400,
-                        color: "#1a1a1a",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {fmtDay(day + "T12:00:00")}
-                    </button>
-                  ))}
+                      onClick={() => { if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1); } else setCalMonth(m => m - 1); }}
+                      style={{ background: "none", border: "none", cursor: "pointer", color: ORANGE, fontSize: 16, lineHeight: 1, padding: "0 4px" }}
+                    >‹</button>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "#1a1a1a" }}>
+                      {MONTH_NAMES[calMonth]} {calYear}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => { if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1); } else setCalMonth(m => m + 1); }}
+                      style={{ background: "none", border: "none", cursor: "pointer", color: ORANGE, fontSize: 16, lineHeight: 1, padding: "0 4px" }}
+                    >›</button>
+                  </div>
+                  {/* Day-of-week headers */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", textAlign: "center", marginBottom: 2 }}>
+                    {DOW.map(d => (
+                      <div key={d} style={{ fontSize: 9, color: "#aaa", fontWeight: 700, padding: "2px 0" }}>{d}</div>
+                    ))}
+                  </div>
+                  {/* Day cells */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", textAlign: "center" }}>
+                    {calCells(calYear, calMonth).map((d, i) => {
+                      if (!d) return <div key={i} />;
+                      const dayStr = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+                      const hasData = daysSet.has(dayStr);
+                      const isSelected = selectedDay === dayStr;
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          disabled={!hasData}
+                          onClick={() => {
+                            if (!hasData) return;
+                            setSelectedDay(dayStr);
+                            const times = coletasByDay.get(dayStr) ?? [];
+                            if (times.length > 0) setSelectedColeta(times[0]);
+                          }}
+                          style={{
+                            padding: "4px 0",
+                            margin: "1px",
+                            borderRadius: 4,
+                            border: "none",
+                            backgroundColor: isSelected ? ORANGE : "transparent",
+                            color: isSelected ? "#fff" : hasData ? "#1a1a1a" : "#ddd",
+                            fontFamily: "Arial",
+                            fontSize: 10,
+                            fontWeight: hasData ? 600 : 400,
+                            cursor: hasData ? "pointer" : "default",
+                          }}
+                        >
+                          {d}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
