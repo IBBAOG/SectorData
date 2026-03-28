@@ -1,0 +1,6 @@
+venv/
+data/
+frontend-next/
+scripts/
+*.pyc
+__pycache__/
