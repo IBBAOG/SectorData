@@ -669,7 +669,7 @@ def salvar_csv(resultado: pd.DataFrame) -> str:
     _BRT = timezone(timedelta(hours=-3))
     resultado.insert(0, "Consulta", datetime.now(_BRT).strftime("%Y-%m-%d %H:%M"))
 
-    arquivo_existe = os.path.isfile(caminho)
+    arquivo_existe = os.path.isfile(caminho) and os.path.getsize(caminho) > 0
     resultado.to_csv(
         caminho,
         mode="a" if arquivo_existe else "w",
