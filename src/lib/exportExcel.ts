@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
-import type { MsSerieRow } from "./rpc";
+import type { MsSerieRow, DgMarginsRow } from "./rpc";
 
 const BIG3_MEMBERS = ["Vibra", "Ipiranga", "Raizen"];
 
@@ -521,6 +521,94 @@ export async function downloadMarketShareExcel(
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const yy = String(now.getFullYear()).slice(-2);
   a.download = `IBBA - FD Market Share ${dd}-${mm}-${yy}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ── D&G Margins export ────────────────────────────────────────────────────────
+
+const DG_FUEL_TYPES = ["Diesel B", "Gasoline C"];
+
+export async function downloadDgMarginsExcel(rows: DgMarginsRow[]): Promise<void> {
+  if (!rows || rows.length === 0) return;
+
+  const wb = new ExcelJS.Workbook();
+
+  for (const fuelType of DG_FUEL_TYPES) {
+    const sheetRows = rows.filter((r) => r.fuel_type === fuelType);
+    if (sheetRows.length === 0) continue;
+
+    const ws = wb.addWorksheet(fuelType);
+    ws.views = [{ showGridLines: false }];
+
+    // Column widths
+    ws.getColumn(1).width = 12; // Week
+    ws.getColumn(2).width = 22; // Dist. & Resale Margin
+    ws.getColumn(3).width = 14; // State Tax
+    ws.getColumn(4).width = 14; // Federal Tax
+    ws.getColumn(5).width = 18; // Biofuel
+    ws.getColumn(6).width = 14; // Base Fuel
+    ws.getColumn(7).width = 12; // Total
+
+    // Header row
+    const headers = [
+      "Week",
+      "Dist. & Resale Margin",
+      "State Tax",
+      "Federal Tax",
+      fuelType === "Diesel B" ? "Biodiesel" : "Anhydrous Ethanol",
+      fuelType === "Diesel B" ? "Diesel A" : "Gasoline A",
+      "Total",
+    ];
+    const hRow = ws.getRow(1);
+    hRow.height = ROW_H;
+    headers.forEach((h, i) => {
+      const cell = ws.getCell(1, i + 1);
+      cell.value = h;
+      cell.font = { name: "Arial", size: 10, bold: true, color: C.headerFg };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: C.headerBg };
+      cell.alignment = { horizontal: i === 0 ? "left" : "center" };
+    });
+
+    // Data rows
+    sheetRows.forEach((r, idx) => {
+      const row = ws.getRow(idx + 2);
+      row.height = ROW_H;
+      const values = [
+        r.week,
+        r.distribution_and_resale_margin,
+        r.state_tax,
+        r.federal_tax,
+        r.biofuel_component,
+        r.base_fuel,
+        r.total,
+      ];
+      values.forEach((v, i) => {
+        const cell = ws.getCell(idx + 2, i + 1);
+        cell.value = v ?? null;
+        cell.font = { name: "Arial", size: 10, color: C.cellFg };
+        if (i > 0) {
+          cell.numFmt = "0.00";
+          cell.alignment = { horizontal: "center" };
+        }
+      });
+    });
+  }
+
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, "0");
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const yy = String(now.getFullYear()).slice(-2);
+  a.download = `IBBA - D&G Margins ${dd}-${mm}-${yy}.xlsx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

@@ -343,3 +343,50 @@ export async function rpcGetNdResumoPortos(
   }
 }
 
+// ─── MODULE: Diesel & Gasoline Margins (/src/app/(dashboard)/diesel-gasoline-margins/page.tsx) ─
+
+export type DgMarginsRow = {
+  id: number;
+  fuel_type: string;
+  week: string;
+  distribution_and_resale_margin: number;
+  state_tax: number;
+  federal_tax: number;
+  biofuel_component: number;
+  base_fuel: number;
+  total: number;
+};
+
+export async function rpcGetDgMarginsData(
+  supabase: SupabaseClient,
+  fuelType?: string | null,
+): Promise<DgMarginsRow[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_dg_margins_data", {
+      p_fuel_type: fuelType ?? null,
+    });
+    if (error) throw error;
+    return (data ?? []) as DgMarginsRow[];
+  } catch (e) {
+    console.error("get_dg_margins_data failed", e);
+    return [];
+  }
+}
+
+export async function rpcGetDgMarginsFilters(
+  supabase: SupabaseClient,
+): Promise<{ fuel_types: string[]; weeks: string[] }> {
+  try {
+    const { data, error } = await supabase.rpc("get_dg_margins_filters", {});
+    if (error) throw error;
+    const d = (data ?? {}) as { fuel_types?: string[]; weeks?: string[] };
+    return {
+      fuel_types: d.fuel_types ?? [],
+      weeks: d.weeks ?? [],
+    };
+  } catch (e) {
+    console.error("get_dg_margins_filters failed", e);
+    return { fuel_types: [], weeks: [] };
+  }
+}
+

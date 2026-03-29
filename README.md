@@ -10,6 +10,7 @@ A multi-module analytics dashboard built with Next.js, Supabase, and Plotly.js. 
 |-------|------|-------------|
 | `/` | `src/app/(dashboard)/page.tsx` | **Sales Dashboard** — product volume analysis (thousand m³) with filters by period, segment, agent, region/state |
 | `/market-share` | `src/app/(dashboard)/market-share/page.tsx` | **Market Share** — temporal evolution of fuel distribution market share by distributor (Individual / Big-3 / Others modes) |
+| `/diesel-gasoline-margins` | `src/app/(dashboard)/diesel-gasoline-margins/page.tsx` | **D&G Margins** — weekly fuel price composition (Diesel B & Gasoline C) broken down by component: base fuel, biofuel, taxes, distribution margin (R$/litro) |
 
 ---
 
@@ -80,6 +81,8 @@ All data fetching goes through Supabase RPC functions (PostgreSQL functions call
 **Sales module:** `get_opcoes_filtros`, `get_metricas`, `get_qtd_por_ano`, `get_qtd_por_mes`, `get_qtd_por_regiao`, `get_qtd_por_uf`, `get_qtd_por_agente`, `get_qtd_por_produto`
 
 **Market Share module:** `get_ms_opcoes_filtros`, `get_ms_serie_fast`, `get_ms_serie_others`, `get_others_players`
+
+**D&G Margins module:** `get_dg_margins_data`, `get_dg_margins_filters`
 
 SQL definitions are tracked in `supabase/migrations/`.
 

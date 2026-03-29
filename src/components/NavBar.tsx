@@ -13,6 +13,7 @@ const NAV_MODULES = [
   { href: "/", label: "Sales" },
   { href: "/market-share", label: "Market Share" },
   { href: "/navios-diesel", label: "Diesel Imports Line-Up" },
+  { href: "/diesel-gasoline-margins", label: "D&G Margins" },
 ];
 
 export default function NavBar() {
