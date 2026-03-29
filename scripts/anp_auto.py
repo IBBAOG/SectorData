@@ -85,6 +85,61 @@ def get_session(http: requests.Session):
     }
 
 
+def ocr_captcha_char(img):
+    """Pre-process a single CAPTCHA character image and OCR it.
+
+    Characters are colorful (red, green, blue, yellow) on a pale/white noisy
+    background.  Plain grayscale loses light-colored chars like yellow.  Using
+    the saturation channel (HSV) separates colored chars from the low-saturation
+    background.
+    """
+    WHITELIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    TSR_CFG = f"--psm 10 -c tessedit_char_whitelist={WHITELIST}"
+
+    img_rgb = img.convert("RGB")
+    w, h = img_rgb.size
+
+    # --- Strategy 1: Saturation channel (best for colored chars on white bg) ---
+    img_hsv = img_rgb.convert("HSV")
+    _, s_channel, _ = img_hsv.split()
+    s_up = s_channel.resize((w * 8, h * 8), Image.LANCZOS)
+    # High saturation = character pixels → invert so char becomes black on white
+    s_bin = s_up.point(lambda p: 0 if p > 50 else 255)
+    s_bin = s_bin.filter(ImageFilter.MedianFilter(3))
+
+    result = pytesseract.image_to_string(s_bin, config=TSR_CFG).strip()
+    if result and result[0] in WHITELIST:
+        return result[0]
+
+    # --- Strategy 2: Grayscale with multiple thresholds ---
+    img_gray = img_rgb.convert("L")
+    img_up = img_gray.resize((w * 8, h * 8), Image.LANCZOS)
+
+    for threshold in (140, 120, 100, 160, 180):
+        binarized = img_up.point(lambda p, t=threshold: 0 if p < t else 255)
+        binarized = binarized.filter(ImageFilter.MedianFilter(3))
+
+        # Try both normal and inverted
+        for candidate in (binarized, ImageOps.invert(binarized)):
+            result = pytesseract.image_to_string(candidate, config=TSR_CFG).strip()
+            if result and result[0] in WHITELIST:
+                return result[0]
+
+    # --- Strategy 3: Per-channel max contrast ---
+    for ch_idx in range(3):
+        ch = img_rgb.split()[ch_idx]
+        ch_up = ch.resize((w * 8, h * 8), Image.LANCZOS)
+        ch_inv = ImageOps.invert(ch_up)
+        ch_bin = ch_inv.point(lambda p: 0 if p > 140 else 255)
+        ch_bin = ch_bin.filter(ImageFilter.MedianFilter(3))
+
+        result = pytesseract.image_to_string(ch_bin, config=TSR_CFG).strip()
+        if result and result[0] in WHITELIST:
+            return result[0]
+
+    return "X"
+
+
 def solve_captcha(http: requests.Session, session_info: dict):
     """Baixa as 5 imagens do CAPTCHA e resolve via Tesseract OCR."""
     p_instance = session_info["p_instance"]
@@ -107,29 +162,8 @@ def solve_captcha(http: requests.Session, session_info: dict):
         resp.raise_for_status()
 
         img = Image.open(BytesIO(resp.content))
-
-        # Pre-process for OCR
-        img = img.convert("L")  # grayscale
-        w, h = img.size
-        img = img.resize((w * 6, h * 6), Image.LANCZOS)
-        img = img.point(lambda p: 255 if p > 140 else 0)  # binarize
-
-        # Invert if background is dark
-        pixels = list(img.getdata())
-        if sum(1 for p in pixels if p == 0) > len(pixels) // 2:
-            img = ImageOps.invert(img)
-
-        img = img.filter(ImageFilter.MedianFilter(3))
-
-        char = pytesseract.image_to_string(
-            img,
-            config="--psm 10 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
-        ).strip()
-
-        if char:
-            captcha += char[0]
-        else:
-            captcha += "X"
+        char = ocr_captcha_char(img)
+        captcha += char
 
     return captcha
 
@@ -192,16 +226,16 @@ def extract_one(http: requests.Session, periodo: str, ambiente: str, output_dir:
             if reuse_session and attempt == 1:
                 session_info = reuse_session
                 print(f"    Reutilizando sessão {session_info['p_instance']}")
-                # For reused sessions, go straight to export (captcha already validated)
                 payload = build_payload(session_info, periodo, ambiente, "", "Exportar")
                 resp = submit_form(http, session_info, payload, stream=True)
 
                 content_type = resp.headers.get("Content-Type", "")
                 if "text/csv" in content_type or "application/octet" in content_type:
-                    return save_csv(resp, periodo, ambiente, output_dir), True
+                    saved = save_csv(resp, periodo, ambiente, output_dir)
+                    if saved:
+                        return session_info, True
 
-                # If HTML returned, session expired — fall through to new session
-                print(f"    ✗ Sessão expirada, tentando nova sessão...")
+                print(f"    ✗ Sessão expirada ou dados vazios, tentando nova sessão...")
                 reuse_session = None
 
             # New session
@@ -253,24 +287,25 @@ def extract_one(http: requests.Session, periodo: str, ambiente: str, output_dir:
             resp = submit_form(http, session_info, payload, stream=True)
 
             content_type = resp.headers.get("Content-Type", "")
-            if "text/csv" in content_type or "application/octet" in content_type or "text/plain" in content_type:
-                return save_csv(resp, periodo, ambiente, output_dir), True
+            saved = None
 
-            # Check if we got HTML back (might need to re-parse and try export differently)
-            if "text/html" in content_type:
-                # Maybe the export is served as a download from the result page
-                # Try to find a download link in the response
+            if "text/csv" in content_type or "application/octet" in content_type or "text/plain" in content_type:
+                saved = save_csv(resp, periodo, ambiente, output_dir)
+            elif "text/html" in content_type:
                 body = resp.content
                 if b"," in body and b"\n" in body and len(body) > 100:
-                    # Looks like CSV data despite content-type
-                    return save_csv_bytes(body, periodo, ambiente, output_dir), True
+                    saved = save_csv_bytes(body, periodo, ambiente, output_dir)
+                else:
+                    print(f"    ✗ Exportação retornou HTML ({len(body)} bytes)")
+            else:
+                saved = save_csv(resp, periodo, ambiente, output_dir)
 
-                print(f"    ✗ Exportação retornou HTML ({len(body)} bytes)")
-                time.sleep(2)
-                continue
+            if saved:
+                return session_info, True
 
-            # Unknown content type — save anyway
-            return save_csv(resp, periodo, ambiente, output_dir), True
+            # CSV was empty (only headers) — CAPTCHA likely wrong, retry
+            time.sleep(2)
+            continue
 
         except Exception as e:
             print(f"    ✗ Erro na tentativa {attempt}: {e}")
@@ -282,31 +317,44 @@ def extract_one(http: requests.Session, periodo: str, ambiente: str, output_dir:
 
 
 def save_csv(resp, periodo, ambiente, output_dir):
-    """Salva a resposta streamed como CSV."""
+    """Salva a resposta streamed como CSV. Retorna None se CSV só tem header."""
     fname = f"producao_poco_{periodo.replace('/', '-')}_{ambiente}.csv"
     fpath = Path(output_dir) / fname
     with open(fpath, "wb") as f:
         for chunk in resp.iter_content(8192):
             f.write(chunk)
-    size_kb = fpath.stat().st_size / 1024
-    print(f"    ✓ Salvo: {fpath} ({size_kb:.1f} KB)")
-    return {
-        "p_instance": None,  # Don't reuse after export
-        "form_action": "",
-        "hidden_fields": {},
-        "plugin_token": None,
-    }
+
+    # Validate: CSV must have data rows, not just headers
+    size = fpath.stat().st_size
+    with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
+        lines = [l.strip() for l in f if l.strip()]
+
+    if len(lines) <= 1:
+        print(f"    ✗ CSV vazio (só header, {size} bytes) — CAPTCHA provavelmente falhou")
+        fpath.unlink()
+        return None
+
+    size_kb = size / 1024
+    print(f"    ✓ Salvo: {fpath} ({size_kb:.1f} KB, {len(lines)-1} linhas de dados)")
+    return "ok"
 
 
 def save_csv_bytes(data, periodo, ambiente, output_dir):
-    """Salva bytes como CSV."""
+    """Salva bytes como CSV. Retorna None se CSV só tem header."""
     fname = f"producao_poco_{periodo.replace('/', '-')}_{ambiente}.csv"
     fpath = Path(output_dir) / fname
     with open(fpath, "wb") as f:
         f.write(data)
+
+    lines = [l for l in data.decode("utf-8", errors="ignore").splitlines() if l.strip()]
+    if len(lines) <= 1:
+        print(f"    ✗ CSV vazio (só header) — CAPTCHA provavelmente falhou")
+        fpath.unlink()
+        return None
+
     size_kb = len(data) / 1024
-    print(f"    ✓ Salvo: {fpath} ({size_kb:.1f} KB)")
-    return None
+    print(f"    ✓ Salvo: {fpath} ({size_kb:.1f} KB, {len(lines)-1} linhas de dados)")
+    return "ok"
 
 
 def parse_periodo(s):
@@ -389,13 +437,16 @@ def main():
     ok = 0
     fail = 0
 
+    reuse = None
     for periodo in periodos:
         for ambiente in ambientes:
-            _, success = extract_one(http, periodo, ambiente, args.output)
+            session_info, success = extract_one(http, periodo, ambiente, args.output, reuse_session=reuse)
             if success:
                 ok += 1
+                reuse = session_info
             else:
                 fail += 1
+                reuse = None
 
     print()
     print(f"Concluído: {ok}/{total} extrações com sucesso, {fail} falhas")
