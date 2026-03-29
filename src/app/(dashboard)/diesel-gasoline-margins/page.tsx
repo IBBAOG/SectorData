@@ -137,8 +137,13 @@ function weekToDateRange(weekStr: string): string {
   return (
     `Week ${weekNum} — ` +
     `${MONTHS[start.getMonth()]} ${start.getDate()} ` +
-    `to ${MONTHS[end.getMonth()]} ${end.getDate()}`
+    `to ${MONTHS[end.getMonth()]} ${end.getDate()}, ${year}`
   );
+}
+
+/** Strips "Week X — " prefix — returns only date range with year (for tooltips/badges) */
+function weekToDateOnly(weekStr: string): string {
+  return weekToDateRange(weekStr).replace(/^Week \d+ — /, "");
 }
 
 // ── WeekSlider ────────────────────────────────────────────────────────────────
@@ -230,7 +235,7 @@ function WeekSlider(props: {
               boxShadow:   "0 1px 6px rgba(0,0,0,0.25)",
               lineHeight:  1.4,
             }}>
-              {weekToDateRange(weekStr)}
+              {weekToDateOnly(weekStr)}
             </span>
           )}
           <span className="slider-handle-label">{weekStr}</span>
@@ -392,20 +397,58 @@ function VariationsTable({
   const prev1  = byWeek.get(allWeeks[latestIdx - 1] ?? "") ?? null;
   const prev4  = byWeek.get(allWeeks[latestIdx - 4] ?? "") ?? null;
 
-  if (!latest) return null;
+  // QTD: first week of the current quarter
+  let qtdRow: DgMarginsRow | null = null;
+  const latestParsed = parseWeek(latestVisibleWeek);
+  if (latestParsed) {
+    const { weekNum, year } = latestParsed;
+    const jan4 = new Date(year, 0, 4);
+    const dow  = jan4.getDay() || 7;
+    const w1Mon = new Date(year, 0, 4 - dow + 1);
+    const wkStart = new Date(w1Mon);
+    wkStart.setDate(w1Mon.getDate() + (weekNum - 1) * 7);
+    const qStartMonth = Math.floor(wkStart.getMonth() / 3) * 3;
+    const quarterStart = new Date(year, qStartMonth, 1);
+    for (const w of allWeeks) {
+      const p = parseWeek(w);
+      if (!p || p.year !== year) continue;
+      const j4 = new Date(p.year, 0, 4);
+      const d  = j4.getDay() || 7;
+      const wm = new Date(p.year, 0, 4 - d + 1);
+      const ws = new Date(wm);
+      ws.setDate(wm.getDate() + (p.weekNum - 1) * 7);
+      if (ws >= quarterStart) {
+        const row = byWeek.get(w);
+        if (row) { qtdRow = row; break; }
+      }
+    }
+  }
 
-  const fmt = (v: unknown) => (v === null || v === undefined ? "—" : Number(v).toFixed(2));
-  const fmtDelta = (v: number | null) =>
-    v === null ? "—" : (v > 0 ? "+" : "") + v.toFixed(2);
+  // YoY: same week number, previous year
+  let yoyRow: DgMarginsRow | null = null;
+  if (latestParsed) {
+    const { weekNum, year } = latestParsed;
+    yoyRow = byWeek.get(`${weekNum}/${year - 1}`) ?? null;
+  }
+
+  if (!latest) return null;
 
   const delta = (
     a: DgMarginsRow | null, b: DgMarginsRow | null, key: keyof DgMarginsRow,
-  ): number | null => {
-    if (!a || !b) return null;
-    const va = a[key] as number | null;
-    const vb = b[key] as number | null;
-    return va !== null && vb !== null ? Number(va) - Number(vb) : null;
+  ): { abs: number | null; pct: number | null } => {
+    if (!a || !b) return { abs: null, pct: null };
+    const va = Number(a[key]);
+    const vb = Number(b[key]);
+    if (isNaN(va) || isNaN(vb)) return { abs: null, pct: null };
+    const abs = va - vb;
+    const pct = vb !== 0 ? (abs / Math.abs(vb)) * 100 : null;
+    return { abs, pct };
   };
+
+  const fmtAbs = (v: number | null) =>
+    v === null ? null : (v > 0 ? "+" : "") + v.toFixed(2);
+  const fmtPct = (v: number | null) =>
+    v === null ? null : (v > 0 ? "+" : "") + v.toFixed(1) + "%";
 
   const cellBg = (v: number | null) =>
     v === null ? "transparent" : v > 0 ? "#C6E8D9" : v < 0 ? "#FFDDCC" : "transparent";
@@ -413,21 +456,31 @@ function VariationsTable({
   const thStyle: React.CSSProperties = {
     fontFamily: "Arial", fontSize: 10, fontWeight: 700,
     color: "#ffffff", backgroundColor: "#000512",
-    textAlign: "center", padding: "4px 10px", border: "none",
+    textAlign: "center", padding: "4px 6px", border: "none",
   };
   const tdCenter: React.CSSProperties = {
-    textAlign: "center", padding: "2px 10px",
-    fontSize: 11, fontFamily: "Arial", color: "#1a1a1a",
+    textAlign: "center", padding: "2px 4px",
+    fontSize: 10, fontFamily: "Arial", color: "#1a1a1a",
     whiteSpace: "nowrap", fontWeight: 400, border: "none",
+    lineHeight: 1.3,
   };
+
+  const COLS = [
+    { label: "WoW",       ref: prev1  },
+    { label: "−4 Weeks",  ref: prev4  },
+    { label: "QTD",       ref: qtdRow },
+    { label: "YoY",       ref: yoyRow },
+  ];
 
   return (
     <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
       <colgroup>
-        <col style={{ width: "42%" }} />
-        <col style={{ width: "19%" }} />
-        <col style={{ width: "19%" }} />
-        <col style={{ width: "20%" }} />
+        <col style={{ width: "28%" }} />
+        <col style={{ width: "12%" }} />
+        <col style={{ width: "15%" }} />
+        <col style={{ width: "15%" }} />
+        <col style={{ width: "15%" }} />
+        <col style={{ width: "15%" }} />
       </colgroup>
       <thead>
         <tr>
@@ -435,14 +488,11 @@ function VariationsTable({
             {fuelType} · {latestVisibleWeek}
           </th>
           <th style={thStyle}>BRL/L</th>
-          <th style={thStyle}>WoW</th>
-          <th style={thStyle}>−4 Weeks</th>
+          {COLS.map((c) => <th key={c.label} style={thStyle}>{c.label}</th>)}
         </tr>
       </thead>
       <tbody>
         {TABLE_KEYS.map((key, i) => {
-          const wow = delta(latest, prev1, key);
-          const m4w = delta(latest, prev4, key);
           const isTotal = key === "total";
           return (
             <tr key={key} style={i === TABLE_KEYS.length - 1 ? { borderBottom: "2px solid #d0d0d0" } : {}}>
@@ -453,15 +503,33 @@ function VariationsTable({
               }}>
                 {key === "total" ? "Total" : compLabel(key as string, fuelType)}
               </td>
-              <td style={{ ...tdCenter, fontWeight: isTotal ? 700 : 400 }}>
-                {fmt(latest[key])}
+              <td style={{ ...tdCenter, fontWeight: isTotal ? 700 : 400, fontSize: 11 }}>
+                {Number(latest[key]).toFixed(2)}
               </td>
-              <td style={{ ...tdCenter, backgroundColor: cellBg(wow), color: wow === null ? "#bbb" : "#1a1a1a" }}>
-                {fmtDelta(wow)}
-              </td>
-              <td style={{ ...tdCenter, backgroundColor: cellBg(m4w), color: m4w === null ? "#bbb" : "#1a1a1a" }}>
-                {fmtDelta(m4w)}
-              </td>
+              {COLS.map(({ label, ref }) => {
+                const { abs, pct } = delta(latest, ref, key);
+                const absStr = fmtAbs(abs);
+                const pctStr = fmtPct(pct);
+                return (
+                  <td key={label} style={{
+                    ...tdCenter,
+                    backgroundColor: cellBg(abs),
+                    color: abs === null ? "#bbb" : "#1a1a1a",
+                    fontWeight: isTotal ? 700 : 400,
+                  }}>
+                    {absStr === null ? "—" : (
+                      <>
+                        <div>{absStr}</div>
+                        {pctStr && (
+                          <div style={{ fontSize: 8.5, color: "#666", lineHeight: 1.2 }}>
+                            {pctStr}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </td>
+                );
+              })}
             </tr>
           );
         })}
@@ -532,10 +600,11 @@ function WeekPeriodBadge({
 export default function DieselGasolineMarginsPage() {
   const supabase = getSupabaseClient();
 
-  const [loading, setLoading]     = useState(true);
-  const [allRows, setAllRows]     = useState<DgMarginsRow[]>([]);
-  const [weeks, setWeeks]         = useState<string[]>([]);
-  const [weekRange, setWeekRange] = useState<[number, number]>([0, 0]);
+  const [loading, setLoading]         = useState(true);
+  const [allRows, setAllRows]         = useState<DgMarginsRow[]>([]);
+  const [weeks, setWeeks]             = useState<string[]>([]);
+  const [weekRange, setWeekRange]     = useState<[number, number]>([0, 0]);
+  const [excelLoading, setExcelLoading] = useState(false);
 
   useEffect(() => {
     if (!supabase) return;
@@ -600,15 +669,33 @@ export default function DieselGasolineMarginsPage() {
               </div>
 
               <div className="sidebar-filter-section" style={{ borderBottom: "none" }}>
-                <div className="sidebar-filter-label">Export</div>
-                <button
-                  className="btn btn-apply btn-sm"
-                  style={{ fontFamily: "Arial", fontSize: 12, width: "100%" }}
-                  disabled={loading || filteredRows.length === 0}
-                  onClick={() => downloadDgMarginsExcel(filteredRows)}
-                >
-                  Export Excel
-                </button>
+                <div style={{ border: "1px solid #d0d0d0", borderRadius: 6, padding: "10px 12px", backgroundColor: "#fafafa" }}>
+                  <div style={{ fontFamily: "Arial", fontSize: 11, fontWeight: 700, color: "#1a1a1a", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    Export Data
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary btn-sm"
+                    onClick={async () => {
+                      setExcelLoading(true);
+                      try {
+                        await downloadDgMarginsExcel(filteredRows);
+                      } catch (e) {
+                        console.error("Excel export failed", e);
+                      } finally {
+                        setExcelLoading(false);
+                      }
+                    }}
+                    disabled={loading || filteredRows.length === 0 || excelLoading}
+                    style={{ fontFamily: "Arial" }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" style={{ marginRight: 5, verticalAlign: "middle" }} xmlns="http://www.w3.org/2000/svg">
+                      <rect x="2" y="2" width="20" height="20" rx="3" fill="#217346"/>
+                      <text x="4" y="17" fontFamily="Arial" fontWeight="bold" fontSize="12" fill="#ffffff">X</text>
+                    </svg>
+                    formatted data .xl
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -619,11 +706,9 @@ export default function DieselGasolineMarginsPage() {
 
               {/* Page header */}
               <div style={{ marginBottom: 12 }}>
-                <div className="page-header-title">Diesel &amp; Gasoline Margins</div>
-                <div className="page-header-sub" style={{ color: "#FF5000", fontWeight: 600 }}>
-                  {latestVisibleWeek
-                    ? weekToDateRange(latestVisibleWeek)
-                    : "Weekly fuel price composition (BRL/litro)"}
+                <div className="page-header-title">
+                  Diesel &amp; Gasoline Margins
+                  {latestVisibleWeek ? ` — ${weekToDateRange(latestVisibleWeek)}` : ""}
                 </div>
               </div>
 
@@ -658,7 +743,7 @@ export default function DieselGasolineMarginsPage() {
                     <div className="col-lg-6">
                       <div className="chart-container">
                         <div className="section-title" style={{ fontSize: 13 }}>
-                          Weekly Variations — Diesel B
+                          Diesel B — Variations
                         </div>
                         <hr className="section-hr" />
                         <VariationsTable
@@ -672,7 +757,7 @@ export default function DieselGasolineMarginsPage() {
                     <div className="col-lg-6">
                       <div className="chart-container">
                         <div className="section-title" style={{ fontSize: 13 }}>
-                          Weekly Variations — Gasoline C
+                          Gasoline C — Variations
                         </div>
                         <hr className="section-hr" />
                         <VariationsTable
