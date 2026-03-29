@@ -92,15 +92,36 @@ function buildPriceBandsChart(
 
   const dates = filtered.map((r) => r.date);
 
-  const traces: PlotData[] = seriesDefs.map((s) => ({
-    type: "scatter",
-    mode: "lines",
-    name: s.label,
-    x: dates,
-    y: filtered.map((r) => r[s.field] as number | null),
-    line: { color: s.color, dash: s.dash, shape: s.shape, width: s.width },
-    hovertemplate: `%{fullData.name}: R$ %{y:.2f}<extra></extra>`,
-  } as unknown as PlotData));
+  // Pre-compute % vs IPP and EPP at each date for the Petrobras trace tooltip
+  const pctCustomdata = filtered.map((r) => {
+    const ptbr = r.petrobras_price as number | null;
+    const ipp  = r.bba_import_parity as number | null;
+    const epp  = r.bba_export_parity as number | null;
+    const pipp = ptbr != null && ipp  != null && ipp  !== 0 ? (ptbr / ipp  - 1) * 100 : null;
+    const pepp = ptbr != null && epp  != null && epp  !== 0 ? (ptbr / epp  - 1) * 100 : null;
+    return [pipp, pepp];
+  });
+
+  const traces: PlotData[] = seriesDefs.map((s) => {
+    const isPetrobras = s.field === "petrobras_price";
+    return {
+      type: "scatter",
+      mode: "lines",
+      name: s.label,
+      x: dates,
+      y: filtered.map((r) => r[s.field] as number | null),
+      line: { color: s.color, dash: s.dash, shape: s.shape, width: s.width },
+      ...(isPetrobras
+        ? {
+            customdata: pctCustomdata,
+            hovertemplate:
+              `%{fullData.name}: %{y:.2f}<br>` +
+              `vs. IPP: %{customdata[0]:+.1f}%<br>` +
+              `vs. EPP: %{customdata[1]:+.1f}%<extra></extra>`,
+          }
+        : { hovertemplate: `%{fullData.name}: %{y:.2f}<extra></extra>` }),
+    } as unknown as PlotData;
+  });
 
   const annotations: Partial<Annotations>[] = seriesDefs.flatMap((s) => {
     for (let i = filtered.length - 1; i >= 0; i--) {
@@ -170,6 +191,26 @@ function buildYtdChart(
 
     if (actualDates.length === 0) continue;
 
+    // For Petrobras trace: attach cumAvg IPP and EPP as customdata for tooltip
+    const isPetrobras = s.field === "petrobras_price";
+    let ytdCustomdata: [number | null, number | null][] | undefined;
+    if (isPetrobras) {
+      let cumIpp = 0, cumEpp = 0, cntIpp = 0, cntEpp = 0;
+      ytdCustomdata = yearRows.map((r) => {
+        const ipp = r.bba_import_parity as number | null;
+        const epp = r.bba_export_parity as number | null;
+        if (ipp != null) { cumIpp += ipp; cntIpp++; }
+        if (epp != null) { cumEpp += epp; cntEpp++; }
+        return [cntIpp > 0 ? cumIpp / cntIpp : null, cntEpp > 0 ? cumEpp / cntEpp : null];
+      }).filter((_, i) => (yearRows[i][s.field] as number | null) != null)
+        .map((pair, i) => {
+          const avgPtbr = actualAvgs[i];
+          const pipp = pair[0] != null && pair[0] !== 0 ? (avgPtbr / pair[0] - 1) * 100 : null;
+          const pepp = pair[1] != null && pair[1] !== 0 ? (avgPtbr / pair[1] - 1) * 100 : null;
+          return [pipp, pepp] as [number | null, number | null];
+        });
+    }
+
     traces.push({
       type: "scatter",
       mode: "lines",
@@ -177,7 +218,15 @@ function buildYtdChart(
       x: actualDates,
       y: actualAvgs,
       line: { color: s.color, dash: s.dash === "dash" ? "dash" : "solid", shape: "linear", width: s.width },
-      hovertemplate: `%{fullData.name}: R$ %{y:.2f}<extra></extra>`,
+      ...(isPetrobras && ytdCustomdata
+        ? {
+            customdata: ytdCustomdata,
+            hovertemplate:
+              `%{fullData.name}: %{y:.2f}<br>` +
+              `vs. IPP avg: %{customdata[0]:+.1f}%<br>` +
+              `vs. EPP avg: %{customdata[1]:+.1f}%<extra></extra>`,
+          }
+        : { hovertemplate: `%{fullData.name}: %{y:.2f}<extra></extra>` }),
     } as unknown as PlotData);
 
     // ── Projection (dashed extension, no legend entry) ─────────────────────
@@ -205,7 +254,7 @@ function buildYtdChart(
         y: projY,
         line: { color: s.color, dash: "dot", shape: "linear", width: s.width },
         showlegend: false,
-        hovertemplate: `%{fullData.name}: R$ %{y:.2f}<extra></extra>`,
+        hovertemplate: `%{fullData.name}: %{y:.2f}<extra></extra>`,
       } as unknown as PlotData);
     }
   }
@@ -262,17 +311,22 @@ function PctBadge({ pct, vs, outlined }: { pct: number; vs: string; outlined?: b
 
 // ── Chart header with product label + badges ──────────────────────────────────
 
-function ChartHeader({ product, rows }: { product: "Gasoline" | "Diesel"; rows: PriceBandsRow[] }) {
-  const last = [...rows].sort((a, b) => b.date.localeCompare(a.date)).find(
+function ChartHeader({ product, rows, xMax }: { product: "Gasoline" | "Diesel"; rows: PriceBandsRow[]; xMax: string | null }) {
+  // Use last row within the selected filter range
+  const scoped = xMax ? rows.filter((r) => r.date <= xMax) : rows;
+  const last = [...scoped].sort((a, b) => b.date.localeCompare(a.date)).find(
     (r) => r.petrobras_price != null && r.bba_import_parity != null && r.bba_export_parity != null
   );
   const pctIpp = last ? ((last.petrobras_price! / last.bba_import_parity!)  - 1) * 100 : null;
   const pctEpp = last ? ((last.petrobras_price! / last.bba_export_parity!) - 1) * 100 : null;
   return (
-    <div style={{ display: "flex", alignItems: "center", marginBottom: 8, marginTop: 16 }}>
-      <span style={{ fontFamily: "Arial", fontSize: 14, fontWeight: 700, color: "#1a1a1a" }}>{product}:</span>
-      {pctIpp != null && <PctBadge pct={pctIpp} vs="IPP" />}
-      {pctEpp != null && <PctBadge pct={pctEpp} vs="EPP" outlined />}
+    <div style={{ marginTop: 16, marginBottom: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}>
+        <span style={{ fontFamily: "Arial", fontSize: 14, fontWeight: 700, color: "#FF5000" }}>{product}:</span>
+        {pctIpp != null && <PctBadge pct={pctIpp} vs="IPP" />}
+        {pctEpp != null && <PctBadge pct={pctEpp} vs="EPP" outlined />}
+      </div>
+      <hr style={{ borderTop: "1px solid #ccc", margin: "0 0 6px 0" }} />
     </div>
   );
 }
@@ -397,11 +451,11 @@ export default function PriceBandsPage() {
                   {/* Price Bands — side by side */}
                   <div className="row g-3">
                     <div className="col-6">
-                      <ChartHeader product="Gasoline" rows={gasolineRows} />
+                      <ChartHeader product="Gasoline" rows={gasolineRows} xMax={xMax} />
                       <PlotlyChart data={gasolineChart.data} layout={gasolineChart.layout} />
                     </div>
                     <div className="col-6">
-                      <ChartHeader product="Diesel" rows={dieselRows} />
+                      <ChartHeader product="Diesel" rows={dieselRows} xMax={xMax} />
                       <PlotlyChart data={dieselChart.data} layout={dieselChart.layout} />
                     </div>
                   </div>
@@ -420,14 +474,16 @@ export default function PriceBandsPage() {
                   {/* YTD — side by side */}
                   <div className="row g-3">
                     <div className="col-6">
-                      <div style={{ display: "flex", alignItems: "center", marginBottom: 8, marginTop: 8 }}>
-                        <span style={{ fontFamily: "Arial", fontSize: 14, fontWeight: 700, color: "#1a1a1a" }}>Gasoline</span>
+                      <div style={{ marginTop: 16, marginBottom: 0 }}>
+                        <span style={{ fontFamily: "Arial", fontSize: 14, fontWeight: 700, color: "#FF5000" }}>Gasoline</span>
+                        <hr style={{ borderTop: "1px solid #ccc", margin: "4px 0 6px 0" }} />
                       </div>
                       <PlotlyChart data={gasolineYtd.data} layout={gasolineYtd.layout} />
                     </div>
                     <div className="col-6">
-                      <div style={{ display: "flex", alignItems: "center", marginBottom: 8, marginTop: 8 }}>
-                        <span style={{ fontFamily: "Arial", fontSize: 14, fontWeight: 700, color: "#1a1a1a" }}>Diesel</span>
+                      <div style={{ marginTop: 16, marginBottom: 0 }}>
+                        <span style={{ fontFamily: "Arial", fontSize: 14, fontWeight: 700, color: "#FF5000" }}>Diesel</span>
+                        <hr style={{ borderTop: "1px solid #ccc", margin: "4px 0 6px 0" }} />
                       </div>
                       <PlotlyChart data={dieselYtd.data} layout={dieselYtd.layout} />
                     </div>
