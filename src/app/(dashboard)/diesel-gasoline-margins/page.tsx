@@ -19,10 +19,19 @@ import { downloadDgMarginsExcel } from "../../../lib/exportExcel";
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const STACK_COLORS: Record<string, string> = {
-  base_fuel:                       "#C8C8C8",
-  biofuel_component:               "#9A9A9A",
-  federal_tax:                     "#6B6B6B",
-  state_tax:                       "#73C6A1",
+  base_fuel:                       "#1a1a1a",   // black
+  biofuel_component:               "#73C6A1",   // green
+  federal_tax:                     "#9A9A9A",   // medium gray
+  state_tax:                       "#C8C8C8",   // light gray
+  distribution_and_resale_margin:  "#FF5000",   // orange
+};
+
+// Annotation colors — ensure readability on white background
+const ANNOT_COLORS: Record<string, string> = {
+  base_fuel:                       "#1a1a1a",
+  biofuel_component:               "#3d8a6e",
+  federal_tax:                     "#555555",
+  state_tax:                       "#888888",
   distribution_and_resale_margin:  "#FF5000",
 };
 
@@ -32,22 +41,32 @@ const MARGIN_LINE_COLORS: Record<string, string> = {
 };
 
 // Stacked chart order: bottom → top
-const STACK_COMPONENTS: { key: keyof DgMarginsRow; label: string }[] = [
-  { key: "base_fuel",                      label: "Base Fuel" },
-  { key: "biofuel_component",              label: "Biofuel" },
-  { key: "federal_tax",                    label: "Federal Tax" },
-  { key: "state_tax",                      label: "State Tax" },
-  { key: "distribution_and_resale_margin", label: "Dist. & Resale Margin" },
+const STACK_COMPONENTS: { key: keyof DgMarginsRow }[] = [
+  { key: "base_fuel" },
+  { key: "biofuel_component" },
+  { key: "federal_tax" },
+  { key: "state_tax" },
+  { key: "distribution_and_resale_margin" },
 ];
 
-// Table order: most relevant first
-const TABLE_COMPONENTS: { key: keyof DgMarginsRow; label: string }[] = [
-  { key: "distribution_and_resale_margin", label: "Dist. & Resale Margin" },
-  { key: "state_tax",                      label: "State Tax" },
-  { key: "federal_tax",                    label: "Federal Tax" },
-  { key: "biofuel_component",              label: "Biofuel" },
-  { key: "base_fuel",                      label: "Base Fuel" },
-  { key: "total",                          label: "Total" },
+// Human-readable label per fuel type
+function compLabel(key: string, fuelType: string): string {
+  if (key === "base_fuel")         return fuelType === "Diesel B" ? "Diesel A"           : "Gasoline A";
+  if (key === "biofuel_component") return fuelType === "Diesel B" ? "Biodiesel"           : "Anhydrous Ethanol";
+  if (key === "federal_tax")       return "Federal Tax";
+  if (key === "state_tax")         return "State Tax";
+  if (key === "distribution_and_resale_margin") return "Dist. & Resale Margin";
+  return key;
+}
+
+// Table component order (most relevant first)
+const TABLE_KEYS: (keyof DgMarginsRow)[] = [
+  "distribution_and_resale_margin",
+  "state_tax",
+  "federal_tax",
+  "biofuel_component",
+  "base_fuel",
+  "total",
 ];
 
 const COMMON_LAYOUT: Partial<Layout> = {
@@ -55,53 +74,52 @@ const COMMON_LAYOUT: Partial<Layout> = {
   plot_bgcolor:  "white",
   font: { family: "Arial", size: 12, color: "#000000" },
   hoverlabel: {
-    bgcolor:     "rgba(255, 255, 255, 0.95)",
-    bordercolor: "rgba(180, 180, 180, 0.5)",
+    bgcolor:     "rgba(255,255,255,0.95)",
+    bordercolor: "rgba(180,180,180,0.5)",
     font: { family: "Arial", color: "#1a1a1a", size: 12 },
     namelength: -1,
   },
 };
 
 const XAXIS_BASE = {
-  type: "category" as const,
-  categoryorder: "array" as const,
-  tickangle: -90,
-  automargin: true,
-  showgrid: false,
-  zeroline: false,
-  showline: true,
-  linecolor: "#000000",
-  linewidth: 1,
-  showspikes: true,
-  spikemode: "across" as const,
-  spikedash: "solid",
-  spikecolor: "#555555",
+  type:         "category" as const,
+  categoryorder:"array"    as const,
+  tickangle:    -90,
+  automargin:   true,
+  showgrid:     false,
+  zeroline:     false,
+  showline:     true,
+  linecolor:    "#000000",
+  linewidth:    1,
+  showspikes:   true,
+  spikemode:    "across"   as const,
+  spikedash:    "solid",
+  spikecolor:   "#555555",
   spikethickness: 1,
 };
 
 const YAXIS_BASE = {
-  showgrid: false,
-  zeroline: false,
-  showline: true,
-  linecolor: "#000000",
-  linewidth: 1,
-  tickformat: ".2f",
+  showgrid:     false,
+  zeroline:     false,
+  showline:     true,
+  linecolor:    "#000000",
+  linewidth:    1,
+  tickformat:   ".2f",
 };
 
 const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
+  "January","February","March","April","May","June",
+  "July","August","September","October","November","December",
 ];
 
 // ── Week helpers ──────────────────────────────────────────────────────────────
 
-function parseWeek(weekStr: string): { weekNum: number; year: number } | null {
-  const parts = weekStr.split("/");
-  if (parts.length !== 2) return null;
-  const weekNum = parseInt(parts[0], 10);
-  const year    = parseInt(parts[1], 10);
-  if (isNaN(weekNum) || isNaN(year)) return null;
-  return { weekNum, year };
+function parseWeek(w: string): { weekNum: number; year: number } | null {
+  const p = w.split("/");
+  if (p.length !== 2) return null;
+  const weekNum = parseInt(p[0], 10);
+  const year    = parseInt(p[1], 10);
+  return isNaN(weekNum) || isNaN(year) ? null : { weekNum, year };
 }
 
 /** "13/2026" → "Week 13 — March 24 to March 30" (ISO 8601) */
@@ -109,25 +127,21 @@ function weekToDateRange(weekStr: string): string {
   const parsed = parseWeek(weekStr);
   if (!parsed) return weekStr;
   const { weekNum, year } = parsed;
-
-  // Jan 4 is always in ISO week 1
   const jan4 = new Date(year, 0, 4);
-  const dow   = jan4.getDay() || 7;            // 1=Mon … 7=Sun
-  const week1Mon = new Date(year, 0, 4 - dow + 1);
-
-  const weekStart = new Date(week1Mon);
-  weekStart.setDate(week1Mon.getDate() + (weekNum - 1) * 7);
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 6);
-
+  const dow  = jan4.getDay() || 7;
+  const w1Mon = new Date(year, 0, 4 - dow + 1);
+  const start = new Date(w1Mon);
+  start.setDate(w1Mon.getDate() + (weekNum - 1) * 7);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
   return (
     `Week ${weekNum} — ` +
-    `${MONTHS[weekStart.getMonth()]} ${weekStart.getDate()} ` +
-    `to ${MONTHS[weekEnd.getMonth()]} ${weekEnd.getDate()}`
+    `${MONTHS[start.getMonth()]} ${start.getDate()} ` +
+    `to ${MONTHS[end.getMonth()]} ${end.getDate()}`
   );
 }
 
-// ── WeekSlider (mirrors PeriodSlider, adapted for week strings) ───────────────
+// ── WeekSlider ────────────────────────────────────────────────────────────────
 
 function WeekSlider(props: {
   weeks: string[];
@@ -147,7 +161,6 @@ function WeekSlider(props: {
 
   const displayRange = dragging ? localRange : value;
 
-  // Year marks: first occurrence of each year in the data
   const marks = useMemo(() => {
     type Mark = { label: string; style: { fontSize: string; color: string } };
     const m: Record<number, Mark> = {};
@@ -171,12 +184,10 @@ function WeekSlider(props: {
     },
     [localRange],
   );
-
   const handleBeforeChange = useCallback(() => setDragging(true), []);
-
-  const handleAfterChange = useCallback(
+  const handleAfterChange  = useCallback(
     (v: number | number[]) => {
-      const arr  = Array.isArray(v) ? v : [localRange[0], localRange[1]];
+      const arr = Array.isArray(v) ? v : [localRange[0], localRange[1]];
       const final: [number, number] = [arr[0] as number, arr[1] as number];
       setDragging(false);
       setLocalRange(final);
@@ -198,9 +209,32 @@ function WeekSlider(props: {
     onChangeComplete: handleAfterChange,
     onBeforeChange: handleBeforeChange,
     handleRender: (node: React.ReactElement, info: { value: number }) => {
-      const label = weeks[info.value] ?? "";
+      const weekStr = weeks[info.value] ?? "";
       return React.cloneElement(node, {}, (
-        <span className="slider-handle-label">{label}</span>
+        <span>
+          {/* while dragging: full date range floats above the handle label */}
+          {dragging && (
+            <span style={{
+              position:    "absolute",
+              bottom:      "calc(100% + 30px)",
+              left:        "50%",
+              transform:   "translateX(-50%)",
+              background:  "rgba(26,26,26,0.88)",
+              color:       "#fff",
+              padding:     "3px 8px",
+              borderRadius: 4,
+              fontSize:    9,
+              fontFamily:  "Arial",
+              whiteSpace:  "nowrap",
+              pointerEvents: "none",
+              boxShadow:   "0 1px 6px rgba(0,0,0,0.25)",
+              lineHeight:  1.4,
+            }}>
+              {weekToDateRange(weekStr)}
+            </span>
+          )}
+          <span className="slider-handle-label">{weekStr}</span>
+        </span>
       ));
     },
   } satisfies SliderProps;
@@ -214,19 +248,16 @@ function WeekSlider(props: {
 
 // ── Chart builders ────────────────────────────────────────────────────────────
 
-function emptyPlot(height = 300): { data: PlotData[]; layout: Partial<Layout> } {
+function emptyPlot(h = 300): { data: PlotData[]; layout: Partial<Layout> } {
   return {
     data: [],
     layout: {
       ...COMMON_LAYOUT,
-      xaxis: { visible: false },
-      yaxis: { visible: false },
-      height,
-      margin: { t: 20, b: 30, l: 10, r: 10 },
+      xaxis: { visible: false }, yaxis: { visible: false },
+      height: h, margin: { t: 20, b: 30, l: 10, r: 10 },
       annotations: [{
         text: "No data for the selected filters.",
-        xref: "paper", yref: "paper",
-        showarrow: false,
+        xref: "paper", yref: "paper", showarrow: false,
         font: { size: 13, family: "Arial", color: "#888" },
       }],
     },
@@ -244,32 +275,48 @@ function buildStackedAreaChart(
   const sorted = [...fuelRows].sort(
     (a, b) => orderedWeeks.indexOf(a.week) - orderedWeeks.indexOf(b.week),
   );
-  const xWeeks = sorted.map((r) => r.week);
+  const xWeeks  = sorted.map((r) => r.week);
+  const lastRow = sorted[sorted.length - 1];
+  const lastX   = xWeeks[xWeeks.length - 1];
 
   const traces: PlotData[] = STACK_COMPONENTS.map((comp) => ({
-    type: "scatter",
-    mode: "lines",
-    name: comp.label,
+    type: "scatter", mode: "lines",
+    name: compLabel(comp.key as string, fuelType),
     x: xWeeks,
     y: sorted.map((r) => Number(r[comp.key] ?? 0)),
     stackgroup: "one",
-    line: { width: 0.5, color: STACK_COLORS[comp.key] },
-    fillcolor: STACK_COLORS[comp.key],
-    hovertemplate: `${comp.label}: %{y:.2f} BRL/L<extra></extra>`,
+    line:      { width: 0.5, color: STACK_COLORS[comp.key as string] },
+    fillcolor: STACK_COLORS[comp.key as string],
+    hovertemplate: `${compLabel(comp.key as string, fuelType)}: %{y:.2f} BRL/L<extra></extra>`,
   } as PlotData));
+
+  // Compute cumulative sums for annotations at last point
+  let cum = 0;
+  const annotations: object[] = STACK_COMPONENTS.map((comp) => {
+    const val = Number(lastRow[comp.key] ?? 0);
+    const midY = cum + val / 2;
+    cum += val;
+    return {
+      x: lastX, y: midY,
+      text: val.toFixed(2),
+      showarrow: false,
+      xanchor: "left", xshift: 6,
+      yanchor: "middle",
+      font: { family: "Arial", size: 10, color: ANNOT_COLORS[comp.key as string] },
+    };
+  });
 
   return {
     data: traces,
     layout: {
       ...COMMON_LAYOUT,
       height: 350,
-      margin: { t: 10, b: 80, l: 65, r: 20 },
+      margin: { t: 10, b: 80, l: 65, r: 75 },
       hovermode: "x unified",
       yaxis: { ...YAXIS_BASE, title: { text: "BRL/litro" } },
       xaxis: { ...XAXIS_BASE, categoryarray: orderedWeeks },
-      legend: {
-        orientation: "h", yanchor: "top", y: -0.28, xanchor: "center", x: 0.5,
-      },
+      legend: { orientation: "h", yanchor: "top", y: -0.28, xanchor: "center", x: 0.5 },
+      annotations: annotations as Layout["annotations"],
     },
   };
 }
@@ -280,16 +327,31 @@ function buildMarginComparisonChart(
 ): { data: PlotData[]; layout: Partial<Layout> } {
   if (rows.length === 0) return emptyPlot(280);
 
+  const annotations: object[] = [];
+
   const traces: PlotData[] = (["Diesel B", "Gasoline C"] as const).map((ft) => {
     const fuelRows = [...rows.filter((r) => r.fuel_type === ft)].sort(
       (a, b) => orderedWeeks.indexOf(a.week) - orderedWeeks.indexOf(b.week),
     );
+    const xs = fuelRows.map((r) => r.week);
+    const ys = fuelRows.map((r) => Number(r.distribution_and_resale_margin ?? 0));
+
+    if (xs.length > 0) {
+      const lastX = xs[xs.length - 1];
+      const lastY = ys[ys.length - 1];
+      annotations.push({
+        x: lastX, y: lastY,
+        text: lastY.toFixed(2),
+        showarrow: false,
+        xanchor: "left", xshift: 6,
+        yanchor: "middle",
+        font: { family: "Arial", size: 11, color: MARGIN_LINE_COLORS[ft] },
+      });
+    }
+
     return {
-      type: "scatter",
-      mode: "lines",
-      name: ft,
-      x: fuelRows.map((r) => r.week),
-      y: fuelRows.map((r) => Number(r.distribution_and_resale_margin ?? 0)),
+      type: "scatter", mode: "lines",
+      name: ft, x: xs, y: ys,
       line: { width: 2.5, color: MARGIN_LINE_COLORS[ft] },
       hovertemplate: `${ft}: %{y:.2f} BRL/L<extra></extra>`,
     } as PlotData;
@@ -300,13 +362,12 @@ function buildMarginComparisonChart(
     layout: {
       ...COMMON_LAYOUT,
       height: 280,
-      margin: { t: 10, b: 80, l: 65, r: 20 },
+      margin: { t: 10, b: 80, l: 65, r: 75 },
       hovermode: "x unified",
       yaxis: { ...YAXIS_BASE, title: { text: "BRL/litro" } },
       xaxis: { ...XAXIS_BASE, categoryarray: orderedWeeks },
-      legend: {
-        orientation: "h", yanchor: "top", y: -0.28, xanchor: "center", x: 0.5,
-      },
+      legend: { orientation: "h", yanchor: "top", y: -0.28, xanchor: "center", x: 0.5 },
+      annotations: annotations as Layout["annotations"],
     },
   };
 }
@@ -314,10 +375,7 @@ function buildMarginComparisonChart(
 // ── Weekly variations table ───────────────────────────────────────────────────
 
 function VariationsTable({
-  fuelType,
-  allRows,
-  allWeeks,
-  latestVisibleWeek,
+  fuelType, allRows, allWeeks, latestVisibleWeek,
 }: {
   fuelType: string;
   allRows: DgMarginsRow[];
@@ -329,7 +387,6 @@ function VariationsTable({
   const byWeek = new Map(
     allRows.filter((r) => r.fuel_type === fuelType).map((r) => [r.week, r]),
   );
-
   const latestIdx = allWeeks.indexOf(latestVisibleWeek);
   const latest = byWeek.get(latestVisibleWeek) ?? null;
   const prev1  = byWeek.get(allWeeks[latestIdx - 1] ?? "") ?? null;
@@ -337,62 +394,45 @@ function VariationsTable({
 
   if (!latest) return null;
 
-  const fmt = (v: unknown) =>
-    v === null || v === undefined ? "—" : Number(v).toFixed(2);
-
-  const fmtDelta = (v: number | null) => {
-    if (v === null) return "—";
-    return (v > 0 ? "+" : "") + v.toFixed(2);
-  };
+  const fmt = (v: unknown) => (v === null || v === undefined ? "—" : Number(v).toFixed(2));
+  const fmtDelta = (v: number | null) =>
+    v === null ? "—" : (v > 0 ? "+" : "") + v.toFixed(2);
 
   const delta = (
-    a: DgMarginsRow | null,
-    b: DgMarginsRow | null,
-    key: keyof DgMarginsRow,
+    a: DgMarginsRow | null, b: DgMarginsRow | null, key: keyof DgMarginsRow,
   ): number | null => {
     if (!a || !b) return null;
     const va = a[key] as number | null;
     const vb = b[key] as number | null;
-    if (va === null || vb === null) return null;
-    return Number(va) - Number(vb);
+    return va !== null && vb !== null ? Number(va) - Number(vb) : null;
   };
 
-  const cellStyle = (v: number | null) => ({
-    textAlign: "center" as const,
-    padding: "2px 10px",
-    fontSize: 11,
-    fontFamily: "Arial",
-    whiteSpace: "nowrap" as const,
-    fontWeight: 400,
-    backgroundColor:
-      v === null ? "transparent" : v > 0 ? "#C6E8D9" : v < 0 ? "#FFDDCC" : "transparent",
-    color: v === null ? "#bbb" : "#1a1a1a",
-    border: "none",
-  });
+  const cellBg = (v: number | null) =>
+    v === null ? "transparent" : v > 0 ? "#C6E8D9" : v < 0 ? "#FFDDCC" : "transparent";
 
-  const thStyle = {
-    fontFamily: "Arial",
-    fontSize: 10,
-    fontWeight: 700,
-    color: "#ffffff",
-    backgroundColor: "#000512",
-    textAlign: "center" as const,
-    padding: "4px 10px",
-    border: "none",
+  const thStyle: React.CSSProperties = {
+    fontFamily: "Arial", fontSize: 10, fontWeight: 700,
+    color: "#ffffff", backgroundColor: "#000512",
+    textAlign: "center", padding: "4px 10px", border: "none",
+  };
+  const tdCenter: React.CSSProperties = {
+    textAlign: "center", padding: "2px 10px",
+    fontSize: 11, fontFamily: "Arial", color: "#1a1a1a",
+    whiteSpace: "nowrap", fontWeight: 400, border: "none",
   };
 
   return (
     <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
       <colgroup>
-        <col style={{ width: "40%" }} />
-        <col style={{ width: "20%" }} />
-        <col style={{ width: "20%" }} />
+        <col style={{ width: "42%" }} />
+        <col style={{ width: "19%" }} />
+        <col style={{ width: "19%" }} />
         <col style={{ width: "20%" }} />
       </colgroup>
       <thead>
         <tr>
-          <th style={{ ...thStyle, textAlign: "left" as const, paddingLeft: 8 }}>
-            {fuelType} — {latestVisibleWeek}
+          <th style={{ ...thStyle, textAlign: "left", paddingLeft: 8 }}>
+            {fuelType} · {latestVisibleWeek}
           </th>
           <th style={thStyle}>BRL/L</th>
           <th style={thStyle}>WoW</th>
@@ -400,38 +440,90 @@ function VariationsTable({
         </tr>
       </thead>
       <tbody>
-        {TABLE_COMPONENTS.map((comp, i) => {
-          const wow = delta(latest, prev1, comp.key);
-          const m4w = delta(latest, prev4, comp.key);
+        {TABLE_KEYS.map((key, i) => {
+          const wow = delta(latest, prev1, key);
+          const m4w = delta(latest, prev4, key);
+          const isTotal = key === "total";
           return (
-            <tr
-              key={comp.key}
-              style={i === TABLE_COMPONENTS.length - 1 ? { borderBottom: "2px solid #d0d0d0" } : {}}
-            >
+            <tr key={key} style={i === TABLE_KEYS.length - 1 ? { borderBottom: "2px solid #d0d0d0" } : {}}>
               <td style={{
-                fontFamily: "Arial", fontSize: 11,
-                color: "#1a1a1a",
-                fontWeight: comp.key === "total" ? 700 : 400,
-                padding: "2px 12px 2px 8px",
-                whiteSpace: "nowrap" as const,
-                border: "none",
+                fontFamily: "Arial", fontSize: 11, color: "#1a1a1a",
+                fontWeight: isTotal ? 700 : 400,
+                padding: "2px 12px 2px 8px", whiteSpace: "nowrap", border: "none",
               }}>
-                {comp.label}
+                {key === "total" ? "Total" : compLabel(key as string, fuelType)}
               </td>
-              <td style={{
-                textAlign: "center" as const, padding: "2px 10px",
-                fontSize: 11, fontFamily: "Arial",
-                color: "#1a1a1a", border: "none",
-              }}>
-                {fmt(latest[comp.key])}
+              <td style={{ ...tdCenter, fontWeight: isTotal ? 700 : 400 }}>
+                {fmt(latest[key])}
               </td>
-              <td style={cellStyle(wow)}>{fmtDelta(wow)}</td>
-              <td style={cellStyle(m4w)}>{fmtDelta(m4w)}</td>
+              <td style={{ ...tdCenter, backgroundColor: cellBg(wow), color: wow === null ? "#bbb" : "#1a1a1a" }}>
+                {fmtDelta(wow)}
+              </td>
+              <td style={{ ...tdCenter, backgroundColor: cellBg(m4w), color: m4w === null ? "#bbb" : "#1a1a1a" }}>
+                {fmtDelta(m4w)}
+              </td>
             </tr>
           );
         })}
       </tbody>
     </table>
+  );
+}
+
+// ── Elegant week period display ───────────────────────────────────────────────
+
+function WeekPeriodBadge({
+  weeks, weekRange,
+}: {
+  weeks: string[];
+  weekRange: [number, number];
+}) {
+  if (weeks.length === 0) return null;
+  const startW = weeks[weekRange[0]];
+  const endW   = weeks[weekRange[1]];
+  const startLabel = weekToDateRange(startW);
+  const endLabel   = weekToDateRange(endW);
+  const single = weekRange[0] === weekRange[1];
+
+  return (
+    <div style={{
+      background:   "#fafafa",
+      border:       "1px solid #e8e8e8",
+      borderLeft:   "3px solid #FF5000",
+      borderRadius: "0 8px 8px 0",
+      padding:      "10px 14px",
+      marginTop:    4,
+    }}>
+      <div style={{
+        fontSize: 9, color: "#aaa", fontFamily: "Arial",
+        textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 6,
+      }}>
+        Selected Period
+      </div>
+
+      {single ? (
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#FF5000", fontFamily: "Arial" }}>
+            {startW}
+          </div>
+          <div style={{ fontSize: 10, color: "#555", fontFamily: "Arial", marginTop: 2, lineHeight: 1.4 }}>
+            {startLabel.replace(/^Week \d+ — /, "")}
+          </div>
+        </div>
+      ) : (
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#FF5000", fontFamily: "Arial" }}>{startW}</span>
+            <span style={{ fontSize: 10, color: "#bbb" }}>→</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#FF5000", fontFamily: "Arial" }}>{endW}</span>
+          </div>
+          <div style={{ fontSize: 10, color: "#555", fontFamily: "Arial", lineHeight: 1.5 }}>
+            <div>{startLabel.replace(/^Week \d+ — /, "")}</div>
+            <div>{endLabel.replace(/^Week \d+ — /, "")}</div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -465,8 +557,8 @@ export default function DieselGasolineMarginsPage() {
 
   const filteredRows = useMemo(() => {
     if (weeks.length === 0) return [];
-    const visibleSet = new Set(weeks.slice(weekRange[0], weekRange[1] + 1));
-    return allRows.filter((r) => visibleSet.has(r.week));
+    const vis = new Set(weeks.slice(weekRange[0], weekRange[1] + 1));
+    return allRows.filter((r) => vis.has(r.week));
   }, [allRows, weekRange, weeks]);
 
   const visibleWeeks = useMemo(
@@ -476,149 +568,161 @@ export default function DieselGasolineMarginsPage() {
 
   const latestVisibleWeek = visibleWeeks[visibleWeeks.length - 1] ?? null;
 
-  // Week translator labels
-  const startLabel = weeks[weekRange[0]] ? weekToDateRange(weeks[weekRange[0]]) : null;
-  const endLabel   = latestVisibleWeek ? weekToDateRange(latestVisibleWeek) : null;
-
   const marginChart  = useMemo(() => buildMarginComparisonChart(filteredRows, visibleWeeks), [filteredRows, visibleWeeks]);
   const dieselChart  = useMemo(() => buildStackedAreaChart(filteredRows, "Diesel B",   visibleWeeks), [filteredRows, visibleWeeks]);
-  const gaslineChart = useMemo(() => buildStackedAreaChart(filteredRows, "Gasoline C", visibleWeeks), [filteredRows, visibleWeeks]);
+  const gasolineChart = useMemo(() => buildStackedAreaChart(filteredRows, "Gasoline C", visibleWeeks), [filteredRows, visibleWeeks]);
 
   return (
-    <>
+    <div>
       <NavBar />
-      <div className="container-fluid py-3">
 
-        {/* ── Page title ──────────────────────────────────────────────── */}
-        <div className="section-title" style={{ color: "#1a1a1a" }}>
-          Diesel &amp; Gasoline Margins
+      <div className="container-fluid g-0">
+        <div className="row g-0">
+
+          {/* ── Sidebar ───────────────────────────────────────────────── */}
+          <div className="col-2 p-0" style={{ display: "flex", flexDirection: "column" }}>
+            <div id="sidebar">
+              <div style={{ textAlign: "center" }}>
+                <img src="/logo.png" alt="Itaú BBA" style={{ width: "100%", maxWidth: 300, marginBottom: 16 }} />
+              </div>
+              <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
+
+              <div className="sidebar-section-label">Filters</div>
+
+              <div className="sidebar-filter-section">
+                <div className="sidebar-filter-label">Period</div>
+                {!loading && weeks.length > 0 && (
+                  <WeekSlider weeks={weeks} value={weekRange} onChange={setWeekRange} />
+                )}
+                {!loading && weeks.length > 0 && (
+                  <WeekPeriodBadge weeks={weeks} weekRange={weekRange} />
+                )}
+              </div>
+
+              <div className="sidebar-filter-section" style={{ borderBottom: "none" }}>
+                <div className="sidebar-filter-label">Export</div>
+                <button
+                  className="btn btn-apply btn-sm"
+                  style={{ fontFamily: "Arial", fontSize: 12, width: "100%" }}
+                  disabled={loading || filteredRows.length === 0}
+                  onClick={() => downloadDgMarginsExcel(filteredRows)}
+                >
+                  Export Excel
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Main content ──────────────────────────────────────────── */}
+          <div className="col-10">
+            <div id="page-content">
+
+              {/* Page header */}
+              <div style={{ marginBottom: 12 }}>
+                <div className="page-header-title">Diesel &amp; Gasoline Margins</div>
+                <div className="page-header-sub" style={{ color: "#FF5000", fontWeight: 600 }}>
+                  {latestVisibleWeek
+                    ? weekToDateRange(latestVisibleWeek)
+                    : "Weekly fuel price composition (BRL/litro)"}
+                </div>
+              </div>
+
+              {loading ? (
+                <div className="d-flex justify-content-center align-items-center" style={{ height: 400 }}>
+                  <div className="spinner-border text-secondary" role="status">
+                    <span className="visually-hidden">Loading…</span>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* 1 ── Distribution & Resale Margin comparison line chart */}
+                  <div className="row mb-2">
+                    <div className="col-12">
+                      <div className="chart-container">
+                        <div className="section-title" style={{ fontSize: 13 }}>
+                          Distribution &amp; Resale Margin (BRL/litro)
+                        </div>
+                        <hr className="section-hr" />
+                        <PlotlyChart
+                          data={marginChart.data}
+                          layout={marginChart.layout}
+                          config={{ responsive: true, displayModeBar: false }}
+                          style={{ width: "100%", height: 280 }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 2 ── Weekly variations tables (above stacked charts) */}
+                  <div className="row mb-2">
+                    <div className="col-lg-6">
+                      <div className="chart-container">
+                        <div className="section-title" style={{ fontSize: 13 }}>
+                          Weekly Variations — Diesel B
+                        </div>
+                        <hr className="section-hr" />
+                        <VariationsTable
+                          fuelType="Diesel B"
+                          allRows={allRows}
+                          allWeeks={weeks}
+                          latestVisibleWeek={latestVisibleWeek}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-lg-6">
+                      <div className="chart-container">
+                        <div className="section-title" style={{ fontSize: 13 }}>
+                          Weekly Variations — Gasoline C
+                        </div>
+                        <hr className="section-hr" />
+                        <VariationsTable
+                          fuelType="Gasoline C"
+                          allRows={allRows}
+                          allWeeks={weeks}
+                          latestVisibleWeek={latestVisibleWeek}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 3 ── Stacked area charts */}
+                  <div className="row mb-2">
+                    <div className="col-lg-6">
+                      <div className="chart-container">
+                        <div className="section-title" style={{ fontSize: 13 }}>
+                          Diesel B — Price Composition (BRL/litro)
+                        </div>
+                        <hr className="section-hr" />
+                        <PlotlyChart
+                          data={dieselChart.data}
+                          layout={dieselChart.layout}
+                          config={{ responsive: true, displayModeBar: false }}
+                          style={{ width: "100%", height: 350 }}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-lg-6">
+                      <div className="chart-container">
+                        <div className="section-title" style={{ fontSize: 13 }}>
+                          Gasoline C — Price Composition (BRL/litro)
+                        </div>
+                        <hr className="section-hr" />
+                        <PlotlyChart
+                          data={gasolineChart.data}
+                          layout={gasolineChart.layout}
+                          config={{ responsive: true, displayModeBar: false }}
+                          style={{ width: "100%", height: 350 }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
         </div>
-        <hr className="section-hr" />
-
-        {/* ── Week slider ─────────────────────────────────────────────── */}
-        {!loading && weeks.length > 0 && (
-          <div style={{ maxWidth: 720 }}>
-            <WeekSlider weeks={weeks} value={weekRange} onChange={setWeekRange} />
-          </div>
-        )}
-
-        {/* ── Week translator ─────────────────────────────────────────── */}
-        {startLabel && endLabel && (
-          <div style={{
-            fontFamily: "Arial", fontSize: 12, color: "#555",
-            marginBottom: 12, marginTop: 4,
-          }}>
-            {startLabel === endLabel
-              ? startLabel
-              : `${startLabel}  →  ${endLabel}`}
-          </div>
-        )}
-
-        {/* ── Export ──────────────────────────────────────────────────── */}
-        <div style={{ marginBottom: 20 }}>
-          <button
-            className="btn btn-outline-secondary btn-sm"
-            style={{ fontFamily: "Arial", fontSize: 12 }}
-            disabled={loading || filteredRows.length === 0}
-            onClick={() => downloadDgMarginsExcel(filteredRows)}
-          >
-            Export Excel
-          </button>
-        </div>
-
-        {/* ── Content ─────────────────────────────────────────────────── */}
-        {loading ? (
-          <div className="d-flex justify-content-center align-items-center" style={{ height: 300 }}>
-            <div className="spinner-border text-secondary" role="status">
-              <span className="visually-hidden">Loading…</span>
-            </div>
-          </div>
-        ) : (
-          <>
-            {/* 1 ── Distribution & Resale Margin comparison */}
-            <div className="row mb-2">
-              <div className="col-12">
-                <div className="chart-container">
-                  <div className="section-title" style={{ fontSize: 13 }}>
-                    Distribution &amp; Resale Margin (BRL/litro)
-                  </div>
-                  <hr className="section-hr" />
-                  <PlotlyChart
-                    data={marginChart.data}
-                    layout={marginChart.layout}
-                    config={{ responsive: true, displayModeBar: false }}
-                    style={{ width: "100%", height: 280 }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* 2 ── Stacked area charts side by side */}
-            <div className="row mb-2">
-              <div className="col-lg-6">
-                <div className="chart-container">
-                  <div className="section-title" style={{ fontSize: 13 }}>
-                    Diesel B — Price Composition (BRL/litro)
-                  </div>
-                  <hr className="section-hr" />
-                  <PlotlyChart
-                    data={dieselChart.data}
-                    layout={dieselChart.layout}
-                    config={{ responsive: true, displayModeBar: false }}
-                    style={{ width: "100%", height: 350 }}
-                  />
-                </div>
-              </div>
-              <div className="col-lg-6">
-                <div className="chart-container">
-                  <div className="section-title" style={{ fontSize: 13 }}>
-                    Gasoline C — Price Composition (BRL/litro)
-                  </div>
-                  <hr className="section-hr" />
-                  <PlotlyChart
-                    data={gaslineChart.data}
-                    layout={gaslineChart.layout}
-                    config={{ responsive: true, displayModeBar: false }}
-                    style={{ width: "100%", height: 350 }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* 3 ── Weekly variations tables side by side */}
-            <div className="row mb-2">
-              <div className="col-lg-6">
-                <div className="chart-container">
-                  <div className="section-title" style={{ fontSize: 13 }}>
-                    Weekly Variations — Diesel B
-                  </div>
-                  <hr className="section-hr" />
-                  <VariationsTable
-                    fuelType="Diesel B"
-                    allRows={allRows}
-                    allWeeks={weeks}
-                    latestVisibleWeek={latestVisibleWeek}
-                  />
-                </div>
-              </div>
-              <div className="col-lg-6">
-                <div className="chart-container">
-                  <div className="section-title" style={{ fontSize: 13 }}>
-                    Weekly Variations — Gasoline C
-                  </div>
-                  <hr className="section-hr" />
-                  <VariationsTable
-                    fuelType="Gasoline C"
-                    allRows={allRows}
-                    allWeeks={weeks}
-                    latestVisibleWeek={latestVisibleWeek}
-                  />
-                </div>
-              </div>
-            </div>
-          </>
-        )}
       </div>
-    </>
+    </div>
   );
 }
