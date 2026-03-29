@@ -85,95 +85,67 @@ def get_session(http: requests.Session):
     }
 
 
-def _ocr_single(img_bw, psm=10):
-    """Run Tesseract on a preprocessed B&W image, return (char, confidence)."""
-    WHITELIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-    cfg = f"--psm {psm} -c tessedit_char_whitelist={WHITELIST}"
-    try:
-        data = pytesseract.image_to_data(img_bw, config=cfg, output_type=pytesseract.Output.DICT)
-        for i, txt in enumerate(data["text"]):
-            txt = txt.strip()
-            if txt and txt[0] in WHITELIST:
-                conf = float(data["conf"][i])
-                return txt[0], conf
-    except Exception:
-        pass
-    return "", 0.0
+def _preprocess_composite(composite_rgb):
+    """Apply preprocessing to a composite CAPTCHA image, return list of B&W candidates."""
+    from PIL import ImageChops
+    w, h = composite_rgb.size
+    scale = 6
+    results = []
 
-
-def ocr_captcha_char(img):
-    """Pre-process a single CAPTCHA character image and OCR it.
-
-    Uses voting across multiple preprocessing strategies and PSM modes
-    to reduce false reads (especially '7' misreads).
-    """
-    img_rgb = img.convert("RGB")
-    w, h = img_rgb.size
-    candidates = []  # list of (char, confidence)
-
-    # --- Prepare preprocessed images ---
-    preprocessed = []
-
-    # 1) Saturation channel (best for colored chars on white bg)
-    img_hsv = img_rgb.convert("HSV")
-    _, s_channel, _ = img_hsv.split()
-    s_up = s_channel.resize((w * 8, h * 8), Image.LANCZOS)
-    s_bin = s_up.point(lambda p: 0 if p > 50 else 255)
+    # Strategy 1: Saturation channel — colored chars on pale bg
+    img_hsv = composite_rgb.convert("HSV")
+    _, s_ch, _ = img_hsv.split()
+    s_up = s_ch.resize((w * scale, h * scale), Image.LANCZOS)
+    s_bin = s_up.point(lambda p: 0 if p > 45 else 255)
     s_bin = s_bin.filter(ImageFilter.MedianFilter(3))
-    preprocessed.append(s_bin)
+    results.append(s_bin)
 
-    # Also try saturation with lower threshold
-    s_bin2 = s_up.point(lambda p: 0 if p > 35 else 255)
+    # Strategy 2: Saturation with higher threshold
+    s_bin2 = s_up.point(lambda p: 0 if p > 60 else 255)
     s_bin2 = s_bin2.filter(ImageFilter.MedianFilter(3))
-    preprocessed.append(s_bin2)
+    results.append(s_bin2)
 
-    # 2) Grayscale with key thresholds
-    img_gray = img_rgb.convert("L")
-    img_up = img_gray.resize((w * 8, h * 8), Image.LANCZOS)
-    for threshold in (120, 140, 160):
-        binarized = img_up.point(lambda p, t=threshold: 0 if p < t else 255)
-        binarized = binarized.filter(ImageFilter.MedianFilter(3))
-        preprocessed.append(binarized)
-        preprocessed.append(ImageOps.invert(binarized))
+    # Strategy 3: Min-channel (captures all colored chars regardless of hue)
+    r, g, b = composite_rgb.split()
+    min_ch = ImageChops.darker(ImageChops.darker(r, g), b)
+    min_up = min_ch.resize((w * scale, h * scale), Image.LANCZOS)
+    min_inv = ImageOps.invert(min_up)
+    min_bin = min_inv.point(lambda p: 0 if p > 110 else 255)
+    min_bin = min_bin.filter(ImageFilter.MedianFilter(3))
+    results.append(min_bin)
 
-    # 3) Per-channel (R, G, B) — inverted + binarized
-    for ch_idx in range(3):
-        ch = img_rgb.split()[ch_idx]
-        ch_up = ch.resize((w * 8, h * 8), Image.LANCZOS)
-        ch_inv = ImageOps.invert(ch_up)
-        ch_bin = ch_inv.point(lambda p: 0 if p > 128 else 255)
-        ch_bin = ch_bin.filter(ImageFilter.MedianFilter(3))
-        preprocessed.append(ch_bin)
+    return results
 
-    # --- OCR each preprocessed image with multiple PSM modes ---
-    for img_bw in preprocessed:
-        for psm in (10, 8, 13):
-            char, conf = _ocr_single(img_bw, psm)
-            if char:
-                candidates.append((char, conf))
 
-    if not candidates:
-        return "X"
-
-    # --- Vote: pick the most frequent char, weighted by confidence ---
-    from collections import Counter
-    vote_scores = Counter()
-    for char, conf in candidates:
-        vote_scores[char] += max(conf, 1.0)  # at least 1 point per vote
-
-    best_char = vote_scores.most_common(1)[0][0]
-    return best_char
+def _ocr_line(img_bw):
+    """Run Tesseract in line mode on a preprocessed B&W image, return text."""
+    WHITELIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    cfg = f"--psm 7 -c tessedit_char_whitelist={WHITELIST}"
+    try:
+        text = pytesseract.image_to_string(img_bw, config=cfg).strip()
+        # Filter to only valid chars
+        return "".join(c for c in text if c in WHITELIST)
+    except Exception:
+        return ""
 
 
 def solve_captcha(http: requests.Session, session_info: dict):
-    """Baixa as 5 imagens do CAPTCHA e resolve via Tesseract OCR."""
+    """Baixa as 5 imagens do CAPTCHA, monta imagem composta e resolve via Tesseract.
+
+    Instead of OCR on individual chars (PSM 10, very error-prone), we stitch
+    the 5 images into one composite and use line-mode OCR (PSM 7) which gives
+    Tesseract word-level context and is dramatically more accurate.
+    """
+    from collections import Counter
+
     p_instance = session_info["p_instance"]
     plugin_token = session_info["plugin_token"]
 
     if not plugin_token:
         raise RuntimeError("Plugin token do CAPTCHA não encontrado")
 
-    captcha = ""
+    # Download all 5 character images
+    char_images = []
     ts = int(time.time() * 1000)
 
     for i in range(1, 6):
@@ -185,10 +157,37 @@ def solve_captcha(http: requests.Session, session_info: dict):
         )
         resp = http.get(url, timeout=30)
         resp.raise_for_status()
+        char_images.append(Image.open(BytesIO(resp.content)))
 
-        img = Image.open(BytesIO(resp.content))
-        char = ocr_captcha_char(img)
-        captcha += char
+    # Stitch into composite image with small gaps
+    gap = 4
+    total_w = sum(img.size[0] for img in char_images) + gap * 4
+    max_h = max(img.size[1] for img in char_images)
+    composite = Image.new("RGB", (total_w, max_h), (255, 255, 255))
+    x = 0
+    for img in char_images:
+        composite.paste(img.convert("RGB"), (x, 0))
+        x += img.size[0] + gap
+
+    # Try multiple preprocessing strategies, pick best 5-char result
+    preprocessed = _preprocess_composite(composite)
+
+    candidates = []  # list of 5-char strings
+    for img_bw in preprocessed:
+        text = _ocr_line(img_bw)
+        if len(text) == 5:
+            candidates.append(text)
+
+    if candidates:
+        # Pick the most common result; if all different, pick first
+        counts = Counter(candidates)
+        captcha = counts.most_common(1)[0][0]
+    elif candidates := [_ocr_line(img) for img in preprocessed if len(_ocr_line(img)) >= 4]:
+        # Fallback: accept 4+ chars, pad with X
+        best = max(candidates, key=len)[:5]
+        captcha = best.ljust(5, "X")
+    else:
+        captcha = "XXXXX"
 
     return captcha
 
