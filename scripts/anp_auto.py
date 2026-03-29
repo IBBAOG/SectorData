@@ -177,22 +177,31 @@ def extract_one(driver, ocr_engine, periodo, ambiente, output_dir, download_dir)
                     print(f"    ✗ Sem dados (CAPTCHA provavelmente errado)")
                 continue
 
-            # Click Ações → Fazer Download
-            acoes_btn = driver.find_element(By.CSS_SELECTOR, ".a-IRR-button--actions")
+            # Click Ações → Fazer Download → CSV
+            acoes_btn = driver.find_element(By.XPATH, "//button[contains(.,'Ações')]")
             acoes_btn.click()
             time.sleep(1)
 
             download_menu = WebDriverWait(driver, 5).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, "[data-action='ir-download']"))
+                EC.element_to_be_clickable((By.XPATH, "//button[contains(.,'Fazer Download')]"))
             )
             download_menu.click()
             time.sleep(1)
 
-            # In dialog: CSV should be pre-selected, click Fazer Download
-            download_btn = WebDriverWait(driver, 5).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, ".ui-dialog-buttonset button.a-Button--hot"))
-            )
-            download_btn.click()
+            # In dialog: CSV should be pre-selected, click Fazer Download button
+            # The dialog has two "Fazer Download" elements — we need the button in the dialog footer
+            dialog_btns = driver.find_elements(By.XPATH, "//div[contains(@class,'ui-dialog')]//button[contains(.,'Fazer Download')]")
+            if not dialog_btns:
+                # Fallback: any hot/primary button in a dialog
+                dialog_btns = driver.find_elements(By.XPATH, "//div[contains(@class,'ui-dialog')]//button[contains(@class,'a-Button--hot')]")
+            if not dialog_btns:
+                # Last fallback
+                dialog_btns = driver.find_elements(By.XPATH, "//button[contains(.,'Fazer Download')]")
+
+            if dialog_btns:
+                dialog_btns[-1].click()  # Last match is typically the dialog button
+            else:
+                raise RuntimeError("Botão 'Fazer Download' não encontrado no dialog")
 
             # Wait for CSV file
             print(f"    Aguardando download...")
