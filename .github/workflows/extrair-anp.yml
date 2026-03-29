@@ -32,12 +32,6 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Instalar Tesseract OCR
-        run: |
-          sudo apt-get update && sudo apt-get install -y tesseract-ocr
-          tesseract --version
-          tesseract --list-langs
-
       - name: Instalar dependências Python
         run: pip install -r requirements.txt
 
