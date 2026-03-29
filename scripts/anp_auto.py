@@ -261,13 +261,17 @@ def ir_download_csv(http, session_info):
         IR_REGION_ID,                        # region
     ]
 
-    resp = http.post(ajax_url, data={**payload, "f01": f01_values}, timeout=60)
+    headers = {
+        "X-Requested-With": "XMLHttpRequest",
+        "Accept": "text/html, */*; q=0.01",
+    }
+    resp = http.post(ajax_url, data={**payload, "f01": f01_values}, headers=headers, timeout=60)
     resp.raise_for_status()
 
-    # Response is a download URL path
+    # Response should be a download URL path (starts with /)
     download_path = resp.text.strip()
-    if not download_path.startswith("/"):
-        raise RuntimeError(f"Download URL inesperada: {download_path[:100]}")
+    if not download_path.startswith("/") or "<!DOCTYPE" in download_path:
+        return None  # CAPTCHA was wrong or session expired
 
     # Step 2: GET the download URL to fetch the CSV
     download_url = BASE_URL + download_path
@@ -348,6 +352,11 @@ def extract_one(http, periodo, ambiente, output_dir):
                 continue
 
             resp = ir_download_csv(http, session_info)
+
+            if resp is None:
+                print(f"    ✗ Download falhou (CAPTCHA provavelmente errado)")
+                time.sleep(1)
+                continue
 
             # Save CSV
             fname = f"producao_poco_{periodo.replace('/', '-')}_{ambiente}.csv"
