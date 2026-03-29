@@ -668,35 +668,6 @@ export default function DieselGasolineMarginsPage() {
                 )}
               </div>
 
-              <div className="sidebar-filter-section" style={{ borderBottom: "none" }}>
-                <div style={{ border: "1px solid #d0d0d0", borderRadius: 6, padding: "10px 12px", backgroundColor: "#fafafa" }}>
-                  <div style={{ fontFamily: "Arial", fontSize: 11, fontWeight: 700, color: "#1a1a1a", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                    Export Data
-                  </div>
-                  <button
-                    type="button"
-                    className="btn btn-outline-secondary btn-sm"
-                    onClick={async () => {
-                      setExcelLoading(true);
-                      try {
-                        await downloadDgMarginsExcel(filteredRows);
-                      } catch (e) {
-                        console.error("Excel export failed", e);
-                      } finally {
-                        setExcelLoading(false);
-                      }
-                    }}
-                    disabled={loading || filteredRows.length === 0 || excelLoading}
-                    style={{ fontFamily: "Arial" }}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" style={{ marginRight: 5, verticalAlign: "middle" }} xmlns="http://www.w3.org/2000/svg">
-                      <rect x="2" y="2" width="20" height="20" rx="3" fill="#217346"/>
-                      <text x="4" y="17" fontFamily="Arial" fontWeight="bold" fontSize="12" fill="#ffffff">X</text>
-                    </svg>
-                    formatted data .xl
-                  </button>
-                </div>
-              </div>
             </div>
           </div>
 
@@ -705,10 +676,39 @@ export default function DieselGasolineMarginsPage() {
             <div id="page-content">
 
               {/* Page header */}
-              <div style={{ marginBottom: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                 <div className="page-header-title">
                   Diesel &amp; Gasoline Margins
                   {latestVisibleWeek ? ` — ${weekToDateRange(latestVisibleWeek)}` : ""}
+                </div>
+                <div style={{ position: "relative", minWidth: 160, flexShrink: 0 }}>
+                  <div style={{ border: "1px solid #d0d0d0", borderRadius: 6, padding: "10px 16px", backgroundColor: "#fafafa" }}>
+                    <div style={{ fontFamily: "Arial", fontSize: 11, fontWeight: 700, color: "#1a1a1a", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                      Export Data
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-outline-secondary btn-sm"
+                      onClick={async () => {
+                        setExcelLoading(true);
+                        try {
+                          await downloadDgMarginsExcel(filteredRows);
+                        } catch (e) {
+                          console.error("Excel export failed", e);
+                        } finally {
+                          setExcelLoading(false);
+                        }
+                      }}
+                      disabled={loading || filteredRows.length === 0 || excelLoading}
+                      style={{ fontFamily: "Arial" }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" style={{ marginRight: 5, verticalAlign: "middle" }} xmlns="http://www.w3.org/2000/svg">
+                        <rect x="2" y="2" width="20" height="20" rx="3" fill="#217346"/>
+                        <text x="4" y="17" fontFamily="Arial" fontWeight="bold" fontSize="12" fill="#ffffff">X</text>
+                      </svg>
+                      formatted data .xl
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -724,7 +724,7 @@ export default function DieselGasolineMarginsPage() {
                   <div className="row mb-2">
                     <div className="col-12">
                       <div className="chart-container">
-                        <div className="section-title" style={{ fontSize: 13 }}>
+                        <div className="section-title" style={{ fontSize: 14 }}>
                           Distribution &amp; Resale Margin (BRL/litro)
                         </div>
                         <hr className="section-hr" />
@@ -742,30 +742,34 @@ export default function DieselGasolineMarginsPage() {
                   <div className="row mb-2">
                     <div className="col-lg-6">
                       <div className="chart-container">
-                        <div className="section-title" style={{ fontSize: 13 }}>
+                        <div className="section-title" style={{ fontSize: 14 }}>
                           Diesel B — Variations
                         </div>
-                        <hr className="section-hr" />
-                        <VariationsTable
-                          fuelType="Diesel B"
-                          allRows={allRows}
-                          allWeeks={weeks}
-                          latestVisibleWeek={latestVisibleWeek}
-                        />
+                        <div style={{ paddingLeft: 65, paddingRight: 75 }}>
+                          <hr className="section-hr" />
+                          <VariationsTable
+                            fuelType="Diesel B"
+                            allRows={allRows}
+                            allWeeks={weeks}
+                            latestVisibleWeek={latestVisibleWeek}
+                          />
+                        </div>
                       </div>
                     </div>
                     <div className="col-lg-6">
                       <div className="chart-container">
-                        <div className="section-title" style={{ fontSize: 13 }}>
+                        <div className="section-title" style={{ fontSize: 14 }}>
                           Gasoline C — Variations
                         </div>
-                        <hr className="section-hr" />
-                        <VariationsTable
-                          fuelType="Gasoline C"
-                          allRows={allRows}
-                          allWeeks={weeks}
-                          latestVisibleWeek={latestVisibleWeek}
-                        />
+                        <div style={{ paddingLeft: 65, paddingRight: 75 }}>
+                          <hr className="section-hr" />
+                          <VariationsTable
+                            fuelType="Gasoline C"
+                            allRows={allRows}
+                            allWeeks={weeks}
+                            latestVisibleWeek={latestVisibleWeek}
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -774,7 +778,7 @@ export default function DieselGasolineMarginsPage() {
                   <div className="row mb-2">
                     <div className="col-lg-6">
                       <div className="chart-container">
-                        <div className="section-title" style={{ fontSize: 13 }}>
+                        <div className="section-title" style={{ fontSize: 14 }}>
                           Diesel B — Price Composition (BRL/litro)
                         </div>
                         <hr className="section-hr" />
@@ -788,7 +792,7 @@ export default function DieselGasolineMarginsPage() {
                     </div>
                     <div className="col-lg-6">
                       <div className="chart-container">
-                        <div className="section-title" style={{ fontSize: 13 }}>
+                        <div className="section-title" style={{ fontSize: 14 }}>
                           Gasoline C — Price Composition (BRL/litro)
                         </div>
                         <hr className="section-hr" />
