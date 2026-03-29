@@ -211,12 +211,10 @@ export default function PriceBandsPage() {
   const [rows, setRows] = useState<PriceBandsRow[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const DEFAULT_START = "2023-06-01";
+
   // Slider state (indices into datas[])
   const [sliderRange, setSliderRange] = useState<[number, number]>([0, 0]);
-
-  // Applied x-axis range (set on "Apply", cleared on "Clear")
-  const [xMin, setXMin] = useState<string | null>(null);
-  const [xMax, setXMax] = useState<string | null>(null);
 
   // Load all data once
   useEffect(() => {
@@ -239,22 +237,21 @@ export default function PriceBandsPage() {
     return Array.from(seen).sort();
   }, [rows]);
 
-  // When data first loads, initialise slider to full range
+  // When data first loads, default start = Jun 2023 (or closest), end = last date
   useEffect(() => {
     if (datas.length === 0) return;
-    setSliderRange([0, datas.length - 1]);
+    const startIdx = Math.max(0, datas.findIndex((d) => d >= DEFAULT_START));
+    setSliderRange([startIdx, datas.length - 1]);
   }, [datas.length]);
 
-  function applyFilters() {
-    const [a, b] = sliderRange;
-    setXMin(datas[a] ?? null);
-    setXMax(datas[b] ?? null);
-  }
+  // x-axis range derived directly from slider — updates immediately on drag end
+  const xMin = datas[sliderRange[0]] ?? null;
+  const xMax = datas[sliderRange[1]] ?? null;
 
   function clearFilters() {
-    if (datas.length > 0) setSliderRange([0, datas.length - 1]);
-    setXMin(null);
-    setXMax(null);
+    if (datas.length === 0) return;
+    const startIdx = Math.max(0, datas.findIndex((d) => d >= DEFAULT_START));
+    setSliderRange([startIdx, datas.length - 1]);
   }
 
   const gasolineRows = useMemo(() => rows.filter((r) => r.product === "Gasoline"), [rows]);
@@ -297,12 +294,7 @@ export default function PriceBandsPage() {
               </div>
 
               <div className="row g-1 mt-1">
-                <div className="col-6">
-                  <button type="button" className="btn btn-apply" onClick={applyFilters} disabled={loading}>
-                    Apply
-                  </button>
-                </div>
-                <div className="col-6">
+                <div className="col-12">
                   <button type="button" className="btn btn-clear" onClick={clearFilters} disabled={loading}>
                     Clear
                   </button>
