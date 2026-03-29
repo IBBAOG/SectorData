@@ -181,8 +181,8 @@ def build_payload(session_info: dict, periodo: str, ambiente: str, captcha: str,
     payload["P54_AMBIENTE"] = ambiente
     payload["P54_DATA_ULTIMA_ATUALIZACAO"] = today
 
-    if request_type == "Buscar":
-        payload["P54_CAPTCHA"] = captcha
+    # CAPTCHA is required for both Buscar and Exportar
+    payload["P54_CAPTCHA"] = captcha
 
     return payload
 
@@ -216,29 +216,58 @@ def check_buscar_success(resp):
     return True, ""
 
 
+def parse_response_session(resp_text, old_session_info):
+    """Re-parse the HTML response after Buscar to get updated form fields and new CAPTCHA token."""
+    soup = BeautifulSoup(resp_text, "lxml")
+    form = soup.find("form", id="wwvFlowForm")
+    if not form:
+        return old_session_info
+
+    updated_fields = {}
+    for inp in form.find_all("input", {"type": "hidden"}):
+        name = inp.get("name") or inp.get("id", "")
+        if name:
+            updated_fields[name] = inp.get("value", "")
+
+    form_action = form.get("action", old_session_info["form_action"])
+
+    # Extract new CAPTCHA plugin token from the regenerated captcha images
+    plugin_token = None
+    captcha_div = soup.find(id="anp_p54_captcha")
+    if captcha_div:
+        img = captcha_div.find("img")
+        if img and img.get("src"):
+            m = re.search(r'[?&]p_request=([^&]+)', img["src"])
+            if m:
+                plugin_token = m.group(1)
+
+    if not plugin_token:
+        for script in soup.find_all("script"):
+            txt = script.string or ""
+            m = re.search(r'pluginUrl\("([^"]+)"', txt)
+            if m:
+                plugin_token = "PLUGIN=" + m.group(1)
+                break
+
+    return {
+        "form_action": form_action,
+        "hidden_fields": updated_fields,
+        "p_instance": updated_fields.get("p_instance", old_session_info["p_instance"]),
+        "plugin_token": plugin_token or old_session_info["plugin_token"],
+    }
+
+
 def extract_one(http: requests.Session, periodo: str, ambiente: str, output_dir: str, reuse_session=None):
-    """Extrai dados para um período/ambiente. Retorna (session_info, success)."""
+    """Extrai dados para um período/ambiente. Retorna (session_info, success).
+
+    Flow: CAPTCHA #1 → Buscar → CAPTCHA #2 → Exportar → CSV
+    """
     amb_nome = AMBIENTE_NOMES.get(ambiente, ambiente)
     print(f"  → Período {periodo}, Ambiente {amb_nome} ({ambiente})")
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            if reuse_session and attempt == 1:
-                session_info = reuse_session
-                print(f"    Reutilizando sessão {session_info['p_instance']}")
-                payload = build_payload(session_info, periodo, ambiente, "", "Exportar")
-                resp = submit_form(http, session_info, payload, stream=True)
-
-                content_type = resp.headers.get("Content-Type", "")
-                if "text/csv" in content_type or "application/octet" in content_type:
-                    saved = save_csv(resp, periodo, ambiente, output_dir)
-                    if saved:
-                        return session_info, True
-
-                print(f"    ✗ Sessão expirada ou dados vazios, tentando nova sessão...")
-                reuse_session = None
-
-            # New session
+            # Step 1: Get session
             print(f"    Tentativa {attempt}/{MAX_RETRIES} — nova sessão...")
             session_info = get_session(http)
             print(f"    p_instance={session_info['p_instance']}")
@@ -247,43 +276,41 @@ def extract_one(http: requests.Session, periodo: str, ambiente: str, output_dir:
                 print("    ✗ Plugin token do CAPTCHA não encontrado")
                 continue
 
-            # Solve CAPTCHA
-            captcha = solve_captcha(http, session_info)
-            print(f"    CAPTCHA resolvido: {captcha}")
+            # Step 2: Solve CAPTCHA #1 for Buscar
+            captcha1 = solve_captcha(http, session_info)
+            print(f"    CAPTCHA #1: {captcha1}")
 
-            # Submit Buscar
-            payload = build_payload(session_info, periodo, ambiente, captcha, "Buscar")
+            # Step 3: Submit Buscar
+            payload = build_payload(session_info, periodo, ambiente, captcha1, "Buscar")
             resp = submit_form(http, session_info, payload)
 
             success, err_msg = check_buscar_success(resp)
             if not success:
-                print(f"    ✗ {err_msg} (tentativa {attempt})")
+                print(f"    ✗ Buscar: {err_msg}")
                 time.sleep(2)
                 continue
 
-            print(f"    ✓ CAPTCHA aceito")
+            # Check if results table appeared (confirms CAPTCHA was correct)
+            if "interactive-grid" not in resp.text.lower() and "<table" not in resp.text.lower():
+                print(f"    ✗ Buscar não retornou tabela de resultados")
+                time.sleep(2)
+                continue
 
-            # Now we need to get a fresh page state after Buscar redirect
-            # APEX typically redirects back to the page after successful submit
-            # Re-parse the response to get updated form fields
-            soup = BeautifulSoup(resp.text, "lxml")
-            form = soup.find("form", id="wwvFlowForm")
-            if form:
-                updated_fields = {}
-                for inp in form.find_all("input", {"type": "hidden"}):
-                    name = inp.get("name") or inp.get("id", "")
-                    if name:
-                        updated_fields[name] = inp.get("value", "")
-                form_action = form.get("action", session_info["form_action"])
-                session_info = {
-                    "form_action": form_action,
-                    "hidden_fields": updated_fields,
-                    "p_instance": updated_fields.get("p_instance", session_info["p_instance"]),
-                    "plugin_token": session_info["plugin_token"],
-                }
+            print(f"    ✓ Buscar OK — dados carregados")
 
-            # Export CSV
-            payload = build_payload(session_info, periodo, ambiente, "", "Exportar")
+            # Step 4: Parse response to get updated form + new CAPTCHA
+            session_info = parse_response_session(resp.text, session_info)
+
+            if not session_info["plugin_token"]:
+                print("    ✗ Novo plugin token não encontrado após Buscar")
+                continue
+
+            # Step 5: Solve CAPTCHA #2 for Exportar
+            captcha2 = solve_captcha(http, session_info)
+            print(f"    CAPTCHA #2: {captcha2}")
+
+            # Step 6: Submit Exportar with CAPTCHA #2
+            payload = build_payload(session_info, periodo, ambiente, captcha2, "Exportar")
             resp = submit_form(http, session_info, payload, stream=True)
 
             content_type = resp.headers.get("Content-Type", "")
@@ -293,17 +320,16 @@ def extract_one(http: requests.Session, periodo: str, ambiente: str, output_dir:
                 saved = save_csv(resp, periodo, ambiente, output_dir)
             elif "text/html" in content_type:
                 body = resp.content
-                if b"," in body and b"\n" in body and len(body) > 100:
+                if b"," in body and b"\n" in body and len(body) > 1000:
                     saved = save_csv_bytes(body, periodo, ambiente, output_dir)
                 else:
-                    print(f"    ✗ Exportação retornou HTML ({len(body)} bytes)")
+                    print(f"    ✗ Exportação retornou HTML ({len(body)} bytes) — CAPTCHA #2 pode ter falhado")
             else:
                 saved = save_csv(resp, periodo, ambiente, output_dir)
 
             if saved:
                 return session_info, True
 
-            # CSV was empty (only headers) — CAPTCHA likely wrong, retry
             time.sleep(2)
             continue
 
