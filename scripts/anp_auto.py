@@ -85,59 +85,84 @@ def get_session(http: requests.Session):
     }
 
 
+def _ocr_single(img_bw, psm=10):
+    """Run Tesseract on a preprocessed B&W image, return (char, confidence)."""
+    WHITELIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    cfg = f"--psm {psm} -c tessedit_char_whitelist={WHITELIST}"
+    try:
+        data = pytesseract.image_to_data(img_bw, config=cfg, output_type=pytesseract.Output.DICT)
+        for i, txt in enumerate(data["text"]):
+            txt = txt.strip()
+            if txt and txt[0] in WHITELIST:
+                conf = float(data["conf"][i])
+                return txt[0], conf
+    except Exception:
+        pass
+    return "", 0.0
+
+
 def ocr_captcha_char(img):
     """Pre-process a single CAPTCHA character image and OCR it.
 
-    Characters are colorful (red, green, blue, yellow) on a pale/white noisy
-    background.  Plain grayscale loses light-colored chars like yellow.  Using
-    the saturation channel (HSV) separates colored chars from the low-saturation
-    background.
+    Uses voting across multiple preprocessing strategies and PSM modes
+    to reduce false reads (especially '7' misreads).
     """
-    WHITELIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-    TSR_CFG = f"--psm 10 -c tessedit_char_whitelist={WHITELIST}"
-
     img_rgb = img.convert("RGB")
     w, h = img_rgb.size
+    candidates = []  # list of (char, confidence)
 
-    # --- Strategy 1: Saturation channel (best for colored chars on white bg) ---
+    # --- Prepare preprocessed images ---
+    preprocessed = []
+
+    # 1) Saturation channel (best for colored chars on white bg)
     img_hsv = img_rgb.convert("HSV")
     _, s_channel, _ = img_hsv.split()
     s_up = s_channel.resize((w * 8, h * 8), Image.LANCZOS)
-    # High saturation = character pixels → invert so char becomes black on white
     s_bin = s_up.point(lambda p: 0 if p > 50 else 255)
     s_bin = s_bin.filter(ImageFilter.MedianFilter(3))
+    preprocessed.append(s_bin)
 
-    result = pytesseract.image_to_string(s_bin, config=TSR_CFG).strip()
-    if result and result[0] in WHITELIST:
-        return result[0]
+    # Also try saturation with lower threshold
+    s_bin2 = s_up.point(lambda p: 0 if p > 35 else 255)
+    s_bin2 = s_bin2.filter(ImageFilter.MedianFilter(3))
+    preprocessed.append(s_bin2)
 
-    # --- Strategy 2: Grayscale with multiple thresholds ---
+    # 2) Grayscale with key thresholds
     img_gray = img_rgb.convert("L")
     img_up = img_gray.resize((w * 8, h * 8), Image.LANCZOS)
-
-    for threshold in (140, 120, 100, 160, 180):
+    for threshold in (120, 140, 160):
         binarized = img_up.point(lambda p, t=threshold: 0 if p < t else 255)
         binarized = binarized.filter(ImageFilter.MedianFilter(3))
+        preprocessed.append(binarized)
+        preprocessed.append(ImageOps.invert(binarized))
 
-        # Try both normal and inverted
-        for candidate in (binarized, ImageOps.invert(binarized)):
-            result = pytesseract.image_to_string(candidate, config=TSR_CFG).strip()
-            if result and result[0] in WHITELIST:
-                return result[0]
-
-    # --- Strategy 3: Per-channel max contrast ---
+    # 3) Per-channel (R, G, B) — inverted + binarized
     for ch_idx in range(3):
         ch = img_rgb.split()[ch_idx]
         ch_up = ch.resize((w * 8, h * 8), Image.LANCZOS)
         ch_inv = ImageOps.invert(ch_up)
-        ch_bin = ch_inv.point(lambda p: 0 if p > 140 else 255)
+        ch_bin = ch_inv.point(lambda p: 0 if p > 128 else 255)
         ch_bin = ch_bin.filter(ImageFilter.MedianFilter(3))
+        preprocessed.append(ch_bin)
 
-        result = pytesseract.image_to_string(ch_bin, config=TSR_CFG).strip()
-        if result and result[0] in WHITELIST:
-            return result[0]
+    # --- OCR each preprocessed image with multiple PSM modes ---
+    for img_bw in preprocessed:
+        for psm in (10, 8, 13):
+            char, conf = _ocr_single(img_bw, psm)
+            if char:
+                candidates.append((char, conf))
 
-    return "X"
+    if not candidates:
+        return "X"
+
+    # --- Vote: pick the most frequent char, weighted by confidence ---
+    from collections import Counter
+    vote_scores = Counter()
+    for char, conf in candidates:
+        vote_scores[char] += max(conf, 1.0)  # at least 1 point per vote
+
+    best_char = vote_scores.most_common(1)[0][0]
+    return best_char
 
 
 def solve_captcha(http: requests.Session, session_info: dict):
@@ -290,13 +315,7 @@ def extract_one(http: requests.Session, periodo: str, ambiente: str, output_dir:
                 time.sleep(2)
                 continue
 
-            # Check if results table appeared (confirms CAPTCHA was correct)
-            if "interactive-grid" not in resp.text.lower() and "<table" not in resp.text.lower():
-                print(f"    ✗ Buscar não retornou tabela de resultados")
-                time.sleep(2)
-                continue
-
-            print(f"    ✓ Buscar OK — dados carregados")
+            print(f"    ✓ Buscar submetido")
 
             # Step 4: Parse response to get updated form + new CAPTCHA
             session_info = parse_response_session(resp.text, session_info)
