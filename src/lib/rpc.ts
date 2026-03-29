@@ -407,13 +407,25 @@ export async function rpcGetPriceBandsData(
   supabase: SupabaseClient,
   product?: string
 ): Promise<PriceBandsRow[]> {
-  const { data, error } = await supabase.rpc("get_price_bands_data", {
-    p_product: product ?? null,
-  });
-  if (error) {
-    console.error("rpcGetPriceBandsData:", error);
-    return [];
+  const PAGE = 1000;
+  let offset = 0;
+  const allRows: PriceBandsRow[] = [];
+
+  while (true) {
+    const { data, error } = await supabase
+      .rpc("get_price_bands_data", { p_product: product ?? null })
+      .range(offset, offset + PAGE - 1);
+    if (error) {
+      console.error("rpcGetPriceBandsData:", error);
+      break;
+    }
+    const rows = (data ?? []) as PriceBandsRow[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
   }
-  return (data ?? []) as PriceBandsRow[];
+
+  return allRows;
 }
 
