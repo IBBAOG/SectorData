@@ -52,7 +52,7 @@ const STACK_COMPONENTS: { key: keyof DgMarginsRow }[] = [
 // Human-readable label per fuel type
 function compLabel(key: string, fuelType: string): string {
   if (key === "base_fuel")         return fuelType === "Diesel B" ? "Diesel A"           : "Gasoline A";
-  if (key === "biofuel_component") return fuelType === "Diesel B" ? "Biodiesel"           : "Anhydrous Ethanol";
+  if (key === "biofuel_component") return fuelType === "Diesel B" ? "Biodiesel"           : "An. Ethanol";
   if (key === "federal_tax")       return "Federal Tax";
   if (key === "state_tax")         return "State Tax";
   if (key === "distribution_and_resale_margin") return "Dist. & Resale Margin";
@@ -745,8 +745,8 @@ export default function DieselGasolineMarginsPage() {
                         <div className="section-title" style={{ fontSize: 14 }}>
                           Diesel B — Variations
                         </div>
+                        <hr className="section-hr" />
                         <div style={{ paddingLeft: 65, paddingRight: 75 }}>
-                          <hr className="section-hr" />
                           <VariationsTable
                             fuelType="Diesel B"
                             allRows={allRows}
@@ -761,8 +761,8 @@ export default function DieselGasolineMarginsPage() {
                         <div className="section-title" style={{ fontSize: 14 }}>
                           Gasoline C — Variations
                         </div>
+                        <hr className="section-hr" />
                         <div style={{ paddingLeft: 65, paddingRight: 75 }}>
-                          <hr className="section-hr" />
                           <VariationsTable
                             fuelType="Gasoline C"
                             allRows={allRows}
