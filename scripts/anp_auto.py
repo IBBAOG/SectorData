@@ -331,14 +331,13 @@ def extract_one(http, periodo, ambiente, output_dir):
             # Submit Buscar
             resp = submit_buscar(http, session_info, periodo, ambiente, captcha)
 
-            # Check if data loaded
-            has_data, err_msg = buscar_has_data(resp.text)
-            if not has_data:
-                print(f"    ✗ Buscar sem dados: {err_msg or 'CAPTCHA provavelmente errado'}")
+            # Check for explicit error in response
+            if "incorreto" in resp.text.lower() or "inválido" in resp.text.lower():
+                print(f"    ✗ CAPTCHA incorreto")
                 time.sleep(1)
                 continue
 
-            print(f"    ✓ Buscar OK — dados carregados")
+            print(f"    ✓ Buscar submetido")
 
             # Re-parse session from Buscar response (get updated IR token)
             session_info = _parse_page(resp.text)
