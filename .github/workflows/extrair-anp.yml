@@ -1,0 +1,80 @@
+name: Extração ANP - Produção por Poço
+
+on:
+  schedule:
+    - cron: '0 8 5 * *'  # dia 5 de cada mês, 08:00 UTC (05:00 BRT)
+  workflow_dispatch:
+    inputs:
+      periodo:
+        description: 'Período único MM/YYYY (ex: 01/2025)'
+        required: false
+      periodo_de:
+        description: 'Período inicial MM/YYYY para lote'
+        required: false
+      periodo_ate:
+        description: 'Período final MM/YYYY para lote'
+        required: false
+      ambiente:
+        description: 'Ambiente: M (Mar), S (Pre-Sal), T (Terra), todos'
+        required: false
+        default: 'todos'
+
+jobs:
+  extrair:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar Tesseract OCR
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr
+
+      - name: Instalar dependências Python
+        run: pip install -r requirements.txt
+
+      - name: Calcular período automático
+        id: periodo
+        run: |
+          if [ -n "${{ github.event.inputs.periodo }}" ]; then
+            echo "args=--periodo ${{ github.event.inputs.periodo }}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ github.event.inputs.periodo_de }}" ]; then
+            DE="${{ github.event.inputs.periodo_de }}"
+            ATE="${{ github.event.inputs.periodo_ate || github.event.inputs.periodo_de }}"
+            echo "args=--de $DE --ate $ATE" >> "$GITHUB_OUTPUT"
+          else
+            # Agendado: 2 meses atrás
+            PERIODO=$(date -d "2 months ago" +"%m/%Y")
+            echo "args=--periodo $PERIODO" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extrair dados ANP
+        run: |
+          AMBIENTE="${{ github.event.inputs.ambiente || 'todos' }}"
+          python scripts/anp_auto.py ${{ steps.periodo.outputs.args }} --ambiente "$AMBIENTE" --output output/anp
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: anp-producao-poco
+          path: output/anp/
+          retention-days: 90
+
+      - name: Commitar CSVs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          cp -r output/anp /tmp/anp_backup 2>/dev/null || true
+          git fetch origin main
+          git reset --hard origin/main
+          mkdir -p output/anp
+          cp -r /tmp/anp_backup/* output/anp/ 2>/dev/null || true
+          git add output/anp/
+          git diff --cached --quiet || git commit -m "dados: ANP produção por poço $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
