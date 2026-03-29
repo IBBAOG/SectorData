@@ -85,58 +85,15 @@ def get_session(http: requests.Session):
     }
 
 
-def _preprocess_composite(composite_rgb):
-    """Apply preprocessing to a composite CAPTCHA image, return list of B&W candidates."""
-    from PIL import ImageChops
-    w, h = composite_rgb.size
-    scale = 6
-    results = []
-
-    # Strategy 1: Saturation channel — colored chars on pale bg
-    img_hsv = composite_rgb.convert("HSV")
-    _, s_ch, _ = img_hsv.split()
-    s_up = s_ch.resize((w * scale, h * scale), Image.LANCZOS)
-    s_bin = s_up.point(lambda p: 0 if p > 45 else 255)
-    s_bin = s_bin.filter(ImageFilter.MedianFilter(3))
-    results.append(s_bin)
-
-    # Strategy 2: Saturation with higher threshold
-    s_bin2 = s_up.point(lambda p: 0 if p > 60 else 255)
-    s_bin2 = s_bin2.filter(ImageFilter.MedianFilter(3))
-    results.append(s_bin2)
-
-    # Strategy 3: Min-channel (captures all colored chars regardless of hue)
-    r, g, b = composite_rgb.split()
-    min_ch = ImageChops.darker(ImageChops.darker(r, g), b)
-    min_up = min_ch.resize((w * scale, h * scale), Image.LANCZOS)
-    min_inv = ImageOps.invert(min_up)
-    min_bin = min_inv.point(lambda p: 0 if p > 110 else 255)
-    min_bin = min_bin.filter(ImageFilter.MedianFilter(3))
-    results.append(min_bin)
-
-    return results
-
-
-def _ocr_line(img_bw):
-    """Run Tesseract in line mode on a preprocessed B&W image, return text."""
-    WHITELIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-    cfg = f"--psm 7 -c tessedit_char_whitelist={WHITELIST}"
-    try:
-        text = pytesseract.image_to_string(img_bw, config=cfg).strip()
-        # Filter to only valid chars
-        return "".join(c for c in text if c in WHITELIST)
-    except Exception:
-        return ""
-
-
 def solve_captcha(http: requests.Session, session_info: dict):
     """Baixa as 5 imagens do CAPTCHA, monta imagem composta e resolve via Tesseract.
 
-    Instead of OCR on individual chars (PSM 10, very error-prone), we stitch
-    the 5 images into one composite and use line-mode OCR (PSM 7) which gives
-    Tesseract word-level context and is dramatically more accurate.
+    Preprocessing: saturation channel isolates colored characters from pale
+    background.  Composite image + PSM 7 (line mode) gives Tesseract context.
+    Tries multiple configs and picks the best 5-char result by voting.
     """
     from collections import Counter
+    from PIL import ImageChops
 
     p_instance = session_info["p_instance"]
     plugin_token = session_info["plugin_token"]
@@ -159,35 +116,79 @@ def solve_captcha(http: requests.Session, session_info: dict):
         resp.raise_for_status()
         char_images.append(Image.open(BytesIO(resp.content)))
 
-    # Stitch into composite image with small gaps
-    gap = 4
-    total_w = sum(img.size[0] for img in char_images) + gap * 4
-    max_h = max(img.size[1] for img in char_images)
+    # Stitch into composite image with generous spacing
+    gap = 8
+    total_w = sum(img.size[0] for img in char_images) + gap * 6  # padding on edges too
+    max_h = max(img.size[1] for img in char_images) + gap * 2
     composite = Image.new("RGB", (total_w, max_h), (255, 255, 255))
-    x = 0
+    x = gap
     for img in char_images:
-        composite.paste(img.convert("RGB"), (x, 0))
+        composite.paste(img.convert("RGB"), (x, gap))
         x += img.size[0] + gap
 
-    # Try multiple preprocessing strategies, pick best 5-char result
-    preprocessed = _preprocess_composite(composite)
+    # Preprocess: saturation channel (colored chars → high sat, pale bg → low sat)
+    w, h = composite.size
+    scale = 6
+    img_hsv = composite.convert("HSV")
+    _, s_ch, _ = img_hsv.split()
+    s_up = s_ch.resize((w * scale, h * scale), Image.LANCZOS)
 
-    candidates = []  # list of 5-char strings
-    for img_bw in preprocessed:
-        text = _ocr_line(img_bw)
-        if len(text) == 5:
-            candidates.append(text)
+    WHITELIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    candidates = []
+
+    # Try multiple saturation thresholds and PSM modes
+    for sat_thresh in (40, 50, 60):
+        # Binarize: high saturation (char) → black, low sat (bg) → white
+        bw = s_up.point(lambda p, t=sat_thresh: 0 if p > t else 255)
+        bw = bw.filter(ImageFilter.MedianFilter(3))
+        # Ensure mode L
+        if bw.mode != "L":
+            bw = bw.convert("L")
+
+        for psm in (7, 8, 6):
+            cfg = f"--psm {psm} -c tessedit_char_whitelist={WHITELIST}"
+            try:
+                text = pytesseract.image_to_string(bw, config=cfg).strip()
+                text = "".join(c for c in text if c in WHITELIST)
+                if len(text) == 5:
+                    candidates.append(text)
+            except Exception as e:
+                print(f"    [OCR error: {e}]")
+
+    # Also try min-channel approach
+    r, g, b = composite.split()
+    min_ch = ImageChops.darker(ImageChops.darker(r, g), b)
+    min_up = min_ch.resize((w * scale, h * scale), Image.LANCZOS)
+    min_inv = ImageOps.invert(min_up)
+    for thresh in (100, 120):
+        bw = min_inv.point(lambda p, t=thresh: 0 if p > t else 255)
+        bw = bw.filter(ImageFilter.MedianFilter(3))
+        if bw.mode != "L":
+            bw = bw.convert("L")
+        cfg = f"--psm 7 -c tessedit_char_whitelist={WHITELIST}"
+        try:
+            text = pytesseract.image_to_string(bw, config=cfg).strip()
+            text = "".join(c for c in text if c in WHITELIST)
+            if len(text) == 5:
+                candidates.append(text)
+        except Exception:
+            pass
 
     if candidates:
-        # Pick the most common result; if all different, pick first
         counts = Counter(candidates)
         captcha = counts.most_common(1)[0][0]
-    elif candidates := [_ocr_line(img) for img in preprocessed if len(_ocr_line(img)) >= 4]:
-        # Fallback: accept 4+ chars, pad with X
-        best = max(candidates, key=len)[:5]
-        captcha = best.ljust(5, "X")
     else:
-        captcha = "XXXXX"
+        # Fallback: try to get any result
+        bw = s_up.point(lambda p: 0 if p > 45 else 255)
+        bw = bw.filter(ImageFilter.MedianFilter(3)).convert("L")
+        cfg = f"--psm 7 -c tessedit_char_whitelist={WHITELIST}"
+        try:
+            text = pytesseract.image_to_string(bw, config=cfg).strip()
+            captcha = "".join(c for c in text if c in WHITELIST)[:5]
+        except Exception:
+            captcha = ""
+        if not captcha:
+            captcha = "XXXXX"
 
     return captcha
 
