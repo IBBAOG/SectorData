@@ -390,3 +390,30 @@ export async function rpcGetDgMarginsFilters(
   }
 }
 
+// ─── MODULE: Price Bands (/src/app/(dashboard)/price-bands/page.tsx) ─────────
+
+export type PriceBandsRow = {
+  id: number;
+  date: string;                          // "YYYY-MM-DD"
+  product: string;                       // "Gasoline" | "Diesel"
+  bba_import_parity: number | null;      // IBBA for Gasoline, BBA for Diesel
+  bba_import_parity_w_subsidy: number | null; // Diesel only
+  bba_export_parity: number | null;
+  petrobras_price: number | null;
+  petrobras_price_w_subsidy: number | null;   // reserved
+};
+
+export async function rpcGetPriceBandsData(
+  supabase: SupabaseClient,
+  product?: string
+): Promise<PriceBandsRow[]> {
+  const { data, error } = await supabase.rpc("get_price_bands_data", {
+    p_product: product ?? null,
+  });
+  if (error) {
+    console.error("rpcGetPriceBandsData:", error);
+    return [];
+  }
+  return (data ?? []) as PriceBandsRow[];
+}
+
