@@ -213,8 +213,17 @@ function WeekSlider(props: {
     onChange: handleChange,
     onChangeComplete: handleAfterChange,
     onBeforeChange: handleBeforeChange,
-    handleRender: (node: React.ReactElement, info: { value: number }) => {
+    handleRender: (node: React.ReactElement, info: { value: number; index?: number }) => {
       const weekStr = weeks[info.value] ?? "";
+      const isLeft  = (info.index ?? 0) === 0;
+      const gap     = displayRange[1] - displayRange[0];
+      // When handles are close, push labels apart so they don't overlap.
+      // Left label shifts fully left of the handle; right label shifts fully right.
+      const CLOSE   = 5;
+      const labelTransform =
+        gap < CLOSE
+          ? isLeft ? "translateX(-98%)" : "translateX(-2%)"
+          : "translateX(-50%)";
       return React.cloneElement(node, {}, (
         <span>
           {/* while dragging: full date range floats above the handle label */}
@@ -238,7 +247,9 @@ function WeekSlider(props: {
               {weekToDateOnly(weekStr)}
             </span>
           )}
-          <span className="slider-handle-label">{weekStr}</span>
+          <span className="slider-handle-label" style={{ transform: labelTransform }}>
+            {weekStr}
+          </span>
         </span>
       ));
     },
