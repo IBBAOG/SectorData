@@ -157,7 +157,8 @@ function WeekSlider(props: {
 
   const [dragging, setDragging] = useState(false);
   const [localRange, setLocalRange] = useState<[number, number]>(value);
-  const prevValue = useRef(value);
+  const prevValue   = useRef(value);
+  const trackRef    = useRef<HTMLDivElement>(null);
 
   if (!dragging && (prevValue.current[0] !== value[0] || prevValue.current[1] !== value[1])) {
     prevValue.current = value;
@@ -214,16 +215,19 @@ function WeekSlider(props: {
     onChangeComplete: handleAfterChange,
     onBeforeChange: handleBeforeChange,
     handleRender: (node: React.ReactElement, info: { value: number; index?: number }) => {
-      const weekStr = weeks[info.value] ?? "";
-      const isLeft  = (info.index ?? 0) === 0;
-      const gap     = displayRange[1] - displayRange[0];
-      // When handles are close, push labels apart so they don't overlap.
-      // Left label shifts fully left of the handle; right label shifts fully right.
-      const CLOSE   = 5;
-      const labelTransform =
-        gap < CLOSE
-          ? isLeft ? "translateX(-98%)" : "translateX(-2%)"
-          : "translateX(-50%)";
+      const weekStr     = weeks[info.value] ?? "";
+      const isLeft      = (info.index ?? 0) === 0;
+      // Pixel-based overlap detection: compute actual gap in pixels between handles.
+      // Label width ≈ 60px (font-size 10px, ~7 chars + padding). Overlap when gap < 60px.
+      const trackWidth  = trackRef.current?.clientWidth ?? 0;
+      const totalSteps  = Math.max(1, weeks.length - 1);
+      const gapPx       = trackWidth > 0
+        ? ((displayRange[1] - displayRange[0]) / totalSteps) * trackWidth
+        : Infinity;
+      const tooClose    = gapPx < 60;
+      const labelTransform = tooClose
+        ? isLeft ? "translateX(-98%)" : "translateX(-2%)"
+        : "translateX(-50%)";
       return React.cloneElement(node, {}, (
         <span>
           {/* while dragging: full date range floats above the handle label */}
@@ -256,7 +260,7 @@ function WeekSlider(props: {
   } satisfies SliderProps;
 
   return (
-    <div style={{ marginBottom: 16, marginTop: 32, paddingLeft: 18, paddingRight: 18 }}>
+    <div ref={trackRef} style={{ marginBottom: 16, marginTop: 32, paddingLeft: 18, paddingRight: 18 }}>
       <Slider range {...rangeProps} />
     </div>
   );
@@ -757,7 +761,7 @@ export default function DieselGasolineMarginsPage() {
                           Diesel B — Variations
                         </div>
                         <hr className="section-hr" />
-                        <div style={{ paddingLeft: 65, paddingRight: 75 }}>
+                        <div style={{ margin: "0 70px" }}>
                           <VariationsTable
                             fuelType="Diesel B"
                             allRows={allRows}
@@ -773,7 +777,7 @@ export default function DieselGasolineMarginsPage() {
                           Gasoline C — Variations
                         </div>
                         <hr className="section-hr" />
-                        <div style={{ paddingLeft: 65, paddingRight: 75 }}>
+                        <div style={{ margin: "0 70px" }}>
                           <VariationsTable
                             fuelType="Gasoline C"
                             allRows={allRows}
