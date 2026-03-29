@@ -2,9 +2,11 @@
 """
 Extração automática de dados de produção por poço — ANP/CDP.
 
-Resolve CAPTCHA via ddddocr (rede neural offline, gratuita).
-Usa o download nativo do Interactive Report (Ações → Fazer Download → CSV),
-que não exige segundo CAPTCHA após o Buscar.
+Usa Selenium (Chrome headless) para executar JavaScript do site APEX +
+ddddocr (rede neural offline) para resolver CAPTCHAs automaticamente.
+
+Após Buscar com CAPTCHA correto, usa Ações → Fazer Download → CSV
+(download nativo do Interactive Report, sem segundo CAPTCHA).
 
 Uso:
     python scripts/anp_auto.py --periodo 01/2025 --ambiente M --output output/anp
@@ -12,124 +14,82 @@ Uso:
 """
 
 import argparse
+import glob
 import os
 import re
+import shutil
 import sys
 import time
-from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
-from urllib.parse import urljoin, quote
 
 import ddddocr
-import requests
-from bs4 import BeautifulSoup
 from PIL import Image
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import Select, WebDriverWait
 
-BASE_URL = "https://cdp.anp.gov.br"
-PAGE_URL = f"{BASE_URL}/ords/r/cdp_apex/consulta-dados-publicos-cdp/consulta-produção-por-poço"
-AJAX_URL = f"{BASE_URL}/ords/wwv_flow.ajax"
+PAGE_URL = "https://cdp.anp.gov.br/ords/r/cdp_apex/consulta-dados-publicos-cdp/consulta-produção-por-poço"
 
-AMBIENTES = {"M": "M", "S": "S", "T": "T"}
-AMBIENTE_NOMES = {"M": "Mar", "S": "Pre-Sal", "T": "Terra"}
-MAX_RETRIES = 8
-
-# Fixed IDs from the ANP APEX Interactive Report widget
-IR_WORKSHEET_ID = "535711077407731650"
-IR_REPORT_ID = "532675064491918620"
-IR_REGION_ID = "R535711499414731654"
+AMBIENTES = {"M": "Mar", "S": "Pre-Sal", "T": "Terra"}
+MAX_RETRIES = 10
 
 
-def _parse_page(html):
-    """Parse page HTML to extract session info, CAPTCHA token, and IR token."""
-    soup = BeautifulSoup(html, "lxml")
-    form = soup.find("form", id="wwvFlowForm")
-    if not form:
-        raise RuntimeError("Formulário wwvFlowForm não encontrado")
+def create_driver(download_dir):
+    """Create Chrome WebDriver in headless mode."""
+    opts = Options()
+    opts.add_argument("--headless=new")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-gpu")
+    opts.add_argument("--window-size=1280,900")
+    opts.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 
-    form_action = form.get("action", "")
-    hidden_fields = {}
-    for inp in form.find_all("input", {"type": "hidden"}):
-        name = inp.get("name") or inp.get("id", "")
-        if name:
-            hidden_fields[name] = inp.get("value", "")
-
-    p_instance = hidden_fields.get("p_instance", "")
-    if not p_instance:
-        raise RuntimeError("p_instance não encontrado")
-
-    # CAPTCHA plugin token from image src
-    captcha_token = None
-    captcha_div = soup.find(id="anp_p54_captcha")
-    if captcha_div:
-        img = captcha_div.find("img")
-        if img and img.get("src"):
-            m = re.search(r'[?&]p_request=([^&]+)', img["src"])
-            if m:
-                captcha_token = m.group(1)
-    if not captcha_token:
-        for script in soup.find_all("script"):
-            txt = script.string or ""
-            m = re.search(r'pluginUrl\("([^"]+)"', txt)
-            if m:
-                captcha_token = "PLUGIN=" + m.group(1)
-                break
-
-    # IR region plugin token (for AJAX download — starts with UkVHSU9O)
-    ir_token = None
-    for script in soup.find_all("script"):
-        txt = script.string or ""
-        for m in re.finditer(r'"ajaxIdentifier"\s*:\s*"([^"]+)"', txt):
-            if m.group(1).startswith("UkVHSU9O"):
-                ir_token = "PLUGIN=" + m.group(1)
-                break
-        if ir_token:
-            break
-
-    return {
-        "form_action": form_action,
-        "hidden_fields": hidden_fields,
-        "p_instance": p_instance,
-        "captcha_token": captcha_token,
-        "ir_token": ir_token,
+    prefs = {
+        "download.default_directory": str(Path(download_dir).resolve()),
+        "download.prompt_for_download": False,
+        "download.directory_upgrade": True,
     }
+    opts.add_experimental_option("prefs", prefs)
+
+    driver = webdriver.Chrome(options=opts)
+    driver.set_page_load_timeout(60)
+
+    # Enable downloads in headless mode
+    driver.execute_cdp_cmd("Page.setDownloadBehavior", {
+        "behavior": "allow",
+        "downloadPath": str(Path(download_dir).resolve()),
+    })
+
+    return driver
 
 
-def get_session(http):
-    resp = http.get(PAGE_URL, timeout=60)
-    resp.raise_for_status()
-    return _parse_page(resp.text)
+def solve_captcha(driver, ocr_engine):
+    """Read the 5 CAPTCHA char images from the page and OCR them."""
+    captcha_div = driver.find_element(By.ID, "anp_p54_captcha")
+    imgs = captcha_div.find_elements(By.TAG_NAME, "img")
 
+    if len(imgs) != 5:
+        return ""
 
-def solve_captcha(http, session_info, ocr_engine):
-    """Baixa as 5 imagens do CAPTCHA, monta composição e resolve via ddddocr."""
-    p_instance = session_info["p_instance"]
-    captcha_token = session_info["captcha_token"]
-    if not captcha_token:
-        raise RuntimeError("CAPTCHA token não encontrado")
-
+    # Get each image as PNG bytes via screenshot
     char_images = []
-    ts = int(time.time() * 1000)
-    for i in range(1, 6):
-        url = (
-            f"{BASE_URL}/ords/wwv_flow.show"
-            f"?p_flow_id=117&p_flow_step_id=54"
-            f"&p_instance={p_instance}&x01=show_image&x02={i}"
-            f"&p_request={captcha_token}&time={ts + i}"
-        )
-        resp = http.get(url, timeout=30)
-        resp.raise_for_status()
-        char_images.append(Image.open(BytesIO(resp.content)))
+    for img in imgs:
+        png_bytes = img.screenshot_as_png
+        char_images.append(Image.open(BytesIO(png_bytes)))
 
-    # Stitch into composite (tight spacing for ddddocr)
+    # Stitch into composite
     gap = 2
-    total_w = sum(img.size[0] for img in char_images) + gap * 4
-    max_h = max(img.size[1] for img in char_images)
+    total_w = sum(im.size[0] for im in char_images) + gap * 4
+    max_h = max(im.size[1] for im in char_images)
     composite = Image.new("RGB", (total_w, max_h), (255, 255, 255))
     x = 0
-    for img in char_images:
-        composite.paste(img.convert("RGB"), (x, 0))
-        x += img.size[0] + gap
+    for im in char_images:
+        composite.paste(im.convert("RGB"), (x, 0))
+        x += im.size[0] + gap
 
     buf = BytesIO()
     composite.save(buf, format="PNG")
@@ -138,129 +98,125 @@ def solve_captcha(http, session_info, ocr_engine):
     return captcha[:5] if len(captcha) >= 5 else captcha
 
 
-def submit_buscar(http, session_info, periodo, ambiente, captcha):
-    today = datetime.now(timezone.utc).strftime("%d/%m/%Y")
-    payload = dict(session_info["hidden_fields"])
-    payload["p_request"] = "Buscar"
-    payload["P54_PERIODO"] = periodo
-    payload["P54_AMBIENTE"] = ambiente
-    payload["P54_CAPTCHA"] = captcha
-    payload["P54_DATA_ULTIMA_ATUALIZACAO"] = today
-
-    form_action = session_info["form_action"]
-    if form_action.startswith("wwv_flow"):
-        url = f"{BASE_URL}/ords/{form_action}"
-    elif form_action.startswith("/"):
-        url = BASE_URL + form_action
-    else:
-        url = urljoin(BASE_URL + "/ords/", form_action)
-
-    resp = http.post(url, data=payload, timeout=120)
-    resp.raise_for_status()
-    return resp
+def wait_for_download(download_dir, timeout=60):
+    """Wait for a CSV file to appear in download_dir."""
+    start = time.time()
+    while time.time() - start < timeout:
+        csv_files = glob.glob(os.path.join(download_dir, "*.csv"))
+        # Exclude .crdownload (partial downloads)
+        csv_files = [f for f in csv_files if not f.endswith(".crdownload")]
+        if csv_files:
+            # Return the newest file
+            return max(csv_files, key=os.path.getmtime)
+        time.sleep(1)
+    return None
 
 
-def ir_download_csv(http, session_info):
-    """Download CSV via IR widget (Ações → Fazer Download → CSV). No CAPTCHA needed."""
-    p_instance = session_info["p_instance"]
-    ir_token = session_info["ir_token"]
-    if not ir_token:
-        return None
-
-    context_path = quote(
-        f"consulta-dados-publicos-cdp/consulta-produção-por-poço/{p_instance}", safe="/-"
-    )
-
-    payload = {
-        "p_flow_id": "117",
-        "p_flow_step_id": "54",
-        "p_instance": p_instance,
-        "p_debug": "",
-        "p_request": ir_token,
-        "p_widget_name": "worksheet",
-        "p_widget_mod": "ACTION",
-        "p_widget_action": "GET_DOWNLOAD_LINK",
-        "p_widget_num_return": "25",
-        "x01": IR_WORKSHEET_ID,
-        "x02": IR_REPORT_ID,
-        "f01": [
-            f"{IR_REGION_ID}_download_format",
-            f"{IR_REGION_ID}_data_only",
-            f"{IR_REGION_ID}_pdf_page_size",
-            IR_REGION_ID,
-        ],
-    }
-    headers = {
-        "X-Requested-With": "XMLHttpRequest",
-        "Accept": "text/html, */*; q=0.01",
-    }
-
-    resp = http.post(f"{AJAX_URL}?p_context={context_path}", data=payload, headers=headers, timeout=60)
-    resp.raise_for_status()
-
-    download_path = resp.text.strip()
-    if not download_path.startswith("/") or "<!DOCTYPE" in download_path:
-        return None
-
-    resp = http.get(BASE_URL + download_path, timeout=300, stream=True)
-    resp.raise_for_status()
-    return resp
-
-
-def extract_one(http, ocr_engine, periodo, ambiente, output_dir):
-    """Extrai dados: CAPTCHA → Buscar → IR Download CSV."""
-    amb_nome = AMBIENTE_NOMES.get(ambiente, ambiente)
+def extract_one(driver, ocr_engine, periodo, ambiente, output_dir, download_dir):
+    """Extract data for one periodo/ambiente combination."""
+    amb_nome = AMBIENTES.get(ambiente, ambiente)
     print(f"  → Período {periodo}, Ambiente {amb_nome} ({ambiente})")
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             print(f"    Tentativa {attempt}/{MAX_RETRIES}...")
-            session_info = get_session(http)
-            print(f"    p_instance={session_info['p_instance']}")
 
-            if not session_info["captcha_token"]:
-                print("    ✗ CAPTCHA token não encontrado")
-                continue
+            # Clear download dir
+            for f in glob.glob(os.path.join(download_dir, "*.csv")):
+                os.remove(f)
 
-            captcha = solve_captcha(http, session_info, ocr_engine)
+            # Navigate to page
+            driver.get(PAGE_URL)
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.ID, "P54_PERIODO"))
+            )
+            time.sleep(1)
+
+            # Fill form
+            periodo_input = driver.find_element(By.ID, "P54_PERIODO")
+            periodo_input.clear()
+            periodo_input.send_keys(periodo)
+
+            ambiente_select = Select(driver.find_element(By.ID, "P54_AMBIENTE"))
+            ambiente_select.select_by_value(ambiente)
+
+            # Solve CAPTCHA
+            captcha = solve_captcha(driver, ocr_engine)
             print(f"    CAPTCHA: {captcha}")
 
             if len(captcha) != 5:
-                print(f"    ✗ CAPTCHA com {len(captcha)} chars (precisa 5)")
+                print(f"    ✗ CAPTCHA com {len(captcha)} chars")
                 continue
 
-            resp = submit_buscar(http, session_info, periodo, ambiente, captcha)
+            captcha_input = driver.find_element(By.ID, "P54_CAPTCHA")
+            captcha_input.clear()
+            captcha_input.send_keys(captcha)
 
-            if "incorreto" in resp.text.lower() or "inválido" in resp.text.lower():
-                print(f"    ✗ CAPTCHA incorreto")
-                time.sleep(1)
+            # Click Buscar
+            buscar_btn = driver.find_element(By.CSS_SELECTOR, "button#B533104921457386864")
+            buscar_btn.click()
+
+            # Wait for page to load after submit
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.ID, "P54_PERIODO"))
+            )
+            time.sleep(2)
+
+            # Check if data loaded — look for IR table rows
+            try:
+                WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, ".a-IRR-table tbody tr"))
+                )
+                print(f"    ✓ Dados carregados!")
+            except Exception:
+                # Check for error alert
+                try:
+                    alert = driver.find_element(By.CSS_SELECTOR, ".t-Alert--warning, .t-Alert--danger")
+                    print(f"    ✗ CAPTCHA errado (erro na página)")
+                except Exception:
+                    print(f"    ✗ Sem dados (CAPTCHA provavelmente errado)")
                 continue
 
-            print(f"    ✓ Buscar submetido")
-            session_info = _parse_page(resp.text)
+            # Click Ações → Fazer Download
+            acoes_btn = driver.find_element(By.CSS_SELECTOR, ".a-IRR-button--actions")
+            acoes_btn.click()
+            time.sleep(1)
 
-            resp = ir_download_csv(http, session_info)
-            if resp is None:
-                print(f"    ✗ Download falhou (CAPTCHA provavelmente errado)")
-                time.sleep(1)
+            download_menu = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "[data-action='ir-download']"))
+            )
+            download_menu.click()
+            time.sleep(1)
+
+            # In dialog: CSV should be pre-selected, click Fazer Download
+            download_btn = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, ".ui-dialog-buttonset button.a-Button--hot"))
+            )
+            download_btn.click()
+
+            # Wait for CSV file
+            print(f"    Aguardando download...")
+            csv_path = wait_for_download(download_dir, timeout=30)
+
+            if not csv_path:
+                print(f"    ✗ Download não completou")
                 continue
 
-            fname = f"producao_poco_{periodo.replace('/', '-')}_{ambiente}.csv"
-            fpath = Path(output_dir) / fname
-            with open(fpath, "wb") as f:
-                for chunk in resp.iter_content(8192):
-                    f.write(chunk)
-
-            size = fpath.stat().st_size
-            with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
+            # Validate CSV has data
+            with open(csv_path, "r", encoding="utf-8", errors="ignore") as f:
                 lines = [l for l in f if l.strip()]
 
             if len(lines) <= 1:
-                print(f"    ✗ CSV vazio ({size} bytes)")
-                fpath.unlink()
+                print(f"    ✗ CSV vazio")
+                os.remove(csv_path)
                 continue
 
-            print(f"    ✓ Salvo: {fpath} ({size/1024:.1f} KB, {len(lines)-1} linhas)")
+            # Move to output
+            fname = f"producao_poco_{periodo.replace('/', '-')}_{ambiente}.csv"
+            dest = os.path.join(output_dir, fname)
+            shutil.move(csv_path, dest)
+            size_kb = os.path.getsize(dest) / 1024
+            print(f"    ✓ Salvo: {dest} ({size_kb:.1f} KB, {len(lines)-1} linhas)")
             return True
 
         except Exception as e:
@@ -320,7 +276,7 @@ def main():
     periodos = [args.periodo] if args.periodo else generate_periodos(args.de, args.ate)
 
     if args.ambiente.lower() == "todos":
-        ambientes = ["M", "S", "T"]
+        ambientes = list(AMBIENTES.keys())
     else:
         amb = args.ambiente.upper()
         if amb not in AMBIENTES:
@@ -328,34 +284,39 @@ def main():
         ambientes = [amb]
 
     os.makedirs(args.output, exist_ok=True)
+    download_dir = os.path.join(args.output, "_downloads")
+    os.makedirs(download_dir, exist_ok=True)
 
     print("ANP/CDP — Produção por Poço")
     print(f"Períodos: {periodos[0]} a {periodos[-1]} ({len(periodos)} meses)")
-    print(f"Ambientes: {', '.join(AMBIENTE_NOMES[a] for a in ambientes)}")
+    print(f"Ambientes: {', '.join(AMBIENTES[a] for a in ambientes)}")
     print(f"Saída: {args.output}")
     print()
 
-    # Initialize OCR engine once (loads model)
+    # Initialize
     ocr_engine = ddddocr.DdddOcr(show_ad=False)
+    driver = create_driver(download_dir)
 
-    http = requests.Session()
-    http.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-    })
+    try:
+        total = len(periodos) * len(ambientes)
+        ok = 0
+        fail = 0
 
-    total = len(periodos) * len(ambientes)
-    ok = 0
-    fail = 0
+        for periodo in periodos:
+            for ambiente in ambientes:
+                if extract_one(driver, ocr_engine, periodo, ambiente, args.output, download_dir):
+                    ok += 1
+                else:
+                    fail += 1
 
-    for periodo in periodos:
-        for ambiente in ambientes:
-            if extract_one(http, ocr_engine, periodo, ambiente, args.output):
-                ok += 1
-            else:
-                fail += 1
+        print()
+        print(f"Concluído: {ok}/{total} extrações com sucesso, {fail} falhas")
 
-    print()
-    print(f"Concluído: {ok}/{total} extrações com sucesso, {fail} falhas")
+    finally:
+        driver.quit()
+        # Clean up download dir
+        shutil.rmtree(download_dir, ignore_errors=True)
+
     if fail > 0:
         sys.exit(1)
 
