@@ -8,6 +8,7 @@ import PlotlyChart from "../../../components/PlotlyChart";
 import PeriodSlider from "../../../components/PeriodSlider";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { rpcGetPriceBandsData, type PriceBandsRow } from "../../../lib/rpc";
+import { downloadPriceBandsExcel } from "../../../lib/exportExcel";
 
 // ── Colors ────────────────────────────────────────────────────────────────────
 
@@ -85,6 +86,27 @@ const COMMON_LAYOUT_BASE: Partial<Layout> = {
     namelength: -1,
   },
 };
+
+function downloadCsv(rows: PriceBandsRow[], filename: string) {
+  if (!rows || rows.length === 0) return;
+  const cols = Object.keys(rows[0]) as (keyof PriceBandsRow)[];
+  const escapeCell = (v: unknown) => {
+    const s = v === null || v === undefined ? "" : String(v);
+    return `"${s.replaceAll('"', '""')}"`;
+  };
+  const csvLines = [cols.join(",")].concat(
+    rows.map((r) => cols.map((c) => escapeCell(r[c])).join(",")),
+  );
+  const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 // ── Price Bands chart (with slider range) ─────────────────────────────────────
 
@@ -361,7 +383,7 @@ function ChartHeader({ product, rows, xMax }: { product: "Gasoline" | "Diesel"; 
         <span style={{ fontFamily: "Arial", fontSize: 14, fontWeight: 700, color: "#FF5000" }}>{product}:</span>
         {pctIpp != null && <PctBadge pct={pctIpp} vs="IPP" />}
         {pctEpp != null && <PctBadge pct={pctEpp} vs="EPP" outlined />}
-        {pctSub != null && <PctBadge pct={pctSub} vs="IPP w/ sub" outlined />}
+        {pctSub != null && <PctBadge pct={pctSub} vs="IPP w/ sub" />}
         {last && (
           <span style={{ fontFamily: "Arial", fontSize: 11, color: "#999", marginLeft: 10 }}>
             Last data: {fmtDateLabel(last.date)}
@@ -383,6 +405,8 @@ export default function PriceBandsPage() {
   const [loading,      setLoading]      = useState(true);
   const [sliderRange,  setSliderRange]  = useState<[number, number]>([0, 0]);
   const [resetHovered, setResetHovered] = useState(false);
+  const [excelLoading, setExcelLoading] = useState(false);
+  const [csvLoading,   setCsvLoading]   = useState(false);
 
   useEffect(() => {
     if (!supabase) return;
@@ -473,9 +497,73 @@ export default function PriceBandsPage() {
           {/* ── Main content ───────────────────────────────────────────── */}
           <div className="col-10">
             <div id="page-content">
-              <div style={{ marginBottom: 12 }}>
-                <div className="page-header-title">Brazil Fuel Price Bands</div>
-                <div className="page-header-sub">BBA Import/Export Parity vs. Petrobras reference price (R$/L)</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                <div>
+                  <div className="page-header-title">Brazil Fuel Price Bands</div>
+                  <div className="page-header-sub">BBA Import/Export Parity vs. Petrobras reference price (R$/L)</div>
+                </div>
+
+                <div style={{ position: "relative", minWidth: 180 }}>
+                  {(excelLoading || csvLoading) && (
+                    <div style={{ position: "absolute", top: 0, right: 0, zIndex: 20, border: "1px solid #e0e0e0", borderRadius: 12, padding: "24px 32px", backgroundColor: "rgba(255,255,255,0.97)", backdropFilter: "blur(8px)", boxShadow: "0 8px 32px rgba(0,0,0,0.12)", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+                      <img src="/barrel_loading.png" alt="Carregando..." width={120} height={120} />
+                      <span style={{ fontFamily: "Arial", fontSize: 13, fontWeight: 600, color: "#555", letterSpacing: "0.3px" }}>
+                        {excelLoading ? "Gerando Excel..." : "Baixando CSV..."}
+                      </span>
+                    </div>
+                  )}
+                  <div style={{ border: "1px solid #d0d0d0", borderRadius: 6, padding: "10px 16px", backgroundColor: "#fafafa" }}>
+                    <div style={{ fontFamily: "Arial", fontSize: 11, fontWeight: 700, color: "#1a1a1a", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                      Export Data
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "row", gap: 8 }}>
+                      <button
+                        type="button"
+                        className="btn btn-outline-secondary btn-sm"
+                        onClick={async () => {
+                          setExcelLoading(true);
+                          try {
+                            await downloadPriceBandsExcel(rows);
+                          } catch (e) {
+                            console.error("Excel export failed", e);
+                          } finally {
+                            setExcelLoading(false);
+                          }
+                        }}
+                        disabled={rows.length === 0 || loading || excelLoading}
+                        style={{ fontFamily: "Arial" }}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" style={{ marginRight: 5, verticalAlign: "middle" }} xmlns="http://www.w3.org/2000/svg">
+                          <rect x="2" y="2" width="20" height="20" rx="3" fill="#217346"/>
+                          <text x="4" y="17" fontFamily="Arial" fontWeight="bold" fontSize="12" fill="#ffffff">X</text>
+                        </svg>
+                        formated data .xl
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline-secondary btn-sm"
+                        onClick={async () => {
+                          setCsvLoading(true);
+                          try {
+                            downloadCsv(rows, "price_bands.csv");
+                          } finally {
+                            setCsvLoading(false);
+                          }
+                        }}
+                        disabled={rows.length === 0 || loading || csvLoading}
+                        style={{ fontFamily: "Arial" }}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" style={{ marginRight: 5, verticalAlign: "middle" }} xmlns="http://www.w3.org/2000/svg">
+                          <rect x="3" y="2" width="18" height="20" rx="2" fill="#1565C0"/>
+                          <rect x="6" y="7" width="12" height="1.5" rx="0.75" fill="#ffffff"/>
+                          <rect x="6" y="11" width="12" height="1.5" rx="0.75" fill="#ffffff"/>
+                          <rect x="6" y="15" width="8" height="1.5" rx="0.75" fill="#ffffff"/>
+                        </svg>
+                        all data .csv
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Section 1: Price Bands (slider-controlled) */}
@@ -494,11 +582,11 @@ export default function PriceBandsPage() {
                   <div className="row g-3">
                     <div className="col-6">
                       <ChartHeader product="Gasoline" rows={gasolineRows} xMax={xMax} />
-                      <PlotlyChart data={gasolineChart.data} layout={gasolineChart.layout} />
+                      <PlotlyChart data={gasolineChart.data} layout={gasolineChart.layout} config={{ displayModeBar: false }} />
                     </div>
                     <div className="col-6">
                       <ChartHeader product="Diesel" rows={dieselRows} xMax={xMax} />
-                      <PlotlyChart data={dieselChart.data} layout={dieselChart.layout} />
+                      <PlotlyChart data={dieselChart.data} layout={dieselChart.layout} config={{ displayModeBar: false }} />
                     </div>
                   </div>
 
@@ -520,14 +608,14 @@ export default function PriceBandsPage() {
                         <span style={{ fontFamily: "Arial", fontSize: 14, fontWeight: 700, color: "#FF5000" }}>Gasoline</span>
                         <hr style={{ borderTop: "1px solid #ccc", margin: "4px 0 6px 0" }} />
                       </div>
-                      <PlotlyChart data={gasolineYtd.data} layout={gasolineYtd.layout} />
+                      <PlotlyChart data={gasolineYtd.data} layout={gasolineYtd.layout} config={{ displayModeBar: false }} />
                     </div>
                     <div className="col-6">
                       <div style={{ marginTop: 16, marginBottom: 0 }}>
                         <span style={{ fontFamily: "Arial", fontSize: 14, fontWeight: 700, color: "#FF5000" }}>Diesel</span>
                         <hr style={{ borderTop: "1px solid #ccc", margin: "4px 0 6px 0" }} />
                       </div>
-                      <PlotlyChart data={dieselYtd.data} layout={dieselYtd.layout} />
+                      <PlotlyChart data={dieselYtd.data} layout={dieselYtd.layout} config={{ displayModeBar: false }} />
                     </div>
                   </div>
                 </>

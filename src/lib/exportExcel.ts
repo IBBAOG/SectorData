@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
-import type { MsSerieRow, DgMarginsRow } from "./rpc";
+import type { MsSerieRow, DgMarginsRow, PriceBandsRow } from "./rpc";
 
 const BIG3_MEMBERS = ["Vibra", "Ipiranga", "Raizen"];
 
@@ -609,6 +609,83 @@ export async function downloadDgMarginsExcel(rows: DgMarginsRow[]): Promise<void
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const yy = String(now.getFullYear()).slice(-2);
   a.download = `IBBA - D&G Margins ${dd}-${mm}-${yy}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ── Price Bands export ────────────────────────────────────────────────────────
+
+export async function downloadPriceBandsExcel(rows: PriceBandsRow[]): Promise<void> {
+  if (!rows || rows.length === 0) return;
+
+  const wb = new ExcelJS.Workbook();
+
+  const sheets: { product: "Gasoline" | "Diesel"; sheetName: string }[] = [
+    { product: "Gasoline", sheetName: "Gasoline" },
+    { product: "Diesel",   sheetName: "Diesel"   },
+  ];
+
+  for (const { product, sheetName } of sheets) {
+    const sheetRows = rows
+      .filter((r) => r.product === product)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    if (sheetRows.length === 0) continue;
+
+    const ws = wb.addWorksheet(sheetName);
+    ws.views = [{ showGridLines: false }];
+
+    const isDiesel = product === "Diesel";
+    const headers = isDiesel
+      ? ["Date", "BBA Import Parity", "BBA Import Parity w/ Subsidy", "BBA Export Parity", "Petrobras Price"]
+      : ["Date", "IBBA Import Parity", "IBBA Export Parity", "Petrobras Price"];
+
+    ws.getColumn(1).width = 12;
+    for (let c = 2; c <= headers.length; c++) ws.getColumn(c).width = 24;
+
+    // Header
+    const hRow = ws.getRow(1);
+    hRow.height = ROW_H;
+    headers.forEach((h, i) => {
+      const cell = ws.getCell(1, i + 1);
+      cell.value = h;
+      cell.font = { name: "Arial", size: 10, bold: true, color: C.headerFg };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: C.headerBg };
+      cell.alignment = { horizontal: i === 0 ? "left" : "center" };
+    });
+
+    // Data rows
+    sheetRows.forEach((r, idx) => {
+      const row = ws.getRow(idx + 2);
+      row.height = ROW_H;
+      const values: (string | number | null)[] = isDiesel
+        ? [r.date, r.bba_import_parity, r.bba_import_parity_w_subsidy, r.bba_export_parity, r.petrobras_price]
+        : [r.date, r.bba_import_parity, r.bba_export_parity, r.petrobras_price];
+      values.forEach((v, i) => {
+        const cell = ws.getCell(idx + 2, i + 1);
+        cell.value = v ?? null;
+        cell.font = { name: "Arial", size: 10, color: C.cellFg };
+        if (i > 0) {
+          cell.numFmt = "0.00";
+          cell.alignment = { horizontal: "center" };
+        }
+      });
+    });
+  }
+
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, "0");
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const yy = String(now.getFullYear()).slice(-2);
+  a.download = `IBBA - Price Bands ${dd}-${mm}-${yy}.xlsx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
