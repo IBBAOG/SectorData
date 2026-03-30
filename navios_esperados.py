@@ -315,7 +315,9 @@ def buscar_santos_atracados() -> pd.DataFrame:
 
 def buscar_itaqui() -> pd.DataFrame:
     html = _get(URL_ITAQUI)
-    dfs = pd.read_html(StringIO(html))
+    # Forçar TODAS as colunas como string para preservar formato BR
+    # (ex: "20.000" = 20000, não 20.0; "125,194" = 125194, não 125.194)
+    dfs = pd.read_html(StringIO(html), converters={i: str for i in range(20)})
     mapeamento = {0: "Atracado", 1: "Fundeado", 2: "Esperado"}
     partes = []
 
@@ -339,11 +341,8 @@ def buscar_itaqui() -> pd.DataFrame:
             f = f.rename(columns={c_berco: "Terminal"})
 
         # Qtd → Quantidade (m³) (ainda em t; será convertida no consolidar)
-        # Forçar string para que _parse_numero() trate "39.889" como 39889 (BR)
-        # e não como float 39.889 (EN) — pd.read_html converte automaticamente.
         c_qtd = _col(df, "Qtd", required=False)
         if c_qtd:
-            f[c_qtd] = f[c_qtd].astype(str)
             f = f.rename(columns={c_qtd: "Quantidade (m³)"})
 
         # Prev Chegada → Chegada
