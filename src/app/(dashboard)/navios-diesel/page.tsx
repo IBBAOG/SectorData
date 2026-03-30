@@ -209,6 +209,11 @@ export default function NaviosDieselPage() {
     const sizes: number[] = [];
     const colors: string[] = [];
 
+    // Ship count labels (offset to the right of bubbles)
+    const shipLats: number[] = [];
+    const shipLons: number[] = [];
+    const shipLabels: string[] = [];
+
     const resumoByPorto = new Map(resumoDisplay.map(p => [p.porto, p]));
 
     for (const [porto, c] of Object.entries(PORT_COORDS)) {
@@ -218,11 +223,18 @@ export default function NaviosDieselPage() {
       if (p) {
         texts.push(
           `<b>${porto}</b><br>` +
-          `${p.total_navios} vessels<br>` +
+          `${p.total_navios} vessel${p.total_navios !== 1 ? "s" : ""}<br>` +
           `${p.total_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³`
         );
-        sizes.push(Math.max(14, Math.sqrt(p.total_navios) * 16));
+        sizes.push(Math.max(14, Math.sqrt(p.total_convertida) * 0.1));
         colors.push(ORANGE);
+        // Ship icons label
+        if (p.total_navios > 0) {
+          shipLats.push(c.lat);
+          shipLons.push(c.lon + 3.5);
+          const ships = "🚢".repeat(Math.min(p.total_navios, 5));
+          shipLabels.push(p.total_navios > 5 ? `${ships}+${p.total_navios - 5}` : ships);
+        }
       } else {
         texts.push(`<b>${porto}</b><br>0 vessels<br>0 m³`);
         sizes.push(9);
@@ -244,6 +256,18 @@ export default function NaviosDieselPage() {
           line: { color: "#000512", width: 1.5 },
         },
       } as unknown as PlotData,
+      // Ship count labels
+      ...(shipLats.length > 0 ? [{
+        type: "scattergeo",
+        lat: shipLats,
+        lon: shipLons,
+        mode: "text",
+        text: shipLabels,
+        textfont: { family: "Arial", size: 10, color: "#1a1a1a" },
+        textposition: "middle right",
+        hoverinfo: "skip",
+        showlegend: false,
+      } as unknown as PlotData] : []),
     ];
 
     const layout: Partial<Layout> = {
@@ -264,6 +288,7 @@ export default function NaviosDieselPage() {
       paper_bgcolor: "white",
       margin: { t: 0, b: 0, l: 0, r: 0 },
       height: 280,
+      showlegend: false,
       hoverlabel: {
         bgcolor: "rgba(255,255,255,0.95)",
         bordercolor: "rgba(180,180,180,0.5)",
@@ -588,7 +613,7 @@ export default function NaviosDieselPage() {
                       <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 11 }}>
                         <thead>
                           <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
-                            {["Port", "Status", "Vessel", "Qty", "Unit", "Conv. Qty (m³)", "ETA", "Unload Start", "Unload End"].map((h) => (
+                            {["Port", "Status", "Vessel", "Volume (m³)", "ETA", "Unload Start", "Unload End"].map((h) => (
                               <th key={h} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
                             ))}
                           </tr>
@@ -615,10 +640,6 @@ export default function NaviosDieselPage() {
                                 </span>
                               </td>
                               <td style={{ padding: "4px 10px" }}>{r.navio}</td>
-                              <td style={{ padding: "4px 10px", textAlign: "right" }}>
-                                {r.quantidade?.toLocaleString("en-US", { maximumFractionDigits: 0 }) ?? "—"}
-                              </td>
-                              <td style={{ padding: "4px 10px" }}>{r.unidade ?? "—"}</td>
                               <td style={{ padding: "4px 10px", textAlign: "right" }}>
                                 {r.quantidade_convertida?.toLocaleString("en-US", { maximumFractionDigits: 0 }) ?? "—"}
                               </td>

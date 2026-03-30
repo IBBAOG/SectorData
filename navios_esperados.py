@@ -339,8 +339,11 @@ def buscar_itaqui() -> pd.DataFrame:
             f = f.rename(columns={c_berco: "Terminal"})
 
         # Qtd → Quantidade (m³) (ainda em t; será convertida no consolidar)
+        # Forçar string para que _parse_numero() trate "39.889" como 39889 (BR)
+        # e não como float 39.889 (EN) — pd.read_html converte automaticamente.
         c_qtd = _col(df, "Qtd", required=False)
         if c_qtd:
+            f[c_qtd] = f[c_qtd].astype(str)
             f = f.rename(columns={c_qtd: "Quantidade (m³)"})
 
         # Prev Chegada → Chegada
