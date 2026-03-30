@@ -40,7 +40,7 @@ export default function NavBar() {
       className="navbar navbar-expand-lg sticky-top"
     >
       <div className="container-fluid">
-        <Link href="/" className="navbar-brand d-flex align-items-center">
+        <Link href="/home" className="navbar-brand d-flex align-items-center">
           <img src={LOGO_URL} alt="Itaú BBA" style={{ height: 56 }} />
         </Link>
 
