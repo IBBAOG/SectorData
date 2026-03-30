@@ -397,12 +397,12 @@ body {
   left: 0;
   min-width: 220px;
   padding: 8px 0;
-  background: rgba(10, 15, 30, 0.85);
+  background: rgba(255, 255, 255, 0.97);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(0, 0, 0, 0.08);
   border-radius: 10px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
   z-index: 1050;
   animation: navDropdownIn 0.2s ease-out;
 }
@@ -423,15 +423,15 @@ body {
   padding: 8px 20px;
   font-family: Arial, sans-serif;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(0, 0, 0, 0.75);
   text-decoration: none;
   transition: background-color 0.15s ease, border-left 0.15s ease;
   border-left: 3px solid transparent;
 }
 
 #main-navbar .nav-module-item:hover {
-  background-color: rgba(255, 80, 0, 0.1);
-  color: #ffffff;
+  background-color: rgba(255, 80, 0, 0.07);
+  color: #cc3d00;
   border-left-color: #ff5000;
 }
 
