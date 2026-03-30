@@ -567,7 +567,7 @@ export default function PriceBandsPage() {
               </div>
 
               {/* Section 1: Price Bands (slider-controlled) */}
-              <h5 className="section-title" style={{ marginBottom: 4 }}>Price Bands</h5>
+              <h5 className="section-title" style={{ marginBottom: 4, color: "#000000" }}>Price Bands</h5>
               <hr className="section-hr" style={{ marginBottom: 0 }} />
 
               {loading ? (
@@ -589,7 +589,7 @@ export default function PriceBandsPage() {
                   </div>
 
                   {/* Section 2: YTD Average Price */}
-                  <h5 className="section-title" style={{ marginBottom: 4, marginTop: 32 }}>
+                  <h5 className="section-title" style={{ marginBottom: 4, marginTop: 32, color: "#000000" }}>
                     {`YTD Average Price (${year})`}
                   </h5>
                   <hr className="section-hr" style={{ marginBottom: 0 }} />
