@@ -6,8 +6,8 @@ import NavBar from "../../../components/NavBar";
 
 const ORANGE = "#E85D20";
 const BG = "#f5f5f5";
-const SURFACE = "#ffffff";
-const BORDER_DEFAULT = "rgba(0,0,0,0.08)";
+const SURFACE = "#1a1a1a";
+const BORDER_DEFAULT = "rgba(255,255,255,0.08)";
 
 interface CardDef {
   preview: string | null;
@@ -149,8 +149,8 @@ export default function HomePage() {
                     transition: "border-color .25s, transform .25s, box-shadow .25s",
                     transform: isHovered ? "translateY(-5px)" : "translateY(0)",
                     boxShadow: isHovered
-                      ? "0 16px 40px rgba(232,93,32,0.15), 0 4px 12px rgba(0,0,0,0.08)"
-                      : "0 1px 4px rgba(0,0,0,0.06)",
+                      ? "0 16px 40px rgba(232,93,32,0.18), 0 4px 16px rgba(0,0,0,0.25)"
+                      : "0 2px 8px rgba(0,0,0,0.15)",
                     opacity: card.disabled ? 0.5 : 1,
                     height: "100%",
                     display: "flex",
@@ -198,12 +198,12 @@ export default function HomePage() {
                       </div>
                     )}
 
-                    {/* Gradient fade from image to card background */}
+                    {/* Gradient fade from image to dark */}
                     <div
                       style={{
                         position: "absolute",
                         inset: 0,
-                        background: `linear-gradient(to bottom, transparent 40%, ${SURFACE} 100%)`,
+                        background: "linear-gradient(to bottom, transparent 30%, #1a1a1a 100%)",
                         pointerEvents: "none",
                       }}
                     />
@@ -241,11 +241,11 @@ export default function HomePage() {
                   </div>
 
                   {/* Text content */}
-                  <div style={{ padding: "14px 20px 18px", display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
-                    <div style={{ fontSize: "1rem", fontWeight: 700, color: "#111" }}>
+                  <div style={{ padding: "14px 20px 18px", display: "flex", flexDirection: "column", gap: 6, flex: 1, background: "#1a1a1a" }}>
+                    <div style={{ fontSize: "1rem", fontWeight: 700, color: "#fff" }}>
                       {card.title}
                     </div>
-                    <div style={{ fontSize: "0.83rem", color: "#777", lineHeight: 1.5 }}>
+                    <div style={{ fontSize: "0.83rem", color: "rgba(255,255,255,0.5)", lineHeight: 1.5 }}>
                       {card.description}
                     </div>
                     {!card.disabled && (
@@ -254,7 +254,7 @@ export default function HomePage() {
                           marginTop: "auto",
                           paddingTop: 8,
                           fontSize: 12,
-                          color: isHovered ? ORANGE : "#ccc",
+                          color: isHovered ? ORANGE : "rgba(255,255,255,0.2)",
                           transition: "color .2s",
                           fontWeight: 600,
                           letterSpacing: "0.04em",
