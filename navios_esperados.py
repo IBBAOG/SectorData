@@ -23,7 +23,7 @@ URL_SANTOS_ATRACADOS = (
     "informacoes-operacionais/operacoes-portuarias/"
     "navegacao-e-movimento-de-navios/atracados-porto-terminais/"
 )
-URL_ITAQUI      = "https://www.portodoitaqui.com/porto-agora/navios/esperados"
+URL_ITAQUI      = "https://www.portodoitaqui.com.br/porto-agora/navios/esperados"
 URL_PARANAGUA   = "https://www.appaweb.appa.pr.gov.br/appaweb/pesquisa.aspx?WCI=relLineUpRetroativo"
 URL_SAO_SEBAST  = "https://sisport.portoss.sp.gov.br/LineUp/ConsultaPublicaProgramacao.aspx"
 SUAPE_SHEET_ID  = "1wfmbo5z4iLqDmANEIslnM-G0FYD57e0iruKHrbzniOk"
