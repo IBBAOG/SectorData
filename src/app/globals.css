@@ -364,6 +364,96 @@ body {
   color: #ffffff !important;
 }
 
+/* ─── Dropdown modules ────────────────────────────────────────────────────── */
+#main-navbar .nav-module {
+  position: relative;
+}
+
+#main-navbar .nav-module-trigger {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  user-select: none;
+}
+
+#main-navbar .nav-module-disabled {
+  opacity: 0.35 !important;
+  cursor: default;
+  pointer-events: none;
+}
+
+#main-navbar .nav-chevron {
+  transition: transform 0.2s ease;
+}
+
+#main-navbar .nav-module:hover .nav-chevron {
+  transform: rotate(180deg);
+}
+
+#main-navbar .nav-module-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 220px;
+  padding: 8px 0;
+  background: rgba(10, 15, 30, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  z-index: 1050;
+  animation: navDropdownIn 0.2s ease-out;
+}
+
+@keyframes navDropdownIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+#main-navbar .nav-module-item {
+  display: block;
+  padding: 8px 20px;
+  font-family: Arial, sans-serif;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+  text-decoration: none;
+  transition: background-color 0.15s ease, border-left 0.15s ease;
+  border-left: 3px solid transparent;
+}
+
+#main-navbar .nav-module-item:hover {
+  background-color: rgba(255, 80, 0, 0.1);
+  color: #ffffff;
+  border-left-color: #ff5000;
+}
+
+@media (max-width: 991.98px) {
+  #main-navbar .nav-module-dropdown {
+    position: static;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+    border: none;
+    border-radius: 0;
+    animation: none;
+    padding-left: 12px;
+  }
+  #main-navbar .nav-module-item {
+    font-size: 13px;
+    padding: 4px 12px;
+    border-left: none;
+  }
+}
+
 /* ─── Page header ──────────────────────────────────────────────────────────── */
 .page-header-title {
   font-family: Arial, sans-serif;
