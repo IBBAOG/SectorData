@@ -44,7 +44,7 @@ export default function LoginPage() {
       .getSession()
       .then(({ data }) => {
         if (cancelled) return;
-        if (data.session) router.replace("/");
+        if (data.session) router.replace("/home");
       })
       .finally(() => {
         if (!cancelled) setChecking(false);
@@ -74,7 +74,7 @@ export default function LoginPage() {
           password,
         });
       if (signInError) throw signInError;
-      router.replace("/");
+      router.replace("/home");
     } catch (e) {
       setError("Incorrect email or password.");
       // eslint-disable-next-line no-console

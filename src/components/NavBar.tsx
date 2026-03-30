@@ -10,6 +10,7 @@ const LOGO_URL = "/logo.png";
 
 // Add new modules here — each entry becomes a nav link automatically.
 const NAV_MODULES = [
+  { href: "/home", label: "Home" },
   { href: "/", label: "Sales" },
   { href: "/market-share", label: "Market Share" },
   { href: "/navios-diesel", label: "Diesel Imports Line-Up" },
