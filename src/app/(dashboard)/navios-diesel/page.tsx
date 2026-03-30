@@ -543,9 +543,9 @@ export default function NaviosDieselPage() {
                               {portMonthlySummary.ports.map((porto, i) => (
                                 <tr
                                   key={porto}
-                                  style={{ borderBottom: "1px solid #eee", backgroundColor: i % 2 === 0 ? "#fff" : "#fafafa" }}
+                                  style={{ borderBottom: i === portMonthlySummary.ports.length - 1 ? "2px solid #d0d0d0" : "1px solid #eee" }}
                                   onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
-                                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = i % 2 === 0 ? "#fff" : "#fafafa"; }}
+                                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }}
                                 >
                                   <td style={{ width: 110, padding: "4px 10px", fontWeight: 600, whiteSpace: "nowrap", fontSize: 11 }}>
                                     {porto.replace("Porto de ", "")}
@@ -594,10 +594,10 @@ export default function NaviosDieselPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {naviosDisplay.map((r) => (
+                          {naviosDisplay.map((r, i) => (
                             <tr
                               key={r.id}
-                              style={{ borderBottom: "1px solid #eee" }}
+                              style={{ borderBottom: i === naviosDisplay.length - 1 ? "2px solid #d0d0d0" : "1px solid #eee" }}
                               onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
                               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }}
                             >
