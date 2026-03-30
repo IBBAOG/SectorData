@@ -26,6 +26,16 @@ const PORT_COORDS: Record<string, { lat: number; lon: number }> = {
   "Porto de São Sebastião": { lat: -23.8170, lon: -45.4170 },
 };
 
+// Label positioning per port: offset from dot + text anchor direction
+// Tuned so nearby ports (Santos/São Sebastião) don't overlap
+const PORT_LABEL: Record<string, { dLat: number; dLon: number; pos: string }> = {
+  "Porto de Itaqui":        { dLat: 0,    dLon: 2,    pos: "middle right" },
+  "Porto de Suape":         { dLat: 0,    dLon: -2,   pos: "middle left" },
+  "Porto de Santos":        { dLat: 1.5,  dLon: -1.5, pos: "middle left" },
+  "Porto de São Sebastião": { dLat: -2,   dLon: 2,    pos: "middle right" },
+  "Porto de Paranaguá":     { dLat: 1.5,  dLon: -1.5, pos: "middle left" },
+};
+
 const STATUS_COLORS: Record<string, string> = {
   Atracado:   "#d4edda",
   Esperado:   "#fff3cd",
@@ -203,36 +213,56 @@ export default function NaviosDieselPage() {
       };
     }
 
-    const lats: number[] = [];
-    const lons: number[] = [];
-    const texts: string[] = [];
+    const markerLats: number[] = [];
+    const markerLons: number[] = [];
+    const hoverTexts: string[] = [];
     const colors: string[] = [];
+
+    const labelLats: number[] = [];
+    const labelLons: number[] = [];
+    const labelTexts: string[] = [];
+    const labelPositions: string[] = [];
 
     const resumoByPorto = new Map(resumoDisplay.map(p => [p.porto, p]));
 
     for (const [porto, c] of Object.entries(PORT_COORDS)) {
       const p = resumoByPorto.get(porto);
-      lats.push(c.lat);
-      lons.push(c.lon);
-      if (p) {
-        texts.push(
-          `<b>${porto.replace("Porto de ", "")}</b><br>` +
-          `${p.total_navios} vessel${p.total_navios !== 1 ? "s" : ""}<br>` +
-          `${p.total_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³`
+      const lbl = PORT_LABEL[porto] ?? { dLat: 0, dLon: 2, pos: "middle right" };
+      const name = porto.replace("Porto de ", "");
+
+      // Marker dot
+      markerLats.push(c.lat);
+      markerLons.push(c.lon);
+
+      // Label (offset from dot)
+      labelLats.push(c.lat + lbl.dLat);
+      labelLons.push(c.lon + lbl.dLon);
+      labelPositions.push(lbl.pos);
+
+      if (p && p.total_navios > 0) {
+        const ships = "🚢".repeat(Math.min(p.total_navios, 6));
+        const extra = p.total_navios > 6 ? `+${p.total_navios - 6}` : "";
+        const vol = p.total_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 });
+        labelTexts.push(`${name}\n${ships}${extra}\n${vol} m³`);
+        hoverTexts.push(
+          `<b>${porto}</b><br>${p.total_navios} vessel${p.total_navios !== 1 ? "s" : ""}<br>${vol} m³`
         );
         colors.push(ORANGE);
       } else {
-        texts.push(`<b>${porto.replace("Porto de ", "")}</b><br>0 vessels<br>0 m³`);
+        labelTexts.push(name);
+        hoverTexts.push(`<b>${porto}</b><br>0 vessels`);
         colors.push("#cccccc");
       }
     }
 
     const data: PlotData[] = [
+      // Dots
       {
         type: "scattergeo",
-        lat: lats,
-        lon: lons,
-        text: texts,
+        lat: markerLats,
+        lon: markerLons,
+        mode: "markers",
+        hovertext: hoverTexts,
         hoverinfo: "text",
         marker: {
           size: 10,
@@ -240,6 +270,19 @@ export default function NaviosDieselPage() {
           opacity: 0.9,
           line: { color: "#000512", width: 1.5 },
         },
+        showlegend: false,
+      } as unknown as PlotData,
+      // Labels (offset from dots)
+      {
+        type: "scattergeo",
+        lat: labelLats,
+        lon: labelLons,
+        mode: "text",
+        text: labelTexts,
+        textposition: labelPositions,
+        textfont: { family: "Arial", size: 9, color: "#1a1a1a" },
+        hoverinfo: "skip",
+        showlegend: false,
       } as unknown as PlotData,
     ];
 
@@ -511,32 +554,6 @@ export default function NaviosDieselPage() {
                         config={{ displayModeBar: false }}
                         style={{ width: "100%", height: 500 }}
                       />
-                      {/* Ship icons legend per port */}
-                      {resumoDisplay.length > 0 && (
-                        <div style={{ marginTop: 4, fontFamily: "Arial" }}>
-                          {resumoDisplay
-                            .filter(p => p.total_navios > 0)
-                            .sort((a, b) => b.total_convertida - a.total_convertida)
-                            .map(p => (
-                              <div key={p.porto} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                                <span style={{ fontSize: 11, fontWeight: 600, color: "#1a1a1a", minWidth: 90 }}>
-                                  {p.porto.replace("Porto de ", "")}
-                                </span>
-                                <span style={{ display: "flex", gap: 1 }}>
-                                  {Array.from({ length: Math.min(p.total_navios, 10) }).map((_, j) => (
-                                    <img key={j} src="/ship_orange.png" alt="" width={14} height={14} />
-                                  ))}
-                                  {p.total_navios > 10 && (
-                                    <span style={{ fontSize: 10, color: "#888", marginLeft: 2 }}>+{p.total_navios - 10}</span>
-                                  )}
-                                </span>
-                                <span style={{ fontSize: 10, color: "#666", marginLeft: 4 }}>
-                                  {p.total_navios} vessel{p.total_navios !== 1 ? "s" : ""} · {p.total_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³
-                                </span>
-                              </div>
-                            ))}
-                        </div>
-                      )}
                     </div>
                     {/* Bar chart + summary table in same container for alignment */}
                     <div className="chart-container" style={{ flex: 1.5, minWidth: 0 }}>
