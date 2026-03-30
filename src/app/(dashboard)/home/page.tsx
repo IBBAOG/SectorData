@@ -9,67 +9,8 @@ const BG = "#f5f5f5";
 const SURFACE = "#ffffff";
 const BORDER_DEFAULT = "rgba(0,0,0,0.08)";
 
-function BarChartIcon() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <rect x="3" y="12" width="4" height="9" rx="1" fill={ORANGE} />
-      <rect x="10" y="7" width="4" height="14" rx="1" fill={ORANGE} opacity="0.75" />
-      <rect x="17" y="3" width="4" height="18" rx="1" fill={ORANGE} opacity="0.5" />
-    </svg>
-  );
-}
-
-function PieChartIcon() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" stroke={ORANGE} strokeWidth="2" opacity="0.3" />
-      <path d="M12 12 L12 3 A9 9 0 0 1 21 12 Z" fill={ORANGE} />
-      <path d="M12 12 L21 12 A9 9 0 0 1 3.7 17.5 Z" fill={ORANGE} opacity="0.6" />
-    </svg>
-  );
-}
-
-function ShipIcon() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M3 17l1.5-6h15l1.5 6H3z" fill={ORANGE} opacity="0.5" />
-      <path d="M8 11V7h8v4" stroke={ORANGE} strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M12 7V4" stroke={ORANGE} strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M2 20c1.5-1.5 3-1.5 4.5 0s3 1.5 4.5 0 3-1.5 4.5 0 3 1.5 4.5 0" stroke={ORANGE} strokeWidth="1.8" strokeLinecap="round" fill="none" />
-    </svg>
-  );
-}
-
-function TrendIcon() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <polyline points="3,17 9,11 13,14 21,6" stroke={ORANGE} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <polyline points="17,6 21,6 21,10" stroke={ORANGE} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function PriceTagIcon() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M12 2L2 12l10 10 10-10L22 2H12z" stroke={ORANGE} strokeWidth="1.8" strokeLinejoin="round" fill={ORANGE} fillOpacity="0.15" />
-      <circle cx="16" cy="6" r="1.5" fill={ORANGE} />
-      <path d="M8 12l2 2 4-4" stroke={ORANGE} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function ClockIcon() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" stroke="#bbb" strokeWidth="2" />
-      <path d="M12 7 L12 12 L16 14" stroke="#bbb" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 interface CardDef {
-  icon: React.ReactNode;
+  preview: string | null;
   title: string;
   description: string;
   badge: string;
@@ -79,7 +20,7 @@ interface CardDef {
 
 const CARDS: CardDef[] = [
   {
-    icon: <BarChartIcon />,
+    preview: "/previews/preview-sales.jpg",
     title: "Sales Dashboard",
     description: "Volume analysis by product, segment, agent, region, and period",
     badge: "Available",
@@ -87,7 +28,7 @@ const CARDS: CardDef[] = [
     disabled: false,
   },
   {
-    icon: <PieChartIcon />,
+    preview: "/previews/preview-market-share.jpg",
     title: "Market Share",
     description: "Market share evolution over time broken down by distributor",
     badge: "Available",
@@ -95,7 +36,7 @@ const CARDS: CardDef[] = [
     disabled: false,
   },
   {
-    icon: <ShipIcon />,
+    preview: "/previews/preview-navios-diesel.jpg",
     title: "Diesel Imports Line-Up",
     description: "Scheduled vessel arrivals and diesel import line-up by port",
     badge: "Available",
@@ -103,7 +44,7 @@ const CARDS: CardDef[] = [
     disabled: false,
   },
   {
-    icon: <TrendIcon />,
+    preview: "/previews/preview-dg-margins.jpg",
     title: "D&G Margins",
     description: "Diesel and gasoline margin tracking across regions and time",
     badge: "Available",
@@ -111,7 +52,7 @@ const CARDS: CardDef[] = [
     disabled: false,
   },
   {
-    icon: <PriceTagIcon />,
+    preview: "/previews/preview-price-bands.jpg",
     title: "Price Bands",
     description: "Price band distribution and competitive positioning by fuel type",
     badge: "Available",
@@ -119,7 +60,7 @@ const CARDS: CardDef[] = [
     disabled: false,
   },
   {
-    icon: <ClockIcon />,
+    preview: null,
     title: "Coming Soon",
     description: "New modules are currently under development",
     badge: "Soon",
@@ -137,17 +78,11 @@ export default function HomePage() {
       <NavBar />
 
       {/* Hero */}
-      <section
-        style={{
-          maxWidth: 960,
-          margin: "0 auto",
-          padding: "72px 24px 48px",
-        }}
-      >
+      <section style={{ maxWidth: 960, margin: "0 auto", padding: "72px 24px 48px" }}>
         <div
           style={{
             display: "inline-block",
-            background: `rgba(232,93,32,0.10)`,
+            background: "rgba(232,93,32,0.10)",
             color: ORANGE,
             borderRadius: 20,
             padding: "3px 12px",
@@ -170,33 +105,18 @@ export default function HomePage() {
             color: "#111",
           }}
         >
-          Market intelligence{" "}
-          <span style={{ color: ORANGE }}>in real time</span>
+          Sectorial data{" "}
+          <span style={{ color: ORANGE }}>promptly available</span>
         </h1>
-        <p
-          style={{
-            fontSize: "clamp(1rem, 2vw, 1.15rem)",
-            color: "#666",
-            maxWidth: 560,
-            lineHeight: 1.6,
-            margin: 0,
-          }}
-        >
-          Access exclusive analytics for Sales, Market Share, Diesel Imports,
-          Margins, and Price Bands — updated data, precise filters, actionable insights.
+        <p style={{ fontSize: "clamp(1rem, 2vw, 1.15rem)", color: "#666", maxWidth: 520, lineHeight: 1.6, margin: 0 }}>
+          Easy access to up-to-date data for the fuel distribution and oil and gas industries.
         </p>
       </section>
 
       {/* Divider */}
-      <hr
-        style={{
-          border: "none",
-          borderTop: "1px solid rgba(0,0,0,0.08)",
-          margin: "0 24px",
-        }}
-      />
+      <hr style={{ border: "none", borderTop: "1px solid rgba(0,0,0,0.08)", margin: "0 24px" }} />
 
-      {/* Dashboard cards */}
+      {/* Cards */}
       <section style={{ maxWidth: 960, margin: "0 auto", padding: "48px 24px 80px" }}>
         <h2
           style={{
@@ -208,7 +128,7 @@ export default function HomePage() {
             marginBottom: 24,
           }}
         >
-          Your dashboards
+          Check it out!
         </h2>
 
         <div className="row g-4">
@@ -217,109 +137,133 @@ export default function HomePage() {
             return (
               <div key={card.title} className="col-md-6 col-lg-4">
                 <div
-                  onClick={() => {
-                    if (!card.disabled && card.href) router.push(card.href);
-                  }}
+                  onClick={() => { if (!card.disabled && card.href) router.push(card.href); }}
                   onMouseEnter={() => !card.disabled && setHoveredIndex(i)}
                   onMouseLeave={() => setHoveredIndex(null)}
                   style={{
                     background: SURFACE,
                     border: `1px solid ${isHovered ? ORANGE : BORDER_DEFAULT}`,
-                    borderRadius: 12,
-                    padding: 24,
+                    borderRadius: 14,
+                    overflow: "hidden",
                     cursor: card.disabled ? "default" : "pointer",
-                    transition: "border-color .2s, transform .2s, box-shadow .2s",
-                    transform: isHovered ? "translateY(-2px)" : "translateY(0)",
+                    transition: "border-color .25s, transform .25s, box-shadow .25s",
+                    transform: isHovered ? "translateY(-5px)" : "translateY(0)",
                     boxShadow: isHovered
-                      ? `0 8px 24px rgba(232,93,32,0.10)`
+                      ? "0 16px 40px rgba(232,93,32,0.15), 0 4px 12px rgba(0,0,0,0.08)"
                       : "0 1px 4px rgba(0,0,0,0.06)",
                     opacity: card.disabled ? 0.5 : 1,
                     height: "100%",
                     display: "flex",
                     flexDirection: "column",
-                    gap: 12,
                   }}
                 >
-                  {/* Icon + badge row */}
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  {/* Screenshot preview */}
+                  <div
+                    style={{
+                      position: "relative",
+                      height: 160,
+                      overflow: "hidden",
+                      background: "#e8e8e8",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {card.preview ? (
+                      <img
+                        src={card.preview}
+                        alt={card.title}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                          objectPosition: "top left",
+                          display: "block",
+                          transition: "transform .35s ease",
+                          transform: isHovered ? "scale(1.06)" : "scale(1.0)",
+                          filter: card.disabled ? "grayscale(1) opacity(0.5)" : "none",
+                        }}
+                      />
+                    ) : (
+                      /* Coming soon placeholder */
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          background: "repeating-linear-gradient(45deg, #f0f0f0, #f0f0f0 10px, #e8e8e8 10px, #e8e8e8 20px)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <span style={{ fontSize: 32, opacity: 0.3 }}>🔒</span>
+                      </div>
+                    )}
+
+                    {/* Gradient fade from image to card background */}
                     <div
                       style={{
-                        background: "rgba(232,93,32,0.08)",
-                        borderRadius: 10,
-                        width: 48,
-                        height: 48,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
+                        position: "absolute",
+                        inset: 0,
+                        background: `linear-gradient(to bottom, transparent 40%, ${SURFACE} 100%)`,
+                        pointerEvents: "none",
                       }}
-                    >
-                      {card.icon}
+                    />
+
+                    {/* Badge floated in the image */}
+                    <div style={{ position: "absolute", top: 10, right: 10 }}>
+                      <span
+                        style={
+                          card.disabled
+                            ? {
+                                background: "rgba(0,0,0,0.45)",
+                                color: "#ddd",
+                                borderRadius: 20,
+                                padding: "2px 10px",
+                                fontSize: 11,
+                                fontWeight: 600,
+                                letterSpacing: "0.04em",
+                                backdropFilter: "blur(4px)",
+                              }
+                            : {
+                                background: "rgba(232,93,32,0.85)",
+                                color: "#fff",
+                                borderRadius: 20,
+                                padding: "2px 10px",
+                                fontSize: 11,
+                                fontWeight: 600,
+                                letterSpacing: "0.04em",
+                                backdropFilter: "blur(4px)",
+                              }
+                        }
+                      >
+                        {card.badge}
+                      </span>
                     </div>
-                    <span
-                      style={
-                        card.disabled
-                          ? {
-                              background: "rgba(0,0,0,0.06)",
-                              color: "#aaa",
-                              borderRadius: 20,
-                              padding: "2px 10px",
-                              fontSize: 11,
-                              fontWeight: 600,
-                              letterSpacing: "0.04em",
-                            }
-                          : {
-                              background: "rgba(232,93,32,0.12)",
-                              color: ORANGE,
-                              borderRadius: 20,
-                              padding: "2px 10px",
-                              fontSize: 11,
-                              fontWeight: 600,
-                              letterSpacing: "0.04em",
-                            }
-                      }
-                    >
-                      {card.badge}
-                    </span>
                   </div>
 
-                  {/* Title + description */}
-                  <div>
-                    <div
-                      style={{
-                        fontSize: "1rem",
-                        fontWeight: 700,
-                        color: "#111",
-                        marginBottom: 6,
-                      }}
-                    >
+                  {/* Text content */}
+                  <div style={{ padding: "14px 20px 18px", display: "flex", flexDirection: "column", gap: 6, flex: 1 }}>
+                    <div style={{ fontSize: "1rem", fontWeight: 700, color: "#111" }}>
                       {card.title}
                     </div>
-                    <div
-                      style={{
-                        fontSize: "0.85rem",
-                        color: "#777",
-                        lineHeight: 1.5,
-                      }}
-                    >
+                    <div style={{ fontSize: "0.83rem", color: "#777", lineHeight: 1.5 }}>
                       {card.description}
                     </div>
+                    {!card.disabled && (
+                      <div
+                        style={{
+                          marginTop: "auto",
+                          paddingTop: 8,
+                          fontSize: 12,
+                          color: isHovered ? ORANGE : "#ccc",
+                          transition: "color .2s",
+                          fontWeight: 600,
+                          letterSpacing: "0.04em",
+                        }}
+                      >
+                        Open →
+                      </div>
+                    )}
                   </div>
-
-                  {/* Arrow for enabled cards */}
-                  {!card.disabled && (
-                    <div
-                      style={{
-                        marginTop: "auto",
-                        fontSize: 12,
-                        color: isHovered ? ORANGE : "#ccc",
-                        transition: "color .2s",
-                        fontWeight: 600,
-                        letterSpacing: "0.04em",
-                      }}
-                    >
-                      Open →
-                    </div>
-                  )}
                 </div>
               </div>
             );
