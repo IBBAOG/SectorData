@@ -194,13 +194,13 @@ function buildPriceBandsChart(
   };
 }
 
-// ── YTD Average Price chart (fixed to current year) ───────────────────────────
+// ── YTD Average Price chart ───────────────────────────────────────────────────
 
 function buildYtdChart(
   rows: PriceBandsRow[],
-  product: "Gasoline" | "Diesel"
+  product: "Gasoline" | "Diesel",
+  year: number
 ): { data: PlotData[]; layout: Partial<Layout> } {
-  const year = new Date().getFullYear();
   const seriesDefs = product === "Gasoline" ? GAS_SERIES : DSL_SERIES;
 
   const yearRows = rows
@@ -400,6 +400,8 @@ export default function PriceBandsPage() {
   const [resetHovered, setResetHovered] = useState(false);
   const [excelLoading, setExcelLoading] = useState(false);
   const [csvLoading,   setCsvLoading]   = useState(false);
+  const currentYear = new Date().getFullYear();
+  const [ytdYear,      setYtdYear]      = useState(currentYear);
 
   useEffect(() => {
     if (!supabase) return;
@@ -437,10 +439,8 @@ export default function PriceBandsPage() {
 
   const gasolineChart = useMemo(() => buildPriceBandsChart(rows, "Gasoline", xMin, xMax), [rows, xMin, xMax]);
   const dieselChart   = useMemo(() => buildPriceBandsChart(rows, "Diesel",   xMin, xMax), [rows, xMin, xMax]);
-  const gasolineYtd   = useMemo(() => buildYtdChart(rows, "Gasoline"),                    [rows]);
-  const dieselYtd     = useMemo(() => buildYtdChart(rows, "Diesel"),                      [rows]);
-
-  const year = new Date().getFullYear();
+  const gasolineYtd   = useMemo(() => buildYtdChart(rows, "Gasoline", ytdYear), [rows, ytdYear]);
+  const dieselYtd     = useMemo(() => buildYtdChart(rows, "Diesel",   ytdYear), [rows, ytdYear]);
 
   return (
     <div>
@@ -582,15 +582,29 @@ export default function PriceBandsPage() {
                   </div>
 
                   {/* Section 2: YTD Average Price */}
-                  <h5 className="section-title" style={{ marginBottom: 4, marginTop: 32, color: "#000000" }}>
-                    {`YTD Average Price (${year})`}
-                  </h5>
-                  <hr className="section-hr" style={{ marginBottom: 0 }} />
-                  <div style={{ marginBottom: 6, marginTop: 4 }}>
-                    <span style={{ fontFamily: "Arial", fontSize: 11, color: "#888" }}>
-                      Solid: actual cumulative average · Dotted: projection assuming today&apos;s prices hold through Dec 31
-                    </span>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 32, marginBottom: 4 }}>
+                    <h5 className="section-title" style={{ color: "#000000", marginBottom: 0 }}>YTD Average Price</h5>
+                    <div className="filter-chip-group" style={{ marginTop: 0 }}>
+                      {[currentYear - 2, currentYear - 1, currentYear].map((y) => (
+                        <button
+                          key={y}
+                          type="button"
+                          className={`filter-chip${ytdYear === y ? " filter-chip--active" : ""}`}
+                          onClick={() => setYtdYear(y)}
+                        >
+                          {y}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+                  <hr className="section-hr" style={{ marginBottom: 0 }} />
+                  {ytdYear === currentYear && (
+                    <div style={{ marginBottom: 6, marginTop: 4 }}>
+                      <span style={{ fontFamily: "Arial", fontSize: 11, color: "#888" }}>
+                        Solid: actual cumulative average · Dotted: projection assuming today&apos;s prices hold through Dec 31
+                      </span>
+                    </div>
+                  )}
 
                   {/* YTD — side by side */}
                   <div className="row g-3">
