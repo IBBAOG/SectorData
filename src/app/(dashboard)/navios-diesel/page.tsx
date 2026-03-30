@@ -274,12 +274,20 @@ export default function NaviosDieselPage() {
     return { data, layout };
   }, [resumoDisplay]);
 
+  // Best available date for bucketing a vessel into a month:
+  // ETA → Unload Start → Unload End → snapshot collection date (for already-berthed vessels)
+  function vesselMonthKey(r: NavioDieselRow): string {
+    const d = r.eta ?? r.inicio_descarga ?? r.fim_descarga ?? selectedColeta;
+    return d ? d.slice(0, 7) : "";
+  }
+
   // Build monthly bar chart
   const monthlyChart = useMemo(() => {
     const totals = new Map<string, number>();
     for (const r of naviosDisplay) {
-      if (!r.eta || r.quantidade_convertida == null) continue;
-      const month = r.eta.slice(0, 7);
+      if (r.quantidade_convertida == null) continue;
+      const month = vesselMonthKey(r);
+      if (!month) continue;
       totals.set(month, (totals.get(month) ?? 0) + r.quantidade_convertida);
     }
     const months = Array.from(totals.keys()).sort();
@@ -324,8 +332,8 @@ export default function NaviosDieselPage() {
     const monthsSet = new Set<string>();
 
     for (const r of naviosDisplay) {
-      if (!r.eta) continue;
-      const month = r.eta.slice(0, 7);
+      const month = vesselMonthKey(r);
+      if (!month) continue;
       monthsSet.add(month);
       if (!portMap.has(r.porto)) portMap.set(r.porto, new Map());
       const mMap = portMap.get(r.porto)!;
