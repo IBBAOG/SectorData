@@ -125,7 +125,7 @@ for (let i = 0; i < records.length; i += BATCH) {
 
   const { error } = await supabase
     .from("navios_diesel")
-    .insert(batch);
+    .upsert(batch, { ignoreDuplicates: true });
 
   if (error) {
     console.error(`❌ Batch ${i}-${i + batch.length} failed:`, error.message);
@@ -133,7 +133,7 @@ for (let i = 0; i < records.length; i += BATCH) {
   }
 
   inserted += batch.length;
-  console.log(`✅ Inserted ${inserted}/${records.length}`);
+  console.log(`✅ Upserted ${inserted}/${records.length}`);
 }
 
 // ── Verify ───────────────────────────────────────────────────────────────────
