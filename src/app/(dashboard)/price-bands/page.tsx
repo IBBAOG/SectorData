@@ -41,6 +41,21 @@ const DSL_SERIES: SeriesDef[] = [
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+const SUBSIDY_CUTOFF = "2026-03-12";
+
+function fmtPct(ptbr: number | null, ref: number | null): string {
+  if (ptbr == null || ref == null || ref === 0) return "—";
+  const pct = (ptbr / ref - 1) * 100;
+  return (pct >= 0 ? "+" : "") + Math.round(pct) + "%";
+}
+
+function fmtDateLabel(d: string): string {
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const m = parseInt(d.slice(5, 7), 10);
+  const day = parseInt(d.slice(8, 10), 10);
+  return `${months[m - 1]} ${day}, ${d.slice(0, 4)}`;
+}
+
 function addDays(dateStr: string, days: number): string {
   const d = new Date(dateStr);
   d.setUTCDate(d.getUTCDate() + days);
@@ -92,37 +107,34 @@ function buildPriceBandsChart(
 
   const dates = filtered.map((r) => r.date);
 
-  // Pre-compute % vs IPP, EPP (and subsidy for Diesel ≥ 2026-03-12) for the Petrobras tooltip
-  const SUBSIDY_CUTOFF = "2026-03-12";
+  // Pre-format % strings for Petrobras tooltip (pre-formatting avoids Plotly precision bugs)
   const pctCustomdata = filtered.map((r) => {
     const ptbr = r.petrobras_price as number | null;
     const ipp  = r.bba_import_parity as number | null;
     const epp  = r.bba_export_parity as number | null;
-    const pipp = ptbr != null && ipp != null && ipp !== 0 ? (ptbr / ipp - 1) * 100 : null;
-    const pepp = ptbr != null && epp != null && epp !== 0 ? (ptbr / epp - 1) * 100 : null;
+    const ippStr = fmtPct(ptbr, ipp);
+    const eppStr = fmtPct(ptbr, epp);
 
     if (product === "Diesel") {
-      const sub  = r.bba_import_parity_w_subsidy as number | null;
-      let subsidyLine = "";
-      if (r.date >= SUBSIDY_CUTOFF && ptbr != null && sub != null && sub !== 0) {
-        const pct  = (ptbr / sub - 1) * 100;
-        const sign = pct >= 0 ? "+" : "";
-        subsidyLine = `vs. IPP w/ sub: ${sign}${Math.round(pct)}%`;
-      }
-      return [pipp, pepp, subsidyLine];
+      const sub = r.bba_import_parity_w_subsidy as number | null;
+      const subsidyLine =
+        r.date >= SUBSIDY_CUTOFF && sub != null
+          ? `vs. IPP w/ sub: ${fmtPct(ptbr, sub)}`
+          : "";
+      return [ippStr, eppStr, subsidyLine];
     }
-    return [pipp, pepp];
+    return [ippStr, eppStr];
   });
 
   const petrobrasTemplate =
     product === "Diesel"
       ? `%{fullData.name}: %{y:.2f}<br>` +
-        `vs. IPP: %{customdata[0]:+.0f}%<br>` +
-        `vs. EPP: %{customdata[1]:+.0f}%<br>` +
+        `vs. IPP: %{customdata[0]}<br>` +
+        `vs. EPP: %{customdata[1]}<br>` +
         `%{customdata[2]}<extra></extra>`
       : `%{fullData.name}: %{y:.2f}<br>` +
-        `vs. IPP: %{customdata[0]:+.0f}%<br>` +
-        `vs. EPP: %{customdata[1]:+.0f}%<extra></extra>`;
+        `vs. IPP: %{customdata[0]}<br>` +
+        `vs. EPP: %{customdata[1]}<extra></extra>`;
 
   const traces: PlotData[] = seriesDefs.map((s) => {
     const isPetrobras = s.field === "petrobras_price";
@@ -207,9 +219,9 @@ function buildYtdChart(
 
     if (actualDates.length === 0) continue;
 
-    // For Petrobras trace: attach cumAvg IPP and EPP as customdata for tooltip
+    // For Petrobras trace: attach cumAvg IPP and EPP as customdata for tooltip (pre-formatted strings)
     const isPetrobras = s.field === "petrobras_price";
-    let ytdCustomdata: [number | null, number | null][] | undefined;
+    let ytdCustomdata: [string, string][] | undefined;
     if (isPetrobras) {
       let cumIpp = 0, cumEpp = 0, cntIpp = 0, cntEpp = 0;
       ytdCustomdata = yearRows.map((r) => {
@@ -221,9 +233,7 @@ function buildYtdChart(
       }).filter((_, i) => (yearRows[i][s.field] as number | null) != null)
         .map((pair, i) => {
           const avgPtbr = actualAvgs[i];
-          const pipp = pair[0] != null && pair[0] !== 0 ? (avgPtbr / pair[0] - 1) * 100 : null;
-          const pepp = pair[1] != null && pair[1] !== 0 ? (avgPtbr / pair[1] - 1) * 100 : null;
-          return [pipp, pepp] as [number | null, number | null];
+          return [fmtPct(avgPtbr, pair[0]), fmtPct(avgPtbr, pair[1])] as [string, string];
         });
     }
 
@@ -239,8 +249,8 @@ function buildYtdChart(
             customdata: ytdCustomdata,
             hovertemplate:
               `%{fullData.name}: %{y:.2f}<br>` +
-              `vs. IPP avg: %{customdata[0]:+.0f}%<br>` +
-              `vs. EPP avg: %{customdata[1]:+.0f}%<extra></extra>`,
+              `vs. IPP avg: %{customdata[0]}<br>` +
+              `vs. EPP avg: %{customdata[1]}<extra></extra>`,
           }
         : { hovertemplate: `%{fullData.name}: %{y:.2f}<extra></extra>` }),
     } as unknown as PlotData);
@@ -330,17 +340,33 @@ function PctBadge({ pct, vs, outlined }: { pct: number; vs: string; outlined?: b
 function ChartHeader({ product, rows, xMax }: { product: "Gasoline" | "Diesel"; rows: PriceBandsRow[]; xMax: string | null }) {
   // Use last row within the selected filter range
   const scoped = xMax ? rows.filter((r) => r.date <= xMax) : rows;
-  const last = [...scoped].sort((a, b) => b.date.localeCompare(a.date)).find(
+  const sorted = [...scoped].sort((a, b) => b.date.localeCompare(a.date));
+  const last = sorted.find(
     (r) => r.petrobras_price != null && r.bba_import_parity != null && r.bba_export_parity != null
   );
   const pctIpp = last ? ((last.petrobras_price! / last.bba_import_parity!)  - 1) * 100 : null;
   const pctEpp = last ? ((last.petrobras_price! / last.bba_export_parity!) - 1) * 100 : null;
+
+  // Diesel: subsidy badge (only from SUBSIDY_CUTOFF onwards)
+  const lastSubsidy = product === "Diesel"
+    ? sorted.find((r) => r.date >= SUBSIDY_CUTOFF && r.petrobras_price != null && r.bba_import_parity_w_subsidy != null)
+    : null;
+  const pctSub = lastSubsidy
+    ? ((lastSubsidy.petrobras_price! / lastSubsidy.bba_import_parity_w_subsidy!) - 1) * 100
+    : null;
+
   return (
     <div style={{ marginTop: 16, marginBottom: 0 }}>
-      <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 0, marginBottom: 4 }}>
         <span style={{ fontFamily: "Arial", fontSize: 14, fontWeight: 700, color: "#FF5000" }}>{product}:</span>
         {pctIpp != null && <PctBadge pct={pctIpp} vs="IPP" />}
         {pctEpp != null && <PctBadge pct={pctEpp} vs="EPP" outlined />}
+        {pctSub != null && <PctBadge pct={pctSub} vs="IPP w/ sub" outlined />}
+        {last && (
+          <span style={{ fontFamily: "Arial", fontSize: 11, color: "#999", marginLeft: 10 }}>
+            Last data: {fmtDateLabel(last.date)}
+          </span>
+        )}
       </div>
       <hr style={{ borderTop: "1px solid #ccc", margin: "0 0 6px 0" }} />
     </div>
