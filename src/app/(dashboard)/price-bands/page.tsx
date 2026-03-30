@@ -184,7 +184,7 @@ function buildPriceBandsChart(
     data: traces,
     layout: {
       ...COMMON_LAYOUT_BASE,
-      xaxis: { type: "date", tickformat: "%b-%y", tickangle: -90, range: [filtered[0].date, xRangeEnd], showgrid: false, showline: true, linecolor: "#000000", linewidth: 1, showspikes: true, spikemode: "across", spikedash: "solid", spikecolor: "#555555", spikethickness: 1 },
+      xaxis: { type: "date", tickformat: "%b-%y", hoverformat: "%b %d, %Y", tickangle: -90, range: [filtered[0].date, xRangeEnd], showgrid: false, showline: true, linecolor: "#000000", linewidth: 1, showspikes: true, spikemode: "across", spikedash: "solid", spikecolor: "#555555", spikethickness: 1 },
       yaxis: { showgrid: true, gridcolor: "#e8e8e8", showline: true, linecolor: "#000000", linewidth: 1, tickformat: ".2f", title: { text: "BRL/litro", font: { family: "Arial", size: 11, color: "#555" } }, automargin: true },
       legend: { orientation: "h", y: -0.3, x: 0.5, xanchor: "center" },
       height: 380,
@@ -329,7 +329,7 @@ function buildYtdChart(
     data: traces,
     layout: {
       ...COMMON_LAYOUT_BASE,
-      xaxis: { type: "date", tickformat: "%b", tickangle: -45, range: [`${year}-01-01`, addDays(yearEnd, 30)], showgrid: false, showline: true, linecolor: "#000000", linewidth: 1, showspikes: true, spikemode: "across", spikecolor: "#555555", spikethickness: 1, spikedash: "solid" },
+      xaxis: { type: "date", tickformat: "%b", hoverformat: "%b %d, %Y", tickangle: -45, range: [`${year}-01-01`, addDays(yearEnd, 30)], showgrid: false, showline: true, linecolor: "#000000", linewidth: 1, showspikes: true, spikemode: "across", spikecolor: "#555555", spikethickness: 1, spikedash: "solid" },
       yaxis: { showgrid: true, gridcolor: "#e8e8e8", showline: true, linecolor: "#000000", linewidth: 1, tickformat: ".2f", title: { text: "BRL/litro", font: { family: "Arial", size: 11, color: "#555" } }, automargin: true },
       legend: { orientation: "h", y: -0.28, x: 0.5, xanchor: "center" },
       height: 360,
