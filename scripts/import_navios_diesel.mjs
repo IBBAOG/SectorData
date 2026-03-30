@@ -125,7 +125,7 @@ for (let i = 0; i < records.length; i += BATCH) {
 
   const { error } = await supabase
     .from("navios_diesel")
-    .upsert(batch, { ignoreDuplicates: true });
+    .upsert(batch, { onConflict: "collected_at,porto,navio", ignoreDuplicates: true });
 
   if (error) {
     console.error(`❌ Batch ${i}-${i + batch.length} failed:`, error.message);
