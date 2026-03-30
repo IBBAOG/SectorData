@@ -206,13 +206,7 @@ export default function NaviosDieselPage() {
     const lats: number[] = [];
     const lons: number[] = [];
     const texts: string[] = [];
-    const sizes: number[] = [];
     const colors: string[] = [];
-
-    // Ship count labels (offset to the right of bubbles)
-    const shipLats: number[] = [];
-    const shipLons: number[] = [];
-    const shipLabels: string[] = [];
 
     const resumoByPorto = new Map(resumoDisplay.map(p => [p.porto, p]));
 
@@ -222,22 +216,13 @@ export default function NaviosDieselPage() {
       lons.push(c.lon);
       if (p) {
         texts.push(
-          `<b>${porto}</b><br>` +
+          `<b>${porto.replace("Porto de ", "")}</b><br>` +
           `${p.total_navios} vessel${p.total_navios !== 1 ? "s" : ""}<br>` +
           `${p.total_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³`
         );
-        sizes.push(Math.max(14, Math.sqrt(p.total_convertida) * 0.1));
         colors.push(ORANGE);
-        // Ship icons label
-        if (p.total_navios > 0) {
-          shipLats.push(c.lat);
-          shipLons.push(c.lon + 3.5);
-          const ships = "🚢".repeat(Math.min(p.total_navios, 5));
-          shipLabels.push(p.total_navios > 5 ? `${ships}+${p.total_navios - 5}` : ships);
-        }
       } else {
-        texts.push(`<b>${porto}</b><br>0 vessels<br>0 m³`);
-        sizes.push(9);
+        texts.push(`<b>${porto.replace("Porto de ", "")}</b><br>0 vessels<br>0 m³`);
         colors.push("#cccccc");
       }
     }
@@ -250,24 +235,12 @@ export default function NaviosDieselPage() {
         text: texts,
         hoverinfo: "text",
         marker: {
-          size: sizes,
+          size: 10,
           color: colors,
-          opacity: 0.85,
+          opacity: 0.9,
           line: { color: "#000512", width: 1.5 },
         },
       } as unknown as PlotData,
-      // Ship count labels
-      ...(shipLats.length > 0 ? [{
-        type: "scattergeo",
-        lat: shipLats,
-        lon: shipLons,
-        mode: "text",
-        text: shipLabels,
-        textfont: { family: "Arial", size: 10, color: "#1a1a1a" },
-        textposition: "middle right",
-        hoverinfo: "skip",
-        showlegend: false,
-      } as unknown as PlotData] : []),
     ];
 
     const layout: Partial<Layout> = {
@@ -538,6 +511,32 @@ export default function NaviosDieselPage() {
                         config={{ displayModeBar: false }}
                         style={{ width: "100%", height: 500 }}
                       />
+                      {/* Ship icons legend per port */}
+                      {resumoDisplay.length > 0 && (
+                        <div style={{ marginTop: 4, fontFamily: "Arial" }}>
+                          {resumoDisplay
+                            .filter(p => p.total_navios > 0)
+                            .sort((a, b) => b.total_convertida - a.total_convertida)
+                            .map(p => (
+                              <div key={p.porto} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: "#1a1a1a", minWidth: 90 }}>
+                                  {p.porto.replace("Porto de ", "")}
+                                </span>
+                                <span style={{ display: "flex", gap: 1 }}>
+                                  {Array.from({ length: Math.min(p.total_navios, 10) }).map((_, j) => (
+                                    <img key={j} src="/ship_orange.png" alt="" width={14} height={14} />
+                                  ))}
+                                  {p.total_navios > 10 && (
+                                    <span style={{ fontSize: 10, color: "#888", marginLeft: 2 }}>+{p.total_navios - 10}</span>
+                                  )}
+                                </span>
+                                <span style={{ fontSize: 10, color: "#666", marginLeft: 4 }}>
+                                  {p.total_navios} vessel{p.total_navios !== 1 ? "s" : ""} · {p.total_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³
+                                </span>
+                              </div>
+                            ))}
+                        </div>
+                      )}
                     </div>
                     {/* Bar chart + summary table in same container for alignment */}
                     <div className="chart-container" style={{ flex: 1.5, minWidth: 0 }}>
