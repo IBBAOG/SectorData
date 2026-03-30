@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import warnings
 from datetime import datetime, timezone, timedelta
 from io import BytesIO, StringIO
@@ -192,10 +193,24 @@ def _para_m3(valor: float, unidade: str) -> float | None:
 # Helpers gerais
 # ---------------------------------------------------------------------------
 
-def _get(url: str) -> str:
-    resp = requests.get(url, verify=False, timeout=30)
-    resp.raise_for_status()
-    return resp.content.decode("utf-8", errors="replace")
+_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    )
+}
+
+def _get(url: str, retries: int = 3, timeout: int = 60) -> str:
+    for attempt in range(1, retries + 1):
+        try:
+            resp = requests.get(url, headers=_HEADERS, verify=False, timeout=timeout)
+            resp.raise_for_status()
+            return resp.content.decode("utf-8", errors="replace")
+        except Exception as e:
+            if attempt == retries:
+                raise
+            time.sleep(5 * attempt)
 
 
 def _col(df: pd.DataFrame, keyword: str, required: bool = True) -> str | None:
