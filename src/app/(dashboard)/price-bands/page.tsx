@@ -571,10 +571,8 @@ export default function PriceBandsPage() {
               <hr className="section-hr" style={{ marginBottom: 0 }} />
 
               {loading ? (
-                <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: 300 }}>
-                  <div className="spinner-border text-secondary" role="status">
-                    <span className="visually-hidden">Loading…</span>
-                  </div>
+                <div className="d-flex justify-content-center my-5">
+                  <img src="/barrel_loading.png" alt="Carregando..." width={160} height={160} />
                 </div>
               ) : (
                 <>

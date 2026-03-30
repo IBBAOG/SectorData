@@ -728,10 +728,8 @@ export default function DieselGasolineMarginsPage() {
               </div>
 
               {loading ? (
-                <div className="d-flex justify-content-center align-items-center" style={{ height: 400 }}>
-                  <div className="spinner-border text-secondary" role="status">
-                    <span className="visually-hidden">Loading…</span>
-                  </div>
+                <div className="d-flex justify-content-center my-5">
+                  <img src="/barrel_loading.png" alt="Carregando..." width={160} height={160} />
                 </div>
               ) : (
                 <>
