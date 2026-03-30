@@ -181,3 +181,21 @@ Consulta,Porto,Status,Navio,Carga,Quantidade Original,Unidade Origem,Quantidade 
 2026-03-30 16:29,Porto de Paranaguá,Esperado,HORIZON THEANO,Óleo Diesel,38000.0,t,45508.98,01/04/2026 05:00,,,,141
 2026-03-30 16:29,Porto de Paranaguá,Despachado,FRANK LIGHT,Óleo Diesel,42079.0,t,50394.01,26/03/2026 12:48,,30/03/2026 00:20,,144
 2026-03-30 16:29,Porto de Suape,Fundeado,VELOS AURORA (EX LATGALE),Óleo Diesel,35585.0,c,35585.0,26/03/2026 03:35,02/04/2026 03:00,04/04/2026 07:00,UST-LUGA-RUS,PGL-1B
+2026-03-30 16:33,Porto de Santos,Esperado,KUBERA,Óleo Diesel,21736.0,t,26031.14,26/03/2026 07:05:00,,,,ALA.-I.B.
+2026-03-30 16:33,Porto de Santos,Esperado,ALLEGRA,Óleo Diesel,33836.0,t,40522.16,29/03/2026 16:30:00,,,,ALAMOA
+2026-03-30 16:33,Porto de Santos,Atracado,URIEL,Óleo Diesel,37263.0,t,44626.35,,,,,I. BARNABE OESTE
+2026-03-30 16:33,Porto de Itaqui,Atracado,HAFNIA LARISSA,Óleo Diesel,125.194,t,149.93,,,,,B106
+2026-03-30 16:33,Porto de Itaqui,Atracado,HORIZON EKAVI,Óleo Diesel,24.966,t,29.9,,,,,B108
+2026-03-30 16:33,Porto de Itaqui,Esperado,SAVITRI,Óleo Diesel,20.0,t,23.95,04/04/26,,,,
+2026-03-30 16:33,Porto de Paranaguá,Ao Largo,BOND,Óleo Diesel,30000.0,t,35928.14,30/03/2026 07:36,,,,141
+2026-03-30 16:33,Porto de Paranaguá,Ao Largo,ROSSA,Óleo Diesel,8000.0,t,9580.84,30/03/2026 10:44,,,,141
+2026-03-30 16:33,Porto de Paranaguá,Ao Largo,ROSSA,Óleo Diesel,39889.0,t,47771.26,27/03/2026 02:12,,,,143
+2026-03-30 16:33,Porto de Paranaguá,Esperado,ALBARO,Óleo Diesel,50000.0,t,59880.24,06/04/2026 15:00,,,,143
+2026-03-30 16:33,Porto de Paranaguá,Esperado,ALLEGRA,Óleo Diesel,38000.0,t,45508.98,04/04/2026 10:00,,,,143
+2026-03-30 16:33,Porto de Paranaguá,Esperado,PACIFIC ZIRCON,Óleo Diesel,20000.0,t,23952.1,04/04/2026 01:00,,,,141
+2026-03-30 16:33,Porto de Paranaguá,Esperado,SINO SOURCE,Óleo Diesel,16815.0,t,20137.72,03/04/2026 08:00,,,,141
+2026-03-30 16:33,Porto de Paranaguá,Esperado,VELOS POLARIS,Óleo Diesel,40941.0,t,49031.14,02/04/2026 16:00,,,,143
+2026-03-30 16:33,Porto de Paranaguá,Esperado,TWINKLE STAR,Óleo Diesel,36800.0,t,44071.86,01/04/2026 20:00,,,,141
+2026-03-30 16:33,Porto de Paranaguá,Esperado,HORIZON THEANO,Óleo Diesel,38000.0,t,45508.98,01/04/2026 05:00,,,,141
+2026-03-30 16:33,Porto de Paranaguá,Despachado,FRANK LIGHT,Óleo Diesel,42079.0,t,50394.01,26/03/2026 12:48,,30/03/2026 00:20,,144
+2026-03-30 16:33,Porto de Suape,Fundeado,VELOS AURORA (EX LATGALE),Óleo Diesel,35585.0,c,35585.0,26/03/2026 03:35,02/04/2026 03:00,04/04/2026 07:00,UST-LUGA-RUS,PGL-1B
