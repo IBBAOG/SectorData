@@ -141,7 +141,7 @@ function buildPriceBandsChart(
       const sub = r.bba_import_parity_w_subsidy as number | null;
       const subsidyLine =
         r.date >= SUBSIDY_CUTOFF && sub != null
-          ? `vs. IPP w/ sub: ${fmtPct(ptbr, sub)}<br>`
+          ? `, vs. IPP w/ sub: ${fmtPct(ptbr, sub)}`
           : "";
       return [ippStr, eppStr, subsidyLine];
     }
@@ -150,13 +150,8 @@ function buildPriceBandsChart(
 
   const petrobrasTemplate =
     product === "Diesel"
-      ? `%{fullData.name}: %{y:.2f}<br>` +
-        `vs. IPP: %{customdata[0]}<br>` +
-        `vs. EPP: %{customdata[1]}<br>` +
-        `%{customdata[2]}<extra></extra>`
-      : `%{fullData.name}: %{y:.2f}<br>` +
-        `vs. IPP: %{customdata[0]}<br>` +
-        `vs. EPP: %{customdata[1]}<extra></extra>`;
+      ? `%{fullData.name}: %{y:.2f} · vs. IPP: %{customdata[0]}, vs. EPP: %{customdata[1]}%{customdata[2]}<extra></extra>`
+      : `%{fullData.name}: %{y:.2f} · vs. IPP: %{customdata[0]}, vs. EPP: %{customdata[1]}<extra></extra>`;
 
   const traces: PlotData[] = seriesDefs.map((s) => {
     const isPetrobras = s.field === "petrobras_price";
@@ -270,9 +265,7 @@ function buildYtdChart(
         ? {
             customdata: ytdCustomdata,
             hovertemplate:
-              `%{fullData.name}: %{y:.2f}<br>` +
-              `vs. IPP avg: %{customdata[0]}<br>` +
-              `vs. EPP avg: %{customdata[1]}<extra></extra>`,
+              `%{fullData.name}: %{y:.2f} · vs. IPP avg: %{customdata[0]}, vs. EPP avg: %{customdata[1]}<extra></extra>`,
           }
         : { hovertemplate: `%{fullData.name}: %{y:.2f}<extra></extra>` }),
     } as unknown as PlotData);
