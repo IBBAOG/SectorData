@@ -45,7 +45,7 @@ const CARDS: CardDef[] = [
   },
   {
     preview: "/previews/preview-dg-margins.jpg",
-    title: "D&G Margins",
+    title: "Diesel and Gasoline Margins",
     description: "Diesel and gasoline margin tracking across regions and time",
     badge: "Available",
     href: "/diesel-gasoline-margins",
@@ -142,7 +142,7 @@ export default function HomePage() {
                   onMouseLeave={() => setHoveredIndex(null)}
                   style={{
                     background: SURFACE,
-                    border: `1px solid ${isHovered ? ORANGE : BORDER_DEFAULT}`,
+                    border: "none",
                     borderRadius: 14,
                     overflow: "hidden",
                     cursor: card.disabled ? "default" : "pointer",
@@ -203,7 +203,7 @@ export default function HomePage() {
                       style={{
                         position: "absolute",
                         inset: 0,
-                        background: "linear-gradient(to bottom, transparent 30%, #1a1a1a 100%)",
+                        background: "linear-gradient(to bottom, transparent 70%, #1a1a1a 100%)",
                         pointerEvents: "none",
                       }}
                     />
