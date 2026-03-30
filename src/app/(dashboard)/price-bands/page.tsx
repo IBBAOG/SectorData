@@ -582,15 +582,27 @@ export default function PriceBandsPage() {
                   </div>
 
                   {/* Section 2: YTD Average Price */}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 32, marginBottom: 4 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 32, marginBottom: 4 }}>
                     <h5 className="section-title" style={{ color: "#000000", marginBottom: 0 }}>YTD Average Price</h5>
-                    <div className="filter-chip-group" style={{ marginTop: 0 }}>
+                    <div style={{ display: "inline-flex", alignItems: "center", backgroundColor: "#f0f0f0", borderRadius: 999, padding: "3px 4px", gap: 2 }}>
                       {[currentYear - 2, currentYear - 1, currentYear].map((y) => (
                         <button
                           key={y}
                           type="button"
-                          className={`filter-chip${ytdYear === y ? " filter-chip--active" : ""}`}
                           onClick={() => setYtdYear(y)}
+                          style={{
+                            background: ytdYear === y ? "#ff5000" : "transparent",
+                            color: ytdYear === y ? "#ffffff" : "#555555",
+                            border: "none",
+                            borderRadius: 999,
+                            padding: "4px 14px",
+                            fontFamily: "Arial",
+                            fontSize: 13,
+                            fontWeight: ytdYear === y ? 700 : 500,
+                            cursor: "pointer",
+                            transition: "background 0.15s, color 0.15s",
+                            lineHeight: 1.4,
+                          }}
                         >
                           {y}
                         </button>
