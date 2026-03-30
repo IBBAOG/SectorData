@@ -7,6 +7,7 @@ from io import BytesIO, StringIO
 
 import pandas as pd
 import requests
+from bs4 import BeautifulSoup
 
 warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 
@@ -315,18 +316,45 @@ def buscar_santos_atracados() -> pd.DataFrame:
 
 def buscar_itaqui() -> pd.DataFrame:
     html = _get(URL_ITAQUI)
-    # Forçar TODAS as colunas como string para preservar formato BR
-    # (ex: "20.000" = 20000, não 20.0; "125,194" = 125194, não 125.194)
-    dfs = pd.read_html(StringIO(html), converters={i: str for i in range(20)})
+
+    # Use BeautifulSoup to extract tables with all cells as strings.
+    # pd.read_html auto-converts "20.000" (BR thousands) → float 20.0, losing
+    # the thousands separator context.  Parsing manually keeps values as text.
+    soup = BeautifulSoup(html, "lxml")
+    raw_tables: list[pd.DataFrame] = []
+    for table in soup.find_all("table"):
+        thead = table.find("thead")
+        headers = [th.get_text(strip=True) for th in thead.find_all(["th", "td"])] if thead else []
+
+        tbody = table.find("tbody") or table
+        rows = []
+        for tr in tbody.find_all("tr"):
+            cells = [td.get_text(strip=True) for td in tr.find_all(["th", "td"])]
+            if cells:
+                rows.append(cells)
+
+        if not headers and rows:
+            headers = rows[0]
+            rows = rows[1:]
+
+        if not rows:
+            continue
+
+        ncols = len(headers)
+        padded = [r[:ncols] + [""] * max(0, ncols - len(r)) for r in rows]
+        raw_tables.append(pd.DataFrame(padded, columns=headers))
+
     mapeamento = {0: "Atracado", 1: "Fundeado", 2: "Esperado"}
     partes = []
 
     for i, status in mapeamento.items():
-        if i >= len(dfs):
+        if i >= len(raw_tables):
             continue
-        df = dfs[i].copy()
+        df = raw_tables[i].copy()
 
-        col_carga = _col(df, "Carga")
+        col_carga = _col(df, "Carga", required=False)
+        if col_carga is None:
+            continue
         mask = df[col_carga].str.strip().str.upper().str.contains("DIESEL", na=False)
         f = df.loc[mask].copy()
         if f.empty:
@@ -340,7 +368,7 @@ def buscar_itaqui() -> pd.DataFrame:
         if c_berco:
             f = f.rename(columns={c_berco: "Terminal"})
 
-        # Qtd → Quantidade (m³) (ainda em t; será convertida no consolidar)
+        # Qtd.Carga → Quantidade (m³) (ainda em t; será convertida no consolidar)
         c_qtd = _col(df, "Qtd", required=False)
         if c_qtd:
             f = f.rename(columns={c_qtd: "Quantidade (m³)"})
