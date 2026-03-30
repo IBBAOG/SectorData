@@ -108,8 +108,8 @@ export default function HomePage() {
           Sectorial data{" "}
           <span style={{ color: ORANGE }}>promptly available</span>
         </h1>
-        <p style={{ fontSize: "clamp(1rem, 2vw, 1.15rem)", color: "#666", maxWidth: 520, lineHeight: 1.6, margin: 0 }}>
-          Easy access to up-to-date data for the fuel distribution and oil and gas industries.
+        <p style={{ fontSize: "clamp(1rem, 2vw, 1.15rem)", color: "#666", lineHeight: 1.6, margin: 0, whiteSpace: "nowrap" }}>
+          Easy access to up-to-date data for the Fuel Distribution and Oil &amp; Gas industries.
         </p>
       </section>
 
@@ -122,7 +122,7 @@ export default function HomePage() {
           style={{
             fontSize: "0.75rem",
             fontWeight: 600,
-            color: "#999",
+            color: "#FF5000",
             letterSpacing: "0.1em",
             textTransform: "uppercase",
             marginBottom: 24,
