@@ -26,6 +26,25 @@ const PORT_COORDS: Record<string, { lat: number; lon: number }> = {
   "Porto de São Sebastião": { lat: -23.8170, lon: -45.4170 },
 };
 
+// Geo range for the map (must match Plotly layout.geo.lonaxis/lataxis)
+const GEO_LON: [number, number] = [-65, -30];
+const GEO_LAT: [number, number] = [-35, 10];
+
+// Per-port label positioning: anchor direction + manual offset tweaks
+const PORT_LABEL_CFG: Record<string, { anchor: "right" | "left"; dx: number; dy: number }> = {
+  "Porto de Santos":        { anchor: "left",  dx: -4, dy: -4 },
+  "Porto de Itaqui":        { anchor: "right", dx: 4,  dy: 0 },
+  "Porto de Paranaguá":     { anchor: "left",  dx: -4, dy: 2 },
+  "Porto de Suape":         { anchor: "left",  dx: -4, dy: 0 },
+  "Porto de São Sebastião": { anchor: "right", dx: 4,  dy: 4 },
+};
+
+function geoToPercent(lat: number, lon: number): { left: number; top: number } {
+  const left = ((lon - GEO_LON[0]) / (GEO_LON[1] - GEO_LON[0])) * 100;
+  const top  = ((GEO_LAT[1] - lat) / (GEO_LAT[1] - GEO_LAT[0])) * 100;
+  return { left, top };
+}
+
 const STATUS_COLORS: Record<string, string> = {
   Atracado:   "#d4edda",
   Esperado:   "#fff3cd",
@@ -189,87 +208,37 @@ export default function NaviosDieselPage() {
     return () => { cancelled = true; };
   }, [supabase, selectedColeta]);
 
-  // Build map traces
-  const mapChart = useMemo(() => {
-    if (resumoDisplay.length === 0) {
-      return {
-        data: [] as PlotData[],
-        layout: {
-          paper_bgcolor: "white", plot_bgcolor: "white",
-          xaxis: { visible: false }, yaxis: { visible: false },
-          annotations: [{ text: "No data", xref: "paper" as const, yref: "paper" as const, showarrow: false, font: { size: 13, family: "Arial", color: "#888" } }],
-          height: 280, margin: { t: 10, b: 10, l: 10, r: 10 },
-        } as Partial<Layout>,
-      };
-    }
+  // Map layout (background only — ports rendered as HTML overlay)
+  const mapLayout = useMemo<Partial<Layout>>(() => ({
+    geo: {
+      scope: "south america",
+      resolution: 50,
+      lonaxis: { range: GEO_LON },
+      lataxis: { range: GEO_LAT },
+      showland: true,
+      landcolor: "#f5f5f5",
+      showocean: true,
+      oceancolor: "#e8f4fd",
+      showcountries: true,
+      countrycolor: "#ccc",
+      showcoastlines: true,
+      coastlinecolor: "#aaa",
+    } as Layout["geo"],
+    paper_bgcolor: "white",
+    margin: { t: 0, b: 0, l: 0, r: 0 },
+    height: 280,
+    showlegend: false,
+  }), []);
 
-    const lats: number[] = [];
-    const lons: number[] = [];
-    const texts: string[] = [];
-    const colors: string[] = [];
-
+  // Port data for the HTML overlay
+  const portOverlayData = useMemo(() => {
     const resumoByPorto = new Map(resumoDisplay.map(p => [p.porto, p]));
-
-    for (const [porto, c] of Object.entries(PORT_COORDS)) {
+    return Object.entries(PORT_COORDS).map(([porto, coords]) => {
       const p = resumoByPorto.get(porto);
-      lats.push(c.lat);
-      lons.push(c.lon);
-      if (p) {
-        texts.push(
-          `<b>${porto.replace("Porto de ", "")}</b><br>` +
-          `${p.total_navios} vessel${p.total_navios !== 1 ? "s" : ""}<br>` +
-          `${p.total_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³`
-        );
-        colors.push(ORANGE);
-      } else {
-        texts.push(`<b>${porto.replace("Porto de ", "")}</b><br>0 vessels<br>0 m³`);
-        colors.push("#cccccc");
-      }
-    }
-
-    const data: PlotData[] = [
-      {
-        type: "scattergeo",
-        lat: lats,
-        lon: lons,
-        text: texts,
-        hoverinfo: "text",
-        marker: {
-          size: 10,
-          color: colors,
-          opacity: 0.9,
-          line: { color: "#000512", width: 1.5 },
-        },
-      } as unknown as PlotData,
-    ];
-
-    const layout: Partial<Layout> = {
-      geo: {
-        scope: "south america",
-        resolution: 50,
-        lonaxis: { range: [-65, -30] },
-        lataxis: { range: [-35, 10] },
-        showland: true,
-        landcolor: "#f5f5f5",
-        showocean: true,
-        oceancolor: "#e8f4fd",
-        showcountries: true,
-        countrycolor: "#ccc",
-        showcoastlines: true,
-        coastlinecolor: "#aaa",
-      } as Layout["geo"],
-      paper_bgcolor: "white",
-      margin: { t: 0, b: 0, l: 0, r: 0 },
-      height: 280,
-      showlegend: false,
-      hoverlabel: {
-        bgcolor: "rgba(255,255,255,0.95)",
-        bordercolor: "rgba(180,180,180,0.5)",
-        font: { family: "Arial", color: "#1a1a1a", size: 12 },
-      },
-    };
-
-    return { data, layout };
+      const pos = geoToPercent(coords.lat, coords.lon);
+      const cfg = PORT_LABEL_CFG[porto] ?? { anchor: "right" as const, dx: 4, dy: 0 };
+      return { porto, pos, cfg, data: p ?? null };
+    });
   }, [resumoDisplay]);
 
   // Build monthly bar chart
@@ -501,42 +470,68 @@ export default function NaviosDieselPage() {
                 <>
                   {/* Charts row: map | bar chart + summary table | vessel details */}
                   <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 16 }}>
-                    {/* Map */}
+                    {/* Map with HTML port overlays */}
                     <div className="chart-container" style={{ flex: 1.5, minWidth: 0 }}>
                       <div style={TITLE_STYLE}>Distribution by Port</div>
                       <hr className="section-hr" />
-                      <PlotlyChart
-                        data={mapChart.data}
-                        layout={{ ...mapChart.layout, height: 500 }}
-                        config={{ displayModeBar: false }}
-                        style={{ width: "100%", height: 500 }}
-                      />
-                      {/* Ship icons legend per port */}
-                      {resumoDisplay.length > 0 && (
-                        <div style={{ marginTop: 4, fontFamily: "Arial" }}>
-                          {resumoDisplay
-                            .filter(p => p.total_navios > 0)
-                            .sort((a, b) => b.total_convertida - a.total_convertida)
-                            .map(p => (
-                              <div key={p.porto} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                                <span style={{ fontSize: 11, fontWeight: 600, color: "#1a1a1a", minWidth: 90 }}>
-                                  {p.porto.replace("Porto de ", "")}
-                                </span>
-                                <span style={{ display: "flex", gap: 1 }}>
-                                  {Array.from({ length: Math.min(p.total_navios, 10) }).map((_, j) => (
-                                    <img key={j} src="/ship_orange.png" alt="" width={14} height={14} />
-                                  ))}
-                                  {p.total_navios > 10 && (
-                                    <span style={{ fontSize: 10, color: "#888", marginLeft: 2 }}>+{p.total_navios - 10}</span>
+                      <div style={{ position: "relative" }}>
+                        <PlotlyChart
+                          data={[]}
+                          layout={{ ...mapLayout, height: 500 }}
+                          config={{ staticPlot: true }}
+                          style={{ width: "100%", height: 500 }}
+                        />
+                        {/* Port labels overlay */}
+                        <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+                          {portOverlayData.map(({ porto, pos, cfg, data: p }) => {
+                            const hasData = p !== null && p.total_navios > 0;
+                            const anchorRight = cfg.anchor === "right";
+                            return (
+                              <div
+                                key={porto}
+                                style={{
+                                  position: "absolute",
+                                  left: `${pos.left}%`,
+                                  top: `${pos.top}%`,
+                                  transform: "translate(-4px, -4px)",
+                                  display: "flex",
+                                  alignItems: "flex-start",
+                                  flexDirection: anchorRight ? "row" : "row-reverse",
+                                  gap: 6,
+                                }}
+                              >
+                                {/* Dot */}
+                                <div style={{
+                                  width: 8, height: 8, borderRadius: "50%", flexShrink: 0, marginTop: 2,
+                                  backgroundColor: hasData ? ORANGE : "#ccc",
+                                  border: "1.5px solid #000512",
+                                }} />
+                                {/* Label */}
+                                <div style={{ fontFamily: "Arial", textAlign: anchorRight ? "left" : "right", whiteSpace: "nowrap" }}>
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: "#1a1a1a", lineHeight: 1.2 }}>
+                                    {porto.replace("Porto de ", "")}
+                                  </div>
+                                  {hasData && (
+                                    <>
+                                      <div style={{ display: "flex", gap: 1, justifyContent: anchorRight ? "flex-start" : "flex-end", marginTop: 1 }}>
+                                        {Array.from({ length: Math.min(p.total_navios, 8) }).map((_, j) => (
+                                          <img key={j} src="/ship_orange.png" alt="" width={12} height={12} />
+                                        ))}
+                                        {p.total_navios > 8 && (
+                                          <span style={{ fontSize: 9, color: "#888", marginLeft: 1, lineHeight: "12px" }}>+{p.total_navios - 8}</span>
+                                        )}
+                                      </div>
+                                      <div style={{ fontSize: 9, color: "#666", lineHeight: 1.2, marginTop: 1 }}>
+                                        {p.total_navios} vessel{p.total_navios !== 1 ? "s" : ""} · {p.total_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³
+                                      </div>
+                                    </>
                                   )}
-                                </span>
-                                <span style={{ fontSize: 10, color: "#666", marginLeft: 4 }}>
-                                  {p.total_navios} vessel{p.total_navios !== 1 ? "s" : ""} · {p.total_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³
-                                </span>
+                                </div>
                               </div>
-                            ))}
+                            );
+                          })}
                         </div>
-                      )}
+                      </div>
                     </div>
                     {/* Bar chart + summary table in same container for alignment */}
                     <div className="chart-container" style={{ flex: 1.5, minWidth: 0 }}>
