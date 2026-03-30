@@ -136,133 +136,113 @@ export default function HomePage() {
             const isHovered = hoveredIndex === i && !card.disabled;
             return (
               <div key={card.title} className="col-md-6 col-lg-4">
+                {/* Fixed-height card — image fills it, text overlaid at bottom */}
                 <div
                   onClick={() => { if (!card.disabled && card.href) router.push(card.href); }}
                   onMouseEnter={() => !card.disabled && setHoveredIndex(i)}
                   onMouseLeave={() => setHoveredIndex(null)}
                   style={{
-                    background: SURFACE,
-                    border: "none",
+                    position: "relative",
+                    height: 220,
                     borderRadius: 14,
                     overflow: "hidden",
                     cursor: card.disabled ? "default" : "pointer",
-                    transition: "border-color .25s, transform .25s, box-shadow .25s",
+                    transition: "transform .25s, box-shadow .25s",
                     transform: isHovered ? "translateY(-5px)" : "translateY(0)",
                     boxShadow: isHovered
                       ? "0 16px 40px rgba(232,93,32,0.18), 0 4px 16px rgba(0,0,0,0.25)"
                       : "0 2px 8px rgba(0,0,0,0.15)",
                     opacity: card.disabled ? 0.5 : 1,
-                    height: "100%",
-                    display: "flex",
-                    flexDirection: "column",
+                    background: "#1a1a1a",
                   }}
                 >
-                  {/* Screenshot preview */}
-                  <div
-                    style={{
-                      position: "relative",
-                      height: 160,
-                      overflow: "hidden",
-                      background: "#e8e8e8",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {card.preview ? (
-                      <img
-                        src={card.preview}
-                        alt={card.title}
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          objectFit: "cover",
-                          objectPosition: "top left",
-                          display: "block",
-                          transition: "transform .35s ease",
-                          transform: isHovered ? "scale(1.06)" : "scale(1.0)",
-                          filter: card.disabled ? "grayscale(1) opacity(0.5)" : "none",
-                        }}
-                      />
-                    ) : (
-                      /* Coming soon placeholder */
-                      <div
-                        style={{
-                          width: "100%",
-                          height: "100%",
-                          background: "repeating-linear-gradient(45deg, #f0f0f0, #f0f0f0 10px, #e8e8e8 10px, #e8e8e8 20px)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <span style={{ fontSize: 32, opacity: 0.3 }}>🔒</span>
-                      </div>
-                    )}
-
-                    {/* Gradient fade from image to dark */}
+                  {/* Image layer */}
+                  {card.preview ? (
+                    <img
+                      src={card.preview}
+                      alt={card.title}
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        width: "100%",
+                        height: "100%",
+                        objectFit: "cover",
+                        objectPosition: "top left",
+                        display: "block",
+                        transition: "transform .35s ease",
+                        transform: isHovered ? "scale(1.06)" : "scale(1.0)",
+                        filter: card.disabled ? "grayscale(1) opacity(0.5)" : "none",
+                      }}
+                    />
+                  ) : (
                     <div
                       style={{
                         position: "absolute",
                         inset: 0,
-                        background: "linear-gradient(to bottom, transparent 70%, #1a1a1a 100%)",
-                        pointerEvents: "none",
+                        background: "repeating-linear-gradient(45deg, #2a2a2a, #2a2a2a 10px, #222 10px, #222 20px)",
                       }}
                     />
+                  )}
 
-                    {/* Badge floated in the image */}
-                    <div style={{ position: "absolute", top: 10, right: 10 }}>
-                      <span
-                        style={
-                          card.disabled
-                            ? {
-                                background: "rgba(0,0,0,0.45)",
-                                color: "#ddd",
-                                borderRadius: 20,
-                                padding: "2px 10px",
-                                fontSize: 11,
-                                fontWeight: 600,
-                                letterSpacing: "0.04em",
-                                backdropFilter: "blur(4px)",
-                              }
-                            : {
-                                background: "rgba(232,93,32,0.85)",
-                                color: "#fff",
-                                borderRadius: 20,
-                                padding: "2px 10px",
-                                fontSize: 11,
-                                fontWeight: 600,
-                                letterSpacing: "0.04em",
-                                backdropFilter: "blur(4px)",
-                              }
-                        }
-                      >
-                        {card.badge}
-                      </span>
-                    </div>
+                  {/* Gradient — expands on hover to reveal extra text */}
+                  <div
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      background: isHovered
+                        ? "linear-gradient(to bottom, transparent 20%, #1a1a1a 60%)"
+                        : "linear-gradient(to bottom, transparent 55%, #1a1a1a 100%)",
+                      transition: "background .3s ease",
+                      pointerEvents: "none",
+                    }}
+                  />
+
+                  {/* Badge */}
+                  <div style={{ position: "absolute", top: 10, right: 10 }}>
+                    <span
+                      style={
+                        card.disabled
+                          ? { background: "rgba(0,0,0,0.45)", color: "#ddd", borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", backdropFilter: "blur(4px)" }
+                          : { background: "rgba(232,93,32,0.85)", color: "#fff", borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 600, letterSpacing: "0.04em", backdropFilter: "blur(4px)" }
+                      }
+                    >
+                      {card.badge}
+                    </span>
                   </div>
 
-                  {/* Text content */}
-                  <div style={{ padding: "14px 20px 18px", display: "flex", flexDirection: "column", gap: 6, flex: 1, background: "#1a1a1a" }}>
-                    <div style={{ fontSize: "1rem", fontWeight: 700, color: "#fff" }}>
+                  {/* Text overlay at the bottom */}
+                  <div
+                    style={{
+                      position: "absolute",
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      padding: "0 18px 14px",
+                    }}
+                  >
+                    {/* Title — always visible */}
+                    <div style={{ fontSize: "1rem", fontWeight: 700, color: "#fff", marginBottom: isHovered ? 6 : 0 }}>
                       {card.title}
                     </div>
-                    <div style={{ fontSize: "0.83rem", color: "rgba(255,255,255,0.5)", lineHeight: 1.5 }}>
-                      {card.description}
-                    </div>
-                    {!card.disabled && (
-                      <div
-                        style={{
-                          marginTop: "auto",
-                          paddingTop: 8,
-                          fontSize: 12,
-                          color: isHovered ? ORANGE : "rgba(255,255,255,0.2)",
-                          transition: "color .2s",
-                          fontWeight: 600,
-                          letterSpacing: "0.04em",
-                        }}
-                      >
-                        Open →
+
+                    {/* Description + Open — only on hover */}
+                    <div
+                      style={{
+                        maxHeight: isHovered ? "100px" : "0px",
+                        opacity: isHovered ? 1 : 0,
+                        overflow: "hidden",
+                        transition: "max-height .3s ease, opacity .25s ease",
+                      }}
+                    >
+                      <div style={{ fontSize: "0.82rem", color: "rgba(255,255,255,0.55)", lineHeight: 1.5, marginBottom: 8 }}>
+                        {card.description}
                       </div>
-                    )}
+                      {!card.disabled && (
+                        <div style={{ fontSize: 12, color: ORANGE, fontWeight: 600, letterSpacing: "0.04em" }}>
+                          Open →
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
