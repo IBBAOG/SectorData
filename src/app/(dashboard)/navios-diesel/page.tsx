@@ -113,6 +113,25 @@ export default function NaviosDieselPage() {
   const [hoveredColeta, setHoveredColeta] = useState<string | null>(null);
   const [hoveredNavBtn, setHoveredNavBtn] = useState<"prev" | "next" | null>(null);
 
+  // Ports that failed data collection in this snapshot
+  const errorPorts = useMemo(
+    () => navios.filter(n => n.status === "ERRO_COLETA").map(n => n.porto),
+    [navios]
+  );
+  const errorPortSet = useMemo(() => new Set(errorPorts), [errorPorts]);
+
+  // Vessel rows without the error sentinels
+  const naviosDisplay = useMemo(
+    () => navios.filter(n => n.status !== "ERRO_COLETA"),
+    [navios]
+  );
+
+  // Port summary without error ports (so map/chart aren't affected)
+  const resumoDisplay = useMemo(
+    () => resumo.filter(r => !errorPortSet.has(r.porto)),
+    [resumo, errorPortSet]
+  );
+
   // Group timestamps by day
   const coletasByDay = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -172,7 +191,7 @@ export default function NaviosDieselPage() {
 
   // Build map traces
   const mapChart = useMemo(() => {
-    if (resumo.length === 0) {
+    if (resumoDisplay.length === 0) {
       return {
         data: [] as PlotData[],
         layout: {
@@ -190,7 +209,7 @@ export default function NaviosDieselPage() {
     const sizes: number[] = [];
     const colors: string[] = [];
 
-    const resumoByPorto = new Map(resumo.map(p => [p.porto, p]));
+    const resumoByPorto = new Map(resumoDisplay.map(p => [p.porto, p]));
 
     for (const [porto, c] of Object.entries(PORT_COORDS)) {
       const p = resumoByPorto.get(porto);
@@ -253,12 +272,12 @@ export default function NaviosDieselPage() {
     };
 
     return { data, layout };
-  }, [resumo]);
+  }, [resumoDisplay]);
 
   // Build monthly bar chart
   const monthlyChart = useMemo(() => {
     const totals = new Map<string, number>();
-    for (const r of navios) {
+    for (const r of naviosDisplay) {
       if (!r.eta || r.quantidade_convertida == null) continue;
       const month = r.eta.slice(0, 7);
       totals.set(month, (totals.get(month) ?? 0) + r.quantidade_convertida);
@@ -297,14 +316,14 @@ export default function NaviosDieselPage() {
     };
 
     return { data, layout };
-  }, [navios]);
+  }, [naviosDisplay]);
 
   // Build port monthly summary
   const portMonthlySummary = useMemo(() => {
     const portMap = new Map<string, Map<string, { vessels: number; volume: number }>>();
     const monthsSet = new Set<string>();
 
-    for (const r of navios) {
+    for (const r of naviosDisplay) {
       if (!r.eta) continue;
       const month = r.eta.slice(0, 7);
       monthsSet.add(month);
@@ -325,7 +344,7 @@ export default function NaviosDieselPage() {
     }
 
     return { ports, months, monthLabels, portMap };
-  }, [navios]);
+  }, [naviosDisplay]);
 
   return (
     <div>
@@ -575,7 +594,7 @@ export default function NaviosDieselPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {navios.map((r) => (
+                          {naviosDisplay.map((r) => (
                             <tr
                               key={r.id}
                               style={{ borderBottom: "1px solid #eee" }}
@@ -611,6 +630,14 @@ export default function NaviosDieselPage() {
                         </tbody>
                       </table>
                     </div>
+                    {errorPorts.length > 0 && (
+                      <div style={{ marginTop: 8, fontFamily: "Arial", fontSize: 10, color: "#999" }}>
+                        {errorPorts.map(p => p.replace("Porto de ", "")).join(", ")}
+                        {errorPorts.length === 1
+                          ? ": dados não disponíveis nesta coleta."
+                          : ": dados não disponíveis nesta coleta."}
+                      </div>
+                    )}
                     </div>
                   </div>
 

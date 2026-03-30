@@ -746,6 +746,16 @@ def salvar_csv(resultado: pd.DataFrame) -> str:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    # Mapping: display name → canonical porto name (multiple sources can share a porto)
+    _FONTE_PORTO = {
+        "Porto de Santos – Esperados":  "Porto de Santos",
+        "Porto de Santos – Atracados":  "Porto de Santos",
+        "Porto de Itaqui":              "Porto de Itaqui",
+        "Porto de Paranaguá":           "Porto de Paranaguá",
+        "Porto de São Sebastião":       "Porto de São Sebastião",
+        "Porto de Suape":               "Porto de Suape",
+    }
+
     fontes = [
         ("Porto de Santos – Esperados",  buscar_santos_esperados),
         ("Porto de Santos – Atracados",  buscar_santos_atracados),
@@ -756,6 +766,7 @@ if __name__ == "__main__":
     ]
 
     tabelas = []
+    portos_com_erro: set[str] = set()
     for nome, fn in fontes:
         print(f"Buscando {nome}...")
         try:
@@ -765,8 +776,24 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"  ERRO: {e}")
             tabelas.append(pd.DataFrame())
+            portos_com_erro.add(_FONTE_PORTO[nome])
 
     resultado = consolidar(*tabelas)
+
+    # Adicionar linhas sentinela para portos sem nenhum dado coletado
+    portos_no_resultado = set(resultado["Porto"].unique()) if not resultado.empty else set()
+    portos_sem_dados = portos_com_erro - portos_no_resultado
+    if portos_sem_dados:
+        sentinelas = []
+        for porto in sorted(portos_sem_dados):
+            row = {col: pd.NA for col in COLS_PADRAO}
+            row["Porto"]  = porto
+            row["Status"] = "ERRO_COLETA"
+            sentinelas.append(row)
+        resultado = pd.concat(
+            [resultado, pd.DataFrame(sentinelas)],
+            ignore_index=True,
+        )
 
     # Salvar CSV
     csv_path = salvar_csv(resultado)
