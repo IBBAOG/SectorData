@@ -231,8 +231,8 @@ export default function NaviosDieselPage() {
       geo: {
         scope: "south america",
         resolution: 50,
-        lonaxis: { range: [-75, -20] },
-        lataxis: { range: [-32, 2] },
+        lonaxis: { range: [-65, -30] },
+        lataxis: { range: [-35, 10] },
         showland: true,
         landcolor: "#f5f5f5",
         showocean: true,
@@ -243,7 +243,7 @@ export default function NaviosDieselPage() {
         coastlinecolor: "#aaa",
       } as Layout["geo"],
       paper_bgcolor: "white",
-      margin: { t: 10, b: 10, l: 0, r: 0 },
+      margin: { t: 0, b: 0, l: 0, r: 0 },
       height: 280,
       hoverlabel: {
         bgcolor: "rgba(255,255,255,0.95)",
@@ -485,7 +485,7 @@ export default function NaviosDieselPage() {
                   {/* Charts row: map | bar chart + summary table | vessel details */}
                   <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 16 }}>
                     {/* Map */}
-                    <div className="chart-container" style={{ flex: 2, minWidth: 0 }}>
+                    <div className="chart-container" style={{ flex: 1.5, minWidth: 0 }}>
                       <div style={TITLE_STYLE}>Distribution by Port</div>
                       <hr className="section-hr" />
                       <PlotlyChart
@@ -557,7 +557,7 @@ export default function NaviosDieselPage() {
                     </div>
 
                     {/* Vessel Details table */}
-                    <div className="chart-container" style={{ flex: 2.5, minWidth: 0 }}>
+                    <div className="chart-container" style={{ flex: 3, minWidth: 0 }}>
                     <div style={{ marginBottom: 8 }}>
                       <div style={TITLE_STYLE}>Vessel Details</div>
                       <hr className="section-hr" />

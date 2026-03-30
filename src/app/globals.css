@@ -82,7 +82,7 @@ body {
 .chart-container .section-hr {
   border-top: 1px solid #999999;
   margin-left: 0;
-  margin-right: 56px;
+  margin-right: 0;
 }
 
 /* ─── Metric cards ────────────────────────────────────────────────────────── */
