@@ -482,10 +482,10 @@ export default function NaviosDieselPage() {
                 </div>
               ) : (
                 <>
-                  {/* Charts row: larger map | bar chart + aligned summary table */}
+                  {/* Charts row: map | bar chart + summary table | vessel details */}
                   <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 16 }}>
-                    {/* Map — larger share of the row */}
-                    <div className="chart-container" style={{ flex: 3, minWidth: 0 }}>
+                    {/* Map */}
+                    <div className="chart-container" style={{ flex: 2, minWidth: 0 }}>
                       <div style={TITLE_STYLE}>Distribution by Port</div>
                       <hr className="section-hr" />
                       <PlotlyChart
@@ -496,7 +496,7 @@ export default function NaviosDieselPage() {
                       />
                     </div>
                     {/* Bar chart + summary table in same container for alignment */}
-                    <div className="chart-container" style={{ flex: 1, minWidth: 0 }}>
+                    <div className="chart-container" style={{ flex: 1.5, minWidth: 0 }}>
                       <div style={TITLE_STYLE}>Monthly Diesel Volume (m³)</div>
                       <hr className="section-hr" />
                       <PlotlyChart
@@ -555,10 +555,9 @@ export default function NaviosDieselPage() {
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Vessel Details table (full width) */}
-                  <div className="chart-container" style={{ marginBottom: 16 }}>
+                    {/* Vessel Details table */}
+                    <div className="chart-container" style={{ flex: 2.5, minWidth: 0 }}>
                     <div style={{ marginBottom: 8 }}>
                       <div style={TITLE_STYLE}>Vessel Details</div>
                       <hr className="section-hr" />
@@ -570,7 +569,7 @@ export default function NaviosDieselPage() {
                       <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 11 }}>
                         <thead>
                           <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
-                            {["Port", "Status", "Vessel", "Qty", "Unit", "Conv. Qty (m³)", "ETA", "Unload Start", "Unload End", "Origin", "Berth"].map((h) => (
+                            {["Port", "Status", "Vessel", "Qty", "Unit", "Conv. Qty (m³)", "ETA", "Unload Start", "Unload End"].map((h) => (
                               <th key={h} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
                             ))}
                           </tr>
@@ -607,12 +606,11 @@ export default function NaviosDieselPage() {
                               <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.eta)}</td>
                               <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.inicio_descarga)}</td>
                               <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.fim_descarga)}</td>
-                              <td style={{ padding: "4px 10px" }}>{r.origem ?? "—"}</td>
-                              <td style={{ padding: "4px 10px" }}>{r.berco ?? "—"}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
+                    </div>
                     </div>
                   </div>
 
