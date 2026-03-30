@@ -92,15 +92,37 @@ function buildPriceBandsChart(
 
   const dates = filtered.map((r) => r.date);
 
-  // Pre-compute % vs IPP and EPP at each date for the Petrobras trace tooltip
+  // Pre-compute % vs IPP, EPP (and subsidy for Diesel ≥ 2026-03-12) for the Petrobras tooltip
+  const SUBSIDY_CUTOFF = "2026-03-12";
   const pctCustomdata = filtered.map((r) => {
     const ptbr = r.petrobras_price as number | null;
     const ipp  = r.bba_import_parity as number | null;
     const epp  = r.bba_export_parity as number | null;
-    const pipp = ptbr != null && ipp  != null && ipp  !== 0 ? (ptbr / ipp  - 1) * 100 : null;
-    const pepp = ptbr != null && epp  != null && epp  !== 0 ? (ptbr / epp  - 1) * 100 : null;
+    const pipp = ptbr != null && ipp != null && ipp !== 0 ? (ptbr / ipp - 1) * 100 : null;
+    const pepp = ptbr != null && epp != null && epp !== 0 ? (ptbr / epp - 1) * 100 : null;
+
+    if (product === "Diesel") {
+      const sub  = r.bba_import_parity_w_subsidy as number | null;
+      let subsidyLine = "";
+      if (r.date >= SUBSIDY_CUTOFF && ptbr != null && sub != null && sub !== 0) {
+        const pct  = (ptbr / sub - 1) * 100;
+        const sign = pct >= 0 ? "+" : "";
+        subsidyLine = `vs. IPP w/ sub: ${sign}${Math.round(pct)}%`;
+      }
+      return [pipp, pepp, subsidyLine];
+    }
     return [pipp, pepp];
   });
+
+  const petrobrasTemplate =
+    product === "Diesel"
+      ? `%{fullData.name}: %{y:.2f}<br>` +
+        `vs. IPP: %{customdata[0]:+.0f}%<br>` +
+        `vs. EPP: %{customdata[1]:+.0f}%<br>` +
+        `%{customdata[2]}<extra></extra>`
+      : `%{fullData.name}: %{y:.2f}<br>` +
+        `vs. IPP: %{customdata[0]:+.0f}%<br>` +
+        `vs. EPP: %{customdata[1]:+.0f}%<extra></extra>`;
 
   const traces: PlotData[] = seriesDefs.map((s) => {
     const isPetrobras = s.field === "petrobras_price";
@@ -112,13 +134,7 @@ function buildPriceBandsChart(
       y: filtered.map((r) => r[s.field] as number | null),
       line: { color: s.color, dash: s.dash, shape: s.shape, width: s.width },
       ...(isPetrobras
-        ? {
-            customdata: pctCustomdata,
-            hovertemplate:
-              `%{fullData.name}: %{y:.2f}<br>` +
-              `vs. IPP: %{customdata[0]:+.1f}%<br>` +
-              `vs. EPP: %{customdata[1]:+.1f}%<extra></extra>`,
-          }
+        ? { customdata: pctCustomdata, hovertemplate: petrobrasTemplate }
         : { hovertemplate: `%{fullData.name}: %{y:.2f}<extra></extra>` }),
     } as unknown as PlotData;
   });
@@ -223,8 +239,8 @@ function buildYtdChart(
             customdata: ytdCustomdata,
             hovertemplate:
               `%{fullData.name}: %{y:.2f}<br>` +
-              `vs. IPP avg: %{customdata[0]:+.1f}%<br>` +
-              `vs. EPP avg: %{customdata[1]:+.1f}%<extra></extra>`,
+              `vs. IPP avg: %{customdata[0]:+.0f}%<br>` +
+              `vs. EPP avg: %{customdata[1]:+.0f}%<extra></extra>`,
           }
         : { hovertemplate: `%{fullData.name}: %{y:.2f}<extra></extra>` }),
     } as unknown as PlotData);
@@ -302,7 +318,7 @@ function buildYtdChart(
 
 function PctBadge({ pct, vs, outlined }: { pct: number; vs: string; outlined?: boolean }) {
   const sign  = pct >= 0 ? "+" : "";
-  const label = `${sign}${pct.toFixed(1)}% vs. ${vs}`;
+  const label = `${sign}${pct.toFixed(0)}% vs. ${vs}`;
   if (outlined) {
     return <span style={{ border: "1px solid #1a1a1a", color: "#1a1a1a", background: "white", borderRadius: 4, padding: "2px 8px", fontSize: 12, fontFamily: "Arial", marginLeft: 8, fontWeight: 600 }}>{label}</span>;
   }
