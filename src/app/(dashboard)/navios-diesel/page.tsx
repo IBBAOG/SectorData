@@ -120,9 +120,9 @@ export default function NaviosDieselPage() {
   );
   const errorPortSet = useMemo(() => new Set(errorPorts), [errorPorts]);
 
-  // Vessel rows without the error sentinels
+  // Vessel rows without the error sentinels and without "Despachado" (Departed)
   const naviosDisplay = useMemo(
-    () => navios.filter(n => n.status !== "ERRO_COLETA"),
+    () => navios.filter(n => n.status !== "ERRO_COLETA" && n.status !== "Despachado"),
     [navios]
   );
 
