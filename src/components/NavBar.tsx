@@ -6,7 +6,7 @@ import { useState } from "react";
 
 import { getSupabaseClient } from "../lib/supabaseClient";
 
-const LOGO_URL = "/logo.png";
+const LOGO_URL = "/logo-navbar.png";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
@@ -77,7 +77,7 @@ export default function NavBar() {
           <img src={LOGO_URL} alt="Itaú BBA" style={{ height: 36 }} />
         </Link>
 
-        <div className="navbar-nav me-auto ms-3">
+        <div className="navbar-nav navbar-nav-center">
           {NAV_ENTRIES.map((entry) => {
             /* ── Standalone link ── */
             if (!isModule(entry)) {

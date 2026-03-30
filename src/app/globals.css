@@ -351,6 +351,19 @@ body {
   gap: 8px;
 }
 
+/* Centre nav items between logo and sign-out button */
+#main-navbar .container-fluid {
+  position: relative;
+}
+
+#main-navbar .navbar-nav-center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  gap: 36px;
+  margin: 0 !important;
+}
+
 #main-navbar .navbar-brand {
   font-family: Arial, sans-serif;
   font-weight: 700;
