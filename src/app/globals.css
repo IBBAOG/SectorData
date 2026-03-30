@@ -344,7 +344,11 @@ body {
 #main-navbar {
   background-color: #000512;
   border-bottom: 3px solid #ff5000;
-  padding: 0 16px;
+  padding: 4px 16px;
+}
+
+#main-navbar .navbar-nav {
+  gap: 8px;
 }
 
 #main-navbar .navbar-brand {
