@@ -26,16 +26,6 @@ const PORT_COORDS: Record<string, { lat: number; lon: number }> = {
   "Porto de São Sebastião": { lat: -23.8170, lon: -45.4170 },
 };
 
-// Label positioning per port: offset from dot + text anchor direction
-// Tuned so nearby ports (Santos/São Sebastião) don't overlap
-const PORT_LABEL: Record<string, { dLat: number; dLon: number; pos: string }> = {
-  "Porto de Itaqui":        { dLat: 0,    dLon: 2,    pos: "middle right" },
-  "Porto de Suape":         { dLat: 0,    dLon: -2,   pos: "middle left" },
-  "Porto de Santos":        { dLat: 1.5,  dLon: -1.5, pos: "middle left" },
-  "Porto de São Sebastião": { dLat: -2,   dLon: 2,    pos: "middle right" },
-  "Porto de Paranaguá":     { dLat: 1.5,  dLon: -1.5, pos: "middle left" },
-};
-
 const STATUS_COLORS: Record<string, string> = {
   Atracado:   "#d4edda",
   Esperado:   "#fff3cd",
@@ -213,76 +203,46 @@ export default function NaviosDieselPage() {
       };
     }
 
-    const markerLats: number[] = [];
-    const markerLons: number[] = [];
-    const hoverTexts: string[] = [];
+    const lats: number[] = [];
+    const lons: number[] = [];
+    const texts: string[] = [];
+    const sizes: number[] = [];
     const colors: string[] = [];
-
-    const labelLats: number[] = [];
-    const labelLons: number[] = [];
-    const labelTexts: string[] = [];
-    const labelPositions: string[] = [];
 
     const resumoByPorto = new Map(resumoDisplay.map(p => [p.porto, p]));
 
     for (const [porto, c] of Object.entries(PORT_COORDS)) {
       const p = resumoByPorto.get(porto);
-      const lbl = PORT_LABEL[porto] ?? { dLat: 0, dLon: 2, pos: "middle right" };
-      const name = porto.replace("Porto de ", "");
-
-      // Marker dot
-      markerLats.push(c.lat);
-      markerLons.push(c.lon);
-
-      // Label (offset from dot)
-      labelLats.push(c.lat + lbl.dLat);
-      labelLons.push(c.lon + lbl.dLon);
-      labelPositions.push(lbl.pos);
-
-      if (p && p.total_navios > 0) {
-        const ships = "🚢".repeat(Math.min(p.total_navios, 6));
-        const extra = p.total_navios > 6 ? `+${p.total_navios - 6}` : "";
-        const vol = p.total_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 });
-        labelTexts.push(`${name}\n${ships}${extra}\n${vol} m³`);
-        hoverTexts.push(
-          `<b>${porto}</b><br>${p.total_navios} vessel${p.total_navios !== 1 ? "s" : ""}<br>${vol} m³`
+      lats.push(c.lat);
+      lons.push(c.lon);
+      if (p) {
+        texts.push(
+          `<b>${porto}</b><br>` +
+          `${p.total_navios} vessels<br>` +
+          `${p.total_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³`
         );
+        sizes.push(Math.max(14, Math.sqrt(p.total_navios) * 16));
         colors.push(ORANGE);
       } else {
-        labelTexts.push(name);
-        hoverTexts.push(`<b>${porto}</b><br>0 vessels`);
+        texts.push(`<b>${porto}</b><br>0 vessels<br>0 m³`);
+        sizes.push(9);
         colors.push("#cccccc");
       }
     }
 
     const data: PlotData[] = [
-      // Dots
       {
         type: "scattergeo",
-        lat: markerLats,
-        lon: markerLons,
-        mode: "markers",
-        hovertext: hoverTexts,
+        lat: lats,
+        lon: lons,
+        text: texts,
         hoverinfo: "text",
         marker: {
-          size: 10,
+          size: sizes,
           color: colors,
-          opacity: 0.9,
+          opacity: 0.85,
           line: { color: "#000512", width: 1.5 },
         },
-        showlegend: false,
-      } as unknown as PlotData,
-      // Labels (offset from dots)
-      {
-        type: "scattergeo",
-        lat: labelLats,
-        lon: labelLons,
-        mode: "text",
-        text: labelTexts,
-        textposition: labelPositions,
-        textfont: { family: "Arial", size: 9, color: "#1a1a1a" },
-        hoverinfo: "skip",
-        showlegend: false,
       } as unknown as PlotData,
     ];
 
@@ -304,7 +264,6 @@ export default function NaviosDieselPage() {
       paper_bgcolor: "white",
       margin: { t: 0, b: 0, l: 0, r: 0 },
       height: 280,
-      showlegend: false,
       hoverlabel: {
         bgcolor: "rgba(255,255,255,0.95)",
         bordercolor: "rgba(180,180,180,0.5)",
