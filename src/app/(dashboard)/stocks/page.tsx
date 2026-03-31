@@ -140,9 +140,9 @@ function PortfolioModal({
         style={{ zIndex: 1040, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
         onClick={onClose}
       />
-      <div className="modal d-block" style={{ zIndex: 1050 }}>
+      <div className="modal d-block" style={{ zIndex: 1050 }} onClick={onClose}>
         <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: 560 }}>
-          <div className="sd-modal-glass">
+          <div className="sd-modal-glass" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="sd-modal-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <h6 style={{ margin: 0, fontWeight: 700, fontSize: 16 }}>
