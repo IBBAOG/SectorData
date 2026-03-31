@@ -1728,30 +1728,22 @@ a {
    ═══════════════════════════════════════════════════════════════════════════ */
 .react-grid-layout {
   position: relative;
-  transition: height 200ms ease;
+  transition: height 0ms;
 }
 .react-grid-item {
-  transition: all 200ms ease;
-  transition-property: left, top, width, height;
+  transition: none;
 }
 .react-grid-item.cssTransforms {
-  transition-property: transform, width, height;
+  transition: none;
 }
 .react-grid-item.react-draggable-dragging {
   transition: none;
   z-index: 3;
   will-change: transform;
-  opacity: 0.9;
 }
 .react-grid-item.react-grid-placeholder {
-  border-radius: 0;
-  opacity: 0.15;
-  transition-duration: 100ms;
-  z-index: 2;
-  user-select: none;
+  display: none !important;
 }
-.stocks-dark .react-grid-item.react-grid-placeholder { background: #ff5000; }
-.stocks-light .react-grid-item.react-grid-placeholder { background: #ff5000; }
 
 /* Resize handle — bottom-right corner */
 .react-grid-item > .react-resizable-handle {

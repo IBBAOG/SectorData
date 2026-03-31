@@ -495,7 +495,7 @@ export default function StocksPage() {
     <>
       <NavBar />
       <div className={themeClass}>
-        <main style={{ padding: "16px 24px", maxWidth: 1440, margin: "0 auto" }}>
+        <main style={{ padding: "12px 6px", maxWidth: "100%", margin: "0 auto" }}>
 
           {/* ── Top bar ── */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
