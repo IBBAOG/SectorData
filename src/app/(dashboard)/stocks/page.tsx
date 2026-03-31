@@ -140,8 +140,8 @@ function PortfolioModal({
         style={{ zIndex: 1040, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
         onClick={onClose}
       />
-      <div className="modal d-block" style={{ zIndex: 1050 }} onClick={onClose}>
-        <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal d-block" style={{ zIndex: 1050 }}>
+        <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: 560 }}>
           <div className="sd-modal-glass">
             {/* Header */}
             <div className="sd-modal-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -258,7 +258,7 @@ export default function StocksPage() {
     createPortfolio, updatePortfolio, deletePortfolio, setActivePortfolio,
   } = useStockPortfolios();
 
-  const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  const [chartTicker, setChartTicker] = useState<string | null>(null);
   const [chartMode, setChartMode] = useState<ChartMode>("line");
   const [modalOpen, setModalOpen] = useState(false);
   const [modalEdit, setModalEdit] = useState(false);
@@ -267,8 +267,9 @@ export default function StocksPage() {
   const { data: quotes, refetch } = useStockQuote(tickers);
   const { isMarketOpen } = useAutoRefresh(useCallback(() => refetch(), [refetch]));
 
-  const chartTicker = selectedTicker ?? tickers[0] ?? null;
-  const { data: historyData, isLoading: historyLoading } = useStockHistory(chartTicker ?? "", "6mo");
+  // Default chart ticker to first in portfolio
+  const effectiveChartTicker = chartTicker && tickers.includes(chartTicker) ? chartTicker : tickers[0] ?? null;
+  const { data: historyData, isLoading: historyLoading } = useStockHistory(effectiveChartTicker ?? "", "6mo");
 
   // ── Blink tracking ──
   const prevPricesRef = useRef<Map<string, number>>(new Map());
@@ -298,7 +299,6 @@ export default function StocksPage() {
   const quoteMap = new Map<string, StockQuote>();
   for (const q of quotes) quoteMap.set(q.symbol, q);
 
-  const linkColor = isDark ? "#e6edf3" : "#1a1a1a";
   const openCreate = () => { setModalEdit(false); setModalOpen(true); };
   const openEdit = () => { setModalEdit(true); setModalOpen(true); };
 
@@ -369,17 +369,17 @@ export default function StocksPage() {
             {/* Left: Portfolio table */}
             <div className="col-lg-7">
               {groups.length > 0 && (
-                <div className="sd-card" style={{ marginBottom: 12 }}>
-                  <table className="sd-table">
+                <div className="sd-card" style={{ marginBottom: 12, padding: 8 }}>
+                  <table className="sd-table" style={{ fontSize: 11 }}>
                     <thead>
                       <tr>
-                        <th style={{ textAlign: "left" }}>ASSET</th>
-                        <th style={{ textAlign: "right" }}>LAST</th>
-                        <th style={{ textAlign: "right" }}>CHG%</th>
-                        <th style={{ textAlign: "center", width: 24 }}></th>
-                        <th style={{ textAlign: "right" }}>LOW</th>
-                        <th style={{ textAlign: "right" }}>HIGH</th>
-                        <th style={{ textAlign: "right" }}>VOL</th>
+                        <th style={{ textAlign: "left", padding: "3px 4px" }}>ASSET</th>
+                        <th style={{ textAlign: "right", padding: "3px 4px" }}>LAST</th>
+                        <th style={{ textAlign: "right", padding: "3px 4px" }}>CHG%</th>
+                        <th style={{ textAlign: "center", width: 20, padding: "3px 2px" }}></th>
+                        <th style={{ textAlign: "right", padding: "3px 4px" }}>LOW</th>
+                        <th style={{ textAlign: "right", padding: "3px 4px" }}>HIGH</th>
+                        <th style={{ textAlign: "right", padding: "3px 4px" }}>VOL</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -387,47 +387,43 @@ export default function StocksPage() {
                         <>
                           {groups.length > 1 && (
                             <tr key={`hdr-${group.name}`}>
-                              <td colSpan={7} className="sd-group-header">{group.name}</td>
+                              <td colSpan={7} className="sd-group-header" style={{ padding: "6px 4px 2px" }}>{group.name}</td>
                             </tr>
                           )}
                           {group.tickers.map((ticker) => {
                             const q = quoteMap.get(ticker);
                             if (!q) return (
                               <tr key={ticker}>
-                                <td style={{ fontWeight: 600 }}>{ticker}</td>
-                                <td colSpan={6} className="sd-muted" style={{ textAlign: "center", fontSize: 11 }}>Loading...</td>
+                                <td style={{ fontWeight: 600, padding: "3px 4px" }}>{ticker}</td>
+                                <td colSpan={6} className="sd-muted" style={{ textAlign: "center", fontSize: 10, padding: "3px 4px" }}>Loading...</td>
                               </tr>
                             );
                             const pos = q.regularMarketChangePercent >= 0;
                             const cls = pos ? "sd-green" : "sd-red";
-                            const isSelected = chartTicker === q.symbol;
                             const blink = blinkMap.get(q.symbol);
                             return (
                               <tr
                                 key={q.symbol}
-                                className={`${isSelected ? "sd-selected" : ""}${blink ? ` stock-blink-${blink}` : ""}`}
-                                style={{ cursor: "pointer" }}
-                                onClick={() => setSelectedTicker(q.symbol)}
+                                className={blink ? `stock-blink-${blink}` : undefined}
                               >
-                                <td>
+                                <td style={{ padding: "3px 4px" }}>
                                   <Link
                                     href={`/stocks/${q.symbol}`}
-                                    style={{ fontWeight: 700, color: linkColor, textDecoration: "none" }}
-                                    onClick={(e) => e.stopPropagation()}
+                                    style={{ fontWeight: 700, color: "inherit", textDecoration: "none" }}
                                   >
                                     {q.symbol}
                                   </Link>
                                 </td>
-                                <td style={{ textAlign: "right" }}>{fmt(q.regularMarketPrice)}</td>
-                                <td style={{ textAlign: "right" }} className={cls}>
+                                <td style={{ textAlign: "right", padding: "3px 4px" }}>{fmt(q.regularMarketPrice)}</td>
+                                <td style={{ textAlign: "right", padding: "3px 4px" }} className={cls}>
                                   {pos ? "+" : ""}{fmt(q.regularMarketChangePercent)}%
                                 </td>
-                                <td style={{ textAlign: "center" }} className={cls}>
+                                <td style={{ textAlign: "center", padding: "3px 2px" }} className={cls}>
                                   {pos ? "\u25B2" : "\u25BC"}
                                 </td>
-                                <td style={{ textAlign: "right" }}>{fmt(q.regularMarketDayLow)}</td>
-                                <td style={{ textAlign: "right" }}>{fmt(q.regularMarketDayHigh)}</td>
-                                <td style={{ textAlign: "right" }}>{fmtVol(q.regularMarketVolume)}</td>
+                                <td style={{ textAlign: "right", padding: "3px 4px" }}>{fmt(q.regularMarketDayLow)}</td>
+                                <td style={{ textAlign: "right", padding: "3px 4px" }}>{fmt(q.regularMarketDayHigh)}</td>
+                                <td style={{ textAlign: "right", padding: "3px 4px" }}>{fmtVol(q.regularMarketVolume)}</td>
                               </tr>
                             );
                           })}
@@ -437,35 +433,34 @@ export default function StocksPage() {
                   </table>
                 </div>
               )}
-
-              {tickers.length > 1 && (
-                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 12 }}>
-                  {tickers.map((t) => (
-                    <button
-                      key={t}
-                      className={`sd-btn${chartTicker === t ? " sd-btn-active" : ""}`}
-                      style={{ fontSize: 11, padding: "3px 10px" }}
-                      onClick={(e) => {
-                        if (e.shiftKey) {
-                          window.location.href = `/stocks/compare?tickers=${chartTicker},${t}`;
-                        } else {
-                          setSelectedTicker(t);
-                        }
-                      }}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
 
-            {/* Right: Chart + Market Overview */}
+            {/* Right: Market Overview first, then Chart */}
             <div className="col-lg-5">
-              {chartTicker && (
-                <div className="sd-card" style={{ marginBottom: 12 }}>
+              <div style={{ marginBottom: 12 }}>
+                <MarketOverview />
+              </div>
+
+              {tickers.length > 0 && (
+                <div className="sd-card">
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <span style={{ fontWeight: 700, fontSize: 12 }}>{chartTicker} — 6M</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {tickers.length > 1 ? (
+                        <select
+                          className="sd-select"
+                          style={{ fontSize: 12, padding: "2px 20px 2px 6px" }}
+                          value={effectiveChartTicker ?? ""}
+                          onChange={(e) => setChartTicker(e.target.value)}
+                        >
+                          {tickers.map((t) => (
+                            <option key={t} value={t}>{t}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span style={{ fontWeight: 700, fontSize: 12 }}>{effectiveChartTicker}</span>
+                      )}
+                      <span className="sd-muted" style={{ fontSize: 10 }}>6M</span>
+                    </div>
                     <div style={{ display: "flex", gap: 3 }}>
                       {(["candlestick", "line"] as ChartMode[]).map((m) => (
                         <button
@@ -488,7 +483,6 @@ export default function StocksPage() {
                   )}
                 </div>
               )}
-              <MarketOverview />
             </div>
           </div>
         </main>
