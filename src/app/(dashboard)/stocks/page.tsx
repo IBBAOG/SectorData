@@ -11,9 +11,10 @@ import { useStockQuote } from "../../../hooks/useStockQuote";
 import { useStockHistory } from "../../../hooks/useStockHistory";
 import { useStockPortfolios } from "../../../hooks/useStockPortfolios";
 import { useAutoRefresh } from "../../../hooks/useAutoRefresh";
-import type { ChartMode, PortfolioGroup, StockQuote } from "../../../types/stocks";
+import type { ChartMode, PortfolioGroup, StockQuote, TimeRange, HistoricalDataPoint } from "../../../types/stocks";
 
 const StockChart = dynamic(() => import("../../../components/stocks/StockChart"), { ssr: false });
+const ComparisonChart = dynamic(() => import("../../../components/stocks/ComparisonChart"), { ssr: false });
 const MarketOverview = dynamic(() => import("../../../components/stocks/MarketOverview"), { ssr: false });
 const StockSearch = dynamic(() => import("../../../components/stocks/StockSearch"), { ssr: false });
 
@@ -56,7 +57,8 @@ type DashCard =
   | { id: string; type: "portfolio" }
   | { id: string; type: "market" }
   | { id: string; type: "chart"; ticker: string }
-  | { id: string; type: "watchlist"; tickers: string[]; title: string };
+  | { id: string; type: "watchlist"; tickers: string[]; title: string }
+  | { id: string; type: "compare"; tickers: string[]; mode: "percent" | "base100"; range: string; baseDate: string; endDate: string };
 
 const DEFAULT_CARDS: DashCard[] = [
   { id: "portfolio", type: "portfolio" },
@@ -365,6 +367,130 @@ function ChartCardContent({ card, isDark, tickers, onUpdate }: { card: DashCard 
   );
 }
 
+/* ── Multi-history hook for compare card ──────────────────────────────────── */
+
+const COMPARE_COLORS = ["#2962FF", "#FF6D00", "#00C853", "#AA00FF", "#FF1744"];
+
+const COMPARE_RANGES: { label: string; value: TimeRange }[] = [
+  { label: "1M", value: "1mo" }, { label: "3M", value: "3mo" }, { label: "6M", value: "6mo" },
+  { label: "1Y", value: "1y" }, { label: "2Y", value: "2y" }, { label: "5Y", value: "5y" }, { label: "MAX", value: "max" },
+];
+
+function useMultiHistory(tickers: string[], range: TimeRange) {
+  const h0 = useStockHistory(tickers[0] ?? "", range);
+  const h1 = useStockHistory(tickers[1] ?? "", range);
+  const h2 = useStockHistory(tickers[2] ?? "", range);
+  const h3 = useStockHistory(tickers[3] ?? "", range);
+  const h4 = useStockHistory(tickers[4] ?? "", range);
+
+  return useMemo(() => {
+    const all = [h0, h1, h2, h3, h4];
+    return tickers.map((t, i) => ({
+      ticker: t,
+      data: all[i]?.data ?? [] as HistoricalDataPoint[],
+      color: COMPARE_COLORS[i % COMPARE_COLORS.length],
+    }));
+  }, [tickers, h0, h1, h2, h3, h4]);
+}
+
+/* ── Compare Card Content ────────────────────────────────────────────────── */
+
+function CompareCardContent({ card, isDark, onUpdate }: {
+  card: DashCard & { type: "compare" };
+  isDark: boolean;
+  onUpdate: (c: DashCard) => void;
+}) {
+  const range = (card.range || "1y") as TimeRange;
+  const seriesData = useMultiHistory(card.tickers, card.mode === "base100" ? "max" : range);
+  const isLoading = seriesData.some((s) => s.data.length === 0) && card.tickers.length > 0;
+
+  const addTicker = useCallback((sym: string) => {
+    if (card.tickers.length >= 5 || card.tickers.includes(sym)) return;
+    onUpdate({ ...card, tickers: [...card.tickers, sym] });
+  }, [card, onUpdate]);
+
+  const removeTicker = useCallback((sym: string) => {
+    onUpdate({ ...card, tickers: card.tickers.filter((t) => t !== sym) });
+  }, [card, onUpdate]);
+
+  return (
+    <>
+      <CardHeader title="Compare Assets" onRemove={() => onUpdate({ ...card, tickers: ["__REMOVE__"] })} />
+
+      {/* Search + ticker chips */}
+      <div style={{ marginBottom: 6 }}>
+        <StockSearch onSelect={addTicker} placeholder="Add asset..." />
+      </div>
+      {card.tickers.length > 0 && (
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
+          {card.tickers.map((t, i) => (
+            <span key={t} style={{
+              display: "inline-flex", alignItems: "center", gap: 3,
+              padding: "2px 8px", borderRadius: 0, fontSize: 10, fontWeight: 600,
+              background: `${COMPARE_COLORS[i % COMPARE_COLORS.length]}18`,
+              color: COMPARE_COLORS[i % COMPARE_COLORS.length],
+              border: `1px solid ${COMPARE_COLORS[i % COMPARE_COLORS.length]}40`,
+            }}>
+              {t}
+              <button onClick={() => removeTicker(t)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, fontSize: 12, lineHeight: 1 }}>x</button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Controls */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, flexWrap: "wrap", gap: 4 }}>
+        <div style={{ display: "flex", gap: 2 }}>
+          <button className={`sd-btn${card.mode === "percent" ? " sd-btn-active" : ""}`} style={{ fontSize: 9, padding: "1px 6px" }}
+            onClick={() => onUpdate({ ...card, mode: "percent" })}>Change %</button>
+          <button className={`sd-btn${card.mode === "base100" ? " sd-btn-active" : ""}`} style={{ fontSize: 9, padding: "1px 6px" }}
+            onClick={() => onUpdate({ ...card, mode: "base100" })}>Base 100</button>
+        </div>
+
+        {card.mode === "percent" && (
+          <div style={{ display: "flex", gap: 2 }}>
+            {COMPARE_RANGES.map((r) => (
+              <button key={r.value} className={`sd-btn${range === r.value ? " sd-btn-active" : ""}`}
+                style={{ fontSize: 9, padding: "1px 5px" }}
+                onClick={() => onUpdate({ ...card, range: r.value })}>
+                {r.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {card.mode === "base100" && (
+          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+            <label className="sd-muted" style={{ fontSize: 9 }}>From:</label>
+            <input type="date" className="sd-input" style={{ width: 110, fontSize: 10, padding: "2px 4px" }}
+              value={card.baseDate} onChange={(e) => onUpdate({ ...card, baseDate: e.target.value })} />
+            <label className="sd-muted" style={{ fontSize: 9 }}>To:</label>
+            <input type="date" className="sd-input" style={{ width: 110, fontSize: 10, padding: "2px 4px" }}
+              value={card.endDate} onChange={(e) => onUpdate({ ...card, endDate: e.target.value })} />
+          </div>
+        )}
+      </div>
+
+      {/* Chart */}
+      {card.tickers.length === 0 ? (
+        <div className="sd-muted" style={{ textAlign: "center", padding: 20, fontSize: 11 }}>Add assets to compare</div>
+      ) : isLoading ? (
+        <div style={{ textAlign: "center", padding: 20 }}><span className="spinner-border spinner-border-sm" style={{ color: "#8b949e" }} /></div>
+      ) : (
+        <ComparisonChart
+          key={card.tickers.join(",") + card.mode}
+          series={seriesData}
+          mode={card.mode}
+          height={200}
+          baseDate={card.baseDate || undefined}
+          endDate={card.endDate || undefined}
+          dark={isDark}
+        />
+      )}
+    </>
+  );
+}
+
 /* ── Main Page ────────────────────────────────────────────────────────────── */
 
 export default function StocksPage() {
@@ -410,17 +536,20 @@ export default function StocksPage() {
 
   const updateCard = useCallback((updated: DashCard) => {
     if ((updated.type === "watchlist" && updated.title === "__REMOVE__") ||
-        (updated.type === "chart" && updated.ticker === "__REMOVE__")) {
+        (updated.type === "chart" && updated.ticker === "__REMOVE__") ||
+        (updated.type === "compare" && updated.tickers[0] === "__REMOVE__")) {
       persistCards(cards.filter((c) => c.id !== updated.id));
       return;
     }
     persistCards(cards.map((c) => c.id === updated.id ? updated : c));
   }, [cards, persistCards]);
 
-  const addCard = useCallback((type: "chart" | "watchlist") => {
+  const addCard = useCallback((type: "chart" | "watchlist" | "compare") => {
     const id = nextId();
     const newCard: DashCard = type === "chart"
       ? { id, type: "chart", ticker: "" }
+      : type === "compare"
+      ? { id, type: "compare", tickers: [], mode: "percent", range: "1y", baseDate: "", endDate: "" }
       : { id, type: "watchlist", tickers: [], title: "Watchlist" };
     const newCards = [...cards, newCard];
     persistCards(newCards);
@@ -518,21 +647,26 @@ export default function StocksPage() {
                 {showAddMenu && (
                   <div className="sd-card" style={{ position: "absolute", top: "100%", left: 0, zIndex: 10, marginTop: 4, padding: 4, minWidth: 120 }}>
                     <button className="sd-btn" style={{ width: "100%", fontSize: 11, padding: "5px 8px", marginBottom: 2, textAlign: "left" }} onClick={() => addCard("chart")}>Chart</button>
-                    <button className="sd-btn" style={{ width: "100%", fontSize: 11, padding: "5px 8px", textAlign: "left" }} onClick={() => addCard("watchlist")}>Watchlist</button>
+                    <button className="sd-btn" style={{ width: "100%", fontSize: 11, padding: "5px 8px", marginBottom: 2, textAlign: "left" }} onClick={() => addCard("watchlist")}>Watchlist</button>
+                    <button className="sd-btn" style={{ width: "100%", fontSize: 11, padding: "5px 8px", textAlign: "left" }} onClick={() => addCard("compare")}>Compare Assets</button>
                   </div>
                 )}
               </div>
+
+              {/* B3 market status — prominent placement */}
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: 4 }}>
+                <span className={`sd-badge ${isMarketOpen ? "sd-badge-open" : "sd-badge-closed"}`} style={{ fontSize: 11, padding: "3px 10px" }}>
+                  {isMarketOpen ? "B3 OPEN" : "B3 CLOSED"}
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>
+                  {new Intl.DateTimeFormat("en-US", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date())} SP
+                </span>
+              </span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <button className="sd-theme-toggle" onClick={toggle} title={isDark ? "Switch to light mode" : "Switch to dark mode"}>
                 {isDark ? <SunIcon /> : <MoonIcon />}
               </button>
-              <span className={`sd-badge ${isMarketOpen ? "sd-badge-open" : "sd-badge-closed"}`}>
-                {isMarketOpen ? "B3 Open" : "B3 Closed"}
-              </span>
-              <span className="sd-muted" style={{ fontSize: 12 }}>
-                {new Intl.DateTimeFormat("en-US", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date())} SP
-              </span>
             </div>
           </div>
 
@@ -636,6 +770,11 @@ export default function StocksPage() {
                     {/* Watchlist */}
                     {card.type === "watchlist" && (
                       <WatchlistCardContent card={card as DashCard & { type: "watchlist" }} isDark={isDark} onUpdate={updateCard} />
+                    )}
+
+                    {/* Compare */}
+                    {card.type === "compare" && (
+                      <CompareCardContent card={card as DashCard & { type: "compare" }} isDark={isDark} onUpdate={updateCard} />
                     )}
                   </div>
                 </div>
