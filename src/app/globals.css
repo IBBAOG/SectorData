@@ -1081,39 +1081,104 @@ a {
   user-select: none;
 }
 
-/* ─── Profile edit card ────────────────────────────────────────────────────── */
-.profile-edit-card {
-  position: relative;
-  max-width: 560px;
+/* ─── Profile inline name edit ────────────────────────────────────────────── */
+.profile-name-edit-icon-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: #aaa;
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+  transition: color 0.15s ease, background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.profile-name-edit-icon-btn:hover {
+  color: #ff5000;
+  background: rgba(255, 80, 0, 0.07);
+}
+
+.profile-name-edit-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.profile-name-edit-input {
   width: 100%;
-  margin-top: 24px;
-  padding: 32px 36px;
-  border-radius: 24px;
-  background: linear-gradient(
-    145deg,
-    rgba(255, 255, 255, 0.95) 0%,
-    rgba(248, 248, 252, 0.90) 40%,
-    rgba(245, 245, 250, 0.93) 100%
-  );
-  backdrop-filter: blur(60px) saturate(180%) brightness(1.05);
-  -webkit-backdrop-filter: blur(60px) saturate(180%) brightness(1.05);
-  border: 2px solid rgba(255, 255, 255, 0.72);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.28),
-    0 16px 48px rgba(0, 0, 0, 0.10),
-    0 4px 12px rgba(0, 0, 0, 0.05),
-    inset 0 2px 0 rgba(255, 255, 255, 0.9),
-    inset 0 0 30px rgba(255, 255, 255, 0.22);
-}
-
-.profile-edit-card h3 {
-  font-size: 1rem;
-  font-weight: 700;
+  padding: 6px 10px;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 8px;
+  font-family: Arial, sans-serif;
+  font-size: 14px;
   color: #1a1a1a;
-  margin: 0 0 20px;
+  background: #fff;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  box-sizing: border-box;
 }
 
-/* ─── Shared form elements (edit card + first-login modal) ─────────────────── */
+.profile-name-edit-input:focus {
+  border-color: #ff5000;
+  box-shadow: 0 0 0 3px rgba(255, 80, 0, 0.10);
+}
+
+.profile-name-edit-input:disabled {
+  background: #f5f5f5;
+  color: #aaa;
+}
+
+.profile-name-edit-error {
+  font-size: 11px;
+  color: #c0392b;
+  align-self: flex-start;
+}
+
+.profile-name-edit-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.profile-name-edit-btn {
+  padding: 5px 14px;
+  border: none;
+  border-radius: 7px;
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.profile-name-edit-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.profile-name-edit-btn--save {
+  background: #ff5000;
+  color: #fff;
+}
+
+.profile-name-edit-btn--save:hover:not(:disabled) {
+  background: #cc3d00;
+}
+
+.profile-name-edit-btn--cancel {
+  background: rgba(0, 0, 0, 0.06);
+  color: #555;
+}
+
+.profile-name-edit-btn--cancel:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.10);
+}
+
+/* ─── Shared form elements (first-login modal) ─────────────────────────────── */
 .profile-edit-input {
   width: 100%;
   padding: 10px 14px;
