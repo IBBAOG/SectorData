@@ -95,12 +95,31 @@ function PortfolioModal({
   const [groups, setGroups] = useState<PortfolioGroup[]>(initialGroups);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setName(initialName);
     setGroups(initialGroups.length ? initialGroups : [{ name: "General", tickers: [] }]);
     setConfirmDelete(false);
   }, [initialName, initialGroups, isOpen]);
+
+  // Close on click outside the dialog (using mousedown to fire before dropdown click)
+  useEffect(() => {
+    if (!isOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (dialogRef.current && !dialogRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    }
+    // Use a timeout so the opening click doesn't immediately close it
+    const timer = setTimeout(() => {
+      document.addEventListener("mousedown", handleClick);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("mousedown", handleClick);
+    };
+  }, [isOpen, onClose]);
 
   const handleSave = async () => {
     if (!name.trim()) return;
@@ -138,11 +157,10 @@ function PortfolioModal({
       <div
         className="modal-backdrop show"
         style={{ zIndex: 1040, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
-        onClick={onClose}
       />
-      <div className="modal d-block" style={{ zIndex: 1050 }} onClick={onClose}>
-        <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: 560 }}>
-          <div className="sd-modal-glass" onClick={(e) => e.stopPropagation()}>
+      <div className="modal d-block" style={{ zIndex: 1050, pointerEvents: "none" }}>
+        <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: 560, pointerEvents: "auto" }} ref={dialogRef}>
+          <div className="sd-modal-glass">
             {/* Header */}
             <div className="sd-modal-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <h6 style={{ margin: 0, fontWeight: 700, fontSize: 16 }}>
