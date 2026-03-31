@@ -1722,3 +1722,42 @@ a {
 .stock-blink-down {
   animation: stock-blink-red 0.6s ease 2;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   react-grid-layout — base styles + theme overrides
+   ═══════════════════════════════════════════════════════════════════════════ */
+.react-grid-layout {
+  position: relative;
+  transition: height 200ms ease;
+}
+.react-grid-item {
+  transition: all 200ms ease;
+  transition-property: left, top, width, height;
+}
+.react-grid-item.cssTransforms {
+  transition-property: transform, width, height;
+}
+.react-grid-item.react-draggable-dragging {
+  transition: none;
+  z-index: 3;
+  will-change: transform;
+  opacity: 0.9;
+}
+.react-grid-item.react-grid-placeholder {
+  border-radius: 8px;
+  opacity: 0.15;
+  transition-duration: 100ms;
+  z-index: 2;
+  user-select: none;
+}
+.stocks-dark .react-grid-item.react-grid-placeholder { background: #ff5000; }
+.stocks-light .react-grid-item.react-grid-placeholder { background: #ff5000; }
+
+.react-grid-item > .react-resizable-handle { display: none; }
+
+/* Drag handle */
+.sd-drag-handle {
+  cursor: grab;
+  user-select: none;
+}
+.sd-drag-handle:active { cursor: grabbing; }
