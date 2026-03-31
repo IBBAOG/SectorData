@@ -32,7 +32,7 @@ export function fmtData(d: string): string {
     const y = d.slice(0, 4);
     const m = parseInt(d.slice(5, 7), 10);
     const day = d.slice(8, 10);
-    return `${MONTHS_EN[m - 1]} ${day}/${y}`;
+    return `${MONTHS_EN[m - 1]} ${day}, ${y}`;
   } catch {
     return d;
   }
