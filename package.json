@@ -14,7 +14,6 @@
     "bootstrap": "^5.3.8",
     "exceljs": "^4.4.0",
     "jszip": "^3.10.1",
-    "lightweight-charts": "^5.1.0",
     "next": "16.2.1",
     "plotly.js-dist-min": "^3.4.0",
     "rc-slider": "^11.1.9",
