@@ -58,7 +58,7 @@ function Chevron() {
 export default function NavBar() {
   const router = useRouter();
   const supabase = getSupabaseClient();
-  const { profile } = useUserProfile();
+  const { profile, moduleVisibility, loading: profileLoading } = useUserProfile();
 
   const [signingOut, setSigningOut] = useState(false);
   const [openModule, setOpenModule] = useState<string | null>(null);
@@ -121,6 +121,20 @@ export default function NavBar() {
 
             /* ── Module (dropdown or disabled placeholder) ── */
             const mod = entry;
+
+            // Filter items by visibility for Client users.
+            // Admins always see everything; while profile is loading show all.
+            const visibleItems = mod.items.filter((item) => {
+              if (profileLoading || profile?.role === "Admin") return true;
+              const slug = item.href.replace(/^\//, "");
+              return moduleVisibility[slug] ?? true;
+            });
+
+            // Hide the entire dropdown trigger if no items are visible
+            if (!mod.disabled && mod.items.length > 0 && visibleItems.length === 0) {
+              return null;
+            }
+
             return (
               <div
                 key={mod.label}
@@ -134,9 +148,9 @@ export default function NavBar() {
                   {mod.label} <Chevron />
                 </span>
 
-                {openModule === mod.label && mod.items.length > 0 && (
+                {openModule === mod.label && visibleItems.length > 0 && (
                   <div className="nav-module-dropdown">
-                    {mod.items.map((item) => (
+                    {visibleItems.map((item) => (
                       <Link
                         key={item.href}
                         href={item.href}
