@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { ResponsiveGridLayout, type LayoutItem, type Layout, type ResponsiveLayouts, useContainerWidth } from "react-grid-layout";
+import { ResponsiveGridLayout, type LayoutItem, type Layout, type ResponsiveLayouts, useContainerWidth, noCompactor } from "react-grid-layout";
 
 import NavBar from "../../../components/NavBar";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
@@ -67,9 +67,9 @@ const DEFAULT_CARDS: DashCard[] = [
 function defaultLayout(): Record<string, LayoutItem[]> {
   return {
     lg: [
-      { i: "portfolio", x: 0, y: 0, w: 1, h: 5 },
-      { i: "market", x: 1, y: 0, w: 1, h: 5 },
-      { i: "chart", x: 2, y: 0, w: 1, h: 5 },
+      { i: "portfolio", x: 0, y: 0, w: 4, h: 8 },
+      { i: "market", x: 4, y: 0, w: 4, h: 8 },
+      { i: "chart", x: 8, y: 0, w: 4, h: 8 },
     ],
   };
 }
@@ -427,8 +427,8 @@ export default function StocksPage() {
 
     // Add layout entry for the new card
     const maxY = (layouts.lg ?? []).reduce((max, l) => Math.max(max, l.y + l.h), 0);
-    const col = newCards.length % 3;
-    const newLayout: LayoutItem = { i: id, x: col, y: maxY, w: 1, h: 5 };
+    const col = ((newCards.length - 1) % 3) * 4;
+    const newLayout: LayoutItem = { i: id, x: col, y: maxY, w: 4, h: 8 };
     const updated = { ...layouts, lg: [...(layouts.lg ?? []), newLayout] };
     setLayouts(updated);
     localStorage.setItem(LAYOUT_KEY, JSON.stringify(updated));
@@ -485,7 +485,7 @@ export default function StocksPage() {
     const missing = cards.filter((c) => !layoutIds.has(c.id));
     if (missing.length === 0) return layouts;
     const maxY = lgLayouts.reduce((max, l) => Math.max(max, l.y + l.h), 0);
-    const extra = missing.map((c, i) => ({ i: c.id, x: i % 3, y: maxY, w: 1, h: 5 }));
+    const extra = missing.map((c, i) => ({ i: c.id, x: (i % 3) * 4, y: maxY, w: 4, h: 8 }));
     // Also filter out layouts for cards that no longer exist
     const filtered = lgLayouts.filter((l) => cardIds.has(l.i));
     return { ...layouts, lg: [...filtered, ...extra] };
@@ -552,12 +552,13 @@ export default function StocksPage() {
               width={containerWidth}
               layouts={effectiveLayouts}
               breakpoints={{ lg: 1000, md: 700, sm: 0 }}
-              cols={{ lg: 3, md: 2, sm: 1 }}
-              rowHeight={40}
+              cols={{ lg: 12, md: 8, sm: 4 }}
+              rowHeight={30}
               onLayoutChange={handleLayoutChange}
               dragConfig={{ enabled: true, bounded: false, handle: ".sd-drag-handle", threshold: 3 }}
-              resizeConfig={{ enabled: false, handles: [] }}
-              margin={[10, 10] as const}
+              resizeConfig={{ enabled: true, handles: ["se"] }}
+              compactor={noCompactor}
+              margin={[0, 0] as const}
               containerPadding={[0, 0] as const}
             >
               {cards.map((card) => (
