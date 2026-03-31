@@ -692,6 +692,12 @@ export default function MarketSharePage() {
                   value={sliderRange}
                   onChange={setSliderRange}
                   sliderId="ms-slider-period"
+                  fmtLabel={(d) => {
+                    try {
+                      const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                      return `${MONTHS[parseInt(d.slice(5,7),10)-1]}, ${d.slice(0,4)}`;
+                    } catch { return d; }
+                  }}
                 />
               </div>
 
@@ -723,7 +729,9 @@ export default function MarketSharePage() {
                         color: mode === m ? "#ffffff" : "#555555",
                         border: "none",
                         borderRadius: 999,
-                        padding: "4px 10px",
+                        padding: "4px 0",
+                        width: 64,
+                        textAlign: "center",
                         fontFamily: "Arial",
                         fontSize: 12,
                         fontWeight: mode === m ? 700 : 500,

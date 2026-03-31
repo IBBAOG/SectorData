@@ -11,8 +11,10 @@ export default function PeriodSlider(props: {
   value: [number, number];
   onChange: (next: [number, number]) => void;
   sliderId?: string;
+  fmtLabel?: (d: string) => string;
 }) {
-  const { datas, value, onChange } = props;
+  const { datas, value, onChange, fmtLabel } = props;
+  const formatLabel = fmtLabel ?? fmtData;
 
   // Internal state for smooth dragging — only propagates on release
   const [dragging, setDragging] = useState(false);
@@ -92,7 +94,7 @@ export default function PeriodSlider(props: {
     onChangeComplete: handleAfterChange,
     onBeforeChange: handleBeforeChange,
     handleRender: (node: React.ReactElement, info: { value: number }) => {
-      const label = datas[info.value] ? fmtData(datas[info.value]) : "";
+      const label = datas[info.value] ? formatLabel(datas[info.value]) : "";
       return React.cloneElement(node, {}, (
         <span className="slider-handle-label">
           {label}
