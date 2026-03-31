@@ -436,6 +436,8 @@ export default function MarketSharePage() {
   const datas = useMemo(() => resolverDatas(opcoes ?? {}), [opcoes]);
 
   const [mode, setMode] = useState<Mode>("Individual");
+  const MODE_OPTIONS: Mode[] = ["Individual", "Big-3", "Others"];
+  const modeActiveIdx = MODE_OPTIONS.indexOf(mode);
 
   const [competidoresSelected, setCompetidoresSelected] = useState<string[]>([]);
   const [regioesSelected, setRegioesSelected] = useState<string[]>([]);
@@ -695,13 +697,42 @@ export default function MarketSharePage() {
 
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">View Mode</div>
-                <div className="view-mode-tabs">
-                  {(["Individual", "Big-3", "Others"] as Mode[]).map((m) => (
+                <div style={{ position: "relative", display: "inline-flex", alignItems: "center", backgroundColor: "#f0f0f0", borderRadius: 999, padding: "3px 4px" }}>
+                  {/* sliding background */}
+                  <div style={{
+                    position: "absolute",
+                    top: 3,
+                    bottom: 3,
+                    left: `calc(4px + ${modeActiveIdx} * (100% - 8px) / 3)`,
+                    width: `calc((100% - 8px) / 3)`,
+                    backgroundColor: "#ff5000",
+                    borderRadius: 999,
+                    transition: "left 0.22s cubic-bezier(0.4, 0, 0.2, 1)",
+                    zIndex: 0,
+                    pointerEvents: "none",
+                  }} />
+                  {MODE_OPTIONS.map((m) => (
                     <button
                       key={m}
                       type="button"
                       onClick={() => setMode(m)}
-                      className={`view-mode-btn${mode === m ? " view-mode-btn--active" : ""}`}
+                      style={{
+                        position: "relative",
+                        zIndex: 1,
+                        background: "transparent",
+                        color: mode === m ? "#ffffff" : "#555555",
+                        border: "none",
+                        borderRadius: 999,
+                        padding: "4px 10px",
+                        fontFamily: "Arial",
+                        fontSize: 12,
+                        fontWeight: mode === m ? 700 : 500,
+                        cursor: "pointer",
+                        transition: "color 0.18s",
+                        lineHeight: 1.4,
+                        userSelect: "none",
+                        whiteSpace: "nowrap",
+                      }}
                     >
                       {m}
                     </button>
