@@ -703,7 +703,7 @@ export default function MarketSharePage() {
 
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">View Mode</div>
-                <div style={{ position: "relative", display: "inline-flex", alignItems: "center", backgroundColor: "#f0f0f0", borderRadius: 999, padding: "3px 4px" }}>
+                <div style={{ position: "relative", display: "flex", alignItems: "center", backgroundColor: "#f0f0f0", borderRadius: 999, padding: "3px 4px", width: "100%" }}>
                   {/* sliding background */}
                   <div style={{
                     position: "absolute",
@@ -730,7 +730,7 @@ export default function MarketSharePage() {
                         border: "none",
                         borderRadius: 999,
                         padding: "4px 0",
-                        width: 64,
+                        flex: 1,
                         textAlign: "center",
                         fontFamily: "Arial",
                         fontSize: 12,
