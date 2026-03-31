@@ -71,6 +71,12 @@ function fmtTime(iso: string): string {
   });
 }
 
+// Extract YYYY-MM-DD in BRT (UTC-3) from a UTC ISO string
+function isoToBRTDate(iso: string): string {
+  const brt = new Date(new Date(iso).getTime() - 3 * 60 * 60 * 1000);
+  return brt.toISOString().slice(0, 10);
+}
+
 function hoursAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
   const h = Math.floor(ms / 3_600_000);
@@ -136,7 +142,7 @@ export default function NaviosDieselPage() {
   const coletasByDay = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const ts of coletas) {
-      const day = ts.slice(0, 10);
+      const day = isoToBRTDate(ts);
       if (!map.has(day)) map.set(day, []);
       map.get(day)!.push(ts);
     }
@@ -160,7 +166,7 @@ export default function NaviosDieselPage() {
       if (cancelled) return;
       setColetas(ts);
       if (ts.length > 0) {
-        const firstDay = ts[0].slice(0, 10);
+        const firstDay = isoToBRTDate(ts[0]);
         setSelectedDay(firstDay);
         setSelectedColeta(ts[0]);
         const [yr, mo] = firstDay.split("-").map(Number);
