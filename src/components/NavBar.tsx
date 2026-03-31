@@ -36,11 +36,10 @@ const NAV_ENTRIES: NavEntry[] = [
     ],
   },
   {
-    label: "Mercado",
+    label: "Market",
     items: [
-      { href: "/stocks", label: "Dashboard de Ações" },
-      { href: "/stocks/compare", label: "Comparar Ativos" },
-      { href: "/stock-portfolios", label: "Carteiras" },
+      { href: "/stocks", label: "Stock Dashboard" },
+      { href: "/stocks/compare", label: "Compare Assets" },
     ],
   },
 ];
@@ -48,7 +47,6 @@ const NAV_ENTRIES: NavEntry[] = [
 /** Map nested/alternate routes to the root module slug for visibility checks */
 const SLUG_MAP: Record<string, string> = {
   "stocks/compare": "stocks",
-  "stock-portfolios": "stocks",
 };
 
 /* ── Chevron SVG ───────────────────────────────────────────────────────────── */

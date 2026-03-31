@@ -3,7 +3,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { getSupabaseClient } from "../lib/supabaseClient";
 import { useUserProfile } from "../context/UserProfileContext";
-import type { StockPortfolio } from "../types/stocks";
+import type { StockPortfolio, PortfolioGroup } from "../types/stocks";
+
+function flattenGroups(groups: PortfolioGroup[]): string[] {
+  return groups.flatMap((g) => g.tickers);
+}
 
 export function useStockPortfolios() {
   const supabase = getSupabaseClient();
@@ -22,7 +26,14 @@ export function useStockPortfolios() {
       .eq("user_id", userId)
       .order("created_at", { ascending: true });
 
-    if (!error && data) setPortfolios(data);
+    if (!error && data) {
+      setPortfolios(
+        data.map((row: StockPortfolio) => ({
+          ...row,
+          groups: Array.isArray(row.groups) ? row.groups : [],
+        })),
+      );
+    }
     setIsLoading(false);
   }, [supabase, userId]);
 
@@ -33,12 +44,13 @@ export function useStockPortfolios() {
   const activePortfolio = portfolios.find((p) => p.is_active) ?? portfolios[0] ?? null;
 
   const createPortfolio = useCallback(
-    async (name: string, tickers: string[]) => {
+    async (name: string, groups: PortfolioGroup[]) => {
       if (!supabase || !userId) return;
       await supabase.from("stock_portfolios").insert({
         user_id: userId,
         name,
-        tickers,
+        groups,
+        tickers: flattenGroups(groups),
         is_active: portfolios.length === 0,
       });
       await refresh();
@@ -47,11 +59,19 @@ export function useStockPortfolios() {
   );
 
   const updatePortfolio = useCallback(
-    async (id: string, updates: { name?: string; tickers?: string[] }) => {
+    async (id: string, updates: { name?: string; groups?: PortfolioGroup[] }) => {
       if (!supabase) return;
+      const payload: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+      };
+      if (updates.name !== undefined) payload.name = updates.name;
+      if (updates.groups !== undefined) {
+        payload.groups = updates.groups;
+        payload.tickers = flattenGroups(updates.groups);
+      }
       await supabase
         .from("stock_portfolios")
-        .update({ ...updates, updated_at: new Date().toISOString() })
+        .update(payload)
         .eq("id", id);
       await refresh();
     },
@@ -70,7 +90,6 @@ export function useStockPortfolios() {
   const setActivePortfolio = useCallback(
     async (id: string) => {
       if (!supabase || !userId) return;
-      // Deactivate all, then activate the chosen one
       await supabase
         .from("stock_portfolios")
         .update({ is_active: false })

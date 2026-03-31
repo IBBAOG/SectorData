@@ -1283,3 +1283,181 @@ a {
 .first-login-modal .profile-save-btn {
   width: 100%;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   STOCKS MODULE — Dark Trading Terminal Theme
+   Scoped to .stocks-dark so it doesn't affect other modules.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.stocks-dark {
+  background: #0d1117;
+  color: #e6edf3;
+  min-height: calc(100vh - 56px);
+  font-family: Arial, sans-serif;
+}
+
+.stocks-dark .sd-card {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.stocks-dark .sd-muted { color: #8b949e; }
+.stocks-dark .sd-green { color: #3fb950; }
+.stocks-dark .sd-red   { color: #f85149; }
+
+.stocks-dark .sd-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.stocks-dark .sd-table th {
+  color: #8b949e;
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 6px;
+  border-bottom: 1px solid #30363d;
+}
+.stocks-dark .sd-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid #21262d;
+  white-space: nowrap;
+}
+.stocks-dark .sd-table tr:hover {
+  background: #1c2128;
+}
+.stocks-dark .sd-table tr.sd-selected {
+  background: #1c2128;
+  border-left: 2px solid #ff5000;
+}
+
+.stocks-dark .sd-group-header {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #8b949e;
+  padding: 8px 6px 3px;
+  border-bottom: 1px solid #30363d;
+}
+
+.stocks-dark .sd-btn {
+  background: #21262d;
+  color: #e6edf3;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.stocks-dark .sd-btn:hover { background: #30363d; }
+.stocks-dark .sd-btn-active {
+  background: #ff5000;
+  color: #fff;
+  border-color: #ff5000;
+}
+
+.stocks-dark .sd-input {
+  background: #0d1117;
+  color: #e6edf3;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  width: 100%;
+}
+.stocks-dark .sd-input:focus {
+  outline: none;
+  border-color: #ff5000;
+  box-shadow: 0 0 0 2px rgba(255,80,0,0.2);
+}
+.stocks-dark .sd-input::placeholder { color: #484f58; }
+
+.stocks-dark .sd-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+  text-transform: uppercase;
+}
+.stocks-dark .sd-badge-active {
+  background: #ff5000;
+  color: #fff;
+}
+.stocks-dark .sd-badge-open {
+  background: rgba(63,185,80,0.15);
+  color: #3fb950;
+}
+.stocks-dark .sd-badge-closed {
+  background: #21262d;
+  color: #8b949e;
+}
+
+/* Dropdown for portfolio selector */
+.stocks-dark .sd-select {
+  background: #161b22;
+  color: #e6edf3;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 4px 24px 4px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%238b949e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+.stocks-dark .sd-select:focus {
+  outline: none;
+  border-color: #ff5000;
+}
+
+/* Modal dark theme */
+.stocks-dark .modal-content {
+  background: #161b22;
+  border: 1px solid #30363d;
+  color: #e6edf3;
+}
+.stocks-dark .modal-header {
+  border-bottom: 1px solid #30363d;
+}
+.stocks-dark .modal-footer {
+  border-top: 1px solid #30363d;
+}
+.stocks-dark .btn-close {
+  filter: invert(1);
+}
+
+/* Search dropdown dark */
+.stocks-dark .list-group-item {
+  background: #161b22;
+  color: #e6edf3;
+  border-color: #30363d;
+}
+.stocks-dark .list-group-item:hover,
+.stocks-dark .list-group-item.active {
+  background: #1c2128;
+  border-color: #30363d;
+  color: #e6edf3;
+}
+
+/* ── Stock blink animation ─────────────────────────────────────────────────── */
+@keyframes stock-blink-green {
+  0%, 100% { background: transparent; }
+  50% { background: rgba(63,185,80,0.15); }
+}
+@keyframes stock-blink-red {
+  0%, 100% { background: transparent; }
+  50% { background: rgba(248,81,73,0.15); }
+}
+.stock-blink-up {
+  animation: stock-blink-green 0.6s ease 2;
+}
+.stock-blink-down {
+  animation: stock-blink-red 0.6s ease 2;
+}

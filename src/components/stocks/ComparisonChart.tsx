@@ -24,8 +24,8 @@ interface Props {
   series: SeriesInput[];
   height?: number;
   mode: "percent" | "base100";
-  baseDate?: string; // YYYY-MM-DD
-  endDate?: string;  // YYYY-MM-DD
+  baseDate?: string;
+  endDate?: string;
 }
 
 function toChartTime(unix: number) {
@@ -37,18 +37,11 @@ function toUnix(dateStr: string): number {
   return Math.floor(new Date(dateStr).getTime() / 1000);
 }
 
-export default function ComparisonChart({
-  series,
-  height = 400,
-  mode,
-  baseDate,
-  endDate,
-}: Props) {
+export default function ComparisonChart({ series, height = 400, mode, baseDate, endDate }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const addedSeriesRef = useRef<ISeriesApi<SeriesType>[]>([]);
 
-  // Create chart once
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -56,20 +49,20 @@ export default function ComparisonChart({
       width: containerRef.current.clientWidth,
       height,
       layout: {
-        background: { type: ColorType.Solid, color: "#ffffff" },
-        textColor: "#374151",
+        background: { type: ColorType.Solid, color: "#161b22" },
+        textColor: "#8b949e",
         fontFamily: "Arial, sans-serif",
       },
       grid: {
-        vertLines: { color: "#f3f4f6" },
-        horzLines: { color: "#f3f4f6" },
+        vertLines: { color: "#21262d" },
+        horzLines: { color: "#21262d" },
       },
       crosshair: { mode: CrosshairMode.Normal },
       rightPriceScale: {
-        borderColor: "#e5e7eb",
+        borderColor: "#30363d",
         scaleMargins: { top: 0.1, bottom: 0.1 },
       },
-      timeScale: { borderColor: "#e5e7eb" },
+      timeScale: { borderColor: "#30363d" },
     });
 
     chartRef.current = chart;
@@ -88,12 +81,10 @@ export default function ComparisonChart({
     };
   }, [height]);
 
-  // Update series
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
 
-    // Remove previously added series
     for (const s of addedSeriesRef.current) {
       try { chart.removeSeries(s); } catch { /* already removed */ }
     }
@@ -105,9 +96,7 @@ export default function ComparisonChart({
       if (mode === "base100") {
         const startTs = baseDate ? toUnix(baseDate) : 0;
         const endTs = endDate ? toUnix(endDate) : Infinity;
-        filteredData = filteredData.filter(
-          (d) => d.date >= startTs && d.date <= endTs,
-        );
+        filteredData = filteredData.filter((d) => d.date >= startTs && d.date <= endTs);
       }
 
       if (!filteredData.length) return;
@@ -141,15 +130,14 @@ export default function ComparisonChart({
 
   return (
     <div>
-      <div ref={containerRef} style={{ width: "100%", height }} />
-      {/* Legend */}
+      <div ref={containerRef} style={{ width: "100%", height, borderRadius: 6, overflow: "hidden" }} />
       <div style={{ display: "flex", gap: 16, padding: "8px 0", flexWrap: "wrap" }}>
         {series.map((s, i) => (
-          <span key={s.ticker} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13 }}>
+          <span key={s.ticker} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#8b949e" }}>
             <span
               style={{
-                width: 12,
-                height: 12,
+                width: 10,
+                height: 10,
                 borderRadius: 2,
                 backgroundColor: s.color ?? COLORS[i % COLORS.length],
                 display: "inline-block",

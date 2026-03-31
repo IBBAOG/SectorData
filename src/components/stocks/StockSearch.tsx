@@ -9,7 +9,7 @@ interface Props {
   placeholder?: string;
 }
 
-export default function StockSearch({ onSelect, placeholder = "Buscar ação..." }: Props) {
+export default function StockSearch({ onSelect, placeholder = "Search stock..." }: Props) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<StockSearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -19,7 +19,6 @@ export default function StockSearch({ onSelect, placeholder = "Buscar ação..."
   const debouncedQuery = useDebounce(query, 150);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Fetch search results
   useEffect(() => {
     if (!debouncedQuery || debouncedQuery.length < 2) {
       setResults([]);
@@ -49,7 +48,6 @@ export default function StockSearch({ onSelect, placeholder = "Buscar ação..."
     return () => { cancelled = true; };
   }, [debouncedQuery]);
 
-  // Close on click outside
   useEffect(() => {
     const handle = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -72,7 +70,6 @@ export default function StockSearch({ onSelect, placeholder = "Buscar ação..."
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (!isOpen) return;
-
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setActiveIndex((prev) => Math.min(prev + 1, results.length - 1));
@@ -92,32 +89,19 @@ export default function StockSearch({ onSelect, placeholder = "Buscar ação..."
       <div style={{ position: "relative" }}>
         <input
           type="text"
-          className="form-control"
+          className="sd-input"
           placeholder={placeholder}
           value={query}
           onChange={(e) => setQuery(e.target.value.toUpperCase())}
           onKeyDown={handleKeyDown}
           onFocus={() => results.length > 0 && setIsOpen(true)}
-          style={{ paddingLeft: 36 }}
+          style={{ paddingLeft: 32 }}
         />
-        <span
-          style={{
-            position: "absolute",
-            left: 10,
-            top: "50%",
-            transform: "translateY(-50%)",
-            color: "#888",
-            fontSize: 16,
-          }}
-        >
+        <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#484f58", fontSize: 14 }}>
           {isLoading ? (
-            <span
-              className="spinner-border spinner-border-sm"
-              role="status"
-              style={{ width: 16, height: 16 }}
-            />
+            <span className="spinner-border spinner-border-sm" style={{ width: 14, height: 14, color: "#8b949e" }} />
           ) : (
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
               <path d="M11.742 10.344a6.5 6.5 0 10-1.397 1.398h-.001l3.85 3.85a1 1 0 001.415-1.414l-3.85-3.85zm-5.242.156a5 5 0 110-10 5 5 0 010 10z" />
             </svg>
           )}
@@ -133,23 +117,23 @@ export default function StockSearch({ onSelect, placeholder = "Buscar ação..."
             left: 0,
             right: 0,
             zIndex: 1050,
-            maxHeight: 280,
+            maxHeight: 240,
             overflowY: "auto",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-            borderRadius: 8,
+            borderRadius: 6,
             marginTop: 4,
+            border: "1px solid #30363d",
           }}
         >
           {results.map((item, idx) => (
             <li
               key={item.symbol}
               className={`list-group-item list-group-item-action${idx === activeIndex ? " active" : ""}`}
-              style={{ cursor: "pointer", padding: "8px 12px" }}
+              style={{ cursor: "pointer", padding: "6px 10px", fontSize: 12 }}
               onMouseEnter={() => setActiveIndex(idx)}
               onClick={() => handleSelect(item)}
             >
-              <strong style={{ marginRight: 8 }}>{item.symbol}</strong>
-              <span style={{ fontSize: 13, color: idx === activeIndex ? "#fff" : "#666" }}>
+              <strong style={{ marginRight: 6 }}>{item.symbol}</strong>
+              <span style={{ color: idx === activeIndex ? "#e6edf3" : "#8b949e" }}>
                 {item.shortName}
               </span>
             </li>

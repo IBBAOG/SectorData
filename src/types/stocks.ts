@@ -34,11 +34,17 @@ export interface StockSearchResult {
   type: string;
 }
 
+export interface PortfolioGroup {
+  name: string;
+  tickers: string[];
+}
+
 export interface StockPortfolio {
   id: string;
   user_id: string;
   name: string;
   tickers: string[];
+  groups: PortfolioGroup[];
   is_active: boolean;
   created_at: string;
   updated_at: string;

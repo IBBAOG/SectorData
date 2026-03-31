@@ -17,20 +17,19 @@ const SHORTCUTS = [
   { label: "+ Brent", ticker: "BZ=F" },
   { label: "+ WTI", ticker: "CL=F" },
   { label: "+ IBOV", ticker: "^BVSP" },
-  { label: "+ Ouro", ticker: "GC=F" },
+  { label: "+ Gold", ticker: "GC=F" },
 ];
 
 const RANGES: { label: string; value: TimeRange }[] = [
   { label: "1M", value: "1mo" },
   { label: "3M", value: "3mo" },
   { label: "6M", value: "6mo" },
-  { label: "1A", value: "1y" },
-  { label: "2A", value: "2y" },
-  { label: "5A", value: "5y" },
+  { label: "1Y", value: "1y" },
+  { label: "2Y", value: "2y" },
+  { label: "5Y", value: "5y" },
   { label: "MAX", value: "max" },
 ];
 
-// Hook that fetches history for multiple tickers
 function useMultiHistory(tickers: string[], range: TimeRange) {
   const h0 = useStockHistory(tickers[0] ?? "", range);
   const h1 = useStockHistory(tickers[1] ?? "", range);
@@ -83,190 +82,143 @@ export default function ComparePage() {
   return (
     <>
       <NavBar />
-      <main className="container-fluid" style={{ padding: "24px 32px", maxWidth: 1200, margin: "0 auto" }}>
-        <h4 style={{ fontWeight: 700, marginBottom: 20 }}>Comparar Ativos</h4>
+      <div className="stocks-dark">
+        <main style={{ padding: "16px 24px", maxWidth: 1200, margin: "0 auto" }}>
+          <h5 style={{ fontWeight: 700, marginBottom: 16 }}>Compare Assets</h5>
 
-        {/* Search + Shortcuts */}
-        <div className="row g-3 mb-3">
-          <div className="col-md-6">
-            <StockSearch
-              onSelect={(sym) => handleAddTicker(sym)}
-              placeholder="Buscar acao para comparar..."
-            />
-          </div>
-          <div className="col-md-6 d-flex align-items-center gap-2 flex-wrap">
-            {SHORTCUTS.map((s) => (
-              <button
-                key={s.ticker}
-                className="btn btn-sm"
-                style={{
-                  background: tickers.includes(s.ticker) ? "#e5e7eb" : "#f3f4f6",
-                  color: "#333",
-                  fontWeight: 600,
-                  fontSize: 12,
-                  borderRadius: 6,
-                  border: "none",
-                  padding: "4px 12px",
-                }}
-                onClick={() => handleAddTicker(s.ticker)}
-                disabled={tickers.includes(s.ticker) || tickers.length >= 5}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Ticker chips */}
-        {tickers.length > 0 && (
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-            {tickers.map((t, i) => (
-              <span
-                key={t}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "4px 12px",
-                  borderRadius: 20,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  background: `${COLORS[i % COLORS.length]}18`,
-                  color: COLORS[i % COLORS.length],
-                  border: `1px solid ${COLORS[i % COLORS.length]}40`,
-                }}
-              >
-                {t}
+          {/* Search + Shortcuts */}
+          <div className="row g-3 mb-3">
+            <div className="col-md-6">
+              <StockSearch
+                onSelect={(sym) => handleAddTicker(sym)}
+                placeholder="Search stock to compare..."
+              />
+            </div>
+            <div className="col-md-6 d-flex align-items-center gap-2 flex-wrap">
+              {SHORTCUTS.map((s) => (
                 <button
-                  onClick={() => handleRemove(t)}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    color: "inherit",
-                    cursor: "pointer",
-                    padding: 0,
-                    fontSize: 16,
-                    lineHeight: 1,
-                  }}
+                  key={s.ticker}
+                  className={`sd-btn${tickers.includes(s.ticker) ? " sd-btn-active" : ""}`}
+                  style={{ fontSize: 11, padding: "3px 10px" }}
+                  onClick={() => handleAddTicker(s.ticker)}
+                  disabled={tickers.includes(s.ticker) || tickers.length >= 5}
                 >
-                  x
+                  {s.label}
                 </button>
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* Controls */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
-          <div style={{ display: "flex", gap: 4 }}>
-            <button
-              className="btn btn-sm"
-              style={{
-                background: mode === "percent" ? "#ff5000" : "#f3f4f6",
-                color: mode === "percent" ? "#fff" : "#666",
-                fontWeight: 600,
-                fontSize: 12,
-                borderRadius: 6,
-                border: "none",
-                padding: "4px 12px",
-              }}
-              onClick={() => setMode("percent")}
-            >
-              Variacao %
-            </button>
-            <button
-              className="btn btn-sm"
-              style={{
-                background: mode === "base100" ? "#ff5000" : "#f3f4f6",
-                color: mode === "base100" ? "#fff" : "#666",
-                fontWeight: 600,
-                fontSize: 12,
-                borderRadius: 6,
-                border: "none",
-                padding: "4px 12px",
-              }}
-              onClick={() => setMode("base100")}
-            >
-              Base 100
-            </button>
+              ))}
+            </div>
           </div>
 
-          {/* Range selector (hidden in base100 mode) */}
-          {mode === "percent" && (
-            <div style={{ display: "flex", gap: 4 }}>
-              {RANGES.map((r) => (
-                <button
-                  key={r.value}
-                  className="btn btn-sm"
+          {/* Ticker chips */}
+          {tickers.length > 0 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+              {tickers.map((t, i) => (
+                <span
+                  key={t}
                   style={{
-                    background: range === r.value ? "#ff5000" : "#f3f4f6",
-                    color: range === r.value ? "#fff" : "#666",
-                    fontWeight: 600,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    padding: "3px 10px",
+                    borderRadius: 16,
                     fontSize: 12,
-                    borderRadius: 6,
-                    border: "none",
-                    padding: "4px 10px",
+                    fontWeight: 600,
+                    background: `${COLORS[i % COLORS.length]}18`,
+                    color: COLORS[i % COLORS.length],
+                    border: `1px solid ${COLORS[i % COLORS.length]}40`,
                   }}
-                  onClick={() => setRange(r.value)}
                 >
-                  {r.label}
-                </button>
+                  {t}
+                  <button
+                    onClick={() => handleRemove(t)}
+                    style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}
+                  >
+                    x
+                  </button>
+                </span>
               ))}
             </div>
           )}
 
-          {/* Date pickers (only in base100 mode) */}
-          {mode === "base100" && (
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <label style={{ fontSize: 12, color: "#888" }}>De:</label>
-              <input
-                type="date"
-                className="form-control form-control-sm"
-                style={{ width: 150, fontSize: 12 }}
-                value={baseDate}
-                onChange={(e) => setBaseDate(e.target.value)}
-              />
-              <label style={{ fontSize: 12, color: "#888" }}>Ate:</label>
-              <input
-                type="date"
-                className="form-control form-control-sm"
-                style={{ width: 150, fontSize: 12 }}
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
+          {/* Controls */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+            <div style={{ display: "flex", gap: 3 }}>
+              <button
+                className={`sd-btn${mode === "percent" ? " sd-btn-active" : ""}`}
+                style={{ fontSize: 11, padding: "3px 10px" }}
+                onClick={() => setMode("percent")}
+              >
+                Change %
+              </button>
+              <button
+                className={`sd-btn${mode === "base100" ? " sd-btn-active" : ""}`}
+                style={{ fontSize: 11, padding: "3px 10px" }}
+                onClick={() => setMode("base100")}
+              >
+                Base 100
+              </button>
             </div>
-          )}
-        </div>
 
-        {/* Chart */}
-        <div
-          style={{
-            background: "#fff",
-            borderRadius: 12,
-            padding: 16,
-            boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
-          }}
-        >
-          {tickers.length === 0 ? (
-            <div className="text-center py-5" style={{ color: "#888" }}>
-              Adicione ativos para comparar
-            </div>
-          ) : isLoading ? (
-            <div className="text-center py-5">
-              <span className="spinner-border spinner-border-sm" />
-            </div>
-          ) : (
-            <ComparisonChart
-              key={tickers.join(",") + mode}
-              series={seriesData}
-              mode={mode}
-              height={450}
-              baseDate={baseDate || undefined}
-              endDate={endDate || undefined}
-            />
-          )}
-        </div>
-      </main>
+            {mode === "percent" && (
+              <div style={{ display: "flex", gap: 3 }}>
+                {RANGES.map((r) => (
+                  <button
+                    key={r.value}
+                    className={`sd-btn${range === r.value ? " sd-btn-active" : ""}`}
+                    style={{ fontSize: 11, padding: "3px 8px" }}
+                    onClick={() => setRange(r.value)}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {mode === "base100" && (
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <label className="sd-muted" style={{ fontSize: 11 }}>From:</label>
+                <input
+                  type="date"
+                  className="sd-input"
+                  style={{ width: 140, fontSize: 11, padding: "3px 8px" }}
+                  value={baseDate}
+                  onChange={(e) => setBaseDate(e.target.value)}
+                />
+                <label className="sd-muted" style={{ fontSize: 11 }}>To:</label>
+                <input
+                  type="date"
+                  className="sd-input"
+                  style={{ width: 140, fontSize: 11, padding: "3px 8px" }}
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Chart */}
+          <div className="sd-card">
+            {tickers.length === 0 ? (
+              <div style={{ textAlign: "center", padding: 40 }} className="sd-muted">
+                Add assets to compare
+              </div>
+            ) : isLoading ? (
+              <div style={{ textAlign: "center", padding: 40 }}>
+                <span className="spinner-border spinner-border-sm" style={{ color: "#8b949e" }} />
+              </div>
+            ) : (
+              <ComparisonChart
+                key={tickers.join(",") + mode}
+                series={seriesData}
+                mode={mode}
+                height={420}
+                baseDate={baseDate || undefined}
+                endDate={endDate || undefined}
+              />
+            )}
+          </div>
+        </main>
+      </div>
     </>
   );
 }
