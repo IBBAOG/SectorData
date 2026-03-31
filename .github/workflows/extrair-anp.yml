@@ -34,9 +34,12 @@ jobs:
 
       - name: Instalar Chrome
         run: |
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable || sudo apt-get install -y chromium-browser
-          google-chrome --version || chromium-browser --version
+          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | \
+            sudo tee /etc/apt/sources.list.d/google-chrome.list
+          sudo apt-get update -q
+          sudo apt-get install -y google-chrome-stable
+          google-chrome --version
 
       - name: Instalar dependências Python
         run: pip install -r requirements.txt
@@ -45,39 +48,66 @@ jobs:
         id: periodo
         run: |
           if [ -n "${{ github.event.inputs.periodo }}" ]; then
-            echo "args=--periodo ${{ github.event.inputs.periodo }}" >> "$GITHUB_OUTPUT"
+            ARGS="--periodo ${{ github.event.inputs.periodo }}"
+            PRIMEIRO="${{ github.event.inputs.periodo }}"
           elif [ -n "${{ github.event.inputs.periodo_de }}" ]; then
             DE="${{ github.event.inputs.periodo_de }}"
             ATE="${{ github.event.inputs.periodo_ate || github.event.inputs.periodo_de }}"
-            echo "args=--de $DE --ate $ATE" >> "$GITHUB_OUTPUT"
+            ARGS="--de $DE --ate $ATE"
+            PRIMEIRO="$DE"
           else
             # Agendado: 2 meses atrás
-            PERIODO=$(date -d "2 months ago" +"%m/%Y")
-            echo "args=--periodo $PERIODO" >> "$GITHUB_OUTPUT"
+            PRIMEIRO=$(date -d "2 months ago" +"%m/%Y")
+            ARGS="--periodo $PRIMEIRO"
           fi
+          echo "args=$ARGS"         >> "$GITHUB_OUTPUT"
+          echo "primeiro=$PRIMEIRO" >> "$GITHUB_OUTPUT"
 
       - name: Extrair dados ANP
         run: |
           AMBIENTE="${{ github.event.inputs.ambiente || 'todos' }}"
-          python scripts/anp_auto.py ${{ steps.periodo.outputs.args }} --ambiente "$AMBIENTE" --output output/anp
+          ARGS="${{ steps.periodo.outputs.args }}"
+          PRIMEIRO="${{ steps.periodo.outputs.primeiro }}"
+          SESSION="output/anp/session.json"
 
-      - name: Upload artifact
+          mkdir -p output/anp
+
+          # Se existe session.json salvo, tenta replay direto (sem CAPTCHA).
+          # Se o replay falhar (sessão expirou), recaptura e tenta de novo.
+          if [ -f "$SESSION" ]; then
+            echo "=== Sessão existente encontrada — tentando replay sem CAPTCHA ==="
+            if python scripts/anp_auto.py --replay-only $ARGS \
+                --ambiente "$AMBIENTE" --output output/anp; then
+              echo "=== Replay concluído com sucesso ==="
+            else
+              echo "=== Replay falhou — sessão expirou, recapturando... ==="
+              python scripts/anp_auto.py --capture \
+                --periodo "$PRIMEIRO" --ambiente M --output output/anp
+              python scripts/anp_auto.py --replay $ARGS \
+                --ambiente "$AMBIENTE" --output output/anp
+            fi
+          else
+            echo "=== Sem session.json — capturando sessão e extraindo ==="
+            python scripts/anp_auto.py --capture \
+              --periodo "$PRIMEIRO" --ambiente M --output output/anp
+            python scripts/anp_auto.py --replay $ARGS \
+              --ambiente "$AMBIENTE" --output output/anp
+          fi
+
+      - name: Upload CSVs e sessão
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: anp-producao-poco
-          path: output/anp/
+          path: |
+            output/anp/*.csv
+            output/anp/session.json
           retention-days: 90
 
-      - name: Commitar CSVs
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          cp -r output/anp /tmp/anp_backup 2>/dev/null || true
-          git fetch origin main
-          git reset --hard origin/main
-          mkdir -p output/anp
-          cp -r /tmp/anp_backup/* output/anp/ 2>/dev/null || true
-          git add output/anp/
-          git diff --cached --quiet || git commit -m "dados: ANP produção por poço $(date -u +'%Y-%m-%d %H:%M UTC')"
-          git push
+      - name: Upload debug screenshots
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: anp-debug-screenshots
+          path: output/anp/_debug/
+          retention-days: 14
