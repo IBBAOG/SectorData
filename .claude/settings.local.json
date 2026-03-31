@@ -35,7 +35,12 @@
       "Bash(1:*)",
       "Bash(python -c \"import ast; ast.parse\\(open\\(''scripts/anp_auto.py''\\).read\\(\\)\\); print\\(''Syntax OK''\\)\")",
       "Bash(find C:/Users/eduar/dashboard_projeto/node_modules/next/dist/docs -name *.md)",
-      "Bash(ls \"C:/Users/eduar/dashboard_projeto/src/app/\\(dashboard\\)/\")"
+      "Bash(ls \"C:/Users/eduar/dashboard_projeto/src/app/\\(dashboard\\)/\")",
+      "Bash(git checkout:*)",
+      "Bash(find C:/Users/eduar/dashboard_projeto/frontend-next -name *.tsx -o -name *.jsx -o -name *.ts -o -name *.js)",
+      "Bash(find C:/Users/eduar/dashboard_projeto/frontend-next/src -name *.tsx -o -name *.ts)",
+      "Bash(find C:/Users/eduar/dashboard_projeto -name *.tsx -o -name *.jsx)",
+      "Bash(find C:/Users/eduar/dashboard_projeto -path */worktrees -prune -o -path */node_modules -prune -o -path */.next -prune -o \\\\\\(-name *.tsx -o -name *.jsx \\\\\\) -print)"
     ]
   }
 }
