@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Layout, PlotData } from "plotly.js";
 
 import NavBar from "../../../components/NavBar";
+import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import PlotlyChart from "../../../components/PlotlyChart";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import {
@@ -99,6 +100,7 @@ const TITLE_STYLE: React.CSSProperties = {
 };
 
 export default function NaviosDieselPage() {
+  const { visible, loading: visLoading } = useModuleVisibilityGuard("navios-diesel");
   const supabase = getSupabaseClient();
 
   const [coletas, setColetas] = useState<string[]>([]);
@@ -353,6 +355,8 @@ export default function NaviosDieselPage() {
 
     return { ports, months, monthLabels, portMap };
   }, [naviosDisplay]);
+
+  if (visLoading || !visible) return null;
 
   return (
     <div>

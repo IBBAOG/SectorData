@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseClient } from "../../lib/supabaseClient";
+import { UserProfileProvider } from "../../context/UserProfileContext";
 
 export default function DashboardLayout({
   children,
@@ -44,5 +45,9 @@ export default function DashboardLayout({
 
   if (checking) return null;
 
-  return <>{children}</>;
+  return (
+    <UserProfileProvider supabase={supabase}>
+      {children}
+    </UserProfileProvider>
+  );
 }

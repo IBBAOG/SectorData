@@ -7,6 +7,7 @@ import type { SliderProps } from "rc-slider";
 import "rc-slider/assets/index.css";
 
 import NavBar from "../../../components/NavBar";
+import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import PlotlyChart from "../../../components/PlotlyChart";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import {
@@ -613,6 +614,7 @@ function WeekPeriodBadge({
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function DieselGasolineMarginsPage() {
+  const { visible, loading: visLoading } = useModuleVisibilityGuard("diesel-gasoline-margins");
   const supabase = getSupabaseClient();
 
   const [loading, setLoading]         = useState(true);
@@ -655,6 +657,8 @@ export default function DieselGasolineMarginsPage() {
   const marginChart  = useMemo(() => buildMarginComparisonChart(filteredRows, visibleWeeks), [filteredRows, visibleWeeks]);
   const dieselChart  = useMemo(() => buildStackedAreaChart(filteredRows, "Diesel B",   visibleWeeks), [filteredRows, visibleWeeks]);
   const gasolineChart = useMemo(() => buildStackedAreaChart(filteredRows, "Gasoline C", visibleWeeks), [filteredRows, visibleWeeks]);
+
+  if (visLoading || !visible) return null;
 
   return (
     <div>

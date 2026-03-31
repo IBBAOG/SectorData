@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Annotations, Layout, PlotData } from "plotly.js";
 
 import NavBar from "../../../components/NavBar";
+import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import PlotlyChart from "../../../components/PlotlyChart";
 import PeriodSlider from "../../../components/PeriodSlider";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
@@ -393,6 +394,7 @@ function ChartHeader({ product, rows, xMax }: { product: "Gasoline" | "Diesel"; 
 const DEFAULT_START = "2023-06-01";
 
 export default function PriceBandsPage() {
+  const { visible, loading: visLoading } = useModuleVisibilityGuard("price-bands");
   const supabase = getSupabaseClient();
   const [rows,         setRows]         = useState<PriceBandsRow[]>([]);
   const [loading,      setLoading]      = useState(true);
@@ -444,6 +446,8 @@ export default function PriceBandsPage() {
 
   const ytdYears    = [currentYear, currentYear - 1, currentYear - 2];
   const ytdActiveIdx = ytdYears.indexOf(ytdYear);
+
+  if (visLoading || !visible) return null;
 
   return (
     <div>

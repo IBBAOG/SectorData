@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { getSupabaseClient } from "../lib/supabaseClient";
+import { useUserProfile } from "../context/UserProfileContext";
+import { getInitials } from "../lib/avatarUtils";
 
 const LOGO_URL = "/logo-navbar.png";
 
@@ -56,19 +58,48 @@ function Chevron() {
 export default function NavBar() {
   const router = useRouter();
   const supabase = getSupabaseClient();
+  const { profile } = useUserProfile();
+
   const [signingOut, setSigningOut] = useState(false);
   const [openModule, setOpenModule] = useState<string | null>(null);
+  const [openUserMenu, setOpenUserMenu] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+
+  // Ref for click-outside detection on the user menu
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!openUserMenu) return;
+    function onClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenUserMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [openUserMenu]);
+
+  // Fetch session email once for the dropdown header
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.auth.getSession().then(({ data }) => {
+      setUserEmail(data.session?.user?.email ?? null);
+    });
+  }, [supabase]);
 
   async function onLogout() {
     if (!supabase) return;
     if (signingOut) return;
     setSigningOut(true);
+    setOpenUserMenu(false);
     try {
       await supabase.auth.signOut();
     } finally {
       router.replace("/login");
     }
   }
+
+  const initials = getInitials(profile, userEmail);
+  const isAdmin = profile?.role === "Admin";
 
   return (
     <nav id="main-navbar" className="navbar navbar-expand-lg sticky-top">
@@ -122,14 +153,69 @@ export default function NavBar() {
           })}
         </div>
 
-        <button
-          className="btn btn-outline-light btn-sm"
-          onClick={onLogout}
-          disabled={signingOut || !supabase}
-          style={{ fontFamily: "Arial", fontSize: 12 }}
+        {/* ── Right side: avatar circle + user dropdown ──────────────────── */}
+        <div
+          ref={menuRef}
+          style={{ position: "relative", display: "flex", alignItems: "center" }}
         >
-          Sign out
-        </button>
+          <button
+            className="nav-avatar-btn"
+            onClick={() => setOpenUserMenu((v) => !v)}
+            aria-label="Open user menu"
+            aria-expanded={openUserMenu}
+            disabled={!supabase}
+          >
+            <span className="nav-avatar-circle">{initials}</span>
+          </button>
+
+          {openUserMenu && (
+            <div className="nav-user-dropdown">
+              {/* Header — name/email + role badge */}
+              <div className="nav-user-dropdown-header">
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span>{profile?.full_name ?? userEmail ?? "User"}</span>
+                  <span className={`role-badge role-badge--${isAdmin ? "admin" : "client"}`}>
+                    {profile?.role ?? "Client"}
+                  </span>
+                </div>
+                {profile?.full_name && userEmail && (
+                  <div className="nav-user-dropdown-header-email">{userEmail}</div>
+                )}
+              </div>
+
+              <hr />
+
+              <Link
+                href="/profile"
+                className="nav-user-dropdown-item"
+                onClick={() => setOpenUserMenu(false)}
+              >
+                My Profile
+              </Link>
+
+              {/* Settings — only visible to Admins */}
+              {isAdmin && (
+                <Link
+                  href="/settings"
+                  className="nav-user-dropdown-item"
+                  onClick={() => setOpenUserMenu(false)}
+                >
+                  Settings
+                </Link>
+              )}
+
+              <hr />
+
+              <button
+                className="nav-user-dropdown-item nav-user-dropdown-signout"
+                onClick={onLogout}
+                disabled={signingOut || !supabase}
+              >
+                {signingOut ? "Signing out…" : "Sign out"}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </nav>
   );

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Layout, PlotData } from "plotly.js";
 
 import NavBar from "../../../components/NavBar";
+import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import PlotlyChart from "../../../components/PlotlyChart";
 import PeriodSlider from "../../../components/PeriodSlider";
 import CheckList from "../../../components/CheckList";
@@ -95,6 +96,7 @@ function makeCartesianLayout(params: {
 }
 
 export default function SalesPage() {
+  const { visible, loading: visLoading } = useModuleVisibilityGuard("sales");
   const supabase = getSupabaseClient();
 
   const SEGMENTOS = useMemo(() => ["B2B", "Retail", "TRR", "Others"], []);
@@ -311,6 +313,7 @@ export default function SalesPage() {
   }, [dfAno, dfMes, dfRegiao, dfUf, dfAgente, dfProduto]);
 
   if (!opcoes) return null;
+  if (visLoading || !visible) return null;
 
   return (
     <div>

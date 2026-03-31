@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Layout, PlotData } from "plotly.js";
 
 import NavBar from "../../../components/NavBar";
+import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import PlotlyChart from "../../../components/PlotlyChart";
 import PeriodSlider from "../../../components/PeriodSlider";
 import CheckList from "../../../components/CheckList";
@@ -418,6 +419,7 @@ function downloadCsv(rows: Record<string, unknown>[], filename: string) {
 }
 
 export default function MarketSharePage() {
+  const { visible, loading: visLoading } = useModuleVisibilityGuard("market-share");
   const supabase = getSupabaseClient();
 
   type AppliedMarketShareFilters = {
@@ -648,6 +650,7 @@ export default function MarketSharePage() {
   }
 
   if (!opcoes) return null;
+  if (visLoading || !visible) return null;
 
   return (
     <div>

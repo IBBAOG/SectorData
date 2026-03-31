@@ -3,6 +3,16 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import NavBar from "../../../components/NavBar";
+import { useUserProfile } from "../../../context/UserProfileContext";
+
+/**
+ * Maps a card's href to its module_visibility slug.
+ * The Sales card uses href="/" (redirects to /home) so we map it explicitly.
+ */
+function hrefToSlug(href: string | null): string {
+  if (!href || href === "/") return "sales";
+  return href.replace(/^\//, ""); // "/market-share" → "market-share"
+}
 
 const ORANGE = "#E85D20";
 const BG = "#f5f5f5";
@@ -73,6 +83,19 @@ export default function HomePage() {
   const router = useRouter();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
+  const { profile, moduleVisibility, loading: profileLoading } = useUserProfile();
+
+  // Filter out cards hidden by Admin for Client users.
+  // While the profile is still loading, show all cards to avoid a layout jump.
+  // Admins always see all cards regardless of visibility settings.
+  const visibleCards = profileLoading
+    ? CARDS
+    : CARDS.filter((card) => {
+        if (card.href === null) return true; // "Coming Soon" — always shown
+        if (profile?.role === "Admin") return true;
+        return moduleVisibility[hrefToSlug(card.href)] ?? true;
+      });
+
   return (
     <main style={{ background: BG, minHeight: "100vh", color: "#1a1a1a", fontFamily: "Arial, sans-serif" }}>
       <NavBar />
@@ -132,7 +155,7 @@ export default function HomePage() {
         </h2>
 
         <div className="row g-4">
-          {CARDS.map((card, i) => {
+          {visibleCards.map((card, i) => {
             const isHovered = hoveredIndex === i && !card.disabled;
             return (
               <div key={card.title} className="col-md-6 col-lg-4">

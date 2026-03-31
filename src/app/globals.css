@@ -809,3 +809,262 @@ a {
 .js-plotly-plot .plotly .cursor-crosshair {
   cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cline x1='12' y1='0' x2='12' y2='24' stroke='%23111111' stroke-width='1.5'/%3E%3Cline x1='0' y1='12' x2='24' y2='12' stroke='%23111111' stroke-width='1.5'/%3E%3C/svg%3E") 12 12, crosshair !important;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Profile + Settings — new UI components
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Nav: avatar button ──────────────────────────────────────────────────── */
+.nav-avatar-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.nav-avatar-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #FF5000;
+  color: #fff;
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.04em;
+  user-select: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.nav-avatar-btn:hover .nav-avatar-circle {
+  opacity: 0.82;
+  transform: scale(1.06);
+}
+
+/* ─── Nav: user dropdown ──────────────────────────────────────────────────── */
+.nav-user-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 210px;
+  padding: 6px 0;
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(0, 0, 0, 0.09);
+  border-radius: 12px;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.14),
+    0 2px 8px rgba(0, 0, 0, 0.07);
+  z-index: 1050;
+  animation: navDropdownIn 0.18s ease-out;
+}
+
+.nav-user-dropdown-header {
+  padding: 10px 16px 8px;
+  font-family: Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1a1a;
+  line-height: 1.4;
+}
+
+.nav-user-dropdown-header-email {
+  font-size: 11px;
+  font-weight: 400;
+  color: #888;
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-user-dropdown hr {
+  border: none;
+  border-top: 1px solid rgba(0, 0, 0, 0.07);
+  margin: 4px 0;
+}
+
+.nav-user-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 8px 16px;
+  font-family: Arial, sans-serif;
+  font-size: 13px;
+  color: rgba(0, 0, 0, 0.78);
+  text-decoration: none;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.nav-user-dropdown-item:hover {
+  background-color: rgba(255, 80, 0, 0.07);
+  color: #cc3d00;
+  text-decoration: none;
+}
+
+.nav-user-dropdown-signout {
+  color: rgba(0, 0, 0, 0.48);
+}
+
+.nav-user-dropdown-signout:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.68);
+}
+
+/* ─── Role badge ──────────────────────────────────────────────────────────── */
+.role-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 20px;
+  font-family: Arial, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
+.role-badge--admin {
+  background: rgba(255, 80, 0, 0.12);
+  color: #FF5000;
+}
+
+.role-badge--client {
+  background: rgba(26, 26, 26, 0.08);
+  color: #555;
+}
+
+/* ─── Profile page card ───────────────────────────────────────────────────── */
+.profile-card {
+  position: relative;
+  max-width: 560px;
+  width: 100%;
+  padding: 40px 36px;
+  border-radius: 24px;
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(248, 248, 252, 0.90) 40%,
+    rgba(245, 245, 250, 0.93) 100%
+  );
+  backdrop-filter: blur(60px) saturate(180%) brightness(1.05);
+  -webkit-backdrop-filter: blur(60px) saturate(180%) brightness(1.05);
+  border: 2px solid rgba(255, 255, 255, 0.72);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.28),
+    0 16px 48px rgba(0, 0, 0, 0.10),
+    0 4px 12px rgba(0, 0, 0, 0.05),
+    inset 0 2px 0 rgba(255, 255, 255, 0.9),
+    inset 0 0 30px rgba(255, 255, 255, 0.22);
+}
+
+/* ─── Profile avatar circle (larger, used on /profile page) ──────────────── */
+.profile-avatar-circle {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: #FF5000;
+  color: #fff;
+  font-family: Arial, sans-serif;
+  font-size: 26px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+/* ─── Profile info rows ───────────────────────────────────────────────────── */
+.profile-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.profile-info-row:last-child {
+  border-bottom: none;
+}
+
+.profile-info-label {
+  font-family: Arial, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #888;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  margin-right: 16px;
+}
+
+.profile-info-value {
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+  color: #1a1a1a;
+  text-align: right;
+  word-break: break-all;
+}
+
+/* ─── Settings page ───────────────────────────────────────────────────────── */
+.settings-card {
+  background: #ffffff;
+  border: 1px solid #e8e8e8;
+  border-radius: 16px;
+  padding: 28px 28px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+}
+
+.settings-module-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.settings-module-row:last-child {
+  border-bottom: none;
+}
+
+.settings-module-label {
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+  color: #1a1a1a;
+  font-weight: 500;
+}
+
+.settings-saved-tick {
+  font-size: 12px;
+  color: #22aa55;
+  font-weight: 600;
+  margin-left: 8px;
+  animation: fadeInTick 0.2s ease-out;
+}
+
+@keyframes fadeInTick {
+  from { opacity: 0; transform: scale(0.7); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* Accent the Bootstrap toggle with brand orange */
+.form-check-input:checked {
+  background-color: #FF5000 !important;
+  border-color: #FF5000 !important;
+}
+
+.form-check-input:focus {
+  box-shadow: 0 0 0 0.2rem rgba(255, 80, 0, 0.25) !important;
+}
