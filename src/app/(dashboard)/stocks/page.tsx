@@ -265,6 +265,20 @@ function PortfolioModal({
   );
 }
 
+/* ── Extra Chart Card (self-contained with own data fetch) ────────────────── */
+
+function ExtraChartCard({ ticker, isDark }: { ticker: string; isDark: boolean }) {
+  const { data, isLoading } = useStockHistory(ticker, "6mo");
+  if (isLoading) {
+    return (
+      <div style={{ textAlign: "center", padding: 30 }}>
+        <span className="spinner-border spinner-border-sm" style={{ color: "#8b949e" }} />
+      </div>
+    );
+  }
+  return <StockChart data={data} mode="line" height={180} dark={isDark} />;
+}
+
 /* ── Main Page ────────────────────────────────────────────────────────────── */
 
 export default function StocksPage() {
@@ -280,6 +294,11 @@ export default function StocksPage() {
   const [chartMode, setChartMode] = useState<ChartMode>("line");
   const [modalOpen, setModalOpen] = useState(false);
   const [modalEdit, setModalEdit] = useState(false);
+
+  // Extra cards: user can add chart or table cards below the right column
+  type ExtraCard = { type: "chart"; ticker: string } | { type: "table" };
+  const [extraCards, setExtraCards] = useState<ExtraCard[]>([]);
+  const [showAddMenu, setShowAddMenu] = useState(false);
 
   const tickers = activePortfolio?.tickers ?? [];
   const { data: quotes, refetch } = useStockQuote(tickers);
@@ -383,21 +402,19 @@ export default function StocksPage() {
           )}
 
           {/* ── Main grid ── */}
-          <div className="row g-3">
+          <div className="row g-2">
             {/* Left: Portfolio table */}
-            <div className="col-lg-7">
+            <div className="col-lg-5">
               {groups.length > 0 && (
-                <div className="sd-card" style={{ marginBottom: 12, padding: 8 }}>
+                <div className="sd-card" style={{ padding: 6 }}>
                   <table className="sd-table" style={{ fontSize: 11 }}>
                     <thead>
                       <tr>
-                        <th style={{ textAlign: "left", padding: "3px 4px" }}>ASSET</th>
-                        <th style={{ textAlign: "right", padding: "3px 4px" }}>LAST</th>
-                        <th style={{ textAlign: "right", padding: "3px 4px" }}>CHG%</th>
-                        <th style={{ textAlign: "center", width: 20, padding: "3px 2px" }}></th>
-                        <th style={{ textAlign: "right", padding: "3px 4px" }}>LOW</th>
-                        <th style={{ textAlign: "right", padding: "3px 4px" }}>HIGH</th>
-                        <th style={{ textAlign: "right", padding: "3px 4px" }}>VOL</th>
+                        <th style={{ textAlign: "left", padding: "2px 3px" }}>ASSET</th>
+                        <th style={{ textAlign: "right", padding: "2px 3px" }}>LAST</th>
+                        <th style={{ textAlign: "right", padding: "2px 3px" }}>CHG%</th>
+                        <th style={{ textAlign: "center", width: 16, padding: "2px 1px" }}></th>
+                        <th style={{ textAlign: "right", padding: "2px 3px" }}>VOL</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -405,43 +422,35 @@ export default function StocksPage() {
                         <>
                           {groups.length > 1 && (
                             <tr key={`hdr-${group.name}`}>
-                              <td colSpan={7} className="sd-group-header" style={{ padding: "6px 4px 2px" }}>{group.name}</td>
+                              <td colSpan={5} className="sd-group-header" style={{ padding: "5px 3px 2px" }}>{group.name}</td>
                             </tr>
                           )}
                           {group.tickers.map((ticker) => {
                             const q = quoteMap.get(ticker);
                             if (!q) return (
                               <tr key={ticker}>
-                                <td style={{ fontWeight: 600, padding: "3px 4px" }}>{ticker}</td>
-                                <td colSpan={6} className="sd-muted" style={{ textAlign: "center", fontSize: 10, padding: "3px 4px" }}>Loading...</td>
+                                <td style={{ fontWeight: 600, padding: "2px 3px" }}>{ticker}</td>
+                                <td colSpan={4} className="sd-muted" style={{ textAlign: "center", fontSize: 10, padding: "2px 3px" }}>Loading...</td>
                               </tr>
                             );
                             const pos = q.regularMarketChangePercent >= 0;
                             const cls = pos ? "sd-green" : "sd-red";
                             const blink = blinkMap.get(q.symbol);
                             return (
-                              <tr
-                                key={q.symbol}
-                                className={blink ? `stock-blink-${blink}` : undefined}
-                              >
-                                <td style={{ padding: "3px 4px" }}>
-                                  <Link
-                                    href={`/stocks/${q.symbol}`}
-                                    style={{ fontWeight: 700, color: "inherit", textDecoration: "none" }}
-                                  >
+                              <tr key={q.symbol} className={blink ? `stock-blink-${blink}` : undefined}>
+                                <td style={{ padding: "2px 3px" }}>
+                                  <Link href={`/stocks/${q.symbol}`} style={{ fontWeight: 700, color: "inherit", textDecoration: "none" }}>
                                     {q.symbol}
                                   </Link>
                                 </td>
-                                <td style={{ textAlign: "right", padding: "3px 4px" }}>{fmt(q.regularMarketPrice)}</td>
-                                <td style={{ textAlign: "right", padding: "3px 4px" }} className={cls}>
+                                <td style={{ textAlign: "right", padding: "2px 3px" }}>{fmt(q.regularMarketPrice)}</td>
+                                <td style={{ textAlign: "right", padding: "2px 3px" }} className={cls}>
                                   {pos ? "+" : ""}{fmt(q.regularMarketChangePercent)}%
                                 </td>
-                                <td style={{ textAlign: "center", padding: "3px 2px" }} className={cls}>
+                                <td style={{ textAlign: "center", padding: "2px 1px" }} className={cls}>
                                   {pos ? "\u25B2" : "\u25BC"}
                                 </td>
-                                <td style={{ textAlign: "right", padding: "3px 4px" }}>{fmt(q.regularMarketDayLow)}</td>
-                                <td style={{ textAlign: "right", padding: "3px 4px" }}>{fmt(q.regularMarketDayHigh)}</td>
-                                <td style={{ textAlign: "right", padding: "3px 4px" }}>{fmtVol(q.regularMarketVolume)}</td>
+                                <td style={{ textAlign: "right", padding: "2px 3px" }}>{fmtVol(q.regularMarketVolume)}</td>
                               </tr>
                             );
                           })}
@@ -453,54 +462,167 @@ export default function StocksPage() {
               )}
             </div>
 
-            {/* Right: Market Overview first, then Chart */}
-            <div className="col-lg-5">
-              <div style={{ marginBottom: 12 }}>
-                <MarketOverview />
-              </div>
+            {/* Right: Market Overview, Chart, Extra cards */}
+            <div className="col-lg-7">
+              <div className="row g-2">
+                {/* Market Overview */}
+                <div className="col-md-6">
+                  <MarketOverview />
+                </div>
 
-              {tickers.length > 0 && (
-                <div className="sd-card">
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      {tickers.length > 1 ? (
-                        <select
-                          className="sd-select"
-                          style={{ fontSize: 12, padding: "2px 20px 2px 6px" }}
-                          value={effectiveChartTicker ?? ""}
-                          onChange={(e) => setChartTicker(e.target.value)}
-                        >
-                          {tickers.map((t) => (
-                            <option key={t} value={t}>{t}</option>
+                {/* Chart */}
+                {tickers.length > 0 && (
+                  <div className="col-md-6">
+                    <div className="sd-card" style={{ padding: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          {tickers.length > 1 ? (
+                            <select
+                              className="sd-select"
+                              style={{ fontSize: 11, padding: "1px 18px 1px 4px" }}
+                              value={effectiveChartTicker ?? ""}
+                              onChange={(e) => setChartTicker(e.target.value)}
+                            >
+                              {tickers.map((t) => (
+                                <option key={t} value={t}>{t}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span style={{ fontWeight: 700, fontSize: 11 }}>{effectiveChartTicker}</span>
+                          )}
+                          <span className="sd-muted" style={{ fontSize: 9 }}>6M</span>
+                        </div>
+                        <div style={{ display: "flex", gap: 2 }}>
+                          {(["candlestick", "line"] as ChartMode[]).map((m) => (
+                            <button
+                              key={m}
+                              className={`sd-btn${chartMode === m ? " sd-btn-active" : ""}`}
+                              style={{ fontSize: 9, padding: "1px 6px" }}
+                              onClick={() => setChartMode(m)}
+                            >
+                              {m === "candlestick" ? "Candle" : "Line"}
+                            </button>
                           ))}
-                        </select>
+                        </div>
+                      </div>
+                      {historyLoading ? (
+                        <div style={{ textAlign: "center", padding: 30 }}>
+                          <span className="spinner-border spinner-border-sm" style={{ color: "#8b949e" }} />
+                        </div>
                       ) : (
-                        <span style={{ fontWeight: 700, fontSize: 12 }}>{effectiveChartTicker}</span>
+                        <StockChart data={historyData} mode={chartMode} height={220} dark={isDark} />
                       )}
-                      <span className="sd-muted" style={{ fontSize: 10 }}>6M</span>
-                    </div>
-                    <div style={{ display: "flex", gap: 3 }}>
-                      {(["candlestick", "line"] as ChartMode[]).map((m) => (
-                        <button
-                          key={m}
-                          className={`sd-btn${chartMode === m ? " sd-btn-active" : ""}`}
-                          style={{ fontSize: 10, padding: "2px 8px" }}
-                          onClick={() => setChartMode(m)}
-                        >
-                          {m === "candlestick" ? "Candle" : "Line"}
-                        </button>
-                      ))}
                     </div>
                   </div>
-                  {historyLoading ? (
-                    <div style={{ textAlign: "center", padding: 40 }}>
-                      <span className="spinner-border spinner-border-sm" style={{ color: "#8b949e" }} />
+                )}
+
+                {/* Extra cards */}
+                {extraCards.map((card, idx) => (
+                  <div key={idx} className="col-md-6">
+                    <div className="sd-card" style={{ padding: 8, position: "relative" }}>
+                      <button
+                        className="sd-btn"
+                        style={{ position: "absolute", top: 4, right: 4, padding: "1px 5px", fontSize: 10, lineHeight: 1, opacity: 0.6 }}
+                        onClick={() => setExtraCards((prev) => prev.filter((_, i) => i !== idx))}
+                        title="Remove card"
+                      >x</button>
+                      {card.type === "chart" ? (
+                        <>
+                          <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4 }}>
+                            <select
+                              className="sd-select"
+                              style={{ fontSize: 11, padding: "1px 18px 1px 4px" }}
+                              value={card.ticker}
+                              onChange={(e) => setExtraCards((prev) => prev.map((c, i) => i === idx ? { type: "chart", ticker: e.target.value } : c))}
+                            >
+                              {tickers.map((t) => (
+                                <option key={t} value={t}>{t}</option>
+                              ))}
+                            </select>
+                            <span className="sd-muted" style={{ fontSize: 9 }}>6M</span>
+                          </div>
+                          <ExtraChartCard ticker={card.ticker} isDark={isDark} />
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ marginBottom: 4 }}>
+                            <span style={{ fontWeight: 700, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>Portfolio</span>
+                          </div>
+                          <table className="sd-table" style={{ fontSize: 11 }}>
+                            <thead>
+                              <tr>
+                                <th style={{ textAlign: "left", padding: "2px 3px" }}>ASSET</th>
+                                <th style={{ textAlign: "right", padding: "2px 3px" }}>LAST</th>
+                                <th style={{ textAlign: "right", padding: "2px 3px" }}>CHG%</th>
+                                <th style={{ textAlign: "center", width: 16, padding: "2px 1px" }}></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {tickers.map((ticker) => {
+                                const q = quoteMap.get(ticker);
+                                if (!q) return null;
+                                const pos = q.regularMarketChangePercent >= 0;
+                                const cls = pos ? "sd-green" : "sd-red";
+                                return (
+                                  <tr key={q.symbol}>
+                                    <td style={{ fontWeight: 600, padding: "2px 3px" }}>{q.symbol}</td>
+                                    <td style={{ textAlign: "right", padding: "2px 3px" }}>{fmt(q.regularMarketPrice)}</td>
+                                    <td style={{ textAlign: "right", padding: "2px 3px" }} className={cls}>
+                                      {pos ? "+" : ""}{fmt(q.regularMarketChangePercent)}%
+                                    </td>
+                                    <td style={{ textAlign: "center", padding: "2px 1px" }} className={cls}>
+                                      {pos ? "\u25B2" : "\u25BC"}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </>
+                      )}
                     </div>
-                  ) : (
-                    <StockChart data={historyData} mode={chartMode} height={280} dark={isDark} />
-                  )}
-                </div>
-              )}
+                  </div>
+                ))}
+
+                {/* Add card button */}
+                {tickers.length > 0 && (
+                  <div className="col-md-6">
+                    <div style={{ position: "relative" }}>
+                      <button
+                        className="sd-btn"
+                        style={{ width: "100%", padding: "12px 0", fontSize: 11, borderStyle: "dashed", borderRadius: 8, opacity: 0.6 }}
+                        onClick={() => setShowAddMenu((v) => !v)}
+                      >
+                        + Add Card
+                      </button>
+                      {showAddMenu && (
+                        <div className="sd-card" style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 10, marginTop: 4, padding: 4 }}>
+                          <button
+                            className="sd-btn"
+                            style={{ width: "100%", fontSize: 11, padding: "6px 8px", marginBottom: 3, textAlign: "left" }}
+                            onClick={() => {
+                              setExtraCards((prev) => [...prev, { type: "chart", ticker: tickers[0] }]);
+                              setShowAddMenu(false);
+                            }}
+                          >
+                            Chart
+                          </button>
+                          <button
+                            className="sd-btn"
+                            style={{ width: "100%", fontSize: 11, padding: "6px 8px", textAlign: "left" }}
+                            onClick={() => {
+                              setExtraCards((prev) => [...prev, { type: "table" }]);
+                              setShowAddMenu(false);
+                            }}
+                          >
+                            Portfolio Table
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </main>

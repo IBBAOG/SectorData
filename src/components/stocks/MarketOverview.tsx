@@ -6,12 +6,12 @@ import { useAutoRefresh } from "../../hooks/useAutoRefresh";
 
 const MARKET_TICKERS = ["^BVSP", "USDBRL=X", "EURBRL=X", "BZ=F", "CL=F", "BTC-BRL"];
 const LABELS: Record<string, string> = {
-  "^BVSP": "IBOVESPA",
+  "^BVSP": "IBOV",
   "USDBRL=X": "USD/BRL",
   "EURBRL=X": "EUR/BRL",
   "BZ=F": "BRENT",
   "CL=F": "WTI",
-  "BTC-BRL": "BTC/BRL",
+  "BTC-BRL": "BTC",
 };
 
 export default function MarketOverview() {
@@ -22,28 +22,28 @@ export default function MarketOverview() {
     v.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 
   return (
-    <div className="sd-card">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-        <span style={{ fontWeight: 700, fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5 }}>
+    <div className="sd-card" style={{ padding: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, padding: "0 4px" }}>
+        <span style={{ fontWeight: 700, fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>
           Market Overview
         </span>
-        <span className={`sd-badge ${isMarketOpen ? "sd-badge-open" : "sd-badge-closed"}`}>
+        <span className={`sd-badge ${isMarketOpen ? "sd-badge-open" : "sd-badge-closed"}`} style={{ fontSize: 9, padding: "1px 6px" }}>
           {isMarketOpen ? "Open" : "Closed"}
         </span>
       </div>
 
       {isLoading && !data.length ? (
-        <div style={{ textAlign: "center", padding: 16 }}>
-          <span className="spinner-border spinner-border-sm" style={{ color: "#8b949e" }} />
+        <div style={{ textAlign: "center", padding: 12 }}>
+          <span className="spinner-border spinner-border-sm" style={{ color: "#8b949e", width: 12, height: 12 }} />
         </div>
       ) : (
-        <table className="sd-table">
+        <table className="sd-table" style={{ fontSize: 11 }}>
           <thead>
             <tr>
-              <th style={{ textAlign: "left" }}>ASSET</th>
-              <th style={{ textAlign: "right" }}>LAST</th>
-              <th style={{ textAlign: "right" }}>CHG%</th>
-              <th style={{ textAlign: "center", width: 30 }}></th>
+              <th style={{ textAlign: "left", padding: "2px 4px" }}>ASSET</th>
+              <th style={{ textAlign: "right", padding: "2px 4px" }}>LAST</th>
+              <th style={{ textAlign: "right", padding: "2px 4px" }}>CHG%</th>
+              <th style={{ textAlign: "center", width: 18, padding: "2px 2px" }}></th>
             </tr>
           </thead>
           <tbody>
@@ -52,14 +52,14 @@ export default function MarketOverview() {
               const cls = positive ? "sd-green" : "sd-red";
               return (
                 <tr key={q.symbol}>
-                  <td style={{ fontWeight: 600 }}>
+                  <td style={{ fontWeight: 600, padding: "3px 4px" }}>
                     {LABELS[q.symbol] ?? q.symbol}
                   </td>
-                  <td style={{ textAlign: "right" }}>{fmt(q.regularMarketPrice)}</td>
-                  <td style={{ textAlign: "right" }} className={cls}>
+                  <td style={{ textAlign: "right", padding: "3px 4px" }}>{fmt(q.regularMarketPrice)}</td>
+                  <td style={{ textAlign: "right", padding: "3px 4px" }} className={cls}>
                     {positive ? "+" : ""}{fmt(q.regularMarketChangePercent)}%
                   </td>
-                  <td style={{ textAlign: "center" }} className={cls}>
+                  <td style={{ textAlign: "center", padding: "3px 2px" }} className={cls}>
                     {positive ? "\u25B2" : "\u25BC"}
                   </td>
                 </tr>
