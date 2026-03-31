@@ -442,6 +442,9 @@ export default function PriceBandsPage() {
   const gasolineYtd   = useMemo(() => buildYtdChart(rows, "Gasoline", ytdYear), [rows, ytdYear]);
   const dieselYtd     = useMemo(() => buildYtdChart(rows, "Diesel",   ytdYear), [rows, ytdYear]);
 
+  const ytdYears    = [currentYear, currentYear - 1, currentYear - 2];
+  const ytdActiveIdx = ytdYears.indexOf(ytdYear);
+
   return (
     <div>
       <NavBar />
@@ -584,52 +587,46 @@ export default function PriceBandsPage() {
                   {/* Section 2: YTD Average Price */}
                   <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 32, marginBottom: 4 }}>
                     <h5 className="section-title" style={{ color: "#000000", marginBottom: 0 }}>YTD Average Price</h5>
-                    {(() => {
-                      const years = [currentYear, currentYear - 1, currentYear - 2];
-                      const activeIdx = years.indexOf(ytdYear);
-                      return (
-                        <div style={{ position: "relative", display: "inline-flex", alignItems: "center", backgroundColor: "#f0f0f0", borderRadius: 999, padding: "3px 4px" }}>
-                          {/* sliding background */}
-                          <div style={{
-                            position: "absolute",
-                            top: 3,
-                            bottom: 3,
-                            left: `calc(4px + ${activeIdx} * (100% - 8px) / 3)`,
-                            width: `calc((100% - 8px) / 3)`,
-                            backgroundColor: "#ff5000",
+                    <div style={{ position: "relative", display: "inline-flex", alignItems: "center", backgroundColor: "#f0f0f0", borderRadius: 999, padding: "3px 4px" }}>
+                      {/* sliding background */}
+                      <div style={{
+                        position: "absolute",
+                        top: 3,
+                        bottom: 3,
+                        left: `calc(4px + ${ytdActiveIdx} * (100% - 8px) / 3)`,
+                        width: `calc((100% - 8px) / 3)`,
+                        backgroundColor: "#ff5000",
+                        borderRadius: 999,
+                        transition: "left 0.22s cubic-bezier(0.4, 0, 0.2, 1)",
+                        zIndex: 0,
+                        pointerEvents: "none",
+                      }} />
+                      {ytdYears.map((y) => (
+                        <button
+                          key={y}
+                          type="button"
+                          onClick={() => setYtdYear(y)}
+                          style={{
+                            position: "relative",
+                            zIndex: 1,
+                            background: "transparent",
+                            color: ytdYear === y ? "#ffffff" : "#555555",
+                            border: "none",
                             borderRadius: 999,
-                            transition: "left 0.22s cubic-bezier(0.4, 0, 0.2, 1)",
-                            zIndex: 0,
-                            pointerEvents: "none",
-                          }} />
-                          {years.map((y) => (
-                            <button
-                              key={y}
-                              type="button"
-                              onClick={() => setYtdYear(y)}
-                              style={{
-                                position: "relative",
-                                zIndex: 1,
-                                background: "transparent",
-                                color: ytdYear === y ? "#ffffff" : "#555555",
-                                border: "none",
-                                borderRadius: 999,
-                                padding: "4px 14px",
-                                fontFamily: "Arial",
-                                fontSize: 13,
-                                fontWeight: ytdYear === y ? 700 : 500,
-                                cursor: "pointer",
-                                transition: "color 0.18s, font-weight 0.18s",
-                                lineHeight: 1.4,
-                                userSelect: "none",
-                              }}
-                            >
-                              {y}
-                            </button>
-                          ))}
-                        </div>
-                      );
-                    })()}
+                            padding: "4px 14px",
+                            fontFamily: "Arial",
+                            fontSize: 13,
+                            fontWeight: ytdYear === y ? 700 : 500,
+                            cursor: "pointer",
+                            transition: "color 0.18s",
+                            lineHeight: 1.4,
+                            userSelect: "none",
+                          }}
+                        >
+                          {y}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <hr className="section-hr" style={{ marginBottom: 0 }} />
                   {ytdYear === currentYear && (
