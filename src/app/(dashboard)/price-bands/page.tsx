@@ -329,7 +329,7 @@ function buildYtdChart(
     data: traces,
     layout: {
       ...COMMON_LAYOUT_BASE,
-      xaxis: { type: "date", tickformat: "%b", hoverformat: "%b %d, %Y", tickangle: -45, range: [`${year}-01-01`, addDays(yearEnd, 30)], showgrid: false, showline: true, linecolor: "#000000", linewidth: 1, showspikes: true, spikemode: "across", spikecolor: "#555555", spikethickness: 1, spikedash: "solid" },
+      xaxis: { type: "date", tickformat: "%b", hoverformat: "%b %d, %Y", dtick: "M1", tickangle: -90, range: [`${year}-01-01`, addDays(yearEnd, 30)], showgrid: false, showline: true, linecolor: "#000000", linewidth: 1, showspikes: true, spikemode: "across", spikecolor: "#555555", spikethickness: 1, spikedash: "solid" },
       yaxis: { showgrid: true, gridcolor: "#e8e8e8", showline: true, linecolor: "#000000", linewidth: 1, tickformat: ".2f", title: { text: "BRL/litro", font: { family: "Arial", size: 11, color: "#555" } }, automargin: true },
       legend: { orientation: "h", y: -0.28, x: 0.5, xanchor: "center" },
       height: 360,
@@ -629,13 +629,6 @@ export default function PriceBandsPage() {
                     </div>
                   </div>
                   <hr className="section-hr" style={{ marginBottom: 0 }} />
-                  {ytdYear === currentYear && (
-                    <div style={{ marginBottom: 6, marginTop: 4 }}>
-                      <span style={{ fontFamily: "Arial", fontSize: 11, color: "#888" }}>
-                        Solid: actual cumulative average · Dotted: projection assuming today&apos;s prices hold through Dec 31
-                      </span>
-                    </div>
-                  )}
 
                   {/* YTD — side by side */}
                   <div className="row g-3">
@@ -654,6 +647,13 @@ export default function PriceBandsPage() {
                       <PlotlyChart data={dieselYtd.data} layout={dieselYtd.layout} config={{ displayModeBar: false }} />
                     </div>
                   </div>
+                  {ytdYear === currentYear && (
+                    <div style={{ marginTop: 4 }}>
+                      <span style={{ fontFamily: "Arial", fontSize: 11, color: "#888" }}>
+                        Solid: actual cumulative average · Dotted: projection assuming today&apos;s prices hold through Dec 31
+                      </span>
+                    </div>
+                  )}
                 </>
               )}
             </div>
