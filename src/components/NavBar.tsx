@@ -100,6 +100,7 @@ export default function NavBar() {
 
   const initials = getInitials(profile, userEmail);
   const isAdmin = profile?.role === "Admin";
+  const firstName = profile?.full_name?.trim().split(/\s+/)[0] ?? null;
 
   return (
     <nav id="main-navbar" className="navbar navbar-expand-lg sticky-top">
@@ -172,6 +173,9 @@ export default function NavBar() {
           ref={menuRef}
           style={{ position: "relative", display: "flex", alignItems: "center" }}
         >
+          {firstName && (
+            <span className="nav-username-label">{firstName}</span>
+          )}
           <button
             className="nav-avatar-btn"
             onClick={() => setOpenUserMenu((v) => !v)}

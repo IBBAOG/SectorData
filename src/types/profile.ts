@@ -52,4 +52,9 @@ export interface UserProfileContextValue {
    * propagates to the home page within the same session.
    */
   refreshVisibility: () => Promise<void>;
+  /**
+   * Re-fetches the user's own profile row and updates the context.
+   * Call this after saving a name change so NavBar and other consumers update.
+   */
+  refreshProfile: () => Promise<void>;
 }

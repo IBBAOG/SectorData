@@ -22,6 +22,7 @@ const UserProfileContext = createContext<UserProfileContextValue>({
   moduleVisibility: {},
   loading: true,
   refreshVisibility: async () => {},
+  refreshProfile: async () => {},
 });
 
 /* ── Provider ────────────────────────────────────────────────────────────────── */
@@ -47,6 +48,11 @@ export function UserProfileProvider({
   >({});
   const [loading, setLoading] = useState(true);
 
+  const loadProfile = useCallback(async () => {
+    const profileData = await rpcGetMyProfile(supabase);
+    setProfile(profileData ?? null);
+  }, [supabase]);
+
   // Convert the ModuleConfig array into a flat slug→boolean map
   const loadVisibility = useCallback(async () => {
     const rows = await rpcGetModuleVisibility(supabase);
@@ -60,30 +66,25 @@ export function UserProfileProvider({
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([
-      rpcGetMyProfile(supabase),
-      rpcGetModuleVisibility(supabase),
-    ]).then(([profileData, visRows]) => {
+    Promise.all([loadProfile(), loadVisibility()]).then(() => {
       if (cancelled) return;
-
-      setProfile(profileData ?? null);
-
-      const map: Record<string, boolean> = {};
-      for (const row of visRows) {
-        map[row.module_slug] = row.is_visible_for_clients;
-      }
-      setModuleVisibility(map);
       setLoading(false);
     });
 
     return () => {
       cancelled = true;
     };
-  }, [supabase]);
+  }, [loadProfile, loadVisibility]);
 
   return (
     <UserProfileContext.Provider
-      value={{ profile, moduleVisibility, loading, refreshVisibility: loadVisibility }}
+      value={{
+        profile,
+        moduleVisibility,
+        loading,
+        refreshVisibility: loadVisibility,
+        refreshProfile: loadProfile,
+      }}
     >
       {children}
     </UserProfileContext.Provider>

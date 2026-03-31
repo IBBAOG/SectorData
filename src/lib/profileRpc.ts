@@ -90,6 +90,29 @@ export async function rpcSetUserRole(
 }
 
 /**
+ * Upserts the authenticated user's own profile (name and avatar).
+ * Role is intentionally NOT updatable via this function.
+ * Creates the profile row if it doesn't exist yet.
+ */
+export async function rpcUpsertMyProfile(
+  supabase: SupabaseClient,
+  fullName: string,
+  avatarUrl: string | null,
+): Promise<UserProfile | null> {
+  try {
+    const { data, error } = await supabase.rpc("upsert_my_profile", {
+      p_full_name: fullName,
+      p_avatar_url: avatarUrl,
+    });
+    if (error) throw error;
+    return (data as UserProfile) ?? null;
+  } catch (e) {
+    console.error("[profileRpc] upsert_my_profile error:", e);
+    return null;
+  }
+}
+
+/**
  * Toggles one module's visibility for Client users.
  * Only succeeds if the caller has role='Admin' (enforced server-side).
  * Returns the updated row, or null on error.
