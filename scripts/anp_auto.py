@@ -324,7 +324,13 @@ def do_acoes_download(driver):
 
 # ─── Session capture ─────────────────────────────────────────────────────────
 
-def capture_session(driver, ocr_engine, periodo, ambiente, output_dir, download_dir):
+def _is_renderer_crash(exc):
+    """Return True if the exception looks like a Chrome renderer crash/timeout."""
+    msg = str(exc).lower()
+    return "renderer" in msg or "session deleted" in msg or not str(exc).strip()
+
+
+def capture_session(ocr_engine, periodo, ambiente, output_dir, download_dir):
     """
     Run a full Selenium flow for one period/ambiente, intercept the APEX download
     form parameters via JavaScript, and save everything to session.json.
@@ -336,7 +342,9 @@ def capture_session(driver, ocr_engine, periodo, ambiente, output_dir, download_
     """
     print(f"  Capturando sessão para {periodo} / {AMBIENTES[ambiente]}...")
 
-    for attempt in range(1, MAX_RETRIES + 1):
+    driver = create_driver(download_dir)
+    try:
+      for attempt in range(1, MAX_RETRIES + 1):
         print(f"    Tentativa {attempt}/{MAX_RETRIES}...")
 
         try:
@@ -347,68 +355,79 @@ def capture_session(driver, ocr_engine, periodo, ambiente, output_dir, download_
                 save_debug_screenshot(driver, output_dir, f"cap_buscar_{attempt}")
                 continue
 
-            # Inject JS to intercept the form.submit() call that APEX uses for downloads.
-            # This captures the exact POST parameters without disrupting the download itself.
+            # Inject JS interceptor BEFORE triggering download.
+            # The XHR is captured at send() time — before any file is downloaded.
             driver.execute_script(_CAPTURE_JS)
 
             do_acoes_download(driver)
+
+            # Give the JS event loop a moment to fire the XHR interceptor
+            time.sleep(2)
+
         except Exception as e:
             print(f"    ✗ Erro: {e}")
             save_debug_screenshot(driver, output_dir, f"cap_err_{attempt}")
-            if attempt < MAX_RETRIES:
+            if _is_renderer_crash(e):
+                print(f"    [driver] Chrome travou, reiniciando...")
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
+                driver = create_driver(download_dir)
+            elif attempt < MAX_RETRIES:
                 time.sleep(2)
             continue
 
-        csv_path = wait_for_download(download_dir, timeout=30)
-        if not csv_path:
-            print(f"    ✗ Download não completou")
-            save_debug_screenshot(driver, output_dir, f"cap_nodl_{attempt}")
-            continue
+        # ── Collect intercepted requests ─────────────────────────────────────
+        # The XHR capture happens at send() time, so it's available immediately
+        # after the button click — we do NOT need to wait for Chrome's file download.
+        try:
+            captured_list = driver.execute_script("return window._anpCapture || [];")
+        except Exception:
+            captured_list = []
 
-        n_lines = validate_csv(csv_path)
-        if n_lines == 0:
-            print(f"    ✗ CSV vazio")
-            os.remove(csv_path)
-            continue
-
-        # Collect all captured requests (form, fetch, XHR)
-        captured_list = driver.execute_script("return window._anpCapture || [];")
-        # Look for the most relevant download request (wwv_flow related)
         download_req = None
         for entry in reversed(captured_list):
             url = entry.get("url", "") or entry.get("__action__", "")
-            if "wwv_flow" in url or "wwv_flow.show" in url:
+            if "wwv_flow" in url:
                 download_req = entry
                 break
         if not download_req and captured_list:
             download_req = captured_list[-1]
 
+        if not download_req:
+            print(f"    ✗ Nenhum request interceptado")
+            save_debug_screenshot(driver, output_dir, f"cap_noreq_{attempt}")
+            continue
+
         print(f"    [capture] {len(captured_list)} request(s) interceptados: "
               f"{[e.get('__type__', e.get('type','?')) for e in captured_list]}")
-        if download_req:
-            url_preview = download_req.get("url", download_req.get("__action__", "?"))
-            print(f"    [capture] download_req URL: {url_preview[:120]}")
+        url_preview = download_req.get("url", download_req.get("__action__", "?"))
+        print(f"    [capture] download_req URL: {url_preview[:120]}")
 
         # Read APEX session identifiers from JS environment
-        apex_env = driver.execute_script("""
-            try {
-                return {
-                    app_id:     String(apex.env.APP_ID),
-                    page_id:    String(apex.env.APP_PAGE_ID),
-                    p_instance: String(apex.env.APP_SESSION)
-                };
-            } catch(e) { return {}; }
-        """) or {}
-
-        raw_cookies = driver.get_cookies()  # Full objects with domain, path, secure, etc.
+        try:
+            apex_env = driver.execute_script("""
+                try {
+                    return {
+                        app_id:     String(apex.env.APP_ID),
+                        page_id:    String(apex.env.APP_PAGE_ID),
+                        p_instance: String(apex.env.APP_SESSION)
+                    };
+                } catch(e) { return {}; }
+            """) or {}
+            raw_cookies = driver.get_cookies()
+        except Exception:
+            apex_env = {}
+            raw_cookies = []
 
         session = {
-            "cookies":          {c["name"]: c["value"] for c in raw_cookies},
-            "cookies_full":     raw_cookies,
-            "apex_env":         apex_env,
-            "base_url":         ORDS_BASE,
-            "download_req":     download_req,
-            "captured_at":      time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "cookies":           {c["name"]: c["value"] for c in raw_cookies},
+            "cookies_full":      raw_cookies,
+            "apex_env":          apex_env,
+            "base_url":          ORDS_BASE,
+            "download_req":      download_req,
+            "captured_at":       time.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "captured_periodo":  periodo,
             "captured_ambiente": ambiente,
         }
@@ -420,19 +439,40 @@ def capture_session(driver, ocr_engine, periodo, ambiente, output_dir, download_
         print(f"    ✓ session.json salvo")
         print(f"      cookies : {list(session['cookies'].keys())}")
         print(f"      apex_env: {apex_env}")
-        if download_req:
-            print(f"      mecanismo: {download_req.get('__type__', download_req.get('type','?'))}")
-        else:
-            print(f"      AVISO: nenhum request interceptado")
+        print(f"      mecanismo: {download_req.get('__type__', download_req.get('type','?'))}")
 
+        # ── Get CSV via fast download (requests) — avoids Chrome download crash ──
         fname = f"producao_poco_{periodo.replace('/', '-')}_{ambiente}.csv"
-        dest = os.path.join(output_dir, fname)
-        shutil.move(csv_path, dest)
-        print(f"    ✓ {dest} ({os.path.getsize(dest)/1024:.1f} KB, {n_lines} linhas)")
-        return dest
+        dest  = os.path.join(output_dir, fname)
 
-    print(f"    ✗ Captura falhou após {MAX_RETRIES} tentativas")
-    return None
+        csv_path = try_fast_download(session, periodo, ambiente, download_dir)
+        if csv_path:
+            n_lines = validate_csv(csv_path)
+            shutil.move(csv_path, dest)
+            print(f"    ✓ {dest} ({os.path.getsize(dest)/1024:.1f} KB, {n_lines} linhas)")
+            return dest
+
+        # Fallback: wait for Chrome's own file download (may crash, but try once)
+        print(f"    [capture] Fast download falhou, aguardando download do Chrome...")
+        csv_path = wait_for_download(download_dir, timeout=30)
+        if csv_path:
+            n_lines = validate_csv(csv_path)
+            if n_lines > 0:
+                shutil.move(csv_path, dest)
+                print(f"    ✓ {dest} ({os.path.getsize(dest)/1024:.1f} KB, {n_lines} linhas)")
+                return dest
+            os.remove(csv_path)
+
+        print(f"    ✗ CSV não obtido, mas session.json foi salvo")
+        return dest  # session is captured even without CSV
+
+      print(f"    ✗ Captura falhou após {MAX_RETRIES} tentativas")
+      return None
+    finally:
+        try:
+            driver.quit()
+        except Exception:
+            pass
 
 
 # ─── Fast replay (no CAPTCHA) ────────────────────────────────────────────────
@@ -629,9 +669,11 @@ def try_fast_download(session_data, periodo, ambiente, download_dir):
 
 # ─── Selenium extraction (fallback) ──────────────────────────────────────────
 
-def extract_one_selenium(driver, ocr_engine, periodo, ambiente, output_dir, download_dir):
+def extract_one_selenium(ocr_engine, periodo, ambiente, output_dir, download_dir):
     """Full Selenium + CAPTCHA extraction for one period/ambiente."""
-    for attempt in range(1, MAX_RETRIES + 1):
+    driver = create_driver(download_dir)
+    try:
+      for attempt in range(1, MAX_RETRIES + 1):
         try:
             print(f"    [selenium] Tentativa {attempt}/{MAX_RETRIES}...")
 
@@ -675,24 +717,36 @@ def extract_one_selenium(driver, ocr_engine, periodo, ambiente, output_dir, down
                 driver, output_dir,
                 f"{periodo.replace('/', '-')}_{ambiente}_err_{attempt}"
             )
-            if attempt < MAX_RETRIES:
+            if _is_renderer_crash(e):
+                print(f"    [driver] Chrome travou, reiniciando...")
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
+                driver = create_driver(download_dir)
+            elif attempt < MAX_RETRIES:
                 time.sleep(2)
 
-    print(f"    ✗ Falhou após {MAX_RETRIES} tentativas")
-    return False
+      print(f"    ✗ Falhou após {MAX_RETRIES} tentativas")
+      return False
+    finally:
+        try:
+            driver.quit()
+        except Exception:
+            pass
 
 
 # ─── Orchestrator ────────────────────────────────────────────────────────────
 
 def extract_one(
     periodo, ambiente, output_dir, download_dir,
-    session_data=None, driver=None, ocr_engine=None,
+    session_data=None, ocr_engine=None, use_selenium=True,
 ):
     """
     Extract one period/ambiente combination.
     - Skips if the output file already exists with data.
     - Tries fast (no CAPTCHA) replay if session_data is available.
-    - Falls back to Selenium if fast fails and driver is provided.
+    - Falls back to Selenium (new driver per call) if fast fails and use_selenium=True.
     """
     fname = f"producao_poco_{periodo.replace('/', '-')}_{ambiente}.csv"
     dest = os.path.join(output_dir, fname)
@@ -713,11 +767,11 @@ def extract_one(
             return True
         print(f"    [fast] Falhou — usando Selenium+CAPTCHA")
 
-    if driver is None or ocr_engine is None:
+    if not use_selenium or ocr_engine is None:
         print(f"    ✗ Sem driver Selenium e sessão expirou (--replay-only ativo)")
         return False
 
-    return extract_one_selenium(driver, ocr_engine, periodo, ambiente, output_dir, download_dir)
+    return extract_one_selenium(ocr_engine, periodo, ambiente, output_dir, download_dir)
 
 
 # ─── CLI helpers ─────────────────────────────────────────────────────────────
@@ -813,13 +867,11 @@ def main():
 
         print(f"Modo: CAPTURA")
         ocr_engine = ddddocr.DdddOcr(show_ad=False)
-        driver = create_driver(download_dir)
         try:
             result = capture_session(
-                driver, ocr_engine, periodo_cap, ambiente_cap, args.output, download_dir
+                ocr_engine, periodo_cap, ambiente_cap, args.output, download_dir
             )
         finally:
-            driver.quit()
             shutil.rmtree(download_dir, ignore_errors=True)
 
         sys.exit(0 if result else 1)
@@ -838,14 +890,11 @@ def main():
         print(f"  python scripts/anp_auto.py --capture --periodo {periodos[0]} --output {args.output}")
         sys.exit(1)
 
-    # Create Selenium driver unless --replay-only
-    driver = None
+    # OCR engine is shared across calls; driver is created fresh per Selenium extraction
     ocr_engine = None
-    if not args.replay_only:
-        print("Inicializando Selenium (fallback para quando fast mode falhar)...")
+    use_selenium = not args.replay_only
+    if use_selenium:
         ocr_engine = ddddocr.DdddOcr(show_ad=False)
-        driver = create_driver(download_dir)
-        print()
 
     try:
         total = len(periodos) * len(ambientes)
@@ -857,8 +906,8 @@ def main():
                 if extract_one(
                     periodo, ambiente, args.output, download_dir,
                     session_data=session_data,
-                    driver=driver,
                     ocr_engine=ocr_engine,
+                    use_selenium=use_selenium,
                 ):
                     ok += 1
                 else:
@@ -868,8 +917,6 @@ def main():
         print(f"Concluído: {ok}/{total} com sucesso, {fail} falhas")
 
     finally:
-        if driver:
-            driver.quit()
         shutil.rmtree(download_dir, ignore_errors=True)
 
     if fail > 0:
