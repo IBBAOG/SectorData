@@ -35,7 +35,21 @@ const NAV_ENTRIES: NavEntry[] = [
       { href: "/price-bands", label: "Price Bands" },
     ],
   },
+  {
+    label: "Mercado",
+    items: [
+      { href: "/stocks", label: "Dashboard de Ações" },
+      { href: "/stocks/compare", label: "Comparar Ativos" },
+      { href: "/stock-portfolios", label: "Carteiras" },
+    ],
+  },
 ];
+
+/** Map nested/alternate routes to the root module slug for visibility checks */
+const SLUG_MAP: Record<string, string> = {
+  "stocks/compare": "stocks",
+  "stock-portfolios": "stocks",
+};
 
 /* ── Chevron SVG ───────────────────────────────────────────────────────────── */
 
@@ -127,7 +141,8 @@ export default function NavBar() {
             // Admins always see everything; while profile is loading show all.
             const visibleItems = mod.items.filter((item) => {
               if (profileLoading || profile?.role === "Admin") return true;
-              const slug = item.href.replace(/^\//, "");
+              const rawSlug = item.href.replace(/^\//, "");
+              const slug = SLUG_MAP[rawSlug] ?? rawSlug;
               return moduleVisibility[slug] ?? true;
             });
 
