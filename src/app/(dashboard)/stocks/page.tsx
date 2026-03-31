@@ -18,6 +18,24 @@ const StockSearch = dynamic(() => import("../../../components/stocks/StockSearch
 
 /* ── Helpers ──────────────────────────────────────────────────────────────── */
 
+const STORAGE_KEY = "stocks-theme";
+
+function useTheme() {
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved === "light" || saved === "dark") setTheme(saved);
+  }, []);
+  const toggle = useCallback(() => {
+    setTheme((prev) => {
+      const next = prev === "dark" ? "light" : "dark";
+      localStorage.setItem(STORAGE_KEY, next);
+      return next;
+    });
+  }, []);
+  return { theme, isDark: theme === "dark", toggle };
+}
+
 const fmt = (v: number, d = 2) =>
   v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 
@@ -28,7 +46,7 @@ const fmtVol = (v: number) => {
   return String(v);
 };
 
-/* ── Gear Icon SVG ────────────────────────────────────────────────────────── */
+/* ── Icons ────────────────────────────────────────────────────────────────── */
 
 function GearIcon() {
   return (
@@ -39,16 +57,30 @@ function GearIcon() {
   );
 }
 
-/* ── Portfolio Modal ──────────────────────────────────────────────────────── */
+function SunIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="5" />
+      <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+      <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+    </svg>
+  );
+}
+
+/* ── Portfolio Modal (Liquid Glass) ───────────────────────────────────────── */
 
 function PortfolioModal({
-  isOpen,
-  onClose,
-  initialName,
-  initialGroups,
-  onSave,
-  onDelete,
-  isEdit,
+  isOpen, onClose, initialName, initialGroups, onSave, onDelete, isEdit, themeClass,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -57,6 +89,7 @@ function PortfolioModal({
   onSave: (name: string, groups: PortfolioGroup[]) => Promise<void>;
   onDelete?: () => Promise<void>;
   isEdit: boolean;
+  themeClass: string;
 }) {
   const [name, setName] = useState(initialName);
   const [groups, setGroups] = useState<PortfolioGroup[]>(initialGroups);
@@ -84,9 +117,7 @@ function PortfolioModal({
   const addTickerToGroup = (idx: number, symbol: string) => {
     setGroups((prev) =>
       prev.map((g, i) =>
-        i === idx && !g.tickers.includes(symbol)
-          ? { ...g, tickers: [...g.tickers, symbol] }
-          : g,
+        i === idx && !g.tickers.includes(symbol) ? { ...g, tickers: [...g.tickers, symbol] } : g,
       ),
     );
   };
@@ -97,32 +128,34 @@ function PortfolioModal({
     );
   };
 
-  const addGroup = () => {
-    setGroups((prev) => [...prev, { name: "", tickers: [] }]);
-  };
-
-  const removeGroup = (idx: number) => {
-    setGroups((prev) => prev.filter((_, i) => i !== idx));
-  };
+  const addGroup = () => setGroups((prev) => [...prev, { name: "", tickers: [] }]);
+  const removeGroup = (idx: number) => setGroups((prev) => prev.filter((_, i) => i !== idx));
 
   if (!isOpen) return null;
 
   return (
-    <>
-      <div className="modal-backdrop show" style={{ zIndex: 1040 }} onClick={onClose} />
+    <div className={themeClass}>
+      <div
+        className="modal-backdrop show"
+        style={{ zIndex: 1040, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+        onClick={onClose}
+      />
       <div className="modal d-block" style={{ zIndex: 1050 }} onClick={onClose}>
-        <div className="modal-dialog modal-dialog-centered modal-lg" onClick={(e) => e.stopPropagation()}>
-          <div className="modal-content" style={{ borderRadius: 12 }}>
-            <div className="modal-header" style={{ padding: "12px 16px" }}>
-              <h6 className="modal-title" style={{ fontWeight: 700, fontSize: 14 }}>
+        <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+          <div className="sd-modal-glass">
+            {/* Header */}
+            <div className="sd-modal-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <h6 style={{ margin: 0, fontWeight: 700, fontSize: 16 }}>
                 {isEdit ? "Edit Portfolio" : "New Portfolio"}
               </h6>
               <button type="button" className="btn-close" onClick={onClose} />
             </div>
-            <div className="modal-body" style={{ padding: 16, maxHeight: "60vh", overflowY: "auto" }}>
+
+            {/* Body */}
+            <div className="sd-modal-body">
               {/* Portfolio Name */}
               <div style={{ marginBottom: 16 }}>
-                <label style={{ fontSize: 11, fontWeight: 600, color: "#8b949e", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4, display: "block" }}>
+                <label style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6, display: "block", opacity: 0.6 }}>
                   Portfolio Name
                 </label>
                 <input
@@ -131,12 +164,13 @@ function PortfolioModal({
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. My B3 Portfolio"
+                  style={{ borderRadius: 10, padding: "8px 12px" }}
                 />
               </div>
 
               {/* Groups */}
               {groups.map((group, gi) => (
-                <div key={gi} style={{ marginBottom: 16, padding: 12, background: "#0d1117", borderRadius: 8, border: "1px solid #21262d" }}>
+                <div key={gi} className="sd-modal-group">
                   <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
                     <input
                       type="text"
@@ -144,43 +178,23 @@ function PortfolioModal({
                       value={group.name}
                       onChange={(e) => updateGroup(gi, { name: e.target.value })}
                       placeholder="Group name (e.g. Energy)"
-                      style={{ flex: 1, fontSize: 12, padding: "4px 8px" }}
+                      style={{ flex: 1, fontSize: 12, padding: "6px 10px", borderRadius: 8 }}
                     />
                     {groups.length > 1 && (
-                      <button
-                        className="sd-btn"
-                        style={{ padding: "4px 8px", fontSize: 11, color: "#f85149", borderColor: "#f8514930" }}
-                        onClick={() => removeGroup(gi)}
-                      >
+                      <button className="sd-btn" style={{ padding: "4px 10px", fontSize: 11 }} onClick={() => removeGroup(gi)}>
                         Remove
                       </button>
                     )}
                   </div>
-                  <StockSearch
-                    onSelect={(sym) => addTickerToGroup(gi, sym)}
-                    placeholder="Add stock to this group..."
-                  />
+                  <StockSearch onSelect={(sym) => addTickerToGroup(gi, sym)} placeholder="Add stock to this group..." />
                   {group.tickers.length > 0 && (
-                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 8 }}>
+                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 8 }}>
                       {group.tickers.map((t) => (
-                        <span
-                          key={t}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 4,
-                            fontSize: 11,
-                            fontWeight: 600,
-                            background: "#21262d",
-                            padding: "3px 8px",
-                            borderRadius: 10,
-                            color: "#e6edf3",
-                          }}
-                        >
+                        <span key={t} className="sd-btn" style={{ padding: "3px 8px", fontSize: 11, borderRadius: 10, display: "inline-flex", alignItems: "center", gap: 4 }}>
                           {t}
                           <button
                             onClick={() => removeTickerFromGroup(gi, t)}
-                            style={{ background: "none", border: "none", color: "#8b949e", cursor: "pointer", padding: 0, fontSize: 13, lineHeight: 1 }}
+                            style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, fontSize: 13, lineHeight: 1, opacity: 0.6 }}
                           >
                             x
                           </button>
@@ -191,31 +205,34 @@ function PortfolioModal({
                 </div>
               ))}
 
-              <button className="sd-btn" style={{ fontSize: 12, width: "100%" }} onClick={addGroup}>
+              <button className="sd-btn" style={{ fontSize: 12, width: "100%", borderRadius: 10, padding: "8px 0" }} onClick={addGroup}>
                 + Add Group
               </button>
             </div>
-            <div className="modal-footer" style={{ padding: "10px 16px", justifyContent: "space-between" }}>
+
+            {/* Footer */}
+            <div className="sd-modal-footer" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 {isEdit && onDelete && (
                   confirmDelete ? (
                     <div style={{ display: "flex", gap: 6 }}>
-                      <button className="sd-btn" style={{ color: "#f85149", borderColor: "#f8514930" }} onClick={async () => { await onDelete(); onClose(); }}>
-                        Confirm Delete
+                      <button className="sd-btn sd-btn-active" style={{ fontSize: 12, borderRadius: 10 }} onClick={async () => { await onDelete(); onClose(); }}>
+                        Confirm
                       </button>
-                      <button className="sd-btn" onClick={() => setConfirmDelete(false)}>Cancel</button>
+                      <button className="sd-btn" style={{ fontSize: 12, borderRadius: 10 }} onClick={() => setConfirmDelete(false)}>Cancel</button>
                     </div>
                   ) : (
-                    <button className="sd-btn" style={{ color: "#f85149", borderColor: "#f8514930" }} onClick={() => setConfirmDelete(true)}>
+                    <button className="sd-btn" style={{ fontSize: 12, borderRadius: 10, opacity: 0.7 }} onClick={() => setConfirmDelete(true)}>
                       Delete Portfolio
                     </button>
                   )
                 )}
               </div>
               <div style={{ display: "flex", gap: 6 }}>
-                <button className="sd-btn" onClick={onClose}>Cancel</button>
+                <button className="sd-btn" style={{ fontSize: 12, borderRadius: 10, padding: "6px 16px" }} onClick={onClose}>Cancel</button>
                 <button
                   className="sd-btn sd-btn-active"
+                  style={{ fontSize: 12, borderRadius: 10, padding: "6px 20px" }}
                   onClick={handleSave}
                   disabled={saving || !name.trim()}
                 >
@@ -226,7 +243,7 @@ function PortfolioModal({
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -234,14 +251,11 @@ function PortfolioModal({
 
 export default function StocksPage() {
   const { visible, loading: guardLoading } = useModuleVisibilityGuard("stocks");
+  const { theme, isDark, toggle } = useTheme();
+  const themeClass = isDark ? "stocks-dark" : "stocks-light";
   const {
-    portfolios,
-    activePortfolio,
-    isLoading: portfolioLoading,
-    createPortfolio,
-    updatePortfolio,
-    deletePortfolio,
-    setActivePortfolio,
+    portfolios, activePortfolio, isLoading: portfolioLoading,
+    createPortfolio, updatePortfolio, deletePortfolio, setActivePortfolio,
   } = useStockPortfolios();
 
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
@@ -256,7 +270,7 @@ export default function StocksPage() {
   const chartTicker = selectedTicker ?? tickers[0] ?? null;
   const { data: historyData, isLoading: historyLoading } = useStockHistory(chartTicker ?? "", "6mo");
 
-  // ── Blink animation tracking ──
+  // ── Blink tracking ──
   const prevPricesRef = useRef<Map<string, number>>(new Map());
   const [blinkMap, setBlinkMap] = useState<Map<string, "up" | "down">>(new Map());
 
@@ -264,7 +278,6 @@ export default function StocksPage() {
     if (!quotes.length) return;
     const newBlinks = new Map<string, "up" | "down">();
     const prev = prevPricesRef.current;
-
     for (const q of quotes) {
       const old = prev.get(q.symbol);
       if (old !== undefined && old !== q.regularMarketPrice) {
@@ -272,7 +285,6 @@ export default function StocksPage() {
       }
       prev.set(q.symbol, q.regularMarketPrice);
     }
-
     if (newBlinks.size > 0) {
       setBlinkMap(newBlinks);
       const timer = setTimeout(() => setBlinkMap(new Map()), 1200);
@@ -283,18 +295,17 @@ export default function StocksPage() {
   if (guardLoading || !visible) return null;
 
   const groups = activePortfolio?.groups ?? [];
-
-  // Build a map from symbol to quote for fast lookup
   const quoteMap = new Map<string, StockQuote>();
   for (const q of quotes) quoteMap.set(q.symbol, q);
 
+  const linkColor = isDark ? "#e6edf3" : "#1a1a1a";
   const openCreate = () => { setModalEdit(false); setModalOpen(true); };
   const openEdit = () => { setModalEdit(true); setModalOpen(true); };
 
   return (
     <>
       <NavBar />
-      <div className="stocks-dark">
+      <div className={themeClass}>
         <main style={{ padding: "16px 24px", maxWidth: 1440, margin: "0 auto" }}>
 
           {/* ── Top bar ── */}
@@ -325,6 +336,10 @@ export default function StocksPage() {
               </button>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {/* Theme toggle */}
+              <button className="sd-theme-toggle" onClick={toggle} title={isDark ? "Switch to light mode" : "Switch to dark mode"}>
+                {isDark ? <SunIcon /> : <MoonIcon />}
+              </button>
               <span className={`sd-badge ${isMarketOpen ? "sd-badge-open" : "sd-badge-closed"}`}>
                 {isMarketOpen ? "B3 Open" : "B3 Closed"}
               </span>
@@ -397,7 +412,7 @@ export default function StocksPage() {
                                 <td>
                                   <Link
                                     href={`/stocks/${q.symbol}`}
-                                    style={{ fontWeight: 700, color: "#e6edf3", textDecoration: "none" }}
+                                    style={{ fontWeight: 700, color: linkColor, textDecoration: "none" }}
                                     onClick={(e) => e.stopPropagation()}
                                   >
                                     {q.symbol}
@@ -423,7 +438,6 @@ export default function StocksPage() {
                 </div>
               )}
 
-              {/* Ticker shortcut buttons */}
               {tickers.length > 1 && (
                 <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 12 }}>
                   {tickers.map((t) => (
@@ -448,13 +462,10 @@ export default function StocksPage() {
 
             {/* Right: Chart + Market Overview */}
             <div className="col-lg-5">
-              {/* Chart */}
               {chartTicker && (
                 <div className="sd-card" style={{ marginBottom: 12 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <span style={{ fontWeight: 700, fontSize: 12 }}>
-                      {chartTicker} — 6M
-                    </span>
+                    <span style={{ fontWeight: 700, fontSize: 12 }}>{chartTicker} — 6M</span>
                     <div style={{ display: "flex", gap: 3 }}>
                       {(["candlestick", "line"] as ChartMode[]).map((m) => (
                         <button
@@ -473,12 +484,10 @@ export default function StocksPage() {
                       <span className="spinner-border spinner-border-sm" style={{ color: "#8b949e" }} />
                     </div>
                   ) : (
-                    <StockChart data={historyData} mode={chartMode} height={280} />
+                    <StockChart data={historyData} mode={chartMode} height={280} dark={isDark} />
                   )}
                 </div>
               )}
-
-              {/* Market Overview */}
               <MarketOverview />
             </div>
           </div>
@@ -490,6 +499,7 @@ export default function StocksPage() {
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
         isEdit={modalEdit}
+        themeClass={themeClass}
         initialName={modalEdit ? (activePortfolio?.name ?? "") : ""}
         initialGroups={modalEdit ? (activePortfolio?.groups ?? []) : [{ name: "General", tickers: [] }]}
         onSave={async (n, g) => {

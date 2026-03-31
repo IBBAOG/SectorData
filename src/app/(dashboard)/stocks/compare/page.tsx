@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 
 import NavBar from "../../../../components/NavBar";
@@ -49,6 +49,12 @@ function useMultiHistory(tickers: string[], range: TimeRange) {
 
 export default function ComparePage() {
   const { visible, loading: guardLoading } = useModuleVisibilityGuard("stocks");
+  const [isDark, setIsDark] = useState(true);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("stocks-theme");
+    if (saved === "light") setIsDark(false);
+  }, []);
 
   const [tickers, setTickers] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
@@ -79,20 +85,18 @@ export default function ComparePage() {
 
   if (guardLoading || !visible) return null;
 
+  const themeClass = isDark ? "stocks-dark" : "stocks-light";
+
   return (
     <>
       <NavBar />
-      <div className="stocks-dark">
+      <div className={themeClass}>
         <main style={{ padding: "16px 24px", maxWidth: 1200, margin: "0 auto" }}>
           <h5 style={{ fontWeight: 700, marginBottom: 16 }}>Compare Assets</h5>
 
-          {/* Search + Shortcuts */}
           <div className="row g-3 mb-3">
             <div className="col-md-6">
-              <StockSearch
-                onSelect={(sym) => handleAddTicker(sym)}
-                placeholder="Search stock to compare..."
-              />
+              <StockSearch onSelect={(sym) => handleAddTicker(sym)} placeholder="Search stock to compare..." />
             </div>
             <div className="col-md-6 d-flex align-items-center gap-2 flex-wrap">
               {SHORTCUTS.map((s) => (
@@ -109,20 +113,14 @@ export default function ComparePage() {
             </div>
           </div>
 
-          {/* Ticker chips */}
           {tickers.length > 0 && (
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
               {tickers.map((t, i) => (
                 <span
                   key={t}
                   style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 4,
-                    padding: "3px 10px",
-                    borderRadius: 16,
-                    fontSize: 12,
-                    fontWeight: 600,
+                    display: "inline-flex", alignItems: "center", gap: 4,
+                    padding: "3px 10px", borderRadius: 16, fontSize: 12, fontWeight: 600,
                     background: `${COLORS[i % COLORS.length]}18`,
                     color: COLORS[i % COLORS.length],
                     border: `1px solid ${COLORS[i % COLORS.length]}40`,
@@ -132,44 +130,22 @@ export default function ComparePage() {
                   <button
                     onClick={() => handleRemove(t)}
                     style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }}
-                  >
-                    x
-                  </button>
+                  >x</button>
                 </span>
               ))}
             </div>
           )}
 
-          {/* Controls */}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
             <div style={{ display: "flex", gap: 3 }}>
-              <button
-                className={`sd-btn${mode === "percent" ? " sd-btn-active" : ""}`}
-                style={{ fontSize: 11, padding: "3px 10px" }}
-                onClick={() => setMode("percent")}
-              >
-                Change %
-              </button>
-              <button
-                className={`sd-btn${mode === "base100" ? " sd-btn-active" : ""}`}
-                style={{ fontSize: 11, padding: "3px 10px" }}
-                onClick={() => setMode("base100")}
-              >
-                Base 100
-              </button>
+              <button className={`sd-btn${mode === "percent" ? " sd-btn-active" : ""}`} style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => setMode("percent")}>Change %</button>
+              <button className={`sd-btn${mode === "base100" ? " sd-btn-active" : ""}`} style={{ fontSize: 11, padding: "3px 10px" }} onClick={() => setMode("base100")}>Base 100</button>
             </div>
 
             {mode === "percent" && (
               <div style={{ display: "flex", gap: 3 }}>
                 {RANGES.map((r) => (
-                  <button
-                    key={r.value}
-                    className={`sd-btn${range === r.value ? " sd-btn-active" : ""}`}
-                    style={{ fontSize: 11, padding: "3px 8px" }}
-                    onClick={() => setRange(r.value)}
-                  >
-                    {r.label}
-                  </button>
+                  <button key={r.value} className={`sd-btn${range === r.value ? " sd-btn-active" : ""}`} style={{ fontSize: 11, padding: "3px 8px" }} onClick={() => setRange(r.value)}>{r.label}</button>
                 ))}
               </div>
             )}
@@ -177,31 +153,16 @@ export default function ComparePage() {
             {mode === "base100" && (
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <label className="sd-muted" style={{ fontSize: 11 }}>From:</label>
-                <input
-                  type="date"
-                  className="sd-input"
-                  style={{ width: 140, fontSize: 11, padding: "3px 8px" }}
-                  value={baseDate}
-                  onChange={(e) => setBaseDate(e.target.value)}
-                />
+                <input type="date" className="sd-input" style={{ width: 140, fontSize: 11, padding: "3px 8px" }} value={baseDate} onChange={(e) => setBaseDate(e.target.value)} />
                 <label className="sd-muted" style={{ fontSize: 11 }}>To:</label>
-                <input
-                  type="date"
-                  className="sd-input"
-                  style={{ width: 140, fontSize: 11, padding: "3px 8px" }}
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                />
+                <input type="date" className="sd-input" style={{ width: 140, fontSize: 11, padding: "3px 8px" }} value={endDate} onChange={(e) => setEndDate(e.target.value)} />
               </div>
             )}
           </div>
 
-          {/* Chart */}
           <div className="sd-card">
             {tickers.length === 0 ? (
-              <div style={{ textAlign: "center", padding: 40 }} className="sd-muted">
-                Add assets to compare
-              </div>
+              <div style={{ textAlign: "center", padding: 40 }} className="sd-muted">Add assets to compare</div>
             ) : isLoading ? (
               <div style={{ textAlign: "center", padding: 40 }}>
                 <span className="spinner-border spinner-border-sm" style={{ color: "#8b949e" }} />
@@ -214,6 +175,7 @@ export default function ComparePage() {
                 height={420}
                 baseDate={baseDate || undefined}
                 endDate={endDate || undefined}
+                dark={isDark}
               />
             )}
           </div>

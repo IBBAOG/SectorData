@@ -1417,21 +1417,62 @@ a {
   border-color: #ff5000;
 }
 
-/* Modal dark theme */
-.stocks-dark .modal-content {
-  background: #161b22;
-  border: 1px solid #30363d;
+/* ── Liquid Glass Modal (Dark) ──────────────────────────────────────────── */
+.stocks-dark .sd-modal-glass {
+  position: relative;
+  border-radius: 24px;
+  background: linear-gradient(
+    145deg,
+    rgba(22, 27, 34, 0.96) 0%,
+    rgba(13, 17, 23, 0.92) 40%,
+    rgba(22, 27, 34, 0.95) 100%
+  );
+  backdrop-filter: blur(60px) saturate(180%) brightness(1.05);
+  -webkit-backdrop-filter: blur(60px) saturate(180%) brightness(1.05);
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 16px 48px rgba(0, 0, 0, 0.45),
+    0 4px 12px rgba(0, 0, 0, 0.25),
+    inset 0 2px 0 rgba(255, 255, 255, 0.06),
+    inset 0 0 30px rgba(255, 255, 255, 0.03);
   color: #e6edf3;
+  overflow: hidden;
 }
-.stocks-dark .modal-header {
-  border-bottom: 1px solid #30363d;
+.stocks-dark .sd-modal-glass::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 50%;
+  border-radius: 24px 24px 0 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.04) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
 }
-.stocks-dark .modal-footer {
-  border-top: 1px solid #30363d;
+.stocks-dark .sd-modal-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  position: relative; z-index: 1;
 }
-.stocks-dark .btn-close {
-  filter: invert(1);
+.stocks-dark .sd-modal-body {
+  padding: 16px 24px;
+  position: relative; z-index: 1;
+  max-height: 55vh;
+  overflow-y: auto;
 }
+.stocks-dark .sd-modal-footer {
+  padding: 14px 24px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  position: relative; z-index: 1;
+}
+.stocks-dark .sd-modal-group {
+  padding: 14px;
+  background: rgba(0,0,0,0.25);
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.05);
+  margin-bottom: 12px;
+}
+.stocks-dark .btn-close { filter: invert(1); }
 
 /* Search dropdown dark */
 .stocks-dark .list-group-item {
@@ -1445,6 +1486,226 @@ a {
   border-color: #30363d;
   color: #e6edf3;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   STOCKS MODULE — Light Theme
+   Scoped to .stocks-light so it doesn't affect other modules.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.stocks-light {
+  background: #f5f5f5;
+  color: #1a1a1a;
+  min-height: calc(100vh - 56px);
+  font-family: Arial, sans-serif;
+}
+
+.stocks-light .sd-card {
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+.stocks-light .sd-muted { color: #888; }
+.stocks-light .sd-green { color: #16a34a; }
+.stocks-light .sd-red   { color: #dc2626; }
+
+.stocks-light .sd-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.stocks-light .sd-table th {
+  color: #888;
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 6px;
+  border-bottom: 1px solid #e0e0e0;
+}
+.stocks-light .sd-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid #f0f0f0;
+  white-space: nowrap;
+}
+.stocks-light .sd-table tr:hover {
+  background: #f9f9f9;
+}
+.stocks-light .sd-table tr.sd-selected {
+  background: #fff7ed;
+  border-left: 2px solid #ff5000;
+}
+
+.stocks-light .sd-group-header {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #888;
+  padding: 8px 6px 3px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.stocks-light .sd-btn {
+  background: #f3f4f6;
+  color: #333;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.stocks-light .sd-btn:hover { background: #e5e7eb; }
+.stocks-light .sd-btn-active {
+  background: #ff5000;
+  color: #fff;
+  border-color: #ff5000;
+}
+
+.stocks-light .sd-input {
+  background: #ffffff;
+  color: #1a1a1a;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  width: 100%;
+}
+.stocks-light .sd-input:focus {
+  outline: none;
+  border-color: #ff5000;
+  box-shadow: 0 0 0 2px rgba(255,80,0,0.15);
+}
+.stocks-light .sd-input::placeholder { color: #aaa; }
+
+.stocks-light .sd-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+  text-transform: uppercase;
+}
+.stocks-light .sd-badge-active {
+  background: #ff5000;
+  color: #fff;
+}
+.stocks-light .sd-badge-open {
+  background: rgba(22,163,74,0.1);
+  color: #16a34a;
+}
+.stocks-light .sd-badge-closed {
+  background: #f3f4f6;
+  color: #888;
+}
+
+.stocks-light .sd-select {
+  background: #ffffff;
+  color: #1a1a1a;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  padding: 4px 24px 4px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23888888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+.stocks-light .sd-select:focus {
+  outline: none;
+  border-color: #ff5000;
+}
+
+/* ── Liquid Glass Modal (Light) ────────────────────────────────────────── */
+.stocks-light .sd-modal-glass {
+  position: relative;
+  border-radius: 24px;
+  background: linear-gradient(
+    145deg,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(248, 248, 252, 0.90) 40%,
+    rgba(245, 245, 250, 0.93) 100%
+  );
+  backdrop-filter: blur(60px) saturate(180%) brightness(1.05);
+  -webkit-backdrop-filter: blur(60px) saturate(180%) brightness(1.05);
+  border: 2px solid rgba(255, 255, 255, 0.72);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.28),
+    0 16px 48px rgba(0, 0, 0, 0.12),
+    0 4px 12px rgba(0, 0, 0, 0.06),
+    inset 0 2px 0 rgba(255, 255, 255, 0.9),
+    inset 0 0 30px rgba(255, 255, 255, 0.22);
+  color: #1a1a1a;
+  overflow: hidden;
+}
+.stocks-light .sd-modal-glass::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 50%;
+  border-radius: 24px 24px 0 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.15) 45%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+.stocks-light .sd-modal-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  position: relative; z-index: 1;
+}
+.stocks-light .sd-modal-body {
+  padding: 16px 24px;
+  position: relative; z-index: 1;
+  max-height: 55vh;
+  overflow-y: auto;
+}
+.stocks-light .sd-modal-footer {
+  padding: 14px 24px;
+  border-top: 1px solid rgba(0,0,0,0.06);
+  position: relative; z-index: 1;
+}
+.stocks-light .sd-modal-group {
+  padding: 14px;
+  background: rgba(0,0,0,0.03);
+  border-radius: 14px;
+  border: 1px solid rgba(0,0,0,0.06);
+  margin-bottom: 12px;
+}
+.stocks-light .btn-close { filter: none; }
+
+/* Search dropdown light */
+.stocks-light .list-group-item {
+  background: #ffffff;
+  color: #1a1a1a;
+  border-color: #e0e0e0;
+}
+.stocks-light .list-group-item:hover,
+.stocks-light .list-group-item.active {
+  background: #f5f5f5;
+  border-color: #e0e0e0;
+  color: #1a1a1a;
+}
+
+/* ── Theme toggle switch ───────────────────────────────────────────────── */
+.sd-theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 14px;
+  user-select: none;
+  transition: background 0.2s;
+}
+.stocks-dark .sd-theme-toggle { background: #21262d; color: #e6edf3; border: 1px solid #30363d; }
+.stocks-dark .sd-theme-toggle:hover { background: #30363d; }
+.stocks-light .sd-theme-toggle { background: #f3f4f6; color: #333; border: 1px solid #e0e0e0; }
+.stocks-light .sd-theme-toggle:hover { background: #e5e7eb; }
 
 /* ── Stock blink animation ─────────────────────────────────────────────────── */
 @keyframes stock-blink-green {
