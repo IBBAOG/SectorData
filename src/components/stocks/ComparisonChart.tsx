@@ -25,12 +25,12 @@ const THEMES = {
   light: { bg: "#ffffff", grid: "#f3f4f6", text: "#374151", border: "#e5e7eb", crosshair: "#9ca3af", tooltip: "#1f2937", tooltipText: "#ffffff" },
 };
 
-const PADDING = { top: 10, right: 60, bottom: 24, left: 6 };
+const PADDING = { top: 10, right: 64, bottom: 28, left: 48 };
 
 function fmtDate(unix: number, short = false): string {
   const d = new Date(unix * 1000);
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  if (short) return `${months[d.getMonth()]} ${d.getDate()}`;
+  if (short) return `${months[d.getMonth()]} ${String(d.getDate()).padStart(2, "0")}`;
   return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
@@ -58,7 +58,7 @@ interface NormalizedSeries {
   values: { date: number; value: number }[];
 }
 
-export default function ComparisonChart({ series, height = 400, mode, baseDate, endDate, dark = true }: Props) {
+export default function ComparisonChart({ series, height, mode, baseDate, endDate, dark = true }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mouseRef = useRef<{ x: number; y: number } | null>(null);
@@ -66,7 +66,6 @@ export default function ComparisonChart({ series, height = 400, mode, baseDate, 
 
   const t = dark ? THEMES.dark : THEMES.light;
 
-  // Normalize series data
   const normalized: NormalizedSeries[] = series.map((s, i) => {
     let filtered = s.data;
     if (mode === "base100") {
@@ -77,30 +76,30 @@ export default function ComparisonChart({ series, height = 400, mode, baseDate, 
     if (!filtered.length) return { ticker: s.ticker, color: s.color ?? COLORS[i % COLORS.length], values: [] };
     const baseValue = filtered[0].close;
     if (!baseValue) return { ticker: s.ticker, color: s.color ?? COLORS[i % COLORS.length], values: [] };
-
     return {
       ticker: s.ticker,
       color: s.color ?? COLORS[i % COLORS.length],
       values: filtered.map((d) => ({
         date: d.date,
-        value: mode === "percent"
-          ? ((d.close - baseValue) / baseValue) * 100
-          : (d.close / baseValue) * 100,
+        value: mode === "percent" ? ((d.close - baseValue) / baseValue) * 100 : (d.close / baseValue) * 100,
       })),
     };
   });
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    const w = rect.width;
-    const h = rect.height;
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    if (w <= 0 || h <= 0) return;
 
     canvas.width = w * dpr;
     canvas.height = h * dpr;
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
     const ctx = canvas.getContext("2d")!;
     ctx.scale(dpr, dpr);
 
@@ -114,7 +113,6 @@ export default function ComparisonChart({ series, height = 400, mode, baseDate, 
     const activeSeries = normalized.filter((s) => s.values.length > 0);
     if (!activeSeries.length) return;
 
-    // Find global min/max and date range
     let minVal = Infinity, maxVal = -Infinity;
     let allDates: number[] = [];
     for (const s of activeSeries) {
@@ -147,7 +145,8 @@ export default function ComparisonChart({ series, height = 400, mode, baseDate, 
 
     const xStepCount = Math.max(1, Math.floor(plotW / 80));
     const xStep = Math.max(1, Math.floor(allDates.length / xStepCount));
-    for (let i = 0; i < allDates.length; i += xStep) {
+    const xStart = Math.max(1, xStep);
+    for (let i = xStart; i < allDates.length; i += xStep) {
       const x = Math.round(toX(i)) + 0.5;
       ctx.beginPath();
       ctx.moveTo(x, PADDING.top);
@@ -174,7 +173,6 @@ export default function ComparisonChart({ series, height = 400, mode, baseDate, 
       ctx.strokeStyle = s.color;
       ctx.lineWidth = 2;
       for (let i = 0; i < s.values.length; i++) {
-        // Map this series' index to the global x scale
         const xi = allDates.indexOf(s.values[i].date);
         const x = xi >= 0 ? toX(xi) : toX(i * (allDates.length - 1) / (s.values.length - 1 || 1));
         const y = toY(s.values[i].value);
@@ -183,14 +181,49 @@ export default function ComparisonChart({ series, height = 400, mode, baseDate, 
       ctx.stroke();
     }
 
+    // ── Current value labels (right side, like TradingView) ──
+    const suffix = mode === "percent" ? "%" : "";
+    for (const s of activeSeries) {
+      if (!s.values.length) continue;
+      const lastVal = s.values[s.values.length - 1].value;
+      const lastY = toY(lastVal);
+      const labelText = lastVal.toFixed(1) + suffix;
+      ctx.font = "bold 9px Arial";
+      const lw = ctx.measureText(labelText).width + 8;
+
+      // Dashed line at current value
+      ctx.setLineDash([2, 2]);
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(PADDING.left, lastY);
+      ctx.lineTo(w - PADDING.right, lastY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Label box
+      ctx.fillStyle = s.color;
+      ctx.fillRect(w - PADDING.right, lastY - 7, lw, 14);
+      ctx.fillStyle = "#fff";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillText(labelText, w - PADDING.right + 4, lastY);
+    }
+
     // Y-axis labels
     ctx.fillStyle = t.text;
     ctx.font = "10px Arial";
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    const suffix = mode === "percent" ? "%" : "";
     for (const v of valSteps) {
       const y = toY(v);
+      // Skip if overlaps with any current value label
+      const overlaps = activeSeries.some((s) => {
+        if (!s.values.length) return false;
+        const ly = toY(s.values[s.values.length - 1].value);
+        return Math.abs(y - ly) < 12;
+      });
+      if (overlaps) continue;
       if (y > PADDING.top + 5 && y < h - PADDING.bottom - 5) {
         ctx.fillText(v.toFixed(1) + suffix, w - PADDING.right + 6, y);
       }
@@ -199,8 +232,10 @@ export default function ComparisonChart({ series, height = 400, mode, baseDate, 
     // X-axis labels
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    for (let i = 0; i < allDates.length; i += xStep) {
-      ctx.fillText(fmtDate(allDates[i], true), toX(i), h - PADDING.bottom + 4);
+    ctx.fillStyle = t.text;
+    ctx.font = "10px Arial";
+    for (let i = xStart; i < allDates.length; i += xStep) {
+      ctx.fillText(fmtDate(allDates[i], true), toX(i), h - PADDING.bottom + 6);
     }
 
     // Crosshair
@@ -211,7 +246,6 @@ export default function ComparisonChart({ series, height = 400, mode, baseDate, 
       const snapX = toX(di);
       const snapDate = allDates[di];
 
-      // Vertical dashed line
       ctx.setLineDash([4, 3]);
       ctx.strokeStyle = t.crosshair;
       ctx.lineWidth = 1;
@@ -221,7 +255,6 @@ export default function ComparisonChart({ series, height = 400, mode, baseDate, 
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Date tooltip (bottom)
       const dateText = fmtDate(snapDate);
       const dtw = ctx.measureText(dateText).width + 8;
       ctx.fillStyle = t.tooltip;
@@ -232,12 +265,10 @@ export default function ComparisonChart({ series, height = 400, mode, baseDate, 
       ctx.textBaseline = "top";
       ctx.fillText(dateText, snapX, h - PADDING.bottom + 4);
 
-      // Series value tooltips (top-left stack)
       ctx.textAlign = "left";
       ctx.textBaseline = "top";
       let ty = PADDING.top + 2;
       for (const s of activeSeries) {
-        // Find value at this date
         const sv = s.values.find((v) => v.date === snapDate);
         if (!sv) continue;
         ctx.fillStyle = s.color;
@@ -281,17 +312,16 @@ export default function ComparisonChart({ series, height = 400, mode, baseDate, 
 
   return (
     <div>
-      <div ref={containerRef} style={{ width: "100%", height }}>
+      <div ref={containerRef} style={{ width: "100%", height: height ?? "100%", minHeight: 80 }}>
         <canvas
           ref={canvasRef}
-          style={{ width: "100%", height: "100%", display: "block" }}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
         />
       </div>
-      <div style={{ display: "flex", gap: 16, padding: "8px 0", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 16, padding: "6px 0", flexWrap: "wrap" }}>
         {series.map((s, i) => (
-          <span key={s.ticker} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: mutedColor }}>
+          <span key={s.ticker} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: mutedColor }}>
             <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: s.color ?? COLORS[i % COLORS.length], display: "inline-block" }} />
             {s.ticker}
           </span>

@@ -32,6 +32,7 @@ export default function TickerDetailPage() {
   const { visible, loading: guardLoading } = useModuleVisibilityGuard("stocks");
   const [range, setRange] = useState<TimeRange>("1y");
   const [mode, setMode] = useState<ChartMode>("candlestick");
+  const [interval, setInterval] = useState("1d");
   const [isDark, setIsDark] = useState(true);
 
   useEffect(() => {
@@ -40,7 +41,7 @@ export default function TickerDetailPage() {
   }, []);
 
   const { data: quotes } = useStockQuote(ticker ? [ticker] : []);
-  const { data: historyData, isLoading: historyLoading } = useStockHistory(ticker, range);
+  const { data: historyData, isLoading: historyLoading } = useStockHistory(ticker, range, interval);
 
   if (guardLoading || !visible) return null;
 
@@ -83,11 +84,18 @@ export default function TickerDetailPage() {
             )}
           </div>
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 6 }}>
             <div style={{ display: "flex", gap: 3 }}>
               {RANGES.map((r) => (
                 <button key={r.value} className={`sd-btn${range === r.value ? " sd-btn-active" : ""}`} style={{ fontSize: 11, padding: "3px 8px" }} onClick={() => setRange(r.value)}>
                   {r.label}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 2 }}>
+              {[{ l: "15m", v: "15m" }, { l: "30m", v: "30m" }, { l: "1H", v: "60m" }, { l: "1D", v: "1d" }, { l: "1W", v: "1wk" }].map((iv) => (
+                <button key={iv.v} className={`sd-btn${interval === iv.v ? " sd-btn-active" : ""}`} style={{ fontSize: 10, padding: "2px 6px" }} onClick={() => setInterval(iv.v)}>
+                  {iv.l}
                 </button>
               ))}
             </div>

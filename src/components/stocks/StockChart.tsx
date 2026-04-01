@@ -11,16 +11,16 @@ interface Props {
 }
 
 const THEMES = {
-  dark: { bg: "#161b22", grid: "#21262d", text: "#8b949e", border: "#30363d", up: "#3fb950", down: "#f85149", line: "#ff5000", crosshair: "#8b949e", tooltip: "#2d333b", tooltipText: "#e6edf3" },
-  light: { bg: "#ffffff", grid: "#f3f4f6", text: "#374151", border: "#e5e7eb", up: "#16a34a", down: "#dc2626", line: "#ff5000", crosshair: "#9ca3af", tooltip: "#1f2937", tooltipText: "#ffffff" },
+  dark: { bg: "#161b22", grid: "#21262d", text: "#8b949e", border: "#30363d", up: "#3fb950", down: "#f85149", line: "#ff5000", crosshair: "#8b949e", tooltip: "#2d333b", tooltipText: "#e6edf3", priceLine: "#ff5000", priceLabel: "#ff5000", priceLabelText: "#fff" },
+  light: { bg: "#ffffff", grid: "#f3f4f6", text: "#374151", border: "#e5e7eb", up: "#16a34a", down: "#dc2626", line: "#ff5000", crosshair: "#9ca3af", tooltip: "#1f2937", tooltipText: "#ffffff", priceLine: "#ff5000", priceLabel: "#ff5000", priceLabelText: "#fff" },
 };
 
-const PADDING = { top: 10, right: 60, bottom: 24, left: 6 };
+const PADDING = { top: 10, right: 64, bottom: 28, left: 48 };
 
 function fmtDate(unix: number, short = false): string {
   const d = new Date(unix * 1000);
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  if (short) return `${months[d.getMonth()]} ${d.getDate()}`;
+  if (short) return `${months[d.getMonth()]} ${String(d.getDate()).padStart(2, "0")}`;
   return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
@@ -32,17 +32,13 @@ function niceSteps(min: number, max: number, targetCount = 5): number[] {
   let step = mag;
   if (rough / mag > 5) step = mag * 5;
   else if (rough / mag > 2) step = mag * 2;
-
   const steps: number[] = [];
   let v = Math.ceil(min / step) * step;
-  while (v <= max) {
-    steps.push(v);
-    v += step;
-  }
+  while (v <= max) { steps.push(v); v += step; }
   return steps;
 }
 
-export default function StockChart({ data, mode, height = 400, dark = true }: Props) {
+export default function StockChart({ data, mode, height, dark = true }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const mouseRef = useRef<{ x: number; y: number } | null>(null);
@@ -52,19 +48,21 @@ export default function StockChart({ data, mode, height = 400, dark = true }: Pr
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !data.length) return;
+    const container = containerRef.current;
+    if (!canvas || !container || !data.length) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    const w = rect.width;
-    const h = rect.height;
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    if (w <= 0 || h <= 0) return;
 
     canvas.width = w * dpr;
     canvas.height = h * dpr;
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
     const ctx = canvas.getContext("2d")!;
     ctx.scale(dpr, dpr);
 
-    // Clear
     ctx.fillStyle = t.bg;
     ctx.fillRect(0, 0, w, h);
 
@@ -100,10 +98,11 @@ export default function StockChart({ data, mode, height = 400, dark = true }: Pr
       ctx.stroke();
     }
 
-    // X grid (every ~80px)
+    // X grid — skip first label to avoid cutoff
     const xStepCount = Math.max(1, Math.floor(plotW / 80));
     const xStep = Math.max(1, Math.floor(data.length / xStepCount));
-    for (let i = 0; i < data.length; i += xStep) {
+    const xStart = Math.max(1, xStep); // skip index 0 to avoid left cutoff
+    for (let i = xStart; i < data.length; i += xStep) {
       const x = Math.round(toX(i)) + 0.5;
       ctx.beginPath();
       ctx.moveTo(x, PADDING.top);
@@ -121,14 +120,12 @@ export default function StockChart({ data, mode, height = 400, dark = true }: Pr
         ctx.strokeStyle = isUp ? t.up : t.down;
         ctx.fillStyle = isUp ? t.up : t.down;
 
-        // Wick
         ctx.beginPath();
         ctx.moveTo(x, toY(d.high));
         ctx.lineTo(x, toY(d.low));
         ctx.lineWidth = 1;
         ctx.stroke();
 
-        // Body
         const top = toY(Math.max(d.open, d.close));
         const bottom = toY(Math.min(d.open, d.close));
         const bodyH = Math.max(1, bottom - top);
@@ -139,7 +136,6 @@ export default function StockChart({ data, mode, height = 400, dark = true }: Pr
         }
       }
     } else {
-      // Line with gradient fill
       ctx.beginPath();
       for (let i = 0; i < data.length; i++) {
         const x = toX(i);
@@ -150,7 +146,6 @@ export default function StockChart({ data, mode, height = 400, dark = true }: Pr
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Fill area
       const grad = ctx.createLinearGradient(0, PADDING.top, 0, h - PADDING.bottom);
       grad.addColorStop(0, dark ? "rgba(255,80,0,0.15)" : "rgba(255,80,0,0.1)");
       grad.addColorStop(1, "rgba(255,80,0,0)");
@@ -161,6 +156,32 @@ export default function StockChart({ data, mode, height = 400, dark = true }: Pr
       ctx.fill();
     }
 
+    // ── Current price label (like TradingView) ──
+    const lastPrice = data[data.length - 1].close;
+    const lastY = toY(lastPrice);
+    const isUp = data.length > 1 ? lastPrice >= data[data.length - 2].close : true;
+
+    // Dashed line across chart at current price
+    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = t.priceLine;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(PADDING.left, lastY);
+    ctx.lineTo(w - PADDING.right, lastY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Price label box on the right
+    const priceText = lastPrice.toFixed(2);
+    ctx.font = "bold 10px Arial";
+    const plw = ctx.measureText(priceText).width + 10;
+    ctx.fillStyle = t.priceLabel;
+    ctx.fillRect(w - PADDING.right, lastY - 9, plw, 18);
+    ctx.fillStyle = t.priceLabelText;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(priceText, w - PADDING.right + 5, lastY);
+
     // Y-axis labels
     ctx.fillStyle = t.text;
     ctx.font = "10px Arial";
@@ -168,30 +189,32 @@ export default function StockChart({ data, mode, height = 400, dark = true }: Pr
     ctx.textBaseline = "middle";
     for (const p of priceSteps) {
       const y = toY(p);
+      // Don't draw if it overlaps with current price label
+      if (Math.abs(y - lastY) < 14) continue;
       if (y > PADDING.top + 5 && y < h - PADDING.bottom - 5) {
         ctx.fillText(p.toFixed(2), w - PADDING.right + 6, y);
       }
     }
 
-    // X-axis labels
+    // X-axis labels — skip first to avoid left cutoff
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    for (let i = 0; i < data.length; i += xStep) {
+    ctx.fillStyle = t.text;
+    ctx.font = "10px Arial";
+    for (let i = xStart; i < data.length; i += xStep) {
       const x = toX(i);
-      ctx.fillText(fmtDate(data[i].date, true), x, h - PADDING.bottom + 4);
+      ctx.fillText(fmtDate(data[i].date, true), x, h - PADDING.bottom + 6);
     }
 
     // Crosshair
     const mouse = mouseRef.current;
     if (mouse && mouse.x >= PADDING.left && mouse.x <= w - PADDING.right && mouse.y >= PADDING.top && mouse.y <= h - PADDING.bottom) {
-      // Find nearest data point
       const idx = Math.round(((mouse.x - PADDING.left) / plotW) * (data.length - 1));
       const di = Math.max(0, Math.min(data.length - 1, idx));
       const dp = data[di];
       const snapX = toX(di);
-      const snapY = toY(mode === "candlestick" ? dp.close : dp.close);
+      const snapY = toY(dp.close);
 
-      // Vertical line
       ctx.setLineDash([4, 3]);
       ctx.strokeStyle = t.crosshair;
       ctx.lineWidth = 1;
@@ -199,26 +222,22 @@ export default function StockChart({ data, mode, height = 400, dark = true }: Pr
       ctx.moveTo(snapX, PADDING.top);
       ctx.lineTo(snapX, h - PADDING.bottom);
       ctx.stroke();
-
-      // Horizontal line
       ctx.beginPath();
       ctx.moveTo(PADDING.left, snapY);
       ctx.lineTo(w - PADDING.right, snapY);
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Price tooltip (right)
-      const priceText = dp.close.toFixed(2);
-      const tw = ctx.measureText(priceText).width + 8;
+      const ptText = dp.close.toFixed(2);
+      const tw = ctx.measureText(ptText).width + 8;
       ctx.fillStyle = t.tooltip;
       ctx.fillRect(w - PADDING.right, snapY - 9, tw + 4, 18);
       ctx.fillStyle = t.tooltipText;
       ctx.font = "10px Arial";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
-      ctx.fillText(priceText, w - PADDING.right + 4, snapY);
+      ctx.fillText(ptText, w - PADDING.right + 4, snapY);
 
-      // Date tooltip (bottom)
       const dateText = fmtDate(dp.date);
       const dtw = ctx.measureText(dateText).width + 8;
       ctx.fillStyle = t.tooltip;
@@ -228,7 +247,6 @@ export default function StockChart({ data, mode, height = 400, dark = true }: Pr
       ctx.textBaseline = "top";
       ctx.fillText(dateText, snapX, h - PADDING.bottom + 4);
 
-      // OHLC tooltip (top-left)
       if (mode === "candlestick") {
         const ohlc = `O ${dp.open.toFixed(2)}  H ${dp.high.toFixed(2)}  L ${dp.low.toFixed(2)}  C ${dp.close.toFixed(2)}`;
         ctx.fillStyle = t.text;
@@ -240,12 +258,8 @@ export default function StockChart({ data, mode, height = 400, dark = true }: Pr
     }
   }, [data, mode, dark, t]);
 
-  // Redraw on data/mode/theme changes
-  useEffect(() => {
-    draw();
-  }, [draw]);
+  useEffect(() => { draw(); }, [draw]);
 
-  // ResizeObserver
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -272,10 +286,9 @@ export default function StockChart({ data, mode, height = 400, dark = true }: Pr
   }, [draw]);
 
   return (
-    <div ref={containerRef} style={{ width: "100%", height }}>
+    <div ref={containerRef} style={{ width: "100%", height: height ?? "100%", minHeight: 80 }}>
       <canvas
         ref={canvasRef}
-        style={{ width: "100%", height: "100%", display: "block" }}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
       />

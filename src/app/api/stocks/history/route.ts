@@ -26,10 +26,13 @@ function rangeToPeriod1(range: string): number {
   return Math.floor((now - delta) / 1000);
 }
 
+const VALID_INTERVALS = new Set(["1m", "2m", "5m", "15m", "30m", "60m", "1h", "1d", "5d", "1wk", "1mo"]);
+
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const ticker = searchParams.get("ticker");
   const range = searchParams.get("range") ?? "1y";
+  const interval = searchParams.get("interval") ?? "1d";
 
   if (!ticker) {
     return Response.json({ error: "Missing ticker parameter" }, { status: 400 });
@@ -38,12 +41,13 @@ export async function GET(request: NextRequest) {
   const yahooSymbol = toYahooSymbol(ticker);
   const period1 = rangeToPeriod1(range);
   const period2 = Math.floor(Date.now() / 1000);
+  const safeInterval = VALID_INTERVALS.has(interval) ? interval : "1d";
 
-  const url = `${YAHOO_BASE}/${encodeURIComponent(yahooSymbol)}?period1=${period1}&period2=${period2}&interval=1d`;
+  const url = `${YAHOO_BASE}/${encodeURIComponent(yahooSymbol)}?period1=${period1}&period2=${period2}&interval=${safeInterval}`;
 
   const res = await fetch(url, {
     headers: { "User-Agent": UA },
-    next: { revalidate: 3600 },
+    next: { revalidate: safeInterval.includes("m") || safeInterval === "1h" || safeInterval === "60m" ? 60 : 3600 },
   });
 
   if (!res.ok) {

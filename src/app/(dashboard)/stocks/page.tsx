@@ -336,20 +336,32 @@ function WatchlistCardContent({ card, isDark, onUpdate }: { card: DashCard & { t
 
 /* ── Extra Chart Card ────────────────────────────────────────────────────── */
 
+const INTERVALS = [
+  { label: "15m", value: "15m" }, { label: "30m", value: "30m" }, { label: "1H", value: "60m" },
+  { label: "1D", value: "1d" }, { label: "1W", value: "1wk" },
+];
+
 function ChartCardContent({ card, isDark, tickers, onUpdate }: { card: DashCard & { type: "chart" }; isDark: boolean; tickers: string[]; onUpdate: (c: DashCard) => void }) {
   const [mode, setMode] = useState<ChartMode>("line");
+  const [interval, setInterval] = useState("1d");
   const effectiveTicker = card.ticker && tickers.includes(card.ticker) ? card.ticker : tickers[0] ?? "";
-  const { data, isLoading } = useStockHistory(effectiveTicker, "6mo");
+  const { data, isLoading } = useStockHistory(effectiveTicker, "6mo", interval);
 
   return (
-    <>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <CardHeader title="Chart" onRemove={card.id !== "chart" ? () => onUpdate({ ...card, ticker: "__REMOVE__" }) : undefined}>
         {tickers.length > 1 && (
           <select className="sd-select" style={{ fontSize: 10, padding: "1px 16px 1px 4px" }} value={effectiveTicker} onChange={(e) => onUpdate({ ...card, ticker: e.target.value })}>
             {tickers.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         )}
-        <span className="sd-muted" style={{ fontSize: 9 }}>6M</span>
+        <div style={{ display: "flex", gap: 1 }}>
+          {INTERVALS.map((iv) => (
+            <button key={iv.value} className={`sd-btn${interval === iv.value ? " sd-btn-active" : ""}`} style={{ fontSize: 8, padding: "1px 4px" }} onClick={() => setInterval(iv.value)}>
+              {iv.label}
+            </button>
+          ))}
+        </div>
         <div style={{ display: "flex", gap: 2 }}>
           {(["candlestick", "line"] as ChartMode[]).map((m) => (
             <button key={m} className={`sd-btn${mode === m ? " sd-btn-active" : ""}`} style={{ fontSize: 9, padding: "1px 5px" }} onClick={() => setMode(m)}>
@@ -358,12 +370,14 @@ function ChartCardContent({ card, isDark, tickers, onUpdate }: { card: DashCard 
           ))}
         </div>
       </CardHeader>
-      {isLoading ? (
-        <div style={{ textAlign: "center", padding: 30 }}><span className="spinner-border spinner-border-sm" style={{ color: "#8b949e" }} /></div>
-      ) : (
-        <StockChart data={data} mode={mode} height={200} dark={isDark} />
-      )}
-    </>
+      <div style={{ flex: 1, minHeight: 0 }}>
+        {isLoading ? (
+          <div style={{ textAlign: "center", padding: 30 }}><span className="spinner-border spinner-border-sm" style={{ color: "#8b949e" }} /></div>
+        ) : (
+          <StockChart data={data} mode={mode} dark={isDark} />
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -414,15 +428,15 @@ function CompareCardContent({ card, isDark, onUpdate }: {
   }, [card, onUpdate]);
 
   return (
-    <>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <CardHeader title="Compare Assets" onRemove={() => onUpdate({ ...card, tickers: ["__REMOVE__"] })} />
 
       {/* Search + ticker chips */}
-      <div style={{ marginBottom: 6 }}>
+      <div style={{ marginBottom: 4 }}>
         <StockSearch onSelect={addTicker} placeholder="Add asset..." />
       </div>
       {card.tickers.length > 0 && (
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 6 }}>
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 4 }}>
           {card.tickers.map((t, i) => (
             <span key={t} style={{
               display: "inline-flex", alignItems: "center", gap: 3,
@@ -439,7 +453,7 @@ function CompareCardContent({ card, isDark, onUpdate }: {
       )}
 
       {/* Controls */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, flexWrap: "wrap", gap: 4 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, flexWrap: "wrap", gap: 4 }}>
         <div style={{ display: "flex", gap: 2 }}>
           <button className={`sd-btn${card.mode === "percent" ? " sd-btn-active" : ""}`} style={{ fontSize: 9, padding: "1px 6px" }}
             onClick={() => onUpdate({ ...card, mode: "percent" })}>Change %</button>
@@ -471,23 +485,24 @@ function CompareCardContent({ card, isDark, onUpdate }: {
         )}
       </div>
 
-      {/* Chart */}
-      {card.tickers.length === 0 ? (
-        <div className="sd-muted" style={{ textAlign: "center", padding: 20, fontSize: 11 }}>Add assets to compare</div>
-      ) : isLoading ? (
-        <div style={{ textAlign: "center", padding: 20 }}><span className="spinner-border spinner-border-sm" style={{ color: "#8b949e" }} /></div>
-      ) : (
-        <ComparisonChart
-          key={card.tickers.join(",") + card.mode}
-          series={seriesData}
-          mode={card.mode}
-          height={200}
-          baseDate={card.baseDate || undefined}
-          endDate={card.endDate || undefined}
-          dark={isDark}
-        />
-      )}
-    </>
+      {/* Chart — fills remaining space */}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        {card.tickers.length === 0 ? (
+          <div className="sd-muted" style={{ textAlign: "center", padding: 20, fontSize: 11 }}>Add assets to compare</div>
+        ) : isLoading ? (
+          <div style={{ textAlign: "center", padding: 20 }}><span className="spinner-border spinner-border-sm" style={{ color: "#8b949e" }} /></div>
+        ) : (
+          <ComparisonChart
+            key={card.tickers.join(",") + card.mode}
+            series={seriesData}
+            mode={card.mode}
+            baseDate={card.baseDate || undefined}
+            endDate={card.endDate || undefined}
+            dark={isDark}
+          />
+        )}
+      </div>
+    </div>
   );
 }
 
