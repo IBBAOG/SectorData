@@ -3,7 +3,8 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import type { LayoutItem, Layout, ResponsiveLayouts } from "react-grid-layout";
+// Types inlined to avoid SSR-triggered module evaluation
+interface LayoutItem { i: string; x: number; y: number; w: number; h: number; }
 
 import NavBar from "../../../components/NavBar";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
@@ -628,14 +629,26 @@ export default function StocksPage() {
     try {
       const savedCards = localStorage.getItem(CARDS_KEY);
       const savedLayouts = localStorage.getItem(LAYOUT_KEY);
-      if (savedCards) setCards(JSON.parse(savedCards));
-      if (savedLayouts) setLayouts(JSON.parse(savedLayouts));
-    } catch { /* ignore */ }
+      if (savedCards) {
+        const parsed = JSON.parse(savedCards);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.id && parsed[0]?.type) {
+          setCards(parsed);
+        }
+      }
+      if (savedLayouts) {
+        const parsed = JSON.parse(savedLayouts);
+        if (parsed && typeof parsed === "object") setLayouts(parsed);
+      }
+    } catch {
+      // Clear corrupted data
+      localStorage.removeItem(CARDS_KEY);
+      localStorage.removeItem(LAYOUT_KEY);
+    }
     // Dynamically load noCompactor at runtime (SSR-safe)
     import("react-grid-layout").then((mod) => {
       noCompactorRef.current = mod.noCompactor;
       setMounted(true);
-    });
+    }).catch(() => setMounted(true));
   }, []);
 
   const persistCards = useCallback((c: DashCard[]) => {
@@ -643,9 +656,10 @@ export default function StocksPage() {
     localStorage.setItem(CARDS_KEY, JSON.stringify(c));
   }, []);
 
-  const handleLayoutChange = useCallback((_layout: Layout, allLayouts: ResponsiveLayouts) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleLayoutChange = useCallback((_layout: any, allLayouts: any) => {
     const serializable = Object.fromEntries(
-      Object.entries(allLayouts).map(([k, v]) => [k, v ? [...v] : []])
+      Object.entries(allLayouts).map(([k, v]) => [k, Array.isArray(v) ? [...v] : []])
     ) as Record<string, LayoutItem[]>;
     setLayouts(serializable);
     localStorage.setItem(LAYOUT_KEY, JSON.stringify(serializable));
