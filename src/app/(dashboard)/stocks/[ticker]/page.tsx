@@ -40,8 +40,12 @@ export default function TickerDetailPage() {
     if (saved === "light") setIsDark(false);
   }, []);
 
+  // Auto-select range for intraday intervals
+  const INTERVAL_RANGE: Record<string, string> = { "15m": "3d", "30m": "5d", "60m": "1mo" };
+  const effectiveRange = (INTERVAL_RANGE[interval] ?? range) as TimeRange;
+
   const { data: quotes } = useStockQuote(ticker ? [ticker] : []);
-  const { data: historyData, isLoading: historyLoading } = useStockHistory(ticker, range, interval);
+  const { data: historyData, isLoading: historyLoading } = useStockHistory(ticker, effectiveRange, interval);
 
   if (guardLoading || !visible) return null;
 

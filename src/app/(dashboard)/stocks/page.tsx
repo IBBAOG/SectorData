@@ -12,6 +12,7 @@ import { useStockHistory } from "../../../hooks/useStockHistory";
 import { useStockPortfolios } from "../../../hooks/useStockPortfolios";
 import { useAutoRefresh } from "../../../hooks/useAutoRefresh";
 import type { ChartMode, PortfolioGroup, StockQuote, TimeRange, HistoricalDataPoint } from "../../../types/stocks";
+// TimeRange used for auto-range selection
 
 const StockChart = dynamic(() => import("../../../components/stocks/StockChart"), { ssr: false });
 const ComparisonChart = dynamic(() => import("../../../components/stocks/ComparisonChart"), { ssr: false });
@@ -341,11 +342,17 @@ const INTERVALS = [
   { label: "1D", value: "1d" }, { label: "1W", value: "1wk" },
 ];
 
+// Auto-select range based on interval — Yahoo limits intraday data
+const INTERVAL_RANGE: Record<string, string> = {
+  "15m": "3d", "30m": "5d", "60m": "1mo", "1d": "6mo", "1wk": "2y",
+};
+
 function ChartCardContent({ card, isDark, tickers, onUpdate }: { card: DashCard & { type: "chart" }; isDark: boolean; tickers: string[]; onUpdate: (c: DashCard) => void }) {
   const [mode, setMode] = useState<ChartMode>("line");
   const [interval, setInterval] = useState("1d");
   const effectiveTicker = card.ticker && tickers.includes(card.ticker) ? card.ticker : tickers[0] ?? "";
-  const { data, isLoading } = useStockHistory(effectiveTicker, "6mo", interval);
+  const autoRange = (INTERVAL_RANGE[interval] ?? "6mo") as TimeRange;
+  const { data, isLoading } = useStockHistory(effectiveTicker, autoRange, interval);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>

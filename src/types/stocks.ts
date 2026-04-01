@@ -25,7 +25,7 @@ export interface HistoricalDataPoint {
 }
 
 export type ChartMode = "candlestick" | "line";
-export type TimeRange = "1d" | "5d" | "1mo" | "3mo" | "6mo" | "1y" | "2y" | "5y" | "max";
+export type TimeRange = "1d" | "3d" | "5d" | "1mo" | "3mo" | "6mo" | "1y" | "2y" | "5y" | "max";
 
 export interface StockSearchResult {
   symbol: string;

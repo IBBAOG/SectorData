@@ -13,6 +13,7 @@ function rangeToPeriod1(range: string): number {
   const now = Date.now();
   const ms: Record<string, number> = {
     "1d": 1 * 86400_000,
+    "3d": 3 * 86400_000,
     "5d": 5 * 86400_000,
     "1mo": 30 * 86400_000,
     "3mo": 90 * 86400_000,
