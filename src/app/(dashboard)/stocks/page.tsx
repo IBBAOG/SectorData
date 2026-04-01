@@ -754,16 +754,16 @@ function StocksPageInner() {
     return m;
   }, [quotes]);
 
-  // Container width — simple ref-based measurement (no external hook)
-  const containerRef = useRef<HTMLDivElement>(null);
+  // Container width — callback ref to handle element appearing after guard loads
   const [containerWidth, setContainerWidth] = useState(0);
-  useEffect(() => {
-    const el = containerRef.current; if (!el) return;
-    const measure = () => setContainerWidth(el.clientWidth);
-    measure();
-    const ro = new ResizeObserver(measure);
+  const roRef = useRef<ResizeObserver | null>(null);
+  const containerRef = useCallback((el: HTMLDivElement | null) => {
+    if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
+    if (!el) return;
+    setContainerWidth(el.clientWidth);
+    const ro = new ResizeObserver(() => setContainerWidth(el.clientWidth));
     ro.observe(el);
-    return () => ro.disconnect();
+    roRef.current = ro;
   }, []);
 
   // Ensure layout has entries for all cards — MUST be before any conditional return
@@ -845,7 +845,7 @@ function StocksPageInner() {
           )}
 
           {/* ── Draggable Grid ── */}
-          <div ref={containerRef} style={{ minHeight: 1 }} />
+          <div ref={containerRef} style={{ width: "100%", minHeight: 4 }} />
           {mounted && activePortfolio && containerWidth > 0 && (
             <GridLayout
               className="layout"
