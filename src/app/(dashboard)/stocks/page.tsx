@@ -342,17 +342,33 @@ const INTERVALS = [
   { label: "1D", value: "1d" }, { label: "1W", value: "1wk" },
 ];
 
-// Auto-select range based on interval — Yahoo limits intraday data
-const INTERVAL_RANGE: Record<string, string> = {
-  "15m": "3d", "30m": "5d", "60m": "1mo", "1d": "6mo", "1wk": "2y",
+const CHART_RANGES: { label: string; value: TimeRange }[] = [
+  { label: "1D", value: "1d" }, { label: "5D", value: "5d" }, { label: "1M", value: "1mo" },
+  { label: "3M", value: "3mo" }, { label: "6M", value: "6mo" }, { label: "1Y", value: "1y" },
+  { label: "2Y", value: "2y" }, { label: "MAX", value: "max" },
+];
+
+// Max range Yahoo allows per interval
+const MAX_RANGE: Record<string, string> = {
+  "15m": "5d", "30m": "1mo", "60m": "3mo", "1d": "max", "1wk": "max",
 };
+const RANGE_ORDER = ["1d","3d","5d","1mo","3mo","6mo","1y","2y","5y","max"];
+
+const INTRADAY_INTERVALS = new Set(["15m", "30m", "60m"]);
 
 function ChartCardContent({ card, isDark, tickers, onUpdate }: { card: DashCard & { type: "chart" }; isDark: boolean; tickers: string[]; onUpdate: (c: DashCard) => void }) {
   const [mode, setMode] = useState<ChartMode>("line");
   const [interval, setInterval] = useState("1d");
+  const [range, setRange] = useState<TimeRange>("6mo");
   const effectiveTicker = card.ticker && tickers.includes(card.ticker) ? card.ticker : tickers[0] ?? "";
-  const autoRange = (INTERVAL_RANGE[interval] ?? "6mo") as TimeRange;
-  const { data, isLoading } = useStockHistory(effectiveTicker, autoRange, interval);
+  const isIntraday = INTRADAY_INTERVALS.has(interval);
+
+  // Clamp range to what Yahoo supports for this interval
+  const maxIdx = RANGE_ORDER.indexOf(MAX_RANGE[interval] ?? "max");
+  const rangeIdx = RANGE_ORDER.indexOf(range);
+  const effectiveRange = (rangeIdx > maxIdx ? MAX_RANGE[interval] ?? "6mo" : range) as TimeRange;
+
+  const { data, isLoading } = useStockHistory(effectiveTicker, effectiveRange, interval);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -362,6 +378,22 @@ function ChartCardContent({ card, isDark, tickers, onUpdate }: { card: DashCard 
             {tickers.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         )}
+      </CardHeader>
+      {/* Controls row below header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "2px 0 4px", gap: 4, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 1 }}>
+          {CHART_RANGES.map((r) => {
+            const rIdx = RANGE_ORDER.indexOf(r.value);
+            const disabled = rIdx > maxIdx;
+            return (
+              <button key={r.value} className={`sd-btn${range === r.value ? " sd-btn-active" : ""}`}
+                style={{ fontSize: 8, padding: "1px 4px", opacity: disabled ? 0.3 : 1 }}
+                onClick={() => !disabled && setRange(r.value)} disabled={disabled}>
+                {r.label}
+              </button>
+            );
+          })}
+        </div>
         <div style={{ display: "flex", gap: 1 }}>
           {INTERVALS.map((iv) => (
             <button key={iv.value} className={`sd-btn${interval === iv.value ? " sd-btn-active" : ""}`} style={{ fontSize: 8, padding: "1px 4px" }} onClick={() => setInterval(iv.value)}>
@@ -376,12 +408,12 @@ function ChartCardContent({ card, isDark, tickers, onUpdate }: { card: DashCard 
             </button>
           ))}
         </div>
-      </CardHeader>
+      </div>
       <div style={{ flex: 1, minHeight: 0 }}>
         {isLoading ? (
           <div style={{ textAlign: "center", padding: 30 }}><span className="spinner-border spinner-border-sm" style={{ color: "#8b949e" }} /></div>
         ) : (
-          <StockChart data={data} mode={mode} dark={isDark} />
+          <StockChart data={data} mode={mode} dark={isDark} intraday={isIntraday} />
         )}
       </div>
     </div>

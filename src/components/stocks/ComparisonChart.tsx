@@ -8,10 +8,12 @@ interface SeriesInput { ticker: string; data: HistoricalDataPoint[]; color?: str
 interface Props { series: SeriesInput[]; height?: number; mode: "percent"|"base100"; baseDate?: string; endDate?: string; dark?: boolean; }
 
 const THEMES = {
-  dark: { bg:"#161b22",grid:"#21262d",text:"#8b949e",border:"#30363d",crosshair:"#8b949e",tooltip:"#2d333b",tooltipText:"#e6edf3" },
-  light: { bg:"#ffffff",grid:"#f3f4f6",text:"#374151",border:"#e5e7eb",crosshair:"#9ca3af",tooltip:"#1f2937",tooltipText:"#ffffff" },
+  dark: { bg:"#161b22",grid:"#21262d",text:"#c9d1d9",border:"#30363d",crosshair:"#8b949e",tooltip:"#2d333b",tooltipText:"#ffffff" },
+  light: { bg:"#ffffff",grid:"#f0f0f0",text:"#1a1a1a",border:"#e0e0e0",crosshair:"#9ca3af",tooltip:"#1f2937",tooltipText:"#ffffff" },
 };
-const PAD = {top:10,right:64,bottom:28,left:48};
+const FONT_SM = "11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif";
+const FONT_BOLD = "bold 9px -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif";
+const PAD = {top:12,right:72,bottom:32,left:8};
 const MIN_BARS = 10;
 
 function fmtDate(unix:number,short=false):string { const d=new Date(unix*1000); const M=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return short?`${M[d.getMonth()]} ${String(d.getDate()).padStart(2,"0")}`:`${M[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`; }
@@ -83,14 +85,14 @@ export default function ComparisonChart({series,height,mode,baseDate,endDate,dar
 
     // Current value labels
     const suffix=mode==="percent"?"%":"";
-    for(const s of active){const li=Math.min(ve,s.values.length-1);if(li<0)continue;const lv=s.values[li].value,ly=toY(lv);const lt=lv.toFixed(1)+suffix;ctx.font="bold 9px Arial";const lw=ctx.measureText(lt).width+8;ctx.setLineDash([2,2]);ctx.strokeStyle=s.color;ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(PAD.left,ly);ctx.lineTo(w-PAD.right,ly);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=s.color;ctx.fillRect(w-PAD.right,ly-7,lw,14);ctx.fillStyle="#fff";ctx.textAlign="left";ctx.textBaseline="middle";ctx.fillText(lt,w-PAD.right+4,ly);}
+    for(const s of active){const li=Math.min(ve,s.values.length-1);if(li<0)continue;const lv=s.values[li].value,ly=toY(lv);const lt=lv.toFixed(1)+suffix;ctx.font=FONT_BOLD;const lw=ctx.measureText(lt).width+8;ctx.setLineDash([2,2]);ctx.strokeStyle=s.color;ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(PAD.left,ly);ctx.lineTo(w-PAD.right,ly);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=s.color;ctx.fillRect(w-PAD.right,ly-7,lw,14);ctx.fillStyle="#fff";ctx.textAlign="left";ctx.textBaseline="middle";ctx.fillText(lt,w-PAD.right+4,ly);}
 
     // Y labels
-    ctx.fillStyle=t.text;ctx.font="10px Arial";ctx.textAlign="left";ctx.textBaseline="middle";
+    ctx.fillStyle=t.text;ctx.font=FONT_SM;ctx.textAlign="left";ctx.textBaseline="middle";
     for(const v of valSteps){const y=toY(v);const ov=active.some(s=>{const li=Math.min(ve,s.values.length-1);return li>=0&&Math.abs(y-toY(s.values[li].value))<12;});if(ov)continue;if(y>PAD.top+5&&y<h-PAD.bottom-5)ctx.fillText(v.toFixed(1)+suffix,w-PAD.right+6,y);}
 
     // X labels
-    ctx.textAlign="center";ctx.textBaseline="top";ctx.fillStyle=t.text;ctx.font="10px Arial";
+    ctx.textAlign="center";ctx.textBaseline="top";ctx.fillStyle=t.text;ctx.font=FONT_SM;
     for(let i=x0;i<vLen;i+=xs)ctx.fillText(fmtDate(viewDates[i],true),toX(i),h-PAD.bottom+6);
 
     // Crosshair
@@ -98,9 +100,9 @@ export default function ComparisonChart({series,height,mode,baseDate,endDate,dar
     if(m&&m.x>=PAD.left&&m.x<=w-PAD.right&&m.y>=PAD.top&&m.y<=h-PAD.bottom){
       const idx=Math.round(((m.x-PAD.left)/pw)*(vLen-1));const di=clamp(idx,0,vLen-1);const sx=toX(di),sDate=viewDates[di];
       ctx.setLineDash([4,3]);ctx.strokeStyle=t.crosshair;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(sx,PAD.top);ctx.lineTo(sx,h-PAD.bottom);ctx.stroke();ctx.setLineDash([]);
-      const dtTxt=fmtDate(sDate),dtw2=ctx.measureText(dtTxt).width+8;ctx.fillStyle=t.tooltip;ctx.fillRect(sx-dtw2/2,h-PAD.bottom,dtw2,18);ctx.fillStyle=t.tooltipText;ctx.font="10px Arial";ctx.textAlign="center";ctx.textBaseline="top";ctx.fillText(dtTxt,sx,h-PAD.bottom+4);
+      const dtTxt=fmtDate(sDate),dtw2=ctx.measureText(dtTxt).width+8;ctx.fillStyle=t.tooltip;ctx.fillRect(sx-dtw2/2,h-PAD.bottom,dtw2,18);ctx.fillStyle=t.tooltipText;ctx.font=FONT_SM;ctx.textAlign="center";ctx.textBaseline="top";ctx.fillText(dtTxt,sx,h-PAD.bottom+4);
       ctx.textAlign="left";ctx.textBaseline="top";let ty=PAD.top+2;
-      for(const s of active){const gi=vs+di;if(gi>=s.values.length)continue;const sv=s.values[gi];ctx.fillStyle=s.color;ctx.fillRect(PAD.left+4,ty+1,8,8);ctx.fillStyle=t.text;ctx.font="10px Arial";ctx.fillText(`${s.ticker}: ${sv.value.toFixed(2)}${suffix}`,PAD.left+16,ty);ty+=14;}
+      for(const s of active){const gi=vs+di;if(gi>=s.values.length)continue;const sv=s.values[gi];ctx.fillStyle=s.color;ctx.fillRect(PAD.left+4,ty+1,8,8);ctx.fillStyle=t.text;ctx.font=FONT_SM;ctx.fillText(`${s.ticker}: ${sv.value.toFixed(2)}${suffix}`,PAD.left+16,ty);ty+=14;}
     }
   },[normalized,active,allDates,totalLen,mode,dark,t,getView]);
 

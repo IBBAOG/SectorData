@@ -8,20 +8,35 @@ interface Props {
   mode: ChartMode;
   height?: number;
   dark?: boolean;
+  intraday?: boolean; // true for 15m, 30m, 1h intervals — show time on x-axis
 }
 
 const THEMES = {
-  dark: { bg: "#161b22", grid: "#21262d", text: "#8b949e", border: "#30363d", up: "#3fb950", down: "#f85149", line: "#ff5000", crosshair: "#8b949e", tooltip: "#2d333b", tooltipText: "#e6edf3", priceLine: "#ff5000", priceLabel: "#ff5000", priceLabelText: "#fff" },
-  light: { bg: "#ffffff", grid: "#f3f4f6", text: "#374151", border: "#e5e7eb", up: "#16a34a", down: "#dc2626", line: "#ff5000", crosshair: "#9ca3af", tooltip: "#1f2937", tooltipText: "#ffffff", priceLine: "#ff5000", priceLabel: "#ff5000", priceLabelText: "#fff" },
+  dark: { bg: "#161b22", grid: "#21262d", text: "#c9d1d9", border: "#30363d", up: "#3fb950", down: "#f85149", line: "#ff5000", crosshair: "#8b949e", tooltip: "#2d333b", tooltipText: "#ffffff", priceLine: "#ff5000", priceLabel: "#ff5000", priceLabelText: "#fff" },
+  light: { bg: "#ffffff", grid: "#f0f0f0", text: "#1a1a1a", border: "#e0e0e0", up: "#16a34a", down: "#dc2626", line: "#ff5000", crosshair: "#9ca3af", tooltip: "#1f2937", tooltipText: "#ffffff", priceLine: "#ff5000", priceLabel: "#ff5000", priceLabelText: "#fff" },
 };
 
-const PAD = { top: 10, right: 64, bottom: 28, left: 48 };
+const FONT = "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif";
+const FONT_BOLD = "bold 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif";
+const FONT_SM = "11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif";
+const PAD = { top: 12, right: 72, bottom: 32, left: 8 };
 const MIN_BARS = 10;
 
-function fmtDate(unix: number, short = false): string {
+function fmtDateShort(unix: number, intraday: boolean): string {
   const d = new Date(unix * 1000);
   const M = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  return short ? `${M[d.getMonth()]} ${String(d.getDate()).padStart(2,"0")}` : `${M[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+  if (intraday) {
+    return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+  }
+  return `${M[d.getMonth()]} ${String(d.getDate()).padStart(2,"0")}`;
+}
+
+function fmtDateFull(unix: number, intraday: boolean): string {
+  const d = new Date(unix * 1000);
+  const M = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const date = `${M[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+  if (intraday) return `${date} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+  return date;
 }
 
 function niceSteps(min: number, max: number, n = 5): number[] {
@@ -34,7 +49,7 @@ function niceSteps(min: number, max: number, n = 5): number[] {
 
 function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
 
-export default function StockChart({ data, mode, height, dark = true }: Props) {
+export default function StockChart({ data, mode, height, dark = true, intraday = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const mouseRef = useRef<{x:number;y:number}|null>(null);
@@ -60,9 +75,12 @@ export default function StockChart({ data, mode, height, dark = true }: Props) {
     const w = wrap.clientWidth, h = wrap.clientHeight;
     if (w <= 0 || h <= 0) return;
     canvas.width = w * dpr; canvas.height = h * dpr;
-    const ctx = canvas.getContext("2d")!; ctx.scale(dpr, dpr);
-    ctx.fillStyle = t.bg; ctx.fillRect(0, 0, w, h);
+    const ctx = canvas.getContext("2d")!;
+    ctx.scale(dpr, dpr);
+    // Sharper text rendering
+    ctx.imageSmoothingEnabled = false;
 
+    ctx.fillStyle = t.bg; ctx.fillRect(0, 0, w, h);
     const pw = w - PAD.left - PAD.right, ph = h - PAD.top - PAD.bottom;
     if (pw <= 0 || ph <= 0) return;
     const [vs, ve] = getView(); const vLen = ve - vs + 1; if (vLen <= 0) return;
@@ -78,7 +96,7 @@ export default function StockChart({ data, mode, height, dark = true }: Props) {
     ctx.strokeStyle = t.grid; ctx.lineWidth = 1;
     const ps = niceSteps(lo, hi, 5);
     for (const p of ps) { const y = Math.round(toY(p))+0.5; ctx.beginPath(); ctx.moveTo(PAD.left,y); ctx.lineTo(w-PAD.right,y); ctx.stroke(); }
-    const xn = Math.max(1,Math.floor(pw/80)), xs = Math.max(1,Math.floor(vLen/xn)), x0 = Math.max(1,xs);
+    const xn = Math.max(1,Math.floor(pw/90)), xs = Math.max(1,Math.floor(vLen/xn)), x0 = Math.max(1,xs);
     for (let i=x0;i<vLen;i+=xs) { const x=Math.round(toX(i))+0.5; ctx.beginPath(); ctx.moveTo(x,PAD.top); ctx.lineTo(x,h-PAD.bottom); ctx.stroke(); }
 
     // Data
@@ -104,17 +122,17 @@ export default function StockChart({ data, mode, height, dark = true }: Props) {
     const lp=slice[vLen-1].close,ly=toY(lp);
     ctx.setLineDash([3,3]); ctx.strokeStyle=t.priceLine; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(PAD.left,ly); ctx.lineTo(w-PAD.right,ly); ctx.stroke(); ctx.setLineDash([]);
-    const pt=lp.toFixed(2); ctx.font="bold 10px Arial"; const plw=ctx.measureText(pt).width+10;
-    ctx.fillStyle=t.priceLabel; ctx.fillRect(w-PAD.right,ly-9,plw,18);
-    ctx.fillStyle=t.priceLabelText; ctx.textAlign="left"; ctx.textBaseline="middle"; ctx.fillText(pt,w-PAD.right+5,ly);
+    const pt=lp.toFixed(2); ctx.font=FONT_BOLD; const plw=ctx.measureText(pt).width+12;
+    ctx.fillStyle=t.priceLabel; ctx.fillRect(w-PAD.right,ly-10,plw,20);
+    ctx.fillStyle=t.priceLabelText; ctx.textAlign="left"; ctx.textBaseline="middle"; ctx.fillText(pt,w-PAD.right+6,ly);
 
     // Y labels
-    ctx.fillStyle=t.text; ctx.font="10px Arial"; ctx.textAlign="left"; ctx.textBaseline="middle";
-    for (const p of ps) { const y=toY(p); if(Math.abs(y-ly)<14)continue; if(y>PAD.top+5&&y<h-PAD.bottom-5) ctx.fillText(p.toFixed(2),w-PAD.right+6,y); }
+    ctx.fillStyle=t.text; ctx.font=FONT_SM; ctx.textAlign="left"; ctx.textBaseline="middle";
+    for (const p of ps) { const y=toY(p); if(Math.abs(y-ly)<16)continue; if(y>PAD.top+5&&y<h-PAD.bottom-5) ctx.fillText(p.toFixed(2),w-PAD.right+6,y); }
 
     // X labels
-    ctx.textAlign="center"; ctx.textBaseline="top"; ctx.fillStyle=t.text; ctx.font="10px Arial";
-    for (let i=x0;i<vLen;i+=xs) ctx.fillText(fmtDate(slice[i].date,true),toX(i),h-PAD.bottom+6);
+    ctx.textAlign="center"; ctx.textBaseline="top"; ctx.fillStyle=t.text; ctx.font=FONT_SM;
+    for (let i=x0;i<vLen;i+=xs) ctx.fillText(fmtDateShort(slice[i].date, intraday),toX(i),h-PAD.bottom+8);
 
     // Crosshair
     const m=mouseRef.current;
@@ -124,20 +142,22 @@ export default function StockChart({ data, mode, height, dark = true }: Props) {
       ctx.setLineDash([4,3]); ctx.strokeStyle=t.crosshair; ctx.lineWidth=1;
       ctx.beginPath(); ctx.moveTo(sx,PAD.top); ctx.lineTo(sx,h-PAD.bottom); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(PAD.left,sy); ctx.lineTo(w-PAD.right,sy); ctx.stroke(); ctx.setLineDash([]);
-      const pTxt=dp.close.toFixed(2),tw2=ctx.measureText(pTxt).width+8;
-      ctx.fillStyle=t.tooltip; ctx.fillRect(w-PAD.right,sy-9,tw2+4,18);
-      ctx.fillStyle=t.tooltipText; ctx.font="10px Arial"; ctx.textAlign="left"; ctx.textBaseline="middle"; ctx.fillText(pTxt,w-PAD.right+4,sy);
-      const dtTxt=fmtDate(dp.date),dtw2=ctx.measureText(dtTxt).width+8;
-      ctx.fillStyle=t.tooltip; ctx.fillRect(sx-dtw2/2,h-PAD.bottom,dtw2,18);
+
+      const pTxt=dp.close.toFixed(2); ctx.font=FONT_SM; const tw2=ctx.measureText(pTxt).width+10;
+      ctx.fillStyle=t.tooltip; ctx.fillRect(w-PAD.right,sy-10,tw2+4,20);
+      ctx.fillStyle=t.tooltipText; ctx.textAlign="left"; ctx.textBaseline="middle"; ctx.fillText(pTxt,w-PAD.right+5,sy);
+
+      const dtTxt=fmtDateFull(dp.date, intraday); ctx.font=FONT_SM; const dtw2=ctx.measureText(dtTxt).width+10;
+      ctx.fillStyle=t.tooltip; ctx.fillRect(sx-dtw2/2,h-PAD.bottom,dtw2,20);
       ctx.fillStyle=t.tooltipText; ctx.textAlign="center"; ctx.textBaseline="top"; ctx.fillText(dtTxt,sx,h-PAD.bottom+4);
-      if (mode==="candlestick") { ctx.fillStyle=t.text; ctx.font="10px Arial"; ctx.textAlign="left"; ctx.textBaseline="top"; ctx.fillText(`O ${dp.open.toFixed(2)}  H ${dp.high.toFixed(2)}  L ${dp.low.toFixed(2)}  C ${dp.close.toFixed(2)}`,PAD.left+4,PAD.top+2); }
+
+      if (mode==="candlestick") { ctx.fillStyle=t.text; ctx.font=FONT_SM; ctx.textAlign="left"; ctx.textBaseline="top"; ctx.fillText(`O ${dp.open.toFixed(2)}  H ${dp.high.toFixed(2)}  L ${dp.low.toFixed(2)}  C ${dp.close.toFixed(2)}`,PAD.left+4,PAD.top+2); }
     }
-  }, [data,mode,dark,t,getView,len]);
+  }, [data,mode,dark,t,getView,len,intraday]);
 
   useEffect(() => { draw(); }, [draw]);
   useEffect(() => { const w=wrapRef.current; if(!w)return; const ro=new ResizeObserver(()=>{ cancelAnimationFrame(rafRef.current); rafRef.current=requestAnimationFrame(draw); }); ro.observe(w); return ()=>ro.disconnect(); }, [draw]);
 
-  // Mouse crosshair + drag pan
   const onMove = useCallback((e: React.MouseEvent) => {
     const r=wrapRef.current?.getBoundingClientRect(); if(!r)return;
     mouseRef.current = {x:e.clientX-r.left,y:e.clientY-r.top};
@@ -157,31 +177,23 @@ export default function StockChart({ data, mode, height, dark = true }: Props) {
   const onDown = useCallback((e:React.MouseEvent)=>{ const[vs2,ve2]=getView(); dragRef.current={startX:e.clientX,origRange:[vs2,ve2]}; },[getView]);
   const onUp = useCallback(()=>{ dragRef.current=null; },[]);
 
-  // Native wheel handler with passive:false to prevent page scroll
   useEffect(() => {
-    const canvas = canvasRef.current; if(!canvas) return;
-    const handler = (e: WheelEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if(len<2) return;
-      const [vs2,ve2] = getView();
-      const vLen = ve2-vs2;
-      // Cursor position as ratio (0..1) within the plot area
-      const rect = canvas.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const ratio = clamp((mx - PAD.left) / ((rect.width) - PAD.left - PAD.right), 0, 1);
-      // Zoom factor
-      const zoomAmt = Math.sign(e.deltaY) * Math.max(1, Math.round(vLen * 0.15));
-      // Distribute zoom proportionally to cursor position
-      const shrinkLeft = Math.round(zoomAmt * ratio);
-      const shrinkRight = zoomAmt - shrinkLeft;
-      let ns = vs2 + shrinkLeft, ne = ve2 - shrinkRight;
-      if(ne-ns < MIN_BARS) { const mid = Math.round(vs2 + vLen*ratio); ns = mid - Math.floor(MIN_BARS/2); ne = mid + Math.ceil(MIN_BARS/2); }
-      setViewRange([clamp(ns,0,len-1), clamp(ne,0,len-1)]);
+    const canvas=canvasRef.current; if(!canvas)return;
+    const handler=(e:WheelEvent)=>{
+      e.preventDefault(); e.stopPropagation();
+      if(len<2)return;
+      const[vs2,ve2]=getView(); const vLen=ve2-vs2;
+      const rect=canvas.getBoundingClientRect(); const mx=e.clientX-rect.left;
+      const ratio=clamp((mx-PAD.left)/(rect.width-PAD.left-PAD.right),0,1);
+      const zoomAmt=Math.sign(e.deltaY)*Math.max(1,Math.round(vLen*0.15));
+      const shrinkL=Math.round(zoomAmt*ratio),shrinkR=zoomAmt-shrinkL;
+      let ns=vs2+shrinkL,ne=ve2-shrinkR;
+      if(ne-ns<MIN_BARS){const mid=Math.round(vs2+vLen*ratio);ns=mid-Math.floor(MIN_BARS/2);ne=mid+Math.ceil(MIN_BARS/2);}
+      setViewRange([clamp(ns,0,len-1),clamp(ne,0,len-1)]);
     };
-    canvas.addEventListener("wheel", handler, {passive:false});
-    return () => canvas.removeEventListener("wheel", handler);
-  }, [getView, len]);
+    canvas.addEventListener("wheel",handler,{passive:false});
+    return()=>canvas.removeEventListener("wheel",handler);
+  }, [getView,len]);
 
   return (
     <div ref={wrapRef} style={{width:"100%",height:height??"100%",minHeight:60,position:"relative"}}>
