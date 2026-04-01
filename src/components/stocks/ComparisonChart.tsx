@@ -12,7 +12,7 @@ const THEMES = {
   light: { bg:"#ffffff",grid:"#f0f0f0",text:"#1a1a1a",border:"#e0e0e0",crosshair:"#9ca3af",tooltip:"#1f2937",tooltipText:"#ffffff" },
 };
 const FONT_SM = "11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif";
-const FONT_BOLD = "bold 9px -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif";
+const FONT_BOLD = "bold 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif";
 const PAD = {top:12,right:72,bottom:32,left:8};
 const MIN_BARS = 10;
 
@@ -74,8 +74,8 @@ export default function ComparisonChart({series,height,mode,baseDate,endDate,dar
     ctx.strokeStyle=t.grid;ctx.lineWidth=1;
     const valSteps=niceSteps(minV,maxV,5);
     for(const v of valSteps){const y=Math.round(toY(v))+0.5;ctx.beginPath();ctx.moveTo(PAD.left,y);ctx.lineTo(w-PAD.right,y);ctx.stroke();}
-    const xn=Math.max(1,Math.floor(pw/80)),xs=Math.max(1,Math.floor(vLen/xn)),x0=Math.max(1,xs);
-    for(let i=x0;i<vLen;i+=xs){const x=Math.round(toX(i))+0.5;ctx.beginPath();ctx.moveTo(x,PAD.top);ctx.lineTo(x,h-PAD.bottom);ctx.stroke();}
+    const xn=Math.max(1,Math.floor(pw/90)),xs=Math.max(1,Math.floor(vLen/xn));
+    for(let i=0;i<vLen;i+=xs){const x=Math.round(toX(i))+0.5;ctx.beginPath();ctx.moveTo(x,PAD.top);ctx.lineTo(x,h-PAD.bottom);ctx.stroke();}
 
     // Zero line
     if(mode==="percent"&&minV<0&&maxV>0){ctx.strokeStyle=t.border;ctx.lineWidth=1;ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(PAD.left,Math.round(toY(0))+0.5);ctx.lineTo(w-PAD.right,Math.round(toY(0))+0.5);ctx.stroke();ctx.setLineDash([]);}
@@ -85,15 +85,15 @@ export default function ComparisonChart({series,height,mode,baseDate,endDate,dar
 
     // Current value labels
     const suffix=mode==="percent"?"%":"";
-    for(const s of active){const li=Math.min(ve,s.values.length-1);if(li<0)continue;const lv=s.values[li].value,ly=toY(lv);const lt=lv.toFixed(1)+suffix;ctx.font=FONT_BOLD;const lw=ctx.measureText(lt).width+8;ctx.setLineDash([2,2]);ctx.strokeStyle=s.color;ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(PAD.left,ly);ctx.lineTo(w-PAD.right,ly);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=s.color;ctx.fillRect(w-PAD.right,ly-7,lw,14);ctx.fillStyle="#fff";ctx.textAlign="left";ctx.textBaseline="middle";ctx.fillText(lt,w-PAD.right+4,ly);}
+    for(const s of active){const li=Math.min(ve,s.values.length-1);if(li<0)continue;const lv=s.values[li].value,ly=toY(lv);const lt=lv.toFixed(1)+suffix;ctx.font=FONT_BOLD;const lw=ctx.measureText(lt).width+12;ctx.setLineDash([2,2]);ctx.strokeStyle=s.color;ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(PAD.left,ly);ctx.lineTo(w-PAD.right,ly);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=s.color;ctx.fillRect(w-PAD.right,ly-10,lw,20);ctx.fillStyle="#fff";ctx.textAlign="left";ctx.textBaseline="middle";ctx.fillText(lt,w-PAD.right+6,ly);}
 
     // Y labels
     ctx.fillStyle=t.text;ctx.font=FONT_SM;ctx.textAlign="left";ctx.textBaseline="middle";
     for(const v of valSteps){const y=toY(v);const ov=active.some(s=>{const li=Math.min(ve,s.values.length-1);return li>=0&&Math.abs(y-toY(s.values[li].value))<12;});if(ov)continue;if(y>PAD.top+5&&y<h-PAD.bottom-5)ctx.fillText(v.toFixed(1)+suffix,w-PAD.right+6,y);}
 
     // X labels
-    ctx.textAlign="center";ctx.textBaseline="top";ctx.fillStyle=t.text;ctx.font=FONT_SM;
-    for(let i=x0;i<vLen;i+=xs)ctx.fillText(fmtDate(viewDates[i],true),toX(i),h-PAD.bottom+6);
+    ctx.textBaseline="top";ctx.fillStyle=t.text;ctx.font=FONT_SM;
+    for(let i=0;i<vLen;i+=xs){const lx=toX(i);ctx.textAlign=i===0?"left":"center";ctx.fillText(fmtDate(viewDates[i],true),i===0?Math.max(2,lx-4):lx,h-PAD.bottom+8);}
 
     // Crosshair
     const m=mouseRef.current;

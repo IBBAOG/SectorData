@@ -96,8 +96,8 @@ export default function StockChart({ data, mode, height, dark = true, intraday =
     ctx.strokeStyle = t.grid; ctx.lineWidth = 1;
     const ps = niceSteps(lo, hi, 5);
     for (const p of ps) { const y = Math.round(toY(p))+0.5; ctx.beginPath(); ctx.moveTo(PAD.left,y); ctx.lineTo(w-PAD.right,y); ctx.stroke(); }
-    const xn = Math.max(1,Math.floor(pw/90)), xs = Math.max(1,Math.floor(vLen/xn)), x0 = Math.max(1,xs);
-    for (let i=x0;i<vLen;i+=xs) { const x=Math.round(toX(i))+0.5; ctx.beginPath(); ctx.moveTo(x,PAD.top); ctx.lineTo(x,h-PAD.bottom); ctx.stroke(); }
+    const xn = Math.max(1,Math.floor(pw/90)), xs = Math.max(1,Math.floor(vLen/xn));
+    for (let i=0;i<vLen;i+=xs) { const x=Math.round(toX(i))+0.5; ctx.beginPath(); ctx.moveTo(x,PAD.top); ctx.lineTo(x,h-PAD.bottom); ctx.stroke(); }
 
     // Data
     if (mode==="candlestick") {
@@ -131,8 +131,12 @@ export default function StockChart({ data, mode, height, dark = true, intraday =
     for (const p of ps) { const y=toY(p); if(Math.abs(y-ly)<16)continue; if(y>PAD.top+5&&y<h-PAD.bottom-5) ctx.fillText(p.toFixed(2),w-PAD.right+6,y); }
 
     // X labels
-    ctx.textAlign="center"; ctx.textBaseline="top"; ctx.fillStyle=t.text; ctx.font=FONT_SM;
-    for (let i=x0;i<vLen;i+=xs) ctx.fillText(fmtDateShort(slice[i].date, intraday),toX(i),h-PAD.bottom+8);
+    ctx.textBaseline="top"; ctx.fillStyle=t.text; ctx.font=FONT_SM;
+    for (let i=0;i<vLen;i+=xs) {
+      const lx = toX(i);
+      ctx.textAlign = i === 0 ? "left" : "center";
+      ctx.fillText(fmtDateShort(slice[i].date, intraday), i === 0 ? Math.max(2, lx - 4) : lx, h-PAD.bottom+8);
+    }
 
     // Crosshair
     const m=mouseRef.current;

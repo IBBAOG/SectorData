@@ -52,7 +52,12 @@ export default function MarketOverview() {
               const cls = positive ? "sd-green" : "sd-red";
               return (
                 <tr key={q.symbol}>
-                  <td style={{ fontWeight: 600, padding: "3px 4px" }}>
+                  <td style={{ fontWeight: 600, padding: "3px 4px", display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{
+                      display: "inline-block", width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+                      background: q.regularMarketTime && (Date.now() - new Date(q.regularMarketTime).getTime() < 30*60*1000) ? "#3fb950" : "#30363d",
+                      boxShadow: q.regularMarketTime && (Date.now() - new Date(q.regularMarketTime).getTime() < 30*60*1000) ? "0 0 4px #3fb950" : "none",
+                    }} />
                     {LABELS[q.symbol] ?? q.symbol}
                   </td>
                   <td style={{ textAlign: "right", padding: "3px 4px" }}>{fmt(q.regularMarketPrice)}</td>

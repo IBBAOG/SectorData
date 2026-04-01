@@ -45,6 +45,29 @@ function useTheme() {
 const fmt = (v: number, d = 2) =>
   v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 
+/** Check if a quote is actively trading (updated within last 30 min) */
+function isTrading(marketTime: string): boolean {
+  if (!marketTime) return false;
+  const diff = Date.now() - new Date(marketTime).getTime();
+  return diff < 30 * 60 * 1000; // 30 minutes
+}
+
+/** Green dot if trading, dim dot if not */
+function TradingDot({ active }: { active: boolean }) {
+  return (
+    <span style={{
+      display: "inline-block",
+      width: 6,
+      height: 6,
+      borderRadius: "50%",
+      background: active ? "#3fb950" : "#30363d",
+      boxShadow: active ? "0 0 4px #3fb950" : "none",
+      marginRight: 4,
+      flexShrink: 0,
+    }} />
+  );
+}
+
 const fmtVol = (v: number) => {
   if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
   if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
@@ -319,7 +342,8 @@ function WatchlistCardContent({ card, isDark, onUpdate }: { card: DashCard & { t
               const cls = pos ? "sd-green" : "sd-red";
               return (
                 <tr key={q.symbol}>
-                  <td style={{ fontWeight: 600, padding: "2px 3px" }}>
+                  <td style={{ fontWeight: 600, padding: "2px 3px", display: "flex", alignItems: "center" }}>
+                    <TradingDot active={isTrading(q.regularMarketTime)} />
                     <Link href={`/stocks/${q.symbol}`} style={{ color: "inherit", textDecoration: "none" }}>{q.symbol}</Link>
                   </td>
                   <td style={{ textAlign: "right", padding: "2px 3px" }}>{fmt(q.regularMarketPrice)}</td>
@@ -788,7 +812,8 @@ export default function StocksPage() {
                                     const blink = blinkMap.get(q.symbol);
                                     return (
                                       <tr key={q.symbol} className={blink ? `stock-blink-${blink}` : undefined}>
-                                        <td style={{ padding: "2px 3px" }}>
+                                        <td style={{ padding: "2px 3px", display: "flex", alignItems: "center" }}>
+                                          <TradingDot active={isTrading(q.regularMarketTime)} />
                                           <Link href={`/stocks/${q.symbol}`} style={{ fontWeight: 700, color: "inherit", textDecoration: "none" }}>{q.symbol}</Link>
                                         </td>
                                         <td style={{ textAlign: "right", padding: "2px 3px" }}>{fmt(q.regularMarketPrice)}</td>
