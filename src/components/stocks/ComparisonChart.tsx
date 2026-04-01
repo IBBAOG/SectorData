@@ -11,8 +11,8 @@ const THEMES = {
   dark: { bg:"#161b22",grid:"#21262d",text:"#c9d1d9",border:"#30363d",crosshair:"#8b949e",tooltip:"#2d333b",tooltipText:"#ffffff" },
   light: { bg:"#ffffff",grid:"#f0f0f0",text:"#1a1a1a",border:"#e0e0e0",crosshair:"#9ca3af",tooltip:"#1f2937",tooltipText:"#ffffff" },
 };
-const FONT_SM = "500 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-const FONT_BOLD = "600 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+const FONT_SM = "13px Arial, Helvetica, sans-serif";
+const FONT_BOLD = "bold 13px Arial, Helvetica, sans-serif";
 const PAD = {top:14,right:78,bottom:34,left:8};
 const MIN_BARS = 10;
 
@@ -57,7 +57,7 @@ export default function ComparisonChart({series,height,mode,baseDate,endDate,dar
     const dpr=window.devicePixelRatio||1,w=wrap.clientWidth,h=wrap.clientHeight;
     if(w<=0||h<=0)return;
     canvas.width=w*dpr;canvas.height=h*dpr;
-    const ctx=canvas.getContext("2d")!;ctx.scale(dpr,dpr);
+    const ctx=canvas.getContext("2d",{alpha:false})!;ctx.scale(dpr,dpr);
     ctx.fillStyle=t.bg;ctx.fillRect(0,0,w,h);
     const pw=w-PAD.left-PAD.right,ph=h-PAD.top-PAD.bottom;
     if(pw<=0||ph<=0||!active.length||!totalLen)return;
@@ -144,7 +144,7 @@ export default function ComparisonChart({series,height,mode,baseDate,endDate,dar
   return(
     <div style={{display:"flex",flexDirection:"column",height:height??"100%",minHeight:60}}>
       <div ref={wrapRef} style={{flex:1,minHeight:0,position:"relative"}}>
-        <canvas ref={canvasRef} style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",cursor:"crosshair"}}
+        <canvas ref={canvasRef} style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",cursor:"crosshair",imageRendering:"auto"}}
           onMouseMove={onMove} onMouseLeave={onLeave} onMouseDown={onDown} onMouseUp={onUp} />
       </div>
       <div style={{display:"flex",gap:12,padding:"4px 0",flexWrap:"wrap",flexShrink:0}}>
