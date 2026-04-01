@@ -28,7 +28,7 @@ const THEMES = {
 
 const FONT = "13px Arial, Helvetica, sans-serif";
 const FONT_BOLD = "bold 13px Arial, Helvetica, sans-serif";
-const PAD = { top: 30, right: 78, bottom: 34, left: 8 };
+const PAD = { top: 30, right: 72, bottom: 34, left: 72 };
 
 function niceSteps(min: number, max: number, n = 5): number[] {
   const r = max - min; if (r <= 0) return [min];
@@ -62,9 +62,10 @@ export default function FuturesCurveChart({ dark = true }: Props) {
     const canvas = canvasRef.current, wrap = wrapRef.current;
     if (!canvas || !wrap || !contracts.length) return;
     const dpr = window.devicePixelRatio || 1;
-    const w = wrap.clientWidth, h = wrap.clientHeight;
+    const w = Math.floor(wrap.clientWidth), h = Math.floor(wrap.clientHeight);
     if (w <= 0 || h <= 0) return;
-    canvas.width = w * dpr; canvas.height = h * dpr;
+    canvas.width = Math.floor(w * dpr); canvas.height = Math.floor(h * dpr);
+    canvas.style.width = w + "px"; canvas.style.height = h + "px";
     const ctx = canvas.getContext("2d", { alpha: false })!;
     ctx.scale(dpr, dpr);
     ctx.fillStyle = t.bg; ctx.fillRect(0, 0, w, h);
@@ -128,10 +129,9 @@ export default function FuturesCurveChart({ dark = true }: Props) {
 
     // X labels
     ctx.textBaseline = "top"; ctx.font = FONT;
+    ctx.textAlign = "center";
     for (let i = 0; i < n; i += xStep) {
-      const lx = toX(i);
-      ctx.textAlign = i === 0 ? "left" : "center";
-      ctx.fillText(contracts[i].contract, i === 0 ? Math.max(2, lx - 4) : lx, h - PAD.bottom + 8);
+      ctx.fillText(contracts[i].contract, toX(i), h - PAD.bottom + 8);
     }
 
     // Crosshair

@@ -13,7 +13,7 @@ const THEMES = {
 };
 const FONT_SM = "13px Arial, Helvetica, sans-serif";
 const FONT_BOLD = "bold 13px Arial, Helvetica, sans-serif";
-const PAD = {top:14,right:78,bottom:34,left:8};
+const PAD = {top:14,right:72,bottom:34,left:72};
 const MIN_BARS = 10;
 
 function fmtDate(unix:number,short=false):string { const d=new Date(unix*1000); const M=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return short?`${M[d.getMonth()]} ${String(d.getDate()).padStart(2,"0")}`:`${M[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`; }
@@ -54,9 +54,11 @@ export default function ComparisonChart({series,height,mode,baseDate,endDate,dar
   const draw=useCallback(()=>{
     const canvas=canvasRef.current,wrap=wrapRef.current;
     if(!canvas||!wrap)return;
-    const dpr=window.devicePixelRatio||1,w=wrap.clientWidth,h=wrap.clientHeight;
+    const dpr=window.devicePixelRatio||1;
+    const w=Math.floor(wrap.clientWidth),h=Math.floor(wrap.clientHeight);
     if(w<=0||h<=0)return;
-    canvas.width=w*dpr;canvas.height=h*dpr;
+    canvas.width=Math.floor(w*dpr);canvas.height=Math.floor(h*dpr);
+    canvas.style.width=w+"px";canvas.style.height=h+"px";
     const ctx=canvas.getContext("2d",{alpha:false})!;ctx.scale(dpr,dpr);
     ctx.fillStyle=t.bg;ctx.fillRect(0,0,w,h);
     const pw=w-PAD.left-PAD.right,ph=h-PAD.top-PAD.bottom;
@@ -93,7 +95,7 @@ export default function ComparisonChart({series,height,mode,baseDate,endDate,dar
 
     // X labels
     ctx.textBaseline="top";ctx.fillStyle=t.text;ctx.font=FONT_SM;
-    for(let i=0;i<vLen;i+=xs){const lx=toX(i);ctx.textAlign=i===0?"left":"center";ctx.fillText(fmtDate(viewDates[i],true),i===0?Math.max(2,lx-4):lx,h-PAD.bottom+8);}
+    ctx.textAlign="center";for(let i=0;i<vLen;i+=xs){ctx.fillText(fmtDate(viewDates[i],true),toX(i),h-PAD.bottom+8);}
 
     // Crosshair
     const m=mouseRef.current;

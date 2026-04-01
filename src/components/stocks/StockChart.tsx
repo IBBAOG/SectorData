@@ -19,7 +19,7 @@ const THEMES = {
 
 const FONT_BOLD = "bold 13px Arial, Helvetica, sans-serif";
 const FONT_SM = "13px Arial, Helvetica, sans-serif";
-const PAD = { top: 14, right: 78, bottom: 34, left: 8 };
+const PAD = { top: 14, right: 72, bottom: 34, left: 72 };
 const MIN_BARS = 10;
 
 function fmtDateShort(unix: number, intraday: boolean): string {
@@ -72,9 +72,11 @@ export default function StockChart({ data, mode, height, dark = true, intraday =
     const canvas = canvasRef.current, wrap = wrapRef.current;
     if (!canvas || !wrap || !len) return;
     const dpr = window.devicePixelRatio || 1;
-    const w = wrap.clientWidth, h = wrap.clientHeight;
+    // Use floor to get exact integer pixel dimensions — prevents sub-pixel stretching
+    const w = Math.floor(wrap.clientWidth), h = Math.floor(wrap.clientHeight);
     if (w <= 0 || h <= 0) return;
-    canvas.width = w * dpr; canvas.height = h * dpr;
+    canvas.width = Math.floor(w * dpr); canvas.height = Math.floor(h * dpr);
+    canvas.style.width = w + "px"; canvas.style.height = h + "px";
     const ctx = canvas.getContext("2d", { alpha: false })!;
     ctx.scale(dpr, dpr);
 
@@ -131,10 +133,9 @@ export default function StockChart({ data, mode, height, dark = true, intraday =
 
     // X labels
     ctx.textBaseline="top"; ctx.fillStyle=t.text; ctx.font=FONT_SM;
+    ctx.textAlign = "center";
     for (let i=0;i<vLen;i+=xs) {
-      const lx = toX(i);
-      ctx.textAlign = i === 0 ? "left" : "center";
-      ctx.fillText(fmtDateShort(slice[i].date, intraday), i === 0 ? Math.max(2, lx - 4) : lx, h-PAD.bottom+8);
+      ctx.fillText(fmtDateShort(slice[i].date, intraday), toX(i), h-PAD.bottom+8);
     }
 
     // Crosshair
