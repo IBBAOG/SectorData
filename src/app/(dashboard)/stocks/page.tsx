@@ -605,6 +605,17 @@ export default function StocksPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalEdit, setModalEdit] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
+  const addMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close add menu on click outside
+  useEffect(() => {
+    if (!showAddMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) setShowAddMenu(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showAddMenu]);
 
   // ── Cards state (persisted to localStorage) ──
   const [cards, setCards] = useState<DashCard[]>(DEFAULT_CARDS);
@@ -744,7 +755,7 @@ export default function StocksPage() {
         <main style={{ padding: "12px 6px", maxWidth: "100%", margin: "0 auto" }}>
 
           {/* ── Top bar ── */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, position: "relative", zIndex: 100 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               {portfolios.length > 1 ? (
                 <select className="sd-select" value={activePortfolio?.id ?? ""} onChange={(e) => setActivePortfolio(e.target.value)}>
@@ -759,10 +770,10 @@ export default function StocksPage() {
               <button className="sd-btn" style={{ padding: "4px 10px", fontSize: 12 }} onClick={openCreate}>+ New</button>
 
               {/* Add card */}
-              <div style={{ position: "relative" }}>
+              <div ref={addMenuRef} style={{ position: "relative" }}>
                 <button className="sd-btn" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => setShowAddMenu((v) => !v)}>+ Card</button>
                 {showAddMenu && (
-                  <div className="sd-card" style={{ position: "absolute", top: "100%", left: 0, zIndex: 10, marginTop: 4, padding: 4, minWidth: 120 }}>
+                  <div className="sd-card" style={{ position: "absolute", top: "100%", left: 0, zIndex: 9999, marginTop: 4, padding: 4, minWidth: 160 }}>
                     <button className="sd-btn" style={{ width: "100%", fontSize: 11, padding: "5px 8px", marginBottom: 2, textAlign: "left" }} onClick={() => addCard("chart")}>Chart</button>
                     <button className="sd-btn" style={{ width: "100%", fontSize: 11, padding: "5px 8px", marginBottom: 2, textAlign: "left" }} onClick={() => addCard("watchlist")}>Watchlist</button>
                     <button className="sd-btn" style={{ width: "100%", fontSize: 11, padding: "5px 8px", marginBottom: 2, textAlign: "left" }} onClick={() => addCard("compare")}>Compare Assets</button>
