@@ -393,7 +393,7 @@ const CHART_SHORTCUTS = [
   { label: "USD/BRL", value: "USDBRL=X" },
 ];
 
-function ChartCardContent({ card, isDark, tickers, onUpdate }: { card: DashCard & { type: "chart" }; isDark: boolean; tickers: string[]; onUpdate: (c: DashCard) => void }) {
+function ChartCardContent({ card, isDark, tickers, onUpdate, quoteMap }: { card: DashCard & { type: "chart" }; isDark: boolean; tickers: string[]; onUpdate: (c: DashCard) => void; quoteMap: Map<string, StockQuote> }) {
   const [mode, setMode] = useState<ChartMode>("line");
   const [interval, setInterval] = useState("1d");
   const [range, setRange] = useState<TimeRange>("6mo");
@@ -410,8 +410,8 @@ function ChartCardContent({ card, isDark, tickers, onUpdate }: { card: DashCard 
   const effectiveRange = (rangeIdx > maxIdx ? MAX_RANGE[interval] ?? "6mo" : range) as TimeRange;
 
   const { data, isLoading } = useStockHistory(effectiveTicker, effectiveRange, interval);
-  const { data: chartQuotes } = useStockQuote(effectiveTicker ? [effectiveTicker] : []);
-  const chartLivePrice = chartQuotes[0]?.regularMarketPrice;
+  // Use shared quote from parent — same source as Market Overview table
+  const chartLivePrice = quoteMap.get(effectiveTicker)?.regularMarketPrice;
 
   // Find display label for current ticker
   const tickerLabel = CHART_SHORTCUTS.find((s) => s.value === effectiveTicker)?.label ?? effectiveTicker;
@@ -724,9 +724,15 @@ function StocksPageInner() {
     setShowAddMenu(false);
   }, [cards, layouts, persistCards]);
 
-  // ── Portfolio data ──
+  // ── Portfolio data + shortcut tickers (shared quote source for all cards) ──
   const tickers = activePortfolio?.tickers ?? [];
-  const { data: quotes, refetch } = useStockQuote(tickers);
+  const SHORTCUT_TICKERS = CHART_SHORTCUTS.map((s) => s.value);
+  const allQuoteTickers = useMemo(() => {
+    const combined = [...tickers];
+    for (const t of SHORTCUT_TICKERS) { if (!combined.includes(t)) combined.push(t); }
+    return combined;
+  }, [tickers]);
+  const { data: quotes, refetch } = useStockQuote(allQuoteTickers);
   const { isMarketOpen } = useAutoRefresh(useCallback(() => refetch(), [refetch]));
 
   // ── Blink tracking ──
@@ -935,7 +941,7 @@ function StocksPageInner() {
 
                     {/* Chart */}
                     {card.type === "chart" && (
-                      <ChartCardContent card={card as DashCard & { type: "chart" }} isDark={isDark} tickers={tickers} onUpdate={updateCard} />
+                      <ChartCardContent card={card as DashCard & { type: "chart" }} isDark={isDark} tickers={tickers} onUpdate={updateCard} quoteMap={quoteMap} />
                     )}
 
                     {/* Watchlist */}
