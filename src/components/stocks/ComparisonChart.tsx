@@ -11,9 +11,9 @@ const THEMES = {
   dark: { bg:"#161b22",grid:"#21262d",text:"#c9d1d9",border:"#30363d",crosshair:"#8b949e",tooltip:"#2d333b",tooltipText:"#ffffff" },
   light: { bg:"#ffffff",grid:"#f0f0f0",text:"#1a1a1a",border:"#e0e0e0",crosshair:"#9ca3af",tooltip:"#1f2937",tooltipText:"#ffffff" },
 };
-const FONT_SM = "11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif";
-const FONT_BOLD = "bold 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif";
-const PAD = {top:12,right:72,bottom:32,left:8};
+const FONT_SM = "500 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+const FONT_BOLD = "600 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+const PAD = {top:14,right:78,bottom:34,left:8};
 const MIN_BARS = 10;
 
 function fmtDate(unix:number,short=false):string { const d=new Date(unix*1000); const M=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return short?`${M[d.getMonth()]} ${String(d.getDate()).padStart(2,"0")}`:`${M[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`; }

@@ -16,10 +16,9 @@ const THEMES = {
   light: { bg: "#ffffff", grid: "#f0f0f0", text: "#1a1a1a", border: "#e0e0e0", up: "#16a34a", down: "#dc2626", line: "#ff5000", crosshair: "#9ca3af", tooltip: "#1f2937", tooltipText: "#ffffff", priceLine: "#ff5000", priceLabel: "#ff5000", priceLabelText: "#fff" },
 };
 
-const FONT = "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif";
-const FONT_BOLD = "bold 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif";
-const FONT_SM = "11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif";
-const PAD = { top: 12, right: 72, bottom: 32, left: 8 };
+const FONT_BOLD = "600 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+const FONT_SM = "500 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+const PAD = { top: 14, right: 78, bottom: 34, left: 8 };
 const MIN_BARS = 10;
 
 function fmtDateShort(unix: number, intraday: boolean): string {

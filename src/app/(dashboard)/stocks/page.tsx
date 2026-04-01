@@ -380,55 +380,71 @@ const RANGE_ORDER = ["1d","3d","5d","1mo","3mo","6mo","1y","2y","5y","max"];
 
 const INTRADAY_INTERVALS = new Set(["15m", "30m", "60m"]);
 
+const CHART_SHORTCUTS = [
+  { label: "BRENT", value: "BZ=F" },
+  { label: "IBOV", value: "^BVSP" },
+  { label: "USD/BRL", value: "USDBRL=X" },
+];
+
 function ChartCardContent({ card, isDark, tickers, onUpdate }: { card: DashCard & { type: "chart" }; isDark: boolean; tickers: string[]; onUpdate: (c: DashCard) => void }) {
   const [mode, setMode] = useState<ChartMode>("line");
   const [interval, setInterval] = useState("1d");
   const [range, setRange] = useState<TimeRange>("6mo");
-  const effectiveTicker = card.ticker && tickers.includes(card.ticker) ? card.ticker : tickers[0] ?? "";
+
+  // Combine portfolio tickers + shortcuts for the dropdown
+  const allTickers = [...tickers];
+  for (const s of CHART_SHORTCUTS) { if (!allTickers.includes(s.value)) allTickers.push(s.value); }
+
+  const effectiveTicker = card.ticker && allTickers.includes(card.ticker) ? card.ticker : tickers[0] ?? "";
   const isIntraday = INTRADAY_INTERVALS.has(interval);
 
-  // Clamp range to what Yahoo supports for this interval
   const maxIdx = RANGE_ORDER.indexOf(MAX_RANGE[interval] ?? "max");
   const rangeIdx = RANGE_ORDER.indexOf(range);
   const effectiveRange = (rangeIdx > maxIdx ? MAX_RANGE[interval] ?? "6mo" : range) as TimeRange;
 
   const { data, isLoading } = useStockHistory(effectiveTicker, effectiveRange, interval);
 
+  // Find display label for current ticker
+  const tickerLabel = CHART_SHORTCUTS.find((s) => s.value === effectiveTicker)?.label ?? effectiveTicker;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <CardHeader title="Chart" onRemove={card.id !== "chart" ? () => onUpdate({ ...card, ticker: "__REMOVE__" }) : undefined}>
-        {tickers.length > 1 && (
-          <select className="sd-select" style={{ fontSize: 10, padding: "1px 16px 1px 4px" }} value={effectiveTicker} onChange={(e) => onUpdate({ ...card, ticker: e.target.value })}>
+        <select className="sd-select" style={{ fontSize: 11, padding: "2px 20px 2px 6px", fontWeight: 600 }} value={effectiveTicker} onChange={(e) => onUpdate({ ...card, ticker: e.target.value })}>
+          {tickers.length > 0 && <optgroup label="Portfolio">
             {tickers.map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-        )}
+          </optgroup>}
+          <optgroup label="Indices & FX">
+            {CHART_SHORTCUTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </optgroup>
+        </select>
       </CardHeader>
-      {/* Controls row below header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "2px 0 4px", gap: 4, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", gap: 1 }}>
+      {/* Controls row */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0 6px", gap: 6, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 2 }}>
           {CHART_RANGES.map((r) => {
             const rIdx = RANGE_ORDER.indexOf(r.value);
             const disabled = rIdx > maxIdx;
             return (
               <button key={r.value} className={`sd-btn${range === r.value ? " sd-btn-active" : ""}`}
-                style={{ fontSize: 8, padding: "1px 4px", opacity: disabled ? 0.3 : 1 }}
+                style={{ fontSize: 11, padding: "3px 6px", opacity: disabled ? 0.3 : 1 }}
                 onClick={() => !disabled && setRange(r.value)} disabled={disabled}>
                 {r.label}
               </button>
             );
           })}
         </div>
-        <div style={{ display: "flex", gap: 1 }}>
+        <div style={{ display: "flex", gap: 2 }}>
           {INTERVALS.map((iv) => (
-            <button key={iv.value} className={`sd-btn${interval === iv.value ? " sd-btn-active" : ""}`} style={{ fontSize: 8, padding: "1px 4px" }} onClick={() => setInterval(iv.value)}>
+            <button key={iv.value} className={`sd-btn${interval === iv.value ? " sd-btn-active" : ""}`} style={{ fontSize: 11, padding: "3px 6px" }} onClick={() => setInterval(iv.value)}>
               {iv.label}
             </button>
           ))}
         </div>
         <div style={{ display: "flex", gap: 2 }}>
           {(["candlestick", "line"] as ChartMode[]).map((m) => (
-            <button key={m} className={`sd-btn${mode === m ? " sd-btn-active" : ""}`} style={{ fontSize: 9, padding: "1px 5px" }} onClick={() => setMode(m)}>
-              {m === "candlestick" ? "C" : "L"}
+            <button key={m} className={`sd-btn${mode === m ? " sd-btn-active" : ""}`} style={{ fontSize: 11, padding: "3px 8px" }} onClick={() => setMode(m)}>
+              {m === "candlestick" ? "Candle" : "Line"}
             </button>
           ))}
         </div>
