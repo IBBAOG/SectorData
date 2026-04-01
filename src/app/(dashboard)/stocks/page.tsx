@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo, Component, type ErrorInfo, type ReactNode } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 // Types inlined to avoid SSR-triggered module evaluation
@@ -29,8 +29,8 @@ const GridLayout = dynamic(
 /* ── Helpers ──────────────────────────────────────────────────────────────── */
 
 const THEME_KEY = "stocks-theme";
-const CARDS_KEY = "stocks-dash-cards";
-const LAYOUT_KEY = "stocks-dash-layout";
+const CARDS_KEY = "stocks-dash-cards-v2";
+const LAYOUT_KEY = "stocks-dash-layout-v2";
 
 function useTheme() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -592,9 +592,34 @@ function CompareCardContent({ card, isDark, onUpdate }: {
   );
 }
 
+/* ── Error Boundary ──────────────────────────────────────────────────────── */
+
+class StockErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode }) { super(props); this.state = { hasError: false }; }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(_error: Error, _info: ErrorInfo) {
+    // Clear potentially corrupted state
+    try { localStorage.removeItem(CARDS_KEY); localStorage.removeItem(LAYOUT_KEY); } catch {}
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 40, textAlign: "center" }}>
+          <p style={{ marginBottom: 12 }}>Something went wrong loading the dashboard.</p>
+          <button onClick={() => { try { localStorage.removeItem(CARDS_KEY); localStorage.removeItem(LAYOUT_KEY); } catch {} window.location.reload(); }}
+            style={{ padding: "8px 20px", background: "#ff5000", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 600 }}>
+            Reset & Reload
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 /* ── Main Page ────────────────────────────────────────────────────────────── */
 
-export default function StocksPage() {
+function StocksPageInner() {
   const { visible, loading: guardLoading } = useModuleVisibilityGuard("stocks");
   const { isDark, toggle } = useTheme();
   const themeClass = isDark ? "stocks-dark" : "stocks-light";
@@ -954,5 +979,13 @@ export default function StocksPage() {
         onDelete={modalEdit && activePortfolio ? async () => { await deletePortfolio(activePortfolio.id); } : undefined}
       />
     </>
+  );
+}
+
+export default function StocksPage() {
+  return (
+    <StockErrorBoundary>
+      <StocksPageInner />
+    </StockErrorBoundary>
   );
 }
