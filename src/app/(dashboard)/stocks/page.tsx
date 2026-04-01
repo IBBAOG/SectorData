@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { ResponsiveGridLayout, type LayoutItem, type Layout, type ResponsiveLayouts, useContainerWidth, noCompactor } from "react-grid-layout";
+import type { LayoutItem, Layout, ResponsiveLayouts } from "react-grid-layout";
 
 import NavBar from "../../../components/NavBar";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
@@ -18,6 +18,10 @@ const StockChart = dynamic(() => import("../../../components/stocks/StockChart")
 const ComparisonChart = dynamic(() => import("../../../components/stocks/ComparisonChart"), { ssr: false });
 const MarketOverview = dynamic(() => import("../../../components/stocks/MarketOverview"), { ssr: false });
 const StockSearch = dynamic(() => import("../../../components/stocks/StockSearch"), { ssr: false });
+const GridLayout = dynamic(
+  () => import("react-grid-layout").then((mod) => mod.ResponsiveGridLayout),
+  { ssr: false },
+);
 
 
 /* ── Helpers ──────────────────────────────────────────────────────────────── */
@@ -604,6 +608,8 @@ export default function StocksPage() {
   const [cards, setCards] = useState<DashCard[]>(DEFAULT_CARDS);
   const [layouts, setLayouts] = useState<Record<string, LayoutItem[]>>(defaultLayout);
   const [mounted, setMounted] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const noCompactorRef = useRef<any>(null);
 
   useEffect(() => {
     try {
@@ -612,7 +618,11 @@ export default function StocksPage() {
       if (savedCards) setCards(JSON.parse(savedCards));
       if (savedLayouts) setLayouts(JSON.parse(savedLayouts));
     } catch { /* ignore */ }
-    setMounted(true);
+    // Dynamically load noCompactor at runtime (SSR-safe)
+    import("react-grid-layout").then((mod) => {
+      noCompactorRef.current = mod.noCompactor;
+      setMounted(true);
+    });
   }, []);
 
   const persistCards = useCallback((c: DashCard[]) => {
@@ -692,10 +702,19 @@ export default function StocksPage() {
     return m;
   }, [quotes]);
 
-  if (guardLoading || !visible) return null;
+  // Container width — simple ref-based measurement (no external hook)
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  useEffect(() => {
+    const el = containerRef.current; if (!el) return;
+    const measure = () => setContainerWidth(el.clientWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
-  // Container width for react-grid-layout
-  const { containerRef, width: containerWidth, mounted: widthMounted } = useContainerWidth();
+  if (guardLoading || !visible) return null;
 
   const openCreate = () => { setModalEdit(false); setModalOpen(true); };
   const openEdit = () => { setModalEdit(true); setModalOpen(true); };
@@ -774,8 +793,8 @@ export default function StocksPage() {
 
           {/* ── Draggable Grid ── */}
           <div ref={containerRef} style={{ minHeight: 1 }} />
-          {mounted && widthMounted && activePortfolio && containerWidth > 0 && (
-            <ResponsiveGridLayout
+          {mounted && activePortfolio && containerWidth > 0 && (
+            <GridLayout
               className="layout"
               width={containerWidth}
               layouts={effectiveLayouts}
@@ -785,7 +804,7 @@ export default function StocksPage() {
               onLayoutChange={handleLayoutChange}
               dragConfig={{ enabled: true, bounded: false, handle: ".sd-drag-handle", threshold: 3 }}
               resizeConfig={{ enabled: true, handles: ["se"] }}
-              compactor={noCompactor}
+              compactor={noCompactorRef.current}
               margin={[0, 0] as const}
               containerPadding={[0, 0] as const}
             >
@@ -874,7 +893,7 @@ export default function StocksPage() {
                   </div>
                 </div>
               ))}
-            </ResponsiveGridLayout>
+            </GridLayout>
           )}
         </main>
       </div>
