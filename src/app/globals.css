@@ -1310,12 +1310,12 @@ a {
 .stocks-dark .sd-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 14px;
 }
 .stocks-dark .sd-table th {
   color: #8b949e;
   font-weight: 600;
-  font-size: 10px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   padding: 4px 6px;
@@ -1514,12 +1514,12 @@ a {
 .stocks-light .sd-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 14px;
 }
 .stocks-light .sd-table th {
   color: #888;
   font-weight: 600;
-  font-size: 10px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   padding: 4px 6px;

@@ -12,7 +12,7 @@ interface Props {
 }
 
 const THEMES = {
-  dark: { bg: "#161b22", grid: "#21262d", text: "#c9d1d9", border: "#30363d", up: "#3fb950", down: "#f85149", line: "#ff5000", crosshair: "#8b949e", tooltip: "#2d333b", tooltipText: "#ffffff", priceLine: "#ff5000", priceLabel: "#ff5000", priceLabelText: "#fff" },
+  dark: { bg: "#000000", grid: "#1a1a1a", text: "#ffffff", border: "#333333", up: "#3fb950", down: "#f85149", line: "#ff5000", crosshair: "#666666", tooltip: "#1a1a1a", tooltipText: "#ffffff", priceLine: "#ff5000", priceLabel: "#ff5000", priceLabelText: "#fff" },
   light: { bg: "#ffffff", grid: "#f0f0f0", text: "#1a1a1a", border: "#e0e0e0", up: "#16a34a", down: "#dc2626", line: "#ff5000", crosshair: "#9ca3af", tooltip: "#1f2937", tooltipText: "#ffffff", priceLine: "#ff5000", priceLabel: "#ff5000", priceLabelText: "#fff" },
 };
 

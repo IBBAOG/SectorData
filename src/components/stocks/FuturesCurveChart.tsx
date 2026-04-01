@@ -22,8 +22,8 @@ interface Props {
 }
 
 const THEMES = {
-  dark: { bg: "#161b22", grid: "#21262d", text: "#c9d1d9", line: "#ff5000", dot: "#ff5000", crosshair: "#8b949e", tooltip: "#2d333b", tooltipText: "#ffffff", contango: "#3fb950", backwardation: "#f85149" },
-  light: { bg: "#ffffff", grid: "#f0f0f0", text: "#1a1a1a", line: "#ff5000", dot: "#ff5000", crosshair: "#9ca3af", tooltip: "#1f2937", tooltipText: "#ffffff", contango: "#16a34a", backwardation: "#dc2626" },
+  dark: { bg: "#000000", grid: "#1a1a1a", text: "#ffffff", line: "#ff5000", dot: "#ff5000", crosshair: "#666666", tooltip: "#1a1a1a", tooltipText: "#ffffff" },
+  light: { bg: "#ffffff", grid: "#f0f0f0", text: "#1a1a1a", line: "#ff5000", dot: "#ff5000", crosshair: "#9ca3af", tooltip: "#1f2937", tooltipText: "#ffffff" },
 };
 
 const FONT = "13px Arial, Helvetica, sans-serif";
@@ -80,26 +80,21 @@ export default function FuturesCurveChart({ dark = true }: Props) {
     const toX = (i: number) => PAD.left + (i / (n - 1 || 1)) * pw;
     const toY = (p: number) => PAD.top + (1 - (p - lo) / (hi - lo)) * ph;
 
-    // Structure label: contango or backwardation
-    const isContango = prices[prices.length - 1] > prices[0];
-    const structLabel = isContango ? "Contango" : "Backwardation";
-    const structColor = isContango ? t.contango : t.backwardation;
-    ctx.font = FONT_BOLD; ctx.fillStyle = structColor;
-    ctx.textAlign = "left"; ctx.textBaseline = "top";
-    ctx.fillText(structLabel, PAD.left + 4, 4);
-
-    // Spot price label
+    // Front price label
     ctx.font = FONT; ctx.fillStyle = t.text;
-    ctx.textAlign = "right";
-    ctx.fillText(`Front: $${prices[0].toFixed(2)}`, w - PAD.right - 4, 4);
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.fillText(`Front: ${prices[0].toFixed(2)}`, PAD.left + 4, 4);
 
     // Grid
     ctx.strokeStyle = t.grid; ctx.lineWidth = 1;
     const ps = niceSteps(lo, hi, 5);
     for (const p of ps) { const y = Math.round(toY(p)) + 0.5; ctx.beginPath(); ctx.moveTo(PAD.left, y); ctx.lineTo(w - PAD.right, y); ctx.stroke(); }
 
-    // X grid
-    const xStep = Math.max(1, Math.floor(n / Math.max(1, Math.floor(pw / 70))));
+    // X grid — auto-space based on label width to avoid overlap
+    ctx.font = FONT;
+    const sampleLabelW = ctx.measureText("Sep 2027").width + 16;
+    const maxLabels = Math.max(1, Math.floor(pw / sampleLabelW));
+    const xStep = Math.max(1, Math.ceil(n / maxLabels));
     for (let i = 0; i < n; i += xStep) { const x = Math.round(toX(i)) + 0.5; ctx.beginPath(); ctx.moveTo(x, PAD.top); ctx.lineTo(x, h - PAD.bottom); ctx.stroke(); }
 
     // Line + gradient fill
@@ -122,14 +117,14 @@ export default function FuturesCurveChart({ dark = true }: Props) {
 
     // Current price label (last contract)
     const lastP = prices[n - 1], lastY = toY(lastP);
-    const lastTxt = `$${lastP.toFixed(2)}`; ctx.font = FONT_BOLD;
+    const lastTxt = lastP.toFixed(2); ctx.font = FONT_BOLD;
     const lw = ctx.measureText(lastTxt).width + 12;
     ctx.fillStyle = t.line; ctx.fillRect(w - PAD.right, lastY - 10, lw, 20);
     ctx.fillStyle = "#fff"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(lastTxt, w - PAD.right + 6, lastY);
 
     // Y labels
     ctx.fillStyle = t.text; ctx.font = FONT; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-    for (const p of ps) { const y = toY(p); if (Math.abs(y - lastY) < 16) continue; if (y > PAD.top + 5 && y < h - PAD.bottom - 5) ctx.fillText(`$${p.toFixed(0)}`, w - PAD.right + 6, y); }
+    for (const p of ps) { const y = toY(p); if (Math.abs(y - lastY) < 16) continue; if (y > PAD.top + 5 && y < h - PAD.bottom - 5) ctx.fillText(p.toFixed(0), w - PAD.right + 6, y); }
 
     // X labels
     ctx.textBaseline = "top"; ctx.font = FONT;
@@ -152,7 +147,7 @@ export default function FuturesCurveChart({ dark = true }: Props) {
       ctx.setLineDash([]);
 
       // Price tooltip
-      const pTxt = `$${c.price.toFixed(2)}`; ctx.font = FONT;
+      const pTxt = c.price.toFixed(2); ctx.font = FONT;
       const tw2 = ctx.measureText(pTxt).width + 10;
       ctx.fillStyle = t.tooltip; ctx.fillRect(w - PAD.right, sy - 10, tw2, 20);
       ctx.fillStyle = t.tooltipText; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(pTxt, w - PAD.right + 5, sy);
