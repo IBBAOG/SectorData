@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, useMemo, Component, type ErrorInfo, type ReactNode } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 // Types inlined to avoid SSR-triggered module evaluation
@@ -610,31 +610,6 @@ function CompareCardContent({ card, isDark, onUpdate }: {
   );
 }
 
-/* ── Error Boundary ──────────────────────────────────────────────────────── */
-
-class StockErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
-  constructor(props: { children: ReactNode }) { super(props); this.state = { hasError: false }; }
-  static getDerivedStateFromError() { return { hasError: true }; }
-  componentDidCatch(_error: Error, _info: ErrorInfo) {
-    // Clear potentially corrupted state
-    try { localStorage.removeItem(CARDS_KEY); localStorage.removeItem(LAYOUT_KEY); } catch {}
-  }
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div style={{ padding: 40, textAlign: "center" }}>
-          <p style={{ marginBottom: 12 }}>Something went wrong loading the dashboard.</p>
-          <button onClick={() => { try { localStorage.removeItem(CARDS_KEY); localStorage.removeItem(LAYOUT_KEY); } catch {} window.location.reload(); }}
-            style={{ padding: "8px 20px", background: "#ff5000", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontWeight: 600 }}>
-            Reset & Reload
-          </button>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
 /* ── Main Page ────────────────────────────────────────────────────────────── */
 
 function StocksPageInner() {
@@ -742,10 +717,9 @@ function StocksPageInner() {
 
   // ── Portfolio data + shortcut tickers (shared quote source for all cards) ──
   const tickers = activePortfolio?.tickers ?? [];
-  const SHORTCUT_TICKERS = CHART_SHORTCUTS.map((s) => s.value);
   const allQuoteTickers = useMemo(() => {
     const combined = [...tickers];
-    for (const t of SHORTCUT_TICKERS) { if (!combined.includes(t)) combined.push(t); }
+    for (const s of CHART_SHORTCUTS) { if (!combined.includes(s.value)) combined.push(s.value); }
     return combined;
   }, [tickers]);
   const { data: quotes, refetch } = useStockQuote(allQuoteTickers);
@@ -1006,10 +980,4 @@ function StocksPageInner() {
   );
 }
 
-export default function StocksPage() {
-  return (
-    <StockErrorBoundary>
-      <StocksPageInner />
-    </StockErrorBoundary>
-  );
-}
+export default StocksPageInner;
