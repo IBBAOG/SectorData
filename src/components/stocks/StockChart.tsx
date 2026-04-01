@@ -8,7 +8,8 @@ interface Props {
   mode: ChartMode;
   height?: number;
   dark?: boolean;
-  intraday?: boolean; // true for 15m, 30m, 1h intervals — show time on x-axis
+  intraday?: boolean;
+  livePrice?: number; // if provided, use this for the current price label instead of last data close
 }
 
 const THEMES = {
@@ -48,7 +49,7 @@ function niceSteps(min: number, max: number, n = 5): number[] {
 
 function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
 
-export default function StockChart({ data, mode, height, dark = true, intraday = false }: Props) {
+export default function StockChart({ data, mode, height, dark = true, intraday = false, livePrice }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const mouseRef = useRef<{x:number;y:number}|null>(null);
@@ -115,8 +116,9 @@ export default function StockChart({ data, mode, height, dark = true, intraday =
       ctx.lineTo(toX(vLen-1),h-PAD.bottom); ctx.lineTo(toX(0),h-PAD.bottom); ctx.closePath(); ctx.fillStyle=grad; ctx.fill();
     }
 
-    // Current price label
-    const lp=slice[vLen-1].close,ly=toY(lp);
+    // Current price label — use livePrice if available for consistency with tables
+    const lp = livePrice ?? slice[vLen-1].close;
+    const ly = toY(Math.max(lo, Math.min(hi, lp))); // clamp to visible range
     ctx.setLineDash([3,3]); ctx.strokeStyle=t.priceLine; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(PAD.left,ly); ctx.lineTo(w-PAD.right,ly); ctx.stroke(); ctx.setLineDash([]);
     const pt=lp.toFixed(2); ctx.font=FONT_BOLD; const plw=ctx.measureText(pt).width+12;
@@ -154,7 +156,7 @@ export default function StockChart({ data, mode, height, dark = true, intraday =
 
       if (mode==="candlestick") { ctx.fillStyle=t.text; ctx.font=FONT_SM; ctx.textAlign="left"; ctx.textBaseline="top"; ctx.fillText(`O ${dp.open.toFixed(2)}  H ${dp.high.toFixed(2)}  L ${dp.low.toFixed(2)}  C ${dp.close.toFixed(2)}`,PAD.left+4,PAD.top+2); }
     }
-  }, [data,mode,dark,t,getView,len,intraday]);
+  }, [data,mode,dark,t,getView,len,intraday,livePrice]);
 
   useEffect(() => { draw(); }, [draw]);
   useEffect(() => { const w=wrapRef.current; if(!w)return; const ro=new ResizeObserver(()=>{ cancelAnimationFrame(rafRef.current); rafRef.current=requestAnimationFrame(draw); }); ro.observe(w); return ()=>ro.disconnect(); }, [draw]);

@@ -410,6 +410,8 @@ function ChartCardContent({ card, isDark, tickers, onUpdate }: { card: DashCard 
   const effectiveRange = (rangeIdx > maxIdx ? MAX_RANGE[interval] ?? "6mo" : range) as TimeRange;
 
   const { data, isLoading } = useStockHistory(effectiveTicker, effectiveRange, interval);
+  const { data: chartQuotes } = useStockQuote(effectiveTicker ? [effectiveTicker] : []);
+  const chartLivePrice = chartQuotes[0]?.regularMarketPrice;
 
   // Find display label for current ticker
   const tickerLabel = CHART_SHORTCUTS.find((s) => s.value === effectiveTicker)?.label ?? effectiveTicker;
@@ -460,7 +462,7 @@ function ChartCardContent({ card, isDark, tickers, onUpdate }: { card: DashCard 
         {isLoading ? (
           <div style={{ textAlign: "center", padding: 30 }}><span className="spinner-border spinner-border-sm" style={{ color: "#8b949e" }} /></div>
         ) : (
-          <StockChart data={data} mode={mode} dark={isDark} intraday={isIntraday} />
+          <StockChart data={data} mode={mode} dark={isDark} intraday={isIntraday} livePrice={chartLivePrice} />
         )}
       </div>
     </div>
