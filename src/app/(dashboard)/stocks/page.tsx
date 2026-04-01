@@ -766,12 +766,7 @@ function StocksPageInner() {
     return () => ro.disconnect();
   }, []);
 
-  if (guardLoading || !visible) return null;
-
-  const openCreate = () => { setModalEdit(false); setModalOpen(true); };
-  const openEdit = () => { setModalEdit(true); setModalOpen(true); };
-
-  // Ensure layout has entries for all cards
+  // Ensure layout has entries for all cards — MUST be before any conditional return
   const effectiveLayouts = useMemo(() => {
     const lgLayouts = layouts.lg ?? [];
     const cardIds = new Set(cards.map((c) => c.id));
@@ -784,6 +779,11 @@ function StocksPageInner() {
     const filtered = lgLayouts.filter((l) => cardIds.has(l.i));
     return { ...layouts, lg: [...filtered, ...extra] };
   }, [layouts, cards]);
+
+  if (guardLoading || !visible) return null;
+
+  const openCreate = () => { setModalEdit(false); setModalOpen(true); };
+  const openEdit = () => { setModalEdit(true); setModalOpen(true); };
 
   return (
     <>
