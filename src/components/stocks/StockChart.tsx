@@ -19,7 +19,7 @@ const THEMES = {
 
 const FONT_BOLD = "bold 13px Arial, Helvetica, sans-serif";
 const FONT_SM = "13px Arial, Helvetica, sans-serif";
-const PAD = { top: 14, right: 72, bottom: 34, left: 72 };
+const PAD = { top: 14, right: 72, bottom: 34, left: 48 };
 const MIN_BARS = 10;
 
 function fmtDateShort(unix: number, intraday: boolean): string {
@@ -201,7 +201,7 @@ export default function StockChart({ data, mode, height, dark = true, intraday =
 
   return (
     <div ref={wrapRef} style={{width:"100%",height:height??"100%",minHeight:60,position:"relative"}}>
-      <canvas ref={canvasRef} style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",cursor:"crosshair",imageRendering:"auto"}}
+      <canvas ref={canvasRef} style={{position:"absolute",top:0,left:0,cursor:"crosshair"}}
         onMouseMove={onMove} onMouseLeave={onLeave} onMouseDown={onDown} onMouseUp={onUp} />
     </div>
   );

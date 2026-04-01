@@ -13,7 +13,7 @@ const THEMES = {
 };
 const FONT_SM = "13px Arial, Helvetica, sans-serif";
 const FONT_BOLD = "bold 13px Arial, Helvetica, sans-serif";
-const PAD = {top:14,right:72,bottom:34,left:72};
+const PAD = {top:14,right:72,bottom:34,left:48};
 const MIN_BARS = 10;
 
 function fmtDate(unix:number,short=false):string { const d=new Date(unix*1000); const M=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return short?`${M[d.getMonth()]} ${String(d.getDate()).padStart(2,"0")}`:`${M[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`; }
@@ -146,7 +146,7 @@ export default function ComparisonChart({series,height,mode,baseDate,endDate,dar
   return(
     <div style={{display:"flex",flexDirection:"column",height:height??"100%",minHeight:60}}>
       <div ref={wrapRef} style={{flex:1,minHeight:0,position:"relative"}}>
-        <canvas ref={canvasRef} style={{position:"absolute",top:0,left:0,width:"100%",height:"100%",cursor:"crosshair",imageRendering:"auto"}}
+        <canvas ref={canvasRef} style={{position:"absolute",top:0,left:0,cursor:"crosshair"}}
           onMouseMove={onMove} onMouseLeave={onLeave} onMouseDown={onDown} onMouseUp={onUp} />
       </div>
       <div style={{display:"flex",gap:12,padding:"4px 0",flexWrap:"wrap",flexShrink:0}}>

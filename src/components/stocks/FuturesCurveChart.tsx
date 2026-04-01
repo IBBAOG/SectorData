@@ -28,7 +28,7 @@ const THEMES = {
 
 const FONT = "13px Arial, Helvetica, sans-serif";
 const FONT_BOLD = "bold 13px Arial, Helvetica, sans-serif";
-const PAD = { top: 30, right: 72, bottom: 34, left: 72 };
+const PAD = { top: 30, right: 72, bottom: 34, left: 48 };
 
 function niceSteps(min: number, max: number, n = 5): number[] {
   const r = max - min; if (r <= 0) return [min];
@@ -180,7 +180,7 @@ export default function FuturesCurveChart({ dark = true }: Props) {
 
   return (
     <div ref={wrapRef} style={{ width: "100%", height: "100%", minHeight: 60, position: "relative" }}>
-      <canvas ref={canvasRef} style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", cursor: "crosshair", imageRendering: "auto" }}
+      <canvas ref={canvasRef} style={{ position: "absolute", top: 0, left: 0, cursor: "crosshair" }}
         onMouseMove={onMove} onMouseLeave={onLeave} />
     </div>
   );
