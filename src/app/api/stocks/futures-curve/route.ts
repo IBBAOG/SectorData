@@ -16,9 +16,12 @@ function generateContractTickers(count = 24): { ticker: string; label: string; m
   let month = now.getMonth(); // 0-indexed
   let year = now.getFullYear();
 
-  // Start from next month (current month contract may have expired)
-  month += 1;
-  if (month > 11) { month = 0; year++; }
+  // Brent (ICE) front-month contract is typically M+2.
+  // The nearby contract expires ~1 month before delivery, so by the 1st of
+  // any month the M+1 contract is near expiry or already expired.
+  // Start from M+2 to match CME/ICE convention (e.g. Apr 1 → Jun front).
+  month += 2;
+  if (month > 11) { month -= 12; year++; }
 
   const contracts: { ticker: string; label: string; monthIndex: number; year: number }[] = [];
   for (let i = 0; i < count; i++) {
