@@ -290,6 +290,21 @@ function WatchlistCardContent({ card, isDark, onUpdate }: { card: DashCard & { t
   const [editing, setEditing] = useState(false);
   const { data: watchQuotes } = useStockQuote(card.tickers);
 
+  // Blink tracking for watchlist
+  const wPrevRef = useRef<Map<string, number>>(new Map());
+  const [wBlinks, setWBlinks] = useState<Map<string, "up" | "down">>(new Map());
+  useEffect(() => {
+    if (!watchQuotes.length) return;
+    const nb = new Map<string, "up" | "down">();
+    const prev = wPrevRef.current;
+    for (const q of watchQuotes) {
+      const old = prev.get(q.symbol);
+      if (old !== undefined && old !== q.regularMarketPrice) nb.set(q.symbol, q.regularMarketPrice > old ? "up" : "down");
+      prev.set(q.symbol, q.regularMarketPrice);
+    }
+    if (nb.size > 0) { setWBlinks(nb); const t = setTimeout(() => setWBlinks(new Map()), 1200); return () => clearTimeout(t); }
+  }, [watchQuotes]);
+
   return (
     <>
       <CardHeader
@@ -347,14 +362,15 @@ function WatchlistCardContent({ card, isDark, onUpdate }: { card: DashCard & { t
             {watchQuotes.map((q) => {
               const pos = q.regularMarketChangePercent >= 0;
               const cls = pos ? "sd-green" : "sd-red";
+              const wb = wBlinks.get(q.symbol);
               return (
-                <tr key={q.symbol}>
+                <tr key={q.symbol} className={wb ? `stock-blink-${wb}` : undefined}>
                   <td style={{ fontWeight: 600, padding: "2px 3px", display: "flex", alignItems: "center" }}>
                     <TradingDot active={isTrading(q.regularMarketTime)} />
                     <Link href={`/stocks/${q.symbol}`} style={{ color: "inherit", textDecoration: "none" }}>{q.symbol}</Link>
                   </td>
-                  <td style={{ textAlign: "right", padding: "2px 3px" }}>{fmt(q.regularMarketPrice)}</td>
-                  <td style={{ textAlign: "right", padding: "2px 3px" }} className={cls}>{pos ? "+" : ""}{fmt(q.regularMarketChangePercent)}%</td>
+                  <td style={{ textAlign: "right", padding: "2px 3px" }} className={wb ? `price-flash-${wb}` : undefined}>{fmt(q.regularMarketPrice)}</td>
+                  <td style={{ textAlign: "right", padding: "2px 3px" }} className={`${cls}${wb ? ` price-flash-${wb}` : ""}`}>{pos ? "+" : ""}{fmt(q.regularMarketChangePercent)}%</td>
                   <td style={{ textAlign: "center", padding: "2px 1px" }} className={cls}>{pos ? "\u25B2" : "\u25BC"}</td>
                 </tr>
               );
@@ -914,8 +930,8 @@ function StocksPageInner() {
                                           <TradingDot active={isTrading(q.regularMarketTime)} />
                                           <Link href={`/stocks/${q.symbol}`} style={{ fontWeight: 700, color: "inherit", textDecoration: "none" }}>{q.symbol}</Link>
                                         </td>
-                                        <td style={{ textAlign: "right", padding: "2px 3px" }}>{fmt(q.regularMarketPrice)}</td>
-                                        <td style={{ textAlign: "right", padding: "2px 3px" }} className={cls}>{pos ? "+" : ""}{fmt(q.regularMarketChangePercent)}%</td>
+                                        <td style={{ textAlign: "right", padding: "2px 3px" }} className={blink ? `price-flash-${blink}` : undefined}>{fmt(q.regularMarketPrice)}</td>
+                                        <td style={{ textAlign: "right", padding: "2px 3px" }} className={`${cls}${blink ? ` price-flash-${blink}` : ""}`}>{pos ? "+" : ""}{fmt(q.regularMarketChangePercent)}%</td>
                                         <td style={{ textAlign: "center", padding: "2px 1px" }} className={cls}>{pos ? "\u25B2" : "\u25BC"}</td>
                                         <td style={{ textAlign: "right", padding: "2px 3px" }}>{fmtVol(q.regularMarketVolume)}</td>
                                       </tr>

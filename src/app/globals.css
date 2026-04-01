@@ -1708,19 +1708,36 @@ a {
 .stocks-light .sd-theme-toggle:hover { background: #e5e7eb; }
 
 /* ── Stock blink animation ─────────────────────────────────────────────────── */
+/* Row background flash */
 @keyframes stock-blink-green {
   0%, 100% { background: transparent; }
-  50% { background: rgba(63,185,80,0.15); }
+  50% { background: rgba(63,185,80,0.12); }
 }
 @keyframes stock-blink-red {
   0%, 100% { background: transparent; }
-  50% { background: rgba(248,81,73,0.15); }
+  50% { background: rgba(248,81,73,0.12); }
 }
 .stock-blink-up {
-  animation: stock-blink-green 0.6s ease 2;
+  animation: stock-blink-green 0.4s ease 3;
 }
 .stock-blink-down {
-  animation: stock-blink-red 0.6s ease 2;
+  animation: stock-blink-red 0.4s ease 3;
+}
+
+/* Price text flash (Bloomberg-style) — apply to the price <td> or <span> */
+@keyframes price-flash-green {
+  0% { color: #3fb950; text-shadow: 0 0 6px rgba(63,185,80,0.6); }
+  100% { color: inherit; text-shadow: none; }
+}
+@keyframes price-flash-red {
+  0% { color: #f85149; text-shadow: 0 0 6px rgba(248,81,73,0.6); }
+  100% { color: inherit; text-shadow: none; }
+}
+.price-flash-up {
+  animation: price-flash-green 1.2s ease-out;
+}
+.price-flash-down {
+  animation: price-flash-red 1.2s ease-out;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
