@@ -59,7 +59,7 @@ export default function MarketOverview() {
           <span className="spinner-border spinner-border-sm" style={{ color: "#8b949e", width: 12, height: 12 }} />
         </div>
       ) : (
-        <table className="sd-table" style={{ fontSize: 14 }}>
+        <table className="sd-table">
           <thead>
             <tr>
               <th style={{ textAlign: "left", padding: "2px 4px" }}>ASSET</th>

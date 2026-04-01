@@ -349,7 +349,7 @@ function WatchlistCardContent({ card, isDark, onUpdate }: { card: DashCard & { t
         <div className="sd-muted" style={{ textAlign: "center", padding: 12, fontSize: 11 }}>Click gear to add tickers</div>
       )}
       {card.tickers.length > 0 && (
-        <table className="sd-table" style={{ fontSize: 11 }}>
+        <table className="sd-table">
           <thead>
             <tr>
               <th style={{ textAlign: "left", padding: "2px 3px" }}>ASSET</th>
@@ -869,7 +869,7 @@ function StocksPageInner() {
                       <>
                         <CardHeader title="Portfolio" />
                         {groups.length > 0 && (
-                          <table className="sd-table" style={{ fontSize: 11 }}>
+                          <table className="sd-table">
                             <thead>
                               <tr>
                                 <th style={{ textAlign: "left", padding: "2px 3px" }}>ASSET</th>
