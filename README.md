@@ -15,18 +15,19 @@ Real-time data visualization, automated data pipelines, Excel export, and role-b
 - [Project Structure](#project-structure)
 - [Modules](#modules)
   - [Home](#home)
-  - [Sales Dashboard](#sales-dashboard)
+  - [Sales Volumes](#sales-volumes)
   - [Market Share](#market-share)
   - [Diesel Imports Line-Up](#diesel-imports-line-up)
   - [D&G Margins](#dg-margins)
   - [Price Bands](#price-bands)
+  - [Market Watch](#market-watch)
 - [Database Schema](#database-schema)
 - [Data Pipelines (GitHub Actions)](#data-pipelines-github-actions)
   - [Vessel Monitoring](#1-vessel-monitoring)
   - [ANP Production Extraction](#2-anp-production-extraction)
   - [D&G Margins Upload](#3-dg-margins-upload)
   - [Supabase Migration Deploy](#4-supabase-migration-deploy)
-- [Authentication](#authentication)
+- [Authentication & Roles](#authentication--roles)
 - [Reusable Components](#reusable-components)
 - [Supabase RPC Reference](#supabase-rpc-reference)
 - [Excel Export](#excel-export)
@@ -43,11 +44,12 @@ The Itau BBA Dashboard (internally codenamed **SectorData**) is an internal anal
 
 ### What it does
 
-- **Visualizes fuel sales volumes** broken down by product, distributor, segment, region, and time period
+- **Visualizes fuel distribution volumes** broken down by product, distributor, segment, region, and time period
 - **Tracks market share evolution** of major fuel distributors (Vibra, Ipiranga, Raizen) and smaller players over time
 - **Monitors diesel import vessels** arriving at four Brazilian ports, with ETA, discharge status, and quantity tracking
 - **Breaks down fuel price composition** into its components: base fuel, biofuel, taxes, and distribution margins
-- **Compares import/export parity** against Petrobras pricing for gasoline and diesel
+- **Compares import/export parity** against Petrobras pricing for gasoline and diesel, including YTD cumulative averages
+- **Provides real-time market data** for Brazilian and international stocks, indices, and commodities via a Bloomberg-style dashboard
 
 ### Key products tracked
 
@@ -73,7 +75,7 @@ The Itau BBA Dashboard (internally codenamed **SectorData**) is an internal anal
 
 The Home page acts as a module directory with preview thumbnails for each dashboard:
 
-| Sales Dashboard | Market Share | Diesel Imports Line-Up |
+| Sales Volumes | Market Share | Diesel Imports Line-Up |
 |:-:|:-:|:-:|
 | ![Sales](public/previews/preview-sales.jpg) | ![Market Share](public/previews/preview-market-share.jpg) | ![Navios Diesel](public/previews/preview-navios-diesel.jpg) |
 
@@ -89,9 +91,10 @@ The Home page acts as a module directory with preview thumbnails for each dashbo
 ┌─────────────────────────┐
 │    External Sources      │
 │  ANP Portal, Port sites, │
+│  Yahoo Finance API,      │
 │  Excel files (manual)    │
 └───────────┬─────────────┘
-            │  Python 3.12 (Selenium, pandas, OCR)
+            │  Python 3.12 (Selenium, pandas, OCR) + Next.js API routes
             ▼
 ┌─────────────────────────┐
 │    GitHub Actions         │
@@ -104,9 +107,10 @@ The Home page acts as a module directory with preview thumbnails for each dashbo
 ┌─────────────────────────┐
 │    Supabase               │
 │  PostgreSQL database      │
-│  19 RPC functions         │
+│  25+ RPC functions        │
 │  Row Level Security       │
 │  Email/password auth      │
+│  User roles (Admin/Client)│
 └───────────┬─────────────┘
             │  supabase-js client (anon key)
             ▼
@@ -121,6 +125,7 @@ The Home page acts as a module directory with preview thumbnails for each dashbo
 ┌─────────────────────────┐
 │    Browser (User)         │
 │  Authenticated session    │
+│  Role-based visibility    │
 │  Interactive charts       │
 │  Excel export             │
 └─────────────────────────┘
@@ -128,8 +133,10 @@ The Home page acts as a module directory with preview thumbnails for each dashbo
 
 ### Key architectural decisions
 
-- **No custom API routes.** All backend logic lives in PostgreSQL RPC functions, called directly from the browser via the Supabase JS client. This eliminates a Node.js API layer entirely.
+- **No custom API routes for Supabase data.** All backend logic lives in PostgreSQL RPC functions, called directly from the browser via the Supabase JS client. This eliminates a Node.js API layer entirely.
+- **Next.js API routes for third-party proxying.** The Market Watch module proxies Yahoo Finance requests through `/api/stocks/*` to avoid CORS issues and keep credentials server-side.
 - **Client-side auth.** Supabase email/password authentication with a shared layout guard that redirects unauthenticated users to `/login`.
+- **Role-based module visibility.** Admins can toggle which modules are visible to Client users via the Settings page. Visibility state is stored in Supabase and loaded at session start.
 - **Materialized views for performance.** Market Share queries hit pre-aggregated materialized views (`mv_ms_serie`, `mv_ms_serie_fast`) instead of scanning the full `vendas` table.
 - **GitHub Actions as the data pipeline orchestrator.** Scheduled cron workflows scrape external sources, commit raw CSVs to the repo, and import data into Supabase — no separate ETL infrastructure required.
 
@@ -144,9 +151,11 @@ The Home page acts as a module directory with preview thumbnails for each dashbo
 | Language | TypeScript | 5 |
 | Styling | Bootstrap | 5.3.8 |
 | Charts | Plotly.js (react-plotly.js) | 3.4.0 |
+| Draggable Grid | react-grid-layout | latest |
 | Slider | rc-slider | 11.1.9 |
 | Database & Auth | Supabase (PostgreSQL + PostgREST) | supabase-js 2.100.1 |
 | Excel Export | ExcelJS + JSZip + xlsx-js-style | 4.4.0 / 3.10.1 |
+| Market Data | Yahoo Finance (via Next.js proxy API) | — |
 | Data Pipelines | Python (pandas, selenium, beautifulsoup4, ddddocr) | 3.12 |
 | CI/CD | GitHub Actions | 4 workflows |
 | Deployment | Vercel | Auto-deploy on push |
@@ -163,12 +172,12 @@ dashboard_projeto/
 │   ├── upload-dg-margins.yml       #   Weekly Monday: D&G margins upload
 │   └── supabase-deploy.yml         #   On push: deploy Supabase migrations
 │
-├── data/                           # Source data files
-│   ├── Liquidos_Vendas_Atual.csv   #   132 MB — full sales dataset
+├── data/                           # Source data files (gitignored — local only)
+│   ├── Liquidos_Vendas_Atual.csv   #   ~130 MB — full sales dataset
 │   ├── d_g_margins.xlsx            #   Diesel & gasoline margins
 │   └── price_bands.xlsx            #   Price band data
 │
-├── output/                         # Pipeline output (committed by GitHub Actions)
+├── output/                         # Pipeline output (gitignored — written by GitHub Actions)
 │
 ├── public/
 │   ├── logo.png                    # Itau BBA logo
@@ -192,41 +201,77 @@ dashboard_projeto/
 │   │   ├── login/page.tsx          # Login page
 │   │   ├── forgot-password/page.tsx
 │   │   ├── reset-password/page.tsx
+│   │   ├── api/stocks/             # Yahoo Finance proxy API routes
+│   │   │   ├── quote/route.ts      #   Real-time quote endpoint
+│   │   │   ├── history/route.ts    #   Historical price series
+│   │   │   ├── search/route.ts     #   Ticker search
+│   │   │   └── futures-curve/route.ts # Futures curve data
 │   │   └── (dashboard)/            # Auth-guarded route group
 │   │       ├── layout.tsx          #   Session check → redirect to /login
-│   │       ├── page.tsx            #   Sales Dashboard (/)
-│   │       ├── home/page.tsx       #   Home — module directory (/home)
+│   │       ├── page.tsx            #   Root redirect → /home
+│   │       ├── home/page.tsx       #   Home — module directory
+│   │       ├── sales-volumes/page.tsx  # Sales Volumes dashboard
 │   │       ├── market-share/page.tsx
 │   │       ├── navios-diesel/page.tsx
 │   │       ├── diesel-gasoline-margins/page.tsx
 │   │       ├── price-bands/page.tsx
+│   │       ├── stocks/page.tsx     #   Market Watch (Bloomberg-style)
+│   │       ├── profile/page.tsx    #   User profile editor
+│   │       ├── settings/page.tsx   #   Admin-only: roles + module visibility
 │   │       └── template-module/page.tsx  # Starter template for new modules
 │   │
-│   ├── components/                 # 6 reusable UI components
-│   │   ├── NavBar.tsx              #   Top nav with module links + sign-out
+│   ├── components/                 # Reusable UI components
+│   │   ├── NavBar.tsx              #   Top nav with module links + user menu
 │   │   ├── PlotlyChart.tsx         #   Plotly.js wrapper
 │   │   ├── PeriodSlider.tsx        #   Date range slider (rc-slider)
 │   │   ├── CheckList.tsx           #   Multi-select checkbox group
 │   │   ├── RegionStateFilter.tsx   #   Cascading region → state filter
-│   │   └── SearchableMultiSelect.tsx #  Searchable dropdown multi-select
+│   │   ├── SearchableMultiSelect.tsx #  Searchable dropdown multi-select
+│   │   └── stocks/                 #   Market Watch sub-components
+│   │       ├── StockChart.tsx      #     Price/volume chart (Plotly)
+│   │       ├── ComparisonChart.tsx #     Multi-asset comparison chart
+│   │       ├── MarketOverview.tsx  #     Index/commodity snapshot table
+│   │       ├── StockSearch.tsx     #     Ticker search input
+│   │       └── FuturesCurveChart.tsx #   Brent futures curve
+│   │
+│   ├── context/
+│   │   └── UserProfileContext.tsx  # React context: profile + moduleVisibility
+│   │
+│   ├── hooks/
+│   │   ├── useStockQuote.ts        # Real-time quote polling
+│   │   ├── useStockHistory.ts      # Historical price data
+│   │   ├── useStockPortfolios.ts   # Watchlist/portfolio CRUD
+│   │   ├── useAutoRefresh.ts       # Configurable polling interval
+│   │   ├── useModuleVisibilityGuard.ts # Redirect if module is hidden
+│   │   ├── useRoleGuard.ts         # Redirect if role insufficient
+│   │   └── useDebounce.ts          # Input debounce
 │   │
 │   ├── lib/
 │   │   ├── supabaseClient.ts       # Supabase client singleton
-│   │   ├── rpc.ts                  # All RPC wrappers (~430 lines, grouped by module)
+│   │   ├── rpc.ts                  # All RPC wrappers (grouped by module)
+│   │   ├── profileRpc.ts           # Profile + admin RPC wrappers
 │   │   ├── filterUtils.ts          # Date helpers, REGIAO_UF_MAP, month names
-│   │   └── exportExcel.ts          # Excel export for all modules (~690 lines)
+│   │   ├── avatarUtils.ts          # User initials helper
+│   │   └── exportExcel.ts          # Excel export for all modules
 │   │
 │   └── types/
+│       ├── stocks.ts               # Stock/quote/portfolio type definitions
+│       ├── profile.ts              # User profile + role types
 │       └── plotly.js-dist-min.d.ts # Type shim for Plotly
 │
 ├── supabase/
 │   ├── config.toml                 # Supabase local dev config
 │   └── migrations/                 # SQL migrations (deployed via CI)
-│       ├── 20260327174919_remote_schema.sql   # Base schema (vendas + views + RPCs)
-│       ├── 20260328200000_navios_diesel.sql   # Vessel tracking table + RPCs
-│       └── 20260329000000_create_d_g_margins.sql # D&G margins table + RPCs
+│       ├── 20260327174919_remote_schema.sql       # Base schema (vendas + views + RPCs)
+│       ├── 20260328200000_navios_diesel.sql        # Vessel tracking table + RPCs
+│       ├── 20260329000000_create_d_g_margins.sql  # D&G margins table + RPCs
+│       ├── 20260331000000_navios_diesel_brt.sql   # BRT timezone fix for vessel times
+│       ├── 20260331000001_navios_diesel_drop_old_sigs.sql # Cleanup old function signatures
+│       ├── 20260401000000_stock_portfolios.sql    # stock_portfolios table + visibility
+│       ├── 20260401000001_stock_portfolio_groups.sql # Add portfolio groups column
+│       └── 20260402000000_sales_volumes.sql       # Sales Volumes RPC namespace (get_sv_*)
 │
-├── navios_esperados.py             # Root-level vessel scraper (29 KB)
+├── navios_esperados.py             # Root-level vessel scraper
 ├── upload_dg_margins.py            # Root-level D&G margins uploader
 ├── requirements.txt                # Python dependencies
 ├── package.json                    # Node.js dependencies & scripts
@@ -247,38 +292,32 @@ dashboard_projeto/
 | **File** | `src/app/(dashboard)/home/page.tsx` |
 | **Description** | Landing page and module directory |
 
-The Home page serves as the gateway to all dashboard modules. It displays a responsive card grid where each card shows a preview thumbnail, title, and description. Cards expand on hover to reveal a description and an "Open" link. A "Coming Soon" placeholder card indicates modules under development.
+The Home page serves as the gateway to all dashboard modules. It displays a responsive card grid where each card shows a preview thumbnail, title, and description. Cards expand on hover to reveal a description and an "Open" link. A "Coming Soon" placeholder card indicates modules under development. Card visibility respects the Admin-configured module visibility settings.
 
 ---
 
-### Sales Dashboard
+### Sales Volumes
 
 | | |
 |---|---|
-| **Route** | `/` |
-| **File** | `src/app/(dashboard)/page.tsx` |
-| **Description** | Product volume analysis (thousand m3) |
-| **Excel Export** | No |
+| **Route** | `/sales-volumes` |
+| **File** | `src/app/(dashboard)/sales-volumes/page.tsx` |
+| **Description** | Absolute fuel distribution volumes (thousand m³) by distributor over time |
+| **Excel Export** | Yes |
 
-The main analytics module. It displays fuel sales volumes broken down by multiple dimensions with interactive Plotly charts.
+Shows fuel sales volumes broken down by distributor across the same three display modes as Market Share, but in absolute terms (thousand m³) rather than percentages.
 
-**Charts:**
-- Volume by year (bar chart)
-- Volume by month (line chart)
-- Volume by region (pie chart)
-- Volume by state/UF (bar chart)
-- Volume by agent/distributor (bar chart)
-- Volume by product (bar chart)
+**Three display modes:**
+1. **Individual** — Each distributor (Vibra, Ipiranga, Raizen, Others) as a separate time series
+2. **Big-3** — Aggregates Vibra + Ipiranga + Raizen vs. Others
+3. **Others** — Drills into smaller distributors outside the Big-3
 
-**KPI cards:** Total records, total volume (thousand m3), distinct years available.
+**Products:** Diesel B, Gasoline C, Hydrous Ethanol, Otto-Cycle
+**Segments:** Retail, B2B, TRR (Diesel only)
 
-**Filters:**
-- **Period** — Date range slider with year markers
-- **Segment** — B2B, Retail, TRR, Others (checklist)
-- **Agent** — Distributor name (searchable multi-select)
-- **Region/State** — Cascading filter (Norte, Nordeste, Centro-Oeste, Sudeste, Sul → individual UFs)
+**Filters:** Period, Product, Segment, Region/State, Mode
 
-**RPC functions:** `get_opcoes_filtros`, `get_metricas`, `get_qtd_por_ano`, `get_qtd_por_mes`, `get_qtd_por_regiao`, `get_qtd_por_uf`, `get_qtd_por_agente`, `get_qtd_por_produto`
+**RPC functions:** `get_sv_opcoes_filtros`, `get_ms_serie_fast`, `get_ms_serie_others`, `get_others_players`
 
 ---
 
@@ -369,7 +408,16 @@ Breaks down the retail price of Diesel B and Gasoline C into their constituent c
 | **Description** | Import/export parity vs. Petrobras pricing |
 | **Excel Export** | Yes |
 
-Compares BBA-calculated import and export parity prices against Petrobras' official pricing for gasoline and diesel, displayed as time-series line charts.
+Two sections:
+
+**1. Price Bands** — Daily time-series comparing BBA-calculated import and export parity prices against Petrobras' official pricing for gasoline and diesel.
+
+**2. YTD Average Price** — Cumulative year-to-date average for each price series, with:
+- Year selector (current year, -1, -2)
+- Solid line for actual cumulative averages
+- Dashed projection line extending to Dec 31 (assuming constant last observed price)
+- End-of-year projected value annotations
+- Petrobras tooltip showing percentage spread vs. IPP and EPP cumulative averages
 
 **Metrics per product:**
 - BBA import parity (IBBA for gasoline, BBA for diesel)
@@ -378,6 +426,36 @@ Compares BBA-calculated import and export parity prices against Petrobras' offic
 - Petrobras price
 
 **RPC functions:** `get_price_bands_data`
+
+---
+
+### Market Watch
+
+| | |
+|---|---|
+| **Route** | `/stocks` |
+| **File** | `src/app/(dashboard)/stocks/page.tsx` |
+| **Description** | Bloomberg-style real-time market dashboard |
+| **Excel Export** | No |
+
+A real-time financial market dashboard with a draggable, resizable card grid layout. Data is fetched from Yahoo Finance via Next.js proxy API routes (`/api/stocks/*`).
+
+**Cards available:**
+- **Market Overview** — Snapshot table of key indices and commodities (Ibovespa, S&P 500, Brent, USD/BRL, etc.) with live price and % change
+- **Chart** — Interactive price + volume chart for any ticker. Supports multiple time ranges and chart modes (line / candlestick)
+- **Compare Assets** — Multi-asset normalized return comparison chart
+- **Portfolio / Watchlist** — Custom watchlist with real-time quotes, day high/low, volume, and price flash on updates
+- **Brent Futures Curve** — Forward curve visualization for Brent crude futures
+
+**Features:**
+- Dark / light theme toggle (persisted in localStorage)
+- Draggable and resizable card grid (react-grid-layout)
+- Auto-refresh with configurable interval
+- B3 ticker auto-detection (PETR4, VALE3 → appends `.SA` for Yahoo Finance)
+- Bloomberg-style price flash animation when values update
+- Per-user portfolio/watchlist persistence via Supabase (`stock_portfolios` table)
+
+**Data source:** Yahoo Finance, proxied through Next.js API routes to avoid CORS and expose only safe fields.
 
 ---
 
@@ -415,7 +493,7 @@ Real-time diesel import vessel data, refreshed every 6 hours.
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | bigint (PK) | Auto-generated |
-| `collected_at` | timestamptz | Snapshot timestamp |
+| `collected_at` | timestamptz | Snapshot timestamp (BRT) |
 | `porto` | text | Port name |
 | `status` | text | Vessel status |
 | `navio` | text | Vessel name |
@@ -465,6 +543,32 @@ Daily parity pricing data.
 
 **Unique constraint:** `(product, date)`
 
+#### `stock_portfolios` — User Watchlists
+
+Per-user watchlists/portfolios for the Market Watch module.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | uuid (PK) | Auto-generated |
+| `user_id` | uuid | References `auth.users(id)` |
+| `name` | text | Portfolio name |
+| `tickers` | text[] | Array of ticker symbols |
+| `groups` | jsonb | Sub-portfolio groups (array of `{name, tickers}`) |
+| `is_active` | boolean | Currently selected portfolio |
+| `created_at` | timestamptz | Creation timestamp |
+| `updated_at` | timestamptz | Last update timestamp |
+
+**RLS:** Users can only read and write their own portfolios.
+
+#### `module_visibility` — Per-Module Client Visibility
+
+Controls which modules are visible to Client users (Admins always see all).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `module_slug` | text (PK) | Module identifier (e.g., `"market-share"`) |
+| `is_visible_for_clients` | boolean | Whether Clients can access this module |
+
 ### Materialized Views
 
 | View | Purpose | Refreshed by |
@@ -472,7 +576,7 @@ Daily parity pricing data.
 | `mv_ms_serie` | Monthly aggregated sales by product/segment/agent | `classificar_agentes()` function |
 | `mv_ms_serie_fast` | Pre-aggregated for Individual/Big-3 modes (no agent column) | `classificar_agentes()` function |
 
-These views dramatically speed up Market Share queries by pre-computing monthly aggregations instead of scanning the full `vendas` table on every request.
+These views dramatically speed up Market Share and Sales Volumes queries by pre-computing monthly aggregations instead of scanning the full `vendas` table on every request.
 
 ---
 
@@ -544,9 +648,9 @@ All pipelines support manual triggering via `workflow_dispatch` in addition to t
 
 ---
 
-## Authentication
+## Authentication & Roles
 
-### Flow
+### Auth Flow
 
 1. User navigates to any dashboard page
 2. The `(dashboard)/layout.tsx` guard calls `supabase.auth.getSession()`
@@ -554,13 +658,34 @@ All pipelines support manual triggering via `workflow_dispatch` in addition to t
 4. User enters email and password → `supabase.auth.signInWithPassword()`
 5. On success, the user is redirected to `/home`
 
-### Pages
+### Auth Pages
 
 | Route | File | Purpose |
 |-------|------|---------|
 | `/login` | `src/app/login/page.tsx` | Email + password login form |
 | `/forgot-password` | `src/app/forgot-password/page.tsx` | Request a password reset email |
 | `/reset-password` | `src/app/reset-password/page.tsx` | Set a new password (from recovery link) |
+
+### User Roles
+
+| Role | Access |
+|------|--------|
+| **Admin** | All modules, Settings page, user role management, module visibility control |
+| **Client** | Modules permitted by Admin visibility settings only |
+
+Role is stored in the `user_profiles` table and loaded at session start via `UserProfileContext`. The `useRoleGuard` hook redirects non-Admins away from protected pages (e.g., `/settings`).
+
+### User Pages
+
+| Route | File | Visible to |
+|-------|------|------------|
+| `/profile` | `src/app/(dashboard)/profile/page.tsx` | All authenticated users |
+| `/settings` | `src/app/(dashboard)/settings/page.tsx` | Admin only |
+
+The Settings page allows Admins to:
+- Toggle per-module visibility for Client users
+- View all registered users and their roles
+- Promote/demote users between Admin and Client roles
 
 ### Security
 
@@ -577,10 +702,10 @@ All components are client-side (`"use client"`) and follow a controlled-componen
 
 | Component | File | Description |
 |-----------|------|-------------|
-| **NavBar** | `src/components/NavBar.tsx` | Top navigation bar with links to all modules and a sign-out button. Module links are defined in the `NAV_MODULES` array. |
+| **NavBar** | `src/components/NavBar.tsx` | Top navigation bar. Structured as `NAV_ENTRIES` (Home, Oil & Gas placeholder, Fuel Distribution dropdown, Market Watch). Includes a user avatar with dropdown for Profile, Settings (Admin only), and Sign Out. |
 | **PlotlyChart** | `src/components/PlotlyChart.tsx` | Wrapper around `react-plotly.js` that applies custom tooltip styling (rounded corners, drop shadow) and hides the mode bar. |
-| **PeriodSlider** | `src/components/PeriodSlider.tsx` | Date range slider built with `rc-slider`. Displays year markers along the track. Used by Sales and Market Share for period filtering. |
-| **CheckList** | `src/components/CheckList.tsx` | Multi-select checkbox group with "Select All" and "Clear" quick actions. Used for segment and agent filtering. |
+| **PeriodSlider** | `src/components/PeriodSlider.tsx` | Date range slider built with `rc-slider`. Displays year markers along the track. |
+| **CheckList** | `src/components/CheckList.tsx` | Multi-select checkbox group with "Select All" and "Clear" quick actions. |
 | **RegionStateFilter** | `src/components/RegionStateFilter.tsx` | Two-level cascading filter: select a region (Norte, Nordeste, etc.) to filter available states (UFs). Uses `REGIAO_UF_MAP` from `filterUtils.ts`. |
 | **SearchableMultiSelect** | `src/components/SearchableMultiSelect.tsx` | Dropdown with a search input for filtering options, plus multi-select with checkboxes. Supports click-outside-to-close via `useRef`. |
 
@@ -588,20 +713,16 @@ All components are client-side (`"use client"`) and follow a controlled-componen
 
 ## Supabase RPC Reference
 
-All RPC wrappers live in `src/lib/rpc.ts`, grouped by module. Each wrapper calls `supabase.rpc()` with typed parameters and returns typed data (or a safe fallback on error).
+All RPC wrappers live in `src/lib/rpc.ts` (grouped by module) and `src/lib/profileRpc.ts`. Each wrapper calls `supabase.rpc()` with typed parameters and returns typed data (or a safe fallback on error).
 
-### Sales Module (8 functions)
+### Sales Volumes Module (4 functions)
 
 | Function | Purpose | Parameters |
 |----------|---------|------------|
-| `get_opcoes_filtros` | Available filter options (agents, products, segments, dates) | — |
-| `get_metricas` | KPI metrics (total records, volume, distinct years) | date range, segments, agents, regions, UFs |
-| `get_qtd_por_ano` | Volume aggregated by year | same filters |
-| `get_qtd_por_mes` | Volume aggregated by month | same filters |
-| `get_qtd_por_regiao` | Volume aggregated by region | same filters |
-| `get_qtd_por_uf` | Volume aggregated by state (UF) | same filters |
-| `get_qtd_por_agente` | Volume aggregated by distributor | same filters |
-| `get_qtd_por_produto` | Volume aggregated by product | same filters |
+| `get_sv_opcoes_filtros` | Available filter options (dates, regions, UFs, segments) | — |
+| `get_ms_serie_fast` | Pre-aggregated volume time series (reused from Market Share) | product, segment, classification, date range |
+| `get_ms_serie_others` | "Others" distributor breakdown by volume | product, segment, date range |
+| `get_others_players` | List of distributors in the "Others" category | product, segment |
 
 ### Market Share Module (4 functions)
 
@@ -634,6 +755,17 @@ All RPC wrappers live in `src/lib/rpc.ts`, grouped by module. Each wrapper calls
 |----------|---------|------------|
 | `get_price_bands_data` | All parity rows ordered by date | `p_product` (optional) |
 
+### Profile & Admin (6 functions — in `profileRpc.ts`)
+
+| Function | Purpose | Access |
+|----------|---------|--------|
+| `get_my_profile` | Fetch current user's profile + role | All users |
+| `upsert_my_profile` | Update display name and avatar | All users |
+| `get_module_visibility` | Fetch per-module visibility settings | All users |
+| `set_module_visibility` | Toggle module visibility for Clients | Admin only |
+| `get_all_users_with_roles` | List all registered users with roles | Admin only |
+| `set_user_role` | Promote/demote a user's role | Admin only |
+
 ### Pagination
 
 Functions returning large datasets use a `paginatedRpc()` helper that fetches data in 1,000-row pages via Supabase's `.range(offset, offset + PAGE - 1)` method, accumulating results until all rows are retrieved.
@@ -642,7 +774,7 @@ Functions returning large datasets use a `paginatedRpc()` helper that fetches da
 
 ## Excel Export
 
-Excel export is available in **Market Share**, **D&G Margins**, **Price Bands**, and **Navios Diesel** modules. The implementation lives in `src/lib/exportExcel.ts` (~690 lines) and uses **ExcelJS** for workbook generation and **JSZip** for compression.
+Excel export is available in **Market Share**, **Sales Volumes**, **D&G Margins**, **Price Bands**, and **Navios Diesel** modules. The implementation lives in `src/lib/exportExcel.ts` and uses **ExcelJS** for workbook generation and **JSZip** for compression.
 
 ### Market Share Export
 
@@ -667,6 +799,7 @@ Each sheet contains monthly market share percentages per distributor, with color
 
 ### Other Exports
 
+- **Sales Volumes** — Same structure as Market Share but with absolute volumes (thousand m³)
 - **D&G Margins** — Exports margin component breakdown by week for selected fuel type
 - **Price Bands** — Exports parity pricing data by date and product
 - **Navios Diesel** — Exports vessel data for the selected snapshot
@@ -685,7 +818,7 @@ Each sheet contains monthly market share percentages per distributor, with color
 
 ```bash
 git clone <repo-url>
-cd dashboard_projeto
+cd dashboard_projeto/frontend-next
 npm install
 ```
 
@@ -772,26 +905,37 @@ Configure these in your repository's **Settings > Secrets and variables > Action
 
 2. **Rename the component** inside `page.tsx` to match your module name.
 
-3. **Add a nav entry** in `src/components/NavBar.tsx`:
+3. **Add a nav entry** in `src/components/NavBar.tsx` inside the appropriate `NAV_ENTRIES` group:
    ```ts
+   // Under "Fuel Distribution" dropdown:
    { href: "/your-module", label: "Your Module" }
+   // Or as a standalone link:
+   { label: "Your Module", href: "/your-module" }
    ```
 
 4. **Create RPC functions** in Supabase (PostgreSQL functions) and add a migration file in `supabase/migrations/`.
 
 5. **Add RPC wrappers** in `src/lib/rpc.ts` under a new `// ─── MODULE: ...` section.
 
-6. **(Optional)** Add Excel export logic in `src/lib/exportExcel.ts`.
+6. **Register module visibility** by inserting a row into `module_visibility`:
+   ```sql
+   INSERT INTO module_visibility (module_slug, is_visible_for_clients)
+   VALUES ('your-module', true);
+   ```
 
-7. **(Optional)** Add a preview image to `public/previews/` and a card definition in `src/app/(dashboard)/home/page.tsx`.
+7. **(Optional)** Add Excel export logic in `src/lib/exportExcel.ts`.
 
-8. **Auth is inherited automatically** — the `(dashboard)` route group layout handles session checks. No auth code needed in your page.
+8. **(Optional)** Add a preview image to `public/previews/` and a card definition in `src/app/(dashboard)/home/page.tsx`.
+
+9. **Auth is inherited automatically** — the `(dashboard)` route group layout handles session checks. No auth code needed in your page.
+
+10. **(Optional)** Use `useModuleVisibilityGuard("your-module")` at the top of your page to redirect Clients if the module is hidden.
 
 ---
 
 ## Environment Variables Reference
 
-### Frontend (`.env.local`)
+### Frontend (`frontend-next/.env.local`)
 
 | Variable | Required | Description |
 |----------|----------|-------------|
