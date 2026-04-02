@@ -35,12 +35,7 @@ const NAV_ENTRIES: NavEntry[] = [
       { href: "/price-bands", label: "Price Bands" },
     ],
   },
-  {
-    label: "Market",
-    items: [
-      { href: "/stocks", label: "Stock Dashboard" },
-    ],
-  },
+  { label: "Market Watch", href: "/stocks" },
 ];
 
 /** Map nested/alternate routes to the root module slug for visibility checks */
