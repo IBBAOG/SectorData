@@ -259,6 +259,38 @@ export async function rpcGetOthersPlayers(supabase: SupabaseClient): Promise<str
   }
 }
 
+// ─── MODULE: Sales Volumes (/src/app/(dashboard)/sales-volumes/page.tsx) ─────
+
+export async function rpcGetSvOpcoesFiltros(supabase: SupabaseClient) {
+  try {
+    const { data, error } = await supabase.rpc("get_sv_opcoes_filtros", {});
+    if (error) throw error;
+    return (data ?? {}) as Record<string, unknown>;
+  } catch (e) {
+    console.error("get_sv_opcoes_filtros failed", e);
+    return {};
+  }
+}
+
+export async function rpcGetSvSerieFast(supabase: SupabaseClient, filters: MarketShareFilters) {
+  return paginatedRpc(supabase, "get_sv_serie_fast", filters);
+}
+
+export async function rpcGetSvSerieOthers(supabase: SupabaseClient, filters: MarketShareFilters) {
+  return paginatedRpc(supabase, "get_sv_serie_others", filters);
+}
+
+export async function rpcGetSvOthersPlayers(supabase: SupabaseClient): Promise<string[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_sv_others_players", {});
+    if (error) throw error;
+    return ((data ?? []) as { agente_regulado: string }[]).map(r => r.agente_regulado);
+  } catch (e) {
+    console.error("get_sv_others_players failed", e);
+    return [];
+  }
+}
+
 // ─── MODULE: Navios Diesel (/src/app/(dashboard)/navios-diesel/page.tsx) ─────
 
 export type NavioDieselRow = {

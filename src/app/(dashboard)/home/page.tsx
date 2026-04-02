@@ -31,7 +31,7 @@ interface CardDef {
 const CARDS: CardDef[] = [
   {
     preview: "/previews/preview-sales.jpg",
-    title: "Sales Dashboard",
+    title: "Sales Volumes",
     description: "Volume analysis by product, segment, agent, region, and period",
     badge: "Available",
     href: "/",
