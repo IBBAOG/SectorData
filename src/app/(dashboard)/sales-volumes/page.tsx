@@ -13,10 +13,10 @@ import RegionStateFilter from "../../../components/RegionStateFilter";
 import { resolverDatas } from "../../../lib/filterUtils";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import {
-  rpcGetSvOpcoesFiltros,
-  rpcGetSvSerieFast,
-  rpcGetSvSerieOthers,
-  rpcGetSvOthersPlayers,
+  rpcGetMsOpcoesFiltros,
+  rpcGetMsSerieFast,
+  rpcGetMsSerieOthers,
+  rpcGetOthersPlayers,
   type MarketShareFilters,
   type MsSerieRow,
 } from "../../../lib/rpc";
@@ -424,7 +424,7 @@ export default function SalesVolumesPage() {
     if (!supabase) return;
     let cancelled = false;
     (async () => {
-      const data = await rpcGetSvOpcoesFiltros(supabase);
+      const data = await rpcGetMsOpcoesFiltros(supabase);
       if (!cancelled) setOpcoes(data);
     })();
     return () => { cancelled = true; };
@@ -458,8 +458,8 @@ export default function SalesVolumesPage() {
     (async () => {
       try {
         const rows = isOthers
-          ? await rpcGetSvSerieOthers(supabase, seriesFilters)
-          : await rpcGetSvSerieFast(supabase, seriesFilters);
+          ? await rpcGetMsSerieOthers(supabase, seriesFilters)
+          : await rpcGetMsSerieFast(supabase, seriesFilters);
         if (cancelled) return;
         setSerieRows(rows ?? []);
         if (isOthers) {
@@ -481,7 +481,7 @@ export default function SalesVolumesPage() {
     let cancelled = false;
     (async () => {
       try {
-        const players = await rpcGetSvOthersPlayers(supabase);
+        const players = await rpcGetOthersPlayers(supabase);
         if (cancelled) return;
         setCachedOthersPlayers(players);
       } catch { /* silent */ }
