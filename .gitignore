@@ -16,9 +16,16 @@
 # next.js
 /.next/
 /out/
+frontend-next/.next/
+frontend-next/node_modules/
+frontend-next/out/
 
 # production
 /build
+
+# data files (large, local only)
+data/*.csv
+data/*.xlsx
 
 # misc
 .DS_Store
@@ -47,3 +54,9 @@ __pycache__/
 
 # claude
 .claude/
+
+# local outputs and runtime artifacts
+output/
+venv/
+*.session.json
+session.json
