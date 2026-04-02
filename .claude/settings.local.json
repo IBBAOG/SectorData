@@ -128,7 +128,8 @@
       "Bash(grep -r navios_diesel /c/Users/eduar/dashboard_projeto/supabase --include=*.sql --include=*.py --include=*.js --include=*.ts -n)",
       "Bash(find /c/Users/eduar/dashboard_projeto/src -type f \\\\\\(-name *.ts -o -name *.tsx -o -name *.js -o -name *.jsx \\\\\\) ! -path */node_modules/*)",
       "Bash(find /c/Users/eduar/dashboard_projeto/src/app/api -type f -name *.ts)",
-      "Bash(wc -l \"C:\\\\Users\\\\eduar\\\\dashboard_projeto\\\\.claude\\\\worktrees\\\\zealous-swanson\\\\src\\\\app\\\\\\(dashboard\\)\\\\market-share\\\\page.tsx\" \"C:\\\\Users\\\\eduar\\\\dashboard_projeto\\\\.claude\\\\worktrees\\\\zealous-swanson\\\\supabase\\\\migrations\\\\20260327174919_remote_schema.sql\")"
+      "Bash(wc -l \"C:\\\\Users\\\\eduar\\\\dashboard_projeto\\\\.claude\\\\worktrees\\\\zealous-swanson\\\\src\\\\app\\\\\\(dashboard\\)\\\\market-share\\\\page.tsx\" \"C:\\\\Users\\\\eduar\\\\dashboard_projeto\\\\.claude\\\\worktrees\\\\zealous-swanson\\\\supabase\\\\migrations\\\\20260327174919_remote_schema.sql\")",
+      "Bash(find /c/Users/eduar/dashboard_projeto/src/components -type f -name *.tsx -o -name *.ts)"
     ]
   }
 }

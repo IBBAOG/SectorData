@@ -278,8 +278,8 @@ function buildYtdChart(
 
       let projSum   = cumSum;
       let projCount = count;
-      const projX: string[] = [lastDate];   // connect to last actual point
-      const projY: number[] = [cumSum / count];
+      const projX: string[] = [];
+      const projY: number[] = [];
 
       for (const d of projDates) {
         projSum   += lastPrice;
