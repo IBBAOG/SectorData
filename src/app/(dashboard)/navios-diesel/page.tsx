@@ -319,6 +319,8 @@ export default function NaviosDieselPage() {
         .toLocaleDateString("en-US", { month: "short", year: "numeric" });
     });
 
+    const maxTotal = Math.max(...volumeMensal.map(r => r.discharged_volume + r.pending_volume));
+
     const data: PlotData[] = [
       {
         type: "bar",
@@ -350,22 +352,40 @@ export default function NaviosDieselPage() {
       } as unknown as PlotData,
     ];
 
+    // Total label above each stacked bar via annotations
+    const totalAnnotations = volumeMensal.map((r, i) => ({
+      x: labels[i],
+      y: r.discharged_volume + r.pending_volume,
+      text: (r.discharged_volume + r.pending_volume).toLocaleString("en-US", { maximumFractionDigits: 0 }),
+      showarrow: false,
+      yanchor: "bottom" as const,
+      yshift: 4,
+      font: { family: "Arial", size: 10, color: "#1a1a1a" },
+    }));
+
     const layout: Partial<Layout> = {
       barmode: "stack",
       paper_bgcolor: "white",
       plot_bgcolor: "white",
-      margin: { t: 10, b: 36, l: 110, r: 0 },
+      // t: 28 dá espaço para o label do total acima das barras
+      margin: { t: 28, b: 36, l: 110, r: 0 },
       height: 220,
-      bargap: 0.3,
-      yaxis: { visible: false },
-      xaxis: { tickfont: { family: "Arial", size: 11 } },
+      // bargap: 0 + range explícito eliminam o padding lateral padrão do Plotly,
+      // fazendo cada barra cobrir exatamente a largura de uma coluna da tabela abaixo
+      bargap: 0,
+      yaxis: { visible: false, range: [0, maxTotal * 1.25] },
+      xaxis: {
+        tickfont: { family: "Arial", size: 11 },
+        range: [-0.5, volumeMensal.length - 0.5],
+      },
+      annotations: totalAnnotations,
       legend: {
         orientation: "v",
         x: -0.95,
         y: 1.0,
         xanchor: "left",
         yanchor: "top",
-        font: { family: "Arial", size: 10 },
+        font: { family: "Arial", size: 12 },
       },
       hoverlabel: {
         bgcolor: "rgba(255,255,255,0.95)",
