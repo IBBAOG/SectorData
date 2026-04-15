@@ -44,6 +44,11 @@ const MODULE_LABELS: { slug: string; label: string; description: string }[] = [
     label: "Price Bands",
     description: "Price band distribution and competitive positioning by fuel type",
   },
+  {
+    slug: "stocks",
+    label: "Market Watch",
+    description: "Real-time stock quotes, historical charts, and market overview",
+  },
 ];
 
 export default function SettingsPage() {

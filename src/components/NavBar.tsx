@@ -117,6 +117,12 @@ export default function NavBar() {
           {NAV_ENTRIES.map((entry) => {
             /* ── Standalone link ── */
             if (!isModule(entry)) {
+              // Hide visibility-controlled links from Client users when toggled off
+              if (!profileLoading && profile?.role !== "Admin") {
+                const rawSlug = entry.href.replace(/^\//, "");
+                const slug = SLUG_MAP[rawSlug] ?? rawSlug;
+                if (!(moduleVisibility[slug] ?? true)) return null;
+              }
               return (
                 <Link key={entry.href} href={entry.href} className="nav-link">
                   {entry.label}

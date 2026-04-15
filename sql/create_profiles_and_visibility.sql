@@ -103,7 +103,8 @@ VALUES
   ('market-share',            TRUE),
   ('navios-diesel',           TRUE),
   ('diesel-gasoline-margins', TRUE),
-  ('price-bands',             TRUE)
+  ('price-bands',             TRUE),
+  ('stocks',                  TRUE)
 ON CONFLICT (module_slug) DO NOTHING;
 
 -- Row Level Security

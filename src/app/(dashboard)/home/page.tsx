@@ -71,6 +71,14 @@ const CARDS: CardDef[] = [
   },
   {
     preview: null,
+    title: "Market Watch",
+    description: "Real-time stock quotes, historical charts, and market overview",
+    badge: "Available",
+    href: "/stocks",
+    disabled: false,
+  },
+  {
+    preview: null,
     title: "Coming Soon",
     description: "New modules are currently under development",
     badge: "Soon",
