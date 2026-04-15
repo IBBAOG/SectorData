@@ -199,8 +199,22 @@ _HEADERS = {
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/124.0.0.0 Safari/537.36"
-    )
+    ),
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;"
+        "q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+    ),
+    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Cache-Control": "max-age=0",
 }
+
 
 def _get(url: str, retries: int = 3, timeout: int = 60) -> str:
     for attempt in range(1, retries + 1):
@@ -208,6 +222,13 @@ def _get(url: str, retries: int = 3, timeout: int = 60) -> str:
             resp = requests.get(url, headers=_HEADERS, verify=False, timeout=timeout)
             resp.raise_for_status()
             return resp.content.decode("utf-8", errors="replace")
+        except requests.exceptions.HTTPError as e:
+            # 4xx são erros definitivos do lado do cliente — não tem sentido retentar
+            if e.response is not None and 400 <= e.response.status_code < 500:
+                raise
+            if attempt == retries:
+                raise
+            time.sleep(5 * attempt)
         except Exception as e:
             if attempt == retries:
                 raise
@@ -315,7 +336,18 @@ def buscar_santos_atracados() -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def buscar_itaqui() -> pd.DataFrame:
-    html = _get(URL_ITAQUI)
+    # Usa Session para acumular cookies e mimetizar navegação real:
+    # visita a home antes de pedir a página de navios, o que evita o 403
+    # que alguns WAFs disparam para requisições diretas sem referrer/sessão.
+    base = "https://www.portodoitaqui.com.br"
+    session = requests.Session()
+    session.headers.update(_HEADERS)
+    session.get(base + "/", verify=False, timeout=30)          # warm-up / cookies
+    session.headers["Referer"] = base + "/"
+    session.headers["Sec-Fetch-Site"] = "same-origin"
+    resp = session.get(URL_ITAQUI, verify=False, timeout=60)
+    resp.raise_for_status()
+    html = resp.content.decode("utf-8", errors="replace")
 
     # Use BeautifulSoup to extract tables with all cells as strings.
     # pd.read_html auto-converts "20.000" (BR thousands) → float 20.0, losing
