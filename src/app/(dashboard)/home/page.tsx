@@ -175,7 +175,7 @@ export default function HomePage() {
                   style={{
                     position: "relative",
                     height: 220,
-                    borderRadius: 14,
+                    borderRadius: 0,
                     overflow: "hidden",
                     cursor: card.disabled ? "default" : "pointer",
                     transition: "transform .25s, box-shadow .25s",
