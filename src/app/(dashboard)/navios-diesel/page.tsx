@@ -298,9 +298,7 @@ export default function NaviosDieselPage() {
     return d ? d.slice(0, 7) : "";
   }
 
-  const DISCHARGED_COLOR = "#003f88";
-
-  // Build monthly stacked bar chart: discharged (dark blue) + pending (orange)
+  // Build monthly stacked bar chart: discharged (black) + pending (orange)
   const monthlyChart = useMemo(() => {
     if (volumeMensal.length === 0) {
       return {
@@ -327,7 +325,14 @@ export default function NaviosDieselPage() {
         name: "Discharged",
         x: labels,
         y: volumeMensal.map(r => r.discharged_volume),
-        marker: { color: DISCHARGED_COLOR, opacity: 0.85 },
+        text: volumeMensal.map(r =>
+          r.discharged_volume > 0
+            ? r.discharged_volume.toLocaleString("en-US", { maximumFractionDigits: 0 })
+            : ""
+        ),
+        textposition: "inside",
+        textfont: { family: "Arial", size: 10, color: "#ffffff" },
+        marker: { color: "#000000", opacity: 0.85 },
         hovertemplate: "%{x}<br>Discharged: %{y:,.0f} m³<extra></extra>",
       } as unknown as PlotData,
       {
@@ -336,10 +341,10 @@ export default function NaviosDieselPage() {
         x: labels,
         y: volumeMensal.map(r => r.pending_volume),
         text: volumeMensal.map(r =>
-          (r.discharged_volume + r.pending_volume).toLocaleString("en-US", { maximumFractionDigits: 0 })
+          r.pending_volume.toLocaleString("en-US", { maximumFractionDigits: 0 })
         ),
-        textposition: "outside",
-        textfont: { family: "Arial", size: 11, color: "#1a1a1a" },
+        textposition: "inside",
+        textfont: { family: "Arial", size: 10, color: "#ffffff" },
         marker: { color: ORANGE, opacity: 0.85 },
         hovertemplate: "%{x}<br>Pending: %{y:,.0f} m³<extra></extra>",
       } as unknown as PlotData,
@@ -349,12 +354,19 @@ export default function NaviosDieselPage() {
       barmode: "stack",
       paper_bgcolor: "white",
       plot_bgcolor: "white",
-      margin: { t: 30, b: 36, l: 110, r: 0 },
+      margin: { t: 10, b: 36, l: 110, r: 0 },
       height: 220,
       bargap: 0.3,
       yaxis: { visible: false },
       xaxis: { tickfont: { family: "Arial", size: 11 } },
-      legend: { orientation: "h", y: 1.12, x: 0, font: { family: "Arial", size: 10 } },
+      legend: {
+        orientation: "v",
+        x: -0.95,
+        y: 1.0,
+        xanchor: "left",
+        yanchor: "top",
+        font: { family: "Arial", size: 10 },
+      },
       hoverlabel: {
         bgcolor: "rgba(255,255,255,0.95)",
         bordercolor: "rgba(180,180,180,0.5)",
