@@ -109,7 +109,7 @@ export default function HomePage() {
       <NavBar />
 
       {/* Hero */}
-      <section style={{ maxWidth: 960, margin: "0 auto", padding: "72px 24px 48px" }}>
+      <section style={{ maxWidth: 960, margin: 0, padding: "72px 24px 48px" }}>
         <div
           style={{
             display: "inline-block",
@@ -148,7 +148,7 @@ export default function HomePage() {
       <hr style={{ border: "none", borderTop: "1px solid rgba(0,0,0,0.08)", margin: "0 24px" }} />
 
       {/* Cards */}
-      <section style={{ maxWidth: 960, margin: "0 auto", padding: "48px 24px 80px" }}>
+      <section style={{ maxWidth: 960, margin: 0, padding: "48px 24px 80px" }}>
         <h2
           style={{
             fontSize: "0.75rem",
