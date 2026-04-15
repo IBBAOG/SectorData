@@ -636,7 +636,7 @@ export default function NaviosDieselPage() {
                         style={{ width: "100%", height: 240 }}
                       />
                       <div style={{ marginTop: 8 }}>
-                        <div style={{ ...TITLE_STYLE, fontSize: 12, marginBottom: 6 }}>Monthly Summary by Port</div>
+                        <div style={{ ...TITLE_STYLE, marginBottom: 6 }}>Monthly Summary by Port</div>
                         <hr className="section-hr" />
                         <div style={{ overflowX: "auto" }}>
                           <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 12, tableLayout: "fixed" }}>
@@ -765,7 +765,7 @@ export default function NaviosDieselPage() {
 
                     {/* Row 2 — Col 3: Delivered Vessels, aligned below Vessel Details */}
                     <div className="chart-container">
-                      <div style={{ ...TITLE_STYLE, fontSize: 12, marginBottom: 4 }}>Delivered Vessels</div>
+                      <div style={{ ...TITLE_STYLE, marginBottom: 4 }}>Delivered Vessels</div>
                       <hr className="section-hr" />
                       <div style={{ fontFamily: "Arial", fontSize: 10, color: "#999", marginBottom: 6 }}>
                         Vessels no longer present in the selected snapshot — sanity check for the Discharged segment.
