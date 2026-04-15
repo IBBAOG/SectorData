@@ -375,6 +375,25 @@ export async function rpcGetNdResumoPortos(
   }
 }
 
+export type NdVolumeMensalDescargaRow = {
+  month: string;            // "YYYY-MM"
+  discharged_volume: number;
+  pending_volume: number;
+};
+
+export async function rpcGetNdVolumeMensalDescarga(
+  supabase: SupabaseClient,
+): Promise<NdVolumeMensalDescargaRow[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_nd_volume_mensal_descarga", {});
+    if (error) throw error;
+    return (data ?? []) as NdVolumeMensalDescargaRow[];
+  } catch (e) {
+    console.error("get_nd_volume_mensal_descarga failed", e);
+    return [];
+  }
+}
+
 // ─── MODULE: Diesel & Gasoline Margins (/src/app/(dashboard)/diesel-gasoline-margins/page.tsx) ─
 
 export type DgMarginsRow = {

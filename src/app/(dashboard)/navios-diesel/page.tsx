@@ -12,8 +12,10 @@ import {
   rpcGetNdColetasDistintas,
   rpcGetNdNavios,
   rpcGetNdResumoPortos,
+  rpcGetNdVolumeMensalDescarga,
   type NavioDieselRow,
   type PortoResumo,
+  type NdVolumeMensalDescargaRow,
 } from "../../../lib/rpc";
 
 const ORANGE = "#FF5000";
@@ -106,6 +108,7 @@ export default function NaviosDieselPage() {
   const [coletas, setColetas] = useState<string[]>([]);
   const [selectedDay, setSelectedDay] = useState<string>("");
   const [selectedColeta, setSelectedColeta] = useState<string>("");
+  const [volumeMensal, setVolumeMensal] = useState<NdVolumeMensalDescargaRow[]>([]);
   const [calMonth, setCalMonth] = useState<number>(new Date().getMonth());
   const [calYear, setCalYear] = useState<number>(new Date().getFullYear());
   const [navios, setNavios] = useState<NavioDieselRow[]>([]);
@@ -173,7 +176,19 @@ export default function NaviosDieselPage() {
     return () => { cancelled = true; };
   }, [supabase]);
 
-  // 2. Load data when selected timestamp changes
+  // 2. Load monthly discharged vs pending volume (independent of snapshot selection)
+  useEffect(() => {
+    if (!supabase) return;
+    let cancelled = false;
+    (async () => {
+      const data = await rpcGetNdVolumeMensalDescarga(supabase);
+      if (cancelled) return;
+      setVolumeMensal(data);
+    })();
+    return () => { cancelled = true; };
+  }, [supabase]);
+
+  // 3. Load data when selected timestamp changes
   useEffect(() => {
     if (!supabase || !selectedColeta) return;
     let cancelled = false;
@@ -283,34 +298,50 @@ export default function NaviosDieselPage() {
     return d ? d.slice(0, 7) : "";
   }
 
-  // Build monthly bar chart
-  const monthlyChart = useMemo(() => {
-    const totals = new Map<string, number>();
-    for (const r of naviosDisplay) {
-      if (r.quantidade_convertida == null) continue;
-      const month = vesselMonthKey(r);
-      if (!month) continue;
-      totals.set(month, (totals.get(month) ?? 0) + r.quantidade_convertida);
-    }
-    const months = Array.from(totals.keys()).sort();
-    const labels = months.map(m => {
-      const [yr, mo] = m.split("-");
-      return new Date(Number(yr), Number(mo) - 1, 1).toLocaleDateString("en-US", { month: "short", year: "numeric" });
-    });
-    const values = months.map(m => totals.get(m)!);
+  const DISCHARGED_COLOR = "#003f88";
 
-    const data: PlotData[] = [{
-      type: "bar",
-      x: labels,
-      y: values,
-      text: values.map(v => v.toLocaleString("en-US", { maximumFractionDigits: 0 })),
-      textposition: "outside",
-      textfont: { family: "Arial", size: 12, color: "#1a1a1a" },
-      marker: { color: ORANGE, opacity: 0.85 },
-      hovertemplate: "%{x}: %{y:,.0f} m³<extra></extra>",
-    } as unknown as PlotData];
+  // Build monthly stacked bar chart: discharged (dark blue) + pending (orange)
+  const monthlyChart = useMemo(() => {
+    if (volumeMensal.length === 0) {
+      return {
+        data: [] as PlotData[],
+        layout: {
+          paper_bgcolor: "white", plot_bgcolor: "white",
+          xaxis: { visible: false }, yaxis: { visible: false },
+          annotations: [{ text: "No data", xref: "paper" as const, yref: "paper" as const,
+            showarrow: false, font: { size: 13, family: "Arial", color: "#888" } }],
+          height: 220, margin: { t: 30, b: 36, l: 110, r: 0 },
+        } as Partial<Layout>,
+      };
+    }
+
+    const labels = volumeMensal.map(r => {
+      const [yr, mo] = r.month.split("-");
+      return new Date(Number(yr), Number(mo) - 1, 1)
+        .toLocaleDateString("en-US", { month: "short", year: "numeric" });
+    });
+
+    const data: PlotData[] = [
+      {
+        type: "bar",
+        name: "Discharged",
+        x: labels,
+        y: volumeMensal.map(r => r.discharged_volume),
+        marker: { color: DISCHARGED_COLOR, opacity: 0.85 },
+        hovertemplate: "%{x}<br>Discharged: %{y:,.0f} m³<extra></extra>",
+      } as unknown as PlotData,
+      {
+        type: "bar",
+        name: "Pending Discharge",
+        x: labels,
+        y: volumeMensal.map(r => r.pending_volume),
+        marker: { color: ORANGE, opacity: 0.85 },
+        hovertemplate: "%{x}<br>Pending: %{y:,.0f} m³<extra></extra>",
+      } as unknown as PlotData,
+    ];
 
     const layout: Partial<Layout> = {
+      barmode: "stack",
       paper_bgcolor: "white",
       plot_bgcolor: "white",
       margin: { t: 30, b: 36, l: 110, r: 0 },
@@ -318,6 +349,7 @@ export default function NaviosDieselPage() {
       bargap: 0.3,
       yaxis: { visible: false },
       xaxis: { tickfont: { family: "Arial", size: 11 } },
+      legend: { orientation: "h", y: 1.12, x: 0, font: { family: "Arial", size: 10 } },
       hoverlabel: {
         bgcolor: "rgba(255,255,255,0.95)",
         bordercolor: "rgba(180,180,180,0.5)",
@@ -326,7 +358,7 @@ export default function NaviosDieselPage() {
     };
 
     return { data, layout };
-  }, [naviosDisplay]);
+  }, [volumeMensal]);
 
   // Build port monthly summary
   const portMonthlySummary = useMemo(() => {
