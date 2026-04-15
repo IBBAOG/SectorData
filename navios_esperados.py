@@ -235,6 +235,31 @@ def _get(url: str, retries: int = 3, timeout: int = 60) -> str:
             time.sleep(5 * attempt)
 
 
+def _fetch_with_selenium(url: str) -> str:
+    """Busca URL com Chrome headless via Selenium.
+    Usado como fallback quando requests é bloqueado (403) por WAF/firewall de IP.
+    O fingerprint TLS do Chrome real é diferente do requests e passa pela maioria
+    dos bloqueios baseados em JA3/User-Agent que afetam datacenters.
+    """
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument(f"--user-agent={_HEADERS['User-Agent']}")
+    options.add_argument("--lang=pt-BR")
+
+    driver = webdriver.Chrome(options=options)
+    try:
+        driver.get(url)
+        return driver.page_source
+    finally:
+        driver.quit()
+
+
 def _col(df: pd.DataFrame, keyword: str, required: bool = True) -> str | None:
     matches = [c for c in df.columns if keyword.lower() in str(c).lower()]
     if not matches:
@@ -336,18 +361,27 @@ def buscar_santos_atracados() -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def buscar_itaqui() -> pd.DataFrame:
-    # Usa Session para acumular cookies e mimetizar navegação real:
-    # visita a home antes de pedir a página de navios, o que evita o 403
-    # que alguns WAFs disparam para requisições diretas sem referrer/sessão.
-    base = "https://www.portodoitaqui.com.br"
-    session = requests.Session()
-    session.headers.update(_HEADERS)
-    session.get(base + "/", verify=False, timeout=30)          # warm-up / cookies
-    session.headers["Referer"] = base + "/"
-    session.headers["Sec-Fetch-Site"] = "same-origin"
-    resp = session.get(URL_ITAQUI, verify=False, timeout=60)
-    resp.raise_for_status()
-    html = resp.content.decode("utf-8", errors="replace")
+    # Tentativa 1: requests com Session (rápido, sem overhead de browser)
+    html: str | None = None
+    try:
+        base = "https://www.portodoitaqui.com.br"
+        session = requests.Session()
+        session.headers.update(_HEADERS)
+        session.get(base + "/", verify=False, timeout=30)   # warm-up / cookies
+        session.headers["Referer"] = base + "/"
+        session.headers["Sec-Fetch-Site"] = "same-origin"
+        resp = session.get(URL_ITAQUI, verify=False, timeout=60)
+        resp.raise_for_status()
+        html = resp.content.decode("utf-8", errors="replace")
+    except requests.exceptions.HTTPError as e:
+        if e.response is not None and e.response.status_code == 403:
+            # 403 = bloqueio de IP por WAF (comum em GitHub Actions / datacenters).
+            # Fallback: Chrome headless tem fingerprint TLS diferente e frequentemente
+            # contorna esse tipo de bloqueio sem precisar de proxy.
+            print("    [Itaqui] requests bloqueado (403) — tentando Chrome headless...")
+            html = _fetch_with_selenium(URL_ITAQUI)
+        else:
+            raise
 
     # Use BeautifulSoup to extract tables with all cells as strings.
     # pd.read_html auto-converts "20.000" (BR thousands) → float 20.0, losing
