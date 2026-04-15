@@ -612,10 +612,10 @@ export default function NaviosDieselPage() {
                 </div>
               ) : (
                 <>
-                  {/* Charts row: map | bar chart + summary table | vessel details */}
-                  <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 16 }}>
-                    {/* Map */}
-                    <div className="chart-container" style={{ flex: 1.5, minWidth: 0 }}>
+                  {/* Grid: 3 columns (map | bar+summary | vessel details), 2 rows */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1.5fr 3fr", gap: 16, alignItems: "start", marginBottom: 24 }}>
+                    {/* Row 1 — Col 1: Map */}
+                    <div className="chart-container">
                       <div style={TITLE_STYLE}>Distribution by Port</div>
                       <hr className="section-hr" />
                       <PlotlyChart
@@ -625,8 +625,8 @@ export default function NaviosDieselPage() {
                         style={{ width: "100%", height: 500 }}
                       />
                     </div>
-                    {/* Bar chart + summary table in same container for alignment */}
-                    <div className="chart-container" style={{ flex: 1.5, minWidth: 0 }}>
+                    {/* Row 1 — Col 2: Bar chart + Monthly Summary */}
+                    <div className="chart-container">
                       <div style={TITLE_STYLE}>Monthly Diesel Volume (m³)</div>
                       <hr className="section-hr" />
                       <PlotlyChart
@@ -686,8 +686,8 @@ export default function NaviosDieselPage() {
                       </div>
                     </div>
 
-                    {/* Vessel Details table */}
-                    <div className="chart-container" style={{ flex: 3, minWidth: 0 }}>
+                    {/* Row 1 — Col 3: Vessel Details */}
+                    <div className="chart-container">
                     <div style={{ marginBottom: 8 }}>
                       <div style={TITLE_STYLE}>Vessel Details</div>
                       <hr className="section-hr" />
@@ -746,8 +746,25 @@ export default function NaviosDieselPage() {
                       </div>
                     )}
 
-                    {/* ── Delivered Vessels sanity-check table ── */}
-                    <div style={{ marginTop: 18 }}>
+                    </div>
+
+                    {/* Row 2 — Col 1–2: Disclaimer, aligned below Map + Monthly Summary */}
+                    <div style={{ gridColumn: "span 2", backgroundColor: "#fffbf5", border: "1px solid #ffe0b2", borderRadius: 8, padding: "16px 20px", fontFamily: "Arial", fontSize: 12, color: "#555" }}>
+                      <div style={{ fontWeight: 700, marginBottom: 8, color: "#1a1a1a", fontSize: 13 }}>
+                        Data Limitations & Disclaimer
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: 18 }}>
+                        <li>Data is collected at 6-hour intervals and may not reflect real-time conditions or recent changes in vessel schedules.</li>
+                        <li>Ports monitored: Santos, Itaqui, Paranaguá, Suape, and São Sebastião. Ports with no vessels in the selected snapshot are shown in gray on the map.</li>
+                        <li>Port locations are approximate and for reference only.</li>
+                        <li>Expected ship counts are based on historical patterns and are subject to change.</li>
+                        <li>This data does not account for operational delays, weather impacts, or force majeure events.</li>
+                        <li>For operational decisions, please verify with official port authorities and vessel tracking systems.</li>
+                      </ul>
+                    </div>
+
+                    {/* Row 2 — Col 3: Delivered Vessels, aligned below Vessel Details */}
+                    <div className="chart-container">
                       <div style={{ ...TITLE_STYLE, fontSize: 12, marginBottom: 4 }}>Delivered Vessels</div>
                       <hr className="section-hr" />
                       <div style={{ fontFamily: "Arial", fontSize: 10, color: "#999", marginBottom: 6 }}>
@@ -795,33 +812,6 @@ export default function NaviosDieselPage() {
                       </div>
                     </div>
 
-                    </div>
-                  </div>
-
-                  {/* Disclaimer */}
-                  <div
-                    style={{
-                      backgroundColor: "#fffbf5",
-                      border: "1px solid #ffe0b2",
-                      borderRadius: 8,
-                      padding: "16px 20px",
-                      fontFamily: "Arial",
-                      fontSize: 12,
-                      color: "#555",
-                      marginBottom: 24,
-                    }}
-                  >
-                    <div style={{ fontWeight: 700, marginBottom: 8, color: "#1a1a1a", fontSize: 13 }}>
-                      Data Limitations & Disclaimer
-                    </div>
-                    <ul style={{ margin: 0, paddingLeft: 18 }}>
-                      <li>Data is collected at 6-hour intervals and may not reflect real-time conditions or recent changes in vessel schedules.</li>
-                      <li>Ports monitored: Santos, Itaqui, Paranaguá, Suape, and São Sebastião. Ports with no vessels in the selected snapshot are shown in gray on the map.</li>
-                      <li>Port locations are approximate and for reference only.</li>
-                      <li>Expected ship counts are based on historical patterns and are subject to change.</li>
-                      <li>This data does not account for operational delays, weather impacts, or force majeure events.</li>
-                      <li>For operational decisions, please verify with official port authorities and vessel tracking systems.</li>
-                    </ul>
                   </div>
                 </>
               )}
