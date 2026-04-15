@@ -639,12 +639,12 @@ export default function NaviosDieselPage() {
                         <div style={{ ...TITLE_STYLE, fontSize: 12, marginBottom: 6 }}>Monthly Summary by Port</div>
                         <hr className="section-hr" />
                         <div style={{ overflowX: "auto" }}>
-                          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 11, tableLayout: "fixed" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 12, tableLayout: "fixed" }}>
                             <thead>
                               <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
-                                <th style={{ width: 110, padding: "6px 10px", fontSize: 10, fontWeight: 700, textAlign: "left" }}>Port</th>
+                                <th style={{ width: 110, padding: "6px 10px", fontSize: 11, fontWeight: 700, textAlign: "left" }}>Port</th>
                                 {portMonthlySummary.months.map(m => (
-                                  <th key={m} style={{ padding: "6px 4px", fontSize: 10, fontWeight: 700, textAlign: "center", whiteSpace: "nowrap" }}>
+                                  <th key={m} style={{ padding: "6px 4px", fontSize: 11, fontWeight: 700, textAlign: "center", whiteSpace: "nowrap" }}>
                                     {portMonthlySummary.monthLabels[m]}
                                   </th>
                                 ))}
@@ -658,7 +658,7 @@ export default function NaviosDieselPage() {
                                   onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
                                   onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }}
                                 >
-                                  <td style={{ width: 110, padding: "4px 10px", fontWeight: 600, whiteSpace: "nowrap", fontSize: 11 }}>
+                                  <td style={{ width: 110, padding: "4px 10px", fontWeight: 600, whiteSpace: "nowrap" }}>
                                     {porto.replace("Porto de ", "")}
                                   </td>
                                   {portMonthlySummary.months.map(m => {
@@ -667,8 +667,8 @@ export default function NaviosDieselPage() {
                                       <td key={m} style={{ padding: "4px 10px", textAlign: "center" }}>
                                         {cell ? (
                                           <>
-                                            <div style={{ fontWeight: 700, fontSize: 11 }}>{cell.vessels} vessel{cell.vessels !== 1 ? "s" : ""}</div>
-                                            <div style={{ fontSize: 10, color: "#666" }}>
+                                            <div style={{ fontWeight: 700 }}>{cell.vessels} vessel{cell.vessels !== 1 ? "s" : ""}</div>
+                                            <div style={{ fontSize: 11, color: "#666" }}>
                                               {cell.volume.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³
                                             </div>
                                           </>
@@ -696,11 +696,11 @@ export default function NaviosDieselPage() {
                       </div>
                     </div>
                     <div style={{ overflowX: "auto" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 11 }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 12 }}>
                         <thead>
                           <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
                             {["Port", "Status", "Vessel", "Volume (m³)", "ETA", "Unload Start", "Unload End"].map((h) => (
-                              <th key={h} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
+                              <th key={h} style={{ padding: "6px 10px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
                             ))}
                           </tr>
                         </thead>
@@ -771,11 +771,11 @@ export default function NaviosDieselPage() {
                         Vessels no longer present in the selected snapshot — sanity check for the Discharged segment.
                       </div>
                       <div style={{ overflowX: "auto", maxHeight: 280, overflowY: "auto" }}>
-                        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 11 }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 12 }}>
                           <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
                             <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
                               {["Port", "Vessel", "Last Seen (BRT)", "Est. Discharge Month", "Volume (m³)"].map(h => (
-                                <th key={h} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap", textAlign: h === "Volume (m³)" ? "right" : "left" }}>{h}</th>
+                                <th key={h} style={{ padding: "6px 10px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", textAlign: h === "Volume (m³)" ? "right" : "left" }}>{h}</th>
                               ))}
                             </tr>
                           </thead>
