@@ -13,9 +13,11 @@ import {
   rpcGetNdNavios,
   rpcGetNdResumoPortos,
   rpcGetNdVolumeMensalDescarga,
+  rpcGetNdNaviosDescarregados,
   type NavioDieselRow,
   type PortoResumo,
   type NdVolumeMensalDescargaRow,
+  type NdNavioDescarregadoRow,
 } from "../../../lib/rpc";
 
 const ORANGE = "#FF5000";
@@ -109,6 +111,7 @@ export default function NaviosDieselPage() {
   const [selectedDay, setSelectedDay] = useState<string>("");
   const [selectedColeta, setSelectedColeta] = useState<string>("");
   const [volumeMensal, setVolumeMensal] = useState<NdVolumeMensalDescargaRow[]>([]);
+  const [naviosDescarregados, setNaviosDescarregados] = useState<NdNavioDescarregadoRow[]>([]);
   const [calMonth, setCalMonth] = useState<number>(new Date().getMonth());
   const [calYear, setCalYear] = useState<number>(new Date().getFullYear());
   const [navios, setNavios] = useState<NavioDieselRow[]>([]);
@@ -181,9 +184,13 @@ export default function NaviosDieselPage() {
     if (!supabase || !selectedColeta) return;
     let cancelled = false;
     (async () => {
-      const data = await rpcGetNdVolumeMensalDescarga(supabase, selectedColeta);
+      const [monthly, discharged] = await Promise.all([
+        rpcGetNdVolumeMensalDescarga(supabase, selectedColeta),
+        rpcGetNdNaviosDescarregados(supabase, selectedColeta),
+      ]);
       if (cancelled) return;
-      setVolumeMensal(data);
+      setVolumeMensal(monthly);
+      setNaviosDescarregados(discharged);
     })();
     return () => { cancelled = true; };
   }, [supabase, selectedColeta]);
@@ -738,6 +745,56 @@ export default function NaviosDieselPage() {
                           : ": dados não disponíveis nesta coleta."}
                       </div>
                     )}
+
+                    {/* ── Delivered Vessels sanity-check table ── */}
+                    <div style={{ marginTop: 18 }}>
+                      <div style={{ ...TITLE_STYLE, fontSize: 12, marginBottom: 4 }}>Delivered Vessels</div>
+                      <hr className="section-hr" />
+                      <div style={{ fontFamily: "Arial", fontSize: 10, color: "#999", marginBottom: 6 }}>
+                        Vessels no longer present in the selected snapshot — sanity check for the Discharged segment.
+                      </div>
+                      <div style={{ overflowX: "auto", maxHeight: 280, overflowY: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 11 }}>
+                          <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
+                            <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
+                              {["Port", "Vessel", "Last Seen (BRT)", "Est. Discharge Month", "Volume (m³)"].map(h => (
+                                <th key={h} style={{ padding: "6px 10px", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap", textAlign: h === "Volume (m³)" ? "right" : "left" }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {naviosDescarregados.length === 0 ? (
+                              <tr>
+                                <td colSpan={5} style={{ padding: "12px 10px", textAlign: "center", color: "#aaa", fontFamily: "Arial", fontSize: 11 }}>
+                                  No delivered vessels found for this snapshot.
+                                </td>
+                              </tr>
+                            ) : naviosDescarregados.map((r, i) => {
+                              const [yr, mo] = r.discharge_month.split("-");
+                              const monthLabel = new Date(Number(yr), Number(mo) - 1, 1)
+                                .toLocaleDateString("en-US", { month: "short", year: "numeric" });
+                              return (
+                                <tr
+                                  key={`${r.navio}-${r.porto}`}
+                                  style={{ borderBottom: i === naviosDescarregados.length - 1 ? "2px solid #d0d0d0" : "1px solid #eee" }}
+                                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
+                                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }}
+                                >
+                                  <td style={{ padding: "4px 10px", fontWeight: 600, whiteSpace: "nowrap" }}>{r.porto.replace("Porto de ", "")}</td>
+                                  <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{r.navio}</td>
+                                  <td style={{ padding: "4px 10px", whiteSpace: "nowrap", color: "#555" }}>{r.last_seen}</td>
+                                  <td style={{ padding: "4px 10px", whiteSpace: "nowrap", color: "#555" }}>{monthLabel}</td>
+                                  <td style={{ padding: "4px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                                    {r.last_volume.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
                     </div>
                   </div>
 

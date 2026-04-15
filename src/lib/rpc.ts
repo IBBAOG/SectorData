@@ -398,6 +398,33 @@ export async function rpcGetNdVolumeMensalDescarga(
   }
 }
 
+export type NdNavioDescarregadoRow = {
+  navio: string;
+  porto: string;
+  /** "YYYY-MM-DD HH24:MI" in BRT — last snapshot where vessel was seen */
+  last_seen: string;
+  /** Last known volume in m³ */
+  last_volume: number;
+  /** "YYYY-MM" — estimated discharge month (ETA → unload start → unload end → last_seen) */
+  discharge_month: string;
+};
+
+export async function rpcGetNdNaviosDescarregados(
+  supabase: SupabaseClient,
+  collectedAt: string,
+): Promise<NdNavioDescarregadoRow[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_nd_navios_descarregados", {
+      p_collected_at: collectedAt,
+    });
+    if (error) throw error;
+    return (data ?? []) as NdNavioDescarregadoRow[];
+  } catch (e) {
+    console.error("get_nd_navios_descarregados failed", e);
+    return [];
+  }
+}
+
 // ─── MODULE: Diesel & Gasoline Margins (/src/app/(dashboard)/diesel-gasoline-margins/page.tsx) ─
 
 export type DgMarginsRow = {
