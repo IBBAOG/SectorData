@@ -407,6 +407,7 @@ export default function NaviosDieselPage() {
         y: 1.0,
         xanchor: "left",
         yanchor: "top",
+        traceorder: "normal",
         font: { family: "Arial", size: 12 },
       },
       hoverlabel: {
