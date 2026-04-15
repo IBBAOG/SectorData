@@ -319,7 +319,11 @@ export default function NaviosDieselPage() {
         .toLocaleDateString("en-US", { month: "short", year: "numeric" });
     });
 
-    const maxTotal = Math.max(...volumeMensal.map(r => r.discharged_volume + r.pending_volume));
+    const INDETERMINATE_COLOR = "#73C6A1";
+
+    const maxTotal = Math.max(...volumeMensal.map(r =>
+      r.discharged_volume + r.pending_volume + r.indeterminate_volume
+    ));
 
     const data: PlotData[] = [
       {
@@ -343,20 +347,38 @@ export default function NaviosDieselPage() {
         x: labels,
         y: volumeMensal.map(r => r.pending_volume),
         text: volumeMensal.map(r =>
-          r.pending_volume.toLocaleString("en-US", { maximumFractionDigits: 0 })
+          r.pending_volume > 0
+            ? r.pending_volume.toLocaleString("en-US", { maximumFractionDigits: 0 })
+            : ""
         ),
         textposition: "inside",
         textfont: { family: "Arial", size: 10, color: "#ffffff" },
         marker: { color: ORANGE, opacity: 0.85 },
         hovertemplate: "%{x}<br>Pending: %{y:,.0f} m³<extra></extra>",
       } as unknown as PlotData,
+      {
+        type: "bar",
+        name: "Status Indeterminado",
+        x: labels,
+        y: volumeMensal.map(r => r.indeterminate_volume),
+        text: volumeMensal.map(r =>
+          r.indeterminate_volume > 0
+            ? r.indeterminate_volume.toLocaleString("en-US", { maximumFractionDigits: 0 })
+            : ""
+        ),
+        textposition: "inside",
+        textfont: { family: "Arial", size: 10, color: "#ffffff" },
+        marker: { color: INDETERMINATE_COLOR, opacity: 0.85 },
+        hovertemplate: "%{x}<br>Status Indeterminado: %{y:,.0f} m³<extra></extra>",
+      } as unknown as PlotData,
     ];
 
     // Total label above each stacked bar via annotations
     const totalAnnotations = volumeMensal.map((r, i) => ({
       x: labels[i],
-      y: r.discharged_volume + r.pending_volume,
-      text: (r.discharged_volume + r.pending_volume).toLocaleString("en-US", { maximumFractionDigits: 0 }),
+      y: r.discharged_volume + r.pending_volume + r.indeterminate_volume,
+      text: (r.discharged_volume + r.pending_volume + r.indeterminate_volume)
+        .toLocaleString("en-US", { maximumFractionDigits: 0 }),
       showarrow: false,
       yanchor: "bottom" as const,
       yshift: 4,

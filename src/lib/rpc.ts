@@ -376,9 +376,10 @@ export async function rpcGetNdResumoPortos(
 }
 
 export type NdVolumeMensalDescargaRow = {
-  month: string;            // "YYYY-MM"
+  month: string;              // "YYYY-MM"
   discharged_volume: number;
   pending_volume: number;
+  indeterminate_volume: number; // último volume de portos com ERRO_COLETA
 };
 
 export async function rpcGetNdVolumeMensalDescarga(
