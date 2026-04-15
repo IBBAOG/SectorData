@@ -176,17 +176,17 @@ export default function NaviosDieselPage() {
     return () => { cancelled = true; };
   }, [supabase]);
 
-  // 2. Load monthly discharged vs pending volume (independent of snapshot selection)
+  // 2. Load monthly discharged vs pending volume — re-runs when snapshot changes
   useEffect(() => {
-    if (!supabase) return;
+    if (!supabase || !selectedColeta) return;
     let cancelled = false;
     (async () => {
-      const data = await rpcGetNdVolumeMensalDescarga(supabase);
+      const data = await rpcGetNdVolumeMensalDescarga(supabase, selectedColeta);
       if (cancelled) return;
       setVolumeMensal(data);
     })();
     return () => { cancelled = true; };
-  }, [supabase]);
+  }, [supabase, selectedColeta]);
 
   // 3. Load data when selected timestamp changes
   useEffect(() => {
@@ -335,6 +335,11 @@ export default function NaviosDieselPage() {
         name: "Pending Discharge",
         x: labels,
         y: volumeMensal.map(r => r.pending_volume),
+        text: volumeMensal.map(r =>
+          (r.discharged_volume + r.pending_volume).toLocaleString("en-US", { maximumFractionDigits: 0 })
+        ),
+        textposition: "outside",
+        textfont: { family: "Arial", size: 11, color: "#1a1a1a" },
         marker: { color: ORANGE, opacity: 0.85 },
         hovertemplate: "%{x}<br>Pending: %{y:,.0f} m³<extra></extra>",
       } as unknown as PlotData,

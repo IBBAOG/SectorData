@@ -383,9 +383,12 @@ export type NdVolumeMensalDescargaRow = {
 
 export async function rpcGetNdVolumeMensalDescarga(
   supabase: SupabaseClient,
+  collectedAt: string,
 ): Promise<NdVolumeMensalDescargaRow[]> {
   try {
-    const { data, error } = await supabase.rpc("get_nd_volume_mensal_descarga", {});
+    const { data, error } = await supabase.rpc("get_nd_volume_mensal_descarga", {
+      p_collected_at: collectedAt,
+    });
     if (error) throw error;
     return (data ?? []) as NdVolumeMensalDescargaRow[];
   } catch (e) {
