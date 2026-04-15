@@ -358,7 +358,7 @@ export default function NaviosDieselPage() {
       } as unknown as PlotData,
       {
         type: "bar",
-        name: "Status Indeterminado",
+        name: "Indeterminate Status",
         x: labels,
         y: volumeMensal.map(r => r.indeterminate_volume),
         text: volumeMensal.map(r =>
@@ -369,7 +369,7 @@ export default function NaviosDieselPage() {
         textposition: "inside",
         textfont: { family: "Arial", size: 10, color: "#ffffff" },
         marker: { color: INDETERMINATE_COLOR, opacity: 0.85 },
-        hovertemplate: "%{x}<br>Status Indeterminado: %{y:,.0f} m³<extra></extra>",
+        hovertemplate: "%{x}<br>Indeterminate Status: %{y:,.0f} m³<extra></extra>",
       } as unknown as PlotData,
     ];
 
