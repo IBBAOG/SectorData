@@ -252,7 +252,7 @@ export default function HomePage() {
                     }}
                   >
                     {/* Title — always visible */}
-                    <div style={{ fontSize: "1rem", fontWeight: 700, color: "#fff", marginBottom: isHovered ? 6 : 0 }}>
+                    <div style={{ fontSize: "2rem", fontWeight: 700, color: "#fff", marginBottom: isHovered ? 6 : 0 }}>
                       {card.title}
                     </div>
 
