@@ -152,7 +152,7 @@ function weekToDateOnly(weekStr: string): string {
   return weekToDateRange(weekStr).replace(/^Week \d+ — /, "");
 }
 
-/** "15/2026" → "Apr 11, 2026" (last day = Sunday of that ISO week) */
+/** "15/2026" → "Apr 11, 2026" (last day = Saturday of that week, Mon–Sat convention) */
 function weekLastDay(weekStr: string): string {
   const parsed = parseWeek(weekStr);
   if (!parsed) return weekStr;
@@ -161,7 +161,7 @@ function weekLastDay(weekStr: string): string {
   const dow = jan4.getDay() || 7;
   const w1Mon = new Date(year, 0, 4 - dow + 1);
   const end = new Date(w1Mon);
-  end.setDate(w1Mon.getDate() + (weekNum - 1) * 7 + 6);
+  end.setDate(w1Mon.getDate() + (weekNum - 1) * 7 + 5);
   return `${MONTHS_SHORT[end.getMonth()]} ${end.getDate()}, ${end.getFullYear()}`;
 }
 
@@ -174,7 +174,7 @@ function weekLastDayShort(weekStr: string): string {
   const dow = jan4.getDay() || 7;
   const w1Mon = new Date(year, 0, 4 - dow + 1);
   const end = new Date(w1Mon);
-  end.setDate(w1Mon.getDate() + (weekNum - 1) * 7 + 6);
+  end.setDate(w1Mon.getDate() + (weekNum - 1) * 7 + 5);
   return `${MONTHS_SHORT[end.getMonth()]} ${end.getDate()}`;
 }
 
@@ -363,11 +363,11 @@ function buildStackedAreaChart(
     layout: {
       ...COMMON_LAYOUT,
       height: 350,
-      margin: { t: 10, b: 80, l: 65, r: 75 },
+      margin: { t: 40, b: 80, l: 65, r: 75 },
       hovermode: "x unified",
       yaxis: { ...YAXIS_BASE, title: { text: "BRL/litro" } },
       xaxis: { ...XAXIS_BASE, categoryarray: orderedWeeks.map(weekLastDay) },
-      legend: { orientation: "h", yanchor: "top", y: -0.28, xanchor: "center", x: 0.5 },
+      legend: { orientation: "h", yanchor: "bottom", y: 1.02, xanchor: "left", x: 0 },
       annotations: annotations as Layout["annotations"],
     },
   };
@@ -414,11 +414,11 @@ function buildMarginComparisonChart(
     layout: {
       ...COMMON_LAYOUT,
       height: 280,
-      margin: { t: 10, b: 80, l: 65, r: 75 },
+      margin: { t: 40, b: 80, l: 65, r: 75 },
       hovermode: "x unified",
       yaxis: { ...YAXIS_BASE, title: { text: "BRL/litro" } },
       xaxis: { ...XAXIS_BASE, categoryarray: orderedWeeks.map(weekLastDay) },
-      legend: { orientation: "h", yanchor: "top", y: -0.28, xanchor: "center", x: 0.5 },
+      legend: { orientation: "h", yanchor: "bottom", y: 1.02, xanchor: "left", x: 0 },
       annotations: annotations as Layout["annotations"],
     },
   };
