@@ -9,10 +9,11 @@ import { getCardPreviews } from "../../../lib/cardPreviewRpc";
 
 /**
  * Maps a card's href to its module_visibility slug.
- * The Sales card uses href="/" (redirects to /home) so we map it explicitly.
+ * The Sales card uses href="/sales-volumes" but the slug is "sales".
  */
 function hrefToSlug(href: string | null): string {
-  if (!href || href === "/") return "sales";
+  if (!href) return "";
+  if (href === "/sales-volumes") return "sales";
   return href.replace(/^\//, ""); // "/market-share" → "market-share"
 }
 
@@ -38,7 +39,7 @@ const CARDS: CardDef[] = [
     title: "Sales Volumes",
     description: "Volume analysis by product, segment, agent, region, and period",
     badge: "Available",
-    href: "/",
+    href: "/sales-volumes",
     disabled: false,
   },
   {
