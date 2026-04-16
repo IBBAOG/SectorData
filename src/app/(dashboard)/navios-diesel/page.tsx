@@ -392,8 +392,8 @@ export default function NaviosDieselPage() {
       barmode: "stack",
       paper_bgcolor: "white",
       plot_bgcolor: "white",
-      // t: 28 dá espaço para o label do total acima das barras
-      margin: { t: 28, b: 36, l: 110, r: 0 },
+      // t: 54 dá espaço para a legenda horizontal acima das barras
+      margin: { t: 54, b: 36, l: 110, r: 0 },
       height: 220,
       // bargap: 0 + range explícito eliminam o padding lateral padrão do Plotly,
       // fazendo cada barra cobrir exatamente a largura de uma coluna da tabela abaixo
@@ -405,13 +405,13 @@ export default function NaviosDieselPage() {
       },
       annotations: totalAnnotations,
       legend: {
-        orientation: "v",
-        x: -0.95,
-        y: 1.0,
+        orientation: "h",
+        x: -0.3,
+        y: 1.02,
         xanchor: "left",
-        yanchor: "top",
+        yanchor: "bottom",
         traceorder: "normal",
-        font: { family: "Arial", size: 12 },
+        font: { family: "Arial", size: 11 },
       },
       hoverlabel: {
         bgcolor: "rgba(255,255,255,0.95)",
@@ -681,9 +681,6 @@ export default function NaviosDieselPage() {
                     <div style={{ marginBottom: 8 }}>
                       <div style={TITLE_STYLE}>Expected Vessels / Pending Discharge</div>
                       <hr className="section-hr" />
-                      <div style={{ fontFamily: "Arial", fontSize: 10, color: "#999" }}>
-                        {fmtTs(selectedColeta)}{selectedColeta ? ` BRT (${hoursAgo(selectedColeta)})` : ""}
-                      </div>
                     </div>
                     <div style={{ overflowX: "auto" }}>
                       <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 12 }}>
@@ -746,20 +743,14 @@ export default function NaviosDieselPage() {
                       <ul style={{ margin: 0, paddingLeft: 18 }}>
                         <li>Data is collected at 6-hour intervals and may not reflect real-time conditions or recent changes in vessel schedules.</li>
                         <li>Ports monitored: Santos, Itaqui, Paranaguá, Suape, and São Sebastião. Ports with no vessels in the selected snapshot are shown in gray on the map.</li>
-                        <li>Port locations are approximate and for reference only.</li>
-                        <li>Expected ship counts are based on historical patterns and are subject to change.</li>
-                        <li>This data does not account for operational delays, weather impacts, or force majeure events.</li>
-                        <li>For operational decisions, please verify with official port authorities and vessel tracking systems.</li>
+                        <li>We consider a vessel as delivered when it disappears from the list of expected vessels. Note that this is an estimate and may be subject to error.</li>
                       </ul>
                     </div>
 
                     {/* Row 2 — Col 3: Delivered Vessels, aligned below Vessel Details */}
                     <div className="chart-container">
-                      <div style={{ ...TITLE_STYLE, marginBottom: 4 }}>Delivered Vessels</div>
+                      <div style={{ ...TITLE_STYLE, marginBottom: 4 }}>Delivered Vessels / Discharged</div>
                       <hr className="section-hr" />
-                      <div style={{ fontFamily: "Arial", fontSize: 10, color: "#999", marginBottom: 6 }}>
-                        Vessels no longer present in the selected snapshot — sanity check for the Discharged segment.
-                      </div>
                       <div style={{ overflowX: "auto", maxHeight: 280, overflowY: "auto" }}>
                         <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 12 }}>
                           <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
