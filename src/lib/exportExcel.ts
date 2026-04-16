@@ -638,7 +638,7 @@ export async function downloadPriceBandsExcel(rows: PriceBandsRow[]): Promise<vo
 
     const isDiesel = product === "Diesel";
     const headers = isDiesel
-      ? ["Date", "BBA Import Parity", "BBA Import Parity w/ Subsidy", "BBA Export Parity", "Petrobras Price"]
+      ? ["Date", "BBA Import Parity", "BBA Import Parity w/ Subsidy", "BBA Export Parity", "Petrobras Price", "Petrobras Price w/ Subsidy"]
       : ["Date", "IBBA Import Parity", "IBBA Export Parity", "Petrobras Price"];
 
     ws.getColumn(1).width = 12;
@@ -660,7 +660,7 @@ export async function downloadPriceBandsExcel(rows: PriceBandsRow[]): Promise<vo
       const row = ws.getRow(idx + 2);
       row.height = ROW_H;
       const values: (string | number | null)[] = isDiesel
-        ? [r.date, r.bba_import_parity, r.bba_import_parity_w_subsidy, r.bba_export_parity, r.petrobras_price]
+        ? [r.date, r.bba_import_parity, r.bba_import_parity_w_subsidy, r.bba_export_parity, r.petrobras_price, r.petrobras_price_w_subsidy]
         : [r.date, r.bba_import_parity, r.bba_export_parity, r.petrobras_price];
       values.forEach((v, i) => {
         const cell = ws.getCell(idx + 2, i + 1);

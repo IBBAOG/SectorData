@@ -15,7 +15,7 @@ Credentials (env vars, fall back to .env file):
 
 Excel structure:
     Sheet "Gasoline": Date | IBBA - Import Parity | IBBA - Export Parity | Petrobras Price
-    Sheet "Diesel":   Date | BBA - Import Parity  | BBA - Import Parity w/ subsidy | BBA - Export Parity | Petrobras Price
+    Sheet "Diesel":   Date | BBA - Import Parity  | BBA - Import Parity w/ subsidy | BBA - Export Parity | Petrobras Price | Petrobras Price w/ subsidy
 """
 
 import os
@@ -86,6 +86,7 @@ SHEET_COL_MAP: dict[str, dict[str, str]] = {
         "BBA - Import Parity w/ subsidy": "bba_import_parity_w_subsidy",
         "BBA - Export Parity":            "bba_export_parity",
         "Petrobras Price":                "petrobras_price",
+        "Petrobras Price w/ subsidy":     "petrobras_price_w_subsidy",
     },
 }
 

@@ -35,10 +35,11 @@ const GAS_SERIES: SeriesDef[] = [
 ];
 
 const DSL_SERIES: SeriesDef[] = [
-  { label: "BBA - Import Parity",            field: "bba_import_parity",           color: COLOR_IMPORT, dash: "solid", shape: "linear", width: 1.5 },
-  { label: "BBA - Import Parity w/ subsidy", field: "bba_import_parity_w_subsidy", color: COLOR_IMPORT, dash: "dash",  shape: "linear", width: 1.5 },
-  { label: "BBA - Export Parity",            field: "bba_export_parity",           color: COLOR_EXPORT, dash: "solid", shape: "linear", width: 1.5 },
-  { label: "Petrobras Price",                field: "petrobras_price",             color: COLOR_PETRO,  dash: "solid", shape: "hv",     width: 2   },
+  { label: "BBA - Import Parity",            field: "bba_import_parity",             color: COLOR_IMPORT, dash: "solid", shape: "linear", width: 1.5 },
+  { label: "BBA - Import Parity w/ subsidy", field: "bba_import_parity_w_subsidy",   color: COLOR_IMPORT, dash: "dash",  shape: "linear", width: 1.5 },
+  { label: "BBA - Export Parity",            field: "bba_export_parity",             color: COLOR_EXPORT, dash: "solid", shape: "linear", width: 1.5 },
+  { label: "Petrobras Price",                field: "petrobras_price",               color: COLOR_PETRO,  dash: "solid", shape: "hv",     width: 2   },
+  { label: "Petrobras Price w/ subsidy",     field: "petrobras_price_w_subsidy",     color: COLOR_PETRO,  dash: "dash",  shape: "hv",     width: 2   },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -109,6 +110,53 @@ function downloadCsv(rows: PriceBandsRow[], filename: string) {
   URL.revokeObjectURL(url);
 }
 
+// ── Anti-collision for end-of-line annotations ────────────────────────────────
+
+function deconflictAnnotations(
+  annotations: Partial<Annotations>[],
+  allDataY: number[],
+  chartHeight = 380,
+  marginT = 20,
+  marginB = 110,
+  fontPx = 15,
+): Partial<Annotations>[] {
+  if (annotations.length <= 1) return annotations;
+
+  const yMin = Math.min(...allDataY);
+  const yMax = Math.max(...allDataY);
+  const yRange = yMax - yMin;
+  if (yRange === 0) return annotations;
+
+  // Plotly auto-range adds ~5% padding on each side (10% total)
+  const pxPerUnit = (chartHeight - marginT - marginB) / (yRange * 1.10);
+  const minGapUnits = fontPx / pxPerUnit;
+
+  // Sort by y ascending (work with copies)
+  const items = annotations.map((a, i) => ({ i, y: a.y as number }));
+  items.sort((a, b) => a.y - b.y);
+
+  // Iteratively push neighbours apart until no overlap remains
+  for (let iter = 0; iter < 50; iter++) {
+    let changed = false;
+    for (let j = 1; j < items.length; j++) {
+      const gap = items[j].y - items[j - 1].y;
+      if (gap < minGapUnits) {
+        const shift = (minGapUnits - gap) / 2;
+        items[j - 1].y -= shift;
+        items[j].y += shift;
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+
+  const result = [...annotations];
+  for (const { i, y } of items) {
+    result[i] = { ...annotations[i], y };
+  }
+  return result;
+}
+
 // ── Price Bands chart (with slider range) ─────────────────────────────────────
 
 function buildPriceBandsChart(
@@ -154,8 +202,21 @@ function buildPriceBandsChart(
       ? `%{fullData.name}: %{y:.2f} · vs. IPP: %{customdata[0]}, vs. EPP: %{customdata[1]}%{customdata[2]}<extra></extra>`
       : `%{fullData.name}: %{y:.2f} · vs. IPP: %{customdata[0]}, vs. EPP: %{customdata[1]}<extra></extra>`;
 
+  // Custom data for Petrobras Price w/ subsidy hover (Diesel only)
+  const pctCustomdataSub: string[] | null = product === "Diesel"
+    ? filtered.map((r) => {
+        const ptbrSub = r.petrobras_price_w_subsidy as number | null;
+        const sub     = r.bba_import_parity_w_subsidy as number | null;
+        if (r.date < SUBSIDY_CUTOFF || ptbrSub == null || sub == null) return "—";
+        return fmtPct(ptbrSub, sub);
+      })
+    : null;
+
+  const petrobrasSubTemplate = `%{fullData.name}: %{y:.2f} · vs. IPP w/ sub: %{customdata}<extra></extra>`;
+
   const traces: PlotData[] = seriesDefs.map((s) => {
     const isPetrobras = s.field === "petrobras_price";
+    const isPetroSub  = s.field === "petrobras_price_w_subsidy";
     return {
       type: "scatter",
       mode: "lines",
@@ -165,11 +226,18 @@ function buildPriceBandsChart(
       line: { color: s.color, dash: s.dash, shape: s.shape, width: s.width },
       ...(isPetrobras
         ? { customdata: pctCustomdata, hovertemplate: petrobrasTemplate }
+        : isPetroSub && pctCustomdataSub
+        ? { customdata: pctCustomdataSub, hovertemplate: petrobrasSubTemplate }
         : { hovertemplate: `%{fullData.name}: %{y:.2f}<extra></extra>` }),
     } as unknown as PlotData;
   });
 
-  const annotations: Partial<Annotations>[] = seriesDefs.flatMap((s) => {
+  // Collect all non-null y values so deconfliction can estimate the plotted y-range
+  const allDataY: number[] = seriesDefs.flatMap((s) =>
+    filtered.map((r) => r[s.field] as number | null).filter((v): v is number => v != null)
+  );
+
+  const rawAnnotations: Partial<Annotations>[] = seriesDefs.flatMap((s) => {
     for (let i = filtered.length - 1; i >= 0; i--) {
       const val = filtered[i][s.field] as number | null;
       if (val != null) {
@@ -178,6 +246,8 @@ function buildPriceBandsChart(
     }
     return [];
   });
+
+  const annotations = deconflictAnnotations(rawAnnotations, allDataY);
 
   const xRangeEnd = addDays(filtered[filtered.length - 1].date, 45);
 
@@ -342,9 +412,11 @@ function buildYtdChart(
 
 // ── Badge component ───────────────────────────────────────────────────────────
 
-function PctBadge({ pct, vs, outlined }: { pct: number; vs: string; outlined?: boolean }) {
+function PctBadge({ pct, vs, outlined, numerator }: { pct: number; vs: string; outlined?: boolean; numerator?: string }) {
   const sign  = pct >= 0 ? "+" : "";
-  const label = `${sign}${pct.toFixed(0)}% vs. ${vs}`;
+  const label = numerator
+    ? `${sign}${pct.toFixed(0)}% ${numerator} vs. ${vs}`
+    : `${sign}${pct.toFixed(0)}% vs. ${vs}`;
   if (outlined) {
     return <span style={{ border: "1px solid #1a1a1a", color: "#1a1a1a", background: "white", borderRadius: 4, padding: "2px 8px", fontSize: 12, fontFamily: "Arial", marginLeft: 8, fontWeight: 600 }}>{label}</span>;
   }
@@ -363,7 +435,7 @@ function ChartHeader({ product, rows, xMax }: { product: "Gasoline" | "Diesel"; 
   const pctIpp = last ? ((last.petrobras_price! / last.bba_import_parity!)  - 1) * 100 : null;
   const pctEpp = last ? ((last.petrobras_price! / last.bba_export_parity!) - 1) * 100 : null;
 
-  // Diesel: subsidy badge (only from SUBSIDY_CUTOFF onwards)
+  // Diesel: subsidy badges (only from SUBSIDY_CUTOFF onwards)
   const lastSubsidy = product === "Diesel"
     ? sorted.find((r) => r.date >= SUBSIDY_CUTOFF && r.petrobras_price != null && r.bba_import_parity_w_subsidy != null)
     : null;
@@ -371,13 +443,22 @@ function ChartHeader({ product, rows, xMax }: { product: "Gasoline" | "Diesel"; 
     ? ((lastSubsidy.petrobras_price! / lastSubsidy.bba_import_parity_w_subsidy!) - 1) * 100
     : null;
 
+  // Diesel: Petrobras w/ subsidy vs. IPP w/ subsidy (new card)
+  const lastSubPetro = product === "Diesel"
+    ? sorted.find((r) => r.date >= SUBSIDY_CUTOFF && r.petrobras_price_w_subsidy != null && r.bba_import_parity_w_subsidy != null)
+    : null;
+  const pctSubPetro = lastSubPetro
+    ? ((lastSubPetro.petrobras_price_w_subsidy! / lastSubPetro.bba_import_parity_w_subsidy!) - 1) * 100
+    : null;
+
   return (
     <div style={{ marginTop: 16, marginBottom: 0 }}>
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 0, marginBottom: 4 }}>
         <span style={{ fontFamily: "Arial", fontSize: 14, fontWeight: 700, color: "#FF5000" }}>{product}:</span>
         {pctIpp != null && <PctBadge pct={pctIpp} vs="IPP" />}
-        {pctEpp != null && <PctBadge pct={pctEpp} vs="EPP" outlined />}
         {pctSub != null && <PctBadge pct={pctSub} vs="IPP w/ sub" />}
+        {pctSubPetro != null && <PctBadge pct={pctSubPetro} vs="IPP w/ sub" numerator="Petr. w/sub" />}
+        {pctEpp != null && <PctBadge pct={pctEpp} vs="EPP" outlined />}
         {last && (
           <span style={{ fontFamily: "Arial", fontSize: 11, color: "#999", marginLeft: 10 }}>
             Last data: {fmtDateLabel(last.date)}
