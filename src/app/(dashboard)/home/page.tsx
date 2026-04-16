@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import NavBar from "../../../components/NavBar";
 import { useUserProfile } from "../../../context/UserProfileContext";
+import { getSupabaseClient } from "../../../lib/supabaseClient";
+import { getCardPreviews } from "../../../lib/cardPreviewRpc";
 
 /**
  * Maps a card's href to its module_visibility slug.
@@ -20,7 +22,8 @@ const SURFACE = "#1a1a1a";
 const BORDER_DEFAULT = "rgba(255,255,255,0.08)";
 
 interface CardDef {
-  preview: string | null;
+  slug: string | null;          // matches card_previews.card_slug; null for disabled placeholders
+  preview: string | null;       // static fallback image in /public/previews/
   title: string;
   description: string;
   badge: string;
@@ -30,6 +33,7 @@ interface CardDef {
 
 const CARDS: CardDef[] = [
   {
+    slug: "sales",
     preview: "/previews/preview-sales.jpg",
     title: "Sales Volumes",
     description: "Volume analysis by product, segment, agent, region, and period",
@@ -38,6 +42,7 @@ const CARDS: CardDef[] = [
     disabled: false,
   },
   {
+    slug: "market-share",
     preview: "/previews/preview-market-share.jpg",
     title: "Market Share",
     description: "Market share evolution over time broken down by distributor",
@@ -46,6 +51,7 @@ const CARDS: CardDef[] = [
     disabled: false,
   },
   {
+    slug: "navios-diesel",
     preview: "/previews/preview-navios-diesel.jpg",
     title: "Diesel Imports Line-Up",
     description: "Scheduled vessel arrivals and diesel import line-up by port",
@@ -54,6 +60,7 @@ const CARDS: CardDef[] = [
     disabled: false,
   },
   {
+    slug: "diesel-gasoline-margins",
     preview: "/previews/preview-dg-margins.jpg",
     title: "Diesel and Gasoline Margins",
     description: "Diesel and gasoline margin tracking across regions and time",
@@ -62,6 +69,7 @@ const CARDS: CardDef[] = [
     disabled: false,
   },
   {
+    slug: "price-bands",
     preview: "/previews/preview-price-bands.jpg",
     title: "Price Bands",
     description: "Price band distribution and competitive positioning by fuel type",
@@ -70,6 +78,7 @@ const CARDS: CardDef[] = [
     disabled: false,
   },
   {
+    slug: "stocks",
     preview: null,
     title: "Market Watch",
     description: "Real-time stock quotes, historical charts, and market overview",
@@ -78,6 +87,7 @@ const CARDS: CardDef[] = [
     disabled: false,
   },
   {
+    slug: null,
     preview: null,
     title: "Coming Soon",
     description: "New modules are currently under development",
@@ -89,9 +99,17 @@ const CARDS: CardDef[] = [
 
 export default function HomePage() {
   const router = useRouter();
+  const supabase = getSupabaseClient();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [cardPreviews, setCardPreviews] = useState<Record<string, string>>({});
 
   const { profile, moduleVisibility, loading: profileLoading } = useUserProfile();
+
+  // Fetch admin-uploaded preview URLs; falls back to static images if unavailable.
+  useEffect(() => {
+    if (!supabase) return;
+    getCardPreviews(supabase).then(setCardPreviews);
+  }, [supabase]);
 
   // Filter out cards hidden by Admin for Client users.
   // While the profile is still loading, show all cards to avoid a layout jump.
@@ -187,10 +205,10 @@ export default function HomePage() {
                     background: "#1a1a1a",
                   }}
                 >
-                  {/* Image layer */}
-                  {card.preview ? (
+                  {/* Image layer — uses admin-uploaded URL first, then static fallback */}
+                  {(card.slug ? (cardPreviews[card.slug] ?? card.preview) : card.preview) ? (
                     <img
-                      src={card.preview}
+                      src={card.slug ? (cardPreviews[card.slug] ?? card.preview ?? "") : (card.preview ?? "")}
                       alt={card.title}
                       style={{
                         position: "absolute",

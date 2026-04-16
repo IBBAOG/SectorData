@@ -12,6 +12,7 @@ import {
 } from "../../../lib/profileRpc";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { getInitials } from "../../../lib/avatarUtils";
+import { getCardPreviews, uploadCardPreview } from "../../../lib/cardPreviewRpc";
 import type { UserWithRole } from "../../../types/profile";
 
 const ORANGE = "#FF5000";
@@ -55,6 +56,33 @@ export default function SettingsPage() {
   const { allowed, loading: roleLoading } = useRoleGuard("Admin");
   const { moduleVisibility, refreshVisibility, profile: myProfile } = useUserProfile();
   const supabase = getSupabaseClient();
+
+  // ── Card Previews state ────────────────────────────────────────────────────
+  const [localPreviews, setLocalPreviews] = useState<Record<string, string>>({});
+  const [uploadingSlug, setUploadingSlug] = useState<string | null>(null);
+  const [savedPreviewSlug, setSavedPreviewSlug] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!supabase) return;
+    getCardPreviews(supabase).then(setLocalPreviews);
+  }, [supabase]);
+
+  async function handlePreviewUpload(slug: string, file: File) {
+    if (!supabase || uploadingSlug) return;
+    setUploadingSlug(slug);
+    setUploadError(null);
+    const url = await uploadCardPreview(supabase, slug, file);
+    if (url) {
+      setLocalPreviews((prev) => ({ ...prev, [slug]: url }));
+      setSavedPreviewSlug(slug);
+      setTimeout(() => setSavedPreviewSlug((s) => (s === slug ? null : s)), 2000);
+    } else {
+      setUploadError(slug);
+      setTimeout(() => setUploadError((s) => (s === slug ? null : s)), 3000);
+    }
+    setUploadingSlug(null);
+  }
 
   // ── Module visibility state ────────────────────────────────────────────────
   const [localVis, setLocalVis] = useState<Record<string, boolean>>({});
@@ -303,6 +331,99 @@ export default function SettingsPage() {
                       }}
                     />
                   </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ── Card Previews section ─────────────────────────────────────── */}
+        <div className="settings-card">
+          <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>
+            Card Previews
+          </h2>
+          <p style={{ fontSize: 13, color: "#888", margin: "0 0 20px" }}>
+            Upload a custom preview image for each dashboard card shown on the Home page.
+            Images are stored in Supabase and replace the default screenshots immediately.
+          </p>
+
+          {MODULE_LABELS.map(({ slug, label }) => {
+            const currentUrl = localPreviews[slug];
+            const isUploading = uploadingSlug === slug;
+            const justSaved = savedPreviewSlug === slug;
+            const hasError = uploadError === slug;
+
+            return (
+              <div key={slug} className="settings-module-row" style={{ alignItems: "center", gap: 16 }}>
+                {/* Thumbnail */}
+                <div
+                  style={{
+                    width: 80,
+                    height: 50,
+                    borderRadius: 4,
+                    overflow: "hidden",
+                    flexShrink: 0,
+                    background: "#e0e0e0",
+                    border: "1px solid #ddd",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {currentUrl ? (
+                    <img
+                      src={currentUrl}
+                      alt={label}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  ) : (
+                    <span style={{ fontSize: 10, color: "#bbb" }}>No image</span>
+                  )}
+                </div>
+
+                {/* Label */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="settings-module-label">{label}</div>
+                  <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>{slug}</div>
+                </div>
+
+                {/* Feedback + Upload button */}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                  {justSaved && (
+                    <span className="settings-saved-tick" aria-live="polite">✓ Saved</span>
+                  )}
+                  {hasError && (
+                    <span style={{ fontSize: 12, color: "#c0392b" }}>Upload failed</span>
+                  )}
+                  <label
+                    style={{
+                      display: "inline-block",
+                      padding: "6px 14px",
+                      borderRadius: 8,
+                      border: `1px solid ${ORANGE}`,
+                      color: isUploading ? "#aaa" : ORANGE,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: isUploading ? "wait" : "pointer",
+                      background: "#fff",
+                      transition: "opacity 0.15s",
+                      opacity: isUploading ? 0.6 : 1,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {isUploading ? "Uploading…" : "Upload image"}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      style={{ display: "none" }}
+                      disabled={isUploading}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handlePreviewUpload(slug, file);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
                 </div>
               </div>
             );
