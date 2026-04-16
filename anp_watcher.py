@@ -804,6 +804,11 @@ def main():
     # Run once immediately on startup
     run_check(dry_run=False, force=args.force)
 
+    # In --force mode (used by GitHub Actions), exit after one run
+    if args.force:
+        log.info("--force mode: exiting after single run.")
+        return
+
     # Schedule recurring checks
     schedule.every(CHECK_INTERVAL_MINUTES).minutes.do(run_check)
 
