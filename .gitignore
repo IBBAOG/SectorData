@@ -60,3 +60,6 @@ output/
 venv/
 *.session.json
 session.json
+
+# standalone scripts — local only, not for version control
+exportar_para_excel.py
