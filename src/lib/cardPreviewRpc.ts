@@ -28,11 +28,12 @@ export async function getCardPreviews(
   }
 }
 
-// ─── Write (Admin only — enforced by RLS) ─────────────────────────────────────
+// ─── Write (Admin only — goes through server API route that uses service role) ──
 
 /**
- * Uploads an image file to the card-previews bucket and upserts the public URL
- * into card_previews. Returns the public URL on success, null on failure.
+ * Uploads an image file via the /api/upload-card-preview route, which uses the
+ * Supabase service role on the server side. This bypasses storage RLS entirely.
+ * Returns the public URL on success, null on failure.
  */
 export async function uploadCardPreview(
   supabase: SupabaseClient,
@@ -40,28 +41,25 @@ export async function uploadCardPreview(
   file: File,
 ): Promise<string | null> {
   try {
-    const ext = file.name.split(".").pop() ?? "jpg";
-    const path = `${slug}.${ext}`;
+    // Get the current user's access token to authenticate the API call
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) throw new Error("Not authenticated");
 
-    // Upload (upsert so replacing an existing image works)
-    const { error: uploadError } = await supabase.storage
-      .from("card-previews")
-      .upload(path, file, { upsert: true, contentType: file.type });
-    if (uploadError) throw uploadError;
+    const form = new FormData();
+    form.append("slug", slug);
+    form.append("file", file);
 
-    // Get the permanent public URL
-    const { data } = supabase.storage
-      .from("card-previews")
-      .getPublicUrl(path);
-    const publicUrl = data.publicUrl;
+    const res = await fetch("/api/upload-card-preview", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
 
-    // Persist the URL in card_previews
-    const { error: upsertError } = await supabase
-      .from("card_previews")
-      .upsert({ card_slug: slug, image_url: publicUrl, updated_at: new Date().toISOString() });
-    if (upsertError) throw upsertError;
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error ?? "Upload failed");
 
-    return publicUrl;
+    return json.url as string;
   } catch (e) {
     console.error("[cardPreviewRpc] uploadCardPreview error:", e);
     return null;
