@@ -11,11 +11,11 @@ import {
   rpcGetNdUltimaColeta,
   rpcGetNdColetasDistintas,
   rpcGetNdNavios,
-  rpcGetNdResumoPortos,
+  rpcGetNdResumoMensalPortos,
   rpcGetNdVolumeMensalDescarga,
   rpcGetNdNaviosDescarregados,
   type NavioDieselRow,
-  type PortoResumo,
+  type NdResumoMensalPortoRow,
   type NdVolumeMensalDescargaRow,
   type NdNavioDescarregadoRow,
 } from "../../../lib/rpc";
@@ -115,18 +115,17 @@ export default function NaviosDieselPage() {
   const [calMonth, setCalMonth] = useState<number>(new Date().getMonth());
   const [calYear, setCalYear] = useState<number>(new Date().getFullYear());
   const [navios, setNavios] = useState<NavioDieselRow[]>([]);
-  const [resumo, setResumo] = useState<PortoResumo[]>([]);
+  const [resumoMensal, setResumoMensal] = useState<NdResumoMensalPortoRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [hoveredDay, setHoveredDay] = useState<string | null>(null);
   const [hoveredColeta, setHoveredColeta] = useState<string | null>(null);
   const [hoveredNavBtn, setHoveredNavBtn] = useState<"prev" | "next" | null>(null);
 
-  // Ports that failed data collection in this snapshot
+  // Ports that failed data collection in this snapshot (used for the error notice in Vessel Details)
   const errorPorts = useMemo(
     () => navios.filter(n => n.status === "ERRO_COLETA").map(n => n.porto),
     [navios]
   );
-  const errorPortSet = useMemo(() => new Set(errorPorts), [errorPorts]);
 
   // Vessel rows without the error sentinels and without "Despachado" (Departed)
   const naviosDisplay = useMemo(
@@ -134,11 +133,17 @@ export default function NaviosDieselPage() {
     [navios]
   );
 
-  // Port summary without error ports (so map/chart aren't affected)
-  const resumoDisplay = useMemo(
-    () => resumo.filter(r => !errorPortSet.has(r.porto)),
-    [resumo, errorPortSet]
-  );
+  // Per-port totals aggregated across all months — used by the map
+  const resumoByPorto = useMemo(() => {
+    const m = new Map<string, { total_navios: number; total_convertida: number }>();
+    for (const r of resumoMensal) {
+      const entry = m.get(r.porto) ?? { total_navios: 0, total_convertida: 0 };
+      entry.total_navios += r.vessels;
+      entry.total_convertida += r.volume;
+      m.set(r.porto, entry);
+    }
+    return m;
+  }, [resumoMensal]);
 
   // Group timestamps by day
   const coletasByDay = useMemo(() => {
@@ -201,13 +206,13 @@ export default function NaviosDieselPage() {
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const [nav, res] = await Promise.all([
+      const [nav, mensal] = await Promise.all([
         rpcGetNdNavios(supabase, selectedColeta),
-        rpcGetNdResumoPortos(supabase, selectedColeta),
+        rpcGetNdResumoMensalPortos(supabase, selectedColeta),
       ]);
       if (cancelled) return;
       setNavios(nav);
-      setResumo(res);
+      setResumoMensal(mensal);
       setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -215,7 +220,7 @@ export default function NaviosDieselPage() {
 
   // Build map traces
   const mapChart = useMemo(() => {
-    if (resumoDisplay.length === 0) {
+    if (resumoByPorto.size === 0) {
       return {
         data: [] as PlotData[],
         layout: {
@@ -232,8 +237,6 @@ export default function NaviosDieselPage() {
     const texts: string[] = [];
     const sizes: number[] = [];
     const colors: string[] = [];
-
-    const resumoByPorto = new Map(resumoDisplay.map(p => [p.porto, p]));
 
     for (const [porto, c] of Object.entries(PORT_COORDS)) {
       const p = resumoByPorto.get(porto);
@@ -296,14 +299,7 @@ export default function NaviosDieselPage() {
     };
 
     return { data, layout };
-  }, [resumoDisplay]);
-
-  // Best available date for bucketing a vessel into a month:
-  // ETA → Unload Start → Unload End → snapshot collection date (for already-berthed vessels)
-  function vesselMonthKey(r: NavioDieselRow): string {
-    const d = r.eta ?? r.inicio_descarga ?? r.fim_descarga ?? selectedColeta;
-    return d ? d.slice(0, 7) : "";
-  }
+  }, [resumoByPorto]);
 
   // Build monthly stacked bar chart: discharged (black) + pending (orange)
   const monthlyChart = useMemo(() => {
@@ -427,21 +423,15 @@ export default function NaviosDieselPage() {
     return { data, layout };
   }, [volumeMensal]);
 
-  // Build port monthly summary
+  // Build port monthly summary from all three status categories (via resumoMensal)
   const portMonthlySummary = useMemo(() => {
     const portMap = new Map<string, Map<string, { vessels: number; volume: number }>>();
     const monthsSet = new Set<string>();
 
-    for (const r of naviosDisplay) {
-      const month = vesselMonthKey(r);
-      if (!month) continue;
-      monthsSet.add(month);
+    for (const r of resumoMensal) {
+      monthsSet.add(r.month);
       if (!portMap.has(r.porto)) portMap.set(r.porto, new Map());
-      const mMap = portMap.get(r.porto)!;
-      if (!mMap.has(month)) mMap.set(month, { vessels: 0, volume: 0 });
-      const cell = mMap.get(month)!;
-      cell.vessels += 1;
-      cell.volume += r.quantidade_convertida ?? 0;
+      portMap.get(r.porto)!.set(r.month, { vessels: r.vessels, volume: r.volume });
     }
 
     const months = Array.from(monthsSet).sort();
@@ -453,7 +443,7 @@ export default function NaviosDieselPage() {
     }
 
     return { ports, months, monthLabels, portMap };
-  }, [naviosDisplay]);
+  }, [resumoMensal]);
 
   if (visLoading || !visible) return null;
 
@@ -689,7 +679,7 @@ export default function NaviosDieselPage() {
                     {/* Row 1 — Col 3: Vessel Details */}
                     <div className="chart-container">
                     <div style={{ marginBottom: 8 }}>
-                      <div style={TITLE_STYLE}>Vessel Details</div>
+                      <div style={TITLE_STYLE}>Expected Vessels / Pending Discharge</div>
                       <hr className="section-hr" />
                       <div style={{ fontFamily: "Arial", fontSize: 10, color: "#999" }}>
                         {fmtTs(selectedColeta)}{selectedColeta ? ` BRT (${hoursAgo(selectedColeta)})` : ""}
@@ -699,7 +689,7 @@ export default function NaviosDieselPage() {
                       <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 12 }}>
                         <thead>
                           <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
-                            {["Port", "Status", "Vessel", "Volume (m³)", "ETA", "Unload Start", "Unload End"].map((h) => (
+                            {["Port", "Status", "Vessel", "Volume (m³)", "Date", "Unload Start", "Unload End"].map((h) => (
                               <th key={h} style={{ padding: "6px 10px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
                             ))}
                           </tr>
