@@ -222,14 +222,14 @@ export default function NavBar() {
                 My Profile
               </Link>
 
-              {/* Settings — only visible to Admins */}
+              {/* Admin Panel — only visible to Admins */}
               {isAdmin && (
                 <Link
-                  href="/settings"
+                  href="/admin-panel"
                   className="nav-user-dropdown-item"
                   onClick={() => setOpenUserMenu(false)}
                 >
-                  Settings
+                  Admin Panel
                 </Link>
               )}
 

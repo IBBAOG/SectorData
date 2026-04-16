@@ -52,7 +52,7 @@ const MODULE_LABELS: { slug: string; label: string; description: string }[] = [
   },
 ];
 
-export default function SettingsPage() {
+export default function AdminPanelPage() {
   const { allowed, loading: roleLoading } = useRoleGuard("Admin");
   const { moduleVisibility, refreshVisibility, profile: myProfile } = useUserProfile();
   const supabase = getSupabaseClient();
@@ -176,7 +176,7 @@ export default function SettingsPage() {
             Admin
           </div>
           <h1 style={{ fontSize: "1.75rem", fontWeight: 700, color: "#111", margin: "0 0 8px" }}>
-            Settings
+            Admin Panel
           </h1>
           <p style={{ fontSize: 14, color: "#666", margin: 0 }}>
             Configure the application for all users.

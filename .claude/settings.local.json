@@ -129,7 +129,24 @@
       "Bash(find /c/Users/eduar/dashboard_projeto/src -type f \\\\\\(-name *.ts -o -name *.tsx -o -name *.js -o -name *.jsx \\\\\\) ! -path */node_modules/*)",
       "Bash(find /c/Users/eduar/dashboard_projeto/src/app/api -type f -name *.ts)",
       "Bash(wc -l \"C:\\\\Users\\\\eduar\\\\dashboard_projeto\\\\.claude\\\\worktrees\\\\zealous-swanson\\\\src\\\\app\\\\\\(dashboard\\)\\\\market-share\\\\page.tsx\" \"C:\\\\Users\\\\eduar\\\\dashboard_projeto\\\\.claude\\\\worktrees\\\\zealous-swanson\\\\supabase\\\\migrations\\\\20260327174919_remote_schema.sql\")",
-      "Bash(find /c/Users/eduar/dashboard_projeto/src/components -type f -name *.tsx -o -name *.ts)"
+      "Bash(find /c/Users/eduar/dashboard_projeto/src/components -type f -name *.tsx -o -name *.ts)",
+      "Bash(supabase db:*)",
+      "Bash(ls -la *.env* .env* supabase/.env*)",
+      "Bash(node -e ':*)",
+      "Bash(find \"C:\\\\Users\\\\eduar\\\\dashboard_projeto\" -type f -name \"*.py\" ! -path \"*/venv/*\" ! -path \"*/node_modules/*\" ! -path \"*/.claude/*\" -exec wc -l {} +)",
+      "Bash(python -c ':*)",
+      "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(python create_navios_excel.py)",
+      "Bash(python scripts/recalc.py \"C:/Users/eduar/Desktop/Monitoramento_Navios_Diesel.xlsx\")",
+      "Bash(git rm:*)",
+      "Bash(copy \"C:\\\\Users\\\\eduar\\\\dashboard_projeto\\\\exportar_para_excel.py\" \"C:\\\\Users\\\\eduar\\\\Desktop\\\\exportar_para_excel.py\")",
+      "Bash(python3 -c \"import requests, json; r = requests.get\\('https://rrrkgynlpqtmvuuqdjpb.supabase.co/rest/v1/navios_diesel?select=count', headers={'apikey': 'sb_publishable_MVqJp0aNRG2Emg3z8iFvxQ_tF0BO2r1', 'Authorization': 'Bearer sb_publishable_MVqJp0aNRG2Emg3z8iFvxQ_tF0BO2r1', 'Prefer': 'count=exact', 'Range': '0-0'}\\); print\\(r.headers.get\\('content-range', 'N/A'\\)\\); print\\(r.status_code\\)\")",
+      "Bash(python -c \"import requests; r = requests.get\\('https://rrrkgynlpqtmvuuqdjpb.supabase.co/rest/v1/navios_diesel?select=count', headers={'apikey': 'sb_publishable_MVqJp0aNRG2Emg3z8iFvxQ_tF0BO2r1', 'Authorization': 'Bearer sb_publishable_MVqJp0aNRG2Emg3z8iFvxQ_tF0BO2r1', 'Prefer': 'count=exact', 'Range': '0-0'}\\); print\\(r.headers.get\\('content-range', 'N/A'\\)\\); print\\(r.status_code\\)\")",
+      "Bash(python _export_supabase.py)",
+      "Bash(ls -la \"C:\\\\Users\\\\eduar\\\\Desktop\\\\Lineup_Navios_Diesel_\"*.xlsx)",
+      "Bash(curl -s https://rrrkgynlpqtmvuuqdjpb.supabase.co/storage/v1/bucket -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJycmtneW5scHF0bXZ1dXFkanBiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDQ1Mjg4MCwiZXhwIjoyMDkwMDI4ODgwfQ.JWu7yTJzfvMe95Wdwt1N7oNultH6oOXWcWHjhiz5QgQ' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJycmtneW5scHF0bXZ1dXFkanBiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDQ1Mjg4MCwiZXhwIjoyMDkwMDI4ODgwfQ.JWu7yTJzfvMe95Wdwt1N7oNultH6oOXWcWHjhiz5QgQ')",
+      "Bash(curl -s 'https://rrrkgynlpqtmvuuqdjpb.supabase.co/rest/v1/card_previews?limit=1' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJycmtneW5scHF0bXZ1dXFkanBiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDQ1Mjg4MCwiZXhwIjoyMDkwMDI4ODgwfQ.JWu7yTJzfvMe95Wdwt1N7oNultH6oOXWcWHjhiz5QgQ' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJycmtneW5scHF0bXZ1dXFkanBiIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDQ1Mjg4MCwiZXhwIjoyMDkwMDI4ODgwfQ.JWu7yTJzfvMe95Wdwt1N7oNultH6oOXWcWHjhiz5QgQ')"
     ]
   }
 }

@@ -136,7 +136,7 @@ The Home page acts as a module directory with preview thumbnails for each dashbo
 - **No custom API routes for Supabase data.** All backend logic lives in PostgreSQL RPC functions, called directly from the browser via the Supabase JS client. This eliminates a Node.js API layer entirely.
 - **Next.js API routes for third-party proxying.** The Market Watch module proxies Yahoo Finance requests through `/api/stocks/*` to avoid CORS issues and keep credentials server-side.
 - **Client-side auth.** Supabase email/password authentication with a shared layout guard that redirects unauthenticated users to `/login`.
-- **Role-based module visibility.** Admins can toggle which modules are visible to Client users via the Settings page. Visibility state is stored in Supabase and loaded at session start.
+- **Role-based module visibility.** Admins can toggle which modules are visible to Client users via the Admin Panel page. Visibility state is stored in Supabase and loaded at session start.
 - **Materialized views for performance.** Market Share queries hit pre-aggregated materialized views (`mv_ms_serie`, `mv_ms_serie_fast`) instead of scanning the full `vendas` table.
 - **GitHub Actions as the data pipeline orchestrator.** Scheduled cron workflows scrape external sources, commit raw CSVs to the repo, and import data into Supabase — no separate ETL infrastructure required.
 
@@ -217,7 +217,7 @@ dashboard_projeto/
 │   │       ├── price-bands/page.tsx
 │   │       ├── stocks/page.tsx     #   Market Watch (Bloomberg-style)
 │   │       ├── profile/page.tsx    #   User profile editor
-│   │       ├── settings/page.tsx   #   Admin-only: roles + module visibility
+│   │       ├── admin-panel/page.tsx   #   Admin-only: roles + module visibility
 │   │       └── template-module/page.tsx  # Starter template for new modules
 │   │
 │   ├── components/                 # Reusable UI components
@@ -670,19 +670,19 @@ All pipelines support manual triggering via `workflow_dispatch` in addition to t
 
 | Role | Access |
 |------|--------|
-| **Admin** | All modules, Settings page, user role management, module visibility control |
+| **Admin** | All modules, Admin Panel page, user role management, module visibility control |
 | **Client** | Modules permitted by Admin visibility settings only |
 
-Role is stored in the `user_profiles` table and loaded at session start via `UserProfileContext`. The `useRoleGuard` hook redirects non-Admins away from protected pages (e.g., `/settings`).
+Role is stored in the `user_profiles` table and loaded at session start via `UserProfileContext`. The `useRoleGuard` hook redirects non-Admins away from protected pages (e.g., `/admin-panel`).
 
 ### User Pages
 
 | Route | File | Visible to |
 |-------|------|------------|
 | `/profile` | `src/app/(dashboard)/profile/page.tsx` | All authenticated users |
-| `/settings` | `src/app/(dashboard)/settings/page.tsx` | Admin only |
+| `/admin-panel` | `src/app/(dashboard)/admin-panel/page.tsx` | Admin only |
 
-The Settings page allows Admins to:
+The Admin Panel page allows Admins to:
 - Toggle per-module visibility for Client users
 - View all registered users and their roles
 - Promote/demote users between Admin and Client roles
@@ -702,7 +702,7 @@ All components are client-side (`"use client"`) and follow a controlled-componen
 
 | Component | File | Description |
 |-----------|------|-------------|
-| **NavBar** | `src/components/NavBar.tsx` | Top navigation bar. Structured as `NAV_ENTRIES` (Home, Oil & Gas placeholder, Fuel Distribution dropdown, Market Watch). Includes a user avatar with dropdown for Profile, Settings (Admin only), and Sign Out. |
+| **NavBar** | `src/components/NavBar.tsx` | Top navigation bar. Structured as `NAV_ENTRIES` (Home, Oil & Gas placeholder, Fuel Distribution dropdown, Market Watch). Includes a user avatar with dropdown for Profile, Admin Panel (Admin only), and Sign Out. |
 | **PlotlyChart** | `src/components/PlotlyChart.tsx` | Wrapper around `react-plotly.js` that applies custom tooltip styling (rounded corners, drop shadow) and hides the mode bar. |
 | **PeriodSlider** | `src/components/PeriodSlider.tsx` | Date range slider built with `rc-slider`. Displays year markers along the track. |
 | **CheckList** | `src/components/CheckList.tsx` | Multi-select checkbox group with "Select All" and "Clear" quick actions. |
