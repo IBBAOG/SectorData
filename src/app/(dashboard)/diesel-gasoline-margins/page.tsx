@@ -113,6 +113,11 @@ const MONTHS = [
   "July","August","September","October","November","December",
 ];
 
+const MONTHS_SHORT = [
+  "Jan","Feb","Mar","Apr","May","Jun",
+  "Jul","Aug","Sep","Oct","Nov","Dec",
+];
+
 // ── Week helpers ──────────────────────────────────────────────────────────────
 
 function parseWeek(w: string): { weekNum: number; year: number } | null {
@@ -145,6 +150,32 @@ function weekToDateRange(weekStr: string): string {
 /** Strips "Week X — " prefix — returns only date range with year (for tooltips/badges) */
 function weekToDateOnly(weekStr: string): string {
   return weekToDateRange(weekStr).replace(/^Week \d+ — /, "");
+}
+
+/** "15/2026" → "Apr 11, 2026" (last day = Sunday of that ISO week) */
+function weekLastDay(weekStr: string): string {
+  const parsed = parseWeek(weekStr);
+  if (!parsed) return weekStr;
+  const { weekNum, year } = parsed;
+  const jan4 = new Date(year, 0, 4);
+  const dow = jan4.getDay() || 7;
+  const w1Mon = new Date(year, 0, 4 - dow + 1);
+  const end = new Date(w1Mon);
+  end.setDate(w1Mon.getDate() + (weekNum - 1) * 7 + 6);
+  return `${MONTHS_SHORT[end.getMonth()]} ${end.getDate()}, ${end.getFullYear()}`;
+}
+
+/** "15/2026" → "Apr 11" (compact, for slider handle labels) */
+function weekLastDayShort(weekStr: string): string {
+  const parsed = parseWeek(weekStr);
+  if (!parsed) return weekStr;
+  const { weekNum, year } = parsed;
+  const jan4 = new Date(year, 0, 4);
+  const dow = jan4.getDay() || 7;
+  const w1Mon = new Date(year, 0, 4 - dow + 1);
+  const end = new Date(w1Mon);
+  end.setDate(w1Mon.getDate() + (weekNum - 1) * 7 + 6);
+  return `${MONTHS_SHORT[end.getMonth()]} ${end.getDate()}`;
 }
 
 // ── WeekSlider ────────────────────────────────────────────────────────────────
@@ -249,11 +280,11 @@ function WeekSlider(props: {
               boxShadow:   "0 1px 6px rgba(0,0,0,0.25)",
               lineHeight:  1.4,
             }}>
-              {weekToDateOnly(weekStr)}
+              {weekLastDay(weekStr)}
             </span>
           )}
           <span className="slider-handle-label" style={{ transform: labelTransform }}>
-            {weekStr}
+            {weekLastDayShort(weekStr)}
           </span>
         </span>
       ));
@@ -296,7 +327,7 @@ function buildStackedAreaChart(
   const sorted = [...fuelRows].sort(
     (a, b) => orderedWeeks.indexOf(a.week) - orderedWeeks.indexOf(b.week),
   );
-  const xWeeks  = sorted.map((r) => r.week);
+  const xWeeks  = sorted.map((r) => weekLastDay(r.week));
   const lastRow = sorted[sorted.length - 1];
   const lastX   = xWeeks[xWeeks.length - 1];
 
@@ -335,7 +366,7 @@ function buildStackedAreaChart(
       margin: { t: 10, b: 80, l: 65, r: 75 },
       hovermode: "x unified",
       yaxis: { ...YAXIS_BASE, title: { text: "BRL/litro" } },
-      xaxis: { ...XAXIS_BASE, categoryarray: orderedWeeks },
+      xaxis: { ...XAXIS_BASE, categoryarray: orderedWeeks.map(weekLastDay) },
       legend: { orientation: "h", yanchor: "top", y: -0.28, xanchor: "center", x: 0.5 },
       annotations: annotations as Layout["annotations"],
     },
@@ -354,7 +385,7 @@ function buildMarginComparisonChart(
     const fuelRows = [...rows.filter((r) => r.fuel_type === ft)].sort(
       (a, b) => orderedWeeks.indexOf(a.week) - orderedWeeks.indexOf(b.week),
     );
-    const xs = fuelRows.map((r) => r.week);
+    const xs = fuelRows.map((r) => weekLastDay(r.week));
     const ys = fuelRows.map((r) => Number(r.distribution_and_resale_margin ?? 0));
 
     if (xs.length > 0) {
@@ -386,7 +417,7 @@ function buildMarginComparisonChart(
       margin: { t: 10, b: 80, l: 65, r: 75 },
       hovermode: "x unified",
       yaxis: { ...YAXIS_BASE, title: { text: "BRL/litro" } },
-      xaxis: { ...XAXIS_BASE, categoryarray: orderedWeeks },
+      xaxis: { ...XAXIS_BASE, categoryarray: orderedWeeks.map(weekLastDay) },
       legend: { orientation: "h", yanchor: "top", y: -0.28, xanchor: "center", x: 0.5 },
       annotations: annotations as Layout["annotations"],
     },
@@ -501,7 +532,7 @@ function VariationsTable({
       <thead>
         <tr>
           <th style={{ ...thStyle, textAlign: "left", paddingLeft: 8 }}>
-            {fuelType} · {latestVisibleWeek}
+            {fuelType} · {weekLastDay(latestVisibleWeek)}
           </th>
           <th style={thStyle}>BRL/L</th>
           {COLS.map((c) => <th key={c.label} style={thStyle}>{c.label}</th>)}
@@ -588,7 +619,7 @@ function WeekPeriodBadge({
       {single ? (
         <div>
           <div style={{ fontSize: 13, fontWeight: 700, color: "#FF5000", fontFamily: "Arial" }}>
-            {startW}
+            {weekLastDay(startW)}
           </div>
           <div style={{ fontSize: 10, color: "#555", fontFamily: "Arial", marginTop: 2, lineHeight: 1.4 }}>
             {startLabel.replace(/^Week \d+ — /, "")}
@@ -597,9 +628,9 @@ function WeekPeriodBadge({
       ) : (
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: "#FF5000", fontFamily: "Arial" }}>{startW}</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#FF5000", fontFamily: "Arial" }}>{weekLastDay(startW)}</span>
             <span style={{ fontSize: 10, color: "#bbb" }}>→</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: "#FF5000", fontFamily: "Arial" }}>{endW}</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#FF5000", fontFamily: "Arial" }}>{weekLastDay(endW)}</span>
           </div>
           <div style={{ fontSize: 10, color: "#555", fontFamily: "Arial", lineHeight: 1.5 }}>
             <div>{startLabel.replace(/^Week \d+ — /, "")}</div>
@@ -698,7 +729,7 @@ export default function DieselGasolineMarginsPage() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                 <div className="page-header-title">
                   Diesel &amp; Gasoline Margins
-                  {latestVisibleWeek ? ` — ${weekToDateRange(latestVisibleWeek)}` : ""}
+                  {latestVisibleWeek ? ` — ${weekLastDay(latestVisibleWeek)}` : ""}
                 </div>
                 <div style={{ position: "relative", minWidth: 160, flexShrink: 0 }}>
                   <div style={{ border: "1px solid #d0d0d0", borderRadius: 6, padding: "10px 16px", backgroundColor: "#fafafa" }}>
