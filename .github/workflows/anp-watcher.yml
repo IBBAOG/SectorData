@@ -1,0 +1,62 @@
+name: ANP Watcher - Vendas Combustíveis
+
+on:
+  schedule:
+    # Roda a cada 10 minutos nos dias 18 a 31 de cada mês (horário UTC)
+    # Dia 18 UTC = dia 17 a partir das 21h BRT — levemente adiantado, mas inofensivo
+    # (o script só faz upload se detectar período novo na ANP)
+    - cron: '*/10 * 18-31 * *'
+
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Forçar verificação mesmo fora do período (--force)'
+        required: false
+        default: 'true'
+        type: boolean
+
+jobs:
+  verificar-e-subir:
+    name: Verificar ANP e subir dados
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      PYTHONIOENCODING: utf-8
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Instalar dependências
+        run: |
+          pip install --upgrade pip
+          pip install requests pandas supabase python-dotenv schedule
+
+      - name: Verificar variáveis de ambiente
+        run: |
+          if [ -z "$SUPABASE_URL" ]; then
+            echo "::error::Secret SUPABASE_URL não configurado"
+            exit 1
+          fi
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::error::Secret SUPABASE_SERVICE_ROLE_KEY não configurado"
+            exit 1
+          fi
+          echo "Secrets OK."
+
+      - name: Rodar ANP Watcher
+        run: python anp_watcher.py --force
+        # --force: ignora checagem de dia e state file, roda uma vez e sai.
+        # O script ainda compara o período mais recente da ANP com o do Supabase
+        # e só faz upload se houver dado novo.
+        # O extractor Power BI (Windows-only) é ignorado automaticamente no Linux;
+        # o script usa apenas a fonte CSV/ZIP da ANP.
