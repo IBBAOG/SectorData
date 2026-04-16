@@ -8,3 +8,5 @@ Pillow
 ddddocr
 selenium
 supabase
+python-dotenv
+schedule
