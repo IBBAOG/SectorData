@@ -46,13 +46,20 @@ export async function POST(req: NextRequest) {
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
     const ext = (file instanceof File ? file.name.split(".").pop() : null) ?? "jpg";
-    const path = `${slug}.${ext}`;
+    // Include timestamp in filename so the CDN never serves a stale cached version
+    const path = `${slug}-${Date.now()}.${ext}`;
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
+    // Delete old file(s) for this slug so the bucket stays clean
+    const { data: existing } = await admin.storage.from("card-previews").list("", { search: slug });
+    if (existing && existing.length > 0) {
+      await admin.storage.from("card-previews").remove(existing.map((f) => f.name));
+    }
+
     const { error: uploadErr } = await admin.storage
       .from("card-previews")
-      .upload(path, buffer, { upsert: true, contentType: file.type });
+      .upload(path, buffer, { upsert: false, contentType: file.type });
     if (uploadErr) throw uploadErr;
 
     const { data: urlData } = admin.storage.from("card-previews").getPublicUrl(path);

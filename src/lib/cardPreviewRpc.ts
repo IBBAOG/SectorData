@@ -9,19 +9,16 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
  * Returns a slug → image_url map for all rows in card_previews.
+ * Reads via the server-side API route (uses service role) so no RLS issues.
  * Falls back to an empty object on error (home page will use static previews).
  */
 export async function getCardPreviews(
-  supabase: SupabaseClient,
+  _supabase?: SupabaseClient,
 ): Promise<Record<string, string>> {
   try {
-    const { data, error } = await supabase
-      .from("card_previews")
-      .select("card_slug, image_url");
-    if (error) throw error;
-    const map: Record<string, string> = {};
-    for (const row of data ?? []) map[row.card_slug] = row.image_url;
-    return map;
+    const res = await fetch("/api/card-previews", { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json() as Record<string, string>;
   } catch (e) {
     console.error("[cardPreviewRpc] getCardPreviews error:", e);
     return {};
