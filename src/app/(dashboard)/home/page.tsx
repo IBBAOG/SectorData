@@ -2,7 +2,12 @@
  * Server Component — fetches card preview URLs at render time using the
  * service role key so the client receives them instantly with the HTML.
  * No client-side fetch, no loading flash.
+ *
+ * force-dynamic: ensures Next.js never serves a cached version of this page,
+ * so admin-uploaded images appear immediately on the next visit to /home.
  */
+export const dynamic = "force-dynamic";
+
 import { createClient } from "@supabase/supabase-js";
 import HomeClient from "./HomeClient";
 
