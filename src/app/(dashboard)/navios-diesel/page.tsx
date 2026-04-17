@@ -753,14 +753,13 @@ export default function NaviosDieselPage() {
                                   <span style={{
                                     marginLeft: 7,
                                     display: "inline-block",
-                                    padding: "1px 6px",
+                                    padding: "2px 8px",
                                     borderRadius: 4,
-                                    fontSize: 9,
-                                    fontWeight: 700,
-                                    backgroundColor: "#198754",
+                                    fontSize: 10,
+                                    fontWeight: 600,
+                                    backgroundColor: ORANGE,
                                     color: "#fff",
                                     verticalAlign: "middle",
-                                    letterSpacing: "0.04em",
                                   }}>New!</span>
                                 )}
                               </td>
