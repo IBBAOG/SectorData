@@ -116,6 +116,7 @@ export default function NaviosDieselPage() {
   const [calYear, setCalYear] = useState<number>(new Date().getFullYear());
   const [navios, setNavios] = useState<NavioDieselRow[]>([]);
   const [resumoMensal, setResumoMensal] = useState<NdResumoMensalPortoRow[]>([]);
+  const [naviosAnteriores, setNaviosAnteriores] = useState<NavioDieselRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [hoveredDay, setHoveredDay] = useState<string | null>(null);
   const [hoveredColeta, setHoveredColeta] = useState<string | null>(null);
@@ -145,6 +146,17 @@ export default function NaviosDieselPage() {
     return m;
   }, [resumoMensal]);
 
+  // Vessels present today but absent from the previous day's last snapshot → "New!"
+  const newVesselSet = useMemo(() => {
+    if (naviosAnteriores.length === 0) return new Set<string>();
+    const prevKeys = new Set(naviosAnteriores.map(n => `${n.navio}__${n.porto}`));
+    return new Set(
+      naviosDisplay
+        .filter(n => !prevKeys.has(`${n.navio}__${n.porto}`))
+        .map(n => `${n.navio}__${n.porto}`)
+    );
+  }, [naviosAnteriores, naviosDisplay]);
+
   // Group timestamps by day
   const coletasByDay = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -163,6 +175,15 @@ export default function NaviosDieselPage() {
     () => coletasByDay.get(selectedDay) ?? [],
     [coletasByDay, selectedDay]
   );
+
+  // Most-recent snapshot of the day before selectedDay — reference for "new" vessels
+  const prevDaySnapshot = useMemo(() => {
+    const dayIdx = days.indexOf(selectedDay);
+    if (dayIdx < 0 || dayIdx >= days.length - 1) return null;
+    const prevDay = days[dayIdx + 1]; // days sorted DESC → next index = previous day
+    const times = coletasByDay.get(prevDay) ?? [];
+    return times[0] ?? null;         // times[0] = most recent of that day (DESC)
+  }, [days, selectedDay, coletasByDay]);
 
   // 1. Load available collection timestamps
   useEffect(() => {
@@ -217,6 +238,20 @@ export default function NaviosDieselPage() {
     })();
     return () => { cancelled = true; };
   }, [supabase, selectedColeta]);
+
+  // 4. Load previous-day snapshot vessels for "New!" detection
+  useEffect(() => {
+    if (!supabase || !prevDaySnapshot) {
+      setNaviosAnteriores([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const nav = await rpcGetNdNavios(supabase, prevDaySnapshot);
+      if (!cancelled) setNaviosAnteriores(nav);
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, prevDaySnapshot]);
 
   // Build map traces
   const mapChart = useMemo(() => {
@@ -712,7 +747,23 @@ export default function NaviosDieselPage() {
                                   {STATUS_LABELS[r.status] ?? r.status}
                                 </span>
                               </td>
-                              <td style={{ padding: "4px 10px" }}>{r.navio}</td>
+                              <td style={{ padding: "4px 10px" }}>
+                                {r.navio}
+                                {newVesselSet.has(`${r.navio}__${r.porto}`) && (
+                                  <span style={{
+                                    marginLeft: 7,
+                                    display: "inline-block",
+                                    padding: "1px 6px",
+                                    borderRadius: 4,
+                                    fontSize: 9,
+                                    fontWeight: 700,
+                                    backgroundColor: "#198754",
+                                    color: "#fff",
+                                    verticalAlign: "middle",
+                                    letterSpacing: "0.04em",
+                                  }}>New!</span>
+                                )}
+                              </td>
                               <td style={{ padding: "4px 10px", textAlign: "right" }}>
                                 {r.quantidade_convertida?.toLocaleString("en-US", { maximumFractionDigits: 0 }) ?? "—"}
                               </td>
