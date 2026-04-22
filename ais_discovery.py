@@ -513,6 +513,20 @@ async def _run():
         c["departure_ts"] = departure_ts
         c["origin_is_product_hub"] = bool(origin_locode and origin_locode in PRODUCT_HUB_LOCODES)
 
+        # Cabotagem guard — dashboard tracks IMPORTS only. If the last port is
+        # Brazilian, this vessel is doing domestic coastal shipping (e.g.
+        # BOW COMPASS Rio Grande → Paranaguá). Drop it here; never insert.
+        is_br_origin = (
+            (origin_locode and origin_locode.upper().startswith("BR"))
+            or (origin_country and origin_country.strip().upper() in ("BRAZIL", "BRASIL", "BR"))
+        )
+        if is_br_origin:
+            print(
+                f"[disc] {i}/{len(hits)} {c.get('navio') or mmsi:30s} "
+                f"→ SKIP cabotagem (origin {origin_name or origin_locode or origin_country})"
+            )
+            continue
+
         # Score
         score, signals = score_candidate(c)
         c["confidence_score"] = score
