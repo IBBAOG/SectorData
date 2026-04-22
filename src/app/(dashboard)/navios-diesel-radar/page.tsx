@@ -123,7 +123,7 @@ export default function NaviosDieselRadarPage() {
             showarrow: false,
             font: { size: 13, family: "Arial", color: "#888" },
           }],
-          height: 620, margin: { t: 0, b: 0, l: 0, r: 0 },
+          height: 480, margin: { t: 0, b: 0, l: 0, r: 0 },
         } as Partial<Layout>,
       };
     }
@@ -182,9 +182,10 @@ export default function NaviosDieselRadarPage() {
         scope: "world",
         // Mercator fills a rectangular canvas edge-to-edge — much better use
         // of the dashboard's horizontal real-estate than natural earth's
-        // curved borders. Capped latitudes hide the useless polar stretch.
+        // curved borders. Cropped south of Argentina (-55°) since nothing
+        // shipping-wise happens below Cape Horn.
         projection: { type: "mercator" },
-        lataxis: { range: [-60, 72] },
+        lataxis: { range: [-55, 72] },
         lonaxis: { range: [-170, 170] },
         showland: true,
         landcolor: "#f5f5f5",
@@ -196,14 +197,14 @@ export default function NaviosDieselRadarPage() {
         coastlinecolor: "#aaa",
       } as Layout["geo"],
       paper_bgcolor: "white",
-      margin: { t: 10, b: 10, l: 10, r: 10 },
-      height: 620,
+      margin: { t: 10, b: 10, l: 10, r: 130 },
+      height: 480,
       // Fully static — no drag/pan/zoom. Hover tooltips still work.
       dragmode: false,
       showlegend: true,
       legend: {
-        orientation: "h",
-        x: 0, y: -0.05,
+        orientation: "v",
+        x: 1.02, y: 1,
         xanchor: "left",
         yanchor: "top",
         font: { family: "Arial", size: 11 },
@@ -325,7 +326,7 @@ export default function NaviosDieselRadarPage() {
                         showTips: false,
                         responsive: false,
                       }}
-                      style={{ width: "100%", height: 620 }}
+                      style={{ width: "100%", height: 480 }}
                     />
                   </div>
 
