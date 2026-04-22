@@ -63,13 +63,6 @@ function fmtDate(iso: string | null): string {
   });
 }
 
-function confidenceColor(score: number | null): string {
-  if (score == null) return "#999";
-  if (score >= 80) return "#2eb85c";
-  if (score >= 60) return "#e7a000";
-  return "#d33";
-}
-
 export default function NaviosDieselRadarPage() {
   // Shares module visibility with the main line-up — both pages belong to one module
   const { visible, loading: visLoading } = useModuleVisibilityGuard("navios-diesel");
@@ -79,7 +72,6 @@ export default function NaviosDieselRadarPage() {
   const [summary, setSummary] = useState<ImportCandidateSummaryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [portFilter, setPortFilter] = useState<string | "all">("all");
-  const [minConfidence, setMinConfidence] = useState(0);
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "in_lineup">("all");
 
   useEffect(() => {
@@ -103,10 +95,9 @@ export default function NaviosDieselRadarPage() {
     return candidates.filter(c => {
       if (portFilter !== "all" && c.destination_slug !== portFilter) return false;
       if (statusFilter !== "all" && c.status !== statusFilter) return false;
-      if ((c.confidence_score ?? 0) < minConfidence) return false;
       return true;
     });
-  }, [candidates, portFilter, minConfidence, statusFilter]);
+  }, [candidates, portFilter, statusFilter]);
 
   const summaryByPort = useMemo(() => {
     const m = new Map<string, ImportCandidateSummaryRow>();
@@ -172,14 +163,13 @@ export default function NaviosDieselRadarPage() {
             `Flag: ${r.flag ?? "—"}<br>` +
             `Dest: ${label}<br>` +
             `ETA: ${etaStr}<br>` +
-            `Last port: ${origin}<br>` +
-            `Confidence: ${r.confidence_score ?? "—"}`
+            `Last port: ${origin}`
           );
         }),
         hoverinfo: "text",
         name: `→ ${label}`,
         marker: {
-          size: rows.map(r => Math.max(8, Math.min(18, ((r.confidence_score ?? 0) / 100) * 16 + 6))),
+          size: 12,
           color: PORT_COLORS[slug] ?? "#888",
           opacity: 0.9,
           line: { color: "#1a1a1a", width: 0.8 },
@@ -267,33 +257,6 @@ export default function NaviosDieselRadarPage() {
                 </select>
               </div>
 
-              <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Min. confidence: {minConfidence}</div>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  step={20}
-                  value={minConfidence}
-                  onChange={(e) => setMinConfidence(Number(e.target.value))}
-                  style={{ width: "100%" }}
-                />
-                <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>
-                  0-100 composite score from AIS + VesselFinder signals
-                </div>
-              </div>
-
-              <div className="sidebar-filter-section" style={{ marginTop: 12, fontSize: 10, color: "#888", lineHeight: 1.4 }}>
-                <div style={{ fontWeight: 700, marginBottom: 4, color: "#555" }}>How scoring works</div>
-                Each signal contributes up to 20 pts:
-                <ul style={{ margin: "4px 0 0 14px", padding: 0 }}>
-                  <li>BR destination</li>
-                  <li>Tanker ship type</li>
-                  <li>Product-tanker size</li>
-                  <li>Origin = product hub</li>
-                  <li>Currently loaded</li>
-                </ul>
-              </div>
             </div>
           </div>
 
@@ -329,9 +292,6 @@ export default function NaviosDieselRadarPage() {
                           <div style={{ fontFamily: "Arial", fontSize: 28, fontWeight: 700, color: ORANGE, lineHeight: 1 }}>{n}</div>
                           <div style={{ fontFamily: "Arial", fontSize: 10, color: "#888", marginTop: 4, lineHeight: 1.4 }}>
                             <div>{radarOnly} radar-only · {nInLineup} confirmed</div>
-                            {s?.avg_confidence != null && (
-                              <div>avg confidence: <b style={{ color: confidenceColor(s.avg_confidence) }}>{s.avg_confidence}</b></div>
-                            )}
                           </div>
                         </div>
                       );
@@ -343,7 +303,7 @@ export default function NaviosDieselRadarPage() {
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                       <div style={TITLE_STYLE}>Global AIS Positions</div>
                       <div style={{ fontSize: 10, color: "#888" }}>
-                        {filtered.filter(c => c.last_seen_lat != null).length} / {filtered.length} with position · sized by confidence
+                        {filtered.filter(c => c.last_seen_lat != null).length} / {filtered.length} with position
                       </div>
                     </div>
                     <hr className="section-hr" />
@@ -375,7 +335,6 @@ export default function NaviosDieselRadarPage() {
                               { label: "Origin",      align: "left" as const },
                               { label: "Departed",    align: "left" as const },
                               { label: "Draft",       align: "left" as const },
-                              { label: "Conf.",       align: "center" as const,  title: "Composite confidence score (0-100)" },
                               { label: "BR dest",     align: "center" as const,  title: "AIS Destination field maps to a monitored BR port" },
                               { label: "Tanker",      align: "center" as const,  title: "Ship type classified as tanker" },
                               { label: "Prod size",   align: "center" as const,  title: "Dimensions compatible with product tanker (< 230 m / < 90k DWT)" },
@@ -392,7 +351,7 @@ export default function NaviosDieselRadarPage() {
                         <tbody>
                           {filtered.length === 0 ? (
                             <tr>
-                              <td colSpan={18} style={{ padding: "20px 10px", textAlign: "center", color: "#aaa", fontSize: 11 }}>
+                              <td colSpan={17} style={{ padding: "20px 10px", textAlign: "center", color: "#aaa", fontSize: 11 }}>
                                 No candidates match current filters.
                               </td>
                             </tr>
@@ -449,18 +408,6 @@ export default function NaviosDieselRadarPage() {
                                     </span>
                                   )}
                                 </td>
-                                <td style={{ padding: "4px 10px", textAlign: "center" }}>
-                                  <span style={{
-                                    display: "inline-block",
-                                    minWidth: 38,
-                                    padding: "2px 8px",
-                                    borderRadius: 4,
-                                    fontSize: 11,
-                                    fontWeight: 700,
-                                    color: "#fff",
-                                    backgroundColor: confidenceColor(c.confidence_score),
-                                  }}>{c.confidence_score ?? "—"}</span>
-                                </td>
                                 <td style={{ padding: "4px 6px", textAlign: "center" }}>{signalCell(sig.destination_br_port)}</td>
                                 <td style={{ padding: "4px 6px", textAlign: "center" }}>{signalCell(sig.tanker)}</td>
                                 <td style={{ padding: "4px 6px", textAlign: "center" }}>{signalCell(sig.size_product_range)}</td>
@@ -498,11 +445,11 @@ export default function NaviosDieselRadarPage() {
                       How this works
                     </div>
                     <ul style={{ margin: 0, paddingLeft: 18 }}>
-                      <li>Pipeline listens AIS globally for 10 min, 3× daily, and captures any vessel whose captain-declared <code>Destination</code> matches a Brazilian port.</li>
+                      <li>Pipeline listens AIS globally for 10 min, 6× daily, capturing any vessel whose captain-declared <code>Destination</code> matches a Brazilian port.</li>
                       <li>Each candidate is enriched with VesselFinder last-port, flag, type, DWT and draft.</li>
-                      <li>Cargo type isn't broadcast in AIS — the confidence score infers diesel likelihood from ship type, size, loaded state and origin hub.</li>
+                      <li>The five signal columns (BR dest · Tanker · Prod size · Prod hub · Loaded) are independent facts about the vessel — use them together to judge whether a candidate is really a diesel import.</li>
                       <li>When a candidate later appears in the port-scraped line-up, status automatically flips from <i>Detected</i> to <i>In line-up</i>.</li>
-                      <li>False positives (gasoline or jet-fuel tankers) and negatives (ships with stale Destination field) are unavoidable — treat the confidence score as directional, not absolute.</li>
+                      <li>False positives (gasoline or jet-fuel tankers) and negatives (ships with stale Destination field) are unavoidable — AIS doesn't broadcast cargo type.</li>
                     </ul>
                   </div>
                 </>
