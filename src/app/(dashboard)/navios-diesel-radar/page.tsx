@@ -25,20 +25,6 @@ const PORT_LABELS: Record<string, string> = {
   suape: "Suape",
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  active: "Detected",
-  in_lineup: "In line-up",
-  arrived: "Arrived",
-  dismissed: "Dismissed",
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  active: "#fff3cd",
-  in_lineup: "#d4edda",
-  arrived: "#d1ecf1",
-  dismissed: "#e2e3e5",
-};
-
 const TITLE_STYLE: React.CSSProperties = {
   fontFamily: "Arial",
   fontSize: 14,
@@ -356,7 +342,6 @@ export default function NaviosDieselRadarPage() {
                               { label: "Prod size",   align: "center" as const,  title: "Dimensions compatible with product tanker (< 230 m / < 90k DWT)" },
                               { label: "Prod hub",    align: "center" as const,  title: "Last port is a refined-product export hub" },
                               { label: "Loaded",      align: "center" as const,  title: "Current draft > 70% of design max → carrying cargo" },
-                              { label: "Status",      align: "left" as const },
                               { label: "First seen",  align: "left" as const },
                               { label: "Last seen",   align: "left" as const },
                             ].map((h) => (
@@ -367,7 +352,7 @@ export default function NaviosDieselRadarPage() {
                         <tbody>
                           {filtered.length === 0 ? (
                             <tr>
-                              <td colSpan={17} style={{ padding: "20px 10px", textAlign: "center", color: "#aaa", fontSize: 11 }}>
+                              <td colSpan={16} style={{ padding: "20px 10px", textAlign: "center", color: "#aaa", fontSize: 11 }}>
                                 No candidates match current filters.
                               </td>
                             </tr>
@@ -429,18 +414,6 @@ export default function NaviosDieselRadarPage() {
                                 <td style={{ padding: "4px 6px", textAlign: "center" }}>{signalCell(sig.size_product_range)}</td>
                                 <td style={{ padding: "4px 6px", textAlign: "center" }}>{signalCell(sig.origin_product_hub)}</td>
                                 <td style={{ padding: "4px 6px", textAlign: "center" }}>{signalCell(sig.loaded)}</td>
-                                <td style={{ padding: "4px 10px" }}>
-                                  <span style={{
-                                    display: "inline-block",
-                                    padding: "2px 8px",
-                                    borderRadius: 4,
-                                    fontSize: 10,
-                                    fontWeight: 600,
-                                    backgroundColor: STATUS_COLORS[c.status] ?? "#f0f0f0",
-                                  }}>
-                                    {STATUS_LABELS[c.status] ?? c.status}
-                                  </span>
-                                </td>
                                 <td style={{ padding: "4px 10px", whiteSpace: "nowrap", fontSize: 10, color: "#888" }}>
                                   {fmtTs(c.first_seen_at)}
                                 </td>
@@ -455,19 +428,6 @@ export default function NaviosDieselRadarPage() {
                     </div>
                   </div>
 
-                  {/* Disclaimer */}
-                  <div style={{ marginTop: 20, backgroundColor: "#fffbf5", border: "1px solid #ffe0b2", borderRadius: 8, padding: "16px 20px", fontFamily: "Arial", fontSize: 12, color: "#555" }}>
-                    <div style={{ fontWeight: 700, marginBottom: 8, color: "#1a1a1a", fontSize: 13 }}>
-                      How this works
-                    </div>
-                    <ul style={{ margin: 0, paddingLeft: 18 }}>
-                      <li>Pipeline listens AIS globally for 10 min, 6× daily, capturing any vessel whose captain-declared <code>Destination</code> matches a Brazilian port.</li>
-                      <li>Each candidate is enriched with VesselFinder last-port, flag, type, DWT and draft.</li>
-                      <li>The five signal columns (BR dest · Tanker · Prod size · Prod hub · Loaded) are independent facts about the vessel — use them together to judge whether a candidate is really a diesel import.</li>
-                      <li>When a candidate later appears in the port-scraped line-up, status automatically flips from <i>Detected</i> to <i>In line-up</i>.</li>
-                      <li>False positives (gasoline or jet-fuel tankers) and negatives (ships with stale Destination field) are unavoidable — AIS doesn't broadcast cargo type.</li>
-                    </ul>
-                  </div>
                 </>
               )}
             </div>
