@@ -787,57 +787,6 @@ export default function NaviosDieselPage() {
                 </div>
               )}
 
-              {/* AIS live tracking toggle */}
-              <div className="sidebar-filter-section" style={{ marginTop: 10 }}>
-                <div className="sidebar-filter-label">Live AIS Layer</div>
-                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontFamily: "Arial", fontSize: 11, color: "#1a1a1a" }}>
-                  <input
-                    type="checkbox"
-                    checked={showAis}
-                    onChange={(e) => setShowAis(e.target.checked)}
-                    style={{ cursor: "pointer" }}
-                  />
-                  Show AIS positions
-                </label>
-                <div style={{ marginTop: 4, fontSize: 10, color: "#888", lineHeight: 1.3 }}>
-                  Port polygons + live vessel positions (AISStream.io).
-                </div>
-                {showAis && (() => {
-                  const normName = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
-                  const active = navios.filter(n => n.status !== "ERRO_COLETA" && n.status !== "Despachado");
-                  const tableSize = active.length;
-                  const resolved = active.filter(n => n.imo || n.mmsi).length;
-                  const unresolvedNames = active.filter(n => !n.imo && !n.mmsi).map(n => n.navio);
-                  const aisIds = new Set<string>();
-                  for (const p of [...aisPositions, ...aisAllRecent]) {
-                    if (p.imo) aisIds.add(`imo:${p.imo}`);
-                    if (p.mmsi) aisIds.add(`mmsi:${p.mmsi}`);
-                    if (p.navio) aisIds.add(`name:${normName(p.navio)}`);
-                  }
-                  const withAis = active.filter(n =>
-                    (n.imo && aisIds.has(`imo:${n.imo}`)) ||
-                    (n.mmsi && aisIds.has(`mmsi:${n.mmsi}`)) ||
-                    aisIds.has(`name:${normName(n.navio)}`)
-                  ).length;
-                  const color = (n: number) => n > 0 ? "#2eb85c" : "#d33";
-                  return (
-                    <div style={{ marginTop: 6, fontSize: 10, color: "#555", lineHeight: 1.4, backgroundColor: "#f8f8f8", padding: "6px 8px", borderRadius: 4 }}>
-                      <div>Table vessels: <b>{tableSize}</b></div>
-                      <div>IMO resolved: <b style={{ color: color(resolved) }}>{resolved} / {tableSize}</b></div>
-                      <div>With AIS position: <b style={{ color: color(withAis) }}>{withAis} / {tableSize}</b></div>
-                      <div>Inside polygons: <b>{arrivalsOpen.length}</b></div>
-                      {unresolvedNames.length > 0 && (
-                        <div style={{ marginTop: 4, paddingTop: 4, borderTop: "1px dashed #ccc", color: "#777" }}>
-                          <div style={{ fontWeight: 700, marginBottom: 2 }}>Pending IMO lookup:</div>
-                          {unresolvedNames.map(n => (
-                            <div key={n} style={{ fontSize: 9, lineHeight: 1.3 }}>• {n}</div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
             </div>
           </div>
 
@@ -868,7 +817,52 @@ export default function NaviosDieselPage() {
                   <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1.5fr 3fr", gap: 16, alignItems: "start", marginBottom: 24 }}>
                     {/* Row 1 — Col 1: Map */}
                     <div className="chart-container">
-                      <div style={TITLE_STYLE}>Distribution by Port</div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div style={TITLE_STYLE}>Distribution by Port</div>
+                        {/* AIS tracker toggle pill — styled to match Price Bands */}
+                        <div style={{ position: "relative", display: "inline-flex", alignItems: "center", backgroundColor: "#f0f0f0", borderRadius: 999, padding: "3px 4px", marginBottom: 4 }}>
+                          <div style={{
+                            position: "absolute",
+                            top: 3,
+                            bottom: 3,
+                            left: `calc(4px + ${showAis ? 1 : 0} * (100% - 8px) / 2)`,
+                            width: `calc((100% - 8px) / 2)`,
+                            backgroundColor: "#ff5000",
+                            borderRadius: 999,
+                            transition: "left 0.22s cubic-bezier(0.4, 0, 0.2, 1)",
+                            zIndex: 0,
+                            pointerEvents: "none",
+                          }} />
+                          {[
+                            { key: false, label: "AIS Off" },
+                            { key: true,  label: "AIS On"  },
+                          ].map(({ key, label }) => (
+                            <button
+                              key={label}
+                              type="button"
+                              onClick={() => setShowAis(key)}
+                              style={{
+                                position: "relative",
+                                zIndex: 1,
+                                background: "transparent",
+                                color: showAis === key ? "#ffffff" : "#555555",
+                                border: "none",
+                                borderRadius: 999,
+                                padding: "3px 12px",
+                                fontFamily: "Arial",
+                                fontSize: 11,
+                                fontWeight: showAis === key ? 700 : 500,
+                                cursor: "pointer",
+                                transition: "color 0.18s",
+                                lineHeight: 1.4,
+                                userSelect: "none",
+                              }}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <hr className="section-hr" />
                       <PlotlyChart
                         data={mapChart.data}
@@ -876,6 +870,41 @@ export default function NaviosDieselPage() {
                         config={{ displayModeBar: false }}
                         style={{ width: "100%", height: 500 }}
                       />
+                      {showAis && (() => {
+                        const normName = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
+                        const active = navios.filter(n => n.status !== "ERRO_COLETA" && n.status !== "Despachado");
+                        const tableSize = active.length;
+                        const resolved = active.filter(n => n.imo || n.mmsi).length;
+                        const unresolvedNames = active.filter(n => !n.imo && !n.mmsi).map(n => n.navio);
+                        const aisIds = new Set<string>();
+                        for (const p of [...aisPositions, ...aisAllRecent]) {
+                          if (p.imo) aisIds.add(`imo:${p.imo}`);
+                          if (p.mmsi) aisIds.add(`mmsi:${p.mmsi}`);
+                          if (p.navio) aisIds.add(`name:${normName(p.navio)}`);
+                        }
+                        const withAis = active.filter(n =>
+                          (n.imo && aisIds.has(`imo:${n.imo}`)) ||
+                          (n.mmsi && aisIds.has(`mmsi:${n.mmsi}`)) ||
+                          aisIds.has(`name:${normName(n.navio)}`)
+                        ).length;
+                        const color = (n: number) => n > 0 ? "#2eb85c" : "#d33";
+                        return (
+                          <div style={{ marginTop: 8, fontSize: 10, color: "#555", lineHeight: 1.4, backgroundColor: "#f8f8f8", padding: "6px 8px", borderRadius: 4 }}>
+                            <div>Table vessels: <b>{tableSize}</b></div>
+                            <div>IMO resolved: <b style={{ color: color(resolved) }}>{resolved} / {tableSize}</b></div>
+                            <div>With AIS position: <b style={{ color: color(withAis) }}>{withAis} / {tableSize}</b></div>
+                            <div>Inside polygons: <b>{arrivalsOpen.length}</b></div>
+                            {unresolvedNames.length > 0 && (
+                              <div style={{ marginTop: 4, paddingTop: 4, borderTop: "1px dashed #ccc", color: "#777" }}>
+                                <div style={{ fontWeight: 700, marginBottom: 2 }}>Pending IMO lookup:</div>
+                                {unresolvedNames.map(n => (
+                                  <div key={n} style={{ fontSize: 9, lineHeight: 1.3 }}>• {n}</div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                     {/* Row 1 — Col 2: Bar chart + Monthly Summary */}
                     <div className="chart-container">
