@@ -39,14 +39,6 @@ const STATUS_COLORS: Record<string, string> = {
   dismissed: "#e2e3e5",
 };
 
-const SIGNAL_LABELS: Record<string, string> = {
-  destination_br_port: "BR destination",
-  tanker: "Tanker",
-  size_product_range: "Product size",
-  origin_product_hub: "Product hub origin",
-  loaded: "Loaded",
-};
-
 const TITLE_STYLE: React.CSSProperties = {
   fontFamily: "Arial",
   fontSize: 14,
@@ -374,21 +366,33 @@ export default function NaviosDieselRadarPage() {
                         <thead>
                           <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
                             {[
-                              "Vessel", "Flag", "Type",
-                              "Destination", "ETA",
-                              "Origin", "Departed",
-                              "Draft", "Confidence",
-                              "Signals", "Status",
-                              "First seen", "Last seen",
+                              { label: "Vessel",      align: "left" as const },
+                              { label: "Flag",        align: "left" as const },
+                              { label: "Type",        align: "left" as const },
+                              { label: "Capacity",    align: "right" as const,  title: "Deadweight tonnage (DWT, tonnes)" },
+                              { label: "Destination", align: "left" as const },
+                              { label: "ETA",         align: "left" as const },
+                              { label: "Origin",      align: "left" as const },
+                              { label: "Departed",    align: "left" as const },
+                              { label: "Draft",       align: "left" as const },
+                              { label: "Conf.",       align: "center" as const,  title: "Composite confidence score (0-100)" },
+                              { label: "BR dest",     align: "center" as const,  title: "AIS Destination field maps to a monitored BR port" },
+                              { label: "Tanker",      align: "center" as const,  title: "Ship type classified as tanker" },
+                              { label: "Prod size",   align: "center" as const,  title: "Dimensions compatible with product tanker (< 230 m / < 90k DWT)" },
+                              { label: "Prod hub",    align: "center" as const,  title: "Last port is a refined-product export hub" },
+                              { label: "Loaded",      align: "center" as const,  title: "Current draft > 70% of design max → carrying cargo" },
+                              { label: "Status",      align: "left" as const },
+                              { label: "First seen",  align: "left" as const },
+                              { label: "Last seen",   align: "left" as const },
                             ].map((h) => (
-                              <th key={h} style={{ padding: "6px 10px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", textAlign: "left" }}>{h}</th>
+                              <th key={h.label} title={h.title} style={{ padding: "6px 10px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", textAlign: h.align }}>{h.label}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
                           {filtered.length === 0 ? (
                             <tr>
-                              <td colSpan={13} style={{ padding: "20px 10px", textAlign: "center", color: "#aaa", fontSize: 11 }}>
+                              <td colSpan={18} style={{ padding: "20px 10px", textAlign: "center", color: "#aaa", fontSize: 11 }}>
                                 No candidates match current filters.
                               </td>
                             </tr>
@@ -396,9 +400,19 @@ export default function NaviosDieselRadarPage() {
                             const draftPct = c.current_draught_m && c.max_draught_m
                               ? Math.round((c.current_draught_m / c.max_draught_m) * 100)
                               : null;
-                            const activeSignals = c.signals
-                              ? Object.entries(c.signals).filter(([, v]) => v).map(([k]) => SIGNAL_LABELS[k] ?? k)
-                              : [];
+                            const signalCell = (on: boolean | null | undefined) => {
+                              if (on == null) {
+                                return <span style={{ color: "#ccc", fontSize: 14 }}>—</span>;
+                              }
+                              return (
+                                <span style={{
+                                  color: on ? "#2eb85c" : "#d33",
+                                  fontSize: 15,
+                                  fontWeight: 700,
+                                }}>{on ? "✓" : "✗"}</span>
+                              );
+                            };
+                            const sig = c.signals ?? {};
                             return (
                               <tr
                                 key={c.id}
@@ -412,6 +426,11 @@ export default function NaviosDieselRadarPage() {
                                 </td>
                                 <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{c.flag ?? "—"}</td>
                                 <td style={{ padding: "4px 10px", whiteSpace: "nowrap", fontSize: 11, color: "#555" }}>{c.ship_type ?? "—"}</td>
+                                <td style={{ padding: "4px 10px", whiteSpace: "nowrap", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                                  {c.dwt != null
+                                    ? `${c.dwt.toLocaleString("en-US")} t`
+                                    : "—"}
+                                </td>
                                 <td style={{ padding: "4px 10px", whiteSpace: "nowrap", fontWeight: 600 }}>
                                   {c.destination_slug ? PORT_LABELS[c.destination_slug] ?? c.destination_slug : "—"}
                                   <span style={{ fontSize: 9, color: "#999", marginLeft: 6 }}>{c.destination_raw}</span>
@@ -442,12 +461,11 @@ export default function NaviosDieselRadarPage() {
                                     backgroundColor: confidenceColor(c.confidence_score),
                                   }}>{c.confidence_score ?? "—"}</span>
                                 </td>
-                                <td style={{ padding: "4px 10px", fontSize: 10, color: "#666" }}>
-                                  {activeSignals.slice(0, 3).map(s => (
-                                    <span key={s} style={{ display: "inline-block", marginRight: 4, padding: "1px 6px", fontSize: 9, borderRadius: 3, backgroundColor: "#eef6ff", color: "#0b4a84" }}>{s}</span>
-                                  ))}
-                                  {activeSignals.length > 3 && <span style={{ fontSize: 9, color: "#999" }}>+{activeSignals.length - 3}</span>}
-                                </td>
+                                <td style={{ padding: "4px 6px", textAlign: "center" }}>{signalCell(sig.destination_br_port)}</td>
+                                <td style={{ padding: "4px 6px", textAlign: "center" }}>{signalCell(sig.tanker)}</td>
+                                <td style={{ padding: "4px 6px", textAlign: "center" }}>{signalCell(sig.size_product_range)}</td>
+                                <td style={{ padding: "4px 6px", textAlign: "center" }}>{signalCell(sig.origin_product_hub)}</td>
+                                <td style={{ padding: "4px 6px", textAlign: "center" }}>{signalCell(sig.loaded)}</td>
                                 <td style={{ padding: "4px 10px" }}>
                                   <span style={{
                                     display: "inline-block",
