@@ -14,10 +14,16 @@ import {
   rpcGetNdResumoMensalPortos,
   rpcGetNdVolumeMensalDescarga,
   rpcGetNdNaviosDescarregados,
+  rpcGetAisPositionsLatest,
+  rpcGetAisArrivalsOpen,
+  rpcGetPortPolygons,
   type NavioDieselRow,
   type NdResumoMensalPortoRow,
   type NdVolumeMensalDescargaRow,
   type NdNavioDescarregadoRow,
+  type AisPositionRow,
+  type PortArrivalRow,
+  type PortPolygonRow,
 } from "../../../lib/rpc";
 
 const ORANGE = "#FF5000";
@@ -121,6 +127,12 @@ export default function NaviosDieselPage() {
   const [hoveredDay, setHoveredDay] = useState<string | null>(null);
   const [hoveredColeta, setHoveredColeta] = useState<string | null>(null);
   const [hoveredNavBtn, setHoveredNavBtn] = useState<"prev" | "next" | null>(null);
+
+  // AIS live-tracking layer
+  const [showAis, setShowAis] = useState(false);
+  const [aisPositions, setAisPositions] = useState<AisPositionRow[]>([]);
+  const [portPolygons, setPortPolygons] = useState<PortPolygonRow[]>([]);
+  const [arrivalsOpen, setArrivalsOpen] = useState<PortArrivalRow[]>([]);
 
   // Ports that failed data collection in this snapshot (used for the error notice in Vessel Details)
   const errorPorts = useMemo(
@@ -253,6 +265,29 @@ export default function NaviosDieselPage() {
     return () => { cancelled = true; };
   }, [supabase, prevDaySnapshot]);
 
+  // 5. Load AIS positions / polygons / open arrivals when the AIS layer is enabled
+  useEffect(() => {
+    if (!supabase) return;
+    if (!showAis) {
+      setAisPositions([]);
+      setArrivalsOpen([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const [polys, positions, arrivals] = await Promise.all([
+        portPolygons.length ? Promise.resolve(portPolygons) : rpcGetPortPolygons(supabase),
+        selectedColeta ? rpcGetAisPositionsLatest(supabase, selectedColeta) : Promise.resolve([]),
+        rpcGetAisArrivalsOpen(supabase),
+      ]);
+      if (cancelled) return;
+      if (!portPolygons.length) setPortPolygons(polys);
+      setAisPositions(positions);
+      setArrivalsOpen(arrivals);
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, showAis, selectedColeta, portPolygons]);
+
   // Build map traces
   const mapChart = useMemo(() => {
     if (resumoByPorto.size === 0) {
@@ -308,6 +343,73 @@ export default function NaviosDieselPage() {
       } as unknown as PlotData,
     ];
 
+    // AIS overlay: port polygons + live vessel positions
+    if (showAis) {
+      for (const p of portPolygons) {
+        const ring = p.polygon?.coordinates?.[0];
+        if (!ring || ring.length < 3) continue;
+        const polyLons = ring.map(([lon]) => lon);
+        const polyLats = ring.map(([, lat]) => lat);
+        data.push({
+          type: "scattergeo",
+          mode: "lines",
+          lat: polyLats,
+          lon: polyLons,
+          fill: "toself",
+          fillcolor: "rgba(255,80,0,0.10)",
+          line: { color: ORANGE, width: 1.5 },
+          hoverinfo: "text",
+          text: Array(polyLats.length).fill(`<b>${p.name}</b><br>Port polygon`),
+          showlegend: false,
+        } as unknown as PlotData);
+      }
+
+      const inLats: number[] = [];
+      const inLons: number[] = [];
+      const inText: string[] = [];
+      const outLats: number[] = [];
+      const outLons: number[] = [];
+      const outText: string[] = [];
+      for (const v of aisPositions) {
+        if (v.lat == null || v.lon == null) continue;
+        const hover =
+          `<b>${v.navio}</b><br>` +
+          (v.imo ? `IMO ${v.imo}<br>` : "") +
+          (v.sog != null ? `${v.sog.toFixed(1)} kn<br>` : "") +
+          (v.nav_status ? `${v.nav_status}<br>` : "") +
+          (v.inside_port ? `Inside: ${v.inside_port}` : "");
+        if (v.inside_port) {
+          inLats.push(v.lat); inLons.push(v.lon); inText.push(hover);
+        } else {
+          outLats.push(v.lat); outLons.push(v.lon); outText.push(hover);
+        }
+      }
+      if (outLats.length) {
+        data.push({
+          type: "scattergeo",
+          mode: "markers",
+          lat: outLats,
+          lon: outLons,
+          text: outText,
+          hoverinfo: "text",
+          marker: { size: 7, color: "#2196f3", opacity: 0.85, line: { color: "#0b4a84", width: 0.8 } },
+          showlegend: false,
+        } as unknown as PlotData);
+      }
+      if (inLats.length) {
+        data.push({
+          type: "scattergeo",
+          mode: "markers",
+          lat: inLats,
+          lon: inLons,
+          text: inText,
+          hoverinfo: "text",
+          marker: { size: 10, color: "#2eb85c", opacity: 0.95, line: { color: "#0f4d25", width: 1 } },
+          showlegend: false,
+        } as unknown as PlotData);
+      }
+    }
+
     const layout: Partial<Layout> = {
       geo: {
         scope: "south america",
@@ -334,7 +436,7 @@ export default function NaviosDieselPage() {
     };
 
     return { data, layout };
-  }, [resumoByPorto]);
+  }, [resumoByPorto, showAis, portPolygons, aisPositions]);
 
   // Build monthly stacked bar chart: discharged (black) + pending (orange)
   const monthlyChart = useMemo(() => {
@@ -611,6 +713,23 @@ export default function NaviosDieselPage() {
                   </div>
                 </div>
               )}
+
+              {/* AIS live tracking toggle */}
+              <div className="sidebar-filter-section" style={{ marginTop: 10 }}>
+                <div className="sidebar-filter-label">Live AIS Layer</div>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontFamily: "Arial", fontSize: 11, color: "#1a1a1a" }}>
+                  <input
+                    type="checkbox"
+                    checked={showAis}
+                    onChange={(e) => setShowAis(e.target.checked)}
+                    style={{ cursor: "pointer" }}
+                  />
+                  Show AIS positions
+                </label>
+                <div style={{ marginTop: 4, fontSize: 10, color: "#888", lineHeight: 1.3 }}>
+                  Port polygons + live vessel positions (AISStream.io).
+                </div>
+              </div>
             </div>
           </div>
 
@@ -844,6 +963,50 @@ export default function NaviosDieselPage() {
                     </div>
 
                   </div>
+
+                  {/* AIS — Vessels currently inside a monitored port polygon */}
+                  {showAis && (
+                    <div className="chart-container" style={{ marginBottom: 24 }}>
+                      <div style={{ ...TITLE_STYLE, marginBottom: 4 }}>
+                        Vessels Currently in Port Area (Live AIS)
+                      </div>
+                      <hr className="section-hr" />
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 12 }}>
+                          <thead>
+                            <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
+                              {["Vessel", "IMO", "MMSI", "Port", "Entered At", "Duration"].map(h => (
+                                <th key={h} style={{ padding: "6px 10px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", textAlign: "left" }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {arrivalsOpen.length === 0 ? (
+                              <tr>
+                                <td colSpan={6} style={{ padding: "12px 10px", textAlign: "center", color: "#aaa", fontFamily: "Arial", fontSize: 11 }}>
+                                  No vessels currently inside port polygons.
+                                </td>
+                              </tr>
+                            ) : arrivalsOpen.map((r, i) => (
+                              <tr
+                                key={`${r.imo ?? r.mmsi}-${r.port_slug}`}
+                                style={{ borderBottom: i === arrivalsOpen.length - 1 ? "2px solid #d0d0d0" : "1px solid #eee" }}
+                                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
+                                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }}
+                              >
+                                <td style={{ padding: "4px 10px", fontWeight: 600, whiteSpace: "nowrap" }}>{r.vessel_name ?? "—"}</td>
+                                <td style={{ padding: "4px 10px", whiteSpace: "nowrap", color: "#555" }}>{r.imo ?? "—"}</td>
+                                <td style={{ padding: "4px 10px", whiteSpace: "nowrap", color: "#555" }}>{r.mmsi ?? "—"}</td>
+                                <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{r.port_name ?? r.port_slug}</td>
+                                <td style={{ padding: "4px 10px", whiteSpace: "nowrap", color: "#555" }}>{fmtTs(r.entered_at)}</td>
+                                <td style={{ padding: "4px 10px", whiteSpace: "nowrap", color: "#555" }}>{hoursAgo(r.entered_at)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>

@@ -10,3 +10,5 @@ selenium
 supabase
 python-dotenv
 schedule
+websockets
+shapely

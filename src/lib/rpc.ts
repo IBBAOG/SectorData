@@ -308,6 +308,8 @@ export type NavioDieselRow = {
   fim_descarga: string | null;
   origem: string | null;
   berco: string | null;
+  imo: string | null;
+  mmsi: string | null;
 };
 
 export type PortoResumo = {
@@ -444,6 +446,84 @@ export async function rpcGetNdResumoMensalPortos(
     return (data ?? []) as NdResumoMensalPortoRow[];
   } catch (e) {
     console.error("get_nd_resumo_mensal_portos failed", e);
+    return [];
+  }
+}
+
+// ─── MODULE: Navios Diesel — AIS tracking add-on ─────────────────────────────
+
+export type AisPositionRow = {
+  navio: string;
+  imo: string | null;
+  mmsi: string | null;
+  ts: string | null;
+  lat: number | null;
+  lon: number | null;
+  sog: number | null;
+  cog: number | null;
+  nav_status: string | null;
+  inside_port: string | null;
+};
+
+export type PortArrivalRow = {
+  imo: string | null;
+  mmsi: string | null;
+  vessel_name: string | null;
+  port_slug: string;
+  port_name: string | null;
+  entered_at: string;
+  exited_at: string | null;
+  detected_at: string | null;
+};
+
+export type PortPolygonRow = {
+  slug: string;
+  name: string;
+  /** GeoJSON Polygon geometry */
+  polygon: {
+    type: "Polygon";
+    coordinates: number[][][];
+  };
+};
+
+export async function rpcGetAisPositionsLatest(
+  supabase: SupabaseClient,
+  collectedAt: string,
+): Promise<AisPositionRow[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_ais_positions_latest", {
+      p_collected_at: collectedAt,
+    });
+    if (error) throw error;
+    return (data ?? []) as AisPositionRow[];
+  } catch (e) {
+    console.error("get_ais_positions_latest failed", e);
+    return [];
+  }
+}
+
+export async function rpcGetAisArrivalsOpen(
+  supabase: SupabaseClient,
+): Promise<PortArrivalRow[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_ais_arrivals_open", {});
+    if (error) throw error;
+    return (data ?? []) as PortArrivalRow[];
+  } catch (e) {
+    console.error("get_ais_arrivals_open failed", e);
+    return [];
+  }
+}
+
+export async function rpcGetPortPolygons(
+  supabase: SupabaseClient,
+): Promise<PortPolygonRow[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_port_polygons", {});
+    if (error) throw error;
+    return (data ?? []) as PortPolygonRow[];
+  } catch (e) {
+    console.error("get_port_polygons failed", e);
     return [];
   }
 }

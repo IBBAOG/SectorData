@@ -27,6 +27,7 @@ Real-time data visualization, automated data pipelines, Excel export, and role-b
   - [ANP Production Extraction](#2-anp-production-extraction)
   - [D&G Margins Upload](#3-dg-margins-upload)
   - [Supabase Migration Deploy](#4-supabase-migration-deploy)
+  - [AIS Vessel Tracking Sync](#5-ais-vessel-tracking-sync)
 - [Authentication & Roles](#authentication--roles)
 - [Reusable Components](#reusable-components)
 - [Supabase RPC Reference](#supabase-rpc-reference)
@@ -646,6 +647,25 @@ All pipelines support manual triggering via `workflow_dispatch` in addition to t
 2. Marks the baseline migration as applied
 3. Runs `supabase db push` to apply all pending migrations
 
+### 5. AIS Vessel Tracking Sync
+
+| | |
+|---|---|
+| **Workflow** | `.github/workflows/ais_sync.yml` |
+| **Schedule** | Every 6 hours — 10:15, 16:15, 22:15, 04:15 UTC (15 min after each port scraping run) |
+| **Script** | `ais_sync.py` |
+| **Target tables** | `vessel_registry`, `vessel_positions`, `port_arrivals` (also enriches `navios_diesel.imo` / `navios_diesel.mmsi`) |
+
+**Process:**
+1. Connects to [AISStream.io](https://aisstream.io) over WebSocket (free API key) and subscribes to bounding boxes covering the Brazilian coast around the 5 monitored ports.
+2. Listens for `LISTEN_SECONDS` (default 150 s), buffering the latest `PositionReport` and `ShipStaticData` per MMSI.
+3. Upserts observed `(IMO, MMSI, name, ship_type)` into `vessel_registry` — this is what makes the **name → IMO** cross-reference work when the port-scraping pipeline doesn't know the IMO of a vessel.
+4. Inserts one position row per observed vessel into `vessel_positions`, pre-computing `inside_port` via shapely point-in-polygon against `port_polygons`.
+5. For any `navios_diesel` row with `imo IS NULL`, backfills `imo`/`mmsi` when the vessel's normalised name matches a registry entry.
+6. Opens a new `port_arrivals` row whenever a monitored vessel's latest position falls inside a polygon and no arrival is currently open. Closes stale arrivals when the latest position has been outside the polygon for ≥ 2 h.
+
+**Required secret:** `AISSTREAM_API_KEY` (in addition to the usual `SUPABASE_URL` / `SUPABASE_SERVICE_KEY`).
+
 ---
 
 ## Authentication & Roles
@@ -893,6 +913,7 @@ Configure these in your repository's **Settings > Secrets and variables > Action
 | `SUPABASE_SERVICE_KEY` | Pipelines | Service role key (elevated privileges) |
 | `SUPABASE_PROJECT_REF` | Migration deploy | Project reference ID |
 | `SUPABASE_ACCESS_TOKEN` | Migration deploy | Supabase management API token |
+| `AISSTREAM_API_KEY` | AIS sync pipeline | Free API key from [aisstream.io](https://aisstream.io) |
 
 ---
 
@@ -959,3 +980,4 @@ Configure these in your repository's **Settings > Secrets and variables > Action
 | `SUPABASE_SERVICE_KEY` | navios, dg-margins | Service key for data imports |
 | `SUPABASE_PROJECT_REF` | supabase-deploy | Project ref for CLI link |
 | `SUPABASE_ACCESS_TOKEN` | supabase-deploy | Management API token for CLI auth |
+| `AISSTREAM_API_KEY` | ais-sync | Free API key from [aisstream.io](https://aisstream.io) for live vessel positions |
