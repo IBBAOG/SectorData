@@ -349,9 +349,10 @@ export default function NaviosDieselPage() {
       } as unknown as PlotData,
     ];
 
-    // AIS overlay: port polygons + live vessel positions
+    // AIS overlay: port polygon markers + live vessel positions
     if (showAis) {
-      // Polygon outlines (may be tiny at this zoom — centroid markers below make them visible)
+      // Polygons are ~0.1° rectangles — too small to draw at this map scope.
+      // Represent each one as an open-diamond marker at its centroid instead.
       const centroidLats: number[] = [];
       const centroidLons: number[] = [];
       const centroidText: string[] = [];
@@ -360,17 +361,6 @@ export default function NaviosDieselPage() {
         if (!ring || ring.length < 3) continue;
         const polyLons = ring.map(([lon]) => lon);
         const polyLats = ring.map(([, lat]) => lat);
-        data.push({
-          type: "scattergeo",
-          mode: "lines",
-          lat: polyLats,
-          lon: polyLons,
-          fill: "toself",
-          fillcolor: "rgba(255,80,0,0.25)",
-          line: { color: ORANGE, width: 2.5 },
-          hoverinfo: "skip",
-          showlegend: false,
-        } as unknown as PlotData);
         const cLat = polyLats.reduce((a, b) => a + b, 0) / polyLats.length;
         const cLon = polyLons.reduce((a, b) => a + b, 0) / polyLons.length;
         centroidLats.push(cLat);
@@ -386,7 +376,7 @@ export default function NaviosDieselPage() {
           text: centroidText,
           hoverinfo: "text",
           marker: {
-            size: 16,
+            size: 14,
             symbol: "diamond-open",
             color: ORANGE,
             line: { color: ORANGE, width: 2 },
