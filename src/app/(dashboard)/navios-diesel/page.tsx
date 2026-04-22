@@ -399,39 +399,41 @@ export default function NaviosDieselPage() {
         } as unknown as PlotData);
       }
 
-      // Merge server-matched positions with any client-side matches from the
-      // 24h AIS capture that also correspond to a row in the Expected Vessels
-      // table. Only markers that map to an actual table row are rendered —
-      // random ships AISStream happened to catch are skipped.
+      // Render ONLY vessels that map to a row in the Expected Vessels table.
+      // Match by IMO → MMSI → normalised name, deduping across the two AIS
+      // data sources (server-resolved for the snapshot + 24h raw capture).
       const seenKey = new Set<string>();
-      const matchedPositions: Array<{ pos: AisPositionRow; nd: NavioDieselRow }> = [];
-      for (const v of aisPositions) {
-        if (v.lat == null || v.lon == null) continue;
+      type Entry = { pos: AisPositionRow; nd: NavioDieselRow };
+      const entries: Entry[] = [];
+      const collect = (v: AisPositionRow) => {
+        if (v.lat == null || v.lon == null) return;
         const nd = lookupNavio(v);
-        if (!nd) continue;
+        if (!nd) return;
         const k = `${v.imo ?? ""}|${v.mmsi ?? ""}|${nd.navio}`;
-        if (seenKey.has(k)) continue;
+        if (seenKey.has(k)) return;
         seenKey.add(k);
-        matchedPositions.push({ pos: v, nd });
-      }
-      for (const v of aisAllRecent) {
-        if (v.lat == null || v.lon == null) continue;
-        const nd = lookupNavio(v);
-        if (!nd) continue;
-        const k = `${v.imo ?? ""}|${v.mmsi ?? ""}|${nd.navio}`;
-        if (seenKey.has(k)) continue;
-        seenKey.add(k);
-        matchedPositions.push({ pos: v, nd });
-      }
+        entries.push({ pos: v, nd });
+      };
+      for (const v of aisPositions) collect(v);
+      for (const v of aisAllRecent) collect(v);
 
-      // Split into "inside monitored polygon" vs "open water" markers
+      // Log the gap so we can see WHY matches might be zero
+      const tableNames = navios.filter(n => n.status !== "ERRO_COLETA").map(n => n.navio);
+      const aisNames = Array.from(new Set([
+        ...aisPositions.map(p => p.navio),
+        ...aisAllRecent.map(p => p.navio),
+      ]));
+      console.log("[ais-match] table vessels:", tableNames);
+      console.log("[ais-match] AIS vessels seen:", aisNames);
+      console.log("[ais-match] matched entries:", entries.length);
+
       const inLats: number[] = [];
       const inLons: number[] = [];
       const inText: string[] = [];
       const outLats: number[] = [];
       const outLons: number[] = [];
       const outText: string[] = [];
-      for (const { pos: v, nd } of matchedPositions) {
+      for (const { pos: v, nd } of entries) {
         if (v.lat == null || v.lon == null) continue;
         const hover =
           `<b>${nd.navio}</b><br>` +
@@ -458,7 +460,7 @@ export default function NaviosDieselPage() {
           lon: outLons,
           text: outText,
           hoverinfo: "text",
-          marker: { size: 9, color: "#2196f3", opacity: 0.9, line: { color: "#0b4a84", width: 1 } },
+          marker: { size: 10, color: "#2196f3", opacity: 0.95, line: { color: "#0b4a84", width: 1 } },
           showlegend: false,
         } as unknown as PlotData);
       }
@@ -470,7 +472,7 @@ export default function NaviosDieselPage() {
           lon: inLons,
           text: inText,
           hoverinfo: "text",
-          marker: { size: 12, color: "#2eb85c", opacity: 0.95, line: { color: "#0f4d25", width: 1.2 } },
+          marker: { size: 13, color: "#2eb85c", opacity: 0.98, line: { color: "#0f4d25", width: 1.2 } },
           showlegend: false,
         } as unknown as PlotData);
       }
@@ -795,14 +797,29 @@ export default function NaviosDieselPage() {
                 <div style={{ marginTop: 4, fontSize: 10, color: "#888", lineHeight: 1.3 }}>
                   Port polygons + live vessel positions (AISStream.io).
                 </div>
-                {showAis && (
-                  <div style={{ marginTop: 6, fontSize: 10, color: "#555", lineHeight: 1.4, backgroundColor: "#f8f8f8", padding: "4px 6px", borderRadius: 4 }}>
-                    <div>Polygons: <b>{portPolygons.length}</b></div>
-                    <div>Monitored on map: <b>{aisPositions.length}</b></div>
-                    <div>All AIS (24h): <b>{aisAllRecent.length}</b></div>
-                    <div>Inside ports: <b>{arrivalsOpen.length}</b></div>
-                  </div>
-                )}
+                {showAis && (() => {
+                  const normName = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
+                  const aisIds = new Set<string>();
+                  for (const p of [...aisPositions, ...aisAllRecent]) {
+                    if (p.imo) aisIds.add(`imo:${p.imo}`);
+                    if (p.mmsi) aisIds.add(`mmsi:${p.mmsi}`);
+                    if (p.navio) aisIds.add(`name:${normName(p.navio)}`);
+                  }
+                  const matched = navios.filter(n => n.status !== "ERRO_COLETA" && (
+                    (n.imo && aisIds.has(`imo:${n.imo}`)) ||
+                    (n.mmsi && aisIds.has(`mmsi:${n.mmsi}`)) ||
+                    aisIds.has(`name:${normName(n.navio)}`)
+                  )).length;
+                  const tableSize = navios.filter(n => n.status !== "ERRO_COLETA").length;
+                  return (
+                    <div style={{ marginTop: 6, fontSize: 10, color: "#555", lineHeight: 1.4, backgroundColor: "#f8f8f8", padding: "4px 6px", borderRadius: 4 }}>
+                      <div>Table vessels: <b>{tableSize}</b></div>
+                      <div>AIS vessels (24h): <b>{aisAllRecent.length}</b></div>
+                      <div>Matched on map: <b style={{ color: matched > 0 ? "#2eb85c" : "#d33" }}>{matched} / {tableSize}</b></div>
+                      <div>Inside polygons: <b>{arrivalsOpen.length}</b></div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
