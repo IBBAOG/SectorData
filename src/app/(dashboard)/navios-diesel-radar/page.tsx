@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { Layout, PlotData } from "plotly.js";
 
 import NavBar from "../../../components/NavBar";
 import LineUpTabs from "../../../components/LineUpTabs";
+import PlotlyChart from "../../../components/PlotlyChart";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import {
@@ -120,6 +122,113 @@ export default function NaviosDieselRadarPage() {
     return m;
   }, [summary]);
 
+  // Build world map of last-seen positions for the filtered candidates.
+  // Points are grouped by destination port (one trace per port) so each
+  // port gets its own colour in the legend.
+  const worldMap = useMemo(() => {
+    const withPos = filtered.filter(
+      c => c.last_seen_lat != null && c.last_seen_lon != null
+    );
+    if (withPos.length === 0) {
+      return {
+        data: [] as PlotData[],
+        layout: {
+          paper_bgcolor: "white", plot_bgcolor: "white",
+          annotations: [{
+            text: "No AIS positions yet — candidates appear here after the next discovery run",
+            xref: "paper" as const, yref: "paper" as const,
+            showarrow: false,
+            font: { size: 13, family: "Arial", color: "#888" },
+          }],
+          height: 360, margin: { t: 0, b: 0, l: 0, r: 0 },
+        } as Partial<Layout>,
+      };
+    }
+
+    const PORT_COLORS: Record<string, string> = {
+      santos:         "#ff5000",
+      itaqui:         "#2196f3",
+      paranagua:      "#2eb85c",
+      sao_sebastiao:  "#9c27b0",
+      suape:          "#ffc107",
+    };
+
+    const grouped = new Map<string, ImportCandidateRow[]>();
+    for (const c of withPos) {
+      const key = c.destination_slug ?? "unknown";
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key)!.push(c);
+    }
+
+    const data: PlotData[] = [];
+    for (const [slug, rows] of grouped) {
+      const label = PORT_LABELS[slug] ?? slug;
+      data.push({
+        type: "scattergeo",
+        mode: "markers",
+        lat: rows.map(r => r.last_seen_lat!),
+        lon: rows.map(r => r.last_seen_lon!),
+        text: rows.map(r => {
+          const etaStr = r.eta
+            ? new Date(r.eta).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" })
+            : "—";
+          const origin = r.origin_port_name
+            ? `${r.origin_port_name}${r.origin_country ? ` (${r.origin_country})` : ""}`
+            : "—";
+          return (
+            `<b>${r.navio}</b><br>` +
+            `Flag: ${r.flag ?? "—"}<br>` +
+            `Dest: ${label}<br>` +
+            `ETA: ${etaStr}<br>` +
+            `Last port: ${origin}<br>` +
+            `Confidence: ${r.confidence_score ?? "—"}`
+          );
+        }),
+        hoverinfo: "text",
+        name: `→ ${label}`,
+        marker: {
+          size: rows.map(r => Math.max(8, Math.min(18, ((r.confidence_score ?? 0) / 100) * 16 + 6))),
+          color: PORT_COLORS[slug] ?? "#888",
+          opacity: 0.9,
+          line: { color: "#1a1a1a", width: 0.8 },
+        },
+      } as unknown as PlotData);
+    }
+
+    const layout: Partial<Layout> = {
+      geo: {
+        scope: "world",
+        projection: { type: "natural earth" },
+        showland: true,
+        landcolor: "#f5f5f5",
+        showocean: true,
+        oceancolor: "#e8f4fd",
+        showcountries: true,
+        countrycolor: "#ccc",
+        showcoastlines: true,
+        coastlinecolor: "#aaa",
+      } as Layout["geo"],
+      paper_bgcolor: "white",
+      margin: { t: 10, b: 10, l: 10, r: 10 },
+      height: 420,
+      showlegend: true,
+      legend: {
+        orientation: "h",
+        x: 0, y: -0.05,
+        xanchor: "left",
+        yanchor: "top",
+        font: { family: "Arial", size: 11 },
+      },
+      hoverlabel: {
+        bgcolor: "rgba(255,255,255,0.95)",
+        bordercolor: "rgba(180,180,180,0.5)",
+        font: { family: "Arial", color: "#1a1a1a", size: 12 },
+      },
+    };
+
+    return { data, layout };
+  }, [filtered]);
+
   if (visLoading || !visible) return null;
 
   return (
@@ -235,6 +344,23 @@ export default function NaviosDieselRadarPage() {
                         </div>
                       );
                     })}
+                  </div>
+
+                  {/* World map of last-seen positions */}
+                  <div className="chart-container" style={{ marginBottom: 20 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                      <div style={TITLE_STYLE}>Global AIS Positions</div>
+                      <div style={{ fontSize: 10, color: "#888" }}>
+                        {filtered.filter(c => c.last_seen_lat != null).length} / {filtered.length} with position · sized by confidence
+                      </div>
+                    </div>
+                    <hr className="section-hr" />
+                    <PlotlyChart
+                      data={worldMap.data}
+                      layout={worldMap.layout}
+                      config={{ displayModeBar: false, scrollZoom: false }}
+                      style={{ width: "100%", height: 420 }}
+                    />
                   </div>
 
                   {/* Main table */}

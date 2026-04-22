@@ -580,6 +580,9 @@ export type ImportCandidateRow = {
   is_loaded: boolean | null;
   confidence_score: number | null;
   signals: ImportCandidateSignals | null;
+  last_seen_lat: number | null;
+  last_seen_lon: number | null;
+  last_seen_ts: string | null;
   first_seen_at: string | null;
   last_seen_at: string | null;
   status: "active" | "in_lineup" | "arrived" | "dismissed";

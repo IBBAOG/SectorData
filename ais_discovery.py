@@ -232,6 +232,14 @@ async def listen_for_br_candidates() -> dict[str, dict]:
             eta_dict = sd.get("Eta") or {}
             eta_iso = _eta_dict_to_iso(eta_dict)
 
+            # AISStream includes lat/lon in MetaData for every message type
+            try:
+                last_lat = float(meta["latitude"]) if meta.get("latitude") is not None else None
+                last_lon = float(meta["longitude"]) if meta.get("longitude") is not None else None
+            except (TypeError, ValueError):
+                last_lat = last_lon = None
+            last_seen_ts = _parse_meta_time(meta.get("time_utc"))
+
             hits[mmsi] = {
                 "mmsi": mmsi,
                 "imo": imo,
@@ -243,6 +251,9 @@ async def listen_for_br_candidates() -> dict[str, dict]:
                 "destination_port_name": port_name,
                 "eta": eta_iso,
                 "current_draught_m": _parse_draught(sd.get("MaximumStaticDraught") or sd.get("Draught")),
+                "last_seen_lat": last_lat,
+                "last_seen_lon": last_lon,
+                "last_seen_ts": last_seen_ts,
             }
 
         print(f"[disc] {msgs} ShipStaticData msgs | {br_matches} com destino BR | {len(hits)} IMOs únicos")
@@ -276,6 +287,25 @@ def _parse_draught(raw: Any) -> float | None:
         v = float(raw)
         return v if 0 < v < 25 else None
     except (TypeError, ValueError):
+        return None
+
+
+def _parse_meta_time(value: str | None) -> str | None:
+    """AISStream sends `time_utc` in Go format; reuse ais_sync's parser logic."""
+    if not value:
+        return None
+    try:
+        cleaned = value.replace(" UTC", "").strip()
+        parts = cleaned.rsplit(" ", 1)
+        dt_part = parts[0]
+        tz_part = parts[1] if len(parts) > 1 else "+0000"
+        if "." in dt_part:
+            date_time, frac = dt_part.split(".", 1)
+            frac = frac[:6].ljust(6, "0")
+            dt_part = f"{date_time}.{frac}"
+        iso_like = f"{dt_part}{tz_part[:3]}:{tz_part[3:]}"
+        return datetime.fromisoformat(iso_like).astimezone(timezone.utc).isoformat()
+    except Exception:
         return None
 
 
@@ -384,6 +414,9 @@ def upsert_candidates(sb, enriched: list[dict]) -> int:
             "is_loaded": c.get("is_loaded"),
             "confidence_score": c.get("confidence_score"),
             "signals": c.get("signals"),
+            "last_seen_lat": c.get("last_seen_lat"),
+            "last_seen_lon": c.get("last_seen_lon"),
+            "last_seen_ts":  c.get("last_seen_ts"),
             "last_seen_at": now,
             "status": "active",
         })
