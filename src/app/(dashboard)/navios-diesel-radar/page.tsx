@@ -378,7 +378,8 @@ export default function NaviosDieselRadarPage() {
                               "Destination", "ETA",
                               "Origin", "Departed",
                               "Draft", "Confidence",
-                              "Signals", "Status", "First seen",
+                              "Signals", "Status",
+                              "First seen", "Last seen",
                             ].map((h) => (
                               <th key={h} style={{ padding: "6px 10px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", textAlign: "left" }}>{h}</th>
                             ))}
@@ -387,7 +388,7 @@ export default function NaviosDieselRadarPage() {
                         <tbody>
                           {filtered.length === 0 ? (
                             <tr>
-                              <td colSpan={12} style={{ padding: "20px 10px", textAlign: "center", color: "#aaa", fontSize: 11 }}>
+                              <td colSpan={13} style={{ padding: "20px 10px", textAlign: "center", color: "#aaa", fontSize: 11 }}>
                                 No candidates match current filters.
                               </td>
                             </tr>
@@ -461,6 +462,9 @@ export default function NaviosDieselRadarPage() {
                                 </td>
                                 <td style={{ padding: "4px 10px", whiteSpace: "nowrap", fontSize: 10, color: "#888" }}>
                                   {fmtTs(c.first_seen_at)}
+                                </td>
+                                <td style={{ padding: "4px 10px", whiteSpace: "nowrap", fontSize: 10, color: "#888" }}>
+                                  {fmtTs(c.last_seen_at)}
                                 </td>
                               </tr>
                             );

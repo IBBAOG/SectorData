@@ -430,6 +430,41 @@ def upsert_candidates(sb, enriched: list[dict]) -> int:
     return written
 
 
+def insert_position_history(sb, enriched: list[dict]) -> int:
+    """
+    Append one row to candidate_positions per vessel observation. Unique on
+    (imo, ts) so re-runs can't duplicate the same captured moment.
+    """
+    rows: list[dict] = []
+    for c in enriched:
+        if not c.get("imo"):
+            continue
+        lat = c.get("last_seen_lat")
+        lon = c.get("last_seen_lon")
+        ts  = c.get("last_seen_ts")
+        if lat is None or lon is None or not ts:
+            continue
+        rows.append({
+            "imo": c["imo"],
+            "mmsi": c.get("mmsi"),
+            "ts": ts,
+            "lat": lat,
+            "lon": lon,
+            "confidence_score": c.get("confidence_score"),
+            "destination_slug": c.get("destination_slug"),
+        })
+    if not rows:
+        return 0
+
+    written = 0
+    for i in range(0, len(rows), 500):
+        sb.table("candidate_positions").upsert(
+            rows[i:i + 500], on_conflict="imo,ts", ignore_duplicates=True,
+        ).execute()
+        written += len(rows[i:i + 500])
+    return written
+
+
 # ─── Main ───────────────────────────────────────────────────────────────────
 async def _run():
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -492,9 +527,11 @@ async def _run():
             f"({'|'.join(k for k,v in signals.items() if v)})"
         )
 
-    # 3. Upsert
+    # 3. Upsert latest snapshot + append to historical trail
     written = upsert_candidates(sb, enriched)
     print(f"[disc] {written} candidato(s) gravado(s) em import_candidates")
+    trail_written = insert_position_history(sb, enriched)
+    print(f"[disc] {trail_written} linha(s) de trilha gravada(s) em candidate_positions")
 
 
 if __name__ == "__main__":
