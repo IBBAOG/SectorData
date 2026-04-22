@@ -1,12 +1,8 @@
 name: ANP Watcher - Vendas Combustíveis
 
 on:
-  schedule:
-    # Roda a cada 10 minutos nos dias 18 a 31 de cada mês (horário UTC)
-    # Dia 18 UTC = dia 17 a partir das 21h BRT — levemente adiantado, mas inofensivo
-    # (o script só faz upload se detectar período novo na ANP)
-    - cron: '*/10 * 18-31 * *'
-
+  # Agendamento gerenciado externamente via cron-job.org → workflow_dispatch
+  # O trigger schedule nativo do GitHub não garante pontualidade em intervalos curtos.
   workflow_dispatch:
     inputs:
       force:
