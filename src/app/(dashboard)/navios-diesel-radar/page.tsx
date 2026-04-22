@@ -123,7 +123,7 @@ export default function NaviosDieselRadarPage() {
             showarrow: false,
             font: { size: 13, family: "Arial", color: "#888" },
           }],
-          height: 360, margin: { t: 0, b: 0, l: 0, r: 0 },
+          height: 620, margin: { t: 0, b: 0, l: 0, r: 0 },
         } as Partial<Layout>,
       };
     }
@@ -180,7 +180,12 @@ export default function NaviosDieselRadarPage() {
     const layout: Partial<Layout> = {
       geo: {
         scope: "world",
-        projection: { type: "natural earth" },
+        // Mercator fills a rectangular canvas edge-to-edge — much better use
+        // of the dashboard's horizontal real-estate than natural earth's
+        // curved borders. Capped latitudes hide the useless polar stretch.
+        projection: { type: "mercator" },
+        lataxis: { range: [-60, 72] },
+        lonaxis: { range: [-170, 170] },
         showland: true,
         landcolor: "#f5f5f5",
         showocean: true,
@@ -192,7 +197,7 @@ export default function NaviosDieselRadarPage() {
       } as Layout["geo"],
       paper_bgcolor: "white",
       margin: { t: 10, b: 10, l: 10, r: 10 },
-      height: 420,
+      height: 620,
       showlegend: true,
       legend: {
         orientation: "h",
@@ -311,7 +316,7 @@ export default function NaviosDieselRadarPage() {
                       data={worldMap.data}
                       layout={worldMap.layout}
                       config={{ displayModeBar: false, scrollZoom: false }}
-                      style={{ width: "100%", height: 420 }}
+                      style={{ width: "100%", height: 620 }}
                     />
                   </div>
 
