@@ -351,6 +351,20 @@ export default function NaviosDieselPage() {
 
     // AIS overlay: port polygon markers + live vessel positions
     if (showAis) {
+      // Lookup from Expected-Vessels rows → enriches tooltips with porto/volume/status
+      const normName = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const navioByKey = new Map<string, NavioDieselRow>();
+      for (const n of navios) {
+        if (n.status === "ERRO_COLETA") continue;
+        navioByKey.set(`name:${normName(n.navio)}`, n);
+        if (n.imo) navioByKey.set(`imo:${n.imo}`, n);
+        if (n.mmsi) navioByKey.set(`mmsi:${n.mmsi}`, n);
+      }
+      const lookupNavio = (p: AisPositionRow): NavioDieselRow | undefined =>
+        (p.imo && navioByKey.get(`imo:${p.imo}`)) ||
+        (p.mmsi && navioByKey.get(`mmsi:${p.mmsi}`)) ||
+        navioByKey.get(`name:${normName(p.navio)}`) ||
+        undefined;
       // Polygons are ~0.1° rectangles — too small to draw at this map scope.
       // Represent each one as an open-diamond marker at its centroid instead.
       const centroidLats: number[] = [];
@@ -396,11 +410,17 @@ export default function NaviosDieselPage() {
       for (const v of aisAllRecent) {
         if (v.lat == null || v.lon == null) continue;
         if (monitoredKey.has(v.imo ?? v.mmsi ?? "")) continue;
+        const nd = lookupNavio(v);
         bgLats.push(v.lat);
         bgLons.push(v.lon);
         bgText.push(
-          `<b>${v.navio}</b><br>` +
-          (v.imo ? `IMO ${v.imo}<br>` : `MMSI ${v.mmsi ?? "—"}<br>`) +
+          `<b>${nd?.navio ?? v.navio}</b><br>` +
+          (nd ? `Port: ${nd.porto.replace("Porto de ", "")}<br>` : "") +
+          (nd?.quantidade_convertida != null
+            ? `Volume: ${nd.quantidade_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³<br>`
+            : "") +
+          (nd?.status ? `Status: ${STATUS_LABELS[nd.status] ?? nd.status}<br>` : "") +
+          (v.imo ? `IMO ${v.imo}<br>` : v.mmsi ? `MMSI ${v.mmsi}<br>` : "") +
           (v.sog != null ? `${v.sog.toFixed(1)} kn<br>` : "") +
           (v.nav_status ? `${v.nav_status}<br>` : "") +
           (v.inside_port ? `Inside: ${v.inside_port}` : "Open water")
@@ -428,8 +448,14 @@ export default function NaviosDieselPage() {
       const outText: string[] = [];
       for (const v of aisPositions) {
         if (v.lat == null || v.lon == null) continue;
+        const nd = lookupNavio(v);
         const hover =
-          `<b>${v.navio}</b> (monitored)<br>` +
+          `<b>${nd?.navio ?? v.navio}</b><br>` +
+          (nd ? `Port: ${nd.porto.replace("Porto de ", "")}<br>` : "") +
+          (nd?.quantidade_convertida != null
+            ? `Volume: ${nd.quantidade_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³<br>`
+            : "") +
+          (nd?.status ? `Status: ${STATUS_LABELS[nd.status] ?? nd.status}<br>` : "") +
           (v.imo ? `IMO ${v.imo}<br>` : "") +
           (v.sog != null ? `${v.sog.toFixed(1)} kn<br>` : "") +
           (v.nav_status ? `${v.nav_status}<br>` : "") +
@@ -492,7 +518,7 @@ export default function NaviosDieselPage() {
     };
 
     return { data, layout };
-  }, [resumoByPorto, showAis, portPolygons, aisPositions, aisAllRecent]);
+  }, [resumoByPorto, showAis, portPolygons, aisPositions, aisAllRecent, navios]);
 
   // Build monthly stacked bar chart: discharged (black) + pending (orange)
   const monthlyChart = useMemo(() => {
