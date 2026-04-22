@@ -180,13 +180,13 @@ export default function NaviosDieselRadarPage() {
     const layout: Partial<Layout> = {
       geo: {
         scope: "world",
-        // Mercator fills a rectangular canvas edge-to-edge — much better use
-        // of the dashboard's horizontal real-estate than natural earth's
-        // curved borders. Cropped south of Argentina (-55°) since nothing
-        // shipping-wise happens below Cape Horn.
-        projection: { type: "mercator" },
-        lataxis: { range: [-55, 72] },
-        lonaxis: { range: [-170, 170] },
+        // Mercator fills a rectangular canvas edge-to-edge. Centered on the
+        // mid-Atlantic (where BR-bound traffic lives) and zoomed in so the
+        // frame crops below Argentina and above the high Arctic. lataxis
+        // alone doesn't clip the basemap under scope:"world" — must scale +
+        // center the projection itself.
+        projection: { type: "mercator", scale: 1.35 },
+        center: { lat: 22, lon: -35 },
         showland: true,
         landcolor: "#f5f5f5",
         showocean: true,
@@ -197,16 +197,19 @@ export default function NaviosDieselRadarPage() {
         coastlinecolor: "#aaa",
       } as Layout["geo"],
       paper_bgcolor: "white",
-      margin: { t: 10, b: 10, l: 10, r: 130 },
+      margin: { t: 10, b: 10, l: 10, r: 10 },
       height: 480,
       // Fully static — no drag/pan/zoom. Hover tooltips still work.
       dragmode: false,
       showlegend: true,
       legend: {
-        orientation: "v",
-        x: 1.02, y: 1,
-        xanchor: "left",
-        yanchor: "top",
+        orientation: "h",
+        x: 0.5, y: 0.02,
+        xanchor: "center",
+        yanchor: "bottom",
+        bgcolor: "rgba(255,255,255,0.85)",
+        bordercolor: "rgba(180,180,180,0.4)",
+        borderwidth: 1,
         font: { family: "Arial", size: 11 },
       },
       hoverlabel: {
