@@ -66,6 +66,32 @@ def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
 
 
+def _parse_ais_time(value: str | None) -> str:
+    """
+    AISStream sends `time_utc` in Go's default time.Time format, e.g.
+    '2026-04-22 14:00:04.905714085 +0000 UTC', which Postgres rejects.
+    Convert to ISO 8601 with microsecond precision and UTC offset.
+    """
+    if not value:
+        return _now_iso()
+    try:
+        # strip trailing " UTC" and truncate ns → µs (Python caps at 6 digits)
+        cleaned = value.replace(" UTC", "").strip()
+        # split off timezone offset (last token)
+        parts = cleaned.rsplit(" ", 1)
+        dt_part = parts[0]
+        tz_part = parts[1] if len(parts) > 1 else "+0000"
+        # truncate sub-second to 6 digits
+        if "." in dt_part:
+            date_time, frac = dt_part.split(".", 1)
+            frac = frac[:6].ljust(6, "0")
+            dt_part = f"{date_time}.{frac}"
+        iso_like = f"{dt_part}{tz_part[:3]}:{tz_part[3:]}"  # +0000 → +00:00
+        return datetime.fromisoformat(iso_like).astimezone(timezone.utc).isoformat()
+    except Exception:
+        return _now_iso()
+
+
 def _load_polygons(sb) -> list[dict]:
     resp = sb.table("port_polygons").select("slug, name, polygon").execute()
     polys = []
@@ -138,7 +164,7 @@ async def _listen(polys: list[dict]) -> tuple[dict, dict]:
                 lon = pr.get("Longitude")
                 if lat is None or lon is None:
                     continue
-                ts = meta.get("time_utc") or _now_iso()
+                ts = _parse_ais_time(meta.get("time_utc"))
                 positions[mmsi] = {
                     "ts": ts,
                     "lat": float(lat),
