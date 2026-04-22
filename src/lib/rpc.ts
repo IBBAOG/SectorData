@@ -528,6 +528,22 @@ export async function rpcGetPortPolygons(
   }
 }
 
+export async function rpcGetAisPositionsAllRecent(
+  supabase: SupabaseClient,
+  hours: number = 24,
+): Promise<AisPositionRow[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_ais_positions_all_recent", {
+      p_hours: hours,
+    });
+    if (error) throw error;
+    return (data ?? []) as AisPositionRow[];
+  } catch (e) {
+    console.error("get_ais_positions_all_recent failed", e);
+    return [];
+  }
+}
+
 // ─── MODULE: Diesel & Gasoline Margins (/src/app/(dashboard)/diesel-gasoline-margins/page.tsx) ─
 
 export type DgMarginsRow = {

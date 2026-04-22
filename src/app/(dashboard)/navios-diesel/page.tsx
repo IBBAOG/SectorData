@@ -15,6 +15,7 @@ import {
   rpcGetNdVolumeMensalDescarga,
   rpcGetNdNaviosDescarregados,
   rpcGetAisPositionsLatest,
+  rpcGetAisPositionsAllRecent,
   rpcGetAisArrivalsOpen,
   rpcGetPortPolygons,
   type NavioDieselRow,
@@ -131,6 +132,7 @@ export default function NaviosDieselPage() {
   // AIS live-tracking layer
   const [showAis, setShowAis] = useState(false);
   const [aisPositions, setAisPositions] = useState<AisPositionRow[]>([]);
+  const [aisAllRecent, setAisAllRecent] = useState<AisPositionRow[]>([]);
   const [portPolygons, setPortPolygons] = useState<PortPolygonRow[]>([]);
   const [arrivalsOpen, setArrivalsOpen] = useState<PortArrivalRow[]>([]);
 
@@ -270,23 +272,27 @@ export default function NaviosDieselPage() {
     if (!supabase) return;
     if (!showAis) {
       setAisPositions([]);
+      setAisAllRecent([]);
       setArrivalsOpen([]);
       return;
     }
     let cancelled = false;
     (async () => {
-      const [polys, positions, arrivals] = await Promise.all([
-        portPolygons.length ? Promise.resolve(portPolygons) : rpcGetPortPolygons(supabase),
+      const [polys, positions, allRecent, arrivals] = await Promise.all([
+        rpcGetPortPolygons(supabase),
         selectedColeta ? rpcGetAisPositionsLatest(supabase, selectedColeta) : Promise.resolve([]),
+        rpcGetAisPositionsAllRecent(supabase, 24),
         rpcGetAisArrivalsOpen(supabase),
       ]);
       if (cancelled) return;
-      if (!portPolygons.length) setPortPolygons(polys);
+      console.log("[ais] polygons:", polys.length, "monitored positions:", positions.length, "all recent:", allRecent.length, "open arrivals:", arrivals.length);
+      setPortPolygons(polys);
       setAisPositions(positions);
+      setAisAllRecent(allRecent);
       setArrivalsOpen(arrivals);
     })();
     return () => { cancelled = true; };
-  }, [supabase, showAis, selectedColeta, portPolygons]);
+  }, [supabase, showAis, selectedColeta]);
 
   // Build map traces
   const mapChart = useMemo(() => {
@@ -345,6 +351,10 @@ export default function NaviosDieselPage() {
 
     // AIS overlay: port polygons + live vessel positions
     if (showAis) {
+      // Polygon outlines (may be tiny at this zoom — centroid markers below make them visible)
+      const centroidLats: number[] = [];
+      const centroidLons: number[] = [];
+      const centroidText: string[] = [];
       for (const p of portPolygons) {
         const ring = p.polygon?.coordinates?.[0];
         if (!ring || ring.length < 3) continue;
@@ -356,14 +366,70 @@ export default function NaviosDieselPage() {
           lat: polyLats,
           lon: polyLons,
           fill: "toself",
-          fillcolor: "rgba(255,80,0,0.10)",
-          line: { color: ORANGE, width: 1.5 },
+          fillcolor: "rgba(255,80,0,0.25)",
+          line: { color: ORANGE, width: 2.5 },
+          hoverinfo: "skip",
+          showlegend: false,
+        } as unknown as PlotData);
+        const cLat = polyLats.reduce((a, b) => a + b, 0) / polyLats.length;
+        const cLon = polyLons.reduce((a, b) => a + b, 0) / polyLons.length;
+        centroidLats.push(cLat);
+        centroidLons.push(cLon);
+        centroidText.push(`<b>${p.name}</b><br>Monitored polygon`);
+      }
+      if (centroidLats.length) {
+        data.push({
+          type: "scattergeo",
+          mode: "markers",
+          lat: centroidLats,
+          lon: centroidLons,
+          text: centroidText,
           hoverinfo: "text",
-          text: Array(polyLats.length).fill(`<b>${p.name}</b><br>Port polygon`),
+          marker: {
+            size: 16,
+            symbol: "diamond-open",
+            color: ORANGE,
+            line: { color: ORANGE, width: 2 },
+          },
           showlegend: false,
         } as unknown as PlotData);
       }
 
+      // Background layer: every vessel AISStream has heard from in the last 24 h
+      const monitoredKey = new Set<string>();
+      for (const v of aisPositions) {
+        monitoredKey.add(v.imo ?? v.mmsi ?? "");
+      }
+      const bgLats: number[] = [];
+      const bgLons: number[] = [];
+      const bgText: string[] = [];
+      for (const v of aisAllRecent) {
+        if (v.lat == null || v.lon == null) continue;
+        if (monitoredKey.has(v.imo ?? v.mmsi ?? "")) continue;
+        bgLats.push(v.lat);
+        bgLons.push(v.lon);
+        bgText.push(
+          `<b>${v.navio}</b><br>` +
+          (v.imo ? `IMO ${v.imo}<br>` : `MMSI ${v.mmsi ?? "—"}<br>`) +
+          (v.sog != null ? `${v.sog.toFixed(1)} kn<br>` : "") +
+          (v.nav_status ? `${v.nav_status}<br>` : "") +
+          (v.inside_port ? `Inside: ${v.inside_port}` : "Open water")
+        );
+      }
+      if (bgLats.length) {
+        data.push({
+          type: "scattergeo",
+          mode: "markers",
+          lat: bgLats,
+          lon: bgLons,
+          text: bgText,
+          hoverinfo: "text",
+          marker: { size: 5, color: "#9aa7b5", opacity: 0.7, line: { color: "#5a6670", width: 0.5 } },
+          showlegend: false,
+        } as unknown as PlotData);
+      }
+
+      // Foreground layer: vessels matched to the current navios_diesel snapshot
       const inLats: number[] = [];
       const inLons: number[] = [];
       const inText: string[] = [];
@@ -373,7 +439,7 @@ export default function NaviosDieselPage() {
       for (const v of aisPositions) {
         if (v.lat == null || v.lon == null) continue;
         const hover =
-          `<b>${v.navio}</b><br>` +
+          `<b>${v.navio}</b> (monitored)<br>` +
           (v.imo ? `IMO ${v.imo}<br>` : "") +
           (v.sog != null ? `${v.sog.toFixed(1)} kn<br>` : "") +
           (v.nav_status ? `${v.nav_status}<br>` : "") +
@@ -392,7 +458,7 @@ export default function NaviosDieselPage() {
           lon: outLons,
           text: outText,
           hoverinfo: "text",
-          marker: { size: 7, color: "#2196f3", opacity: 0.85, line: { color: "#0b4a84", width: 0.8 } },
+          marker: { size: 9, color: "#2196f3", opacity: 0.9, line: { color: "#0b4a84", width: 1 } },
           showlegend: false,
         } as unknown as PlotData);
       }
@@ -404,7 +470,7 @@ export default function NaviosDieselPage() {
           lon: inLons,
           text: inText,
           hoverinfo: "text",
-          marker: { size: 10, color: "#2eb85c", opacity: 0.95, line: { color: "#0f4d25", width: 1 } },
+          marker: { size: 12, color: "#2eb85c", opacity: 0.95, line: { color: "#0f4d25", width: 1.2 } },
           showlegend: false,
         } as unknown as PlotData);
       }
@@ -436,7 +502,7 @@ export default function NaviosDieselPage() {
     };
 
     return { data, layout };
-  }, [resumoByPorto, showAis, portPolygons, aisPositions]);
+  }, [resumoByPorto, showAis, portPolygons, aisPositions, aisAllRecent]);
 
   // Build monthly stacked bar chart: discharged (black) + pending (orange)
   const monthlyChart = useMemo(() => {
@@ -729,6 +795,14 @@ export default function NaviosDieselPage() {
                 <div style={{ marginTop: 4, fontSize: 10, color: "#888", lineHeight: 1.3 }}>
                   Port polygons + live vessel positions (AISStream.io).
                 </div>
+                {showAis && (
+                  <div style={{ marginTop: 6, fontSize: 10, color: "#555", lineHeight: 1.4, backgroundColor: "#f8f8f8", padding: "4px 6px", borderRadius: 4 }}>
+                    <div>Polygons: <b>{portPolygons.length}</b></div>
+                    <div>Monitored on map: <b>{aisPositions.length}</b></div>
+                    <div>All AIS (24h): <b>{aisAllRecent.length}</b></div>
+                    <div>Inside ports: <b>{arrivalsOpen.length}</b></div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
