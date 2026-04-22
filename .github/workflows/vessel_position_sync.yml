@@ -1,0 +1,30 @@
+name: Vessel Position Sync (VesselFinder)
+
+on:
+  workflow_run:
+    workflows: ["Vessel IMO Lookup"]
+    types: [completed]
+  schedule:
+    # 10 minutes after vessel_lookup cron → IMO/MMSI should be populated
+    - cron: '10 10,16,22,4 * * *'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Sync vessel positions from VesselFinder
+        run: python vessel_position_sync.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

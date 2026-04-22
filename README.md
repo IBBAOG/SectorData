@@ -29,6 +29,7 @@ Real-time data visualization, automated data pipelines, Excel export, and role-b
   - [Supabase Migration Deploy](#4-supabase-migration-deploy)
   - [AIS Vessel Tracking Sync](#5-ais-vessel-tracking-sync)
   - [Vessel IMO Lookup](#6-vessel-imo-lookup)
+  - [Vessel Position Sync (VesselFinder)](#7-vessel-position-sync-vesselfinder)
 - [Authentication & Roles](#authentication--roles)
 - [Reusable Components](#reusable-components)
 - [Supabase RPC Reference](#supabase-rpc-reference)
@@ -687,6 +688,30 @@ All pipelines support manual triggering via `workflow_dispatch` in addition to t
 5. Rate-limits to one request every 2 s (`VESSEL_LOOKUP_DELAY`) to stay polite.
 
 Once this runs, §5's AIS sync can subscribe with an MMSI filter instead of bbox-roulette.
+
+### 7. Vessel Position Sync (VesselFinder)
+
+| | |
+|---|---|
+| **Workflow** | `.github/workflows/vessel_position_sync.yml` |
+| **Trigger** | `workflow_run` after **Vessel IMO Lookup** completes, plus cron backup at `10 10,16,22,4 * * *` UTC |
+| **Script** | `vessel_position_sync.py` |
+| **Target tables** | `vessel_positions`, `port_arrivals` |
+
+**Problem it solves:** AISStream.io's free tier has sparse open-ocean coverage — vessels mid-Atlantic routinely produce zero positions over a 3-minute listen window. For arrival-tracking at the 5 monitored ports, we don't actually need continuous lat/lon; we need *"has this ship reached a Brazilian port yet, and where is it next headed?"*
+
+**Process:**
+1. For every monitored MMSI, GET `https://www.vesselfinder.com/api/pub/vi2/{mmsi}` — returns the vessel's last port call (name, UN/LOCODE, ATA/ATD timestamp) and next destination (UN/LOCODE + ETA).
+2. Classify each vessel:
+   - **`in_port`** — last call is ATA at one of the 5 monitored ports → place marker at that port's centroid, open a `port_arrivals` row if not already.
+   - **`en_route`** — next destination LOCODE maps to a monitored port → place marker at the destination centroid with ETA in the tooltip.
+   - **`table_fallback`** — VF has nothing relevant but the Expected Vessels table has the vessel at a monitored port → place marker there with "Per line-up" note, enriched with whatever VF bits are available (AIS last port, next dest).
+3. Insert a `vessel_positions` row for each placed vessel. `get_ais_positions_latest` RPC picks up the most recent row per vessel, so the frontend map reflects the current state.
+4. Reconcile `port_arrivals`: open new ATA entries, close open ones where VF has reported an ATD.
+
+**Why not exact lat/lon?** VF's live position stream requires an authenticated subscription. The public port-call API gives us everything we need for *import* tracking (the dashboard's actual job) without touching private endpoints or paid AIS tiers.
+
+**LOCODE handling:** VF returns destinations in multiple shapes — `BRITQ001` (LOCODE + berth), `BR ITQ` (with spaces), `BRITQ>BRPNG` (route segments), or free text like `PARANAGUABRAZIL`. The parser normalises to uppercase-alphanumeric and matches against both LOCODE prefixes and port-name tokens.
 
 **Cabotage filtering:** the dashboard only shows *import* diesel volumes, so vessels identified as domestic coastal shipping are excluded:
 
