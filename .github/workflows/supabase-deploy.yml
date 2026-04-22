@@ -22,8 +22,30 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
-      - name: Mark baseline migration as applied
-        run: supabase migration repair 20260327174919 --status applied
+      - name: Mark all pre-existing migrations as applied
+        # The baseline plus every migration added before the ais_tracking feature
+        # was applied manually via the SQL Editor (the old workflow was broken
+        # and re-pushed the same migrations). Repairing them here ensures
+        # `supabase db push` only applies NEW migrations going forward.
+        run: |
+          for v in \
+            20260327174919 \
+            20260328200000 \
+            20260329000000 \
+            20260331000000 \
+            20260331000001 \
+            20260401000000 \
+            20260401000001 \
+            20260402000000 \
+            20260415000000 \
+            20260415000001 \
+            20260415000002 \
+            20260415000003 \
+            20260415000004 \
+            20260416000000 \
+            20260416000001; do
+            supabase migration repair "$v" --status applied || true
+          done
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
