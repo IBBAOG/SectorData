@@ -179,14 +179,12 @@ export default function NaviosDieselRadarPage() {
 
     const layout: Partial<Layout> = {
       geo: {
-        scope: "world",
-        // Mercator fills a rectangular canvas edge-to-edge. Centered on the
-        // mid-Atlantic (where BR-bound traffic lives) and zoomed in so the
-        // frame crops below Argentina and above the high Arctic. lataxis
-        // alone doesn't clip the basemap under scope:"world" — must scale +
-        // center the projection itself.
-        projection: { type: "mercator", scale: 1.35 },
-        center: { lat: 22, lon: -35 },
+        // IMPORTANT: no `scope: "world"` — when scope is set, Plotly ignores
+        // lataxis/lonaxis.range and always draws the full globe including
+        // Antarctica. Leaving scope out lets the range crop the basemap.
+        projection: { type: "mercator" },
+        lataxis: { range: [-55, 75] },
+        lonaxis: { range: [-180, 180] },
         showland: true,
         landcolor: "#f5f5f5",
         showocean: true,
