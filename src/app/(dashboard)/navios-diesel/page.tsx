@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Layout, PlotData } from "plotly.js";
 
 import NavBar from "../../../components/NavBar";
+import LineUpTabs from "../../../components/LineUpTabs";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import PlotlyChart from "../../../components/PlotlyChart";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
@@ -803,6 +804,7 @@ export default function NaviosDieselPage() {
                     </span>
                   )}
                 </div>
+                <LineUpTabs active="line-up" />
               </div>
 
               <hr style={{ borderTop: "2px solid #e0e0e0", marginBottom: 12 }} />

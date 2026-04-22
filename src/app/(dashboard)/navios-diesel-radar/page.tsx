@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import NavBar from "../../../components/NavBar";
+import LineUpTabs from "../../../components/LineUpTabs";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import {
@@ -76,7 +77,8 @@ function confidenceColor(score: number | null): string {
 }
 
 export default function NaviosDieselRadarPage() {
-  const { visible, loading: visLoading } = useModuleVisibilityGuard("navios-diesel-radar");
+  // Shares module visibility with the main line-up — both pages belong to one module
+  const { visible, loading: visLoading } = useModuleVisibilityGuard("navios-diesel");
   const supabase = getSupabaseClient();
 
   const [candidates, setCandidates] = useState<ImportCandidateRow[]>([]);
@@ -198,10 +200,11 @@ export default function NaviosDieselRadarPage() {
           <div className="col-10">
             <div id="page-content">
               <div className="mb-2">
-                <div className="page-header-title">Diesel Imports Radar</div>
+                <div className="page-header-title">Diesel Imports Line-Up</div>
                 <div className="page-header-sub">
                   Tankers worldwide signalling a Brazilian port via AIS — 10-30 days before port authorities publish the scheduled line-up.
                 </div>
+                <LineUpTabs active="radar" />
               </div>
 
               <hr style={{ borderTop: "2px solid #e0e0e0", marginBottom: 12 }} />
