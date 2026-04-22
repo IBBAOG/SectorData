@@ -399,56 +399,39 @@ export default function NaviosDieselPage() {
         } as unknown as PlotData);
       }
 
-      // Background layer: every vessel AISStream has heard from in the last 24 h
-      const monitoredKey = new Set<string>();
+      // Merge server-matched positions with any client-side matches from the
+      // 24h AIS capture that also correspond to a row in the Expected Vessels
+      // table. Only markers that map to an actual table row are rendered —
+      // random ships AISStream happened to catch are skipped.
+      const seenKey = new Set<string>();
+      const matchedPositions: Array<{ pos: AisPositionRow; nd: NavioDieselRow }> = [];
       for (const v of aisPositions) {
-        monitoredKey.add(v.imo ?? v.mmsi ?? "");
+        if (v.lat == null || v.lon == null) continue;
+        const nd = lookupNavio(v);
+        if (!nd) continue;
+        const k = `${v.imo ?? ""}|${v.mmsi ?? ""}|${nd.navio}`;
+        if (seenKey.has(k)) continue;
+        seenKey.add(k);
+        matchedPositions.push({ pos: v, nd });
       }
-      const bgLats: number[] = [];
-      const bgLons: number[] = [];
-      const bgText: string[] = [];
       for (const v of aisAllRecent) {
         if (v.lat == null || v.lon == null) continue;
-        if (monitoredKey.has(v.imo ?? v.mmsi ?? "")) continue;
         const nd = lookupNavio(v);
-        bgLats.push(v.lat);
-        bgLons.push(v.lon);
-        bgText.push(
-          `<b>${nd?.navio ?? v.navio}</b><br>` +
-          (nd ? `Port: ${nd.porto.replace("Porto de ", "")}<br>` : "") +
-          (nd?.quantidade_convertida != null
-            ? `Volume: ${nd.quantidade_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³<br>`
-            : "") +
-          (nd?.status ? `Status: ${STATUS_LABELS[nd.status] ?? nd.status}<br>` : "") +
-          (v.imo ? `IMO ${v.imo}<br>` : v.mmsi ? `MMSI ${v.mmsi}<br>` : "") +
-          (v.sog != null ? `${v.sog.toFixed(1)} kn<br>` : "") +
-          (v.nav_status ? `${v.nav_status}<br>` : "") +
-          (v.inside_port ? `Inside: ${v.inside_port}` : "Open water")
-        );
-      }
-      if (bgLats.length) {
-        data.push({
-          type: "scattergeo",
-          mode: "markers",
-          lat: bgLats,
-          lon: bgLons,
-          text: bgText,
-          hoverinfo: "text",
-          marker: { size: 5, color: "#9aa7b5", opacity: 0.7, line: { color: "#5a6670", width: 0.5 } },
-          showlegend: false,
-        } as unknown as PlotData);
+        if (!nd) continue;
+        const k = `${v.imo ?? ""}|${v.mmsi ?? ""}|${nd.navio}`;
+        if (seenKey.has(k)) continue;
+        seenKey.add(k);
+        matchedPositions.push({ pos: v, nd });
       }
 
-      // Foreground layer: vessels matched to the current navios_diesel snapshot
+      // Split into "inside monitored polygon" vs "open water" markers
       const inLats: number[] = [];
       const inLons: number[] = [];
       const inText: string[] = [];
       const outLats: number[] = [];
       const outLons: number[] = [];
       const outText: string[] = [];
-      for (const v of aisPositions) {
-        if (v.lat == null || v.lon == null) continue;
-        const nd = lookupNavio(v);
+      for (const { pos: v, nd } of matchedPositions) {
         const hover =
           `<b>${nd?.navio ?? v.navio}</b><br>` +
           (nd ? `Port: ${nd.porto.replace("Porto de ", "")}<br>` : "") +
