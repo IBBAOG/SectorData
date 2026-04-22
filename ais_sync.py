@@ -40,7 +40,7 @@ if not (SUPABASE_URL and SUPABASE_KEY and AISSTREAM_KEY):
 # Janela de escuta no WebSocket por execução (segundos).
 # Com `FiltersShipMMSI` ativo o stream vem pré-filtrado, então 60s é suficiente.
 # Sem filtro (primeira run antes do vessel_lookup), precisamos de janela maior.
-LISTEN_SECONDS_FILTERED = int(os.environ.get("AIS_LISTEN_SECONDS_FILTERED", "60"))
+LISTEN_SECONDS_FILTERED = int(os.environ.get("AIS_LISTEN_SECONDS_FILTERED", "180"))
 LISTEN_SECONDS_FALLBACK = int(os.environ.get("AIS_LISTEN_SECONDS_FALLBACK", "150"))
 
 # Bounding boxes cobrindo a costa brasileira onde os 5 portos monitorados estão.
@@ -153,16 +153,22 @@ async def _listen(polys: list[dict], mmsi_filter: list[str]) -> tuple[dict, dict
 
     sub: dict = {
         "APIKey": AISSTREAM_KEY,
-        "BoundingBoxes": BOUNDING_BOXES,
         "FilterMessageTypes": ["PositionReport", "ShipStaticData"],
     }
     if mmsi_filter:
+        # AISStream requires BoundingBoxes; with MMSI filter we go global so
+        # we catch vessels regardless of where they currently are (a ship
+        # coming from the Gulf of Mexico is still relevant until it docks).
+        sub["BoundingBoxes"] = [[[-90.0, -180.0], [90.0, 180.0]]]
         sub["FiltersShipMMSI"] = mmsi_filter
         listen_seconds = LISTEN_SECONDS_FILTERED
-        print(f"[ais] conectando em {AISSTREAM_URL} com filtro de {len(mmsi_filter)} MMSI(s), {listen_seconds}s")
+        print(f"[ais] conectando em {AISSTREAM_URL} global + filtro de {len(mmsi_filter)} MMSI(s), {listen_seconds}s")
     else:
+        # No MMSIs known yet — fall back to Brazilian-coast bboxes to bootstrap
+        # the registry.
+        sub["BoundingBoxes"] = BOUNDING_BOXES
         listen_seconds = LISTEN_SECONDS_FALLBACK
-        print(f"[ais] conectando em {AISSTREAM_URL} sem filtro MMSI (bbox-only), {listen_seconds}s")
+        print(f"[ais] conectando em {AISSTREAM_URL} sem filtro MMSI (bbox BR-only), {listen_seconds}s")
 
     async with websockets.connect(AISSTREAM_URL, ping_interval=30) as ws:
         await ws.send(json.dumps(sub))
