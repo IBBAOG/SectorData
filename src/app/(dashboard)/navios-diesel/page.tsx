@@ -340,6 +340,7 @@ export default function NaviosDieselPage() {
         lon: lons,
         text: texts,
         hoverinfo: "text",
+        showlegend: false,
         marker: {
           size: sizes,
           color: colors,
