@@ -799,24 +799,36 @@ export default function NaviosDieselPage() {
                 </div>
                 {showAis && (() => {
                   const normName = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
+                  const active = navios.filter(n => n.status !== "ERRO_COLETA" && n.status !== "Despachado");
+                  const tableSize = active.length;
+                  const resolved = active.filter(n => n.imo || n.mmsi).length;
+                  const unresolvedNames = active.filter(n => !n.imo && !n.mmsi).map(n => n.navio);
                   const aisIds = new Set<string>();
                   for (const p of [...aisPositions, ...aisAllRecent]) {
                     if (p.imo) aisIds.add(`imo:${p.imo}`);
                     if (p.mmsi) aisIds.add(`mmsi:${p.mmsi}`);
                     if (p.navio) aisIds.add(`name:${normName(p.navio)}`);
                   }
-                  const matched = navios.filter(n => n.status !== "ERRO_COLETA" && (
+                  const withAis = active.filter(n =>
                     (n.imo && aisIds.has(`imo:${n.imo}`)) ||
                     (n.mmsi && aisIds.has(`mmsi:${n.mmsi}`)) ||
                     aisIds.has(`name:${normName(n.navio)}`)
-                  )).length;
-                  const tableSize = navios.filter(n => n.status !== "ERRO_COLETA").length;
+                  ).length;
+                  const color = (n: number) => n > 0 ? "#2eb85c" : "#d33";
                   return (
-                    <div style={{ marginTop: 6, fontSize: 10, color: "#555", lineHeight: 1.4, backgroundColor: "#f8f8f8", padding: "4px 6px", borderRadius: 4 }}>
+                    <div style={{ marginTop: 6, fontSize: 10, color: "#555", lineHeight: 1.4, backgroundColor: "#f8f8f8", padding: "6px 8px", borderRadius: 4 }}>
                       <div>Table vessels: <b>{tableSize}</b></div>
-                      <div>AIS vessels (24h): <b>{aisAllRecent.length}</b></div>
-                      <div>Matched on map: <b style={{ color: matched > 0 ? "#2eb85c" : "#d33" }}>{matched} / {tableSize}</b></div>
+                      <div>IMO resolved: <b style={{ color: color(resolved) }}>{resolved} / {tableSize}</b></div>
+                      <div>With AIS position: <b style={{ color: color(withAis) }}>{withAis} / {tableSize}</b></div>
                       <div>Inside polygons: <b>{arrivalsOpen.length}</b></div>
+                      {unresolvedNames.length > 0 && (
+                        <div style={{ marginTop: 4, paddingTop: 4, borderTop: "1px dashed #ccc", color: "#777" }}>
+                          <div style={{ fontWeight: 700, marginBottom: 2 }}>Pending IMO lookup:</div>
+                          {unresolvedNames.map(n => (
+                            <div key={n} style={{ fontSize: 9, lineHeight: 1.3 }}>• {n}</div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })()}

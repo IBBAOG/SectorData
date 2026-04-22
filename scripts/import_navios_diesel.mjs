@@ -90,6 +90,10 @@ for (const line of lines) {
   const collectedAt = parseISOish(cols[0]);
   if (!collectedAt) { skipped++; continue; }
 
+  // cols[13] (IMO) is optional — only Suape scraping supplies it today
+  const imoRaw = (cols[13] ?? "").trim();
+  const imo = /^\d{7}$/.test(imoRaw) ? imoRaw : null;
+
   records.push({
     collected_at:          collectedAt,
     porto:                 cols[1]?.trim() || "",
@@ -104,6 +108,7 @@ for (const line of lines) {
     fim_descarga:          parseBRDate(cols[10]),
     origem:                cols[11]?.trim() || null,
     berco:                 cols[12]?.trim() || null,
+    imo:                   imo,
   });
 }
 

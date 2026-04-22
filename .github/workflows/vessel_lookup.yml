@@ -1,0 +1,32 @@
+name: Vessel IMO Lookup
+
+on:
+  workflow_run:
+    workflows: ["Monitoramento Navios Diesel"]
+    types: [completed]
+  schedule:
+    # Same cadence as the scraping pipeline, 5 minutes later to catch anything
+    # the workflow_run trigger misses
+    - cron: '5 10,16,22,4 * * *'
+  workflow_dispatch:
+
+jobs:
+  lookup:
+    # Only run if the upstream scraping job succeeded (workflow_run case)
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Resolve vessel IMO/MMSI
+        run: python vessel_lookup.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

@@ -37,8 +37,11 @@ if not (SUPABASE_URL and SUPABASE_KEY and AISSTREAM_KEY):
     print("[erro] faltam env vars: SUPABASE_URL, SUPABASE_SERVICE_KEY, AISSTREAM_API_KEY", file=sys.stderr)
     sys.exit(1)
 
-# Janela de escuta no WebSocket por execução (segundos)
-LISTEN_SECONDS = int(os.environ.get("AIS_LISTEN_SECONDS", "150"))
+# Janela de escuta no WebSocket por execução (segundos).
+# Com `FiltersShipMMSI` ativo o stream vem pré-filtrado, então 60s é suficiente.
+# Sem filtro (primeira run antes do vessel_lookup), precisamos de janela maior.
+LISTEN_SECONDS_FILTERED = int(os.environ.get("AIS_LISTEN_SECONDS_FILTERED", "60"))
+LISTEN_SECONDS_FALLBACK = int(os.environ.get("AIS_LISTEN_SECONDS_FALLBACK", "150"))
 
 # Bounding boxes cobrindo a costa brasileira onde os 5 portos monitorados estão.
 # AISStream.io espera pares [[lat_min, lon_min], [lat_max, lon_max]].
@@ -92,6 +95,28 @@ def _parse_ais_time(value: str | None) -> str:
         return _now_iso()
 
 
+def _load_monitored_mmsis(sb) -> list[str]:
+    """
+    Returns the list of MMSIs from navios_diesel rows that are still active in
+    the current line-up (not despachado / erro). Used to subscribe to
+    AISStream with a server-side filter.
+    """
+    resp = (
+        sb.table("navios_diesel")
+        .select("mmsi")
+        .not_.is_("mmsi", None)
+        .neq("status", "Despachado")
+        .neq("status", "ERRO_COLETA")
+        .execute()
+    )
+    mmsis: set[str] = set()
+    for row in resp.data or []:
+        m = (row.get("mmsi") or "").strip()
+        if m and m.isdigit():
+            mmsis.add(m)
+    return sorted(mmsis)
+
+
 def _load_polygons(sb) -> list[dict]:
     resp = sb.table("port_polygons").select("slug, name, polygon").execute()
     polys = []
@@ -113,29 +138,37 @@ def _point_in_any(lat: float, lon: float, polys: list[dict]) -> str | None:
 
 
 # ─── AIS listener ────────────────────────────────────────────────────────────
-async def _listen(polys: list[dict]) -> tuple[dict, dict]:
+async def _listen(polys: list[dict], mmsi_filter: list[str]) -> tuple[dict, dict]:
     """
     Returns (positions_by_mmsi, statics_by_mmsi).
 
     positions_by_mmsi[mmsi] = {ts, lat, lon, sog, cog, nav_status, inside_port}
     statics_by_mmsi[mmsi]   = {imo, name, ship_type}
+
+    If `mmsi_filter` is non-empty, AISStream delivers only those vessels and
+    the listen window is short. Otherwise fall back to the full-bbox listen.
     """
     positions: dict[str, dict] = {}
     statics: dict[str, dict] = {}
 
-    sub = {
+    sub: dict = {
         "APIKey": AISSTREAM_KEY,
         "BoundingBoxes": BOUNDING_BOXES,
         "FilterMessageTypes": ["PositionReport", "ShipStaticData"],
     }
-
-    print(f"[ais] conectando em {AISSTREAM_URL} por {LISTEN_SECONDS}s...")
+    if mmsi_filter:
+        sub["FiltersShipMMSI"] = mmsi_filter
+        listen_seconds = LISTEN_SECONDS_FILTERED
+        print(f"[ais] conectando em {AISSTREAM_URL} com filtro de {len(mmsi_filter)} MMSI(s), {listen_seconds}s")
+    else:
+        listen_seconds = LISTEN_SECONDS_FALLBACK
+        print(f"[ais] conectando em {AISSTREAM_URL} sem filtro MMSI (bbox-only), {listen_seconds}s")
 
     async with websockets.connect(AISSTREAM_URL, ping_interval=30) as ws:
         await ws.send(json.dumps(sub))
 
         msg_count = 0
-        deadline = asyncio.get_event_loop().time() + LISTEN_SECONDS
+        deadline = asyncio.get_event_loop().time() + listen_seconds
 
         while True:
             remaining = deadline - asyncio.get_event_loop().time()
@@ -371,7 +404,10 @@ async def _run():
     polys = _load_polygons(sb)
     print(f"[ais] {len(polys)} polígono(s) carregado(s): {[p['slug'] for p in polys]}")
 
-    positions, statics = await _listen(polys)
+    monitored_mmsis = _load_monitored_mmsis(sb)
+    print(f"[ais] {len(monitored_mmsis)} MMSI(s) monitorado(s) conhecido(s)")
+
+    positions, statics = await _listen(polys, monitored_mmsis)
 
     n_reg = _persist_registry(sb, positions, statics)
     n_pos = _persist_positions(sb, positions, statics)

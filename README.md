@@ -28,6 +28,7 @@ Real-time data visualization, automated data pipelines, Excel export, and role-b
   - [D&G Margins Upload](#3-dg-margins-upload)
   - [Supabase Migration Deploy](#4-supabase-migration-deploy)
   - [AIS Vessel Tracking Sync](#5-ais-vessel-tracking-sync)
+  - [Vessel IMO Lookup](#6-vessel-imo-lookup)
 - [Authentication & Roles](#authentication--roles)
 - [Reusable Components](#reusable-components)
 - [Supabase RPC Reference](#supabase-rpc-reference)
@@ -654,17 +655,38 @@ All pipelines support manual triggering via `workflow_dispatch` in addition to t
 | **Workflow** | `.github/workflows/ais_sync.yml` |
 | **Schedule** | Every 6 hours — 10:15, 16:15, 22:15, 04:15 UTC (15 min after each port scraping run) |
 | **Script** | `ais_sync.py` |
-| **Target tables** | `vessel_registry`, `vessel_positions`, `port_arrivals` (also enriches `navios_diesel.imo` / `navios_diesel.mmsi`) |
+| **Target tables** | `vessel_registry`, `vessel_positions`, `port_arrivals` |
 
 **Process:**
-1. Connects to [AISStream.io](https://aisstream.io) over WebSocket (free API key) and subscribes to bounding boxes covering the Brazilian coast around the 5 monitored ports.
-2. Listens for `LISTEN_SECONDS` (default 150 s), buffering the latest `PositionReport` and `ShipStaticData` per MMSI.
-3. Upserts observed `(IMO, MMSI, name, ship_type)` into `vessel_registry` — this is what makes the **name → IMO** cross-reference work when the port-scraping pipeline doesn't know the IMO of a vessel.
+1. Reads the list of known MMSIs from `navios_diesel` (populated by §6).
+2. Connects to [AISStream.io](https://aisstream.io) over WebSocket with `FiltersShipMMSI` = that list, so the server streams **only** the monitored vessels. Listen window `AIS_LISTEN_SECONDS_FILTERED` (default 60 s). If the MMSI list is empty, falls back to bbox-only listening with `AIS_LISTEN_SECONDS_FALLBACK` (default 150 s).
+3. Upserts observed `(IMO, MMSI, name, ship_type)` into `vessel_registry`.
 4. Inserts one position row per observed vessel into `vessel_positions`, pre-computing `inside_port` via shapely point-in-polygon against `port_polygons`.
-5. For any `navios_diesel` row with `imo IS NULL`, backfills `imo`/`mmsi` when the vessel's normalised name matches a registry entry.
-6. Opens a new `port_arrivals` row whenever a monitored vessel's latest position falls inside a polygon and no arrival is currently open. Closes stale arrivals when the latest position has been outside the polygon for ≥ 2 h.
+5. Opens a new `port_arrivals` row whenever a monitored vessel's latest position falls inside a polygon and no arrival is currently open. Closes stale arrivals when the latest position has been outside the polygon for ≥ 2 h.
 
 **Required secret:** `AISSTREAM_API_KEY` (in addition to the usual `SUPABASE_URL` / `SUPABASE_SERVICE_KEY`).
+
+### 6. Vessel IMO Lookup
+
+| | |
+|---|---|
+| **Workflow** | `.github/workflows/vessel_lookup.yml` |
+| **Trigger** | `workflow_run` after **Monitoramento Navios Diesel** completes, plus cron backup at `5 10,16,22,4 * * *` UTC |
+| **Script** | `vessel_lookup.py` |
+| **Target columns** | `navios_diesel.imo`, `navios_diesel.mmsi`, `vessel_registry` |
+
+**Problem it solves:** the port-scraping pipeline only yields vessel **names**. AIS protocol is keyed by MMSI (and optionally IMO), and AISStream.io's passive listen window is too narrow to reliably capture `ShipStaticData` for the handful of monitored vessels. Without a resolution step, the AIS layer matches zero vessels from the line-up.
+
+**Process:**
+1. Selects `navios_diesel` rows where `imo IS NULL` and status is still active (`<> 'Despachado'`, `<> 'ERRO_COLETA'`).
+2. For each unique vessel name, queries public maritime databases in order:
+   - [VesselFinder](https://www.vesselfinder.com) free search (primary).
+   - [MarineTraffic](https://www.marinetraffic.com) async JSON endpoint (fallback).
+3. Only accepts an exact normalised-name match (`UPPER(REGEXP_REPLACE(name, '[^A-Za-z0-9]', ''))`); partial / ambiguous results are skipped to avoid gluing the wrong IMO onto a vessel.
+4. Writes the resolved `imo` / `mmsi` back to `navios_diesel` (for all rows with that name and `imo IS NULL`) and upserts `vessel_registry`.
+5. Rate-limits to one request every 2 s (`VESSEL_LOOKUP_DELAY`) to stay polite.
+
+Once this runs, §5's AIS sync can subscribe with an MMSI filter instead of bbox-roulette.
 
 ---
 

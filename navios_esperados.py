@@ -36,7 +36,7 @@ COLS_PADRAO = [
     "Porto", "Status", "Navio", "Carga",
     "Quantidade Original", "Unidade Origem", "Quantidade (m³)",
     "Chegada", "Atracação", "Desatracação",
-    "Origem", "Terminal",
+    "Origem", "Terminal", "IMO",
 ]
 
 # Status a serem excluídos da tabela final
