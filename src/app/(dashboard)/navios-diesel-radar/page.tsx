@@ -198,6 +198,8 @@ export default function NaviosDieselRadarPage() {
       paper_bgcolor: "white",
       margin: { t: 10, b: 10, l: 10, r: 10 },
       height: 620,
+      // Fully static — no drag/pan/zoom. Hover tooltips still work.
+      dragmode: false,
       showlegend: true,
       legend: {
         orientation: "h",
@@ -315,7 +317,14 @@ export default function NaviosDieselRadarPage() {
                     <PlotlyChart
                       data={worldMap.data}
                       layout={worldMap.layout}
-                      config={{ displayModeBar: false, scrollZoom: false }}
+                      config={{
+                        displayModeBar: false,
+                        scrollZoom: false,
+                        doubleClick: false,
+                        displaylogo: false,
+                        showTips: false,
+                        responsive: false,
+                      }}
                       style={{ width: "100%", height: 620 }}
                     />
                   </div>
