@@ -1,0 +1,29 @@
+name: AIS Diesel Import Radar
+
+on:
+  schedule:
+    # 3× daily — ShipStaticData broadcasts every ~6 min so a 10-min window is
+    # enough; running more often eats AIS bandwidth without gaining much.
+    - cron: '0 6,14,22 * * *'
+  workflow_dispatch:
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run AIS discovery
+        run: python ais_discovery.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          AISSTREAM_API_KEY: ${{ secrets.AISSTREAM_API_KEY }}

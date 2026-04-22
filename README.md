@@ -30,6 +30,7 @@ Real-time data visualization, automated data pipelines, Excel export, and role-b
   - [AIS Vessel Tracking Sync](#5-ais-vessel-tracking-sync)
   - [Vessel IMO Lookup](#6-vessel-imo-lookup)
   - [Vessel Position Sync (VesselFinder)](#7-vessel-position-sync-vesselfinder)
+  - [AIS Diesel Import Radar](#8-ais-diesel-import-radar)
 - [Authentication & Roles](#authentication--roles)
 - [Reusable Components](#reusable-components)
 - [Supabase RPC Reference](#supabase-rpc-reference)
@@ -719,6 +720,35 @@ Once this runs, §5's AIS sync can subscribe with an MMSI filter instead of bbox
 - For the other 4 ports (which don't publish origin), `vessel_lookup.py` captures the vessel flag from VesselFinder and writes it to `navios_diesel.flag`.
 - `navios_diesel.is_cabotagem` is a generated column: `true` whenever `flag ∈ {Brazil, Brasil, BR}` OR `origem LIKE '%-BRA'` OR `origem LIKE '%BRASIL%'`.
 - Every user-facing RPC (`get_nd_navios`, `get_nd_resumo_portos`, `get_nd_volume_mensal_descarga`, etc.) filters `WHERE NOT is_cabotagem`. Cabotage rows stay in the DB (preserving history) but never reach the frontend.
+- `cabotage_cleanup.py` (chained after `vessel_lookup.py`) hard-deletes cabotage rows from `navios_diesel` and cascades to `vessel_positions` / `port_arrivals` for orphaned MMSIs/IMOs. A curated Brazilian-fleet name blocklist (Transpetro + coastal tankers) catches vessels that aren't indexed in VesselFinder.
+
+### 8. AIS Diesel Import Radar
+
+| | |
+|---|---|
+| **Workflow** | `.github/workflows/ais_discovery.yml` |
+| **Schedule** | 3× daily at 06:00, 14:00, 22:00 UTC |
+| **Script** | `ais_discovery.py` |
+| **Target table** | `import_candidates` |
+| **UI** | `/navios-diesel-radar` |
+
+**Problem it solves:** the port-scraped line-up (§1) only publishes expected arrivals 3–7 days ahead of ETA. This pipeline spots vessels 10–30 days earlier — the moment a tanker's captain sets its AIS `Destination` field to a Brazilian port after departing a refining hub anywhere in the world.
+
+**Process:**
+1. Subscribe to AISStream globally for `ShipStaticData` messages only (broadcast every ~6 min by all Class-A vessels). A single 10-min listen window catches the cycle for every active tanker.
+2. Filter by `Destination` regex matching one of 5 Brazilian LOCODEs (`BRSSZ`, `BRITQ`, `BRPNG`, `BRSSB`, `BRSUA`) or port-name tokens.
+3. Enrich each hit with VesselFinder `/api/pub/click/{mmsi}` (flag, type, DWT, design draft) and `/api/pub/vi2/{mmsi}` (last port, ATD).
+4. Score 0–100 based on 5 signals, each worth 20 pts:
+   - Destination is a monitored BR port
+   - Ship type is a tanker (AIS 80–89 or VF "Products/Chemical tanker")
+   - Size compatible with product tankers (<230 m or <90 k DWT)
+   - Origin is a refined-product export hub (ARA, US Gulf, Sikka, Fujairah, Singapore, Mediterranean)
+   - Currently loaded (draft > 70% of design max)
+5. Upsert into `import_candidates` keyed by IMO.
+
+**Automatic line-up reconciliation:** a DB trigger on `navios_diesel` watches for inserts; when a row's IMO / MMSI / normalised name matches an active candidate, the candidate's status auto-flips from `active` → `in_lineup` so the dashboard shows it as "confirmed".
+
+**Cargo caveat:** AIS has no cargo-type field. Confidence score is a composite heuristic, not a guarantee — treat it as directional. False positives are gasoline or jet-fuel tankers; false negatives are vessels with stale `Destination`.
 
 ---
 

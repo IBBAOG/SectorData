@@ -546,6 +546,81 @@ export async function rpcGetAisPositionsAllRecent(
   }
 }
 
+// ─── MODULE: Navios Diesel — AIS Import Radar (discovery) ───────────────────
+
+export type ImportCandidateSignals = {
+  destination_br_port?: boolean;
+  tanker?: boolean;
+  size_product_range?: boolean;
+  origin_product_hub?: boolean;
+  loaded?: boolean;
+};
+
+export type ImportCandidateRow = {
+  id: number;
+  imo: string;
+  mmsi: string | null;
+  navio: string;
+  flag: string | null;
+  ship_type_code: number | null;
+  ship_type: string | null;
+  length_m: number | null;
+  dwt: number | null;
+  destination_raw: string | null;
+  destination_slug: string | null;
+  destination_port_name: string | null;
+  eta: string | null;
+  origin_port_name: string | null;
+  origin_locode: string | null;
+  origin_country: string | null;
+  origin_is_product_hub: boolean | null;
+  departure_ts: string | null;
+  current_draught_m: number | null;
+  max_draught_m: number | null;
+  is_loaded: boolean | null;
+  confidence_score: number | null;
+  signals: ImportCandidateSignals | null;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+  status: "active" | "in_lineup" | "arrived" | "dismissed";
+  in_lineup_since: string | null;
+};
+
+export type ImportCandidateSummaryRow = {
+  destination_slug: string;
+  candidates: number;
+  in_lineup: number;
+  active_only: number;
+  avg_confidence: number;
+  total_dwt: number;
+};
+
+export async function rpcGetIcActive(
+  supabase: SupabaseClient,
+): Promise<ImportCandidateRow[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_ic_active", {});
+    if (error) throw error;
+    return (data ?? []) as ImportCandidateRow[];
+  } catch (e) {
+    console.error("get_ic_active failed", e);
+    return [];
+  }
+}
+
+export async function rpcGetIcSummary(
+  supabase: SupabaseClient,
+): Promise<ImportCandidateSummaryRow[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_ic_summary", {});
+    if (error) throw error;
+    return (data ?? []) as ImportCandidateSummaryRow[];
+  } catch (e) {
+    console.error("get_ic_summary failed", e);
+    return [];
+  }
+}
+
 // ─── MODULE: Diesel & Gasoline Margins (/src/app/(dashboard)/diesel-gasoline-margins/page.tsx) ─
 
 export type DgMarginsRow = {

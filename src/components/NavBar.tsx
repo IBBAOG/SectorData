@@ -31,6 +31,7 @@ const NAV_ENTRIES: NavEntry[] = [
       { href: "/sales-volumes", label: "Sales Volumes" },
       { href: "/market-share", label: "Market Share" },
       { href: "/navios-diesel", label: "Diesel Imports Line-Up" },
+      { href: "/navios-diesel-radar", label: "Diesel Imports Radar" },
       { href: "/diesel-gasoline-margins", label: "Diesel and Gasoline Margins" },
       { href: "/price-bands", label: "Price Bands" },
     ],

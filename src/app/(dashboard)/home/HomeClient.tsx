@@ -57,6 +57,15 @@ const CARDS: CardDef[] = [
     disabled: false,
   },
   {
+    slug: "navios-diesel-radar",
+    preview: "/previews/preview-navios-diesel.jpg",
+    title: "Diesel Imports Radar",
+    description: "Early-warning radar: tankers worldwide signalling Brazilian ports via AIS",
+    badge: "New!",
+    href: "/navios-diesel-radar",
+    disabled: false,
+  },
+  {
     slug: "diesel-gasoline-margins",
     preview: "/previews/preview-dg-margins.jpg",
     title: "Diesel and Gasoline Margins",
