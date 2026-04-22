@@ -432,13 +432,14 @@ export default function NaviosDieselPage() {
       const outLons: number[] = [];
       const outText: string[] = [];
       for (const { pos: v, nd } of matchedPositions) {
+        if (v.lat == null || v.lon == null) continue;
         const hover =
-          `<b>${nd?.navio ?? v.navio}</b><br>` +
-          (nd ? `Port: ${nd.porto.replace("Porto de ", "")}<br>` : "") +
-          (nd?.quantidade_convertida != null
+          `<b>${nd.navio}</b><br>` +
+          `Port: ${nd.porto.replace("Porto de ", "")}<br>` +
+          (nd.quantidade_convertida != null
             ? `Volume: ${nd.quantidade_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³<br>`
             : "") +
-          (nd?.status ? `Status: ${STATUS_LABELS[nd.status] ?? nd.status}<br>` : "") +
+          (nd.status ? `Status: ${STATUS_LABELS[nd.status] ?? nd.status}<br>` : "") +
           (v.imo ? `IMO ${v.imo}<br>` : "") +
           (v.sog != null ? `${v.sog.toFixed(1)} kn<br>` : "") +
           (v.nav_status ? `${v.nav_status}<br>` : "") +
