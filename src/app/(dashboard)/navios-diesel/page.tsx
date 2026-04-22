@@ -333,8 +333,12 @@ export default function NaviosDieselPage() {
       }
     }
 
-    const data: PlotData[] = [
-      {
+    // Port-size orange circles only when AIS layer is OFF — when AIS is ON
+    // the per-vessel markers at each port centroid carry the information,
+    // and the large circles overlap them and steal hover priority.
+    const data: PlotData[] = [];
+    if (!showAis) {
+      data.push({
         type: "scattergeo",
         lat: lats,
         lon: lons,
@@ -347,8 +351,8 @@ export default function NaviosDieselPage() {
           opacity: 0.85,
           line: { color: "#000512", width: 1.5 },
         },
-      } as unknown as PlotData,
-    ];
+      } as unknown as PlotData);
+    }
 
     // AIS overlay: port polygon markers + live vessel positions
     if (showAis) {
