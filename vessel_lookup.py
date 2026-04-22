@@ -48,6 +48,23 @@ def _norm(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9]", "", (name or "").upper())
 
 
+def _clean_search_name(name: str) -> str:
+    """
+    Strip parenthetical annotations like '(EX LATGALE)', '(ex. Pretty Scene)'
+    etc. and common tanker prefixes so VesselFinder/MarineTraffic can match.
+    """
+    s = re.sub(r"\s*\([^)]*\)\s*", " ", name)
+    # "MT " / "M/T " / "M/V " / "MV " prefixes used on port manifests
+    s = re.sub(r"^\s*(MT|MV|M/T|M/V)\s+", "", s, flags=re.IGNORECASE)
+    return s.strip()
+
+
+# Ship-type hints for our line-up: everything is diesel/oil-product tankers.
+# When a name is ambiguous, prefer candidates whose VesselFinder-reported
+# type contains any of these tokens.
+_TANKER_TYPE_TOKENS = ("TANKER", "OIL", "CHEMICAL", "PRODUCTS")
+
+
 def _now_iso() -> str:
     return datetime.now(tz=timezone.utc).isoformat()
 
@@ -61,93 +78,172 @@ def _is_plausible_mmsi(s: str | None) -> bool:
 
 
 # ─── Sources ────────────────────────────────────────────────────────────────
-def lookup_vesselfinder(name: str) -> tuple[str | None, str | None]:
+def lookup_vesselfinder(name: str) -> tuple[str | None, str | None, str]:
     """
-    Returns (imo, mmsi) from vesselfinder.com free search.
-    Honours exact-name match only to avoid wrong assignments.
+    Returns (imo, mmsi, debug) from vesselfinder.com free search.
+    Honours exact normalised-name match, with tanker-type tie-break.
+
+    Page structure (as of 2026-04):
+      <a class="ship-link" href="/vessels/details/{IMO}">
+        <img data-src=".../ship-photo/{IMO}-{MMSI}-..."/>
+        <div class="slna">{NAME}</div>
+        <div class="slty">{SHIP_TYPE}</div>
     """
-    target = _norm(name)
+    search_term = _clean_search_name(name)
+    target = _norm(search_term)
     try:
         r = requests.get(
             "https://www.vesselfinder.com/vessels",
-            params={"name": name},
+            params={"name": search_term},
             headers=HEADERS,
             timeout=REQUEST_TIMEOUT_S,
         )
         if r.status_code != 200:
-            return None, None
+            return None, None, f"vf:http {r.status_code}"
         soup = BeautifulSoup(r.text, "html.parser")
-        # Search results are rendered as rows in a table with class "results"
-        # Each row links to /vessels/details/<IMO>/<MMSI>
-        rows = soup.select("table.results tr")
-        best: tuple[str | None, str | None] = (None, None)
-        best_score = -1
-        for row in rows:
-            link = row.find("a", href=True)
-            if not link:
+        anchors = soup.select("a.ship-link[href^='/vessels/details/']")
+        if not anchors:
+            return None, None, "vf:0 results"
+
+        # name, imo, mmsi, ship_type
+        candidates: list[tuple[str, str, str | None, str]] = []
+        for a in anchors:
+            m_imo = re.search(r"/details/(\d{7})", a.get("href", ""))
+            if not m_imo:
                 continue
-            href = link["href"]
-            # /vessels/details/IMO/MMSI
-            m = re.search(r"/details/(\d{7})/(\d{9})", href or "")
-            if not m:
-                continue
-            imo, mmsi = m.group(1), m.group(2)
-            # name cell
-            name_txt = link.get_text(strip=True)
-            if _norm(name_txt) == target:
-                return imo, mmsi
-            # otherwise keep the best fuzzy candidate (exact prefix match only)
-            if _norm(name_txt).startswith(target) and len(target) >= 4:
-                score = len(target)
-                if score > best_score:
-                    best_score = score
-                    best = (imo, mmsi)
-        return best
+            imo = m_imo.group(1)
+
+            mmsi: str | None = None
+            img = a.find("img")
+            if img:
+                data_src = img.get("data-src") or img.get("src") or ""
+                m_mmsi = re.search(r"/ship-photo/\d{7}-(\d{9})-", data_src)
+                if m_mmsi:
+                    mmsi = m_mmsi.group(1)
+
+            slna = a.find("div", class_="slna")
+            slty = a.find("div", class_="slty")
+            nm = (slna.get_text(strip=True) if slna else a.get_text(" ", strip=True)) or ""
+            ship_type = (slty.get_text(strip=True) if slty else "") or ""
+            candidates.append((nm, imo, mmsi, ship_type))
+
+        # Exact normalised match (cleaning candidate names too — VF sometimes
+        # prefixes with "MT " etc.)
+        exact = [c for c in candidates if _norm(_clean_search_name(c[0])) == target]
+        if len(exact) == 1:
+            nm, imo, mmsi, _ = exact[0]
+            return imo, mmsi, f"vf:exact '{nm}'"
+        if len(exact) > 1:
+            # Tie-break: prefer tanker types (our line-up is 100% diesel tankers)
+            tankers = [c for c in exact if any(t in c[3].upper() for t in _TANKER_TYPE_TOKENS)]
+            if len(tankers) == 1:
+                nm, imo, mmsi, ship_type = tankers[0]
+                return imo, mmsi, f"vf:exact '{nm}' (tanker tie-break, {ship_type})"
+            return None, None, f"vf:ambiguous ({len(exact)} exact, {len(tankers)} tankers)"
+        cand_names = ", ".join(c[0] for c in candidates[:5])
+        return None, None, f"vf:{len(candidates)} candidates [{cand_names}] — no exact match"
     except Exception as e:
-        print(f"[lookup/vf] {name}: {e}", file=sys.stderr)
-        return None, None
+        return None, None, f"vf:err {e}"
 
 
-def lookup_marinetraffic(name: str) -> tuple[str | None, str | None]:
+def lookup_marinetraffic(name: str) -> tuple[str | None, str | None, str]:
     """
-    Best-effort scrape of marinetraffic.com's public search JSON endpoint.
-    They aggressively rate-limit; used only as fallback.
+    Scrape marinetraffic.com's public search page HTML.
+    They aggressively rate-limit / bot-block; used as fallback only.
     """
-    target = _norm(name)
+    search_term = _clean_search_name(name)
+    target = _norm(search_term)
     try:
         r = requests.get(
-            "https://www.marinetraffic.com/en/vesselDetails/asyncJson",
-            params={"term": name},
-            headers={**HEADERS, "X-Requested-With": "XMLHttpRequest"},
+            "https://www.marinetraffic.com/en/ais/index/search/all/keyword:" + requests.utils.quote(search_term),
+            headers={**HEADERS, "Referer": "https://www.marinetraffic.com/"},
+            timeout=REQUEST_TIMEOUT_S,
+            allow_redirects=True,
+        )
+        if r.status_code != 200:
+            return None, None, f"mt:http {r.status_code}"
+        # MT sometimes redirects straight to the ship page if there's one match
+        m = re.search(r"/en/ais/details/ships/shipid:\d+/mmsi:(\d{9})/imo:(\d{7})/vessel:([^/\"']+)", r.url)
+        if m:
+            mmsi, imo, url_name = m.group(1), m.group(2), m.group(3)
+            if _norm(url_name.replace("_", " ").replace("%20", " ")) == target:
+                return imo, mmsi, "mt:redirect exact"
+        # Otherwise parse HTML for search results
+        soup = BeautifulSoup(r.text, "html.parser")
+        candidates: list[tuple[str, str | None, str | None]] = []
+        for a in soup.select("a[href*='/en/ais/details/ships/']"):
+            href = a.get("href", "")
+            m_mmsi = re.search(r"/mmsi:(\d{9})", href)
+            m_imo = re.search(r"/imo:(\d{7})", href)
+            mmsi = m_mmsi.group(1) if m_mmsi else None
+            imo = m_imo.group(1) if m_imo else None
+            nm = a.get_text(" ", strip=True)
+            if not nm:
+                continue
+            candidates.append((nm, imo, mmsi))
+        exact = [c for c in candidates if _norm(c[0]) == target]
+        if len(exact) == 1:
+            nm, imo, mmsi = exact[0]
+            return imo, mmsi, f"mt:exact '{nm}'"
+        if len(exact) > 1:
+            return None, None, f"mt:ambiguous ({len(exact)})"
+        return None, None, f"mt:{len(candidates)} candidates — no exact match"
+    except Exception as e:
+        return None, None, f"mt:err {e}"
+
+
+def lookup_balticshipping(name: str) -> tuple[str | None, str | None, str]:
+    """
+    Free search at balticshipping.com. Third fallback.
+    """
+    search_term = _clean_search_name(name)
+    target = _norm(search_term)
+    try:
+        r = requests.get(
+            "https://www.balticshipping.com/vessels/search",
+            params={"search": search_term},
+            headers=HEADERS,
             timeout=REQUEST_TIMEOUT_S,
         )
         if r.status_code != 200:
-            return None, None
-        data = r.json() if r.headers.get("content-type", "").startswith("application/json") else None
-        if not isinstance(data, list):
-            return None, None
-        for item in data:
-            nm = item.get("name") or item.get("title") or ""
-            if _norm(nm) != target:
+            return None, None, f"bs:http {r.status_code}"
+        soup = BeautifulSoup(r.text, "html.parser")
+        candidates: list[tuple[str, str | None, str | None]] = []
+        for a in soup.select("a[href*='/vessel/imo/']"):
+            href = a.get("href", "")
+            m = re.search(r"/vessel/imo/(\d{7})", href)
+            if not m:
                 continue
-            imo = str(item.get("imo") or "").strip()
-            mmsi = str(item.get("mmsi") or "").strip()
-            return (imo if _is_plausible_imo(imo) else None, mmsi if _is_plausible_mmsi(mmsi) else None)
+            imo = m.group(1)
+            nm = a.get_text(" ", strip=True)
+            if not nm:
+                continue
+            candidates.append((nm, imo, None))
+        exact = [c for c in candidates if _norm(c[0]) == target]
+        if len(exact) == 1:
+            nm, imo, mmsi = exact[0]
+            return imo, mmsi, f"bs:exact '{nm}'"
+        if len(exact) > 1:
+            return None, None, f"bs:ambiguous ({len(exact)})"
+        return None, None, f"bs:{len(candidates)} candidates — no exact match"
     except Exception as e:
-        print(f"[lookup/mt] {name}: {e}", file=sys.stderr)
-    return None, None
+        return None, None, f"bs:err {e}"
 
 
-def resolve(name: str) -> tuple[str | None, str | None, str | None]:
-    """Returns (imo, mmsi, source) or (None, None, None)."""
-    imo, mmsi = lookup_vesselfinder(name)
-    if imo or mmsi:
-        return imo, mmsi, "vesselfinder"
-    time.sleep(REQUEST_DELAY_S)
-    imo, mmsi = lookup_marinetraffic(name)
-    if imo or mmsi:
-        return imo, mmsi, "marinetraffic"
-    return None, None, None
+def resolve(name: str) -> tuple[str | None, str | None, str | None, list[str]]:
+    """Returns (imo, mmsi, source, debug_notes) — debug always populated."""
+    notes: list[str] = []
+    for src_name, fn in [
+        ("vesselfinder", lookup_vesselfinder),
+        ("marinetraffic", lookup_marinetraffic),
+        ("balticshipping", lookup_balticshipping),
+    ]:
+        imo, mmsi, note = fn(name)
+        notes.append(note)
+        if imo or mmsi:
+            return imo, mmsi, src_name, notes
+        time.sleep(REQUEST_DELAY_S)
+    return None, None, None, notes
 
 
 # ─── Persistence ────────────────────────────────────────────────────────────
@@ -211,13 +307,14 @@ def main() -> None:
     resolved = 0
     for i, v in enumerate(pending, 1):
         name = v["navio"]
-        imo, mmsi, source = resolve(name)
+        imo, mmsi, source, notes = resolve(name)
         if imo or mmsi:
             _write_back(sb, name, imo, mmsi)
             resolved += 1
             print(f"[lookup] {i}/{len(pending)} {name} → IMO {imo or '—'}, MMSI {mmsi or '—'} ({source})")
         else:
-            print(f"[lookup] {i}/{len(pending)} {name} → sem match em nenhuma fonte")
+            # Show every source's verdict so we can see WHY nothing matched
+            print(f"[lookup] {i}/{len(pending)} {name} → no match | {' | '.join(notes)}")
         time.sleep(REQUEST_DELAY_S)
 
     print(f"[lookup] {resolved}/{len(pending)} resolvidos nesta run")
