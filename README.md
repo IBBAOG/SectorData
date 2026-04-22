@@ -727,7 +727,7 @@ Once this runs, §5's AIS sync can subscribe with an MMSI filter instead of bbox
 | | |
 |---|---|
 | **Workflow** | `.github/workflows/ais_discovery.yml` |
-| **Schedule** | 3× daily at 06:00, 14:00, 22:00 UTC |
+| **Schedule** | 6× daily at 02, 06, 10, 14, 18, 22 UTC (every 4 h) |
 | **Script** | `ais_discovery.py` |
 | **Target table** | `import_candidates` |
 | **UI** | `/navios-diesel-radar` |

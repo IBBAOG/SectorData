@@ -2,9 +2,9 @@ name: AIS Diesel Import Radar
 
 on:
   schedule:
-    # 3× daily — ShipStaticData broadcasts every ~6 min so a 10-min window is
-    # enough; running more often eats AIS bandwidth without gaining much.
-    - cron: '0 6,14,22 * * *'
+    # 6× daily, every 4h — covers sparse open-ocean coverage gaps. Each run
+    # is 10 min; total ≈ 60 min/day of listening.
+    - cron: '0 2,6,10,14,18,22 * * *'
   workflow_dispatch:
 
 jobs:
