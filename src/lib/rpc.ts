@@ -310,6 +310,8 @@ export type NavioDieselRow = {
   berco: string | null;
   imo: string | null;
   mmsi: string | null;
+  flag: string | null;
+  is_cabotagem: boolean;
 };
 
 export type PortoResumo = {

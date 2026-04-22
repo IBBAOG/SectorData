@@ -688,6 +688,13 @@ All pipelines support manual triggering via `workflow_dispatch` in addition to t
 
 Once this runs, §5's AIS sync can subscribe with an MMSI filter instead of bbox-roulette.
 
+**Cabotage filtering:** the dashboard only shows *import* diesel volumes, so vessels identified as domestic coastal shipping are excluded:
+
+- Suape scraping strips rows whose origin ends in `-BRA` at scrape time.
+- For the other 4 ports (which don't publish origin), `vessel_lookup.py` captures the vessel flag from VesselFinder and writes it to `navios_diesel.flag`.
+- `navios_diesel.is_cabotagem` is a generated column: `true` whenever `flag ∈ {Brazil, Brasil, BR}` OR `origem LIKE '%-BRA'` OR `origem LIKE '%BRASIL%'`.
+- Every user-facing RPC (`get_nd_navios`, `get_nd_resumo_portos`, `get_nd_volume_mensal_descarga`, etc.) filters `WHERE NOT is_cabotagem`. Cabotage rows stay in the DB (preserving history) but never reach the frontend.
+
 ---
 
 ## Authentication & Roles
