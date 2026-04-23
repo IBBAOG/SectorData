@@ -123,6 +123,27 @@ TANKER_PRODUCT_PATTERNS = (
     "chemical tanker",
 )
 
+# Non-oil tankers that must be excluded even though their type contains "tanker"
+NON_OIL_TANKER_SUBSTRINGS = (
+    "lpg", "lng", "gas", "asphalt", "bitumen", "water",
+)
+
+
+def is_oil_tanker(ship_type: str | None, ship_type_code: int | None) -> bool:
+    """True if this vessel is a liquid-petroleum-capable tanker.
+
+    The Radar tracks DIESEL imports, so general-cargo, container, bulk-carrier
+    and gas/water carriers are pure noise. Rule:
+      - VF `ship_type` contains "tanker" and none of the non-oil substrings
+      - OR, if VF type is missing, AIS code 80-89 (the tanker bucket)
+    """
+    if ship_type:
+        t = ship_type.lower()
+        if "tanker" not in t:
+            return False
+        return not any(bad in t for bad in NON_OIL_TANKER_SUBSTRINGS)
+    return _is_tanker_ship_type(ship_type_code)
+
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 def _norm(s: str | None) -> str:
@@ -524,6 +545,15 @@ async def _run():
             print(
                 f"[disc] {i}/{len(hits)} {c.get('navio') or mmsi:30s} "
                 f"→ SKIP cabotagem (origin {origin_name or origin_locode or origin_country})"
+            )
+            continue
+
+        # Non-oil-tanker guard — Radar tracks diesel imports only. Skip
+        # container/bulk/cargo/gas/water vessels so they never reach the UI.
+        if not is_oil_tanker(c.get("ship_type"), c.get("ship_type_code")):
+            print(
+                f"[disc] {i}/{len(hits)} {c.get('navio') or mmsi:30s} "
+                f"→ SKIP non-oil-tanker (type: {c.get('ship_type') or c.get('ship_type_code') or '?'})"
             )
             continue
 
