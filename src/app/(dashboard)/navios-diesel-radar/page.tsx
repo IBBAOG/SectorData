@@ -337,11 +337,10 @@ export default function NaviosDieselRadarPage() {
                               { label: "Origin",      align: "left" as const },
                               { label: "Departed",    align: "left" as const },
                               { label: "Draft",       align: "left" as const },
-                              { label: "BR dest",     align: "center" as const,  title: "AIS Destination field maps to a monitored BR port" },
-                              { label: "Tanker",      align: "center" as const,  title: "Ship type classified as tanker" },
-                              { label: "Prod size",   align: "center" as const,  title: "Dimensions compatible with product tanker (< 230 m / < 90k DWT)" },
+                              { label: "Tanker",      align: "center" as const,  title: "Ship type classified as a tanker" },
+                              { label: "Prod size",   align: "center" as const,  title: "Dimensions fit a product tanker (<230 m or <90k DWT)" },
                               { label: "Prod hub",    align: "center" as const,  title: "Last port is a refined-product export hub" },
-                              { label: "Loaded",      align: "center" as const,  title: "Current draft > 70% of design max → carrying cargo" },
+                              { label: "Loaded",      align: "center" as const,  title: "Current draft >70% of design max → carrying cargo" },
                               { label: "First seen",  align: "left" as const },
                               { label: "Last seen",   align: "left" as const },
                             ].map((h) => (
@@ -352,7 +351,7 @@ export default function NaviosDieselRadarPage() {
                         <tbody>
                           {filtered.length === 0 ? (
                             <tr>
-                              <td colSpan={16} style={{ padding: "20px 10px", textAlign: "center", color: "#aaa", fontSize: 11 }}>
+                              <td colSpan={15} style={{ padding: "20px 10px", textAlign: "center", color: "#aaa", fontSize: 11 }}>
                                 No candidates match current filters.
                               </td>
                             </tr>
@@ -360,15 +359,49 @@ export default function NaviosDieselRadarPage() {
                             const draftPct = c.current_draught_m && c.max_draught_m
                               ? Math.round((c.current_draught_m / c.max_draught_m) * 100)
                               : null;
-                            const signalCell = (on: boolean | null | undefined) => {
+                            const signalTooltip = (
+                              key: "tanker" | "size_product_range" | "origin_product_hub" | "loaded",
+                              on: boolean | null | undefined,
+                            ): string => {
+                              const what: Record<typeof key, string> = {
+                                tanker:
+                                  "AIS ship-type code 80–89, or VesselFinder-reported Oil/Chemical Products tanker.",
+                                size_product_range:
+                                  "Length under 230 m or DWT under ~90 k tonnes — typical clean-products tanker range.",
+                                origin_product_hub:
+                                  "Last port is a refined-product export hub: ARA (Rotterdam/Antwerp/Amsterdam), US Gulf (Houston, Corpus Christi, Lake Charles), India (Sikka/Jamnagar), Middle East (Fujairah, Ras Tanura), Singapore, Mediterranean.",
+                                loaded:
+                                  "Current AIS draft is more than 70% of the vessel's design max — the ship is fully laden with cargo, not empty in ballast.",
+                              };
+                              const why: Record<typeof key, string> = {
+                                tanker:
+                                  "Only tankers carry liquid petroleum products. A non-tanker heading to a BR oil port wouldn't be discharging diesel.",
+                                size_product_range:
+                                  "Larger vessels (VLCC / Suezmax, >230 m) carry crude oil, not refined diesel. Product carriers are smaller.",
+                                origin_product_hub:
+                                  "Refined diesel is loaded at a refinery hub. Cargo coming out of a non-refining port is unlikely to be diesel.",
+                                loaded:
+                                  "An empty tanker in ballast is going to load, not to discharge. Loaded tankers are already carrying their cargo toward the buyer.",
+                              };
+                              const status = on == null ? "Unknown" : on ? "Yes" : "No";
+                              return `${status}\n${what[key]}\n\nWhy it matters: ${why[key]}`;
+                            };
+                            const signalCell = (
+                              key: "tanker" | "size_product_range" | "origin_product_hub" | "loaded",
+                              on: boolean | null | undefined,
+                            ) => {
+                              const title = signalTooltip(key, on);
                               if (on == null) {
-                                return <span style={{ color: "#ccc", fontSize: 14 }}>—</span>;
+                                return (
+                                  <span title={title} style={{ color: "#ccc", fontSize: 14, cursor: "help" }}>—</span>
+                                );
                               }
                               return (
-                                <span style={{
+                                <span title={title} style={{
                                   color: on ? "#2eb85c" : "#d33",
                                   fontSize: 15,
                                   fontWeight: 700,
+                                  cursor: "help",
                                 }}>{on ? "✓" : "✗"}</span>
                               );
                             };
@@ -409,11 +442,10 @@ export default function NaviosDieselRadarPage() {
                                     </span>
                                   )}
                                 </td>
-                                <td style={{ padding: "4px 6px", textAlign: "center" }}>{signalCell(sig.destination_br_port)}</td>
-                                <td style={{ padding: "4px 6px", textAlign: "center" }}>{signalCell(sig.tanker)}</td>
-                                <td style={{ padding: "4px 6px", textAlign: "center" }}>{signalCell(sig.size_product_range)}</td>
-                                <td style={{ padding: "4px 6px", textAlign: "center" }}>{signalCell(sig.origin_product_hub)}</td>
-                                <td style={{ padding: "4px 6px", textAlign: "center" }}>{signalCell(sig.loaded)}</td>
+                                <td style={{ padding: "4px 6px", textAlign: "center" }}>{signalCell("tanker", sig.tanker)}</td>
+                                <td style={{ padding: "4px 6px", textAlign: "center" }}>{signalCell("size_product_range", sig.size_product_range)}</td>
+                                <td style={{ padding: "4px 6px", textAlign: "center" }}>{signalCell("origin_product_hub", sig.origin_product_hub)}</td>
+                                <td style={{ padding: "4px 6px", textAlign: "center" }}>{signalCell("loaded", sig.loaded)}</td>
                                 <td style={{ padding: "4px 10px", whiteSpace: "nowrap", fontSize: 10, color: "#888" }}>
                                   {fmtTs(c.first_seen_at)}
                                 </td>
