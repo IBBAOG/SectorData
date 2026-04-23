@@ -624,6 +624,33 @@ export async function rpcGetIcSummary(
   }
 }
 
+export async function rpcGetIcDistinctDates(
+  supabase: SupabaseClient,
+): Promise<string[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_ic_distinct_dates", {});
+    if (error) throw error;
+    return (data ?? []) as string[];
+  } catch (e) {
+    console.error("get_ic_distinct_dates failed", e);
+    return [];
+  }
+}
+
+export async function rpcGetIcSnapshot(
+  supabase: SupabaseClient,
+  date: string,
+): Promise<ImportCandidateRow[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_ic_snapshot", { p_date: date });
+    if (error) throw error;
+    return (data ?? []) as ImportCandidateRow[];
+  } catch (e) {
+    console.error("get_ic_snapshot failed", e);
+    return [];
+  }
+}
+
 // ─── MODULE: Diesel & Gasoline Margins (/src/app/(dashboard)/diesel-gasoline-margins/page.tsx) ─
 
 export type DgMarginsRow = {

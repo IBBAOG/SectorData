@@ -11,11 +11,26 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
 import {
   rpcGetIcActive,
   rpcGetIcSummary,
+  rpcGetIcDistinctDates,
+  rpcGetIcSnapshot,
   type ImportCandidateRow,
   type ImportCandidateSummaryRow,
 } from "../../../lib/rpc";
 
 const ORANGE = "#FF5000";
+const ORANGE_HOVER = "#FFE8D9";
+
+const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DOW = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+
+function calCells(year: number, month: number): (number | null)[] {
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  return cells;
+}
 
 const PORT_LABELS: Record<string, string> = {
   santos: "Santos",
@@ -60,14 +75,39 @@ export default function NaviosDieselRadarPage() {
   const [portFilter, setPortFilter] = useState<string | "all">("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "in_lineup">("all");
 
+  // Date snapshot state — null = "current" (latest active), otherwise 'YYYY-MM-DD'
+  const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [calMonth, setCalMonth] = useState<number>(new Date().getMonth());
+  const [calYear, setCalYear] = useState<number>(new Date().getFullYear());
+  const [hoveredDay, setHoveredDay] = useState<string | null>(null);
+  const [hoveredNavBtn, setHoveredNavBtn] = useState<"prev" | "next" | null>(null);
+
+  const daysSet = useMemo(() => new Set(availableDates), [availableDates]);
+
+  // Load list of distinct dates once (used to highlight calendar days)
+  useEffect(() => {
+    if (!supabase) return;
+    let cancelled = false;
+    (async () => {
+      const dates = await rpcGetIcDistinctDates(supabase);
+      if (!cancelled) setAvailableDates(dates);
+    })();
+    return () => { cancelled = true; };
+  }, [supabase]);
+
+  // Load candidates + summary — either current or a historical snapshot
   useEffect(() => {
     if (!supabase) return;
     let cancelled = false;
     (async () => {
       setLoading(true);
       const [rows, sum] = await Promise.all([
-        rpcGetIcActive(supabase),
-        rpcGetIcSummary(supabase),
+        selectedDate
+          ? rpcGetIcSnapshot(supabase, selectedDate)
+          : rpcGetIcActive(supabase),
+        // Summary RPC doesn't support date filter yet — derive from rows below
+        selectedDate ? Promise.resolve([]) : rpcGetIcSummary(supabase),
       ]);
       if (cancelled) return;
       setCandidates(rows);
@@ -75,7 +115,7 @@ export default function NaviosDieselRadarPage() {
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [supabase]);
+  }, [supabase, selectedDate]);
 
   const filtered = useMemo(() => {
     return candidates.filter(c => {
@@ -87,9 +127,31 @@ export default function NaviosDieselRadarPage() {
 
   const summaryByPort = useMemo(() => {
     const m = new Map<string, ImportCandidateSummaryRow>();
-    for (const s of summary) m.set(s.destination_slug, s);
+    // If the server returned a summary (current mode), use it as-is.
+    if (summary.length > 0) {
+      for (const s of summary) m.set(s.destination_slug, s);
+      return m;
+    }
+    // Snapshot mode — compute summary from the already-filtered candidates.
+    for (const c of candidates) {
+      if (!c.destination_slug) continue;
+      const existing = m.get(c.destination_slug);
+      const nextRow: ImportCandidateSummaryRow = existing ?? {
+        destination_slug: c.destination_slug,
+        candidates: 0,
+        in_lineup: 0,
+        active_only: 0,
+        avg_confidence: 0,
+        total_dwt: 0,
+      };
+      nextRow.candidates += 1;
+      if (c.status === "in_lineup") nextRow.in_lineup += 1;
+      else if (c.status === "active") nextRow.active_only += 1;
+      nextRow.total_dwt += c.dwt ?? 0;
+      m.set(c.destination_slug, nextRow);
+    }
     return m;
-  }, [summary]);
+  }, [summary, candidates]);
 
   // Build world map of last-seen positions for the filtered candidates.
   // Points are grouped by destination port (one trace per port) so each
@@ -223,7 +285,94 @@ export default function NaviosDieselRadarPage() {
 
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
 
-              <div className="sidebar-section-label">Filters</div>
+              <div className="sidebar-section-label">Snapshot</div>
+
+              <div className="sidebar-filter-section">
+                <div className="sidebar-filter-label">Date</div>
+                <div style={{ fontFamily: "Arial", userSelect: "none" }}>
+                  {/* Month/Year nav */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                    <button
+                      type="button"
+                      className="btn-hover-transition"
+                      onClick={() => { if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1); } else setCalMonth(m => m - 1); }}
+                      onMouseEnter={() => setHoveredNavBtn("prev")}
+                      onMouseLeave={() => setHoveredNavBtn(null)}
+                      style={{ background: hoveredNavBtn === "prev" ? ORANGE_HOVER : "none", border: "none", borderRadius: 4, cursor: "pointer", color: ORANGE, fontSize: 16, lineHeight: 1, padding: "0 4px" }}
+                    >‹</button>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "#1a1a1a" }}>
+                      {MONTH_NAMES[calMonth]} {calYear}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn-hover-transition"
+                      onClick={() => { if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1); } else setCalMonth(m => m + 1); }}
+                      onMouseEnter={() => setHoveredNavBtn("next")}
+                      onMouseLeave={() => setHoveredNavBtn(null)}
+                      style={{ background: hoveredNavBtn === "next" ? ORANGE_HOVER : "none", border: "none", borderRadius: 4, cursor: "pointer", color: ORANGE, fontSize: 16, lineHeight: 1, padding: "0 4px" }}
+                    >›</button>
+                  </div>
+                  {/* DOW headers */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", textAlign: "center", marginBottom: 2 }}>
+                    {DOW.map(d => (
+                      <div key={d} style={{ fontSize: 9, color: "#aaa", fontWeight: 700, padding: "2px 0" }}>{d}</div>
+                    ))}
+                  </div>
+                  {/* Day cells */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", textAlign: "center" }}>
+                    {calCells(calYear, calMonth).map((d, i) => {
+                      if (!d) return <div key={i} />;
+                      const dayStr = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+                      const hasData = daysSet.has(dayStr);
+                      const isSelected = selectedDate === dayStr;
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          className="btn-hover-transition"
+                          disabled={!hasData}
+                          onClick={() => {
+                            if (!hasData) return;
+                            setSelectedDate(prev => prev === dayStr ? null : dayStr);
+                          }}
+                          onMouseEnter={() => { if (hasData) setHoveredDay(dayStr); }}
+                          onMouseLeave={() => setHoveredDay(null)}
+                          style={{
+                            padding: "4px 0",
+                            margin: "1px",
+                            borderRadius: 4,
+                            border: "none",
+                            backgroundColor: isSelected ? ORANGE : hasData && hoveredDay === dayStr ? ORANGE_HOVER : "transparent",
+                            color: isSelected ? "#fff" : hasData ? "#1a1a1a" : "#ddd",
+                            fontFamily: "Arial",
+                            fontSize: 10,
+                            fontWeight: hasData ? 600 : 400,
+                            cursor: hasData ? "pointer" : "default",
+                          }}
+                        >
+                          {d}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {selectedDate && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedDate(null)}
+                      style={{ marginTop: 8, width: "100%", padding: "4px 8px", fontSize: 10, fontFamily: "Arial", color: ORANGE, border: `1px solid ${ORANGE}`, borderRadius: 4, background: "#fff", cursor: "pointer", fontWeight: 600 }}
+                    >
+                      Clear — show current
+                    </button>
+                  )}
+                  <div style={{ marginTop: 6, fontSize: 10, color: "#888", lineHeight: 1.3 }}>
+                    {selectedDate
+                      ? `Snapshot as of ${selectedDate} (end of day BRT)`
+                      : "Showing current candidates. Pick a day to time-travel."}
+                  </div>
+                </div>
+              </div>
+
+              <div className="sidebar-section-label" style={{ marginTop: 16 }}>Filters</div>
 
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Destination Port</div>
