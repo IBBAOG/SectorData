@@ -25,38 +25,16 @@ const AGE_TICK_MS = 15_000;
 const PAGE_LIMIT = 500;
 const FLASH_DURATION_MS = 3400;
 const THEME_STORAGE_KEY = "news-hunter-theme";
-const KEYWORDS_STORAGE_KEY = "news-hunter-keywords";
 
-// Mirrors Clipinator's default search keyword list so the UI lands with
-// the same filter surface out of the box. Users can add/remove freely.
-const DEFAULT_KEYWORDS: string[] = [
-  "petróleo",
-  "petroleo",
-  "Petrobras",
-  "Vibra",
-  "Brava",
-  "Ultrapar",
-  "Ipiranga",
-  "PetroReconcavo",
-  "PetroRecôncavo",
-  "oil",
-  "gasolina",
-  "gás",
-  "gas",
-  "diesel",
-  "combustível",
-  "combustivel",
-  "combustíveis",
-  "combustiveis",
-  "OceanPact",
-  "Cosan",
-  "Raízen",
-  "Raizen",
-  "Braskem",
-  "Compass",
-  "PRIO",
-  "ANP",
-  "refit",
+// Fallback list shown if Supabase is unreachable. The canonical per-user
+// list is seeded server-side via public.seed_my_news_hunter_keywords() on
+// first visit.
+const FALLBACK_KEYWORDS: string[] = [
+  "petróleo", "petroleo", "Petrobras", "Vibra", "Brava", "Ultrapar",
+  "Ipiranga", "PetroReconcavo", "PetroRecôncavo", "oil", "gasolina",
+  "gás", "gas", "diesel", "combustível", "combustivel", "combustíveis",
+  "combustiveis", "OceanPact", "Cosan", "Raízen", "Raizen", "Braskem",
+  "Compass", "PRIO", "ANP", "refit",
 ];
 
 function labelForWindow(h: number): string {
@@ -125,34 +103,41 @@ export default function NewsHunterPage() {
     }
   }, []);
 
-  // Load persisted keyword filter list, or fall back to defaults on first use.
+  // Load per-user keyword list from Supabase. On first visit, seed defaults
+  // via the SECURITY DEFINER RPC and re-fetch. Falls back to an in-memory
+  // read-only list on RLS / network errors so the page still renders.
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(KEYWORDS_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as unknown;
-        if (Array.isArray(parsed) && parsed.every((x) => typeof x === "string")) {
-          setKeywords(parsed as string[]);
-          setKeywordsLoaded(true);
-          return;
-        }
+    if (!supabase) return;
+    let cancelled = false;
+    void (async () => {
+      const { data, error: err } = await supabase
+        .from("news_hunter_keywords")
+        .select("keyword")
+        .order("keyword");
+      if (cancelled) return;
+      if (err) {
+        setKeywords(FALLBACK_KEYWORDS);
+        setKeywordsLoaded(true);
+        return;
       }
-    } catch {
-      /* ignore — fall through to defaults */
-    }
-    setKeywords(DEFAULT_KEYWORDS);
-    setKeywordsLoaded(true);
-  }, []);
-
-  // Persist keyword list whenever it changes (after the initial load).
-  useEffect(() => {
-    if (!keywordsLoaded) return;
-    try {
-      localStorage.setItem(KEYWORDS_STORAGE_KEY, JSON.stringify(keywords));
-    } catch {
-      /* ignore */
-    }
-  }, [keywords, keywordsLoaded]);
+      if ((data ?? []).length === 0) {
+        await supabase.rpc("seed_my_news_hunter_keywords");
+        const seeded = await supabase
+          .from("news_hunter_keywords")
+          .select("keyword")
+          .order("keyword");
+        if (cancelled) return;
+        const rows = (seeded.data ?? []) as { keyword: string }[];
+        setKeywords(rows.length > 0 ? rows.map((r) => r.keyword) : FALLBACK_KEYWORDS);
+      } else {
+        setKeywords((data as { keyword: string }[]).map((r) => r.keyword));
+      }
+      setKeywordsLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
 
   const toggleTheme = useCallback(() => {
     setTheme((t) => {
@@ -166,24 +151,40 @@ export default function NewsHunterPage() {
     });
   }, []);
 
-  const addKeyword = useCallback((raw: string) => {
-    const kw = raw.trim();
-    if (!kw) return;
-    setKeywords((prev) => {
-      const exists = prev.some((k) => k.toLowerCase() === kw.toLowerCase());
-      if (exists) return prev;
-      return [...prev, kw];
-    });
-    setNewKeyword("");
-  }, []);
+  const addKeyword = useCallback(
+    async (raw: string) => {
+      const kw = raw.trim();
+      if (!kw || !supabase) return;
+      const already = keywords.some((k) => k.toLowerCase() === kw.toLowerCase());
+      setNewKeyword("");
+      if (already) return;
+      const { error: insertErr } = await supabase
+        .from("news_hunter_keywords")
+        .insert({ keyword: kw });
+      if (!insertErr) {
+        setKeywords((prev) =>
+          prev.some((k) => k.toLowerCase() === kw.toLowerCase())
+            ? prev
+            : [...prev, kw],
+        );
+      }
+    },
+    [supabase, keywords],
+  );
 
-  const removeKeyword = useCallback((kw: string) => {
-    setKeywords((prev) => prev.filter((k) => k !== kw));
-  }, []);
-
-  const restoreDefaultKeywords = useCallback(() => {
-    setKeywords(DEFAULT_KEYWORDS);
-  }, []);
+  const removeKeyword = useCallback(
+    async (kw: string) => {
+      if (!supabase) return;
+      const { error: delErr } = await supabase
+        .from("news_hunter_keywords")
+        .delete()
+        .eq("keyword", kw);
+      if (!delErr) {
+        setKeywords((prev) => prev.filter((k) => k !== kw));
+      }
+    },
+    [supabase],
+  );
 
   const mergeArticles = useCallback(
     (prev: NewsArticle[], incoming: NewsArticle[]): NewsArticle[] => {
@@ -371,14 +372,6 @@ export default function NewsHunterPage() {
         <section className={styles.panel}>
           <div className={styles.panelHeader}>
             <h3 className={styles.panelTitle}>Palavras-chave</h3>
-            <button
-              type="button"
-              className={styles.restoreBtn}
-              onClick={restoreDefaultKeywords}
-              title="Restaurar lista padrão"
-            >
-              restaurar padrão
-            </button>
           </div>
           <div className={styles.panelBody}>
             <ul className={styles.chips}>
@@ -450,7 +443,7 @@ export default function NewsHunterPage() {
               </p>
               {articles.length === 0 && (
                 <p className={styles.metaMuted}>
-                  Verifique se o scanner local está rodando.
+                  O scanner está rodando na nuvem — novas manchetes aparecem aqui a cada 30s.
                 </p>
               )}
             </div>
