@@ -36,6 +36,7 @@ const NAV_ENTRIES: NavEntry[] = [
     ],
   },
   { label: "Market Watch", href: "/stocks" },
+  { label: "News Hunter", href: "/news-hunter" },
 ];
 
 /** Map nested/alternate routes to the root module slug for visibility checks */
