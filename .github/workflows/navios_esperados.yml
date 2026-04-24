@@ -1,9 +1,10 @@
 name: Monitoramento Navios Diesel
 
 on:
-  schedule:
-    - cron: '0 10,16,22,4 * * *'  # a cada 6h a partir das 7h BRT (10,16,22,04 UTC)
-  workflow_dispatch:           # permite rodar manualmente pelo GitHub
+  # Agendamento gerenciado externamente via cron-job.org → workflow_dispatch
+  # O trigger schedule nativo do GitHub não garante pontualidade em intervalos curtos.
+  # Cadência desejada: a cada 6h (10, 16, 22, 04 UTC = 07, 13, 19, 01 BRT).
+  workflow_dispatch:           # permite rodar manualmente pelo GitHub e via cron-job.org
 
 jobs:
   monitorar:
