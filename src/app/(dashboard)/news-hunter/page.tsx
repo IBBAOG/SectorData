@@ -25,6 +25,39 @@ const AGE_TICK_MS = 15_000;
 const PAGE_LIMIT = 500;
 const FLASH_DURATION_MS = 3400;
 const THEME_STORAGE_KEY = "news-hunter-theme";
+const KEYWORDS_STORAGE_KEY = "news-hunter-keywords";
+
+// Mirrors Clipinator's default search keyword list so the UI lands with
+// the same filter surface out of the box. Users can add/remove freely.
+const DEFAULT_KEYWORDS: string[] = [
+  "petróleo",
+  "petroleo",
+  "Petrobras",
+  "Vibra",
+  "Brava",
+  "Ultrapar",
+  "Ipiranga",
+  "PetroReconcavo",
+  "PetroRecôncavo",
+  "oil",
+  "gasolina",
+  "gás",
+  "gas",
+  "diesel",
+  "combustível",
+  "combustivel",
+  "combustíveis",
+  "combustiveis",
+  "OceanPact",
+  "Cosan",
+  "Raízen",
+  "Raizen",
+  "Braskem",
+  "Compass",
+  "PRIO",
+  "ANP",
+  "refit",
+];
 
 function labelForWindow(h: number): string {
   if (h < 24) return `${h}h`;
@@ -51,13 +84,19 @@ function formatTimeLocal(iso: string): string {
   return `${hh}:${mm}`;
 }
 
+function stripAccents(s: string): string {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
 export default function NewsHunterPage() {
   const { visible, loading: visLoading } = useModuleVisibilityGuard("news-hunter");
   const supabase = useMemo(() => getSupabaseClient(), []);
 
   const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [windowHours, setWindowHours] = useState<number>(24);
-  const [activeKeywords, setActiveKeywords] = useState<Set<string>>(new Set());
+  const [keywords, setKeywords] = useState<string[]>([]);
+  const [keywordsLoaded, setKeywordsLoaded] = useState<boolean>(false);
+  const [newKeyword, setNewKeyword] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(true);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -86,6 +125,35 @@ export default function NewsHunterPage() {
     }
   }, []);
 
+  // Load persisted keyword filter list, or fall back to defaults on first use.
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(KEYWORDS_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored) as unknown;
+        if (Array.isArray(parsed) && parsed.every((x) => typeof x === "string")) {
+          setKeywords(parsed as string[]);
+          setKeywordsLoaded(true);
+          return;
+        }
+      }
+    } catch {
+      /* ignore — fall through to defaults */
+    }
+    setKeywords(DEFAULT_KEYWORDS);
+    setKeywordsLoaded(true);
+  }, []);
+
+  // Persist keyword list whenever it changes (after the initial load).
+  useEffect(() => {
+    if (!keywordsLoaded) return;
+    try {
+      localStorage.setItem(KEYWORDS_STORAGE_KEY, JSON.stringify(keywords));
+    } catch {
+      /* ignore */
+    }
+  }, [keywords, keywordsLoaded]);
+
   const toggleTheme = useCallback(() => {
     setTheme((t) => {
       const next: "light" | "dark" = t === "dark" ? "light" : "dark";
@@ -96,6 +164,25 @@ export default function NewsHunterPage() {
       }
       return next;
     });
+  }, []);
+
+  const addKeyword = useCallback((raw: string) => {
+    const kw = raw.trim();
+    if (!kw) return;
+    setKeywords((prev) => {
+      const exists = prev.some((k) => k.toLowerCase() === kw.toLowerCase());
+      if (exists) return prev;
+      return [...prev, kw];
+    });
+    setNewKeyword("");
+  }, []);
+
+  const removeKeyword = useCallback((kw: string) => {
+    setKeywords((prev) => prev.filter((k) => k !== kw));
+  }, []);
+
+  const restoreDefaultKeywords = useCallback(() => {
+    setKeywords(DEFAULT_KEYWORDS);
   }, []);
 
   const mergeArticles = useCallback(
@@ -219,33 +306,23 @@ export default function NewsHunterPage() {
     };
   }, []);
 
-  const availableKeywords = useMemo(() => {
-    const s = new Set<string>();
-    for (const a of articles) for (const kw of a.matched_keywords) s.add(kw);
-    return Array.from(s).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [articles]);
-
   const filtered = useMemo(() => {
     const cutoff = Date.now() - windowHours * 3600 * 1000;
     const inWindow = articles.filter(
       (a) => new Date(a.published_at).getTime() >= cutoff,
     );
-    if (activeKeywords.size === 0) return inWindow;
-    return inWindow.filter((a) =>
-      a.matched_keywords.some((kw) => activeKeywords.has(kw)),
-    );
-  }, [articles, windowHours, activeKeywords]);
-
-  const toggleKeyword = useCallback((kw: string) => {
-    setActiveKeywords((prev) => {
-      const next = new Set(prev);
-      if (next.has(kw)) next.delete(kw);
-      else next.add(kw);
-      return next;
+    if (keywords.length === 0) return inWindow;
+    const terms = keywords
+      .map((k) => stripAccents(k.toLowerCase()).trim())
+      .filter(Boolean);
+    if (terms.length === 0) return inWindow;
+    return inWindow.filter((a) => {
+      const hay = stripAccents(
+        `${a.title} ${a.source_name} ${a.snippet} ${a.matched_keywords.join(" ")}`.toLowerCase(),
+      );
+      return terms.some((t) => hay.includes(t));
     });
-  }, []);
-
-  const clearKeywords = useCallback(() => setActiveKeywords(new Set()), []);
+  }, [articles, windowHours, keywords]);
 
   if (visLoading || !visible) return null;
 
@@ -292,40 +369,56 @@ export default function NewsHunterPage() {
         </div>
 
         <section className={styles.panel}>
-          <h3 className={styles.panelTitle}>Palavras-chave</h3>
+          <div className={styles.panelHeader}>
+            <h3 className={styles.panelTitle}>Palavras-chave</h3>
+            <button
+              type="button"
+              className={styles.restoreBtn}
+              onClick={restoreDefaultKeywords}
+              title="Restaurar lista padrão"
+            >
+              restaurar padrão
+            </button>
+          </div>
           <div className={styles.panelBody}>
-            {availableKeywords.length === 0 ? (
-              <span className={styles.emptyKw}>
-                Nenhuma palavra-chave registrada nas notícias desta janela.
-              </span>
-            ) : (
-              <ul className={styles.chips}>
-                {availableKeywords.map((kw) => {
-                  const active = activeKeywords.has(kw);
-                  return (
-                    <li
-                      key={kw}
-                      className={`${styles.chip} ${active ? styles.chipActive : ""}`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => toggleKeyword(kw)}
-                        aria-pressed={active}
-                      >
-                        {kw}
-                      </button>
-                    </li>
-                  );
-                })}
-                {activeKeywords.size > 0 && (
-                  <li className={styles.chipClear}>
-                    <button type="button" onClick={clearKeywords}>
-                      limpar ×
-                    </button>
-                  </li>
-                )}
-              </ul>
-            )}
+            <ul className={styles.chips}>
+              {keywords.map((kw) => (
+                <li key={kw} className={styles.chip}>
+                  <span className={styles.chipLabel}>{kw}</span>
+                  <button
+                    type="button"
+                    className={styles.chipRemove}
+                    onClick={() => removeKeyword(kw)}
+                    aria-label={`remover ${kw}`}
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+              {keywords.length === 0 && (
+                <li className={styles.emptyKw}>
+                  Nenhum filtro ativo — todas as manchetes são exibidas.
+                </li>
+              )}
+            </ul>
+            <form
+              className={styles.addForm}
+              onSubmit={(e) => {
+                e.preventDefault();
+                addKeyword(newKeyword);
+              }}
+            >
+              <input
+                type="text"
+                className={styles.addInput}
+                placeholder="+ adicionar palavra-chave"
+                value={newKeyword}
+                onChange={(e) => setNewKeyword(e.target.value)}
+              />
+              <button type="submit" className={styles.addBtn} aria-label="adicionar">
+                +
+              </button>
+            </form>
           </div>
         </section>
 
@@ -340,15 +433,6 @@ export default function NewsHunterPage() {
               <>
                 <span className={styles.metaSep}>·</span>
                 <span className={styles.metaMuted}>{lastScanLabel}</span>
-              </>
-            )}
-            {activeKeywords.size > 0 && (
-              <>
-                <span className={styles.metaSep}>·</span>
-                <span className={styles.metaFilter}>
-                  filtrado por {activeKeywords.size} palavra
-                  {activeKeywords.size === 1 ? "" : "s"}
-                </span>
               </>
             )}
           </div>

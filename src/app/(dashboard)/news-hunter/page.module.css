@@ -114,12 +114,19 @@
 
 /* Keyword panel ───────────────────────────────────────────────────── */
 .panel {
-  background: var(--nh-panel);
-  border: 1px solid var(--nh-border);
+  background: var(--nh-panel-tint);
+  border: 1px solid rgba(255, 80, 0, 0.18);
   border-radius: var(--nh-radius);
   padding: 16px 20px;
   margin: 12px 40px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+.panelHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 .panelTitle {
   margin: 0 0 2px;
@@ -127,18 +134,33 @@
   font-weight: 600;
   color: var(--nh-accent);
 }
+.restoreBtn {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--nh-muted);
+  font-size: 12px;
+  font-style: italic;
+  cursor: pointer;
+  font-family: inherit;
+}
+.restoreBtn:hover {
+  color: var(--nh-accent);
+  text-decoration: underline;
+}
 .panelBody {
   padding-top: 10px;
   border-top: 2px solid var(--nh-muted-strong);
   margin-top: 6px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 .emptyKw {
   color: var(--nh-muted);
   font-size: 13px;
   font-style: italic;
+  padding: 4px 0;
 }
 .chips {
   list-style: none;
@@ -152,45 +174,79 @@
 .chip {
   display: inline-flex;
   align-items: center;
-}
-.chip button {
+  gap: 6px;
   background: var(--nh-panel);
   border: 1px solid var(--nh-border);
   color: var(--nh-text);
-  padding: 4px 12px;
+  padding: 4px 10px;
   border-radius: 20px;
   font-size: 13px;
-  font-family: inherit;
-  cursor: pointer;
   transition: border-color 0.15s, color 0.15s, background 0.15s;
 }
-.chip button:hover {
+.chip:hover {
   border-color: var(--nh-accent);
-  background: var(--nh-panel-tint);
-  color: var(--nh-accent);
 }
-.chipActive button {
-  background: var(--nh-accent);
-  border-color: var(--nh-accent);
-  color: #ffffff;
+.chipLabel {
+  line-height: 1.2;
 }
-.chipActive button:hover {
-  background: var(--nh-accent-hover);
-  border-color: var(--nh-accent-hover);
-  color: #ffffff;
-}
-.chipClear button {
+.chipRemove {
   background: transparent;
   border: 0;
   color: var(--nh-muted);
-  font-size: 12px;
-  font-style: italic;
   cursor: pointer;
-  padding: 4px 8px;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
   font-family: inherit;
 }
-.chipClear button:hover {
+.chipRemove:hover {
   color: var(--nh-accent);
+}
+
+.addForm {
+  display: flex;
+  gap: 6px;
+}
+.addInput {
+  flex: 1;
+  min-width: 220px;
+  background: #ffffff;
+  color: #1a1a1a;
+  border: 1px solid var(--nh-border);
+  padding: 7px 10px;
+  border-radius: var(--nh-radius-sm);
+  font-size: 13px;
+  font-family: inherit;
+}
+.addInput:focus {
+  outline: none;
+  border-color: var(--nh-accent);
+  box-shadow: 0 0 0 3px rgba(255, 80, 0, 0.15);
+}
+.page[data-nh-theme="dark"] .addInput {
+  background: #141414;
+  color: var(--nh-text);
+}
+.addBtn {
+  background: #ffffff;
+  border: 1px solid var(--nh-border-strong);
+  color: var(--nh-muted);
+  padding: 0 16px;
+  border-radius: var(--nh-radius-sm);
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 600;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.addBtn:hover {
+  border-color: var(--nh-accent);
+  color: var(--nh-accent);
+  background: var(--nh-panel-tint);
+}
+.page[data-nh-theme="dark"] .addBtn {
+  background: #141414;
+  color: var(--nh-muted-strong);
 }
 
 /* Headlines section ──────────────────────────────────────────────── */
