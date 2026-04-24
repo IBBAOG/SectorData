@@ -52,7 +52,7 @@ const STATUS_LABELS: Record<string, string> = {
   Esperado:   "Expected",
   "Ao Largo": "Offshore",
   Fundeado:   "Anchored",
-  Despachado: "Departed",
+  Despachado: "Delivered",
 };
 
 function fmtTs(iso: string | null): string {
@@ -143,9 +143,10 @@ export default function NaviosDieselPage() {
     [navios]
   );
 
-  // Vessel rows without the error sentinels and without "Despachado" (Departed)
+  // Vessel rows without the error sentinels. "Despachado" vessels (status Delivered)
+  // are kept in the display — they represent completed diesel deliveries.
   const naviosDisplay = useMemo(
-    () => navios.filter(n => n.status !== "ERRO_COLETA" && n.status !== "Despachado"),
+    () => navios.filter(n => n.status !== "ERRO_COLETA"),
     [navios]
   );
 
