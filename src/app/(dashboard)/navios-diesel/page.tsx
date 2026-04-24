@@ -143,10 +143,11 @@ export default function NaviosDieselPage() {
     [navios]
   );
 
-  // Vessel rows without the error sentinels. "Despachado" vessels (status Delivered)
-  // are kept in the display — they represent completed diesel deliveries.
+  // Vessel rows for the main "active line-up" table. Excludes:
+  //   - ERRO_COLETA   (scraping failed)
+  //   - Despachado    (already discharged — shown in the "Delivered Vessels" table below)
   const naviosDisplay = useMemo(
-    () => navios.filter(n => n.status !== "ERRO_COLETA"),
+    () => navios.filter(n => n.status !== "ERRO_COLETA" && n.status !== "Despachado"),
     [navios]
   );
 
@@ -1052,7 +1053,7 @@ export default function NaviosDieselPage() {
                       <ul style={{ margin: 0, paddingLeft: 18 }}>
                         <li>Data is collected at 6-hour intervals and may not reflect real-time conditions or recent changes in vessel schedules.</li>
                         <li>Ports monitored: Santos, Itaqui, Paranaguá, Suape, and São Sebastião. Ports with no vessels in the selected snapshot are shown in gray on the map.</li>
-                        <li>We consider a vessel as delivered when it disappears from the list of expected vessels. Note that this is an estimate and may be subject to error.</li>
+                        <li>A vessel is considered delivered when the port marks it as "Despachado" or when it disappears from the line-up. Both are estimates and may be subject to error.</li>
                       </ul>
                     </div>
 
