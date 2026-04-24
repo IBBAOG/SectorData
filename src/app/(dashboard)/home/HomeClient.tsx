@@ -84,6 +84,15 @@ const CARDS: CardDef[] = [
     disabled: false,
   },
   {
+    slug: "news-hunter",
+    preview: null,
+    title: "News Hunter",
+    description: "Live oil & gas news feed with incremental 30s polling across ~60 sources",
+    badge: "Available",
+    href: "/news-hunter",
+    disabled: false,
+  },
+  {
     slug: null,
     preview: null,
     title: "Coming Soon",
