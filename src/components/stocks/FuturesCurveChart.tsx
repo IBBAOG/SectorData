@@ -26,8 +26,8 @@ const THEMES = {
   light: { bg: "#ffffff", grid: "#f0f0f0", text: "#1a1a1a", line: "#ff5000", dot: "#ff5000", crosshair: "#9ca3af", tooltip: "#1f2937", tooltipText: "#ffffff" },
 };
 
-const FONT = "13px Arial, Helvetica, sans-serif";
-const FONT_BOLD = "bold 13px Arial, Helvetica, sans-serif";
+const FONT = "11px Arial, Helvetica, sans-serif";
+const FONT_BOLD = "bold 11px Arial, Helvetica, sans-serif";
 const PAD = { top: 30, right: 72, bottom: 34, left: 48 };
 
 function niceSteps(min: number, max: number, n = 5): number[] {
@@ -84,7 +84,7 @@ export default function FuturesCurveChart({ dark = true }: Props) {
     // Front price label
     ctx.font = FONT; ctx.fillStyle = t.text;
     ctx.textAlign = "left"; ctx.textBaseline = "top";
-    ctx.fillText(`Front: ${prices[0].toFixed(2)}`, PAD.left + 4, 4);
+    ctx.fillText(`FRONT: ${prices[0].toFixed(2)}`, PAD.left + 4, 4);
 
     // Grid
     ctx.strokeStyle = t.grid; ctx.lineWidth = 1;
@@ -131,7 +131,7 @@ export default function FuturesCurveChart({ dark = true }: Props) {
     ctx.textBaseline = "top"; ctx.font = FONT;
     ctx.textAlign = "center";
     for (let i = 0; i < n; i += xStep) {
-      ctx.fillText(contracts[i].contract, toX(i), h - PAD.bottom + 8);
+      ctx.fillText(contracts[i].contract.toUpperCase(), toX(i), h - PAD.bottom + 8);
     }
 
     // Crosshair
@@ -153,7 +153,7 @@ export default function FuturesCurveChart({ dark = true }: Props) {
       ctx.fillStyle = t.tooltipText; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(pTxt, w - PAD.right + 5, sy);
 
       // Contract tooltip
-      const dtTxt = c.contract; ctx.font = FONT;
+      const dtTxt = c.contract.toUpperCase(); ctx.font = FONT;
       const dtw = ctx.measureText(dtTxt).width + 10;
       ctx.fillStyle = t.tooltip; ctx.fillRect(sx - dtw / 2, h - PAD.bottom, dtw, 22);
       ctx.fillStyle = t.tooltipText; ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.fillText(dtTxt, sx, h - PAD.bottom + 5);

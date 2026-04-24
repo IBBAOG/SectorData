@@ -27,21 +27,21 @@ const THEMES = {
   },
 };
 
-const FONT = "13px Arial, Helvetica, sans-serif";
-const FONT_B = "bold 13px Arial, Helvetica, sans-serif";
+const FONT = "11px Arial, Helvetica, sans-serif";
+const FONT_B = "bold 11px Arial, Helvetica, sans-serif";
 const PAD = { top: 14, right: 72, bottom: 34, left: 48 };
 const MIN_BARS = 10;
 
 function fmtShort(unix: number, intraday: boolean): string {
   const d = new Date(unix * 1000);
-  const M = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const M = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
   if (intraday) return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
   return `${M[d.getMonth()]} ${String(d.getDate()).padStart(2,"0")}`;
 }
 
 function fmtFull(unix: number, intraday: boolean): string {
   const d = new Date(unix * 1000);
-  const M = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const M = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
   const dt = `${M[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
   return intraday ? `${dt} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}` : dt;
 }

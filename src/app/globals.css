@@ -1793,3 +1793,123 @@ a {
   user-select: none;
 }
 .sd-drag-handle:active { cursor: grabbing; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MARKET WATCH — Flat uppercase overhaul
+   (uniform Arial 11px, no rounded corners, near-black background)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Single typography + zero radius across the entire Market Watch surface */
+.stocks-dark,
+.stocks-dark *,
+.stocks-light,
+.stocks-light * {
+  font-family: Arial, Helvetica, sans-serif !important;
+  font-size: 11px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0 !important;
+  border-radius: 0 !important;
+}
+
+/* Bootstrap spinners must remain circular */
+.stocks-dark .spinner-border,
+.stocks-light .spinner-border {
+  border-radius: 50% !important;
+}
+
+/* ── Dark theme: near-black surfaces ─────────────────────────────────────── */
+.stocks-dark {
+  background: #000000 !important;
+}
+.stocks-dark .sd-card {
+  background: #0a0a0a !important;
+  border: 1px solid #1a1a1a !important;
+  box-shadow: none !important;
+}
+.stocks-dark .sd-btn {
+  background: #0f0f0f !important;
+  border-color: #1f1f1f !important;
+  color: #e6edf3 !important;
+}
+.stocks-dark .sd-btn:hover {
+  background: #1a1a1a !important;
+}
+.stocks-dark .sd-btn-active {
+  background: #ff5000 !important;
+  border-color: #ff5000 !important;
+  color: #ffffff !important;
+}
+.stocks-dark .sd-input,
+.stocks-dark .sd-select {
+  background: #050505 !important;
+  border-color: #1f1f1f !important;
+  color: #e6edf3 !important;
+}
+.stocks-dark .sd-input:focus,
+.stocks-dark .sd-select:focus {
+  border-color: #ff5000 !important;
+  box-shadow: none !important;
+}
+.stocks-dark .sd-table th {
+  border-bottom-color: #1f1f1f !important;
+  color: #8b949e !important;
+}
+.stocks-dark .sd-table td {
+  border-bottom-color: #141414 !important;
+}
+.stocks-dark .sd-table tr:hover {
+  background: #0f0f0f !important;
+}
+.stocks-dark .sd-table tr.sd-selected {
+  background: #0f0f0f !important;
+}
+.stocks-dark .sd-group-header {
+  border-bottom-color: #1f1f1f !important;
+  color: #8b949e !important;
+}
+.stocks-dark .sd-badge-open {
+  background: rgba(63, 185, 80, 0.15) !important;
+  color: #3fb950 !important;
+}
+.stocks-dark .sd-badge-closed {
+  background: #0f0f0f !important;
+  color: #8b949e !important;
+}
+.stocks-dark .sd-theme-toggle {
+  background: #0f0f0f !important;
+  border: 1px solid #1f1f1f !important;
+  color: #e6edf3 !important;
+}
+.stocks-dark .sd-theme-toggle:hover {
+  background: #1a1a1a !important;
+}
+.stocks-dark .list-group-item {
+  background: #0a0a0a !important;
+  border-color: #1f1f1f !important;
+  color: #e6edf3 !important;
+}
+.stocks-dark .list-group-item:hover,
+.stocks-dark .list-group-item.active {
+  background: #141414 !important;
+}
+.stocks-dark .sd-modal-glass {
+  background: #0a0a0a !important;
+  border: 1px solid #1f1f1f !important;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6) !important;
+}
+.stocks-dark .sd-modal-glass::before { display: none !important; }
+.stocks-dark .sd-modal-header,
+.stocks-dark .sd-modal-footer {
+  border-color: #1f1f1f !important;
+}
+.stocks-dark .sd-modal-group {
+  background: #050505 !important;
+  border-color: #1f1f1f !important;
+}
+
+/* ── Light theme: flat/uppercase only (keep light palette) ───────────────── */
+.stocks-light .sd-card {
+  box-shadow: none !important;
+  border-color: #d0d0d0 !important;
+}
+.stocks-light .sd-modal-glass::before { display: none !important; }

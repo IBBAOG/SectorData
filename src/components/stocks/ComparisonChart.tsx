@@ -11,12 +11,12 @@ const THEMES = {
   dark: { bg:"#000000",grid:"#1a1a1a",text:"#ffffff",border:"#333333",crosshair:"#666666",tooltip:"#1a1a1a",tooltipText:"#ffffff" },
   light: { bg:"#ffffff",grid:"#f0f0f0",text:"#1a1a1a",border:"#e0e0e0",crosshair:"#9ca3af",tooltip:"#1f2937",tooltipText:"#ffffff" },
 };
-const FONT_SM = "13px Arial, Helvetica, sans-serif";
-const FONT_BOLD = "bold 13px Arial, Helvetica, sans-serif";
+const FONT_SM = "11px Arial, Helvetica, sans-serif";
+const FONT_BOLD = "bold 11px Arial, Helvetica, sans-serif";
 const PAD = {top:14,right:72,bottom:34,left:48};
 const MIN_BARS = 10;
 
-function fmtDate(unix:number,short=false):string { const d=new Date(unix*1000); const M=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return short?`${M[d.getMonth()]} ${String(d.getDate()).padStart(2,"0")}`:`${M[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`; }
+function fmtDate(unix:number,short=false):string { const d=new Date(unix*1000); const M=["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"]; return short?`${M[d.getMonth()]} ${String(d.getDate()).padStart(2,"0")}`:`${M[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`; }
 function niceSteps(min:number,max:number,n=5):number[] { const r=max-min; if(r<=0)return[min]; const rough=r/n,mag=Math.pow(10,Math.floor(Math.log10(rough))); let step=mag; if(rough/mag>5)step=mag*5; else if(rough/mag>2)step=mag*2; const s:number[]=[]; let v=Math.ceil(min/step)*step; while(v<=max){s.push(v);v+=step;} return s; }
 function clamp(v:number,lo:number,hi:number){return Math.max(lo,Math.min(hi,v));}
 function toUnix(s:string):number{return Math.floor(new Date(s).getTime()/1000);}
