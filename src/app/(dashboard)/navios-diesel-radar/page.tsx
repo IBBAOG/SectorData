@@ -13,8 +13,10 @@ import {
   rpcGetIcSummary,
   rpcGetIcDistinctDates,
   rpcGetIcSnapshot,
+  rpcGetIcLastRun,
   type ImportCandidateRow,
   type ImportCandidateSummaryRow,
+  type DiscoveryRunRow,
 } from "../../../lib/rpc";
 
 const ORANGE = "#FF5000";
@@ -71,6 +73,7 @@ export default function NaviosDieselRadarPage() {
 
   const [candidates, setCandidates] = useState<ImportCandidateRow[]>([]);
   const [summary, setSummary] = useState<ImportCandidateSummaryRow[]>([]);
+  const [lastRun, setLastRun] = useState<DiscoveryRunRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [portFilter, setPortFilter] = useState<string | "all">("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "in_lineup">("all");
@@ -90,8 +93,13 @@ export default function NaviosDieselRadarPage() {
     if (!supabase) return;
     let cancelled = false;
     (async () => {
-      const dates = await rpcGetIcDistinctDates(supabase);
-      if (!cancelled) setAvailableDates(dates);
+      const [dates, run] = await Promise.all([
+        rpcGetIcDistinctDates(supabase),
+        rpcGetIcLastRun(supabase),
+      ]);
+      if (cancelled) return;
+      setAvailableDates(dates);
+      setLastRun(run);
     })();
     return () => { cancelled = true; };
   }, [supabase]);
@@ -412,6 +420,26 @@ export default function NaviosDieselRadarPage() {
                 <div className="page-header-sub">
                   Tankers worldwide signalling a Brazilian port via AIS — 10-30 days before port authorities publish the scheduled line-up.
                 </div>
+                {lastRun && (
+                  <div
+                    title={
+                      `Messages scanned: ${lastRun.msgs_total ?? "—"}\n` +
+                      `BR-destination matches: ${lastRun.br_matches ?? 0}\n` +
+                      `Unique IMOs: ${lastRun.unique_imos ?? 0}\n` +
+                      `Skipped (cabotage): ${lastRun.cabotage_skipped ?? 0}\n` +
+                      `Skipped (non-oil-tanker): ${lastRun.non_tanker_skipped ?? 0}\n` +
+                      `Candidates written: ${lastRun.candidates_written ?? 0}\n` +
+                      `Positions written: ${lastRun.positions_written ?? 0}`
+                    }
+                    style={{ fontFamily: "Arial", fontSize: 11, color: "#888", marginTop: 4, cursor: "help" }}
+                  >
+                    Last AIS sweep: <span style={{ color: "#1a1a1a", fontWeight: 600 }}>{fmtTs(lastRun.ran_at)}</span>
+                    {" · "}
+                    {lastRun.candidates_written ?? 0} candidate(s) kept
+                    {" · "}
+                    {(lastRun.cabotage_skipped ?? 0) + (lastRun.non_tanker_skipped ?? 0)} filtered out
+                  </div>
+                )}
                 <LineUpTabs active="radar" />
               </div>
 

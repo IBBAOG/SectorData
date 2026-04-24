@@ -598,6 +598,18 @@ export type ImportCandidateSummaryRow = {
   total_dwt: number;
 };
 
+export type DiscoveryRunRow = {
+  ran_at: string;
+  listen_seconds: number | null;
+  msgs_total: number | null;
+  br_matches: number | null;
+  unique_imos: number | null;
+  cabotage_skipped: number | null;
+  non_tanker_skipped: number | null;
+  candidates_written: number | null;
+  positions_written: number | null;
+};
+
 export async function rpcGetIcActive(
   supabase: SupabaseClient,
 ): Promise<ImportCandidateRow[]> {
@@ -621,6 +633,19 @@ export async function rpcGetIcSummary(
   } catch (e) {
     console.error("get_ic_summary failed", e);
     return [];
+  }
+}
+
+export async function rpcGetIcLastRun(
+  supabase: SupabaseClient,
+): Promise<DiscoveryRunRow | null> {
+  try {
+    const { data, error } = await supabase.rpc("get_ic_last_run", {});
+    if (error) throw error;
+    return (data ?? null) as DiscoveryRunRow | null;
+  } catch (e) {
+    console.error("get_ic_last_run failed", e);
+    return null;
   }
 }
 

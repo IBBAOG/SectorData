@@ -185,9 +185,11 @@ def _is_tanker_ship_type(code: int | None) -> bool:
 
 
 # ─── AISStream listener ─────────────────────────────────────────────────────
-async def listen_for_br_candidates() -> dict[str, dict]:
+async def listen_for_br_candidates() -> tuple[dict[str, dict], dict]:
     """
-    Returns {mmsi: {imo, name, ship_type_code, dest_raw, eta, draught, ...}}
+    Returns (hits, stats) where:
+      hits  — {mmsi: {imo, name, ship_type_code, dest_raw, eta, draught, ...}}
+      stats — {msgs_total, br_matches, unique_imos, listen_seconds}
     for vessels whose Destination mentions a Brazilian port during the window.
     """
     hits: dict[str, dict] = {}
@@ -279,7 +281,13 @@ async def listen_for_br_candidates() -> dict[str, dict]:
 
         print(f"[disc] {msgs} ShipStaticData msgs | {br_matches} com destino BR | {len(hits)} IMOs únicos")
 
-    return hits
+    stats = {
+        "msgs_total": msgs,
+        "br_matches": br_matches,
+        "unique_imos": len(hits),
+        "listen_seconds": LISTEN_SECONDS,
+    }
+    return hits, stats
 
 
 def _eta_dict_to_iso(eta: dict) -> str | None:
@@ -491,9 +499,14 @@ async def _run():
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
     # 1. Listen for BR-destined ShipStaticData
-    hits = await listen_for_br_candidates()
+    hits, stats = await listen_for_br_candidates()
+
+    cabotage_skipped = 0
+    non_tanker_skipped = 0
+
     if not hits:
         print("[disc] nenhum candidato novo neste ciclo")
+        _log_run(sb, stats, cabotage_skipped, non_tanker_skipped, 0, 0)
         return
 
     # 2. Enrich each hit with VesselFinder click + vi2
@@ -542,6 +555,7 @@ async def _run():
             or (origin_country and origin_country.strip().upper() in ("BRAZIL", "BRASIL", "BR"))
         )
         if is_br_origin:
+            cabotage_skipped += 1
             print(
                 f"[disc] {i}/{len(hits)} {c.get('navio') or mmsi:30s} "
                 f"→ SKIP cabotagem (origin {origin_name or origin_locode or origin_country})"
@@ -551,6 +565,7 @@ async def _run():
         # Non-oil-tanker guard — Radar tracks diesel imports only. Skip
         # container/bulk/cargo/gas/water vessels so they never reach the UI.
         if not is_oil_tanker(c.get("ship_type"), c.get("ship_type_code")):
+            non_tanker_skipped += 1
             print(
                 f"[disc] {i}/{len(hits)} {c.get('navio') or mmsi:30s} "
                 f"→ SKIP non-oil-tanker (type: {c.get('ship_type') or c.get('ship_type_code') or '?'})"
@@ -576,6 +591,28 @@ async def _run():
     print(f"[disc] {written} candidato(s) gravado(s) em import_candidates")
     trail_written = insert_position_history(sb, enriched)
     print(f"[disc] {trail_written} linha(s) de trilha gravada(s) em candidate_positions")
+
+    _log_run(sb, stats, cabotage_skipped, non_tanker_skipped, written, trail_written)
+
+
+def _log_run(sb, stats: dict, cabotage_skipped: int, non_tanker_skipped: int,
+             candidates_written: int, positions_written: int) -> None:
+    """Persist this sweep's outcome so the dashboard can show 'last run' even
+    when everything got filtered."""
+    try:
+        sb.table("discovery_runs").insert({
+            "listen_seconds":     stats.get("listen_seconds"),
+            "msgs_total":         stats.get("msgs_total"),
+            "br_matches":         stats.get("br_matches"),
+            "unique_imos":        stats.get("unique_imos"),
+            "cabotage_skipped":   cabotage_skipped,
+            "non_tanker_skipped": non_tanker_skipped,
+            "candidates_written": candidates_written,
+            "positions_written":  positions_written,
+        }).execute()
+        print("[disc] run registrada em discovery_runs")
+    except Exception as e:
+        print(f"[disc] falha ao registrar run em discovery_runs: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":
