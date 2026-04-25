@@ -79,10 +79,6 @@ export default function NewsHunterPage() {
   const [keywordsLoaded, setKeywordsLoaded] = useState<boolean>(false);
   const [newKeyword, setNewKeyword] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(true);
-  // ISO timestamp of the most recent row's `found_at` — i.e., when the GHA
-  // scanner last pushed a new article. This reflects the actual scanner
-  // cadence, not the front-end's polling clock.
-  const [lastFoundAt, setLastFoundAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [justArrivedUrls, setJustArrivedUrls] = useState<Set<string>>(new Set());
@@ -224,15 +220,15 @@ export default function NewsHunterPage() {
       }
       const rows = (data as NewsArticle[]) ?? [];
       setArticles(rows);
-      const newest =
+      // Watermark for incremental polling (`WHERE found_at > X`). MUST stay
+      // on `found_at`, not `published_at` — the scanner upserts existing
+      // URLs with a refreshed `found_at` on every run, so a `published_at`
+      // watermark would skip those re-touches and we'd miss real updates.
+      const newestFoundAt =
         rows.length > 0
           ? rows.reduce((max, r) => (r.found_at > max ? r.found_at : max), rows[0].found_at)
           : null;
-      // For incremental queries we still need a watermark even if no rows
-      // were returned, so fall back to "now" for the ref. The displayed
-      // label uses `newest` (real scanner activity), not the watermark.
-      lastFoundAtRef.current = newest ?? new Date().toISOString();
-      setLastFoundAt(newest);
+      lastFoundAtRef.current = newestFoundAt ?? new Date().toISOString();
       // Seed seen-set so the initial load doesn't flash as "just arrived".
       seenUrlsRef.current = new Set(rows.map((r) => r.url));
       setLoading(false);
@@ -256,12 +252,10 @@ export default function NewsHunterPage() {
     setError(null);
     if (rows.length === 0) return;
 
-    const newMax = rows.reduce(
+    lastFoundAtRef.current = rows.reduce(
       (max, r) => (r.found_at > max ? r.found_at : max),
       lastFoundAtRef.current!,
     );
-    lastFoundAtRef.current = newMax;
-    setLastFoundAt(newMax);
 
     const trulyNew = rows.filter((r) => !seenUrlsRef.current.has(r.url));
     if (trulyNew.length > 0) {
@@ -338,11 +332,17 @@ export default function NewsHunterPage() {
 
   if (visLoading || !visible) return null;
 
-  // "última manchete há X" — based on the newest `found_at` we've seen, i.e.
-  // when the GHA scanner last pushed an article. If no articles ever, show
-  // nothing (the empty-state already explains the cadence).
-  const lastScanLabel = lastFoundAt
-    ? `última manchete ${humanizeAge(lastFoundAt)}`
+  // "última manchete há X" uses the newest *published_at* of what the user
+  // currently sees — NOT MAX(found_at). The scanner is stateless and re-
+  // upserts every URL it encounters, so `found_at` advances on every run
+  // even when nothing new was actually published. `published_at` is set
+  // from the article's real publication date and stays stable across
+  // re-scans, so it answers the honest question: "how fresh is the news
+  // I'm looking at?". `filtered` is sorted DESC by published_at, so [0]
+  // is the max.
+  const lastPublishedAt = filtered[0]?.published_at ?? null;
+  const lastScanLabel = lastPublishedAt
+    ? `última manchete ${humanizeAge(lastPublishedAt)}`
     : "";
 
   return (
@@ -441,7 +441,7 @@ export default function NewsHunterPage() {
             </span>
             <span className={styles.metaSep}>·</span>
             <span className={styles.metaMuted}>últimas {windowHours}h</span>
-            {lastFoundAt && (
+            {lastPublishedAt && (
               <>
                 <span className={styles.metaSep}>·</span>
                 <span className={styles.metaMuted}>{lastScanLabel}</span>
