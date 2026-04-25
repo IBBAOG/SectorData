@@ -1,6 +1,8 @@
 -- Per-user keyword list for News Hunter. Each user maintains their own
--- preferences. The scanner (running on Fly.io with the service_role key)
--- reads SELECT DISTINCT keyword FROM news_hunter_keywords across all users
+-- preferences. The scanner (GitHub Actions workflow at
+-- github.com/IBBAOG/news-hunter-scanner, triggered by cron-job.org every
+-- ~5 min, using the service_role key) reads
+-- SELECT DISTINCT keyword FROM news_hunter_keywords across all users
 -- to build the search set; the frontend filters per-user client-side using
 -- only auth.uid()'s rows.
 

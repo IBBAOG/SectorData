@@ -21,6 +21,7 @@ Real-time data visualization, automated data pipelines, Excel export, and role-b
   - [D&G Margins](#dg-margins)
   - [Price Bands](#price-bands)
   - [Market Watch](#market-watch)
+  - [News Hunter](#news-hunter)
 - [Database Schema](#database-schema)
 - [Data Pipelines (GitHub Actions)](#data-pipelines-github-actions)
   - [Vessel Monitoring](#1-vessel-monitoring)
@@ -31,6 +32,7 @@ Real-time data visualization, automated data pipelines, Excel export, and role-b
   - [Vessel IMO Lookup](#6-vessel-imo-lookup)
   - [Vessel Position Sync (VesselFinder)](#7-vessel-position-sync-vesselfinder)
   - [AIS Diesel Import Radar](#8-ais-diesel-import-radar)
+  - [News Hunter Scanner](#9-news-hunter-scanner)
 - [Authentication & Roles](#authentication--roles)
 - [Reusable Components](#reusable-components)
 - [Supabase RPC Reference](#supabase-rpc-reference)
@@ -220,6 +222,9 @@ dashboard_projeto/
 │   │       ├── diesel-gasoline-margins/page.tsx
 │   │       ├── price-bands/page.tsx
 │   │       ├── stocks/page.tsx     #   Market Watch (Bloomberg-style)
+│   │       ├── news-hunter/        #   News Hunter — live O&G headline feed
+│   │       │   ├── page.tsx        #     Page (polling + chips + theme toggle)
+│   │       │   └── page.module.css #     Scoped CSS (isolates from Bootstrap)
 │   │       ├── profile/page.tsx    #   User profile editor
 │   │       ├── admin-panel/page.tsx   #   Admin-only: roles + module visibility
 │   │       └── template-module/page.tsx  # Starter template for new modules
@@ -273,7 +278,9 @@ dashboard_projeto/
 │       ├── 20260331000001_navios_diesel_drop_old_sigs.sql # Cleanup old function signatures
 │       ├── 20260401000000_stock_portfolios.sql    # stock_portfolios table + visibility
 │       ├── 20260401000001_stock_portfolio_groups.sql # Add portfolio groups column
-│       └── 20260402000000_sales_volumes.sql       # Sales Volumes RPC namespace (get_sv_*)
+│       ├── 20260402000000_sales_volumes.sql       # Sales Volumes RPC namespace (get_sv_*)
+│       ├── 20260424000008_news_hunter.sql         # news_articles table (read-only for app)
+│       └── 20260424000009_news_hunter_keywords.sql # Per-user keyword filters + seed RPC
 │
 ├── navios_esperados.py             # Root-level vessel scraper
 ├── upload_dg_margins.py            # Root-level D&G margins uploader
@@ -463,6 +470,47 @@ A real-time financial market dashboard with a draggable, resizable card grid lay
 
 ---
 
+### News Hunter
+
+| | |
+|---|---|
+| **Route** | `/news-hunter` |
+| **File** | `src/app/(dashboard)/news-hunter/page.tsx` |
+| **Description** | Live oil & gas headline feed, scanned across ~60 Brazilian news sources |
+| **Excel Export** | No |
+
+Flat, real-time list of headlines matching a user-editable keyword set. The dashboard is **read-only**: ingestion is performed by an external scanner (see [News Hunter Scanner](#9-news-hunter-scanner)) that pushes new articles into Supabase. The page polls Supabase incrementally to surface them.
+
+**How it works end-to-end:**
+
+1. The scanner — a separate GitHub Actions workflow at [`IBBAOG/news-hunter-scanner`](https://github.com/IBBAOG/news-hunter-scanner) — is triggered by **cron-job.org every ~5 min** via `workflow_dispatch`.
+2. Each run executes `python news_hunter_service.py --once`: it reads the search keyword set as the **UNION of every authenticated user's `news_hunter_keywords` rows**, scrapes ~60 sources, and UPSERTs new rows into `public.news_articles` with the service role key (bypassing RLS).
+3. The dashboard page polls Supabase every **60 s**, fetching only rows with `found_at` greater than the last seen watermark — keeping egress flat regardless of how many users are connected.
+4. The keyword chip panel reads/writes `public.news_hunter_keywords` per `auth.uid()` (RLS). Adding a chip on the dashboard **does** change what the scanner searches for on its next run.
+
+**UI features:**
+
+- **Window dropdown** (1h, 3h, 6h, 12h, 24h, 48h, 72h, 7d) — display-only filter on `published_at`. The scanner always sweeps the trailing 24h, so windows ≥ 24h surface only what's accumulated in the table.
+- **Keyword chips with × / +** — bound to `news_hunter_keywords` via Supabase RLS; first visit auto-seeds 27 default oil & gas terms via `seed_my_news_hunter_keywords()`.
+- **"Just-arrived" flash** — yellow `#ffd400` highlight for ~3.4 s when a new headline lands during incremental polling.
+- **Light / dark theme** toggle persisted in `localStorage` (`news-hunter-theme`).
+- **"Última manchete há X"** — derived from `MAX(found_at)` across loaded rows, so it reflects when the scanner last pushed something, not when the front-end last fetched.
+
+**Cadence summary:**
+
+| Layer | Cadence |
+|---|---|
+| `cron-job.org` → GHA `workflow_dispatch` | ~5 min |
+| GHA scan (`--once`) → Supabase UPSERT | ~5 min |
+| Front-end `fetchIncremental` → Supabase | 60 s |
+| Age label tick (`"há X min"`) | 15 s |
+
+**RLS:** `news_articles` allows `SELECT` to `authenticated`; only the service role (held by the scanner workflow) can `INSERT`/`UPDATE`. `news_hunter_keywords` is per-user — users can read/write only their own rows.
+
+**RPC functions:** `seed_my_news_hunter_keywords` (idempotent first-visit seed)
+
+---
+
 ## Database Schema
 
 All tables use Row Level Security (RLS) — only authenticated users can `SELECT`. All data access from the frontend goes through RPC functions (no direct table queries).
@@ -572,6 +620,37 @@ Controls which modules are visible to Client users (Admins always see all).
 |--------|------|-------------|
 | `module_slug` | text (PK) | Module identifier (e.g., `"market-share"`) |
 | `is_visible_for_clients` | boolean | Whether Clients can access this module |
+
+#### `news_articles` — Oil & Gas Headlines
+
+Articles ingested by the [News Hunter Scanner](#9-news-hunter-scanner) GitHub Actions workflow.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `url` | text (PK) | Article URL (deduplication key) |
+| `domain` | text | Source domain (e.g., `valor.globo.com`) |
+| `source_name` | text | Human-readable source name |
+| `title` | text | Headline |
+| `snippet` | text | First paragraph / RSS summary |
+| `published_at` | timestamptz | When the article was published |
+| `found_at` | timestamptz | When the scanner inserted the row |
+| `matched_keywords` | text[] | Keywords from `news_hunter_keywords` that matched |
+| `created_at` | timestamptz | Row creation timestamp |
+
+**RLS:** `SELECT` open to `authenticated`. No `INSERT`/`UPDATE`/`DELETE` policy — only the scanner's service role key can write.
+
+#### `news_hunter_keywords` — Per-User Keyword Filters
+
+Each authenticated user maintains their own keyword list. The scanner reads the **UNION** of all users' keywords as its global search set.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `user_id` | uuid | References `auth.users(id)` (cascade) |
+| `keyword` | text | Search term |
+| `created_at` | timestamptz | When the user added it |
+
+**Primary key:** `(user_id, keyword)`
+**RLS:** Users can `SELECT`/`INSERT`/`DELETE` only their own rows.
 
 ### Materialized Views
 
@@ -750,6 +829,37 @@ Once this runs, §5's AIS sync can subscribe with an MMSI filter instead of bbox
 
 **Cargo caveat:** AIS has no cargo-type field. Confidence score is a composite heuristic, not a guarantee — treat it as directional. False positives are gasoline or jet-fuel tankers; false negatives are vessels with stale `Destination`.
 
+### 9. News Hunter Scanner
+
+| | |
+|---|---|
+| **Repo** | [`IBBAOG/news-hunter-scanner`](https://github.com/IBBAOG/news-hunter-scanner) (separate from this dashboard repo) |
+| **Workflow** | `.github/workflows/scan.yml` |
+| **Schedule** | `workflow_dispatch` only — fired by [cron-job.org](https://cron-job.org) every ~5 min |
+| **Script** | `python news_hunter_service.py --once` |
+| **Target table** | `news_articles` (this Supabase project) |
+| **Keyword source** | `news_hunter_keywords` (this Supabase project) |
+
+**Why a separate repo?** Keeping the scanner outside the dashboard repo means it can iterate on its scrape logic / source list without retriggering the Vercel deploy. The scanner depends only on the shared Supabase tables.
+
+**Why cron-job.org instead of GitHub `schedule:`?** GitHub-native cron is unreliable at sub-15-minute intervals (workers can be deferred 10–30 min under load). External cron with `workflow_dispatch` gives a tight ~5 min cadence.
+
+**Process:**
+
+1. The workflow is dispatched. `concurrency: { group: scanner, cancel-in-progress: true }` means a new dispatch cancels any in-flight run, so scans never queue up.
+2. The script reads the keyword search set with `SELECT keyword FROM news_hunter_keywords` (deduped, UNION across all authenticated users).
+3. It scrapes ~60 sources (RSS / sitemaps / Google News / homepage scrapes) using 48 parallel workers with a 12 s deadline per source.
+4. For each candidate item, it fetches the article HTML, extracts a clean `published_at` and snippet, and re-validates the keyword match.
+5. New articles (deduped on `url`) are batch-UPSERTed into `news_articles` using the `SUPABASE_SERVICE_KEY` (bypassing RLS).
+6. `hours_override=24` is hardcoded — every scan sweeps the trailing 24 h regardless of dashboard window selection.
+
+**Required secrets** (in the **scanner** repo, not this one):
+
+- `SUPABASE_URL` — `https://<project>.supabase.co`
+- `SUPABASE_SERVICE_KEY` — service role key (full bypass of RLS)
+
+**Manual run:** Actions → *News Hunter scan* → *Run workflow* in `IBBAOG/news-hunter-scanner`.
+
 ---
 
 ## Authentication & Roles
@@ -858,6 +968,14 @@ All RPC wrappers live in `src/lib/rpc.ts` (grouped by module) and `src/lib/profi
 | Function | Purpose | Parameters |
 |----------|---------|------------|
 | `get_price_bands_data` | All parity rows ordered by date | `p_product` (optional) |
+
+### News Hunter Module (1 function)
+
+| Function | Purpose | Parameters |
+|----------|---------|------------|
+| `seed_my_news_hunter_keywords` | Seed the default 27 oil & gas keywords for `auth.uid()` on first visit (idempotent — `ON CONFLICT DO NOTHING`) | — |
+
+The page itself reads/writes `news_hunter_keywords` directly with PostgREST (RLS-scoped to the current user); only the seed call goes through an RPC.
 
 ### Profile & Admin (6 functions — in `profileRpc.ts`)
 

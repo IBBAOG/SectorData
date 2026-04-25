@@ -1,4 +1,6 @@
-/* News Hunter — visual replica of Clipinator /headlines (scoped) */
+/* News Hunter — flat headline list, scoped via CSS module so it doesn't
+   collide with the global Bootstrap stylesheet used by the rest of the
+   dashboard. */
 
 .page {
   --nh-bg: #ffffff;

@@ -1,5 +1,7 @@
--- News Hunter: oil & gas news articles ingested by an external Python scanner
--- that uses the service_role key. The frontend only reads (authenticated).
+-- News Hunter: oil & gas news articles ingested by the external Python scanner
+-- at github.com/IBBAOG/news-hunter-scanner (GitHub Actions, triggered by
+-- cron-job.org every ~5 min). The scanner uses the service_role key to
+-- UPSERT rows; the frontend only reads (authenticated, RLS).
 
 create table if not exists public.news_articles (
   url              text primary key,

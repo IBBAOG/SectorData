@@ -20,7 +20,10 @@ type NewsArticle = {
 };
 
 const WINDOW_PRESETS = [1, 3, 6, 12, 24, 48, 72, 168] as const;
-const POLL_INTERVAL_MS = 30_000;
+// Scanner roda no GitHub Actions (IBBAOG/news-hunter-scanner) a cada ~5 min,
+// disparado por cron-job.org. Polling do front a 60s mantém a tela responsiva
+// sem desperdiçar egress do free tier do Supabase em queries vazias.
+const POLL_INTERVAL_MS = 60_000;
 const AGE_TICK_MS = 15_000;
 const PAGE_LIMIT = 500;
 const FLASH_DURATION_MS = 3400;
@@ -76,7 +79,10 @@ export default function NewsHunterPage() {
   const [keywordsLoaded, setKeywordsLoaded] = useState<boolean>(false);
   const [newKeyword, setNewKeyword] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(true);
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  // ISO timestamp of the most recent row's `found_at` — i.e., when the GHA
+  // scanner last pushed a new article. This reflects the actual scanner
+  // cadence, not the front-end's polling clock.
+  const [lastFoundAt, setLastFoundAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [justArrivedUrls, setJustArrivedUrls] = useState<Set<string>>(new Set());
@@ -218,11 +224,15 @@ export default function NewsHunterPage() {
       }
       const rows = (data as NewsArticle[]) ?? [];
       setArticles(rows);
-      setLastUpdate(new Date());
-      lastFoundAtRef.current =
+      const newest =
         rows.length > 0
           ? rows.reduce((max, r) => (r.found_at > max ? r.found_at : max), rows[0].found_at)
-          : new Date().toISOString();
+          : null;
+      // For incremental queries we still need a watermark even if no rows
+      // were returned, so fall back to "now" for the ref. The displayed
+      // label uses `newest` (real scanner activity), not the watermark.
+      lastFoundAtRef.current = newest ?? new Date().toISOString();
+      setLastFoundAt(newest);
       // Seed seen-set so the initial load doesn't flash as "just arrived".
       seenUrlsRef.current = new Set(rows.map((r) => r.url));
       setLoading(false);
@@ -243,14 +253,15 @@ export default function NewsHunterPage() {
       return;
     }
     const rows = (data as NewsArticle[]) ?? [];
-    setLastUpdate(new Date());
     setError(null);
     if (rows.length === 0) return;
 
-    lastFoundAtRef.current = rows.reduce(
+    const newMax = rows.reduce(
       (max, r) => (r.found_at > max ? r.found_at : max),
       lastFoundAtRef.current!,
     );
+    lastFoundAtRef.current = newMax;
+    setLastFoundAt(newMax);
 
     const trulyNew = rows.filter((r) => !seenUrlsRef.current.has(r.url));
     if (trulyNew.length > 0) {
@@ -327,8 +338,11 @@ export default function NewsHunterPage() {
 
   if (visLoading || !visible) return null;
 
-  const lastScanLabel = lastUpdate
-    ? `último scan ${humanizeAge(lastUpdate.toISOString())}`
+  // "última manchete há X" — based on the newest `found_at` we've seen, i.e.
+  // when the GHA scanner last pushed an article. If no articles ever, show
+  // nothing (the empty-state already explains the cadence).
+  const lastScanLabel = lastFoundAt
+    ? `última manchete ${humanizeAge(lastFoundAt)}`
     : "";
 
   return (
@@ -365,7 +379,12 @@ export default function NewsHunterPage() {
             >
               {theme === "dark" ? "Modo claro" : "Modo escuro"}
             </button>
-            <span className={styles.autoNote}>auto-refresh: 30s</span>
+            <span
+              className={styles.autoNote}
+              title="Scanner roda no GitHub Actions a cada ~5 min; o painel revalida a cada 60s."
+            >
+              scanner ~5 min · refresh 60s
+            </span>
           </div>
         </div>
 
@@ -422,7 +441,7 @@ export default function NewsHunterPage() {
             </span>
             <span className={styles.metaSep}>·</span>
             <span className={styles.metaMuted}>últimas {windowHours}h</span>
-            {lastUpdate && (
+            {lastFoundAt && (
               <>
                 <span className={styles.metaSep}>·</span>
                 <span className={styles.metaMuted}>{lastScanLabel}</span>
@@ -443,7 +462,9 @@ export default function NewsHunterPage() {
               </p>
               {articles.length === 0 && (
                 <p className={styles.metaMuted}>
-                  O scanner está rodando na nuvem — novas manchetes aparecem aqui a cada 30s.
+                  O scanner roda no GitHub Actions a cada ~5 min e grava
+                  artigos novos no Supabase. Esta página revalida sozinha
+                  conforme novas manchetes chegam.
                 </p>
               )}
             </div>
