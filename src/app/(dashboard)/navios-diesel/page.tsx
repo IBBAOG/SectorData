@@ -273,7 +273,7 @@ export default function NaviosDieselPage() {
 
   // Map height: 500px on xxl (1400px+), 360px on smaller screens
   useEffect(() => {
-    const update = () => setMapHeight(window.innerWidth >= 1400 ? 500 : 360);
+    const update = () => setMapHeight(window.innerWidth >= 1920 ? 500 : 380);
     update();
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
