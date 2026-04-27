@@ -33,17 +33,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Use user token to get their profile (respects RLS)
-    const userClient = createClient(SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
-      global: { headers: { Authorization: `Bearer ${userToken}` } },
-    });
-    const { data: profile, error: profileErr } = await userClient.rpc("get_my_profile");
-    if (profileErr || !profile || profile.role !== "Admin") {
-      return NextResponse.json({ error: "Forbidden — Admin only" }, { status: 403 });
+    const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+
+    // Verify JWT and get user identity via service role
+    const { data: { user }, error: userErr } = await admin.auth.getUser(userToken);
+    if (userErr || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // ── 3. Upload using service role (bypasses storage RLS) ─────────────────
-    const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+    // Check Admin role directly from profiles table (bypasses RLS)
+    const { data: profileRow, error: profileErr } = await admin
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+    if (profileErr || !profileRow || profileRow.role !== "Admin") {
+      return NextResponse.json({ error: "Forbidden — Admin only" }, { status: 403 });
+    }
 
     const ext = (file instanceof File ? file.name.split(".").pop() : null) ?? "jpg";
     // Include timestamp in filename so the CDN never serves a stale cached version
