@@ -70,6 +70,7 @@ const MODULE_LABELS: { slug: string; label: string; description: string }[] = [
   { slug: "diesel-gasoline-margins",label: "Diesel and Gasoline Margins",description: "Diesel and gasoline margin tracking across regions and time" },
   { slug: "price-bands",            label: "Price Bands",               description: "Price band distribution and competitive positioning by fuel type" },
   { slug: "stocks",                 label: "Market Watch",              description: "Real-time stock quotes, historical charts, and market overview" },
+  { slug: "news-hunter",            label: "News Hunter",               description: "Live oil & gas news feed with incremental polling across ~60 sources" },
 ];
 
 // ── Main component ────────────────────────────────────────────────────────────
