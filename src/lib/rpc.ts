@@ -729,7 +729,7 @@ export type PriceBandsRow = {
   id: number;
   date: string;                          // "YYYY-MM-DD"
   product: string;                       // "Gasoline" | "Diesel"
-  bba_import_parity: number | null;      // IBBA for Gasoline, BBA for Diesel
+  bba_import_parity: number | null;      // bba = calculated import parity
   bba_import_parity_w_subsidy: number | null; // Diesel only
   bba_export_parity: number | null;
   petrobras_price: number | null;

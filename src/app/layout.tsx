@@ -3,8 +3,8 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Itaú BBA | Dashboard",
-  description: "Itaú BBA dashboard",
+  title: "Dashboard",
+  description: "Analytics dashboard",
 };
 
 export default function RootLayout({

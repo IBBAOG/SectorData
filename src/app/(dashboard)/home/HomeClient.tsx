@@ -145,7 +145,7 @@ export default function HomeClient({ initialPreviews }: HomeClientProps) {
             marginBottom: 20,
           }}
         >
-          Itaú BBA · Analytics
+          Analytics
         </div>
         <h1
           style={{

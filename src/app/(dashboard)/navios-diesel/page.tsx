@@ -670,7 +670,7 @@ export default function NaviosDieselPage() {
           <div className="col-2 p-0">
             <div id="sidebar">
               <div style={{ textAlign: "center" }}>
-                <img src="/logo.png" alt="Itaú BBA" style={{ width: "100%", maxWidth: 300, marginBottom: 16 }} />
+                <div style={{ width: "100%", maxWidth: 300, height: 60, display: "flex", alignItems: "center", justifyContent: "center", border: "2px dashed #ccc", color: "#aaa", fontSize: 18, fontWeight: 700, letterSpacing: 3, marginBottom: 16, borderRadius: 6 }}>TBD</div>
               </div>
 
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />

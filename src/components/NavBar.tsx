@@ -8,7 +8,6 @@ import { getSupabaseClient } from "../lib/supabaseClient";
 import { useUserProfile } from "../context/UserProfileContext";
 import { getInitials } from "../lib/avatarUtils";
 
-const LOGO_URL = "/logo-navbar.png";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
@@ -111,7 +110,7 @@ export default function NavBar() {
     <nav id="main-navbar" className="navbar navbar-expand-lg sticky-top">
       <div className="container-fluid">
         <Link href="/home" className="navbar-brand d-flex align-items-center">
-          <img src={LOGO_URL} alt="Itaú BBA" style={{ height: 36 }} />
+          <span style={{ height: 36, display: "inline-flex", alignItems: "center", padding: "0 10px", border: "2px dashed #aaa", color: "#aaa", fontSize: 13, fontWeight: 700, letterSpacing: 2, borderRadius: 4 }}>TBD</span>
         </Link>
 
         <div className="navbar-nav navbar-nav-center">

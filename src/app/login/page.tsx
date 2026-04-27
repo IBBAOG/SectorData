@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 
 import { getSupabaseClient } from "../../lib/supabaseClient";
 
-const LOGO_URL = "/logo.png";
 
 const BG_GIFS = [
   "https://media0.giphy.com/media/fy9QYx06VF8c9D3Sc3/giphy.gif",
@@ -131,11 +130,7 @@ export default function LoginPage() {
       </svg>
       <div id="login-card">
         <div style={{ textAlign: "center" }}>
-          <img
-            src={LOGO_URL}
-            alt="Itaú BBA"
-            style={{ width: "100%", maxWidth: 280, marginBottom: 24 }}
-          />
+          <div style={{ width: "100%", maxWidth: 280, height: 64, display: "flex", alignItems: "center", justifyContent: "center", border: "2px dashed #ccc", color: "#aaa", fontSize: 18, fontWeight: 700, letterSpacing: 3, marginBottom: 24, borderRadius: 6 }}>TBD</div>
         </div>
 
         <h5

@@ -520,7 +520,7 @@ export async function downloadMarketShareExcel(
   const dd = String(now.getDate()).padStart(2, "0");
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const yy = String(now.getFullYear()).slice(-2);
-  a.download = `IBBA - FD Market Share ${dd}-${mm}-${yy}.xlsx`;
+  a.download = `FD Market Share ${dd}-${mm}-${yy}.xlsx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -608,7 +608,7 @@ export async function downloadDgMarginsExcel(rows: DgMarginsRow[]): Promise<void
   const dd = String(now.getDate()).padStart(2, "0");
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const yy = String(now.getFullYear()).slice(-2);
-  a.download = `IBBA - D&G Margins ${dd}-${mm}-${yy}.xlsx`;
+  a.download = `D&G Margins ${dd}-${mm}-${yy}.xlsx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -639,7 +639,7 @@ export async function downloadPriceBandsExcel(rows: PriceBandsRow[]): Promise<vo
     const isDiesel = product === "Diesel";
     const headers = isDiesel
       ? ["Date", "BBA Import Parity", "BBA Import Parity w/ Subsidy", "BBA Export Parity", "Petrobras Price", "Petrobras Price w/ Subsidy"]
-      : ["Date", "IBBA Import Parity", "IBBA Export Parity", "Petrobras Price"];
+      : ["Date", "Import Parity", "Export Parity", "Petrobras Price"];
 
     ws.getColumn(1).width = 12;
     for (let c = 2; c <= headers.length; c++) ws.getColumn(c).width = 24;
@@ -685,7 +685,7 @@ export async function downloadPriceBandsExcel(rows: PriceBandsRow[]): Promise<vo
   const dd = String(now.getDate()).padStart(2, "0");
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const yy = String(now.getFullYear()).slice(-2);
-  a.download = `IBBA - Price Bands ${dd}-${mm}-${yy}.xlsx`;
+  a.download = `Price Bands ${dd}-${mm}-${yy}.xlsx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -1052,7 +1052,7 @@ export async function downloadSalesVolumesExcel(
   const dd = String(now.getDate()).padStart(2, "0");
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const yy = String(now.getFullYear()).slice(-2);
-  svA.download = `IBBA - FD Sales Volumes ${dd}-${mm}-${yy}.xlsx`;
+  svA.download = `FD Sales Volumes ${dd}-${mm}-${yy}.xlsx`;
   document.body.appendChild(svA);
   svA.click();
   document.body.removeChild(svA);

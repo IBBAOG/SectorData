@@ -13,8 +13,8 @@ import { downloadPriceBandsExcel } from "../../../lib/exportExcel";
 
 // ── Colors ────────────────────────────────────────────────────────────────────
 
-const COLOR_IMPORT = "#E8611A";  // orange — IBBA/BBA Import Parity
-const COLOR_EXPORT = "#1a1a1a";  // black  — IBBA/BBA Export Parity
+const COLOR_IMPORT = "#E8611A";  // orange — Import Parity
+const COLOR_EXPORT = "#1a1a1a";  // black  — Export Parity
 const COLOR_PETRO  = "#4ECDC4";  // teal   — Petrobras Price
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -29,8 +29,8 @@ interface SeriesDef {
 }
 
 const GAS_SERIES: SeriesDef[] = [
-  { label: "IBBA - Import Parity", field: "bba_import_parity", color: COLOR_IMPORT, dash: "solid", shape: "linear", width: 1.5 },
-  { label: "IBBA - Export Parity", field: "bba_export_parity", color: COLOR_EXPORT, dash: "solid", shape: "linear", width: 1.5 },
+  { label: "Import Parity", field: "bba_import_parity", color: COLOR_IMPORT, dash: "solid", shape: "linear", width: 1.5 },
+  { label: "Export Parity", field: "bba_export_parity", color: COLOR_EXPORT, dash: "solid", shape: "linear", width: 1.5 },
   { label: "Petrobras Price",      field: "petrobras_price",   color: COLOR_PETRO,  dash: "solid", shape: "hv",     width: 2   },
 ];
 
@@ -541,7 +541,7 @@ export default function PriceBandsPage() {
           <div className="col-2 p-0" style={{ display: "flex", flexDirection: "column" }}>
             <div id="sidebar">
               <div style={{ textAlign: "center" }}>
-                <img src="/logo.png" alt="Itaú BBA" style={{ width: "100%", maxWidth: 300, marginBottom: 16 }} />
+                <div style={{ width: "100%", maxWidth: 300, height: 60, display: "flex", alignItems: "center", justifyContent: "center", border: "2px dashed #ccc", color: "#aaa", fontSize: 18, fontWeight: 700, letterSpacing: 3, marginBottom: 16, borderRadius: 6 }}>TBD</div>
               </div>
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
 
