@@ -85,7 +85,7 @@ export default function AdminPanelPage() {
   const [localPreviews, setLocalPreviews] = useState<Record<string, string>>({});
   const [uploadingSlug, setUploadingSlug] = useState<string | null>(null);
   const [savedPreviewSlug, setSavedPreviewSlug] = useState<string | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<{ slug: string; message: string } | null>(null);
 
   useEffect(() => {
     if (!supabase) return;
@@ -96,14 +96,14 @@ export default function AdminPanelPage() {
     if (!supabase || uploadingSlug) return;
     setUploadingSlug(slug);
     setUploadError(null);
-    const url = await uploadCardPreview(supabase, slug, file);
-    if (url) {
-      setLocalPreviews((prev) => ({ ...prev, [slug]: url }));
+    const result = await uploadCardPreview(supabase, slug, file);
+    if ("url" in result) {
+      setLocalPreviews((prev) => ({ ...prev, [slug]: result.url }));
       setSavedPreviewSlug(slug);
       setTimeout(() => setSavedPreviewSlug((s) => (s === slug ? null : s)), 2000);
     } else {
-      setUploadError(slug);
-      setTimeout(() => setUploadError((s) => (s === slug ? null : s)), 3000);
+      setUploadError({ slug, message: result.error });
+      setTimeout(() => setUploadError((s) => (s?.slug === slug ? null : s)), 6000);
     }
     setUploadingSlug(null);
   }
@@ -398,7 +398,7 @@ export default function AdminPanelPage() {
                 const currentUrl = localPreviews[slug];
                 const isUploading = uploadingSlug === slug;
                 const justSaved = savedPreviewSlug === slug;
-                const hasError = uploadError === slug;
+                const errorForSlug = uploadError?.slug === slug ? uploadError.message : null;
                 return (
                   <div key={slug} className="settings-module-row" style={{ alignItems: "center", gap: 16 }}>
                     {/* Thumbnail */}
@@ -416,7 +416,11 @@ export default function AdminPanelPage() {
                     {/* Upload */}
                     <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
                       {justSaved && <span className="settings-saved-tick" aria-live="polite">✓ Saved</span>}
-                      {hasError && <span style={{ fontSize: 12, color: "#c0392b" }}>Upload failed</span>}
+                      {errorForSlug && (
+                        <span style={{ fontSize: 12, color: "#c0392b", maxWidth: 200, wordBreak: "break-word" }} title={errorForSlug}>
+                          {errorForSlug.length > 40 ? errorForSlug.slice(0, 40) + "…" : errorForSlug}
+                        </span>
+                      )}
                       <label style={{ display: "inline-block", padding: "6px 14px", borderRadius: 8, border: `1px solid ${ORANGE}`, color: isUploading ? "#aaa" : ORANGE, fontSize: 12, fontWeight: 600, cursor: isUploading ? "wait" : "pointer", background: "#fff", transition: "opacity 0.15s", opacity: isUploading ? 0.6 : 1, whiteSpace: "nowrap" }}>
                         {isUploading ? "Uploading…" : "Upload image"}
                         <input

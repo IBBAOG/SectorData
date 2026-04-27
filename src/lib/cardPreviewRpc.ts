@@ -36,12 +36,11 @@ export async function uploadCardPreview(
   supabase: SupabaseClient,
   slug: string,
   file: File,
-): Promise<string | null> {
+): Promise<{ url: string } | { error: string }> {
   try {
-    // Get the current user's access token to authenticate the API call
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
-    if (!token) throw new Error("Not authenticated");
+    if (!token) return { error: "Not authenticated" };
 
     const form = new FormData();
     form.append("slug", slug);
@@ -53,12 +52,18 @@ export async function uploadCardPreview(
       body: form,
     });
 
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error ?? "Upload failed");
+    let json: Record<string, unknown>;
+    try {
+      json = await res.json();
+    } catch {
+      return { error: `Server error (HTTP ${res.status})` };
+    }
 
-    return json.url as string;
+    if (!res.ok) return { error: (json.error as string) ?? `HTTP ${res.status}` };
+
+    return { url: json.url as string };
   } catch (e) {
     console.error("[cardPreviewRpc] uploadCardPreview error:", e);
-    return null;
+    return { error: e instanceof Error ? e.message : String(e) };
   }
 }
