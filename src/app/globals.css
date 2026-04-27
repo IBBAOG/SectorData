@@ -1994,6 +1994,7 @@ a {
 /* ── Dark theme: near-black dark-blue surfaces ───────────────────────────── */
 .stocks-dark {
   background: #030814 !important;
+  min-height: 100vh;
 }
 .stocks-dark .sd-card {
   background: #070d1c !important;
