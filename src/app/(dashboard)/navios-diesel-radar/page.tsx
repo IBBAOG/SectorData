@@ -452,7 +452,7 @@ export default function NaviosDieselRadarPage() {
               ) : (
                 <>
                   {/* Summary cards */}
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 20 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 20 }}>
                     {Object.entries(PORT_LABELS).map(([slug, label]) => {
                       const s = summaryByPort.get(slug);
                       const n = s?.candidates ?? 0;

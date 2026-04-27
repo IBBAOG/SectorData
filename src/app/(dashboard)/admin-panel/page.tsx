@@ -270,7 +270,7 @@ export default function AdminPanelPage() {
         </aside>
 
         {/* ── Content area ─────────────────────────────────────────────────── */}
-        <div style={{ flex: 1, padding: "40px 40px 80px", overflowY: "auto" }}>
+        <div style={{ flex: 1, padding: "clamp(16px, 3vw, 40px) clamp(16px, 3vw, 40px) 48px", overflowY: "auto", minWidth: 0 }}>
 
           {/* Section header */}
           <div style={{ marginBottom: 32 }}>

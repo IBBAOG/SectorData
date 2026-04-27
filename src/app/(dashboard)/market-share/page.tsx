@@ -361,7 +361,7 @@ function ComparisonTable({ rows, colors }: { rows: CompRow[]; colors: Record<str
     border: "none",
   };
   return (
-    <table style={{ borderCollapse: "collapse", width: "calc(100% - 191px)", margin: "6px 0 0 60px", tableLayout: "fixed" }}>
+    <table style={{ borderCollapse: "collapse", width: "100%", margin: "6px 0 0 0", tableLayout: "fixed" }}>
       <colgroup>
         <col style={{ width: "30%" }} />
         <col style={{ width: "17.5%" }} />
@@ -907,7 +907,7 @@ export default function MarketSharePage() {
                           data={charts.dieselRetail.data}
                           layout={charts.dieselRetail.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "calc(100% - 56px)", height: 300 }}
+                          style={{ width: "100%", height: 300 }}
                         />
                         {compData && <ComparisonTable rows={compData.dieselRetail} colors={chartColors} />}
                       </div>
@@ -922,7 +922,7 @@ export default function MarketSharePage() {
                           data={charts.dieselB2B.data}
                           layout={charts.dieselB2B.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "calc(100% - 56px)", height: 300 }}
+                          style={{ width: "100%", height: 300 }}
                         />
                         {compData && <ComparisonTable rows={compData.dieselB2B} colors={chartColors} />}
                       </div>
@@ -940,7 +940,7 @@ export default function MarketSharePage() {
                           data={charts.dieselTrR.data}
                           layout={charts.dieselTrR.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "calc(100% - 56px)", height: 300 }}
+                          style={{ width: "100%", height: 300 }}
                         />
                         {compData && <ComparisonTable rows={compData.dieselTrR} colors={chartColors} />}
                       </div>
@@ -955,7 +955,7 @@ export default function MarketSharePage() {
                           data={charts.dieselTotal.data}
                           layout={charts.dieselTotal.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "calc(100% - 56px)", height: 300 }}
+                          style={{ width: "100%", height: 300 }}
                         />
                         {compData && <ComparisonTable rows={compData.dieselTotal} colors={chartColors} />}
                       </div>
@@ -979,7 +979,7 @@ export default function MarketSharePage() {
                           data={charts.gasRetail.data}
                           layout={charts.gasRetail.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "calc(100% - 56px)", height: 300 }}
+                          style={{ width: "100%", height: 300 }}
                         />
                         {compData && <ComparisonTable rows={compData.gasRetail} colors={chartColors} />}
                       </div>
@@ -994,7 +994,7 @@ export default function MarketSharePage() {
                           data={charts.gasB2B.data}
                           layout={charts.gasB2B.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "calc(100% - 56px)", height: 300 }}
+                          style={{ width: "100%", height: 300 }}
                         />
                         {compData && <ComparisonTable rows={compData.gasB2B} colors={chartColors} />}
                       </div>
@@ -1011,7 +1011,7 @@ export default function MarketSharePage() {
                           data={charts.gasTotal.data}
                           layout={charts.gasTotal.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "calc(100% - 56px)", height: 300 }}
+                          style={{ width: "100%", height: 300 }}
                         />
                         {compData && <ComparisonTable rows={compData.gasTotal} colors={chartColors} />}
                       </div>
@@ -1035,7 +1035,7 @@ export default function MarketSharePage() {
                           data={charts.ethRetail.data}
                           layout={charts.ethRetail.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "calc(100% - 56px)", height: 300 }}
+                          style={{ width: "100%", height: 300 }}
                         />
                         {compData && <ComparisonTable rows={compData.ethRetail} colors={chartColors} />}
                       </div>
@@ -1050,7 +1050,7 @@ export default function MarketSharePage() {
                           data={charts.ethB2B.data}
                           layout={charts.ethB2B.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "calc(100% - 56px)", height: 300 }}
+                          style={{ width: "100%", height: 300 }}
                         />
                         {compData && <ComparisonTable rows={compData.ethB2B} colors={chartColors} />}
                       </div>
@@ -1067,7 +1067,7 @@ export default function MarketSharePage() {
                           data={charts.ethTotal.data}
                           layout={charts.ethTotal.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "calc(100% - 56px)", height: 300 }}
+                          style={{ width: "100%", height: 300 }}
                         />
                         {compData && <ComparisonTable rows={compData.ethTotal} colors={chartColors} />}
                       </div>
@@ -1089,7 +1089,7 @@ export default function MarketSharePage() {
                           data={charts.ottoRetail.data}
                           layout={charts.ottoRetail.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "calc(100% - 56px)", height: 300 }}
+                          style={{ width: "100%", height: 300 }}
                         />
                         {compData && <ComparisonTable rows={compData.ottoRetail} colors={chartColors} />}
                       </div>
@@ -1102,7 +1102,7 @@ export default function MarketSharePage() {
                           data={charts.ottoB2B.data}
                           layout={charts.ottoB2B.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "calc(100% - 56px)", height: 300 }}
+                          style={{ width: "100%", height: 300 }}
                         />
                         {compData && <ComparisonTable rows={compData.ottoB2B} colors={chartColors} />}
                       </div>
@@ -1117,7 +1117,7 @@ export default function MarketSharePage() {
                           data={charts.ottoTotal.data}
                           layout={charts.ottoTotal.layout}
                           config={{ displayModeBar: false }}
-                          style={{ width: "calc(100% - 56px)", height: 300 }}
+                          style={{ width: "100%", height: 300 }}
                         />
                         {compData && <ComparisonTable rows={compData.ottoTotal} colors={chartColors} />}
                       </div>

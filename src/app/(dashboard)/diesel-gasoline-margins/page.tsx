@@ -794,7 +794,7 @@ export default function DieselGasolineMarginsPage() {
                           Diesel B — Variations
                         </div>
                         <hr className="section-hr" />
-                        <div style={{ margin: "0 70px" }}>
+                        <div className="variations-table-wrapper">
                           <VariationsTable
                             fuelType="Diesel B"
                             allRows={allRows}
@@ -810,7 +810,7 @@ export default function DieselGasolineMarginsPage() {
                           Gasoline C — Variations
                         </div>
                         <hr className="section-hr" />
-                        <div style={{ margin: "0 70px" }}>
+                        <div className="variations-table-wrapper">
                           <VariationsTable
                             fuelType="Gasoline C"
                             allRows={allRows}

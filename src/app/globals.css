@@ -639,6 +639,28 @@ body {
   padding: 16px 20px;
   background-color: #ffffff;
   min-height: calc(100vh - 56px);
+  overflow-x: auto;
+}
+
+@media (max-width: 1200px) {
+  #page-content { padding: 12px 16px; }
+}
+
+@media (max-width: 767.98px) {
+  #page-content { padding: 10px 12px; }
+}
+
+/* Variations table wrapper — responsive side margins */
+.variations-table-wrapper {
+  margin: 0 70px;
+}
+
+@media (max-width: 1200px) {
+  .variations-table-wrapper { margin: 0 32px; }
+}
+
+@media (max-width: 767.98px) {
+  .variations-table-wrapper { margin: 0; }
 }
 
 /* ─── Plotly font fix ─────────────────────────────────────────────────────── */
