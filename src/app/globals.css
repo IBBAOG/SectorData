@@ -1290,15 +1290,15 @@ a {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .stocks-dark {
-  background: #0d1117;
+  background: #07101f;
   color: #e6edf3;
   min-height: calc(100vh - 56px);
   font-family: Arial, sans-serif;
 }
 
 .stocks-dark .sd-card {
-  background: #161b22;
-  border: 1px solid #30363d;
+  background: #0d1830;
+  border: 1px solid #1d3254;
   border-radius: 0;
   padding: 12px;
 }
@@ -1307,14 +1307,14 @@ a {
 .stocks-dark .sd-card::-webkit-scrollbar,
 .stocks-dark .sd-card ::-webkit-scrollbar        { width: 6px; height: 6px; }
 .stocks-dark .sd-card::-webkit-scrollbar-track,
-.stocks-dark .sd-card ::-webkit-scrollbar-track  { background: #161b22; }
+.stocks-dark .sd-card ::-webkit-scrollbar-track  { background: #0d1830; }
 .stocks-dark .sd-card::-webkit-scrollbar-thumb,
-.stocks-dark .sd-card ::-webkit-scrollbar-thumb  { background: #30363d; border-radius: 3px; }
+.stocks-dark .sd-card ::-webkit-scrollbar-thumb  { background: #1d3254; border-radius: 3px; }
 .stocks-dark .sd-card::-webkit-scrollbar-thumb:hover,
-.stocks-dark .sd-card ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+.stocks-dark .sd-card ::-webkit-scrollbar-thumb:hover { background: #2a4570; }
 /* Firefox */
 .stocks-dark .sd-card,
-.stocks-dark .sd-card * { scrollbar-color: #30363d #161b22; scrollbar-width: thin; }
+.stocks-dark .sd-card * { scrollbar-color: #1d3254 #0d1830; scrollbar-width: thin; }
 
 .stocks-dark .sd-muted { color: #8b949e; }
 .stocks-dark .sd-green { color: #3fb950; }
@@ -1332,11 +1332,11 @@ a {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   padding: 4px 6px;
-  border-bottom: 1px solid #30363d;
+  border-bottom: 1px solid #1d3254;
 }
 .stocks-dark .sd-table td {
   padding: 5px 6px;
-  border-bottom: 1px solid #21262d;
+  border-bottom: 1px solid #122240;
   white-space: nowrap;
 }
 .stocks-dark .sd-table tr:hover {
@@ -1354,20 +1354,20 @@ a {
   letter-spacing: 0.8px;
   color: #8b949e;
   padding: 8px 6px 3px;
-  border-bottom: 1px solid #30363d;
+  border-bottom: 1px solid #1d3254;
 }
 
 .stocks-dark .sd-btn {
-  background: #21262d;
+  background: #122240;
   color: #e6edf3;
-  border: 1px solid #30363d;
+  border: 1px solid #1d3254;
   border-radius: 6px;
   font-size: 12px;
   font-weight: 600;
   padding: 4px 10px;
   cursor: pointer;
 }
-.stocks-dark .sd-btn:hover { background: #30363d; }
+.stocks-dark .sd-btn:hover { background: #1d3254; }
 .stocks-dark .sd-btn-active {
   background: #ff5000;
   color: #fff;
@@ -1375,9 +1375,9 @@ a {
 }
 
 .stocks-dark .sd-input {
-  background: #0d1117;
+  background: #07101f;
   color: #e6edf3;
-  border: 1px solid #30363d;
+  border: 1px solid #1d3254;
   border-radius: 6px;
   padding: 6px 10px;
   font-size: 13px;
@@ -1388,7 +1388,7 @@ a {
   border-color: #ff5000;
   box-shadow: 0 0 0 2px rgba(255,80,0,0.2);
 }
-.stocks-dark .sd-input::placeholder { color: #484f58; }
+.stocks-dark .sd-input::placeholder { color: #4a6a90; }
 
 .stocks-dark .sd-badge {
   font-size: 10px;
@@ -1406,15 +1406,15 @@ a {
   color: #3fb950;
 }
 .stocks-dark .sd-badge-closed {
-  background: #21262d;
+  background: #122240;
   color: #8b949e;
 }
 
 /* Dropdown for portfolio selector */
 .stocks-dark .sd-select {
-  background: #161b22;
+  background: #0d1830;
   color: #e6edf3;
-  border: 1px solid #30363d;
+  border: 1px solid #1d3254;
   border-radius: 6px;
   padding: 4px 24px 4px 8px;
   font-size: 13px;
@@ -1489,14 +1489,14 @@ a {
 
 /* Search dropdown dark */
 .stocks-dark .list-group-item {
-  background: #161b22;
+  background: #0d1830;
   color: #e6edf3;
-  border-color: #30363d;
+  border-color: #1d3254;
 }
 .stocks-dark .list-group-item:hover,
 .stocks-dark .list-group-item.active {
   background: #1c2128;
-  border-color: #30363d;
+  border-color: #1d3254;
   color: #e6edf3;
 }
 
@@ -1715,8 +1715,8 @@ a {
   user-select: none;
   transition: background 0.2s;
 }
-.stocks-dark .sd-theme-toggle { background: #21262d; color: #e6edf3; border: 1px solid #30363d; }
-.stocks-dark .sd-theme-toggle:hover { background: #30363d; }
+.stocks-dark .sd-theme-toggle { background: #122240; color: #e6edf3; border: 1px solid #1d3254; }
+.stocks-dark .sd-theme-toggle:hover { background: #1d3254; }
 .stocks-light .sd-theme-toggle { background: #f3f4f6; color: #333; border: 1px solid #e0e0e0; }
 .stocks-light .sd-theme-toggle:hover { background: #e5e7eb; }
 
