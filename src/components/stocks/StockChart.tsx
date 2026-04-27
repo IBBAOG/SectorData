@@ -14,9 +14,9 @@ interface Props {
 
 const THEMES = {
   dark: {
-    bg: "#000000", grid: "#1a1a1a", text: "#ffffff", border: "#333333",
+    bg: "#030814", grid: "#161d33", text: "#ffffff", border: "#1f2747",
     up: "#3fb950", down: "#f85149", line: "#ff5000",
-    crosshair: "#666666", tooltip: "#1a1a1a", tooltipText: "#ffffff",
+    crosshair: "#4a5578", tooltip: "#0a1124", tooltipText: "#ffffff",
     priceLine: "#ff5000", priceLabel: "#ff5000", priceLabelText: "#ffffff",
   },
   light: {

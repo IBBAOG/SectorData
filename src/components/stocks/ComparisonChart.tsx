@@ -8,7 +8,7 @@ interface SeriesInput { ticker: string; data: HistoricalDataPoint[]; color?: str
 interface Props { series: SeriesInput[]; height?: number; mode: "percent"|"base100"; baseDate?: string; endDate?: string; dark?: boolean; }
 
 const THEMES = {
-  dark: { bg:"#000000",grid:"#1a1a1a",text:"#ffffff",border:"#333333",crosshair:"#666666",tooltip:"#1a1a1a",tooltipText:"#ffffff" },
+  dark: { bg:"#030814",grid:"#161d33",text:"#ffffff",border:"#1f2747",crosshair:"#4a5578",tooltip:"#0a1124",tooltipText:"#ffffff" },
   light: { bg:"#ffffff",grid:"#f0f0f0",text:"#1a1a1a",border:"#e0e0e0",crosshair:"#9ca3af",tooltip:"#1f2937",tooltipText:"#ffffff" },
 };
 const FONT_SM = "11px Arial, Helvetica, sans-serif";

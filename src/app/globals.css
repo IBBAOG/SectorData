@@ -1973,22 +1973,22 @@ a {
   border-radius: 50% !important;
 }
 
-/* ── Dark theme: near-black surfaces ─────────────────────────────────────── */
+/* ── Dark theme: near-black dark-blue surfaces ───────────────────────────── */
 .stocks-dark {
-  background: #000000 !important;
+  background: #030814 !important;
 }
 .stocks-dark .sd-card {
-  background: #0a0a0a !important;
-  border: 1px solid #1a1a1a !important;
+  background: #070d1c !important;
+  border: 1px solid #131a2e !important;
   box-shadow: none !important;
 }
 .stocks-dark .sd-btn {
-  background: #0f0f0f !important;
-  border-color: #1f1f1f !important;
+  background: #0a1124 !important;
+  border-color: #161d33 !important;
   color: #e6edf3 !important;
 }
 .stocks-dark .sd-btn:hover {
-  background: #1a1a1a !important;
+  background: #131a2e !important;
 }
 .stocks-dark .sd-btn-active {
   background: #ff5000 !important;
@@ -1997,8 +1997,8 @@ a {
 }
 .stocks-dark .sd-input,
 .stocks-dark .sd-select {
-  background: #050505 !important;
-  border-color: #1f1f1f !important;
+  background: #04091a !important;
+  border-color: #161d33 !important;
   color: #e6edf3 !important;
 }
 .stocks-dark .sd-input:focus,
@@ -2007,20 +2007,20 @@ a {
   box-shadow: none !important;
 }
 .stocks-dark .sd-table th {
-  border-bottom-color: #1f1f1f !important;
+  border-bottom-color: #161d33 !important;
   color: #8b949e !important;
 }
 .stocks-dark .sd-table td {
-  border-bottom-color: #141414 !important;
+  border-bottom-color: #0e1426 !important;
 }
 .stocks-dark .sd-table tr:hover {
-  background: #0f0f0f !important;
+  background: #0a1124 !important;
 }
 .stocks-dark .sd-table tr.sd-selected {
-  background: #0f0f0f !important;
+  background: #0a1124 !important;
 }
 .stocks-dark .sd-group-header {
-  border-bottom-color: #1f1f1f !important;
+  border-bottom-color: #161d33 !important;
   color: #8b949e !important;
 }
 .stocks-dark .sd-badge-open {
@@ -2028,39 +2028,39 @@ a {
   color: #3fb950 !important;
 }
 .stocks-dark .sd-badge-closed {
-  background: #0f0f0f !important;
+  background: #0a1124 !important;
   color: #8b949e !important;
 }
 .stocks-dark .sd-theme-toggle {
-  background: #0f0f0f !important;
-  border: 1px solid #1f1f1f !important;
+  background: #0a1124 !important;
+  border: 1px solid #161d33 !important;
   color: #e6edf3 !important;
 }
 .stocks-dark .sd-theme-toggle:hover {
-  background: #1a1a1a !important;
+  background: #131a2e !important;
 }
 .stocks-dark .list-group-item {
-  background: #0a0a0a !important;
-  border-color: #1f1f1f !important;
+  background: #070d1c !important;
+  border-color: #161d33 !important;
   color: #e6edf3 !important;
 }
 .stocks-dark .list-group-item:hover,
 .stocks-dark .list-group-item.active {
-  background: #141414 !important;
+  background: #131a2e !important;
 }
 .stocks-dark .sd-modal-glass {
-  background: #0a0a0a !important;
-  border: 1px solid #1f1f1f !important;
+  background: #070d1c !important;
+  border: 1px solid #161d33 !important;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6) !important;
 }
 .stocks-dark .sd-modal-glass::before { display: none !important; }
 .stocks-dark .sd-modal-header,
 .stocks-dark .sd-modal-footer {
-  border-color: #1f1f1f !important;
+  border-color: #161d33 !important;
 }
 .stocks-dark .sd-modal-group {
-  background: #050505 !important;
-  border-color: #1f1f1f !important;
+  background: #04091a !important;
+  border-color: #161d33 !important;
 }
 
 /* ── Light theme: flat/uppercase only (keep light palette) ───────────────── */

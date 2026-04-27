@@ -22,7 +22,7 @@ interface Props {
 }
 
 const THEMES = {
-  dark: { bg: "#000000", grid: "#1a1a1a", text: "#ffffff", line: "#ff5000", dot: "#ff5000", crosshair: "#666666", tooltip: "#1a1a1a", tooltipText: "#ffffff" },
+  dark: { bg: "#030814", grid: "#161d33", text: "#ffffff", line: "#ff5000", dot: "#ff5000", crosshair: "#4a5578", tooltip: "#0a1124", tooltipText: "#ffffff" },
   light: { bg: "#ffffff", grid: "#f0f0f0", text: "#1a1a1a", line: "#ff5000", dot: "#ff5000", crosshair: "#9ca3af", tooltip: "#1f2937", tooltipText: "#ffffff" },
 };
 
