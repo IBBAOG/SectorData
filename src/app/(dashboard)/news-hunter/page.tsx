@@ -1,44 +1,17 @@
-"use client";
+﻿"use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import NavBar from "../../../components/NavBar";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
+import { useNewsHunter } from "../../../context/NewsHunterContext";
 
 import styles from "./page.module.css";
 
-type NewsArticle = {
-  url: string;
-  domain: string;
-  source_name: string;
-  title: string;
-  snippet: string;
-  published_at: string;
-  found_at: string;
-  matched_keywords: string[];
-};
-
 const WINDOW_PRESETS = [1, 3, 6, 12, 24, 48, 72, 168] as const;
-// Scanner roda no GitHub Actions (IBBAOG/news-hunter-scanner) a cada ~5 min,
-// disparado por cron-job.org. Polling do front a 60s mantém a tela responsiva
-// sem desperdiçar egress do free tier do Supabase em queries vazias.
-const POLL_INTERVAL_MS = 60_000;
 const AGE_TICK_MS = 15_000;
-const PAGE_LIMIT = 500;
-const FLASH_DURATION_MS = 3400;
 const THEME_STORAGE_KEY = "news-hunter-theme";
-
-// Fallback list shown if Supabase is unreachable. The canonical per-user
-// list is seeded server-side via public.seed_my_news_hunter_keywords() on
-// first visit.
-const FALLBACK_KEYWORDS: string[] = [
-  "petróleo", "petroleo", "Petrobras", "Vibra", "Brava", "Ultrapar",
-  "Ipiranga", "PetroReconcavo", "PetroRecôncavo", "oil", "gasolina",
-  "gás", "gas", "diesel", "combustível", "combustivel", "combustíveis",
-  "combustiveis", "OceanPact", "Cosan", "Raízen", "Raizen", "Braskem",
-  "Compass", "PRIO", "ANP", "refit",
-];
 
 function labelForWindow(h: number): string {
   if (h < 24) return `${h}h`;
@@ -66,89 +39,39 @@ function formatTimeLocal(iso: string): string {
 }
 
 function stripAccents(s: string): string {
-  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
 
 export default function NewsHunterPage() {
   const { visible, loading: visLoading } = useModuleVisibilityGuard("news-hunter");
   const supabase = useMemo(() => getSupabaseClient(), []);
 
-  const [articles, setArticles] = useState<NewsArticle[]>([]);
+  // Shared fetch/polling state lives in NewsHunterContext (mounted at layout level).
+  const { articles, justArrivedUrls, keywords, setKeywords, loading, error } = useNewsHunter();
+
   const [windowHours, setWindowHours] = useState<number>(24);
-  const [keywords, setKeywords] = useState<string[]>([]);
-  const [keywordsLoaded, setKeywordsLoaded] = useState<boolean>(false);
   const [newKeyword, setNewKeyword] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [justArrivedUrls, setJustArrivedUrls] = useState<Set<string>>(new Set());
   // Triggers re-render so "há X min" labels stay fresh without re-fetching.
   const [, setAgeTick] = useState(0);
 
-  const lastFoundAtRef = useRef<string | null>(null);
-  const seenUrlsRef = useRef<Set<string>>(new Set());
-  const flashTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-
-  // Load persisted theme (or system preference fallback)
   useEffect(() => {
     try {
       const stored = localStorage.getItem(THEME_STORAGE_KEY);
-      if (stored === "dark" || stored === "light") {
-        setTheme(stored);
-        return;
-      }
-      if (window.matchMedia?.("(prefers-color-scheme: dark)").matches) {
-        setTheme("dark");
-      }
-    } catch {
-      /* ignore — no localStorage available */
-    }
+      if (stored === "dark" || stored === "light") { setTheme(stored); return; }
+      if (window.matchMedia?.("(prefers-color-scheme: dark)").matches) setTheme("dark");
+    } catch { /* no localStorage */ }
   }, []);
 
-  // Load per-user keyword list from Supabase. On first visit, seed defaults
-  // via the SECURITY DEFINER RPC and re-fetch. Falls back to an in-memory
-  // read-only list on RLS / network errors so the page still renders.
   useEffect(() => {
-    if (!supabase) return;
-    let cancelled = false;
-    void (async () => {
-      const { data, error: err } = await supabase
-        .from("news_hunter_keywords")
-        .select("keyword")
-        .order("keyword");
-      if (cancelled) return;
-      if (err) {
-        setKeywords(FALLBACK_KEYWORDS);
-        setKeywordsLoaded(true);
-        return;
-      }
-      if ((data ?? []).length === 0) {
-        await supabase.rpc("seed_my_news_hunter_keywords");
-        const seeded = await supabase
-          .from("news_hunter_keywords")
-          .select("keyword")
-          .order("keyword");
-        if (cancelled) return;
-        const rows = (seeded.data ?? []) as { keyword: string }[];
-        setKeywords(rows.length > 0 ? rows.map((r) => r.keyword) : FALLBACK_KEYWORDS);
-      } else {
-        setKeywords((data as { keyword: string }[]).map((r) => r.keyword));
-      }
-      setKeywordsLoaded(true);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [supabase]);
+    const id = setInterval(() => setAgeTick((t) => t + 1), AGE_TICK_MS);
+    return () => clearInterval(id);
+  }, []);
 
   const toggleTheme = useCallback(() => {
     setTheme((t) => {
       const next: "light" | "dark" = t === "dark" ? "light" : "dark";
-      try {
-        localStorage.setItem(THEME_STORAGE_KEY, next);
-      } catch {
-        /* ignore */
-      }
+      try { localStorage.setItem(THEME_STORAGE_KEY, next); } catch { /* ignore */ }
       return next;
     });
   }, []);
@@ -165,13 +88,11 @@ export default function NewsHunterPage() {
         .insert({ keyword: kw });
       if (!insertErr) {
         setKeywords((prev) =>
-          prev.some((k) => k.toLowerCase() === kw.toLowerCase())
-            ? prev
-            : [...prev, kw],
+          prev.some((k) => k.toLowerCase() === kw.toLowerCase()) ? prev : [...prev, kw],
         );
       }
     },
-    [supabase, keywords],
+    [supabase, keywords, setKeywords],
   );
 
   const removeKeyword = useCallback(
@@ -181,136 +102,10 @@ export default function NewsHunterPage() {
         .from("news_hunter_keywords")
         .delete()
         .eq("keyword", kw);
-      if (!delErr) {
-        setKeywords((prev) => prev.filter((k) => k !== kw));
-      }
+      if (!delErr) setKeywords((prev) => prev.filter((k) => k !== kw));
     },
-    [supabase],
+    [supabase, setKeywords],
   );
-
-  const mergeArticles = useCallback(
-    (prev: NewsArticle[], incoming: NewsArticle[]): NewsArticle[] => {
-      if (incoming.length === 0) return prev;
-      const byUrl = new Map(prev.map((a) => [a.url, a]));
-      for (const a of incoming) byUrl.set(a.url, a);
-      return Array.from(byUrl.values()).sort(
-        (a, b) =>
-          new Date(b.published_at).getTime() - new Date(a.published_at).getTime(),
-      );
-    },
-    [],
-  );
-
-  const fetchInitial = useCallback(
-    async (hours: number) => {
-      if (!supabase) return;
-      setLoading(true);
-      setError(null);
-      const cutoff = new Date(Date.now() - hours * 3600 * 1000).toISOString();
-      const { data, error: err } = await supabase
-        .from("news_articles")
-        .select("*")
-        .gte("published_at", cutoff)
-        .order("published_at", { ascending: false })
-        .limit(PAGE_LIMIT);
-      if (err) {
-        setError(err.message);
-        setLoading(false);
-        return;
-      }
-      const rows = (data as NewsArticle[]) ?? [];
-      setArticles(rows);
-      // Watermark for incremental polling (`WHERE found_at > X`). MUST stay
-      // on `found_at`, not `published_at` — the scanner upserts existing
-      // URLs with a refreshed `found_at` on every run, so a `published_at`
-      // watermark would skip those re-touches and we'd miss real updates.
-      const newestFoundAt =
-        rows.length > 0
-          ? rows.reduce((max, r) => (r.found_at > max ? r.found_at : max), rows[0].found_at)
-          : null;
-      lastFoundAtRef.current = newestFoundAt ?? new Date().toISOString();
-      // Seed seen-set so the initial load doesn't flash as "just arrived".
-      seenUrlsRef.current = new Set(rows.map((r) => r.url));
-      setLoading(false);
-    },
-    [supabase],
-  );
-
-  const fetchIncremental = useCallback(async () => {
-    if (!supabase || !lastFoundAtRef.current) return;
-    const { data, error: err } = await supabase
-      .from("news_articles")
-      .select("*")
-      .gt("found_at", lastFoundAtRef.current)
-      .order("found_at", { ascending: false })
-      .limit(PAGE_LIMIT);
-    if (err) {
-      setError(err.message);
-      return;
-    }
-    const rows = (data as NewsArticle[]) ?? [];
-    setError(null);
-    if (rows.length === 0) return;
-
-    lastFoundAtRef.current = rows.reduce(
-      (max, r) => (r.found_at > max ? r.found_at : max),
-      lastFoundAtRef.current!,
-    );
-
-    const trulyNew = rows.filter((r) => !seenUrlsRef.current.has(r.url));
-    if (trulyNew.length > 0) {
-      setJustArrivedUrls((prev) => {
-        const next = new Set(prev);
-        for (const r of trulyNew) {
-          next.add(r.url);
-          seenUrlsRef.current.add(r.url);
-          const existing = flashTimersRef.current.get(r.url);
-          if (existing) clearTimeout(existing);
-          const timer = setTimeout(() => {
-            setJustArrivedUrls((cur) => {
-              if (!cur.has(r.url)) return cur;
-              const n = new Set(cur);
-              n.delete(r.url);
-              return n;
-            });
-            flashTimersRef.current.delete(r.url);
-          }, FLASH_DURATION_MS);
-          flashTimersRef.current.set(r.url, timer);
-        }
-        return next;
-      });
-    }
-
-    setArticles((prev) => {
-      const merged = mergeArticles(prev, rows);
-      const cutoff = Date.now() - windowHours * 3600 * 1000;
-      return merged.filter((a) => new Date(a.published_at).getTime() >= cutoff);
-    });
-  }, [supabase, mergeArticles, windowHours]);
-
-  useEffect(() => {
-    void fetchInitial(windowHours);
-  }, [fetchInitial, windowHours]);
-
-  useEffect(() => {
-    const id = setInterval(() => {
-      void fetchIncremental();
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [fetchIncremental]);
-
-  useEffect(() => {
-    const id = setInterval(() => setAgeTick((t) => t + 1), AGE_TICK_MS);
-    return () => clearInterval(id);
-  }, []);
-
-  useEffect(() => {
-    const timers = flashTimersRef.current;
-    return () => {
-      for (const t of timers.values()) clearTimeout(t);
-      timers.clear();
-    };
-  }, []);
 
   const filtered = useMemo(() => {
     const cutoff = Date.now() - windowHours * 3600 * 1000;
@@ -332,14 +127,8 @@ export default function NewsHunterPage() {
 
   if (visLoading || !visible) return null;
 
-  // "última manchete há X" uses the newest *published_at* of what the user
-  // currently sees — NOT MAX(found_at). The scanner is stateless and re-
-  // upserts every URL it encounters, so `found_at` advances on every run
-  // even when nothing new was actually published. `published_at` is set
-  // from the article's real publication date and stays stable across
-  // re-scans, so it answers the honest question: "how fresh is the news
-  // I'm looking at?". `filtered` is sorted DESC by published_at, so [0]
-  // is the max.
+  // "última manchete há X" uses the newest published_at — not found_at, which
+  // advances on every scanner re-upsert regardless of actual new content.
   const lastPublishedAt = filtered[0]?.published_at ?? null;
   const lastScanLabel = lastPublishedAt
     ? `última manchete ${humanizeAge(lastPublishedAt)}`
@@ -365,9 +154,7 @@ export default function NewsHunterPage() {
                 onChange={(e) => setWindowHours(Number(e.target.value))}
               >
                 {WINDOW_PRESETS.map((h) => (
-                  <option key={h} value={h}>
-                    {labelForWindow(h)}
-                  </option>
+                  <option key={h} value={h}>{labelForWindow(h)}</option>
                 ))}
               </select>
             </label>
@@ -415,10 +202,7 @@ export default function NewsHunterPage() {
             </ul>
             <form
               className={styles.addForm}
-              onSubmit={(e) => {
-                e.preventDefault();
-                addKeyword(newKeyword);
-              }}
+              onSubmit={(e) => { e.preventDefault(); addKeyword(newKeyword); }}
             >
               <input
                 type="text"
@@ -427,9 +211,7 @@ export default function NewsHunterPage() {
                 value={newKeyword}
                 onChange={(e) => setNewKeyword(e.target.value)}
               />
-              <button type="submit" className={styles.addBtn} aria-label="adicionar">
-                +
-              </button>
+              <button type="submit" className={styles.addBtn} aria-label="adicionar">+</button>
             </form>
           </div>
         </section>
@@ -449,9 +231,7 @@ export default function NewsHunterPage() {
             )}
           </div>
 
-          {error && (
-            <div className={styles.error}>Erro ao carregar: {error}</div>
-          )}
+          {error && <div className={styles.error}>Erro ao carregar: {error}</div>}
 
           {!loading && filtered.length === 0 && (
             <div className={styles.empty}>
@@ -480,9 +260,7 @@ export default function NewsHunterPage() {
                   }`}
                   data-url={a.url}
                 >
-                  <span className={styles.htime}>
-                    {formatTimeLocal(a.published_at)}
-                  </span>
+                  <span className={styles.htime}>{formatTimeLocal(a.published_at)}</span>
                   <a
                     className={styles.hlink}
                     href={a.url}

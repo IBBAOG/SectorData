@@ -20,6 +20,10 @@ const ComparisonChart = dynamic(() => import("../../../components/stocks/Compari
 const MarketOverview = dynamic(() => import("../../../components/stocks/MarketOverview"), { ssr: false });
 const StockSearch = dynamic(() => import("../../../components/stocks/StockSearch"), { ssr: false });
 const FuturesCurveChart = dynamic(() => import("../../../components/stocks/FuturesCurveChart"), { ssr: false });
+const NewsCard = dynamic(
+  () => import("../../../components/stocks/NewsCard").then((m) => ({ default: m.NewsCard })),
+  { ssr: false },
+);
 const GridLayout = dynamic(
   () => import("react-grid-layout").then((mod) => mod.ResponsiveGridLayout),
   { ssr: false },
@@ -89,7 +93,8 @@ type DashCard =
   | { id: string; type: "chart"; ticker: string }
   | { id: string; type: "watchlist"; tickers: string[]; title: string }
   | { id: string; type: "compare"; tickers: string[]; mode: "percent" | "base100"; range: string; baseDate: string; endDate: string }
-  | { id: string; type: "futures" };
+  | { id: string; type: "futures" }
+  | { id: string; type: "news" };
 
 const DEFAULT_CARDS: DashCard[] = [
   { id: "portfolio", type: "portfolio" },
@@ -693,7 +698,7 @@ function StocksPageInner() {
     persistCards(cards.map((c) => c.id === updated.id ? updated : c));
   }, [cards, persistCards]);
 
-  const addCard = useCallback((type: "chart" | "watchlist" | "compare" | "futures") => {
+  const addCard = useCallback((type: "chart" | "watchlist" | "compare" | "futures" | "news") => {
     const id = nextId();
     const newCard: DashCard = type === "chart"
       ? { id, type: "chart", ticker: "" }
@@ -701,6 +706,8 @@ function StocksPageInner() {
       ? { id, type: "compare", tickers: [], mode: "percent", range: "1y", baseDate: "", endDate: "" }
       : type === "futures"
       ? { id, type: "futures" }
+      : type === "news"
+      ? { id, type: "news" }
       : { id, type: "watchlist", tickers: [], title: "Watchlist" };
     const newCards = [...cards, newCard];
     persistCards(newCards);
@@ -814,7 +821,8 @@ function StocksPageInner() {
                     <button className="sd-btn" style={{ width: "100%", fontSize: 11, padding: "5px 8px", marginBottom: 2, textAlign: "left" }} onClick={() => addCard("chart")}>Chart</button>
                     <button className="sd-btn" style={{ width: "100%", fontSize: 11, padding: "5px 8px", marginBottom: 2, textAlign: "left" }} onClick={() => addCard("watchlist")}>Watchlist</button>
                     <button className="sd-btn" style={{ width: "100%", fontSize: 11, padding: "5px 8px", marginBottom: 2, textAlign: "left" }} onClick={() => addCard("compare")}>Compare Assets</button>
-                    <button className="sd-btn" style={{ width: "100%", fontSize: 11, padding: "5px 8px", textAlign: "left" }} onClick={() => addCard("futures")}>Brent Futures Curve</button>
+                    <button className="sd-btn" style={{ width: "100%", fontSize: 11, padding: "5px 8px", marginBottom: 2, textAlign: "left" }} onClick={() => addCard("futures")}>Brent Futures Curve</button>
+                    <button className="sd-btn" style={{ width: "100%", fontSize: 11, padding: "5px 8px", textAlign: "left" }} onClick={() => addCard("news")}>News Hunter</button>
                   </div>
                 )}
               </div>
@@ -954,6 +962,14 @@ function StocksPageInner() {
                           <FuturesCurveChart dark={isDark} />
                         </div>
                       </div>
+                    )}
+
+                    {/* News Hunter */}
+                    {card.type === "news" && (
+                      <NewsCard
+                        isDark={isDark}
+                        onRemove={() => persistCards(cards.filter((c) => c.id !== card.id))}
+                      />
                     )}
                   </div>
                 </div>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { getSupabaseClient } from "../../lib/supabaseClient";
 import { UserProfileProvider } from "../../context/UserProfileContext";
 import { useUserProfile } from "../../context/UserProfileContext";
+import { NewsHunterProvider } from "../../context/NewsHunterContext";
 import { rpcUpsertMyProfile } from "../../lib/profileRpc";
 
 export default function DashboardLayout({
@@ -49,8 +50,10 @@ export default function DashboardLayout({
 
   return (
     <UserProfileProvider supabase={supabase}>
-      <FirstLoginGate />
-      {children}
+      <NewsHunterProvider supabase={supabase}>
+        <FirstLoginGate />
+        {children}
+      </NewsHunterProvider>
     </UserProfileProvider>
   );
 }
