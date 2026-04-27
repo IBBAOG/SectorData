@@ -626,6 +626,28 @@ function StocksPageInner() {
     createPortfolio, updatePortfolio, deletePortfolio, setActivePortfolio,
   } = useStockPortfolios();
 
+  const [navbarVisible, setNavbarVisible] = useState(false);
+  const navbarRef = useRef<HTMLDivElement>(null);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    function onMouseMove(e: MouseEvent) {
+      if (e.clientY < 8) {
+        if (hideTimerRef.current) { clearTimeout(hideTimerRef.current); hideTimerRef.current = null; }
+        setNavbarVisible(true);
+      }
+    }
+    document.addEventListener("mousemove", onMouseMove);
+    return () => document.removeEventListener("mousemove", onMouseMove);
+  }, []);
+
+  function onNavMouseLeave() {
+    hideTimerRef.current = setTimeout(() => setNavbarVisible(false), 300);
+  }
+  function onNavMouseEnter() {
+    if (hideTimerRef.current) { clearTimeout(hideTimerRef.current); hideTimerRef.current = null; }
+  }
+
   const [modalOpen, setModalOpen] = useState(false);
   const [modalEdit, setModalEdit] = useState(false);
   const [showAddMenu, setShowAddMenu] = useState(false);
@@ -794,7 +816,14 @@ function StocksPageInner() {
 
   return (
     <>
-      <NavBar />
+      <div
+        ref={navbarRef}
+        className={`navbar-autohide${navbarVisible ? " navbar-autohide--visible" : ""}`}
+        onMouseEnter={onNavMouseEnter}
+        onMouseLeave={onNavMouseLeave}
+      >
+        <NavBar />
+      </div>
       <div className={themeClass}>
         <main style={{ padding: "12px 6px", maxWidth: "100%", margin: "0 auto" }}>
 

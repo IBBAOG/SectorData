@@ -1950,6 +1950,24 @@ a {
 }
 .sd-drag-handle:active { cursor: grabbing; }
 
+/* ── Market Watch — auto-hide navbar (full-screen mode) ─────────────────── */
+.navbar-autohide {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1050;
+  transform: translateY(-100%);
+  transition: transform 0.22s ease;
+}
+.navbar-autohide--visible {
+  transform: translateY(0);
+}
+/* Override Bootstrap sticky-top so it flows naturally inside the fixed wrapper */
+.navbar-autohide #main-navbar {
+  position: relative !important;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    MARKET WATCH — Flat uppercase overhaul
    (uniform Arial 11px, no rounded corners, near-black background)
