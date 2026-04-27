@@ -2069,3 +2069,30 @@ a {
   border-color: #d0d0d0 !important;
 }
 .stocks-light .sd-modal-glass::before { display: none !important; }
+
+/* ─── Navios Diesel — responsive main grid ─────────────────────────────────── */
+/* Default (xxl 1400px+): 3-column */
+.nd-main-grid {
+  display: grid;
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 24px;
+  grid-template-columns: 1.5fr 1.5fr 3fr;
+}
+
+/* Disclaimer spans first two columns in the 3-col layout */
+.nd-disclaimer { grid-column: span 2; }
+
+/* Below xxl (< 1400px): 2-column — vessel details, disclaimer, delivered go full-width */
+@media (max-width: 1399.98px) {
+  .nd-main-grid { grid-template-columns: 1fr 1fr; }
+  .nd-span-full,
+  .nd-disclaimer { grid-column: span 2; }
+}
+
+/* Below md (< 768px): 1-column — everything stacks */
+@media (max-width: 767.98px) {
+  .nd-main-grid { grid-template-columns: 1fr; }
+  .nd-span-full,
+  .nd-disclaimer { grid-column: span 1; }
+}

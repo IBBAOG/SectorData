@@ -129,6 +129,7 @@ export default function NaviosDieselPage() {
   const [hoveredDay, setHoveredDay] = useState<string | null>(null);
   const [hoveredColeta, setHoveredColeta] = useState<string | null>(null);
   const [hoveredNavBtn, setHoveredNavBtn] = useState<"prev" | "next" | null>(null);
+  const [mapHeight, setMapHeight] = useState(500);
 
   // AIS live-tracking layer
   const [showAis, setShowAis] = useState(false);
@@ -269,6 +270,14 @@ export default function NaviosDieselPage() {
     })();
     return () => { cancelled = true; };
   }, [supabase, prevDaySnapshot]);
+
+  // Map height: 500px on xxl (1400px+), 360px on smaller screens
+  useEffect(() => {
+    const update = () => setMapHeight(window.innerWidth >= 1400 ? 500 : 360);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
 
   // 5. Load AIS positions / polygons / open arrivals when the AIS layer is enabled
   useEffect(() => {
@@ -817,8 +826,8 @@ export default function NaviosDieselPage() {
                 </div>
               ) : (
                 <>
-                  {/* Grid: 3 columns (map | bar+summary | vessel details), 2 rows */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1.5fr 3fr", gap: 16, alignItems: "start", marginBottom: 24 }}>
+                  {/* Grid: responsive (3-col xxl+, 2-col below xxl, 1-col mobile) */}
+                  <div className="nd-main-grid">
                     {/* Row 1 — Col 1: Map */}
                     <div className="chart-container">
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -870,9 +879,9 @@ export default function NaviosDieselPage() {
                       <hr className="section-hr" />
                       <PlotlyChart
                         data={mapChart.data}
-                        layout={{ ...mapChart.layout, height: 500 }}
+                        layout={{ ...mapChart.layout, height: mapHeight }}
                         config={{ displayModeBar: false }}
-                        style={{ width: "100%", height: 500 }}
+                        style={{ width: "100%", height: mapHeight }}
                       />
                       {showAis && (() => {
                         const normName = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -972,7 +981,7 @@ export default function NaviosDieselPage() {
                     </div>
 
                     {/* Row 1 — Col 3: Vessel Details */}
-                    <div className="chart-container">
+                    <div className="chart-container nd-span-full">
                     <div style={{ marginBottom: 8 }}>
                       <div style={TITLE_STYLE}>Expected Vessels / Pending Discharge</div>
                       <hr className="section-hr" />
@@ -1046,7 +1055,7 @@ export default function NaviosDieselPage() {
                     </div>
 
                     {/* Row 2 — Col 1–2: Disclaimer, aligned below Map + Monthly Summary */}
-                    <div style={{ gridColumn: "span 2", backgroundColor: "#fffbf5", border: "1px solid #ffe0b2", borderRadius: 8, padding: "16px 20px", fontFamily: "Arial", fontSize: 12, color: "#555" }}>
+                    <div className="nd-disclaimer" style={{ backgroundColor: "#fffbf5", border: "1px solid #ffe0b2", borderRadius: 8, padding: "16px 20px", fontFamily: "Arial", fontSize: 12, color: "#555" }}>
                       <div style={{ fontWeight: 700, marginBottom: 8, color: "#1a1a1a", fontSize: 13 }}>
                         Data Limitations & Disclaimer
                       </div>
@@ -1058,7 +1067,7 @@ export default function NaviosDieselPage() {
                     </div>
 
                     {/* Row 2 — Col 3: Delivered Vessels, aligned below Vessel Details */}
-                    <div className="chart-container">
+                    <div className="chart-container nd-span-full">
                       <div style={{ ...TITLE_STYLE, marginBottom: 4 }}>Delivered Vessels / Discharged</div>
                       <hr className="section-hr" />
                       <div style={{ overflowX: "auto", maxHeight: 280, overflowY: "auto" }}>
