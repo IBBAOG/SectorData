@@ -382,6 +382,12 @@
 .justArrived:has(*) { color: var(--nh-text); }
 
 /* Responsive ──────────────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .topRow { padding: 16px 24px 8px; }
+  .panel { margin: 10px 24px; }
+  .headlinesSection { margin: 10px 24px 30px; }
+}
+
 @media (max-width: 768px) {
   .topRow { padding: 16px 16px 8px; }
   .panel { margin: 10px 16px; padding: 12px 14px; }
@@ -389,5 +395,5 @@
   .headline { flex-wrap: wrap; }
   .hlink { flex-wrap: wrap; }
   .htitle { white-space: normal; overflow: visible; text-overflow: clip; }
-  .hage { margin-left: 58px; padding-left: 0; }
+  .hage { margin-left: 16px; padding-left: 0; }
 }

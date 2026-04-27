@@ -12,9 +12,10 @@ body {
 
 /* ─── Sidebar ─────────────────────────────────────────────────────────────── */
 #sidebar {
-  position: relative;
-  min-height: 100vh;
-  flex: 1;
+  position: sticky;
+  top: 56px;            /* navbar height */
+  height: calc(100vh - 56px);
+  min-height: 0;
   padding: 20px 16px;
   overflow-y: auto;
   overflow-x: hidden;
@@ -490,6 +491,11 @@ body {
   .nav-username-label { display: none; }
 }
 
+@media (max-width: 900px) {
+  #main-navbar .navbar-nav-center { gap: 10px; }
+  #main-navbar .nav-link { font-size: 12.5px !important; }
+}
+
 @media (max-width: 767.98px) {
   #main-navbar { padding: 4px 12px; }
   /* At mobile, grid becomes 3-col: hamburger | logo (center) | avatar */
@@ -527,12 +533,19 @@ body {
 
 /* ─── Responsive sidebar ──────────────────────────────────────────────────── */
 
-/* At < 768px stack sidebar above content and limit its height */
+/* Compact padding on medium screens */
+@media (max-width: 1199.98px) {
+  #sidebar { padding: 14px 12px; }
+}
+
+/* At < 768px sidebar stacks above content — reset sticky, cap height */
 @media (max-width: 767.98px) {
   #sidebar {
-    min-height: unset;
+    position: static;
+    height: auto;
     max-height: 60vh;
     overflow-y: auto;
+    padding: 12px 10px;
   }
   #page-content {
     overflow-x: auto;
