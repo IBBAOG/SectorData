@@ -1303,6 +1303,14 @@ a {
   padding: 12px;
 }
 
+/* Dark scrollbars inside cards (Chromium/Safari) */
+.stocks-dark .sd-card ::-webkit-scrollbar        { width: 6px; height: 6px; }
+.stocks-dark .sd-card ::-webkit-scrollbar-track  { background: #161b22; }
+.stocks-dark .sd-card ::-webkit-scrollbar-thumb  { background: #30363d; border-radius: 3px; }
+.stocks-dark .sd-card ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+/* Firefox */
+.stocks-dark .sd-card * { scrollbar-color: #30363d #161b22; scrollbar-width: thin; }
+
 .stocks-dark .sd-muted { color: #8b949e; }
 .stocks-dark .sd-green { color: #3fb950; }
 .stocks-dark .sd-red   { color: #f85149; }
