@@ -40,6 +40,7 @@ export default function PlotlyChart(props: {
         layout={props.layout as any}
         config={props.config as any}
         style={{ width: "100%", height: "100%" }}
+        useResizeHandler
       />
     </div>
   );

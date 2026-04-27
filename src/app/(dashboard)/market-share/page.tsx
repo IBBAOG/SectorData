@@ -675,7 +675,7 @@ export default function MarketSharePage() {
 
       <div className="container-fluid g-0">
         <div className="row g-0">
-          <div className="col-2 p-0" style={{ display: "flex", flexDirection: "column" }}>
+          <div className="col-xl-2 col-md-3 p-0" style={{ display: "flex", flexDirection: "column" }}>
             <div id="sidebar">
               <div style={{ textAlign: "center" }}>
                 <div style={{ width: "100%", maxWidth: 300, height: 60, display: "flex", alignItems: "center", justifyContent: "center", border: "2px dashed #ccc", color: "#aaa", fontSize: 18, fontWeight: 700, letterSpacing: 3, marginBottom: 16, borderRadius: 6 }}>TBD</div>
@@ -794,7 +794,7 @@ export default function MarketSharePage() {
             </div>
           </div>
 
-          <div className="col-10">
+          <div className="col-xl-10 col-md-9">
             <div id="page-content">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                 <div>
