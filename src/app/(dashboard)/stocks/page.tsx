@@ -84,6 +84,11 @@ const fmtPct = (v: number | null | undefined) => {
   return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
 };
 
+const fmtPctArrow = (v: number | null | undefined) => {
+  if (v == null) return "—";
+  return `${v >= 0 ? "▲" : "▼"} ${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
+};
+
 const fmtVol = (v: number) => {
   if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
   if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
@@ -369,7 +374,6 @@ function WatchlistCardContent({ card, isDark, onUpdate }: { card: DashCard & { t
               <th style={{ textAlign: "right", padding: "2px 3px" }}>CHG%</th>
               <th style={{ textAlign: "right", padding: "2px 3px" }}>YTD%</th>
               <th style={{ textAlign: "right", padding: "2px 3px" }}>MTD%</th>
-              <th style={{ textAlign: "center", width: 16, padding: "2px 1px" }}></th>
             </tr>
           </thead>
           <tbody>
@@ -385,10 +389,9 @@ function WatchlistCardContent({ card, isDark, onUpdate }: { card: DashCard & { t
                     <Link href={`/stocks/${q.symbol}`} style={{ color: "inherit", textDecoration: "none" }}>{q.symbol}</Link>
                   </td>
                   <td style={{ textAlign: "right", padding: "2px 3px" }} className={wb ? `price-flash-${wb}` : undefined}>{fmt(q.regularMarketPrice)}</td>
-                  <td style={{ textAlign: "right", padding: "2px 3px" }} className={`${cls}${wb ? ` price-flash-${wb}` : ""}`}>{pos ? "+" : ""}{fmt(q.regularMarketChangePercent)}%</td>
-                  <td style={{ textAlign: "right", padding: "2px 3px" }} className={pr?.ytdPct != null ? (pr.ytdPct >= 0 ? "sd-green" : "sd-red") : undefined}>{fmtPct(pr?.ytdPct)}</td>
-                  <td style={{ textAlign: "right", padding: "2px 3px" }} className={pr?.mtdPct != null ? (pr.mtdPct >= 0 ? "sd-green" : "sd-red") : undefined}>{fmtPct(pr?.mtdPct)}</td>
-                  <td style={{ textAlign: "center", padding: "2px 1px" }} className={cls}>{pos ? "\u25B2" : "\u25BC"}</td>
+                  <td style={{ textAlign: "right", padding: "2px 3px" }} className={`${cls}${wb ? ` price-flash-${wb}` : ""}`}>{pos ? "\u25B2" : "\u25BC"} {pos ? "+" : ""}{fmt(q.regularMarketChangePercent)}%</td>
+                  <td style={{ textAlign: "right", padding: "2px 3px" }} className={pr?.ytdPct != null ? (pr.ytdPct >= 0 ? "sd-green" : "sd-red") : undefined}>{fmtPctArrow(pr?.ytdPct)}</td>
+                  <td style={{ textAlign: "right", padding: "2px 3px" }} className={pr?.mtdPct != null ? (pr.mtdPct >= 0 ? "sd-green" : "sd-red") : undefined}>{fmtPctArrow(pr?.mtdPct)}</td>
                 </tr>
               );
             })}
@@ -934,7 +937,6 @@ function StocksPageInner() {
                                 <th style={{ textAlign: "right", padding: "2px 3px" }}>CHG%</th>
                                 <th style={{ textAlign: "right", padding: "2px 3px" }}>YTD%</th>
                                 <th style={{ textAlign: "right", padding: "2px 3px" }}>MTD%</th>
-                                <th style={{ textAlign: "center", width: 16, padding: "2px 1px" }}></th>
                                 <th style={{ textAlign: "right", padding: "2px 3px" }}>VOL</th>
                               </tr>
                             </thead>
@@ -943,7 +945,7 @@ function StocksPageInner() {
                                 <>
                                   {groups.length > 1 && (
                                     <tr key={`hdr-${group.name}`}>
-                                      <td colSpan={7} className="sd-group-header" style={{ padding: "5px 3px 2px" }}>{group.name}</td>
+                                      <td colSpan={6} className="sd-group-header" style={{ padding: "5px 3px 2px" }}>{group.name}</td>
                                     </tr>
                                   )}
                                   {group.tickers.map((ticker) => {
@@ -951,7 +953,7 @@ function StocksPageInner() {
                                     if (!q) return (
                                       <tr key={ticker}>
                                         <td style={{ fontWeight: 600, padding: "2px 3px" }}>{ticker}</td>
-                                        <td colSpan={6} className="sd-muted" style={{ textAlign: "center", fontSize: 10, padding: "2px 3px" }}>Loading...</td>
+                                        <td colSpan={5} className="sd-muted" style={{ textAlign: "center", fontSize: 10, padding: "2px 3px" }}>Loading...</td>
                                       </tr>
                                     );
                                     const pos = q.regularMarketChangePercent >= 0;
@@ -965,10 +967,9 @@ function StocksPageInner() {
                                           <Link href={`/stocks/${q.symbol}`} style={{ fontWeight: 700, color: "inherit", textDecoration: "none" }}>{q.symbol}</Link>
                                         </td>
                                         <td style={{ textAlign: "right", padding: "2px 3px" }} className={blink ? `price-flash-${blink}` : undefined}>{fmt(q.regularMarketPrice)}</td>
-                                        <td style={{ textAlign: "right", padding: "2px 3px" }} className={`${cls}${blink ? ` price-flash-${blink}` : ""}`}>{pos ? "+" : ""}{fmt(q.regularMarketChangePercent)}%</td>
-                                        <td style={{ textAlign: "right", padding: "2px 3px" }} className={pr?.ytdPct != null ? (pr.ytdPct >= 0 ? "sd-green" : "sd-red") : undefined}>{fmtPct(pr?.ytdPct)}</td>
-                                        <td style={{ textAlign: "right", padding: "2px 3px" }} className={pr?.mtdPct != null ? (pr.mtdPct >= 0 ? "sd-green" : "sd-red") : undefined}>{fmtPct(pr?.mtdPct)}</td>
-                                        <td style={{ textAlign: "center", padding: "2px 1px" }} className={cls}>{pos ? "\u25B2" : "\u25BC"}</td>
+                                        <td style={{ textAlign: "right", padding: "2px 3px" }} className={`${cls}${blink ? ` price-flash-${blink}` : ""}`}>{pos ? "\u25B2" : "\u25BC"} {pos ? "+" : ""}{fmt(q.regularMarketChangePercent)}%</td>
+                                        <td style={{ textAlign: "right", padding: "2px 3px" }} className={pr?.ytdPct != null ? (pr.ytdPct >= 0 ? "sd-green" : "sd-red") : undefined}>{fmtPctArrow(pr?.ytdPct)}</td>
+                                        <td style={{ textAlign: "right", padding: "2px 3px" }} className={pr?.mtdPct != null ? (pr.mtdPct >= 0 ? "sd-green" : "sd-red") : undefined}>{fmtPctArrow(pr?.mtdPct)}</td>
                                         <td style={{ textAlign: "right", padding: "2px 3px" }}>{fmtVol(q.regularMarketVolume)}</td>
                                       </tr>
                                     );

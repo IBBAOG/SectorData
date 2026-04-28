@@ -74,7 +74,6 @@ export default function MarketOverview() {
               <th style={{ textAlign: "right", padding: "2px 4px" }}>CHG%</th>
               <th style={{ textAlign: "right", padding: "2px 4px" }}>YTD%</th>
               <th style={{ textAlign: "right", padding: "2px 4px" }}>MTD%</th>
-              <th style={{ textAlign: "center", width: 18, padding: "2px 2px" }}></th>
             </tr>
           </thead>
           <tbody>
@@ -97,16 +96,13 @@ export default function MarketOverview() {
                     {fmt(q.regularMarketPrice)}
                   </td>
                   <td style={{ textAlign: "right", padding: "3px 4px" }} className={cls}>
-                    {positive ? "+" : ""}{fmt(q.regularMarketChangePercent)}%
+                    {positive ? "\u25B2" : "\u25BC"} {positive ? "+" : ""}{fmt(q.regularMarketChangePercent)}%
                   </td>
                   <td style={{ textAlign: "right", padding: "3px 4px" }} className={pr?.ytdPct != null ? (pr.ytdPct >= 0 ? "sd-green" : "sd-red") : undefined}>
-                    {fmtPct(pr?.ytdPct)}
+                    {pr?.ytdPct != null ? `${pr.ytdPct >= 0 ? "\u25B2" : "\u25BC"} ${fmtPct(pr.ytdPct)}` : "\u2014"}
                   </td>
                   <td style={{ textAlign: "right", padding: "3px 4px" }} className={pr?.mtdPct != null ? (pr.mtdPct >= 0 ? "sd-green" : "sd-red") : undefined}>
-                    {fmtPct(pr?.mtdPct)}
-                  </td>
-                  <td style={{ textAlign: "center", padding: "3px 2px" }} className={cls}>
-                    {positive ? "\u25B2" : "\u25BC"}
+                    {pr?.mtdPct != null ? `${pr.mtdPct >= 0 ? "\u25B2" : "\u25BC"} ${fmtPct(pr.mtdPct)}` : "\u2014"}
                   </td>
                 </tr>
               );
