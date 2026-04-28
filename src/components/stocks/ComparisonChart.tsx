@@ -34,7 +34,8 @@ export default function ComparisonChart({series,height,mode,baseDate,endDate,dar
 
   const normalized:NSeries[]=series.map((s,i)=>{
     let f=s.data;
-    if(mode==="base100"){const st=baseDate?toUnix(baseDate):0,en=endDate?toUnix(endDate):Infinity;f=f.filter(d=>d.date>=st&&d.date<=en);}
+    const st=baseDate?toUnix(baseDate):0,en=endDate?toUnix(endDate):Infinity;
+    if(baseDate||endDate){f=f.filter(d=>d.date>=st&&d.date<=en);}
     if(!f.length)return{ticker:s.ticker,color:s.color??COLORS[i%COLORS.length],values:[]};
     const bv=f[0].close; if(!bv)return{ticker:s.ticker,color:s.color??COLORS[i%COLORS.length],values:[]};
     return{ticker:s.ticker,color:s.color??COLORS[i%COLORS.length],values:f.map(d=>({date:d.date,value:mode==="percent"?((d.close-bv)/bv)*100:(d.close/bv)*100}))};

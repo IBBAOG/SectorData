@@ -535,8 +535,7 @@ function CompareCardContent({ card, isDark, onUpdate }: {
   isDark: boolean;
   onUpdate: (c: DashCard) => void;
 }) {
-  const range = (card.range || "1y") as TimeRange;
-  const seriesData = useMultiHistory(card.tickers, card.mode === "base100" ? "max" : range);
+  const seriesData = useMultiHistory(card.tickers, "max");
   const isLoading = seriesData.some((s) => s.data.length === 0) && card.tickers.length > 0;
 
   const addTicker = useCallback((sym: string) => {
@@ -582,28 +581,14 @@ function CompareCardContent({ card, isDark, onUpdate }: {
             onClick={() => onUpdate({ ...card, mode: "base100" })}>Base 100</button>
         </div>
 
-        {card.mode === "percent" && (
-          <div style={{ display: "flex", gap: 2 }}>
-            {COMPARE_RANGES.map((r) => (
-              <button key={r.value} className={`sd-btn${range === r.value ? " sd-btn-active" : ""}`}
-                style={{ fontSize: 9, padding: "1px 5px" }}
-                onClick={() => onUpdate({ ...card, range: r.value })}>
-                {r.label}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {card.mode === "base100" && (
-          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-            <label className="sd-muted" style={{ fontSize: 9 }}>From:</label>
-            <input type="date" className="sd-input" style={{ width: 110, fontSize: 10, padding: "2px 4px" }}
-              value={card.baseDate} onChange={(e) => onUpdate({ ...card, baseDate: e.target.value })} />
-            <label className="sd-muted" style={{ fontSize: 9 }}>To:</label>
-            <input type="date" className="sd-input" style={{ width: 110, fontSize: 10, padding: "2px 4px" }}
-              value={card.endDate} onChange={(e) => onUpdate({ ...card, endDate: e.target.value })} />
-          </div>
-        )}
+        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+          <label className="sd-muted" style={{ fontSize: 9 }}>From:</label>
+          <input type="date" className="sd-input" style={{ width: 110, fontSize: 10, padding: "2px 4px" }}
+            value={card.baseDate} onChange={(e) => onUpdate({ ...card, baseDate: e.target.value })} />
+          <label className="sd-muted" style={{ fontSize: 9 }}>To:</label>
+          <input type="date" className="sd-input" style={{ width: 110, fontSize: 10, padding: "2px 4px" }}
+            value={card.endDate} onChange={(e) => onUpdate({ ...card, endDate: e.target.value })} />
+        </div>
       </div>
 
       {/* Chart — fills remaining space */}
