@@ -82,6 +82,9 @@ export default function MarketOverview() {
               const cls = positive ? "sd-green" : "sd-red";
               const blink = blinkMap.get(q.symbol);
               const pr = periodReturns.get(q.symbol);
+              const p = q.regularMarketPrice;
+              const ytdPct = pr?.ytdRefPrice ? (p - pr.ytdRefPrice) / pr.ytdRefPrice * 100 : null;
+              const mtdPct = pr?.mtdRefPrice ? (p - pr.mtdRefPrice) / pr.mtdRefPrice * 100 : null;
               return (
                 <tr key={q.symbol} className={blink ? `stock-blink-${blink}` : undefined}>
                   <td style={{ fontWeight: 600, padding: "3px 4px", display: "flex", alignItems: "center", gap: 4 }}>
@@ -98,11 +101,11 @@ export default function MarketOverview() {
                   <td style={{ textAlign: "right", padding: "3px 4px" }} className={cls}>
                     {positive ? "\u25B2" : "\u25BC"} {positive ? "+" : ""}{fmt(q.regularMarketChangePercent)}%
                   </td>
-                  <td style={{ textAlign: "right", padding: "3px 4px" }} className={pr?.ytdPct != null ? (pr.ytdPct >= 0 ? "sd-green" : "sd-red") : undefined}>
-                    {pr?.ytdPct != null ? `${pr.ytdPct >= 0 ? "\u25B2" : "\u25BC"} ${fmtPct(pr.ytdPct)}` : "\u2014"}
+                  <td style={{ textAlign: "right", padding: "3px 4px" }} className={ytdPct != null ? (ytdPct >= 0 ? "sd-green" : "sd-red") : undefined}>
+                    {ytdPct != null ? `${ytdPct >= 0 ? "\u25B2" : "\u25BC"} ${fmtPct(ytdPct)}` : "\u2014"}
                   </td>
-                  <td style={{ textAlign: "right", padding: "3px 4px" }} className={pr?.mtdPct != null ? (pr.mtdPct >= 0 ? "sd-green" : "sd-red") : undefined}>
-                    {pr?.mtdPct != null ? `${pr.mtdPct >= 0 ? "\u25B2" : "\u25BC"} ${fmtPct(pr.mtdPct)}` : "\u2014"}
+                  <td style={{ textAlign: "right", padding: "3px 4px" }} className={mtdPct != null ? (mtdPct >= 0 ? "sd-green" : "sd-red") : undefined}>
+                    {mtdPct != null ? `${mtdPct >= 0 ? "\u25B2" : "\u25BC"} ${fmtPct(mtdPct)}` : "\u2014"}
                   </td>
                 </tr>
               );

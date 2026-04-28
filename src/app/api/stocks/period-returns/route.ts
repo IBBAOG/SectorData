@@ -44,23 +44,17 @@ async function fetchPeriodReturns(ticker: string) {
 
   if (points.length === 0) return null;
 
-  const currentPrice: number = meta.regularMarketPrice ?? points[points.length - 1].close;
-
   const today = new Date();
-  // Use UTC midnight of Jan 1 and the 1st of this month as reference timestamps
   const ytdStart = Date.UTC(today.getFullYear(), 0, 1) / 1000;
   const mtdStart = Date.UTC(today.getFullYear(), today.getMonth(), 1) / 1000;
 
   const ytdPoint = points.find((p) => p.ts >= ytdStart);
   const mtdPoint = points.find((p) => p.ts >= mtdStart);
 
-  const calc = (ref: { close: number } | undefined) =>
-    ref ? Math.round(((currentPrice - ref.close) / ref.close) * 10000) / 100 : null;
-
   return {
     symbol: stripSA(meta.symbol ?? yahooSymbol),
-    ytdPct: calc(ytdPoint),
-    mtdPct: calc(mtdPoint),
+    ytdRefPrice: ytdPoint?.close ?? null,
+    mtdRefPrice: mtdPoint?.close ?? null,
   };
 }
 

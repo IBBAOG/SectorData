@@ -382,6 +382,9 @@ function WatchlistCardContent({ card, isDark, onUpdate }: { card: DashCard & { t
               const cls = pos ? "sd-green" : "sd-red";
               const wb = wBlinks.get(q.symbol);
               const pr = watchPeriods.get(q.symbol);
+              const p = q.regularMarketPrice;
+              const ytdPct = pr?.ytdRefPrice ? (p - pr.ytdRefPrice) / pr.ytdRefPrice * 100 : null;
+              const mtdPct = pr?.mtdRefPrice ? (p - pr.mtdRefPrice) / pr.mtdRefPrice * 100 : null;
               return (
                 <tr key={q.symbol} className={wb ? `stock-blink-${wb}` : undefined}>
                   <td style={{ fontWeight: 600, padding: "2px 3px", display: "flex", alignItems: "center" }}>
@@ -390,8 +393,8 @@ function WatchlistCardContent({ card, isDark, onUpdate }: { card: DashCard & { t
                   </td>
                   <td style={{ textAlign: "right", padding: "2px 3px" }} className={wb ? `price-flash-${wb}` : undefined}>{fmt(q.regularMarketPrice)}</td>
                   <td style={{ textAlign: "right", padding: "2px 3px" }} className={`${cls}${wb ? ` price-flash-${wb}` : ""}`}>{pos ? "\u25B2" : "\u25BC"} {pos ? "+" : ""}{fmt(q.regularMarketChangePercent)}%</td>
-                  <td style={{ textAlign: "right", padding: "2px 3px" }} className={pr?.ytdPct != null ? (pr.ytdPct >= 0 ? "sd-green" : "sd-red") : undefined}>{fmtPctArrow(pr?.ytdPct)}</td>
-                  <td style={{ textAlign: "right", padding: "2px 3px" }} className={pr?.mtdPct != null ? (pr.mtdPct >= 0 ? "sd-green" : "sd-red") : undefined}>{fmtPctArrow(pr?.mtdPct)}</td>
+                  <td style={{ textAlign: "right", padding: "2px 3px" }} className={ytdPct != null ? (ytdPct >= 0 ? "sd-green" : "sd-red") : undefined}>{fmtPctArrow(ytdPct)}</td>
+                  <td style={{ textAlign: "right", padding: "2px 3px" }} className={mtdPct != null ? (mtdPct >= 0 ? "sd-green" : "sd-red") : undefined}>{fmtPctArrow(mtdPct)}</td>
                 </tr>
               );
             })}
@@ -960,6 +963,9 @@ function StocksPageInner() {
                                     const cls = pos ? "sd-green" : "sd-red";
                                     const blink = blinkMap.get(q.symbol);
                                     const pr = periodReturns.get(q.symbol);
+                                    const p = q.regularMarketPrice;
+                                    const ytdPct = pr?.ytdRefPrice ? (p - pr.ytdRefPrice) / pr.ytdRefPrice * 100 : null;
+                                    const mtdPct = pr?.mtdRefPrice ? (p - pr.mtdRefPrice) / pr.mtdRefPrice * 100 : null;
                                     return (
                                       <tr key={q.symbol} className={blink ? `stock-blink-${blink}` : undefined}>
                                         <td style={{ padding: "2px 3px", display: "flex", alignItems: "center" }}>
@@ -968,8 +974,8 @@ function StocksPageInner() {
                                         </td>
                                         <td style={{ textAlign: "right", padding: "2px 3px" }} className={blink ? `price-flash-${blink}` : undefined}>{fmt(q.regularMarketPrice)}</td>
                                         <td style={{ textAlign: "right", padding: "2px 3px" }} className={`${cls}${blink ? ` price-flash-${blink}` : ""}`}>{pos ? "\u25B2" : "\u25BC"} {pos ? "+" : ""}{fmt(q.regularMarketChangePercent)}%</td>
-                                        <td style={{ textAlign: "right", padding: "2px 3px" }} className={pr?.ytdPct != null ? (pr.ytdPct >= 0 ? "sd-green" : "sd-red") : undefined}>{fmtPctArrow(pr?.ytdPct)}</td>
-                                        <td style={{ textAlign: "right", padding: "2px 3px" }} className={pr?.mtdPct != null ? (pr.mtdPct >= 0 ? "sd-green" : "sd-red") : undefined}>{fmtPctArrow(pr?.mtdPct)}</td>
+                                        <td style={{ textAlign: "right", padding: "2px 3px" }} className={ytdPct != null ? (ytdPct >= 0 ? "sd-green" : "sd-red") : undefined}>{fmtPctArrow(ytdPct)}</td>
+                                        <td style={{ textAlign: "right", padding: "2px 3px" }} className={mtdPct != null ? (mtdPct >= 0 ? "sd-green" : "sd-red") : undefined}>{fmtPctArrow(mtdPct)}</td>
                                         <td style={{ textAlign: "right", padding: "2px 3px" }}>{fmtVol(q.regularMarketVolume)}</td>
                                       </tr>
                                     );

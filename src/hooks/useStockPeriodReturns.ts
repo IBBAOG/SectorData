@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 
 export interface PeriodReturn {
   symbol: string;
-  ytdPct: number | null;
-  mtdPct: number | null;
+  ytdRefPrice: number | null;
+  mtdRefPrice: number | null;
 }
 
 export function useStockPeriodReturns(tickers: string[]) {
