@@ -530,13 +530,35 @@ function useMultiHistory(tickers: string[], range: TimeRange) {
 
 /* ── Compare Card Content ────────────────────────────────────────────────── */
 
-function CompareCardContent({ card, isDark, onUpdate }: {
+function CompareCardContent({ card, isDark, onUpdate, quoteMap }: {
   card: DashCard & { type: "compare" };
   isDark: boolean;
   onUpdate: (c: DashCard) => void;
+  quoteMap: Map<string, StockQuote>;
 }) {
   const seriesData = useMultiHistory(card.tickers, "max");
   const isLoading = seriesData.some((s) => s.data.length === 0) && card.tickers.length > 0;
+
+  // Extend each series with the live price so the chart reaches today
+  const seriesWithLive = useMemo(() => seriesData.map((s) => {
+    const quote = quoteMap.get(s.ticker);
+    if (!quote?.regularMarketPrice || !s.data.length) return s;
+    const liveTs = Math.floor(Date.now() / 1000);
+    const livePoint: HistoricalDataPoint = {
+      date: liveTs,
+      open: quote.regularMarketPrice,
+      high: quote.regularMarketPrice,
+      low: quote.regularMarketPrice,
+      close: quote.regularMarketPrice,
+      volume: quote.regularMarketVolume ?? 0,
+    };
+    const lastDate = new Date(s.data[s.data.length - 1].date * 1000);
+    const today = new Date();
+    const sameDay = lastDate.getFullYear() === today.getFullYear() &&
+                    lastDate.getMonth() === today.getMonth() &&
+                    lastDate.getDate() === today.getDate();
+    return { ...s, data: sameDay ? [...s.data.slice(0, -1), livePoint] : [...s.data, livePoint] };
+  }), [seriesData, quoteMap]);
 
   const addTicker = useCallback((sym: string) => {
     if (card.tickers.length >= 5 || card.tickers.includes(sym)) return;
@@ -600,7 +622,7 @@ function CompareCardContent({ card, isDark, onUpdate }: {
         ) : (
           <ComparisonChart
             key={card.tickers.join(",") + card.mode}
-            series={seriesData}
+            series={seriesWithLive}
             mode={card.mode}
             baseDate={card.baseDate || undefined}
             endDate={card.endDate || undefined}
@@ -981,7 +1003,7 @@ function StocksPageInner() {
 
                     {/* Compare */}
                     {card.type === "compare" && (
-                      <CompareCardContent card={card as DashCard & { type: "compare" }} isDark={isDark} onUpdate={updateCard} />
+                      <CompareCardContent card={card as DashCard & { type: "compare" }} isDark={isDark} onUpdate={updateCard} quoteMap={quoteMap} />
                     )}
 
                     {/* Futures Curve */}
