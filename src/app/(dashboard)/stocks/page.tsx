@@ -12,6 +12,7 @@ import { useStockQuote } from "../../../hooks/useStockQuote";
 import { useStockHistory } from "../../../hooks/useStockHistory";
 import { useStockPortfolios } from "../../../hooks/useStockPortfolios";
 import { useAutoRefresh } from "../../../hooks/useAutoRefresh";
+import { useStockPeriodReturns } from "../../../hooks/useStockPeriodReturns";
 import type { ChartMode, PortfolioGroup, StockQuote, TimeRange, HistoricalDataPoint } from "../../../types/stocks";
 // TimeRange used for auto-range selection
 
@@ -77,6 +78,11 @@ function TradingDot({ active }: { active: boolean }) {
     }} />
   );
 }
+
+const fmtPct = (v: number | null | undefined) => {
+  if (v == null) return "—";
+  return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
+};
 
 const fmtVol = (v: number) => {
   if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
@@ -294,6 +300,7 @@ function PortfolioModal({
 function WatchlistCardContent({ card, isDark, onUpdate }: { card: DashCard & { type: "watchlist" }; isDark: boolean; onUpdate: (c: DashCard) => void }) {
   const [editing, setEditing] = useState(false);
   const { data: watchQuotes } = useStockQuote(card.tickers);
+  const { data: watchPeriods } = useStockPeriodReturns(card.tickers);
 
   // Blink tracking for watchlist
   const wPrevRef = useRef<Map<string, number>>(new Map());
@@ -360,6 +367,8 @@ function WatchlistCardContent({ card, isDark, onUpdate }: { card: DashCard & { t
               <th style={{ textAlign: "left", padding: "2px 3px" }}>ASSET</th>
               <th style={{ textAlign: "right", padding: "2px 3px" }}>LAST</th>
               <th style={{ textAlign: "right", padding: "2px 3px" }}>CHG%</th>
+              <th style={{ textAlign: "right", padding: "2px 3px" }}>YTD%</th>
+              <th style={{ textAlign: "right", padding: "2px 3px" }}>MTD%</th>
               <th style={{ textAlign: "center", width: 16, padding: "2px 1px" }}></th>
             </tr>
           </thead>
@@ -368,6 +377,7 @@ function WatchlistCardContent({ card, isDark, onUpdate }: { card: DashCard & { t
               const pos = q.regularMarketChangePercent >= 0;
               const cls = pos ? "sd-green" : "sd-red";
               const wb = wBlinks.get(q.symbol);
+              const pr = watchPeriods.get(q.symbol);
               return (
                 <tr key={q.symbol} className={wb ? `stock-blink-${wb}` : undefined}>
                   <td style={{ fontWeight: 600, padding: "2px 3px", display: "flex", alignItems: "center" }}>
@@ -376,6 +386,8 @@ function WatchlistCardContent({ card, isDark, onUpdate }: { card: DashCard & { t
                   </td>
                   <td style={{ textAlign: "right", padding: "2px 3px" }} className={wb ? `price-flash-${wb}` : undefined}>{fmt(q.regularMarketPrice)}</td>
                   <td style={{ textAlign: "right", padding: "2px 3px" }} className={`${cls}${wb ? ` price-flash-${wb}` : ""}`}>{pos ? "+" : ""}{fmt(q.regularMarketChangePercent)}%</td>
+                  <td style={{ textAlign: "right", padding: "2px 3px" }} className={pr?.ytdPct != null ? (pr.ytdPct >= 0 ? "sd-green" : "sd-red") : undefined}>{fmtPct(pr?.ytdPct)}</td>
+                  <td style={{ textAlign: "right", padding: "2px 3px" }} className={pr?.mtdPct != null ? (pr.mtdPct >= 0 ? "sd-green" : "sd-red") : undefined}>{fmtPct(pr?.mtdPct)}</td>
                   <td style={{ textAlign: "center", padding: "2px 1px" }} className={cls}>{pos ? "\u25B2" : "\u25BC"}</td>
                 </tr>
               );
@@ -753,6 +765,7 @@ function StocksPageInner() {
   }, [tickers]);
   const { data: quotes, refetch } = useStockQuote(allQuoteTickers);
   const { isMarketOpen } = useAutoRefresh(useCallback(() => refetch(), [refetch]));
+  const { data: periodReturns } = useStockPeriodReturns(tickers);
 
   // ── Blink tracking ──
   const prevPricesRef = useRef<Map<string, number>>(new Map());
@@ -912,6 +925,8 @@ function StocksPageInner() {
                                 <th style={{ textAlign: "left", padding: "2px 3px" }}>ASSET</th>
                                 <th style={{ textAlign: "right", padding: "2px 3px" }}>LAST</th>
                                 <th style={{ textAlign: "right", padding: "2px 3px" }}>CHG%</th>
+                                <th style={{ textAlign: "right", padding: "2px 3px" }}>YTD%</th>
+                                <th style={{ textAlign: "right", padding: "2px 3px" }}>MTD%</th>
                                 <th style={{ textAlign: "center", width: 16, padding: "2px 1px" }}></th>
                                 <th style={{ textAlign: "right", padding: "2px 3px" }}>VOL</th>
                               </tr>
@@ -921,7 +936,7 @@ function StocksPageInner() {
                                 <>
                                   {groups.length > 1 && (
                                     <tr key={`hdr-${group.name}`}>
-                                      <td colSpan={5} className="sd-group-header" style={{ padding: "5px 3px 2px" }}>{group.name}</td>
+                                      <td colSpan={7} className="sd-group-header" style={{ padding: "5px 3px 2px" }}>{group.name}</td>
                                     </tr>
                                   )}
                                   {group.tickers.map((ticker) => {
@@ -929,12 +944,13 @@ function StocksPageInner() {
                                     if (!q) return (
                                       <tr key={ticker}>
                                         <td style={{ fontWeight: 600, padding: "2px 3px" }}>{ticker}</td>
-                                        <td colSpan={4} className="sd-muted" style={{ textAlign: "center", fontSize: 10, padding: "2px 3px" }}>Loading...</td>
+                                        <td colSpan={6} className="sd-muted" style={{ textAlign: "center", fontSize: 10, padding: "2px 3px" }}>Loading...</td>
                                       </tr>
                                     );
                                     const pos = q.regularMarketChangePercent >= 0;
                                     const cls = pos ? "sd-green" : "sd-red";
                                     const blink = blinkMap.get(q.symbol);
+                                    const pr = periodReturns.get(q.symbol);
                                     return (
                                       <tr key={q.symbol} className={blink ? `stock-blink-${blink}` : undefined}>
                                         <td style={{ padding: "2px 3px", display: "flex", alignItems: "center" }}>
@@ -943,6 +959,8 @@ function StocksPageInner() {
                                         </td>
                                         <td style={{ textAlign: "right", padding: "2px 3px" }} className={blink ? `price-flash-${blink}` : undefined}>{fmt(q.regularMarketPrice)}</td>
                                         <td style={{ textAlign: "right", padding: "2px 3px" }} className={`${cls}${blink ? ` price-flash-${blink}` : ""}`}>{pos ? "+" : ""}{fmt(q.regularMarketChangePercent)}%</td>
+                                        <td style={{ textAlign: "right", padding: "2px 3px" }} className={pr?.ytdPct != null ? (pr.ytdPct >= 0 ? "sd-green" : "sd-red") : undefined}>{fmtPct(pr?.ytdPct)}</td>
+                                        <td style={{ textAlign: "right", padding: "2px 3px" }} className={pr?.mtdPct != null ? (pr.mtdPct >= 0 ? "sd-green" : "sd-red") : undefined}>{fmtPct(pr?.mtdPct)}</td>
                                         <td style={{ textAlign: "center", padding: "2px 1px" }} className={cls}>{pos ? "\u25B2" : "\u25BC"}</td>
                                         <td style={{ textAlign: "right", padding: "2px 3px" }}>{fmtVol(q.regularMarketVolume)}</td>
                                       </tr>
