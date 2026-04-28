@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState, useEffect } from "react";
 import { useStockQuote } from "../../hooks/useStockQuote";
 import { useAutoRefresh } from "../../hooks/useAutoRefresh";
+import { useStockPeriodReturns } from "../../hooks/useStockPeriodReturns";
 
 const MARKET_TICKERS = ["^BVSP", "USDBRL=X", "EURBRL=X", "BZ=F", "CL=F", "BTC-BRL"];
 const LABELS: Record<string, string> = {
@@ -17,6 +18,7 @@ const LABELS: Record<string, string> = {
 export default function MarketOverview() {
   const { data, isLoading, refetch } = useStockQuote(MARKET_TICKERS);
   const { isMarketOpen } = useAutoRefresh(useCallback(() => refetch(), [refetch]));
+  const { data: periodReturns } = useStockPeriodReturns(MARKET_TICKERS);
 
   // Blink tracking
   const prevPricesRef = useRef<Map<string, number>>(new Map());
@@ -43,6 +45,11 @@ export default function MarketOverview() {
   const fmt = (v: number, decimals = 2) =>
     v.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 
+  const fmtPct = (v: number | null | undefined) => {
+    if (v == null) return "—";
+    return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
+  };
+
   return (
     <div className="sd-card" style={{ padding: 8 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4, padding: "0 4px" }}>
@@ -65,6 +72,8 @@ export default function MarketOverview() {
               <th style={{ textAlign: "left", padding: "2px 4px" }}>ASSET</th>
               <th style={{ textAlign: "right", padding: "2px 4px" }}>LAST</th>
               <th style={{ textAlign: "right", padding: "2px 4px" }}>CHG%</th>
+              <th style={{ textAlign: "right", padding: "2px 4px" }}>YTD%</th>
+              <th style={{ textAlign: "right", padding: "2px 4px" }}>MTD%</th>
               <th style={{ textAlign: "center", width: 18, padding: "2px 2px" }}></th>
             </tr>
           </thead>
@@ -73,6 +82,7 @@ export default function MarketOverview() {
               const positive = q.regularMarketChangePercent >= 0;
               const cls = positive ? "sd-green" : "sd-red";
               const blink = blinkMap.get(q.symbol);
+              const pr = periodReturns.get(q.symbol);
               return (
                 <tr key={q.symbol} className={blink ? `stock-blink-${blink}` : undefined}>
                   <td style={{ fontWeight: 600, padding: "3px 4px", display: "flex", alignItems: "center", gap: 4 }}>
@@ -88,6 +98,12 @@ export default function MarketOverview() {
                   </td>
                   <td style={{ textAlign: "right", padding: "3px 4px" }} className={cls}>
                     {positive ? "+" : ""}{fmt(q.regularMarketChangePercent)}%
+                  </td>
+                  <td style={{ textAlign: "right", padding: "3px 4px" }} className={pr?.ytdPct != null ? (pr.ytdPct >= 0 ? "sd-green" : "sd-red") : undefined}>
+                    {fmtPct(pr?.ytdPct)}
+                  </td>
+                  <td style={{ textAlign: "right", padding: "3px 4px" }} className={pr?.mtdPct != null ? (pr.mtdPct >= 0 ? "sd-green" : "sd-red") : undefined}>
+                    {fmtPct(pr?.mtdPct)}
                   </td>
                   <td style={{ textAlign: "center", padding: "3px 2px" }} className={cls}>
                     {positive ? "\u25B2" : "\u25BC"}
