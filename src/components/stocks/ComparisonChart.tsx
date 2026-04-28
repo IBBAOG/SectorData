@@ -20,6 +20,15 @@ function fmtDate(unix:number,short=false):string { const d=new Date(unix*1000); 
 function niceSteps(min:number,max:number,n=5):number[] { const r=max-min; if(r<=0)return[min]; const rough=r/n,mag=Math.pow(10,Math.floor(Math.log10(rough))); let step=mag; if(rough/mag>5)step=mag*5; else if(rough/mag>2)step=mag*2; const s:number[]=[]; let v=Math.ceil(min/step)*step; while(v<=max){s.push(v);v+=step;} return s; }
 function clamp(v:number,lo:number,hi:number){return Math.max(lo,Math.min(hi,v));}
 function toUnix(s:string):number{return Math.floor(new Date(s).getTime()/1000);}
+function resolveOverlaps(ys:number[],boxH:number,minY:number,maxY:number):number[]{
+  if(ys.length<=1)return[...ys];
+  const items=ys.map((y,i)=>({y,i})).sort((a,b)=>a.y-b.y);
+  for(let i=1;i<items.length;i++){if(items[i].y<items[i-1].y+boxH)items[i].y=items[i-1].y+boxH;}
+  if(items[items.length-1].y>maxY-boxH/2)items[items.length-1].y=maxY-boxH/2;
+  for(let i=items.length-2;i>=0;i--){if(items[i].y>items[i+1].y-boxH)items[i].y=items[i+1].y-boxH;}
+  if(items[0].y<minY+boxH/2)items[0].y=minY+boxH/2;
+  const res=new Array<number>(ys.length);for(const{y,i}of items)res[i]=y;return res;
+}
 
 interface NSeries { ticker:string; color:string; values:{date:number;value:number}[] }
 
@@ -86,13 +95,17 @@ export default function ComparisonChart({series,height,mode,baseDate,endDate,dar
     // Lines
     for(const s of active){ctx.beginPath();ctx.strokeStyle=s.color;ctx.lineWidth=2;for(let vi=0;vi<vLen;vi++){const gi=vs+vi;if(gi>=s.values.length)break;const x=toX(vi),y=toY(s.values[gi].value);vi===0?ctx.moveTo(x,y):ctx.lineTo(x,y);}ctx.stroke();}
 
-    // Current value labels
+    // Current value labels — stacked to avoid overlap
     const suffix=mode==="percent"?"%":"";
-    for(const s of active){const li=Math.min(ve,s.values.length-1);if(li<0)continue;const lv=s.values[li].value,ly=toY(lv);const lt=lv.toFixed(1)+suffix;ctx.font=FONT_BOLD;const lw=ctx.measureText(lt).width+12;ctx.setLineDash([2,2]);ctx.strokeStyle=s.color;ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(PAD.left,ly);ctx.lineTo(w-PAD.right,ly);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=s.color;ctx.fillRect(w-PAD.right,ly-10,lw,20);ctx.fillStyle="#fff";ctx.textAlign="left";ctx.textBaseline="middle";ctx.fillText(lt,w-PAD.right+6,ly);}
+    const LH=20;
+    ctx.font=FONT_BOLD;
+    const lblData=active.map(s=>{const li=Math.min(ve,s.values.length-1);if(li<0)return null;const lv=s.values[li].value,ly=toY(lv),lt=lv.toFixed(1)+suffix,lw=ctx.measureText(lt).width+12;return{s,ly,lt,lw};}).filter((x):x is NonNullable<typeof x>=>x!==null);
+    const adjYs=resolveOverlaps(lblData.map(l=>l.ly),LH,PAD.top,h-PAD.bottom);
+    for(let i=0;i<lblData.length;i++){const{s,ly,lt,lw}=lblData[i];const ay=adjYs[i];ctx.setLineDash([2,2]);ctx.strokeStyle=s.color;ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(PAD.left,ly);ctx.lineTo(w-PAD.right,ly);ctx.stroke();if(Math.abs(ay-ly)>1){ctx.setLineDash([]);ctx.beginPath();ctx.moveTo(w-PAD.right,ly);ctx.lineTo(w-PAD.right,ay);ctx.stroke();}ctx.setLineDash([]);ctx.fillStyle=s.color;ctx.fillRect(w-PAD.right,ay-LH/2,lw,LH);ctx.fillStyle="#fff";ctx.textAlign="left";ctx.textBaseline="middle";ctx.fillText(lt,w-PAD.right+6,ay);}
 
-    // Y labels
+    // Y labels — skip positions near dashed lines or stacked label boxes
     ctx.fillStyle=t.text;ctx.font=FONT_SM;ctx.textAlign="left";ctx.textBaseline="middle";
-    for(const v of valSteps){const y=toY(v);const ov=active.some(s=>{const li=Math.min(ve,s.values.length-1);return li>=0&&Math.abs(y-toY(s.values[li].value))<12;});if(ov)continue;if(y>PAD.top+5&&y<h-PAD.bottom-5)ctx.fillText(v.toFixed(1)+suffix,w-PAD.right+6,y);}
+    for(const v of valSteps){const y=toY(v);const ov=lblData.some((l,i)=>Math.abs(y-l.ly)<12||Math.abs(y-adjYs[i])<12);if(ov)continue;if(y>PAD.top+5&&y<h-PAD.bottom-5)ctx.fillText(v.toFixed(1)+suffix,w-PAD.right+6,y);}
 
     // X labels
     ctx.textBaseline="top";ctx.fillStyle=t.text;ctx.font=FONT_SM;
