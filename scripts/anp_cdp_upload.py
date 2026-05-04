@@ -13,21 +13,45 @@ import argparse
 import glob
 import os
 import re
+import time
+from pathlib import Path
 
 import pandas as pd
 from supabase import create_client
 
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_SERVICE_KEY = os.environ["SUPABASE_SERVICE_KEY"]
+# Load .env / .env.local from project root (grandparent of this script)
+try:
+    from dotenv import load_dotenv
+    _root = Path(__file__).resolve().parent.parent
+    load_dotenv(_root / ".env")
+    load_dotenv(_root / ".env.local", override=False)
+except ImportError:
+    pass
 
-BATCH = 500
+SUPABASE_URL = (
+    os.environ.get("SUPABASE_URL")
+    or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
+)
+SUPABASE_SERVICE_KEY = (
+    os.environ.get("SUPABASE_SERVICE_KEY")
+    or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+)
+
+if not SUPABASE_URL:
+    raise SystemExit("ERROR: set SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL")
+if not SUPABASE_SERVICE_KEY:
+    raise SystemExit(
+        "ERROR: set SUPABASE_SERVICE_KEY\n"
+        "  Get it from: Supabase Dashboard → Project Settings → API → service_role"
+    )
+
+BATCH = 200
 _AMBIENTE_TO_LOCAL = {"M": "PosSal", "S": "PreSal", "T": "Terra"}
 _PAT_CSV = re.compile(r"producao_poco_(\d{2})-(\d{4})_([MST])\.csv$", re.IGNORECASE)
 
 _KEEP_COLS = [
-    "ano", "mes", "operador", "bacia", "local",
-    "oleo_bbl_dia", "condensado_bbl_dia", "petroleo_bbl_dia",
-    "gas_total_mm3_dia", "agua_bbl_dia",
+    "ano", "mes", "campo", "bacia", "local",
+    "petroleo_bbl_dia", "gas_total_mm3_dia", "agua_bbl_dia",
 ]
 
 
@@ -47,14 +71,12 @@ def _get_max_date(sb) -> tuple[int, int]:
 
 def _agg(df: pd.DataFrame) -> pd.DataFrame:
     grp = (
-        df.groupby(["ano", "mes", "operador", "bacia", "local"], dropna=False)
+        df.groupby(["ano", "mes", "campo", "bacia", "local"], dropna=False)
         .agg(
-            oleo_bbl_dia=("oleo_bbl_dia", "sum"),
-            condensado_bbl_dia=("condensado_bbl_dia", "sum"),
             petroleo_bbl_dia=("petroleo_bbl_dia", "sum"),
             gas_total_mm3_dia=("gas_total_mm3_dia", "sum"),
             agua_bbl_dia=("agua_bbl_dia", "sum"),
-            n_pocos=("bacia", "count"),
+            n_pocos=("campo", "count"),
         )
         .reset_index()
     )
@@ -62,12 +84,25 @@ def _agg(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _upsert(sb, rows: list[dict]) -> None:
-    for i in range(0, len(rows), BATCH):
+    total = len(rows)
+    ok = 0
+    for i in range(0, total, BATCH):
         batch = rows[i : i + BATCH]
-        sb.table("anp_cdp_producao").upsert(
-            batch, on_conflict="ano,mes,operador,bacia,local"
-        ).execute()
-    print(f"  Upserted {len(rows)} rows")
+        ano_label = batch[0]["ano"]
+        for attempt in range(3):
+            try:
+                sb.table("anp_cdp_producao").upsert(
+                    batch, on_conflict="ano,mes,campo,bacia,local"
+                ).execute()
+                ok += len(batch)
+                break
+            except Exception as e:
+                if attempt == 2:
+                    print(f"  ERRO batch {i}-{i+len(batch)} (ano~{ano_label}): {e}")
+                    raise
+                time.sleep(2 ** attempt)
+        print(f"  {ok}/{total} rows upserted (ano ~{ano_label})…", end="\r")
+    print(f"\n  Done: {ok} rows upserted.")
 
 
 def _rows_from_df(df: pd.DataFrame) -> list[dict]:
@@ -81,14 +116,18 @@ def _rows_from_df(df: pd.DataFrame) -> list[dict]:
     return rows
 
 
-def _from_parquet(sb, path: str) -> None:
+def _from_parquet(sb, path: str, ano_inicio: int = 0) -> None:
     print(f"Reading parquet: {path}")
     df = pd.read_parquet(path)
     df = df.rename(columns={"gas_natural_total_mm3_dia": "gas_total_mm3_dia"})
+    df["campo"] = df["campo"].str.strip()
     df = df[_KEEP_COLS].copy()
+    if ano_inicio:
+        df = df[df["ano"] >= ano_inicio]
+        print(f"  Filtering from ano >= {ano_inicio}")
     agg = _agg(df)
     rows = _rows_from_df(agg)
-    print(f"  {len(rows)} aggregated rows, upserting…")
+    print(f"  {len(rows)} aggregated rows to upsert…")
     _upsert(sb, rows)
 
 
@@ -201,6 +240,7 @@ def main() -> None:
     ap.add_argument("--from-parquet", metavar="PATH", help="Historical backfill from Parquet")
     ap.add_argument("--from-csv-dir", metavar="DIR", help="Incremental update from CSV directory")
     ap.add_argument("--no-incremental", action="store_true", help="Re-upload even if data already in DB")
+    ap.add_argument("--ano-inicio", type=int, default=0, metavar="ANO", help="Skip rows before this year (parquet mode)")
     args = ap.parse_args()
 
     if not args.from_parquet and not args.from_csv_dir:
@@ -209,7 +249,7 @@ def main() -> None:
     sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
     if args.from_parquet:
-        _from_parquet(sb, args.from_parquet)
+        _from_parquet(sb, args.from_parquet, ano_inicio=args.ano_inicio)
     else:
         _from_csv_dir(sb, args.from_csv_dir, incremental=not args.no_incremental)
 

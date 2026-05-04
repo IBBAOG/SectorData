@@ -1,43 +1,29 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Layout, PlotData } from "plotly.js";
 import Slider from "rc-slider";
 import "rc-slider/assets/index.css";
 
 import NavBar from "../../../components/NavBar";
 import PlotlyChart from "../../../components/PlotlyChart";
+import SearchableMultiSelect from "../../../components/SearchableMultiSelect";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import {
-  rpcGetAnpCdpSerie,
+  rpcGetAnpCdpCampoSerie,
+  rpcGetAnpCdpCamposList,
   rpcGetAnpCdpFiltros,
-  type AnpCdpSerieRow,
+  type AnpCdpSeriePonto,
+  type AnpCdpCampoMeta,
   type AnpCdpFiltros,
 } from "../../../lib/rpc";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const BACIA_COLORS: Record<string, string> = {
-  "Campos":          "#FF5000",
-  "Santos":          "#2196F3",
-  "Potiguar":        "#8BC34A",
-  "Recôncavo":       "#FF9800",
-  "Sergipe":         "#9C27B0",
-  "Espírito Santo":  "#00ACC1",
-  "Solimões":        "#E53935",
-  "Alagoas":         "#FF8C42",
-  "Ceará":           "#64B5F6",
-  "Parnaíba":        "#7CB342",
-  "Barreirinhas":    "#AB47BC",
-  "Camamu":          "#FF7043",
-  "Amazonas":        "#26C6DA",
-  "Paraná":          "#D4E157",
-  "Tucano Sul":      "#EF9A9A",
-};
-const PALETTE = [
-  "#FF5000","#2196F3","#8BC34A","#FF9800","#9C27B0",
-  "#E53935","#00ACC1","#FF8C42","#64B5F6","#7CB342",
+const METRICS = [
+  { key: "petroleo_bbl_dia",  label: "Petróleo (bbl/dia)" },
+  { key: "gas_total_mm3_dia", label: "Gás Natural (Mm³/dia)" },
 ];
 
 const LOCAL_LABELS: Record<string, string> = {
@@ -45,14 +31,6 @@ const LOCAL_LABELS: Record<string, string> = {
   PosSal: "Pós-Sal (Mar)",
   Terra:  "Terra",
 };
-
-const TOP_BACOES = ["Campos", "Santos", "Potiguar", "Recôncavo", "Sergipe", "Espírito Santo"];
-
-const METRICS = [
-  { key: "petroleo_bbl_dia",   label: "Petróleo (bbl/dia)" },
-  { key: "gas_total_mm3_dia",  label: "Gás Natural (Mm³/dia)" },
-  { key: "oleo_bbl_dia",       label: "Óleo (bbl/dia)" },
-];
 
 const COMMON_LAYOUT: Partial<Layout> = {
   paper_bgcolor: "white",
@@ -69,7 +47,7 @@ const AXIS_LINE = { showgrid: false, zeroline: false, showline: true, linecolor:
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function emptyPlot(h = 300): { data: PlotData[]; layout: Partial<Layout> } {
+function emptyPlot(h = 340): { data: PlotData[]; layout: Partial<Layout> } {
   return {
     data: [],
     layout: {
@@ -79,107 +57,34 @@ function emptyPlot(h = 300): { data: PlotData[]; layout: Partial<Layout> } {
   };
 }
 
-function buildSerieChart(
-  rows: AnpCdpSerieRow[],
-  bacoes: string[],
-  locais: string[],
-  allYears: number[],
-  yearRange: [number, number],
+function buildChart(
+  serie: AnpCdpSeriePonto[],
   metricKey: string,
   metricLabel: string,
+  nCampos: number,
 ): { data: PlotData[]; layout: Partial<Layout> } {
-  const yMin = allYears[yearRange[0]];
-  const yMax = allYears[yearRange[1]];
-
-  const filtered = rows.filter(r =>
-    r.ano >= yMin && r.ano <= yMax &&
-    bacoes.includes(r.bacia) &&
-    locais.includes(r.local)
-  );
-  if (!filtered.length) return emptyPlot(340);
-
-  // Aggregate by (ano, mes, bacia) across operators
-  const agg: Record<string, Record<string, number>> = {};
-  for (const r of filtered) {
-    if (!agg[r.bacia]) agg[r.bacia] = {};
-    const k = `${r.ano}-${String(r.mes).padStart(2, "0")}-01`;
-    const v = (r[metricKey as keyof AnpCdpSerieRow] as number | null) ?? 0;
-    agg[r.bacia][k] = (agg[r.bacia][k] ?? 0) + v;
-  }
-
-  const activeBacoes = bacoes.filter(b => agg[b]);
-  const traces: PlotData[] = activeBacoes.map((b, i) => {
-    const entries = Object.entries(agg[b]).sort(([a], [bb]) => a.localeCompare(bb));
-    const color = BACIA_COLORS[b] ?? PALETTE[i % PALETTE.length];
-    return {
-      type: "scatter", mode: "lines",
-      name: b,
-      x: entries.map(([d]) => d),
-      y: entries.map(([, v]) => v),
-      line: { width: 2, color },
-      hovertemplate: `${b}: %{y:,.1f}<extra></extra>`,
-    } as PlotData;
-  });
-
-  return {
-    data: traces,
-    layout: {
-      ...COMMON_LAYOUT, height: 340,
-      margin: { t: 10, b: 50, l: 90, r: 30 },
-      hovermode: "x unified",
-      yaxis: { ...AXIS_LINE, title: { text: metricLabel } },
-      xaxis: { ...AXIS_LINE, type: "date" as const },
-      legend: { orientation: "h", yanchor: "bottom", y: 1.01, xanchor: "left", x: 0 },
-    },
-  };
-}
-
-function buildTopOperadoresChart(
-  rows: AnpCdpSerieRow[],
-  bacoes: string[],
-  locais: string[],
-  allYears: number[],
-  yearRange: [number, number],
-  metricKey: string,
-  metricLabel: string,
-): { data: PlotData[]; layout: Partial<Layout> } {
-  const yMin = allYears[yearRange[0]];
-  const yMax = allYears[yearRange[1]];
-
-  const filtered = rows.filter(r =>
-    r.ano >= yMin && r.ano <= yMax &&
-    bacoes.includes(r.bacia) &&
-    locais.includes(r.local)
-  );
-  if (!filtered.length) return emptyPlot(380);
-
-  const byOp: Record<string, number> = {};
-  for (const r of filtered) {
-    const v = (r[metricKey as keyof AnpCdpSerieRow] as number | null) ?? 0;
-    byOp[r.operador] = (byOp[r.operador] ?? 0) + v;
-  }
-
-  const sorted = Object.entries(byOp)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 15);
-  const total = sorted.reduce((s, [, v]) => s + v, 0);
-
+  if (!serie.length) return emptyPlot(340);
   return {
     data: [{
-      type: "bar",
-      orientation: "h",
-      x: sorted.map(([, v]) => total > 0 ? (v / total) * 100 : 0),
-      y: sorted.map(([op]) => op),
-      marker: { color: "#FF5000" },
-      hovertemplate: "%{y}: %{x:.2f}%<extra></extra>",
-      text: sorted.map(([, v]) => total > 0 ? `${((v / total) * 100).toFixed(1)}%` : ""),
-      textposition: "outside",
+      type: "scatter", mode: "lines",
+      name: metricLabel,
+      x: serie.map(r => `${r.ano}-${String(r.mes).padStart(2, "0")}-01`),
+      y: serie.map(r => r[metricKey as keyof AnpCdpSeriePonto] as number),
+      line: { width: 2.5, color: "#FF5000" },
+      hovertemplate: `%{x|%b %Y}: %{y:,.1f}<extra></extra>`,
+      fill: "tozeroy",
+      fillcolor: "rgba(255,80,0,0.07)",
     } as PlotData],
     layout: {
-      ...COMMON_LAYOUT, height: 380,
-      margin: { t: 10, b: 50, l: 200, r: 70 },
-      xaxis: { ...AXIS_LINE, title: { text: "Participação (%)" } },
-      yaxis: { ...AXIS_LINE, autorange: "reversed" as const },
+      ...COMMON_LAYOUT, height: 340,
+      margin: { t: 30, b: 50, l: 90, r: 30 },
+      title: {
+        text: `${nCampos === 0 ? "Todos os campos" : `${nCampos} campo${nCampos > 1 ? "s" : ""} selecionado${nCampos > 1 ? "s" : ""}`}`,
+        font: { size: 12, color: "#888", family: "Arial" },
+        x: 0.01, xanchor: "left",
+      },
+      yaxis: { ...AXIS_LINE, title: { text: metricLabel } },
+      xaxis: { ...AXIS_LINE, type: "date" as const },
     },
   };
 }
@@ -190,61 +95,96 @@ export default function AnpCdpPage() {
   const { visible, loading: visLoading } = useModuleVisibilityGuard("anp-cdp");
   const supabase = getSupabaseClient();
 
-  const [loading, setLoading]           = useState(true);
-  const [filtros, setFiltros]           = useState<AnpCdpFiltros>({ bacoes: [], operadores: [], locais: [], ano_min: null, ano_max: null });
-  const [allRows, setAllRows]           = useState<AnpCdpSerieRow[]>([]);
-  const [allYears, setAllYears]         = useState<number[]>([]);
-  const [yearRange, setYearRange]       = useState<[number, number]>([0, 0]);
-  const [selectedBacoes, setBacoes]     = useState<string[]>([]);
-  const [selectedLocais, setLocais]     = useState<string[]>([]);
-  const [metric, setMetric]             = useState(METRICS[0]);
+  const [loading, setLoading]             = useState(true);
+  const [serieLoading, setSerieLoading]   = useState(false);
+  const [filtros, setFiltros]             = useState<AnpCdpFiltros>({ bacoes: [], locais: [], ano_min: null, ano_max: null });
+  const [camposList, setCamposList]       = useState<AnpCdpCampoMeta[]>([]);
+  const [serieData, setSerieData]         = useState<AnpCdpSeriePonto[]>([]);
+  const [allYears, setAllYears]           = useState<number[]>([]);
+  const [yearRange, setYearRange]         = useState<[number, number]>([0, 0]);
 
+  // Filters ([] = all / no restriction)
+  const [selectedCampos, setSelectedCampos] = useState<string[]>([]);
+  const [selectedBacoes, setSelectedBacoes] = useState<string[]>([]);
+  const [selectedLocais, setSelectedLocais] = useState<string[]>([]);
+  const [metric, setMetric]                 = useState(METRICS[0]);
+
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Initial load ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!supabase) return;
     let cancelled = false;
     (async () => {
-      const [f, rows] = await Promise.all([
+      const [f, campos, serie] = await Promise.all([
         rpcGetAnpCdpFiltros(supabase),
-        rpcGetAnpCdpSerie(supabase),
+        rpcGetAnpCdpCamposList(supabase),
+        rpcGetAnpCdpCampoSerie(supabase),
       ]);
       if (cancelled) return;
       setFiltros(f);
-      setLocais(f.locais);
-      // Default: top significant bacoes only
-      const defaultBacoes = f.bacoes.filter(b => TOP_BACOES.includes(b));
-      setBacoes(defaultBacoes.length > 0 ? defaultBacoes : f.bacoes);
+      setCamposList(campos);
+      setSerieData(serie);
 
-      const years = Array.from(new Set(rows.map(r => r.ano))).sort((a, b) => a - b);
+      const yMin = f.ano_min ?? 2005;
+      const yMax = f.ano_max ?? new Date().getFullYear();
+      const years: number[] = [];
+      for (let y = yMin; y <= yMax; y++) years.push(y);
       setAllYears(years);
-      if (years.length > 0) {
-        const currentYear = new Date().getFullYear();
-        const startIdx = Math.max(0, years.findIndex(y => y >= currentYear - 9));
-        setYearRange([startIdx, years.length - 1]);
-      }
-      setAllRows(rows);
+      const currentYear = new Date().getFullYear();
+      const startIdx = Math.max(0, years.findIndex(y => y >= currentYear - 9));
+      setYearRange([startIdx, years.length - 1]);
       setLoading(false);
     })();
     return () => { cancelled = true; };
   }, [supabase]);
 
-  const serieChart = useMemo(
-    () => buildSerieChart(allRows, selectedBacoes, selectedLocais, allYears, yearRange, metric.key, metric.label),
-    [allRows, selectedBacoes, selectedLocais, allYears, yearRange, metric],
-  );
-  const topChart = useMemo(
-    () => buildTopOperadoresChart(allRows, selectedBacoes, selectedLocais, allYears, yearRange, metric.key, metric.label),
-    [allRows, selectedBacoes, selectedLocais, allYears, yearRange, metric],
+  // ── Reactive serie fetch (debounced 400ms) ────────────────────────────────
+  const fetchSerie = useCallback(() => {
+    if (!supabase || loading) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setSerieLoading(true);
+      const data = await rpcGetAnpCdpCampoSerie(supabase, {
+        campos:    selectedCampos.length  ? selectedCampos  : null,
+        bacoes:    selectedBacoes.length  ? selectedBacoes  : null,
+        locais:    selectedLocais.length  ? selectedLocais  : null,
+        anoInicio: allYears[yearRange[0]] ?? null,
+        anoFim:    allYears[yearRange[1]] ?? null,
+      });
+      setSerieData(data);
+      setSerieLoading(false);
+    }, 400);
+  }, [supabase, loading, selectedCampos, selectedBacoes, selectedLocais, yearRange, allYears]);
+
+  useEffect(() => { fetchSerie(); }, [fetchSerie]);
+
+  // ── Campo list filtered by bacia/local selection ──────────────────────────
+  const visibleCampos = useMemo(() => {
+    let list = camposList;
+    if (selectedBacoes.length) list = list.filter(c => selectedBacoes.includes(c.bacia));
+    if (selectedLocais.length) list = list.filter(c => selectedLocais.includes(c.local));
+    // Deduplicate campo names (same campo may appear in multiple locais)
+    const seen = new Set<string>();
+    return list.filter(c => { if (seen.has(c.campo)) return false; seen.add(c.campo); return true; });
+  }, [camposList, selectedBacoes, selectedLocais]);
+
+  const campoOptions = useMemo(() => visibleCampos.map(c => c.campo), [visibleCampos]);
+
+  const chart = useMemo(
+    () => buildChart(serieData, metric.key, metric.label, selectedCampos.length),
+    [serieData, metric, selectedCampos.length],
   );
 
   if (visLoading || !visible) return null;
 
-  const toggleBacia = (b: string) =>
-    setBacoes(prev => prev.includes(b) ? (prev.length > 1 ? prev.filter(x => x !== b) : prev) : [...prev, b]);
   const toggleLocal = (l: string) =>
-    setLocais(prev => prev.includes(l) ? (prev.length > 1 ? prev.filter(x => x !== l) : prev) : [...prev, l]);
+    setSelectedLocais(prev => prev.includes(l) ? (prev.length > 1 ? prev.filter(x => x !== l) : prev) : [...prev, l]);
 
   const yMin = allYears[yearRange[0]] ?? "—";
   const yMax = allYears[yearRange[1]] ?? "—";
+
+  const allLocais = filtros.locais.length ? filtros.locais : ["PreSal", "PosSal", "Terra"];
 
   return (
     <div>
@@ -265,6 +205,7 @@ export default function AnpCdpPage() {
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
               <div className="sidebar-section-label">Filtros</div>
 
+              {/* Metric */}
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Métrica</div>
                 {METRICS.map(m => (
@@ -279,39 +220,84 @@ export default function AnpCdpPage() {
                 ))}
               </div>
 
+              {/* Ambiente */}
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Local</div>
-                {filtros.locais.map(l => (
+                <div className="sidebar-filter-label">Ambiente</div>
+                {allLocais.map(l => (
                   <div key={l} className="form-check" style={{ marginBottom: 4 }}>
                     <input className="form-check-input" type="checkbox" id={`cdp-l-${l}`}
-                      checked={selectedLocais.includes(l)} onChange={() => toggleLocal(l)} />
+                      checked={selectedLocais.length === 0 || selectedLocais.includes(l)}
+                      onChange={() => {
+                        if (selectedLocais.length === 0) {
+                          setSelectedLocais(allLocais.filter(x => x !== l));
+                        } else {
+                          toggleLocal(l);
+                        }
+                      }} />
                     <label className="form-check-label" htmlFor={`cdp-l-${l}`}
                       style={{ fontFamily: "Arial", fontSize: 11, cursor: "pointer" }}>
                       {LOCAL_LABELS[l] ?? l}
                     </label>
                   </div>
                 ))}
+                {selectedLocais.length > 0 && (
+                  <button className="filter-btn-link filter-btn-link--secondary"
+                    style={{ marginTop: 4, fontFamily: "Arial", fontSize: 10 }}
+                    onClick={() => setSelectedLocais([])}>
+                    Todos
+                  </button>
+                )}
               </div>
 
+              {/* Bacia */}
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Bacia</div>
-                {filtros.bacoes.map((b, i) => (
+                {filtros.bacoes.map(b => (
                   <div key={b} className="form-check" style={{ marginBottom: 4 }}>
                     <input className="form-check-input" type="checkbox" id={`cdp-b-${b}`}
-                      checked={selectedBacoes.includes(b)} onChange={() => toggleBacia(b)} />
+                      checked={selectedBacoes.length === 0 || selectedBacoes.includes(b)}
+                      onChange={() => {
+                        if (selectedBacoes.length === 0) {
+                          setSelectedBacoes(filtros.bacoes.filter(x => x !== b));
+                        } else {
+                          setSelectedBacoes(prev =>
+                            prev.includes(b) ? (prev.length > 1 ? prev.filter(x => x !== b) : prev) : [...prev, b]
+                          );
+                        }
+                      }} />
                     <label className="form-check-label" htmlFor={`cdp-b-${b}`}
                       style={{ fontFamily: "Arial", fontSize: 11, cursor: "pointer" }}>
-                      <span style={{
-                        display: "inline-block", width: 8, height: 8, borderRadius: "50%",
-                        backgroundColor: BACIA_COLORS[b] ?? PALETTE[i % PALETTE.length],
-                        marginRight: 5, verticalAlign: "middle",
-                      }} />
                       {b}
                     </label>
                   </div>
                 ))}
+                {selectedBacoes.length > 0 && (
+                  <button className="filter-btn-link filter-btn-link--secondary"
+                    style={{ marginTop: 4, fontFamily: "Arial", fontSize: 10 }}
+                    onClick={() => setSelectedBacoes([])}>
+                    Todas
+                  </button>
+                )}
               </div>
 
+              {/* Campo */}
+              <div className="sidebar-filter-section">
+                <div className="sidebar-filter-label">
+                  Campo{" "}
+                  <span style={{ color: "#888", fontWeight: 400 }}>
+                    ({selectedCampos.length === 0 ? campoOptions.length : selectedCampos.length}/{campoOptions.length})
+                  </span>
+                </div>
+                {!loading && (
+                  <SearchableMultiSelect
+                    options={campoOptions}
+                    value={selectedCampos}
+                    onChange={setSelectedCampos}
+                  />
+                )}
+              </div>
+
+              {/* Período */}
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Período</div>
                 {!loading && allYears.length > 0 && (
@@ -333,7 +319,7 @@ export default function AnpCdpPage() {
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
               <div className="page-header-title" style={{ marginBottom: 16 }}>
-                ANP CDP — Produção por Poço · {metric.label}
+                ANP CDP — Produção por Campo · {metric.label}
                 {yMin && yMax ? ` · ${yMin}–${yMax}` : ""}
               </div>
 
@@ -342,35 +328,24 @@ export default function AnpCdpPage() {
                   <img src="/barrel_loading.png" alt="Carregando..." width={160} height={160} />
                 </div>
               ) : (
-                <>
-                  <div className="row mb-2">
-                    <div className="col-12">
-                      <div className="chart-container">
-                        <div className="section-title">
-                          Produção Mensal por Bacia — {metric.label}
-                        </div>
-                        <hr className="section-hr" />
-                        <PlotlyChart data={serieChart.data} layout={serieChart.layout}
-                          config={{ responsive: true, displayModeBar: false }}
-                          style={{ width: "100%", height: 340 }} />
+                <div className="row mb-2">
+                  <div className="col-12">
+                    <div className="chart-container" style={{ position: "relative" }}>
+                      <div className="section-title">
+                        Produção Total Selecionada — {metric.label}
+                        {serieLoading && (
+                          <span style={{ marginLeft: 10, fontSize: 11, color: "#aaa", fontWeight: 400 }}>
+                            atualizando…
+                          </span>
+                        )}
                       </div>
+                      <hr className="section-hr" />
+                      <PlotlyChart data={chart.data} layout={chart.layout}
+                        config={{ responsive: true, displayModeBar: false }}
+                        style={{ width: "100%", height: 340, opacity: serieLoading ? 0.5 : 1 }} />
                     </div>
                   </div>
-
-                  <div className="row mb-2">
-                    <div className="col-12">
-                      <div className="chart-container">
-                        <div className="section-title">
-                          Market Share por Operador — Top 15 · {metric.label} acumulado {yMin}–{yMax}
-                        </div>
-                        <hr className="section-hr" />
-                        <PlotlyChart data={topChart.data} layout={topChart.layout}
-                          config={{ responsive: true, displayModeBar: false }}
-                          style={{ width: "100%", height: 380 }} />
-                      </div>
-                    </div>
-                  </div>
-                </>
+                </div>
               )}
             </div>
           </div>

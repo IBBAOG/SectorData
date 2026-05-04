@@ -1531,58 +1531,68 @@ export async function rpcGetSindicomFiltros(
 
 // ─── MODULE: ANP CDP (/src/app/(dashboard)/anp-cdp/page.tsx) ─────────────────
 
-export type AnpCdpSerieRow = {
+export type AnpCdpSeriePonto = {
   ano: number;
   mes: number;
-  operador: string;
+  petroleo_bbl_dia: number;
+  gas_total_mm3_dia: number;
+  n_pocos: number;
+};
+
+export type AnpCdpCampoMeta = {
+  campo: string;
   bacia: string;
   local: string;
-  petroleo_bbl_dia: number | null;
-  oleo_bbl_dia: number | null;
-  condensado_bbl_dia: number | null;
-  gas_total_mm3_dia: number | null;
-  agua_bbl_dia: number | null;
-  n_pocos: number | null;
+  petroleo_total: number;
+  n_pocos_total: number;
 };
 
 export type AnpCdpFiltros = {
   bacoes: string[];
-  operadores: string[];
   locais: string[];
   ano_min: number | null;
   ano_max: number | null;
 };
 
-export async function rpcGetAnpCdpSerie(
+export async function rpcGetAnpCdpCampoSerie(
   supabase: SupabaseClient,
   params?: {
+    campos?: string[] | null;
     bacoes?: string[] | null;
     locais?: string[] | null;
     anoInicio?: number | null;
     anoFim?: number | null;
   },
-): Promise<AnpCdpSerieRow[]> {
-  const PAGE = 1000;
-  let offset = 0;
-  const allRows: AnpCdpSerieRow[] = [];
-  const rpcParams = {
+): Promise<AnpCdpSeriePonto[]> {
+  const { data, error } = await supabase.rpc("get_anp_cdp_campo_serie", {
+    p_campos:     params?.campos    ?? null,
     p_bacoes:     params?.bacoes    ?? null,
     p_locais:     params?.locais    ?? null,
     p_ano_inicio: params?.anoInicio ?? null,
     p_ano_fim:    params?.anoFim    ?? null,
-  };
+  });
+  if (error) { console.error("get_anp_cdp_campo_serie failed", error); return []; }
+  return (data ?? []) as AnpCdpSeriePonto[];
+}
+
+export async function rpcGetAnpCdpCamposList(
+  supabase: SupabaseClient,
+): Promise<AnpCdpCampoMeta[]> {
+  const PAGE = 1000;
+  let offset = 0;
+  const all: AnpCdpCampoMeta[] = [];
   while (true) {
     const { data, error } = await supabase
-      .rpc("get_anp_cdp_serie", rpcParams)
+      .rpc("get_anp_cdp_campos_list", {})
       .range(offset, offset + PAGE - 1);
-    if (error) { console.error("get_anp_cdp_serie failed", error); break; }
-    const rows = (data ?? []) as AnpCdpSerieRow[];
+    if (error) { console.error("get_anp_cdp_campos_list failed", error); break; }
+    const rows = (data ?? []) as AnpCdpCampoMeta[];
     if (!rows.length) break;
-    allRows.push(...rows);
+    all.push(...rows);
     if (rows.length < PAGE) break;
     offset += PAGE;
   }
-  return allRows;
+  return all;
 }
 
 export async function rpcGetAnpCdpFiltros(
@@ -1593,14 +1603,13 @@ export async function rpcGetAnpCdpFiltros(
     if (error) throw error;
     const d = (data ?? {}) as Partial<AnpCdpFiltros>;
     return {
-      bacoes:     d.bacoes     ?? [],
-      operadores: d.operadores ?? [],
-      locais:     d.locais     ?? [],
-      ano_min:    d.ano_min    ?? null,
-      ano_max:    d.ano_max    ?? null,
+      bacoes:  d.bacoes  ?? [],
+      locais:  d.locais  ?? [],
+      ano_min: d.ano_min ?? null,
+      ano_max: d.ano_max ?? null,
     };
   } catch (e) {
     console.error("get_anp_cdp_filtros failed", e);
-    return { bacoes: [], operadores: [], locais: [], ano_min: null, ano_max: null };
+    return { bacoes: [], locais: [], ano_min: null, ano_max: null };
   }
 }
