@@ -911,7 +911,7 @@ export async function rpcGetAnpPpiLocaisSerie(
   produto: string,
   params?: { dataInicio?: string | null; dataFim?: string | null },
 ): Promise<AnpPpiLocaisRow[]> {
-  const PAGE = 2000;
+  const PAGE = 1000;
   let offset = 0;
   const allRows: AnpPpiLocaisRow[] = [];
   const rpcParams = {
@@ -979,7 +979,7 @@ export async function rpcGetAnpPprodutoresSerie(
     dataFim?: string | null;
   },
 ): Promise<AnpPprodutoresRow[]> {
-  const PAGE = 2000;
+  const PAGE = 1000;
   let offset = 0;
   const allRows: AnpPprodutoresRow[] = [];
   const rpcParams = {
@@ -1047,7 +1047,7 @@ export async function rpcGetAnpGlpSerie(
     anoFim?: number | null;
   },
 ): Promise<AnpGlpSerieRow[]> {
-  const PAGE = 2000;
+  const PAGE = 1000;
   let offset = 0;
   const allRows: AnpGlpSerieRow[] = [];
   const rpcParams = {
@@ -1116,7 +1116,7 @@ export async function rpcGetAnpDaieSerie(
     anoFim?: number | null;
   },
 ): Promise<AnpDaieRow[]> {
-  const PAGE = 2000;
+  const PAGE = 1000;
   let offset = 0;
   const allRows: AnpDaieRow[] = [];
   const rpcParams = {
@@ -1190,7 +1190,7 @@ export async function rpcGetAnpDesembaracosSerie(
     anoFim?: number | null;
   },
 ): Promise<AnpDesembaracosRow[]> {
-  const PAGE = 2000;
+  const PAGE = 1000;
   let offset = 0;
   const allRows: AnpDesembaracosRow[] = [];
   const rpcParams = {
@@ -1285,7 +1285,7 @@ export async function rpcGetAnpPainelImpSerie(
     anoFim?: number | null;
   },
 ): Promise<AnpPainelImpSerieRow[]> {
-  const PAGE = 2000;
+  const PAGE = 1000;
   let offset = 0;
   const allRows: AnpPainelImpSerieRow[] = [];
   const rpcParams = {
@@ -1383,7 +1383,7 @@ export async function rpcGetAnpLpcNacional(
     dataFim?: string | null;
   },
 ): Promise<AnpLpcNacionalRow[]> {
-  const PAGE = 2000;
+  const PAGE = 1000;
   let offset = 0;
   const allRows: AnpLpcNacionalRow[] = [];
   const rpcParams = {
@@ -1414,7 +1414,7 @@ export async function rpcGetAnpLpcSerie(
     dataFim?: string | null;
   },
 ): Promise<AnpLpcSerieRow[]> {
-  const PAGE = 2000;
+  const PAGE = 1000;
   let offset = 0;
   const allRows: AnpLpcSerieRow[] = [];
   const rpcParams = {
@@ -1485,7 +1485,7 @@ export async function rpcGetSindicomSerie(
     anoFim?: number | null;
   },
 ): Promise<SindicomSerieRow[]> {
-  const PAGE = 2000;
+  const PAGE = 1000;
   let offset = 0;
   const allRows: SindicomSerieRow[] = [];
   const rpcParams = {
@@ -1562,7 +1562,7 @@ export async function rpcGetAnpCdpSerie(
     anoFim?: number | null;
   },
 ): Promise<AnpCdpSerieRow[]> {
-  const PAGE = 2000;
+  const PAGE = 1000;
   let offset = 0;
   const allRows: AnpCdpSerieRow[] = [];
   const rpcParams = {
