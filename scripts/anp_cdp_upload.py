@@ -77,10 +77,16 @@ def _prepare(df: pd.DataFrame) -> pd.DataFrame:
     df["poco"]  = df["poco"].str.strip()
     df["campo"] = df["campo"].str.strip()
     df["bacia"] = df["bacia"].str.strip()
+    # Deduplicate: sum production for identical PK combinations (parquet may have duplicates)
+    PK = ["ano", "mes", "poco", "campo", "bacia", "local"]
+    df = (
+        df[PK + ["petroleo_bbl_dia", "gas_total_mm3_dia"]]
+        .groupby(PK, as_index=False, dropna=False)
+        .sum()
+    )
     # Keep only active wells (non-zero production)
     df = df[(df["petroleo_bbl_dia"] > 0) | (df["gas_total_mm3_dia"] > 0)].copy()
-    return df[["ano", "mes", "poco", "campo", "bacia", "local",
-               "petroleo_bbl_dia", "gas_total_mm3_dia"]]
+    return df
 
 
 def _upsert(sb, rows: list[dict]) -> None:
