@@ -11,11 +11,11 @@ import SearchableMultiSelect from "../../../components/SearchableMultiSelect";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import {
-  rpcGetAnpCdpCampoSerie,
-  rpcGetAnpCdpCamposList,
+  rpcGetAnpCdpPocoSerie,
+  rpcGetAnpCdpPocosList,
   rpcGetAnpCdpFiltros,
   type AnpCdpSeriePonto,
-  type AnpCdpCampoMeta,
+  type AnpCdpPocoMeta,
   type AnpCdpFiltros,
 } from "../../../lib/rpc";
 
@@ -61,9 +61,14 @@ function buildChart(
   serie: AnpCdpSeriePonto[],
   metricKey: string,
   metricLabel: string,
-  nCampos: number,
+  nPocos: number,
+  totalPocos: number,
 ): { data: PlotData[]; layout: Partial<Layout> } {
   if (!serie.length) return emptyPlot(340);
+  const allSelected = nPocos === 0;
+  const titleText = allSelected
+    ? `Todos os poços (${totalPocos.toLocaleString("pt-BR")})`
+    : `${nPocos.toLocaleString("pt-BR")} poço${nPocos > 1 ? "s" : ""} selecionado${nPocos > 1 ? "s" : ""}`;
   return {
     data: [{
       type: "scatter", mode: "lines",
@@ -79,7 +84,7 @@ function buildChart(
       ...COMMON_LAYOUT, height: 340,
       margin: { t: 30, b: 50, l: 90, r: 30 },
       title: {
-        text: `${nCampos === 0 ? "Todos os campos" : `${nCampos} campo${nCampos > 1 ? "s" : ""} selecionado${nCampos > 1 ? "s" : ""}`}`,
+        text: titleText,
         font: { size: 12, color: "#888", family: "Arial" },
         x: 0.01, xanchor: "left",
       },
@@ -97,13 +102,14 @@ export default function AnpCdpPage() {
 
   const [loading, setLoading]             = useState(true);
   const [serieLoading, setSerieLoading]   = useState(false);
-  const [filtros, setFiltros]             = useState<AnpCdpFiltros>({ bacoes: [], locais: [], ano_min: null, ano_max: null });
-  const [camposList, setCamposList]       = useState<AnpCdpCampoMeta[]>([]);
+  const [filtros, setFiltros]             = useState<AnpCdpFiltros>({ bacoes: [], campos: [], locais: [], ano_min: null, ano_max: null });
+  const [pocosList, setPocosList]         = useState<AnpCdpPocoMeta[]>([]);
   const [serieData, setSerieData]         = useState<AnpCdpSeriePonto[]>([]);
   const [allYears, setAllYears]           = useState<number[]>([]);
   const [yearRange, setYearRange]         = useState<[number, number]>([0, 0]);
 
   // Filters ([] = all / no restriction)
+  const [selectedPocos, setSelectedPocos]   = useState<string[]>([]);
   const [selectedCampos, setSelectedCampos] = useState<string[]>([]);
   const [selectedBacoes, setSelectedBacoes] = useState<string[]>([]);
   const [selectedLocais, setSelectedLocais] = useState<string[]>([]);
@@ -116,14 +122,14 @@ export default function AnpCdpPage() {
     if (!supabase) return;
     let cancelled = false;
     (async () => {
-      const [f, campos, serie] = await Promise.all([
+      const [f, pocos, serie] = await Promise.all([
         rpcGetAnpCdpFiltros(supabase),
-        rpcGetAnpCdpCamposList(supabase),
-        rpcGetAnpCdpCampoSerie(supabase),
+        rpcGetAnpCdpPocosList(supabase),
+        rpcGetAnpCdpPocoSerie(supabase),
       ]);
       if (cancelled) return;
       setFiltros(f);
-      setCamposList(campos);
+      setPocosList(pocos);
       setSerieData(serie);
 
       const yMin = f.ano_min ?? 2005;
@@ -145,35 +151,47 @@ export default function AnpCdpPage() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       setSerieLoading(true);
-      const data = await rpcGetAnpCdpCampoSerie(supabase, {
-        campos:    selectedCampos.length  ? selectedCampos  : null,
-        bacoes:    selectedBacoes.length  ? selectedBacoes  : null,
-        locais:    selectedLocais.length  ? selectedLocais  : null,
+      const data = await rpcGetAnpCdpPocoSerie(supabase, {
+        pocos:     selectedPocos.length  ? selectedPocos  : null,
+        campos:    selectedCampos.length ? selectedCampos : null,
+        bacoes:    selectedBacoes.length ? selectedBacoes : null,
+        locais:    selectedLocais.length ? selectedLocais : null,
         anoInicio: allYears[yearRange[0]] ?? null,
         anoFim:    allYears[yearRange[1]] ?? null,
       });
       setSerieData(data);
       setSerieLoading(false);
     }, 400);
-  }, [supabase, loading, selectedCampos, selectedBacoes, selectedLocais, yearRange, allYears]);
+  }, [supabase, loading, selectedPocos, selectedCampos, selectedBacoes, selectedLocais, yearRange, allYears]);
 
   useEffect(() => { fetchSerie(); }, [fetchSerie]);
 
-  // ── Campo list filtered by bacia/local selection ──────────────────────────
-  const visibleCampos = useMemo(() => {
-    let list = camposList;
-    if (selectedBacoes.length) list = list.filter(c => selectedBacoes.includes(c.bacia));
-    if (selectedLocais.length) list = list.filter(c => selectedLocais.includes(c.local));
-    // Deduplicate campo names (same campo may appear in multiple locais)
-    const seen = new Set<string>();
-    return list.filter(c => { if (seen.has(c.campo)) return false; seen.add(c.campo); return true; });
-  }, [camposList, selectedBacoes, selectedLocais]);
+  // ── Well list filtered by campo/bacia/local selection ────────────────────
+  const visiblePocos = useMemo(() => {
+    let list = pocosList;
+    if (selectedCampos.length) list = list.filter(p => selectedCampos.includes(p.campo));
+    if (selectedBacoes.length) list = list.filter(p => selectedBacoes.includes(p.bacia));
+    if (selectedLocais.length) list = list.filter(p => selectedLocais.includes(p.local));
+    return list;
+  }, [pocosList, selectedCampos, selectedBacoes, selectedLocais]);
 
-  const campoOptions = useMemo(() => visibleCampos.map(c => c.campo), [visibleCampos]);
+  const pocoOptions = useMemo(() => visiblePocos.map(p => p.poco), [visiblePocos]);
+
+  // Campo options narrowed by bacia/local
+  const visibleCampos = useMemo(() => {
+    let list = pocosList;
+    if (selectedBacoes.length) list = list.filter(p => selectedBacoes.includes(p.bacia));
+    if (selectedLocais.length) list = list.filter(p => selectedLocais.includes(p.local));
+    const seen = new Set<string>();
+    return list.reduce<string[]>((acc, p) => {
+      if (!seen.has(p.campo)) { seen.add(p.campo); acc.push(p.campo); }
+      return acc;
+    }, []).sort();
+  }, [pocosList, selectedBacoes, selectedLocais]);
 
   const chart = useMemo(
-    () => buildChart(serieData, metric.key, metric.label, selectedCampos.length),
-    [serieData, metric, selectedCampos.length],
+    () => buildChart(serieData, metric.key, metric.label, selectedPocos.length, pocosList.length),
+    [serieData, metric, selectedPocos.length, pocosList.length],
   );
 
   if (visLoading || !visible) return null;
@@ -285,14 +303,34 @@ export default function AnpCdpPage() {
                 <div className="sidebar-filter-label">
                   Campo{" "}
                   <span style={{ color: "#888", fontWeight: 400 }}>
-                    ({selectedCampos.length === 0 ? campoOptions.length : selectedCampos.length}/{campoOptions.length})
+                    ({selectedCampos.length === 0 ? visibleCampos.length : selectedCampos.length}/{visibleCampos.length})
                   </span>
                 </div>
                 {!loading && (
                   <SearchableMultiSelect
-                    options={campoOptions}
+                    options={visibleCampos}
                     value={selectedCampos}
-                    onChange={setSelectedCampos}
+                    onChange={newCampos => {
+                      setSelectedCampos(newCampos);
+                      setSelectedPocos([]);
+                    }}
+                  />
+                )}
+              </div>
+
+              {/* Poço */}
+              <div className="sidebar-filter-section">
+                <div className="sidebar-filter-label">
+                  Poço{" "}
+                  <span style={{ color: "#888", fontWeight: 400 }}>
+                    ({selectedPocos.length === 0 ? pocoOptions.length : selectedPocos.length}/{pocoOptions.length})
+                  </span>
+                </div>
+                {!loading && (
+                  <SearchableMultiSelect
+                    options={pocoOptions}
+                    value={selectedPocos}
+                    onChange={setSelectedPocos}
                   />
                 )}
               </div>
@@ -319,7 +357,7 @@ export default function AnpCdpPage() {
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
               <div className="page-header-title" style={{ marginBottom: 16 }}>
-                ANP CDP — Produção por Campo · {metric.label}
+                ANP CDP — Produção por Poço · {metric.label}
                 {yMin && yMax ? ` · ${yMin}–${yMax}` : ""}
               </div>
 

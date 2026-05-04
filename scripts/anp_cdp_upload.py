@@ -50,8 +50,8 @@ _AMBIENTE_TO_LOCAL = {"M": "PosSal", "S": "PreSal", "T": "Terra"}
 _PAT_CSV = re.compile(r"producao_poco_(\d{2})-(\d{4})_([MST])\.csv$", re.IGNORECASE)
 
 _KEEP_COLS = [
-    "ano", "mes", "campo", "bacia", "local",
-    "petroleo_bbl_dia", "gas_total_mm3_dia", "agua_bbl_dia",
+    "ano", "mes", "nome_poco_anp", "campo", "bacia", "local",
+    "petroleo_bbl_dia", "gas_total_mm3_dia",
 ]
 
 
@@ -69,18 +69,18 @@ def _get_max_date(sb) -> tuple[int, int]:
     return (0, 0)
 
 
-def _agg(df: pd.DataFrame) -> pd.DataFrame:
-    grp = (
-        df.groupby(["ano", "mes", "campo", "bacia", "local"], dropna=False)
-        .agg(
-            petroleo_bbl_dia=("petroleo_bbl_dia", "sum"),
-            gas_total_mm3_dia=("gas_total_mm3_dia", "sum"),
-            agua_bbl_dia=("agua_bbl_dia", "sum"),
-            n_pocos=("campo", "count"),
-        )
-        .reset_index()
-    )
-    return grp
+def _prepare(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.rename(columns={
+        "gas_natural_total_mm3_dia": "gas_total_mm3_dia",
+        "nome_poco_anp": "poco",
+    })
+    df["poco"]  = df["poco"].str.strip()
+    df["campo"] = df["campo"].str.strip()
+    df["bacia"] = df["bacia"].str.strip()
+    # Keep only active wells (non-zero production)
+    df = df[(df["petroleo_bbl_dia"] > 0) | (df["gas_total_mm3_dia"] > 0)].copy()
+    return df[["ano", "mes", "poco", "campo", "bacia", "local",
+               "petroleo_bbl_dia", "gas_total_mm3_dia"]]
 
 
 def _upsert(sb, rows: list[dict]) -> None:
@@ -92,7 +92,7 @@ def _upsert(sb, rows: list[dict]) -> None:
         for attempt in range(3):
             try:
                 sb.table("anp_cdp_producao").upsert(
-                    batch, on_conflict="ano,mes,campo,bacia,local"
+                    batch, on_conflict="ano,mes,poco,campo,bacia,local"
                 ).execute()
                 ok += len(batch)
                 break
@@ -106,28 +106,23 @@ def _upsert(sb, rows: list[dict]) -> None:
 
 
 def _rows_from_df(df: pd.DataFrame) -> list[dict]:
-    df = df.dropna(subset=["ano", "mes", "operador", "bacia", "local"])
+    df = df.dropna(subset=["ano", "mes", "poco", "campo", "bacia", "local"])
     rows = df.where(pd.notna(df), None).to_dict("records")
     for r in rows:
         r["ano"] = int(r["ano"])
         r["mes"] = int(r["mes"])
-        if r.get("n_pocos") is not None:
-            r["n_pocos"] = int(r["n_pocos"])
     return rows
 
 
 def _from_parquet(sb, path: str, ano_inicio: int = 0) -> None:
     print(f"Reading parquet: {path}")
     df = pd.read_parquet(path)
-    df = df.rename(columns={"gas_natural_total_mm3_dia": "gas_total_mm3_dia"})
-    df["campo"] = df["campo"].str.strip()
-    df = df[_KEEP_COLS].copy()
+    df = _prepare(df)
     if ano_inicio:
         df = df[df["ano"] >= ano_inicio]
         print(f"  Filtering from ano >= {ano_inicio}")
-    agg = _agg(df)
-    rows = _rows_from_df(agg)
-    print(f"  {len(rows)} aggregated rows to upsert…")
+    rows = _rows_from_df(df)
+    print(f"  {len(rows)} well-month rows to upsert…")
     _upsert(sb, rows)
 
 
