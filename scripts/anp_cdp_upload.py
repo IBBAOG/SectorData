@@ -157,6 +157,15 @@ def _rows_from_df(df: pd.DataFrame) -> list[dict]:
     return rows
 
 
+def _refresh_mv(sb) -> None:
+    print("  Refreshing materialized view mv_anp_cdp_pocos…")
+    try:
+        sb.rpc("refresh_anp_cdp_pocos", {}).execute()
+        print("  View refreshed.")
+    except Exception as e:
+        print(f"  WARN: could not refresh view: {e}")
+
+
 def _from_parquet(sb, path: str, ano_inicio: int = 0) -> None:
     print(f"Reading parquet: {path}")
     df = pd.read_parquet(path)
@@ -167,6 +176,7 @@ def _from_parquet(sb, path: str, ano_inicio: int = 0) -> None:
     rows = _rows_from_df(df)
     print(f"  {len(rows)} well-month rows to upsert…")
     _upsert(sb, rows)
+    _refresh_mv(sb)
 
 
 def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
@@ -305,6 +315,7 @@ def _from_csv_dir(sb, csv_dir: str, incremental: bool = True) -> None:
     rows = _rows_from_df(df)
     print(f"  {len(rows)} aggregated rows, upserting…")
     _upsert(sb, rows)
+    _refresh_mv(sb)
 
 
 def main() -> None:
