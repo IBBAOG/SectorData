@@ -46,6 +46,7 @@ const NAV_ENTRIES: NavEntry[] = [
       { href: "/anp-painel-importacoes", label: "ANP Painel Importações" },
       { href: "/anp-lpc", label: "ANP LPC Preços" },
       { href: "/sindicom", label: "SINDICOM" },
+      { href: "/anp-cdp", label: "ANP CDP Produção" },
     ],
   },
   { label: "Market Watch", href: "/stocks" },

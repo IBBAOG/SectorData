@@ -94,6 +94,12 @@ jobs:
               --ambiente "$AMBIENTE" --output output/anp
           fi
 
+      - name: Upload to Supabase
+        run: python scripts/anp_cdp_upload.py --from-csv-dir output/anp/
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
       - name: Upload CSVs e sessão
         uses: actions/upload-artifact@v4
         if: always()
