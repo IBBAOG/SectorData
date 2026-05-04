@@ -50,6 +50,7 @@ export default function NewsHunterPage() {
   const { articles, justArrivedUrls, keywords, setKeywords, loading, error } = useNewsHunter();
 
   const [newKeyword, setNewKeyword] = useState<string>("");
+  const [searchTerm, setSearchTerm] = useState<string>("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   // Triggers re-render so "há X min" labels stay fresh without re-fetching.
   const [, setAgeTick] = useState(0);
@@ -107,18 +108,29 @@ export default function NewsHunterPage() {
   );
 
   const filtered = useMemo(() => {
-    if (keywords.length === 0) return articles;
-    const terms = keywords
-      .map((k) => stripAccents(k.toLowerCase()).trim())
-      .filter(Boolean);
-    if (terms.length === 0) return articles;
-    return articles.filter((a) => {
-      const hay = stripAccents(
-        `${a.title} ${a.source_name} ${a.snippet} ${a.matched_keywords.join(" ")}`.toLowerCase(),
-      );
-      return terms.some((t) => hay.includes(t));
-    });
-  }, [articles, keywords]);
+    let result = articles;
+    if (keywords.length > 0) {
+      const terms = keywords
+        .map((k) => stripAccents(k.toLowerCase()).trim())
+        .filter(Boolean);
+      if (terms.length > 0) {
+        result = result.filter((a) => {
+          const hay = stripAccents(
+            `${a.title} ${a.source_name} ${a.snippet} ${a.matched_keywords.join(" ")}`.toLowerCase(),
+          );
+          return terms.some((t) => hay.includes(t));
+        });
+      }
+    }
+    const q = stripAccents(searchTerm.toLowerCase().trim());
+    if (q) {
+      result = result.filter((a) => {
+        const hay = stripAccents(`${a.title} ${a.source_name}`.toLowerCase());
+        return hay.includes(q);
+      });
+    }
+    return result;
+  }, [articles, keywords, searchTerm]);
 
   if (visLoading || !visible) return null;
 
@@ -198,6 +210,29 @@ export default function NewsHunterPage() {
             </form>
           </div>
         </section>
+
+        <div className={styles.searchBar}>
+          <div className={styles.searchWrap}>
+            <input
+              type="search"
+              className={styles.searchInput}
+              placeholder="Buscar por título ou fonte…"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              aria-label="Buscar notícias"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                className={styles.searchClear}
+                onClick={() => setSearchTerm("")}
+                aria-label="Limpar busca"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        </div>
 
         <section className={styles.headlinesSection}>
           <div className={styles.headlinesMeta}>
