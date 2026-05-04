@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -9,16 +9,8 @@ import { useNewsHunter } from "../../../context/NewsHunterContext";
 
 import styles from "./page.module.css";
 
-const WINDOW_PRESETS = [1, 3, 6, 12, 24, 48, 72, 168] as const;
 const AGE_TICK_MS = 15_000;
 const THEME_STORAGE_KEY = "news-hunter-theme";
-
-function labelForWindow(h: number): string {
-  if (h < 24) return `${h}h`;
-  if (h === 24) return "24h (1d)";
-  if (h === 168) return "7d";
-  return `${h}h (${Math.floor(h / 24)}d)`;
-}
 
 function humanizeAge(iso: string): string {
   const then = new Date(iso).getTime();
@@ -57,7 +49,6 @@ export default function NewsHunterPage() {
   // Shared fetch/polling state lives in NewsHunterContext (mounted at layout level).
   const { articles, justArrivedUrls, keywords, setKeywords, loading, error } = useNewsHunter();
 
-  const [windowHours, setWindowHours] = useState<number>(24);
   const [newKeyword, setNewKeyword] = useState<string>("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   // Triggers re-render so "há X min" labels stay fresh without re-fetching.
@@ -116,22 +107,18 @@ export default function NewsHunterPage() {
   );
 
   const filtered = useMemo(() => {
-    const cutoff = Date.now() - windowHours * 3600 * 1000;
-    const inWindow = articles.filter(
-      (a) => new Date(a.published_at).getTime() >= cutoff,
-    );
-    if (keywords.length === 0) return inWindow;
+    if (keywords.length === 0) return articles;
     const terms = keywords
       .map((k) => stripAccents(k.toLowerCase()).trim())
       .filter(Boolean);
-    if (terms.length === 0) return inWindow;
-    return inWindow.filter((a) => {
+    if (terms.length === 0) return articles;
+    return articles.filter((a) => {
       const hay = stripAccents(
         `${a.title} ${a.source_name} ${a.snippet} ${a.matched_keywords.join(" ")}`.toLowerCase(),
       );
       return terms.some((t) => hay.includes(t));
     });
-  }, [articles, windowHours, keywords]);
+  }, [articles, keywords]);
 
   if (visLoading || !visible) return null;
 
@@ -154,18 +141,6 @@ export default function NewsHunterPage() {
             </span>
           </div>
           <div className={styles.topActions}>
-            <label className={styles.windowLabel}>
-              Janela:
-              <select
-                className={styles.windowSelect}
-                value={windowHours}
-                onChange={(e) => setWindowHours(Number(e.target.value))}
-              >
-                {WINDOW_PRESETS.map((h) => (
-                  <option key={h} value={h}>{labelForWindow(h)}</option>
-                ))}
-              </select>
-            </label>
             <button
               type="button"
               className={styles.themeBtn}
@@ -229,8 +204,6 @@ export default function NewsHunterPage() {
             <span className={styles.metaCount}>
               {filtered.length} manchete{filtered.length === 1 ? "" : "s"}
             </span>
-            <span className={styles.metaSep}>·</span>
-            <span className={styles.metaMuted}>últimas {windowHours}h</span>
             {lastPublishedAt && (
               <>
                 <span className={styles.metaSep}>·</span>
@@ -245,7 +218,7 @@ export default function NewsHunterPage() {
             <div className={styles.empty}>
               <p>
                 {articles.length === 0
-                  ? "Ainda sem manchetes nesta janela."
+                  ? "Ainda sem manchetes."
                   : "Nenhuma notícia corresponde aos filtros selecionados."}
               </p>
               {articles.length === 0 && (
