@@ -32,9 +32,8 @@ interface NewsHunterContextValue {
 
 const POLL_INTERVAL_MS = 60_000;
 const FLASH_DURATION_MS = 3_400;
-const PAGE_LIMIT = 500;
-// 7d covers all window selector options in the News Hunter page.
-const INITIAL_HOURS = 168;
+// Supabase PostgREST retorna no máximo 1000 linhas por request.
+const PAGE_SIZE = 1000;
 
 export const FALLBACK_KEYWORDS: string[] = [
   "petróleo", "petroleo", "Petrobras", "Vibra", "Brava", "Ultrapar",
@@ -118,30 +117,37 @@ export function NewsHunterProvider({
     if (!supabase) return;
     setLoading(true);
     setError(null);
-    const cutoff = new Date(Date.now() - INITIAL_HOURS * 3600 * 1000).toISOString();
-    const { data, error: err } = await supabase
-      .from("news_articles")
-      .select("*")
-      .gte("published_at", cutoff)
-      .order("published_at", { ascending: false })
-      .limit(PAGE_LIMIT);
-    if (err) {
-      setError(err.message);
-      setLoading(false);
-      return;
+
+    // Pagina sobre todo o histórico (sem filtro de data). Cada request traz
+    // até PAGE_SIZE linhas; repetimos até o banco retornar menos que PAGE_SIZE.
+    const allRows: NewsArticle[] = [];
+    let offset = 0;
+
+    for (;;) {
+      const { data, error: err } = await supabase
+        .from("news_articles")
+        .select("*")
+        .order("published_at", { ascending: false })
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (err) { setError(err.message); setLoading(false); return; }
+      const rows = (data as NewsArticle[]) ?? [];
+      if (rows.length === 0) break;
+      for (const r of rows) allRows.push(r);
+      // Atualiza UI a cada página para que o histórico apareça progressivamente.
+      setArticles(prev => mergeArticles(prev, rows));
+      if (rows.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
     }
-    const rows = (data as NewsArticle[]) ?? [];
-    setArticles(rows);
-    // Watermark on found_at (not published_at) — scanner refreshes found_at on
-    // every upsert, so a published_at watermark would miss re-touched articles.
-    const newestFoundAt =
-      rows.length > 0
-        ? rows.reduce((max, r) => (r.found_at > max ? r.found_at : max), rows[0].found_at)
-        : null;
+
+    // Watermark on found_at — scanner refreshes found_at on every upsert, so a
+    // published_at watermark would miss re-touched articles.
+    const newestFoundAt = allRows.length > 0
+      ? allRows.reduce((max, r) => (r.found_at > max ? r.found_at : max), allRows[0].found_at)
+      : null;
     lastFoundAtRef.current = newestFoundAt ?? new Date().toISOString();
-    seenUrlsRef.current = new Set(rows.map((r) => r.url));
+    seenUrlsRef.current = new Set(allRows.map((r) => r.url));
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, mergeArticles]);
 
   const fetchIncremental = useCallback(async () => {
     if (!supabase || !lastFoundAtRef.current) return;
@@ -150,7 +156,7 @@ export function NewsHunterProvider({
       .select("*")
       .gt("found_at", lastFoundAtRef.current)
       .order("found_at", { ascending: false })
-      .limit(PAGE_LIMIT);
+      .limit(PAGE_SIZE);
     if (err) { setError(err.message); return; }
     const rows = (data as NewsArticle[]) ?? [];
     setError(null);
