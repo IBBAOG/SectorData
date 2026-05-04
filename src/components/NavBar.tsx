@@ -34,6 +34,12 @@ const NAV_ENTRIES: NavEntry[] = [
       { href: "/price-bands", label: "Price Bands" },
     ],
   },
+  {
+    label: "Estatísticas",
+    items: [
+      { href: "/mdic-comex", label: "MDIC Comex" },
+    ],
+  },
   { label: "Market Watch", href: "/stocks" },
   { label: "News Hunter", href: "/news-hunter" },
 ];

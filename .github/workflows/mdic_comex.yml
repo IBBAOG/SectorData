@@ -1,0 +1,36 @@
+name: MDIC Comex — Sync
+
+on:
+  schedule:
+    - cron: '0 14 * * *'   # daily at 14:00 UTC (11:00 BRT)
+  workflow_dispatch:        # manual trigger from GitHub UI
+    inputs:
+      desde:
+        description: 'Mês inicial YYYY-MM (opcional, default: últimos 3 meses)'
+        required: false
+        default: ''
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Sync MDIC Comex → Supabase
+        run: |
+          if [ -n "${{ github.event.inputs.desde }}" ]; then
+            python scripts/mdic_comex_sync.py --desde "${{ github.event.inputs.desde }}"
+          else
+            python scripts/mdic_comex_sync.py --meses 3
+          fi
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

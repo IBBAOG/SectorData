@@ -762,3 +762,97 @@ export async function rpcGetPriceBandsData(
   return allRows;
 }
 
+// ─── MODULE: MDIC Comex (/src/app/(dashboard)/mdic-comex/page.tsx) ───────────
+
+export type MdicComexSerieRow = {
+  ano: number;
+  mes: number;
+  flow: string;
+  ncm_codigo: string;
+  ncm_nome: string | null;
+  volume_kg: number | null;
+  valor_fob_usd: number | null;
+};
+
+export type MdicComexTopPaisRow = {
+  pais: string;
+  ncm_codigo: string;
+  volume_kg: number | null;
+  valor_fob_usd: number | null;
+};
+
+export type MdicComexFiltros = {
+  anos: number[];
+  ncms: { ncm_codigo: string; ncm_nome: string }[];
+};
+
+export async function rpcGetMdicComexSerie(
+  supabase: SupabaseClient,
+  params?: {
+    flow?: string | null;
+    ncms?: string[] | null;
+    anoInicio?: number | null;
+    anoFim?: number | null;
+  },
+): Promise<MdicComexSerieRow[]> {
+  const PAGE = 1000;
+  let offset = 0;
+  const allRows: MdicComexSerieRow[] = [];
+  const rpcParams = {
+    p_flow:       params?.flow      ?? null,
+    p_ncms:       params?.ncms      ?? null,
+    p_ano_inicio: params?.anoInicio ?? null,
+    p_ano_fim:    params?.anoFim    ?? null,
+  };
+  while (true) {
+    const { data, error } = await supabase
+      .rpc("get_mdic_comex_serie", rpcParams)
+      .range(offset, offset + PAGE - 1);
+    if (error) { console.error("get_mdic_comex_serie failed", error); break; }
+    const rows = (data ?? []) as MdicComexSerieRow[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
+  }
+  return allRows;
+}
+
+export async function rpcGetMdicComexTopPaises(
+  supabase: SupabaseClient,
+  flow: string | null,
+  ncmCodigo: string | null,
+  anoInicio: number | null,
+  anoFim: number | null,
+  limit = 15,
+): Promise<MdicComexTopPaisRow[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_mdic_comex_top_paises", {
+      p_flow:        flow,
+      p_ncm_codigo:  ncmCodigo,
+      p_ano_inicio:  anoInicio,
+      p_ano_fim:     anoFim,
+      p_limit:       limit,
+    });
+    if (error) throw error;
+    return (data ?? []) as MdicComexTopPaisRow[];
+  } catch (e) {
+    console.error("get_mdic_comex_top_paises failed", e);
+    return [];
+  }
+}
+
+export async function rpcGetMdicComexFiltros(
+  supabase: SupabaseClient,
+): Promise<MdicComexFiltros> {
+  try {
+    const { data, error } = await supabase.rpc("get_mdic_comex_filtros", {});
+    if (error) throw error;
+    const d = (data ?? {}) as Partial<MdicComexFiltros>;
+    return { anos: d.anos ?? [], ncms: d.ncms ?? [] };
+  } catch (e) {
+    console.error("get_mdic_comex_filtros failed", e);
+    return { anos: [], ncms: [] };
+  }
+}
+
