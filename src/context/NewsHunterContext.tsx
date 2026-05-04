@@ -35,7 +35,7 @@ interface NewsHunterContextValue {
 
 const POLL_INTERVAL_MS = 60_000;
 const FLASH_DURATION_MS = 3_400;
-export const ARTICLES_PER_PAGE = 50;
+export const ARTICLES_PER_PAGE = 300;
 
 export const FALLBACK_KEYWORDS: string[] = [
   "petróleo", "petroleo", "Petrobras", "Vibra", "Brava", "Ultrapar",
