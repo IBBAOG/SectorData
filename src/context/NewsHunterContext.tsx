@@ -32,8 +32,31 @@ interface NewsHunterContextValue {
 
 const POLL_INTERVAL_MS = 60_000;
 const FLASH_DURATION_MS = 3_400;
-// Supabase PostgREST retorna no máximo 1000 linhas por request.
-const PAGE_SIZE = 1000;
+const PAGE_SIZE = 1000; // Supabase PostgREST max por request
+
+// Cache em localStorage — artigos históricos são estáticos, não precisam ser
+// re-buscados a cada visita. Versão no key invalida cache quando o schema muda.
+const CACHE_KEY = "nh_articles_v1";
+const WATERMARK_KEY = "nh_watermark_v1";
+
+function cacheLoad(): { articles: NewsArticle[]; watermark: string | null } {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    const watermark = localStorage.getItem(WATERMARK_KEY);
+    return { articles: raw ? (JSON.parse(raw) as NewsArticle[]) : [], watermark };
+  } catch {
+    return { articles: [], watermark: null };
+  }
+}
+
+function cacheSave(articles: NewsArticle[], watermark: string): void {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(articles));
+    localStorage.setItem(WATERMARK_KEY, watermark);
+  } catch {
+    // QuotaExceededError — ignora; na próxima visita faz fetch completo
+  }
+}
 
 export const FALLBACK_KEYWORDS: string[] = [
   "petróleo", "petroleo", "Petrobras", "Vibra", "Brava", "Ultrapar",
@@ -118,34 +141,57 @@ export function NewsHunterProvider({
     setLoading(true);
     setError(null);
 
-    // Pagina sobre todo o histórico (sem filtro de data). Cada request traz
-    // até PAGE_SIZE linhas; repetimos até o banco retornar menos que PAGE_SIZE.
-    const allRows: NewsArticle[] = [];
-    let offset = 0;
+    // 1. Carrega cache local imediatamente — histórico aparece sem nenhum request.
+    const { articles: cached, watermark: cachedWatermark } = cacheLoad();
+    if (cached.length > 0) {
+      setArticles(cached);
+      seenUrlsRef.current = new Set(cached.map((r) => r.url));
+    }
 
-    for (;;) {
+    if (cachedWatermark && cached.length > 0) {
+      // 2a. Cache existe: busca apenas artigos mais novos que o watermark.
       const { data, error: err } = await supabase
         .from("news_articles")
         .select("*")
-        .order("published_at", { ascending: false })
-        .range(offset, offset + PAGE_SIZE - 1);
+        .gt("found_at", cachedWatermark)
+        .order("found_at", { ascending: false })
+        .limit(PAGE_SIZE);
       if (err) { setError(err.message); setLoading(false); return; }
       const rows = (data as NewsArticle[]) ?? [];
-      if (rows.length === 0) break;
-      for (const r of rows) allRows.push(r);
-      // Atualiza UI a cada página para que o histórico apareça progressivamente.
-      setArticles(prev => mergeArticles(prev, rows));
-      if (rows.length < PAGE_SIZE) break;
-      offset += PAGE_SIZE;
+      const merged = mergeArticles(cached, rows);
+      const newWatermark = merged.reduce(
+        (max, r) => (r.found_at > max ? r.found_at : max), cachedWatermark,
+      );
+      setArticles(merged);
+      seenUrlsRef.current = new Set(merged.map((r) => r.url));
+      lastFoundAtRef.current = newWatermark;
+      cacheSave(merged, newWatermark);
+    } else {
+      // 2b. Sem cache: busca histórico completo paginando (só ocorre na 1ª visita).
+      const allRows: NewsArticle[] = [];
+      let offset = 0;
+      for (;;) {
+        const { data, error: err } = await supabase
+          .from("news_articles")
+          .select("*")
+          .order("published_at", { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1);
+        if (err) { setError(err.message); setLoading(false); return; }
+        const rows = (data as NewsArticle[]) ?? [];
+        if (rows.length === 0) break;
+        for (const r of rows) allRows.push(r);
+        setArticles((prev) => mergeArticles(prev, rows));
+        if (rows.length < PAGE_SIZE) break;
+        offset += PAGE_SIZE;
+      }
+      const watermark = allRows.length > 0
+        ? allRows.reduce((max, r) => (r.found_at > max ? r.found_at : max), allRows[0].found_at)
+        : new Date().toISOString();
+      lastFoundAtRef.current = watermark;
+      seenUrlsRef.current = new Set(allRows.map((r) => r.url));
+      cacheSave(allRows, watermark);
     }
 
-    // Watermark on found_at — scanner refreshes found_at on every upsert, so a
-    // published_at watermark would miss re-touched articles.
-    const newestFoundAt = allRows.length > 0
-      ? allRows.reduce((max, r) => (r.found_at > max ? r.found_at : max), allRows[0].found_at)
-      : null;
-    lastFoundAtRef.current = newestFoundAt ?? new Date().toISOString();
-    seenUrlsRef.current = new Set(allRows.map((r) => r.url));
     setLoading(false);
   }, [supabase, mergeArticles]);
 
@@ -191,7 +237,11 @@ export function NewsHunterProvider({
       });
     }
 
-    setArticles((prev) => mergeArticles(prev, rows));
+    setArticles((prev) => {
+      const merged = mergeArticles(prev, rows);
+      cacheSave(merged, lastFoundAtRef.current!);
+      return merged;
+    });
   }, [supabase, mergeArticles]);
 
   useEffect(() => {
