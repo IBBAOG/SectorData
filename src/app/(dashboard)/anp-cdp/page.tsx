@@ -12,10 +12,10 @@ import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuar
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import {
   rpcGetAnpCdpPocoSerie,
-  rpcGetAnpCdpPocosList,
+  rpcGetAnpCdpPocosByFiltros,
   rpcGetAnpCdpFiltros,
   type AnpCdpSeriePonto,
-  type AnpCdpPocoMeta,
+  type AnpCdpPocoSimples,
   type AnpCdpFiltros,
 } from "../../../lib/rpc";
 
@@ -69,12 +69,10 @@ function buildChart(
   metricKey: string,
   metricLabel: string,
   nPocos: number,
-  totalPocos: number,
 ): { data: PlotData[]; layout: Partial<Layout> } {
   if (!serie.length) return emptyPlot(340);
-  const allSelected = nPocos === 0;
-  const titleText = allSelected
-    ? `Todos os poços (${totalPocos.toLocaleString("pt-BR")})`
+  const titleText = nPocos === 0
+    ? "Todos os poços"
     : `${nPocos.toLocaleString("pt-BR")} poço${nPocos !== 1 ? "s" : ""} selecionado${nPocos !== 1 ? "s" : ""}`;
   return {
     data: [{
@@ -101,7 +99,7 @@ function buildChart(
   };
 }
 
-// ── Small reusable filter components ─────────────────────────────────────────
+// ── Reusable filter components ────────────────────────────────────────────────
 
 function CheckboxGroup({
   id, items, selected, onChange, labelMap,
@@ -177,32 +175,33 @@ export default function AnpCdpPage() {
   const { visible, loading: visLoading } = useModuleVisibilityGuard("anp-cdp");
   const supabase = getSupabaseClient();
 
-  const [loading, setLoading]         = useState(true);
+  const [loading, setLoading]           = useState(true);
   const [serieLoading, setSerieLoading] = useState(false);
-  const [filtros, setFiltros]         = useState<AnpCdpFiltros>({
+  const [pocosLoading, setPocosLoading] = useState(false);
+  const [filtros, setFiltros]           = useState<AnpCdpFiltros>({
     bacoes: [], campos: [], locais: [], estados: [], operadores: [],
     instalacoes: [], tipos_instalacao: [], ano_min: null, ano_max: null,
   });
-  const [pocosList, setPocosList]     = useState<AnpCdpPocoMeta[]>([]);
-  const [pocosLoaded, setPocosLoaded] = useState(false);
-  const [serieData, setSerieData]     = useState<AnpCdpSeriePonto[]>([]);
-  const [allYears, setAllYears]       = useState<number[]>([]);
-  const [yearRange, setYearRange]     = useState<[number, number]>([0, 0]);
+  const [pocosList, setPocosList]       = useState<AnpCdpPocoSimples[]>([]);
+  const [serieData, setSerieData]       = useState<AnpCdpSeriePonto[]>([]);
+  const [allYears, setAllYears]         = useState<number[]>([]);
+  const [yearRange, setYearRange]       = useState<[number, number]>([0, 0]);
 
-  // Filters ([] = all / no restriction)
-  const [selectedPocos,          setSelectedPocos]          = useState<string[]>([]);
-  const [selectedCampos,         setSelectedCampos]         = useState<string[]>([]);
-  const [selectedBacoes,         setSelectedBacoes]         = useState<string[]>([]);
-  const [selectedLocais,         setSelectedLocais]         = useState<string[]>([]);
-  const [selectedEstados,        setSelectedEstados]        = useState<string[]>([]);
-  const [selectedOperadores,     setSelectedOperadores]     = useState<string[]>([]);
-  const [selectedInstalacoes,    setSelectedInstalacoes]    = useState<string[]>([]);
-  const [selectedTipos,          setSelectedTipos]          = useState<string[]>([]);
-  const [metric, setMetric]           = useState(METRICS[0]);
+  // Filters
+  const [selectedPocos,       setSelectedPocos]       = useState<string[]>([]);
+  const [selectedCampos,      setSelectedCampos]      = useState<string[]>([]);
+  const [selectedBacoes,      setSelectedBacoes]      = useState<string[]>([]);
+  const [selectedLocais,      setSelectedLocais]      = useState<string[]>([]);
+  const [selectedEstados,     setSelectedEstados]     = useState<string[]>([]);
+  const [selectedOperadores,  setSelectedOperadores]  = useState<string[]>([]);
+  const [selectedInstalacoes, setSelectedInstalacoes] = useState<string[]>([]);
+  const [selectedTipos,       setSelectedTipos]       = useState<string[]>([]);
+  const [metric, setMetric]             = useState(METRICS[0]);
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const serieDebounce  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pocosDebounce  = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Initial load ──────────────────────────────────────────────────────────
+  // ── Initial load: filtros + default serie ────────────────────────────────
   useEffect(() => {
     if (!supabase) return;
     let cancelled = false;
@@ -220,17 +219,9 @@ export default function AnpCdpPage() {
       const years: number[] = [];
       for (let y = yMin; y <= yMax; y++) years.push(y);
       setAllYears(years);
-      const currentYear = new Date().getFullYear();
-      const startIdx = Math.max(0, years.findIndex(y => y >= currentYear - 9));
+      const startIdx = Math.max(0, years.findIndex(y => y >= yMax - 9));
       setYearRange([startIdx, years.length - 1]);
       setLoading(false);
-
-      // Load poços list in background (24K rows — doesn't block UI)
-      const pocos = await rpcGetAnpCdpPocosList(supabase);
-      if (!cancelled) {
-        setPocosList(pocos);
-        setPocosLoaded(true);
-      }
     })();
     return () => { cancelled = true; };
   }, [supabase]);
@@ -238,8 +229,8 @@ export default function AnpCdpPage() {
   // ── Reactive serie fetch (debounced 400ms) ────────────────────────────────
   const fetchSerie = useCallback(() => {
     if (!supabase || loading) return;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
+    if (serieDebounce.current) clearTimeout(serieDebounce.current);
+    serieDebounce.current = setTimeout(async () => {
       setSerieLoading(true);
       const data = await rpcGetAnpCdpPocoSerie(supabase, {
         pocos:           selectedPocos.length       ? selectedPocos       : null,
@@ -261,42 +252,47 @@ export default function AnpCdpPage() {
 
   useEffect(() => { fetchSerie(); }, [fetchSerie]);
 
-  // ── Derived options (narrowed by upstream filters) ────────────────────────
+  // ── Lazy poços load: only when dimension filters are active ───────────────
+  // Triggered when campos/bacoes/locais/estados/operadores change (never loads 24K at once)
+  const hasDimensionFilter = selectedCampos.length > 0 || selectedBacoes.length > 0 ||
+    selectedLocais.length > 0 || selectedEstados.length > 0 || selectedOperadores.length > 0;
 
-  // Campo: from filtros (fast), narrowed by bacia/local/estado via pocosList when loaded
-  const visibleCampos = useMemo(() => {
-    const needsNarrow = selectedBacoes.length || selectedLocais.length || selectedEstados.length;
-    if (!needsNarrow || !pocosLoaded) return filtros.campos;
-    const seen = new Set<string>();
-    pocosList
-      .filter(p =>
-        (!selectedBacoes.length  || selectedBacoes.includes(p.bacia))  &&
-        (!selectedLocais.length  || selectedLocais.includes(p.local))  &&
-        (!selectedEstados.length || (p.estado && selectedEstados.includes(p.estado)))
-      )
-      .forEach(p => seen.add(p.campo));
-    return filtros.campos.filter(c => seen.has(c));
-  }, [filtros.campos, pocosList, pocosLoaded, selectedBacoes, selectedLocais, selectedEstados]);
+  useEffect(() => {
+    if (!supabase || loading) return;
+    if (!hasDimensionFilter) {
+      setPocosList([]);
+      setSelectedPocos([]);
+      return;
+    }
+    if (pocosDebounce.current) clearTimeout(pocosDebounce.current);
+    pocosDebounce.current = setTimeout(async () => {
+      setPocosLoading(true);
+      setSelectedPocos([]);
+      const rows = await rpcGetAnpCdpPocosByFiltros(supabase, {
+        campos:     selectedCampos.length    ? selectedCampos    : null,
+        bacoes:     selectedBacoes.length    ? selectedBacoes    : null,
+        locais:     selectedLocais.length    ? selectedLocais    : null,
+        estados:    selectedEstados.length   ? selectedEstados   : null,
+        operadores: selectedOperadores.length ? selectedOperadores : null,
+      });
+      setPocosList(rows);
+      setPocosLoading(false);
+    }, 400);
+  }, [supabase, loading, hasDimensionFilter, selectedCampos, selectedBacoes,
+      selectedLocais, selectedEstados, selectedOperadores]);
 
-  // Poço: filtered by all active dimension filters
-  const visiblePocos = useMemo(() => {
+  // ── Derived options ───────────────────────────────────────────────────────
+
+  const pocoOptions = useMemo(() => {
     let list = pocosList;
-    if (selectedCampos.length)      list = list.filter(p => selectedCampos.includes(p.campo));
-    if (selectedBacoes.length)      list = list.filter(p => selectedBacoes.includes(p.bacia));
-    if (selectedLocais.length)      list = list.filter(p => selectedLocais.includes(p.local));
-    if (selectedEstados.length)     list = list.filter(p => p.estado     && selectedEstados.includes(p.estado));
-    if (selectedOperadores.length)  list = list.filter(p => p.operador   && selectedOperadores.includes(p.operador));
-    if (selectedInstalacoes.length) list = list.filter(p => p.instalacao_destino && selectedInstalacoes.includes(p.instalacao_destino));
-    if (selectedTipos.length)       list = list.filter(p => p.tipo_instalacao    && selectedTipos.includes(p.tipo_instalacao));
-    return list;
-  }, [pocosList, selectedCampos, selectedBacoes, selectedLocais, selectedEstados,
-      selectedOperadores, selectedInstalacoes, selectedTipos]);
-
-  const pocoOptions = useMemo(() => visiblePocos.map(p => p.poco), [visiblePocos]);
+    if (selectedInstalacoes.length) list = list.filter(p => selectedInstalacoes.includes((p as any).instalacao_destino));
+    if (selectedTipos.length)       list = list.filter(p => selectedTipos.includes((p as any).tipo_instalacao));
+    return list.map(p => p.poco);
+  }, [pocosList, selectedInstalacoes, selectedTipos]);
 
   const chart = useMemo(
-    () => buildChart(serieData, metric.key, metric.label, selectedPocos.length, pocosList.length),
-    [serieData, metric, selectedPocos.length, pocosList.length],
+    () => buildChart(serieData, metric.key, metric.label, selectedPocos.length),
+    [serieData, metric, selectedPocos.length],
   );
 
   if (visLoading || !visible) return null;
@@ -343,11 +339,8 @@ export default function AnpCdpPage() {
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Ambiente</div>
                 <CheckboxGroup
-                  id="cdp-l"
-                  items={allLocais}
-                  selected={selectedLocais}
-                  onChange={setSelectedLocais}
-                  labelMap={LOCAL_LABELS}
+                  id="cdp-l" items={allLocais} selected={selectedLocais}
+                  onChange={setSelectedLocais} labelMap={LOCAL_LABELS}
                 />
               </div>
 
@@ -355,74 +348,66 @@ export default function AnpCdpPage() {
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Bacia</div>
                 <CheckboxGroup
-                  id="cdp-b"
-                  items={filtros.bacoes}
-                  selected={selectedBacoes}
+                  id="cdp-b" items={filtros.bacoes} selected={selectedBacoes}
                   onChange={setSelectedBacoes}
                 />
               </div>
 
               {/* Estado */}
-              <MultiFilter
-                label="Estado" options={filtros.estados}
-                value={selectedEstados} onChange={setSelectedEstados} loading={loading}
-              />
+              <MultiFilter label="Estado" options={filtros.estados}
+                value={selectedEstados} onChange={setSelectedEstados} loading={loading} />
 
               {/* Operador */}
-              <MultiFilter
-                label="Operador" options={filtros.operadores}
-                value={selectedOperadores} onChange={setSelectedOperadores} loading={loading}
-              />
+              <MultiFilter label="Operador" options={filtros.operadores}
+                value={selectedOperadores} onChange={setSelectedOperadores} loading={loading} />
 
               {/* Instalação Destino */}
-              <MultiFilter
-                label="Instalação Destino" options={filtros.instalacoes}
-                value={selectedInstalacoes} onChange={setSelectedInstalacoes} loading={loading}
-              />
+              <MultiFilter label="Instalação Destino" options={filtros.instalacoes}
+                value={selectedInstalacoes} onChange={setSelectedInstalacoes} loading={loading} />
 
               {/* Tipo Instalação */}
-              <MultiFilter
-                label="Tipo Instalação" options={filtros.tipos_instalacao}
-                value={selectedTipos} onChange={setSelectedTipos} loading={loading}
-              />
+              <MultiFilter label="Tipo Instalação" options={filtros.tipos_instalacao}
+                value={selectedTipos} onChange={setSelectedTipos} loading={loading} />
 
               {/* Campo */}
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">
                   Campo{" "}
                   <span style={{ color: "#888", fontWeight: 400 }}>
-                    ({selectedCampos.length === 0 ? visibleCampos.length : selectedCampos.length}/{visibleCampos.length})
+                    ({selectedCampos.length === 0 ? filtros.campos.length : selectedCampos.length}/{filtros.campos.length})
                   </span>
                 </div>
                 {!loading && (
                   <SearchableMultiSelect
-                    options={visibleCampos}
+                    options={filtros.campos}
                     value={selectedCampos}
                     onChange={v => { setSelectedCampos(v); setSelectedPocos([]); }}
                   />
                 )}
               </div>
 
-              {/* Poço */}
+              {/* Poço — lazy: só carrega após selecionar algum filtro de dimensão */}
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">
                   Poço{" "}
                   <span style={{ color: "#888", fontWeight: 400 }}>
-                    {pocosLoaded
-                      ? `(${selectedPocos.length === 0 ? pocoOptions.length : selectedPocos.length}/${pocoOptions.length})`
-                      : "(carregando…)"}
+                    {hasDimensionFilter
+                      ? pocosLoading
+                        ? "(carregando…)"
+                        : `(${selectedPocos.length === 0 ? pocoOptions.length : selectedPocos.length}/${pocoOptions.length})`
+                      : ""}
                   </span>
                 </div>
-                {!loading && pocosLoaded && (
+                {!loading && hasDimensionFilter && !pocosLoading && (
                   <SearchableMultiSelect
                     options={pocoOptions}
                     value={selectedPocos}
                     onChange={setSelectedPocos}
                   />
                 )}
-                {!loading && !pocosLoaded && (
+                {!loading && !hasDimensionFilter && (
                   <div style={{ fontSize: 10, color: "#aaa", fontFamily: "Arial", paddingTop: 4 }}>
-                    Aguardando lista de poços…
+                    Selecione bacia, estado, operador ou campo para ver os poços.
                   </div>
                 )}
               </div>

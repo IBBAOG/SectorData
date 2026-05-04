@@ -1602,18 +1602,39 @@ export async function rpcGetAnpCdpPocoSerie(
   return (data ?? []) as AnpCdpSeriePonto[];
 }
 
-export async function rpcGetAnpCdpPocosList(
+export type AnpCdpPocoSimples = {
+  poco: string;
+  campo: string;
+  bacia: string;
+  local: string;
+  petroleo_total: number;
+};
+
+export async function rpcGetAnpCdpPocosByFiltros(
   supabase: SupabaseClient,
-): Promise<AnpCdpPocoMeta[]> {
+  params: {
+    campos?: string[] | null;
+    bacoes?: string[] | null;
+    locais?: string[] | null;
+    estados?: string[] | null;
+    operadores?: string[] | null;
+  },
+): Promise<AnpCdpPocoSimples[]> {
   const PAGE = 1000;
   let offset = 0;
-  const all: AnpCdpPocoMeta[] = [];
+  const all: AnpCdpPocoSimples[] = [];
   while (true) {
     const { data, error } = await supabase
-      .rpc("get_anp_cdp_pocos_list", {})
+      .rpc("get_anp_cdp_pocos_by_filtros", {
+        p_campos:     params.campos     ?? null,
+        p_bacoes:     params.bacoes     ?? null,
+        p_locais:     params.locais     ?? null,
+        p_estados:    params.estados    ?? null,
+        p_operadores: params.operadores ?? null,
+      })
       .range(offset, offset + PAGE - 1);
-    if (error) { console.error("get_anp_cdp_pocos_list failed", error); break; }
-    const rows = (data ?? []) as AnpCdpPocoMeta[];
+    if (error) { console.error("get_anp_cdp_pocos_by_filtros failed", error); break; }
+    const rows = (data ?? []) as AnpCdpPocoSimples[];
     if (!rows.length) break;
     all.push(...rows);
     if (rows.length < PAGE) break;
