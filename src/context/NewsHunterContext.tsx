@@ -41,7 +41,7 @@ export const FALLBACK_KEYWORDS: string[] = [
   "Ipiranga", "PetroReconcavo", "PetroRecôncavo", "oil", "gasolina",
   "gás", "gas", "diesel", "combustível", "combustivel", "combustíveis",
   "combustiveis", "OceanPact", "Cosan", "Raízen", "Raizen", "Braskem",
-  "Compass", "PRIO", "ANP", "refit", "Brasil Energia",
+  "Compass", "PRIO", "ANP", "refit",
 ];
 
 const NewsHunterCtx = createContext<NewsHunterContextValue | null>(null);
