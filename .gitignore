@@ -63,3 +63,7 @@ session.json
 
 # standalone scripts — local only, not for version control
 exportar_para_excel.py
+
+# local alert system — not for version control
+alertas/
+DADOS/
