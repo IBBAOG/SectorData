@@ -1,0 +1,38 @@
+name: ANP Fase 3 — Sync (DAIE + Desembaraços + Painel Importações)
+
+on:
+  schedule:
+    - cron: '0 13 1 * *'   # 1st of each month at 13:00 UTC (10:00 BRT)
+  workflow_dispatch:        # manual trigger from GitHub UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Sync ANP Dados Abertos IE → Supabase
+        run: python scripts/anp_daie_sync.py
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      - name: Sync ANP Desembaraços → Supabase
+        run: python scripts/anp_desembaracos_sync.py
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      - name: Sync ANP Painel Importações Distribuidores → Supabase
+        run: python scripts/anp_painel_imp_sync.py
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
