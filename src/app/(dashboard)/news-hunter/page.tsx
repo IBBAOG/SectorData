@@ -35,7 +35,15 @@ function formatTimeLocal(iso: string): string {
   if (Number.isNaN(d.getTime())) return "--:--";
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
+  const today = new Date();
+  const sameDay =
+    d.getDate() === today.getDate() &&
+    d.getMonth() === today.getMonth() &&
+    d.getFullYear() === today.getFullYear();
+  if (sameDay) return `${hh}:${mm}`;
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}/${mo} ${hh}:${mm}`;
 }
 
 function stripAccents(s: string): string {
