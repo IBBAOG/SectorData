@@ -1535,8 +1535,14 @@ export type AnpCdpSeriePonto = {
   ano: number;
   mes: number;
   petroleo_bbl_dia: number;
+  oleo_bbl_dia: number;
+  condensado_bbl_dia: number;
   gas_total_mm3_dia: number;
+  gas_natural_assoc_mm3_dia: number;
+  gas_natural_n_assoc_mm3_dia: number;
+  gas_royalties: number;
   agua_bbl_dia: number;
+  tempo_prod_hs_mes: number;
 };
 
 export type AnpCdpPocoMeta = {
@@ -1544,7 +1550,12 @@ export type AnpCdpPocoMeta = {
   campo: string;
   bacia: string;
   local: string;
+  estado: string | null;
+  operador: string | null;
+  nome_poco_operador: string | null;
+  num_contrato: string | null;
   instalacao_destino: string | null;
+  tipo_instalacao: string | null;
   petroleo_total: number;
 };
 
@@ -1552,7 +1563,10 @@ export type AnpCdpFiltros = {
   bacoes: string[];
   campos: string[];
   locais: string[];
+  estados: string[];
+  operadores: string[];
   instalacoes: string[];
+  tipos_instalacao: string[];
   ano_min: number | null;
   ano_max: number | null;
 };
@@ -1564,19 +1578,25 @@ export async function rpcGetAnpCdpPocoSerie(
     campos?: string[] | null;
     bacoes?: string[] | null;
     locais?: string[] | null;
+    estados?: string[] | null;
+    operadores?: string[] | null;
     instalacoes?: string[] | null;
+    tiposInstalacao?: string[] | null;
     anoInicio?: number | null;
     anoFim?: number | null;
   },
 ): Promise<AnpCdpSeriePonto[]> {
   const { data, error } = await supabase.rpc("get_anp_cdp_poco_serie", {
-    p_pocos:       params?.pocos       ?? null,
-    p_campos:      params?.campos      ?? null,
-    p_bacoes:      params?.bacoes      ?? null,
-    p_locais:      params?.locais      ?? null,
-    p_instalacoes: params?.instalacoes ?? null,
-    p_ano_inicio:  params?.anoInicio   ?? null,
-    p_ano_fim:     params?.anoFim      ?? null,
+    p_pocos:            params?.pocos            ?? null,
+    p_campos:           params?.campos           ?? null,
+    p_bacoes:           params?.bacoes           ?? null,
+    p_locais:           params?.locais           ?? null,
+    p_estados:          params?.estados          ?? null,
+    p_operadores:       params?.operadores       ?? null,
+    p_instalacoes:      params?.instalacoes      ?? null,
+    p_tipos_instalacao: params?.tiposInstalacao  ?? null,
+    p_ano_inicio:       params?.anoInicio        ?? null,
+    p_ano_fim:          params?.anoFim           ?? null,
   });
   if (error) { console.error("get_anp_cdp_poco_serie failed", error); return []; }
   return (data ?? []) as AnpCdpSeriePonto[];
@@ -1610,15 +1630,21 @@ export async function rpcGetAnpCdpFiltros(
     if (error) throw error;
     const d = (data ?? {}) as Partial<AnpCdpFiltros>;
     return {
-      bacoes:      d.bacoes      ?? [],
-      campos:      d.campos      ?? [],
-      locais:      d.locais      ?? [],
-      instalacoes: d.instalacoes ?? [],
-      ano_min:     d.ano_min     ?? null,
-      ano_max:     d.ano_max     ?? null,
+      bacoes:           d.bacoes           ?? [],
+      campos:           d.campos           ?? [],
+      locais:           d.locais           ?? [],
+      estados:          d.estados          ?? [],
+      operadores:       d.operadores       ?? [],
+      instalacoes:      d.instalacoes      ?? [],
+      tipos_instalacao: d.tipos_instalacao ?? [],
+      ano_min:          d.ano_min          ?? null,
+      ano_max:          d.ano_max          ?? null,
     };
   } catch (e) {
     console.error("get_anp_cdp_filtros failed", e);
-    return { bacoes: [], campos: [], locais: [], instalacoes: [], ano_min: null, ano_max: null };
+    return {
+      bacoes: [], campos: [], locais: [], estados: [], operadores: [],
+      instalacoes: [], tipos_instalacao: [], ano_min: null, ano_max: null,
+    };
   }
 }

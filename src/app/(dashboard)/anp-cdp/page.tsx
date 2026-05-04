@@ -22,9 +22,15 @@ import {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const METRICS = [
-  { key: "petroleo_bbl_dia",  label: "Petróleo (bbl/dia)" },
-  { key: "gas_total_mm3_dia", label: "Gás Natural (Mm³/dia)" },
-  { key: "agua_bbl_dia",      label: "Água (bbl/dia)" },
+  { key: "petroleo_bbl_dia",             label: "Petróleo (bbl/dia)" },
+  { key: "oleo_bbl_dia",                 label: "Óleo (bbl/dia)" },
+  { key: "condensado_bbl_dia",           label: "Condensado (bbl/dia)" },
+  { key: "gas_total_mm3_dia",            label: "Gás Total (Mm³/dia)" },
+  { key: "gas_natural_assoc_mm3_dia",    label: "Gás Assoc. (Mm³/dia)" },
+  { key: "gas_natural_n_assoc_mm3_dia",  label: "Gás N-Assoc. (Mm³/dia)" },
+  { key: "gas_royalties",                label: "Gás Royalties (Mm³/dia)" },
+  { key: "agua_bbl_dia",                 label: "Água (bbl/dia)" },
+  { key: "tempo_prod_hs_mes",            label: "Tempo Produção (hs/mês)" },
 ];
 
 const LOCAL_LABELS: Record<string, string> = {
@@ -95,34 +101,108 @@ function buildChart(
   };
 }
 
+// ── Small reusable filter components ─────────────────────────────────────────
+
+function CheckboxGroup({
+  id, items, selected, onChange, labelMap,
+}: {
+  id: string;
+  items: string[];
+  selected: string[];
+  onChange: (v: string[]) => void;
+  labelMap?: Record<string, string>;
+}) {
+  const toggle = (item: string) => {
+    if (selected.length === 0) {
+      onChange(items.filter(x => x !== item));
+    } else {
+      const next = selected.includes(item)
+        ? (selected.length > 1 ? selected.filter(x => x !== item) : selected)
+        : [...selected, item];
+      onChange(next);
+    }
+  };
+  return (
+    <>
+      {items.map(item => (
+        <div key={item} className="form-check" style={{ marginBottom: 4 }}>
+          <input className="form-check-input" type="checkbox" id={`${id}-${item}`}
+            checked={selected.length === 0 || selected.includes(item)}
+            onChange={() => toggle(item)} />
+          <label className="form-check-label" htmlFor={`${id}-${item}`}
+            style={{ fontFamily: "Arial", fontSize: 11, cursor: "pointer" }}>
+            {labelMap?.[item] ?? item}
+          </label>
+        </div>
+      ))}
+      {selected.length > 0 && (
+        <button className="filter-btn-link filter-btn-link--secondary"
+          style={{ marginTop: 4, fontFamily: "Arial", fontSize: 10 }}
+          onClick={() => onChange([])}>
+          Todos
+        </button>
+      )}
+    </>
+  );
+}
+
+function MultiFilter({
+  label, options, value, onChange, loading,
+}: {
+  label: string;
+  options: string[];
+  value: string[];
+  onChange: (v: string[]) => void;
+  loading?: boolean;
+}) {
+  if (!options.length) return null;
+  return (
+    <div className="sidebar-filter-section">
+      <div className="sidebar-filter-label">
+        {label}{" "}
+        <span style={{ color: "#888", fontWeight: 400 }}>
+          ({value.length === 0 ? options.length : value.length}/{options.length})
+        </span>
+      </div>
+      {!loading && (
+        <SearchableMultiSelect options={options} value={value} onChange={onChange} />
+      )}
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AnpCdpPage() {
   const { visible, loading: visLoading } = useModuleVisibilityGuard("anp-cdp");
   const supabase = getSupabaseClient();
 
-  const [loading, setLoading]             = useState(true);
-  const [serieLoading, setSerieLoading]   = useState(false);
-  const [filtros, setFiltros]             = useState<AnpCdpFiltros>({
-    bacoes: [], campos: [], locais: [], instalacoes: [], ano_min: null, ano_max: null,
+  const [loading, setLoading]         = useState(true);
+  const [serieLoading, setSerieLoading] = useState(false);
+  const [filtros, setFiltros]         = useState<AnpCdpFiltros>({
+    bacoes: [], campos: [], locais: [], estados: [], operadores: [],
+    instalacoes: [], tipos_instalacao: [], ano_min: null, ano_max: null,
   });
-  const [pocosList, setPocosList]         = useState<AnpCdpPocoMeta[]>([]);
-  const [pocosLoaded, setPocosLoaded]     = useState(false);
-  const [serieData, setSerieData]         = useState<AnpCdpSeriePonto[]>([]);
-  const [allYears, setAllYears]           = useState<number[]>([]);
-  const [yearRange, setYearRange]         = useState<[number, number]>([0, 0]);
+  const [pocosList, setPocosList]     = useState<AnpCdpPocoMeta[]>([]);
+  const [pocosLoaded, setPocosLoaded] = useState(false);
+  const [serieData, setSerieData]     = useState<AnpCdpSeriePonto[]>([]);
+  const [allYears, setAllYears]       = useState<number[]>([]);
+  const [yearRange, setYearRange]     = useState<[number, number]>([0, 0]);
 
   // Filters ([] = all / no restriction)
-  const [selectedPocos, setSelectedPocos]           = useState<string[]>([]);
-  const [selectedCampos, setSelectedCampos]         = useState<string[]>([]);
-  const [selectedBacoes, setSelectedBacoes]         = useState<string[]>([]);
-  const [selectedLocais, setSelectedLocais]         = useState<string[]>([]);
-  const [selectedInstalacoes, setSelectedInstalacoes] = useState<string[]>([]);
-  const [metric, setMetric]                         = useState(METRICS[0]);
+  const [selectedPocos,          setSelectedPocos]          = useState<string[]>([]);
+  const [selectedCampos,         setSelectedCampos]         = useState<string[]>([]);
+  const [selectedBacoes,         setSelectedBacoes]         = useState<string[]>([]);
+  const [selectedLocais,         setSelectedLocais]         = useState<string[]>([]);
+  const [selectedEstados,        setSelectedEstados]        = useState<string[]>([]);
+  const [selectedOperadores,     setSelectedOperadores]     = useState<string[]>([]);
+  const [selectedInstalacoes,    setSelectedInstalacoes]    = useState<string[]>([]);
+  const [selectedTipos,          setSelectedTipos]          = useState<string[]>([]);
+  const [metric, setMetric]           = useState(METRICS[0]);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── Initial load: filtros + default serie (fast); pocos loaded in background ─
+  // ── Initial load ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!supabase) return;
     let cancelled = false;
@@ -162,46 +242,55 @@ export default function AnpCdpPage() {
     debounceRef.current = setTimeout(async () => {
       setSerieLoading(true);
       const data = await rpcGetAnpCdpPocoSerie(supabase, {
-        pocos:       selectedPocos.length       ? selectedPocos       : null,
-        campos:      selectedCampos.length      ? selectedCampos      : null,
-        bacoes:      selectedBacoes.length      ? selectedBacoes      : null,
-        locais:      selectedLocais.length      ? selectedLocais      : null,
-        instalacoes: selectedInstalacoes.length ? selectedInstalacoes : null,
-        anoInicio:   allYears[yearRange[0]] ?? null,
-        anoFim:      allYears[yearRange[1]] ?? null,
+        pocos:           selectedPocos.length       ? selectedPocos       : null,
+        campos:          selectedCampos.length      ? selectedCampos      : null,
+        bacoes:          selectedBacoes.length      ? selectedBacoes      : null,
+        locais:          selectedLocais.length      ? selectedLocais      : null,
+        estados:         selectedEstados.length     ? selectedEstados     : null,
+        operadores:      selectedOperadores.length  ? selectedOperadores  : null,
+        instalacoes:     selectedInstalacoes.length ? selectedInstalacoes : null,
+        tiposInstalacao: selectedTipos.length       ? selectedTipos       : null,
+        anoInicio:       allYears[yearRange[0]]     ?? null,
+        anoFim:          allYears[yearRange[1]]     ?? null,
       });
       setSerieData(data);
       setSerieLoading(false);
     }, 400);
-  }, [supabase, loading, selectedPocos, selectedCampos, selectedBacoes, selectedLocais, selectedInstalacoes, yearRange, allYears]);
+  }, [supabase, loading, selectedPocos, selectedCampos, selectedBacoes, selectedLocais,
+      selectedEstados, selectedOperadores, selectedInstalacoes, selectedTipos, yearRange, allYears]);
 
   useEffect(() => { fetchSerie(); }, [fetchSerie]);
 
-  // ── Derived options ────────────────────────────────────────────────────────
+  // ── Derived options (narrowed by upstream filters) ────────────────────────
 
-  // Campo: use filtros.campos directly (fast), narrow by bacia/local only when pocosList is ready
+  // Campo: from filtros (fast), narrowed by bacia/local/estado via pocosList when loaded
   const visibleCampos = useMemo(() => {
-    if (!selectedBacoes.length && !selectedLocais.length) return filtros.campos;
-    if (!pocosLoaded) return filtros.campos;
+    const needsNarrow = selectedBacoes.length || selectedLocais.length || selectedEstados.length;
+    if (!needsNarrow || !pocosLoaded) return filtros.campos;
     const seen = new Set<string>();
     pocosList
       .filter(p =>
-        (!selectedBacoes.length || selectedBacoes.includes(p.bacia)) &&
-        (!selectedLocais.length || selectedLocais.includes(p.local))
+        (!selectedBacoes.length  || selectedBacoes.includes(p.bacia))  &&
+        (!selectedLocais.length  || selectedLocais.includes(p.local))  &&
+        (!selectedEstados.length || (p.estado && selectedEstados.includes(p.estado)))
       )
       .forEach(p => seen.add(p.campo));
     return filtros.campos.filter(c => seen.has(c));
-  }, [filtros.campos, pocosList, pocosLoaded, selectedBacoes, selectedLocais]);
+  }, [filtros.campos, pocosList, pocosLoaded, selectedBacoes, selectedLocais, selectedEstados]);
 
-  // Poço: filter by all active dimension filters
+  // Poço: filtered by all active dimension filters
   const visiblePocos = useMemo(() => {
     let list = pocosList;
     if (selectedCampos.length)      list = list.filter(p => selectedCampos.includes(p.campo));
     if (selectedBacoes.length)      list = list.filter(p => selectedBacoes.includes(p.bacia));
     if (selectedLocais.length)      list = list.filter(p => selectedLocais.includes(p.local));
+    if (selectedEstados.length)     list = list.filter(p => p.estado     && selectedEstados.includes(p.estado));
+    if (selectedOperadores.length)  list = list.filter(p => p.operador   && selectedOperadores.includes(p.operador));
     if (selectedInstalacoes.length) list = list.filter(p => p.instalacao_destino && selectedInstalacoes.includes(p.instalacao_destino));
+    if (selectedTipos.length)       list = list.filter(p => p.tipo_instalacao    && selectedTipos.includes(p.tipo_instalacao));
     return list;
-  }, [pocosList, selectedCampos, selectedBacoes, selectedLocais, selectedInstalacoes]);
+  }, [pocosList, selectedCampos, selectedBacoes, selectedLocais, selectedEstados,
+      selectedOperadores, selectedInstalacoes, selectedTipos]);
 
   const pocoOptions = useMemo(() => visiblePocos.map(p => p.poco), [visiblePocos]);
 
@@ -212,12 +301,8 @@ export default function AnpCdpPage() {
 
   if (visLoading || !visible) return null;
 
-  const toggleLocal = (l: string) =>
-    setSelectedLocais(prev => prev.includes(l) ? (prev.length > 1 ? prev.filter(x => x !== l) : prev) : [...prev, l]);
-
   const yMin = allYears[yearRange[0]] ?? "—";
   const yMax = allYears[yearRange[1]] ?? "—";
-
   const allLocais = filtros.locais.length ? filtros.locais : ["PreSal", "PosSal", "Terra"];
 
   return (
@@ -257,81 +342,49 @@ export default function AnpCdpPage() {
               {/* Ambiente */}
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Ambiente</div>
-                {allLocais.map(l => (
-                  <div key={l} className="form-check" style={{ marginBottom: 4 }}>
-                    <input className="form-check-input" type="checkbox" id={`cdp-l-${l}`}
-                      checked={selectedLocais.length === 0 || selectedLocais.includes(l)}
-                      onChange={() => {
-                        if (selectedLocais.length === 0) {
-                          setSelectedLocais(allLocais.filter(x => x !== l));
-                        } else {
-                          toggleLocal(l);
-                        }
-                      }} />
-                    <label className="form-check-label" htmlFor={`cdp-l-${l}`}
-                      style={{ fontFamily: "Arial", fontSize: 11, cursor: "pointer" }}>
-                      {LOCAL_LABELS[l] ?? l}
-                    </label>
-                  </div>
-                ))}
-                {selectedLocais.length > 0 && (
-                  <button className="filter-btn-link filter-btn-link--secondary"
-                    style={{ marginTop: 4, fontFamily: "Arial", fontSize: 10 }}
-                    onClick={() => setSelectedLocais([])}>
-                    Todos
-                  </button>
-                )}
+                <CheckboxGroup
+                  id="cdp-l"
+                  items={allLocais}
+                  selected={selectedLocais}
+                  onChange={setSelectedLocais}
+                  labelMap={LOCAL_LABELS}
+                />
               </div>
 
               {/* Bacia */}
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Bacia</div>
-                {filtros.bacoes.map(b => (
-                  <div key={b} className="form-check" style={{ marginBottom: 4 }}>
-                    <input className="form-check-input" type="checkbox" id={`cdp-b-${b}`}
-                      checked={selectedBacoes.length === 0 || selectedBacoes.includes(b)}
-                      onChange={() => {
-                        if (selectedBacoes.length === 0) {
-                          setSelectedBacoes(filtros.bacoes.filter(x => x !== b));
-                        } else {
-                          setSelectedBacoes(prev =>
-                            prev.includes(b) ? (prev.length > 1 ? prev.filter(x => x !== b) : prev) : [...prev, b]
-                          );
-                        }
-                      }} />
-                    <label className="form-check-label" htmlFor={`cdp-b-${b}`}
-                      style={{ fontFamily: "Arial", fontSize: 11, cursor: "pointer" }}>
-                      {b}
-                    </label>
-                  </div>
-                ))}
-                {selectedBacoes.length > 0 && (
-                  <button className="filter-btn-link filter-btn-link--secondary"
-                    style={{ marginTop: 4, fontFamily: "Arial", fontSize: 10 }}
-                    onClick={() => setSelectedBacoes([])}>
-                    Todas
-                  </button>
-                )}
+                <CheckboxGroup
+                  id="cdp-b"
+                  items={filtros.bacoes}
+                  selected={selectedBacoes}
+                  onChange={setSelectedBacoes}
+                />
               </div>
 
+              {/* Estado */}
+              <MultiFilter
+                label="Estado" options={filtros.estados}
+                value={selectedEstados} onChange={setSelectedEstados} loading={loading}
+              />
+
+              {/* Operador */}
+              <MultiFilter
+                label="Operador" options={filtros.operadores}
+                value={selectedOperadores} onChange={setSelectedOperadores} loading={loading}
+              />
+
               {/* Instalação Destino */}
-              {filtros.instalacoes.length > 0 && (
-                <div className="sidebar-filter-section">
-                  <div className="sidebar-filter-label">
-                    Instalação Destino{" "}
-                    <span style={{ color: "#888", fontWeight: 400 }}>
-                      ({selectedInstalacoes.length === 0 ? filtros.instalacoes.length : selectedInstalacoes.length}/{filtros.instalacoes.length})
-                    </span>
-                  </div>
-                  {!loading && (
-                    <SearchableMultiSelect
-                      options={filtros.instalacoes}
-                      value={selectedInstalacoes}
-                      onChange={setSelectedInstalacoes}
-                    />
-                  )}
-                </div>
-              )}
+              <MultiFilter
+                label="Instalação Destino" options={filtros.instalacoes}
+                value={selectedInstalacoes} onChange={setSelectedInstalacoes} loading={loading}
+              />
+
+              {/* Tipo Instalação */}
+              <MultiFilter
+                label="Tipo Instalação" options={filtros.tipos_instalacao}
+                value={selectedTipos} onChange={setSelectedTipos} loading={loading}
+              />
 
               {/* Campo */}
               <div className="sidebar-filter-section">
@@ -345,10 +398,7 @@ export default function AnpCdpPage() {
                   <SearchableMultiSelect
                     options={visibleCampos}
                     value={selectedCampos}
-                    onChange={newCampos => {
-                      setSelectedCampos(newCampos);
-                      setSelectedPocos([]);
-                    }}
+                    onChange={v => { setSelectedCampos(v); setSelectedPocos([]); }}
                   />
                 )}
               </div>

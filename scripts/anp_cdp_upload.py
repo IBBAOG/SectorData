@@ -51,12 +51,34 @@ _PAT_CSV = re.compile(r"producao_poco_(\d{2})-(\d{4})_([MST])\.csv$", re.IGNOREC
 
 _PK = ["ano", "mes", "poco", "campo", "bacia", "local"]
 
-# Parquet column renames → canonical names
+# Parquet → canonical column names
 _RENAME = {
+    "nome_poco_anp":           "poco",
     "gas_natural_total_mm3_dia": "gas_total_mm3_dia",
-    "nome_poco_anp":             "poco",
-    "nome_instalacao_destino":   "instalacao_destino",
 }
+
+# All numeric production columns (will be summed on dedup)
+_SUM_COLS = [
+    "petroleo_bbl_dia",
+    "oleo_bbl_dia",
+    "condensado_bbl_dia",
+    "gas_total_mm3_dia",
+    "gas_natural_assoc_mm3_dia",
+    "gas_natural_n_assoc_mm3_dia",
+    "gas_royalties",
+    "agua_bbl_dia",
+    "tempo_prod_hs_mes",
+]
+
+# Text metadata columns (first non-null per PK group)
+_META_COLS = [
+    "estado",
+    "nome_poco_operador",
+    "operador",
+    "num_contrato",
+    "instalacao_destino",
+    "tipo_instalacao",
+]
 
 
 def _get_max_date(sb) -> tuple[int, int]:
@@ -76,25 +98,25 @@ def _get_max_date(sb) -> tuple[int, int]:
 def _prepare(df: pd.DataFrame) -> pd.DataFrame:
     df = df.rename(columns=_RENAME)
 
-    for col in ("poco", "campo", "bacia"):
-        df[col] = df[col].str.strip()
-    if "instalacao_destino" in df.columns:
-        df["instalacao_destino"] = df["instalacao_destino"].str.strip()
-    else:
-        df["instalacao_destino"] = None
+    # Ensure all required columns exist; fill missing with defaults
+    for col in _SUM_COLS:
+        if col not in df.columns:
+            df[col] = 0.0
+    for col in _META_COLS:
+        if col not in df.columns:
+            df[col] = None
 
-    if "agua_bbl_dia" not in df.columns:
-        df["agua_bbl_dia"] = 0.0
+    # Strip whitespace from text columns
+    for col in ("poco", "campo", "bacia") + tuple(_META_COLS):
+        if col in df.columns and df[col].dtype == object:
+            df[col] = df[col].str.strip()
 
-    # Deduplicate: sum production, keep first instalacao per PK
-    agg_spec = {
-        "petroleo_bbl_dia":   "sum",
-        "gas_total_mm3_dia":  "sum",
-        "agua_bbl_dia":       "sum",
-        "instalacao_destino": "first",
-    }
+    # Deduplicate: sum numeric, keep first non-null metadata per PK
+    agg_spec = {c: "sum" for c in _SUM_COLS}
+    agg_spec.update({c: "first" for c in _META_COLS})
+
     df = (
-        df[_PK + list(agg_spec.keys())]
+        df[_PK + _SUM_COLS + _META_COLS]
         .groupby(_PK, as_index=False, dropna=False)
         .agg(agg_spec)
     )
@@ -174,16 +196,36 @@ def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
             col_map["poco"] = c
         elif "campo" in cl:
             col_map["campo"] = c
+        elif "estado" in cl or "uf" == cl:
+            col_map["estado"] = c
+        elif "operador" in cl:
+            col_map["operador"] = c
+        elif "contrato" in cl:
+            col_map["num_contrato"] = c
         elif "destino" in cl:
             col_map["instalacao_destino"] = c
+        elif "tipo" in cl and "instal" in cl:
+            col_map["tipo_instalacao"] = c
         elif "perodo" in cl and "carga" not in cl:
             col_map["periodo"] = c
         elif "petrleo" in cl or "petróleo" in cl:
             col_map["petroleo"] = c
+        elif "leo (bbl" in cl and "petr" not in cl:
+            col_map["oleo"] = c
+        elif "condensado" in cl:
+            col_map["condensado"] = c
+        elif "assoc" in cl and "mm" in cl and "n_" not in cl and "n-" not in cl:
+            col_map["gas_assoc"] = c
+        elif ("n_assoc" in cl or "n-assoc" in cl) and "mm" in cl:
+            col_map["gas_n_assoc"] = c
         elif "total" in cl and "mm" in cl:
             col_map["gas_total"] = c
+        elif "royalt" in cl:
+            col_map["gas_royalties"] = c
         elif "gua (bbl" in cl or "água" in cl:
             col_map["agua"] = c
+        elif "tempo" in cl and "prod" in cl:
+            col_map["tempo_prod"] = c
 
     required = ("bacia", "poco", "campo", "periodo", "petroleo")
     if not all(k in col_map for k in required):
@@ -196,16 +238,31 @@ def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
             return pd.Series([0.0] * len(df), dtype=float)
         return pd.to_numeric(df[col], errors="coerce").fillna(0.0)
 
+    def _txt(key: str):
+        col = col_map.get(key)
+        return df[col].str.strip() if col else None
+
     out = pd.DataFrame({
-        "bacia":               df[col_map["bacia"]].str.strip(),
-        "poco":                df[col_map["poco"]].str.strip(),
-        "campo":               df[col_map["campo"]].str.strip(),
-        "instalacao_destino":  df[col_map["instalacao_destino"]].str.strip() if "instalacao_destino" in col_map else None,
-        "periodo":             df[col_map["periodo"]].str.strip(),
-        "petroleo_bbl_dia":    _num("petroleo"),
-        "gas_total_mm3_dia":   _num("gas_total"),
-        "agua_bbl_dia":        _num("agua"),
-        "local":               local,
+        "bacia":                       df[col_map["bacia"]].str.strip(),
+        "poco":                        df[col_map["poco"]].str.strip(),
+        "campo":                       df[col_map["campo"]].str.strip(),
+        "estado":                      _txt("estado"),
+        "operador":                    _txt("operador"),
+        "nome_poco_operador":          None,
+        "num_contrato":                _txt("num_contrato"),
+        "instalacao_destino":          _txt("instalacao_destino"),
+        "tipo_instalacao":             _txt("tipo_instalacao"),
+        "periodo":                     df[col_map["periodo"]].str.strip(),
+        "petroleo_bbl_dia":            _num("petroleo"),
+        "oleo_bbl_dia":                _num("oleo"),
+        "condensado_bbl_dia":          _num("condensado"),
+        "gas_total_mm3_dia":           _num("gas_total"),
+        "gas_natural_assoc_mm3_dia":   _num("gas_assoc"),
+        "gas_natural_n_assoc_mm3_dia": _num("gas_n_assoc"),
+        "gas_royalties":               _num("gas_royalties"),
+        "agua_bbl_dia":                _num("agua"),
+        "tempo_prod_hs_mes":           _num("tempo_prod"),
+        "local":                       local,
     })
     out["ano"] = pd.to_numeric(out["periodo"].str[:4], errors="coerce")
     out["mes"] = pd.to_numeric(out["periodo"].str[5:7], errors="coerce")
