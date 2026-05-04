@@ -1,0 +1,26 @@
+name: ANP LPC — Sync (preços semanais de combustíveis)
+
+on:
+  schedule:
+    - cron: '30 14 * * 3'   # Wednesdays at 14:30 UTC (11:30 BRT) — ANP publishes weekly
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Sync ANP LPC → Supabase
+        run: python scripts/anp_lpc_sync.py
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

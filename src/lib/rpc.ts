@@ -1350,3 +1350,182 @@ export async function rpcGetAnpPainelImpFiltros(
   }
 }
 
+// ─── MODULE: ANP LPC (/src/app/(dashboard)/anp-lpc/page.tsx) ─────────────────
+
+export type AnpLpcNacionalRow = {
+  data_fim: string;          // "YYYY-MM-DD" (week end date)
+  produto: string;
+  preco_medio_venda: number | null;
+  total_postos: number | null;
+};
+
+export type AnpLpcSerieRow = {
+  data_fim: string;
+  produto: string;
+  estado: string;
+  preco_medio_venda: number | null;
+  preco_medio_compra: number | null;
+  n_postos: number | null;
+};
+
+export type AnpLpcFiltros = {
+  produtos: string[];
+  estados: string[];
+  data_min: string | null;
+  data_max: string | null;
+};
+
+export async function rpcGetAnpLpcNacional(
+  supabase: SupabaseClient,
+  params?: {
+    produtos?: string[] | null;
+    dataInicio?: string | null;
+    dataFim?: string | null;
+  },
+): Promise<AnpLpcNacionalRow[]> {
+  const PAGE = 2000;
+  let offset = 0;
+  const allRows: AnpLpcNacionalRow[] = [];
+  const rpcParams = {
+    p_produtos:    params?.produtos   ?? null,
+    p_data_inicio: params?.dataInicio ?? null,
+    p_data_fim:    params?.dataFim    ?? null,
+  };
+  while (true) {
+    const { data, error } = await supabase
+      .rpc("get_anp_lpc_nacional", rpcParams)
+      .range(offset, offset + PAGE - 1);
+    if (error) { console.error("get_anp_lpc_nacional failed", error); break; }
+    const rows = (data ?? []) as AnpLpcNacionalRow[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
+  }
+  return allRows;
+}
+
+export async function rpcGetAnpLpcSerie(
+  supabase: SupabaseClient,
+  params?: {
+    produtos?: string[] | null;
+    estados?: string[] | null;
+    dataInicio?: string | null;
+    dataFim?: string | null;
+  },
+): Promise<AnpLpcSerieRow[]> {
+  const PAGE = 2000;
+  let offset = 0;
+  const allRows: AnpLpcSerieRow[] = [];
+  const rpcParams = {
+    p_produtos:    params?.produtos   ?? null,
+    p_estados:     params?.estados    ?? null,
+    p_data_inicio: params?.dataInicio ?? null,
+    p_data_fim:    params?.dataFim    ?? null,
+  };
+  while (true) {
+    const { data, error } = await supabase
+      .rpc("get_anp_lpc_serie", rpcParams)
+      .range(offset, offset + PAGE - 1);
+    if (error) { console.error("get_anp_lpc_serie failed", error); break; }
+    const rows = (data ?? []) as AnpLpcSerieRow[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
+  }
+  return allRows;
+}
+
+export async function rpcGetAnpLpcFiltros(
+  supabase: SupabaseClient,
+): Promise<AnpLpcFiltros> {
+  try {
+    const { data, error } = await supabase.rpc("get_anp_lpc_filtros", {});
+    if (error) throw error;
+    const d = (data ?? {}) as Partial<AnpLpcFiltros>;
+    return {
+      produtos:  d.produtos  ?? [],
+      estados:   d.estados   ?? [],
+      data_min:  d.data_min  ?? null,
+      data_max:  d.data_max  ?? null,
+    };
+  } catch (e) {
+    console.error("get_anp_lpc_filtros failed", e);
+    return { produtos: [], estados: [], data_min: null, data_max: null };
+  }
+}
+
+// ─── MODULE: SINDICOM (/src/app/(dashboard)/sindicom/page.tsx) ────────────────
+
+export type SindicomSerieRow = {
+  ano: number;
+  mes: number;
+  empresa: string;
+  nome_produto: string;
+  segmento: string;
+  volume: number | null;
+};
+
+export type SindicomFiltros = {
+  empresas: string[];
+  produtos: string[];
+  segmentos: string[];
+  ano_min: number | null;
+  ano_max: number | null;
+};
+
+export async function rpcGetSindicomSerie(
+  supabase: SupabaseClient,
+  params?: {
+    empresas?: string[] | null;
+    produtos?: string[] | null;
+    segmentos?: string[] | null;
+    anoInicio?: number | null;
+    anoFim?: number | null;
+  },
+): Promise<SindicomSerieRow[]> {
+  const PAGE = 2000;
+  let offset = 0;
+  const allRows: SindicomSerieRow[] = [];
+  const rpcParams = {
+    p_empresas:   params?.empresas   ?? null,
+    p_produtos:   params?.produtos   ?? null,
+    p_segmentos:  params?.segmentos  ?? null,
+    p_ano_inicio: params?.anoInicio  ?? null,
+    p_ano_fim:    params?.anoFim     ?? null,
+  };
+  while (true) {
+    const { data, error } = await supabase
+      .rpc("get_sindicom_serie", rpcParams)
+      .range(offset, offset + PAGE - 1);
+    if (error) { console.error("get_sindicom_serie failed", error); break; }
+    const rows = (data ?? []) as SindicomSerieRow[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
+  }
+  return allRows;
+}
+
+export async function rpcGetSindicomFiltros(
+  supabase: SupabaseClient,
+): Promise<SindicomFiltros> {
+  try {
+    const { data, error } = await supabase.rpc("get_sindicom_filtros", {});
+    if (error) throw error;
+    const d = (data ?? {}) as Partial<SindicomFiltros>;
+    return {
+      empresas:  d.empresas  ?? [],
+      produtos:  d.produtos  ?? [],
+      segmentos: d.segmentos ?? [],
+      ano_min:   d.ano_min   ?? null,
+      ano_max:   d.ano_max   ?? null,
+    };
+  } catch (e) {
+    console.error("get_sindicom_filtros failed", e);
+    return { empresas: [], produtos: [], segmentos: [], ano_min: null, ano_max: null };
+  }
+}
+
