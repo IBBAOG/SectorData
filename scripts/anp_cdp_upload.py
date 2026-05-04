@@ -49,10 +49,14 @@ BATCH = 200
 _AMBIENTE_TO_LOCAL = {"M": "PosSal", "S": "PreSal", "T": "Terra"}
 _PAT_CSV = re.compile(r"producao_poco_(\d{2})-(\d{4})_([MST])\.csv$", re.IGNORECASE)
 
-_KEEP_COLS = [
-    "ano", "mes", "nome_poco_anp", "campo", "bacia", "local",
-    "petroleo_bbl_dia", "gas_total_mm3_dia",
-]
+_PK = ["ano", "mes", "poco", "campo", "bacia", "local"]
+
+# Parquet column renames → canonical names
+_RENAME = {
+    "gas_natural_total_mm3_dia": "gas_total_mm3_dia",
+    "nome_poco_anp":             "poco",
+    "nome_instalacao_destino":   "instalacao_destino",
+}
 
 
 def _get_max_date(sb) -> tuple[int, int]:
@@ -70,21 +74,32 @@ def _get_max_date(sb) -> tuple[int, int]:
 
 
 def _prepare(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.rename(columns={
-        "gas_natural_total_mm3_dia": "gas_total_mm3_dia",
-        "nome_poco_anp": "poco",
-    })
-    df["poco"]  = df["poco"].str.strip()
-    df["campo"] = df["campo"].str.strip()
-    df["bacia"] = df["bacia"].str.strip()
-    # Deduplicate: sum production for identical PK combinations (parquet may have duplicates)
-    PK = ["ano", "mes", "poco", "campo", "bacia", "local"]
+    df = df.rename(columns=_RENAME)
+
+    for col in ("poco", "campo", "bacia"):
+        df[col] = df[col].str.strip()
+    if "instalacao_destino" in df.columns:
+        df["instalacao_destino"] = df["instalacao_destino"].str.strip()
+    else:
+        df["instalacao_destino"] = None
+
+    if "agua_bbl_dia" not in df.columns:
+        df["agua_bbl_dia"] = 0.0
+
+    # Deduplicate: sum production, keep first instalacao per PK
+    agg_spec = {
+        "petroleo_bbl_dia":   "sum",
+        "gas_total_mm3_dia":  "sum",
+        "agua_bbl_dia":       "sum",
+        "instalacao_destino": "first",
+    }
     df = (
-        df[PK + ["petroleo_bbl_dia", "gas_total_mm3_dia"]]
-        .groupby(PK, as_index=False, dropna=False)
-        .sum()
+        df[_PK + list(agg_spec.keys())]
+        .groupby(_PK, as_index=False, dropna=False)
+        .agg(agg_spec)
     )
-    # Keep only active wells (non-zero production)
+
+    # Keep only active wells (non-zero oil or gas)
     df = df[(df["petroleo_bbl_dia"] > 0) | (df["gas_total_mm3_dia"] > 0)].copy()
     return df
 
@@ -112,7 +127,7 @@ def _upsert(sb, rows: list[dict]) -> None:
 
 
 def _rows_from_df(df: pd.DataFrame) -> list[dict]:
-    df = df.dropna(subset=["ano", "mes", "poco", "campo", "bacia", "local"])
+    df = df.dropna(subset=_PK)
     rows = df.where(pd.notna(df), None).to_dict("records")
     for r in rows:
         r["ano"] = int(r["ano"])
@@ -155,22 +170,23 @@ def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
         cl = c.lower()
         if "bacia" in cl:
             col_map["bacia"] = c
-        elif "operador" in cl and "nome" not in cl:
-            col_map["operador"] = c
+        elif "poco" in cl or "poço" in cl:
+            col_map["poco"] = c
+        elif "campo" in cl:
+            col_map["campo"] = c
+        elif "destino" in cl:
+            col_map["instalacao_destino"] = c
         elif "perodo" in cl and "carga" not in cl:
             col_map["periodo"] = c
-        elif "leo (bbl" in cl and "petr" not in cl:
-            col_map["oleo"] = c
-        elif "condensado" in cl:
-            col_map["condensado"] = c
-        elif "petrleo" in cl:
+        elif "petrleo" in cl or "petróleo" in cl:
             col_map["petroleo"] = c
         elif "total" in cl and "mm" in cl:
             col_map["gas_total"] = c
-        elif "gua (bbl" in cl:
+        elif "gua (bbl" in cl or "água" in cl:
             col_map["agua"] = c
 
-    if not all(k in col_map for k in ("bacia", "operador", "periodo", "petroleo")):
+    required = ("bacia", "poco", "campo", "periodo", "petroleo")
+    if not all(k in col_map for k in required):
         print(f"  WARN: missing key columns in {os.path.basename(path)}, got: {list(col_map)}")
         return None
 
@@ -180,19 +196,17 @@ def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
             return pd.Series([0.0] * len(df), dtype=float)
         return pd.to_numeric(df[col], errors="coerce").fillna(0.0)
 
-    out = pd.DataFrame(
-        {
-            "bacia": df[col_map["bacia"]].str.strip(),
-            "operador": df[col_map["operador"]].str.strip(),
-            "periodo": df[col_map["periodo"]].str.strip(),
-            "oleo_bbl_dia": _num("oleo"),
-            "condensado_bbl_dia": _num("condensado"),
-            "petroleo_bbl_dia": _num("petroleo"),
-            "gas_total_mm3_dia": _num("gas_total"),
-            "agua_bbl_dia": _num("agua"),
-            "local": local,
-        }
-    )
+    out = pd.DataFrame({
+        "bacia":               df[col_map["bacia"]].str.strip(),
+        "poco":                df[col_map["poco"]].str.strip(),
+        "campo":               df[col_map["campo"]].str.strip(),
+        "instalacao_destino":  df[col_map["instalacao_destino"]].str.strip() if "instalacao_destino" in col_map else None,
+        "periodo":             df[col_map["periodo"]].str.strip(),
+        "petroleo_bbl_dia":    _num("petroleo"),
+        "gas_total_mm3_dia":   _num("gas_total"),
+        "agua_bbl_dia":        _num("agua"),
+        "local":               local,
+    })
     out["ano"] = pd.to_numeric(out["periodo"].str[:4], errors="coerce")
     out["mes"] = pd.to_numeric(out["periodo"].str[5:7], errors="coerce")
     return out.drop(columns=["periodo"])
@@ -230,8 +244,8 @@ def _from_csv_dir(sb, csv_dir: str, incremental: bool = True) -> None:
         return
 
     df = pd.concat(frames, ignore_index=True)
-    agg = _agg(df)
-    rows = _rows_from_df(agg)
+    df = _prepare(df)
+    rows = _rows_from_df(df)
     print(f"  {len(rows)} aggregated rows, upserting…")
     _upsert(sb, rows)
 
