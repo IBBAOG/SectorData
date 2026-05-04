@@ -856,3 +856,236 @@ export async function rpcGetMdicComexFiltros(
   }
 }
 
+// ─── MODULE: ANP PPI (/src/app/(dashboard)/anp-ppi/page.tsx) ─────────────────
+
+export type AnpPpiSerieRow = {
+  data_inicio: string;   // "YYYY-MM-DD"
+  data_fim: string;
+  produto: string;
+  preco_medio: number | null;
+  unidade: string | null;
+};
+
+export type AnpPpiLocaisRow = {
+  data_inicio: string;
+  data_fim: string;
+  local: string;
+  preco: number | null;
+  variacao_pct: number | null;
+};
+
+export type AnpPpiFiltros = {
+  produtos: string[];
+  locais: string[];
+  data_min: string | null;
+  data_max: string | null;
+};
+
+export async function rpcGetAnpPpiMediaSerie(
+  supabase: SupabaseClient,
+  params?: { dataInicio?: string | null; dataFim?: string | null },
+): Promise<AnpPpiSerieRow[]> {
+  const PAGE = 1000;
+  let offset = 0;
+  const allRows: AnpPpiSerieRow[] = [];
+  const rpcParams = {
+    p_data_inicio: params?.dataInicio ?? null,
+    p_data_fim:    params?.dataFim    ?? null,
+  };
+  while (true) {
+    const { data, error } = await supabase
+      .rpc("get_anp_ppi_media_serie", rpcParams)
+      .range(offset, offset + PAGE - 1);
+    if (error) { console.error("get_anp_ppi_media_serie failed", error); break; }
+    const rows = (data ?? []) as AnpPpiSerieRow[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
+  }
+  return allRows;
+}
+
+export async function rpcGetAnpPpiLocaisSerie(
+  supabase: SupabaseClient,
+  produto: string,
+  params?: { dataInicio?: string | null; dataFim?: string | null },
+): Promise<AnpPpiLocaisRow[]> {
+  const PAGE = 2000;
+  let offset = 0;
+  const allRows: AnpPpiLocaisRow[] = [];
+  const rpcParams = {
+    p_produto:     produto,
+    p_data_inicio: params?.dataInicio ?? null,
+    p_data_fim:    params?.dataFim    ?? null,
+  };
+  while (true) {
+    const { data, error } = await supabase
+      .rpc("get_anp_ppi_locais_serie", rpcParams)
+      .range(offset, offset + PAGE - 1);
+    if (error) { console.error("get_anp_ppi_locais_serie failed", error); break; }
+    const rows = (data ?? []) as AnpPpiLocaisRow[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
+  }
+  return allRows;
+}
+
+export async function rpcGetAnpPpiFiltros(
+  supabase: SupabaseClient,
+): Promise<AnpPpiFiltros> {
+  try {
+    const { data, error } = await supabase.rpc("get_anp_ppi_filtros", {});
+    if (error) throw error;
+    const d = (data ?? {}) as Partial<AnpPpiFiltros>;
+    return {
+      produtos:  d.produtos  ?? [],
+      locais:    d.locais    ?? [],
+      data_min:  d.data_min  ?? null,
+      data_max:  d.data_max  ?? null,
+    };
+  } catch (e) {
+    console.error("get_anp_ppi_filtros failed", e);
+    return { produtos: [], locais: [], data_min: null, data_max: null };
+  }
+}
+
+// ─── MODULE: ANP Preços Produtores (/src/app/(dashboard)/anp-precos-produtores/page.tsx) ─
+
+export type AnpPprodutoresRow = {
+  data_inicio: string;
+  data_fim: string;
+  produto: string;
+  unidade: string | null;
+  regiao: string;
+  preco: number | null;
+};
+
+export type AnpPprodutoresFiltros = {
+  produtos: string[];
+  regioes: string[];
+  data_min: string | null;
+  data_max: string | null;
+};
+
+export async function rpcGetAnpPprodutoresSerie(
+  supabase: SupabaseClient,
+  params?: {
+    produto?: string | null;
+    regioes?: string[] | null;
+    dataInicio?: string | null;
+    dataFim?: string | null;
+  },
+): Promise<AnpPprodutoresRow[]> {
+  const PAGE = 2000;
+  let offset = 0;
+  const allRows: AnpPprodutoresRow[] = [];
+  const rpcParams = {
+    p_produto:     params?.produto     ?? null,
+    p_regioes:     params?.regioes     ?? null,
+    p_data_inicio: params?.dataInicio  ?? null,
+    p_data_fim:    params?.dataFim     ?? null,
+  };
+  while (true) {
+    const { data, error } = await supabase
+      .rpc("get_anp_precos_produtores_serie", rpcParams)
+      .range(offset, offset + PAGE - 1);
+    if (error) { console.error("get_anp_precos_produtores_serie failed", error); break; }
+    const rows = (data ?? []) as AnpPprodutoresRow[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
+  }
+  return allRows;
+}
+
+export async function rpcGetAnpPprodutoresFiltros(
+  supabase: SupabaseClient,
+): Promise<AnpPprodutoresFiltros> {
+  try {
+    const { data, error } = await supabase.rpc("get_anp_precos_produtores_filtros", {});
+    if (error) throw error;
+    const d = (data ?? {}) as Partial<AnpPprodutoresFiltros>;
+    return {
+      produtos:  d.produtos  ?? [],
+      regioes:   d.regioes   ?? [],
+      data_min:  d.data_min  ?? null,
+      data_max:  d.data_max  ?? null,
+    };
+  } catch (e) {
+    console.error("get_anp_precos_produtores_filtros failed", e);
+    return { produtos: [], regioes: [], data_min: null, data_max: null };
+  }
+}
+
+// ─── MODULE: ANP GLP (/src/app/(dashboard)/anp-glp/page.tsx) ─────────────────
+
+export type AnpGlpSerieRow = {
+  ano: number;
+  mes: number;
+  distribuidora: string;
+  categoria: string;
+  vendas_kg: number | null;
+};
+
+export type AnpGlpFiltros = {
+  distribuidoras: string[];
+  categorias: string[];
+  ano_min: number | null;
+  ano_max: number | null;
+};
+
+export async function rpcGetAnpGlpSerie(
+  supabase: SupabaseClient,
+  params?: {
+    distribuidoras?: string[] | null;
+    categorias?: string[] | null;
+    anoInicio?: number | null;
+    anoFim?: number | null;
+  },
+): Promise<AnpGlpSerieRow[]> {
+  const PAGE = 2000;
+  let offset = 0;
+  const allRows: AnpGlpSerieRow[] = [];
+  const rpcParams = {
+    p_distribuidoras: params?.distribuidoras ?? null,
+    p_categorias:     params?.categorias     ?? null,
+    p_ano_inicio:     params?.anoInicio      ?? null,
+    p_ano_fim:        params?.anoFim         ?? null,
+  };
+  while (true) {
+    const { data, error } = await supabase
+      .rpc("get_anp_glp_serie", rpcParams)
+      .range(offset, offset + PAGE - 1);
+    if (error) { console.error("get_anp_glp_serie failed", error); break; }
+    const rows = (data ?? []) as AnpGlpSerieRow[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
+  }
+  return allRows;
+}
+
+export async function rpcGetAnpGlpFiltros(
+  supabase: SupabaseClient,
+): Promise<AnpGlpFiltros> {
+  try {
+    const { data, error } = await supabase.rpc("get_anp_glp_filtros", {});
+    if (error) throw error;
+    const d = (data ?? {}) as Partial<AnpGlpFiltros>;
+    return {
+      distribuidoras: d.distribuidoras ?? [],
+      categorias:     d.categorias     ?? [],
+      ano_min:        d.ano_min        ?? null,
+      ano_max:        d.ano_max        ?? null,
+    };
+  } catch (e) {
+    console.error("get_anp_glp_filtros failed", e);
+    return { distribuidoras: [], categorias: [], ano_min: null, ano_max: null };
+  }
+}
+

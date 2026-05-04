@@ -38,6 +38,9 @@ const NAV_ENTRIES: NavEntry[] = [
     label: "Estatísticas",
     items: [
       { href: "/mdic-comex", label: "MDIC Comex" },
+      { href: "/anp-ppi", label: "ANP PPI" },
+      { href: "/anp-precos-produtores", label: "ANP Preços Produtores" },
+      { href: "/anp-glp", label: "ANP GLP" },
     ],
   },
   { label: "Market Watch", href: "/stocks" },
