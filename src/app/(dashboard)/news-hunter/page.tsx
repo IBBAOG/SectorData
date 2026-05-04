@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import NavBar from "../../../components/NavBar";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
-import { useNewsHunter, ARTICLES_PER_PAGE } from "../../../context/NewsHunterContext";
+import { useNewsHunter } from "../../../context/NewsHunterContext";
 
 import styles from "./page.module.css";
 
@@ -42,29 +42,13 @@ function stripAccents(s: string): string {
   return s.normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
 
-function getPageNumbers(current: number, total: number): (number | "…")[] {
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-  const pages: (number | "…")[] = [1];
-  if (current > 3) pages.push("…");
-  for (let p = Math.max(2, current - 1); p <= Math.min(total - 1, current + 1); p++) {
-    pages.push(p);
-  }
-  if (current < total - 2) pages.push("…");
-  pages.push(total);
-  return pages;
-}
 
 export default function NewsHunterPage() {
   const { visible, loading: visLoading } = useModuleVisibilityGuard("news-hunter");
   const supabase = useMemo(() => getSupabaseClient(), []);
 
   // Shared fetch/polling state lives in NewsHunterContext (mounted at layout level).
-  const {
-    articles, justArrivedUrls, keywords, setKeywords,
-    loading, error, currentPage, totalCount, goToPage,
-  } = useNewsHunter();
-
-  const totalPages = Math.max(1, Math.ceil(totalCount / ARTICLES_PER_PAGE));
+  const { articles, justArrivedUrls, keywords, setKeywords, loading, error } = useNewsHunter();
 
   const [newKeyword, setNewKeyword] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState<string>("");
@@ -256,14 +240,6 @@ export default function NewsHunterPage() {
             <span className={styles.metaCount}>
               {filtered.length} manchete{filtered.length === 1 ? "" : "s"}
             </span>
-            {totalCount > 0 && (
-              <>
-                <span className={styles.metaSep}>·</span>
-                <span className={styles.metaMuted}>
-                  {totalCount.toLocaleString("pt-BR")} total · pág. {currentPage} de {totalPages}
-                </span>
-              </>
-            )}
             {lastPublishedAt && (
               <>
                 <span className={styles.metaSep}>·</span>
@@ -319,44 +295,6 @@ export default function NewsHunterPage() {
             </ul>
           )}
 
-          {totalPages > 1 && (
-            <div className={styles.pagination}>
-              <button
-                type="button"
-                className={styles.pageBtn}
-                onClick={() => goToPage(currentPage - 1)}
-                disabled={currentPage === 1 || loading}
-                aria-label="Página anterior"
-              >
-                ‹
-              </button>
-              {getPageNumbers(currentPage, totalPages).map((p, i) =>
-                p === "…" ? (
-                  <span key={`e-${i}`} className={styles.pageEllipsis}>…</span>
-                ) : (
-                  <button
-                    key={p}
-                    type="button"
-                    className={`${styles.pageBtn} ${p === currentPage ? styles.pageBtnActive : ""}`}
-                    onClick={() => { if (p !== currentPage) goToPage(p as number); }}
-                    disabled={loading}
-                    aria-current={p === currentPage ? "page" : undefined}
-                  >
-                    {p}
-                  </button>
-                )
-              )}
-              <button
-                type="button"
-                className={styles.pageBtn}
-                onClick={() => goToPage(currentPage + 1)}
-                disabled={currentPage === totalPages || loading}
-                aria-label="Próxima página"
-              >
-                ›
-              </button>
-            </div>
-          )}
         </section>
       </div>
     </>
