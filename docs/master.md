@@ -143,14 +143,19 @@ Workflow controlado pelo Gerente Geral:
 
 ---
 
-## Estado atual (snapshot inicial)
+## Estado atual (snapshot)
 
 - 4 departamentos + 3 papéis transversais.
 - Documentação inicial criada em **2026-05-05**.
-- Pendências de limpeza física conhecidas (a confirmar com CEO):
-  - `components/` na raiz (parece morto, só `__pycache__`)
-  - `frontend-next/` na raiz (parece tentativa antiga)
-  - `sql/` na raiz (provavelmente já em `supabase/migrations/`)
-  - `news-hunter-handoff.txt` na raiz (deveria virar parte de doc)
-  - Scripts Python soltos na raiz (poderiam ir para `scripts/` ou `pipelines/`)
-  - Workflows `anp-watcher.yml`, `anp_fase3_sync.yml` (validar uso)
+
+### Limpeza inicial (2026-05-05)
+
+Resolvido:
+- `components/` na raiz — deletado (só tinha `__pycache__`).
+- `frontend-next/` na raiz — deletado (tentativa antiga abandonada). Referência stale em `src/app/login/page.tsx:96` corrigida.
+- `news-hunter-handoff.txt` na raiz — movido para [`docs/etl-pipelines/news-hunter-architecture.md`](etl-pipelines/news-hunter-architecture.md).
+- Workflows `anp-watcher.yml` e `anp_fase3_sync.yml` — confirmados ATIVOS (anp-watcher é trigger externo via cron-job.org; anp_fase3_sync roda mensal). Adicionados aos PRDs do ETL.
+
+Tech debt conhecido (não resolvido):
+- **`sql/` na raiz contém DDL aplicado direto no Supabase Dashboard, NÃO versionado em `supabase/migrations/`.** Tabelas afetadas: `price_bands`, `profiles`, `module_visibility`. Recriar o DB apenas das migrations resultaria em DB incompleto. **Ação futura**: APP deve converter os 3 arquivos em migrations próprias, depois remover `sql/`.
+- **Scripts Python na raiz** (`ais_*.py`, `navios_esperados.py`, `vessel_*.py`, `cabotage_cleanup.py`, `anp_watcher.py`, `upload_dg_margins.py`) convivem com `scripts/`. Mover requer atualizar workflows correspondentes — feito quando houver janela.

@@ -102,6 +102,18 @@ Wrappers de RPC: `src/lib/rpc.ts` (organizado por módulo) e `src/lib/profileRpc
 - **Client**: módulos permitidos pelo Admin via `module_visibility`. Enforcement: `useModuleVisibilityGuard(slug)`.
 - Role armazenado em `user_profiles`, exposto via `UserProfileContext`. `useRoleGuard` protege páginas de Admin.
 
+## Tech debt: SQL fora das migrations
+
+Existem 3 arquivos em `sql/` (raiz do repo) cujo DDL foi aplicado **diretamente no Supabase Dashboard SQL Editor**, não via `supabase/migrations/`:
+
+| Arquivo | Tabelas/RPCs criadas |
+|---|---|
+| `sql/create_price_bands.sql` | `price_bands`, `get_price_bands_data` |
+| `sql/create_profiles_and_visibility.sql` | `profiles`, `module_visibility`, policies |
+| `sql/create_user_management.sql` | (verificar) |
+
+Implicação: recriar o banco apenas das migrations versionadas resultaria em schema incompleto. Para resolver: criar migrations correspondentes em `supabase/migrations/<timestamp>_<feature>.sql` espelhando o conteúdo, depois remover `sql/`.
+
 ## Variáveis de ambiente
 
 ```

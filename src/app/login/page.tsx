@@ -93,7 +93,7 @@ export default function LoginPage() {
             Missing configuration
           </h5>
           <div style={{ fontFamily: "Arial", fontSize: 13, color: "#555" }}>
-            Create a <code>.env.local</code> in <code>frontend-next/</code> with:
+            Create a <code>.env.local</code> at the project root with:
             <div style={{ marginTop: 8 }}>
               <code>NEXT_PUBLIC_SUPABASE_URL</code>
               <br />

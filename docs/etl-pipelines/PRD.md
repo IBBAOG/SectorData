@@ -43,8 +43,8 @@ scripts/deploy_profiles_visibility.mjs
 |---|---|---|---|
 | `ais_discovery.yml` | Cada 4h | `ais_discovery.py` | `import_candidates` |
 | `ais_sync.yml` | Cada 6h+15min | `ais_sync.py` | `vessel_registry`, `vessel_positions`, `port_arrivals` |
-| `anp-watcher.yml` | [verificar uso] | `anp_watcher.py` | — |
-| `anp_fase3_sync.yml` | [verificar uso] | — | — |
+| `anp-watcher.yml` | Trigger externo (cron-job.org via `workflow_dispatch`) | `anp_watcher.py --force` | (vendas combustíveis ANP) |
+| `anp_fase3_sync.yml` | Mensal — 1º dia, 13:00 UTC | `scripts/anp_daie_sync.py`, `scripts/anp_desembaracos_sync.py`, `scripts/anp_painel_imp_sync.py` | DAIE, Desembaraços, Painel Importações |
 | `anp_lpc_sync.yml` | [verificar] | `scripts/anp_lpc_sync.py` | (ANP LPC) |
 | `anp_precos_sync.yml` | [verificar] | `scripts/anp_precos_produtores_sync.py` | (ANP preços) |
 | `extrair-anp.yml` | Mensal (5º) | `scripts/anp_auto.py` | `output/anp/` (extração bruta) |
@@ -55,7 +55,9 @@ scripts/deploy_profiles_visibility.mjs
 | `vessel_lookup.yml` | Após `navios_esperados` | `vessel_lookup.py` | `navios_diesel.imo/mmsi` |
 | `vessel_position_sync.yml` | Após `vessel_lookup` | `vessel_position_sync.py` | `vessel_positions`, `port_arrivals` |
 
-> **Pendência:** confirmar com o CEO se `anp-watcher.yml` e `anp_fase3_sync.yml` ainda estão em uso. Não estão listados no README.
+> Workflows confirmados ativos em 2026-05-05. README está desatualizado (não os menciona). Quando atualizar README, incluir.
+
+> **Doc de arquitetura News Hunter:** [`news-hunter-architecture.md`](news-hunter-architecture.md) (movido da raiz em 2026-05-05).
 
 ### Dados consolidados
 
