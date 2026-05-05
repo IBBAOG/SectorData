@@ -20,7 +20,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Sync ANP LPC → Supabase
-        run: python scripts/anp_lpc_sync.py
+        run: python scripts/pipelines/anp/lpc_sync.py
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

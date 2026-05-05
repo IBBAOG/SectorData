@@ -26,7 +26,7 @@ CEO (Eduardo)
      │   └─ dash-admin                (/home + /profile + /admin-panel)
      │
      ├─ Supabase / DB    (schema Postgres, migrations, RLS, RPCs SQL,
-     │                    materialized views, supabase-deploy workflow)
+     │                    materialized views, supabase_deploy workflow)
      ├─ Dados Locais     (Excels manuais + scripts de upload)
      ├─ ETL / Pipelines  (scrapers automáticos + GitHub Actions)
      ├─ Alertas          (subsistema autocontido em alertas/)
@@ -42,9 +42,9 @@ CEO (Eduardo)
 | Dept | Slug do agente | Ownership de pastas | PRD |
 |---|---|---|---|
 | APP (Subgerente) | [`worker_subgerente-app`](../.claude/agents/worker_subgerente-app.md) | `src/` (infra compartilhada), `public/`, `.vercel/`, configs Next/TS | [`docs/app/PRD.md`](app/PRD.md) |
-| Supabase / DB | [`worker_supabase`](../.claude/agents/worker_supabase.md) | `supabase/migrations/`, `supabase/config.toml`, `sql/` (legado), `supabase-deploy.yml` | [`docs/supabase/PRD.md`](supabase/PRD.md) |
-| Dados Locais | [`worker_dados-locais`](../.claude/agents/worker_dados-locais.md) | `data/`, `upload_dg_margins.py`, `scripts/upload_price_bands.py` | [`docs/dados-locais/PRD.md`](dados-locais/PRD.md) |
-| ETL / Pipelines | [`worker_etl-pipelines`](../.claude/agents/worker_etl-pipelines.md) | `DADOS/`, `output/`, `scripts/` (scrapers), `.github/workflows/` (scrapers), scripts Python na raiz (ais, vessel, navios, anp_watcher) | [`docs/etl-pipelines/PRD.md`](etl-pipelines/PRD.md) |
+| Supabase / DB | [`worker_supabase`](../.claude/agents/worker_supabase.md) | `supabase/migrations/`, `supabase/config.toml`, `sql/` (legado), `supabase_deploy.yml` | [`docs/supabase/PRD.md`](supabase/PRD.md) |
+| Dados Locais | [`worker_dados-locais`](../.claude/agents/worker_dados-locais.md) | `data/`, `scripts/manual/dg_margins_upload.py`, `scripts/manual/price_bands_upload.py` | [`docs/dados-locais/PRD.md`](dados-locais/PRD.md) |
+| ETL / Pipelines | [`worker_etl-pipelines`](../.claude/agents/worker_etl-pipelines.md) | `DADOS/`, `output/`, `scripts/pipelines/` (todos os scrapers), `.github/workflows/` dos scrapers | [`docs/etl-pipelines/PRD.md`](etl-pipelines/PRD.md) |
 | Alertas | [`worker_alertas`](../.claude/agents/worker_alertas.md) | `alertas/` (autocontido) | [`docs/alertas/PRD.md`](alertas/PRD.md) |
 
 ## Sub-agentes do APP (donos de dashboard)
@@ -124,7 +124,7 @@ ETL pode ler para análise; somente Alertas escreve.
 
 ### Workflows GitHub Actions
 
-**Dono:** ETL (e APP, no caso do `supabase-deploy.yml`).
+**Dono:** ETL (e APP, no caso do `supabase_deploy.yml`).
 
 Cada workflow novo precisa: secrets registrados no GitHub, schedule cron, e linha no `docs/etl-pipelines/PRD.md`.
 
@@ -199,8 +199,8 @@ Resolvido:
 - `components/` na raiz — deletado (só tinha `__pycache__`).
 - `frontend-next/` na raiz — deletado (tentativa antiga abandonada). Referência stale em `src/app/login/page.tsx:96` corrigida.
 - `news-hunter-handoff.txt` na raiz — movido para [`docs/etl-pipelines/news-hunter-architecture.md`](etl-pipelines/news-hunter-architecture.md).
-- Workflows `anp-watcher.yml` e `anp_fase3_sync.yml` — confirmados ATIVOS (anp-watcher é trigger externo via cron-job.org; anp_fase3_sync roda mensal). Adicionados aos PRDs do ETL.
+- Workflows `anp_vendas_watch.yml` e `anp_fase3_sync.yml` — confirmados ATIVOS (anp-watcher é trigger externo via cron-job.org; anp_fase3_sync roda mensal). Adicionados aos PRDs do ETL.
 
 Tech debt conhecido (não resolvido):
 - **`sql/` na raiz contém DDL aplicado direto no Supabase Dashboard, NÃO versionado em `supabase/migrations/`.** Tabelas afetadas: `price_bands`, `profiles`, `module_visibility`. Recriar o DB apenas das migrations resultaria em DB incompleto. **Ação futura**: APP deve converter os 3 arquivos em migrations próprias, depois remover `sql/`.
-- **Scripts Python na raiz** (`ais_*.py`, `navios_esperados.py`, `vessel_*.py`, `cabotage_cleanup.py`, `anp_watcher.py`, `upload_dg_margins.py`) convivem com `scripts/`. Mover requer atualizar workflows correspondentes — feito quando houver janela.
+- **Scripts Python na raiz** (`ais_*.py`, `pipelines/navios/01_lineup_scrape.py`, `vessel_*.py`, `pipelines/navios/04_cabotage_cleanup.py`, `pipelines/anp/vendas_watch.py`, `scripts/manual/dg_margins_upload.py`) convivem com `scripts/`. Mover requer atualizar workflows correspondentes — feito quando houver janela.

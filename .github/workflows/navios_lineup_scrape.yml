@@ -21,7 +21,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Executar monitoramento
-        run: python navios_esperados.py
+        run: python scripts/pipelines/navios/01_lineup_scrape.py
 
       - uses: actions/setup-node@v4
         with:
@@ -30,7 +30,7 @@ jobs:
       - name: Importar dados para Supabase
         run: |
           npm install @supabase/supabase-js
-          node scripts/import_navios_diesel.mjs
+          node scripts/pipelines/navios/02_diesel_import.mjs
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

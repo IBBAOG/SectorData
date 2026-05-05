@@ -58,7 +58,7 @@ package.json, eslint.config.mjs     Configs do projeto
 supabase/migrations/                Migrations — agora dept supabase
 supabase/config.toml                Config CLI — agora dept supabase
 sql/                                Legado DDL — agora dept supabase
-.github/workflows/supabase-deploy.yml  Deploy de migrations — agora dept supabase
+.github/workflows/supabase_deploy.yml  Deploy de migrations — agora dept supabase
 ```
 
 **Linha de divisão:** SQL = `worker_supabase`. JS chamando SQL = APP.
@@ -97,7 +97,7 @@ Para qualquer mudança em código de um dashboard específico, delegue ao agente
 - **Auth guard** em `src/app/(dashboard)/layout.tsx` — `supabase.auth.getSession()`, redireciona para `/login` se ausente.
 - **Visibility por role**: Admin pode habilitar/desabilitar módulos para Clientes via `module_visibility`.
 - **Materialized views** `mv_ms_serie` e `mv_ms_serie_fast` para Market Share / Sales Volumes (perf).
-- **Workflow `supabase-deploy.yml`** é deste dept — deploya migrations em push para `main`.
+- **Workflow `supabase_deploy.yml`** é deste dept — deploya migrations em push para `main`.
 
 ## Schema do Supabase (overview)
 
@@ -105,10 +105,10 @@ Schema completo é responsabilidade compartilhada — cada `dash-*` documenta as
 
 | Tabela | Dono lógico | Populada por |
 |---|---|---|
-| `vendas` | dash-sales-volumes / dash-market-share | ETL (anp_watcher) |
+| `vendas` | dash-sales-volumes / dash-market-share | ETL (`pipelines/anp/vendas_watch.py`) |
 | `mv_ms_serie`, `mv_ms_serie_fast` | dash-sales-volumes / dash-market-share | Função `classificar_agentes()` |
-| `navios_diesel` | dash-navios-diesel | ETL (navios_esperados → import_navios_diesel) |
-| `vessel_registry`, `vessel_positions`, `port_arrivals`, `import_candidates` | dash-navios-diesel | ETL (ais_*, vessel_*) |
+| `navios_diesel` | dash-navios-diesel | ETL (`pipelines/navios/01_lineup_scrape.py` → `02_diesel_import.mjs`) |
+| `vessel_registry`, `vessel_positions`, `port_arrivals`, `import_candidates` | dash-navios-diesel | ETL (`pipelines/ais/*`, `pipelines/navios/03-05`) |
 | `d_g_margins` | dash-margins | Dados Locais (upload manual) |
 | `price_bands` | dash-price-bands | Dados Locais (upload manual) |
 | `stock_portfolios` | dash-stocks | App (CRUD direto via PostgREST) |

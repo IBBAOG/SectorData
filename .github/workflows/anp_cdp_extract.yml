@@ -76,26 +76,26 @@ jobs:
           # Se o replay falhar (sessão expirou), recaptura e tenta de novo.
           if [ -f "$SESSION" ]; then
             echo "=== Sessão existente encontrada — tentando replay sem CAPTCHA ==="
-            if python scripts/anp_auto.py --replay-only $ARGS \
+            if python scripts/pipelines/anp/cdp/01_extract.py --replay-only $ARGS \
                 --ambiente "$AMBIENTE" --output output/anp; then
               echo "=== Replay concluído com sucesso ==="
             else
               echo "=== Replay falhou — sessão expirou, recapturando... ==="
-              python scripts/anp_auto.py --capture \
+              python scripts/pipelines/anp/cdp/01_extract.py --capture \
                 --periodo "$PRIMEIRO" --ambiente M --output output/anp
-              python scripts/anp_auto.py --replay $ARGS \
+              python scripts/pipelines/anp/cdp/01_extract.py --replay $ARGS \
                 --ambiente "$AMBIENTE" --output output/anp
             fi
           else
             echo "=== Sem session.json — capturando sessão e extraindo ==="
-            python scripts/anp_auto.py --capture \
+            python scripts/pipelines/anp/cdp/01_extract.py --capture \
               --periodo "$PRIMEIRO" --ambiente M --output output/anp
-            python scripts/anp_auto.py --replay $ARGS \
+            python scripts/pipelines/anp/cdp/01_extract.py --replay $ARGS \
               --ambiente "$AMBIENTE" --output output/anp
           fi
 
       - name: Upload to Supabase
-        run: python scripts/anp_cdp_upload.py --from-csv-dir output/anp/
+        run: python scripts/pipelines/anp/cdp/02_upload.py --from-csv-dir output/anp/
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

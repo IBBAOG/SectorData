@@ -20,19 +20,19 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Sync ANP Dados Abertos IE → Supabase
-        run: python scripts/anp_daie_sync.py
+        run: python scripts/pipelines/anp/fase3/01_daie_sync.py
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
       - name: Sync ANP Desembaraços → Supabase
-        run: python scripts/anp_desembaracos_sync.py
+        run: python scripts/pipelines/anp/fase3/02_desembaracos_sync.py
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
       - name: Sync ANP Painel Importações Distribuidores → Supabase
-        run: python scripts/anp_painel_imp_sync.py
+        run: python scripts/pipelines/anp/fase3/03_painel_imp_sync.py
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

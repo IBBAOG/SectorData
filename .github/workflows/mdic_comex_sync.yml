@@ -27,9 +27,9 @@ jobs:
       - name: Sync MDIC Comex → Supabase
         run: |
           if [ -n "${{ github.event.inputs.desde }}" ]; then
-            python scripts/mdic_comex_sync.py --desde "${{ github.event.inputs.desde }}"
+            python scripts/pipelines/mdic_comex_sync.py --desde "${{ github.event.inputs.desde }}"
           else
-            python scripts/mdic_comex_sync.py --meses 3
+            python scripts/pipelines/mdic_comex_sync.py --meses 3
           fi
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}

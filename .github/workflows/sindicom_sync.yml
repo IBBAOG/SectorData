@@ -23,7 +23,7 @@ jobs:
         run: pip install playwright && playwright install --with-deps chromium
 
       - name: Sync SINDICOM → Supabase
-        run: python scripts/sindicom_sync.py
+        run: python scripts/pipelines/sindicom_sync.py
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

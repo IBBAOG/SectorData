@@ -50,7 +50,7 @@ jobs:
           echo "Secrets OK."
 
       - name: Rodar ANP Watcher
-        run: python anp_watcher.py --force
+        run: python scripts/pipelines/anp/vendas_watch.py --force
         # --force: ignora checagem de dia e state file, roda uma vez e sai.
         # O script ainda compara o período mais recente da ANP com o do Supabase
         # e só faz upload se houver dado novo.

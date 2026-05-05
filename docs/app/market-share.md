@@ -46,7 +46,7 @@ Idênticos ao sales-volumes. Padronização intencional.
 
 ## Dependências cross-dept
 
-Idênticas ao sales-volumes (ETL/anp_watcher → `vendas` → MV).
+Idênticas ao sales-volumes (ETL/`vendas_watch` → `vendas` → MV).
 
 ## Anti-padrões
 

@@ -42,11 +42,11 @@ A coluna `navios_diesel.is_cabotagem` é **generated** por:
 
 | Tabela | Populada por | Notas |
 |---|---|---|
-| `navios_diesel` | ETL (`navios_esperados.py` → `import_navios_diesel.mjs`) cada 6h | Cresce ~100/semana |
-| `vessel_registry` | ETL (`ais_sync.py`) | Catálogo de navios via AIS |
-| `vessel_positions` | ETL (`vessel_position_sync.py`, `ais_sync.py`) | Posições históricas |
-| `port_arrivals` | ETL (`ais_sync.py`, `vessel_position_sync.py`) | Chegadas confirmadas |
-| `import_candidates` | ETL (`ais_discovery.py`) | Radar de candidatos a import (score 0-100) |
+| `navios_diesel` | ETL (`pipelines/navios/01_lineup_scrape.py` → `pipelines/navios/02_diesel_import.mjs`) cada 6h | Cresce ~100/semana |
+| `vessel_registry` | ETL (`pipelines/ais/positions_sync.py`) | Catálogo de navios via AIS |
+| `vessel_positions` | ETL (`pipelines/navios/05_positions_sync.py`, `pipelines/ais/positions_sync.py`) | Posições históricas |
+| `port_arrivals` | ETL (`pipelines/ais/positions_sync.py`, `pipelines/navios/05_positions_sync.py`) | Chegadas confirmadas |
+| `import_candidates` | ETL (`pipelines/ais/candidates_discover.py`) | Radar de candidatos a import (score 0-100) |
 
 Migrations relevantes:
 - `20260328200000_navios_diesel.sql`
@@ -64,11 +64,11 @@ Este dashboard tem a **maior dependência de ETL** dentro do APP:
 
 | Workflow | Schedule | O que produz |
 |---|---|---|
-| `navios_esperados.yml` | cada 6h | Lineup dos portos → `navios_diesel` |
-| `vessel_lookup.yml` | após `navios_esperados` | Resolve IMO/MMSI das linhas novas |
-| `vessel_position_sync.yml` | após `vessel_lookup` | Atualiza posições + chegadas |
-| `ais_sync.yml` | cada 6h+15min | AIS tempo real |
-| `ais_discovery.yml` | cada 4h | Descoberta de candidatos (radar) |
+| `navios_lineup_scrape.yml` | cada 6h | Lineup dos portos → `navios_diesel` |
+| `navios_imo_lookup.yml` | após `navios_lineup_scrape` | Resolve IMO/MMSI das linhas novas |
+| `navios_positions_sync.yml` | após `navios_imo_lookup` | Atualiza posições + chegadas |
+| `ais_positions_sync.yml` | cada 6h+15min | AIS tempo real |
+| `ais_candidates_discover.yml` | cada 4h | Descoberta de candidatos (radar) |
 
 Mudanças no schema vêm geralmente de **necessidade do dashboard** (você pede ao Subgerente que pede ao ETL — ou vice-versa para colunas novas do scraper).
 
@@ -104,5 +104,5 @@ Valores de `navios_diesel.status`:
 - RPC sem `NOT is_cabotagem`.
 - Confiar em MMSI quando IMO está disponível (IMO é mais estável).
 - Mexer em `vessel_*` ou `port_arrivals` direto — esses são populados pelo ETL.
-- Tentar chamar `ais_discovery` ou `vessel_lookup` do frontend — são pipelines do ETL.
+- Tentar chamar `ais_candidates_discover` ou `navios_imo_lookup` do frontend — são pipelines do ETL.
 - Visualizar lista grande sem paginação/virtualização.

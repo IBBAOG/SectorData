@@ -26,13 +26,13 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Resolve vessel IMO/MMSI
-        run: python vessel_lookup.py
+        run: python scripts/pipelines/navios/03_imo_lookup.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
       - name: Hard-delete cabotage rows
-        run: python cabotage_cleanup.py
+        run: python scripts/pipelines/navios/04_cabotage_cleanup.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

@@ -47,7 +47,7 @@ Output típico: linhas temporais sobrepostas, por produto.
 **Manualmente, pelo CEO.** Fluxo:
 
 ```
-CEO edita data/price_bands.xlsx → scripts/upload_price_bands.py → upsert em price_bands
+CEO edita data/price_bands.xlsx → scripts/manual/price_bands_upload.py → upsert em price_bands
 ```
 
 Hoje o upload é manual (rodado localmente). **Dono do dado:** `worker_dados-locais`.

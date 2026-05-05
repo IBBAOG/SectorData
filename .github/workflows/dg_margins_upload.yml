@@ -20,7 +20,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Upload D&G Margins to Supabase
-        run: python upload_dg_margins.py
+        run: python scripts/manual/dg_margins_upload.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

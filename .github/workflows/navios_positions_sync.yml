@@ -24,7 +24,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Sync vessel positions from VesselFinder
-        run: python vessel_position_sync.py
+        run: python scripts/pipelines/navios/05_positions_sync.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

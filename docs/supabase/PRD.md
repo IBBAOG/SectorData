@@ -17,7 +17,7 @@ sql/                                LEGADO — DDL aplicado direto no Dashboard
   create_user_management.sql        (verificar conteúdo)
 
 .github/workflows/
-  supabase-deploy.yml               Deploy de migrations em push pra main
+  supabase_deploy.yml               Deploy de migrations em push pra main
 ```
 
 ## O que NÃO é deste departamento
@@ -47,10 +47,10 @@ sql/                                LEGADO — DDL aplicado direto no Dashboard
 
 | Tabela | Dept consumidor | Populada por |
 |---|---|---|
-| `vendas` | dash-sales-volumes / dash-market-share | ETL (`anp_watcher.py`) |
-| `navios_diesel` | dash-navios-diesel | ETL (`navios_esperados.py` → `import_navios_diesel.mjs`) |
+| `vendas` | dash-sales-volumes / dash-market-share | ETL (`pipelines/anp/vendas_watch.py`) |
+| `navios_diesel` | dash-navios-diesel | ETL (`pipelines/navios/01_lineup_scrape.py` → `pipelines/navios/02_diesel_import.mjs`) |
 | `vessel_registry`, `vessel_positions`, `port_arrivals`, `import_candidates` | dash-navios-diesel | ETL (`ais_*.py`, `vessel_*.py`) |
-| `d_g_margins` | dash-margins | Dados Locais (manual via `upload_dg_margins.py`) |
+| `d_g_margins` | dash-margins | Dados Locais (manual via `scripts/manual/dg_margins_upload.py`) |
 | `price_bands` | dash-price-bands | Dados Locais (manual via `upload_price_bands.py`) |
 | `stock_portfolios` | dash-stocks | App (CRUD direto via PostgREST) |
 | `news_articles`, `news_hunter_keywords` | dash-news-hunter | scanner externo + user via UI |
@@ -78,7 +78,7 @@ Refresh via função `classificar_agentes()`. Chamada após upload em `vendas`.
 | News Hunter | `seed_my_news_hunter_keywords` | dash-news-hunter |
 | Generic / metrics | `get_metricas`, `classificar_agentes` | base |
 
-## Workflow `supabase-deploy.yml`
+## Workflow `supabase_deploy.yml`
 
 Deploya migrations em push pra `main`. Use `SUPABASE_PROJECT_REF` e `SUPABASE_ACCESS_TOKEN`.
 

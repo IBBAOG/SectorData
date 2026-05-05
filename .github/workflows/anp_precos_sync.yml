@@ -20,19 +20,19 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Sync ANP PPI → Supabase
-        run: python scripts/anp_ppi_sync.py
+        run: python scripts/pipelines/anp/precos/01_ppi_sync.py
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
       - name: Sync ANP Preços Produtores → Supabase
-        run: python scripts/anp_precos_produtores_sync.py
+        run: python scripts/pipelines/anp/precos/02_precos_produtores_sync.py
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
       - name: Sync ANP GLP → Supabase
-        run: python scripts/anp_glp_sync.py
+        run: python scripts/pipelines/anp/glp_sync.py
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

@@ -71,13 +71,23 @@ dashboard_projeto/
 │   ├── etl-pipelines/PRD.md
 │   ├── dados-locais/PRD.md
 │   └── alertas/PRD.md
-├── scripts/                       # ETL sync scripts + utilities
-│   ├── anp_*_sync.py              # ANP-specific scrapers
-│   ├── mdic_comex_sync.py
-│   ├── sindicom_sync.py
-│   ├── import_navios_diesel.mjs
-│   ├── upload_price_bands.py
-│   └── deploy_*.mjs               # one-off deploy utilities
+├── scripts/                       # all Python/Node scripts (organized by role)
+│   ├── pipelines/                 # automated (run by GitHub Actions)
+│   │   ├── ais/                   # candidates_discover.py, positions_sync.py
+│   │   ├── anp/                   # vendas_watch.py, glp_sync.py, lpc_sync.py + chains:
+│   │   │   ├── cdp/               #   01_extract.py → 02_upload.py
+│   │   │   ├── fase3/             #   01_daie_sync.py → 02_desembaracos_sync.py → 03_painel_imp_sync.py
+│   │   │   └── precos/            #   01_ppi_sync.py → 02_precos_produtores_sync.py
+│   │   ├── navios/                # 5-stage chain: 01_lineup_scrape → ... → 05_positions_sync
+│   │   ├── mdic_comex_sync.py
+│   │   └── sindicom_sync.py
+│   ├── manual/                    # human-in-the-loop uploads (Dados Locais)
+│   │   ├── dg_margins_upload.py   # uploads data/d_g_margins.xlsx
+│   │   └── price_bands_upload.py  # uploads data/price_bands.xlsx
+│   └── utils/                     # one-shot utilities (deploy, capture)
+│       ├── deploy_migration.mjs
+│       ├── deploy_profiles_visibility.mjs
+│       └── capture_previews.mjs
 ├── src/                           # Next.js app
 │   ├── app/
 │   │   ├── layout.tsx             # Root shell (Bootstrap CSS, lang=pt-BR)
@@ -106,8 +116,7 @@ dashboard_projeto/
 ├── DADOS/                         # local-only (gitignored) — consolidated parquet/csv per source
 ├── data/                          # manual Excels (d_g_margins, price_bands) — gitignored
 ├── output/                        # local-only (gitignored) — raw extracts
-├── ais_*.py navios_esperados.py vessel_*.py anp_watcher.py cabotage_cleanup.py upload_dg_margins.py
-└── requirements.txt               # ETL pipelines (root scripts use this)
+└── requirements.txt               # ETL pipelines (Python deps for scripts/pipelines/* and scripts/manual/*)
 ```
 
 ## Database Schema
@@ -135,27 +144,27 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 
 | # | Workflow | Schedule | Script(s) | Target |
 |---|----------|----------|-----------|--------|
-| 1 | `navios_esperados.yml` | Every 6h | `navios_esperados.py` → `import_navios_diesel.mjs` | `navios_diesel` |
-| 2 | `vessel_lookup.yml` | After #1 | `vessel_lookup.py` (VesselFinder + MarineTraffic) | `navios_diesel.imo/mmsi` |
-| 3 | `vessel_position_sync.yml` | After #2 | `vessel_position_sync.py` (VF port-call) | `vessel_positions`, `port_arrivals` |
-| 4 | `ais_sync.yml` | Every 6h+15min | `ais_sync.py` (AISStream WebSocket) | `vessel_registry`, `vessel_positions`, `port_arrivals` |
-| 5 | `ais_discovery.yml` | Every 4h | `ais_discovery.py` (AIS global scan, score 0–100) | `import_candidates` |
-| 6 | `extrair-anp.yml` | Monthly 5th | `scripts/anp_auto.py` (Selenium + ddddocr CAPTCHA) | `output/anp/` raw extracts |
-| 7 | `anp-watcher.yml` | External trigger (cron-job.org → workflow_dispatch) | `anp_watcher.py --force` | `vendas` (ANP fuel sales) |
-| 8 | `anp_fase3_sync.yml` | Monthly 1st, 13:00 UTC | `anp_daie_sync.py`, `anp_desembaracos_sync.py`, `anp_painel_imp_sync.py` | DAIE, Desembaraços, Painel Imp |
-| 9 | `anp_lpc_sync.yml` | (verify schedule) | `scripts/anp_lpc_sync.py` | ANP LPC |
-| 10 | `anp_precos_sync.yml` | (verify schedule) | `scripts/anp_precos_produtores_sync.py` | ANP preços produtores |
-| 11 | `mdic_comex.yml` | (verify schedule) | `scripts/mdic_comex_sync.py` | MDIC Comex |
-| 12 | `sindicom_sync.yml` | (verify schedule) | `scripts/sindicom_sync.py` | SINDICOM |
-| 13 | `upload-dg-margins.yml` | Weekly Mon | `upload_dg_margins.py` | `d_g_margins` (manual Excel) |
-| 14 | `supabase-deploy.yml` | On push to main | `supabase db push` | migrations |
+| 1 | `navios_lineup_scrape.yml` | Every 6h | `pipelines/navios/01_lineup_scrape.py` → `02_diesel_import.mjs` | `navios_diesel` |
+| 2 | `navios_imo_lookup.yml` | After #1 | `pipelines/navios/03_imo_lookup.py` → `04_pipelines/navios/04_cabotage_cleanup.py` | `navios_diesel.imo/mmsi` |
+| 3 | `navios_positions_sync.yml` | After #2 | `pipelines/navios/05_positions_sync.py` (VF port-call) | `vessel_positions`, `port_arrivals` |
+| 4 | `ais_positions_sync.yml` | Every 6h+15min | `pipelines/ais/positions_sync.py` (AISStream WebSocket) | `vessel_registry`, `vessel_positions`, `port_arrivals` |
+| 5 | `ais_candidates_discover.yml` | Every 4h | `pipelines/ais/candidates_discover.py` (AIS global scan, score 0–100) | `import_candidates` |
+| 6 | `anp_cdp_extract.yml` | Monthly 5th | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` (Selenium + ddddocr CAPTCHA) | `output/anp/` + ANP CDP table |
+| 7 | `anp_vendas_watch.yml` | External trigger (cron-job.org → workflow_dispatch) | `pipelines/anp/vendas_watch.py --force` | `vendas` (ANP fuel sales) |
+| 8 | `anp_fase3_sync.yml` | Monthly 1st, 13:00 UTC | `pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` → `03_painel_imp_sync.py` | DAIE, Desembaraços, Painel Imp |
+| 9 | `anp_lpc_sync.yml` | (verify schedule) | `pipelines/anp/lpc_sync.py` | ANP LPC |
+| 10 | `anp_precos_sync.yml` | (verify schedule) | `pipelines/anp/glp_sync.py` + `precos/01_ppi_sync.py` → `02_precos_produtores_sync.py` | GLP, PPI, preços produtores |
+| 11 | `mdic_comex_sync.yml` | (verify schedule) | `pipelines/mdic_comex_sync.py` | MDIC Comex |
+| 12 | `sindicom_sync.yml` | (verify schedule) | `pipelines/sindicom_sync.py` | SINDICOM |
+| 13 | `dg_margins_upload.yml` | Weekly Mon | `manual/dg_margins_upload.py` | `d_g_margins` (manual Excel) |
+| 14 | `supabase_deploy.yml` | On push to main | `supabase db push` | migrations |
 | ext | News Hunter scanner | Every ~5min via cron-job.org | `news_hunter_service.py --once` (in repo `IBBAOG/news-hunter-scanner`) | `news_articles` |
 
 **News Hunter scanner** lives in a separate repo. Uses `SUPABASE_SERVICE_KEY`. Keywords from UNION of all users' rows in `news_hunter_keywords`. Frontend polls `news_articles` every 60s incrementally (`found_at` watermark).
 
 **Cabotage filtering:** `navios_diesel.is_cabotagem` is a generated column (`flag IN {Brazil,BR}` OR `origem` pattern). All navios RPCs filter `WHERE NOT is_cabotagem`.
 
-**Manual data subsystem (`data/`):** `data/d_g_margins.xlsx` and `data/price_bands.xlsx` are edited by hand and uploaded via `upload_dg_margins.py` (weekly automated) and `scripts/upload_price_bands.py` (manual). Both files are gitignored.
+**Manual data subsystem (`data/`):** `data/d_g_margins.xlsx` and `data/price_bands.xlsx` are edited by hand and uploaded via `scripts/manual/dg_margins_upload.py` (weekly automated) and `scripts/manual/price_bands_upload.py` (manual). Both files are gitignored.
 
 **Alert subsystem (`alertas/`):** local-only (gitignored), self-contained. 11 detection bases over Supabase tables/parquet files, sends notifications via Gmail API. See `alertas/PRD_ALERTAS.md`.
 
@@ -186,6 +195,6 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 
 # GitHub Actions secrets
 SUPABASE_URL / SUPABASE_SERVICE_KEY              # pipelines
-SUPABASE_PROJECT_REF / SUPABASE_ACCESS_TOKEN     # migration deploy (supabase-deploy.yml)
+SUPABASE_PROJECT_REF / SUPABASE_ACCESS_TOKEN     # migration deploy (supabase_deploy.yml)
 AISSTREAM_API_KEY                                # AIS sync
 ```

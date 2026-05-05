@@ -11,8 +11,8 @@ data/
   price_bands.xlsx              Bandas de preço (paridade import/export, Petrobras)
   Liquidos_Vendas_Atual.csv     Vendas líquidos (snapshot)
 
-upload_dg_margins.py            (raiz) Upload de d_g_margins → Supabase
-scripts/upload_price_bands.py   Upload de price_bands → Supabase
+scripts/manual/dg_margins_upload.py    Upload de d_g_margins → Supabase
+scripts/manual/price_bands_upload.py   Upload de price_bands → Supabase
 ```
 
 ## Tabelas-alvo no Supabase
@@ -31,7 +31,7 @@ Schema é dono do APP. Aqui só listamos o contrato esperado.
 1. CEO abre Excel em data/
 2. CEO edita/adiciona linhas
 3. CEO salva
-4. Upload roda (manual local OU GitHub Action upload-dg-margins.yml semanal)
+4. Upload roda (manual local OU GitHub Action dg_margins_upload.yml semanal)
 5. Script lê Excel → valida schema → upsert in Supabase
 ```
 
@@ -49,9 +49,9 @@ Sua função: garantir que o passo 5 nunca quebre por mismatch entre Excel e sch
 
 | Workflow | Schedule | Script |
 |---|---|---|
-| `.github/workflows/upload-dg-margins.yml` | Semanal (segunda) | `upload_dg_margins.py` |
+| `.github/workflows/dg_margins_upload.yml` | Semanal (segunda) | `scripts/manual/dg_margins_upload.py` |
 
-`price_bands` hoje é upload manual (rodar `python scripts/upload_price_bands.py` localmente). Verificar se faz sentido criar workflow.
+`price_bands` hoje é upload manual (rodar `python scripts/manual/price_bands_upload.py` localmente). Verificar se faz sentido criar workflow.
 
 ## Tarefas comuns
 
@@ -67,7 +67,7 @@ Sua função: garantir que o passo 5 nunca quebre por mismatch entre Excel e sch
 
 1. Coloque arquivo em `data/<nome>.xlsx` ou `.csv`.
 2. Solicite ao APP a criação da tabela no Supabase via migration.
-3. Crie `scripts/upload_<nome>.py` espelhado em `upload_price_bands.py`.
+3. Crie `scripts/manual/<nome>_upload.py` espelhado em `price_bands_upload.py` (segue R4 de nomenclatura: `<domain>_upload.py`).
 4. Adicione workflow em `.github/workflows/upload-<nome>.yml` se for upload recorrente.
 5. Atualize este PRD (linha nova na tabela de tabelas-alvo).
 6. Se Alertas vai monitorar essa tabela, avise.

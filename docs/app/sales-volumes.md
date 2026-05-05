@@ -53,7 +53,7 @@ Output principal: gráfico de linhas / barras com séries por agente. Tabela com
 
 | Origem | Como depende |
 |---|---|
-| ETL (`anp_watcher`) | Popula `vendas` periodicamente |
+| ETL (`vendas_watch`) | Popula `vendas` periodicamente |
 | Subgerente APP | Migration de `vendas` e RPCs base |
 | Designer | Identidade visual de séries, cores, tooltip |
 | dash-market-share | RPCs compartilhadas |

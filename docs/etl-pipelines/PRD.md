@@ -4,56 +4,68 @@ Pipelines automáticas que coletam dados de fontes externas (ANP, SINDICOM, MDIC
 
 ## Escopo
 
-### Scripts Python (raiz e `scripts/`)
+### Scripts (organizados por natureza em `scripts/`)
+
+Convenção (R3, R9): `<domain>_<scope>_<action>.{py|mjs}`. Chains usam subpasta + prefixo numérico `01_, 02_, ...`.
 
 ```
-# Raiz (legado/mover para scripts/ quando seguro)
-ais_discovery.py                   AIS global scan → score 0-100 → import_candidates
-ais_sync.py                        AISStream WebSocket → vessel_registry, vessel_positions, port_arrivals
-anp_watcher.py                     ANP geral (vintage)
-cabotage_cleanup.py                Limpeza de cabotagem em navios_diesel
-navios_esperados.py                Scrape portos → CSV → import_navios_diesel.mjs → navios_diesel
-vessel_lookup.py                   VesselFinder + MarineTraffic → resolver IMO/MMSI em navios_diesel
-vessel_position_sync.py            VF port-call API → vessel_positions, port_arrivals
+scripts/pipelines/                  # rodam via GitHub Actions (todos os ETL)
+  ais/
+    candidates_discover.py          AIS global scan → score 0-100 → import_candidates
+    positions_sync.py               AISStream WebSocket → vessel_registry, vessel_positions, port_arrivals
 
-# scripts/
-scripts/anp_auto.py                Selenium + ddddocr CAPTCHA → output/anp/
-scripts/anp_cdp_upload.py          Upload CDP poços → Supabase
-scripts/anp_daie_sync.py           Dados Abertos IE
-scripts/anp_desembaracos_sync.py   Desembaraços
-scripts/anp_glp_sync.py            GLP
-scripts/anp_lpc_sync.py            Levantamento Preços ao Consumidor
-scripts/anp_painel_imp_sync.py     Painel Combustíveis
-scripts/anp_ppi_sync.py            PPI
-scripts/anp_precos_produtores_sync.py  Preços Produtores
-scripts/import_navios_diesel.mjs   CSV → navios_diesel
-scripts/mdic_comex_sync.py         MDIC Comex
-scripts/sindicom_sync.py           SINDICOM
-scripts/export_lineup_apr2026.py   Export específico de lineup (ad-hoc)
+  anp/
+    cdp/                            chain (workflow anp_cdp_extract.yml)
+      01_extract.py                 Selenium + ddddocr CAPTCHA → output/anp/
+      02_upload.py                  CSVs → Supabase
+    fase3/                          chain (workflow anp_fase3_sync.yml)
+      01_daie_sync.py               Dados Abertos IE
+      02_desembaracos_sync.py       Desembaraços
+      03_painel_imp_sync.py         Painel Combustíveis
+    precos/                         chain (workflow anp_precos_sync.yml — junto com glp_sync)
+      01_ppi_sync.py                PPI
+      02_precos_produtores_sync.py  Preços Produtores
+    glp_sync.py                     GLP (rodado em anp_precos_sync.yml)
+    lpc_sync.py                     Levantamento Preços ao Consumidor
+    vendas_watch.py                 ANP vendas combustíveis (vintage anp-watcher)
 
-# scripts/ — utilitários (não-ETL, mas convivem)
-scripts/capture-previews.mjs
-scripts/deploy_migration.mjs
-scripts/deploy_profiles_visibility.mjs
+  navios/                           chain de 5 stages (3 workflows traversam)
+    01_lineup_scrape.py             Scrape portos → CSV (era navios_esperados.py)
+    02_diesel_import.mjs            CSV → navios_diesel (era import_navios_diesel.mjs)
+    03_imo_lookup.py                VF + MarineTraffic → resolver IMO/MMSI (era vessel_lookup.py)
+    04_cabotage_cleanup.py          Limpeza de cabotagem em navios_diesel
+    05_positions_sync.py            VF port-call → vessel_positions, port_arrivals
+
+  mdic_comex_sync.py                MDIC Comex
+  sindicom_sync.py                  SINDICOM (Playwright)
+
+scripts/manual/                     # humano-no-loop (dept Dados Locais)
+  dg_margins_upload.py              Excel data/d_g_margins.xlsx → d_g_margins
+  price_bands_upload.py             Excel data/price_bands.xlsx → price_bands
+
+scripts/utils/                      # one-shots (não-ETL)
+  capture_previews.mjs              Headless Chrome → screenshots autenticados
+  deploy_migration.mjs              Aplicar migration via service key (legado)
+  deploy_profiles_visibility.mjs    Aplicar sql/create_profiles_and_visibility.sql (legado)
 ```
 
 ### Workflows GitHub Actions
 
 | Workflow | Schedule | Script(s) | Tabela alvo |
 |---|---|---|---|
-| `ais_discovery.yml` | Cada 4h | `ais_discovery.py` | `import_candidates` |
-| `ais_sync.yml` | Cada 6h+15min | `ais_sync.py` | `vessel_registry`, `vessel_positions`, `port_arrivals` |
-| `anp-watcher.yml` | Trigger externo (cron-job.org via `workflow_dispatch`) | `anp_watcher.py --force` | (vendas combustíveis ANP) |
-| `anp_fase3_sync.yml` | Mensal — 1º dia, 13:00 UTC | `scripts/anp_daie_sync.py`, `scripts/anp_desembaracos_sync.py`, `scripts/anp_painel_imp_sync.py` | DAIE, Desembaraços, Painel Importações |
-| `anp_lpc_sync.yml` | [verificar] | `scripts/anp_lpc_sync.py` | (ANP LPC) |
-| `anp_precos_sync.yml` | [verificar] | `scripts/anp_precos_produtores_sync.py` | (ANP preços) |
-| `extrair-anp.yml` | Mensal (5º) | `scripts/anp_auto.py` | `output/anp/` (extração bruta) |
-| `mdic_comex.yml` | [verificar] | `scripts/mdic_comex_sync.py` | (MDIC) |
-| `navios_esperados.yml` | Cada 6h | `navios_esperados.py` + `scripts/import_navios_diesel.mjs` | `navios_diesel` |
-| `sindicom_sync.yml` | [verificar] | `scripts/sindicom_sync.py` | (SINDICOM) |
-| `upload-dg-margins.yml` | Semanal | `upload_dg_margins.py` | `d_g_margins` (este é Dados Locais, não ETL) |
-| `vessel_lookup.yml` | Após `navios_esperados` | `vessel_lookup.py` | `navios_diesel.imo/mmsi` |
-| `vessel_position_sync.yml` | Após `vessel_lookup` | `vessel_position_sync.py` | `vessel_positions`, `port_arrivals` |
+| `ais_candidates_discover.yml` | Cada 4h | `pipelines/ais/candidates_discover.py` | `import_candidates` |
+| `ais_positions_sync.yml` | Cada 6h+15min | `pipelines/ais/positions_sync.py` | `vessel_registry`, `vessel_positions`, `port_arrivals` |
+| `anp_vendas_watch.yml` | Trigger externo (cron-job.org via `workflow_dispatch`) | `pipelines/anp/vendas_watch.py --force` | (vendas combustíveis ANP) |
+| `anp_fase3_sync.yml` | Mensal — 1º dia, 13:00 UTC | `pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` → `03_painel_imp_sync.py` | DAIE, Desembaraços, Painel Importações |
+| `anp_lpc_sync.yml` | [verificar] | `pipelines/anp/lpc_sync.py` | (ANP LPC) |
+| `anp_precos_sync.yml` | [verificar] | `pipelines/anp/glp_sync.py` + `precos/01_ppi_sync.py` → `02_precos_produtores_sync.py` | GLP, PPI, preços |
+| `anp_cdp_extract.yml` | Mensal (5º) | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` | `output/anp/` + ANP CDP table |
+| `mdic_comex_sync.yml` | [verificar] | `pipelines/mdic_comex_sync.py` | (MDIC) |
+| `navios_lineup_scrape.yml` | Cada 6h | `pipelines/navios/01_lineup_scrape.py` → `02_diesel_import.mjs` | `navios_diesel` |
+| `sindicom_sync.yml` | [verificar] | `pipelines/sindicom_sync.py` | (SINDICOM) |
+| `dg_margins_upload.yml` | Semanal | `manual/dg_margins_upload.py` | `d_g_margins` (este é Dados Locais, não ETL) |
+| `navios_imo_lookup.yml` | Após `navios_lineup_scrape` | `pipelines/navios/03_imo_lookup.py` → `04_cabotage_cleanup.py` | `navios_diesel.imo/mmsi` |
+| `navios_positions_sync.yml` | Após `navios_imo_lookup` | `pipelines/navios/05_positions_sync.py` | `vessel_positions`, `port_arrivals` |
 
 > Workflows confirmados ativos em 2026-05-05. README está desatualizado (não os menciona). Quando atualizar README, incluir.
 
@@ -82,7 +94,7 @@ DADOS/
 ```
 output/
   anp/                              CSVs mensais ANP por fase
-  navios_diesel.csv                 Output do navios_esperados.py
+  navios_diesel.csv                 Output do pipelines/navios/01_lineup_scrape.py
   lineup_2026-04.xlsx               Export ad-hoc
 ```
 
@@ -104,7 +116,7 @@ output/
 
 ### Adicionar pipeline novo
 
-1. Criar script em `scripts/<fonte>_sync.py`.
+1. Criar script em `scripts/pipelines/<domain>/<scope>_<action>.py` (segue R3/R9 de nomenclatura). Se for chain, criar subpasta + prefixo numérico `01_, 02_, ...`.
 2. Coordenar com APP a criação da tabela-alvo + RPC de leitura (se o dashboard for consumir).
 3. Criar workflow `.github/workflows/<fonte>_sync.yml` com schedule cron.
 4. Registrar secrets necessários (`SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, eventuais API keys da fonte).
@@ -145,6 +157,6 @@ Ordem de diagnóstico:
 ## Contratos com outros departamentos
 
 - **APP** é dono das tabelas-alvo. Você popula. Mudança de schema é geralmente **iniciada por você** (precisa de coluna nova) e **executada pelo APP** (cria migration).
-- **Dados Locais** é separado por design. Não toque em `data/*.xlsx` nem em `upload_dg_margins.py`/`upload_price_bands.py` (estes são deles).
+- **Dados Locais** é separado por design. Não toque em `data/*.xlsx` nem em `scripts/manual/*` (estes são deles).
 - **Alertas** lê do Supabase ou de `DADOS/historico_alertas.csv`. Mudanças de schema/coluna que Alertas usa precisam aviso via Gerente.
-- **`supabase-deploy.yml`** é do APP, não deste dept (deploya migrations, não dados).
+- **`supabase_deploy.yml`** é do dept `worker_supabase`, não deste dept (deploya migrations, não dados).

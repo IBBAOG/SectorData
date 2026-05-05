@@ -1,16 +1,15 @@
-name: AIS Diesel Import Radar
+name: AIS Vessel Tracking Sync
 
 on:
   schedule:
-    # 6× daily, every 4h — covers sparse open-ocean coverage gaps. Each run
-    # is 10 min; total ≈ 60 min/day of listening.
-    - cron: '0 2,6,10,14,18,22 * * *'
+    - cron: '15 10,16,22,4 * * *'  # a cada 6h, 15 min após o scraping de portos (para pegar snapshots já atualizados)
   workflow_dispatch:
 
 jobs:
-  discover:
+  sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
+
     steps:
       - uses: actions/checkout@v4
 
@@ -18,11 +17,11 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install dependencies
+      - name: Instalar dependências
         run: pip install -r requirements.txt
 
-      - name: Run AIS discovery
-        run: python ais_discovery.py
+      - name: Sincronizar posições AIS
+        run: python scripts/pipelines/ais/positions_sync.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
