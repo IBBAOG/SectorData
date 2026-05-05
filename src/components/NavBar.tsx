@@ -23,7 +23,12 @@ function isModule(entry: NavEntry): entry is NavModule {
 
 const NAV_ENTRIES: NavEntry[] = [
   { label: "Home", href: "/home" },
-  { label: "Oil & Gas", items: [], disabled: true },
+  {
+    label: "Oil & Gas",
+    items: [
+      { href: "/anp-cdp", label: "ANP CDP Produção" },
+    ],
+  },
   {
     label: "Fuel Distribution",
     items: [
@@ -32,11 +37,6 @@ const NAV_ENTRIES: NavEntry[] = [
       { href: "/navios-diesel", label: "Diesel Imports Line-Up" },
       { href: "/diesel-gasoline-margins", label: "Diesel and Gasoline Margins" },
       { href: "/price-bands", label: "Price Bands" },
-    ],
-  },
-  {
-    label: "Estatísticas",
-    items: [
       { href: "/mdic-comex", label: "MDIC Comex" },
       { href: "/anp-ppi", label: "ANP PPI" },
       { href: "/anp-precos-produtores", label: "ANP Preços Produtores" },
@@ -46,7 +46,6 @@ const NAV_ENTRIES: NavEntry[] = [
       { href: "/anp-painel-importacoes", label: "ANP Painel Importações" },
       { href: "/anp-lpc", label: "ANP LPC Preços" },
       { href: "/sindicom", label: "SINDICOM" },
-      { href: "/anp-cdp", label: "ANP CDP Produção" },
     ],
   },
   { label: "Market Watch", href: "/stocks" },

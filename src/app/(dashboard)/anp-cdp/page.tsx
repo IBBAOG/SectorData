@@ -137,7 +137,7 @@ function CheckboxGroup({
         <button className="filter-btn-link filter-btn-link--secondary"
           style={{ marginTop: 4, fontFamily: "Arial", fontSize: 10 }}
           onClick={() => onChange([])}>
-          Todos
+          Limpar
         </button>
       )}
     </>
@@ -410,10 +410,19 @@ export default function AnpCdpPage() {
 
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
-              <div className="page-header-title" style={{ marginBottom: 16 }}>
-                ANP CDP — Produção por Poço · {metric.label}
-                {yMin && yMax ? ` · ${yMin}–${yMax}` : ""}
+              <div className="mb-2">
+                <div className="page-header-title">ANP CDP — Produção por Poço</div>
+                <div className="page-header-sub">
+                  Produção mensal declarada à ANP por poço, campo e operador
+                  {allYears.length > 0 && (
+                    <span style={{ marginLeft: 12, fontSize: 11, color: "#888" }}>
+                      Período: {yMin}–{yMax}
+                    </span>
+                  )}
+                </div>
               </div>
+
+              <hr style={{ borderTop: "2px solid #e0e0e0", marginBottom: 12 }} />
 
               {loading ? (
                 <div className="d-flex justify-content-center my-5">

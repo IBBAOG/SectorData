@@ -58,6 +58,32 @@ Protegida por `useRoleGuard("Admin")`. Funcionalidades:
 
 > **Tech debt**: ambas criadas via [`sql/create_profiles_and_visibility.sql`](../../sql/create_profiles_and_visibility.sql) aplicado direto no Dashboard, **não em migration versionada**.
 
+## Slugs gerenciados em `module_visibility`
+
+Lista completa dos slugs atualmente registrados na tabela `module_visibility` (todos com `is_visible_for_clients = true` por padrão):
+
+| Slug | Categoria | Label na UI |
+|---|---|---|
+| `sales` | Fuel Distribution | Sales Volumes |
+| `market-share` | Fuel Distribution | Market Share |
+| `navios-diesel` | Fuel Distribution | Diesel Imports Line-Up |
+| `diesel-gasoline-margins` | Fuel Distribution | Diesel and Gasoline Margins |
+| `price-bands` | Fuel Distribution | Price Bands |
+| `mdic-comex` | Estatísticas / Fuel Distribution | MDIC Comex |
+| `anp-ppi` | Estatísticas / Fuel Distribution | ANP PPI |
+| `anp-precos-produtores` | Estatísticas / Fuel Distribution | ANP Preços Produtores |
+| `anp-glp` | Estatísticas / Fuel Distribution | ANP GLP |
+| `anp-daie` | Estatísticas / Fuel Distribution | ANP Dados Abertos IE |
+| `anp-desembaracos` | Estatísticas / Fuel Distribution | ANP Desembaraços |
+| `anp-painel-importacoes` | Estatísticas / Fuel Distribution | ANP Painel Importações |
+| `anp-lpc` | Estatísticas / Fuel Distribution | ANP LPC Preços |
+| `sindicom` | Estatísticas / Fuel Distribution | SINDICOM |
+| `anp-cdp` | Estatísticas / Oil & Gas | ANP CDP Produção |
+| `stocks` | Other | Market Watch |
+| `news-hunter` | Other | News Hunter |
+
+> Os toggles no `/admin-panel` (seção Permissions) e os slots de imagem (seção Card Images) são gerados automaticamente a partir de `MODULE_LABELS` em `admin-panel/page.tsx`. Os cards na `/home` são definidos em `HomeClient.tsx` (array `CARDS`).
+
 ## Sua RESPONSABILIDADE ESPECIAL — onboarding de dashboard novo
 
 Workflow disparado pelo Subgerente APP quando ele cria um dashboard novo:

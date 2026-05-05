@@ -143,12 +143,11 @@ RETURNS json LANGUAGE sql SECURITY DEFINER AS $$
     SELECT json_build_object(
         'ncms', (
             SELECT COALESCE(
-                json_agg(sub ORDER BY (sub->>'ncm_codigo')),
+                json_agg(json_build_object('ncm_codigo', ncm_codigo, 'ncm_nome', ncm_nome) ORDER BY ncm_codigo),
                 '[]'::json
             )
             FROM (
-                SELECT DISTINCT
-                    json_build_object('ncm_codigo', ncm_codigo, 'ncm_nome', MAX(ncm_nome)) AS sub
+                SELECT ncm_codigo, MAX(ncm_nome) AS ncm_nome
                 FROM public.anp_desembaracos
                 GROUP BY ncm_codigo
             ) t

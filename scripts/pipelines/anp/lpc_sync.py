@@ -122,7 +122,9 @@ def _get_max_date(sb) -> str:
 
 
 def _parse_xlsx(content: bytes, data_fim: str) -> pd.DataFrame:
-    df = pd.read_excel(io.BytesIO(content), skiprows=9, dtype=str)
+    # Usa calamine como engine para evitar bug openpyxl 3.1.x com ExternalReference
+    # em XLSXs da ANP que têm links externos malformados.
+    df = pd.read_excel(io.BytesIO(content), skiprows=9, dtype=str, engine="calamine")
     df = df.rename(columns=_COLS_XLSX)
     cols = [c for c in _COLS_XLSX.values() if c in df.columns]
     df = df[cols].copy()

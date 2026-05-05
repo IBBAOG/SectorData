@@ -176,6 +176,19 @@ def main():
         print("Nada a fazer.")
         sys.exit(0)
 
+    # Deduplica pela chave de conflito antes do upsert (previne "ON CONFLICT DO UPDATE
+    # cannot affect row a second time" quando as duas séries se sobrepõem)
+    seen: set[tuple] = set()
+    deduped: list[dict] = []
+    for r in all_records:
+        key_val = (r["data_inicio"], r["produto"], r["regiao"])
+        if key_val not in seen:
+            seen.add(key_val)
+            deduped.append(r)
+    if len(deduped) < len(all_records):
+        print(f"  Deduplicados: {len(all_records):,} → {len(deduped):,}")
+    all_records = deduped
+
     print(f"\nTotal: {len(all_records):,} registros")
     total = _upsert(sb, all_records)
     print(f"Concluido: {total:,} registros em anp_precos_produtores")
