@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Layout, PlotData } from "plotly.js";
 import Slider from "rc-slider";
 import "rc-slider/assets/index.css";
@@ -46,7 +46,7 @@ const AXIS_LINE = {
 
 // ── Chart helpers ──────────────────────────────────────────────────────────────
 
-function emptyPlot(h = 320): { data: PlotData[]; layout: Partial<Layout> } {
+function emptyPlot(h = 360): { data: PlotData[]; layout: Partial<Layout> } {
   return {
     data: [],
     layout: {
@@ -109,65 +109,80 @@ export default function AnpPrecosProdutoresPage() {
   const supabase = getSupabaseClient();
 
   const [loading, setLoading]           = useState(true);
-  const [filtros, setFiltros]           = useState<AnpPprodutoresFiltros>({ produtos: [], regioes: [], data_min: null, data_max: null });
-  const [allSerie, setAllSerie]         = useState<AnpPprodutoresRow[]>([]);
+  const [serieLoading, setSerieLoading] = useState(false);
+  const [filtros, setFiltros]           = useState<AnpPprodutoresFiltros>({
+    produtos: [], regioes: [], data_min: null, data_max: null,
+  });
+  const [serieRows, setSerieRows]       = useState<AnpPprodutoresRow[]>([]);
   const [allYears, setAllYears]         = useState<number[]>([]);
   const [yearRange, setYearRange]       = useState<[number, number]>([0, 0]);
   const [selectedProduto, setProduto]   = useState<string>("");
   const [selectedRegioes, setRegioes]   = useState<string[]>(ALL_REGIOES);
-  const [serieLoading, setSerieLoading] = useState(false);
 
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Initial load: filtros + first serie fetch in parallel ────────────────
   useEffect(() => {
     if (!supabase) return;
     let cancelled = false;
     (async () => {
       const f = await rpcGetAnpPprodutoresFiltros(supabase);
       if (cancelled) return;
+
       setFiltros(f);
-      const defaultProduto = f.produtos.includes("Gasolina A Comum") ? "Gasolina A Comum" : f.produtos[0] ?? "";
+
+      const yMin = f.data_min ? parseInt(f.data_min.slice(0, 4)) : new Date().getFullYear() - 10;
+      const yMax = f.data_max ? parseInt(f.data_max.slice(0, 4)) : new Date().getFullYear();
+      const years: number[] = [];
+      for (let y = yMin; y <= yMax; y++) years.push(y);
+      const startIdx = Math.max(0, years.findIndex(y => y >= yMax - 9));
+      const fromYear = years[startIdx] ?? yMin;
+      setAllYears(years);
+      setYearRange([startIdx, years.length - 1]);
+
+      const defaultProduto = f.produtos.includes("Gasolina A Comum")
+        ? "Gasolina A Comum"
+        : f.produtos[0] ?? "";
       setProduto(defaultProduto);
+
+      // First paint with initial data — debounced refetch will fire after loading=false
+      // but with identical params, so no UX impact (just a redundant network call).
+      if (defaultProduto) {
+        const rows = await rpcGetAnpPprodutoresSerie(supabase, {
+          produto:    defaultProduto,
+          dataInicio: `${fromYear}-01-01`,
+          dataFim:    `${yMax}-12-31`,
+        });
+        if (!cancelled) setSerieRows(rows);
+      }
+      setLoading(false);
     })();
     return () => { cancelled = true; };
   }, [supabase]);
 
-  useEffect(() => {
-    if (!supabase || !selectedProduto) return;
-    let cancelled = false;
-    setSerieLoading(true);
-    (async () => {
-      const rows = await rpcGetAnpPprodutoresSerie(supabase, { produto: selectedProduto });
-      if (cancelled) return;
-
-      const years = Array.from(
-        new Set(rows.map(r => parseInt(r.data_inicio.slice(0, 4))))
-      ).sort((a, b) => a - b);
-
-      setAllYears(years);
-      if (years.length > 0) {
-        const currentYear = new Date().getFullYear();
-        const startIdx = Math.max(0, years.findIndex(y => y >= currentYear - 9));
-        setYearRange([startIdx, years.length - 1]);
-      }
-      setAllSerie(rows);
+  // ── Reactive serie fetch (debounced 400ms) ────────────────────────────────
+  const fetchSerie = useCallback(() => {
+    if (!supabase || loading || !selectedProduto) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setSerieLoading(true);
+      const yMin = allYears[yearRange[0]];
+      const yMax = allYears[yearRange[1]];
+      const rows = await rpcGetAnpPprodutoresSerie(supabase, {
+        produto:    selectedProduto,
+        dataInicio: yMin ? `${yMin}-01-01` : null,
+        dataFim:    yMax ? `${yMax}-12-31` : null,
+      });
+      setSerieRows(rows);
       setSerieLoading(false);
-      setLoading(false);
-    })();
-    return () => { cancelled = true; };
-  }, [supabase, selectedProduto]);
+    }, 400);
+  }, [supabase, loading, selectedProduto, yearRange, allYears]);
 
-  const filteredSerie = useMemo(() => {
-    const yMin = allYears[yearRange[0]];
-    const yMax = allYears[yearRange[1]];
-    if (!yMin || !yMax) return allSerie;
-    return allSerie.filter(r => {
-      const y = parseInt(r.data_inicio.slice(0, 4));
-      return y >= yMin && y <= yMax;
-    });
-  }, [allSerie, yearRange, allYears]);
+  useEffect(() => { fetchSerie(); }, [fetchSerie]);
 
   const chart = useMemo(
-    () => buildChart(filteredSerie, selectedRegioes),
-    [filteredSerie, selectedRegioes],
+    () => buildChart(serieRows, selectedRegioes),
+    [serieRows, selectedRegioes],
   );
 
   if (visLoading || !visible) return null;
@@ -179,8 +194,9 @@ export default function AnpPrecosProdutoresPage() {
         : [...prev, r]
     );
 
-  const yMin = allYears[yearRange[0]] ?? "—";
-  const yMax = allYears[yearRange[1]] ?? "—";
+  const hasYears = allYears.length > 0;
+  const yMin = hasYears ? allYears[yearRange[0]] : null;
+  const yMax = hasYears ? allYears[yearRange[1]] : null;
 
   return (
     <div>
@@ -218,7 +234,12 @@ export default function AnpPrecosProdutoresPage() {
               </div>
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Região</div>
+                <div className="sidebar-filter-label">
+                  Região{" "}
+                  <span style={{ color: "#888", fontWeight: 400 }}>
+                    ({selectedRegioes.length}/{ALL_REGIOES.length})
+                  </span>
+                </div>
                 {ALL_REGIOES.map(r => (
                   <div key={r} className="form-check" style={{ marginBottom: 6 }}>
                     <input
@@ -239,11 +260,18 @@ export default function AnpPrecosProdutoresPage() {
                     </label>
                   </div>
                 ))}
+                {selectedRegioes.length < ALL_REGIOES.length && (
+                  <button className="filter-btn-link filter-btn-link--secondary"
+                    style={{ marginTop: 4, fontFamily: "Arial", fontSize: 10 }}
+                    onClick={() => setRegioes(ALL_REGIOES)}>
+                    Limpar
+                  </button>
+                )}
               </div>
 
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Período</div>
-                {!loading && allYears.length > 0 && (
+                {!loading && hasYears && (
                   <>
                     <div style={{ marginTop: 18, marginBottom: 10, paddingLeft: 4, paddingRight: 4 }}>
                       <Slider
@@ -270,29 +298,44 @@ export default function AnpPrecosProdutoresPage() {
           {/* ── Main content ──────────────────────────────────────────── */}
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
-              <div className="page-header-title" style={{ marginBottom: 16 }}>
-                ANP — Preços Médios Ponderados Produtores e Importadores
-                {selectedProduto ? ` · ${selectedProduto}` : ""}
-                {yMin && yMax ? ` · ${yMin}–${yMax}` : ""}
+              <div className="mb-2">
+                <div className="page-header-title">
+                  ANP — Preços Médios Ponderados Produtores e Importadores
+                </div>
+                <div className="page-header-sub">
+                  Preços semanais médios ponderados praticados por produtores e importadores, por região
+                  {hasYears && (
+                    <span style={{ marginLeft: 12, fontSize: 11, color: "#888" }}>
+                      Período: {yMin}–{yMax}
+                    </span>
+                  )}
+                </div>
               </div>
 
-              {(loading || serieLoading) ? (
+              <hr style={{ borderTop: "2px solid #e0e0e0", marginBottom: 12 }} />
+
+              {loading ? (
                 <div className="d-flex justify-content-center my-5">
                   <img src="/barrel_loading.png" alt="Carregando..." width={160} height={160} />
                 </div>
               ) : (
                 <div className="row mb-2">
                   <div className="col-12">
-                    <div className="chart-container">
+                    <div className="chart-container" style={{ position: "relative" }}>
                       <div className="section-title">
                         Preço por Região — {selectedProduto}
+                        {serieLoading && (
+                          <span style={{ marginLeft: 10, fontSize: 11, color: "#aaa", fontWeight: 400 }}>
+                            atualizando…
+                          </span>
+                        )}
                       </div>
                       <hr className="section-hr" />
                       <PlotlyChart
                         data={chart.data}
                         layout={chart.layout}
                         config={{ responsive: true, displayModeBar: false }}
-                        style={{ width: "100%", height: 360 }}
+                        style={{ width: "100%", height: 360, opacity: serieLoading ? 0.5 : 1 }}
                       />
                     </div>
                   </div>
