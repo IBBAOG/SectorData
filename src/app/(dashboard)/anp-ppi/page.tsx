@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Layout, PlotData } from "plotly.js";
 import Slider from "rc-slider";
 import "rc-slider/assets/index.css";
@@ -68,6 +68,7 @@ function buildMediaChart(
   yearRange: [number, number],
   allYears: number[],
 ): { data: PlotData[]; layout: Partial<Layout> } {
+  if (!allYears.length) return emptyPlot(300);
   const yMin = allYears[yearRange[0]];
   const yMax = allYears[yearRange[1]];
   const filtered = rows.filter(r => {
@@ -111,7 +112,6 @@ function buildMediaChart(
 
 function buildLocaisChart(
   rows: AnpPpiLocaisRow[],
-  produto: string,
 ): { data: PlotData[]; layout: Partial<Layout> } {
   if (!rows.length) return emptyPlot(320);
 
@@ -167,11 +167,14 @@ export default function AnpPpiPage() {
   const [locaisRows, setLocaisRows]       = useState<AnpPpiLocaisRow[]>([]);
   const [locaisLoading, setLocaisLoading] = useState(false);
 
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Initial load ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!supabase) return;
     let cancelled = false;
     (async () => {
-      const [filtros, serie] = await Promise.all([
+      const [, serie] = await Promise.all([
         rpcGetAnpPpiFiltros(supabase),
         rpcGetAnpPpiMediaSerie(supabase),
       ]);
@@ -193,23 +196,24 @@ export default function AnpPpiPage() {
     return () => { cancelled = true; };
   }, [supabase]);
 
-  useEffect(() => {
-    if (!supabase || !detailProduto) return;
-    let cancelled = false;
-    setLocaisLoading(true);
-    (async () => {
+  // ── Reactive locais fetch (debounced 400ms) ─────────────────────────────
+  const fetchLocais = useCallback(() => {
+    if (!supabase || loading || !detailProduto) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setLocaisLoading(true);
       const yMin = allYears[yearRange[0]];
       const yMax = allYears[yearRange[1]];
       const rows = await rpcGetAnpPpiLocaisSerie(supabase, detailProduto, {
         dataInicio: yMin ? `${yMin}-01-01` : null,
         dataFim:    yMax ? `${yMax}-12-31` : null,
       });
-      if (cancelled) return;
       setLocaisRows(rows);
       setLocaisLoading(false);
-    })();
-    return () => { cancelled = true; };
-  }, [supabase, detailProduto, yearRange[0], yearRange[1], allYears]);
+    }, 400);
+  }, [supabase, loading, detailProduto, yearRange, allYears]);
+
+  useEffect(() => { fetchLocais(); }, [fetchLocais]);
 
   const mediaChart = useMemo(
     () => buildMediaChart(allSerie, selectedProdutos, yearRange, allYears),
@@ -217,8 +221,8 @@ export default function AnpPpiPage() {
   );
 
   const locaisChart = useMemo(
-    () => buildLocaisChart(locaisRows, detailProduto),
-    [locaisRows, detailProduto],
+    () => buildLocaisChart(locaisRows),
+    [locaisRows],
   );
 
   if (visLoading || !visible) return null;
@@ -230,8 +234,9 @@ export default function AnpPpiPage() {
         : [...prev, p]
     );
 
-  const yMin = allYears[yearRange[0]] ?? "—";
-  const yMax = allYears[yearRange[1]] ?? "—";
+  const hasYears = allYears.length > 0;
+  const yMin = hasYears ? allYears[yearRange[0]] : null;
+  const yMax = hasYears ? allYears[yearRange[1]] : null;
 
   return (
     <div>
@@ -280,7 +285,7 @@ export default function AnpPpiPage() {
 
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Período</div>
-                {!loading && allYears.length > 0 && (
+                {!loading && hasYears && (
                   <>
                     <div style={{ marginTop: 18, marginBottom: 10, paddingLeft: 4, paddingRight: 4 }}>
                       <Slider
@@ -321,10 +326,19 @@ export default function AnpPpiPage() {
           {/* ── Main content ──────────────────────────────────────────── */}
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
-              <div className="page-header-title" style={{ marginBottom: 16 }}>
-                ANP — Preços de Paridade de Importação (PPI)
-                {yMin && yMax ? ` · ${yMin}–${yMax}` : ""}
+              <div className="mb-2">
+                <div className="page-header-title">ANP — Preços de Paridade de Importação (PPI)</div>
+                <div className="page-header-sub">
+                  Preços semanais de paridade publicados pela ANP, por produto e local de entrega
+                  {hasYears && (
+                    <span style={{ marginLeft: 12, fontSize: 11, color: "#888" }}>
+                      Período: {yMin}–{yMax}
+                    </span>
+                  )}
+                </div>
               </div>
+
+              <hr style={{ borderTop: "2px solid #e0e0e0", marginBottom: 12 }} />
 
               {loading ? (
                 <div className="d-flex justify-content-center my-5">
@@ -349,23 +363,22 @@ export default function AnpPpiPage() {
 
                   <div className="row mb-2">
                     <div className="col-12">
-                      <div className="chart-container">
+                      <div className="chart-container" style={{ position: "relative" }}>
                         <div className="section-title">
                           PPI por Local — {PRODUTO_INFO[detailProduto]?.label ?? detailProduto}
+                          {locaisLoading && (
+                            <span style={{ marginLeft: 10, fontSize: 11, color: "#aaa", fontWeight: 400 }}>
+                              atualizando…
+                            </span>
+                          )}
                         </div>
                         <hr className="section-hr" />
-                        {locaisLoading ? (
-                          <div className="d-flex justify-content-center align-items-center" style={{ height: 320 }}>
-                            <div className="spinner-border spinner-border-sm text-secondary" />
-                          </div>
-                        ) : (
-                          <PlotlyChart
-                            data={locaisChart.data}
-                            layout={locaisChart.layout}
-                            config={{ responsive: true, displayModeBar: false }}
-                            style={{ width: "100%", height: 320 }}
-                          />
-                        )}
+                        <PlotlyChart
+                          data={locaisChart.data}
+                          layout={locaisChart.layout}
+                          config={{ responsive: true, displayModeBar: false }}
+                          style={{ width: "100%", height: 320, opacity: locaisLoading ? 0.5 : 1 }}
+                        />
                       </div>
                     </div>
                   </div>
