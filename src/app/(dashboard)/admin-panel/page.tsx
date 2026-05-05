@@ -64,13 +64,26 @@ const SECTIONS: { id: SectionId; label: string; description: string; icon: React
 
 // ── Module labels ─────────────────────────────────────────────────────────────
 const MODULE_LABELS: { slug: string; label: string; description: string }[] = [
-  { slug: "sales",                  label: "Sales Dashboard",           description: "Volume analysis by product, segment, agent, region, and period" },
-  { slug: "market-share",           label: "Market Share",              description: "Market share evolution over time broken down by distributor" },
-  { slug: "navios-diesel",          label: "Diesel Imports Line-Up",    description: "Scheduled vessel arrivals and diesel import line-up by port" },
-  { slug: "diesel-gasoline-margins",label: "Diesel and Gasoline Margins",description: "Diesel and gasoline margin tracking across regions and time" },
-  { slug: "price-bands",            label: "Price Bands",               description: "Price band distribution and competitive positioning by fuel type" },
-  { slug: "stocks",                 label: "Market Watch",              description: "Real-time stock quotes, historical charts, and market overview" },
-  { slug: "news-hunter",            label: "News Hunter",               description: "Live oil & gas news feed with incremental polling across ~60 sources" },
+  // Fuel Distribution
+  { slug: "sales-volumes",           label: "Sales Dashboard",              description: "Volume analysis by product, segment, agent, region, and period" },
+  { slug: "market-share",            label: "Market Share",                 description: "Market share evolution over time broken down by distributor" },
+  { slug: "navios-diesel",           label: "Diesel Imports Line-Up",       description: "Scheduled vessel arrivals and diesel import line-up by port" },
+  { slug: "diesel-gasoline-margins", label: "Diesel and Gasoline Margins",  description: "Diesel and gasoline margin tracking across regions and time" },
+  { slug: "price-bands",             label: "Price Bands",                  description: "Price band distribution and competitive positioning by fuel type" },
+  // Estatísticas
+  { slug: "mdic-comex",              label: "MDIC Comex",                   description: "Brazilian trade balance and import/export volumes by product and origin" },
+  { slug: "anp-ppi",                 label: "ANP PPI",                      description: "ANP import price parity reference benchmarks for fuel pricing" },
+  { slug: "anp-precos-produtores",   label: "ANP Preços Produtores",        description: "Producer prices for fuels tracked by ANP" },
+  { slug: "anp-glp",                 label: "ANP GLP",                      description: "LPG production and distribution data from ANP" },
+  { slug: "anp-daie",                label: "ANP Dados Abertos IE",         description: "Open import/export energy data from ANP's DAIE dataset" },
+  { slug: "anp-desembaracos",        label: "ANP Desembaraços",             description: "Fuel customs clearance volumes from ANP" },
+  { slug: "anp-painel-importacoes",  label: "ANP Painel Importações",       description: "ANP fuel import dashboard with volume and origin country tracking" },
+  { slug: "anp-lpc",                 label: "ANP LPC Preços",               description: "ANP consumer price survey across Brazilian gas stations" },
+  { slug: "sindicom",                label: "SINDICOM",                     description: "Fuel distribution data from the SINDICOM industry association" },
+  { slug: "anp-cdp",                 label: "ANP CDP Produção",             description: "ANP CDP oil and gas production data by well and field" },
+  // Other
+  { slug: "stocks",                  label: "Market Watch",                 description: "Real-time stock quotes, historical charts, and market overview" },
+  { slug: "news-hunter",             label: "News Hunter",                  description: "Live oil & gas news feed with incremental polling across ~60 sources" },
 ];
 
 // ── Main component ────────────────────────────────────────────────────────────
