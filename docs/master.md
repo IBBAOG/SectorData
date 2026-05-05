@@ -25,6 +25,8 @@ CEO (Eduardo)
      │   ├─ dash-news-hunter          (/news-hunter — coord. com repo scanner)
      │   └─ dash-admin                (/home + /profile + /admin-panel)
      │
+     ├─ Supabase / DB    (schema Postgres, migrations, RLS, RPCs SQL,
+     │                    materialized views, supabase-deploy workflow)
      ├─ Dados Locais     (Excels manuais + scripts de upload)
      ├─ ETL / Pipelines  (scrapers automáticos + GitHub Actions)
      ├─ Alertas          (subsistema autocontido em alertas/)
@@ -39,7 +41,8 @@ CEO (Eduardo)
 
 | Dept | Slug do agente | Ownership de pastas | PRD |
 |---|---|---|---|
-| APP (Subgerente) | [`subgerente-app`](../.claude/agents/subgerente-app.md) | `src/` (infra compartilhada), `public/`, `supabase/migrations/`, `.vercel/`, configs Next/TS | [`docs/app/PRD.md`](app/PRD.md) |
+| APP (Subgerente) | [`subgerente-app`](../.claude/agents/subgerente-app.md) | `src/` (infra compartilhada), `public/`, `.vercel/`, configs Next/TS | [`docs/app/PRD.md`](app/PRD.md) |
+| Supabase / DB | [`supabase`](../.claude/agents/supabase.md) | `supabase/migrations/`, `supabase/config.toml`, `sql/` (legado), `supabase-deploy.yml` | [`docs/supabase/PRD.md`](supabase/PRD.md) |
 | Dados Locais | [`dados-locais`](../.claude/agents/dados-locais.md) | `data/`, `upload_dg_margins.py`, `scripts/upload_price_bands.py` | [`docs/dados-locais/PRD.md`](dados-locais/PRD.md) |
 | ETL / Pipelines | [`etl-pipelines`](../.claude/agents/etl-pipelines.md) | `DADOS/`, `output/`, `scripts/` (scrapers), `.github/workflows/` (scrapers), scripts Python na raiz (ais, vessel, navios, anp_watcher) | [`docs/etl-pipelines/PRD.md`](etl-pipelines/PRD.md) |
 | Alertas | [`alertas`](../.claude/agents/alertas.md) | `alertas/` (autocontido) | [`docs/alertas/PRD.md`](alertas/PRD.md) |
@@ -76,16 +79,18 @@ São os pontos onde um departamento depende de outro. Mudanças nestes contratos
 
 ### Schema do Supabase
 
-**Dono:** APP. Migrations vivem em `supabase/migrations/`.
+**Dono:** dept **Supabase / DB** (peer dos demais; não pertence ao APP). Migrations vivem em `supabase/migrations/`.
 
 | Quem consome | Como |
 |---|---|
-| APP | Lê via supabase-js (anon key) chamando RPCs em `src/lib/rpc.ts` |
+| APP | Lê via supabase-js (anon key) chamando RPCs. Wrappers em `src/lib/rpc.ts` (este código é do APP, mas as RPCs em si pertencem ao Supabase) |
 | ETL | Escreve via supabase-py (service key) — popula `vendas`, `navios_diesel`, `news_articles`, etc. |
 | Dados Locais | Escreve via supabase-py (service key) — popula `d_g_margins`, `price_bands` |
 | Alertas | Lê via supabase-py — verifica mudanças em fontes monitoradas |
 
-**Quando algum dept precisa de coluna/tabela nova:** abre solicitação ao APP via Gerente. APP cria migration. Documentador atualiza este arquivo + `docs/app/PRD.md`.
+**Regra de divisão:** SQL = `supabase`. JS chamando SQL = `subgerente-app` / `dash-*`.
+
+**Quando algum dept precisa de coluna/tabela nova:** abre solicitação ao agente `supabase` via Gerente. `supabase` cria migration + RLS + (se for o caso) RPC. Avisa o dept consumidor pra atualizar wrapper JS / popular dados. Documentador atualiza este arquivo + `docs/supabase/PRD.md` + PRD do dept consumidor.
 
 ### Parquet/CSV consolidados em `DADOS/`
 

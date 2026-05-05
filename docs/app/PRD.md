@@ -1,6 +1,8 @@
 # PRD — Departamento APP (Subgerente)
 
-Dashboard Next.js + Supabase + Vercel. Owner do schema do banco. Este PRD documenta apenas a **infra compartilhada** sob ownership do Subgerente APP. Cada dashboard tem seu próprio sub-PRD em `docs/app/<dashboard>.md`.
+Dashboard Next.js + Vercel. Este PRD documenta apenas a **infra compartilhada** sob ownership do Subgerente APP. Cada dashboard tem seu próprio sub-PRD em `docs/app/<dashboard>.md`.
+
+> **Schema/SQL/migrations/RLS** pertencem ao dept `supabase` (ver [`docs/supabase/PRD.md`](../supabase/PRD.md)). APP é consumidor via wrappers JS em `src/lib/rpc.ts`.
 
 > **Visão geral pública** está no `README.md` da raiz. Aqui é a referência **interna** do Subgerente.
 
@@ -35,23 +37,31 @@ src/hooks/                          Hooks COMPARTILHADOS
   useDebounce.ts
   (useStockQuote/History/Portfolios.ts são scoped — pertencem a dash-stocks)
 
-src/lib/                            Helpers compartilhados
-  supabaseClient.ts
-  rpc.ts                            Agregador de RPCs (cada seção pertence a um dash-*)
-  profileRpc.ts                     RPCs de perfil (compartilhado com dash-admin)
+src/lib/                            Helpers compartilhados (JS — chamando o que o dept supabase expõe)
+  supabaseClient.ts                 Setup do cliente JS (anon key)
+  rpc.ts                            Agregador de wrappers JS (cada seção pertence a um dash-*)
+  profileRpc.ts                     Wrappers JS de perfil (compartilhado com dash-admin)
   filterUtils.ts                    REGIAO_UF_MAP, helpers de data
   exportExcel.ts                    Export ExcelJS para todos os dashboards
 
 src/types/                          Tipos compartilhados (tipos scoped ficam com dash-*)
-
-supabase/migrations/                Migrations canônicas (DDL + RPCs + RLS)
-supabase/config.toml                Config Supabase CLI
 
 public/                             Assets estáticos (logos, previews)
 .vercel/                            Config de deploy
 next.config.ts, tsconfig.json,
 package.json, eslint.config.mjs     Configs do projeto
 ```
+
+## NÃO está mais no escopo (foi pro dept `supabase`)
+
+```
+supabase/migrations/                Migrations — agora dept supabase
+supabase/config.toml                Config CLI — agora dept supabase
+sql/                                Legado DDL — agora dept supabase
+.github/workflows/supabase-deploy.yml  Deploy de migrations — agora dept supabase
+```
+
+**Linha de divisão:** SQL = `supabase`. JS chamando SQL = APP.
 
 ## Sub-agentes (donos de dashboard)
 
@@ -105,18 +115,6 @@ Schema completo é responsabilidade compartilhada — cada `dash-*` documenta as
 | `news_articles`, `news_hunter_keywords` | dash-news-hunter | News Hunter scanner (repo separado) + user via UI |
 | `profiles`, `module_visibility` | dash-admin | App (RPC) |
 
-## Tech debt: SQL fora das migrations
-
-Existem 3 arquivos em `sql/` (raiz do repo) cujo DDL foi aplicado **diretamente no Supabase Dashboard SQL Editor**, não via `supabase/migrations/`:
-
-| Arquivo | Tabelas/RPCs criadas |
-|---|---|
-| `sql/create_price_bands.sql` | `price_bands`, `get_price_bands_data` |
-| `sql/create_profiles_and_visibility.sql` | `profiles`, `module_visibility`, policies |
-| `sql/create_user_management.sql` | (verificar) |
-
-Implicação: recriar o banco apenas das migrations versionadas resultaria em schema incompleto. Para resolver: criar migrations correspondentes em `supabase/migrations/<timestamp>_<feature>.sql` espelhando o conteúdo, depois remover `sql/`.
-
 ## Variáveis de ambiente
 
 ```
@@ -131,9 +129,9 @@ Ver `.claude/agents/subgerente-app.md` → seção "Adicionar novo dashboard". R
 
 1. Copiar `template-module/` → novo módulo.
 2. Entrada no `NavBar.NAV_ENTRIES`.
-3. Migration (tabelas + RPCs + **RLS**).
-4. Wrappers em `src/lib/rpc.ts`.
-5. `INSERT INTO module_visibility`.
+3. **Solicitar ao `supabase`** migration com tabelas + RPCs + **RLS**. Aguardar.
+4. Wrappers JS em `src/lib/rpc.ts`.
+5. `INSERT INTO module_visibility` (na migration ou via `dash-admin`).
 6. `useModuleVisibilityGuard("<slug>")` na página.
 7. **CRIAR `.claude/agents/dash-<slug>.md`** ← responsabilidade do Subgerente.
 8. **CRIAR `docs/app/<slug>.md`** ← sub-PRD.
@@ -144,21 +142,19 @@ Ver `.claude/agents/subgerente-app.md` → seção "Adicionar novo dashboard". R
 
 ## Princípios não-negociáveis (TODO dash-* herda)
 
-1. **Nada de rota API para dados do Supabase.** RPCs sempre.
-2. **RLS sempre ligada** em qualquer tabela nova.
+1. **Nada de rota API para dados do Supabase.** RPCs sempre (criadas pelo dept `supabase`, chamadas via wrappers JS aqui).
+2. **Schema é responsabilidade do `supabase`** — APP é consumidor.
 3. **Auth guard** em `(dashboard)/layout.tsx` — não duplique.
 4. **Visibility guard** — `useModuleVisibilityGuard("<slug>")` em cada módulo.
 5. **Wrappers de RPC centralizados** em `src/lib/rpc.ts`.
 6. **Idioma da UI:** português.
-7. **Migration nova é única fonte da verdade** — nunca edite migration aplicada.
-8. **Identidade visual** consultada via `designer` antes de drift.
+7. **Identidade visual** consultada via `designer` antes de drift.
 
 ## Anti-padrões (deste dept)
 
 - Criar `src/app/api/<rota>` para ler/escrever no Supabase. Use RPC.
 - Componente chamando `supabase.rpc(...)` direto — sempre via wrapper.
-- Tabela sem RLS.
-- Editar migration já aplicada.
+- Tentar criar/editar migration aqui — peça ao `supabase`.
 - UI em inglês.
 - Esquecer `useModuleVisibilityGuard` em módulo novo.
 - Criar dashboard sem registrar em `module_visibility` ou sem foto na home (memória do CEO).
@@ -166,8 +162,8 @@ Ver `.claude/agents/subgerente-app.md` → seção "Adicionar novo dashboard". R
 
 ## Contratos com outros departamentos
 
-- **ETL** popula tabelas; quando ETL precisa coluna nova, APP cria migration.
+- **`supabase`** é o dono do schema. Você consome via `supabase-js` + wrappers JS. Mudanças de schema/RPC/RLS solicitadas a ele.
+- **ETL** popula tabelas; quando ETL precisa coluna nova, ETL solicita ao `supabase`.
 - **Dados Locais** popula `d_g_margins` e `price_bands` via upload manual.
 - **Alertas** lê tabelas; mudanças de schema podem quebrar bases.
 - **Designer** é consultado antes de mudanças visuais.
-- **Workflow `supabase-deploy.yml`** é deste dept (deploya migrations).
