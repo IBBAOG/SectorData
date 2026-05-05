@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Layout, PlotData } from "plotly.js";
 import Slider from "rc-slider";
 import "rc-slider/assets/index.css";
@@ -63,12 +63,8 @@ function emptyPlot(h = 300): { data: PlotData[]; layout: Partial<Layout> } {
 function buildTrendChart(
   rows: AnpGlpSerieRow[],
   categorias: string[],
-  anoInicio: number,
-  anoFim: number,
 ): { data: PlotData[]; layout: Partial<Layout> } {
-  const filtered = rows.filter(r =>
-    r.ano >= anoInicio && r.ano <= anoFim && categorias.includes(r.categoria)
-  );
+  const filtered = rows.filter(r => categorias.includes(r.categoria));
   if (!filtered.length) return emptyPlot(300);
 
   // Aggregate by (ano, mes, categoria)
@@ -114,12 +110,8 @@ function buildTrendChart(
 function buildTopDistChart(
   rows: AnpGlpSerieRow[],
   categoria: string,
-  anoInicio: number,
-  anoFim: number,
 ): { data: PlotData[]; layout: Partial<Layout> } {
-  const filtered = rows.filter(r =>
-    r.ano >= anoInicio && r.ano <= anoFim && r.categoria === categoria
-  );
+  const filtered = rows.filter(r => r.categoria === categoria);
   if (!filtered.length) return emptyPlot(360);
 
   const byDist: Record<string, number> = {};
@@ -164,51 +156,78 @@ export default function AnpGlpPage() {
   const supabase = getSupabaseClient();
 
   const [loading, setLoading]                 = useState(true);
-  const [filtros, setFiltros]                 = useState<AnpGlpFiltros>({ distribuidoras: [], categorias: [], ano_min: null, ano_max: null });
-  const [allSerie, setAllSerie]               = useState<AnpGlpSerieRow[]>([]);
+  const [serieLoading, setSerieLoading]       = useState(false);
+  const [, setFiltros]                        = useState<AnpGlpFiltros>({ distribuidoras: [], categorias: [], ano_min: null, ano_max: null });
+  const [serieRows, setSerieRows]             = useState<AnpGlpSerieRow[]>([]);
   const [allYears, setAllYears]               = useState<number[]>([]);
   const [yearRange, setYearRange]             = useState<[number, number]>([0, 0]);
   const [selectedCats, setSelectedCats]       = useState<string[]>(MAIN_CATEGORIAS);
   const [topDistCat, setTopDistCat]           = useState<string>("P13");
 
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Initial load: filtros + first serie fetch (last 10 years) ────────────
   useEffect(() => {
     if (!supabase) return;
     let cancelled = false;
     (async () => {
-      const [f, serie] = await Promise.all([
-        rpcGetAnpGlpFiltros(supabase),
-        rpcGetAnpGlpSerie(supabase),
-      ]);
+      const f = await rpcGetAnpGlpFiltros(supabase);
       if (cancelled) return;
       setFiltros(f);
 
-      const years = Array.from(
-        new Set(serie.map(r => r.ano))
-      ).sort((a, b) => a - b);
-
+      const yMin = f.ano_min ?? new Date().getFullYear() - 10;
+      const yMax = f.ano_max ?? new Date().getFullYear();
+      const years: number[] = [];
+      for (let y = yMin; y <= yMax; y++) years.push(y);
+      const startIdx = Math.max(0, years.findIndex(y => y >= yMax - 9));
+      const fromYear = years[startIdx] ?? yMin;
       setAllYears(years);
-      if (years.length > 0) {
-        const currentYear = new Date().getFullYear();
-        const startIdx = Math.max(0, years.findIndex(y => y >= currentYear - 9));
-        setYearRange([startIdx, years.length - 1]);
+      setYearRange([startIdx, years.length - 1]);
+
+      const rows = await rpcGetAnpGlpSerie(supabase, {
+        anoInicio: fromYear,
+        anoFim:    yMax,
+      });
+      if (!cancelled) {
+        setSerieRows(rows);
+        setLoading(false);
       }
-      setAllSerie(serie);
-      setLoading(false);
     })();
     return () => { cancelled = true; };
   }, [supabase]);
 
-  const anoInicio = allYears[yearRange[0]] ?? 0;
-  const anoFim    = allYears[yearRange[1]] ?? 9999;
+  // ── Reactive serie fetch (debounced 400ms) — period changes only ─────────
+  const yearTuple = useMemo<[number, number]>(
+    () => [yearRange[0], yearRange[1]],
+    [yearRange],
+  );
 
-  const trendChart  = useMemo(
-    () => buildTrendChart(allSerie, selectedCats, anoInicio, anoFim),
-    [allSerie, selectedCats, anoInicio, anoFim],
+  const fetchSerie = useCallback(() => {
+    if (!supabase || loading) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setSerieLoading(true);
+      const yMin = allYears[yearTuple[0]];
+      const yMax = allYears[yearTuple[1]];
+      const rows = await rpcGetAnpGlpSerie(supabase, {
+        anoInicio: yMin ?? null,
+        anoFim:    yMax ?? null,
+      });
+      setSerieRows(rows);
+      setSerieLoading(false);
+    }, 400);
+  }, [supabase, loading, yearTuple, allYears]);
+
+  useEffect(() => { fetchSerie(); }, [fetchSerie]);
+
+  const trendChart = useMemo(
+    () => buildTrendChart(serieRows, selectedCats),
+    [serieRows, selectedCats],
   );
 
   const topDistChart = useMemo(
-    () => buildTopDistChart(allSerie, topDistCat, anoInicio, anoFim),
-    [allSerie, topDistCat, anoInicio, anoFim],
+    () => buildTopDistChart(serieRows, topDistCat),
+    [serieRows, topDistCat],
   );
 
   if (visLoading || !visible) return null;
@@ -220,8 +239,9 @@ export default function AnpGlpPage() {
         : [...prev, c]
     );
 
-  const yMin = allYears[yearRange[0]] ?? "—";
-  const yMax = allYears[yearRange[1]] ?? "—";
+  const hasYears = allYears.length > 0;
+  const yMin = hasYears ? allYears[yearRange[0]] : null;
+  const yMax = hasYears ? allYears[yearRange[1]] : null;
 
   return (
     <div>
@@ -245,7 +265,12 @@ export default function AnpGlpPage() {
               <div className="sidebar-section-label">Filtros</div>
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Categoria</div>
+                <div className="sidebar-filter-label">
+                  Categoria{" "}
+                  <span style={{ color: "#888", fontWeight: 400 }}>
+                    ({selectedCats.length}/{MAIN_CATEGORIAS.length})
+                  </span>
+                </div>
                 {MAIN_CATEGORIAS.map(c => (
                   <div key={c} className="form-check" style={{ marginBottom: 6 }}>
                     <input
@@ -266,11 +291,18 @@ export default function AnpGlpPage() {
                     </label>
                   </div>
                 ))}
+                {selectedCats.length < MAIN_CATEGORIAS.length && (
+                  <button className="filter-btn-link filter-btn-link--secondary"
+                    style={{ marginTop: 4, fontFamily: "Arial", fontSize: 10 }}
+                    onClick={() => setSelectedCats(MAIN_CATEGORIAS)}>
+                    Limpar
+                  </button>
+                )}
               </div>
 
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Período</div>
-                {!loading && allYears.length > 0 && (
+                {!loading && hasYears && (
                   <>
                     <div style={{ marginTop: 18, marginBottom: 10, paddingLeft: 4, paddingRight: 4 }}>
                       <Slider
@@ -311,10 +343,19 @@ export default function AnpGlpPage() {
           {/* ── Main content ──────────────────────────────────────────── */}
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
-              <div className="page-header-title" style={{ marginBottom: 16 }}>
-                ANP — Vendas de GLP por Recipiente
-                {yMin && yMax ? ` · ${yMin}–${yMax}` : ""}
+              <div className="mb-2">
+                <div className="page-header-title">ANP — Vendas de GLP por Recipiente</div>
+                <div className="page-header-sub">
+                  Vendas mensais de GLP por distribuidora e categoria de recipiente (P13, Outros - GLP, Outros - Especiais)
+                  {hasYears && (
+                    <span style={{ marginLeft: 12, fontSize: 11, color: "#888" }}>
+                      Período: {yMin}–{yMax}
+                    </span>
+                  )}
+                </div>
               </div>
+
+              <hr style={{ borderTop: "2px solid #e0e0e0", marginBottom: 12 }} />
 
               {loading ? (
                 <div className="d-flex justify-content-center my-5">
@@ -324,14 +365,21 @@ export default function AnpGlpPage() {
                 <>
                   <div className="row mb-2">
                     <div className="col-12">
-                      <div className="chart-container">
-                        <div className="section-title">Vendas Mensais — Total Nacional (mil t)</div>
+                      <div className="chart-container" style={{ position: "relative" }}>
+                        <div className="section-title">
+                          Vendas Mensais — Total Nacional (mil t)
+                          {serieLoading && (
+                            <span style={{ marginLeft: 10, fontSize: 11, color: "#aaa", fontWeight: 400 }}>
+                              atualizando…
+                            </span>
+                          )}
+                        </div>
                         <hr className="section-hr" />
                         <PlotlyChart
                           data={trendChart.data}
                           layout={trendChart.layout}
                           config={{ responsive: true, displayModeBar: false }}
-                          style={{ width: "100%", height: 300 }}
+                          style={{ width: "100%", height: 300, opacity: serieLoading ? 0.5 : 1 }}
                         />
                       </div>
                     </div>
@@ -339,12 +387,12 @@ export default function AnpGlpPage() {
 
                   <div className="row mb-2">
                     <div className="col-12">
-                      <div className="chart-container" style={{ minHeight: 460 }}>
+                      <div className="chart-container" style={{ minHeight: 460, position: "relative" }}>
                         <PlotlyChart
                           data={topDistChart.data}
                           layout={topDistChart.layout}
                           config={{ responsive: true, displayModeBar: false }}
-                          style={{ width: "100%", height: 420 }}
+                          style={{ width: "100%", height: 420, opacity: serieLoading ? 0.5 : 1 }}
                         />
                       </div>
                     </div>
