@@ -1,6 +1,6 @@
 # Sub-PRD — `/news-hunter`
 
-Dashboard de News Hunter (radar de notícias). Owner: [`dash-news-hunter`](../../.claude/agents/dash-news-hunter.md).
+Dashboard de News Hunter (radar de notícias). Owner: [`worker_dash-news-hunter`](../../.claude/agents/worker_dash-news-hunter.md).
 
 > Único dashboard que **coordena com um repo externo** ([`IBBAOG/news-hunter-scanner`](https://github.com/IBBAOG/news-hunter-scanner)).
 
@@ -55,7 +55,7 @@ Doc detalhado: [`docs/etl-pipelines/news-hunter-architecture.md`](../etl-pipelin
 
 | RPC | Função |
 |---|---|
-| `seed_my_news_hunter_keywords` | Popula keywords default pro user logado (chamada no first-login pelo `dash-admin`) |
+| `seed_my_news_hunter_keywords` | Popula keywords default pro user logado (chamada no first-login pelo `worker_dash-admin`) |
 
 ## Tabelas
 
@@ -100,13 +100,13 @@ Nunca baixe a tabela inteira. Sempre incremental.
 
 ### Schema de `news_articles`
 - Mudança quebra o scanner (que escreve com schema antigo).
-- **Sequência obrigatória**: (1) coordenar com `etl-pipelines` quem mantém doc do scanner, (2) atualizar repo `news-hunter-scanner` PRIMEIRO, (3) deploy do scanner, (4) só então criar migration aqui.
+- **Sequência obrigatória**: (1) coordenar com `worker_etl-pipelines` quem mantém doc do scanner, (2) atualizar repo `news-hunter-scanner` PRIMEIRO, (3) deploy do scanner, (4) só então criar migration aqui.
 
 ### Schema de `news_hunter_keywords`
 - Mesma lógica.
 
 ### Mudança visual
-- Consulte `designer`.
+- Consulte `worker_designer`.
 
 ## Anti-padrões
 

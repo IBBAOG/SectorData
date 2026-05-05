@@ -1,6 +1,6 @@
 # Sub-PRD — Bundle Admin (`/home` + `/profile` + `/admin-panel`)
 
-Bundle administrativo. Owner: [`dash-admin`](../../.claude/agents/dash-admin.md).
+Bundle administrativo. Owner: [`worker_dash-admin`](../../.claude/agents/worker_dash-admin.md).
 
 3 páginas pequenas/médias com natureza administrativa, agrupadas num agente único.
 

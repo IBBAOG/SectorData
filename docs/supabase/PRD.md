@@ -1,6 +1,6 @@
 # PRD — Departamento Supabase / Database
 
-Único guardião do schema Postgres. Owner: [`supabase`](../../.claude/agents/supabase.md).
+Único guardião do schema Postgres. Owner: [`worker_supabase`](../../.claude/agents/worker_supabase.md).
 
 Recebe solicitações de todos os outros departamentos. Não tem desenho próprio — schema serve dado, e dado pertence aos depts consumidores.
 
@@ -130,7 +130,7 @@ Implicação: recriar o banco apenas das migrations resultaria em schema incompl
 
 ## Tarefas comuns
 
-Ver `.claude/agents/supabase.md` (mesma seção). Resumo:
+Ver `.claude/agents/worker_supabase.md` (mesma seção). Resumo:
 
 - Criar tabela nova
 - Adicionar/modificar RPC

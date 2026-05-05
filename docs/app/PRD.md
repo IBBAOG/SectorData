@@ -2,7 +2,7 @@
 
 Dashboard Next.js + Vercel. Este PRD documenta apenas a **infra compartilhada** sob ownership do Subgerente APP. Cada dashboard tem seu próprio sub-PRD em `docs/app/<dashboard>.md`.
 
-> **Schema/SQL/migrations/RLS** pertencem ao dept `supabase` (ver [`docs/supabase/PRD.md`](../supabase/PRD.md)). APP é consumidor via wrappers JS em `src/lib/rpc.ts`.
+> **Schema/SQL/migrations/RLS** pertencem ao dept `worker_supabase` (ver [`docs/supabase/PRD.md`](../supabase/PRD.md)). APP é consumidor via wrappers JS em `src/lib/rpc.ts`.
 
 > **Visão geral pública** está no `README.md` da raiz. Aqui é a referência **interna** do Subgerente.
 
@@ -52,7 +52,7 @@ next.config.ts, tsconfig.json,
 package.json, eslint.config.mjs     Configs do projeto
 ```
 
-## NÃO está mais no escopo (foi pro dept `supabase`)
+## NÃO está mais no escopo (foi pro dept `worker_supabase`)
 
 ```
 supabase/migrations/                Migrations — agora dept supabase
@@ -61,7 +61,7 @@ sql/                                Legado DDL — agora dept supabase
 .github/workflows/supabase-deploy.yml  Deploy de migrations — agora dept supabase
 ```
 
-**Linha de divisão:** SQL = `supabase`. JS chamando SQL = APP.
+**Linha de divisão:** SQL = `worker_supabase`. JS chamando SQL = APP.
 
 ## Sub-agentes (donos de dashboard)
 
@@ -69,14 +69,14 @@ Para qualquer mudança em código de um dashboard específico, delegue ao agente
 
 | Dashboard | Agente | Sub-PRD |
 |---|---|---|
-| `/sales-volumes` | `dash-sales-volumes` | [sales-volumes.md](sales-volumes.md) |
-| `/market-share` | `dash-market-share` | [market-share.md](market-share.md) |
-| `/navios-diesel` | `dash-navios-diesel` | [navios-diesel.md](navios-diesel.md) |
-| `/diesel-gasoline-margins` | `dash-margins` | [diesel-gasoline-margins.md](diesel-gasoline-margins.md) |
-| `/price-bands` | `dash-price-bands` | [price-bands.md](price-bands.md) |
-| `/stocks` | `dash-stocks` | [stocks.md](stocks.md) |
-| `/news-hunter` | `dash-news-hunter` | [news-hunter.md](news-hunter.md) |
-| `/home`, `/profile`, `/admin-panel` | `dash-admin` | [admin.md](admin.md) |
+| `/sales-volumes` | `worker_dash-sales-volumes` | [sales-volumes.md](sales-volumes.md) |
+| `/market-share` | `worker_dash-market-share` | [market-share.md](market-share.md) |
+| `/navios-diesel` | `worker_dash-navios-diesel` | [navios-diesel.md](navios-diesel.md) |
+| `/diesel-gasoline-margins` | `worker_dash-margins` | [diesel-gasoline-margins.md](diesel-gasoline-margins.md) |
+| `/price-bands` | `worker_dash-price-bands` | [price-bands.md](price-bands.md) |
+| `/stocks` | `worker_dash-stocks` | [stocks.md](stocks.md) |
+| `/news-hunter` | `worker_dash-news-hunter` | [news-hunter.md](news-hunter.md) |
+| `/home`, `/profile`, `/admin-panel` | `worker_dash-admin` | [admin.md](admin.md) |
 
 ## Stack
 
@@ -125,36 +125,36 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 
 ## Workflow Subgerente: adicionar dashboard novo
 
-Ver `.claude/agents/subgerente-app.md` → seção "Adicionar novo dashboard". Resumo dos 12 passos:
+Ver `.claude/agents/worker_subgerente-app.md` → seção "Adicionar novo dashboard". Resumo dos 12 passos:
 
 1. Copiar `template-module/` → novo módulo.
 2. Entrada no `NavBar.NAV_ENTRIES`.
-3. **Solicitar ao `supabase`** migration com tabelas + RPCs + **RLS**. Aguardar.
+3. **Solicitar ao `worker_supabase`** migration com tabelas + RPCs + **RLS**. Aguardar.
 4. Wrappers JS em `src/lib/rpc.ts`.
-5. `INSERT INTO module_visibility` (na migration ou via `dash-admin`).
+5. `INSERT INTO module_visibility` (na migration ou via `worker_dash-admin`).
 6. `useModuleVisibilityGuard("<slug>")` na página.
-7. **CRIAR `.claude/agents/dash-<slug>.md`** ← responsabilidade do Subgerente.
+7. **CRIAR `.claude/agents/worker_dash-<slug>.md`** (mantenha o prefixo `worker_`) ← responsabilidade do Subgerente.
 8. **CRIAR `docs/app/<slug>.md`** ← sub-PRD.
-9. **Disparar `dash-admin`** → toggle de visibilidade + foto na home (memória do CEO).
-10. Atualizar `subgerente-app.md` (mapeamento).
-11. Atualizar `gerente-geral.md` (sub-agentes).
+9. **Disparar `worker_dash-admin`** → toggle de visibilidade + foto na home (memória do CEO).
+10. Atualizar `worker_subgerente-app.md` (mapeamento).
+11. Atualizar `worker_gerente-geral.md` (sub-agentes).
 12. Avisar Documentador → `master.md` + este `PRD.md`.
 
 ## Princípios não-negociáveis (TODO dash-* herda)
 
-1. **Nada de rota API para dados do Supabase.** RPCs sempre (criadas pelo dept `supabase`, chamadas via wrappers JS aqui).
-2. **Schema é responsabilidade do `supabase`** — APP é consumidor.
+1. **Nada de rota API para dados do Supabase.** RPCs sempre (criadas pelo dept `worker_supabase`, chamadas via wrappers JS aqui).
+2. **Schema é responsabilidade do `worker_supabase`** — APP é consumidor.
 3. **Auth guard** em `(dashboard)/layout.tsx` — não duplique.
 4. **Visibility guard** — `useModuleVisibilityGuard("<slug>")` em cada módulo.
 5. **Wrappers de RPC centralizados** em `src/lib/rpc.ts`.
 6. **Idioma da UI:** português.
-7. **Identidade visual** consultada via `designer` antes de drift.
+7. **Identidade visual** consultada via `worker_designer` antes de drift.
 
 ## Anti-padrões (deste dept)
 
 - Criar `src/app/api/<rota>` para ler/escrever no Supabase. Use RPC.
 - Componente chamando `supabase.rpc(...)` direto — sempre via wrapper.
-- Tentar criar/editar migration aqui — peça ao `supabase`.
+- Tentar criar/editar migration aqui — peça ao `worker_supabase`.
 - UI em inglês.
 - Esquecer `useModuleVisibilityGuard` em módulo novo.
 - Criar dashboard sem registrar em `module_visibility` ou sem foto na home (memória do CEO).
@@ -162,8 +162,8 @@ Ver `.claude/agents/subgerente-app.md` → seção "Adicionar novo dashboard". R
 
 ## Contratos com outros departamentos
 
-- **`supabase`** é o dono do schema. Você consome via `supabase-js` + wrappers JS. Mudanças de schema/RPC/RLS solicitadas a ele.
-- **ETL** popula tabelas; quando ETL precisa coluna nova, ETL solicita ao `supabase`.
+- **`worker_supabase`** é o dono do schema. Você consome via `supabase-js` + wrappers JS. Mudanças de schema/RPC/RLS solicitadas a ele.
+- **ETL** popula tabelas; quando ETL precisa coluna nova, ETL solicita ao `worker_supabase`.
 - **Dados Locais** popula `d_g_margins` e `price_bands` via upload manual.
 - **Alertas** lê tabelas; mudanças de schema podem quebrar bases.
 - **Designer** é consultado antes de mudanças visuais.

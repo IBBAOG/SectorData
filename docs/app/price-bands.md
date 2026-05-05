@@ -1,6 +1,6 @@
 # Sub-PRD — `/price-bands`
 
-Dashboard de Price Bands (paridade de preços). Owner: [`dash-price-bands`](../../.claude/agents/dash-price-bands.md).
+Dashboard de Price Bands (paridade de preços). Owner: [`worker_dash-price-bands`](../../.claude/agents/worker_dash-price-bands.md).
 
 ## Escopo de código
 
@@ -50,7 +50,7 @@ Output típico: linhas temporais sobrepostas, por produto.
 CEO edita data/price_bands.xlsx → scripts/upload_price_bands.py → upsert em price_bands
 ```
 
-Hoje o upload é manual (rodado localmente). **Dono do dado:** `dados-locais`.
+Hoje o upload é manual (rodado localmente). **Dono do dado:** `worker_dados-locais`.
 
 ## Dependências cross-dept
 

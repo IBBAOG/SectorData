@@ -1,6 +1,6 @@
 # Sub-PRD — `/navios-diesel`
 
-Dashboard de Navios Diesel (importação por mar). Owner: [`dash-navios-diesel`](../../.claude/agents/dash-navios-diesel.md). Mais complexo do APP.
+Dashboard de Navios Diesel (importação por mar). Owner: [`worker_dash-navios-diesel`](../../.claude/agents/worker_dash-navios-diesel.md). Mais complexo do APP.
 
 ## Escopo de código
 

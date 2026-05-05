@@ -1,6 +1,6 @@
 # Sub-PRD — `/market-share`
 
-Dashboard de Market Share (% de participação). Owner: [`dash-market-share`](../../.claude/agents/dash-market-share.md).
+Dashboard de Market Share (% de participação). Owner: [`worker_dash-market-share`](../../.claude/agents/worker_dash-market-share.md).
 
 ## Escopo de código
 
@@ -26,7 +26,7 @@ Visualização de **% de participação de mercado** entre players de combustív
 | `get_ms_serie_others` | **compartilhado** | Soma de "Outros" |
 | `get_others_players` | **compartilhado** | Lista de players em "Outros" |
 
-> **Coordenação obrigatória:** mudança nas 3 RPCs compartilhadas exige alinhamento com `dash-sales-volumes`.
+> **Coordenação obrigatória:** mudança nas 3 RPCs compartilhadas exige alinhamento com `worker_dash-sales-volumes`.
 
 ## Tabelas / Views
 

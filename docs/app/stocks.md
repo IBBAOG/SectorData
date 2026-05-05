@@ -1,6 +1,6 @@
 # Sub-PRD — `/stocks` (Market Watch)
 
-Dashboard de Stocks com tema **dark trading terminal** (Bloomberg-like). Owner: [`dash-stocks`](../../.claude/agents/dash-stocks.md).
+Dashboard de Stocks com tema **dark trading terminal** (Bloomberg-like). Owner: [`worker_dash-stocks`](../../.claude/agents/worker_dash-stocks.md).
 
 > Único módulo do app com identidade visual própria. Mantida intencionalmente distinta.
 

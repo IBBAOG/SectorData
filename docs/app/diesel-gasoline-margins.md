@@ -1,6 +1,6 @@
 # Sub-PRD — `/diesel-gasoline-margins`
 
-Dashboard de Margens Diesel/Gasolina. Owner: [`dash-margins`](../../.claude/agents/dash-margins.md).
+Dashboard de Margens Diesel/Gasolina. Owner: [`worker_dash-margins`](../../.claude/agents/worker_dash-margins.md).
 
 ## Escopo de código
 
@@ -47,7 +47,7 @@ CEO edita data/d_g_margins.xlsx → upload_dg_margins.py → upsert em d_g_margi
 
 Workflow GitHub Action: `.github/workflows/upload-dg-margins.yml` roda semanalmente (segunda).
 
-**Dono do dado:** `dados-locais` (não ETL automático). Este dashboard só consome.
+**Dono do dado:** `worker_dados-locais` (não ETL automático). Este dashboard só consome.
 
 ## Dependências cross-dept
 

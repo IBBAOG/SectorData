@@ -41,11 +41,11 @@ CEO (Eduardo)
 
 | Dept | Slug do agente | Ownership de pastas | PRD |
 |---|---|---|---|
-| APP (Subgerente) | [`subgerente-app`](../.claude/agents/subgerente-app.md) | `src/` (infra compartilhada), `public/`, `.vercel/`, configs Next/TS | [`docs/app/PRD.md`](app/PRD.md) |
-| Supabase / DB | [`supabase`](../.claude/agents/supabase.md) | `supabase/migrations/`, `supabase/config.toml`, `sql/` (legado), `supabase-deploy.yml` | [`docs/supabase/PRD.md`](supabase/PRD.md) |
-| Dados Locais | [`dados-locais`](../.claude/agents/dados-locais.md) | `data/`, `upload_dg_margins.py`, `scripts/upload_price_bands.py` | [`docs/dados-locais/PRD.md`](dados-locais/PRD.md) |
-| ETL / Pipelines | [`etl-pipelines`](../.claude/agents/etl-pipelines.md) | `DADOS/`, `output/`, `scripts/` (scrapers), `.github/workflows/` (scrapers), scripts Python na raiz (ais, vessel, navios, anp_watcher) | [`docs/etl-pipelines/PRD.md`](etl-pipelines/PRD.md) |
-| Alertas | [`alertas`](../.claude/agents/alertas.md) | `alertas/` (autocontido) | [`docs/alertas/PRD.md`](alertas/PRD.md) |
+| APP (Subgerente) | [`worker_subgerente-app`](../.claude/agents/worker_subgerente-app.md) | `src/` (infra compartilhada), `public/`, `.vercel/`, configs Next/TS | [`docs/app/PRD.md`](app/PRD.md) |
+| Supabase / DB | [`worker_supabase`](../.claude/agents/worker_supabase.md) | `supabase/migrations/`, `supabase/config.toml`, `sql/` (legado), `supabase-deploy.yml` | [`docs/supabase/PRD.md`](supabase/PRD.md) |
+| Dados Locais | [`worker_dados-locais`](../.claude/agents/worker_dados-locais.md) | `data/`, `upload_dg_margins.py`, `scripts/upload_price_bands.py` | [`docs/dados-locais/PRD.md`](dados-locais/PRD.md) |
+| ETL / Pipelines | [`worker_etl-pipelines`](../.claude/agents/worker_etl-pipelines.md) | `DADOS/`, `output/`, `scripts/` (scrapers), `.github/workflows/` (scrapers), scripts Python na raiz (ais, vessel, navios, anp_watcher) | [`docs/etl-pipelines/PRD.md`](etl-pipelines/PRD.md) |
+| Alertas | [`worker_alertas`](../.claude/agents/worker_alertas.md) | `alertas/` (autocontido) | [`docs/alertas/PRD.md`](alertas/PRD.md) |
 
 ## Sub-agentes do APP (donos de dashboard)
 
@@ -53,23 +53,23 @@ Cada um possui um módulo (ou bundle, no caso de admin). Cada um auto-documenta 
 
 | Slug | Cobertura | Sub-PRD |
 |---|---|---|
-| [`dash-sales-volumes`](../.claude/agents/dash-sales-volumes.md) | `/sales-volumes` | [`docs/app/sales-volumes.md`](app/sales-volumes.md) |
-| [`dash-market-share`](../.claude/agents/dash-market-share.md) | `/market-share` | [`docs/app/market-share.md`](app/market-share.md) |
-| [`dash-navios-diesel`](../.claude/agents/dash-navios-diesel.md) | `/navios-diesel` (+ sub-páginas) | [`docs/app/navios-diesel.md`](app/navios-diesel.md) |
-| [`dash-margins`](../.claude/agents/dash-margins.md) | `/diesel-gasoline-margins` | [`docs/app/diesel-gasoline-margins.md`](app/diesel-gasoline-margins.md) |
-| [`dash-price-bands`](../.claude/agents/dash-price-bands.md) | `/price-bands` | [`docs/app/price-bands.md`](app/price-bands.md) |
-| [`dash-stocks`](../.claude/agents/dash-stocks.md) | `/stocks` + Yahoo proxy + `components/stocks/` | [`docs/app/stocks.md`](app/stocks.md) |
-| [`dash-news-hunter`](../.claude/agents/dash-news-hunter.md) | `/news-hunter` (coord. com repo scanner) | [`docs/app/news-hunter.md`](app/news-hunter.md) |
-| [`dash-admin`](../.claude/agents/dash-admin.md) | `/home` + `/profile` + `/admin-panel` | [`docs/app/admin.md`](app/admin.md) |
+| [`worker_dash-sales-volumes`](../.claude/agents/worker_dash-sales-volumes.md) | `/sales-volumes` | [`docs/app/sales-volumes.md`](app/sales-volumes.md) |
+| [`worker_dash-market-share`](../.claude/agents/worker_dash-market-share.md) | `/market-share` | [`docs/app/market-share.md`](app/market-share.md) |
+| [`worker_dash-navios-diesel`](../.claude/agents/worker_dash-navios-diesel.md) | `/navios-diesel` (+ sub-páginas) | [`docs/app/navios-diesel.md`](app/navios-diesel.md) |
+| [`worker_dash-margins`](../.claude/agents/worker_dash-margins.md) | `/diesel-gasoline-margins` | [`docs/app/diesel-gasoline-margins.md`](app/diesel-gasoline-margins.md) |
+| [`worker_dash-price-bands`](../.claude/agents/worker_dash-price-bands.md) | `/price-bands` | [`docs/app/price-bands.md`](app/price-bands.md) |
+| [`worker_dash-stocks`](../.claude/agents/worker_dash-stocks.md) | `/stocks` + Yahoo proxy + `components/stocks/` | [`docs/app/stocks.md`](app/stocks.md) |
+| [`worker_dash-news-hunter`](../.claude/agents/worker_dash-news-hunter.md) | `/news-hunter` (coord. com repo scanner) | [`docs/app/news-hunter.md`](app/news-hunter.md) |
+| [`worker_dash-admin`](../.claude/agents/worker_dash-admin.md) | `/home` + `/profile` + `/admin-panel` | [`docs/app/admin.md`](app/admin.md) |
 
 ## Papéis transversais (não donos de pasta)
 
 | Papel | Slug | Quando entra |
 |---|---|---|
-| Gerente Geral | [`gerente-geral`](../.claude/agents/gerente-geral.md) | Início de qualquer tarefa nova ou ambígua. Roteia para o(s) dept(s) corretos. |
-| Documentador | [`documentador`](../.claude/agents/documentador.md) | Após qualquer mudança que altere contrato cross-dept. Mantém `master.md` + PRDs de departamento. (Sub-PRDs por dashboard são auto-mantidos pelo `dash-*` correspondente.) |
-| Designer | [`designer`](../.claude/agents/designer.md) | Antes de qualquer mudança visual ou em `globals.css`. Carrega [`docs/design/identity.md`](design/identity.md) e [`docs/design/best-practices.md`](design/best-practices.md). |
-| Revisor / QA | [`revisor-qa`](../.claude/agents/revisor-qa.md) | Antes do commit, sobre o diff staged. Aplica checklist de segurança, contratos e simplicidade. |
+| Gerente Geral | [`worker_gerente-geral`](../.claude/agents/worker_gerente-geral.md) | Início de qualquer tarefa nova ou ambígua. Roteia para o(s) dept(s) corretos. |
+| Documentador | [`worker_documentador`](../.claude/agents/worker_documentador.md) | Após qualquer mudança que altere contrato cross-dept. Mantém `master.md` + PRDs de departamento. (Sub-PRDs por dashboard são auto-mantidos pelo `dash-*` correspondente.) |
+| Designer | [`worker_designer`](../.claude/agents/worker_designer.md) | Antes de qualquer mudança visual ou em `globals.css`. Carrega [`docs/design/identity.md`](design/identity.md) e [`docs/design/best-practices.md`](design/best-practices.md). |
+| Revisor / QA | [`worker_revisor-qa`](../.claude/agents/worker_revisor-qa.md) | Antes do commit, sobre o diff staged. Aplica checklist de segurança, contratos e simplicidade. |
 
 ---
 
@@ -88,9 +88,9 @@ São os pontos onde um departamento depende de outro. Mudanças nestes contratos
 | Dados Locais | Escreve via supabase-py (service key) — popula `d_g_margins`, `price_bands` |
 | Alertas | Lê via supabase-py — verifica mudanças em fontes monitoradas |
 
-**Regra de divisão:** SQL = `supabase`. JS chamando SQL = `subgerente-app` / `dash-*`.
+**Regra de divisão:** SQL = `worker_supabase`. JS chamando SQL = `worker_subgerente-app` / `dash-*`.
 
-**Quando algum dept precisa de coluna/tabela nova:** abre solicitação ao agente `supabase` via Gerente. `supabase` cria migration + RLS + (se for o caso) RPC. Avisa o dept consumidor pra atualizar wrapper JS / popular dados. Documentador atualiza este arquivo + `docs/supabase/PRD.md` + PRD do dept consumidor.
+**Quando algum dept precisa de coluna/tabela nova:** abre solicitação ao agente `worker_supabase` via Gerente. `worker_supabase` cria migration + RLS + (se for o caso) RPC. Avisa o dept consumidor pra atualizar wrapper JS / popular dados. Documentador atualiza este arquivo + `docs/supabase/PRD.md` + PRD do dept consumidor.
 
 ### Parquet/CSV consolidados em `DADOS/`
 
@@ -168,22 +168,22 @@ Ver `C:/Users/eduar/.claude/projects/C--Users-eduar-dashboard-projeto/memory/MEM
 Workflow controlado pelo Gerente Geral:
 
 1. CEO decide criar `<novo-dept>` (ex: "Finanças").
-2. Gerente cria `.claude/agents/<novo-dept>.md` (template = um agente existente).
+2. Gerente cria `.claude/agents/worker_<novo-dept>.md` (mantenha o prefixo `worker_`; template = um agente existente).
 3. Gerente cria `docs/<novo-dept>/PRD.md` com seções: Escopo, Ownership, Contratos, Convenções, Tarefas comuns, Anti-padrões.
 4. Gerente atualiza este `master.md`: organograma + tabela de departamentos + contratos cross-dept (se houver).
-5. Gerente atualiza tabela de roteamento em `gerente-geral.md`.
+5. Gerente atualiza tabela de roteamento em `worker_gerente-geral.md`.
 6. Documentador valida.
 
 ## Como adicionar um novo dashboard (não departamento)
 
-Workflow controlado pelo **Subgerente APP** (não pelo Gerente Geral). Ver detalhes em `subgerente-app.md` → "Adicionar novo dashboard". Resumo:
+Workflow controlado pelo **Subgerente APP** (não pelo Gerente Geral). Ver detalhes em `worker_subgerente-app.md` → "Adicionar novo dashboard". Resumo:
 
 1. Subgerente copia `template-module/` → novo módulo.
-2. Cria migration + RPCs + RLS.
-3. **Cria `.claude/agents/dash-<slug>.md`** (responsabilidade do Subgerente).
+2. Solicita ao `worker_supabase` migration + RPCs + RLS.
+3. **Cria `.claude/agents/worker_dash-<slug>.md`** (mantenha o prefixo `worker_`; responsabilidade do Subgerente).
 4. **Cria `docs/app/<slug>.md`** (sub-PRD).
-5. **Dispara `dash-admin`** para registrar visibilidade + foto na home.
-6. Atualiza tabelas em `subgerente-app.md` e `gerente-geral.md`.
+5. **Dispara `worker_dash-admin`** para registrar visibilidade + foto na home.
+6. Atualiza tabelas em `worker_subgerente-app.md` e `worker_gerente-geral.md`.
 7. Avisa Documentador para refletir em `master.md`.
 
 ---

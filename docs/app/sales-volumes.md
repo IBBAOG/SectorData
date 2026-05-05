@@ -1,6 +1,6 @@
 # Sub-PRD — `/sales-volumes`
 
-Dashboard de Volumes de Venda. Owner: [`dash-sales-volumes`](../../.claude/agents/dash-sales-volumes.md).
+Dashboard de Volumes de Venda. Owner: [`worker_dash-sales-volumes`](../../.claude/agents/worker_dash-sales-volumes.md).
 
 ## Escopo de código
 
@@ -30,7 +30,7 @@ Output principal: gráfico de linhas / barras com séries por agente. Tabela com
 | `get_ms_serie_others` | **compartilhado** | Soma agregada dos players "Outros" |
 | `get_others_players` | **compartilhado** | Lista de players agregados em "Outros" |
 
-> **Coordenação obrigatória:** mudança nas 3 RPCs compartilhadas exige alinhamento com `dash-market-share`.
+> **Coordenação obrigatória:** mudança nas 3 RPCs compartilhadas exige alinhamento com `worker_dash-market-share`.
 
 ## Tabelas / Views
 
@@ -67,5 +67,5 @@ Output principal: gráfico de linhas / barras com séries por agente. Tabela com
 ## Anti-padrões
 
 - Query direta em `vendas` para visualizações temporais. Use o MV.
-- Modificar `get_ms_*` sem avisar `dash-market-share`.
+- Modificar `get_ms_*` sem avisar `worker_dash-market-share`.
 - Plotly importado direto (use `PlotlyChart`).
