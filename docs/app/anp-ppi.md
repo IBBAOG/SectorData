@@ -49,7 +49,7 @@ Header: `ANP — Preços de Paridade de Importação (PPI)` + sub `Preços seman
 
 | Workflow | Schedule | Scripts |
 |---|---|---|
-| `.github/workflows/anp_precos_sync.yml` | Semanal segunda 12:00 UTC (09:00 BRT) | `scripts/pipelines/anp/precos/01_ppi_sync.py` (4 sheets: Gasolina, Diesel, QAV, GLP — `_SHEETS` map) |
+| `.github/workflows/etl_anp_precos.yml` | Semanal segunda 12:00 UTC (09:00 BRT) | `scripts/pipelines/anp/precos/01_ppi_sync.py` (4 sheets: Gasolina, Diesel, QAV, GLP — `_SHEETS` map) |
 
 O mesmo workflow encadeia também `02_precos_produtores_sync.py` e `glp_sync.py` (outros dashboards).
 

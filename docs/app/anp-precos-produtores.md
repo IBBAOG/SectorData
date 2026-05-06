@@ -50,7 +50,7 @@ Diferença vs `/anp-ppi`: aqui é o **preço de venda real do produtor** (refino
 
 | Workflow | Schedule | Scripts |
 |---|---|---|
-| `.github/workflows/anp_precos_sync.yml` | Semanal segunda 12:00 UTC (09:00 BRT) | `scripts/pipelines/anp/precos/02_precos_produtores_sync.py` (após `01_ppi_sync.py` no mesmo workflow) |
+| `.github/workflows/etl_anp_precos.yml` | Semanal segunda 12:00 UTC (09:00 BRT) | `scripts/pipelines/anp/precos/02_precos_produtores_sync.py` (após `01_ppi_sync.py` no mesmo workflow) |
 
 A série 2002-2012 é baixada uma única vez (estática); a 2013+ é rebaixada e upsertada a cada execução.
 

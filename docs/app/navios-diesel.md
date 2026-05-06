@@ -64,11 +64,11 @@ Este dashboard tem a **maior dependência de ETL** dentro do APP:
 
 | Workflow | Schedule | O que produz |
 |---|---|---|
-| `navios_lineup_scrape.yml` | cada 6h | Lineup dos portos → `navios_diesel` |
-| `navios_imo_lookup.yml` | após `navios_lineup_scrape` | Resolve IMO/MMSI das linhas novas |
-| `navios_positions_sync.yml` | após `navios_imo_lookup` | Atualiza posições + chegadas |
-| `ais_positions_sync.yml` | cada 6h+15min | AIS tempo real |
-| `ais_candidates_discover.yml` | cada 4h | Descoberta de candidatos (radar) |
+| `etl_navios_lineup.yml` | cada 6h | Lineup dos portos → `navios_diesel` |
+| `etl_navios_imo_lookup.yml` | após `etl_navios_lineup` | Resolve IMO/MMSI das linhas novas |
+| `etl_navios_positions.yml` | após `etl_navios_imo_lookup` | Atualiza posições + chegadas |
+| `etl_ais_positions.yml` | cada 6h+15min | AIS tempo real |
+| `etl_ais_candidates.yml` | cada 4h | Descoberta de candidatos (radar) |
 
 Mudanças no schema vêm geralmente de **necessidade do dashboard** (você pede ao Subgerente que pede ao ETL — ou vice-versa para colunas novas do scraper).
 

@@ -64,7 +64,7 @@ Diferenças entre os 3 dashboards Fase 3:
 
 | Workflow | Schedule | Scripts |
 |---|---|---|
-| `.github/workflows/anp_fase3_sync.yml` | Mensal dia 1° 13:00 UTC (10:00 BRT) | `scripts/pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` → `03_painel_imp_sync.py` |
+| `.github/workflows/etl_anp_fase3.yml` | Mensal dia 1° 13:00 UTC (10:00 BRT) | `scripts/pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` → `03_painel_imp_sync.py` |
 
 Comportamento do scraper `03_painel_imp_sync.py`:
 - Baixa o dataset do "Painel Dinâmico de Importações por Distribuidor" da ANP.

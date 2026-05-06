@@ -51,7 +51,7 @@ Diferença vs `/anp-cdp`: aqui é o **fluxo internacional** (import/export) repo
 
 | Workflow | Schedule | Scripts |
 |---|---|---|
-| `.github/workflows/mdic_comex_sync.yml` | Diário 14:00 UTC (11:00 BRT) | `scripts/pipelines/mdic_comex_sync.py` |
+| `.github/workflows/etl_mdic_comex.yml` | Diário 14:00 UTC (11:00 BRT) | `scripts/pipelines/mdic_comex_sync.py` |
 
 Comportamento do scraper:
 - Default: re-baixa últimos 3 meses (`--meses 3`) e faz upsert idempotente.

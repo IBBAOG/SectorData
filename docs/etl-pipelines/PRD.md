@@ -15,17 +15,17 @@ scripts/pipelines/                  # rodam via GitHub Actions (todos os ETL)
     positions_sync.py               AISStream WebSocket → vessel_registry, vessel_positions, port_arrivals
 
   anp/
-    cdp/                            chain (workflow anp_cdp_extract.yml)
+    cdp/                            chain (workflow etl_anp_cdp.yml)
       01_extract.py                 Selenium + ddddocr CAPTCHA → output/anp/
       02_upload.py                  CSVs → Supabase
-    fase3/                          chain (workflow anp_fase3_sync.yml)
+    fase3/                          chain (workflow etl_anp_fase3.yml)
       01_daie_sync.py               Dados Abertos IE
       02_desembaracos_sync.py       Desembaraços
       03_painel_imp_sync.py         Painel Combustíveis
-    precos/                         chain (workflow anp_precos_sync.yml — junto com glp_sync)
+    precos/                         chain (workflow etl_anp_precos.yml — junto com glp_sync)
       01_ppi_sync.py                PPI
       02_precos_produtores_sync.py  Preços Produtores
-    glp_sync.py                     GLP (rodado em anp_precos_sync.yml)
+    glp_sync.py                     GLP (rodado em etl_anp_precos.yml)
     lpc_sync.py                     Levantamento Preços ao Consumidor
     vendas_watch.py                 ANP vendas combustíveis (vintage anp-watcher)
 
@@ -53,19 +53,19 @@ scripts/utils/                      # one-shots (não-ETL)
 
 | Workflow | Schedule | Script(s) | Tabela alvo |
 |---|---|---|---|
-| `ais_candidates_discover.yml` | Cada 4h | `pipelines/ais/candidates_discover.py` | `import_candidates` |
-| `ais_positions_sync.yml` | Cada 6h+15min | `pipelines/ais/positions_sync.py` | `vessel_registry`, `vessel_positions`, `port_arrivals` |
-| `anp_vendas_watch.yml` | Trigger externo (cron-job.org via `workflow_dispatch`) | `pipelines/anp/vendas_watch.py --force` | (vendas combustíveis ANP) |
-| `anp_fase3_sync.yml` | Mensal — 1º dia, 13:00 UTC | `pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` → `03_painel_imp_sync.py` | `anp_daie` (6.912 rows), `anp_desembaracos` (6.204), `anp_painel_imp_dist` (1.444) |
-| `anp_lpc_sync.yml` | Semanal — quarta, 14:30 UTC (`30 14 * * 3`) | `pipelines/anp/lpc_sync.py` | `anp_lpc` (29.736 rows) |
-| `anp_precos_sync.yml` | Semanal — segunda, 12:00 UTC (`0 12 * * 1`) | `pipelines/anp/glp_sync.py` + `precos/01_ppi_sync.py` → `02_precos_produtores_sync.py` | `anp_glp` (3.106), `anp_ppi` (18.131), `anp_precos_produtores` (38.392) |
-| `anp_cdp_extract.yml` | Mensal (5º), 08:00 UTC (`0 8 5 * *`) | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` | `output/anp/` + `anp_cdp_producao` (1.813.851 rows) |
-| `mdic_comex_sync.yml` | Diário, 14:00 UTC (`0 14 * * *`) | `pipelines/mdic_comex_sync.py` | `mdic_comex` (1.238 rows) |
-| `navios_lineup_scrape.yml` | Cada 6h | `pipelines/navios/01_lineup_scrape.py` → `02_diesel_import.mjs` | `navios_diesel` |
-| `sindicom_sync.yml` | Mensal — dia 5, 15:00 UTC (`0 15 5 * *`) | `pipelines/sindicom_sync.py` | `sindicom` — BLOQUEADO por Cloudflare em IP residencial; só roda via GitHub Actions runner. Aguardando dispatch manual. |
-| `dg_margins_upload.yml` | Semanal | `manual/dg_margins_upload.py` | `d_g_margins` (este é Dados Locais, não ETL) |
-| `navios_imo_lookup.yml` | Após `navios_lineup_scrape` | `pipelines/navios/03_imo_lookup.py` → `04_cabotage_cleanup.py` | `navios_diesel.imo/mmsi` |
-| `navios_positions_sync.yml` | Após `navios_imo_lookup` | `pipelines/navios/05_positions_sync.py` | `vessel_positions`, `port_arrivals` |
+| `etl_ais_candidates.yml` | Cada 4h | `pipelines/ais/candidates_discover.py` | `import_candidates` |
+| `etl_ais_positions.yml` | Cada 6h+15min | `pipelines/ais/positions_sync.py` | `vessel_registry`, `vessel_positions`, `port_arrivals` |
+| `etl_anp_vendas.yml` | Trigger externo (cron-job.org via `workflow_dispatch`) | `pipelines/anp/vendas_watch.py --force` | (vendas combustíveis ANP) |
+| `etl_anp_fase3.yml` | Mensal — 1º dia, 13:00 UTC | `pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` → `03_painel_imp_sync.py` | `anp_daie` (6.912 rows), `anp_desembaracos` (6.204), `anp_painel_imp_dist` (1.444) |
+| `etl_anp_lpc.yml` | Semanal — quarta, 14:30 UTC (`30 14 * * 3`) | `pipelines/anp/lpc_sync.py` | `anp_lpc` (29.736 rows) |
+| `etl_anp_precos.yml` | Semanal — segunda, 12:00 UTC (`0 12 * * 1`) | `pipelines/anp/glp_sync.py` + `precos/01_ppi_sync.py` → `02_precos_produtores_sync.py` | `anp_glp` (3.106), `anp_ppi` (18.131), `anp_precos_produtores` (38.392) |
+| `etl_anp_cdp.yml` | Mensal (5º), 08:00 UTC (`0 8 5 * *`) | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` | `output/anp/` + `anp_cdp_producao` (1.813.851 rows) |
+| `etl_mdic_comex.yml` | Diário, 14:00 UTC (`0 14 * * *`) | `pipelines/mdic_comex_sync.py` | `mdic_comex` (1.238 rows) |
+| `etl_navios_lineup.yml` | Cada 6h | `pipelines/navios/01_lineup_scrape.py` → `02_diesel_import.mjs` | `navios_diesel` |
+| `etl_sindicom.yml` | Mensal — dia 5, 15:00 UTC (`0 15 5 * *`) | `pipelines/sindicom_sync.py` | `sindicom` — BLOQUEADO por Cloudflare em IP residencial; só roda via GitHub Actions runner. Aguardando dispatch manual. |
+| `manual_dg_margins.yml` | Semanal | `manual/dg_margins_upload.py` | `d_g_margins` (este é Dados Locais, não ETL) |
+| `etl_navios_imo_lookup.yml` | Após `etl_navios_lineup` | `pipelines/navios/03_imo_lookup.py` → `04_cabotage_cleanup.py` | `navios_diesel.imo/mmsi` |
+| `etl_navios_positions.yml` | Após `etl_navios_imo_lookup` | `pipelines/navios/05_positions_sync.py` | `vessel_positions`, `port_arrivals` |
 
 > Workflows confirmados ativos em 2026-05-05. Row counts refletem estado de produção em 2026-05-05. README está desatualizado (não os menciona). Quando atualizar README, incluir.
 

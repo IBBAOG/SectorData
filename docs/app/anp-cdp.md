@@ -57,7 +57,7 @@ Header dinâmico: "ANP CDP — Produção por Poço · {métrica} · {ano iníci
 
 | Workflow | Schedule | Scripts |
 |---|---|---|
-| `.github/workflows/anp_cdp_extract.yml` | Mensal (dia 5) | `scripts/pipelines/anp/cdp/01_extract.py` (CAPTCHA + Selenium) → `02_upload.py` (upsert via service key + refresh MV) |
+| `.github/workflows/etl_anp_cdp.yml` | Mensal (dia 5) | `scripts/pipelines/anp/cdp/01_extract.py` (CAPTCHA + Selenium) → `02_upload.py` (upsert via service key + refresh MV) |
 
 Backfill histórico foi feito via `02_upload.py --from-parquet`. Cargas mensais usam `--from-csv-dir`.
 

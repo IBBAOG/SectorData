@@ -148,7 +148,7 @@ ETL pode ler para análise; somente Alertas escreve.
 
 Cada workflow novo precisa: secrets registrados no GitHub, schedule cron, e linha no `docs/etl-pipelines/PRD.md`.
 
-Workflows ativos para as tabelas novas: `mdic_comex_sync.yml`, `anp_precos_sync.yml` (PPI + preços produtores + GLP), `anp_fase3_sync.yml` (DAIE + desembaraços + painel importações), `anp_lpc_sync.yml`, `sindicom_sync.yml`, `anp_cdp_extract.yml` (CDP). Ver `docs/etl-pipelines/PRD.md` para schedules e scripts.
+Workflows ativos para as tabelas novas: `etl_mdic_comex.yml`, `etl_anp_precos.yml` (PPI + preços produtores + GLP), `etl_anp_fase3.yml` (DAIE + desembaraços + painel importações), `etl_anp_lpc.yml`, `etl_sindicom.yml`, `etl_anp_cdp.yml` (CDP). Ver `docs/etl-pipelines/PRD.md` para schedules e scripts.
 
 ---
 
@@ -266,7 +266,7 @@ Resolvido:
 - `components/` na raiz — deletado (só tinha `__pycache__`).
 - `frontend-next/` na raiz — deletado (tentativa antiga abandonada). Referência stale em `src/app/login/page.tsx:96` corrigida.
 - `news-hunter-handoff.txt` na raiz — movido para [`docs/etl-pipelines/news-hunter-architecture.md`](etl-pipelines/news-hunter-architecture.md).
-- Workflows `anp_vendas_watch.yml` e `anp_fase3_sync.yml` — confirmados ATIVOS (anp-watcher é trigger externo via cron-job.org; anp_fase3_sync roda mensal). Adicionados aos PRDs do ETL.
+- Workflows `etl_anp_vendas.yml` e `etl_anp_fase3.yml` — confirmados ATIVOS (anp-watcher é trigger externo via cron-job.org; etl_anp_fase3 roda mensal). Adicionados aos PRDs do ETL.
 
 Tech debt conhecido (não resolvido):
 - **`sql/` na raiz contém DDL aplicado direto no Supabase Dashboard, NÃO versionado em `supabase/migrations/`.** Tabelas afetadas: `price_bands`, `profiles`, `module_visibility`. Recriar o DB apenas das migrations resultaria em DB incompleto. **Ação futura**: APP deve converter os 3 arquivos em migrations próprias, depois remover `sql/`.

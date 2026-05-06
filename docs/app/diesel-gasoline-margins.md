@@ -45,7 +45,7 @@ Visualização típica: **stacked bar/area chart** ao longo de semanas, com filt
 CEO edita data/d_g_margins.xlsx → scripts/manual/dg_margins_upload.py → upsert em d_g_margins
 ```
 
-Workflow GitHub Action: `.github/workflows/dg_margins_upload.yml` roda semanalmente (segunda).
+Workflow GitHub Action: `.github/workflows/manual_dg_margins.yml` roda semanalmente (segunda).
 
 **Dono do dado:** `worker_dados-locais` (não ETL automático). Este dashboard só consome.
 

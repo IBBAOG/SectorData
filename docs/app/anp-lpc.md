@@ -49,7 +49,7 @@ Diferença vs `/anp-precos-produtores`: aqui é o **preço final ao consumidor**
 
 | Workflow | Schedule | Scripts |
 |---|---|---|
-| `.github/workflows/anp_lpc_sync.yml` | Quarta 14:30 UTC (11:30 BRT) | `scripts/pipelines/anp/lpc_sync.py` |
+| `.github/workflows/etl_anp_lpc.yml` | Quarta 14:30 UTC (11:30 BRT) | `scripts/pipelines/anp/lpc_sync.py` |
 
 Comportamento do scraper:
 - Estratégia incremental: consulta `MAX(data_fim)` em `anp_lpc`, baixa apenas semanas mais recentes.

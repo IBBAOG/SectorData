@@ -50,7 +50,7 @@ Diferença vs `/anp-desembaracos` (Fase 3): aqui o foco é **agregação por pro
 
 | Workflow | Schedule | Scripts |
 |---|---|---|
-| `.github/workflows/anp_fase3_sync.yml` | Mensal dia 1° 13:00 UTC (10:00 BRT) | `scripts/pipelines/anp/fase3/01_daie_sync.py` (encadeado com `02_desembaracos_sync.py` e `03_painel_imp_sync.py`) |
+| `.github/workflows/etl_anp_fase3.yml` | Mensal dia 1° 13:00 UTC (10:00 BRT) | `scripts/pipelines/anp/fase3/01_daie_sync.py` (encadeado com `02_desembaracos_sync.py` e `03_painel_imp_sync.py`) |
 
 Comportamento do scraper:
 - Baixa o dataset Dados Abertos IE da ANP (CSV/XLSX).

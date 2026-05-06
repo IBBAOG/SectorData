@@ -50,7 +50,7 @@ Diferença vs `/anp-ppi` e `/anp-precos-produtores`: aqui o foco é **volume ven
 
 | Workflow | Schedule | Scripts |
 |---|---|---|
-| `.github/workflows/anp_precos_sync.yml` | Semanal segunda 12:00 UTC (09:00 BRT) | `scripts/pipelines/anp/glp_sync.py` (encadeado após `precos/01_ppi_sync.py` e `precos/02_precos_produtores_sync.py`) |
+| `.github/workflows/etl_anp_precos.yml` | Semanal segunda 12:00 UTC (09:00 BRT) | `scripts/pipelines/anp/glp_sync.py` (encadeado após `precos/01_ppi_sync.py` e `precos/02_precos_produtores_sync.py`) |
 
 ## Filtros disponíveis (UI)
 

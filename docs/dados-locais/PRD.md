@@ -31,7 +31,7 @@ Schema é dono do APP. Aqui só listamos o contrato esperado.
 1. CEO abre Excel em data/
 2. CEO edita/adiciona linhas
 3. CEO salva
-4. Upload roda (manual local OU GitHub Action dg_margins_upload.yml semanal)
+4. Upload roda (manual local OU GitHub Action manual_dg_margins.yml semanal)
 5. Script lê Excel → valida schema → upsert in Supabase
 ```
 
@@ -49,7 +49,7 @@ Sua função: garantir que o passo 5 nunca quebre por mismatch entre Excel e sch
 
 | Workflow | Schedule | Script |
 |---|---|---|
-| `.github/workflows/dg_margins_upload.yml` | Semanal (segunda) | `scripts/manual/dg_margins_upload.py` |
+| `.github/workflows/manual_dg_margins.yml` | Semanal (segunda) | `scripts/manual/dg_margins_upload.py` |
 
 `price_bands` hoje é upload manual (rodar `python scripts/manual/price_bands_upload.py` localmente). Verificar se faz sentido criar workflow.
 

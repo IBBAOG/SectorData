@@ -64,6 +64,14 @@ session.json
 # standalone scripts — local only, not for version control
 exportar_para_excel.py
 
-# local alert system — not for version control
-alertas/
+# alertas/ — source code is now versioned; only runtime/secret artifacts are excluded.
+# CRITICAL: credentials.json and token.json contain Gmail OAuth secrets — NEVER commit.
+alertas/credentials.json
+alertas/token.json
+alertas/estado/
+alertas/__pycache__/
+alertas/bases/__pycache__/
+alertas/scripts/**/__pycache__/
+
+# DADOS/ — local consolidated parquets and history CSVs; not for version control.
 DADOS/

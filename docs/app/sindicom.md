@@ -51,7 +51,7 @@ Diferença vs `/sales-volumes` (ANP): SINDICOM agrega **apenas as distribuidoras
 
 | Workflow | Schedule | Scripts |
 |---|---|---|
-| `.github/workflows/sindicom_sync.yml` | Dia 5 mensal 15:00 UTC (12:00 BRT) + `workflow_dispatch` | `scripts/pipelines/sindicom_sync.py` |
+| `.github/workflows/etl_sindicom.yml` | Dia 5 mensal 15:00 UTC (12:00 BRT) + `workflow_dispatch` | `scripts/pipelines/sindicom_sync.py` |
 
 Comportamento do scraper:
 - Download via Playwright Chromium (locale pt-BR) — necessário porque o site usa Cloudflare que rejeita `requests` com User-Agent normal.
@@ -91,7 +91,7 @@ Comportamento do scraper:
 Quando `filtros.produtos.length === 0` (= tabela vazia), a página não exibe charts vazios — exibe um **card central de empty state** com:
 
 - Mensagem: "Aguardando dados — pipeline ainda não rodou."
-- Instrução: como disparar o workflow `sindicom_sync.yml` via GitHub Actions
+- Instrução: como disparar o workflow `etl_sindicom.yml` via GitHub Actions
 - Link para este sub-PRD para detalhes do bloqueio Cloudflare
 
 Sidebar continua renderizada (filtros vazios + slider escondido), mas sem barrel infinito travando a UI.
