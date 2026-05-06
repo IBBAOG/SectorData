@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Layout, PlotData } from "plotly.js";
 import Slider from "rc-slider";
 import "rc-slider/assets/index.css";
@@ -147,71 +147,103 @@ export default function MdicComexPage() {
   const { visible, loading: visLoading } = useModuleVisibilityGuard("mdic-comex");
   const supabase = getSupabaseClient();
 
-  const [loading, setLoading]                 = useState(true);
-  const [allSerie, setAllSerie]               = useState<MdicComexSerieRow[]>([]);
-  const [anos, setAnos]                       = useState<number[]>([]);
-  const [yearRange, setYearRange]             = useState<[number, number]>([0, 0]);
-  const [selectedNCMs, setSelectedNCMs]       = useState<string[]>(ALL_NCMS);
+  const [loading, setLoading]                     = useState(true);
+  const [serieLoading, setSerieLoading]           = useState(false);
+  const [topLoading, setTopLoading]               = useState(false);
+  const [serieRows, setSerieRows]                 = useState<MdicComexSerieRow[]>([]);
+  const [anos, setAnos]                           = useState<number[]>([]);
+  const [yearRange, setYearRange]                 = useState<[number, number]>([0, 0]);
+  const [selectedNCMs, setSelectedNCMs]           = useState<string[]>(ALL_NCMS);
   const [selectedNcmPaises, setSelectedNcmPaises] = useState<string>("27090010");
-  const [topImport, setTopImport]             = useState<MdicComexTopPaisRow[]>([]);
-  const [topExport, setTopExport]             = useState<MdicComexTopPaisRow[]>([]);
-  const [topLoading, setTopLoading]           = useState(false);
+  const [topImport, setTopImport]                 = useState<MdicComexTopPaisRow[]>([]);
+  const [topExport, setTopExport]                 = useState<MdicComexTopPaisRow[]>([]);
 
-  // ── Load series on mount ──────────────────────────────────────────────────
+  const serieDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const topDebounceRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Initial load: filtros + first serie fetch (last 10 years) ────────────
   useEffect(() => {
     if (!supabase) return;
     let cancelled = false;
     (async () => {
-      const [filtros, serie] = await Promise.all([
-        rpcGetMdicComexFiltros(supabase),
-        rpcGetMdicComexSerie(supabase),
-      ]);
+      const filtros = await rpcGetMdicComexFiltros(supabase);
       if (cancelled) return;
       const a = filtros.anos;
       setAnos(a);
-      if (a.length > 0) {
-        const currentYear = new Date().getFullYear();
-        const startIdx = Math.max(0, a.findIndex(yr => yr >= currentYear - 9));
-        setYearRange([startIdx, a.length - 1]);
+
+      if (a.length === 0) {
+        setLoading(false);
+        return;
       }
-      setAllSerie(serie);
-      setLoading(false);
+
+      const currentYear = new Date().getFullYear();
+      const startIdx    = Math.max(0, a.findIndex(yr => yr >= currentYear - 9));
+      const endIdx      = a.length - 1;
+      const fromYear    = a[startIdx];
+      const toYear      = a[endIdx];
+      setYearRange([startIdx, endIdx]);
+
+      const serie = await rpcGetMdicComexSerie(supabase, {
+        anoInicio: fromYear,
+        anoFim:    toYear,
+      });
+      if (!cancelled) {
+        setSerieRows(serie);
+        setLoading(false);
+      }
     })();
     return () => { cancelled = true; };
   }, [supabase]);
 
-  const anoInicio = anos[yearRange[0]] ?? null;
-  const anoFim    = anos[yearRange[1]] ?? null;
+  // ── Ref-stable year tuple to avoid spurious refetches ─────────────────────
+  const yearTuple = useMemo<[number, number]>(
+    () => [yearRange[0], yearRange[1]],
+    [yearRange],
+  );
 
-  // ── Load top countries when NCM or year range changes ────────────────────
-  useEffect(() => {
-    if (!supabase || !anoInicio || !anoFim) return;
-    let cancelled = false;
-    setTopLoading(true);
-    (async () => {
+  // ── Reactive serie fetch (debounced 400ms) — period changes only ─────────
+  const fetchSerie = useCallback(() => {
+    if (!supabase || loading) return;
+    if (serieDebounceRef.current) clearTimeout(serieDebounceRef.current);
+    serieDebounceRef.current = setTimeout(async () => {
+      setSerieLoading(true);
+      const yMin = anos[yearTuple[0]];
+      const yMax = anos[yearTuple[1]];
+      const rows = await rpcGetMdicComexSerie(supabase, {
+        anoInicio: yMin ?? null,
+        anoFim:    yMax ?? null,
+      });
+      setSerieRows(rows);
+      setSerieLoading(false);
+    }, 400);
+  }, [supabase, loading, yearTuple, anos]);
+
+  useEffect(() => { fetchSerie(); }, [fetchSerie]);
+
+  // ── Reactive top countries fetch (debounced 400ms) ────────────────────────
+  const fetchTop = useCallback(() => {
+    if (!supabase || loading) return;
+    if (topDebounceRef.current) clearTimeout(topDebounceRef.current);
+    topDebounceRef.current = setTimeout(async () => {
+      setTopLoading(true);
+      const yMin = anos[yearTuple[0]];
+      const yMax = anos[yearTuple[1]];
+      if (!yMin || !yMax) { setTopLoading(false); return; }
       const [imp, exp] = await Promise.all([
-        rpcGetMdicComexTopPaises(supabase, "import", selectedNcmPaises, anoInicio, anoFim),
-        rpcGetMdicComexTopPaises(supabase, "export", selectedNcmPaises, anoInicio, anoFim),
+        rpcGetMdicComexTopPaises(supabase, "import", selectedNcmPaises, yMin, yMax),
+        rpcGetMdicComexTopPaises(supabase, "export", selectedNcmPaises, yMin, yMax),
       ]);
-      if (cancelled) return;
       setTopImport(imp);
       setTopExport(exp);
       setTopLoading(false);
-    })();
-    return () => { cancelled = true; };
-  }, [supabase, selectedNcmPaises, anoInicio, anoFim]);
+    }, 400);
+  }, [supabase, loading, selectedNcmPaises, yearTuple, anos]);
 
-  // ── Filter series ─────────────────────────────────────────────────────────
-  const filteredSerie = useMemo(() => {
-    if (!anoInicio || !anoFim) return allSerie;
-    return allSerie.filter(r =>
-      r.ano >= anoInicio && r.ano <= anoFim && selectedNCMs.includes(r.ncm_codigo)
-    );
-  }, [allSerie, anoInicio, anoFim, selectedNCMs]);
+  useEffect(() => { fetchTop(); }, [fetchTop]);
 
   // ── Charts ────────────────────────────────────────────────────────────────
-  const importChart    = useMemo(() => buildLineChart(filteredSerie, "import", selectedNCMs), [filteredSerie, selectedNCMs]);
-  const exportChart    = useMemo(() => buildLineChart(filteredSerie, "export", selectedNCMs), [filteredSerie, selectedNCMs]);
+  const importChart    = useMemo(() => buildLineChart(serieRows, "import", selectedNCMs), [serieRows, selectedNCMs]);
+  const exportChart    = useMemo(() => buildLineChart(serieRows, "export", selectedNCMs), [serieRows, selectedNCMs]);
   const topImportChart = useMemo(() => buildBarChart(topImport, "import", selectedNcmPaises), [topImport, selectedNcmPaises]);
   const topExportChart = useMemo(() => buildBarChart(topExport, "export", selectedNcmPaises), [topExport, selectedNcmPaises]);
 
@@ -224,6 +256,10 @@ export default function MdicComexPage() {
         : [...prev, ncm]
     );
   };
+
+  const hasYears = anos.length > 0;
+  const yMin     = hasYears ? anos[yearRange[0]] : null;
+  const yMax     = hasYears ? anos[yearRange[1]] : null;
 
   return (
     <div>
@@ -247,7 +283,12 @@ export default function MdicComexPage() {
               <div className="sidebar-section-label">Filtros</div>
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Produto</div>
+                <div className="sidebar-filter-label">
+                  Produto{" "}
+                  <span style={{ color: "#888", fontWeight: 400 }}>
+                    ({selectedNCMs.length}/{ALL_NCMS.length})
+                  </span>
+                </div>
                 {ALL_NCMS.map(ncm => (
                   <div key={ncm} className="form-check" style={{ marginBottom: 6 }}>
                     <input
@@ -268,11 +309,18 @@ export default function MdicComexPage() {
                     </label>
                   </div>
                 ))}
+                {selectedNCMs.length < ALL_NCMS.length && (
+                  <button className="filter-btn-link filter-btn-link--secondary"
+                    style={{ marginTop: 4, fontFamily: "Arial", fontSize: 10 }}
+                    onClick={() => setSelectedNCMs(ALL_NCMS)}>
+                    Limpar
+                  </button>
+                )}
               </div>
 
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Período</div>
-                {!loading && anos.length > 0 && (
+                {!loading && hasYears && (
                   <>
                     <div style={{ marginTop: 18, marginBottom: 10, paddingLeft: 4, paddingRight: 4 }}>
                       <Slider
@@ -287,8 +335,8 @@ export default function MdicComexPage() {
                       />
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#555", fontFamily: "Arial" }}>
-                      <span style={{ fontWeight: 600 }}>{anoInicio}</span>
-                      <span style={{ fontWeight: 600 }}>{anoFim}</span>
+                      <span style={{ fontWeight: 600 }}>{yMin}</span>
+                      <span style={{ fontWeight: 600 }}>{yMax}</span>
                     </div>
                   </>
                 )}
@@ -313,10 +361,19 @@ export default function MdicComexPage() {
           {/* ── Main content ──────────────────────────────────────────── */}
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
-              <div className="page-header-title" style={{ marginBottom: 16 }}>
-                MDIC Comex Stat — Importações e Exportações
-                {anoInicio && anoFim ? ` · ${anoInicio}–${anoFim}` : ""}
+              <div className="mb-2">
+                <div className="page-header-title">MDIC Comex Stat — Importações e Exportações</div>
+                <div className="page-header-sub">
+                  Volume mensal de importação e exportação de petróleo cru, gasolina e diesel por NCM e país de origem/destino
+                  {hasYears && (
+                    <span style={{ marginLeft: 12, fontSize: 11, color: "#888" }}>
+                      Período: {yMin}–{yMax}
+                    </span>
+                  )}
+                </div>
               </div>
+
+              <hr style={{ borderTop: "2px solid #e0e0e0", marginBottom: 12 }} />
 
               {loading ? (
                 <div className="d-flex justify-content-center my-5">
@@ -327,14 +384,21 @@ export default function MdicComexPage() {
                   {/* ── Volume Importado ─────────────────────────────── */}
                   <div className="row mb-2">
                     <div className="col-12">
-                      <div className="chart-container">
-                        <div className="section-title">Importações (mil t / mês)</div>
+                      <div className="chart-container" style={{ position: "relative" }}>
+                        <div className="section-title">
+                          Importações (mil t / mês)
+                          {serieLoading && (
+                            <span style={{ marginLeft: 10, fontSize: 11, color: "#aaa", fontWeight: 400 }}>
+                              atualizando…
+                            </span>
+                          )}
+                        </div>
                         <hr className="section-hr" />
                         <PlotlyChart
                           data={importChart.data}
                           layout={importChart.layout}
                           config={{ responsive: true, displayModeBar: false }}
-                          style={{ width: "100%", height: 280 }}
+                          style={{ width: "100%", height: 280, opacity: serieLoading ? 0.5 : 1 }}
                         />
                       </div>
                     </div>
@@ -343,14 +407,21 @@ export default function MdicComexPage() {
                   {/* ── Volume Exportado ─────────────────────────────── */}
                   <div className="row mb-2">
                     <div className="col-12">
-                      <div className="chart-container">
-                        <div className="section-title">Exportações (mil t / mês)</div>
+                      <div className="chart-container" style={{ position: "relative" }}>
+                        <div className="section-title">
+                          Exportações (mil t / mês)
+                          {serieLoading && (
+                            <span style={{ marginLeft: 10, fontSize: 11, color: "#aaa", fontWeight: 400 }}>
+                              atualizando…
+                            </span>
+                          )}
+                        </div>
                         <hr className="section-hr" />
                         <PlotlyChart
                           data={exportChart.data}
                           layout={exportChart.layout}
                           config={{ responsive: true, displayModeBar: false }}
-                          style={{ width: "100%", height: 280 }}
+                          style={{ width: "100%", height: 280, opacity: serieLoading ? 0.5 : 1 }}
                         />
                       </div>
                     </div>
@@ -359,35 +430,23 @@ export default function MdicComexPage() {
                   {/* ── Top Países ───────────────────────────────────── */}
                   <div className="row mb-2">
                     <div className="col-lg-6">
-                      <div className="chart-container" style={{ minHeight: 420 }}>
-                        {topLoading ? (
-                          <div className="d-flex justify-content-center align-items-center" style={{ height: 380 }}>
-                            <div className="spinner-border spinner-border-sm text-secondary" />
-                          </div>
-                        ) : (
-                          <PlotlyChart
-                            data={topImportChart.data}
-                            layout={topImportChart.layout}
-                            config={{ responsive: true, displayModeBar: false }}
-                            style={{ width: "100%", height: 380 }}
-                          />
-                        )}
+                      <div className="chart-container" style={{ minHeight: 420, position: "relative" }}>
+                        <PlotlyChart
+                          data={topImportChart.data}
+                          layout={topImportChart.layout}
+                          config={{ responsive: true, displayModeBar: false }}
+                          style={{ width: "100%", height: 380, opacity: topLoading ? 0.5 : 1 }}
+                        />
                       </div>
                     </div>
                     <div className="col-lg-6">
-                      <div className="chart-container" style={{ minHeight: 420 }}>
-                        {topLoading ? (
-                          <div className="d-flex justify-content-center align-items-center" style={{ height: 380 }}>
-                            <div className="spinner-border spinner-border-sm text-secondary" />
-                          </div>
-                        ) : (
-                          <PlotlyChart
-                            data={topExportChart.data}
-                            layout={topExportChart.layout}
-                            config={{ responsive: true, displayModeBar: false }}
-                            style={{ width: "100%", height: 380 }}
-                          />
-                        )}
+                      <div className="chart-container" style={{ minHeight: 420, position: "relative" }}>
+                        <PlotlyChart
+                          data={topExportChart.data}
+                          layout={topExportChart.layout}
+                          config={{ responsive: true, displayModeBar: false }}
+                          style={{ width: "100%", height: 380, opacity: topLoading ? 0.5 : 1 }}
+                        />
                       </div>
                     </div>
                   </div>
