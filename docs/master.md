@@ -16,14 +16,24 @@ CEO (Eduardo)
      │  (rota tarefas)                  (escreve docs cross-dept)
      │
      ├─ Subgerente APP   (entry point pra qualquer coisa do produto web)
-     │   ├─ dash-sales-volumes        (/sales-volumes)
-     │   ├─ dash-market-share         (/market-share)
-     │   ├─ dash-navios-diesel        (/navios-diesel + sub-páginas futuras)
-     │   ├─ dash-margins              (/diesel-gasoline-margins)
-     │   ├─ dash-price-bands          (/price-bands)
-     │   ├─ dash-stocks               (/stocks + Yahoo proxy + components/stocks/)
-     │   ├─ dash-news-hunter          (/news-hunter — coord. com repo scanner)
-     │   └─ dash-admin                (/home + /profile + /admin-panel)
+     │   ├─ dash-sales-volumes            (/sales-volumes)
+     │   ├─ dash-market-share             (/market-share)
+     │   ├─ dash-navios-diesel            (/navios-diesel + sub-páginas futuras)
+     │   ├─ dash-margins                  (/diesel-gasoline-margins)
+     │   ├─ dash-price-bands              (/price-bands)
+     │   ├─ dash-stocks                   (/stocks + Yahoo proxy + components/stocks/)
+     │   ├─ dash-news-hunter              (/news-hunter — coord. com repo scanner)
+     │   ├─ dash-admin                    (/home + /profile + /admin-panel)
+     │   ├─ dash-anp-cdp                  (/anp-cdp — Oil & Gas)
+     │   ├─ dash-anp-ppi                  (/anp-ppi — Fuel Distribution)
+     │   ├─ dash-anp-precos-produtores    (/anp-precos-produtores — Fuel Distribution)
+     │   ├─ dash-anp-glp                  (/anp-glp — Fuel Distribution)
+     │   ├─ dash-mdic-comex               (/mdic-comex — Oil & Gas / Fuel Distribution)
+     │   ├─ dash-anp-lpc                  (/anp-lpc — Fuel Distribution)
+     │   ├─ dash-sindicom                 (/sindicom — Fuel Distribution)
+     │   ├─ dash-anp-daie                 (/anp-daie — Oil & Gas / Fuel Distribution)
+     │   ├─ dash-anp-desembaracos         (/anp-desembaracos — Oil & Gas / Fuel Distribution)
+     │   └─ dash-anp-painel-importacoes   (/anp-painel-importacoes — Oil & Gas / Fuel Distribution)
      │
      ├─ Supabase / DB    (schema Postgres, migrations, RLS, RPCs SQL,
      │                    materialized views, supabase_deploy workflow)
@@ -61,6 +71,16 @@ Cada um possui um módulo (ou bundle, no caso de admin). Cada um auto-documenta 
 | [`worker_dash-stocks`](../.claude/agents/worker_dash-stocks.md) | `/stocks` + Yahoo proxy + `components/stocks/` | [`docs/app/stocks.md`](app/stocks.md) |
 | [`worker_dash-news-hunter`](../.claude/agents/worker_dash-news-hunter.md) | `/news-hunter` (coord. com repo scanner) | [`docs/app/news-hunter.md`](app/news-hunter.md) |
 | [`worker_dash-admin`](../.claude/agents/worker_dash-admin.md) | `/home` + `/profile` + `/admin-panel` | [`docs/app/admin.md`](app/admin.md) |
+| [`worker_dash-anp-cdp`](../.claude/agents/worker_dash-anp-cdp.md) | `/anp-cdp` | [`docs/app/anp-cdp.md`](app/anp-cdp.md) |
+| [`worker_dash-anp-ppi`](../.claude/agents/worker_dash-anp-ppi.md) | `/anp-ppi` | [`docs/app/anp-ppi.md`](app/anp-ppi.md) |
+| [`worker_dash-anp-precos-produtores`](../.claude/agents/worker_dash-anp-precos-produtores.md) | `/anp-precos-produtores` | [`docs/app/anp-precos-produtores.md`](app/anp-precos-produtores.md) |
+| [`worker_dash-anp-glp`](../.claude/agents/worker_dash-anp-glp.md) | `/anp-glp` | [`docs/app/anp-glp.md`](app/anp-glp.md) |
+| [`worker_dash-mdic-comex`](../.claude/agents/worker_dash-mdic-comex.md) | `/mdic-comex` | [`docs/app/mdic-comex.md`](app/mdic-comex.md) |
+| [`worker_dash-anp-lpc`](../.claude/agents/worker_dash-anp-lpc.md) | `/anp-lpc` | [`docs/app/anp-lpc.md`](app/anp-lpc.md) |
+| [`worker_dash-sindicom`](../.claude/agents/worker_dash-sindicom.md) | `/sindicom` | [`docs/app/sindicom.md`](app/sindicom.md) |
+| [`worker_dash-anp-daie`](../.claude/agents/worker_dash-anp-daie.md) | `/anp-daie` | [`docs/app/anp-daie.md`](app/anp-daie.md) |
+| [`worker_dash-anp-desembaracos`](../.claude/agents/worker_dash-anp-desembaracos.md) | `/anp-desembaracos` | [`docs/app/anp-desembaracos.md`](app/anp-desembaracos.md) |
+| [`worker_dash-anp-painel-importacoes`](../.claude/agents/worker_dash-anp-painel-importacoes.md) | `/anp-painel-importacoes` | [`docs/app/anp-painel-importacoes.md`](app/anp-painel-importacoes.md) |
 
 ## Papéis transversais (não donos de pasta)
 
@@ -84,7 +104,7 @@ São os pontos onde um departamento depende de outro. Mudanças nestes contratos
 | Quem consome | Como |
 |---|---|
 | APP | Lê via supabase-js (anon key) chamando RPCs. Wrappers em `src/lib/rpc.ts` (este código é do APP, mas as RPCs em si pertencem ao Supabase) |
-| ETL | Escreve via supabase-py (service key) — popula `vendas`, `navios_diesel`, `news_articles`, etc. |
+| ETL | Escreve via supabase-py (service key) — popula `vendas`, `navios_diesel`, `news_articles`, `mdic_comex`, `anp_ppi`, `anp_precos_produtores`, `anp_glp`, `anp_daie`, `anp_desembaracos`, `anp_painel_imp_dist`, `anp_lpc`, `sindicom`, `anp_cdp_producao`, etc. |
 | Dados Locais | Escreve via supabase-py (service key) — popula `d_g_margins`, `price_bands` |
 | Alertas | Lê via supabase-py — verifica mudanças em fontes monitoradas |
 
@@ -127,6 +147,8 @@ ETL pode ler para análise; somente Alertas escreve.
 **Dono:** ETL (e APP, no caso do `supabase_deploy.yml`).
 
 Cada workflow novo precisa: secrets registrados no GitHub, schedule cron, e linha no `docs/etl-pipelines/PRD.md`.
+
+Workflows ativos para as tabelas novas: `mdic_comex_sync.yml`, `anp_precos_sync.yml` (PPI + preços produtores + GLP), `anp_fase3_sync.yml` (DAIE + desembaraços + painel importações), `anp_lpc_sync.yml`, `sindicom_sync.yml`, `anp_cdp_extract.yml` (CDP). Ver `docs/etl-pipelines/PRD.md` para schedules e scripts.
 
 ---
 
@@ -191,6 +213,7 @@ Workflow controlado pelo **Subgerente APP** (não pelo Gerente Geral). Ver detal
 ## Estado atual (snapshot)
 
 - 4 departamentos + 3 papéis transversais.
+- 18 dashboards ativos (8 originais + 10 adicionados na Fase 3).
 - Documentação inicial criada em **2026-05-05**.
 
 ### Limpeza inicial (2026-05-05)

@@ -77,6 +77,31 @@ Para qualquer mudança em código de um dashboard específico, delegue ao agente
 | `/stocks` | `worker_dash-stocks` | [stocks.md](stocks.md) |
 | `/news-hunter` | `worker_dash-news-hunter` | [news-hunter.md](news-hunter.md) |
 | `/home`, `/profile`, `/admin-panel` | `worker_dash-admin` | [admin.md](admin.md) |
+| `/anp-cdp` | `worker_dash-anp-cdp` | [anp-cdp.md](anp-cdp.md) |
+| `/anp-ppi` | `worker_dash-anp-ppi` | [anp-ppi.md](anp-ppi.md) |
+| `/anp-precos-produtores` | `worker_dash-anp-precos-produtores` | [anp-precos-produtores.md](anp-precos-produtores.md) |
+| `/anp-glp` | `worker_dash-anp-glp` | [anp-glp.md](anp-glp.md) |
+| `/mdic-comex` | `worker_dash-mdic-comex` | [mdic-comex.md](mdic-comex.md) |
+| `/anp-lpc` | `worker_dash-anp-lpc` | [anp-lpc.md](anp-lpc.md) |
+| `/sindicom` | `worker_dash-sindicom` | [sindicom.md](sindicom.md) |
+| `/anp-daie` | `worker_dash-anp-daie` | [anp-daie.md](anp-daie.md) |
+| `/anp-desembaracos` | `worker_dash-anp-desembaracos` | [anp-desembaracos.md](anp-desembaracos.md) |
+| `/anp-painel-importacoes` | `worker_dash-anp-painel-importacoes` | [anp-painel-importacoes.md](anp-painel-importacoes.md) |
+
+### Dashboards adicionados na Fase 3 (categoria NavBar / tabela alvo)
+
+| Slug | Categoria NavBar | Tabela alvo (linhas) |
+|---|---|---|
+| `anp-cdp` | Oil & Gas | `anp_cdp_producao` (~1.8M) |
+| `anp-ppi` | Fuel Distribution | `anp_ppi` (~18k) |
+| `anp-precos-produtores` | Fuel Distribution | `anp_precos_produtores` (~38k) |
+| `anp-glp` | Fuel Distribution | `anp_glp` (~3k) |
+| `mdic-comex` | Fuel Distribution | `mdic_comex` (~1.2k) |
+| `anp-lpc` | Fuel Distribution | `anp_lpc` (~30k) |
+| `sindicom` | Fuel Distribution | `sindicom` (0 — pendente Cloudflare) |
+| `anp-daie` | Fuel Distribution | `anp_daie` (~7k) |
+| `anp-desembaracos` | Fuel Distribution | `anp_desembaracos` (~6k) |
+| `anp-painel-importacoes` | Fuel Distribution | `anp_painel_imp_dist` (~1.4k) |
 
 ## Stack
 
@@ -167,3 +192,34 @@ Ver `.claude/agents/worker_subgerente-app.md` → seção "Adicionar novo dashbo
 - **Dados Locais** popula `d_g_margins` e `price_bands` via upload manual.
 - **Alertas** lê tabelas; mudanças de schema podem quebrar bases.
 - **Designer** é consultado antes de mudanças visuais.
+
+## Padrões consolidados na Fase 3 (referência para futuros dashboards)
+
+A Fase 3 entregou 10 dashboards (ANP CDP, PPI, Preços Produtores, GLP, MDIC Comex, ANP LPC, SINDICOM, DAIE, Desembaraços, Painel Importações) e cristalizou os seguintes padrões. Use como checklist ao criar dashboard novo:
+
+1. **Header** — `page-header-title` + `page-header-sub` + `<hr>` (`border-top: 2px solid #e0e0e0`) + period badge condicional.
+2. **Push de período para server-side** — passar ANO ou DATE pra RPC (`p_ano_inicio/p_ano_fim` ou `p_data_inicio/p_data_fim`); evita filtrar volumes grandes no cliente.
+3. **Debounce 400ms** via `useCallback` + `useRef` em todos os fetches reativos a filtros.
+4. **Loading discreto** — barrel só no init; nos refetches usar `serieLoading`/`topLoading` inline (`atualizando…`) com `opacity: 0.5` no chart.
+5. **Filtros multi-select** — botão "Limpar" + counter `(N/total)` em cinza `#888`.
+6. **`yearTuple = useMemo<[number, number]>`** ref-stable para evitar refetches espúrios disparados por nova identidade de array.
+7. **Empty state amigável** (card central) quando tabela vazia ou filtros sem resultado.
+8. **Section-title extraído do layout do Plotly** — permite indicador "atualizando…" no header da seção.
+9. **Coerência divisor/unidade** — divisor matemático e label de unidade têm que casar (lição: bug de fator 1000 no `anp-daie`).
+10. **Locale-aware capitalize** — `toLocaleLowerCase("pt-BR")` para nomes com acento.
+
+## Próximas Fases (roadmap)
+
+### Fase 4 — Extração de componentes compartilhados (proposta, não executar agora)
+
+Os 10 dashboards da Fase 3 evidenciaram duplicação substancial. Estimativa: **~1.500 linhas removidas** após extração. Candidatos:
+
+- `<DashboardHeader>` — encapsula o padrão header (título + sub + hr + period badge).
+- `<MultiSelectFilter>` — multi-select com botão Limpar e counter `(N/total)` (substitui boilerplate).
+- `<PeriodSlider>` — promover slider de período para componente verdadeiramente compartilhado (hoje há variantes locais).
+- `<ChartSection>` — wrapper que extrai o section-title do layout do Plotly e exibe indicador "atualizando…".
+- `useDebouncedFetch` — hook que encapsula o padrão `useCallback` + `useRef` + 400ms.
+- `plotlyDefaults.ts` — defaults de layout/config do Plotly (cores, fontes, locale, modeBar).
+- **Branded types para unidades** (`type Liters = number & { __brand: "Liters" }`) — força conversão explícita; previne o bug de fator 1000.
+
+Antes de iniciar a Fase 4, validar com Designer que o `<DashboardHeader>` cobre 100% das variações visuais já aprovadas.

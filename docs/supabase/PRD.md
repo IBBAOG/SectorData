@@ -56,18 +56,37 @@ sql/                                LEGADO — DDL aplicado direto no Dashboard
 | `news_articles`, `news_hunter_keywords` | dash-news-hunter | scanner externo + user via UI |
 | `profiles`, `module_visibility` | dash-admin | App (RPC) |
 
+### Tabelas Fase 3 (adicionadas 2026-05-04)
+
+Todas com RLS habilitada, policy `acesso autenticado` FOR SELECT TO authenticated USING (true), exceto `anp_cdp_producao` (policy `public read` USING (true)).
+
+| Tabela | PK | Colunas-chave | Migration | Pipeline |
+|---|---|---|---|---|
+| `mdic_comex` | (ano, mes, flow, ncm_codigo, pais) | volume_kg, valor_fob_usd | `20260504000012_mdic_comex.sql` | `pipelines/mdic_comex_sync.py` |
+| `anp_ppi` | (data_fim, produto, local) | preco, variacao_pct, unidade | `20260504000002_anp_precos.sql` | `pipelines/anp/precos/01_ppi_sync.py` |
+| `anp_precos_produtores` | (data_inicio, produto, regiao) | preco, unidade | `20260504000002_anp_precos.sql` | `pipelines/anp/precos/02_precos_produtores_sync.py` |
+| `anp_glp` | (ano, mes, distribuidora, categoria) | vendas_kg | `20260504000002_anp_precos.sql` | `pipelines/anp/glp_sync.py` |
+| `anp_daie` | (ano, mes, produto, operacao) | volume_m3, valor_usd | `20260504000003_anp_fase3.sql` | `pipelines/anp/fase3/01_daie_sync.py` |
+| `anp_desembaracos` | (ano, mes, ncm_codigo, pais_origem) | quantidade_kg | `20260504000003_anp_fase3.sql` | `pipelines/anp/fase3/02_desembaracos_sync.py` |
+| `anp_painel_imp_dist` | (ano, mes, distribuidor, uf, nome_produto) | volume_m3 | `20260504000003_anp_fase3.sql` | `pipelines/anp/fase3/03_painel_imp_sync.py` |
+| `anp_lpc` | (data_fim, produto, estado) | preco_medio_venda, preco_medio_compra, n_postos | `20260504000004_lpc_sindicom.sql` | `pipelines/anp/lpc_sync.py` |
+| `sindicom` | (ano, mes, empresa, nome_produto, segmento, uf) | volume | `20260504000004_lpc_sindicom.sql` | `pipelines/sindicom_sync.py` |
+| `anp_cdp_producao` | (ano, mes, operador, bacia, local) | petroleo_bbl_dia, gas_total_mm3_dia, oleo_bbl_dia, condensado_bbl_dia, agua_bbl_dia, n_pocos | `20260504000005_anp_cdp.sql` (v1) → `_v7` (schema final com poco/campo) | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` (~1.8M rows) |
+
 ### Materialized views
 
-| MV | Função |
-|---|---|
-| `mv_ms_serie` | Agregação mensal por agente (sales-volumes / market-share) |
-| `mv_ms_serie_fast` | Versão otimizada de `mv_ms_serie` |
+| MV | Função de refresh | Índices |
+|---|---|---|
+| `mv_ms_serie` | `classificar_agentes()` | — |
+| `mv_ms_serie_fast` | `classificar_agentes()` | versão otimizada de `mv_ms_serie` |
+| `mv_anp_cdp_pocos` | `refresh_anp_cdp_pocos()` | UNIQUE (poco, campo, bacia, local); campo, bacia, estado |
 
-Refresh via função `classificar_agentes()`. Chamada após upload em `vendas`.
+`mv_ms_serie` / `mv_ms_serie_fast`: refresh após upload em `vendas`.
+`mv_anp_cdp_pocos`: pré-agrega metadados de poços (~24K rows) para o filter UI do dash anp-cdp. Refresh chamado pelo script de upload após cada upsert. Suporta `REFRESH CONCURRENTLY` (índice único presente). Definida em `20260504000011_anp_cdp_v7.sql`.
 
 ### RPCs (ver detalhe nos sub-PRDs)
 
-| Domínio | Prefixo | Dono lógico |
+| Domínio | Prefixo / Funções | Dono lógico |
 |---|---|---|
 | Sales Volumes | `get_sv_*`, `get_ms_*` (compartilhado) | dash-sales-volumes / dash-market-share |
 | Market Share | `get_ms_*` | dash-market-share |
@@ -77,6 +96,16 @@ Refresh via função `classificar_agentes()`. Chamada após upload em `vendas`.
 | Profile / Admin | `get_my_*`, `set_*`, `upsert_my_*` | dash-admin |
 | News Hunter | `seed_my_news_hunter_keywords` | dash-news-hunter |
 | Generic / metrics | `get_metricas`, `classificar_agentes` | base |
+| MDIC Comex | `get_mdic_comex_filtros`, `get_mdic_comex_serie`, `get_mdic_comex_top_paises` | dash-mdic-comex |
+| ANP PPI | `get_anp_ppi_filtros`, `get_anp_ppi_media_serie`, `get_anp_ppi_locais_serie` | dash-anp-ppi |
+| ANP Preços Produtores | `get_anp_precos_produtores_filtros`, `get_anp_precos_produtores_serie` | dash-anp-precos-produtores |
+| ANP GLP | `get_anp_glp_filtros`, `get_anp_glp_serie` | dash-anp-glp |
+| ANP DAIE | `get_anp_daie_filtros`, `get_anp_daie_serie` | dash-anp-daie |
+| ANP Desembaraços | `get_anp_desembaracos_filtros`, `get_anp_desembaracos_serie`, `get_anp_desembaracos_top_paises` | dash-anp-desembaracos |
+| ANP Painel Imp. | `get_anp_painel_imp_filtros`, `get_anp_painel_imp_serie`, `get_anp_painel_imp_top_dist` | dash-anp-painel-importacoes |
+| ANP LPC | `get_anp_lpc_filtros`, `get_anp_lpc_serie`, `get_anp_lpc_nacional` | dash-anp-lpc |
+| SINDICOM | `get_sindicom_filtros`, `get_sindicom_serie` | dash-sindicom |
+| ANP CDP | `get_anp_cdp_filtros`, `get_anp_cdp_serie`, `get_anp_cdp_pocos_json` | dash-anp-cdp |
 
 ## Workflow `supabase_deploy.yml`
 
@@ -87,6 +116,10 @@ Deploya migrations em push pra `main`. Use `SUPABASE_PROJECT_REF` e `SUPABASE_AC
 Quando MCP tools `mcp__*__apply_migration`, `mcp__*__execute_sql`, `mcp__*__list_tables`, `mcp__*__list_migrations`, `mcp__*__get_advisors`, `mcp__*__list_extensions`, `mcp__*__deploy_edge_function` estão disponíveis, **prefira eles** ao CLI. Operam direto no project remoto.
 
 ## Tech Debt
+
+### Migration slot collision — `20260504000001` (resolvido)
+
+A migration `20260504000001` foi originalmente `add_brasil_energia_keyword` (commit 8307a66d), revertida via git revert (commit 98531667), e o slot foi reutilizado para `mdic_comex`. Isso causou collision: `schema_migrations` tinha `name=add_brasil_energia_keyword` enquanto o disco tinha `mdic_comex.sql`. Resolvido em commit 880782e9: arquivo `mdic_comex` renomeado para `_000012_mdic_comex.sql` + repair step adicionado ao workflow `supabase_deploy.yml` para atualizar o registro em `schema_migrations` antes do push.
 
 ### `sql/` fora das migrations versionadas
 
