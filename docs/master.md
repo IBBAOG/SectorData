@@ -6,6 +6,18 @@ Plataforma analítica interna do Itaú BBA para o setor de Distribuição de Com
 
 ---
 
+## ⚠️ Princípio organizacional inviolável
+
+**Toda tarefa de execução técnica é feita por um worker especializado, nunca pelo CTO.**
+
+Isso vale para: aplicar migrations, editar código de domínio (`src/`, `scripts/`, `alertas/`, `supabase/`, `data/`), copiar arquivos entre worktrees, sincronizar `schema_migrations`, rodar pipelines locais, atualizar PRDs departamentais, disparar workflows GHA, etc. **Sem exceção.**
+
+Se uma tarefa não tem worker qualificado, a resposta correta é **contratar um worker novo** (ver "Protocolo formal de contratação de novo worker" abaixo). Improvisar com "permissão excepcional" para um worker fora do domínio, ou pior, executar como CTO, são anti-patterns explicitamente proibidos no `CLAUDE.md`.
+
+O CTO faz: pensar, delegar, integrar via `worker_orquestrador`, autorizar commits/push, contratar workers novos quando há gap, manter este `master.md` e o `CLAUDE.md` em dia. Nada além disso.
+
+---
+
 ## Organograma
 
 ```
@@ -189,6 +201,81 @@ Cada agente em `.claude/agents/worker_*.md` declara um campo `tools:` no frontma
 | Todos | `ToolSearch` para carregar tools deferred sob demanda |
 
 **Quando um worker reportar "MCP tool não disponível", a falha é do CTO** que não atualizou `.claude/agents/worker_*.md`. Edite o frontmatter, adicione a tool faltante, e dispare de novo.
+
+### Protocolo formal de contratação de novo worker
+
+Quando uma tarefa **não tem worker qualificado**, a resposta correta NÃO é "CTO faz". A resposta é **contratar**. Ordem de execução obrigatória:
+
+#### 1. Decidir se é caso de contratação
+
+Critérios:
+- A tarefa é **recorrente** (não é one-off) E não cabe no escopo de nenhum worker existente.
+- Worker existente está sobrecarregado com responsabilidades muito heterogêneas (split em sub-workers).
+- Surge novo subdomínio (ex: novo dashboard → contratar `worker_dash-<slug>`).
+- Worker fora do domínio está sendo "improvisado" pra preencher gap (sinal claro).
+
+Se for **one-off** que não vai se repetir, escolha: deixar com worker mais próximo (sem permissão excepcional cross-domain) ou criar worker mesmo assim por princípio (preferível).
+
+#### 2. Definir escopo do cargo
+
+Antes de criar o arquivo, escreva:
+- **Slug**: `worker_<categoria>-<area>` (ex: `worker_dash-anp-cdp`, `worker_etl-pipelines`).
+- **Missão**: 1 frase em português explicando o problema que ele resolve.
+- **Ownership de pasta(s)**: lista exata de paths dos quais ele é dono ÚNICO (não pode haver overlap com workers existentes — se houver, é hora de redefinir fronteiras).
+- **Quando é invocado**: list 3-5 gatilhos típicos.
+- **Quando NÃO é invocado**: explicitar para evitar duplicação.
+
+#### 3. Identificar tools obrigatórias
+
+Tabela mental:
+- File ops básicos: `Read, Edit, Write, Glob, Grep, Bash` (todos têm)
+- `Agent` se ele orquestra (subgerentes e gerentes)
+- `TodoWrite` se ele gerencia múltiplas tarefas internas
+- `WebFetch` se acessa APIs externas
+- `ToolSearch` (todos têm — para carregar tools deferred sob demanda)
+- **MCP Supabase**: lista da tabela acima (read-only ou full conforme escopo)
+- **MCP Preview**: para workers de UI que precisam smoke test visual
+- **MCP scheduled-tasks / mcp-registry**: workers raros
+
+#### 4. Criar `.claude/agents/worker_<slug>.md`
+
+Frontmatter completo:
+
+```yaml
+---
+name: worker_<slug>
+description: <em INGLÊS — usado pelo harness para decidir invocação automática. Liste sintomas de prompt que devem disparar este worker.>
+tools: <comma-separated, incluindo MCP necessárias>
+model: sonnet | opus
+color: <cor para UI do harness>
+---
+```
+
+Corpo Markdown obrigatório:
+- Função em PT-BR
+- Ownership exclusivo (paths)
+- Princípios não-negociáveis (3-7 itens)
+- Workflow padrão (passo a passo)
+- Pegadinhas conhecidas (se herdadas de sessão anterior)
+- Como o invocador deve passar contexto
+
+#### 5. Atualizar este `docs/master.md`
+
+- Adicionar linha na tabela de departamentos (se for novo dept) OU em "Sub-agentes" (se for sub de subgerente) OU em "Papéis transversais" (se for cross-dept).
+- Atualizar organograma ASCII no topo do arquivo.
+
+#### 6. Atualizar `CLAUDE.md` do CTO
+
+- Adicionar linha na **lista negra** mapeando "tipo de operação → novo worker".
+- Se introduzir nova categoria de tarefa, atualizar workflow obrigatório.
+
+#### 7. Commit `feat(org): hire worker_<slug> — <missão>`
+
+`.claude/agents/*.md` é gitignored, então o commit captura só `docs/master.md` + `CLAUDE.md`. O frontmatter do worker fica local — cada worktree precisa do seu.
+
+#### 8. Aí sim, delega a tarefa ao worker recém-contratado
+
+Atalho proibido: ❌ "vou fazer essa tarefa pequena eu mesmo, depois crio o worker". ✅ Contrate primeiro, delegue depois.
 
 ### worker_orquestrador (integração)
 
