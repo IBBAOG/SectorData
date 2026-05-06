@@ -45,12 +45,7 @@ jobs:
             echo "primeiro=${{ github.event.inputs.periodo }}" >> "$GITHUB_OUTPUT"
           else
             # Agendado: mês anterior ao atual (ex: se hoje é 2025-07-05, usa 06/2025)
-            PRIMEIRO=$(python - <<'PY'
-from datetime import date, timedelta
-d = date.today().replace(day=1) - timedelta(days=1)
-print(f"{d.month:02d}/{d.year}")
-PY
-)
+            PRIMEIRO=$(python -c "from datetime import date, timedelta; d=date.today().replace(day=1)-timedelta(days=1); print(f'{d.month:02d}/{d.year}')")
             echo "primeiro=$PRIMEIRO" >> "$GITHUB_OUTPUT"
           fi
 
