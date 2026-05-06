@@ -19,6 +19,11 @@ on:
         required: false
         default: 'todos'
 
+# Sessão APEX capturada manualmente e armazenada em alertas_session (base='anp_cdp').
+# CI usa apenas replay (01_extract_replay_only.py) — zero Selenium, zero CAPTCHA.
+# Quando a sessão expirar (meses), re-capture localmente com 01_extract.py --capture
+# e atualize alertas_session via SQL (ver docs/etl-pipelines/PRD.md).
+
 jobs:
   extrair:
     runs-on: ubuntu-latest
@@ -32,21 +37,6 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Instalar Chrome + Chromedriver (versão coerente)
-        id: chrome
-        uses: browser-actions/setup-chrome@latest
-        with:
-          chrome-version: stable
-
-      - name: Remover chromedriver do sistema (evita conflito com Selenium Manager)
-        run: |
-          # Remove qualquer chromedriver instalado via apt (chromium-driver ou similar)
-          # para garantir que o Selenium Manager use o driver baixado pelo setup-chrome.
-          sudo rm -f /usr/bin/chromedriver /usr/local/bin/chromedriver || true
-          echo "Chrome binary (forçado via env): ${{ steps.chrome.outputs.chrome-path }}"
-          echo "Versão real: $(${{ steps.chrome.outputs.chrome-path }} --version)"
-          echo "Chromedriver path: $(which chromedriver 2>/dev/null || echo 'not in PATH — Selenium Manager resolverá')"
-
       - name: Instalar dependências Python
         run: pip install -r requirements.txt
 
@@ -55,56 +45,30 @@ jobs:
         run: |
           if [ -n "${{ github.event.inputs.periodo }}" ]; then
             ARGS="--periodo ${{ github.event.inputs.periodo }}"
-            PRIMEIRO="${{ github.event.inputs.periodo }}"
           elif [ -n "${{ github.event.inputs.periodo_de }}" ]; then
             DE="${{ github.event.inputs.periodo_de }}"
             ATE="${{ github.event.inputs.periodo_ate || github.event.inputs.periodo_de }}"
             ARGS="--de $DE --ate $ATE"
-            PRIMEIRO="$DE"
           else
-            # Agendado: 2 meses atrás
-            PRIMEIRO=$(date -d "2 months ago" +"%m/%Y")
-            ARGS="--periodo $PRIMEIRO"
+            # Agendado: 2 meses atrás (calculado pelo script quando nenhum argumento é passado)
+            ARGS=""
           fi
-          echo "args=$ARGS"         >> "$GITHUB_OUTPUT"
-          echo "primeiro=$PRIMEIRO" >> "$GITHUB_OUTPUT"
+          echo "args=$ARGS" >> "$GITHUB_OUTPUT"
 
-      - name: Extrair dados ANP
+      - name: Extrair dados ANP (replay de sessão APEX)
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          CHROME_BINARY:        ${{ steps.chrome.outputs.chrome-path }}
         run: |
           AMBIENTE="${{ github.event.inputs.ambiente || 'todos' }}"
           ARGS="${{ steps.periodo.outputs.args }}"
-          PRIMEIRO="${{ steps.periodo.outputs.primeiro }}"
-          SESSION="output/anp/session.json"
 
           mkdir -p output/anp
 
-          # Se existe session.json salvo, tenta replay direto (sem CAPTCHA).
-          # Se o replay falhar (sessão expirou), recaptura e tenta de novo.
-          # --capture agora também faz upsert da sessão em alertas_session (Supabase)
-          # para que o monitor de alertas possa consumir a sessão sem Selenium.
-          if [ -f "$SESSION" ]; then
-            echo "=== Sessão existente encontrada — tentando replay sem CAPTCHA ==="
-            if python scripts/pipelines/anp/cdp/01_extract.py --replay-only $ARGS \
-                --ambiente "$AMBIENTE" --output output/anp; then
-              echo "=== Replay concluído com sucesso ==="
-            else
-              echo "=== Replay falhou — sessão expirou, recapturando... ==="
-              python scripts/pipelines/anp/cdp/01_extract.py --capture \
-                --periodo "$PRIMEIRO" --ambiente M --output output/anp
-              python scripts/pipelines/anp/cdp/01_extract.py --replay $ARGS \
-                --ambiente "$AMBIENTE" --output output/anp
-            fi
-          else
-            echo "=== Sem session.json — capturando sessão e extraindo ==="
-            python scripts/pipelines/anp/cdp/01_extract.py --capture \
-              --periodo "$PRIMEIRO" --ambiente M --output output/anp
-            python scripts/pipelines/anp/cdp/01_extract.py --replay $ARGS \
-              --ambiente "$AMBIENTE" --output output/anp
-          fi
+          python scripts/pipelines/anp/cdp/01_extract_replay_only.py \
+            $ARGS \
+            --ambiente "$AMBIENTE" \
+            --output output/anp
 
       - name: Upload to Supabase
         run: python scripts/pipelines/anp/cdp/02_upload.py --from-csv-dir output/anp/
@@ -112,22 +76,18 @@ jobs:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
-      - name: Upload CSVs e sessão
+      - name: Upload CSVs como artifact
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: anp-producao-poco
-          path: |
-            output/anp/*.csv
-            output/anp/session.json
+          path: output/anp/*.csv
           retention-days: 90
 
-      - name: Upload debug screenshots
+      - name: Upload debug info em caso de falha
         uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: anp-debug-screenshots
-          path: |
-            output/anp/_debug/*.png
-            output/anp/_debug/*.html
+          name: anp-debug-info
+          path: output/anp/_downloads/
           retention-days: 14

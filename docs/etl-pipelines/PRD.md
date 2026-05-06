@@ -16,9 +16,10 @@ scripts/pipelines/                  # rodam via GitHub Actions (todos os ETL)
 
   anp/
     cdp/                            chain (workflow etl_anp_cdp.yml)
-      01_extract.py                 Selenium + ddddocr CAPTCHA → output/anp/ + upsert alertas_session
-      02_upload.py                  CSVs → Supabase
+      01_extract.py                 Selenium + ddddocr CAPTCHA → output/anp/ (CAPTURA LOCAL APENAS — não roda em CI)
+      01_extract_replay_only.py     CI usa este: lê session de alertas_session, faz replay, gera CSVs em output/anp/
       _replay.py                    Módulo standalone (zero Selenium): replay_download() → "ok"|"expired"|"error"
+      02_upload.py                  CSVs → Supabase
     fase3/                          chain (workflow etl_anp_fase3.yml)
       01_daie_sync.py               Dados Abertos IE
       02_desembaracos_sync.py       Desembaraços
@@ -60,7 +61,7 @@ scripts/utils/                      # one-shots (não-ETL)
 | `etl_anp_fase3.yml` | Mensal — 1º dia, 13:00 UTC | `pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` → `03_painel_imp_sync.py` | `anp_daie` (6.912 rows), `anp_desembaracos` (6.204), `anp_painel_imp_dist` (1.444) |
 | `etl_anp_lpc.yml` | Semanal — quarta, 14:30 UTC (`30 14 * * 3`) | `pipelines/anp/lpc_sync.py` | `anp_lpc` (160.243 rows — histórico 2004–2026 após backfill) |
 | `etl_anp_precos.yml` | Semanal — segunda, 12:00 UTC (`0 12 * * 1`) | `pipelines/anp/glp_sync.py` + `precos/01_ppi_sync.py` → `02_precos_produtores_sync.py` | `anp_glp` (3.106), `anp_ppi` (18.131), `anp_precos_produtores` (54.738 — histórico 2002–2026 após backfill) |
-| `etl_anp_cdp.yml` | Mensal (5º), 08:00 UTC (`0 8 5 * *`) | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` | `output/anp/` + `anp_cdp_producao` (2.045.515 rows) + `alertas_session` (sessão APEX) |
+| `etl_anp_cdp.yml` | Mensal (5º), 08:00 UTC (`0 8 5 * *`) | `pipelines/anp/cdp/01_extract_replay_only.py` → `02_upload.py` | `output/anp/` + `anp_cdp_producao` (2.045.515 rows). Sessão APEX lida de `alertas_session`. Sem Selenium/CAPTCHA. |
 | `etl_mdic_comex.yml` | Diário, 14:00 UTC (`0 14 * * *`) | `pipelines/mdic_comex_sync.py` | `mdic_comex` (10.029 rows — histórico 1997–2026 após backfill) |
 | `etl_navios_lineup.yml` | Cada 6h | `pipelines/navios/01_lineup_scrape.py` → `02_diesel_import.mjs` | `navios_diesel` |
 | `etl_sindicom.yml` | Mensal — dia 5, 15:00 UTC (`0 15 5 * *`) | `pipelines/sindicom_sync.py` | `sindicom` — BLOQUEADO por Cloudflare em IP residencial; só roda via GitHub Actions runner. Aguardando dispatch manual. |
@@ -158,6 +159,33 @@ output/
 7. **News Hunter está em repo separado** — coordenação por contrato (`news_articles` schema).
 
 ## Tarefas comuns
+
+### Renovar sessão APEX ANP CDP (quando CI reportar "Session expirada")
+
+A sessão APEX capturada em 2026-03-31 durou 35+ dias. Quando o CI retornar exit code 2
+("Session APEX expirou"), é preciso re-capturar manualmente:
+
+1. **Localmente** (com Chrome instalado):
+   ```bash
+   python scripts/pipelines/anp/cdp/01_extract.py --capture --periodo MM/YYYY --ambiente M --output output/anp
+   # Isso gera output/anp/session.json com os novos cookies APEX
+   ```
+
+2. **Atualizar o banco** — execute via Supabase Dashboard > SQL Editor:
+   ```sql
+   UPDATE alertas_session
+   SET
+     session      = '<conteúdo de output/anp/session.json>'::jsonb,
+     captured_at  = now(),
+     expires_at   = NULL,
+     last_used_at = now(),
+     metadata     = '{"source":"manual_local_capture_YYYY_MM_DD"}'::jsonb
+   WHERE base = 'anp_cdp';
+   ```
+
+3. **Verificar** que o CI volta a funcionar fazendo dispatch manual de `etl_anp_cdp.yml`.
+
+**Nota**: `01_extract.py` permanece em disco para este uso — não foi removido, apenas retirado do path do CI.
 
 ### Adicionar pipeline novo
 
