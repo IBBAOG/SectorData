@@ -41,7 +41,7 @@ import ddddocr
 import requests
 from PIL import Image
 from selenium import webdriver
-from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -56,6 +56,40 @@ _replay_mod = _ilu.module_from_spec(_spec)
 _spec.loader.exec_module(_replay_mod)
 _build_requests_session = _replay_mod._build_requests_session
 replay_download = _replay_mod.replay_download
+
+# ─── Diagnostic helpers ──────────────────────────────────────────────────────
+
+def _wait_for(driver, condition, timeout, label):
+    """WebDriverWait wrapper that logs the failing selector/condition on timeout."""
+    try:
+        return WebDriverWait(driver, timeout).until(condition)
+    except TimeoutException:
+        print(f"    [timeout] Esperando: {label} ({timeout}s esgotado)")
+        raise
+
+
+def _dump_page_state(driver, output_dir, label, attempt):
+    """Save current page HTML + log URL/title/body excerpt for post-mortem debug."""
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    try:
+        debug_dir = Path(output_dir) / "_debug"
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        html_path = debug_dir / f"debug_{ts}_{label}_{attempt}.html"
+        html_path.write_text(driver.page_source, encoding="utf-8")
+        print(f"    [diag-state] HTML salvo: {html_path.name}")
+    except Exception as html_exc:
+        print(f"    [diag-state] Falha ao salvar HTML: {html_exc}")
+    try:
+        print(f"    [diag-state] URL: {driver.current_url}")
+        print(f"    [diag-state] Title: {driver.title}")
+    except Exception as nav_exc:
+        print(f"    [diag-state] Falha ao ler URL/title: {nav_exc}")
+    try:
+        body_text = driver.find_element(By.TAG_NAME, "body").text[:500]
+        print(f"    [diag-state] Body (500 chars): {body_text!r}")
+    except Exception:
+        pass
+
 
 PAGE_URL = (
     "https://cdp.anp.gov.br/ords/r/cdp_apex/"
@@ -145,6 +179,10 @@ def create_driver(download_dir):
         "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     )
+    # Anti-bot: suppress automation fingerprint that APEX/Oracle may detect
+    opts.add_argument("--disable-blink-features=AutomationControlled")
+    opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+    opts.add_experimental_option("useAutomationExtension", False)
 
     # Force the Chrome binary installed by browser-actions/setup-chrome (CI env).
     # Avoids version mismatch when the system already has an older Chrome in PATH.
@@ -304,10 +342,13 @@ def do_buscar(driver, ocr_engine, periodo, ambiente):
         return False
 
 
-def do_acoes_download(driver):
+def do_acoes_download(driver, output_dir=None, attempt=1):
     """
     Click Ações → Fazer Download → confirm CSV download in dialog.
     Returns True on success.
+
+    output_dir / attempt are used for _dump_page_state on TimeoutException so the
+    caller can pin-point exactly which of the 3 wait steps timed out.
     """
     # APEX IR actions button — class selector is stable across locales
     try:
@@ -316,9 +357,12 @@ def do_acoes_download(driver):
         acoes_btn = driver.find_element(By.XPATH, "//button[contains(.,'Ações')]")
     acoes_btn.click()
 
-    # Click "Fazer Download" menu item (first visible match = menu entry)
-    menu_item = WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable((By.XPATH, "//button[contains(.,'Fazer Download')]"))
+    # [wait-1] Click "Fazer Download" menu item (first visible match = menu entry)
+    menu_item = _wait_for(
+        driver,
+        EC.element_to_be_clickable((By.XPATH, "//button[contains(.,'Fazer Download')]")),
+        10,
+        "element_to_be_clickable //button[contains(.,'Fazer Download')] (menu item)",
     )
     menu_item.click()
 
@@ -338,7 +382,13 @@ def do_acoes_download(driver):
             return false;
         """)
 
-    WebDriverWait(driver, 10).until(_click_dialog_confirm)
+    # [wait-2] Dialog confirm button
+    try:
+        _wait_for(driver, _click_dialog_confirm, 10, "JS dialog confirm (Fazer Download visível no overlay)")
+    except TimeoutException:
+        if output_dir:
+            _dump_page_state(driver, output_dir, "acoes_dialog_confirm", attempt)
+        raise
     return True
 
 
@@ -399,14 +449,17 @@ def capture_session(ocr_engine, periodo, ambiente, output_dir, download_dir):
             # The XHR is captured at send() time — before any file is downloaded.
             driver.execute_script(_CAPTURE_JS)
 
-            do_acoes_download(driver)
+            do_acoes_download(driver, output_dir=output_dir, attempt=attempt)
 
             # Give the JS event loop a moment to fire the XHR interceptor
             time.sleep(2)
 
         except Exception as e:
             print(f"    ✗ Erro [{type(e).__name__}]: {str(e)[:200]}")
-            if isinstance(e, WebDriverException):
+            if isinstance(e, TimeoutException):
+                # Dump page state so the next run log shows exactly which wait failed
+                _dump_page_state(driver, output_dir, "cap_timeout", attempt)
+            elif isinstance(e, WebDriverException):
                 _diag_webdriver_exc(e)
             save_debug_screenshot(driver, output_dir, f"cap_err_{attempt}")
             if _is_renderer_crash(e):
@@ -553,7 +606,7 @@ def extract_one_selenium(ocr_engine, periodo, ambiente, output_dir, download_dir
                 )
                 continue
 
-            do_acoes_download(driver)
+            do_acoes_download(driver, output_dir=output_dir, attempt=attempt)
 
             print(f"    Aguardando download...")
             csv_path = wait_for_download(download_dir, timeout=30)
@@ -579,7 +632,9 @@ def extract_one_selenium(ocr_engine, periodo, ambiente, output_dir, download_dir
 
         except Exception as e:
             print(f"    ✗ Erro [{type(e).__name__}]: {str(e)[:200]}")
-            if isinstance(e, WebDriverException):
+            if isinstance(e, TimeoutException):
+                _dump_page_state(driver, output_dir, f"{periodo.replace('/', '-')}_{ambiente}_timeout", attempt)
+            elif isinstance(e, WebDriverException):
                 _diag_webdriver_exc(e)
             save_debug_screenshot(
                 driver, output_dir,

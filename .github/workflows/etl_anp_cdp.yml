@@ -127,5 +127,7 @@ jobs:
         if: failure()
         with:
           name: anp-debug-screenshots
-          path: output/anp/_debug/
+          path: |
+            output/anp/_debug/*.png
+            output/anp/_debug/*.html
           retention-days: 14
