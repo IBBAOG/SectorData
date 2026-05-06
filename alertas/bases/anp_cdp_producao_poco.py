@@ -1,6 +1,7 @@
 import csv
 import json
 import os
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -221,6 +222,26 @@ class AnpCdpProducaoPoco(BaseMonitor):
         except Exception as e:
             print(f"[{self.slug}]   ERRO ao baixar CSVs: {e}")
             return False
+
+        # 3b. Upload dos CSVs para Supabase (idempotente — sempre roda, não só quando há campo novo)
+        # Antes esse passo vivia em etl_anp_cdp.yml; unificado aqui pra eliminar duplicação.
+        try:
+            upload_script = _SCRIPTS_DIR / "pipelines" / "anp" / "cdp" / "02_upload.py"
+            csv_dir       = str(_DADOS_DIR / "_downloads")
+            print(f"[{self.slug}]   Upload pro Supabase: {csv_dir}")
+            result = subprocess.run(
+                [sys.executable, str(upload_script), "--from-csv-dir", csv_dir],
+                capture_output=True, text=True, timeout=300,
+            )
+            if result.returncode == 0:
+                print(f"[{self.slug}]   ✓ Upload OK")
+            else:
+                print(
+                    f"[{self.slug}]   ⚠ Upload falhou (rc={result.returncode}): "
+                    f"{(result.stderr or result.stdout)[:500]}"
+                )
+        except Exception as e:
+            print(f"[{self.slug}]   ⚠ Erro ao chamar upload: {e}")
 
         # 4. Comparar campos por ambiente com baseline no estado
         novidades = []
