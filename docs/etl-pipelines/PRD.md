@@ -16,9 +16,8 @@ scripts/pipelines/                  # rodam via GitHub Actions (todos os ETL)
 
   anp/
     cdp/                            chain (workflow etl_anp_cdp.yml)
-      01_extract.py                 Selenium + ddddocr CAPTCHA → output/anp/ (CAPTURA LOCAL APENAS — não roda em CI)
-      01_extract_replay_only.py     CI usa este: lê session de alertas_session, faz replay, gera CSVs em output/anp/
-      _replay.py                    Módulo standalone (zero Selenium): replay_download() → "ok"|"expired"|"error"
+      01_extract.py                 Selenium + ddddocr CAPTCHA → output/anp/ (roda em CI via --capture)
+      _replay.py                    Módulo standalone (zero Selenium): replay_download() → usado por alertas/
       02_upload.py                  CSVs → Supabase
     fase3/                          chain (workflow etl_anp_fase3.yml)
       01_daie_sync.py               Dados Abertos IE
@@ -61,7 +60,7 @@ scripts/utils/                      # one-shots (não-ETL)
 | `etl_anp_fase3.yml` | Mensal — 1º dia, 13:00 UTC | `pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` → `03_painel_imp_sync.py` | `anp_daie` (6.912 rows), `anp_desembaracos` (6.204), `anp_painel_imp_dist` (1.444) |
 | `etl_anp_lpc.yml` | Semanal — quarta, 14:30 UTC (`30 14 * * 3`) | `pipelines/anp/lpc_sync.py` | `anp_lpc` (160.243 rows — histórico 2004–2026 após backfill) |
 | `etl_anp_precos.yml` | Semanal — segunda, 12:00 UTC (`0 12 * * 1`) | `pipelines/anp/glp_sync.py` + `precos/01_ppi_sync.py` → `02_precos_produtores_sync.py` | `anp_glp` (3.106), `anp_ppi` (18.131), `anp_precos_produtores` (54.738 — histórico 2002–2026 após backfill) |
-| `etl_anp_cdp.yml` | Mensal (5º), 08:00 UTC (`0 8 5 * *`) | `pipelines/anp/cdp/01_extract_replay_only.py` → `02_upload.py` | `output/anp/` + `anp_cdp_producao` (2.045.515 rows). Sessão APEX lida de `alertas_session`. Sem Selenium/CAPTCHA. |
+| `etl_anp_cdp.yml` | Mensal (5º), 08:00 UTC (`0 8 5 * *`) | `pipelines/anp/cdp/01_extract.py --capture` (×3 ambientes) → `02_upload.py` | `output/anp/` + `anp_cdp_producao` (2.045.515 rows). 3 captures sequenciais (M, S, T), cada um com 10 retries de CAPTCHA ddddocr (~50% por tentativa → ~99.9% por ambiente). |
 | `etl_mdic_comex.yml` | Diário, 14:00 UTC (`0 14 * * *`) | `pipelines/mdic_comex_sync.py` | `mdic_comex` (10.029 rows — histórico 1997–2026 após backfill) |
 | `etl_navios_lineup.yml` | Cada 6h | `pipelines/navios/01_lineup_scrape.py` → `02_diesel_import.mjs` | `navios_diesel` |
 | `etl_sindicom.yml` | Mensal — dia 5, 15:00 UTC (`0 15 5 * *`) | `pipelines/sindicom_sync.py` | `sindicom` — BLOQUEADO por Cloudflare em IP residencial; só roda via GitHub Actions runner. Aguardando dispatch manual. |
@@ -160,32 +159,14 @@ output/
 
 ## Tarefas comuns
 
-### Renovar sessão APEX ANP CDP (quando CI reportar "Session expirada")
+### Debug de falha ANP CDP (quando CI reportar ambiente com 10 retries esgotados)
 
-A sessão APEX capturada em 2026-03-31 durou 35+ dias. Quando o CI retornar exit code 2
-("Session APEX expirou"), é preciso re-capturar manualmente:
+O workflow `etl_anp_cdp.yml` roda `01_extract.py --capture` 3× (ambientes M, S, T) via Selenium + ddddocr. Taxa ddddocr ~40-50% por tentativa; 10 retries internos por capture → ~99.9% de sucesso por ambiente. Se algum ambiente falhar completamente:
 
-1. **Localmente** (com Chrome instalado):
-   ```bash
-   python scripts/pipelines/anp/cdp/01_extract.py --capture --periodo MM/YYYY --ambiente M --output output/anp
-   # Isso gera output/anp/session.json com os novos cookies APEX
-   ```
-
-2. **Atualizar o banco** — execute via Supabase Dashboard > SQL Editor:
-   ```sql
-   UPDATE alertas_session
-   SET
-     session      = '<conteúdo de output/anp/session.json>'::jsonb,
-     captured_at  = now(),
-     expires_at   = NULL,
-     last_used_at = now(),
-     metadata     = '{"source":"manual_local_capture_YYYY_MM_DD"}'::jsonb
-   WHERE base = 'anp_cdp';
-   ```
-
-3. **Verificar** que o CI volta a funcionar fazendo dispatch manual de `etl_anp_cdp.yml`.
-
-**Nota**: `01_extract.py` permanece em disco para este uso — não foi removido, apenas retirado do path do CI.
+1. **Baixar artifact** `anp-debug-info` do run com falha — contém screenshots e HTMLs de debug em `output/anp/_debug/`.
+2. **Verificar** se o site ANP CDP mudou layout (seletores Selenium), ou se o CAPTCHA mudou formato (afeta ddddocr).
+3. **Dispatch manual** com `periodo` explícito se o problema foi transitório — re-rodar costuma resolver.
+4. Se o layout do site mudou, atualizar os seletores em `scripts/pipelines/anp/cdp/01_extract.py`.
 
 ### Adicionar pipeline novo
 
@@ -233,4 +214,4 @@ Ordem de diagnóstico:
 - **Dados Locais** é separado por design. Não toque em `data/*.xlsx` nem em `scripts/manual/*` (estes são deles).
 - **Alertas** lê do Supabase ou de `DADOS/historico_alertas.csv`. Mudanças de schema/coluna que Alertas usa precisam aviso via Gerente.
 - **`supabase_deploy.yml`** é do dept `worker_supabase`, não deste dept (deploya migrations, não dados).
-- **`alertas_session` (tabela nova)**: `etl_anp_cdp.yml` escreve aqui após cada `--capture` bem-sucedido via `_upload_session_to_supabase()`. A tabela é criada pelo `worker_supabase` (Frente A). O monitor de alertas lê a sessão salva e chama `_replay.py:replay_download()` a cada 2h sem precisar de Selenium. Contrato do módulo: `replay_download(session_data, periodo, ambiente, output_dir) -> ReplayResult` com `.status` em `{"ok", "expired", "error"}`. Quando `"expired"`, o monitor deve disparar workflow de recaptura.
+- **`_replay.py`**: módulo standalone (`scripts/pipelines/anp/cdp/_replay.py`) usado por `alertas/bases/anp_cdp_producao_poco.py` para leitura do DB local. Não é chamado pelo workflow ETL — o workflow usa `01_extract.py --capture` diretamente com Selenium.

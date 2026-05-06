@@ -8,21 +8,11 @@ on:
       periodo:
         description: 'Período único MM/YYYY (ex: 01/2025)'
         required: false
-      periodo_de:
-        description: 'Período inicial MM/YYYY para lote'
-        required: false
-      periodo_ate:
-        description: 'Período final MM/YYYY para lote'
-        required: false
-      ambiente:
-        description: 'Ambiente: M (Mar), S (Pre-Sal), T (Terra), todos'
-        required: false
-        default: 'todos'
 
-# Sessão APEX capturada manualmente e armazenada em alertas_session (base='anp_cdp').
-# CI usa apenas replay (01_extract_replay_only.py) — zero Selenium, zero CAPTCHA.
-# Quando a sessão expirar (meses), re-capture localmente com 01_extract.py --capture
-# e atualize alertas_session via SQL (ver docs/etl-pipelines/PRD.md).
+# Workflow roda --capture para os 3 ambientes (M, S, T) sequencialmente.
+# Cada capture usa Selenium + ddddocr com 10 retries internos de CAPTCHA.
+# Taxa ddddocr ~40-50% por tentativa → ~99.9% de sucesso por ambiente em 10 retries.
+# Falha total se qualquer ambiente esgotar os 10 retries — inspecionar screenshots no artifact.
 
 jobs:
   extrair:
@@ -40,35 +30,54 @@ jobs:
       - name: Instalar dependências Python
         run: pip install -r requirements.txt
 
-      - name: Calcular período automático
+      - name: Instalar Chrome
+        id: chrome
+        uses: browser-actions/setup-chrome@latest
+
+      - name: Remover chromedriver do sistema
+        run: |
+          sudo rm -f /usr/bin/chromedriver /usr/local/bin/chromedriver || true
+
+      - name: Calcular período
         id: periodo
         run: |
           if [ -n "${{ github.event.inputs.periodo }}" ]; then
-            ARGS="--periodo ${{ github.event.inputs.periodo }}"
-          elif [ -n "${{ github.event.inputs.periodo_de }}" ]; then
-            DE="${{ github.event.inputs.periodo_de }}"
-            ATE="${{ github.event.inputs.periodo_ate || github.event.inputs.periodo_de }}"
-            ARGS="--de $DE --ate $ATE"
+            echo "primeiro=${{ github.event.inputs.periodo }}" >> "$GITHUB_OUTPUT"
           else
-            # Agendado: 2 meses atrás (calculado pelo script quando nenhum argumento é passado)
-            ARGS=""
+            # Agendado: mês anterior ao atual (ex: se hoje é 2025-07-05, usa 06/2025)
+            PRIMEIRO=$(python - <<'PY'
+from datetime import date, timedelta
+d = date.today().replace(day=1) - timedelta(days=1)
+print(f"{d.month:02d}/{d.year}")
+PY
+)
+            echo "primeiro=$PRIMEIRO" >> "$GITHUB_OUTPUT"
           fi
-          echo "args=$ARGS" >> "$GITHUB_OUTPUT"
 
-      - name: Extrair dados ANP (replay de sessão APEX)
+      - name: Extrair 3 ambientes (capture per ambiente)
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          CHROME_BINARY:        ${{ steps.chrome.outputs.chrome-path }}
         run: |
-          AMBIENTE="${{ github.event.inputs.ambiente || 'todos' }}"
-          ARGS="${{ steps.periodo.outputs.args }}"
-
+          PERIODO="${{ steps.periodo.outputs.primeiro }}"
           mkdir -p output/anp
-
-          python scripts/pipelines/anp/cdp/01_extract_replay_only.py \
-            $ARGS \
-            --ambiente "$AMBIENTE" \
-            --output output/anp
+          failed=0
+          for ambiente in M S T; do
+            echo "=== Capturando $PERIODO ambiente=$ambiente ==="
+            if python scripts/pipelines/anp/cdp/01_extract.py \
+                 --capture --periodo "$PERIODO" --ambiente "$ambiente" \
+                 --output output/anp; then
+              echo "✓ $ambiente capturado"
+            else
+              echo "✗ $ambiente falhou após 10 retries"
+              failed=$((failed+1))
+            fi
+          done
+          if [ "$failed" -gt 0 ]; then
+            echo "$failed/3 ambientes falharam"
+            exit 1
+          fi
 
       - name: Upload to Supabase
         run: python scripts/pipelines/anp/cdp/02_upload.py --from-csv-dir output/anp/
@@ -84,10 +93,10 @@ jobs:
           path: output/anp/*.csv
           retention-days: 90
 
-      - name: Upload debug info em caso de falha
+      - name: Upload debug screenshots em caso de falha
         uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: anp-debug-info
-          path: output/anp/_downloads/
+          path: output/anp/_debug/
           retention-days: 14
