@@ -256,12 +256,21 @@ class AnpCdpProducaoPoco(BaseMonitor):
         except Exception as e:
             print(f"[{self.slug}]   ⚠ Erro ao chamar upload: {e}")
 
-        # 4. Comparar campos por ambiente com baseline no estado
+        # 4. Comparar campos por ambiente com baseline NO MESMO PERÍODO.
+        # Semântica: alerta = "dados de produção do mês X para o campo Y foram divulgados".
+        # Se mês mudou desde o último run, baseline é resetada — o que existia em meses
+        # anteriores não importa, queremos saber quando cada campo aparece NESTE mês.
         novidades = []
         novo_estado = dict(self._estado_atual)
+        ultimo_periodo = self._estado_atual.get("ultimo_periodo")
+        if ultimo_periodo != periodo:
+            print(f"[{self.slug}]   Período mudou ({ultimo_periodo!r} → {periodo!r}); resetando baseline de campos.")
+            for amb in ("M", "S", "T"):
+                novo_estado[f"campos_{amb.lower()}"] = []
+
         for ambiente, csv_path in csvs.items():
             baseline_key = f"campos_{ambiente.lower()}"  # campos_m, campos_s, campos_t
-            baseline = set(self._estado_atual.get(baseline_key, []))
+            baseline = set(novo_estado.get(baseline_key, []))
             atuais   = self._extrair_campos(csv_path)
             novos    = sorted(atuais - baseline)
             if novos:
