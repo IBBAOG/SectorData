@@ -19,6 +19,14 @@ Os seguintes caminhos pertencem a workers especializados. **Você nunca os edita
 
 Arquivos que o CTO pode tocar diretamente: `CLAUDE.md`, `docs/master.md`, `.claude/agents/*.md`, `docs/*/PRD.md`.
 
+### Anti-pattern: "permissão excepcional" cross-domínio
+
+❌ **Nunca** dê a um worker permissão temporária pra editar arquivos do domínio de outro worker. A regra de ownership existe pra que o owner real audite/revise mudanças no seu território.
+
+Exemplo do que NÃO fazer (cometido em 2026-05-06): tarefa cross-cutting (mover extractor Power BI de fora do projeto pra dentro) tocava `scripts/` E `alertas/`. CTO delegou ao `worker_etl-pipelines` com nota "você está autorizado a tocar alertas/ nesta tarefa específica". Funcionou tecnicamente, mas violou o protocolo — owner real (`worker_alertas`) só foi chamado depois para auditar (PASS, mas tarde demais).
+
+✅ **Correto**: spawn 2 workers paralelos via worktree, cada um no seu domínio. Depois `worker_orquestrador` consolida em 1 commit. Coordene paths/nomes prováveis no prompt (Regra G).
+
 ### Responsabilidade do CTO: equipar workers com as ferramentas certas
 
 Cada worker tem um `tools:` declarado no frontmatter de `.claude/agents/worker_*.md`. Esse campo **filtra** quais ferramentas o agent enxerga — se a tool não está listada, o agent não consegue chamá-la, mesmo que o harness tenha disponível.
