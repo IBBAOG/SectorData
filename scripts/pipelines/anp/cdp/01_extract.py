@@ -714,15 +714,17 @@ def _upload_session_to_supabase(session_path: Path, periodo: str, ambiente: str)
             "captured_ambiente": ambiente,
             "uploaded_at": datetime.utcnow().isoformat() + "Z",
         }
+        # Schema: PK (base, ambiente) — 1 row por ambiente CDP (M, S, T)
         sb.table("alertas_session").upsert({
             "base": "anp_cdp_producao_poco",
+            "ambiente": ambiente,
             "session": session_data,
             "captured_at": datetime.utcnow().isoformat() + "Z",
-            # APEX session ~8h, set conservative 6h TTL
-            "expires_at": (datetime.utcnow() + timedelta(hours=6)).isoformat() + "Z",
+            # APEX session dura semanas em prática; TTL de 30 dias com folga
+            "expires_at": (datetime.utcnow() + timedelta(days=30)).isoformat() + "Z",
             "metadata": metadata,
-        }, on_conflict="base").execute()
-        print("[session-upload] alertas_session synced for base=anp_cdp_producao_poco")
+        }, on_conflict="base,ambiente").execute()
+        print(f"[session-upload] alertas_session synced for base=anp_cdp_producao_poco ambiente={ambiente}")
     except Exception as e:
         print(f"[session-upload] ERRO ao sincronizar sessão: {e}")
         # Non-fatal: ETL continues even if session upload fails

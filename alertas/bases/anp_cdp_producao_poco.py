@@ -53,11 +53,11 @@ class AnpCdpProducaoPoco(BaseMonitor):
 
     # ── Supabase session ──────────────────────────────────────────────────────
 
-    def _get_session_from_db(self, slug: str) -> dict | None:
+    def _get_sessions_by_ambiente(self, slug: str) -> dict | None:
         """
-        Lê a linha de alertas_session para o slug. Retorna None se:
-        - Linha inexistente
-        - expires_at < now (sessão expirada)
+        Lê TODAS as rows de alertas_session para o slug, indexadas por ambiente.
+        Retorna {"M": row, "S": row, "T": row} se as 3 rows existem e nenhuma
+        expirou; None caso contrário (alerter dispara captura).
         """
         if self._sb is None:
             print(f"[{self.slug}]   Supabase não configurado — não é possível ler sessão.")
@@ -67,29 +67,37 @@ class AnpCdpProducaoPoco(BaseMonitor):
                 self._sb.table("alertas_session")
                 .select("*")
                 .eq("base", slug)
-                .single()
+                .in_("ambiente", ["M", "S", "T"])
                 .execute()
             )
         except Exception as e:
             print(f"[{self.slug}]   Erro ao consultar alertas_session: {e}")
             return None
 
-        row = res.data if res else None
-        if not row:
+        rows = res.data if res else []
+        by_amb = {row["ambiente"]: row for row in rows if row.get("ambiente") in ("M", "S", "T")}
+
+        # Precisa ter as 3 sessions
+        faltando = [a for a in ("M", "S", "T") if a not in by_amb]
+        if faltando:
+            print(f"[{self.slug}]   Sessions faltando para ambiente(s): {faltando}")
             return None
 
-        # Verificar expiração
-        expires_at_str = row.get("expires_at")
-        if expires_at_str:
+        # Verificar expiração de qualquer uma
+        now_utc = datetime.now(timezone.utc)
+        for amb, row in by_amb.items():
+            expires_at_str = row.get("expires_at")
+            if not expires_at_str:
+                continue
             try:
                 expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
-                if datetime.now(timezone.utc) >= expires_at:
-                    print(f"[{self.slug}]   Sessão expirada em {expires_at_str}.")
+                if now_utc >= expires_at:
+                    print(f"[{self.slug}]   Sessão {amb} expirada em {expires_at_str}.")
                     return None
             except ValueError:
-                pass  # Se não conseguir parsear, trata como válida e continua
+                pass
 
-        return row
+        return by_amb
 
     # ── Workflow dispatch com debounce ────────────────────────────────────────
 
@@ -137,9 +145,10 @@ class AnpCdpProducaoPoco(BaseMonitor):
 
     # ── Download dos CSVs do mês via _replay ─────────────────────────────────
 
-    def _baixar_csvs_mes(self, session_data: dict, periodo: str) -> dict:
+    def _baixar_csvs_mes(self, sessions_by_ambiente: dict, periodo: str) -> dict:
         """
-        Chama replay_download para cada ambiente (M, S, T).
+        Chama replay_download usando a session específica de cada ambiente.
+        sessions_by_ambiente = {"M": row, "S": row, "T": row} (cada row tem .session jsonb).
         Retorna {"M": path, "S": path, "T": path} ou levanta RuntimeError.
         """
         if replay_download is None:
@@ -153,6 +162,8 @@ class AnpCdpProducaoPoco(BaseMonitor):
 
         resultado = {}
         for ambiente in ("M", "S", "T"):
+            row = sessions_by_ambiente[ambiente]
+            session_data = row["session"]
             res = replay_download(
                 session_data=session_data,
                 periodo=periodo,
@@ -195,30 +206,32 @@ class AnpCdpProducaoPoco(BaseMonitor):
         # Carregar estado atual para uso em _trigger_capture_workflow_with_debounce
         self._estado_atual = self.ler_estado()
 
-        # 1. Tentar obter sessão do Supabase
-        session_row = self._get_session_from_db(self.slug)
+        # 1. Tentar obter as 3 sessions (M, S, T) do Supabase
+        sessions = self._get_sessions_by_ambiente(self.slug)
 
-        if session_row is None:
-            # Sem sessão válida — tenta disparar o capture workflow (com debounce)
+        if sessions is None:
+            # Faltam sessions ou alguma expirou — dispara capture workflow (com debounce)
             if self._trigger_capture_workflow_with_debounce(self.slug):
-                print(f"[{self.slug}]   Sessão expirada/ausente; capture workflow disparado. Pulando esta rodada.")
+                print(f"[{self.slug}]   Sessions ausentes/expiradas; capture workflow disparado. Pulando esta rodada.")
             else:
-                print(f"[{self.slug}]   Sessão expirada/ausente; capture já foi disparado nas últimas {_DEBOUNCE_HOURS}h (debounce). Pulando.")
+                print(f"[{self.slug}]   Sessions ausentes/expiradas; capture já foi disparado nas últimas {_DEBOUNCE_HOURS}h (debounce). Pulando.")
             return False
 
-        # 2. Verificar se a sessão é do mês esperado
+        # 2. Verificar se TODAS as sessions são do mês esperado
         periodo = _mes_esperado()
-        captured_periodo = (session_row.get("metadata") or {}).get("captured_periodo")
-        if periodo != captured_periodo:
-            print(
-                f"[{self.slug}]   Sessão é de {captured_periodo!r}, "
-                f"mês esperado é {periodo!r}. Pulando até nova captura."
-            )
-            return False
+        for amb, row in sessions.items():
+            captured_periodo = (row.get("metadata") or {}).get("captured_periodo")
+            if periodo != captured_periodo:
+                print(
+                    f"[{self.slug}]   Session {amb} é de {captured_periodo!r}, "
+                    f"mês esperado é {periodo!r}. Disparando recaptura."
+                )
+                self._trigger_capture_workflow_with_debounce(self.slug)
+                return False
 
-        # 3. Baixar CSVs do mês usando _replay
+        # 3. Baixar CSVs do mês usando _replay (1 session por ambiente)
         try:
-            csvs = self._baixar_csvs_mes(session_row["session"], periodo)
+            csvs = self._baixar_csvs_mes(sessions, periodo)
         except Exception as e:
             print(f"[{self.slug}]   ERRO ao baixar CSVs: {e}")
             return False
@@ -299,12 +312,12 @@ class AnpCdpProducaoPoco(BaseMonitor):
             list(csvs.values()),
         )
 
-        # 7. Atualizar last_used_at na tabela alertas_session
+        # 7. Atualizar last_used_at nas 3 rows de alertas_session (M, S, T)
         if self._sb is not None:
             try:
                 self._sb.table("alertas_session").update(
                     {"last_used_at": datetime.now(timezone.utc).isoformat()}
-                ).eq("base", self.slug).execute()
+                ).eq("base", self.slug).in_("ambiente", ["M", "S", "T"]).execute()
             except Exception as e:
                 print(f"[{self.slug}]   [aviso] Falha ao atualizar last_used_at: {e}")
 
