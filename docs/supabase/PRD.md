@@ -142,7 +142,35 @@ Implicação: recriar o banco apenas das migrations resultaria em schema incompl
 ### Outras observações
 
 - Algumas RPCs em `remote_schema.sql` têm múltiplas assinaturas (overload) — é histórico e funciona, mas convém consolidar.
-- Auditoria periódica via `get_advisors` ainda não foi rodada — fazer ao entrar em produção plena.
+- Auditoria periódica via `get_advisors`: rodada em 2026-05-06 — ver Hardening 2026-05-06 abaixo.
+
+### Hardening 2026-05-06 (migrations 20260505000001 a 20260505000005)
+
+Cinco migrations de hardening aplicadas após auditoria `get_advisors` (53 perf + 264 security issues):
+
+**A — Quick wins** (`20260505000001_hardening_a_rls_indexes.sql`):
+- 9 policies que usavam `auth.uid()` diretamente agora usam `(select auth.uid())` (wrapping elimina re-avaliação por row).
+- `profiles`: duas policies SELECT (own + admin) consolidadas em `"profiles read"` com OR.
+- `card_previews`: policy `FOR ALL` separada em INSERT/UPDATE/DELETE para eliminar overlap com SELECT.
+- 3 duplicate indexes em `vendas` dropados: `idx_vendas_agente`, `idx_vendas_regiao`, `idx_vendas_uf`.
+- FK index adicionado: `idx_stock_portfolios_user_id`.
+
+**B — Search path** (`20260505000002_hardening_b_search_path.sql`):
+- `ALTER FUNCTION ... SET search_path = public, pg_temp` aplicado a ~75 funções sem search_path fixo.
+- Resolve `function_search_path_mutable` para todas as RPCs de dashboard e pipeline.
+
+**C — MV exposure** (`20260505000003_hardening_c_mv_revoke.sql`):
+- `REVOKE SELECT ON mv_ms_serie, mv_ms_serie_fast, mv_anp_cdp_pocos FROM anon, authenticated`.
+- Confirmado via grep em `src/`: nenhum acesso direto — apenas via RPCs SECURITY DEFINER.
+
+**D — SECURITY DEFINER audit** (`20260505000004_hardening_d_revoke_internal_rpcs.sql`):
+- Revogado EXECUTE para anon/authenticated em funções internas: `classificar_agentes`, `fn_classificar_agente`, `_match_candidate_on_navio_insert`, `get_nd_unresolved`, `get_candidate_trail`.
+- Revogado também para 7 overloads legados (8-param com `regiao_origem`/`uf_origem`) que não são chamados pelo frontend.
+- Mantidas: todas as funções em `src/lib/rpc.ts`.
+
+**E — Unused indexes** (`20260505000005_hardening_e_unused_indexes.sql`):
+- Dropado apenas `anp_cdp_v3_poco_idx` (redundante com `anp_cdp_v6_poco_grupo_idx`).
+- 20 outros índices suspeitos retidos pendentes de verificação de stats de produção.
 
 ## Contratos com outros departamentos
 

@@ -6,7 +6,11 @@ import type { Annotations, Layout, PlotData } from "plotly.js";
 import NavBar from "../../../components/NavBar";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import PlotlyChart from "../../../components/PlotlyChart";
-import PeriodSlider from "../../../components/PeriodSlider";
+import DashboardHeader from "../../../components/dashboard/DashboardHeader";
+import PeriodSlider from "../../../components/dashboard/PeriodSlider";
+import SegmentedToggle from "../../../components/dashboard/SegmentedToggle";
+import ExportPanel from "../../../components/dashboard/ExportPanel";
+import BarrelLoading from "../../../components/dashboard/BarrelLoading";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { rpcGetPriceBandsData, type PriceBandsRow } from "../../../lib/rpc";
 import { downloadPriceBandsExcel } from "../../../lib/exportExcel";
@@ -526,7 +530,6 @@ export default function PriceBandsPage() {
   const dieselYtd     = useMemo(() => buildYtdChart(rows, "Diesel",   ytdYear), [rows, ytdYear]);
 
   const ytdYears    = [currentYear, currentYear - 1, currentYear - 2];
-  const ytdActiveIdx = ytdYears.indexOf(ytdYear);
 
   if (visLoading || !visible) return null;
 
@@ -550,7 +553,7 @@ export default function PriceBandsPage() {
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Period</div>
                 {!loading && datas.length > 0 && (
-                  <PeriodSlider datas={datas} value={sliderRange} onChange={setSliderRange} sliderId="pb-slider-period" />
+                  <PeriodSlider dates={datas} value={sliderRange} onChange={setSliderRange} sliderId="pb-slider-period" />
                 )}
               </div>
 
@@ -578,30 +581,21 @@ export default function PriceBandsPage() {
           {/* ── Main content ───────────────────────────────────────────── */}
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-                <div>
-                  <div className="page-header-title">Brazil Fuel Price Bands</div>
-                  <div className="page-header-sub">BBA Import/Export Parity vs. Petrobras reference price (R$/L)</div>
-                </div>
-
-                <div style={{ position: "relative", minWidth: 180 }}>
-                  {(excelLoading || csvLoading) && (
-                    <div style={{ position: "absolute", top: 0, right: 0, zIndex: 20, border: "1px solid #e0e0e0", borderRadius: 12, padding: "24px 32px", backgroundColor: "rgba(255,255,255,0.97)", backdropFilter: "blur(8px)", boxShadow: "0 8px 32px rgba(0,0,0,0.12)", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-                      <img src="/barrel_loading.png" alt="Carregando..." width={120} height={120} />
-                      <span style={{ fontFamily: "Arial", fontSize: 13, fontWeight: 600, color: "#555", letterSpacing: "0.3px" }}>
-                        {excelLoading ? "Gerando Excel..." : "Baixando CSV..."}
-                      </span>
-                    </div>
-                  )}
-                  <div style={{ border: "1px solid #d0d0d0", borderRadius: 6, padding: "10px 16px", backgroundColor: "#fafafa" }}>
-                    <div style={{ fontFamily: "Arial", fontSize: 11, fontWeight: 700, color: "#1a1a1a", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                      Export Data
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "row", gap: 8 }}>
-                      <button
-                        type="button"
-                        className="btn btn-outline-secondary btn-sm"
-                        onClick={async () => {
+              <DashboardHeader
+                title="Brazil Fuel Price Bands"
+                sub="BBA Import/Export Parity vs. Petrobras reference price (R$/L)"
+                lang="en"
+                hideDivider
+                rightSlot={
+                  <ExportPanel
+                    actions={[
+                      {
+                        kind: "excel",
+                        label: "formated data .xl",
+                        busy: excelLoading,
+                        loadingLabel: "Gerando Excel...",
+                        disabled: rows.length === 0 || loading || excelLoading,
+                        onClick: async () => {
                           setExcelLoading(true);
                           try {
                             await downloadPriceBandsExcel(rows);
@@ -610,51 +604,34 @@ export default function PriceBandsPage() {
                           } finally {
                             setExcelLoading(false);
                           }
-                        }}
-                        disabled={rows.length === 0 || loading || excelLoading}
-                        style={{ fontFamily: "Arial" }}
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" style={{ marginRight: 5, verticalAlign: "middle" }} xmlns="http://www.w3.org/2000/svg">
-                          <rect x="2" y="2" width="20" height="20" rx="3" fill="#217346"/>
-                          <text x="4" y="17" fontFamily="Arial" fontWeight="bold" fontSize="12" fill="#ffffff">X</text>
-                        </svg>
-                        formated data .xl
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-outline-secondary btn-sm"
-                        onClick={async () => {
+                        },
+                      },
+                      {
+                        kind: "csv",
+                        label: "all data .csv",
+                        busy: csvLoading,
+                        loadingLabel: "Baixando CSV...",
+                        disabled: rows.length === 0 || loading || csvLoading,
+                        onClick: async () => {
                           setCsvLoading(true);
                           try {
                             downloadCsv(rows, "price_bands.csv");
                           } finally {
                             setCsvLoading(false);
                           }
-                        }}
-                        disabled={rows.length === 0 || loading || csvLoading}
-                        style={{ fontFamily: "Arial" }}
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" style={{ marginRight: 5, verticalAlign: "middle" }} xmlns="http://www.w3.org/2000/svg">
-                          <rect x="3" y="2" width="18" height="20" rx="2" fill="#1565C0"/>
-                          <rect x="6" y="7" width="12" height="1.5" rx="0.75" fill="#ffffff"/>
-                          <rect x="6" y="11" width="12" height="1.5" rx="0.75" fill="#ffffff"/>
-                          <rect x="6" y="15" width="8" height="1.5" rx="0.75" fill="#ffffff"/>
-                        </svg>
-                        all data .csv
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                        },
+                      },
+                    ]}
+                  />
+                }
+              />
 
               {/* Section 1: Price Bands (slider-controlled) */}
               <h5 className="section-title" style={{ marginBottom: 4, color: "#000000" }}>Price Bands</h5>
               <hr className="section-hr" style={{ marginBottom: 0 }} />
 
               {loading ? (
-                <div className="d-flex justify-content-center my-5">
-                  <img src="/barrel_loading.png" alt="Carregando..." width={160} height={160} />
-                </div>
+                <BarrelLoading />
               ) : (
                 <>
                   {/* Price Bands — side by side */}
@@ -672,46 +649,14 @@ export default function PriceBandsPage() {
                   {/* Section 2: YTD Average Price */}
                   <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 32, marginBottom: 4 }}>
                     <h5 className="section-title" style={{ color: "#000000", marginBottom: 0 }}>YTD Average Price</h5>
-                    <div style={{ position: "relative", display: "inline-flex", alignItems: "center", backgroundColor: "#f0f0f0", borderRadius: 999, padding: "3px 4px" }}>
-                      {/* sliding background */}
-                      <div style={{
-                        position: "absolute",
-                        top: 3,
-                        bottom: 3,
-                        left: `calc(4px + ${ytdActiveIdx} * (100% - 8px) / 3)`,
-                        width: `calc((100% - 8px) / 3)`,
-                        backgroundColor: "#ff5000",
-                        borderRadius: 999,
-                        transition: "left 0.22s cubic-bezier(0.4, 0, 0.2, 1)",
-                        zIndex: 0,
-                        pointerEvents: "none",
-                      }} />
-                      {ytdYears.map((y) => (
-                        <button
-                          key={y}
-                          type="button"
-                          onClick={() => setYtdYear(y)}
-                          style={{
-                            position: "relative",
-                            zIndex: 1,
-                            background: "transparent",
-                            color: ytdYear === y ? "#ffffff" : "#555555",
-                            border: "none",
-                            borderRadius: 999,
-                            padding: "4px 14px",
-                            fontFamily: "Arial",
-                            fontSize: 13,
-                            fontWeight: ytdYear === y ? 700 : 500,
-                            cursor: "pointer",
-                            transition: "color 0.18s",
-                            lineHeight: 1.4,
-                            userSelect: "none",
-                          }}
-                        >
-                          {y}
-                        </button>
-                      ))}
-                    </div>
+                    <SegmentedToggle
+                      variant="compact"
+                      fontSize={13}
+                      buttonPadding="14px"
+                      options={ytdYears.map((y) => ({ value: y, label: String(y) }))}
+                      value={ytdYear}
+                      onChange={setYtdYear}
+                    />
                   </div>
                   <hr className="section-hr" style={{ marginBottom: 0 }} />
 

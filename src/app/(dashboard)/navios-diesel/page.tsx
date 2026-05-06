@@ -7,6 +7,9 @@ import NavBar from "../../../components/NavBar";
 import LineUpTabs from "../../../components/LineUpTabs";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import PlotlyChart from "../../../components/PlotlyChart";
+import DashboardHeader from "../../../components/dashboard/DashboardHeader";
+import SegmentedToggle from "../../../components/dashboard/SegmentedToggle";
+import BarrelLoading from "../../../components/dashboard/BarrelLoading";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import {
   rpcGetNdUltimaColeta,
@@ -805,25 +808,27 @@ export default function NaviosDieselPage() {
           {/* ── Main Content ── */}
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
-              <div className="mb-2">
-                <div className="page-header-title">Diesel Imports Line-Up</div>
-                <div className="page-header-sub">
-                  Expected diesel vessel arrivals at Brazilian ports
-                  {selectedColeta && (
+              <DashboardHeader
+                title="Diesel Imports Line-Up"
+                sub="Expected diesel vessel arrivals at Brazilian ports"
+                lang="en"
+                hideDivider
+                extraBadge={
+                  selectedColeta && (
                     <span style={{ marginLeft: 12, fontSize: 11, color: "#888" }}>
                       Last update: {fmtTs(selectedColeta)} BRT ({hoursAgo(selectedColeta)})
                     </span>
-                  )}
-                </div>
+                  )
+                }
+              />
+              <div className="mb-2">
                 <LineUpTabs active="line-up" />
               </div>
 
               <hr style={{ borderTop: "2px solid #e0e0e0", marginBottom: 12 }} />
 
               {loading ? (
-                <div className="d-flex justify-content-center my-5">
-                  <img src="/barrel_loading.png" alt="Loading..." width={160} height={160} />
-                </div>
+                <BarrelLoading alt="Loading..." />
               ) : (
                 <>
                   {/* Grid: responsive (3-col xxl+, 2-col below xxl, 1-col mobile) */}
@@ -833,48 +838,16 @@ export default function NaviosDieselPage() {
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <div style={TITLE_STYLE}>Distribution by Port</div>
                         {/* AIS tracker toggle pill — styled to match Price Bands */}
-                        <div style={{ position: "relative", display: "inline-flex", alignItems: "center", backgroundColor: "#f0f0f0", borderRadius: 999, padding: "3px 4px", marginBottom: 4 }}>
-                          <div style={{
-                            position: "absolute",
-                            top: 3,
-                            bottom: 3,
-                            left: `calc(4px + ${showAis ? 1 : 0} * (100% - 8px) / 2)`,
-                            width: `calc((100% - 8px) / 2)`,
-                            backgroundColor: "#ff5000",
-                            borderRadius: 999,
-                            transition: "left 0.22s cubic-bezier(0.4, 0, 0.2, 1)",
-                            zIndex: 0,
-                            pointerEvents: "none",
-                          }} />
-                          {[
-                            { key: false, label: "AIS Off" },
-                            { key: true,  label: "AIS On"  },
-                          ].map(({ key, label }) => (
-                            <button
-                              key={label}
-                              type="button"
-                              onClick={() => setShowAis(key)}
-                              style={{
-                                position: "relative",
-                                zIndex: 1,
-                                background: "transparent",
-                                color: showAis === key ? "#ffffff" : "#555555",
-                                border: "none",
-                                borderRadius: 999,
-                                padding: "3px 12px",
-                                fontFamily: "Arial",
-                                fontSize: 11,
-                                fontWeight: showAis === key ? 700 : 500,
-                                cursor: "pointer",
-                                transition: "color 0.18s",
-                                lineHeight: 1.4,
-                                userSelect: "none",
-                              }}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
+                        <SegmentedToggle
+                          variant="compact"
+                          style={{ marginBottom: 4 }}
+                          options={[
+                            { value: false, label: "AIS Off" },
+                            { value: true,  label: "AIS On"  },
+                          ]}
+                          value={showAis}
+                          onChange={setShowAis}
+                        />
                       </div>
                       <hr className="section-hr" />
                       <PlotlyChart

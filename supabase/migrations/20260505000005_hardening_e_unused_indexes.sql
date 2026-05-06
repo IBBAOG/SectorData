@@ -1,0 +1,26 @@
+-- ============================================================================
+-- Hardening E — Conservative unused index cleanup
+--
+-- Advisor reports 21 unused indexes. Policy: only drop indexes that are
+-- provably redundant (covered by a broader composite index on the same table
+-- with the same column as the leading key). All others are retained until
+-- production query stats confirm they are truly unused.
+--
+-- Indexes dropped here:
+--   anp_cdp_v3_poco_idx (poco) — redundant: anp_cdp_v6_poco_grupo_idx
+--     covers (poco, campo, bacia, local); PostgreSQL can use the composite
+--     for equality filters on `poco` alone (leading prefix match).
+--
+-- Indexes NOT dropped (retained pending production stats):
+--   anp_cdp_v3_campo_idx, anp_cdp_v3_bacia_idx — not leading prefix of v6
+--   anp_cdp_v3_ano_mes_idx — used for time-range scans in serie RPCs
+--   anp_cdp_v4_instalacao_idx — new column, may be queried in future
+--   anp_cdp_v5_operador_idx, anp_cdp_v5_estado_idx — filter params in RPC
+--   All other indexes on navios_diesel, import_candidates, etc. — used in
+--   dashboard queries or recently added; too early to declare unused.
+--
+-- NOTE: idx_vendas_agente, idx_vendas_regiao, idx_vendas_uf were already
+-- dropped in migration 20260505000001_hardening_a_rls_indexes.sql.
+-- ============================================================================
+
+DROP INDEX IF EXISTS public.anp_cdp_v3_poco_idx;

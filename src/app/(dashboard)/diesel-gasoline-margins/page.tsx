@@ -9,6 +9,9 @@ import "rc-slider/assets/index.css";
 import NavBar from "../../../components/NavBar";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import PlotlyChart from "../../../components/PlotlyChart";
+import DashboardHeader from "../../../components/dashboard/DashboardHeader";
+import ExportPanel from "../../../components/dashboard/ExportPanel";
+import BarrelLoading from "../../../components/dashboard/BarrelLoading";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import {
   rpcGetDgMarginsData,
@@ -726,46 +729,43 @@ export default function DieselGasolineMarginsPage() {
             <div id="page-content">
 
               {/* Page header */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-                <div className="page-header-title">
-                  Diesel &amp; Gasoline Margins
-                  {latestVisibleWeek ? ` — ${weekLastDay(latestVisibleWeek)}` : ""}
-                </div>
-                <div style={{ position: "relative", minWidth: 160, flexShrink: 0 }}>
-                  <div style={{ border: "1px solid #d0d0d0", borderRadius: 6, padding: "10px 16px", backgroundColor: "#fafafa" }}>
-                    <div style={{ fontFamily: "Arial", fontSize: 11, fontWeight: 700, color: "#1a1a1a", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                      Export Data
-                    </div>
-                    <button
-                      type="button"
-                      className="btn btn-outline-secondary btn-sm"
-                      onClick={async () => {
-                        setExcelLoading(true);
-                        try {
-                          await downloadDgMarginsExcel(filteredRows);
-                        } catch (e) {
-                          console.error("Excel export failed", e);
-                        } finally {
-                          setExcelLoading(false);
-                        }
-                      }}
-                      disabled={loading || filteredRows.length === 0 || excelLoading}
-                      style={{ fontFamily: "Arial" }}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" style={{ marginRight: 5, verticalAlign: "middle" }} xmlns="http://www.w3.org/2000/svg">
-                        <rect x="2" y="2" width="20" height="20" rx="3" fill="#217346"/>
-                        <text x="4" y="17" fontFamily="Arial" fontWeight="bold" fontSize="12" fill="#ffffff">X</text>
-                      </svg>
-                      formatted data .xl
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <DashboardHeader
+                title={
+                  <>
+                    Diesel &amp; Gasoline Margins
+                    {latestVisibleWeek ? ` — ${weekLastDay(latestVisibleWeek)}` : ""}
+                  </>
+                }
+                lang="en"
+                hideDivider
+                rightSlot={
+                  <ExportPanel
+                    style={{ minWidth: 160, flexShrink: 0 }}
+                    actions={[
+                      {
+                        kind: "excel",
+                        label: "formatted data .xl",
+                        busy: excelLoading,
+                        loadingLabel: "Gerando Excel...",
+                        disabled: loading || filteredRows.length === 0 || excelLoading,
+                        onClick: async () => {
+                          setExcelLoading(true);
+                          try {
+                            await downloadDgMarginsExcel(filteredRows);
+                          } catch (e) {
+                            console.error("Excel export failed", e);
+                          } finally {
+                            setExcelLoading(false);
+                          }
+                        },
+                      },
+                    ]}
+                  />
+                }
+              />
 
               {loading ? (
-                <div className="d-flex justify-content-center my-5">
-                  <img src="/barrel_loading.png" alt="Carregando..." width={160} height={160} />
-                </div>
+                <BarrelLoading />
               ) : (
                 <>
                   {/* 1 ── Distribution & Resale Margin comparison line chart */}

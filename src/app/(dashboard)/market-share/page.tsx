@@ -6,7 +6,11 @@ import type { Layout, PlotData } from "plotly.js";
 import NavBar from "../../../components/NavBar";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import PlotlyChart from "../../../components/PlotlyChart";
-import PeriodSlider from "../../../components/PeriodSlider";
+import PeriodSlider from "../../../components/dashboard/PeriodSlider";
+import DashboardHeader from "../../../components/dashboard/DashboardHeader";
+import SegmentedToggle from "../../../components/dashboard/SegmentedToggle";
+import ExportPanel from "../../../components/dashboard/ExportPanel";
+import BarrelLoading from "../../../components/dashboard/BarrelLoading";
 import CheckList from "../../../components/CheckList";
 import SearchableMultiSelect from "../../../components/SearchableMultiSelect";
 import RegionStateFilter from "../../../components/RegionStateFilter";
@@ -439,7 +443,6 @@ export default function MarketSharePage() {
 
   const [mode, setMode] = useState<Mode>("Individual");
   const MODE_OPTIONS: Mode[] = ["Individual", "Big-3", "Others"];
-  const modeActiveIdx = MODE_OPTIONS.indexOf(mode);
 
   const [competidoresSelected, setCompetidoresSelected] = useState<string[]>([]);
   const [regioesSelected, setRegioesSelected] = useState<string[]>([]);
@@ -687,7 +690,7 @@ export default function MarketSharePage() {
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Period</div>
                 <PeriodSlider
-                  datas={datas}
+                  dates={datas}
                   value={sliderRange}
                   onChange={setSliderRange}
                   sliderId="ms-slider-period"
@@ -702,49 +705,11 @@ export default function MarketSharePage() {
 
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">View Mode</div>
-                <div style={{ position: "relative", display: "flex", alignItems: "center", backgroundColor: "#f0f0f0", borderRadius: 999, padding: "3px 4px", width: "100%" }}>
-                  {/* sliding background */}
-                  <div style={{
-                    position: "absolute",
-                    top: 3,
-                    bottom: 3,
-                    left: `calc(4px + ${modeActiveIdx} * (100% - 8px) / 3)`,
-                    width: `calc((100% - 8px) / 3)`,
-                    backgroundColor: "#ff5000",
-                    borderRadius: 999,
-                    transition: "left 0.22s cubic-bezier(0.4, 0, 0.2, 1)",
-                    zIndex: 0,
-                    pointerEvents: "none",
-                  }} />
-                  {MODE_OPTIONS.map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setMode(m)}
-                      style={{
-                        position: "relative",
-                        zIndex: 1,
-                        background: "transparent",
-                        color: mode === m ? "#ffffff" : "#555555",
-                        border: "none",
-                        borderRadius: 999,
-                        padding: "4px 0",
-                        flex: 1,
-                        textAlign: "center",
-                        fontFamily: "Arial",
-                        fontSize: 12,
-                        fontWeight: mode === m ? 700 : 500,
-                        cursor: "pointer",
-                        transition: "color 0.18s",
-                        lineHeight: 1.4,
-                        userSelect: "none",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {m}
-                    </button>
-                  ))}
-                </div>
+                <SegmentedToggle
+                  options={MODE_OPTIONS.map((m) => ({ value: m, label: m }))}
+                  value={mode}
+                  onChange={setMode}
+                />
               </div>
 
               <div className="sidebar-filter-section">
@@ -796,47 +761,21 @@ export default function MarketSharePage() {
 
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-                <div>
-                  <div className="page-header-title">Brazil Fuel Distribution Market Share</div>
-                  <div className="page-header-sub">
-                    Temporal evolution of market share by distributor (%)
-                  </div>
-                </div>
-
-                <div style={{ position: "relative", minWidth: 180 }}>
-                  {(excelLoading || csvLoading) && (
-                    <div style={{
-                      position: "absolute",
-                      top: 0,
-                      right: 0,
-                      zIndex: 20,
-                      border: "1px solid #e0e0e0",
-                      borderRadius: 12,
-                      padding: "24px 32px",
-                      backgroundColor: "rgba(255,255,255,0.97)",
-                      backdropFilter: "blur(8px)",
-                      boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      gap: 12,
-                    }}>
-                      <img src="/barrel_loading.png" alt="Carregando..." width={120} height={120} />
-                      <span style={{ fontFamily: "Arial", fontSize: 13, fontWeight: 600, color: "#555", letterSpacing: "0.3px" }}>
-                        {excelLoading ? "Gerando Excel..." : "Baixando CSV..."}
-                      </span>
-                    </div>
-                  )}
-                  <div style={{ border: "1px solid #d0d0d0", borderRadius: 6, padding: "10px 16px", backgroundColor: "#fafafa" }}>
-                    <div style={{ fontFamily: "Arial", fontSize: 11, fontWeight: 700, color: "#1a1a1a", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                      Export Data
-                    </div>
-                    <div style={{ display: "flex", flexDirection: "row", gap: 8 }}>
-                      <button
-                        type="button"
-                        className="btn btn-outline-secondary btn-sm"
-                        onClick={async () => {
+              <DashboardHeader
+                title="Brazil Fuel Distribution Market Share"
+                sub="Temporal evolution of market share by distributor (%)"
+                lang="en"
+                hideDivider
+                rightSlot={
+                  <ExportPanel
+                    actions={[
+                      {
+                        kind: "excel",
+                        label: "formated data .xl",
+                        busy: excelLoading,
+                        loadingLabel: "Gerando Excel...",
+                        disabled: !serieRows || serieRows.length === 0 || seriesLoading || excelLoading,
+                        onClick: async () => {
                           setExcelLoading(true);
                           try {
                             await downloadMarketShareExcel(serieRows, players, big3);
@@ -845,20 +784,15 @@ export default function MarketSharePage() {
                           } finally {
                             setExcelLoading(false);
                           }
-                        }}
-                        disabled={!serieRows || serieRows.length === 0 || seriesLoading || excelLoading}
-                        style={{ fontFamily: "Arial" }}
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" style={{ marginRight: 5, verticalAlign: "middle" }} xmlns="http://www.w3.org/2000/svg">
-                          <rect x="2" y="2" width="20" height="20" rx="3" fill="#217346"/>
-                          <text x="4" y="17" fontFamily="Arial" fontWeight="bold" fontSize="12" fill="#ffffff">X</text>
-                        </svg>
-                        formated data .xl
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-outline-secondary btn-sm"
-                        onClick={async () => {
+                        },
+                      },
+                      {
+                        kind: "csv",
+                        label: "all data .csv",
+                        busy: csvLoading,
+                        loadingLabel: "Baixando CSV...",
+                        disabled: csvLoading || seriesLoading,
+                        onClick: async () => {
                           if (!supabase) return;
                           setCsvLoading(true);
                           try {
@@ -869,27 +803,15 @@ export default function MarketSharePage() {
                           } finally {
                             setCsvLoading(false);
                           }
-                        }}
-                        disabled={csvLoading || seriesLoading}
-                        style={{ fontFamily: "Arial" }}
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" style={{ marginRight: 5, verticalAlign: "middle" }} xmlns="http://www.w3.org/2000/svg">
-                          <rect x="3" y="2" width="18" height="20" rx="2" fill="#1565C0"/>
-                          <rect x="6" y="7" width="12" height="1.5" rx="0.75" fill="#ffffff"/>
-                          <rect x="6" y="11" width="12" height="1.5" rx="0.75" fill="#ffffff"/>
-                          <rect x="6" y="15" width="8" height="1.5" rx="0.75" fill="#ffffff"/>
-                        </svg>
-                        all data .csv
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                        },
+                      },
+                    ]}
+                  />
+                }
+              />
 
               {seriesLoading ? (
-                <div className="d-flex justify-content-center my-5">
-                  <img src="/barrel_loading.png" alt="Carregando..." width={160} height={160} />
-                </div>
+                <BarrelLoading />
               ) : (
                 <>
                   <div style={{ marginBottom: 10 }}>
