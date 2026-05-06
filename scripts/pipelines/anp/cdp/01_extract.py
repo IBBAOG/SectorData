@@ -342,55 +342,42 @@ def do_buscar(driver, ocr_engine, periodo, ambiente):
         return False
 
 
-def do_acoes_download(driver, output_dir=None, attempt=1):
+def do_acoes_download(driver):
     """
-    Click the "Exportar p/ csv" button that the ANP/APEX UI now exposes directly
-    (the previous Ações menu + dialog confirm flow was removed by ANP).
-
-    Strategy C (hybrid): wait for button presence in DOM, then fire apex.submit()
-    via JS — same code path as a human click.  Falls back to a direct Selenium
-    .click() if the JS submit raises an exception.
-
-    output_dir / attempt are used for _dump_page_state on TimeoutException.
+    Click Ações → Fazer Download → confirm CSV download in dialog.
     Returns True on success.
     """
-    _EXPORTAR_XPATH = "//button[.//span[text()='Exportar p/ csv']]"
-
-    # Wait for the "Exportar p/ csv" button to be present in the DOM (ensures the
-    # APEX page state is ready before we fire the submit).
+    # APEX IR actions button — class selector is stable across locales
     try:
-        _wait_for(
-            driver,
-            EC.presence_of_element_located((By.XPATH, _EXPORTAR_XPATH)),
-            timeout=20,
-            label="botão 'Exportar p/ csv' presente no DOM",
-        )
-    except TimeoutException:
-        if output_dir:
-            _dump_page_state(driver, output_dir, "exportar_btn_absent", attempt)
-        raise
+        acoes_btn = driver.find_element(By.CSS_SELECTOR, "button.a-IRR-button--actions")
+    except Exception:
+        acoes_btn = driver.find_element(By.XPATH, "//button[contains(.,'Ações')]")
+    acoes_btn.click()
 
-    # Primary path: fire apex.submit() via JS — identical to the onclick handler.
-    try:
-        driver.execute_script("apex.submit({request:'Exportar',validate:true});")
-        return True
-    except Exception as js_exc:
-        print(f"    [export] apex.submit() falhou ({js_exc}), tentando click direto...")
+    # Click "Fazer Download" menu item (first visible match = menu entry)
+    menu_item = WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable((By.XPATH, "//button[contains(.,'Fazer Download')]"))
+    )
+    menu_item.click()
 
-    # Fallback: direct Selenium click on the button element.
-    try:
-        btn = _wait_for(
-            driver,
-            EC.element_to_be_clickable((By.XPATH, _EXPORTAR_XPATH)),
-            timeout=10,
-            label="botão 'Exportar p/ csv' clicável (fallback)",
-        )
-        btn.click()
-        return True
-    except TimeoutException:
-        if output_dir:
-            _dump_page_state(driver, output_dir, "exportar_btn_not_clickable", attempt)
-        raise
+    # Wait for the download dialog to appear, then click its confirm button via JS.
+    # We use JS click because Selenium's click can fail on APEX overlay dialogs that
+    # don't use standard jQuery UI (.ui-dialog) structure.
+    def _click_dialog_confirm(d):
+        return d.execute_script("""
+            var btns = Array.from(document.querySelectorAll('button'));
+            // Find a visible "Fazer Download" button that is NOT the menu item
+            // (menu closes after click, so any remaining visible match is the dialog confirm)
+            var btn = btns.find(function(b) {
+                return b.textContent.trim().indexOf('Fazer Download') !== -1
+                    && b.offsetParent !== null;  // offsetParent == null means hidden
+            });
+            if (btn) { btn.click(); return true; }
+            return false;
+        """)
+
+    WebDriverWait(driver, 10).until(_click_dialog_confirm)
+    return True
 
 
 # ─── Session capture ─────────────────────────────────────────────────────────
@@ -450,7 +437,7 @@ def capture_session(ocr_engine, periodo, ambiente, output_dir, download_dir):
             # The XHR is captured at send() time — before any file is downloaded.
             driver.execute_script(_CAPTURE_JS)
 
-            do_acoes_download(driver, output_dir=output_dir, attempt=attempt)
+            do_acoes_download(driver)
 
             # Give the JS event loop a moment to fire the XHR interceptor
             time.sleep(2)
@@ -607,7 +594,7 @@ def extract_one_selenium(ocr_engine, periodo, ambiente, output_dir, download_dir
                 )
                 continue
 
-            do_acoes_download(driver, output_dir=output_dir, attempt=attempt)
+            do_acoes_download(driver)
 
             print(f"    Aguardando download...")
             csv_path = wait_for_download(download_dir, timeout=30)
