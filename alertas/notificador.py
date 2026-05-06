@@ -4,6 +4,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -31,9 +32,19 @@ def _get_service():
     if _TOKEN.exists():
         creds = Credentials.from_authorized_user_file(str(_TOKEN), SCOPES)
     if not creds or not creds.valid:
+        refreshed = False
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
+            # NOTE: In GitHub Actions there is no browser, so if the refresh
+            # token is revoked the run will still fail (no interactive flow
+            # possible).  This try/except only helps local re-authentication.
+            try:
+                creds.refresh(Request())
+                refreshed = True
+            except RefreshError as e:
+                # Refresh token revoked / invalid — fall through to interactive flow.
+                print(f"  [auth] Refresh token revogado ({e}). Iniciando fluxo OAuth interativo...")
+                creds = None
+        if not refreshed:
             # Interactive OAuth flow — only works locally (GHA has no browser).
             flow = InstalledAppFlow.from_client_secrets_file(str(_CREDENTIALS), SCOPES)
             creds = flow.run_local_server(port=0)
