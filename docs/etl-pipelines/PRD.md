@@ -57,17 +57,53 @@ scripts/utils/                      # one-shots (não-ETL)
 | `etl_ais_positions.yml` | Cada 6h+15min | `pipelines/ais/positions_sync.py` | `vessel_registry`, `vessel_positions`, `port_arrivals` |
 | `etl_anp_vendas.yml` | Trigger externo (cron-job.org via `workflow_dispatch`) | `pipelines/anp/vendas_watch.py --force` | (vendas combustíveis ANP) |
 | `etl_anp_fase3.yml` | Mensal — 1º dia, 13:00 UTC | `pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` → `03_painel_imp_sync.py` | `anp_daie` (6.912 rows), `anp_desembaracos` (6.204), `anp_painel_imp_dist` (1.444) |
-| `etl_anp_lpc.yml` | Semanal — quarta, 14:30 UTC (`30 14 * * 3`) | `pipelines/anp/lpc_sync.py` | `anp_lpc` (29.736 rows) |
-| `etl_anp_precos.yml` | Semanal — segunda, 12:00 UTC (`0 12 * * 1`) | `pipelines/anp/glp_sync.py` + `precos/01_ppi_sync.py` → `02_precos_produtores_sync.py` | `anp_glp` (3.106), `anp_ppi` (18.131), `anp_precos_produtores` (38.392) |
-| `etl_anp_cdp.yml` | Mensal (5º), 08:00 UTC (`0 8 5 * *`) | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` | `output/anp/` + `anp_cdp_producao` (1.813.851 rows) |
-| `etl_mdic_comex.yml` | Diário, 14:00 UTC (`0 14 * * *`) | `pipelines/mdic_comex_sync.py` | `mdic_comex` (1.238 rows) |
+| `etl_anp_lpc.yml` | Semanal — quarta, 14:30 UTC (`30 14 * * 3`) | `pipelines/anp/lpc_sync.py` | `anp_lpc` (160.243 rows — histórico 2004–2026 após backfill) |
+| `etl_anp_precos.yml` | Semanal — segunda, 12:00 UTC (`0 12 * * 1`) | `pipelines/anp/glp_sync.py` + `precos/01_ppi_sync.py` → `02_precos_produtores_sync.py` | `anp_glp` (3.106), `anp_ppi` (18.131), `anp_precos_produtores` (54.738 — histórico 2002–2026 após backfill) |
+| `etl_anp_cdp.yml` | Mensal (5º), 08:00 UTC (`0 8 5 * *`) | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` | `output/anp/` + `anp_cdp_producao` (2.045.515 rows) |
+| `etl_mdic_comex.yml` | Diário, 14:00 UTC (`0 14 * * *`) | `pipelines/mdic_comex_sync.py` | `mdic_comex` (10.029 rows — histórico 1997–2026 após backfill) |
 | `etl_navios_lineup.yml` | Cada 6h | `pipelines/navios/01_lineup_scrape.py` → `02_diesel_import.mjs` | `navios_diesel` |
 | `etl_sindicom.yml` | Mensal — dia 5, 15:00 UTC (`0 15 5 * *`) | `pipelines/sindicom_sync.py` | `sindicom` — BLOQUEADO por Cloudflare em IP residencial; só roda via GitHub Actions runner. Aguardando dispatch manual. |
 | `manual_dg_margins.yml` | Semanal | `manual/dg_margins_upload.py` | `d_g_margins` (este é Dados Locais, não ETL) |
 | `etl_navios_imo_lookup.yml` | Após `etl_navios_lineup` | `pipelines/navios/03_imo_lookup.py` → `04_cabotage_cleanup.py` | `navios_diesel.imo/mmsi` |
 | `etl_navios_positions.yml` | Após `etl_navios_imo_lookup` | `pipelines/navios/05_positions_sync.py` | `vessel_positions`, `port_arrivals` |
 
-> Workflows confirmados ativos em 2026-05-05. Row counts refletem estado de produção em 2026-05-05. README está desatualizado (não os menciona). Quando atualizar README, incluir.
+> Workflows confirmados ativos em 2026-05-05. Row counts atualizados após backfill histórico de 2026-05-06. README está desatualizado (não os menciona). Quando atualizar README, incluir.
+
+### Scripts de backfill histórico (one-shot, rodar localmente)
+
+Scripts criados em 2026-05-06 para preencher gaps históricos entre `DADOS/` e Supabase.
+São idempotentes (ON CONFLICT DO UPDATE) — seguros de re-rodar.
+
+```
+scripts/pipelines/
+  mdic_comex_backfill.py              DADOS/mdic_comex/comex_consolidado.parquet → mdic_comex
+                                      Flags: --parquet PATH, --desde ANO, --ate ANO
+  anp/
+    precos/precos_produtores_backfill.py  DADOS/anp_precos_produtores/...parquet → anp_precos_produtores
+                                          Flags: --parquet PATH, --desde YYYY-MM-DD, --ate YYYY-MM-DD
+    lpc_backfill.py                   DADOS/anp_lpc_ultimas/lpc_consolidado.parquet → anp_lpc
+                                      Flags: --parquet PATH, --from-date, --to-date, --full
+```
+
+**Resultado do backfill em 2026-05-06:**
+
+| Tabela | Rows antes | Rows depois | Periodo ganho |
+|---|---|---|---|
+| `anp_lpc` | 29.736 | 160.243 | +2004-05 a 2022-09 (1.095 semanas) |
+| `anp_precos_produtores` | 38.392 | 54.738 | +produtos adicionais (asfaltenos, QAV, etc.) 2002–2026 |
+| `mdic_comex` | 1.238 | 10.029 | +1997-01 a 2023-12 |
+
+### Redundância alertas/ vs ETL pipelines (tech debt rastreado)
+
+Os scripts em `alertas/bases/<base>.py` fazem download das mesmas fontes ANP/SINDICOM/MDIC
+que os pipelines em `scripts/pipelines/`. Há duplicação de lógica de download, mas os
+objetivos são distintos:
+- **ETL pipelines**: populam Supabase (incrementais, via GHA).
+- **alertas/**: consolidam parquet local em `DADOS/` para detecção de alertas (leitura local).
+
+**Status**: redundância documentada, refactor não planejado. Unificação futura implicaria
+fazer alertas/ consumir diretamente do Supabase em vez dos parquets — avaliação de escopo
+necessária antes de iniciar.
 
 ### Fixes aplicados na Fase 3 (já em main)
 
