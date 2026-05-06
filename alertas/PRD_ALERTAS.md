@@ -79,27 +79,30 @@ em `monitor.py` e são **puladas automaticamente** quando o monitor é chamado s
 
 | Slug | Motivo | Quem detecta novidade |
 |------|--------|-----------------------|
-| `anp_cdp_producao_poco` | Requer Selenium + Chrome headless + ddddocr + onnxruntime (~200 MB de deps). O site usa CAPTCHA interativo (Oracle APEX) — impossível sem browser real. | `etl_anp_cdp.yml` (cron mensal dia 5, 08h UTC) faz o download + upload completo. |
 | `sindicom` | Requer Playwright + Chromium. O site usa proteção anti-bot e o link de download exige JavaScript e cookies de sessão — requests simples retorna 403. | `etl_sindicom.yml` (cron mensal dia 5, 15h UTC) faz o download + upload completo. |
+
+> **Nota (2026-05):** `anp_cdp_producao_poco` foi **removida** de `_HEAVY_BASES`. Ela agora
+> roda a cada 2h como as demais bases leves. Veja detalhes na seção da base abaixo.
 
 ### Por que não rodar no monitor a cada 2h
 
-- ANP CDP atualiza apenas 1 vez por mês (geralmente dia 5).
-- Tentar a cada 2h significaria 360 tentativas/mês, todas falhando por ausência de Selenium
-  no ambiente leve do `alertas_monitor.yml`.
-- O workflow `etl_anp_cdp.yml` já é o proprietário correto desse dado — tem Selenium instalado,
+- SINDICOM exige Playwright + Chromium (anti-bot), impossível sem browser real no runner leve.
+- O workflow `etl_sindicom.yml` já é o proprietário correto desse dado — tem Playwright instalado,
   roda na data certa e faz upload ao Supabase.
 
 ### Como rodar manualmente se necessário
 
 ```bash
-# Rodar uma base heavy diretamente (local, com Selenium/Playwright instalado):
-python alertas/monitor.py --base anp_cdp_producao_poco
+# Rodar a base heavy diretamente (local, com Playwright instalado):
 python alertas/monitor.py --base sindicom
 
 # Ou via GitHub Actions (forçar workflow ETL dedicado):
-gh workflow run etl_anp_cdp.yml --ref main
 gh workflow run etl_sindicom.yml --ref main
+
+# ANP CDP agora é leve — roda normalmente no monitor default:
+python alertas/monitor.py --base anp_cdp_producao_poco
+# Para forçar nova captura Selenium (mensal):
+gh workflow run etl_anp_cdp.yml --ref main
 ```
 
 ### Como adicionar uma nova base heavy
@@ -252,11 +255,30 @@ Get-NetTCPConnection -LocalPort 8050 | ForEach-Object { Stop-Process -Id $_.Owni
 
 - **Fonte**: Oracle APEX (`cdp.anp.gov.br`) — sistema interativo com CAPTCHA, sem bulk download para 2024+
 - **Lógica diferente das demais**: o método `run()` é sobrescrito diretamente (não segue `verificar()/baixar()`).
-  - Baixa o CSV do ambiente **Mar** para o período esperado (mês atual − 2)
-  - Extrai os campos (poços) presentes no CSV
-  - Compara com baseline anterior; se houver campos novos → alerta
-  - Se o checklist de campos importantes (`cdp_campos_importantes.json`) estiver completo → baixa também **Pre-Sal** e **Terra**
-- **CAPTCHA**: resolvido automaticamente via `ddddocr` (OCR de imagem). Até 10 tentativas por período. O modo `--replay` usa sessão salva (`output/anp/session.json`) como fast path sem precisar resolver CAPTCHA; em caso de falha, cai para Selenium completo.
+
+#### Fluxo atual (desde 2026-05) — base leve, checada a cada 2h
+
+A base passou de "heavy" (Selenium + ddddocr) para "leve" (Supabase session + requests puro):
+
+1. **Lê sessão do Supabase** (`alertas_session` — criada pelo `etl_anp_cdp.yml` mensal). Se a sessão estiver ausente ou expirada, dispara o workflow de captura via GitHub API (com debounce de 6h) e pula a rodada.
+2. **Verifica o período**: a sessão capturada deve ser do mês esperado (`now − 2 meses`). Se for de mês anterior, pula até nova captura.
+3. **Baixa 3 CSVs** (Mar, Pre-Sal, Terra) usando `scripts/pipelines/anp/cdp/_replay.py` (`replay_download()` via requests puro, sem Selenium).
+4. **Compara campos por ambiente** com baseline em `estado["campos_m"]`, `estado["campos_s"]`, `estado["campos_t"]`.
+5. **Alerta granular**: 1 email por campo novo (CEO quer granularidade). Cap de 10 — se houver mais, envia 1 digest único.
+6. Salva estado e atualiza `last_used_at` em `alertas_session`.
+
+**Tabela Supabase necessária**: `alertas_session(base TEXT PK, session JSONB, captured_at TIMESTAMPTZ, expires_at TIMESTAMPTZ, last_used_at TIMESTAMPTZ, metadata JSONB)` — criada pela Frente A (migration da `worker_supabase`).
+
+**Módulo externo necessário**: `scripts/pipelines/anp/cdp/_replay.py` com função `replay_download(session_data, periodo, ambiente, output_dir) -> str | Literal["expired","error"]` — criado pela Frente B (`worker_etl-pipelines`).
+
+**Secret novo necessário** (CEO deve configurar em `https://github.com/IBBAOG/SectorData/settings/secrets/actions`):
+
+| Secret | Escopo do PAT | Uso |
+|--------|--------------|-----|
+| `GITHUB_PAT_WORKFLOW_DISPATCH` | `actions:write` (fine-grained) ou `workflow` (classic) no repo `IBBAOG/SectorData` | Disparar `etl_anp_cdp.yml` automaticamente quando a sessão expira |
+
+O capture Selenium pesado (ddddocr + Chrome) continua exclusivo do `etl_anp_cdp.yml` que roda 1×/mês. O monitor de alertas apenas **consume** a sessão resultante via requests.
+
 - **Consolidação manual** (`consolidar.py`):
   - 2005–2020: ZIPs anuais disponíveis em `gov.br/anp`
   - 2021–2023: ZIPs mensais disponíveis em `gov.br/anp`
@@ -420,6 +442,7 @@ Acesse `https://github.com/IBBAOG/SectorData/settings/secrets/actions` e crie:
 | `ALERTAS_DEST_EMAIL` | Email destino das notificacoes (ex: `eduardo.mendes@itaubba.com`) |
 | `SUPABASE_URL` | Ja existe — compartilhado com outros workflows |
 | `SUPABASE_SERVICE_KEY` | Ja existe — compartilhado com outros workflows |
+| `GITHUB_PAT_WORKFLOW_DISPATCH` | PAT com escopo `actions:write` (fine-grained) ou `workflow` (classic) no repo `IBBAOG/SectorData`. Usado pela base `anp_cdp_producao_poco` para re-disparar `etl_anp_cdp.yml` quando a sessão expira (debounce: 6h). |
 
 Passos para copiar credentials.json e token.json:
 

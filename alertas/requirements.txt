@@ -11,5 +11,4 @@ dash
 plotly
 openpyxl
 xlrd>=2.0.1
-ddddocr>=1.5.0
-supabase
+supabase>=2.0

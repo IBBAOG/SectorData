@@ -9,13 +9,13 @@ if hasattr(sys.stderr, "reconfigure"):
 Sistema de Alertas ANP — Monitor Principal
 
 Comportamento default (sem --base):
-    Pula automaticamente as "bases heavy" listadas em _HEAVY_BASES (ex: anp_cdp_producao_poco),
-    que exigem Selenium + Chrome + CAPTCHA solver e são desproporcional para runs a cada 2h.
+    Pula automaticamente as "bases heavy" listadas em _HEAVY_BASES (ex: sindicom),
+    que exigem Playwright + Chromium e são desproporcional para runs a cada 2h.
     Essas bases têm workflows ETL dedicados que cuidam da detecção real.
 
     python alertas/monitor.py                         # todas as bases (exceto heavy)
     python alertas/monitor.py --base anp_ppi          # base específica
-    python alertas/monitor.py --base anp_cdp_producao_poco  # forçar base heavy manualmente
+    python alertas/monitor.py --base anp_cdp_producao_poco  # roda normalmente (leve)
     python alertas/monitor.py --loop --intervalo 30   # loop a cada 30 min
 """
 import argparse
@@ -36,13 +36,17 @@ from bases.mdic_comex            import MdicComex
 from bases.anp_cdp_producao_poco import AnpCdpProducaoPoco
 from bases.sindicom              import Sindicom
 
-# Bases que requerem dependências pesadas (Selenium + Chrome + CAPTCHA solver).
+# Bases que requerem dependências pesadas (Playwright + Chromium).
 # São puladas no run default (a cada 2h) porque o custo é desproporcional e cada
 # uma delas tem um workflow ETL dedicado que detecta novidades no ritmo correto.
 # Para rodar manualmente: python alertas/monitor.py --base <slug>
+#
+# NOTA: anp_cdp_producao_poco foi REMOVIDA deste conjunto em 2026-05.
+# Ela agora é leve: lê sessão do Supabase (alertas_session) e usa requests puro
+# via _replay.py (Frente B), sem Selenium nem ddddocr. O capture Selenium mensal
+# continua exclusivo do etl_anp_cdp.yml.
 _HEAVY_BASES = {
-    "anp_cdp_producao_poco",   # Selenium + Chrome + ddddocr (CAPTCHA solver) — ANP CDP atualiza 1×/mês via etl_anp_cdp.yml
-    "sindicom",                # Playwright + Chromium — SINDICOM atualiza 1×/mês via etl_sindicom.yml
+    "sindicom",  # Playwright + Chromium — SINDICOM atualiza 1×/mês via etl_sindicom.yml
 }
 
 MONITORES = [

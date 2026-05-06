@@ -1,21 +1,35 @@
 import csv
 import json
 import os
-import shutil
 import sys
-from datetime import date
+from datetime import datetime, timezone
 from pathlib import Path
+
+import requests
 
 from .base import BaseMonitor
 
-_SCRIPTS_DIR  = Path(__file__).parent.parent.parent / "scripts"
-_DADOS_DIR    = Path(__file__).parent.parent.parent / "DADOS" / "anp_cdp_producao_poco"
-_CHECKLIST    = Path(__file__).parent.parent / "cdp_campos_importantes.json"
-_SESSION_SRC  = Path(__file__).parent.parent.parent / "output" / "anp" / "session.json"
+_ALERTAS_DIR  = Path(__file__).parent.parent
+_SCRIPTS_DIR  = _ALERTAS_DIR.parent / "scripts"
+_DADOS_DIR    = _ALERTAS_DIR.parent / "DADOS" / "anp_cdp_producao_poco"
+
+# Assume Frente B criou este módulo no path indicado.
+# Se não existir em runtime, o ImportError será propagado com mensagem clara.
+sys.path.insert(0, str(_SCRIPTS_DIR / "pipelines" / "anp" / "cdp"))
+try:
+    from _replay import replay_download  # type: ignore
+except ImportError as _replay_import_err:
+    replay_download = None  # type: ignore
+    _REPLAY_MISSING_MSG = str(_replay_import_err)
+
+# GitHub dispatch settings
+_GITHUB_REPO  = "IBBAOG/SectorData"
+_WORKFLOW_ID  = "etl_anp_cdp.yml"
+_DEBOUNCE_HOURS = 6
 
 
 def _mes_esperado() -> str:
-    hoje = date.today()
+    hoje = datetime.now(timezone.utc)
     mes  = hoje.month - 2
     ano  = hoje.year
     if mes <= 0:
@@ -24,17 +38,9 @@ def _mes_esperado() -> str:
     return f"{mes:02d}/{ano}"
 
 
-def _carregar_checklist() -> list:
-    try:
-        data = json.loads(_CHECKLIST.read_text(encoding="utf-8"))
-        return [c.strip() for c in data.get("campos", []) if c.strip()]
-    except Exception:
-        return []
-
-
 class AnpCdpProducaoPoco(BaseMonitor):
     slug = "anp_cdp_producao_poco"
-    nome = "ANP CDP — Producao por Poco (Mar)"
+    nome = "ANP CDP — Producao por Poco"
     url  = (
         "https://cdp.anp.gov.br/ords/r/cdp_apex/"
         "consulta-dados-publicos-cdp/consulta-producao-por-poco"
@@ -43,42 +49,124 @@ class AnpCdpProducaoPoco(BaseMonitor):
     def __init__(self):
         super().__init__()
         _DADOS_DIR.mkdir(parents=True, exist_ok=True)
-        # Copy existing session.json to DADOS dir if not already there
-        dest_session = _DADOS_DIR / "session.json"
-        if not dest_session.exists() and _SESSION_SRC.exists():
-            shutil.copy(_SESSION_SRC, dest_session)
-            print(f"  [cdp] session.json copiado de output/anp/")
 
-    # ── download ──────────────────────────────────────────────────────────────
+    # ── Supabase session ──────────────────────────────────────────────────────
 
-    def _executar_download(self, periodo: str, ambiente: str = "M") -> str | None:
-        sys.path.insert(0, str(_SCRIPTS_DIR))
-        import ddddocr as _ddddocr
-        from anp_auto import extract_one, SESSION_FILENAME
+    def _get_session_from_db(self, slug: str) -> dict | None:
+        """
+        Lê a linha de alertas_session para o slug. Retorna None se:
+        - Linha inexistente
+        - expires_at < now (sessão expirada)
+        """
+        if self._sb is None:
+            print(f"[{self.slug}]   Supabase não configurado — não é possível ler sessão.")
+            return None
+        try:
+            res = (
+                self._sb.table("alertas_session")
+                .select("*")
+                .eq("base", slug)
+                .single()
+                .execute()
+            )
+        except Exception as e:
+            print(f"[{self.slug}]   Erro ao consultar alertas_session: {e}")
+            return None
+
+        row = res.data if res else None
+        if not row:
+            return None
+
+        # Verificar expiração
+        expires_at_str = row.get("expires_at")
+        if expires_at_str:
+            try:
+                expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
+                if datetime.now(timezone.utc) >= expires_at:
+                    print(f"[{self.slug}]   Sessão expirada em {expires_at_str}.")
+                    return None
+            except ValueError:
+                pass  # Se não conseguir parsear, trata como válida e continua
+
+        return row
+
+    # ── Workflow dispatch com debounce ────────────────────────────────────────
+
+    def _trigger_capture_workflow_with_debounce(self, slug: str) -> bool:
+        """
+        Dispara etl_anp_cdp.yml via GitHub API com debounce de 6h.
+        Usa metadata.last_capture_attempt no Supabase para controlar debounce.
+        Retorna True se disparou, False se ainda dentro do debounce.
+        """
+        pat = os.environ.get("GITHUB_PAT_WORKFLOW_DISPATCH", "")
+        if not pat:
+            print(f"[{self.slug}]   GITHUB_PAT_WORKFLOW_DISPATCH não configurado — não é possível disparar workflow.")
+            return False
+
+        # Verificar debounce via estado local
+        estado = self._estado_atual
+        last_attempt_str = estado.get("last_capture_attempt")
+        if last_attempt_str:
+            try:
+                last_attempt = datetime.fromisoformat(last_attempt_str.replace("Z", "+00:00"))
+                elapsed_hours = (datetime.now(timezone.utc) - last_attempt).total_seconds() / 3600
+                if elapsed_hours < _DEBOUNCE_HOURS:
+                    return False
+            except ValueError:
+                pass
+
+        # Disparar workflow
+        url = f"https://api.github.com/repos/{_GITHUB_REPO}/actions/workflows/{_WORKFLOW_ID}/dispatches"
+        headers = {
+            "Authorization": f"Bearer {pat}",
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json",
+        }
+        try:
+            resp = requests.post(url, json={"ref": "main"}, headers=headers, timeout=15)
+            resp.raise_for_status()
+            # Atualizar timestamp do debounce no estado
+            estado["last_capture_attempt"] = datetime.now(timezone.utc).isoformat()
+            self.salvar_estado(estado)
+            print(f"[{self.slug}]   Workflow {_WORKFLOW_ID} disparado via GitHub API.")
+            return True
+        except requests.HTTPError as e:
+            print(f"[{self.slug}]   Erro ao disparar workflow: {e}")
+            return False
+
+    # ── Download dos CSVs do mês via _replay ─────────────────────────────────
+
+    def _baixar_csvs_mes(self, session_data: dict, periodo: str) -> dict:
+        """
+        Chama replay_download para cada ambiente (M, S, T).
+        Retorna {"M": path, "S": path, "T": path} ou levanta RuntimeError.
+        """
+        if replay_download is None:
+            raise ImportError(
+                f"Frente B não criou scripts/pipelines/anp/cdp/_replay.py ainda. "
+                f"Erro original: {_REPLAY_MISSING_MSG}"
+            )
 
         download_dir = str(_DADOS_DIR / "_downloads")
         os.makedirs(download_dir, exist_ok=True)
 
-        session_data = None
-        session_path = _DADOS_DIR / SESSION_FILENAME
-        if session_path.exists():
-            session_data = json.loads(session_path.read_text())
-            print(f"    Sessao: capturada em {session_data.get('captured_at', '?')}")
+        resultado = {}
+        for ambiente in ("M", "S", "T"):
+            res = replay_download(
+                session_data=session_data,
+                periodo=periodo,
+                ambiente=ambiente,
+                output_dir=download_dir,
+            )
+            if res in ("expired", "error") or res is None:
+                raise RuntimeError(
+                    f"replay_download retornou '{res}' para ambiente={ambiente}, periodo={periodo}."
+                )
+            resultado[ambiente] = res
 
-        ocr = _ddddocr.DdddOcr(show_ad=False)
-        ok  = extract_one(
-            periodo=periodo,
-            ambiente=ambiente,
-            output_dir=str(_DADOS_DIR),
-            download_dir=download_dir,
-            session_data=session_data,
-            ocr_engine=ocr,
-            use_selenium=True,
-        )
-        dest = _DADOS_DIR / f"producao_poco_{periodo.replace('/', '-')}_{ambiente}.csv"
-        return str(dest) if ok and dest.exists() else None
+        return resultado
 
-    # ── parsing ───────────────────────────────────────────────────────────────
+    # ── Extração de campos do CSV ─────────────────────────────────────────────
 
     def _extrair_campos(self, csv_path: str) -> set:
         campos = set()
@@ -98,94 +186,110 @@ class AnpCdpProducaoPoco(BaseMonitor):
             print(f"    [aviso] Erro ao parsear CSV: {e}")
         return campos
 
-    # ── checklist ─────────────────────────────────────────────────────────────
-
-    def _verificar_checklist(self, campos_presentes: set, estado: dict) -> bool:
-        checklist = _carregar_checklist()
-        if not checklist:
-            return False
-
-        faltando = [c for c in checklist if c not in campos_presentes]
-        if faltando:
-            print(f"    Checklist: {len(checklist) - len(faltando)}/{len(checklist)} campos presentes")
-            print(f"    Faltando: {', '.join(faltando)}")
-            return False
-
-        # All important campos present — check if full download already triggered
-        if estado.get("checklist_completo"):
-            return False
-
-        print(f"    ** CHECKLIST COMPLETO — disparando download completo **")
-        return True
-
-    def _download_completo(self, periodo: str):
-        print(f"    Baixando ambientes Pre-Sal e Terra para {periodo}...")
-        for amb in ("S", "T"):
-            self._executar_download(periodo, amb)
-
-    # ── main logic ────────────────────────────────────────────────────────────
+    # ── Lógica principal ──────────────────────────────────────────────────────
 
     def run(self) -> bool:
         print(f"[{self.slug}] {self.nome}...")
+
+        # Carregar estado atual para uso em _trigger_capture_workflow_with_debounce
+        self._estado_atual = self.ler_estado()
+
+        # 1. Tentar obter sessão do Supabase
+        session_row = self._get_session_from_db(self.slug)
+
+        if session_row is None:
+            # Sem sessão válida — tenta disparar o capture workflow (com debounce)
+            if self._trigger_capture_workflow_with_debounce(self.slug):
+                print(f"[{self.slug}]   Sessão expirada/ausente; capture workflow disparado. Pulando esta rodada.")
+            else:
+                print(f"[{self.slug}]   Sessão expirada/ausente; capture já foi disparado nas últimas {_DEBOUNCE_HOURS}h (debounce). Pulando.")
+            return False
+
+        # 2. Verificar se a sessão é do mês esperado
         periodo = _mes_esperado()
-        estado  = self.ler_estado()
-        hoje    = date.today().isoformat()
-
-        print(f"    Periodo: {periodo} | Ambiente: Mar")
-        csv_path = self._executar_download(periodo)
-        if not csv_path:
-            print(f"  >> ERRO: download falhou para {periodo}")
+        captured_periodo = (session_row.get("metadata") or {}).get("captured_periodo")
+        if periodo != captured_periodo:
+            print(
+                f"[{self.slug}]   Sessão é de {captured_periodo!r}, "
+                f"mês esperado é {periodo!r}. Pulando até nova captura."
+            )
             return False
 
-        campos_hoje  = self._extrair_campos(csv_path)
-        campos_antes = set(estado.get("campos_mar", []))
-        novos        = sorted(campos_hoje - campos_antes)
-
-        novo_estado = {
-            **estado,
-            "campos_mar":           sorted(campos_hoje),
-            "ultimo_periodo":       periodo,
-            "ultimo_download_data": hoje,
-        }
-
-        # First run — save baseline silently
-        if not campos_antes:
-            self.salvar_estado(novo_estado)
-            print(f"  >> Baseline salvo: {len(campos_hoje)} campos em {periodo}")
+        # 3. Baixar CSVs do mês usando _replay
+        try:
+            csvs = self._baixar_csvs_mes(session_row["session"], periodo)
+        except Exception as e:
+            print(f"[{self.slug}]   ERRO ao baixar CSVs: {e}")
             return False
 
-        # Check checklist
-        checklist_completo = self._verificar_checklist(campos_hoje, estado)
-        if checklist_completo:
-            novo_estado["checklist_completo"] = True
-            self._download_completo(periodo)
+        # 4. Comparar campos por ambiente com baseline no estado
+        novidades = []
+        novo_estado = dict(self._estado_atual)
+        for ambiente, csv_path in csvs.items():
+            baseline_key = f"campos_{ambiente.lower()}"  # campos_m, campos_s, campos_t
+            baseline = set(self._estado_atual.get(baseline_key, []))
+            atuais   = self._extrair_campos(csv_path)
+            novos    = sorted(atuais - baseline)
+            if novos:
+                novidades.append((ambiente, novos))
+                novo_estado[baseline_key] = sorted(atuais)
 
+        if not novidades:
+            print(f"[{self.slug}]   >> Sem campos novos")
+            return False
+
+        # 5. Enviar alerta(s)
+        sys.path.insert(0, str(_ALERTAS_DIR))
+        from notificador import enviar_alerta  # type: ignore
+
+        total_campos = sum(len(novos) for _, novos in novidades)
+
+        if total_campos <= 10:
+            # 1 email por campo (granular — CEO quer cada novo campo)
+            for ambiente, novos in novidades:
+                for campo in novos:
+                    print(f"[{self.slug}]   >> Novo campo: {campo} ({ambiente})")
+                    enviar_alerta(
+                        f"ANP CDP — Novo campo identificado: {campo} ({ambiente})",
+                        (
+                            f"Campo '{campo}' apareceu pela primeira vez no ambiente "
+                            f"{ambiente} para o período {periodo}."
+                        ),
+                        link=self.url,
+                    )
+        else:
+            # Digest único quando há mais de 10 campos novos
+            print(f"[{self.slug}]   >> {total_campos} campos novos — enviando digest")
+            msg = f"{total_campos} campos novos no período {periodo}:\n\n"
+            for ambiente, novos in novidades:
+                msg += f"## {ambiente}\n" + "\n".join(f"  - {c}" for c in novos) + "\n\n"
+            enviar_alerta(
+                f"ANP CDP — {total_campos} campos novos no período {periodo}",
+                msg,
+                link=self.url,
+            )
+
+        # 6. Salvar estado atualizado
+        novo_estado["ultimo_periodo"] = periodo
         self.salvar_estado(novo_estado)
+        self.registrar_historico(
+            f"{total_campos} campo(s) novo(s) em {periodo}",
+            novo_estado,
+            list(csvs.values()),
+        )
 
-        if not novos and not checklist_completo:
-            print(f"  >> Sem novos campos ({len(campos_hoje)} total em {periodo})")
-            return False
-
-        # Build notification
-        sys.path.insert(0, str(Path(__file__).parent.parent))
-        from notificador import enviar_alerta
-
-        if novos:
-            print(f"  >> {len(novos)} novo(s) campo(s): {', '.join(novos)}")
-            lista = "\n".join(f"• {c}" for c in novos)
-            mensagem = f"{len(novos)} novo(s) campo(s) em {periodo}:\n\n{lista}"
-            if checklist_completo:
-                mensagem += "\n\n*** CHECKLIST COMPLETO — download Mar+Pre-Sal+Terra iniciado ***"
-            self.registrar_historico(mensagem, novo_estado, [csv_path])
-            enviar_alerta(self.nome, mensagem, link=self.url)
-        elif checklist_completo:
-            mensagem = f"Checklist completo para {periodo} — download Mar+Pre-Sal+Terra concluido."
-            self.registrar_historico(mensagem, novo_estado, [csv_path])
-            enviar_alerta(self.nome, mensagem, link=self.url)
+        # 7. Atualizar last_used_at na tabela alertas_session
+        if self._sb is not None:
+            try:
+                self._sb.table("alertas_session").update(
+                    {"last_used_at": datetime.now(timezone.utc).isoformat()}
+                ).eq("base", self.slug).execute()
+            except Exception as e:
+                print(f"[{self.slug}]   [aviso] Falha ao atualizar last_used_at: {e}")
 
         return True
 
-    # ── unused abstract methods (logic is in run()) ───────────────────────────
+    # ── Stubs para interface abstrata (lógica completa está em run()) ─────────
 
     def verificar(self):
         return False, {}, ""
