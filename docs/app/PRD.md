@@ -165,6 +165,74 @@ Ver `.claude/agents/worker_subgerente-app.md` → seção "Adicionar novo dashbo
 11. Atualizar `worker_gerente-geral.md` (sub-agentes).
 12. Avisar Documentador → `master.md` + este `PRD.md`.
 
+## Definition of Done (mandatório para qualquer dashboard novo ou refatorado)
+
+> **Por que existe esta seção:** dois bugs caros — `/anp-daie` com fator 1000 errado e `/sales-volumes` com RPCs ausentes — passaram batido em prod por meses porque "tsc clean" foi tratado como "pronto". Smoke test visual nunca foi feito. Daqui pra frente, antes de marcar uma tarefa de dashboard como completa, valide os 5 critérios abaixo. Os critérios são exatamente os do template canônico em [`docs/app/_template.md`](_template.md) — esta seção apenas torna obrigatória a aplicação.
+
+1. **`npx tsc --noEmit` clean** — zero erros (warnings de `<img>` pré-existentes podem ser tolerados; warnings novos não).
+2. **`npx eslint src/app/(dashboard)/<slug>` clean** — só warnings pré-existentes.
+3. **Smoke test em dev server** (`preview_start` + `preview_screenshot`):
+   - Página carrega sem erros no console.
+   - Filtros populam com options reais (não vazio).
+   - Pelo menos 1 chart renderiza com dados (após selecionar 1 filtro).
+   - Period slider mostra range correto.
+4. **Self-QA estática**: comparado com 2 dashboards maduros (sugestão: `/anp-cdp` e `/sales-volumes`); padrões consolidados batem (header, debounce, loading, multi-select, etc.).
+5. **Sub-PRD (`docs/app/<slug>.md`) atualizado** se a tarefa ganhou nova RPC, coluna, chart, filtro ou mudou unidade/divisor.
+
+**Quem aplica:** todo `worker_dash-*` antes de retornar "task completa" ao Subgerente. **Quem audita:** Subgerente APP — pede evidência (screenshot do smoke test, output de `tsc`, link para sub-PRD atualizado) antes de aceitar a entrega. Sem evidência dos 5 itens, a entrega volta pro `dash-*` para completar.
+
+## Migration: try/catch silencioso → useRpcResult / DataErrorBoundary
+
+> **Por que existe esta seção:** o padrão histórico de cada dashboard é `try { setData(await rpc()); } catch { setData([]); }`. Esse `catch` silencioso fez `/sales-volumes` ficar meses em produção retornando array vazio sem que ninguém percebesse. A infraestrutura nova (preparada na sessão de 2026-05-06) substitui esse padrão por feedback explícito ao usuário.
+
+**Infra disponível** (já criada — não é tarefa para os `worker_dash-*` mexerem):
+
+- **`src/hooks/useRpcResult.ts`** — `useRpcResult<T>(fetcher, deps, fallback)` retorna `{ data, loading, error, refetch }`. Mantém `data: fallback` para a UI continuar funcional, mas expõe `error` para o boundary mostrar.
+- **`src/components/dashboard/DataErrorBoundary.tsx`** — card vermelho (`#dc3545`) com mensagem "Erro ao carregar dados", detalhe técnico (em dev: `error.message`; em prod: hint para console) e botão "Tentar novamente" se `retry` for fornecido.
+
+**Como migrar um dashboard** (referência para os `worker_dash-*`):
+
+```tsx
+// ANTES — silencia falha
+const [data, setData] = useState<Row[]>([]);
+useEffect(() => {
+  rpcGetSerie(period)
+    .then((r) => setData(r ?? []))
+    .catch((e) => { console.warn(e); setData([]); });
+}, [period]);
+
+return <Chart data={data} />;
+
+// DEPOIS — falha visível, com retry
+const { data, loading, error, refetch } = useRpcResult<Row[]>(
+  () => rpcGetSerie(period),
+  [period],
+  [],
+);
+
+return (
+  <DataErrorBoundary error={error} loading={loading} retry={refetch}>
+    <Chart data={data} />
+  </DataErrorBoundary>
+);
+```
+
+**Ordem de prioridade da migração** (sugestão por volume de uso — Subgerente confirma com Gerente Geral antes de disparar cada onda):
+
+| Onda | Dashboards | Justificativa |
+|---|---|---|
+| 1 (alta prioridade) | `sales-volumes`, `market-share`, `navios-diesel` | Mais usuários ativos. Bugs silenciosos são caros aqui. |
+| 2 (média) | `diesel-gasoline-margins`, `price-bands`, `stocks` | Fluxo Market Watch — usuários executivos. |
+| 3 (baixa) | `news-hunter`, `home`/`profile`/`admin-panel` | Fluxos administrativos / passivos. |
+| 4 (Fase 3) | `anp-cdp`, `anp-ppi`, `anp-precos-produtores`, `anp-glp`, `mdic-comex`, `anp-lpc`, `sindicom`, `anp-daie`, `anp-desembaracos`, `anp-painel-importacoes` | Dashboards mais novos — já têm padrões consolidados; aplicar incrementalmente. |
+
+**Regras de migração:**
+
+- Cada `worker_dash-*` migra o seu dashboard de forma incremental (não tem que ser tudo de uma vez — pode ser uma RPC por commit).
+- `useRpcResult` substitui `try { ... } catch { setData([]) }`. Não substitui `useDebouncedFetch` para fetches reativos a filtros — esse continua sendo o padrão para input-driven; apenas adicione tratamento de erro composto se for usar.
+- Após migrar, adicione no sub-PRD (`docs/app/<slug>.md`, seção "Padrões consolidados aplicados"): `[x] Error boundary para falhas de RPC`.
+- Não migrar e ignorar o erro silenciosamente nunca mais — é anti-padrão a partir desta data.
+
 ## Princípios não-negociáveis (TODO dash-* herda)
 
 1. **Nada de rota API para dados do Supabase.** RPCs sempre (criadas pelo dept `worker_supabase`, chamadas via wrappers JS aqui).
