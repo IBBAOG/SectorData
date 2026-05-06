@@ -184,6 +184,12 @@ def create_driver(download_dir):
     opts.add_experimental_option("excludeSwitches", ["enable-automation"])
     opts.add_experimental_option("useAutomationExtension", False)
 
+    # Force pt-BR locale so APEX serves the Portuguese UI.
+    # GitHub runners default to en-US; without this, XPath for "Fazer Download"
+    # and form validation messages ("Valor Obrigatório") appear in English, breaking
+    # both do_acoes_download() and CAPTCHA result detection.
+    opts.add_argument("--lang=pt-BR")
+
     # Force the Chrome binary installed by browser-actions/setup-chrome (CI env).
     # Avoids version mismatch when the system already has an older Chrome in PATH.
     # When running locally without CHROME_BINARY, Selenium uses its default resolution.
@@ -196,6 +202,7 @@ def create_driver(download_dir):
         "download.default_directory": str(Path(download_dir).resolve()),
         "download.prompt_for_download": False,
         "download.directory_upgrade": True,
+        "intl.accept_languages": "pt-BR,pt;q=0.9,en;q=0.8",
     }
     opts.add_experimental_option("prefs", prefs)
 
