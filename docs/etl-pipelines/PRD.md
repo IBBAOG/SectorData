@@ -16,8 +16,9 @@ scripts/pipelines/                  # rodam via GitHub Actions (todos os ETL)
 
   anp/
     cdp/                            chain (workflow etl_anp_cdp.yml)
-      01_extract.py                 Selenium + ddddocr CAPTCHA → output/anp/
+      01_extract.py                 Selenium + ddddocr CAPTCHA → output/anp/ + upsert alertas_session
       02_upload.py                  CSVs → Supabase
+      _replay.py                    Módulo standalone (zero Selenium): replay_download() → "ok"|"expired"|"error"
     fase3/                          chain (workflow etl_anp_fase3.yml)
       01_daie_sync.py               Dados Abertos IE
       02_desembaracos_sync.py       Desembaraços
@@ -59,7 +60,7 @@ scripts/utils/                      # one-shots (não-ETL)
 | `etl_anp_fase3.yml` | Mensal — 1º dia, 13:00 UTC | `pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` → `03_painel_imp_sync.py` | `anp_daie` (6.912 rows), `anp_desembaracos` (6.204), `anp_painel_imp_dist` (1.444) |
 | `etl_anp_lpc.yml` | Semanal — quarta, 14:30 UTC (`30 14 * * 3`) | `pipelines/anp/lpc_sync.py` | `anp_lpc` (160.243 rows — histórico 2004–2026 após backfill) |
 | `etl_anp_precos.yml` | Semanal — segunda, 12:00 UTC (`0 12 * * 1`) | `pipelines/anp/glp_sync.py` + `precos/01_ppi_sync.py` → `02_precos_produtores_sync.py` | `anp_glp` (3.106), `anp_ppi` (18.131), `anp_precos_produtores` (54.738 — histórico 2002–2026 após backfill) |
-| `etl_anp_cdp.yml` | Mensal (5º), 08:00 UTC (`0 8 5 * *`) | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` | `output/anp/` + `anp_cdp_producao` (2.045.515 rows) |
+| `etl_anp_cdp.yml` | Mensal (5º), 08:00 UTC (`0 8 5 * *`) | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` | `output/anp/` + `anp_cdp_producao` (2.045.515 rows) + `alertas_session` (sessão APEX) |
 | `etl_mdic_comex.yml` | Diário, 14:00 UTC (`0 14 * * *`) | `pipelines/mdic_comex_sync.py` | `mdic_comex` (10.029 rows — histórico 1997–2026 após backfill) |
 | `etl_navios_lineup.yml` | Cada 6h | `pipelines/navios/01_lineup_scrape.py` → `02_diesel_import.mjs` | `navios_diesel` |
 | `etl_sindicom.yml` | Mensal — dia 5, 15:00 UTC (`0 15 5 * *`) | `pipelines/sindicom_sync.py` | `sindicom` — BLOQUEADO por Cloudflare em IP residencial; só roda via GitHub Actions runner. Aguardando dispatch manual. |
@@ -204,3 +205,4 @@ Ordem de diagnóstico:
 - **Dados Locais** é separado por design. Não toque em `data/*.xlsx` nem em `scripts/manual/*` (estes são deles).
 - **Alertas** lê do Supabase ou de `DADOS/historico_alertas.csv`. Mudanças de schema/coluna que Alertas usa precisam aviso via Gerente.
 - **`supabase_deploy.yml`** é do dept `worker_supabase`, não deste dept (deploya migrations, não dados).
+- **`alertas_session` (tabela nova)**: `etl_anp_cdp.yml` escreve aqui após cada `--capture` bem-sucedido via `_upload_session_to_supabase()`. A tabela é criada pelo `worker_supabase` (Frente A). O monitor de alertas lê a sessão salva e chama `_replay.py:replay_download()` a cada 2h sem precisar de Selenium. Contrato do módulo: `replay_download(session_data, periodo, ambiente, output_dir) -> ReplayResult` com `.status` em `{"ok", "expired", "error"}`. Quando `"expired"`, o monitor deve disparar workflow de recaptura.

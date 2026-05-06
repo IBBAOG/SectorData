@@ -31,6 +31,7 @@ import shutil
 import sys
 import time
 import urllib.parse
+from datetime import datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 
@@ -44,6 +45,16 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
+
+# Replay module (pure requests — importável também pelo monitor de alertas)
+# Use path-based import so this script works whether invoked from repo root or directly.
+import importlib.util as _ilu
+_replay_path = Path(__file__).parent / "_replay.py"
+_spec = _ilu.spec_from_file_location("_replay", _replay_path)
+_replay_mod = _ilu.module_from_spec(_spec)
+_spec.loader.exec_module(_replay_mod)
+_build_requests_session = _replay_mod._build_requests_session
+replay_download = _replay_mod.replay_download
 
 PAGE_URL = (
     "https://cdp.anp.gov.br/ords/r/cdp_apex/"
@@ -476,194 +487,18 @@ def capture_session(ocr_engine, periodo, ambiente, output_dir, download_dir):
 
 
 # ─── Fast replay (no CAPTCHA) ────────────────────────────────────────────────
-
-def _build_requests_session(session_data):
-    """Build a requests.Session with cookies from the Selenium capture."""
-    s = requests.Session()
-    # Do NOT set a browser User-Agent — Cloudflare detects the TLS fingerprint mismatch
-    # and returns 403. The default python-requests UA passes through fine.
-
-    # Use full cookie objects (with domain/path) when available
-    cookies_full = session_data.get("cookies_full", [])
-    if cookies_full:
-        for c in cookies_full:
-            domain = c.get("domain", "cdp.anp.gov.br").lstrip(".")
-            s.cookies.set(c["name"], c["value"], domain=domain, path=c.get("path", "/"))
-    else:
-        for name, value in session_data.get("cookies", {}).items():
-            s.cookies.set(name, value, domain="cdp.anp.gov.br", path="/")
-    return s
-
+# _build_requests_session and replay_download now live in _replay.py (imported above).
+# try_fast_download is a thin shim kept for backward compat with capture_session().
 
 def try_fast_download(session_data, periodo, ambiente, download_dir):
     """
-    Attempt to download a CSV using only the saved session — no Selenium, no CAPTCHA.
-
-    Tries multiple strategies:
-    1. Replay the captured download request (fetch/XHR/form) directly.
-    2. f?p URL to update session state + standard APEX IR download endpoint.
-
+    Thin shim around replay_download() for use inside capture_session().
     Returns path to downloaded CSV on success, None otherwise.
+    (The full replay_download() is also directly available for external callers.)
     """
-    apex_env   = session_data.get("apex_env", {})
-    dl_req     = session_data.get("download_req")
-    base_url   = session_data.get("base_url", ORDS_BASE)
-
-    if not apex_env.get("p_instance"):
-        return None
-
-    # The download FILE_ID is tied to the specific Buscar query (period + ambiente).
-    # Replaying for a different period just returns the captured period's data.
-    # Only attempt fast download if this is the exact same period/ambiente captured.
-    cap_periodo  = session_data.get("captured_periodo")
-    cap_ambiente = session_data.get("captured_ambiente")
-    if cap_periodo and cap_ambiente:
-        if periodo != cap_periodo or ambiente != cap_ambiente:
-            return None  # silent: Selenium will handle different periods
-
-    s          = _build_requests_session(session_data)
-    app_id     = apex_env.get("app_id", "")
-    page_id    = apex_env.get("page_id", "")
-    p_instance = apex_env.get("p_instance", "")
-
-    def _try_download_url(url, label):
-        """GET a URL and return path if it yields a valid CSV, else None."""
-        try:
-            r2 = s.get(url, timeout=30)
-            ct2 = r2.headers.get("Content-Type", "")
-            cd2 = r2.headers.get("Content-Disposition", "")
-            if r2.status_code == 200 and ("csv" in ct2.lower() or "attachment" in cd2.lower()):
-                lines = [l for l in r2.text.splitlines() if l.strip()]
-                if len(lines) > 1:
-                    print(f"    [fast] {label} funcionou ({len(lines)-1} linhas)")
-                    p = os.path.join(
-                        download_dir, f"fast_{periodo.replace('/', '-')}_{ambiente}.csv"
-                    )
-                    with open(p, "wb") as f:
-                        f.write(r2.content)
-                    return p
-            print(f"    [fast] {label}: HTTP {r2.status_code} ct={ct2!r}")
-        except Exception as e:
-            print(f"    [fast] {label} erro: {e}")
-        return None
-
-    # ── Strategy 1: APEX GET_DOWNLOAD_LINK two-step flow ─────────────────────
-    # The captured XHR calls GET_DOWNLOAD_LINK, which returns JSON with a download URL.
-    # We replay that XHR (with updated pageItems to set P54_PERIODO), parse the JSON,
-    # then GET the returned URL to fetch the actual CSV.
-    if dl_req:
-        raw_url = dl_req.get("url") or dl_req.get("__action__", "")
-        method  = (dl_req.get("method") or dl_req.get("__method__", "POST")).upper()
-        body    = dl_req.get("body") or ""
-
-        # Fix relative URL
-        if raw_url and not raw_url.startswith("http"):
-            raw_url = f"{base_url}/{raw_url.lstrip('/')}"
-
-        # Update p_instance in URL (in case the session was re-captured)
-        # The URL contains the old p_instance at the end
-        for old_inst in [apex_env.get("p_instance", "")]:
-            if old_inst and old_inst in raw_url:
-                raw_url = raw_url.replace(old_inst, p_instance)
-
-        try:
-            # Parse body as list of (key, value) tuples to preserve multi-value params
-            # (dict() would drop duplicate keys like f01/f02 which specify format options)
-            params_list = urllib.parse.parse_qsl(body, keep_blank_values=True)
-
-            # Update p_instance in case session was re-captured
-            params_list = [(k, p_instance if k == "p_instance" else v)
-                           for k, v in params_list]
-
-            # Inject pageItems to try to update P54_PERIODO in session state
-            new_list = []
-            for k, v in params_list:
-                if k == "p_json":
-                    try:
-                        pj = json.loads(v)
-                    except Exception:
-                        pj = {}
-                    pj["pageItems"] = "#P54_PERIODO,#P54_AMBIENTE"
-                    v = json.dumps(pj)
-                new_list.append((k, v))
-            params_list = new_list
-            params_list.extend([("P54_PERIODO", periodo), ("P54_AMBIENTE", ambiente)])
-
-            if method == "POST":
-                r = s.post(raw_url, data=params_list, timeout=30)
-            else:
-                r = s.get(raw_url, params=params_list, timeout=30)
-
-            print(f"    [fast] GET_DOWNLOAD_LINK → HTTP {r.status_code} ct={r.headers.get('Content-Type','')!r}")
-
-            if r.status_code == 200:
-                # Response should be JSON with a download URL
-                try:
-                    resp_json = r.json()
-                    # APEX returns something like {"status":"success","url":"..."}
-                    # or {"action":"redirect","redirectUrl":"..."}
-                    dl_url = (
-                        resp_json.get("url")
-                        or resp_json.get("redirectUrl")
-                        or resp_json.get("download_url")
-                        or resp_json.get("fileUrl")
-                    )
-                    if not dl_url:
-                        # Search nested
-                        for v in resp_json.values():
-                            if isinstance(v, str) and ("wwv_flow" in v or "/ords/" in v):
-                                dl_url = v
-                                break
-                    if dl_url:
-                        # Response path starts with /ords/... — prepend host only
-                        host = base_url.split("/ords")[0]
-                        if not dl_url.startswith("http"):
-                            dl_url = host + dl_url if dl_url.startswith("/") else f"{host}/{dl_url}"
-                        print(f"    [fast] Download URL: {dl_url[:100]}")
-                        result = _try_download_url(dl_url, "GET_DOWNLOAD_LINK→GET")
-                        if result:
-                            return result
-                    else:
-                        print(f"    [fast] Resposta JSON sem URL de download: {str(resp_json)[:200]}")
-                except Exception:
-                    ct = r.headers.get("Content-Type", "")
-                    cd = r.headers.get("Content-Disposition", "")
-                    # Case A: direct CSV response
-                    if "csv" in ct.lower() or "attachment" in cd.lower():
-                        lines = [l for l in r.text.splitlines() if l.strip()]
-                        if len(lines) > 1:
-                            print(f"    [fast] GET_DOWNLOAD_LINK retornou CSV diretamente")
-                            p = os.path.join(
-                                download_dir,
-                                f"fast_{periodo.replace('/', '-')}_{ambiente}.csv"
-                            )
-                            with open(p, "wb") as f:
-                                f.write(r.content)
-                            return p
-                    # Case B: plain-text URL path (APEX returns redirect URL as text/html)
-                    dl_path = r.text.strip()
-                    if dl_path.startswith("/") or dl_path.startswith("http"):
-                        host = base_url.split("/ords")[0]
-                        if not dl_path.startswith("http"):
-                            dl_url = host + dl_path
-                        else:
-                            dl_url = dl_path
-                        print(f"    [fast] Download URL (text): {dl_url[:100]}")
-                        result = _try_download_url(dl_url, "GET_DOWNLOAD_LINK->GET")
-                        if result:
-                            return result
-                    else:
-                        print(f"    [fast] Resposta nao e JSON nem CSV: {r.text[:200]}")
-        except Exception as e:
-            print(f"    [fast] Estratégia 1 erro: {e}")
-
-    # ── Strategy 2: standard f?p:CSV trigger ─────────────────────────────────
-    # (works only if session state has the right P54_PERIODO — may fail with SSP)
-    dl_url = f"{base_url}/f?p={app_id}:{page_id}:{p_instance}:CSV"
-    result = _try_download_url(dl_url, "f?p:CSV")
-    if result:
-        return result
-
+    result = replay_download(session_data, periodo, ambiente, os.path.dirname(download_dir))
+    if result.status == "ok":
+        return result.csv_path
     return None
 
 
@@ -759,19 +594,55 @@ def extract_one(
 
     if session_data:
         print(f"    [fast] Tentando replay sem CAPTCHA...")
-        csv_path = try_fast_download(session_data, periodo, ambiente, download_dir)
-        if csv_path:
-            n_lines = validate_csv(csv_path)
-            shutil.move(csv_path, dest)
-            print(f"    ✓ [fast] {dest} ({os.path.getsize(dest)/1024:.1f} KB, {n_lines} linhas)")
+        replay_result = replay_download(session_data, periodo, ambiente, output_dir)
+        if replay_result.status == "ok" and replay_result.csv_path:
+            # replay_download already writes to output_dir/producao_poco_*.csv
+            n_lines = validate_csv(replay_result.csv_path)
+            print(f"    ✓ [fast] {replay_result.csv_path} ({os.path.getsize(replay_result.csv_path)/1024:.1f} KB, {n_lines} linhas)")
             return True
-        print(f"    [fast] Falhou — usando Selenium+CAPTCHA")
+        if replay_result.status == "expired":
+            print(f"    [fast] Sessão APEX expirada — usando Selenium+CAPTCHA para recapturar")
+        else:
+            print(f"    [fast] Falhou ({replay_result.message}) — usando Selenium+CAPTCHA")
 
     if not use_selenium or ocr_engine is None:
         print(f"    ✗ Sem driver Selenium e sessão expirou (--replay-only ativo)")
         return False
 
     return extract_one_selenium(ocr_engine, periodo, ambiente, output_dir, download_dir)
+
+
+# ─── Session upload to Supabase ──────────────────────────────────────────────
+
+def _upload_session_to_supabase(session_path: Path, periodo: str, ambiente: str):
+    """Upsert session.json em alertas_session table (read by alertas/ at every 2h run)."""
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_SERVICE_KEY")
+    if not url or not key:
+        print("[session-upload] SUPABASE_URL/SERVICE_KEY missing, skipping cloud sync")
+        return
+
+    try:
+        from supabase import create_client
+        sb = create_client(url, key)
+        session_data = json.loads(Path(session_path).read_text())
+        metadata = {
+            "captured_periodo": periodo,
+            "captured_ambiente": ambiente,
+            "uploaded_at": datetime.utcnow().isoformat() + "Z",
+        }
+        sb.table("alertas_session").upsert({
+            "base": "anp_cdp_producao_poco",
+            "session": session_data,
+            "captured_at": datetime.utcnow().isoformat() + "Z",
+            # APEX session ~8h, set conservative 6h TTL
+            "expires_at": (datetime.utcnow() + timedelta(hours=6)).isoformat() + "Z",
+            "metadata": metadata,
+        }, on_conflict="base").execute()
+        print("[session-upload] alertas_session synced for base=anp_cdp_producao_poco")
+    except Exception as e:
+        print(f"[session-upload] ERRO ao sincronizar sessão: {e}")
+        # Non-fatal: ETL continues even if session upload fails
 
 
 # ─── CLI helpers ─────────────────────────────────────────────────────────────
@@ -873,6 +744,15 @@ def main():
             )
         finally:
             shutil.rmtree(download_dir, ignore_errors=True)
+
+        if result:
+            # Upload captured session to Supabase so the alertas monitor can use it
+            # without needing Selenium between monthly captures.
+            _upload_session_to_supabase(
+                Path(args.output) / SESSION_FILENAME,
+                periodo_cap,
+                ambiente_cap,
+            )
 
         sys.exit(0 if result else 1)
 

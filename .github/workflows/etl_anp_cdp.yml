@@ -64,6 +64,9 @@ jobs:
           echo "primeiro=$PRIMEIRO" >> "$GITHUB_OUTPUT"
 
       - name: Extrair dados ANP
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           AMBIENTE="${{ github.event.inputs.ambiente || 'todos' }}"
           ARGS="${{ steps.periodo.outputs.args }}"
@@ -74,6 +77,8 @@ jobs:
 
           # Se existe session.json salvo, tenta replay direto (sem CAPTCHA).
           # Se o replay falhar (sessão expirou), recaptura e tenta de novo.
+          # --capture agora também faz upsert da sessão em alertas_session (Supabase)
+          # para que o monitor de alertas possa consumir a sessão sem Selenium.
           if [ -f "$SESSION" ]; then
             echo "=== Sessão existente encontrada — tentando replay sem CAPTCHA ==="
             if python scripts/pipelines/anp/cdp/01_extract.py --replay-only $ARGS \
