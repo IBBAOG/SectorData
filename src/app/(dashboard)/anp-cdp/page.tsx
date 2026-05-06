@@ -1,15 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Layout, PlotData } from "plotly.js";
-import Slider from "rc-slider";
-import "rc-slider/assets/index.css";
 
 import NavBar from "../../../components/NavBar";
 import PlotlyChart from "../../../components/PlotlyChart";
 import SearchableMultiSelect from "../../../components/SearchableMultiSelect";
+import DashboardHeader from "../../../components/dashboard/DashboardHeader";
+import MultiSelectFilter from "../../../components/dashboard/MultiSelectFilter";
+import PeriodSlider from "../../../components/dashboard/PeriodSlider";
+import ChartSection from "../../../components/dashboard/ChartSection";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
+import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
+import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../lib/plotlyDefaults";
 import {
   rpcGetAnpCdpPocoSerie,
   rpcGetAnpCdpPocosJson,
@@ -39,30 +43,7 @@ const LOCAL_LABELS: Record<string, string> = {
   Terra:  "Terra",
 };
 
-const COMMON_LAYOUT: Partial<Layout> = {
-  paper_bgcolor: "white",
-  plot_bgcolor:  "white",
-  font: { family: "Arial", size: 12, color: "#000000" },
-  hoverlabel: {
-    bgcolor:     "rgba(255,255,255,0.95)",
-    bordercolor: "rgba(180,180,180,0.5)",
-    font: { family: "Arial", color: "#1a1a1a", size: 12 },
-    namelength: -1,
-  },
-};
-const AXIS_LINE = { showgrid: false, zeroline: false, showline: true, linecolor: "#000000", linewidth: 1 };
-
 // ── Helpers ────────────────────────────────────────────────────────────────────
-
-function emptyPlot(h = 340): { data: PlotData[]; layout: Partial<Layout> } {
-  return {
-    data: [],
-    layout: {
-      ...COMMON_LAYOUT, height: h, margin: { t: 20, b: 30, l: 10, r: 10 },
-      annotations: [{ text: "Sem dados.", xref: "paper", yref: "paper", showarrow: false, font: { size: 13, color: "#888" } }],
-    },
-  };
-}
 
 function buildChart(
   serie: AnpCdpSeriePonto[],
@@ -70,7 +51,7 @@ function buildChart(
   metricLabel: string,
   nPocos: number,
 ): { data: PlotData[]; layout: Partial<Layout> } {
-  if (!serie.length) return emptyPlot(340);
+  if (!serie.length) return emptyPlot(340, "Sem dados.");
   const titleText = nPocos === 0
     ? "Todos os poços"
     : `${nPocos.toLocaleString("pt-BR")} poço${nPocos !== 1 ? "s" : ""} selecionado${nPocos !== 1 ? "s" : ""}`;
@@ -99,9 +80,12 @@ function buildChart(
   };
 }
 
-// ── Reusable filter components ────────────────────────────────────────────────
+// ── Reusable components scoped to this page ───────────────────────────────────
 
-function CheckboxGroup({
+// Inverted-toggle checkbox group: empty selection = "all selected".
+// Used for Ambiente and Bacia, where the user typically wants everything
+// included by default but can untick a few.
+function InvertedCheckboxGroup({
   id, items, selected, onChange, labelMap,
 }: {
   id: string;
@@ -176,7 +160,6 @@ export default function AnpCdpPage() {
   const supabase = getSupabaseClient();
 
   const [loading, setLoading]           = useState(true);
-  const [serieLoading, setSerieLoading] = useState(false);
   const [filtros, setFiltros]           = useState<AnpCdpFiltros>({
     bacoes: [], campos: [], locais: [], estados: [], operadores: [],
     instalacoes: [], tipos_instalacao: [], ano_min: null, ano_max: null,
@@ -198,8 +181,6 @@ export default function AnpCdpPage() {
   const [selectedInstalacoes, setSelectedInstalacoes] = useState<string[]>([]);
   const [selectedTipos,       setSelectedTipos]       = useState<string[]>([]);
   const [metric, setMetric]             = useState(METRICS[0]);
-
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Initial load ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -235,12 +216,10 @@ export default function AnpCdpPage() {
   }, [supabase]);
 
   // ── Reactive serie fetch (debounced 400ms) ────────────────────────────────
-  const fetchSerie = useCallback(() => {
-    if (!supabase || loading) return;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      setSerieLoading(true);
-      const data = await rpcGetAnpCdpPocoSerie(supabase, {
+  const { data: refetched, loading: serieLoading } = useDebouncedFetch(
+    async () => {
+      if (!supabase || loading) return null;
+      return rpcGetAnpCdpPocoSerie(supabase, {
         pocos:           selectedPocos.length       ? selectedPocos       : null,
         campos:          selectedCampos.length      ? selectedCampos      : null,
         bacoes:          selectedBacoes.length      ? selectedBacoes      : null,
@@ -252,13 +231,15 @@ export default function AnpCdpPage() {
         anoInicio:       allYears[yearRange[0]]     ?? null,
         anoFim:          allYears[yearRange[1]]     ?? null,
       });
-      setSerieData(data);
-      setSerieLoading(false);
-    }, 400);
-  }, [supabase, loading, selectedPocos, selectedCampos, selectedBacoes, selectedLocais,
-      selectedEstados, selectedOperadores, selectedInstalacoes, selectedTipos, yearRange, allYears]);
+    },
+    [supabase, loading, selectedPocos, selectedCampos, selectedBacoes, selectedLocais,
+      selectedEstados, selectedOperadores, selectedInstalacoes, selectedTipos, yearRange, allYears],
+    { ms: 400, skipInitial: true },
+  );
 
-  useEffect(() => { fetchSerie(); }, [fetchSerie]);
+  useEffect(() => {
+    if (refetched) setSerieData(refetched);
+  }, [refetched]);
 
   // ── Client-side poço filtering (all filters applied in-memory) ────────────
   const visiblePocos = useMemo(() => {
@@ -318,17 +299,17 @@ export default function AnpCdpPage() {
                 ))}
               </div>
 
-              {/* Ambiente */}
+              {/* Ambiente — uses inverted toggle (empty = all) */}
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Ambiente</div>
-                <CheckboxGroup id="cdp-l" items={allLocais} selected={selectedLocais}
+                <InvertedCheckboxGroup id="cdp-l" items={allLocais} selected={selectedLocais}
                   onChange={setSelectedLocais} labelMap={LOCAL_LABELS} />
               </div>
 
-              {/* Bacia */}
+              {/* Bacia — uses inverted toggle */}
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Bacia</div>
-                <CheckboxGroup id="cdp-b" items={filtros.bacoes} selected={selectedBacoes}
+                <InvertedCheckboxGroup id="cdp-b" items={filtros.bacoes} selected={selectedBacoes}
                   onChange={setSelectedBacoes} />
               </div>
 
@@ -393,16 +374,7 @@ export default function AnpCdpPage() {
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Período</div>
                 {!loading && allYears.length > 0 && (
-                  <>
-                    <div style={{ marginTop: 18, marginBottom: 10, paddingLeft: 4, paddingRight: 4 }}>
-                      <Slider range min={0} max={allYears.length - 1} value={yearRange}
-                        onChange={v => { const a = v as number[]; setYearRange([a[0], a[1]]); }} />
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#555", fontFamily: "Arial" }}>
-                      <span style={{ fontWeight: 600 }}>{yMin}</span>
-                      <span style={{ fontWeight: 600 }}>{yMax}</span>
-                    </div>
-                  </>
+                  <PeriodSlider years={allYears} value={yearRange} onChange={setYearRange} />
                 )}
               </div>
             </div>
@@ -410,19 +382,11 @@ export default function AnpCdpPage() {
 
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
-              <div className="mb-2">
-                <div className="page-header-title">ANP CDP — Produção por Poço</div>
-                <div className="page-header-sub">
-                  Produção mensal declarada à ANP por poço, campo e operador
-                  {allYears.length > 0 && (
-                    <span style={{ marginLeft: 12, fontSize: 11, color: "#888" }}>
-                      Período: {yMin}–{yMax}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <hr style={{ borderTop: "2px solid #e0e0e0", marginBottom: 12 }} />
+              <DashboardHeader
+                title="ANP CDP — Produção por Poço"
+                sub="Produção mensal declarada à ANP por poço, campo e operador"
+                period={allYears.length > 0 ? [yMin, yMax] : null}
+              />
 
               {loading ? (
                 <div className="d-flex justify-content-center my-5">
@@ -431,20 +395,15 @@ export default function AnpCdpPage() {
               ) : (
                 <div className="row mb-2">
                   <div className="col-12">
-                    <div className="chart-container" style={{ position: "relative" }}>
-                      <div className="section-title">
-                        Produção Total Selecionada — {metric.label}
-                        {serieLoading && (
-                          <span style={{ marginLeft: 10, fontSize: 11, color: "#aaa", fontWeight: 400 }}>
-                            atualizando…
-                          </span>
-                        )}
-                      </div>
-                      <hr className="section-hr" />
+                    <ChartSection
+                      title={`Produção Total Selecionada — ${metric.label}`}
+                      loading={serieLoading}
+                      height={340}
+                    >
                       <PlotlyChart data={chart.data} layout={chart.layout}
                         config={{ responsive: true, displayModeBar: false }}
-                        style={{ width: "100%", height: 340, opacity: serieLoading ? 0.5 : 1 }} />
-                    </div>
+                        style={{ width: "100%", height: 340 }} />
+                    </ChartSection>
                   </div>
                 </div>
               )}

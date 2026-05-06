@@ -1,14 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Layout, PlotData } from "plotly.js";
-import Slider from "rc-slider";
-import "rc-slider/assets/index.css";
 
 import NavBar from "../../../components/NavBar";
 import PlotlyChart from "../../../components/PlotlyChart";
+import DashboardHeader from "../../../components/dashboard/DashboardHeader";
+import MultiSelectFilter from "../../../components/dashboard/MultiSelectFilter";
+import PeriodSlider from "../../../components/dashboard/PeriodSlider";
+import ChartSection from "../../../components/dashboard/ChartSection";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
+import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
+import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../lib/plotlyDefaults";
 import {
   rpcGetAnpPprodutoresSerie,
   rpcGetAnpPprodutoresFiltros,
@@ -27,47 +31,14 @@ const REGIAO_COLOR: Record<string, string> = {
 };
 const ALL_REGIOES = Object.keys(REGIAO_COLOR);
 
-const COMMON_LAYOUT: Partial<Layout> = {
-  paper_bgcolor: "white",
-  plot_bgcolor:  "white",
-  font: { family: "Arial", size: 12, color: "#000000" },
-  hoverlabel: {
-    bgcolor:     "rgba(255,255,255,0.95)",
-    bordercolor: "rgba(180,180,180,0.5)",
-    font: { family: "Arial", color: "#1a1a1a", size: 12 },
-    namelength: -1,
-  },
-};
-
-const AXIS_LINE = {
-  showgrid: false, zeroline: false,
-  showline: true,  linecolor: "#000000", linewidth: 1,
-};
-
 // ── Chart helpers ──────────────────────────────────────────────────────────────
-
-function emptyPlot(h = 360): { data: PlotData[]; layout: Partial<Layout> } {
-  return {
-    data: [],
-    layout: {
-      ...COMMON_LAYOUT,
-      height: h,
-      margin: { t: 20, b: 30, l: 10, r: 10 },
-      annotations: [{
-        text: "Sem dados para o período selecionado.",
-        xref: "paper", yref: "paper", showarrow: false,
-        font: { size: 13, family: "Arial", color: "#888" },
-      }],
-    },
-  };
-}
 
 function buildChart(
   rows: AnpPprodutoresRow[],
   regioes: string[],
 ): { data: PlotData[]; layout: Partial<Layout> } {
   const filtered = rows.filter(r => regioes.includes(r.regiao));
-  if (!filtered.length) return emptyPlot();
+  if (!filtered.length) return emptyPlot(360);
 
   const byRegiao: Record<string, AnpPprodutoresRow[]> = {};
   for (const r of filtered) (byRegiao[r.regiao] ??= []).push(r);
@@ -109,7 +80,6 @@ export default function AnpPrecosProdutoresPage() {
   const supabase = getSupabaseClient();
 
   const [loading, setLoading]           = useState(true);
-  const [serieLoading, setSerieLoading] = useState(false);
   const [filtros, setFiltros]           = useState<AnpPprodutoresFiltros>({
     produtos: [], regioes: [], data_min: null, data_max: null,
   });
@@ -118,8 +88,6 @@ export default function AnpPrecosProdutoresPage() {
   const [yearRange, setYearRange]       = useState<[number, number]>([0, 0]);
   const [selectedProduto, setProduto]   = useState<string>("");
   const [selectedRegioes, setRegioes]   = useState<string[]>(ALL_REGIOES);
-
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Initial load: filtros + first serie fetch in parallel ────────────────
   useEffect(() => {
@@ -161,24 +129,24 @@ export default function AnpPrecosProdutoresPage() {
   }, [supabase]);
 
   // ── Reactive serie fetch (debounced 400ms) ────────────────────────────────
-  const fetchSerie = useCallback(() => {
-    if (!supabase || loading || !selectedProduto) return;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      setSerieLoading(true);
+  const { data: refetched, loading: serieLoading } = useDebouncedFetch(
+    async () => {
+      if (!supabase || loading || !selectedProduto) return null;
       const yMin = allYears[yearRange[0]];
       const yMax = allYears[yearRange[1]];
-      const rows = await rpcGetAnpPprodutoresSerie(supabase, {
+      return rpcGetAnpPprodutoresSerie(supabase, {
         produto:    selectedProduto,
         dataInicio: yMin ? `${yMin}-01-01` : null,
         dataFim:    yMax ? `${yMax}-12-31` : null,
       });
-      setSerieRows(rows);
-      setSerieLoading(false);
-    }, 400);
-  }, [supabase, loading, selectedProduto, yearRange, allYears]);
+    },
+    [supabase, loading, selectedProduto, yearRange[0], yearRange[1], allYears],
+    { ms: 400, skipInitial: true },
+  );
 
-  useEffect(() => { fetchSerie(); }, [fetchSerie]);
+  useEffect(() => {
+    if (refetched) setSerieRows(refetched);
+  }, [refetched]);
 
   const chart = useMemo(
     () => buildChart(serieRows, selectedRegioes),
@@ -233,63 +201,20 @@ export default function AnpPrecosProdutoresPage() {
                 </select>
               </div>
 
-              <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">
-                  Região{" "}
-                  <span style={{ color: "#888", fontWeight: 400 }}>
-                    ({selectedRegioes.length}/{ALL_REGIOES.length})
-                  </span>
-                </div>
-                {ALL_REGIOES.map(r => (
-                  <div key={r} className="form-check" style={{ marginBottom: 6 }}>
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id={`reg-${r}`}
-                      checked={selectedRegioes.includes(r)}
-                      onChange={() => toggleRegiao(r)}
-                    />
-                    <label className="form-check-label" htmlFor={`reg-${r}`}
-                      style={{ fontFamily: "Arial", fontSize: 12, cursor: "pointer" }}>
-                      <span style={{
-                        display: "inline-block", width: 9, height: 9,
-                        borderRadius: "50%", backgroundColor: REGIAO_COLOR[r],
-                        marginRight: 6, verticalAlign: "middle",
-                      }} />
-                      {r}
-                    </label>
-                  </div>
-                ))}
-                {selectedRegioes.length < ALL_REGIOES.length && (
-                  <button className="filter-btn-link filter-btn-link--secondary"
-                    style={{ marginTop: 4, fontFamily: "Arial", fontSize: 10 }}
-                    onClick={() => setRegioes(ALL_REGIOES)}>
-                    Limpar
-                  </button>
-                )}
-              </div>
+              <MultiSelectFilter
+                label="Região"
+                items={ALL_REGIOES}
+                selected={selectedRegioes}
+                onToggle={toggleRegiao}
+                onClear={selectedRegioes.length < ALL_REGIOES.length ? () => setRegioes(ALL_REGIOES) : undefined}
+                swatch={(r) => REGIAO_COLOR[r]}
+                idPrefix="reg"
+              />
 
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Período</div>
                 {!loading && hasYears && (
-                  <>
-                    <div style={{ marginTop: 18, marginBottom: 10, paddingLeft: 4, paddingRight: 4 }}>
-                      <Slider
-                        range
-                        min={0}
-                        max={allYears.length - 1}
-                        value={yearRange}
-                        onChange={v => {
-                          const arr = v as number[];
-                          setYearRange([arr[0], arr[1]]);
-                        }}
-                      />
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#555", fontFamily: "Arial" }}>
-                      <span style={{ fontWeight: 600 }}>{yMin}</span>
-                      <span style={{ fontWeight: 600 }}>{yMax}</span>
-                    </div>
-                  </>
+                  <PeriodSlider years={allYears} value={yearRange} onChange={setYearRange} />
                 )}
               </div>
             </div>
@@ -298,21 +223,11 @@ export default function AnpPrecosProdutoresPage() {
           {/* ── Main content ──────────────────────────────────────────── */}
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
-              <div className="mb-2">
-                <div className="page-header-title">
-                  ANP — Preços Médios Ponderados Produtores e Importadores
-                </div>
-                <div className="page-header-sub">
-                  Preços semanais médios ponderados praticados por produtores e importadores, por região
-                  {hasYears && (
-                    <span style={{ marginLeft: 12, fontSize: 11, color: "#888" }}>
-                      Período: {yMin}–{yMax}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <hr style={{ borderTop: "2px solid #e0e0e0", marginBottom: 12 }} />
+              <DashboardHeader
+                title="ANP — Preços Médios Ponderados Produtores e Importadores"
+                sub="Preços semanais médios ponderados praticados por produtores e importadores, por região"
+                period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
+              />
 
               {loading ? (
                 <div className="d-flex justify-content-center my-5">
@@ -321,23 +236,18 @@ export default function AnpPrecosProdutoresPage() {
               ) : (
                 <div className="row mb-2">
                   <div className="col-12">
-                    <div className="chart-container" style={{ position: "relative" }}>
-                      <div className="section-title">
-                        Preço por Região — {selectedProduto}
-                        {serieLoading && (
-                          <span style={{ marginLeft: 10, fontSize: 11, color: "#aaa", fontWeight: 400 }}>
-                            atualizando…
-                          </span>
-                        )}
-                      </div>
-                      <hr className="section-hr" />
+                    <ChartSection
+                      title={`Preço por Região — ${selectedProduto}`}
+                      loading={serieLoading}
+                      height={360}
+                    >
                       <PlotlyChart
                         data={chart.data}
                         layout={chart.layout}
                         config={{ responsive: true, displayModeBar: false }}
-                        style={{ width: "100%", height: 360, opacity: serieLoading ? 0.5 : 1 }}
+                        style={{ width: "100%", height: 360 }}
                       />
-                    </div>
+                    </ChartSection>
                   </div>
                 </div>
               )}

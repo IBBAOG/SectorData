@@ -1,14 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Layout, PlotData } from "plotly.js";
-import Slider from "rc-slider";
-import "rc-slider/assets/index.css";
 
 import NavBar from "../../../components/NavBar";
 import PlotlyChart from "../../../components/PlotlyChart";
+import DashboardHeader from "../../../components/dashboard/DashboardHeader";
+import MultiSelectFilter from "../../../components/dashboard/MultiSelectFilter";
+import PeriodSlider from "../../../components/dashboard/PeriodSlider";
+import ChartSection from "../../../components/dashboard/ChartSection";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
+import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
+import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../lib/plotlyDefaults";
 import {
   rpcGetAnpPpiMediaSerie,
   rpcGetAnpPpiLocaisSerie,
@@ -27,40 +31,7 @@ const PRODUTO_INFO: Record<string, { label: string; color: string; unidade: stri
 };
 const ALL_PRODUTOS = Object.keys(PRODUTO_INFO);
 
-const COMMON_LAYOUT: Partial<Layout> = {
-  paper_bgcolor: "white",
-  plot_bgcolor:  "white",
-  font: { family: "Arial", size: 12, color: "#000000" },
-  hoverlabel: {
-    bgcolor:     "rgba(255,255,255,0.95)",
-    bordercolor: "rgba(180,180,180,0.5)",
-    font: { family: "Arial", color: "#1a1a1a", size: 12 },
-    namelength: -1,
-  },
-};
-
-const AXIS_LINE = {
-  showgrid: false, zeroline: false,
-  showline: true,  linecolor: "#000000", linewidth: 1,
-};
-
 // ── Chart helpers ──────────────────────────────────────────────────────────────
-
-function emptyPlot(h = 300): { data: PlotData[]; layout: Partial<Layout> } {
-  return {
-    data: [],
-    layout: {
-      ...COMMON_LAYOUT,
-      height: h,
-      margin: { t: 20, b: 30, l: 10, r: 10 },
-      annotations: [{
-        text: "Sem dados para o período selecionado.",
-        xref: "paper", yref: "paper", showarrow: false,
-        font: { size: 13, family: "Arial", color: "#888" },
-      }],
-    },
-  };
-}
 
 function buildMediaChart(
   rows: AnpPpiSerieRow[],
@@ -165,9 +136,6 @@ export default function AnpPpiPage() {
   const [selectedProdutos, setSelected]   = useState<string[]>(ALL_PRODUTOS);
   const [detailProduto, setDetailProduto] = useState<string>("Gasolina A Comum");
   const [locaisRows, setLocaisRows]       = useState<AnpPpiLocaisRow[]>([]);
-  const [locaisLoading, setLocaisLoading] = useState(false);
-
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Initial load ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -197,28 +165,23 @@ export default function AnpPpiPage() {
   }, [supabase]);
 
   // ── Reactive locais fetch (debounced 400ms) ─────────────────────────────
-  const yearTuple = useMemo<[number, number]>(
-    () => [yearRange[0], yearRange[1]],
-    [yearRange],
-  );
-
-  const fetchLocais = useCallback(() => {
-    if (!supabase || loading || !detailProduto) return;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      setLocaisLoading(true);
-      const yMin = allYears[yearTuple[0]];
-      const yMax = allYears[yearTuple[1]];
-      const rows = await rpcGetAnpPpiLocaisSerie(supabase, detailProduto, {
+  const { data: refetched, loading: locaisLoading } = useDebouncedFetch(
+    async () => {
+      if (!supabase || loading || !detailProduto) return null;
+      const yMin = allYears[yearRange[0]];
+      const yMax = allYears[yearRange[1]];
+      return rpcGetAnpPpiLocaisSerie(supabase, detailProduto, {
         dataInicio: yMin ? `${yMin}-01-01` : null,
         dataFim:    yMax ? `${yMax}-12-31` : null,
       });
-      setLocaisRows(rows);
-      setLocaisLoading(false);
-    }, 400);
-  }, [supabase, loading, detailProduto, yearTuple, allYears]);
+    },
+    [supabase, loading, detailProduto, yearRange[0], yearRange[1], allYears],
+    { ms: 400, skipInitial: false },
+  );
 
-  useEffect(() => { fetchLocais(); }, [fetchLocais]);
+  useEffect(() => {
+    if (refetched) setLocaisRows(refetched);
+  }, [refetched]);
 
   const mediaChart = useMemo(
     () => buildMediaChart(allSerie, selectedProdutos, yearRange, allYears),
@@ -264,56 +227,21 @@ export default function AnpPpiPage() {
 
               <div className="sidebar-section-label">Filtros</div>
 
-              <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">
-                  Produto{" "}
-                  <span style={{ color: "#888", fontWeight: 400 }}>
-                    ({selectedProdutos.length}/{ALL_PRODUTOS.length})
-                  </span>
-                </div>
-                {ALL_PRODUTOS.map(p => (
-                  <div key={p} className="form-check" style={{ marginBottom: 6 }}>
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id={`ppi-${p}`}
-                      checked={selectedProdutos.includes(p)}
-                      onChange={() => toggleProduto(p)}
-                    />
-                    <label className="form-check-label" htmlFor={`ppi-${p}`}
-                      style={{ fontFamily: "Arial", fontSize: 12, cursor: "pointer" }}>
-                      <span style={{
-                        display: "inline-block", width: 9, height: 9,
-                        borderRadius: "50%", backgroundColor: PRODUTO_INFO[p].color,
-                        marginRight: 6, verticalAlign: "middle",
-                      }} />
-                      {PRODUTO_INFO[p].label}
-                    </label>
-                  </div>
-                ))}
-              </div>
+              <MultiSelectFilter
+                label="Produto"
+                items={ALL_PRODUTOS}
+                selected={selectedProdutos}
+                onToggle={toggleProduto}
+                swatch={(p) => PRODUTO_INFO[p].color}
+                itemLabel={(p) => PRODUTO_INFO[p].label}
+                idPrefix="ppi"
+                counterTotal={ALL_PRODUTOS.length}
+              />
 
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Período</div>
                 {!loading && hasYears && (
-                  <>
-                    <div style={{ marginTop: 18, marginBottom: 10, paddingLeft: 4, paddingRight: 4 }}>
-                      <Slider
-                        range
-                        min={0}
-                        max={allYears.length - 1}
-                        value={yearRange}
-                        onChange={v => {
-                          const arr = v as number[];
-                          setYearRange([arr[0], arr[1]]);
-                        }}
-                      />
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#555", fontFamily: "Arial" }}>
-                      <span style={{ fontWeight: 600 }}>{yMin}</span>
-                      <span style={{ fontWeight: 600 }}>{yMax}</span>
-                    </div>
-                  </>
+                  <PeriodSlider years={allYears} value={yearRange} onChange={setYearRange} />
                 )}
               </div>
 
@@ -336,19 +264,11 @@ export default function AnpPpiPage() {
           {/* ── Main content ──────────────────────────────────────────── */}
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
-              <div className="mb-2">
-                <div className="page-header-title">ANP — Preços de Paridade de Importação (PPI)</div>
-                <div className="page-header-sub">
-                  Preços semanais de paridade publicados pela ANP, por produto e local de entrega
-                  {hasYears && (
-                    <span style={{ marginLeft: 12, fontSize: 11, color: "#888" }}>
-                      Período: {yMin}–{yMax}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <hr style={{ borderTop: "2px solid #e0e0e0", marginBottom: 12 }} />
+              <DashboardHeader
+                title="ANP — Preços de Paridade de Importação (PPI)"
+                sub="Preços semanais de paridade publicados pela ANP, por produto e local de entrega"
+                period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
+              />
 
               {loading ? (
                 <div className="d-flex justify-content-center my-5">
@@ -358,38 +278,34 @@ export default function AnpPpiPage() {
                 <>
                   <div className="row mb-2">
                     <div className="col-12">
-                      <div className="chart-container">
-                        <div className="section-title">PPI — Média Nacional (R$/L ou R$/kg)</div>
-                        <hr className="section-hr" />
+                      <ChartSection
+                        title="PPI — Média Nacional (R$/L ou R$/kg)"
+                        height={300}
+                      >
                         <PlotlyChart
                           data={mediaChart.data}
                           layout={mediaChart.layout}
                           config={{ responsive: true, displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
-                      </div>
+                      </ChartSection>
                     </div>
                   </div>
 
                   <div className="row mb-2">
                     <div className="col-12">
-                      <div className="chart-container" style={{ position: "relative" }}>
-                        <div className="section-title">
-                          PPI por Local — {PRODUTO_INFO[detailProduto]?.label ?? detailProduto}
-                          {locaisLoading && (
-                            <span style={{ marginLeft: 10, fontSize: 11, color: "#aaa", fontWeight: 400 }}>
-                              atualizando…
-                            </span>
-                          )}
-                        </div>
-                        <hr className="section-hr" />
+                      <ChartSection
+                        title={`PPI por Local — ${PRODUTO_INFO[detailProduto]?.label ?? detailProduto}`}
+                        loading={locaisLoading}
+                        height={320}
+                      >
                         <PlotlyChart
                           data={locaisChart.data}
                           layout={locaisChart.layout}
                           config={{ responsive: true, displayModeBar: false }}
-                          style={{ width: "100%", height: 320, opacity: locaisLoading ? 0.5 : 1 }}
+                          style={{ width: "100%", height: 320 }}
                         />
-                      </div>
+                      </ChartSection>
                     </div>
                   </div>
                 </>

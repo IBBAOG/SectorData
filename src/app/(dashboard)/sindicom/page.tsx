@@ -1,14 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Layout, PlotData } from "plotly.js";
-import Slider from "rc-slider";
-import "rc-slider/assets/index.css";
 
 import NavBar from "../../../components/NavBar";
 import PlotlyChart from "../../../components/PlotlyChart";
+import DashboardHeader from "../../../components/dashboard/DashboardHeader";
+import MultiSelectFilter from "../../../components/dashboard/MultiSelectFilter";
+import PeriodSlider from "../../../components/dashboard/PeriodSlider";
+import ChartSection from "../../../components/dashboard/ChartSection";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
+import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
+import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../lib/plotlyDefaults";
 import {
   rpcGetSindicomSerie,
   rpcGetSindicomFiltros,
@@ -35,40 +39,7 @@ const PALETTE = [
   "#FF7043", "#26C6DA", "#D4E157", "#AB47BC", "#EF5350",
 ];
 
-const COMMON_LAYOUT: Partial<Layout> = {
-  paper_bgcolor: "white",
-  plot_bgcolor:  "white",
-  font: { family: "Arial", size: 12, color: "#000000" },
-  hoverlabel: {
-    bgcolor:     "rgba(255,255,255,0.95)",
-    bordercolor: "rgba(180,180,180,0.5)",
-    font: { family: "Arial", color: "#1a1a1a", size: 12 },
-    namelength: -1,
-  },
-};
-
-const AXIS_LINE = {
-  showgrid: false, zeroline: false,
-  showline: true,  linecolor: "#000000", linewidth: 1,
-};
-
 // ── Helpers ────────────────────────────────────────────────────────────────────
-
-function emptyPlot(h = 300): { data: PlotData[]; layout: Partial<Layout> } {
-  return {
-    data: [],
-    layout: {
-      ...COMMON_LAYOUT,
-      height: h,
-      margin: { t: 20, b: 30, l: 10, r: 10 },
-      annotations: [{
-        text: "Sem dados para o período selecionado.",
-        xref: "paper", yref: "paper", showarrow: false,
-        font: { size: 13, family: "Arial", color: "#888" },
-      }],
-    },
-  };
-}
 
 function rowDateKey(r: SindicomSerieRow) {
   return `${r.ano}-${String(r.mes).padStart(2, "0")}`;
@@ -174,7 +145,6 @@ export default function SindicomPage() {
   const supabase = getSupabaseClient();
 
   const [loading, setLoading]                   = useState(true);
-  const [serieLoading, setSerieLoading]         = useState(false);
   const [filtros, setFiltros]                   = useState<SindicomFiltros>({
     empresas: [], produtos: [], segmentos: [], ano_min: null, ano_max: null,
   });
@@ -184,8 +154,6 @@ export default function SindicomPage() {
   const [selectedProdutos, setSelectedProdutos] = useState<string[]>([]);
   const [selectedSegmentos, setSelectedSegs]    = useState<string[]>([]);
   const [msProduto, setMsProduto]               = useState<string>("");
-
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Initial load: filtros + first serie fetch ────────────────────────────
   useEffect(() => {
@@ -225,30 +193,24 @@ export default function SindicomPage() {
     return () => { cancelled = true; };
   }, [supabase]);
 
-  // ── Ref-stable year tuple to avoid spurious refetches ─────────────────────
-  const yearTuple = useMemo<[number, number]>(
-    () => [yearRange[0], yearRange[1]],
-    [yearRange],
-  );
-
   // ── Reactive refetch (debounced 400ms) — period changes only ─────────────
-  const fetchSerie = useCallback(() => {
-    if (!supabase || loading || allYears.length === 0) return;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      setSerieLoading(true);
-      const yMin = allYears[yearTuple[0]];
-      const yMax = allYears[yearTuple[1]];
-      const rows = await rpcGetSindicomSerie(supabase, {
+  const { data: refetched, loading: serieLoading } = useDebouncedFetch(
+    async () => {
+      if (!supabase || loading || allYears.length === 0) return null;
+      const yMin = allYears[yearRange[0]];
+      const yMax = allYears[yearRange[1]];
+      return rpcGetSindicomSerie(supabase, {
         anoInicio: yMin ?? null,
         anoFim:    yMax ?? null,
       });
-      setAllRows(rows);
-      setSerieLoading(false);
-    }, 400);
-  }, [supabase, loading, yearTuple, allYears]);
+    },
+    [supabase, loading, yearRange[0], yearRange[1], allYears],
+    { ms: 400, skipInitial: true },
+  );
 
-  useEffect(() => { fetchSerie(); }, [fetchSerie]);
+  useEffect(() => {
+    if (refetched) setAllRows(refetched);
+  }, [refetched]);
 
   const volChart = useMemo(
     () => buildVolumeChart(allRows, selectedProdutos, selectedSegmentos),
@@ -300,95 +262,36 @@ export default function SindicomPage() {
 
               <div className="sidebar-section-label">Filtros</div>
 
-              <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">
-                  Produto{" "}
-                  <span style={{ color: "#888", fontWeight: 400 }}>
-                    ({selectedProdutos.length}/{filtros.produtos.length})
-                  </span>
-                </div>
-                {filtros.produtos.map((p, i) => (
-                  <div key={p} className="form-check" style={{ marginBottom: 6 }}>
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id={`sind-p-${p}`}
-                      checked={selectedProdutos.includes(p)}
-                      onChange={() => toggleProduto(p)}
-                    />
-                    <label className="form-check-label" htmlFor={`sind-p-${p}`}
-                      style={{ fontFamily: "Arial", fontSize: 12, cursor: "pointer" }}>
-                      <span style={{
-                        display: "inline-block", width: 9, height: 9,
-                        borderRadius: "50%",
-                        backgroundColor: PRODUTO_COLORS[p] ?? PALETTE[i % PALETTE.length],
-                        marginRight: 6, verticalAlign: "middle",
-                      }} />
-                      {p}
-                    </label>
-                  </div>
-                ))}
-                {filtros.produtos.length > 0 && selectedProdutos.length < filtros.produtos.length && (
-                  <button className="filter-btn-link filter-btn-link--secondary"
-                    style={{ marginTop: 4, fontFamily: "Arial", fontSize: 10 }}
-                    onClick={() => setSelectedProdutos(filtros.produtos)}>
-                    Limpar
-                  </button>
-                )}
-              </div>
+              <MultiSelectFilter
+                label="Produto"
+                items={filtros.produtos}
+                selected={selectedProdutos}
+                onToggle={toggleProduto}
+                onClear={filtros.produtos.length > 0 && selectedProdutos.length < filtros.produtos.length
+                  ? () => setSelectedProdutos(filtros.produtos)
+                  : undefined}
+                swatch={(p) => {
+                  const i = filtros.produtos.indexOf(p);
+                  return PRODUTO_COLORS[p] ?? PALETTE[i % PALETTE.length];
+                }}
+                idPrefix="sind-p"
+              />
 
-              <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">
-                  Segmento{" "}
-                  <span style={{ color: "#888", fontWeight: 400 }}>
-                    ({selectedSegmentos.length}/{filtros.segmentos.length})
-                  </span>
-                </div>
-                {filtros.segmentos.map(s => (
-                  <div key={s} className="form-check" style={{ marginBottom: 6 }}>
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id={`sind-s-${s}`}
-                      checked={selectedSegmentos.includes(s)}
-                      onChange={() => toggleSegmento(s)}
-                    />
-                    <label className="form-check-label" htmlFor={`sind-s-${s}`}
-                      style={{ fontFamily: "Arial", fontSize: 12, cursor: "pointer" }}>
-                      {s}
-                    </label>
-                  </div>
-                ))}
-                {filtros.segmentos.length > 0 && selectedSegmentos.length < filtros.segmentos.length && (
-                  <button className="filter-btn-link filter-btn-link--secondary"
-                    style={{ marginTop: 4, fontFamily: "Arial", fontSize: 10 }}
-                    onClick={() => setSelectedSegs(filtros.segmentos)}>
-                    Limpar
-                  </button>
-                )}
-              </div>
+              <MultiSelectFilter
+                label="Segmento"
+                items={filtros.segmentos}
+                selected={selectedSegmentos}
+                onToggle={toggleSegmento}
+                onClear={filtros.segmentos.length > 0 && selectedSegmentos.length < filtros.segmentos.length
+                  ? () => setSelectedSegs(filtros.segmentos)
+                  : undefined}
+                idPrefix="sind-s"
+              />
 
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Período</div>
                 {!loading && hasYears && (
-                  <>
-                    <div style={{ marginTop: 18, marginBottom: 10, paddingLeft: 4, paddingRight: 4 }}>
-                      <Slider
-                        range
-                        min={0}
-                        max={allYears.length - 1}
-                        value={yearRange}
-                        onChange={v => {
-                          const arr = v as number[];
-                          setYearRange([arr[0], arr[1]]);
-                        }}
-                      />
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#555", fontFamily: "Arial" }}>
-                      <span style={{ fontWeight: 600 }}>{yMin}</span>
-                      <span style={{ fontWeight: 600 }}>{yMax}</span>
-                    </div>
-                  </>
+                  <PeriodSlider years={allYears} value={yearRange} onChange={setYearRange} />
                 )}
               </div>
 
@@ -411,21 +314,11 @@ export default function SindicomPage() {
           {/* ── Main content ──────────────────────────────────────────── */}
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
-              <div className="mb-2">
-                <div className="page-header-title">
-                  SINDICOM — Distribuição de Combustíveis por Empresa
-                </div>
-                <div className="page-header-sub">
-                  Volumes mensais de venda das distribuidoras associadas ao SINDICOM, por empresa, produto e segmento (mercado / consumidor)
-                  {hasYears && (
-                    <span style={{ marginLeft: 12, fontSize: 11, color: "#888" }}>
-                      Período: {yMin}–{yMax}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <hr style={{ borderTop: "2px solid #e0e0e0", marginBottom: 12 }} />
+              <DashboardHeader
+                title="SINDICOM — Distribuição de Combustíveis por Empresa"
+                sub="Volumes mensais de venda das distribuidoras associadas ao SINDICOM, por empresa, produto e segmento (mercado / consumidor)"
+                period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
+              />
 
               {loading ? (
                 <div className="d-flex justify-content-center my-5">
@@ -447,45 +340,35 @@ export default function SindicomPage() {
                 <>
                   <div className="row mb-2">
                     <div className="col-12">
-                      <div className="chart-container" style={{ position: "relative" }}>
-                        <div className="section-title">
-                          Volume Mensal por Produto (m³)
-                          {serieLoading && (
-                            <span style={{ marginLeft: 10, fontSize: 11, color: "#aaa", fontWeight: 400 }}>
-                              atualizando…
-                            </span>
-                          )}
-                        </div>
-                        <hr className="section-hr" />
+                      <ChartSection
+                        title="Volume Mensal por Produto (m³)"
+                        loading={serieLoading}
+                        height={320}
+                      >
                         <PlotlyChart
                           data={volChart.data}
                           layout={volChart.layout}
                           config={{ responsive: true, displayModeBar: false }}
-                          style={{ width: "100%", height: 320, opacity: serieLoading ? 0.5 : 1 }}
+                          style={{ width: "100%", height: 320 }}
                         />
-                      </div>
+                      </ChartSection>
                     </div>
                   </div>
 
                   <div className="row mb-2">
                     <div className="col-12">
-                      <div className="chart-container" style={{ position: "relative" }}>
-                        <div className="section-title">
-                          Market Share por Empresa — {msProduto} (Top 15)
-                          {serieLoading && (
-                            <span style={{ marginLeft: 10, fontSize: 11, color: "#aaa", fontWeight: 400 }}>
-                              atualizando…
-                            </span>
-                          )}
-                        </div>
-                        <hr className="section-hr" />
+                      <ChartSection
+                        title={`Market Share por Empresa — ${msProduto} (Top 15)`}
+                        loading={serieLoading}
+                        height={400}
+                      >
                         <PlotlyChart
                           data={msChart.data}
                           layout={msChart.layout}
                           config={{ responsive: true, displayModeBar: false }}
-                          style={{ width: "100%", height: 400, opacity: serieLoading ? 0.5 : 1 }}
+                          style={{ width: "100%", height: 400 }}
                         />
-                      </div>
+                      </ChartSection>
                     </div>
                   </div>
                 </>

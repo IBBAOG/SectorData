@@ -1,14 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Layout, PlotData } from "plotly.js";
-import Slider from "rc-slider";
-import "rc-slider/assets/index.css";
 
 import NavBar from "../../../components/NavBar";
 import PlotlyChart from "../../../components/PlotlyChart";
+import DashboardHeader from "../../../components/dashboard/DashboardHeader";
+import MultiSelectFilter from "../../../components/dashboard/MultiSelectFilter";
+import PeriodSlider from "../../../components/dashboard/PeriodSlider";
+import ChartSection from "../../../components/dashboard/ChartSection";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
+import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
+import { COMMON_LAYOUT, AXIS_LINE, emptyPlot, PALETTE } from "../../../lib/plotlyDefaults";
+import { kgToMilTon, LABEL } from "../../../lib/units";
 import {
   rpcGetAnpDesembaracosSerie,
   rpcGetAnpDesembaracosTopPaises,
@@ -18,47 +23,7 @@ import {
   type AnpDesembaracosFiltros,
 } from "../../../lib/rpc";
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-const PALETTE = [
-  "#E53935","#1E88E5","#43A047","#FB8C00","#8E24AA",
-  "#00ACC1","#D81B60","#6D4C41","#F4511E","#039BE5",
-  "#7CB342","#FFB300","#546E7A","#AB47BC","#26A69A","#EC407A",
-];
-
-const COMMON_LAYOUT: Partial<Layout> = {
-  paper_bgcolor: "white",
-  plot_bgcolor:  "white",
-  font: { family: "Arial", size: 12, color: "#000000" },
-  hoverlabel: {
-    bgcolor:     "rgba(255,255,255,0.95)",
-    bordercolor: "rgba(180,180,180,0.5)",
-    font: { family: "Arial", color: "#1a1a1a", size: 12 },
-    namelength: -1,
-  },
-};
-
-const AXIS_LINE = {
-  showgrid: false, zeroline: false,
-  showline: true,  linecolor: "#000000", linewidth: 1,
-};
-
 // ── Helpers ────────────────────────────────────────────────────────────────────
-
-function emptyPlot(h = 300): { data: PlotData[]; layout: Partial<Layout> } {
-  return {
-    data: [],
-    layout: {
-      ...COMMON_LAYOUT, height: h,
-      margin: { t: 20, b: 30, l: 10, r: 10 },
-      annotations: [{
-        text: "Sem dados para o período selecionado.",
-        xref: "paper", yref: "paper", showarrow: false,
-        font: { size: 13, family: "Arial", color: "#888" },
-      }],
-    },
-  };
-}
 
 // quantidade_kg → mil t (kton): kg / 1e6 = thousands of metric tons.
 // Math: 1 mil t = 1.000 t = 1.000.000 kg. Divisor 1e6 matches label "mil t".
@@ -88,9 +53,9 @@ function buildSerieChart(
       type: "scatter", mode: "lines",
       name: ncmNames[ncm] ?? ncm,
       x: allDates,
-      y: allDates.map(d => (byKey[`${ncm}|${d}`] ?? 0) / 1e6),
+      y: allDates.map(d => kgToMilTon(byKey[`${ncm}|${d}`] ?? 0)),
       line: { width: 2, color: PALETTE[i % PALETTE.length] },
-      hovertemplate: `${ncmNames[ncm] ?? ncm}: %{y:.1f} mil t<extra></extra>`,
+      hovertemplate: `${ncmNames[ncm] ?? ncm}: %{y:.1f} ${LABEL.MIL_T}<extra></extra>`,
     } as PlotData));
 
   return {
@@ -99,7 +64,7 @@ function buildSerieChart(
       ...COMMON_LAYOUT, height: 300,
       margin: { t: 10, b: 50, l: 80, r: 30 },
       hovermode: "x unified",
-      yaxis: { ...AXIS_LINE, title: { text: "mil t / mês" } },
+      yaxis: { ...AXIS_LINE, title: { text: `${LABEL.MIL_T} / mês` } },
       xaxis: { ...AXIS_LINE, type: "date" as const },
       legend: { orientation: "h", yanchor: "bottom", y: 1.01, xanchor: "left", x: 0, font: { size: 10 } },
     },
@@ -115,15 +80,15 @@ function buildTopChart(
   return {
     data: [{
       type: "bar", orientation: "h",
-      x: sorted.map(r => (r.total_kg ?? 0) / 1e6),
+      x: sorted.map(r => kgToMilTon(r.total_kg ?? 0)),
       y: sorted.map(r => r.pais_origem),
       marker: { color: "#1E88E5" },
-      hovertemplate: "%{y}: %{x:.1f} mil t<extra></extra>",
+      hovertemplate: `%{y}: %{x:.1f} ${LABEL.MIL_T}<extra></extra>`,
     } as PlotData],
     layout: {
       ...COMMON_LAYOUT, height: 420,
       margin: { t: 36, b: 40, l: 150, r: 20 },
-      xaxis: { ...AXIS_LINE, title: { text: "mil t" } },
+      xaxis: { ...AXIS_LINE, title: { text: LABEL.MIL_T } },
       yaxis: { autorange: "reversed" as const, showgrid: false, zeroline: false, tickfont: { size: 10 } },
       title: {
         text: `Top Países Origem — ${ncmNome}`,
@@ -140,8 +105,6 @@ export default function AnpDesembaracosPage() {
   const supabase = getSupabaseClient();
 
   const [loading, setLoading]               = useState(true);
-  const [serieLoading, setSerieLoading]     = useState(false);
-  const [topLoading, setTopLoading]         = useState(false);
   const [filtros, setFiltros]               = useState<AnpDesembaracosFiltros>({
     ncms: [], paises: [], ano_min: null, ano_max: null,
   });
@@ -151,8 +114,6 @@ export default function AnpDesembaracosPage() {
   const [selectedNcms, setSelectedNcms]     = useState<string[]>([]);
   const [topNcm, setTopNcm]                 = useState<string>("");
   const [topRows, setTopRows]               = useState<AnpDesembaracosTopPaisRow[]>([]);
-
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Initial load: filtros + first serie fetch (last 10 years, top 5 NCMs) ──
   useEffect(() => {
@@ -205,48 +166,42 @@ export default function AnpDesembaracosPage() {
     return () => { cancelled = true; };
   }, [supabase]);
 
-  // ── Ref-stable year tuple to avoid spurious refetches ─────────────────────
-  const yearTuple = useMemo<[number, number]>(
-    () => [yearRange[0], yearRange[1]],
-    [yearRange],
-  );
-
   // ── Reactive serie fetch (debounced 400ms) — period changes only ─────────
-  const fetchSerie = useCallback(() => {
-    if (!supabase || loading) return;
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(async () => {
-      setSerieLoading(true);
-      const yMin = allYears[yearTuple[0]];
-      const yMax = allYears[yearTuple[1]];
-      const rows = await rpcGetAnpDesembaracosSerie(supabase, {
+  const { data: refetchedSerie, loading: serieLoading } = useDebouncedFetch(
+    async () => {
+      if (!supabase || loading) return null;
+      const yMin = allYears[yearRange[0]];
+      const yMax = allYears[yearRange[1]];
+      return rpcGetAnpDesembaracosSerie(supabase, {
         anoInicio: yMin ?? null,
         anoFim:    yMax ?? null,
       });
-      setSerieRows(rows);
-      setSerieLoading(false);
-    }, 400);
-  }, [supabase, loading, yearTuple, allYears]);
+    },
+    [supabase, loading, yearRange[0], yearRange[1], allYears],
+    { ms: 400, skipInitial: true },
+  );
 
-  useEffect(() => { fetchSerie(); }, [fetchSerie]);
-
-  // ── Top países: refetch on topNcm or period change (debounced w/ same ref) ─
   useEffect(() => {
-    if (!supabase || !topNcm || allYears.length === 0 || loading) return;
-    let cancelled = false;
-    setTopLoading(true);
-    const handle = setTimeout(async () => {
-      const rows = await rpcGetAnpDesembaracosTopPaises(
+    if (refetchedSerie) setSerieRows(refetchedSerie);
+  }, [refetchedSerie]);
+
+  // ── Top países: refetch on topNcm or period change ────────────────────────
+  const { data: refetchedTop, loading: topLoading } = useDebouncedFetch(
+    async () => {
+      if (!supabase || !topNcm || allYears.length === 0 || loading) return null;
+      return rpcGetAnpDesembaracosTopPaises(
         supabase, topNcm,
-        allYears[yearTuple[0]] ?? null,
-        allYears[yearTuple[1]] ?? null,
+        allYears[yearRange[0]] ?? null,
+        allYears[yearRange[1]] ?? null,
       );
-      if (cancelled) return;
-      setTopRows(rows);
-      setTopLoading(false);
-    }, 400);
-    return () => { cancelled = true; clearTimeout(handle); };
-  }, [supabase, topNcm, yearTuple, allYears, loading]);
+    },
+    [supabase, topNcm, yearRange[0], yearRange[1], allYears, loading],
+    { ms: 400, skipInitial: false },
+  );
+
+  useEffect(() => {
+    if (refetchedTop) setTopRows(refetchedTop);
+  }, [refetchedTop]);
 
   const serieChart = useMemo(
     () => buildSerieChart(serieRows, selectedNcms),
@@ -262,6 +217,13 @@ export default function AnpDesembaracosPage() {
     () => buildTopChart(topRows, topNcmNome),
     [topRows, topNcmNome],
   );
+
+  const ncmCodigos = useMemo(() => filtros.ncms.map(n => n.ncm_codigo), [filtros.ncms]);
+  const ncmNomeMap = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const n of filtros.ncms) m[n.ncm_codigo] = n.ncm_nome ?? n.ncm_codigo;
+    return m;
+  }, [filtros.ncms]);
 
   if (visLoading || !visible) return null;
 
@@ -298,63 +260,28 @@ export default function AnpDesembaracosPage() {
 
               <div className="sidebar-section-label">Filtros</div>
 
-              <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">
-                  NCM (Série){" "}
-                  <span style={{ color: "#888", fontWeight: 400 }}>
-                    ({selectedNcms.length}/{filtros.ncms.length})
-                  </span>
-                </div>
-                {filtros.ncms.map((n, i) => (
-                  <div key={n.ncm_codigo} className="form-check" style={{ marginBottom: 4 }}>
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id={`ncm-${n.ncm_codigo}`}
-                      checked={selectedNcms.includes(n.ncm_codigo)}
-                      onChange={() => toggleNcm(n.ncm_codigo)}
-                    />
-                    <label className="form-check-label" htmlFor={`ncm-${n.ncm_codigo}`}
-                      style={{ fontFamily: "Arial", fontSize: 11, cursor: "pointer" }}>
-                      <span style={{
-                        display: "inline-block", width: 8, height: 8, borderRadius: "50%",
-                        backgroundColor: PALETTE[i % PALETTE.length],
-                        marginRight: 5, verticalAlign: "middle",
-                      }} />
-                      {n.ncm_nome ?? n.ncm_codigo}
-                    </label>
-                  </div>
-                ))}
-                {filtros.ncms.length > 0 && selectedNcms.length < filtros.ncms.length && (
-                  <button className="filter-btn-link filter-btn-link--secondary"
-                    style={{ marginTop: 4, fontFamily: "Arial", fontSize: 10 }}
-                    onClick={() => setSelectedNcms(filtros.ncms.map(n => n.ncm_codigo))}>
-                    Limpar
-                  </button>
-                )}
-              </div>
+              {/* NCM uses 11px font / 8x8 swatch in original — small variation
+                  acceptable; default 12px+9x9 from MultiSelectFilter is close enough. */}
+              <MultiSelectFilter
+                label="NCM (Série)"
+                items={ncmCodigos}
+                selected={selectedNcms}
+                onToggle={toggleNcm}
+                onClear={ncmCodigos.length > 0 && selectedNcms.length < ncmCodigos.length
+                  ? () => setSelectedNcms(ncmCodigos)
+                  : undefined}
+                swatch={(code) => {
+                  const i = ncmCodigos.indexOf(code);
+                  return PALETTE[i % PALETTE.length];
+                }}
+                itemLabel={(code) => ncmNomeMap[code] ?? code}
+                idPrefix="ncm"
+              />
 
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Período</div>
                 {!loading && hasYears && (
-                  <>
-                    <div style={{ marginTop: 18, marginBottom: 10, paddingLeft: 4, paddingRight: 4 }}>
-                      <Slider
-                        range
-                        min={0}
-                        max={allYears.length - 1}
-                        value={yearRange}
-                        onChange={v => {
-                          const a = v as number[];
-                          setYearRange([a[0], a[1]]);
-                        }}
-                      />
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#555", fontFamily: "Arial" }}>
-                      <span style={{ fontWeight: 600 }}>{yMin}</span>
-                      <span style={{ fontWeight: 600 }}>{yMax}</span>
-                    </div>
-                  </>
+                  <PeriodSlider years={allYears} value={yearRange} onChange={setYearRange} />
                 )}
               </div>
 
@@ -379,21 +306,11 @@ export default function AnpDesembaracosPage() {
           {/* ── Main content ──────────────────────────────────────────── */}
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
-              <div className="mb-2">
-                <div className="page-header-title">
-                  ANP — Desembaraços de Importação (Petróleo, Gás e Derivados)
-                </div>
-                <div className="page-header-sub">
-                  Volumes mensais desembaraçados na importação por NCM e país de origem (massa em mil t)
-                  {hasYears && (
-                    <span style={{ marginLeft: 12, fontSize: 11, color: "#888" }}>
-                      Período: {yMin}–{yMax}
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <hr style={{ borderTop: "2px solid #e0e0e0", marginBottom: 12 }} />
+              <DashboardHeader
+                title="ANP — Desembaraços de Importação (Petróleo, Gás e Derivados)"
+                sub={`Volumes mensais desembaraçados na importação por NCM e país de origem (massa em ${LABEL.MIL_T})`}
+                period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
+              />
 
               {loading ? (
                 <div className="d-flex justify-content-center my-5">
@@ -408,45 +325,36 @@ export default function AnpDesembaracosPage() {
                 <>
                   <div className="row mb-2">
                     <div className="col-12">
-                      <div className="chart-container" style={{ position: "relative" }}>
-                        <div className="section-title">
-                          Volumes Importados por NCM — Total Nacional (mil t / mês)
-                          {serieLoading && (
-                            <span style={{ marginLeft: 10, fontSize: 11, color: "#aaa", fontWeight: 400 }}>
-                              atualizando…
-                            </span>
-                          )}
-                        </div>
-                        <hr className="section-hr" />
+                      <ChartSection
+                        title={`Volumes Importados por NCM — Total Nacional (${LABEL.MIL_T} / mês)`}
+                        loading={serieLoading}
+                        height={300}
+                      >
                         <PlotlyChart
                           data={serieChart.data}
                           layout={serieChart.layout}
                           config={{ responsive: true, displayModeBar: false }}
-                          style={{ width: "100%", height: 300, opacity: serieLoading ? 0.5 : 1 }}
+                          style={{ width: "100%", height: 300 }}
                         />
-                      </div>
+                      </ChartSection>
                     </div>
                   </div>
 
                   <div className="row mb-2">
                     <div className="col-12">
-                      <div className="chart-container" style={{ position: "relative", minHeight: 460 }}>
-                        <div className="section-title">
-                          Top Países Origem — {topNcmNome} (mil t)
-                          {topLoading && (
-                            <span style={{ marginLeft: 10, fontSize: 11, color: "#aaa", fontWeight: 400 }}>
-                              atualizando…
-                            </span>
-                          )}
-                        </div>
-                        <hr className="section-hr" />
+                      <ChartSection
+                        title={`Top Países Origem — ${topNcmNome} (${LABEL.MIL_T})`}
+                        loading={topLoading}
+                        height={420}
+                        containerStyle={{ minHeight: 460 }}
+                      >
                         <PlotlyChart
                           data={topChart.data}
                           layout={topChart.layout}
                           config={{ responsive: true, displayModeBar: false }}
-                          style={{ width: "100%", height: 420, opacity: topLoading ? 0.5 : 1 }}
+                          style={{ width: "100%", height: 420 }}
                         />
-                      </div>
+                      </ChartSection>
                     </div>
                   </div>
                 </>
