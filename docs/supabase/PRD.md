@@ -107,6 +107,64 @@ Todas com RLS habilitada, policy `acesso autenticado` FOR SELECT TO authenticate
 | SINDICOM | `get_sindicom_filtros`, `get_sindicom_serie` | dash-sindicom |
 | ANP CDP | `get_anp_cdp_filtros`, `get_anp_cdp_serie`, `get_anp_cdp_pocos_json` | dash-anp-cdp |
 
+## Migration smoke test
+
+`supabase/tests/migration_smoke.sql` — criado em 2026-05-07 após o bug do `/sales-volumes`.
+
+### Contexto do bug
+
+Migration `20260402000000_sales_volumes` foi registrada em `schema_migrations` mas as 4 funções `get_sv_*` nunca foram criadas: `mv_ms_serie` não existia na hora da execução, causando falha silenciosa. O frontend usava `try/catch` retornando `[]`, então o módulo ficou vazio sem alertar ninguém por meses.
+
+### O que o teste verifica
+
+O script roda dentro de `DO $smoke$ ... END $smoke$;` e falha com `RAISE EXCEPTION` no primeiro item ausente:
+
+| Categoria | O que verifica |
+|---|---|
+| Tabelas (24) | Existência em `information_schema.tables` (schema `public`) |
+| RLS (17 tabelas) | `rowsecurity = TRUE` em `pg_tables` para tabelas com dados de usuário |
+| Materialized views (3) | Existência em `pg_matviews` |
+| Funções (58) | Existência em `pg_proc` + `pg_namespace` (schema `public`) |
+
+Total: **102 assertions**.
+
+### Integração CI
+
+Step `Post-migration smoke test` em `.github/workflows/supabase_deploy.yml`, executado **após** `supabase db push`. Se o script levantar exceção, o job falha e o push fica vermelho.
+
+```yaml
+- name: Post-migration smoke test
+  run: supabase db execute --file supabase/tests/migration_smoke.sql
+  env:
+    SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+```
+
+### Como adicionar novos checks
+
+Após criar uma migration com tabela nova ou RPC nova, adicione ao final do bloco `DO $smoke$` antes do `RAISE NOTICE` final:
+
+**Tabela nova:**
+```sql
+-- Tabela
+PERFORM 1 FROM information_schema.tables
+  WHERE table_schema = 'public' AND table_name = '<nome_tabela>';
+IF NOT FOUND THEN RAISE EXCEPTION 'Missing table: <nome_tabela>'; END IF;
+
+-- RLS (obrigatório para qualquer tabela com dados de usuário)
+PERFORM 1 FROM pg_tables
+  WHERE schemaname = 'public' AND tablename = '<nome_tabela>' AND rowsecurity = TRUE;
+IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: <nome_tabela>'; END IF;
+```
+
+**Função nova:**
+```sql
+PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.proname = '<nome_funcao>';
+IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: <nome_funcao>'; END IF;
+```
+
+Atualize também o `RAISE NOTICE` no final do script com os novos totais.
+
 ## Workflow `supabase_deploy.yml`
 
 Deploya migrations em push pra `main`. Use `SUPABASE_PROJECT_REF` e `SUPABASE_ACCESS_TOKEN`.

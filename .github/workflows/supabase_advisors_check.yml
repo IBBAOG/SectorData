@@ -1,0 +1,70 @@
+name: Supabase Advisors Check
+
+# Runs on day 1 of each month at 13:00 UTC (10:00 BRT).
+# Also triggerable manually via workflow_dispatch.
+on:
+  schedule:
+    - cron: '0 13 1 * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Fetch advisors via Supabase Management API
+        id: advisors
+        env:
+          SUPABASE_PROJECT_REF: rrrkgynlpqtmvuuqdjpb
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          # Supabase Management API v1 — GET /v1/projects/{ref}/advisors?type=performance|security
+          PERF=$(curl -sf -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/advisors?type=performance")
+          SEC=$(curl -sf -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            "https://api.supabase.com/v1/projects/$SUPABASE_PROJECT_REF/advisors?type=security")
+
+          PERF_COUNT=$(echo "$PERF" | jq '.lints | length')
+          SEC_COUNT=$(echo "$SEC"  | jq '.lints | length')
+
+          echo "perf=$PERF_COUNT" >> "$GITHUB_OUTPUT"
+          echo "sec=$SEC_COUNT"   >> "$GITHUB_OUTPUT"
+
+          mkdir -p advisors-output
+          echo "$PERF" > advisors-output/performance.json
+          echo "$SEC"  > advisors-output/security.json
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-advisors
+          path: advisors-output/
+
+      - name: Open issue if WARN+ found
+        if: steps.advisors.outputs.perf > 0 || steps.advisors.outputs.sec > 0
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const perf = '${{ steps.advisors.outputs.perf }}';
+            const sec  = '${{ steps.advisors.outputs.sec }}';
+            const month = new Date().toISOString().slice(0, 7);
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              title: `[Advisors] ${month} — perf=${perf}, sec=${sec}`,
+              body: [
+                `Monthly Supabase advisors audit found **${perf} performance** + **${sec} security** lints.`,
+                '',
+                `Download the workflow artifact \`supabase-advisors\` for the full JSON report.`,
+              ].join('\n'),
+              labels: ['supabase', 'audit', 'advisors'],
+            });

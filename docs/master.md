@@ -190,6 +190,18 @@ Cada agente em `.claude/agents/worker_*.md` declara um campo `tools:` no frontma
 
 **Quando um worker reportar "MCP tool não disponível", a falha é do CTO** que não atualizou `.claude/agents/worker_*.md`. Edite o frontmatter, adicione a tool faltante, e dispare de novo.
 
+### worker_orquestrador (integração)
+
+Após múltiplos workers finalizarem em worktrees paralelas, o CTO **delega a integração** ao `worker_orquestrador` em vez de copiar arquivos manualmente. Esse worker:
+
+- Consolida changes de N worktrees em `main` num único commit
+- Resolve conflitos triviais (ex: 2 agents criando mesmo shared component)
+- Sincroniza `schema_migrations.version` após `apply_migration` MCP
+- Valida `tsc + lint clean` pré-commit
+- Limpa worktrees temporárias pós-merge
+
+Foi criado em 2026-05-07 para eliminar o gargalo de "CTO virou merge engine" identificado na retrospectiva da sessão anterior. Antes dele, ~30% do tempo do CTO em rodadas paralelas era gasto fazendo `cp` entre worktrees + UPDATE em schema_migrations + git rm de arquivos legados.
+
 ### Paralelismo via worktrees git (responsabilidade do CTO)
 
 Quando duas (ou mais) tarefas são **completamente independentes** (não tocam os mesmos arquivos, não dependem do output uma da outra), o CTO **deve** rodá-las em paralelo, cada uma em sua própria worktree.
