@@ -344,52 +344,53 @@ def do_buscar(driver, ocr_engine, periodo, ambiente):
 
 def do_acoes_download(driver, output_dir=None, attempt=1):
     """
-    Click Ações → Fazer Download → confirm CSV download in dialog.
+    Click the "Exportar p/ csv" button that the ANP/APEX UI now exposes directly
+    (the previous Ações menu + dialog confirm flow was removed by ANP).
+
+    Strategy C (hybrid): wait for button presence in DOM, then fire apex.submit()
+    via JS — same code path as a human click.  Falls back to a direct Selenium
+    .click() if the JS submit raises an exception.
+
+    output_dir / attempt are used for _dump_page_state on TimeoutException.
     Returns True on success.
-
-    output_dir / attempt are used for _dump_page_state on TimeoutException so the
-    caller can pin-point exactly which of the 3 wait steps timed out.
     """
-    # APEX IR actions button — class selector is stable across locales
+    _EXPORTAR_XPATH = "//button[.//span[text()='Exportar p/ csv']]"
+
+    # Wait for the "Exportar p/ csv" button to be present in the DOM (ensures the
+    # APEX page state is ready before we fire the submit).
     try:
-        acoes_btn = driver.find_element(By.CSS_SELECTOR, "button.a-IRR-button--actions")
-    except Exception:
-        acoes_btn = driver.find_element(By.XPATH, "//button[contains(.,'Ações')]")
-    acoes_btn.click()
-
-    # [wait-1] Click "Fazer Download" menu item (first visible match = menu entry)
-    menu_item = _wait_for(
-        driver,
-        EC.element_to_be_clickable((By.XPATH, "//button[contains(.,'Fazer Download')]")),
-        10,
-        "element_to_be_clickable //button[contains(.,'Fazer Download')] (menu item)",
-    )
-    menu_item.click()
-
-    # Wait for the download dialog to appear, then click its confirm button via JS.
-    # We use JS click because Selenium's click can fail on APEX overlay dialogs that
-    # don't use standard jQuery UI (.ui-dialog) structure.
-    def _click_dialog_confirm(d):
-        return d.execute_script("""
-            var btns = Array.from(document.querySelectorAll('button'));
-            // Find a visible "Fazer Download" button that is NOT the menu item
-            // (menu closes after click, so any remaining visible match is the dialog confirm)
-            var btn = btns.find(function(b) {
-                return b.textContent.trim().indexOf('Fazer Download') !== -1
-                    && b.offsetParent !== null;  // offsetParent == null means hidden
-            });
-            if (btn) { btn.click(); return true; }
-            return false;
-        """)
-
-    # [wait-2] Dialog confirm button
-    try:
-        _wait_for(driver, _click_dialog_confirm, 10, "JS dialog confirm (Fazer Download visível no overlay)")
+        _wait_for(
+            driver,
+            EC.presence_of_element_located((By.XPATH, _EXPORTAR_XPATH)),
+            timeout=20,
+            label="botão 'Exportar p/ csv' presente no DOM",
+        )
     except TimeoutException:
         if output_dir:
-            _dump_page_state(driver, output_dir, "acoes_dialog_confirm", attempt)
+            _dump_page_state(driver, output_dir, "exportar_btn_absent", attempt)
         raise
-    return True
+
+    # Primary path: fire apex.submit() via JS — identical to the onclick handler.
+    try:
+        driver.execute_script("apex.submit({request:'Exportar',validate:true});")
+        return True
+    except Exception as js_exc:
+        print(f"    [export] apex.submit() falhou ({js_exc}), tentando click direto...")
+
+    # Fallback: direct Selenium click on the button element.
+    try:
+        btn = _wait_for(
+            driver,
+            EC.element_to_be_clickable((By.XPATH, _EXPORTAR_XPATH)),
+            timeout=10,
+            label="botão 'Exportar p/ csv' clicável (fallback)",
+        )
+        btn.click()
+        return True
+    except TimeoutException:
+        if output_dir:
+            _dump_page_state(driver, output_dir, "exportar_btn_not_clickable", attempt)
+        raise
 
 
 # ─── Session capture ─────────────────────────────────────────────────────────
