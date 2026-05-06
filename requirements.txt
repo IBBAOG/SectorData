@@ -4,6 +4,7 @@ lxml
 beautifulsoup4
 html5lib
 openpyxl
+xlrd>=2.0.1
 Pillow
 ddddocr
 selenium
