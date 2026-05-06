@@ -174,6 +174,38 @@ Workflows ativos para as tabelas novas: `mdic_comex_sync.yml`, `anp_precos_sync.
 CEO/CTO → Gerente Geral → dept(s) específico(s) → Documentador → Revisor/QA → commit + push
 ```
 
+### Equipamento dos workers (responsabilidade do CTO)
+
+Cada agente em `.claude/agents/worker_*.md` declara um campo `tools:` no frontmatter. Esse campo **filtra** quais ferramentas o agente enxerga em runtime — se a tool não está listada, o agente não consegue chamá-la mesmo que o harness tenha disponível.
+
+| Worker | MCP tools obrigatórias |
+|---|---|
+| `worker_supabase` | Supabase MCP **completo** (apply_migration, execute_sql, list_tables, get_advisors, list_migrations, list_extensions, generate_typescript_types, search_docs, branches, edge_functions) |
+| `worker_etl-pipelines` | Supabase MCP **read-only** (execute_sql, list_tables, list_migrations, get_advisors, get_logs) — para validar pós-pipeline |
+| `worker_dados-locais` | Supabase MCP **read-only** (execute_sql, list_tables, get_advisors) — para validar pós-upload de Excel |
+| `worker_alertas` | Supabase MCP **read-only** (execute_sql, list_tables, get_logs) + WebFetch — para checar dados base e APIs externas |
+| `worker_subgerente-app` + `worker_dash-*` + `worker_designer` | Preview MCP (`preview_start`, `preview_screenshot`, `preview_eval`, `preview_console_logs`, etc) + Supabase RO — para smoke test visual e checar dados |
+| `worker_gerente-geral` | Supabase RO + Preview RO — para auditorias cross-cutting |
+| Todos | `ToolSearch` para carregar tools deferred sob demanda |
+
+**Quando um worker reportar "MCP tool não disponível", a falha é do CTO** que não atualizou `.claude/agents/worker_*.md`. Edite o frontmatter, adicione a tool faltante, e dispare de novo.
+
+### Paralelismo via worktrees git (responsabilidade do CTO)
+
+Quando duas (ou mais) tarefas são **completamente independentes** (não tocam os mesmos arquivos, não dependem do output uma da outra), o CTO **deve** rodá-las em paralelo, cada uma em sua própria worktree.
+
+**Como**: ao invocar `Agent`, passe `isolation: "worktree"`. O harness cria uma worktree git temporária, o agente trabalha lá, e ao final retorna o path + nome da branch. O CTO então mergeia cada branch em `main` na ordem que fizer sentido.
+
+**Quando vale a pena**:
+- Refactor cross-cutting + 3 backlogs técnicos pequenos (caso real da Fase 4 + housekeeping)
+- 2 dashboards novos sendo refinados em paralelo (não tocam o mesmo `src/lib/rpc.ts`)
+- Update de docs em departamentos diferentes simultaneamente
+
+**Quando NÃO usar**:
+- Tarefas com dependência (output da A é input da B) — sequencial
+- Workers que tocam o mesmo arquivo simultaneamente
+- Mudanças triviais onde o overhead de worktree não compensa
+
 ### Memórias persistentes do CEO (verificar sempre antes de agir)
 
 Ver `C:/Users/eduar/.claude/projects/C--Users-eduar-dashboard-projeto/memory/MEMORY.md`. Resumo das regras vivas:
