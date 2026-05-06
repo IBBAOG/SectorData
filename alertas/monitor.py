@@ -40,7 +40,10 @@ from bases.sindicom              import Sindicom
 # São puladas no run default (a cada 2h) porque o custo é desproporcional e cada
 # uma delas tem um workflow ETL dedicado que detecta novidades no ritmo correto.
 # Para rodar manualmente: python alertas/monitor.py --base <slug>
-_HEAVY_BASES = {"anp_cdp_producao_poco"}
+_HEAVY_BASES = {
+    "anp_cdp_producao_poco",   # Selenium + Chrome + ddddocr (CAPTCHA solver) — ANP CDP atualiza 1×/mês via etl_anp_cdp.yml
+    "sindicom",                # Playwright + Chromium — SINDICOM atualiza 1×/mês via etl_sindicom.yml
+}
 
 MONITORES = [
     AnpLpcUltimas(),

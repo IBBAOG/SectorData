@@ -80,6 +80,7 @@ em `monitor.py` e são **puladas automaticamente** quando o monitor é chamado s
 | Slug | Motivo | Quem detecta novidade |
 |------|--------|-----------------------|
 | `anp_cdp_producao_poco` | Requer Selenium + Chrome headless + ddddocr + onnxruntime (~200 MB de deps). O site usa CAPTCHA interativo (Oracle APEX) — impossível sem browser real. | `etl_anp_cdp.yml` (cron mensal dia 5, 08h UTC) faz o download + upload completo. |
+| `sindicom` | Requer Playwright + Chromium. O site usa proteção anti-bot e o link de download exige JavaScript e cookies de sessão — requests simples retorna 403. | `etl_sindicom.yml` (cron mensal dia 5, 15h UTC) faz o download + upload completo. |
 
 ### Por que não rodar no monitor a cada 2h
 
@@ -92,11 +93,13 @@ em `monitor.py` e são **puladas automaticamente** quando o monitor é chamado s
 ### Como rodar manualmente se necessário
 
 ```bash
-# Rodar uma base heavy diretamente (local, com Selenium instalado):
+# Rodar uma base heavy diretamente (local, com Selenium/Playwright instalado):
 python alertas/monitor.py --base anp_cdp_producao_poco
+python alertas/monitor.py --base sindicom
 
 # Ou via GitHub Actions (forçar workflow ETL dedicado):
 gh workflow run etl_anp_cdp.yml --ref main
+gh workflow run etl_sindicom.yml --ref main
 ```
 
 ### Como adicionar uma nova base heavy
