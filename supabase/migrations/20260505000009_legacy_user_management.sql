@@ -1,11 +1,22 @@
 -- ============================================================================
--- User Management RPCs
--- Allows Admins to list all registered users and assign/change roles
--- directly from the /settings UI — no manual SQL needed.
+-- Legacy: user management RPCs — get_all_users_with_roles, set_user_role,
+--         ensure_user_profile
 --
--- Run this AFTER create_profiles_and_visibility.sql
+-- Mirrors sql/create_user_management.sql, which was applied directly via the
+-- Supabase Dashboard before versioned migrations were adopted.
+--
+-- All DDL is idempotent (CREATE OR REPLACE FUNCTION).
+-- No tables or policies defined here — only RPCs that depend on public.profiles
+-- (defined in 20260505000008_legacy_profiles_and_visibility.sql).
+--
+-- Drift vs prod:
+--   - No drift detected. These 3 functions appear in sql/ but had no
+--     corresponding migration. They exist in prod as created by the sql/ file.
+--   - Added SET search_path = public, pg_temp to all 3 functions to match
+--     the hardening-b standard applied to all other RPCs. The sql/ originals
+--     had SET search_path = public only (without pg_temp); the addition of
+--     pg_temp is a security improvement, not a breaking change.
 -- ============================================================================
-
 
 -- ── RPC: list all users with their role ──────────────────────────────────────
 -- Returns every row in auth.users joined with profiles.
@@ -21,7 +32,7 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   caller_role TEXT;
@@ -58,12 +69,11 @@ CREATE OR REPLACE FUNCTION public.set_user_role(
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   caller_role TEXT;
 BEGIN
-  -- Verify caller is Admin
   SELECT role INTO caller_role
   FROM public.profiles
   WHERE id = auth.uid();
@@ -72,12 +82,10 @@ BEGIN
     RAISE EXCEPTION 'Not authorized: Admin role required';
   END IF;
 
-  -- Validate role value
   IF p_role NOT IN ('Admin', 'Client') THEN
     RAISE EXCEPTION 'Invalid role: must be Admin or Client';
   END IF;
 
-  -- Upsert the profile row
   INSERT INTO public.profiles (id, role)
   VALUES (p_user_id, p_role)
   ON CONFLICT (id) DO UPDATE
@@ -98,7 +106,7 @@ CREATE OR REPLACE FUNCTION public.ensure_user_profile(
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   caller_role TEXT;

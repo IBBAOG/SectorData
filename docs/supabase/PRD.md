@@ -11,14 +11,14 @@ supabase/
   migrations/                       Migrations canônicas (DDL + RPCs + RLS)
   config.toml                       Config Supabase CLI
 
-sql/                                LEGADO — DDL aplicado direto no Dashboard
-  create_price_bands.sql            (price_bands, get_price_bands_data)
-  create_profiles_and_visibility.sql (profiles, module_visibility, policies)
-  create_user_management.sql        (verificar conteúdo)
-
 .github/workflows/
   supabase_deploy.yml               Deploy de migrations em push pra main
 ```
+
+> `sql/` foi removido em 2026-05-06. Os 3 arquivos legados foram convertidos em
+> migrations versionadas: `20260505000007_legacy_price_bands.sql`,
+> `20260505000008_legacy_profiles_and_visibility.sql`,
+> `20260505000009_legacy_user_management.sql`.
 
 ## O que NÃO é deste departamento
 
@@ -121,23 +121,22 @@ Quando MCP tools `mcp__*__apply_migration`, `mcp__*__execute_sql`, `mcp__*__list
 
 A migration `20260504000001` foi originalmente `add_brasil_energia_keyword` (commit 8307a66d), revertida via git revert (commit 98531667), e o slot foi reutilizado para `mdic_comex`. Isso causou collision: `schema_migrations` tinha `name=add_brasil_energia_keyword` enquanto o disco tinha `mdic_comex.sql`. Resolvido em commit 880782e9: arquivo `mdic_comex` renomeado para `_000012_mdic_comex.sql` + repair step adicionado ao workflow `supabase_deploy.yml` para atualizar o registro em `schema_migrations` antes do push.
 
-### `sql/` fora das migrations versionadas
+### `sql/` fora das migrations versionadas — RESOLVIDO (2026-05-06)
 
-3 arquivos em `sql/` foram aplicados direto no Dashboard, criando schema que **não existe em `supabase/migrations/`**:
+3 arquivos legados em `sql/` foram convertidos em migrations versionadas e `sql/` foi deletado via `git rm`.
 
-| Arquivo | Schema criado |
+| Migration criada | Schema coberto |
 |---|---|
-| `sql/create_price_bands.sql` | `price_bands`, `get_price_bands_data` |
-| `sql/create_profiles_and_visibility.sql` | `profiles`, `module_visibility`, policies |
-| `sql/create_user_management.sql` | (verificar) |
+| `20260505000007_legacy_price_bands.sql` | `price_bands`, `get_price_bands_data` |
+| `20260505000008_legacy_profiles_and_visibility.sql` | `profiles`, `module_visibility`, policies, `get_my_profile`, `upsert_my_profile`, `get_module_visibility`, `set_module_visibility` |
+| `20260505000009_legacy_user_management.sql` | `get_all_users_with_roles`, `set_user_role`, `ensure_user_profile` |
 
-Implicação: recriar o banco apenas das migrations resultaria em schema incompleto.
+Drift documentado nas migrations:
+- `get_price_bands_data`: hardening_b (`20260505000002`) já havia aplicado `SET search_path = public, pg_temp` via ALTER FUNCTION; as migrations legacy incluem esse search_path inline (equivalente).
+- Policies de `profiles` e `module_visibility`: hardening_a (`20260505000001`) recriou policies com `(select auth.uid())` wrapping. As migrations legacy usam guards `DO $$ BEGIN IF NOT EXISTS ... END $$` para não duplicar caso o nome da policy já exista.
+- `get_all_users_with_roles`, `set_user_role`, `ensure_user_profile`: sem drift — adicionado `pg_temp` ao search_path (melhoria de segurança).
 
-**Plano de resolução** (próxima janela):
-1. Para cada arquivo em `sql/`, criar migration espelhada com `IF NOT EXISTS`.
-2. `apply_migration` (idempotente — não falha porque DDL já existe no banco).
-3. Listar `migrations` pra confirmar registro.
-4. Remover `sql/` e atualizar `docs/app/PRD.md` (remover seção tech debt).
+As 3 migrations são 100% idempotentes (CREATE TABLE IF NOT EXISTS, CREATE OR REPLACE FUNCTION, INSERT ON CONFLICT DO NOTHING, policy guards). Aplicáveis sem efeito colateral mesmo com objetos já existentes em prod.
 
 ### Outras observações
 

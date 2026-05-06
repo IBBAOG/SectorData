@@ -25,12 +25,14 @@ Output principal: gráfico de linhas / barras com séries por agente. Tabela com
 
 | RPC | Tipo | Função |
 |---|---|---|
-| `get_sv_opcoes_filtros` | próprio | Retorna opções de filtros (anos, meses, agentes, regiões, UFs, mercados) |
-| `get_ms_serie_fast` | **compartilhado com market-share** | Série mensal pré-agregada (mv_ms_serie_fast) |
-| `get_ms_serie_others` | **compartilhado** | Soma agregada dos players "Outros" |
-| `get_others_players` | **compartilhado** | Lista de players agregados em "Outros" |
+| `get_sv_opcoes_filtros` | próprio | Retorna opções de filtros (datas, regiões, UFs, mercados) |
+| `get_sv_serie_fast` | próprio | Série mensal pré-agregada via `mv_ms_serie` (agregada por classificacao) |
+| `get_sv_serie_others` | próprio | Série por `agente_regulado` para players não-Big3 |
+| `get_sv_others_players` | próprio | Lista de agentes não-Big3 para dropdown (~50 rows) |
 
-> **Coordenação obrigatória:** mudança nas 3 RPCs compartilhadas exige alinhamento com `worker_dash-market-share`.
+Wrappers em `src/lib/rpc.ts`: `rpcGetSvOpcoesFiltros`, `rpcGetSvSerieFast`, `rpcGetSvSerieOthers`, `rpcGetSvOthersPlayers`.
+
+> **Nota histórica:** a migration `20260402000000_sales_volumes.sql` falhou silenciosamente (funções não foram criadas). A migration `20260505000006_restore_sv_rpcs.sql` restaurou as 4 funções. O `page.tsx` estava usando as RPCs compartilhadas de market-share (`get_ms_*`) — corrigido para usar as próprias `get_sv_*`.
 
 ## Tabelas / Views
 

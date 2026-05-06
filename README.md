@@ -29,6 +29,8 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 
 ## Modules
 
+### Core (Fase 1–2)
+
 | Route | RPC functions | Export |
 |-------|---------------|--------|
 | `/home` | — (landing with module cards) | — |
@@ -41,6 +43,21 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/news-hunter` | `seed_my_news_hunter_keywords` | No |
 | `/profile` | `get_my_profile`, `upsert_my_profile` | — |
 | `/admin-panel` | `get_module_visibility`, `set_module_visibility`, `get_all_users_with_roles`, `set_user_role` | — |
+
+### Estatísticas (Fase 3 — 10 novos dashboards)
+
+| Route | Categoria | RPC functions | Export |
+|-------|-----------|---------------|--------|
+| `/anp-cdp` | Oil & Gas | `get_anp_cdp_poco_serie`, `get_anp_cdp_pocos_json`, `get_anp_cdp_filtros` | Yes |
+| `/anp-ppi` | Fuel Distribution | `get_anp_ppi_media_serie`, `get_anp_ppi_locais_serie`, `get_anp_ppi_filtros` | Yes |
+| `/anp-precos-produtores` | Fuel Distribution | `get_anp_precos_produtores_serie`, `get_anp_precos_produtores_filtros` | Yes |
+| `/anp-glp` | Fuel Distribution | `get_anp_glp_serie`, `get_anp_glp_filtros` | Yes |
+| `/mdic-comex` | Fuel Distribution | `get_mdic_comex_serie`, `get_mdic_comex_top_paises`, `get_mdic_comex_filtros` | Yes |
+| `/anp-lpc` | Fuel Distribution | `get_anp_lpc_nacional`, `get_anp_lpc_serie`, `get_anp_lpc_filtros` | Yes |
+| `/sindicom` | Fuel Distribution | `get_sindicom_serie`, `get_sindicom_filtros` | Yes |
+| `/anp-daie` | Fuel Distribution | `get_anp_daie_serie`, `get_anp_daie_filtros` | Yes |
+| `/anp-desembaracos` | Fuel Distribution | `get_anp_desembaracos_serie`, `get_anp_desembaracos_top_paises`, `get_anp_desembaracos_filtros` | Yes |
+| `/anp-painel-importacoes` | Fuel Distribution | `get_anp_painel_imp_serie`, `get_anp_painel_imp_top_dist`, `get_anp_painel_imp_filtros` | Yes |
 
 `template-module/` is a starter template, not a deployed module. RPC wrappers: [`src/lib/rpc.ts`](src/lib/rpc.ts) (by module) and [`src/lib/profileRpc.ts`](src/lib/profileRpc.ts).
 
@@ -63,6 +80,9 @@ dashboard_projeto/
 │   │   ├── stocks.md
 │   │   ├── news-hunter.md
 │   │   ├── admin.md               # bundle: home + profile + admin-panel
+│   │   ├── anp-cdp.md anp-ppi.md anp-precos-produtores.md anp-glp.md
+│   │   ├── mdic-comex.md anp-lpc.md sindicom.md anp-daie.md
+│   │   ├── anp-desembaracos.md anp-painel-importacoes.md
 │   │   └── news-hunter-architecture.md  # cross-repo handoff doc
 │   ├── design/
 │   │   ├── identity.md            # tokens (#ff5000, Arial, liquid glass)
@@ -99,19 +119,26 @@ dashboard_projeto/
 │   │       ├── home/ market-share/ sales-volumes/ navios-diesel/
 │   │       ├── diesel-gasoline-margins/ price-bands/ stocks/
 │   │       ├── news-hunter/       # page.tsx + page.module.css
+│   │       ├── anp-cdp/ anp-ppi/ anp-precos-produtores/ anp-glp/
+│   │       ├── mdic-comex/ anp-lpc/ sindicom/ anp-daie/
+│   │       ├── anp-desembaracos/ anp-painel-importacoes/
 │   │       ├── profile/ admin-panel/ template-module/
 │   ├── components/
 │   │   ├── NavBar.tsx PlotlyChart.tsx PeriodSlider.tsx CheckList.tsx
 │   │   ├── RegionStateFilter.tsx SearchableMultiSelect.tsx
+│   │   ├── dashboard/             # Fase 4 shared components (see section below)
 │   │   └── stocks/                # StockChart, ComparisonChart, MarketOverview, ...
 │   ├── context/UserProfileContext.tsx
-│   ├── hooks/                     # useStockQuote, useAutoRefresh, useModuleVisibilityGuard, ...
-│   ├── lib/                       # supabaseClient, rpc.ts, profileRpc, filterUtils, exportExcel
+│   ├── hooks/                     # useStockQuote, useAutoRefresh, useModuleVisibilityGuard,
+│   │   │                          # useDebouncedFetch, ...
+│   ├── lib/                       # supabaseClient, rpc.ts, profileRpc, filterUtils,
+│   │   │                          # exportExcel, plotlyDefaults, units
 │   └── types/                     # shared TS types
 ├── supabase/
 │   ├── config.toml
-│   └── migrations/                # 41 migrations as of 2026-05
-├── sql/                           # ⚠ tech debt — DDL applied via Supabase Dashboard, NOT in migrations
+│   └── migrations/                # 55 migrations as of 2026-05
+├── sql/                           # ⚠ tech debt — 3 DDL files applied via Supabase Dashboard, NOT in migrations
+│   │                              #   (create_price_bands.sql, create_profiles_and_visibility.sql, create_user_management.sql)
 ├── alertas/                       # local-only (gitignored) — alert subsystem with own PRD_ALERTAS.md
 ├── DADOS/                         # local-only (gitignored) — consolidated parquet/csv per source
 ├── data/                          # manual Excels (d_g_margins, price_bands) — gitignored
@@ -135,10 +162,20 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | `news_articles` | url | domain, source_name, title, snippet, published_at, found_at, matched_keywords text[] |
 | `news_hunter_keywords` | (user_id, keyword) | created_at — per-user, RLS scoped |
 | `profiles` | id (FK auth.users) | role (Admin/Client), full_name, avatar_url |
+| `mdic_comex` | id | ano, mes, tipo (IMP/EXP), ncm, descricao_ncm, pais, uf, produto_combustivel, quantidade_kg, valor_fob_usd |
+| `anp_ppi` | id | data_referencia, produto, local, preco_ppi, unidade |
+| `anp_precos_produtores` | id | data_referencia, produto, regiao, preco, unidade |
+| `anp_glp` | id | data_referencia, estado, preco_produtor, preco_distribuidor, preco_revendedor, unidade |
+| `anp_daie` | id | data_referencia, produto, pais_origem, quantidade_m3, quantidade_ton |
+| `anp_desembaracos` | id | data_referencia, produto, pais_origem, quantidade_m3, quantidade_ton |
+| `anp_painel_imp_dist` | id | data_referencia, distribuidora, produto, quantidade_m3 |
+| `anp_lpc` | id | data_referencia, municipio, estado, produto, preco_medio, preco_minimo, preco_maximo, numero_postos |
+| `sindicom` | id | data_referencia, produto, regiao, volume_m3 |
+| `anp_cdp_producao` | id | poco, campo, bacia, operador, data_producao, prod_oleo_bbl, prod_gas_mm3, prod_agua_m3, tipo_poco, ambiente |
 
 **Materialized views:** `mv_ms_serie`, `mv_ms_serie_fast` — pre-aggregated monthly sales, refreshed by `classificar_agentes()`.
 
-> **Tech debt:** `price_bands`, `profiles`, `module_visibility` were created via DDL in [`sql/`](sql/) applied directly to the Supabase Dashboard rather than versioned migrations. See [`docs/supabase/PRD.md`](docs/supabase/PRD.md) for conversion plan.
+> **Tech debt:** `price_bands`, `profiles`, `module_visibility` were created via DDL in [`sql/`](sql/) applied directly to the Supabase Dashboard rather than versioned migrations (`create_price_bands.sql`, `create_profiles_and_visibility.sql`, `create_user_management.sql`). See [`docs/supabase/PRD.md`](docs/supabase/PRD.md) for conversion plan.
 
 ## Data Pipelines (14 workflows + 1 external)
 
@@ -149,13 +186,13 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | 3 | `navios_positions_sync.yml` | After #2 | `pipelines/navios/05_positions_sync.py` (VF port-call) | `vessel_positions`, `port_arrivals` |
 | 4 | `ais_positions_sync.yml` | Every 6h+15min | `pipelines/ais/positions_sync.py` (AISStream WebSocket) | `vessel_registry`, `vessel_positions`, `port_arrivals` |
 | 5 | `ais_candidates_discover.yml` | Every 4h | `pipelines/ais/candidates_discover.py` (AIS global scan, score 0–100) | `import_candidates` |
-| 6 | `anp_cdp_extract.yml` | Monthly 5th | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` (Selenium + ddddocr CAPTCHA) | `output/anp/` + ANP CDP table |
+| 6 | `anp_cdp_extract.yml` | Monthly 5th | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` (Selenium + ddddocr CAPTCHA) | `anp_cdp_producao` |
 | 7 | `anp_vendas_watch.yml` | External trigger (cron-job.org → workflow_dispatch) | `pipelines/anp/vendas_watch.py --force` | `vendas` (ANP fuel sales) |
-| 8 | `anp_fase3_sync.yml` | Monthly 1st, 13:00 UTC | `pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` → `03_painel_imp_sync.py` | DAIE, Desembaraços, Painel Imp |
-| 9 | `anp_lpc_sync.yml` | (verify schedule) | `pipelines/anp/lpc_sync.py` | ANP LPC |
-| 10 | `anp_precos_sync.yml` | (verify schedule) | `pipelines/anp/glp_sync.py` + `precos/01_ppi_sync.py` → `02_precos_produtores_sync.py` | GLP, PPI, preços produtores |
-| 11 | `mdic_comex_sync.yml` | (verify schedule) | `pipelines/mdic_comex_sync.py` | MDIC Comex |
-| 12 | `sindicom_sync.yml` | (verify schedule) | `pipelines/sindicom_sync.py` | SINDICOM |
+| 8 | `anp_fase3_sync.yml` | Monthly 1st, 13:00 UTC | `pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` → `03_painel_imp_sync.py` | `anp_daie`, `anp_desembaracos`, `anp_painel_imp_dist` |
+| 9 | `anp_lpc_sync.yml` | Weekly Wed 14:30 UTC | `pipelines/anp/lpc_sync.py` | `anp_lpc` |
+| 10 | `anp_precos_sync.yml` | Weekly Mon 12:00 UTC | `precos/01_ppi_sync.py` → `02_precos_produtores_sync.py` + `glp_sync.py` | `anp_ppi`, `anp_precos_produtores`, `anp_glp` |
+| 11 | `mdic_comex_sync.yml` | Daily 14:00 UTC | `pipelines/mdic_comex_sync.py` | `mdic_comex` |
+| 12 | `sindicom_sync.yml` | Monthly 5th, 15:00 UTC | `pipelines/sindicom_sync.py` (Playwright + Chromium) | `sindicom` |
 | 13 | `dg_margins_upload.yml` | Weekly Mon | `manual/dg_margins_upload.py` | `d_g_margins` (manual Excel) |
 | 14 | `supabase_deploy.yml` | On push to main | `supabase db push` | migrations |
 | ext | News Hunter scanner | Every ~5min via cron-job.org | `news_hunter_service.py --once` (in repo `IBBAOG/news-hunter-scanner`) | `news_articles` |
@@ -168,6 +205,28 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 
 **Alert subsystem (`alertas/`):** local-only (gitignored), self-contained. 11 detection bases over Supabase tables/parquet files, sends notifications via Gmail API. See `alertas/PRD_ALERTAS.md`.
 
+## Shared Dashboard Components (Fase 4)
+
+Extracted from the 10 Fase 3 dashboards to prevent visual drift. All live in [`src/components/dashboard/`](src/components/dashboard/).
+
+| Component | Purpose |
+|-----------|---------|
+| `DashboardHeader.tsx` | Title + subtitle + period badge + `<hr>` separator. Props: `lang`, `extraBadge`, `rightSlot`, `hideDivider` |
+| `MultiSelectFilter.tsx` | Checkbox list with Limpar button, `(N/total)` counter and optional color swatch |
+| `PeriodSlider.tsx` | rc-slider wrapper; accepts `years: number[]` or `dates: string[]` |
+| `ChartSection.tsx` | Section title + "atualizando..." indicator + opacity 0.5 loading state |
+| `ExportPanel.tsx` | Declarative `actions[]` array with `kind=excel\|csv`, busy state, loading label |
+| `SegmentedToggle.tsx` | Orange-pill toggle for full vs compact view |
+| `BarrelLoading.tsx` | Barrel spinner via next/image; supports `bare` mode for inline use |
+
+**Shared hooks/libs:**
+
+| File | Purpose |
+|------|---------|
+| [`src/hooks/useDebouncedFetch.ts`](src/hooks/useDebouncedFetch.ts) | useCallback + useRef debounce (400ms) with in-flight cancel |
+| [`src/lib/plotlyDefaults.ts`](src/lib/plotlyDefaults.ts) | `COMMON_LAYOUT`, `AXIS_LINE`, `emptyPlot()`, `BRAND_ORANGE`, `PALETTE` |
+| [`src/lib/units.ts`](src/lib/units.ts) | `kgToMilTon`, `m3ToMilM3` converters + `LABEL` constants |
+
 ## Auth & Roles
 
 - Guard: `(dashboard)/layout.tsx` → `supabase.auth.getSession()` → redirect `/login`
@@ -175,7 +234,7 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 - **Client**: modules allowed by Admin only; enforced via `useModuleVisibilityGuard(slug)`
 - Role stored in `profiles`, loaded via `UserProfileContext`; `useRoleGuard` protects Admin pages
 
-## Adding a New Module (developer quick-start)
+## Adding a New Dashboard (developer quick-start)
 
 1. Copy `src/app/(dashboard)/template-module/` → new route folder
 2. Add nav entry in `src/components/NavBar.tsx` (`NAV_ENTRIES`)
@@ -183,6 +242,8 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 4. Add RPC wrappers in `src/lib/rpc.ts`
 5. `INSERT INTO module_visibility VALUES ('<slug>', true);`
 6. Use `useModuleVisibilityGuard("<slug>")` in the page component
+7. **Use shared components** from `src/components/dashboard/` — `DashboardHeader`, `MultiSelectFilter`, `PeriodSlider`, `ChartSection`, `ExportPanel`, `SegmentedToggle`, `BarrelLoading` — to avoid visual drift from the Fase 3 standard
+8. **Use shared hooks/libs** — `useDebouncedFetch` for RPC calls, `plotlyDefaults` for chart layout, `units.ts` for volume conversions
 
 > **Internal team workflow** (creating a `worker_dash-<slug>` agent, sub-PRD, dispatching `worker_dash-admin` for visibility/home image, etc.) is documented in [`docs/app/PRD.md`](docs/app/PRD.md) under "Workflow Subgerente: adicionar dashboard novo".
 
