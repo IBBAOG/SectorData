@@ -41,6 +41,7 @@ import ddddocr
 import requests
 from PIL import Image
 from selenium import webdriver
+from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -338,7 +339,27 @@ def do_acoes_download(driver):
 def _is_renderer_crash(exc):
     """Return True if the exception looks like a Chrome renderer crash/timeout."""
     msg = str(exc).lower()
-    return "renderer" in msg or "session deleted" in msg or not str(exc).strip()
+    return (
+        "renderer" in msg
+        or "session deleted" in msg
+        or "disconnected" in msg
+        or "target window already closed" in msg
+        or not str(exc).strip()
+    )
+
+
+def _diag_webdriver_exc(exc):
+    """Print a structured diagnostic for WebDriver exceptions."""
+    exc_type = type(exc).__name__
+    msg = getattr(exc, "msg", None) or str(exc)
+    print(f"    [diag] {exc_type}: {msg[:300] if msg else '(sem mensagem)'}")
+    low = (msg or "").lower()
+    if "chrome" in low or "chromedriver" in low or "driver" in low:
+        print(f"    [diag] Possivel incompatibilidade Chrome/Chromedriver — verifique versoes no runner")
+    if "#0 0x" in (msg or "") or "stacktrace" in low:
+        print(f"    [diag] Stack trace nativa detectada — tipico de crash de renderer ou mismatch de driver")
+    if "version" in low and ("does not support" in low or "compatible" in low or "detected" in low):
+        print(f"    [diag] Mismatch de versao confirmado — Selenium Manager deveria ter resolvido isso")
 
 
 def capture_session(ocr_engine, periodo, ambiente, output_dir, download_dir):
@@ -376,7 +397,9 @@ def capture_session(ocr_engine, periodo, ambiente, output_dir, download_dir):
             time.sleep(2)
 
         except Exception as e:
-            print(f"    ✗ Erro: {e}")
+            print(f"    ✗ Erro [{type(e).__name__}]: {str(e)[:200]}")
+            if isinstance(e, WebDriverException):
+                _diag_webdriver_exc(e)
             save_debug_screenshot(driver, output_dir, f"cap_err_{attempt}")
             if _is_renderer_crash(e):
                 print(f"    [driver] Chrome travou, reiniciando...")
@@ -547,7 +570,9 @@ def extract_one_selenium(ocr_engine, periodo, ambiente, output_dir, download_dir
             return True
 
         except Exception as e:
-            print(f"    ✗ Erro: {e}")
+            print(f"    ✗ Erro [{type(e).__name__}]: {str(e)[:200]}")
+            if isinstance(e, WebDriverException):
+                _diag_webdriver_exc(e)
             save_debug_screenshot(
                 driver, output_dir,
                 f"{periodo.replace('/', '-')}_{ambiente}_err_{attempt}"

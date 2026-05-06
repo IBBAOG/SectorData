@@ -32,14 +32,17 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Instalar Chrome
+      - name: Instalar Chrome + Chromedriver (versão coerente)
+        uses: browser-actions/setup-chrome@latest
+        id: setup-chrome
+
+      - name: Remover chromedriver do sistema (evita conflito com Selenium Manager)
         run: |
-          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-          echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | \
-            sudo tee /etc/apt/sources.list.d/google-chrome.list
-          sudo apt-get update -q
-          sudo apt-get install -y google-chrome-stable
-          google-chrome --version
+          # Remove qualquer chromedriver instalado via apt (chromium-driver ou similar)
+          # para garantir que o Selenium Manager use o driver baixado pelo setup-chrome.
+          sudo rm -f /usr/bin/chromedriver /usr/local/bin/chromedriver || true
+          echo "Chrome: $(google-chrome --version 2>/dev/null || ${{ steps.setup-chrome.outputs.chrome-path }} --version)"
+          echo "Chromedriver path: $(which chromedriver 2>/dev/null || echo 'not in PATH — Selenium Manager resolverá')"
 
       - name: Instalar dependências Python
         run: pip install -r requirements.txt
