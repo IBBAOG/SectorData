@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 
 import NavBar from "../../../components/NavBar";
 import { useRoleGuard } from "../../../hooks/useRoleGuard";
@@ -415,9 +416,9 @@ export default function AdminPanelPage() {
                 return (
                   <div key={slug} className="settings-module-row" style={{ alignItems: "center", gap: 16 }}>
                     {/* Thumbnail */}
-                    <div style={{ width: 80, height: 50, borderRadius: 4, overflow: "hidden", flexShrink: 0, background: "#e0e0e0", border: "1px solid #ddd", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div style={{ width: 80, height: 50, borderRadius: 4, overflow: "hidden", flexShrink: 0, background: "#e0e0e0", border: "1px solid #ddd", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
                       {currentUrl
-                        ? <img src={currentUrl} alt={label} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        ? <Image src={currentUrl} alt={label} fill sizes="80px" style={{ objectFit: "cover" }} unoptimized />
                         : <span style={{ fontSize: 10, color: "#bbb" }}>No image</span>
                       }
                     </div>

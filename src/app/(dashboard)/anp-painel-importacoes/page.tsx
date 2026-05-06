@@ -9,6 +9,7 @@ import DashboardHeader from "../../../components/dashboard/DashboardHeader";
 import MultiSelectFilter from "../../../components/dashboard/MultiSelectFilter";
 import PeriodSlider from "../../../components/dashboard/PeriodSlider";
 import ChartSection from "../../../components/dashboard/ChartSection";
+import BarrelLoading from "../../../components/dashboard/BarrelLoading";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
@@ -284,9 +285,7 @@ export default function AnpPainelImportacoesPage() {
               />
 
               {loading ? (
-                <div className="d-flex justify-content-center my-5">
-                  <img src="/barrel_loading.png" alt="Carregando..." width={160} height={160} />
-                </div>
+                <BarrelLoading />
               ) : !hasData ? (
                 <div className="d-flex justify-content-center align-items-center my-5"
                   style={{ minHeight: 240, color: "#888", fontFamily: "Arial", fontSize: 14 }}>

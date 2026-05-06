@@ -9,6 +9,7 @@ import DashboardHeader from "../../../components/dashboard/DashboardHeader";
 import MultiSelectFilter from "../../../components/dashboard/MultiSelectFilter";
 import PeriodSlider from "../../../components/dashboard/PeriodSlider";
 import ChartSection from "../../../components/dashboard/ChartSection";
+import BarrelLoading from "../../../components/dashboard/BarrelLoading";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
@@ -271,9 +272,7 @@ export default function AnpPpiPage() {
               />
 
               {loading ? (
-                <div className="d-flex justify-content-center my-5">
-                  <img src="/barrel_loading.png" alt="Carregando..." width={160} height={160} />
-                </div>
+                <BarrelLoading />
               ) : (
                 <>
                   <div className="row mb-2">

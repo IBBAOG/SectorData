@@ -9,6 +9,7 @@ import DashboardHeader from "../../../components/dashboard/DashboardHeader";
 import MultiSelectFilter from "../../../components/dashboard/MultiSelectFilter";
 import PeriodSlider from "../../../components/dashboard/PeriodSlider";
 import ChartSection from "../../../components/dashboard/ChartSection";
+import BarrelLoading from "../../../components/dashboard/BarrelLoading";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
@@ -321,9 +322,7 @@ export default function SindicomPage() {
               />
 
               {loading ? (
-                <div className="d-flex justify-content-center my-5">
-                  <img src="/barrel_loading.png" alt="Carregando..." width={160} height={160} />
-                </div>
+                <BarrelLoading />
               ) : !hasData ? (
                 <div className="chart-container" style={{ padding: "32px 24px", textAlign: "center" }}>
                   <div style={{ fontFamily: "Arial", fontSize: 14, color: "#555", marginBottom: 8 }}>
