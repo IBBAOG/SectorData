@@ -98,9 +98,9 @@ class AnpCdpProducaoPoco(BaseMonitor):
         Usa metadata.last_capture_attempt no Supabase para controlar debounce.
         Retorna True se disparou, False se ainda dentro do debounce.
         """
-        pat = os.environ.get("GITHUB_PAT_WORKFLOW_DISPATCH", "")
+        pat = os.environ.get("WORKFLOW_DISPATCH_PAT", "")
         if not pat:
-            print(f"[{self.slug}]   GITHUB_PAT_WORKFLOW_DISPATCH não configurado — não é possível disparar workflow.")
+            print(f"[{self.slug}]   WORKFLOW_DISPATCH_PAT não configurado — não é possível disparar workflow.")
             return False
 
         # Verificar debounce via estado local

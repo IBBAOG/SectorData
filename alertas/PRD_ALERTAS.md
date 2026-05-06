@@ -275,7 +275,7 @@ A base passou de "heavy" (Selenium + ddddocr) para "leve" (Supabase session + re
 
 | Secret | Escopo do PAT | Uso |
 |--------|--------------|-----|
-| `GITHUB_PAT_WORKFLOW_DISPATCH` | `actions:write` (fine-grained) ou `workflow` (classic) no repo `IBBAOG/SectorData` | Disparar `etl_anp_cdp.yml` automaticamente quando a sessão expira |
+| `WORKFLOW_DISPATCH_PAT` | `actions:write` (fine-grained) ou `workflow` (classic) no repo `IBBAOG/SectorData` | Disparar `etl_anp_cdp.yml` automaticamente quando a sessão expira |
 
 O capture Selenium pesado (ddddocr + Chrome) continua exclusivo do `etl_anp_cdp.yml` que roda 1×/mês. O monitor de alertas apenas **consume** a sessão resultante via requests.
 
@@ -442,7 +442,7 @@ Acesse `https://github.com/IBBAOG/SectorData/settings/secrets/actions` e crie:
 | `ALERTAS_DEST_EMAIL` | Email destino das notificacoes (ex: `eduardo.mendes@itaubba.com`) |
 | `SUPABASE_URL` | Ja existe — compartilhado com outros workflows |
 | `SUPABASE_SERVICE_KEY` | Ja existe — compartilhado com outros workflows |
-| `GITHUB_PAT_WORKFLOW_DISPATCH` | PAT com escopo `actions:write` (fine-grained) ou `workflow` (classic) no repo `IBBAOG/SectorData`. Usado pela base `anp_cdp_producao_poco` para re-disparar `etl_anp_cdp.yml` quando a sessão expira (debounce: 6h). |
+| `WORKFLOW_DISPATCH_PAT` | PAT com escopo `actions:write` (fine-grained) ou `workflow` (classic) no repo `IBBAOG/SectorData`. Usado pela base `anp_cdp_producao_poco` para re-disparar `etl_anp_cdp.yml` quando a sessão expira (debounce: 6h). |
 
 Passos para copiar credentials.json e token.json:
 
