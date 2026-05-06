@@ -21,6 +21,7 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       ALERTAS_DEST_EMAIL: ${{ secrets.ALERTAS_DEST_EMAIL }}
+      WORKFLOW_DISPATCH_PAT: ${{ secrets.WORKFLOW_DISPATCH_PAT }}
       PYTHONIOENCODING: utf-8
 
     steps:
@@ -57,6 +58,9 @@ jobs:
           if [ -z "${{ secrets.GMAIL_TOKEN_JSON }}" ]; then
             echo "::error::Secret GMAIL_TOKEN_JSON não configurado"
             ok=false
+          fi
+          if [ -z "$WORKFLOW_DISPATCH_PAT" ]; then
+            echo "::warning::Secret WORKFLOW_DISPATCH_PAT não configurado — anp_cdp_producao_poco não conseguirá redisparar etl_anp_cdp.yml automaticamente quando a sessão expirar."
           fi
           if [ "$ok" = "false" ]; then exit 1; fi
           echo "Secrets OK."
