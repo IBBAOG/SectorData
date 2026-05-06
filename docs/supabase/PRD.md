@@ -58,7 +58,7 @@ sql/                                LEGADO — DDL aplicado direto no Dashboard
 
 ### Tabelas Fase 3 (adicionadas 2026-05-04)
 
-Todas com RLS habilitada, policy `acesso autenticado` FOR SELECT TO authenticated USING (true), exceto `anp_cdp_producao` (policy `public read` USING (true)).
+Todas com RLS habilitada, policy `acesso autenticado` FOR SELECT TO authenticated USING (true). `anp_cdp_producao` foi corrigida via `20260504000013_anp_cdp_rls_authenticated.sql` (antes tinha `public read` sem restrição a `authenticated`).
 
 | Tabela | PK | Colunas-chave | Migration | Pipeline |
 |---|---|---|---|---|
@@ -71,7 +71,7 @@ Todas com RLS habilitada, policy `acesso autenticado` FOR SELECT TO authenticate
 | `anp_painel_imp_dist` | (ano, mes, distribuidor, uf, nome_produto) | volume_m3 | `20260504000003_anp_fase3.sql` | `pipelines/anp/fase3/03_painel_imp_sync.py` |
 | `anp_lpc` | (data_fim, produto, estado) | preco_medio_venda, preco_medio_compra, n_postos | `20260504000004_lpc_sindicom.sql` | `pipelines/anp/lpc_sync.py` |
 | `sindicom` | (ano, mes, empresa, nome_produto, segmento, uf) | volume | `20260504000004_lpc_sindicom.sql` | `pipelines/sindicom_sync.py` |
-| `anp_cdp_producao` | (ano, mes, operador, bacia, local) | petroleo_bbl_dia, gas_total_mm3_dia, oleo_bbl_dia, condensado_bbl_dia, agua_bbl_dia, n_pocos | `20260504000005_anp_cdp.sql` (v1) → `_v7` (schema final com poco/campo) | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` (~1.8M rows) |
+| `anp_cdp_producao` | (ano, mes, operador, bacia, local) | petroleo_bbl_dia, gas_total_mm3_dia, oleo_bbl_dia, condensado_bbl_dia, agua_bbl_dia, n_pocos | `20260504000005_anp_cdp.sql` (v1) → `_v7` (schema final) → `20260504000013` (RLS authenticated) | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` (~1.8M rows) |
 
 ### Materialized views
 

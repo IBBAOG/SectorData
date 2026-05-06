@@ -52,8 +52,7 @@ jobs:
             20260424000000 \
             20260424000001 \
             20260424000002 \
-            20260424000003 \
-            20260504000001; do
+            20260424000003; do
             supabase migration repair "$v" --status applied || true
           done
         env:

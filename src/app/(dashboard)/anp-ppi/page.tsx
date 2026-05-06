@@ -197,13 +197,18 @@ export default function AnpPpiPage() {
   }, [supabase]);
 
   // ── Reactive locais fetch (debounced 400ms) ─────────────────────────────
+  const yearTuple = useMemo<[number, number]>(
+    () => [yearRange[0], yearRange[1]],
+    [yearRange],
+  );
+
   const fetchLocais = useCallback(() => {
     if (!supabase || loading || !detailProduto) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       setLocaisLoading(true);
-      const yMin = allYears[yearRange[0]];
-      const yMax = allYears[yearRange[1]];
+      const yMin = allYears[yearTuple[0]];
+      const yMax = allYears[yearTuple[1]];
       const rows = await rpcGetAnpPpiLocaisSerie(supabase, detailProduto, {
         dataInicio: yMin ? `${yMin}-01-01` : null,
         dataFim:    yMax ? `${yMax}-12-31` : null,
@@ -211,7 +216,7 @@ export default function AnpPpiPage() {
       setLocaisRows(rows);
       setLocaisLoading(false);
     }, 400);
-  }, [supabase, loading, detailProduto, yearRange, allYears]);
+  }, [supabase, loading, detailProduto, yearTuple, allYears]);
 
   useEffect(() => { fetchLocais(); }, [fetchLocais]);
 
@@ -260,7 +265,12 @@ export default function AnpPpiPage() {
               <div className="sidebar-section-label">Filtros</div>
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Produto</div>
+                <div className="sidebar-filter-label">
+                  Produto{" "}
+                  <span style={{ color: "#888", fontWeight: 400 }}>
+                    ({selectedProdutos.length}/{ALL_PRODUTOS.length})
+                  </span>
+                </div>
                 {ALL_PRODUTOS.map(p => (
                   <div key={p} className="form-check" style={{ marginBottom: 6 }}>
                     <input
