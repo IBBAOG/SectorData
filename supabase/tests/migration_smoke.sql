@@ -506,7 +506,17 @@ BEGIN
     WHERE n.nspname = 'public' AND p.proname = 'seed_my_news_hunter_keywords';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: seed_my_news_hunter_keywords'; END IF;
 
+  -- ─── ALERTAS SESSION (20260507000001) ────────────────────────────────────
+
+  PERFORM 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'alertas_session';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing table: alertas_session'; END IF;
+
+  PERFORM 1 FROM pg_tables
+    WHERE schemaname = 'public' AND tablename = 'alertas_session' AND rowsecurity = TRUE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: alertas_session'; END IF;
+
   RAISE NOTICE 'migration_smoke: all % checks passed.',
-    '24 tables + 3 materialized views + 58 functions + 17 RLS checks';
+    '25 tables + 3 materialized views + 58 functions + 18 RLS checks';
 
 END $smoke$;

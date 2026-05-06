@@ -56,6 +56,14 @@ supabase/
 | `news_articles`, `news_hunter_keywords` | dash-news-hunter | scanner externo + user via UI |
 | `profiles`, `module_visibility` | dash-admin | App (RPC) |
 
+### Sessions / Auth state
+
+| Tabela | Dept consumidor | Populada por |
+|---|---|---|
+| `alertas_session` | dept Alertas (read + update `last_used_at`), dept ETL (write) | `etl_anp_cdp.yml` (capture mensal via Selenium+CAPTCHA) — `alertas_monitor.yml` (read + update `last_used_at` a cada 2h) |
+
+`alertas_session`: sem policies por design — somente service-role bypassa RLS. Migration: `20260507000001_alertas_session.sql`. `metadata` jsonb armazena flags de debounce (`last_capture_attempt`) e contexto APEX (`app_id`, `page_id`, `p_instance`, `captured_periodo`).
+
 ### Tabelas Fase 3 (adicionadas 2026-05-04)
 
 Todas com RLS habilitada, policy `acesso autenticado` FOR SELECT TO authenticated USING (true). `anp_cdp_producao` foi corrigida via `20260504000013_anp_cdp_rls_authenticated.sql` (antes tinha `public read` sem restrição a `authenticated`).
