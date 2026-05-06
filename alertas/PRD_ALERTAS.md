@@ -69,6 +69,43 @@ Slugs disponíveis: `anp_lpc_ultimas`, `anp_sintese_semanal`, `anp_ppi`, `anp_pr
 
 ---
 
+## Bases heavy (puladas no run default)
+
+Algumas bases requerem dependências pesadas que são incompatíveis com o monitor rodando
+a cada 2 horas no GitHub Actions. Essas bases são declaradas na constante `_HEAVY_BASES`
+em `monitor.py` e são **puladas automaticamente** quando o monitor é chamado sem `--base`.
+
+### Bases atualmente heavy
+
+| Slug | Motivo | Quem detecta novidade |
+|------|--------|-----------------------|
+| `anp_cdp_producao_poco` | Requer Selenium + Chrome headless + ddddocr + onnxruntime (~200 MB de deps). O site usa CAPTCHA interativo (Oracle APEX) — impossível sem browser real. | `etl_anp_cdp.yml` (cron mensal dia 5, 08h UTC) faz o download + upload completo. |
+
+### Por que não rodar no monitor a cada 2h
+
+- ANP CDP atualiza apenas 1 vez por mês (geralmente dia 5).
+- Tentar a cada 2h significaria 360 tentativas/mês, todas falhando por ausência de Selenium
+  no ambiente leve do `alertas_monitor.yml`.
+- O workflow `etl_anp_cdp.yml` já é o proprietário correto desse dado — tem Selenium instalado,
+  roda na data certa e faz upload ao Supabase.
+
+### Como rodar manualmente se necessário
+
+```bash
+# Rodar uma base heavy diretamente (local, com Selenium instalado):
+python alertas/monitor.py --base anp_cdp_producao_poco
+
+# Ou via GitHub Actions (forçar workflow ETL dedicado):
+gh workflow run etl_anp_cdp.yml --ref main
+```
+
+### Como adicionar uma nova base heavy
+
+1. Adicione o slug ao conjunto `_HEAVY_BASES` em `alertas/monitor.py`.
+2. Documente aqui: qual dep pesada exige, qual workflow ETL cobre.
+
+---
+
 ## Arquitetura do sistema
 
 ### Fluxo de execução por base

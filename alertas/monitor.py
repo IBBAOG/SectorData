@@ -8,8 +8,14 @@ if hasattr(sys.stderr, "reconfigure"):
 """
 Sistema de Alertas ANP — Monitor Principal
 
-    python alertas/monitor.py                         # todas as bases
+Comportamento default (sem --base):
+    Pula automaticamente as "bases heavy" listadas em _HEAVY_BASES (ex: anp_cdp_producao_poco),
+    que exigem Selenium + Chrome + CAPTCHA solver e são desproporcional para runs a cada 2h.
+    Essas bases têm workflows ETL dedicados que cuidam da detecção real.
+
+    python alertas/monitor.py                         # todas as bases (exceto heavy)
     python alertas/monitor.py --base anp_ppi          # base específica
+    python alertas/monitor.py --base anp_cdp_producao_poco  # forçar base heavy manualmente
     python alertas/monitor.py --loop --intervalo 30   # loop a cada 30 min
 """
 import argparse
@@ -29,6 +35,12 @@ from bases.anp_glp               import AnpGlp
 from bases.mdic_comex            import MdicComex
 from bases.anp_cdp_producao_poco import AnpCdpProducaoPoco
 from bases.sindicom              import Sindicom
+
+# Bases que requerem dependências pesadas (Selenium + Chrome + CAPTCHA solver).
+# São puladas no run default (a cada 2h) porque o custo é desproporcional e cada
+# uma delas tem um workflow ETL dedicado que detecta novidades no ritmo correto.
+# Para rodar manualmente: python alertas/monitor.py --base <slug>
+_HEAVY_BASES = {"anp_cdp_producao_poco"}
 
 MONITORES = [
     AnpLpcUltimas(),
@@ -53,9 +65,15 @@ def rodar(base_filter=None):
             print(f"Base '{base_filter}' não encontrada.")
             print(f"Disponíveis: {', '.join(_BY_SLUG)}")
             sys.exit(1)
+        # Filtro explícito: roda exatamente o que foi pedido, mesmo se for heavy.
         monitores = [_BY_SLUG[base_filter]]
     else:
-        monitores = MONITORES
+        # Run default: pula bases heavy para manter o monitor leve nos runs a cada 2h.
+        skipped = [m.slug for m in MONITORES if m.slug in _HEAVY_BASES]
+        if skipped:
+            print(f"[skip] Bases heavy puladas no run default: {', '.join(skipped)}")
+            print(f"[skip]   Para rodar manualmente: python alertas/monitor.py --base <slug>")
+        monitores = [m for m in MONITORES if m.slug not in _HEAVY_BASES]
 
     novidades = 0
     for m in monitores:
