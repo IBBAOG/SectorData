@@ -7,7 +7,8 @@ from pathlib import Path
 
 from .base import BaseMonitor
 
-_EXTRACTOR_PATH = Path(r"C:\Users\eduar\PAINEL_LIQUIDOS_VENDAS_ATUAL_EXTRACTOR.py")
+# Resolve path relativo a este arquivo: alertas/bases/X.py → ../../scripts/extractors/anp_painel_powerbi.py
+_EXTRACTOR_PATH = Path(__file__).parent.parent.parent / "scripts" / "extractors" / "anp_painel_powerbi.py"
 
 
 def _powerbi_periodo() -> str | None:

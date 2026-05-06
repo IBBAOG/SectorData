@@ -223,7 +223,7 @@ Get-NetTCPConnection -LocalPort 8050 | ForEach-Object { Stop-Process -Id $_.Owni
 
 - **Fonte dupla**:
   1. ZIP estático em `gov.br/anp` — `liquidos.zip` com 6 CSVs (vendas, entregas, importações...)
-  2. API Power BI da ANP — consultada via extrator externo `PAINEL_LIQUIDOS_VENDAS_ATUAL_EXTRACTOR.py` (em `C:\Users\eduar\`)
+  2. API Power BI da ANP — consultada via extrator `scripts/extractors/anp_painel_powerbi.py` (versionado no projeto)
 - **Detecção**: dispara se o ZIP mudou (data ou Last-Modified) **ou** se o Power BI avançou para um período mais novo. Qualquer um dos dois sinais é suficiente.
 - **Download**: chama `consolidar.py` que:
   - Baixa o `liquidos.zip`

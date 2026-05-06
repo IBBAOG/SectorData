@@ -45,7 +45,7 @@ SCRIPT_DIR = Path(__file__).parent
 STATE_FILE = SCRIPT_DIR / "anp_watcher_state.json"
 
 # Path to the existing Power BI extractor (do not modify that file)
-EXTRACTOR_PATH = Path(r"C:\Users\eduar\PAINEL_LIQUIDOS_VENDAS_ATUAL_EXTRACTOR.py")
+EXTRACTOR_PATH = Path(__file__).parent.parent.parent.parent / "scripts" / "extractors" / "anp_painel_powerbi.py"
 
 # ANP page where the ZIP download link is published
 ANP_PAGE_URL = (

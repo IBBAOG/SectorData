@@ -410,7 +410,7 @@ def historico_anp_cdp(slug, nome, url) -> list[dict]:
 def historico_anp_painel_powerbi(slug, nome, url) -> list[dict]:
     """Consulta o Power BI da ANP para obter TODOS os meses disponíveis."""
     rows = []
-    extractor_path = Path(r"C:\Users\eduar\PAINEL_LIQUIDOS_VENDAS_ATUAL_EXTRACTOR.py")
+    extractor_path = Path(__file__).parent.parent / "scripts" / "extractors" / "anp_painel_powerbi.py"
     if not extractor_path.exists():
         return [_entrada(datetime.now().isoformat(timespec="seconds"),
                          slug, nome, url, "", "",
