@@ -146,6 +146,14 @@ def create_driver(download_dir):
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     )
 
+    # Force the Chrome binary installed by browser-actions/setup-chrome (CI env).
+    # Avoids version mismatch when the system already has an older Chrome in PATH.
+    # When running locally without CHROME_BINARY, Selenium uses its default resolution.
+    chrome_binary = os.environ.get("CHROME_BINARY")
+    if chrome_binary:
+        opts.binary_location = chrome_binary
+        print(f"  [config] Chrome binary forçado: {chrome_binary}")
+
     prefs = {
         "download.default_directory": str(Path(download_dir).resolve()),
         "download.prompt_for_download": False,

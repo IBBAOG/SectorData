@@ -33,15 +33,18 @@ jobs:
           python-version: '3.12'
 
       - name: Instalar Chrome + Chromedriver (versão coerente)
+        id: chrome
         uses: browser-actions/setup-chrome@latest
-        id: setup-chrome
+        with:
+          chrome-version: stable
 
       - name: Remover chromedriver do sistema (evita conflito com Selenium Manager)
         run: |
           # Remove qualquer chromedriver instalado via apt (chromium-driver ou similar)
           # para garantir que o Selenium Manager use o driver baixado pelo setup-chrome.
           sudo rm -f /usr/bin/chromedriver /usr/local/bin/chromedriver || true
-          echo "Chrome: $(google-chrome --version 2>/dev/null || ${{ steps.setup-chrome.outputs.chrome-path }} --version)"
+          echo "Chrome binary (forçado via env): ${{ steps.chrome.outputs.chrome-path }}"
+          echo "Versão real: $(${{ steps.chrome.outputs.chrome-path }} --version)"
           echo "Chromedriver path: $(which chromedriver 2>/dev/null || echo 'not in PATH — Selenium Manager resolverá')"
 
       - name: Instalar dependências Python
@@ -70,6 +73,7 @@ jobs:
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          CHROME_BINARY:        ${{ steps.chrome.outputs.chrome-path }}
         run: |
           AMBIENTE="${{ github.event.inputs.ambiente || 'todos' }}"
           ARGS="${{ steps.periodo.outputs.args }}"
