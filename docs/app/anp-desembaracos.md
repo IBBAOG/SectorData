@@ -1,0 +1,122 @@
+# Sub-PRD — `/anp-desembaracos`
+
+Dashboard ANP Desembaraços — Desembaraços Aduaneiros de Importação de Petróleo, Gás e Derivados, por NCM e país de origem (Oil & Gas / Fuel Distribution). Owner: [`worker_dash-anp-desembaracos`](../../.claude/agents/worker_dash-anp-desembaracos.md).
+
+> Item do dropdown "Oil & Gas" da NavBar. Segundo dashboard da Fase 3 ANP (DAIE → **Desembaraços** → Painel Importações).
+
+## Escopo de código
+
+```
+src/app/(dashboard)/anp-desembaracos/
+  page.tsx
+```
+
+RPC wrappers: seção "ANP Desembaraços" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (linhas ~1161–1255).
+
+## Produto
+
+Visualização das **séries mensais e ranking de países origem dos desembaraços aduaneiros de importação** publicados pela ANP. Permite ao usuário:
+
+- Selecionar via checkbox quais **NCMs** comparar no chart de série temporal — ao menos 1 sempre marcado; default: top 5 por volume na janela inicial.
+- Restringir o **período** via range slider de anos (default: últimos 10 anos), aplicado server-side via RPC.
+- Escolher (dropdown) 1 NCM para ver o **ranking de países origem** (top 15 por massa).
+
+Header: `ANP — Desembaraços de Importação (Petróleo, Gás e Derivados)` + sub `Volumes mensais desembaraçados na importação por NCM e país de origem (massa em mil t)` + badge de período quando dados existem.
+
+Diferenças entre os 3 dashboards Fase 3:
+
+| Dashboard | Granularidade | Métrica |
+|---|---|---|
+| `/anp-daie` | produto comercial × operação (Imp/Exp) | volume_m³ + valor_usd |
+| `/anp-desembaracos` | **NCM × país de origem** | **quantidade_kg** |
+| `/anp-painel-importacoes` | distribuidor × produto | volume_m³ |
+
+## Unidades
+
+- **Source**: `quantidade_kg` (kilogramas)
+- **UI**: `mil t` (kton). Conversão: `kg / 1e6 = mil t`.
+- Em todos os charts (Y-axis title, hovertemplate, section-title) o label é "mil t".
+
+## RPCs
+
+| RPC | Tipo | Função |
+|---|---|---|
+| `get_anp_desembaracos_filtros` | próprio | `ncms` ([{ncm_codigo, ncm_nome}]), `paises` (string[]), `ano_min`, `ano_max` |
+| `get_anp_desembaracos_serie` | próprio | Série mensal. Aceita `p_ncms`, `p_paises`, `p_ano_inicio`, `p_ano_fim` (todos opcionais). Wrapper paginado (1.000 linhas/página). |
+| `get_anp_desembaracos_top_paises` | próprio | Top N países origem para 1 NCM. Aceita `p_ncm_codigo` (obrigatório), `p_ano_inicio`, `p_ano_fim`, `p_limit` (default 15). |
+
+## Tabelas
+
+| Objeto | Volume | Populado por |
+|---|---|---|
+| `anp_desembaracos` | ~6.204 linhas | ETL `scripts/pipelines/anp/fase3/02_desembaracos_sync.py` |
+
+### Colunas de `anp_desembaracos`
+
+`ano (smallint), mes (smallint), ncm_codigo (text), ncm_nome (text), pais_origem (text), quantidade_kg (float8)`. PK: `(ano, mes, ncm_codigo, pais_origem)`. Índices: `(ano, mes)`, `(ncm_codigo)`, `(pais_origem)`.
+
+### Migration relevante
+
+- `20260504000003_anp_fase3.sql` — schema + RLS + RPCs + INSERT em `module_visibility` (compartilhada com `/anp-daie` e `/anp-painel-importacoes`).
+
+## Pipeline de origem
+
+| Workflow | Schedule | Scripts |
+|---|---|---|
+| `.github/workflows/anp_fase3_sync.yml` | Mensal dia 1° 13:00 UTC (10:00 BRT) | `scripts/pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` → `03_painel_imp_sync.py` |
+
+Comportamento do scraper `02_desembaracos_sync.py`:
+- Baixa o dataset de desembaraços aduaneiros da ANP (Painel Dinâmico).
+- Normaliza NCM (string), nome do NCM, e país de origem.
+- Agrega por `(ano, mes, ncm_codigo, pais_origem)` somando `quantidade_kg`.
+- Upsert idempotente via supabase-py.
+
+## Filtros disponíveis (UI)
+
+| Filtro | Componente | Comportamento |
+|---|---|---|
+| NCM (Série) | checkboxes c/ swatch de cor + counter `(N/total)` | client-side; mínimo 1 sempre selecionado; "Limpar" restaura todos; default no mount = top 5 NCMs por volume |
+| Período | `rc-slider` range (anos) | server-side em `get_anp_desembaracos_serie` e `get_anp_desembaracos_top_paises` (debounced 400ms cada) |
+| Top Países — NCM | `<select>` (single) | server-side em `get_anp_desembaracos_top_paises` (debounced 400ms); independente do checkbox de Série |
+
+## Charts esperados (2)
+
+1. **Volumes Importados por NCM — Total Nacional (mil t / mês)** — chart de linha múltipla, 1 trace por NCM selecionado, agregando todos os países. Eixo Y: `mil t / mês`. Cor por palette rotativa (16 cores).
+2. **Top Países Origem — `<NCM nome>` (mil t)** — chart de barras horizontais, 1 barra por país (top 15 por massa total no período). Cor única `#1E88E5`.
+
+## Componentes consumidos
+
+- `PlotlyChart` — 2 charts (linha múltipla + barras horizontais).
+- `rc-slider` — slider de período (anos).
+- `NavBar`.
+- `useModuleVisibilityGuard("anp-desembaracos")` — guard de role.
+
+## Dependências cross-dept
+
+| Origem | Como depende |
+|---|---|
+| ETL (`anp_fase3_sync`) | Popula `anp_desembaracos` mensalmente (etapa 2 da chain) |
+| Subgerente APP | Schema/migration de `anp_desembaracos` e RPCs |
+| Designer | Palette rotativa de 16 cores, Arial, padrões de chart de linha múltipla + barras horizontais |
+| Supabase | RLS habilitado em `anp_desembaracos` (read-only via anon authenticated); 3 RPCs SECURITY DEFINER |
+| `worker_dash-admin` | Visibilidade do módulo (`module_visibility.anp-desembaracos`) e imagem da home |
+
+## Performance
+
+- **`anp_desembaracos` é médio (~6k)** — `get_anp_desembaracos_serie` com `p_ano_inicio/p_ano_fim` filtra à janela visível.
+- **Paginação no wrapper** — 1.000 linhas/página (PostgREST default), itera até esgotar. Necessário porque a série completa pode ultrapassar 1.000 linhas (NCM × país × meses).
+- **Período via `p_ano_inicio`/`p_ano_fim`** — empurra filtragem para o servidor.
+- **Filtragem por NCM no chart de série** é client-side via `useMemo` (sem refetch — re-render apenas).
+- **Top países**: refetch no servidor sempre que NCM ou período muda (via `get_anp_desembaracos_top_paises`).
+- **Debounce 400ms** em ambos os fetches reativos — evita rajadas durante drag do slider.
+
+## Anti-padrões
+
+- Query direta em `anp_desembaracos` do front — sempre via RPC.
+- Refetch sem debounce — usar 400ms.
+- Filtrar série inteira client-side por período — empurrar para RPC.
+- Permitir `selectedNcms.length === 0` — sempre manter ao menos 1.
+- Resetar `yearRange` em mudança de NCM — slider é setado uma vez no mount.
+- Bloquear página inteira com barrel em `serieLoading`/`topLoading` — barrel é só pro `loading` inicial.
+- **Drift entre divisor e label** — `quantidade_kg / 1e6 = mil t`. Se trocar divisor, atualizar todos os labels (Y-axis title, hovertemplate, section-title). Bug histórico recorrente em fases 3.x.
+- Mexer em `scripts/pipelines/anp/fase3/02_desembaracos_sync.py` — pertence ao ETL.
