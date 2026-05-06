@@ -44,8 +44,8 @@ jobs:
           if [ -n "${{ github.event.inputs.periodo }}" ]; then
             echo "primeiro=${{ github.event.inputs.periodo }}" >> "$GITHUB_OUTPUT"
           else
-            # Agendado: 2 meses atrás (ANP tem delay de ~2 meses na publicação)
-            PRIMEIRO=$(python -c "from datetime import date, timedelta; d=(date.today().replace(day=1)-timedelta(days=1)).replace(day=1)-timedelta(days=1); print(f'{d.month:02d}/{d.year}')")
+            # Agendado: mês incompleto (mês anterior — operadores submetem dados durante o mês N+1)
+            PRIMEIRO=$(python -c "from datetime import date, timedelta; d=date.today().replace(day=1)-timedelta(days=1); print(f'{d.month:02d}/{d.year}')")
             echo "primeiro=$PRIMEIRO" >> "$GITHUB_OUTPUT"
           fi
 

@@ -30,7 +30,7 @@ _DEBOUNCE_HOURS = 6
 
 def _mes_esperado() -> str:
     hoje = datetime.now(timezone.utc)
-    mes  = hoje.month - 2
+    mes  = hoje.month - 1
     ano  = hoje.year
     if mes <= 0:
         mes += 12
