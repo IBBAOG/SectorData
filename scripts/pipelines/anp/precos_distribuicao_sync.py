@@ -40,24 +40,44 @@ _HEADERS = {"User-Agent": "Mozilla/5.0"}
 _BATCH = 1000
 
 # Canonical product name mapping (normalise variations found in XLSX headers)
+# Keys must be lowercase + de-accented (same transformation as _normalise_produto).
 _PRODUTO_MAP = {
-    "gasolina comum":         "Gasolina Comum",
-    "gasolina c":             "Gasolina Comum",
-    "gasolina":               "Gasolina Comum",
-    "etanol hidratado":       "Etanol Hidratado",
-    "etanol":                 "Etanol Hidratado",
-    "alcool etilico hidratado combustivel": "Etanol Hidratado",
-    "diesel s10":             "Diesel S10",
-    "oleo diesel s10":        "Diesel S10",
-    "diesel s500":            "Diesel S500",
-    "oleo diesel s500":       "Diesel S500",
-    "oleo diesel":            "Diesel S500",
-    "gnv":                    "GNV",
-    "gas natural veicular":   "GNV",
-    "glp":                    "GLP P13",
-    "glp p13":                "GLP P13",
-    "gas liqüefeito de petroleo": "GLP P13",
-    "gas liquefeito de petroleo": "GLP P13",
+    # Gasolina
+    "gasolina comum":                          "Gasolina Comum",
+    "gasolina c":                              "Gasolina Comum",
+    "gasolina c comum":                        "Gasolina Comum",
+    "gasolina c comum aditivada":              "Gasolina Comum",
+    "gasolina c premium":                      "Gasolina Comum",
+    "gasolina":                                "Gasolina Comum",
+    # Etanol
+    "etanol hidratado":                        "Etanol Hidratado",
+    "etanol hidratado comum":                  "Etanol Hidratado",
+    "etanol hidratado aditivado":              "Etanol Hidratado",
+    "etanol":                                  "Etanol Hidratado",
+    "alcool etilico hidratado combustivel":    "Etanol Hidratado",
+    # Diesel S10
+    "diesel s10":                              "Diesel S10",
+    "oleo diesel s10":                         "Diesel S10",
+    "oleo diesel b s10 - comum":               "Diesel S10",
+    "oleo diesel b s10 - aditivado":           "Diesel S10",
+    "oleo diesel b s10 para geracao de energia eletrica": "Diesel S10",
+    # Diesel S500
+    "diesel s500":                             "Diesel S500",
+    "oleo diesel s500":                        "Diesel S500",
+    "oleo diesel b s500 - comum":              "Diesel S500",
+    "oleo diesel b s500 - aditivado":          "Diesel S500",
+    "oleo diesel":                             "Diesel S500",
+    # Diesel S1800 (não rodoviário — mapear para S500 como fallback)
+    "oleo diesel b s1800 nao rodovario comum": "Diesel S500",
+    "oleo diesel b s1800 nao rodovario aditivado": "Diesel S500",
+    # GNV
+    "gnv":                                     "GNV",
+    "gas natural veicular":                    "GNV",
+    # GLP
+    "glp":                                     "GLP P13",
+    "glp p13":                                 "GLP P13",
+    "gas liqüefeito de petroleo":              "GLP P13",
+    "gas liquefeito de petroleo":              "GLP P13",
 }
 
 # Filename patterns to look for on the ANP page
@@ -133,12 +153,16 @@ def _download(url: str) -> bytes:
 
 def _normalise_produto(raw: str) -> str | None:
     key = raw.strip().lower()
-    # remove accents for matching
+    # remove accents and replacement chars (U+FFFD) for matching
     key = (key
+           .replace("�", "")   # openpyxl encoding corruption placeholder
            .replace("á", "a").replace("é", "e").replace("í", "i")
            .replace("ó", "o").replace("ú", "u").replace("ã", "a")
            .replace("â", "a").replace("ê", "e").replace("ô", "o")
-           .replace("ç", "c").replace("ü", "u"))
+           .replace("ç", "c").replace("ü", "u").replace("à", "a")
+           .replace("õ", "o").replace("ñ", "n"))
+    # collapse multiple spaces that may appear after stripping chars
+    key = re.sub(r"\s+", " ", key).strip()
     return _PRODUTO_MAP.get(key)
 
 
@@ -203,11 +227,18 @@ def _parse_brasil(content: bytes, fname: str) -> list[dict]:
         except Exception:
             continue
 
-        # Scan for header row (row containing 'produto' or 'data')
+        # Scan for header row (row containing 'produto' or 'data'/'mes')
+        # All ANP XLSX in this series have 7 metadata rows then the header at row 8.
+        # We scan dynamically to be resilient to format changes.
         header_row = None
         for i, row in raw.iterrows():
             vals = [str(v).strip().lower() for v in row if pd.notna(v)]
-            if any(v in ("produto", "combustivel", "data", "data inicial", "semana") for v in vals):
+            if any(v in ("produto", "combustivel", "data", "data inicial", "semana",
+                         "mes", "mês") for v in vals):
+                header_row = i
+                break
+            # Also accept rows where any value starts with 'data' or equals 'mes'
+            if any(v.startswith("data") or v in ("mes", "mês", "m�s") for v in vals):
                 header_row = i
                 break
 
@@ -225,9 +256,9 @@ def _parse_brasil(content: bytes, fname: str) -> list[dict]:
             c = col.lower()
             if re.search(r"produto|combustivel", c) and "produto" not in col_map:
                 col_map["produto"] = col
-            elif re.search(r"^data|semana|periodo", c) and "data" not in col_map:
+            elif re.search(r"^data|semana|periodo|^m.s$|^mes$", c) and "data" not in col_map:
                 col_map["data"] = col
-            elif re.search(r"medio|médio|media|média", c) and "medio" not in col_map:
+            elif re.search(r"m.dio|medio|media", c) and "medio" not in col_map:
                 col_map["medio"] = col
             elif re.search(r"minim", c) and "minimo" not in col_map:
                 col_map["minimo"] = col
@@ -388,10 +419,21 @@ def _parse_municipio(content: bytes, fname: str) -> list[dict]:
         except Exception:
             continue
 
+        # Header detection: ANP municipio XLSX always has 7 metadata rows then header at row 8.
+        # The column 'MUNICÍPIO' may be stored with U+FFFD replacing the accented char.
+        # We scan for a row that contains BOTH a date-like column AND a municipio-like column,
+        # which distinguishes the actual header from the metadata line "TIPO RELATÓRIO: MUNICÍPIO".
         header_row = None
         for i, row in raw.iterrows():
             vals = [str(v).strip().lower() for v in row if pd.notna(v)]
-            if any(v in ("municipio", "município", "localidade", "cidade") for v in vals):
+            row_str = " | ".join(vals)
+            # The actual header row has multiple columns, one being 'estado' or 'data'
+            # AND one matching municipio — avoids the single-cell metadata lines
+            has_municipio = any(v in ("municipio", "município") for v in vals) or \
+                            any(re.search(r"munic.pio$", v) for v in vals)
+            has_date_col = any(v.startswith("data") or v in ("mes", "mês", "m�s") for v in vals)
+            has_estado = any(v in ("estado", "uf") for v in vals)
+            if has_municipio and (has_date_col or has_estado):
                 header_row = i
                 break
 
@@ -406,15 +448,16 @@ def _parse_municipio(content: bytes, fname: str) -> list[dict]:
         col_map = {}
         for col in df.columns:
             c = col.lower()
-            if re.search(r"municipio|município|localidade|cidade", c) and "municipio" not in col_map:
+            # municipio col may have U+FFFD in place of í — use dot-wildcard regex
+            if re.search(r"munic.pio|municipio|localidade|cidade", c) and "municipio" not in col_map:
                 col_map["municipio"] = col
             elif re.search(r"^uf|^estado", c) and "uf" not in col_map:
                 col_map["uf"] = col
             elif re.search(r"produto|combustivel", c) and "produto" not in col_map:
                 col_map["produto"] = col
-            elif re.search(r"^data|^mes|^mês|^periodo", c) and "data" not in col_map:
+            elif re.search(r"^data|^m.s$|^mes$|^periodo", c) and "data" not in col_map:
                 col_map["data"] = col
-            elif re.search(r"medio|médio", c) and "medio" not in col_map:
+            elif re.search(r"m.dio|medio|media", c) and "medio" not in col_map:
                 col_map["medio"] = col
             elif re.search(r"minim", c) and "minimo" not in col_map:
                 col_map["minimo"] = col
@@ -524,13 +567,15 @@ def main():
 
     grand_total = 0
 
-    # --- Brasil (semanal) ---
+    # --- Brasil (semanal + mensal) ---
     for xlsx_url, fname in links.get("brasil", []):
         print(f"\nBaixando {fname}...")
         content = _download(xlsx_url)
         print(f"  {len(content) / 1024:.0f} KB")
         rows = _parse_brasil(content, fname)
         print(f"  Parseados: {len(rows):,} linhas")
+        if len(rows) == 0:
+            print(f"  WARNING [{fname}]: 0 linhas parseadas — possivel mudanca de layout no XLSX da ANP")
         rows = _dedup(rows)
         print(f"  Apos dedup: {len(rows):,} linhas")
         if rows:
@@ -544,19 +589,23 @@ def main():
         print(f"  {len(content) / 1024:.0f} KB")
         rows = _parse_uf(content, fname)
         print(f"  Parseados: {len(rows):,} linhas")
+        if len(rows) == 0:
+            print(f"  WARNING [{fname}]: 0 linhas parseadas — possivel mudanca de layout no XLSX da ANP")
         rows = _dedup(rows)
         print(f"  Apos dedup: {len(rows):,} linhas")
         if rows:
             n = _upsert(sb, rows, "uf")
             grand_total += n
 
-    # --- Municipios (mensal) ---
+    # --- Municipios (semanal historico + semanal atual + mensal) ---
     for xlsx_url, fname in links.get("municipio", []):
         print(f"\nBaixando {fname}...")
         content = _download(xlsx_url)
         print(f"  {len(content) / 1024:.0f} KB")
         rows = _parse_municipio(content, fname)
         print(f"  Parseados: {len(rows):,} linhas")
+        if len(rows) == 0:
+            print(f"  WARNING [{fname}]: 0 linhas parseadas — possivel mudanca de layout no XLSX da ANP")
         rows = _dedup(rows)
         print(f"  Apos dedup: {len(rows):,} linhas")
         if rows:
