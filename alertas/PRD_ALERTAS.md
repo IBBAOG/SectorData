@@ -65,7 +65,7 @@ python alertas/monitor.py --base anp_ppi
 python alertas/monitor.py --loop --intervalo 30
 ```
 
-Slugs disponíveis: `anp_lpc_ultimas`, `anp_sintese_semanal`, `anp_ppi`, `anp_precos_produtores`, `anp_desembaracos`, `anp_dados_abertos_ie`, `anp_painel_combustiveis`, `anp_glp`, `anp_cdp_producao_poco`, `mdic_comex`, `sindicom`.
+Slugs disponíveis: `anp_lpc_ultimas`, `anp_sintese_semanal`, `anp_ppi`, `anp_precos_produtores`, `anp_desembaracos`, `anp_dados_abertos_ie`, `anp_painel_combustiveis`, `anp_glp`, `anp_cdp_producao_poco`, `mdic_comex`, `sindicom`, `precos_distribuicao`.
 
 ---
 
@@ -387,6 +387,19 @@ python scripts/anp_cdp_upload.py --from-csv-dir output/anp/
 - **Nota GNV**: volume de GNV está em Mil m³, não em m³ como os demais produtos (aviso no próprio XLSX).
 - **Cobertura**: 2017-01 → mês mais recente (atualmente 2026-03), 92k linhas.
 - **Dashboard** (`/sindicom`): série mensal por produto + market share top-15 empresas. Filtros: produto, segmento, período. RPCs: `get_sindicom_serie`, `get_sindicom_filtros`.
+
+---
+
+### 12. ANP Preços de Distribuição de Combustíveis (`precos_distribuicao`)
+
+- **Fonte**: tabela Supabase `anp_precos_distribuicao` — populada pelo pipeline ETL (`etl_anp_precos_distribuicao.yml`).
+- **Detecção**: consulta `MAX(data_referencia)` segregado por `periodicidade` (`semanal` e `mensal`). Compara com `ultima_data_semanal` e `ultima_data_mensal` salvos no estado. Dispara se qualquer periodicidade avançou.
+- **Sem download**: os dados já estão no Supabase — a base não baixa arquivos locais. `baixar()` retorna `[]`.
+- **Estado**: `alertas/estado/precos_distribuicao.json` com chaves `ultima_data_semanal`, `ultima_data_mensal`, `ultima_verificacao`, `produtos_atualizados`.
+- **Email**: inclui data mais recente por periodicidade, produtos identificados na nova data, e link para a página ANP.
+- **Base leve**: sem Playwright, sem scraping — apenas consulta Supabase. Roda no monitor default a cada 2h.
+- **Requer**: `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` no ambiente. Sem eles, retorna False silenciosamente.
+- **Script standalone**: `alertas/scripts/precos_distribuicao/consolidar.py` — pode ser invocado para teste manual sem passar pelo monitor completo.
 
 ---
 
