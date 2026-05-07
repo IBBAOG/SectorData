@@ -1219,9 +1219,14 @@ export async function downloadSalesVolumesExcel(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tier 2 single-sheet wrappers (mdic-comex, anp-cdp, anp-lpc).
-// Use `downloadGenericExcel` with `value:` extractors and `mergeTitleCells:true`
-// to reproduce the legacy `downloadSimpleSheet` banner (title merged across all
-// columns above the black/white header). No OOXML charts — kept simple.
+//
+// Mirror the Tier 1 path exactly: `downloadGenericExcel` with `key:` lookups
+// and **no** `mergeTitleCells`. Earlier these wrappers used `value:` extractors
+// + `mergeTitleCells:true` to reproduce the legacy `downloadSimpleSheet` banner,
+// but that combination produced XLSX files that Excel reported as "file format
+// or file extension is not valid", while Tier 1 dashboards (anp-glp, anp-daie,
+// etc.) using the same helper without those features kept working. Aligning
+// the Tier 2 wrappers to the Tier 1 path eliminates the regression vector.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── MDIC Comex export ────────────────────────────────────────────────────────
@@ -1232,15 +1237,14 @@ export async function downloadMdicComexExcel(rows: MdicComexSerieRow[]): Promise
     sheetName: "MDIC Comex",
     title: "MDIC Comex Stat — Importações e Exportações",
     filename: "MDIC Comex",
-    mergeTitleCells: true,
     columns: [
-      { header: "Ano",            width: 8,  value: r => r.ano,           align: "center" },
-      { header: "Mês",            width: 6,  value: r => r.mes,           align: "center" },
-      { header: "Fluxo",          width: 12, value: r => r.flow,          align: "center" },
-      { header: "NCM",            width: 14, value: r => r.ncm_codigo,    align: "center" },
-      { header: "Descrição NCM",  width: 36, value: r => r.ncm_nome ?? "" },
-      { header: "Volume (kg)",    width: 18, value: r => r.volume_kg,     format: "#,##0", align: "right" },
-      { header: "Valor FOB (US$)",width: 20, value: r => r.valor_fob_usd, format: "#,##0.00", align: "right" },
+      { key: "ano",           header: "Ano",             width: 8 },
+      { key: "mes",           header: "Mês",             width: 6 },
+      { key: "flow",          header: "Fluxo",           width: 12 },
+      { key: "ncm_codigo",    header: "NCM",             width: 14 },
+      { key: "ncm_nome",      header: "Descrição NCM",   width: 36, align: "left" },
+      { key: "volume_kg",     header: "Volume (kg)",     width: 18, format: "#,##0" },
+      { key: "valor_fob_usd", header: "Valor FOB (US$)", width: 20, format: "#,##0.00" },
     ],
   });
 }
@@ -1253,19 +1257,18 @@ export async function downloadAnpCdpExcel(rows: AnpCdpSeriePonto[]): Promise<voi
     sheetName: "ANP CDP",
     title: "ANP CDP — Produção por Poço",
     filename: "ANP CDP",
-    mergeTitleCells: true,
     columns: [
-      { header: "Ano",                      width: 8,  value: r => r.ano, align: "center" },
-      { header: "Mês",                      width: 6,  value: r => r.mes, align: "center" },
-      { header: "Petróleo (bbl/dia)",       width: 18, value: r => r.petroleo_bbl_dia,            format: "#,##0.00", align: "right" },
-      { header: "Óleo (bbl/dia)",           width: 18, value: r => r.oleo_bbl_dia,                format: "#,##0.00", align: "right" },
-      { header: "Condensado (bbl/dia)",     width: 20, value: r => r.condensado_bbl_dia,          format: "#,##0.00", align: "right" },
-      { header: "Gás Total (Mm³/dia)",      width: 20, value: r => r.gas_total_mm3_dia,           format: "#,##0.00", align: "right" },
-      { header: "Gás Assoc. (Mm³/dia)",     width: 22, value: r => r.gas_natural_assoc_mm3_dia,   format: "#,##0.00", align: "right" },
-      { header: "Gás N-Assoc. (Mm³/dia)",   width: 22, value: r => r.gas_natural_n_assoc_mm3_dia, format: "#,##0.00", align: "right" },
-      { header: "Gás Royalties",            width: 18, value: r => r.gas_royalties,               format: "#,##0.00", align: "right" },
-      { header: "Água (bbl/dia)",           width: 16, value: r => r.agua_bbl_dia,                format: "#,##0.00", align: "right" },
-      { header: "Tempo Produção (hs/mês)",  width: 22, value: r => r.tempo_prod_hs_mes,           format: "#,##0.00", align: "right" },
+      { key: "ano",                          header: "Ano",                     width: 8 },
+      { key: "mes",                          header: "Mês",                     width: 6 },
+      { key: "petroleo_bbl_dia",             header: "Petróleo (bbl/dia)",      width: 18, format: "#,##0.00" },
+      { key: "oleo_bbl_dia",                 header: "Óleo (bbl/dia)",          width: 18, format: "#,##0.00" },
+      { key: "condensado_bbl_dia",           header: "Condensado (bbl/dia)",    width: 20, format: "#,##0.00" },
+      { key: "gas_total_mm3_dia",            header: "Gás Total (Mm³/dia)",     width: 20, format: "#,##0.00" },
+      { key: "gas_natural_assoc_mm3_dia",    header: "Gás Assoc. (Mm³/dia)",    width: 22, format: "#,##0.00" },
+      { key: "gas_natural_n_assoc_mm3_dia",  header: "Gás N-Assoc. (Mm³/dia)",  width: 22, format: "#,##0.00" },
+      { key: "gas_royalties",                header: "Gás Royalties",           width: 18, format: "#,##0.00" },
+      { key: "agua_bbl_dia",                 header: "Água (bbl/dia)",          width: 16, format: "#,##0.00" },
+      { key: "tempo_prod_hs_mes",            header: "Tempo Produção (hs/mês)", width: 22, format: "#,##0.00" },
     ],
   });
 }
@@ -1278,14 +1281,13 @@ export async function downloadAnpLpcExcel(rows: AnpLpcSerieRow[]): Promise<void>
     sheetName: "ANP LPC",
     title: "ANP LPC — Levantamento de Preços de Combustíveis",
     filename: "ANP LPC",
-    mergeTitleCells: true,
     columns: [
-      { header: "Data Fim",          width: 12, value: r => r.data_fim,           align: "center" },
-      { header: "Produto",           width: 22, value: r => r.produto },
-      { header: "Estado",            width: 8,  value: r => r.estado,             align: "center" },
-      { header: "Preço Médio Venda", width: 18, value: r => r.preco_medio_venda,  format: "0.000", align: "right" },
-      { header: "Preço Médio Compra",width: 20, value: r => r.preco_medio_compra, format: "0.000", align: "right" },
-      { header: "Nº Postos",         width: 12, value: r => r.n_postos,           format: "#,##0", align: "right" },
+      { key: "data_fim",           header: "Data Fim",           width: 12 },
+      { key: "produto",            header: "Produto",            width: 22, align: "left" },
+      { key: "estado",             header: "Estado",             width: 8 },
+      { key: "preco_medio_venda",  header: "Preço Médio Venda",  width: 18, format: "0.000" },
+      { key: "preco_medio_compra", header: "Preço Médio Compra", width: 20, format: "0.000" },
+      { key: "n_postos",           header: "Nº Postos",          width: 12, format: "#,##0" },
     ],
   });
 }
