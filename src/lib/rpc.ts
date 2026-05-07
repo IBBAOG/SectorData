@@ -2347,7 +2347,7 @@ export async function rpcGetAnalyticsByUser(
   try {
     const { data, error } = await supabase.rpc("get_analytics_by_user", {
       period_days: periodDays,
-      p_search: search && search.trim() ? search.trim() : null,
+      p_search: search && search.trim() ? search.trim() : "",
     });
     if (error) throw error;
     return ((data ?? []) as AnalyticsByUserRow[]).map((r) => ({
