@@ -10,29 +10,19 @@
 // + busy flag. The panel is responsible for the layout, panel chrome, and
 // the floating loading indicator.
 //
-// Two action modes:
-// - `mode: "direct"` (default, backward-compat) — clicking the button runs
-//   the export immediately. This is what existing dashboards use.
-// - `mode: "modal"` — clicking the button opens a parent-managed
-//   `ExportModal` (parent owns the open/close state). The `onClick`
-//   handler is expected to flip that state to `true`.
+// The `onClick` handler decides what happens — either run the export
+// immediately, or flip a parent-managed modal open state. The component
+// itself does not branch on action "mode".
 
 import Image from "next/image";
 import type { ReactNode } from "react";
 
 export type ExportActionKind = "excel" | "csv";
-export type ExportActionMode = "direct" | "modal";
 
 export interface ExportAction {
   kind: ExportActionKind;
   label: ReactNode;
   onClick: () => void | Promise<void>;
-  /**
-   * Behavior of the click handler.
-   * - `"direct"` (default): handler runs the export immediately.
-   * - `"modal"`: handler opens an external `ExportModal`.
-   */
-  mode?: ExportActionMode;
   /** When true, the action button is disabled. */
   disabled?: boolean;
   /** When true, the loading overlay shows with `loadingLabel`. */

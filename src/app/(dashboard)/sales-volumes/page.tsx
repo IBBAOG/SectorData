@@ -751,7 +751,6 @@ export default function SalesVolumesPage() {
                     actions={[
                       {
                         kind: "excel",
-                        mode: "modal",
                         label: "formated data .xl",
                         busy: excelLoading,
                         loadingLabel: "Gerando Excel...",
@@ -760,7 +759,6 @@ export default function SalesVolumesPage() {
                       },
                       {
                         kind: "csv",
-                        mode: "modal",
                         label: "all data .csv",
                         busy: csvLoading,
                         loadingLabel: "Baixando CSV...",
