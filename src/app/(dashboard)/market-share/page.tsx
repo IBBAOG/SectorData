@@ -26,6 +26,7 @@ import {
   type MsSerieRow,
 } from "../../../lib/rpc";
 import { downloadMarketShareExcel } from "../../../lib/exportExcel";
+import { downloadCsv } from "../../../lib/exportCsv";
 
 const _NO_DATA = "No data for the selected filters.";
 const BIG3_MEMBERS = ["Vibra", "Ipiranga", "Raizen"];
@@ -395,31 +396,6 @@ function ComparisonTable({ rows, colors }: { rows: CompRow[]; colors: Record<str
       </tbody>
     </table>
   );
-}
-
-function downloadCsv(rows: Record<string, unknown>[], filename: string) {
-  if (!rows || rows.length === 0) return;
-  const cols = Object.keys(rows[0]);
-  const escapeCell = (v: unknown) => {
-    const s = v === null || v === undefined ? "" : String(v);
-    // Quote always to be safe
-    return `"${s.replaceAll('"', '""')}"`;
-  };
-  const csvLines = [cols.join(",")].concat(
-    rows.map((r) => {
-      const obj = r as Record<string, unknown>;
-      return cols.map((c) => escapeCell(obj[c])).join(",");
-    }),
-  );
-  const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
 }
 
 export default function MarketSharePage() {
@@ -797,7 +773,7 @@ export default function MarketSharePage() {
                           setCsvLoading(true);
                           try {
                             const rows = await fetchAllVendas(supabase);
-                            downloadCsv(rows, "vendas.csv");
+                            downloadCsv({ rows, filename: "vendas" });
                           } catch (e) {
                             console.error("Failed to fetch vendas", e);
                           } finally {
