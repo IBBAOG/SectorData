@@ -24,17 +24,18 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from bases.anp_lpc_ultimas       import AnpLpcUltimas
-from bases.anp_sintese_semanal   import AnpSinteseSemanal
-from bases.anp_ppi               import AnpPpi
-from bases.anp_precos_produtores import AnpPrecosProdutores
-from bases.anp_desembaracos      import AnpDesembaracos
-from bases.anp_dados_abertos_ie  import AnpDadosAbertosIE
-from bases.anp_painel_combustiveis import AnpPainelCombustiveis
-from bases.anp_glp               import AnpGlp
-from bases.mdic_comex            import MdicComex
-from bases.anp_cdp_producao_poco import AnpCdpProducaoPoco
-from bases.sindicom              import Sindicom
+from bases.anp_lpc_ultimas          import AnpLpcUltimas
+from bases.anp_sintese_semanal      import AnpSinteseSemanal
+from bases.anp_ppi                  import AnpPpi
+from bases.anp_precos_produtores    import AnpPrecosProdutores
+from bases.anp_desembaracos         import AnpDesembaracos
+from bases.anp_dados_abertos_ie     import AnpDadosAbertosIE
+from bases.anp_painel_combustiveis  import AnpPainelCombustiveis
+from bases.anp_glp                  import AnpGlp
+from bases.mdic_comex               import MdicComex
+from bases.anp_cdp_producao_poco    import AnpCdpProducaoPoco
+from bases.sindicom                 import Sindicom
+from bases.precos_distribuicao      import PrecosDistribuicao
 
 # Bases que requerem dependências pesadas (Playwright + Chromium).
 # São puladas no run default (a cada 2h) porque o custo é desproporcional e cada
@@ -61,6 +62,7 @@ MONITORES = [
     MdicComex(),
     AnpCdpProducaoPoco(),
     Sindicom(),
+    PrecosDistribuicao(),
 ]
 
 _BY_SLUG = {m.slug: m for m in MONITORES}
