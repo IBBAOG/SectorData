@@ -112,6 +112,7 @@ jobs:
         # preventing silent failures like the 20260402000000_sales_volumes bug
         # where get_sv_* functions were never created but the migration was
         # registered as applied.
-        run: supabase db execute --file supabase/tests/migration_smoke.sql
+        # Note: supabase db execute was removed from CLI; use db query instead.
+        run: supabase db query --file supabase/tests/migration_smoke.sql
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
