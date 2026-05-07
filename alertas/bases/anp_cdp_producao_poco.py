@@ -233,7 +233,11 @@ class AnpCdpProducaoPoco(BaseMonitor):
         ambientes_presentes = sorted(sessions_validas.keys())
         ambientes_ausentes  = sorted(set(["M", "S", "T"]) - set(ambientes_presentes))
         if ambientes_ausentes:
-            print(f"[{self.slug}]   Processando {ambientes_presentes}; ausentes: {ambientes_ausentes} (ANP provavelmente ainda sem dados).")
+            print(f"[{self.slug}]   Processando {ambientes_presentes}; ausentes: {ambientes_ausentes}.")
+            # Dispara ETL pra retentar capturar os ambientes faltantes — talvez ANP publicou
+            # algo desde a última captura. Debounce de 6h evita spam de dispatches.
+            if self._trigger_capture_workflow_with_debounce(self.slug):
+                print(f"[{self.slug}]   ETL re-disparado pra tentar capturar {ambientes_ausentes}.")
 
         # 5. Baixar CSVs apenas dos ambientes com session válida
         try:
