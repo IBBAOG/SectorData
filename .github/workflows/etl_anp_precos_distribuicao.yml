@@ -1,0 +1,27 @@
+name: ANP Precos Distribuicao — Sync
+
+on:
+  schedule:
+    - cron: '0 14 5 * *'    # Monthly — day 5 at 14:00 UTC (ANP publishes by end of following month)
+    - cron: '30 14 * * 2'   # Weekly  — Tuesdays at 14:30 UTC (picks up weekly Brasil XLSX updates)
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Sync ANP Precos Distribuicao → Supabase
+        run: python scripts/pipelines/anp/precos_distribuicao_sync.py
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
