@@ -787,7 +787,6 @@ export default function MarketSharePage() {
                     actions={[
                       {
                         kind: "excel",
-                        mode: "modal",
                         label: "formated data .xl",
                         busy: excelLoading,
                         loadingLabel: "Gerando Excel...",
@@ -796,7 +795,6 @@ export default function MarketSharePage() {
                       },
                       {
                         kind: "csv",
-                        mode: "modal",
                         label: "all data .csv",
                         busy: csvLoading,
                         loadingLabel: "Baixando CSV...",

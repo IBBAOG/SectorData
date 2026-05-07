@@ -327,7 +327,6 @@ export default function MdicComexPage() {
                     actions={[
                       {
                         kind: "excel",
-                        mode: "modal",
                         label: "Excel",
                         busy: excelLoading,
                         loadingLabel: "Gerando Excel...",
@@ -336,7 +335,6 @@ export default function MdicComexPage() {
                       },
                       {
                         kind: "csv",
-                        mode: "modal",
                         label: "CSV",
                         busy: csvLoading,
                         loadingLabel: "Baixando CSV...",

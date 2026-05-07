@@ -342,7 +342,6 @@ export default function AnpLpcPage() {
                     actions={[
                       {
                         kind: "excel",
-                        mode: "modal",
                         label: "Excel",
                         busy: excelLoading,
                         loadingLabel: "Gerando Excel...",
@@ -351,7 +350,6 @@ export default function AnpLpcPage() {
                       },
                       {
                         kind: "csv",
-                        mode: "modal",
                         label: "CSV",
                         busy: csvLoading,
                         loadingLabel: "Baixando CSV...",
