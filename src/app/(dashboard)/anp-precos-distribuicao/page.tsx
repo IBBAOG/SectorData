@@ -35,6 +35,7 @@ const GRAN_OPTIONS = [
   { value: "brasil",    label: "Brasil" },
   { value: "uf",        label: "UF" },
   { value: "municipio", label: "Município" },
+  { value: "regiao",    label: "Região" },
 ] as const;
 type Granularidade = typeof GRAN_OPTIONS[number]["value"];
 
@@ -107,7 +108,7 @@ export default function AnpPrecosDistribuicaoPage() {
 
   const [loading, setLoading]       = useState(true);
   const [filtros, setFiltros]       = useState<AnpPdistFiltros>({
-    produtos: [], granularidades: [], ufs: [], municipios: [],
+    produtos: [], granularidades: [], ufs: [], municipios: [], regioes: [],
     data_min: null, data_max: null,
   });
   const [serieRows, setSerieRows]   = useState<AnpPdistSerieRow[]>([]);
@@ -177,8 +178,9 @@ export default function AnpPrecosDistribuicaoPage() {
     if (selectedGran === "brasil")    return [];
     if (selectedGran === "uf")        return filtros.ufs;
     if (selectedGran === "municipio") return filtros.municipios;
+    if (selectedGran === "regiao")    return filtros.regioes;
     return [];
-  }, [selectedGran, filtros.ufs, filtros.municipios]);
+  }, [selectedGran, filtros.ufs, filtros.municipios, filtros.regioes]);
 
   // ── When granularity changes, reset locais selection ─────────────────────
   useEffect(() => {
@@ -186,8 +188,11 @@ export default function AnpPrecosDistribuicaoPage() {
       setSelectedLocais([]);
       return;
     }
-    // Default: pick first MAX_LOCAIS_CHART entries from the available pool
-    const defaults = availableLocais.slice(0, MAX_LOCAIS_CHART);
+    // For 'regiao' (only 5 options), default to all. For others, cap at MAX_LOCAIS_CHART.
+    const defaults =
+      selectedGran === "regiao"
+        ? availableLocais.slice()
+        : availableLocais.slice(0, MAX_LOCAIS_CHART);
     setSelectedLocais(defaults);
   }, [selectedGran, availableLocais]);
 
@@ -197,10 +202,10 @@ export default function AnpPrecosDistribuicaoPage() {
       if (!supabase || loading || !selectedProduto) return null;
       const yMin = allYears[yearRange[0]];
       const yMax = allYears[yearRange[1]];
-      // For municipio, push selected locais to the server to bound payload.
+      // For municipio and regiao, push selected locais to the server to bound payload.
       // For uf and brasil, pass NULL (server returns all UFs / Brasil).
       const locais =
-        selectedGran === "municipio" && selectedLocais.length > 0
+        (selectedGran === "municipio" || selectedGran === "regiao") && selectedLocais.length > 0
           ? selectedLocais
           : null;
       return rpcGetAnpPdistSerie(supabase, {
@@ -251,11 +256,13 @@ export default function AnpPrecosDistribuicaoPage() {
   const exportAvailableLocais = useMemo<string[]>(() => {
     const wantsUf  = exportGranularidades.includes("uf");
     const wantsMun = exportGranularidades.includes("municipio");
+    const wantsReg = exportGranularidades.includes("regiao");
     const list: string[] = [];
     if (wantsUf)  list.push(...filtros.ufs);
     if (wantsMun) list.push(...filtros.municipios);
+    if (wantsReg) list.push(...filtros.regioes);
     return list;
-  }, [exportGranularidades, filtros.ufs, filtros.municipios]);
+  }, [exportGranularidades, filtros.ufs, filtros.municipios, filtros.regioes]);
 
   if (visLoading || !visible) return null;
 
@@ -329,7 +336,11 @@ export default function AnpPrecosDistribuicaoPage() {
 
               {selectedGran !== "brasil" && (
                 <MultiSelectFilter
-                  label={selectedGran === "uf" ? "UF" : "Município"}
+                  label={
+                    selectedGran === "uf"        ? "UF" :
+                    selectedGran === "municipio" ? "Município" :
+                    "Região"
+                  }
                   items={availableLocais}
                   selected={selectedLocais}
                   onToggle={toggleLocal}
@@ -393,7 +404,12 @@ export default function AnpPrecosDistribuicaoPage() {
                     <ChartSection
                       title={
                         selectedProduto
-                          ? `Preço Médio — ${selectedProduto} (${selectedGran === "brasil" ? "Brasil" : selectedGran === "uf" ? "por UF" : "por Município"})`
+                          ? `Preço Médio — ${selectedProduto} (${
+                              selectedGran === "brasil"    ? "Brasil" :
+                              selectedGran === "uf"        ? "por UF" :
+                              selectedGran === "municipio" ? "por Município" :
+                              "por Região"
+                            })`
                           : "Preço Médio"
                       }
                       loading={serieLoading}
