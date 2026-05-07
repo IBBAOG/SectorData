@@ -324,7 +324,7 @@ export default function ExportModal({
             type="button"
             className="btn btn-sm"
             onClick={() => void onExportCsv()}
-            disabled={busy || !estimate || estimate.rows === 0}
+            disabled={busy || !!error || !estimate || estimate.rows === 0}
             style={{
               fontFamily: "Arial",
               backgroundColor: "#1565C0",
@@ -339,7 +339,7 @@ export default function ExportModal({
             type="button"
             className="btn btn-sm"
             onClick={() => void onExportExcel()}
-            disabled={busy || !estimate || estimate.rows === 0}
+            disabled={busy || !!error || !estimate || estimate.rows === 0}
             style={{
               fontFamily: "Arial",
               backgroundColor: "#217346",
