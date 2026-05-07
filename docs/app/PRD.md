@@ -292,6 +292,7 @@ return (
 - Esquecer `useModuleVisibilityGuard` em módulo novo.
 - Criar dashboard sem registrar em `module_visibility` ou sem foto na home (memória do CEO).
 - Editar componente `src/components/<DashboardEspecifico>` sem ser o `dash-*` dono.
+- **Wrappers de RPC em `src/lib/rpc.ts` NUNCA devem `return 0` (ou `return []`) em erro.** O padrão correto é `throw error` — o cliente captura via `useRpcResult` / `DataErrorBoundary` e exibe mensagem visível ao usuário. Anti-pattern documentado no incidente Export (2026-05-07): wrappers `get*ExportCount` silenciavam erro 42883 (function does not exist) como "0 linhas no modal" por dias. Após fix em `f2537cb2`, todos os wrappers de export count fazem `throw`.
 
 ## Contratos com outros departamentos
 
