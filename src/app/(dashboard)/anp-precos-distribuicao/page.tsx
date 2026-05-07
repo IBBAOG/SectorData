@@ -225,8 +225,11 @@ export default function AnpPrecosDistribuicaoPage() {
   }, [refetched]);
 
   const chart = useMemo(
-    () => buildChart(serieRows, selectedLocais, selectedGran),
-    [serieRows, selectedLocais, selectedGran],
+    () =>
+      serieLoading
+        ? emptyPlot(360, "Loading data...")
+        : buildChart(serieRows, selectedLocais, selectedGran),
+    [serieRows, selectedLocais, selectedGran, serieLoading],
   );
 
   // ── Export modal helpers ─────────────────────────────────────────────────
