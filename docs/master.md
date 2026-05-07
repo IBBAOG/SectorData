@@ -46,7 +46,8 @@ CEO (Eduardo)
      │   ├─ dash-anp-daie                 (/anp-daie — Oil & Gas / Fuel Distribution)
      │   ├─ dash-anp-desembaracos         (/anp-desembaracos — Oil & Gas / Fuel Distribution)
      │   ├─ dash-anp-painel-importacoes   (/anp-painel-importacoes — Oil & Gas / Fuel Distribution)
-     │   └─ dash-anp-precos-distribuicao  (/anp-precos-distribuicao — Fuel Distribution)
+     │   ├─ dash-anp-precos-distribuicao  (/anp-precos-distribuicao — Fuel Distribution)
+     │   └─ dash-admin-analytics          (/admin-analytics — Admin-only, sem module_visibility)
      │
      ├─ Supabase / DB    (schema Postgres, migrations, RLS, RPCs SQL,
      │                    materialized views, supabase_deploy workflow)
@@ -95,6 +96,7 @@ Cada um possui um módulo (ou bundle, no caso de admin). Cada um auto-documenta 
 | [`worker_dash-anp-desembaracos`](../.claude/agents/worker_dash-anp-desembaracos.md) | `/anp-desembaracos` | [`docs/app/anp-desembaracos.md`](app/anp-desembaracos.md) |
 | [`worker_dash-anp-painel-importacoes`](../.claude/agents/worker_dash-anp-painel-importacoes.md) | `/anp-painel-importacoes` | [`docs/app/anp-painel-importacoes.md`](app/anp-painel-importacoes.md) |
 | [`worker_dash-anp-precos-distribuicao`](../.claude/agents/worker_dash-anp-precos-distribuicao.md) | `/anp-precos-distribuicao` | [`docs/app/anp-precos-distribuicao.md`](app/anp-precos-distribuicao.md) |
+| [`worker_dash-admin-analytics`](../.claude/agents/worker_dash-admin-analytics.md) | `/admin-analytics` (Admin-only — sem `module_visibility`; backed por `app_events`) | [`docs/app/admin-analytics.md`](app/admin-analytics.md) |
 
 ## Papéis transversais (não donos de pasta)
 
@@ -118,10 +120,24 @@ São os pontos onde um departamento depende de outro. Mudanças nestes contratos
 
 | Quem consome | Como |
 |---|---|
-| APP | Lê via supabase-js (anon key) chamando RPCs. Wrappers em `src/lib/rpc.ts` (este código é do APP, mas as RPCs em si pertencem ao Supabase) |
+| APP | Lê via supabase-js (anon key) chamando RPCs. Wrappers em `src/lib/rpc.ts` (este código é do APP, mas as RPCs em si pertencem ao Supabase). Também **escreve** `app_events` via RPC `track_event` (fire-and-forget, auth.uid() capturado no SQL). |
 | ETL | Escreve via supabase-py (service key) — popula `vendas`, `navios_diesel`, `news_articles`, `mdic_comex`, `anp_ppi`, `anp_precos_produtores`, `anp_glp`, `anp_daie`, `anp_desembaracos`, `anp_painel_imp_dist`, `anp_lpc`, `sindicom`, `anp_cdp_producao`, `anp_precos_distribuicao`, etc. |
 | Dados Locais | Escreve via supabase-py (service key) — popula `d_g_margins`, `price_bands` |
 | Alertas | Lê via supabase-py — verifica mudanças em fontes monitoradas |
+
+**Tabela de eventos de uso (`app_events`):** criada pela feature Admin Analytics. Ingestão exclusivamente via RPC `track_event(event_type, route, payload)` — o SQL captura `auth.uid()` internamente; INSERT direto do frontend é bloqueado por RLS. SELECT restrito a Admin via RLS. Admins são excluídos dos agregados pelo filtro `role <> 'Admin'` dentro das RPCs read.
+
+| RPC de ingestion | Chamado por |
+|---|---|
+| `track_event(event_type, route, payload)` | `(dashboard)/layout.tsx` (login, page_view) + `ExportPanel` / `ExportModal` (export) |
+
+| RPC Admin read-only | Retorna |
+|---|---|
+| `get_analytics_kpis(period)` | DAU/WAU/MAU, total users, active users, exports, page views, logins |
+| `get_analytics_by_dashboard(period)` | Engajamento agregado por rota |
+| `get_analytics_by_user(period)` | Engajamento por usuário |
+| `get_analytics_user_timeline(user_id, period)` | Timeline de eventos de um usuário específico |
+| `get_analytics_heatmap(period)` | Matriz dia-da-semana × hora |
 
 **Regra de divisão:** SQL = `worker_supabase`. JS chamando SQL = `worker_subgerente-app` / `dash-*`.
 
@@ -182,7 +198,7 @@ Todos os dashboards com dataset tabular exportam Excel + CSV. Dois tiers conform
 
 **Dashboards Tier 1:** `/diesel-gasoline-margins`, `/price-bands`, `/navios-diesel`, `/anp-glp`, `/anp-daie`, `/anp-desembaracos`, `/anp-precos-produtores`, `/sindicom`, `/anp-ppi`, `/anp-painel-importacoes`.
 
-**Skip (sem dataset tabular):** `/home`, `/profile`, `/admin-panel`, `/stocks`, `/news-hunter`.
+**Skip (sem dataset tabular):** `/home`, `/profile`, `/admin-panel`, `/admin-analytics`, `/stocks`, `/news-hunter`.
 
 **Como o tamanho é estimado (Tier 2):** RPC `get_*_export_count(filtros)` retorna `bigint` (count filtrado) → multiplicado pelo `AVG_BYTES_PER_ROW[datasetKey]` em [`exportSizeHeuristics.ts`](../src/lib/exportSizeHeuristics.ts) → `formatBytes(b)` formata para display. O debounce de 300ms está em [`useExportSize.ts`](../src/hooks/useExportSize.ts).
 
@@ -366,7 +382,7 @@ Workflow controlado pelo **Subgerente APP** (não pelo Gerente Geral). Ver detal
 ## Estado atual (snapshot)
 
 - 4 departamentos + 3 papéis transversais.
-- 19 dashboards ativos (8 originais + 11 adicionados na Fase 3).
+- 20 dashboards ativos (8 originais + 11 adicionados na Fase 3 + 1 Admin Analytics).
 - Documentação inicial criada em **2026-05-05**.
 
 ### Limpeza inicial (2026-05-05)

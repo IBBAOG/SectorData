@@ -566,7 +566,41 @@ BEGIN
     WHERE n.nspname = 'public' AND p.proname = 'get_anp_precos_distribuicao_export_count';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_precos_distribuicao_export_count'; END IF;
 
+  -- ─── APP EVENTS (20260507000011) ─────────────────────────────────────────
+
+  PERFORM 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'app_events';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing table: app_events'; END IF;
+
+  PERFORM 1 FROM pg_tables
+    WHERE schemaname = 'public' AND tablename = 'app_events' AND rowsecurity = TRUE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: app_events'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'track_event';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: track_event'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_analytics_kpis';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_analytics_kpis'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_analytics_by_dashboard';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_analytics_by_dashboard'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_analytics_by_user';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_analytics_by_user'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_analytics_user_timeline';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_analytics_user_timeline'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_analytics_heatmap';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_analytics_heatmap'; END IF;
+
   RAISE NOTICE 'migration_smoke: all % checks passed.',
-    '26 tables + 3 materialized views + 67 functions + 19 RLS checks';
+    '27 tables + 3 materialized views + 73 functions + 20 RLS checks';
 
 END $smoke$;

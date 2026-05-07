@@ -55,6 +55,28 @@ supabase/
 | `stock_portfolios` | dash-stocks | App (CRUD direto via PostgREST) |
 | `news_articles`, `news_hunter_keywords` | dash-news-hunter | scanner externo + user via UI |
 | `profiles`, `module_visibility` | dash-admin | App (RPC) |
+| `app_events` | dash-admin (`/admin-analytics`) | RPC `track_event()` (SECURITY DEFINER) |
+
+### App Analytics (adicionada 2026-05-07)
+
+Migration: `20260507000011_add_app_events.sql`.
+
+RLS: INSERT bloqueado diretamente (sem policy de INSERT — escritas apenas via `track_event()` SECURITY DEFINER). SELECT restrito a `profiles.role = 'Admin'` via policy `"app_events admin read"` com `(select auth.uid())` (Hardening A).
+
+Índices: `idx_app_events_user_created (user_id, created_at DESC)`, `idx_app_events_type_created (event_type, created_at DESC)`, `idx_app_events_route_created (route, created_at DESC) WHERE route IS NOT NULL`.
+
+RPCs (todas `SECURITY DEFINER`, `SET search_path = public, auth`; analytics RPCs guardam caller Admin via RAISE EXCEPTION e excluem Admins dos agregados):
+
+| Função | Assinatura | Notas |
+|---|---|---|
+| `track_event` | `(p_event_type text, p_route text DEFAULT NULL, p_payload jsonb DEFAULT '{}') RETURNS void` | Qualquer autenticado; no-op silencioso se `auth.uid()` IS NULL; valida event_type |
+| `get_analytics_kpis` | `(period_days int DEFAULT 30) RETURNS jsonb` | Retorna `{dau, wau, mau, total_users, active_users_period, exports_period, page_views_period, logins_period}` |
+| `get_analytics_by_dashboard` | `(period_days int DEFAULT 30) RETURNS TABLE(route text, page_views bigint, unique_users bigint, exports bigint, bytes_total bigint)` | `bytes_total` = soma de `payload->>'bytes'` em eventos export |
+| `get_analytics_by_user` | `(period_days int DEFAULT 30, p_search text DEFAULT '') RETURNS TABLE(user_id uuid, full_name text, role text, last_login timestamptz, page_views bigint, exports bigint, top_routes jsonb)` | `last_login` = MAX created_at WHERE event_type='login' (NULL se nunca rastreado, SEM fallback para `auth.users.last_sign_in_at`); `top_routes` = array JSON de ate 3 `{route, views}`; ILIKE em full_name se p_search nao-vazio; ordenado DESC por page_views |
+| `get_analytics_user_timeline` | `(target_user_id uuid, period_days int DEFAULT 30) RETURNS TABLE(event_type text, route text, payload jsonb, created_at timestamptz)` | Drill-down de 1 usuario; LIMIT 500; ORDER BY created_at DESC |
+| `get_analytics_heatmap` | `(period_days int DEFAULT 30) RETURNS TABLE(dow int, hour int, event_count bigint)` | Apenas page_view; DOW 0=domingo (EXTRACT(DOW)); timezone America/Sao_Paulo |
+
+Sem entrada em `module_visibility` — `/admin-analytics` protegido por `useRoleGuard`. Sem retencao automatica (LGPD pendente — nao criar pg_cron sem aprovacao do CTO).
 
 ### Sessions / Auth state
 
