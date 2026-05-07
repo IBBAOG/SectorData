@@ -121,3 +121,16 @@ Mesmas 3 entradas em `NCM_INFO` no `page.tsx` e em `_NCMS` no scraper:
 - Bloquear página inteira com barrel em `serieLoading` ou `topLoading` — barrel é só pro `loading` inicial; subsequentes usam indicador inline + opacity 0.5.
 - Adicionar NCM novo apenas no `NCM_INFO` sem coordenar com ETL para incluir em `_NCMS` — vai ficar sem dados.
 - Mexer em `scripts/pipelines/mdic_comex_sync.py` — pertence ao ETL.
+
+## Export
+
+Tier 2 — `<ExportPanel mode="modal">` abre `<ExportModal>` com filtros + calculadora live de tamanho (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
+
+- RPC count: `get_mdic_comex_export_count` (`p_ano_inicio`, `p_ano_fim`, `p_flow`, `p_ncms`) → `bigint`, em `supabase/migrations/20260507000003_export_count_rpcs.sql`.
+- JS wrapper: `getMdicComexExportCount` em [`src/lib/rpc.ts`](../../src/lib/rpc.ts).
+- datasetKey heuristic: `mdic_comex` (ver [`src/lib/exportSizeHeuristics.ts`](../../src/lib/exportSizeHeuristics.ts) → `AVG_BYTES_PER_ROW.mdic_comex`).
+- Filtros expostos no modal: período (slider de anos), flow (IMP/EXP), NCMs (3 fixos: Petróleo Cru, Gasolina, Diesel).
+- Excel handler: `downloadMdicComexExcel` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
+- CSV handler: paginated fetch direto em `mdic_comex` (PostgREST com filtros equivalentes) + `downloadCsv` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
+- Filename pattern: `MdicComex_DD-MM-YY.<xlsx|csv>`.
+- Warning visual quando estimativa > 200 000 linhas.

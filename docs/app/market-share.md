@@ -53,3 +53,17 @@ Idênticas ao sales-volumes (ETL/`vendas_watch` → `vendas` → MV).
 - Calcular % no cliente quando o backend já retorna agregado.
 - Misturar metáfora "absoluto" com "share" no mesmo gráfico.
 - Mudar `get_ms_*` sem coordenar.
+
+## Export
+
+Tier 2 — `<ExportPanel mode="modal">` abre `<ExportModal>` com filtros + calculadora live de tamanho (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
+
+- RPC count: `get_ms_export_count` (`p_data_inicio`, `p_data_fim`, `p_regioes`, `p_ufs`, `p_mercados`) → `bigint`, em `supabase/migrations/20260507000003_export_count_rpcs.sql`.
+- JS wrapper: `getMsExportCount` em [`src/lib/rpc.ts`](../../src/lib/rpc.ts).
+- datasetKey heuristic: `vendas` (ver [`src/lib/exportSizeHeuristics.ts`](../../src/lib/exportSizeHeuristics.ts) → `AVG_BYTES_PER_ROW.vendas`).
+- Filtros expostos no modal: período (slider de meses), regiões, UFs, mercados/segmentos.
+- Excel handler: `downloadMarketShareExcel` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
+- CSV handler: paginated fetch via `fetchVendasFiltered` (helper em `src/lib/rpc.ts`) + `downloadCsv` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
+- Filename pattern: `MarketShare_DD-MM-YY.<xlsx|csv>`.
+- Warning visual quando estimativa > 200 000 linhas.
+- Compartilha o `get_ms_export_count` com `/sales-volumes` — qualquer mudança de assinatura exige coordenação com `worker_dash-sales-volumes`.

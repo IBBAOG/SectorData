@@ -67,3 +67,12 @@ Workflow GitHub Action: `.github/workflows/manual_dg_margins.yml` roda semanalme
 - Tentar editar `data/d_g_margins.xlsx` direto — é manual do CEO.
 - Inferir colunas a partir do Excel — sempre cruze com o schema da tabela.
 - Mostrar `fuel_type` em inglês na UI — traduza pra "Diesel" / "Gasolina".
+
+## Export
+
+Tier 1 — download direto via `<ExportPanel>` (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
+
+- Excel: `downloadDgMarginsExcel` (handler dedicado pré-existente em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts)) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
+- CSV: `downloadCsv<T>` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) — adicionado nesta rodada (RFC4180, UTF-8).
+- Filename pattern: `DieselGasolineMargins_DD-MM-YY.<xlsx|csv>`.
+- Dados exportados: linhas atualmente em estado da página (saída de `get_dg_margins_data` aplicada com filtros de fuel_type e período de semanas).

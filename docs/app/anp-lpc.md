@@ -106,6 +106,19 @@ Comportamento do scraper:
 - Trocar slider de anos por slider de semanas sem coordenar com Designer — quebra consistência cross-dashboard.
 - Mexer em `scripts/pipelines/anp/lpc_sync.py` — pertence ao ETL. **Em particular: não regredir o engine `calamine` para `openpyxl`** (bug conhecido com `ExternalReference`).
 
+## Export
+
+Tier 2 — `<ExportPanel mode="modal">` abre `<ExportModal>` com filtros + calculadora live de tamanho (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
+
+- RPC count: `get_anp_lpc_export_count` (`p_data_inicio`, `p_data_fim`, `p_produtos`, `p_estados`) → `bigint`, em `supabase/migrations/20260507000003_export_count_rpcs.sql`.
+- JS wrapper: `getAnpLpcExportCount` em [`src/lib/rpc.ts`](../../src/lib/rpc.ts).
+- datasetKey heuristic: `anp_lpc` (ver [`src/lib/exportSizeHeuristics.ts`](../../src/lib/exportSizeHeuristics.ts) → `AVG_BYTES_PER_ROW.anp_lpc`).
+- Filtros expostos no modal: período (slider de anos, convertido para `${y}-01-01` / `${y}-12-31` antes do envio), produtos, estados.
+- Excel handler: `downloadAnpLpcExcel` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
+- CSV handler: paginated fetch direto em `anp_lpc` (PostgREST 1.000 linhas/página) + `downloadCsv` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
+- Filename pattern: `AnpLpc_DD-MM-YY.<xlsx|csv>`.
+- Warning visual quando estimativa > 200 000 linhas.
+
 ## Padrão arquitetural: período em DATE vs YEAR
 
 Este é o **primeiro dashboard com tabela cuja chave temporal é DATE (semanal)**, não (ano, mes) como os demais. A solução adotada — **slider de anos no UI, conversão para `${y}-01-01` / `${y}-12-31` ao chamar RPC** — preserva consistência visual com os outros dashboards e evita reaprender UX. Esta abordagem deve ser referência para futuros dashboards com período em DATE (`/sindicom`, `/anp-fase3-daie`, `/anp-fase3-desembaracos`, `/anp-fase3-painel-imp` quando vierem).
