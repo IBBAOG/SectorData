@@ -1880,6 +1880,190 @@ export async function fetchAnpCdpRawFiltered(
   return allRows;
 }
 
+// ─── Tier 2 aggregated exports — /anp-cdp + /mdic-comex ─────────────────────
+//
+// Both `get_anp_cdp_aggregated` and `get_mdic_comex_aggregated` are dynamic
+// SQL aggregators created in a parallel migration by worker_supabase. The
+// caller passes the same filter shape used for the export count + a
+// `p_group_by text[]` whose values must be a strict subset of the union of
+// dimension columns of the underlying table.
+//
+// The RPC returns one row per distinct combination of the requested
+// dimensions, with NULLs in all other dimension columns and SUM/AVG of the
+// metric columns. Filename + Excel column-set on the client must mirror the
+// requested groupBy 1:1 — use the dedicated `downloadAnp*AggregatedExcel`
+// helpers in exportExcel.ts which honour this contract.
+
+// ── ANP CDP aggregated ───────────────────────────────────────────────────────
+
+/** Same 10 filter params as `get_anp_cdp_export_count` / raw export. */
+export type AnpCdpAggregatedFilters = AnpCdpExportCountFilters;
+
+export type AnpCdpGroupBy =
+  | "ano"
+  | "mes"
+  | "campo"
+  | "bacia"
+  | "operador"
+  | "estado"
+  | "local"
+  | "instalacao_destino"
+  | "tipo_instalacao";
+
+export type AnpCdpAggregatedRow = {
+  ano: number | null;
+  mes: number | null;
+  campo: string | null;
+  bacia: string | null;
+  operador: string | null;
+  estado: string | null;
+  local: string | null;
+  instalacao_destino: string | null;
+  tipo_instalacao: string | null;
+  petroleo_bbl_dia: number;
+  oleo_bbl_dia: number;
+  condensado_bbl_dia: number;
+  gas_total_mm3_dia: number;
+  gas_natural_assoc_mm3_dia: number;
+  gas_natural_n_assoc_mm3_dia: number;
+  gas_royalties: number;
+  agua_bbl_dia: number;
+  tempo_prod_hs_mes: number;
+};
+
+export async function rpcGetAnpCdpAggregated(
+  supabase: SupabaseClient,
+  filters: AnpCdpAggregatedFilters,
+  groupBy: AnpCdpGroupBy[],
+): Promise<AnpCdpAggregatedRow[]> {
+  const { data, error } = await supabase.rpc("get_anp_cdp_aggregated", {
+    p_pocos:            toListOrNull(filters.pocos),
+    p_campos:           toListOrNull(filters.campos),
+    p_bacoes:           toListOrNull(filters.bacoes),
+    p_locais:           toListOrNull(filters.locais),
+    p_estados:          toListOrNull(filters.estados),
+    p_operadores:       toListOrNull(filters.operadores),
+    p_instalacoes:      toListOrNull(filters.instalacoes),
+    p_tipos_instalacao: toListOrNull(filters.tiposInstalacao),
+    p_ano_inicio:       filters.anoInicio ?? null,
+    p_ano_fim:          filters.anoFim    ?? null,
+    p_group_by:         groupBy as unknown as string[],
+  });
+  if (error) {
+    console.error("get_anp_cdp_aggregated failed", error);
+    throw error;
+  }
+  return (data ?? []) as AnpCdpAggregatedRow[];
+}
+
+// ── MDIC Comex aggregated ────────────────────────────────────────────────────
+//
+// NOTE: the underlying `mdic_comex` table (migration 20260504000012) has
+// columns: ano, mes, flow, ncm_codigo, ncm_nome, pais, volume_kg,
+// valor_fob_usd. There is **no `uf` column** in the table, so the contract's
+// `ufs` filter and `"uf"` group-by are intentionally omitted here.
+
+export type MdicComexAggregatedFilters = MdicComexExportCountFilters & {
+  paises?: string[] | null;
+};
+
+export type MdicComexGroupBy =
+  | "ano"
+  | "mes"
+  | "flow"
+  | "ncm_codigo"
+  | "ncm_nome"
+  | "pais";
+
+export type MdicComexAggregatedRow = {
+  ano: number | null;
+  mes: number | null;
+  flow: string | null;
+  ncm_codigo: string | null;
+  ncm_nome: string | null;
+  pais: string | null;
+  volume_kg: number;
+  valor_fob_usd: number;
+};
+
+export async function rpcGetMdicComexAggregated(
+  supabase: SupabaseClient,
+  filters: MdicComexAggregatedFilters,
+  groupBy: MdicComexGroupBy[],
+): Promise<MdicComexAggregatedRow[]> {
+  const { data, error } = await supabase.rpc("get_mdic_comex_aggregated", {
+    p_flow:       filters.flow      ?? null,
+    p_ncms:       toListOrNull(filters.ncms),
+    p_paises:     toListOrNull(filters.paises),
+    p_ano_inicio: filters.anoInicio ?? null,
+    p_ano_fim:    filters.anoFim    ?? null,
+    p_group_by:   groupBy as unknown as string[],
+  });
+  if (error) {
+    console.error("get_mdic_comex_aggregated failed", error);
+    throw error;
+  }
+  return (data ?? []) as MdicComexAggregatedRow[];
+}
+
+// ── MDIC Comex raw rows (PostgREST) ──────────────────────────────────────────
+//
+// Default export path for /mdic-comex granularity = "raw". Mirrors columns of
+// `mdic_comex` 1:1 (do not invent fields). Same filter shape as
+// `get_mdic_comex_export_count` plus `paises` (since the table has it).
+
+export type MdicComexRawRow = {
+  ano: number;
+  mes: number;
+  flow: string;
+  ncm_codigo: string;
+  ncm_nome: string | null;
+  pais: string;
+  volume_kg: number | null;
+  valor_fob_usd: number | null;
+};
+
+export async function fetchMdicComexRawFiltered(
+  supabase: SupabaseClient,
+  filters: MdicComexAggregatedFilters,
+): Promise<MdicComexRawRow[]> {
+  const PAGE = 1000;
+  let offset = 0;
+  const allRows: MdicComexRawRow[] = [];
+
+  const ncms   = toListOrNull(filters.ncms);
+  const paises = toListOrNull(filters.paises);
+
+  while (true) {
+    let q = supabase
+      .from("mdic_comex")
+      .select("ano,mes,flow,ncm_codigo,ncm_nome,pais,volume_kg,valor_fob_usd");
+
+    if (filters.flow)            q = q.eq("flow", filters.flow);
+    if (ncms)                    q = q.in("ncm_codigo", ncms);
+    if (paises)                  q = q.in("pais", paises);
+    if (filters.anoInicio != null) q = q.gte("ano", filters.anoInicio);
+    if (filters.anoFim    != null) q = q.lte("ano", filters.anoFim);
+
+    const { data, error } = await q
+      .order("ano",        { ascending: true })
+      .order("mes",        { ascending: true })
+      .order("flow",       { ascending: true })
+      .order("ncm_codigo", { ascending: true })
+      .order("pais",       { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+
+    const rows = (data ?? []) as MdicComexRawRow[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
+  }
+
+  return allRows;
+}
+
 export type AnpLpcExportCountFilters = {
   produtos?: string[] | null;
   estados?: string[] | null;
