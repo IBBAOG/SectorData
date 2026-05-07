@@ -263,19 +263,21 @@ def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
 
     def _txt(key: str):
         col = col_map.get(key)
-        return df[col].str.strip() if col else None
+        # astype(str) evita AttributeError quando pandas auto-detecta tipo numérico
+        # (ex: num_contrato = '48610007063201791' vira int64 sem o astype)
+        return df[col].astype(str).str.strip() if col else None
 
     out = pd.DataFrame({
-        "bacia":                       df[col_map["bacia"]].str.strip(),
-        "poco":                        df[col_map["poco"]].str.strip(),
-        "campo":                       df[col_map["campo"]].str.strip(),
+        "bacia":                       df[col_map["bacia"]].astype(str).str.strip(),
+        "poco":                        df[col_map["poco"]].astype(str).str.strip(),
+        "campo":                       df[col_map["campo"]].astype(str).str.strip(),
         "estado":                      _txt("estado"),
         "operador":                    _txt("operador"),
         "nome_poco_operador":          None,
         "num_contrato":                _txt("num_contrato"),
         "instalacao_destino":          _txt("instalacao_destino"),
         "tipo_instalacao":             _txt("tipo_instalacao"),
-        "periodo":                     df[col_map["periodo"]].str.strip(),
+        "periodo":                     df[col_map["periodo"]].astype(str).str.strip(),
         "petroleo_bbl_dia":            _num("petroleo"),
         "oleo_bbl_dia":                _num("oleo"),
         "condensado_bbl_dia":          _num("condensado"),
