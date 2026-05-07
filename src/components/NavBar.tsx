@@ -12,11 +12,25 @@ import { getInitials } from "../lib/avatarUtils";
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
 interface NavItem { label: string; href: string }
-interface NavModule { label: string; items: NavItem[]; disabled?: boolean }
+interface NavGroup { heading: string; items: NavItem[] }
+interface NavModule {
+  label: string;
+  items: NavItem[];
+  groups?: NavGroup[];
+  disabled?: boolean;
+}
 type NavEntry = NavItem | NavModule;
 
 function isModule(entry: NavEntry): entry is NavModule {
   return "items" in entry;
+}
+
+/** Flatten optional groups into a single items list (for visibility filtering, mobile fallback). */
+function flattenModuleItems(mod: NavModule): NavItem[] {
+  if (mod.groups && mod.groups.length > 0) {
+    return mod.groups.flatMap((g) => g.items);
+  }
+  return mod.items;
 }
 
 /* ── Navigation entries ────────────────────────────────────────────────────── */
@@ -31,21 +45,42 @@ const NAV_ENTRIES: NavEntry[] = [
   },
   {
     label: "Fuel Distribution",
-    items: [
-      { href: "/sales-volumes", label: "Sales Volumes" },
-      { href: "/market-share", label: "Market Share" },
-      { href: "/navios-diesel", label: "Diesel Imports Line-Up" },
-      { href: "/diesel-gasoline-margins", label: "Diesel and Gasoline Margins" },
-      { href: "/price-bands", label: "Price Bands" },
-      { href: "/mdic-comex", label: "MDIC Comex" },
-      { href: "/anp-ppi", label: "ANP PPI" },
-      { href: "/anp-precos-produtores", label: "ANP Preços Produtores" },
-      { href: "/anp-glp", label: "ANP GLP" },
-      { href: "/anp-daie", label: "ANP Dados Abertos IE" },
-      { href: "/anp-desembaracos", label: "ANP Desembaraços" },
-      { href: "/anp-painel-importacoes", label: "ANP Painel Importações" },
-      { href: "/anp-lpc", label: "ANP LPC Preços" },
-      { href: "/sindicom", label: "SINDICOM" },
+    items: [], // populated via groups (mega-menu)
+    groups: [
+      {
+        heading: "ANP data",
+        items: [
+          { href: "/sales-volumes", label: "Sales Volumes — ANP" },
+          { href: "/anp-ppi", label: "PPI" },
+          { href: "/anp-precos-produtores", label: "Preços Produtores" },
+          { href: "/anp-glp", label: "GLP" },
+          { href: "/anp-daie", label: "Importações e Exportações" },
+          { href: "/anp-desembaracos", label: "Desembaraços" },
+          { href: "/anp-painel-importacoes", label: "Painel Importações" },
+          { href: "/anp-lpc", label: "LPC Preços" },
+        ],
+      },
+      {
+        heading: "Sindicom data",
+        items: [
+          { href: "/sindicom", label: "Sales Volumes — Sindicom" },
+        ],
+      },
+      {
+        heading: "Comex data",
+        items: [
+          { href: "/mdic-comex", label: "MDIC Comex" },
+        ],
+      },
+      {
+        heading: "Proprietary data",
+        items: [
+          { href: "/market-share", label: "Market Share" },
+          { href: "/navios-diesel", label: "Diesel Imports Line-Up" },
+          { href: "/diesel-gasoline-margins", label: "Diesel and Gasoline Margins" },
+          { href: "/price-bands", label: "Price Bands" },
+        ],
+      },
     ],
   },
   { label: "Market Watch", href: "/stocks" },
@@ -158,19 +193,29 @@ export default function NavBar() {
             /* ── Module (dropdown or disabled placeholder) ── */
             const mod = entry;
 
-            // Filter items by visibility for Client users.
-            // Admins always see everything; while profile is loading show all.
-            const visibleItems = mod.items.filter((item) => {
+            // Visibility filter helper — applied to flat items and to each group's items
+            const isVisibleItem = (item: NavItem) => {
               if (profileLoading || profile?.role === "Admin") return true;
               const rawSlug = item.href.replace(/^\//, "");
               const slug = SLUG_MAP[rawSlug] ?? rawSlug;
               return moduleVisibility[slug] ?? true;
-            });
+            };
+
+            // Mega-menu path: filter inside each group, hide empty groups
+            const visibleGroups: NavGroup[] | undefined = mod.groups
+              ?.map((g) => ({ ...g, items: g.items.filter(isVisibleItem) }))
+              .filter((g) => g.items.length > 0);
+
+            // Flat list (used by simple dropdown OR by mobile fallback for mega-menu)
+            const visibleItems = flattenModuleItems(mod).filter(isVisibleItem);
 
             // Hide the entire dropdown trigger if no items are visible
-            if (!mod.disabled && mod.items.length > 0 && visibleItems.length === 0) {
+            const totalRawItems = flattenModuleItems(mod).length;
+            if (!mod.disabled && totalRawItems > 0 && visibleItems.length === 0) {
               return null;
             }
+
+            const isMega = !!mod.groups && mod.groups.length > 0;
 
             return (
               <div
@@ -186,18 +231,38 @@ export default function NavBar() {
                 </span>
 
                 {openModule === mod.label && visibleItems.length > 0 && (
-                  <div className="nav-module-dropdown">
-                    {visibleItems.map((item) => (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        className="nav-module-item"
-                        onClick={() => setOpenModule(null)}
-                      >
-                        {item.label}
-                      </Link>
-                    ))}
-                  </div>
+                  isMega && visibleGroups && visibleGroups.length > 0 ? (
+                    <div className="nav-module-dropdown nav-megamenu">
+                      {visibleGroups.map((group) => (
+                        <div key={group.heading} className="nav-megamenu-col">
+                          <div className="nav-megamenu-heading">{group.heading}</div>
+                          {group.items.map((item) => (
+                            <Link
+                              key={item.href}
+                              href={item.href}
+                              className="nav-module-item"
+                              onClick={() => setOpenModule(null)}
+                            >
+                              {item.label}
+                            </Link>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="nav-module-dropdown">
+                      {visibleItems.map((item) => (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          className="nav-module-item"
+                          onClick={() => setOpenModule(null)}
+                        >
+                          {item.label}
+                        </Link>
+                      ))}
+                    </div>
+                  )
                 )}
               </div>
             );

@@ -461,6 +461,49 @@ body {
   border-left-color: #ff5000;
 }
 
+/* ── Mega-menu (multi-column dropdown, Apple-style) ──────────────────────── */
+#main-navbar .nav-megamenu {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  min-width: 760px;
+  padding: 18px 6px;
+  /* Center the panel relative to the trigger so it doesn't clip on the right */
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+#main-navbar .nav-megamenu-col {
+  flex: 1 1 0;
+  min-width: 170px;
+  padding: 0 18px;
+  border-right: 1px solid rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+}
+
+#main-navbar .nav-megamenu-col:last-child {
+  border-right: none;
+}
+
+#main-navbar .nav-megamenu-heading {
+  font-family: Arial, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 4px 12px 8px;
+  margin-bottom: 2px;
+}
+
+/* In the mega-menu, items use slightly tighter horizontal padding so the
+   columns feel balanced. Vertical rhythm and hover state remain identical. */
+#main-navbar .nav-megamenu .nav-module-item {
+  padding: 7px 12px;
+  line-height: 1.35;
+}
+
 @media (max-width: 991.98px) {
   #main-navbar .nav-module-dropdown {
     position: static;
@@ -477,6 +520,27 @@ body {
     font-size: 13px;
     padding: 4px 12px;
     border-left: none;
+  }
+  /* Mobile: collapse mega-menu into a vertical list. Headings act as section dividers. */
+  #main-navbar .nav-megamenu {
+    flex-direction: column;
+    min-width: 0;
+    padding: 4px 0;
+    /* Reset the desktop centering trick */
+    left: 0;
+    transform: none;
+  }
+  #main-navbar .nav-megamenu-col {
+    border-right: none;
+    padding: 4px 0;
+    min-width: 0;
+  }
+  #main-navbar .nav-megamenu-heading {
+    color: rgba(255, 255, 255, 0.55);
+    padding: 8px 12px 4px;
+  }
+  #main-navbar .nav-megamenu .nav-module-item {
+    padding: 4px 12px;
   }
 }
 
