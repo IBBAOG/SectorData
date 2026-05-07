@@ -21,7 +21,7 @@ import {
   rpcGetMsOpcoesFiltros,
   rpcGetMsSerieFast,
   rpcGetMsSerieOthers,
-  fetchAllVendas,
+  fetchVendasFiltered,
   rpcGetOthersPlayers,
   getMsExportCount,
   type MarketShareFilters,
@@ -639,10 +639,12 @@ export default function MarketSharePage() {
   }
 
   // Hydrate modal filters from currently-applied page filters when opened.
+  // Mercados is exposed only in the modal (page sidebar has no mercados
+  // filter), so we start it empty = "Todos".
   function openExportModal() {
     setExportRegioes(regioesSelected ?? []);
     setExportUfs(ufsSelected ?? []);
-    setExportMercados([]); // page does not currently expose mercados — start empty
+    setExportMercados([]);
     setExportRange(sliderRange);
     setExportOpen(true);
   }
@@ -1076,7 +1078,9 @@ export default function MarketSharePage() {
           if (!supabase) return;
           setCsvLoading(true);
           try {
-            const rows = await fetchAllVendas(supabase);
+            // Respect modal filters — same predicate as getMsExportCount so
+            // the size estimate shown in the modal matches the actual rows.
+            const rows = await fetchVendasFiltered(supabase, exportFilters);
             downloadCsv({ rows, filename: "market_share_vendas" });
             setExportOpen(false);
           } catch (e) {
