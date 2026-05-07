@@ -1716,7 +1716,7 @@ export async function getMsExportCount(
   });
   if (error) {
     console.error("get_ms_export_count failed", error);
-    return 0;
+    throw error;
   }
   return Number(data ?? 0);
 }
@@ -1740,7 +1740,7 @@ export async function getMdicComexExportCount(
   });
   if (error) {
     console.error("get_mdic_comex_export_count failed", error);
-    return 0;
+    throw error;
   }
   return Number(data ?? 0);
 }
@@ -1776,7 +1776,7 @@ export async function getAnpCdpExportCount(
   });
   if (error) {
     console.error("get_anp_cdp_export_count failed", error);
-    return 0;
+    throw error;
   }
   return Number(data ?? 0);
 }
@@ -1800,7 +1800,7 @@ export async function getAnpLpcExportCount(
   });
   if (error) {
     console.error("get_anp_lpc_export_count failed", error);
-    return 0;
+    throw error;
   }
   return Number(data ?? 0);
 }

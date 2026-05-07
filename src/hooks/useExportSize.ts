@@ -54,7 +54,16 @@ export function useExportSize<F>(
         setEstimate(estimateSize(count, datasetKey));
       } catch (e) {
         if (myId !== fetchIdRef.current) return;
-        const msg = e instanceof Error ? e.message : "Erro ao estimar tamanho";
+        // Supabase RPC errors are plain `PostgrestError` objects (not Error
+        // instances) but expose a `.message` field. Extract whatever message
+        // we can find, otherwise fall back to a generic label.
+        let msg = "Erro ao estimar tamanho";
+        if (e instanceof Error) {
+          msg = e.message;
+        } else if (e && typeof e === "object" && "message" in e) {
+          const m = (e as { message?: unknown }).message;
+          if (typeof m === "string" && m.length > 0) msg = m;
+        }
         setError(msg);
       } finally {
         if (myId === fetchIdRef.current) setLoading(false);
