@@ -72,6 +72,7 @@ Lista completa dos slugs atualmente registrados na tabela `module_visibility` (t
 | `mdic-comex` | Estatísticas / Fuel Distribution | MDIC Comex |
 | `anp-ppi` | Estatísticas / Fuel Distribution | ANP PPI |
 | `anp-precos-produtores` | Estatísticas / Fuel Distribution | ANP Preços Produtores |
+| `anp-precos-distribuicao` | Estatísticas / Fuel Distribution | ANP Preços Distribuição |
 | `anp-glp` | Estatísticas / Fuel Distribution | ANP GLP |
 | `anp-daie` | Estatísticas / Fuel Distribution | ANP Dados Abertos IE |
 | `anp-desembaracos` | Estatísticas / Fuel Distribution | ANP Desembaraços |

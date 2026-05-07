@@ -75,6 +75,7 @@ const MODULE_LABELS: { slug: string; label: string; description: string }[] = [
   { slug: "mdic-comex",              label: "MDIC Comex",                   description: "Brazilian trade balance and import/export volumes by product and origin" },
   { slug: "anp-ppi",                 label: "ANP PPI",                      description: "ANP import price parity reference benchmarks for fuel pricing" },
   { slug: "anp-precos-produtores",   label: "ANP Preços Produtores",        description: "Producer prices for fuels tracked by ANP" },
+  { slug: "anp-precos-distribuicao", label: "ANP Preços Distribuição",      description: "Distribution prices for fuels tracked by ANP" },
   { slug: "anp-glp",                 label: "ANP GLP",                      description: "LPG production and distribution data from ANP" },
   { slug: "anp-daie",                label: "ANP Dados Abertos IE",         description: "Open import/export energy data from ANP's DAIE dataset" },
   { slug: "anp-desembaracos",        label: "ANP Desembaraços",             description: "Fuel customs clearance volumes from ANP" },

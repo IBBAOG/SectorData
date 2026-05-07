@@ -121,6 +121,15 @@ const CARDS: CardDef[] = [
     disabled: false,
   },
   {
+    slug: "anp-precos-distribuicao",
+    preview: null,
+    title: "ANP Preços Distribuição",
+    description: "Distribution prices for fuels tracked by ANP",
+    badge: "Available",
+    href: "/anp-precos-distribuicao",
+    disabled: false,
+  },
+  {
     slug: "anp-glp",
     preview: null,
     title: "ANP GLP",
