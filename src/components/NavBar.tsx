@@ -53,6 +53,7 @@ const NAV_ENTRIES: NavEntry[] = [
           { href: "/sales-volumes", label: "Sales Volumes — ANP" },
           { href: "/anp-ppi", label: "PPI" },
           { href: "/anp-precos-produtores", label: "Preços Produtores" },
+          { href: "/anp-precos-distribuicao", label: "Preços Distribuição" },
           { href: "/anp-glp", label: "GLP" },
           { href: "/anp-daie", label: "Importações e Exportações" },
           { href: "/anp-desembaracos", label: "Desembaraços" },

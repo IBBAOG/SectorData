@@ -13,6 +13,7 @@ import type {
   AnpCdpAggregatedRow,
   AnpCdpGroupBy,
   AnpLpcSerieRow,
+  AnpPdistSerieRow,
 } from "./rpc";
 
 const BIG3_MEMBERS = ["Vibra", "Ipiranga", "Raizen"];
@@ -1315,6 +1316,25 @@ export async function downloadAnpCdpRawExcel(rows: AnpCdpRawRow[]): Promise<void
       { key: "gas_royalties",                header: "Gás Royalties",           width: 18, format: "#,##0.00" },
       { key: "agua_bbl_dia",                 header: "Água (bbl/dia)",          width: 16, format: "#,##0.00" },
       { key: "tempo_prod_hs_mes",            header: "Tempo Produção (hs/mês)", width: 22, format: "#,##0.00" },
+    ],
+  });
+}
+
+// ── ANP Preços Distribuição export ───────────────────────────────────────────
+
+export async function downloadAnpPdistExcel(rows: AnpPdistSerieRow[]): Promise<void> {
+  await downloadGenericExcel<AnpPdistSerieRow>({
+    rows,
+    sheetName: "ANP Preços Distrib.",
+    title: "ANP — Preços de Distribuição de Combustíveis",
+    filename: "ANP Precos Distribuicao",
+    columns: [
+      { key: "data_referencia", header: "Data Referência", width: 16 },
+      { key: "local",           header: "Local",           width: 26, align: "left" },
+      { key: "preco_medio",     header: "Preço Médio",     width: 14, format: "0.0000" },
+      { key: "preco_minimo",    header: "Preço Mínimo",    width: 14, format: "0.0000" },
+      { key: "preco_maximo",    header: "Preço Máximo",    width: 14, format: "0.0000" },
+      { key: "unidade",         header: "Unidade",         width: 10 },
     ],
   });
 }
