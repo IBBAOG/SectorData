@@ -39,6 +39,8 @@ scripts/pipelines/                  # rodam via GitHub Actions (todos os ETL)
 
   mdic_comex_sync.py                MDIC Comex
   sindicom_sync.py                  SINDICOM (Playwright)
+  anp/
+    precos_distribuicao_sync.py     ANP PDC — Preços de Distribuição → anp_precos_distribuicao
 
 scripts/manual/                     # humano-no-loop (dept Dados Locais)
   dg_margins_upload.py              Excel data/d_g_margins.xlsx → d_g_margins
@@ -67,6 +69,7 @@ scripts/utils/                      # one-shots (não-ETL)
 | `manual_dg_margins.yml` | Semanal | `manual/dg_margins_upload.py` | `d_g_margins` (este é Dados Locais, não ETL) |
 | `etl_navios_imo_lookup.yml` | Após `etl_navios_lineup` | `pipelines/navios/03_imo_lookup.py` → `04_cabotage_cleanup.py` | `navios_diesel.imo/mmsi` |
 | `etl_navios_positions.yml` | Após `etl_navios_imo_lookup` | `pipelines/navios/05_positions_sync.py` | `vessel_positions`, `port_arrivals` |
+| `etl_anp_precos_distribuicao.yml` | Mensal — dia 5, 14:00 UTC (`0 14 5 * *`) + Semanal — terça, 14:30 UTC (`30 14 * * 2`) | `pipelines/anp/precos_distribuicao_sync.py` | `anp_precos_distribuicao` |
 
 > Workflows confirmados ativos em 2026-05-05. Row counts atualizados após backfill histórico de 2026-05-06. README está desatualizado (não os menciona). Quando atualizar README, incluir.
 
