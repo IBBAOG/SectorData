@@ -1936,7 +1936,16 @@ export async function rpcGetAnpCdpAggregated(
   filters: AnpCdpAggregatedFilters,
   groupBy: AnpCdpGroupBy[],
 ): Promise<AnpCdpAggregatedRow[]> {
-  const { data, error } = await supabase.rpc("get_anp_cdp_aggregated", {
+  // PostgREST applies a default `max-rows` ceiling (commonly 1000) to RPC
+  // responses that return a SET / TABLE. Without pagination, "Por campo" with
+  // 21 anos × 12 meses × ~50 campos (~12.6k combinações) gets silently
+  // truncated. We page the same way fetchAnpCdpRawFiltered does, leveraging
+  // supabase-js's `.range()` post-filter on `RETURNS TABLE` RPCs.
+  const PAGE = 1000;
+  let offset = 0;
+  const allRows: AnpCdpAggregatedRow[] = [];
+
+  const args = {
     p_pocos:            toListOrNull(filters.pocos),
     p_campos:           toListOrNull(filters.campos),
     p_bacoes:           toListOrNull(filters.bacoes),
@@ -1948,12 +1957,24 @@ export async function rpcGetAnpCdpAggregated(
     p_ano_inicio:       filters.anoInicio ?? null,
     p_ano_fim:          filters.anoFim    ?? null,
     p_group_by:         groupBy as unknown as string[],
-  });
-  if (error) {
-    console.error("get_anp_cdp_aggregated failed", error);
-    throw error;
+  };
+
+  while (true) {
+    const { data, error } = await supabase
+      .rpc("get_anp_cdp_aggregated", args)
+      .range(offset, offset + PAGE - 1);
+    if (error) {
+      console.error("get_anp_cdp_aggregated failed", error);
+      throw error;
+    }
+    const rows = (data ?? []) as AnpCdpAggregatedRow[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
   }
-  return (data ?? []) as AnpCdpAggregatedRow[];
+
+  return allRows;
 }
 
 // ── MDIC Comex aggregated ────────────────────────────────────────────────────
@@ -1991,19 +2012,38 @@ export async function rpcGetMdicComexAggregated(
   filters: MdicComexAggregatedFilters,
   groupBy: MdicComexGroupBy[],
 ): Promise<MdicComexAggregatedRow[]> {
-  const { data, error } = await supabase.rpc("get_mdic_comex_aggregated", {
+  // Same PostgREST `max-rows` truncation hazard as get_anp_cdp_aggregated.
+  // With ~250 NCMs × 200 países × 12 meses × ano range, full-cardinality
+  // group-bys easily exceed 1000 rows — page identically.
+  const PAGE = 1000;
+  let offset = 0;
+  const allRows: MdicComexAggregatedRow[] = [];
+
+  const args = {
     p_flow:       filters.flow      ?? null,
     p_ncms:       toListOrNull(filters.ncms),
     p_paises:     toListOrNull(filters.paises),
     p_ano_inicio: filters.anoInicio ?? null,
     p_ano_fim:    filters.anoFim    ?? null,
     p_group_by:   groupBy as unknown as string[],
-  });
-  if (error) {
-    console.error("get_mdic_comex_aggregated failed", error);
-    throw error;
+  };
+
+  while (true) {
+    const { data, error } = await supabase
+      .rpc("get_mdic_comex_aggregated", args)
+      .range(offset, offset + PAGE - 1);
+    if (error) {
+      console.error("get_mdic_comex_aggregated failed", error);
+      throw error;
+    }
+    const rows = (data ?? []) as MdicComexAggregatedRow[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
   }
-  return (data ?? []) as MdicComexAggregatedRow[];
+
+  return allRows;
 }
 
 // ── MDIC Comex raw rows (PostgREST) ──────────────────────────────────────────
