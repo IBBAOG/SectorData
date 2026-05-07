@@ -180,19 +180,32 @@ def _from_parquet(sb, path: str, ano_inicio: int = 0) -> None:
 
 
 def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
-    try:
-        df = pd.read_csv(
-            path,
-            encoding="utf-8",
-            encoding_errors="ignore",
-            engine="python",
-            sep=";",
-            on_bad_lines="skip",
-            decimal=",",
-            thousands=".",
-        )
-    except Exception as e:
-        print(f"  WARN: could not parse {path}: {e}")
+    # ANP CDP CSVs (formato atual): comma-separated, decimal '.', encoding cp1252.
+    # Tenta primeiro o formato atual; se falhar, fallback para legado (sep=';', decimal=',').
+    last_exc: Exception | None = None
+    for sep, decimal, enc in [
+        (",", ".", "cp1252"),  # formato atual (2026)
+        (",", ".", "utf-8"),
+        (";", ",", "utf-8"),   # legado
+    ]:
+        try:
+            df = pd.read_csv(
+                path,
+                encoding=enc,
+                encoding_errors="ignore",
+                engine="python",
+                sep=sep,
+                on_bad_lines="skip",
+                decimal=decimal,
+            )
+            if not df.empty and len(df.columns) > 5:
+                break  # parse válido — múltiplas colunas
+        except Exception as e:
+            last_exc = e
+            df = None
+    if df is None or df.empty:
+        if last_exc:
+            print(f"  WARN: could not parse {path}: {last_exc}")
         return None
     if df.empty:
         return None
