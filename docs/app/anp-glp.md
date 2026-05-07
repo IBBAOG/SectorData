@@ -93,3 +93,12 @@ Diferença vs `/anp-ppi` e `/anp-precos-produtores`: aqui o foco é **volume ven
 - Mostrar nome de categoria com label diferente da config (consistência: usar `CATEGORIA_INFO[c].label`).
 - Bloquear página inteira com barrel em `serieLoading` — barrel é só pro `loading` inicial; subsequentes usam indicador inline + opacity 0.5.
 - Mexer em `scripts/pipelines/anp/glp_sync.py` — pertence ao ETL.
+
+## Export
+
+Tier 1 — download direto via `<ExportPanel>` (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
+
+- Excel: `downloadGenericExcel<T>` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
+- CSV: `downloadCsv<T>` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
+- Filename pattern: `AnpGlp_DD-MM-YY.<xlsx|csv>`.
+- Dados exportados: linhas atualmente em estado da página (saída de `get_anp_glp_serie` aplicada com filtros de período + categorias selecionadas).

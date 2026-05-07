@@ -106,3 +106,12 @@ Comportamento do scraper:
 - Bloquear página inteira com barrel em `serieLoading` — barrel é só pro `loading` inicial; subsequentes usam indicador inline + opacity 0.5.
 - Assumir que `operacoes[0]` é "Importação" — em pt-BR, "Exportação" vem antes na ordem alfabética. Detectar por `includes("import")` / `includes("export")`.
 - Mexer em `scripts/pipelines/anp/fase3/01_daie_sync.py` — pertence ao ETL.
+
+## Export
+
+Tier 1 — download direto via `<ExportPanel>` (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
+
+- Excel: `downloadGenericExcel<T>` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
+- CSV: `downloadCsv<T>` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
+- Filename pattern: `AnpDaie_DD-MM-YY.<xlsx|csv>`.
+- Dados exportados: linhas atualmente em estado da página (saída de `get_anp_daie_serie` aplicada com filtros de período + produtos selecionados, agregando ambas operações Importação e Exportação).

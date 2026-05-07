@@ -122,3 +122,12 @@ Comportamento do scraper `03_painel_imp_sync.py`:
 - Bloquear página inteira com barrel em `serieLoading`/`topLoading` — barrel é só pro `loading` inicial.
 - **Drift entre divisor e label** — `volume_m3 / 1e3 = mil m³`. Se o ETL parar de multiplicar por 1.000, todos os divisores caem por 1.000 e o label vira `m³`. Bug histórico recorrente em fases 3.x.
 - Mexer em `scripts/pipelines/anp/fase3/03_painel_imp_sync.py` — pertence ao ETL.
+
+## Export
+
+Tier 1 — download direto via `<ExportPanel>` (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
+
+- Excel: `downloadGenericExcel<T>` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
+- CSV: `downloadCsv<T>` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
+- Filename pattern: `AnpPainelImp_DD-MM-YY.<xlsx|csv>`.
+- Dados exportados: linhas atualmente em estado da página (saída paginada de `get_anp_painel_imp_serie` aplicada com filtros de período + produtos selecionados, agregando cross-distribuidor/UF).

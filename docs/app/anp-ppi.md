@@ -91,3 +91,12 @@ O mesmo workflow encadeia também `02_precos_produtores_sync.py` e `glp_sync.py`
 - Adicionar produto novo em `PRODUTO_INFO` sem garantir que o ETL `01_ppi_sync.py` mapeia o sheet correspondente em `_SHEETS`.
 - Permitir array vazio em `selectedProdutos` — sempre manter ao menos 1 produto selecionado.
 - Mostrar nome de produto sem aplicar `PRODUTO_INFO[p].label` (label oficial PT-BR).
+
+## Export
+
+Tier 1 — download direto via `<ExportPanel>` (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
+
+- Excel: `downloadGenericExcel<T>` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
+- CSV: `downloadCsv<T>` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
+- Filename pattern: `AnpPpi_DD-MM-YY.<xlsx|csv>`.
+- Dados exportados: linhas correspondentes à média nacional (`allSerie` — saída de `get_anp_ppi_media_serie` aplicada com produtos selecionados e período client-side).

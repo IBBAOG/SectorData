@@ -133,3 +133,13 @@ Sidebar continua renderizada (filtros vazios + slider escondido), mas sem barrel
 - Bloquear página inteira com barrel quando tabela está vazia — usar empty state amigável com instrução.
 - Mexer em `scripts/pipelines/sindicom_sync.py` — pertence ao ETL.
 - Tentar debugar Cloudflare localmente — perda de tempo. Disparar via GitHub Actions e verificar o log lá.
+
+## Export
+
+Tier 1 — download direto via `<ExportPanel>` (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
+
+- Excel: `downloadGenericExcel<T>` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
+- CSV: `downloadCsv<T>` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
+- Filename pattern: `Sindicom_DD-MM-YY.<xlsx|csv>`.
+- Dados exportados: linhas atualmente em estado da página (saída de `get_sindicom_serie` aplicada com filtros de período + produtos + segmentos selecionados).
+- Quando a tabela está vazia (Cloudflare ainda não permitiu pipeline rodar), o `<ExportPanel>` é renderizado mas os botões ficam desabilitados.

@@ -93,3 +93,12 @@ A série 2002-2012 é baixada uma única vez (estática); a 2013+ é rebaixada e
 - Mostrar nome de região com label diferente do banco (consistência: usar exatamente `Norte`, `Nordeste`, `Centro-Oeste`, `Sul`, `Sudeste`).
 - Bloquear página inteira com barrel em `serieLoading` — barrel é só pro `loading` inicial; subsequentes usam indicador inline + opacity 0.5.
 - Mexer em `scripts/pipelines/anp/precos/02_precos_produtores_sync.py` — pertence ao ETL.
+
+## Export
+
+Tier 1 — download direto via `<ExportPanel>` (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
+
+- Excel: `downloadGenericExcel<T>` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
+- CSV: `downloadCsv<T>` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
+- Filename pattern: `AnpPrecosProdutores_DD-MM-YY.<xlsx|csv>`.
+- Dados exportados: linhas atualmente em estado da página (saída de `get_anp_precos_produtores_serie` para o produto selecionado + período, com regiões filtradas client-side antes do export).

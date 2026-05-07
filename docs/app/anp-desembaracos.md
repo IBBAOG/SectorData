@@ -120,3 +120,12 @@ Comportamento do scraper `02_desembaracos_sync.py`:
 - Bloquear página inteira com barrel em `serieLoading`/`topLoading` — barrel é só pro `loading` inicial.
 - **Drift entre divisor e label** — `quantidade_kg / 1e6 = mil t`. Se trocar divisor, atualizar todos os labels (Y-axis title, hovertemplate, section-title). Bug histórico recorrente em fases 3.x.
 - Mexer em `scripts/pipelines/anp/fase3/02_desembaracos_sync.py` — pertence ao ETL.
+
+## Export
+
+Tier 1 — download direto via `<ExportPanel>` (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
+
+- Excel: `downloadGenericExcel<T>` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
+- CSV: `downloadCsv<T>` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
+- Filename pattern: `AnpDesembaracos_DD-MM-YY.<xlsx|csv>`.
+- Dados exportados: linhas atualmente em estado da página (saída paginada de `get_anp_desembaracos_serie` aplicada com filtros de período + NCMs selecionados).

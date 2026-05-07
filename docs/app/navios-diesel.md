@@ -106,3 +106,12 @@ Valores de `navios_diesel.status`:
 - Mexer em `vessel_*` ou `port_arrivals` direto — esses são populados pelo ETL.
 - Tentar chamar `ais_candidates_discover` ou `navios_imo_lookup` do frontend — são pipelines do ETL.
 - Visualizar lista grande sem paginação/virtualização.
+
+## Export
+
+Tier 1 — download direto via `<ExportPanel>` (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
+
+- Excel: `downloadGenericExcel<T>` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
+- CSV: `downloadCsv<T>` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
+- Filename pattern: `NaviosDiesel_DD-MM-YY.<xlsx|csv>`.
+- Dados exportados: linhas correspondentes ao estado `naviosDisplay` da página (saída de `get_nd_navios` já filtrada por porto/produto/status/período + `WHERE NOT is_cabotagem`).
