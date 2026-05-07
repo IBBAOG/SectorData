@@ -10,10 +10,13 @@ import MultiSelectFilter from "../../../components/dashboard/MultiSelectFilter";
 import PeriodSlider from "../../../components/dashboard/PeriodSlider";
 import ChartSection from "../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../components/dashboard/BarrelLoading";
+import ExportPanel from "../../../components/dashboard/ExportPanel";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../lib/plotlyDefaults";
+import { downloadGenericExcel } from "../../../lib/exportExcel";
+import { downloadCsv } from "../../../lib/exportCsv";
 import {
   rpcGetAnpPprodutoresSerie,
   rpcGetAnpPprodutoresFiltros,
@@ -89,6 +92,7 @@ export default function AnpPrecosProdutoresPage() {
   const [yearRange, setYearRange]       = useState<[number, number]>([0, 0]);
   const [selectedProduto, setProduto]   = useState<string>("");
   const [selectedRegioes, setRegioes]   = useState<string[]>(ALL_REGIOES);
+  const [excelLoading, setExcelLoading] = useState(false);
 
   // ── Initial load: filtros + first serie fetch in parallel ────────────────
   useEffect(() => {
@@ -228,6 +232,53 @@ export default function AnpPrecosProdutoresPage() {
                 title="ANP — Preços Médios Ponderados Produtores e Importadores"
                 sub="Preços semanais médios ponderados praticados por produtores e importadores, por região"
                 period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
+                rightSlot={
+                  <ExportPanel
+                    actions={[
+                      {
+                        kind: "excel",
+                        label: "formatted data .xl",
+                        busy: excelLoading,
+                        loadingLabel: "Gerando Excel...",
+                        disabled: loading || serieRows.length === 0 || excelLoading,
+                        onClick: async () => {
+                          setExcelLoading(true);
+                          try {
+                            await downloadGenericExcel<AnpPprodutoresRow>({
+                              rows: serieRows,
+                              filename: "ANP-Precos-Produtores",
+                              title: `ANP — Preços Produtores e Importadores — ${selectedProduto}`,
+                              sheetName: "Preços",
+                              columns: [
+                                { key: "data_inicio", header: "Início" },
+                                { key: "data_fim",    header: "Fim" },
+                                { key: "produto",     header: "Produto", width: 28 },
+                                { key: "regiao",      header: "Região",  width: 16 },
+                                { key: "preco",       header: "Preço",   format: "0.0000" },
+                                { key: "unidade",     header: "Unidade" },
+                              ],
+                            });
+                          } catch (e) {
+                            console.error("Excel export failed", e);
+                          } finally {
+                            setExcelLoading(false);
+                          }
+                        },
+                      },
+                      {
+                        kind: "csv",
+                        label: "all data .csv",
+                        disabled: loading || serieRows.length === 0,
+                        onClick: () => {
+                          downloadCsv({
+                            rows: serieRows as unknown as Record<string, unknown>[],
+                            filename: "ANP-Precos-Produtores",
+                          });
+                        },
+                      },
+                    ]}
+                  />
+                }
               />
 
               {loading ? (

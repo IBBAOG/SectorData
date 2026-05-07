@@ -527,6 +527,133 @@ export async function downloadMarketShareExcel(
   URL.revokeObjectURL(url);
 }
 
+// ── Generic Excel export (Tier 1 dashboards) ─────────────────────────────────
+//
+// Pragmatic, uniform XLSX builder used by the "leve" dashboards (small datasets,
+// no chart embedding needed). Produces a single workbook with a single sheet:
+//   - optional title row in brand orange (Arial 13 bold)
+//   - bold black/white header row
+//   - data rows in Arial 10 dark grey
+// Filename gets " DD-MM-YY.xlsx" appended automatically.
+//
+// Usage:
+//   await downloadGenericExcel({
+//     rows,
+//     filename: "ANP GLP",
+//     title:    "ANP — Vendas de GLP",
+//     columns:  [
+//       { key: "ano",           header: "Ano" },
+//       { key: "mes",           header: "Mês" },
+//       { key: "distribuidora", header: "Distribuidora" },
+//       { key: "vendas_kg",     header: "Vendas (kg)", format: "#,##0" },
+//     ],
+//   });
+//
+// If `columns` is omitted the helper falls back to `Object.keys(rows[0])`,
+// useful for "all-columns" dumps.
+
+export type GenericExcelColumn<T> = {
+  key: keyof T;
+  header: string;
+  /** ExcelJS numFmt string applied to data cells (e.g. "0.00", "#,##0", "yyyy-mm-dd"). */
+  format?: string;
+  /** Column width in characters. Defaults to max(header.length+2, 12). */
+  width?: number;
+  /** Cell alignment for the data column. Defaults to "center" for numeric formats, "left" otherwise. */
+  align?: "left" | "center" | "right";
+};
+
+export type GenericExcelOptions<T extends Record<string, unknown>> = {
+  rows: T[];
+  /** Filename without extension — `.xlsx` and ` DD-MM-YY` are appended automatically. */
+  filename: string;
+  /** Optional title shown on row 1 in brand orange. When omitted, the header row is row 1. */
+  title?: string;
+  /** Worksheet name. Defaults to "Dados". */
+  sheetName?: string;
+  /** Explicit column order + headers + formatting. When omitted, falls back to `Object.keys(rows[0])`. */
+  columns?: GenericExcelColumn<T>[];
+};
+
+export async function downloadGenericExcel<T extends Record<string, unknown>>(
+  opts: GenericExcelOptions<T>,
+): Promise<void> {
+  const { rows, filename, title, sheetName = "Dados", columns } = opts;
+  if (!rows || rows.length === 0) return;
+
+  const cols: GenericExcelColumn<T>[] = columns ?? (
+    Object.keys(rows[0]).map((k) => ({ key: k as keyof T, header: k }))
+  );
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet(sheetName);
+  ws.views = [{ showGridLines: false }];
+
+  // Column widths
+  cols.forEach((c, i) => {
+    ws.getColumn(i + 1).width = c.width ?? Math.max(c.header.length + 2, 12);
+  });
+
+  let rowIdx = 1;
+
+  // Title row (optional)
+  if (title) {
+    const tRow = ws.getRow(rowIdx);
+    tRow.height = ROW_H;
+    const tCell = ws.getCell(rowIdx, 1);
+    tCell.value = title;
+    tCell.font = { name: "Arial", size: 13, bold: true, color: C.titleFg };
+    tCell.alignment = { vertical: "middle" };
+    rowIdx++;
+  }
+
+  // Header row
+  const hRow = ws.getRow(rowIdx);
+  hRow.height = ROW_H;
+  cols.forEach((c, i) => {
+    const cell = ws.getCell(rowIdx, i + 1);
+    cell.value = c.header;
+    cell.font = { name: "Arial", size: 10, bold: true, color: C.headerFg };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: C.headerBg };
+    cell.alignment = { horizontal: i === 0 ? "left" : "center" };
+  });
+  rowIdx++;
+
+  // Data rows
+  rows.forEach((r, dataIdx) => {
+    const dRow = ws.getRow(rowIdx + dataIdx);
+    dRow.height = ROW_H;
+    cols.forEach((c, i) => {
+      const cell = ws.getCell(rowIdx + dataIdx, i + 1);
+      const v = r[c.key];
+      cell.value = (v === undefined ? null : v) as ExcelJS.CellValue;
+      cell.font = { name: "Arial", size: 10, color: C.cellFg };
+      if (c.format) cell.numFmt = c.format;
+      const isNumeric = typeof v === "number" || c.format !== undefined;
+      const align = c.align ?? (isNumeric ? "center" : i === 0 ? "left" : "center");
+      cell.alignment = { horizontal: align };
+    });
+  });
+
+  // ── Finalise ──────────────────────────────────────────────────────────────
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, "0");
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const yy = String(now.getFullYear()).slice(-2);
+  a.download = `${filename} ${dd}-${mm}-${yy}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 // ── D&G Margins export ────────────────────────────────────────────────────────
 
 const DG_FUEL_TYPES = ["Diesel B", "Gasoline C"];

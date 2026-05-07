@@ -10,11 +10,14 @@ import MultiSelectFilter from "../../../components/dashboard/MultiSelectFilter";
 import PeriodSlider from "../../../components/dashboard/PeriodSlider";
 import ChartSection from "../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../components/dashboard/BarrelLoading";
+import ExportPanel from "../../../components/dashboard/ExportPanel";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../lib/plotlyDefaults";
 import { m3ToMilM3, LABEL } from "../../../lib/units";
+import { downloadGenericExcel } from "../../../lib/exportExcel";
+import { downloadCsv } from "../../../lib/exportCsv";
 import {
   rpcGetAnpDaieSerie,
   rpcGetAnpDaiFiltros,
@@ -110,6 +113,7 @@ export default function AnpDaiePage() {
   const [allYears, setAllYears]               = useState<number[]>([]);
   const [yearRange, setYearRange]             = useState<[number, number]>([0, 0]);
   const [selectedProdutos, setSelectedProdutos] = useState<string[]>([]);
+  const [excelLoading, setExcelLoading]       = useState(false);
 
   // ── Initial load: filtros + first serie fetch (last 10 years) ─────────────
   useEffect(() => {
@@ -262,6 +266,53 @@ export default function AnpDaiePage() {
                 title="ANP — Dados Abertos Importações e Exportações"
                 sub={`Volumes mensais de importações e exportações de derivados de petróleo (volume em ${LABEL.MIL_M3})`}
                 period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
+                rightSlot={hasData ? (
+                  <ExportPanel
+                    actions={[
+                      {
+                        kind: "excel",
+                        label: "formatted data .xl",
+                        busy: excelLoading,
+                        loadingLabel: "Gerando Excel...",
+                        disabled: loading || serieRows.length === 0 || excelLoading,
+                        onClick: async () => {
+                          setExcelLoading(true);
+                          try {
+                            await downloadGenericExcel<AnpDaieRow>({
+                              rows: serieRows,
+                              filename: "ANP-DAIE",
+                              title: "ANP — Dados Abertos Importações e Exportações",
+                              sheetName: "DAIE",
+                              columns: [
+                                { key: "ano",       header: "Ano" },
+                                { key: "mes",       header: "Mês" },
+                                { key: "produto",   header: "Produto", width: 32 },
+                                { key: "operacao",  header: "Operação", width: 16 },
+                                { key: "volume_m3", header: "Volume (m³)", format: "#,##0" },
+                                { key: "valor_usd", header: "Valor (USD)", format: "#,##0.00" },
+                              ],
+                            });
+                          } catch (e) {
+                            console.error("Excel export failed", e);
+                          } finally {
+                            setExcelLoading(false);
+                          }
+                        },
+                      },
+                      {
+                        kind: "csv",
+                        label: "all data .csv",
+                        disabled: loading || serieRows.length === 0,
+                        onClick: () => {
+                          downloadCsv({
+                            rows: serieRows as unknown as Record<string, unknown>[],
+                            filename: "ANP-DAIE",
+                          });
+                        },
+                      },
+                    ]}
+                  />
+                ) : null}
               />
 
               {loading ? (
