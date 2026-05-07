@@ -173,6 +173,44 @@ IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: <nome_funcao>'; END IF;
 
 Atualize também o `RAISE NOTICE` no final do script com os novos totais.
 
+## Pegadinhas do `supabase_deploy.yml` e CLI
+
+### a) `supabase db execute` foi removido da CLI
+
+O comando `supabase db execute --file <arquivo.sql>` não existe mais na CLI atual. Use:
+
+```bash
+supabase db query --file <arquivo.sql>
+```
+
+O smoke test em `supabase/tests/migration_smoke.sql` deve ser invocado com `db query --file`, não `db execute --file`. O step do workflow foi corrigido em `9310496e`.
+
+### b) Repair de versões remotas fantasma
+
+Quando `supabase_migrations.schema_migrations` contém versões sem arquivo `.sql` local correspondente (situação normal após aplicação manual via Dashboard), `supabase db push` recusa-se a rodar. O workflow `supabase_deploy.yml` deve ter step explícito de repair ANTES do push para cada versão fantasma conhecida:
+
+```bash
+supabase migration repair --status reverted <version>
+```
+
+Não tente loop dinâmico parsando output de `supabase migration list` — o formato não é estável. Use lista explícita hardcoded. Versões fantasmas conhecidas (atualizar quando novas forem identificadas):
+
+| Versão | Origem |
+|---|---|
+| `20260504000001` | Slot reutilizado (add_brasil_energia_keyword revertido, reutilizado para mdic_comex) |
+
+O incidente de produção do rollout Export (2026-05-07) foi causado pela ausência de repair explícito de `20260504000001` na lista do workflow, fazendo `supabase db push` falhar silenciosamente por dias.
+
+### c) Monitorar runs do `supabase_deploy.yml`
+
+Auto-aplicação de migrations só funciona se o workflow passa. Checar periodicamente:
+
+```bash
+gh run list --workflow=supabase_deploy.yml --limit 5
+```
+
+Se houver fail recente sem fix, escalar para `worker_supabase`. Falhas silenciosas já causaram migration não-aplicada por dias em prod (incidente Export 2026-05-07).
+
 ## Workflow `supabase_deploy.yml`
 
 Deploya migrations em push pra `main`. Use `SUPABASE_PROJECT_REF` e `SUPABASE_ACCESS_TOKEN`.
