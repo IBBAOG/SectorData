@@ -10,10 +10,13 @@ import MultiSelectFilter from "../../../components/dashboard/MultiSelectFilter";
 import PeriodSlider from "../../../components/dashboard/PeriodSlider";
 import ChartSection from "../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../components/dashboard/BarrelLoading";
+import ExportPanel from "../../../components/dashboard/ExportPanel";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../lib/plotlyDefaults";
+import { downloadGenericExcel } from "../../../lib/exportExcel";
+import { downloadCsv } from "../../../lib/exportCsv";
 import {
   rpcGetSindicomSerie,
   rpcGetSindicomFiltros,
@@ -155,6 +158,7 @@ export default function SindicomPage() {
   const [selectedProdutos, setSelectedProdutos] = useState<string[]>([]);
   const [selectedSegmentos, setSelectedSegs]    = useState<string[]>([]);
   const [msProduto, setMsProduto]               = useState<string>("");
+  const [excelLoading, setExcelLoading]         = useState(false);
 
   // ── Initial load: filtros + first serie fetch ────────────────────────────
   useEffect(() => {
@@ -319,6 +323,53 @@ export default function SindicomPage() {
                 title="SINDICOM — Distribuição de Combustíveis por Empresa"
                 sub="Volumes mensais de venda das distribuidoras associadas ao SINDICOM, por empresa, produto e segmento (mercado / consumidor)"
                 period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
+                rightSlot={hasData ? (
+                  <ExportPanel
+                    actions={[
+                      {
+                        kind: "excel",
+                        label: "formatted data .xl",
+                        busy: excelLoading,
+                        loadingLabel: "Gerando Excel...",
+                        disabled: loading || allRows.length === 0 || excelLoading,
+                        onClick: async () => {
+                          setExcelLoading(true);
+                          try {
+                            await downloadGenericExcel<SindicomSerieRow>({
+                              rows: allRows,
+                              filename: "SINDICOM",
+                              title: "SINDICOM — Distribuição de Combustíveis por Empresa",
+                              sheetName: "SINDICOM",
+                              columns: [
+                                { key: "ano",          header: "Ano" },
+                                { key: "mes",          header: "Mês" },
+                                { key: "empresa",      header: "Empresa", width: 24 },
+                                { key: "nome_produto", header: "Produto", width: 22 },
+                                { key: "segmento",     header: "Segmento", width: 18 },
+                                { key: "volume",       header: "Volume (m³)", format: "#,##0" },
+                              ],
+                            });
+                          } catch (e) {
+                            console.error("Excel export failed", e);
+                          } finally {
+                            setExcelLoading(false);
+                          }
+                        },
+                      },
+                      {
+                        kind: "csv",
+                        label: "all data .csv",
+                        disabled: loading || allRows.length === 0,
+                        onClick: () => {
+                          downloadCsv({
+                            rows: allRows as unknown as Record<string, unknown>[],
+                            filename: "SINDICOM",
+                          });
+                        },
+                      },
+                    ]}
+                  />
+                ) : null}
               />
 
               {loading ? (

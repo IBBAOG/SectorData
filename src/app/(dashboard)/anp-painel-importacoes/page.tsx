@@ -10,11 +10,14 @@ import MultiSelectFilter from "../../../components/dashboard/MultiSelectFilter";
 import PeriodSlider from "../../../components/dashboard/PeriodSlider";
 import ChartSection from "../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../components/dashboard/BarrelLoading";
+import ExportPanel from "../../../components/dashboard/ExportPanel";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { COMMON_LAYOUT, AXIS_LINE, emptyPlot, PALETTE } from "../../../lib/plotlyDefaults";
 import { m3ToMilM3, LABEL } from "../../../lib/units";
+import { downloadGenericExcel } from "../../../lib/exportExcel";
+import { downloadCsv } from "../../../lib/exportCsv";
 import {
   rpcGetAnpPainelImpSerie,
   rpcGetAnpPainelImpTopDist,
@@ -107,6 +110,7 @@ export default function AnpPainelImportacoesPage() {
   const [selectedProdutos, setSelectedProd] = useState<string[]>([]);
   const [topProduto, setTopProduto]         = useState<string>("");
   const [topRows, setTopRows]               = useState<AnpPainelImpTopDistRow[]>([]);
+  const [excelLoading, setExcelLoading]     = useState(false);
 
   // ── Initial load: filtros + first serie fetch (last 10 years) ──────────────
   useEffect(() => {
@@ -282,6 +286,51 @@ export default function AnpPainelImportacoesPage() {
                 title="ANP Painel — Importações de Distribuidores"
                 sub={`Volumes mensais importados por distribuidor, UF e produto (volume em ${LABEL.MIL_M3})`}
                 period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
+                rightSlot={hasData ? (
+                  <ExportPanel
+                    actions={[
+                      {
+                        kind: "excel",
+                        label: "formatted data .xl",
+                        busy: excelLoading,
+                        loadingLabel: "Gerando Excel...",
+                        disabled: loading || serieRows.length === 0 || excelLoading,
+                        onClick: async () => {
+                          setExcelLoading(true);
+                          try {
+                            await downloadGenericExcel<AnpPainelImpSerieRow>({
+                              rows: serieRows,
+                              filename: "ANP-Painel-Importacoes",
+                              title: "ANP Painel — Importações de Distribuidores (Total Nacional)",
+                              sheetName: "Importações",
+                              columns: [
+                                { key: "ano",          header: "Ano" },
+                                { key: "mes",          header: "Mês" },
+                                { key: "nome_produto", header: "Produto", width: 26 },
+                                { key: "volume_m3",    header: "Volume (m³)", format: "#,##0" },
+                              ],
+                            });
+                          } catch (e) {
+                            console.error("Excel export failed", e);
+                          } finally {
+                            setExcelLoading(false);
+                          }
+                        },
+                      },
+                      {
+                        kind: "csv",
+                        label: "all data .csv",
+                        disabled: loading || serieRows.length === 0,
+                        onClick: () => {
+                          downloadCsv({
+                            rows: serieRows as unknown as Record<string, unknown>[],
+                            filename: "ANP-Painel-Importacoes",
+                          });
+                        },
+                      },
+                    ]}
+                  />
+                ) : null}
               />
 
               {loading ? (

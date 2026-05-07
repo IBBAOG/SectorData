@@ -10,11 +10,14 @@ import MultiSelectFilter from "../../../components/dashboard/MultiSelectFilter";
 import PeriodSlider from "../../../components/dashboard/PeriodSlider";
 import ChartSection from "../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../components/dashboard/BarrelLoading";
+import ExportPanel from "../../../components/dashboard/ExportPanel";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { COMMON_LAYOUT, AXIS_LINE, emptyPlot, PALETTE } from "../../../lib/plotlyDefaults";
 import { kgToMilTon, LABEL } from "../../../lib/units";
+import { downloadGenericExcel } from "../../../lib/exportExcel";
+import { downloadCsv } from "../../../lib/exportCsv";
 import {
   rpcGetAnpDesembaracosSerie,
   rpcGetAnpDesembaracosTopPaises,
@@ -115,6 +118,7 @@ export default function AnpDesembaracosPage() {
   const [selectedNcms, setSelectedNcms]     = useState<string[]>([]);
   const [topNcm, setTopNcm]                 = useState<string>("");
   const [topRows, setTopRows]               = useState<AnpDesembaracosTopPaisRow[]>([]);
+  const [excelLoading, setExcelLoading]     = useState(false);
 
   // ── Initial load: filtros + first serie fetch (last 10 years, top 5 NCMs) ──
   useEffect(() => {
@@ -311,6 +315,53 @@ export default function AnpDesembaracosPage() {
                 title="ANP — Desembaraços de Importação (Petróleo, Gás e Derivados)"
                 sub={`Volumes mensais desembaraçados na importação por NCM e país de origem (massa em ${LABEL.MIL_T})`}
                 period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
+                rightSlot={hasData ? (
+                  <ExportPanel
+                    actions={[
+                      {
+                        kind: "excel",
+                        label: "formatted data .xl",
+                        busy: excelLoading,
+                        loadingLabel: "Gerando Excel...",
+                        disabled: loading || serieRows.length === 0 || excelLoading,
+                        onClick: async () => {
+                          setExcelLoading(true);
+                          try {
+                            await downloadGenericExcel<AnpDesembaracosRow>({
+                              rows: serieRows,
+                              filename: "ANP-Desembaracos",
+                              title: "ANP — Desembaraços de Importação",
+                              sheetName: "Desembaraços",
+                              columns: [
+                                { key: "ano",           header: "Ano" },
+                                { key: "mes",           header: "Mês" },
+                                { key: "ncm_codigo",    header: "NCM" },
+                                { key: "ncm_nome",      header: "Descrição NCM", width: 36 },
+                                { key: "pais_origem",   header: "País origem",   width: 22 },
+                                { key: "quantidade_kg", header: "Quantidade (kg)", format: "#,##0" },
+                              ],
+                            });
+                          } catch (e) {
+                            console.error("Excel export failed", e);
+                          } finally {
+                            setExcelLoading(false);
+                          }
+                        },
+                      },
+                      {
+                        kind: "csv",
+                        label: "all data .csv",
+                        disabled: loading || serieRows.length === 0,
+                        onClick: () => {
+                          downloadCsv({
+                            rows: serieRows as unknown as Record<string, unknown>[],
+                            filename: "ANP-Desembaracos",
+                          });
+                        },
+                      },
+                    ]}
+                  />
+                ) : null}
               />
 
               {loading ? (

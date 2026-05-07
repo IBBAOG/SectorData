@@ -19,6 +19,7 @@ import {
   type DgMarginsRow,
 } from "../../../lib/rpc";
 import { downloadDgMarginsExcel } from "../../../lib/exportExcel";
+import { downloadCsv } from "../../../lib/exportCsv";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -757,6 +758,17 @@ export default function DieselGasolineMarginsPage() {
                           } finally {
                             setExcelLoading(false);
                           }
+                        },
+                      },
+                      {
+                        kind: "csv",
+                        label: "all data .csv",
+                        disabled: loading || filteredRows.length === 0,
+                        onClick: () => {
+                          downloadCsv({
+                            rows: filteredRows as unknown as Record<string, unknown>[],
+                            filename: "Diesel-Gasoline-Margins",
+                          });
                         },
                       },
                     ]}

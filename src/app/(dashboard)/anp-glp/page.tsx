@@ -10,11 +10,14 @@ import MultiSelectFilter from "../../../components/dashboard/MultiSelectFilter";
 import PeriodSlider from "../../../components/dashboard/PeriodSlider";
 import ChartSection from "../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../components/dashboard/BarrelLoading";
+import ExportPanel from "../../../components/dashboard/ExportPanel";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../lib/plotlyDefaults";
 import { kgToMilTon, LABEL } from "../../../lib/units";
+import { downloadGenericExcel } from "../../../lib/exportExcel";
+import { downloadCsv } from "../../../lib/exportCsv";
 import {
   rpcGetAnpGlpSerie,
   rpcGetAnpGlpFiltros,
@@ -135,6 +138,7 @@ export default function AnpGlpPage() {
   const [yearRange, setYearRange]             = useState<[number, number]>([0, 0]);
   const [selectedCats, setSelectedCats]       = useState<string[]>(MAIN_CATEGORIAS);
   const [topDistCat, setTopDistCat]           = useState<string>("P13");
+  const [excelLoading, setExcelLoading]       = useState(false);
 
   // ── Initial load: filtros + first serie fetch (last 10 years) ────────────
   useEffect(() => {
@@ -271,6 +275,52 @@ export default function AnpGlpPage() {
                 title="ANP — Vendas de GLP por Recipiente"
                 sub="Vendas mensais de GLP por distribuidora e categoria de recipiente (P13, Outros - GLP, Outros - Especiais)"
                 period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
+                rightSlot={
+                  <ExportPanel
+                    actions={[
+                      {
+                        kind: "excel",
+                        label: "formatted data .xl",
+                        busy: excelLoading,
+                        loadingLabel: "Gerando Excel...",
+                        disabled: loading || serieRows.length === 0 || excelLoading,
+                        onClick: async () => {
+                          setExcelLoading(true);
+                          try {
+                            await downloadGenericExcel<AnpGlpSerieRow>({
+                              rows: serieRows,
+                              filename: "ANP-GLP",
+                              title: "ANP — Vendas de GLP por Distribuidora",
+                              sheetName: "Vendas GLP",
+                              columns: [
+                                { key: "ano",           header: "Ano" },
+                                { key: "mes",           header: "Mês" },
+                                { key: "distribuidora", header: "Distribuidora", width: 28 },
+                                { key: "categoria",     header: "Categoria",     width: 22 },
+                                { key: "vendas_kg",     header: "Vendas (kg)",   format: "#,##0" },
+                              ],
+                            });
+                          } catch (e) {
+                            console.error("Excel export failed", e);
+                          } finally {
+                            setExcelLoading(false);
+                          }
+                        },
+                      },
+                      {
+                        kind: "csv",
+                        label: "all data .csv",
+                        disabled: loading || serieRows.length === 0,
+                        onClick: () => {
+                          downloadCsv({
+                            rows: serieRows as unknown as Record<string, unknown>[],
+                            filename: "ANP-GLP",
+                          });
+                        },
+                      },
+                    ]}
+                  />
+                }
               />
 
               {loading ? (

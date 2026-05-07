@@ -10,10 +10,13 @@ import MultiSelectFilter from "../../../components/dashboard/MultiSelectFilter";
 import PeriodSlider from "../../../components/dashboard/PeriodSlider";
 import ChartSection from "../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../components/dashboard/BarrelLoading";
+import ExportPanel from "../../../components/dashboard/ExportPanel";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../lib/plotlyDefaults";
+import { downloadGenericExcel } from "../../../lib/exportExcel";
+import { downloadCsv } from "../../../lib/exportCsv";
 import {
   rpcGetAnpPpiMediaSerie,
   rpcGetAnpPpiLocaisSerie,
@@ -137,6 +140,7 @@ export default function AnpPpiPage() {
   const [selectedProdutos, setSelected]   = useState<string[]>(ALL_PRODUTOS);
   const [detailProduto, setDetailProduto] = useState<string>("Gasolina A Comum");
   const [locaisRows, setLocaisRows]       = useState<AnpPpiLocaisRow[]>([]);
+  const [excelLoading, setExcelLoading]   = useState(false);
 
   // ── Initial load ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -269,6 +273,52 @@ export default function AnpPpiPage() {
                 title="ANP — Preços de Paridade de Importação (PPI)"
                 sub="Preços semanais de paridade publicados pela ANP, por produto e local de entrega"
                 period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
+                rightSlot={
+                  <ExportPanel
+                    actions={[
+                      {
+                        kind: "excel",
+                        label: "formatted data .xl",
+                        busy: excelLoading,
+                        loadingLabel: "Gerando Excel...",
+                        disabled: loading || allSerie.length === 0 || excelLoading,
+                        onClick: async () => {
+                          setExcelLoading(true);
+                          try {
+                            await downloadGenericExcel<AnpPpiSerieRow>({
+                              rows: allSerie,
+                              filename: "ANP-PPI",
+                              title: "ANP — Preços de Paridade de Importação (Média Nacional)",
+                              sheetName: "PPI Média",
+                              columns: [
+                                { key: "data_inicio", header: "Início" },
+                                { key: "data_fim",    header: "Fim" },
+                                { key: "produto",     header: "Produto", width: 22 },
+                                { key: "preco_medio", header: "Preço Médio", format: "0.0000" },
+                                { key: "unidade",     header: "Unidade" },
+                              ],
+                            });
+                          } catch (e) {
+                            console.error("Excel export failed", e);
+                          } finally {
+                            setExcelLoading(false);
+                          }
+                        },
+                      },
+                      {
+                        kind: "csv",
+                        label: "all data .csv",
+                        disabled: loading || allSerie.length === 0,
+                        onClick: () => {
+                          downloadCsv({
+                            rows: allSerie as unknown as Record<string, unknown>[],
+                            filename: "ANP-PPI",
+                          });
+                        },
+                      },
+                    ]}
+                  />
+                }
               />
 
               {loading ? (
