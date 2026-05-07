@@ -229,7 +229,7 @@ def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
             col_map["instalacao_destino"] = c
         elif "tipo" in cl and "instal" in cl:
             col_map["tipo_instalacao"] = c
-        elif "perodo" in cl and "carga" not in cl:
+        elif ("perodo" in cl or "período" in cl) and "carga" not in cl:
             col_map["periodo"] = c
         elif "petrleo" in cl or "petróleo" in cl:
             col_map["petroleo"] = c
