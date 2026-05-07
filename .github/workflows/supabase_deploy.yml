@@ -22,25 +22,15 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
-      - name: Repair remote-only (phantom) migrations
-        # Some migrations were applied directly via MCP/Dashboard and exist in
-        # supabase_migrations.schema_migrations with no corresponding local .sql
-        # file. supabase db push refuses to proceed when it finds such versions.
-        # This step detects them dynamically and marks them as reverted so that
-        # db push can continue. The pattern is: output lines where the remote
-        # column has a version but the local column is blank/missing.
+      - name: Revert phantom remote-only migrations
+        # 20260504000001 exists in supabase_migrations.schema_migrations on the
+        # remote DB but has NO corresponding local .sql file (created as a
+        # side-effect of apply_migration MCP using a timestamp different from
+        # the filename). supabase db push refuses to run while any remote version
+        # lacks a local file. Marking it as reverted removes the blocker.
+        # Add new phantom versions here if supabase db push reports them again.
         run: |
-          supabase migration list 2>&1 | tee /tmp/migration_list.txt || true
-          cat /tmp/migration_list.txt
-          # Extract versions that are remote-only (present in DB but no local file)
-          # supabase migration list columns: LOCAL | REMOTE | TIME
-          # Remote-only rows have an empty LOCAL column: "       | 20260504000001 | ..."
-          grep -E '^\s*\|\s*[0-9]{14}\s*\|' /tmp/migration_list.txt | \
-            awk -F'|' '{ gsub(/ /,"",$2); gsub(/ /,"",$3); if ($2=="" && $3!="") print $3 }' | \
-            while read version; do
-              echo "Repairing remote-only phantom migration: $version"
-              supabase migration repair "$version" --status reverted || true
-            done
+          supabase migration repair 20260504000001 --status reverted || true
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
