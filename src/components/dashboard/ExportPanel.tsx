@@ -18,8 +18,12 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { trackEvent } from "@/lib/tracking";
+import type { ExportCompleteInfo, ExportFormat } from "./exportTypes";
 
-export type ExportActionKind = "excel" | "csv";
+// Local alias kept for backwards compatibility with existing imports — the
+// canonical type lives in `./exportTypes` and is shared with `ExportModal`.
+export type ExportActionKind = ExportFormat;
+export type { ExportCompleteInfo } from "./exportTypes";
 
 export interface ExportAction {
   kind: ExportActionKind;
@@ -31,12 +35,6 @@ export interface ExportAction {
   busy?: boolean;
   /** Caption shown in the loading overlay. */
   loadingLabel?: string;
-}
-
-export interface ExportCompleteInfo {
-  format: ExportActionKind;
-  rows?: number;
-  bytes?: number;
 }
 
 export interface ExportPanelProps {
@@ -104,9 +102,12 @@ export default function ExportPanel({
       trackEvent("export", pathname ?? null, { format: a.kind });
       onExportComplete?.({ format: a.kind });
     } catch (err) {
-      // Re-surface to the console — the action's own onClick is responsible
-      // for user-facing error handling.
-      console.error(`[ExportPanel] ${a.kind} export failed`, err);
+      // Log + re-throw. Callers' own onClick handlers manage user-facing
+      // error UI and busy-state reset via try/finally; swallowing here would
+      // hide failures from upstream error boundaries and from any
+      // unhandledrejection telemetry.
+      console.error("[ExportPanel] export handler threw", err);
+      throw err;
     }
   }
 

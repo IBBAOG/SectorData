@@ -25,17 +25,12 @@ import { usePathname } from "next/navigation";
 import { useExportSize } from "@/hooks/useExportSize";
 import { formatBytes } from "@/lib/exportSizeHeuristics";
 import { trackEvent } from "@/lib/tracking";
+import type { ExportCompleteInfo, ExportFormat } from "./exportTypes";
 
 const BRAND_ORANGE = "#ff5000";
 const HARD_LIMIT_ROWS = 200_000;
 
-export type ExportFormat = "excel" | "csv";
-
-export interface ExportCompleteInfo {
-  format: ExportFormat;
-  rows?: number;
-  bytes?: number;
-}
+export type { ExportCompleteInfo, ExportFormat } from "./exportTypes";
 
 export type ExportModalProps = {
   open: boolean;
@@ -140,7 +135,12 @@ export default function ExportModal({
       });
       onExportComplete?.({ format, rows, bytes });
     } catch (err) {
-      console.error(`[ExportModal] ${format} export failed`, err);
+      // Log + re-throw. The parent dashboard's onExportExcel/onExportCsv
+      // handler owns busy-state reset (try/finally) and any user-facing
+      // error UI; swallowing here would hide failures from upstream error
+      // boundaries and from any unhandledrejection telemetry.
+      console.error("[ExportModal] export handler threw", err);
+      throw err;
     }
   }
 
