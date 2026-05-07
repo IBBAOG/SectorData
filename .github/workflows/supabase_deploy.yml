@@ -22,11 +22,32 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
+      - name: Repair remote-only (phantom) migrations
+        # Some migrations were applied directly via MCP/Dashboard and exist in
+        # supabase_migrations.schema_migrations with no corresponding local .sql
+        # file. supabase db push refuses to proceed when it finds such versions.
+        # This step detects them dynamically and marks them as reverted so that
+        # db push can continue. The pattern is: output lines where the remote
+        # column has a version but the local column is blank/missing.
+        run: |
+          supabase migration list 2>&1 | tee /tmp/migration_list.txt || true
+          cat /tmp/migration_list.txt
+          # Extract versions that are remote-only (present in DB but no local file)
+          # supabase migration list columns: LOCAL | REMOTE | TIME
+          # Remote-only rows have an empty LOCAL column: "       | 20260504000001 | ..."
+          grep -E '^\s*\|\s*[0-9]{14}\s*\|' /tmp/migration_list.txt | \
+            awk -F'|' '{ gsub(/ /,"",$2); gsub(/ /,"",$3); if ($2=="" && $3!="") print $3 }' | \
+            while read version; do
+              echo "Repairing remote-only phantom migration: $version"
+              supabase migration repair "$version" --status reverted || true
+            done
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
       - name: Mark all pre-existing migrations as applied
-        # The baseline plus every migration added before the ais_tracking feature
-        # was applied manually via the SQL Editor (the old workflow was broken
-        # and re-pushed the same migrations). Repairing them here ensures
-        # `supabase db push` only applies NEW migrations going forward.
+        # All migrations applied before this workflow was fixed (via MCP or SQL
+        # Editor). Marking them as applied ensures db push only processes truly
+        # new migrations. List covers baseline through 20260507000002 inclusive.
         run: |
           for v in \
             20260327174919 \
@@ -52,7 +73,38 @@ jobs:
             20260424000000 \
             20260424000001 \
             20260424000002 \
-            20260424000003; do
+            20260424000003 \
+            20260424000004 \
+            20260424000005 \
+            20260424000006 \
+            20260424000007 \
+            20260424000008 \
+            20260424000009 \
+            20260504000002 \
+            20260504000003 \
+            20260504000004 \
+            20260504000005 \
+            20260504000006 \
+            20260504000007 \
+            20260504000008 \
+            20260504000009 \
+            20260504000010 \
+            20260504000011 \
+            20260504000012 \
+            20260504000013 \
+            20260505000000 \
+            20260505000001 \
+            20260505000002 \
+            20260505000003 \
+            20260505000004 \
+            20260505000005 \
+            20260505000006 \
+            20260505000007 \
+            20260505000008 \
+            20260505000009 \
+            20260506000001 \
+            20260507000001 \
+            20260507000002; do
             supabase migration repair "$v" --status applied || true
           done
         env:
