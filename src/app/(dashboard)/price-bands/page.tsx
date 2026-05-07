@@ -14,6 +14,7 @@ import BarrelLoading from "../../../components/dashboard/BarrelLoading";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { rpcGetPriceBandsData, type PriceBandsRow } from "../../../lib/rpc";
 import { downloadPriceBandsExcel } from "../../../lib/exportExcel";
+import { downloadCsv } from "../../../lib/exportCsv";
 
 // ── Colors ────────────────────────────────────────────────────────────────────
 
@@ -92,27 +93,6 @@ const COMMON_LAYOUT_BASE: Partial<Layout> = {
     namelength: -1,
   },
 };
-
-function downloadCsv(rows: PriceBandsRow[], filename: string) {
-  if (!rows || rows.length === 0) return;
-  const cols = Object.keys(rows[0]) as (keyof PriceBandsRow)[];
-  const escapeCell = (v: unknown) => {
-    const s = v === null || v === undefined ? "" : String(v);
-    return `"${s.replaceAll('"', '""')}"`;
-  };
-  const csvLines = [cols.join(",")].concat(
-    rows.map((r) => cols.map((c) => escapeCell(r[c])).join(",")),
-  );
-  const blob = new Blob([csvLines.join("\n")], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
 
 // ── Anti-collision for end-of-line annotations ────────────────────────────────
 
@@ -615,7 +595,7 @@ export default function PriceBandsPage() {
                         onClick: async () => {
                           setCsvLoading(true);
                           try {
-                            downloadCsv(rows, "price_bands.csv");
+                            downloadCsv({ rows: rows as unknown as Record<string, unknown>[], filename: "price_bands" });
                           } finally {
                             setCsvLoading(false);
                           }
