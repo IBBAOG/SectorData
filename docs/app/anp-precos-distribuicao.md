@@ -15,17 +15,18 @@ RPC wrappers: seção "ANP Preços Distribuição" em [`src/lib/rpc.ts`](../../s
 
 ## Produto
 
-Visualização dos **preços médios praticados por distribuidoras** (cadeia distribuidor → revenda) publicados pela ANP em três granularidades:
+Visualização dos **preços médios praticados por distribuidoras** (cadeia distribuidor → revenda) publicados pela ANP em quatro granularidades:
 
 - **Brasil semanal** — combustíveis líquidos (Gasolina Comum, Etanol Hidratado, Diesel S10, Diesel S500, GNV).
+- **Região mensal** — preços agregados por região geográfica (NORTE, NORDESTE, CENTRO OESTE, SUDESTE, SUL).
 - **UF mensal** — primeiro caso de uso é GLP P13.
 - **Município mensal** — combustíveis líquidos por município (~459 municípios, 2024+).
 
 Permite ao usuário:
 
 - Selecionar um **produto** via select único (vindo da RPC de filtros).
-- Escolher a **granularidade** via `<SegmentedToggle>` (Brasil | UF | Município) — default `brasil`.
-- Quando granularidade ≠ `brasil`, escolher quais **locais** (UFs ou municípios) aparecem no chart — `<MultiSelectFilter>`. Para granularidade municipal, **máx. 5 selecionados** simultaneamente no gráfico (export libera todos).
+- Escolher a **granularidade** via `<SegmentedToggle>` (Brasil | UF | Município | Região) — default `brasil`.
+- Quando granularidade ≠ `brasil`, escolher quais **locais** (UFs, municípios ou regiões) aparecem no chart — `<MultiSelectFilter>`. Para granularidade municipal, **máx. 5 selecionados** simultaneamente no gráfico (export libera todos). Para Região, sem cap (apenas 5 opções).
 - Restringir o **período** via range slider de anos (default: últimos 5 anos), aplicado server-side via RPC (convertido para `${y}-01-01` / `${y}-12-31`).
 
 Header: `ANP — Preços de Distribuição de Combustíveis` + sub `Preços médios praticados por distribuidoras (Brasil semanal, UF/Município mensal)` + badge de período quando dados existem.
@@ -38,7 +39,7 @@ Header: `ANP — Preços de Distribuição de Combustíveis` + sub `Preços méd
 
 | Wrapper TS | RPC PostgreSQL | Retorno (T) |
 |---|---|---|
-| `rpcGetAnpPdistFiltros` | `get_anp_precos_distribuicao_filtros()` | `{ produtos, granularidades, ufs, municipios, data_min, data_max }` (jsonb) |
+| `rpcGetAnpPdistFiltros` | `get_anp_precos_distribuicao_filtros()` | `{ produtos, granularidades, ufs, municipios, regioes, data_min, data_max }` (jsonb) |
 | `rpcGetAnpPdistSerie` | `get_anp_precos_distribuicao_serie(p_produto, p_granularidade, p_locais?, p_data_inicio?, p_data_fim?)` | `Array<{ data_referencia, local, preco_medio, preco_minimo, preco_maximo, unidade }>` |
 | `getAnpPdistExportCount` | `get_anp_precos_distribuicao_export_count(p_produtos?, p_granularidades?, p_locais?, p_data_inicio?, p_data_fim?)` | `int` (count) |
 
@@ -52,9 +53,10 @@ Tabela: `anp_precos_distribuicao` (~50–100k linhas esperadas, populada por `sc
 | `data_referencia` | date | UNIQUE composta | início da semana ou 1º dia do mês |
 | `periodicidade` | text | | `'semanal'` ou `'mensal'` |
 | `produto` | text | UNIQUE composta | `'Gasolina Comum'`, `'Etanol Hidratado'`, `'Diesel S10'`, `'Diesel S500'`, `'GNV'`, `'GLP P13'` |
-| `granularidade` | text | UNIQUE composta | `'brasil'`, `'uf'`, `'municipio'` |
-| `uf` | text | UNIQUE composta | NULL quando granularidade = `'brasil'` |
+| `granularidade` | text | UNIQUE composta | `'brasil'`, `'uf'`, `'municipio'`, `'regiao'` |
+| `uf` | text | UNIQUE composta | NULL quando granularidade ∈ `{'brasil','regiao'}` |
 | `municipio` | text | UNIQUE composta | NULL quando granularidade ≠ `'municipio'` |
+| `regiao` | text | UNIQUE composta | NULL exceto quando granularidade = `'regiao'`. Valores: `'NORTE'`, `'NORDESTE'`, `'CENTRO OESTE'`, `'SUDESTE'`, `'SUL'` |
 | `preco_medio` | numeric(10,4) | | obrigatório |
 | `preco_minimo` | numeric(10,4) | | nullable |
 | `preco_maximo` | numeric(10,4) | | nullable |
@@ -84,8 +86,8 @@ Tabela: `anp_precos_distribuicao` (~50–100k linhas esperadas, populada por `sc
 | Filtro | Componente | Comportamento |
 |---|---|---|
 | Produto | `<select>` único | server-side em `get_anp_precos_distribuicao_serie` (debounced 400ms). Default: `'Gasolina Comum'` se existir, senão primeiro da lista. |
-| Granularidade | `<SegmentedToggle>` (full) | 3 opções: Brasil / UF / Município. Default: `'brasil'`. Trocar resseta `selectedLocais` para os primeiros 5 disponíveis. |
-| Locais (UF ou Município) | `<MultiSelectFilter>` | Renderizado quando granularidade ≠ `'brasil'`. Para municípios: cap em 5 selecionados (UX). Server-side só para municípios (envia `p_locais`); UF passa `null` e filtra client-side. |
+| Granularidade | `<SegmentedToggle>` (full) | 4 opções: Brasil / UF / Município / Região. Default: `'brasil'`. Trocar resseta `selectedLocais` (Região: todas as 5; demais: primeiros 5 disponíveis). |
+| Locais (UF, Município ou Região) | `<MultiSelectFilter>` | Renderizado quando granularidade ≠ `'brasil'`. Para municípios: cap em 5 selecionados (UX). Para Região: sem cap (só 5 opções). Server-side para municípios e regiões (envia `p_locais`); UF passa `null` e filtra client-side. |
 | Período | `<PeriodSlider years>` | server-side em `get_anp_precos_distribuicao_serie` (debounced 400ms); convertido para `${y}-01-01` / `${y}-12-31`. |
 
 ## Charts esperados
@@ -131,6 +133,7 @@ Tabela: `anp_precos_distribuicao` (~50–100k linhas esperadas, populada por `sc
 - **`anp_precos_distribuicao` é médio (~50–100k linhas esperadas)**.
 - **Granularidade municipal pode ser pesada** — para esse caso, página envia `p_locais = selectedLocais` (cap em 5) já no fetch para bound ao payload.
 - **Granularidade UF** — passa `p_locais = null` (até 27 UFs cabem).
+- **Granularidade Região** — passa `p_locais = selectedLocais` (5 opções fixas).
 - **Granularidade Brasil** — uma única série, payload mínimo.
 - **Debounce 400ms** ao mudar produto, granularidade, locais ou slider — evita rajadas durante drag.
 - **Filtragem por local em UF mode** é client-side via `useMemo` — sem refetch (≤27 UFs).
@@ -162,3 +165,4 @@ Tier 2 — `<ExportPanel mode="modal">` abre `<ExportModal>` com filtros + calcu
 ## Histórico
 
 - `2026-05-07` — Implementação inicial (page + wrappers + NavBar + sub-PRD), em paralelo com schema (`worker_supabase`), ETL (`worker_etl-pipelines`) e alertas (`worker_alertas`).
+- `2026-05-07` — Adicionada granularidade `'regiao'` (4ª opção no `<SegmentedToggle>`): NORTE / NORDESTE / CENTRO OESTE / SUDESTE / SUL. Tipo `AnpPdistFiltros.regioes: string[]` em `src/lib/rpc.ts`. Schema/RPC estendidos por `worker_supabase`; ETL parser estendido por `worker_etl-pipelines`.

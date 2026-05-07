@@ -1504,9 +1504,10 @@ export type AnpPdistSerieRow = {
 
 export type AnpPdistFiltros = {
   produtos: string[];
-  granularidades: string[];    // 'brasil' | 'uf' | 'municipio'
+  granularidades: string[];    // 'brasil' | 'uf' | 'municipio' | 'regiao'
   ufs: string[];
   municipios: string[];
+  regioes: string[];           // 'NORTE' | 'NORDESTE' | 'CENTRO OESTE' | 'SUDESTE' | 'SUL'
   data_min: string | null;
   data_max: string | null;
 };
@@ -1523,12 +1524,13 @@ export async function rpcGetAnpPdistFiltros(
       granularidades:  d.granularidades  ?? [],
       ufs:             d.ufs             ?? [],
       municipios:      d.municipios      ?? [],
+      regioes:         d.regioes         ?? [],
       data_min:        d.data_min        ?? null,
       data_max:        d.data_max        ?? null,
     };
   } catch (e) {
     console.error("get_anp_precos_distribuicao_filtros failed", e);
-    return { produtos: [], granularidades: [], ufs: [], municipios: [], data_min: null, data_max: null };
+    return { produtos: [], granularidades: [], ufs: [], municipios: [], regioes: [], data_min: null, data_max: null };
   }
 }
 
