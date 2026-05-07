@@ -752,16 +752,12 @@ export default function SalesVolumesPage() {
                       {
                         kind: "excel",
                         label: "formated data .xl",
-                        busy: excelLoading,
-                        loadingLabel: "Gerando Excel...",
                         disabled: seriesLoading || excelLoading || csvLoading,
                         onClick: openExportModal,
                       },
                       {
                         kind: "csv",
                         label: "all data .csv",
-                        busy: csvLoading,
-                        loadingLabel: "Baixando CSV...",
                         disabled: seriesLoading || excelLoading || csvLoading,
                         onClick: openExportModal,
                       },

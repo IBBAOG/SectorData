@@ -343,16 +343,12 @@ export default function AnpLpcPage() {
                       {
                         kind: "excel",
                         label: "Excel",
-                        busy: excelLoading,
-                        loadingLabel: "Gerando Excel...",
                         disabled: loading || excelLoading || csvLoading,
                         onClick: openExportModal,
                       },
                       {
                         kind: "csv",
                         label: "CSV",
-                        busy: csvLoading,
-                        loadingLabel: "Baixando CSV...",
                         disabled: loading || excelLoading || csvLoading,
                         onClick: openExportModal,
                       },
