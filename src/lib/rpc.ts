@@ -2231,3 +2231,179 @@ export async function getAnpLpcExportCount(
   }
   return Number(data ?? 0);
 }
+
+// ─── MODULE: Admin Analytics (/admin-analytics) ──────────────────────────────
+//
+// Read-only Admin dashboard fed by the `app_events` table. All RPCs
+// here are SECURITY DEFINER and check role='Admin' server-side; a Client
+// hitting them gets `permission denied`. We surface that as empty data so
+// the page is graceful when role is mid-load.
+//
+// `period_days` is always passed as integer; default 30 matches the SQL
+// signature default. The RPC `track_event` (write side) lives in
+// `src/lib/tracking.ts` because it is fire-and-forget.
+
+export type AnalyticsKpis = {
+  dau: number;
+  wau: number;
+  mau: number;
+  total_users: number;
+  active_users_period: number;
+  exports_period: number;
+  page_views_period: number;
+  logins_period: number;
+};
+
+export type AnalyticsByDashboardRow = {
+  route: string;
+  page_views: number;
+  unique_users: number;
+  exports: number;
+  bytes_total: number;
+};
+
+export type AnalyticsTopRoute = {
+  route: string;
+  views: number;
+};
+
+export type AnalyticsByUserRow = {
+  user_id: string;
+  full_name: string | null;
+  role: string;
+  last_login: string | null;
+  page_views: number;
+  exports: number;
+  top_routes: AnalyticsTopRoute[];
+};
+
+export type AnalyticsTimelineEvent = {
+  event_type: "login" | "page_view" | "export";
+  route: string | null;
+  payload: Record<string, unknown>;
+  created_at: string;
+};
+
+export type AnalyticsHeatmapCell = {
+  dow: number;   // 0=Sunday … 6=Saturday (matches Postgres extract(dow))
+  hour: number;  // 0..23
+  event_count: number;
+};
+
+export async function rpcGetAnalyticsKpis(
+  supabase: SupabaseClient,
+  periodDays = 30,
+): Promise<AnalyticsKpis | null> {
+  try {
+    const { data, error } = await supabase.rpc("get_analytics_kpis", {
+      period_days: periodDays,
+    });
+    if (error) throw error;
+    if (!data) return null;
+    const d = data as Partial<AnalyticsKpis>;
+    return {
+      dau: Number(d.dau ?? 0),
+      wau: Number(d.wau ?? 0),
+      mau: Number(d.mau ?? 0),
+      total_users: Number(d.total_users ?? 0),
+      active_users_period: Number(d.active_users_period ?? 0),
+      exports_period: Number(d.exports_period ?? 0),
+      page_views_period: Number(d.page_views_period ?? 0),
+      logins_period: Number(d.logins_period ?? 0),
+    };
+  } catch (e) {
+    console.warn("get_analytics_kpis failed", e);
+    return null;
+  }
+}
+
+export async function rpcGetAnalyticsByDashboard(
+  supabase: SupabaseClient,
+  periodDays = 30,
+): Promise<AnalyticsByDashboardRow[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_analytics_by_dashboard", {
+      period_days: periodDays,
+    });
+    if (error) throw error;
+    return ((data ?? []) as AnalyticsByDashboardRow[]).map((r) => ({
+      route: r.route,
+      page_views: Number(r.page_views ?? 0),
+      unique_users: Number(r.unique_users ?? 0),
+      exports: Number(r.exports ?? 0),
+      bytes_total: Number(r.bytes_total ?? 0),
+    }));
+  } catch (e) {
+    console.warn("get_analytics_by_dashboard failed", e);
+    return [];
+  }
+}
+
+export async function rpcGetAnalyticsByUser(
+  supabase: SupabaseClient,
+  periodDays = 30,
+  search: string | null = null,
+): Promise<AnalyticsByUserRow[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_analytics_by_user", {
+      period_days: periodDays,
+      p_search: search && search.trim() ? search.trim() : "",
+    });
+    if (error) throw error;
+    return ((data ?? []) as AnalyticsByUserRow[]).map((r) => ({
+      user_id: r.user_id,
+      full_name: r.full_name ?? null,
+      role: r.role ?? "Client",
+      last_login: r.last_login ?? null,
+      page_views: Number(r.page_views ?? 0),
+      exports: Number(r.exports ?? 0),
+      top_routes: Array.isArray(r.top_routes) ? r.top_routes : [],
+    }));
+  } catch (e) {
+    console.warn("get_analytics_by_user failed", e);
+    return [];
+  }
+}
+
+export async function rpcGetAnalyticsUserTimeline(
+  supabase: SupabaseClient,
+  targetUserId: string,
+  periodDays = 30,
+): Promise<AnalyticsTimelineEvent[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_analytics_user_timeline", {
+      target_user_id: targetUserId,
+      period_days: periodDays,
+    });
+    if (error) throw error;
+    return ((data ?? []) as AnalyticsTimelineEvent[]).map((r) => ({
+      event_type: r.event_type,
+      route: r.route ?? null,
+      payload: (r.payload ?? {}) as Record<string, unknown>,
+      created_at: r.created_at,
+    }));
+  } catch (e) {
+    console.warn("get_analytics_user_timeline failed", e);
+    return [];
+  }
+}
+
+export async function rpcGetAnalyticsHeatmap(
+  supabase: SupabaseClient,
+  periodDays = 30,
+): Promise<AnalyticsHeatmapCell[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_analytics_heatmap", {
+      period_days: periodDays,
+    });
+    if (error) throw error;
+    return ((data ?? []) as AnalyticsHeatmapCell[]).map((r) => ({
+      dow: Number(r.dow ?? 0),
+      hour: Number(r.hour ?? 0),
+      event_count: Number(r.event_count ?? 0),
+    }));
+  } catch (e) {
+    console.warn("get_analytics_heatmap failed", e);
+    return [];
+  }
+}
