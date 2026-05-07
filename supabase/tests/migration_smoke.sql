@@ -534,7 +534,17 @@ BEGIN
     WHERE n.nspname = 'public' AND p.proname = 'get_anp_lpc_export_count';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_lpc_export_count'; END IF;
 
+  -- ─── EXPORT AGGREGATED RPCs (20260507000004) ─────────────────────────────
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_anp_cdp_aggregated';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_cdp_aggregated'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_mdic_comex_aggregated';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_mdic_comex_aggregated'; END IF;
+
   RAISE NOTICE 'migration_smoke: all % checks passed.',
-    '25 tables + 3 materialized views + 62 functions + 18 RLS checks';
+    '25 tables + 3 materialized views + 64 functions + 18 RLS checks';
 
 END $smoke$;
