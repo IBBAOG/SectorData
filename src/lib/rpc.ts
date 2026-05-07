@@ -2234,7 +2234,7 @@ export async function getAnpLpcExportCount(
 
 // ─── MODULE: Admin Analytics (/admin-analytics) ──────────────────────────────
 //
-// Read-only Admin dashboard fed by the `analytics_events` table. All RPCs
+// Read-only Admin dashboard fed by the `app_events` table. All RPCs
 // here are SECURITY DEFINER and check role='Admin' server-side; a Client
 // hitting them gets `permission denied`. We surface that as empty data so
 // the page is graceful when role is mid-load.

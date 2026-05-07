@@ -7,7 +7,7 @@
 
 ## 1. Escopo
 
-Painel interno de telemetria: quem usa o quê, quando, com qual frequência. Cobre 3 famílias de eventos coletados pelo helper `src/lib/tracking.ts` em `analytics_events`:
+Painel interno de telemetria: quem usa o quê, quando, com qual frequência. Cobre 3 famílias de eventos coletados pelo helper `src/lib/tracking.ts` em `app_events`:
 
 | event_type | Disparado por | Fonte |
 |---|---|---|
@@ -48,7 +48,7 @@ Todas SECURITY DEFINER, com check de role server-side. Wrappers em [`src/lib/rpc
 
 RPC de escrita (write-side): `track_event(p_event_type text, p_route text, p_payload jsonb)` — chamada apenas via `src/lib/tracking.ts`. Fire-and-forget; nunca trava UI.
 
-## 5. Tabela `analytics_events` (referência — owner é `worker_supabase`)
+## 5. Tabela `app_events` (referência — owner é `worker_supabase`)
 
 Colunas esperadas:
 
@@ -69,7 +69,7 @@ RLS:
 
 ## 6. Dependências cross-dept
 
-- **`worker_supabase`** — dono da tabela `analytics_events`, das RPCs `track_event` + 5 leitoras, das RLS policies. A migration deve estar aplicada antes do dashboard funcionar.
+- **`worker_supabase`** — dono da tabela `app_events`, das RPCs `track_event` + 5 leitoras, das RLS policies. A migration deve estar aplicada antes do dashboard funcionar.
 - **APP / `worker_subgerente-app`** — dono dos hooks de instrumentação (`(dashboard)/layout.tsx`, `ExportPanel`, `ExportModal`) e do helper `src/lib/tracking.ts`.
 - **`worker_dash-admin`** — bundled owner desta página + da página `/admin-panel` que linka para ela.
 
