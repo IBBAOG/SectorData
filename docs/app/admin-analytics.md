@@ -28,7 +28,7 @@ Painel interno de telemetria: quem usa o quê, quando, com qual frequência. Cob
 
 | # | Seção | UI |
 |---|---|---|
-| 1 | Filtro de período (topo) | Toggle pílula `7 dias` / `30 dias` / `90 dias`. Default 30. |
+| 1 | Filtro de período (topo) | Toggle pílula `7 dias` / `30 dias` / `90 dias` + dropdown de janelas longas (`180 dias` / `365 dias` / `730 dias` / `1825 dias`). Default 30. As pílulas e o dropdown controlam um único estado `periodDays int`. Ao selecionar uma opção do dropdown a pílula fica inativa (nenhuma ativa); ao clicar numa pílula o dropdown volta ao placeholder. |
 | 2 | KPIs | 4 cards grandes (DAU, WAU, MAU, Active no período) + 3 cards pequenos (Page views, Exports, Logins do período). |
 | 3 | Engajamento por dashboard | Tabela sortable. Default DESC por `page_views`. Colunas: Rota, Page views, Usuários únicos, Exports, Bytes baixados (`formatBytes`). |
 | 4 | Engajamento por usuário | Search debounced + tabela. Colunas: Nome, Role badge, Último login, Page views, Exports, Top 3 dashboards (badges). Click em row → expande timeline (até 50 linhas + "mostrar mais"). |

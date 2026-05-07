@@ -50,6 +50,14 @@ const PERIOD_OPTIONS: { label: string; days: number }[] = [
   { label: "90 dias", days: 90 },
 ];
 
+// Janelas longas (> 90 dias) expostas via dropdown.
+const LONG_PERIOD_OPTIONS: { label: string; days: number }[] = [
+  { label: "180 dias (6 meses)", days: 180 },
+  { label: "365 dias (1 ano)", days: 365 },
+  { label: "730 dias (2 anos)", days: 730 },
+  { label: "1825 dias (5 anos)", days: 1825 },
+];
+
 const DOW_LABELS_PT = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
 type SortField = keyof Pick<
@@ -236,7 +244,7 @@ export default function AdminAnalyticsPage() {
         />
 
         {/* ── Period filter ───────────────────────────────────────────────── */}
-        <div style={{ display: "flex", gap: 8, marginBottom: 24, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 24, alignItems: "center", flexWrap: "wrap" }}>
           <span style={{ fontSize: 12, color: "#666", fontWeight: 600, marginRight: 4 }}>
             Período:
           </span>
@@ -264,6 +272,45 @@ export default function AdminAnalyticsPage() {
               </button>
             );
           })}
+
+          {/* Separador visual entre pílulas e dropdown */}
+          <span style={{ color: "#ddd", fontSize: 14, margin: "0 2px", userSelect: "none" }}>|</span>
+
+          {/* Dropdown de janelas longas (> 90 dias) */}
+          <select
+            value={LONG_PERIOD_OPTIONS.some((o) => o.days === periodDays) ? periodDays : ""}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              if (v > 0) setPeriodDays(v);
+            }}
+            style={{
+              border: `1px solid ${LONG_PERIOD_OPTIONS.some((o) => o.days === periodDays) ? ORANGE : "#ddd"}`,
+              background: "#fff",
+              color: LONG_PERIOD_OPTIONS.some((o) => o.days === periodDays) ? ORANGE : "#555",
+              borderRadius: 999,
+              padding: "5px 28px 5px 14px",
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: "Arial, sans-serif",
+              outline: "none",
+              appearance: "none",
+              WebkitAppearance: "none",
+              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23999'/%3E%3C/svg%3E")`,
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "right 10px center",
+              transition: "border-color 0.15s, color 0.15s",
+            }}
+          >
+            <option value="" disabled>
+              Janela longa…
+            </option>
+            {LONG_PERIOD_OPTIONS.map((opt) => (
+              <option key={opt.days} value={opt.days}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* ── Section 2: KPIs ─────────────────────────────────────────────── */}
