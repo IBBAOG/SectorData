@@ -118,6 +118,9 @@ jobs:
         # where get_sv_* functions were never created but the migration was
         # registered as applied.
         # Note: supabase db execute was removed from CLI; use db query instead.
-        run: supabase db query --file supabase/tests/migration_smoke.sql
+        # Note: --linked is required — without it the CLI tries 127.0.0.1:54322
+        # (the local dev Postgres) which does not exist on the GHA runner.
+        # The project is already linked by the "Link Supabase project" step above.
+        run: supabase db query --linked --file supabase/tests/migration_smoke.sql
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

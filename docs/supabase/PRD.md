@@ -167,7 +167,7 @@ Step `Post-migration smoke test` em `.github/workflows/supabase_deploy.yml`, exe
 
 ```yaml
 - name: Post-migration smoke test
-  run: supabase db execute --file supabase/tests/migration_smoke.sql
+  run: supabase db query --linked --file supabase/tests/migration_smoke.sql
   env:
     SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 ```
@@ -200,15 +200,19 @@ Atualize também o `RAISE NOTICE` no final do script com os novos totais.
 
 ## Pegadinhas do `supabase_deploy.yml` e CLI
 
-### a) `supabase db execute` foi removido da CLI
+### a) `supabase db execute` removido; `db query` sem `--linked` falha no CI
 
-O comando `supabase db execute --file <arquivo.sql>` não existe mais na CLI atual. Use:
+O comando `supabase db execute --file <arquivo.sql>` não existe mais na CLI atual.
+
+O substituto `supabase db query --file <arquivo.sql>` **sem flags** tenta conectar ao Postgres local (`127.0.0.1:54322`). No runner do GitHub Actions não há instância local, então o step falha com `connection refused` mesmo após `supabase db push` ter sido bem-sucedido.
+
+Solução: sempre usar `--linked` quando o projeto já foi linkado no step anterior:
 
 ```bash
-supabase db query --file <arquivo.sql>
+supabase db query --linked --file <arquivo.sql>
 ```
 
-O smoke test em `supabase/tests/migration_smoke.sql` deve ser invocado com `db query --file`, não `db execute --file`. O step do workflow foi corrigido em `9310496e`.
+O step `Post-migration smoke test` em `supabase_deploy.yml` usa `--linked` desde o fix em `ce367a12` (bug inicial) e foi atualizado novamente para garantir a flag.
 
 ### b) Repair de versões remotas fantasma
 
