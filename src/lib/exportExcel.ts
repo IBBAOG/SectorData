@@ -5,8 +5,13 @@ import type {
   DgMarginsRow,
   PriceBandsRow,
   MdicComexSerieRow,
+  MdicComexRawRow,
+  MdicComexAggregatedRow,
+  MdicComexGroupBy,
   AnpCdpSeriePonto,
   AnpCdpRawRow,
+  AnpCdpAggregatedRow,
+  AnpCdpGroupBy,
   AnpLpcSerieRow,
 } from "./rpc";
 
@@ -1329,6 +1334,179 @@ export async function downloadAnpLpcExcel(rows: AnpLpcSerieRow[]): Promise<void>
       { key: "preco_medio_venda",  header: "Preço Médio Venda",  width: 18, format: "0.000" },
       { key: "preco_medio_compra", header: "Preço Médio Compra", width: 20, format: "0.000" },
       { key: "n_postos",           header: "Nº Postos",          width: 12, format: "#,##0" },
+    ],
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tier 2 aggregated exports (anp-cdp + mdic-comex)
+//
+// The user picks a granularity in the export modal (e.g. "Por campo" → groupBy
+// = ['ano','mes','campo']). Page calls `rpcGet*Aggregated(filters, groupBy)`
+// then routes the rows here. The Excel only includes columns for the requested
+// dimensions plus all metric columns.
+//
+// Constraints (see anti-pattern note in section above):
+//   • `key:` lookups only — never `value:` extractors
+//   • no `mergeTitleCells` (not passed = false default)
+//   • Title row simple on row 1
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── ANP CDP aggregated dimension dictionary ─────────────────────────────────
+//
+// Maps each AnpCdpGroupBy key → its column metadata (header, width, align).
+// `local` is presented as "Ambiente" to match the dashboard label.
+
+type AnpCdpDimColumn = {
+  header: string;
+  width: number;
+  align?: "left" | "center" | "right";
+};
+
+const ANP_CDP_DIM_COLS: Record<AnpCdpGroupBy, AnpCdpDimColumn> = {
+  ano:                { header: "Ano",                width: 8 },
+  mes:                { header: "Mês",                width: 6 },
+  campo:              { header: "Campo",              width: 22, align: "left" },
+  bacia:              { header: "Bacia",              width: 18, align: "left" },
+  operador:           { header: "Operador",           width: 22, align: "left" },
+  estado:             { header: "Estado",             width: 10 },
+  local:              { header: "Ambiente",           width: 12 },
+  instalacao_destino: { header: "Instalação Destino", width: 22, align: "left" },
+  tipo_instalacao:    { header: "Tipo Instalação",    width: 18, align: "left" },
+};
+
+const ANP_CDP_METRIC_COLS: Array<{
+  key: keyof AnpCdpAggregatedRow;
+  header: string;
+  width: number;
+  format: string;
+}> = [
+  { key: "petroleo_bbl_dia",            header: "Petróleo (bbl/dia)",      width: 18, format: "#,##0.00" },
+  { key: "oleo_bbl_dia",                header: "Óleo (bbl/dia)",          width: 18, format: "#,##0.00" },
+  { key: "condensado_bbl_dia",          header: "Condensado (bbl/dia)",    width: 20, format: "#,##0.00" },
+  { key: "gas_total_mm3_dia",           header: "Gás Total (Mm³/dia)",     width: 20, format: "#,##0.00" },
+  { key: "gas_natural_assoc_mm3_dia",   header: "Gás Assoc. (Mm³/dia)",    width: 22, format: "#,##0.00" },
+  { key: "gas_natural_n_assoc_mm3_dia", header: "Gás N-Assoc. (Mm³/dia)",  width: 22, format: "#,##0.00" },
+  { key: "gas_royalties",               header: "Gás Royalties",           width: 18, format: "#,##0.00" },
+  { key: "agua_bbl_dia",                header: "Água (bbl/dia)",          width: 16, format: "#,##0.00" },
+  { key: "tempo_prod_hs_mes",           header: "Tempo Produção (hs/mês)", width: 22, format: "#,##0.00" },
+];
+
+export async function downloadAnpCdpAggregatedExcel(
+  rows: AnpCdpAggregatedRow[],
+  groupBy: AnpCdpGroupBy[],
+): Promise<void> {
+  // Build columns: only dimensions in `groupBy` (in the order given) + all
+  // metrics. `key:` lookup, no value extractor.
+  const dimCols = groupBy.map((g) => {
+    const meta = ANP_CDP_DIM_COLS[g];
+    return {
+      key:    g as keyof AnpCdpAggregatedRow,
+      header: meta.header,
+      width:  meta.width,
+      align:  meta.align,
+    } as const;
+  });
+
+  const filenameBase = `ANP-CDP_${groupBy.join("-")}`;
+
+  await downloadGenericExcel<AnpCdpAggregatedRow>({
+    rows,
+    sheetName: "ANP CDP",
+    title: `ANP CDP — Agregado (${groupBy.join(", ")})`,
+    filename: filenameBase,
+    columns: [
+      ...dimCols,
+      ...ANP_CDP_METRIC_COLS.map((c) => ({
+        key:    c.key,
+        header: c.header,
+        width:  c.width,
+        format: c.format,
+      })),
+    ],
+  });
+}
+
+// ── MDIC Comex aggregated dimension dictionary ──────────────────────────────
+
+type MdicComexDimColumn = {
+  header: string;
+  width: number;
+  align?: "left" | "center" | "right";
+};
+
+const MDIC_COMEX_DIM_COLS: Record<MdicComexGroupBy, MdicComexDimColumn> = {
+  ano:        { header: "Ano",          width: 8 },
+  mes:        { header: "Mês",          width: 6 },
+  flow:       { header: "Fluxo",        width: 12 },
+  ncm_codigo: { header: "NCM",          width: 14 },
+  ncm_nome:   { header: "Descrição NCM", width: 36, align: "left" },
+  pais:       { header: "País",         width: 22, align: "left" },
+};
+
+const MDIC_COMEX_METRIC_COLS: Array<{
+  key: keyof MdicComexAggregatedRow;
+  header: string;
+  width: number;
+  format: string;
+}> = [
+  { key: "volume_kg",     header: "Volume (kg)",     width: 18, format: "#,##0" },
+  { key: "valor_fob_usd", header: "Valor FOB (US$)", width: 20, format: "#,##0.00" },
+];
+
+export async function downloadMdicComexAggregatedExcel(
+  rows: MdicComexAggregatedRow[],
+  groupBy: MdicComexGroupBy[],
+): Promise<void> {
+  const dimCols = groupBy.map((g) => {
+    const meta = MDIC_COMEX_DIM_COLS[g];
+    return {
+      key:    g as keyof MdicComexAggregatedRow,
+      header: meta.header,
+      width:  meta.width,
+      align:  meta.align,
+    } as const;
+  });
+
+  const filenameBase = `MDIC-Comex_${groupBy.join("-")}`;
+
+  await downloadGenericExcel<MdicComexAggregatedRow>({
+    rows,
+    sheetName: "MDIC Comex",
+    title: `MDIC Comex — Agregado (${groupBy.join(", ")})`,
+    filename: filenameBase,
+    columns: [
+      ...dimCols,
+      ...MDIC_COMEX_METRIC_COLS.map((c) => ({
+        key:    c.key,
+        header: c.header,
+        width:  c.width,
+        format: c.format,
+      })),
+    ],
+  });
+}
+
+// ── MDIC Comex raw export (1 row per ano × mes × flow × ncm × pais) ──────────
+//
+// Default export path for /mdic-comex granularity = "raw". Mirrors columns of
+// `mdic_comex` 1:1.
+
+export async function downloadMdicComexRawExcel(rows: MdicComexRawRow[]): Promise<void> {
+  await downloadGenericExcel<MdicComexRawRow>({
+    rows,
+    sheetName: "MDIC Comex — Raw",
+    title: "MDIC Comex — Importações e Exportações (raw)",
+    filename: "MDIC Comex raw",
+    columns: [
+      { key: "ano",           header: "Ano",             width: 8 },
+      { key: "mes",           header: "Mês",             width: 6 },
+      { key: "flow",          header: "Fluxo",           width: 12 },
+      { key: "ncm_codigo",    header: "NCM",             width: 14 },
+      { key: "ncm_nome",      header: "Descrição NCM",   width: 36, align: "left" },
+      { key: "pais",          header: "País",            width: 22, align: "left" },
+      { key: "volume_kg",     header: "Volume (kg)",     width: 18, format: "#,##0" },
+      { key: "valor_fob_usd", header: "Valor FOB (US$)", width: 20, format: "#,##0.00" },
     ],
   });
 }

@@ -22,12 +22,17 @@ import {
   rpcGetAnpCdpFiltros,
   getAnpCdpExportCount,
   fetchAnpCdpRawFiltered,
+  rpcGetAnpCdpAggregated,
   type AnpCdpSeriePonto,
   type AnpCdpPocoSimples,
   type AnpCdpFiltros,
   type AnpCdpExportCountFilters,
+  type AnpCdpGroupBy,
 } from "../../../lib/rpc";
-import { downloadAnpCdpExcel, downloadAnpCdpRawExcel } from "../../../lib/exportExcel";
+import {
+  downloadAnpCdpRawExcel,
+  downloadAnpCdpAggregatedExcel,
+} from "../../../lib/exportExcel";
 import { downloadCsv } from "../../../lib/exportCsv";
 
 // Hard limits for raw (per-poço × per-mês) export. Above EXCEL_MAX, we
@@ -38,7 +43,56 @@ import { downloadCsv } from "../../../lib/exportCsv";
 const RAW_EXCEL_MAX_ROWS = 200_000;
 const RAW_ABS_MAX_ROWS   = 500_000;
 
-type ExportGranularity = "raw" | "ano_mes";
+// Export granularity. "raw" = 1 row per poço × mês × demais dimensões (paginated
+// PostgREST). All others use the dynamic aggregator RPC; the page just maps
+// each granularity to the `groupBy` array passed to `rpcGetAnpCdpAggregated`.
+//
+// "ambiente" maps to the SQL column `local` (the table column is named `local`,
+// the dashboard label is "Ambiente").
+type AnpCdpGranularity =
+  | "raw"
+  | "campo"
+  | "bacia"
+  | "operador"
+  | "ambiente"
+  | "ano_mes"
+  | "estado";
+
+const ANP_CDP_GROUPBY_MAP: Record<Exclude<AnpCdpGranularity, "raw">, AnpCdpGroupBy[]> = {
+  campo:    ["ano", "mes", "campo"],
+  bacia:    ["ano", "mes", "bacia"],
+  operador: ["ano", "mes", "operador"],
+  ambiente: ["ano", "mes", "local"],
+  estado:   ["ano", "mes", "estado"],
+  ano_mes:  ["ano", "mes"],
+};
+
+const ANP_CDP_GRANULARITY_OPTIONS: Array<{
+  value: AnpCdpGranularity;
+  label: string;
+  hint: string;
+}> = [
+  { value: "raw",      label: "Por poço (raw — todas as dimensões)",       hint: "1 linha por poço × mês × demais dimensões (recomendado p/ análise)" },
+  { value: "campo",    label: "Por campo (agregado por ano/mês/campo)",    hint: "soma das métricas por (ano, mês, campo)" },
+  { value: "bacia",    label: "Por bacia (agregado por ano/mês/bacia)",    hint: "soma das métricas por (ano, mês, bacia)" },
+  { value: "operador", label: "Por operador (agregado por ano/mês/operador)", hint: "soma das métricas por (ano, mês, operador)" },
+  { value: "ambiente", label: "Por ambiente (agregado por ano/mês/ambiente)",  hint: "soma das métricas por (ano, mês, ambiente)" },
+  { value: "estado",   label: "Por estado (agregado por ano/mês/estado)",  hint: "soma das métricas por (ano, mês, estado)" },
+  { value: "ano_mes",  label: "Por ano/mês (total agregado)",              hint: "soma total das métricas por mês (≤252 linhas)" },
+];
+
+// Hardcoded estimate of aggregated row counts (no extra round-trip). The raw
+// path uses `getAnpCdpExportCount`; aggregated paths return one of these
+// constants from the modal's `countFetcher`. Numbers are upper-bound back-of-
+// envelope: 21 years × 12 months = 252 (ano_mes), then × distinct dimension.
+const ANP_CDP_AGG_ESTIMATE: Record<Exclude<AnpCdpGranularity, "raw">, number> = {
+  ano_mes:  252,
+  estado:   252 * 6,    // ~6 estados produtores (RJ, SP, ES, RN, BA, AM, ...)
+  ambiente: 252 * 3,    // PreSal | PosSal | Terra
+  bacia:    252 * 12,   // ~12 bacias com produção declarada
+  operador: 252 * 30,   // ~30 operadores ativos
+  campo:    252 * 50,   // ~50 campos com produção
+};
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -209,9 +263,9 @@ export default function AnpCdpPage() {
   const [exportTipos, setExportTipos]               = useState<string[]>([]);
   const [exportRange, setExportRange]               = useState<[number, number]>([0, 0]);
   // Default = raw (1 row per poço × mês × demais dimensões). Aggregated is
-  // an explicit opt-in (users picking "Por ano/mês" get the 113-row summary
-  // that used to be the silent default and caused the bug).
-  const [exportGranularity, setExportGranularity]   = useState<ExportGranularity>("raw");
+  // an explicit opt-in (users picking any aggregated granularity get the
+  // dynamic-aggregator RPC; "Por ano/mês" is the smallest summary at ≤252 rows).
+  const [exportGranularity, setExportGranularity]   = useState<AnpCdpGranularity>("raw");
   const [exportRawCount, setExportRawCount]         = useState<number | null>(null);
 
   // ── Initial load ─────────────────────────────────────────────────────────
@@ -512,14 +566,15 @@ export default function AnpCdpPage() {
         countFetcher={async () => {
           if (!supabase) return 0;
           // For raw granularity the count == raw rows in anp_cdp_producao.
-          // For aggregated (ano_mes) the result is groupwise — at most one
-          // row per (ano, mes) pair: clamp to a tight constant so the size
-          // strip doesn't flash a misleading 100MB+ estimate.
-          if (exportGranularity === "ano_mes") {
-            // Worst case ~252 rows (21 years × 12 months). Reset stored raw
-            // count so over-limit flags stay false on aggregated path.
+          // For any aggregated granularity the result is groupwise — return
+          // a hardcoded conservative upper bound from ANP_CDP_AGG_ESTIMATE so
+          // the size strip doesn't flash a misleading 100MB+ figure (the real
+          // count would require an extra round-trip we don't want to pay).
+          if (exportGranularity !== "raw") {
+            // Reset stored raw count so over-limit flags stay false on
+            // aggregated paths.
             setExportRawCount(null);
-            return 252;
+            return ANP_CDP_AGG_ESTIMATE[exportGranularity];
           }
           const c = await getAnpCdpExportCount(supabase, exportFilters);
           setExportRawCount(c);
@@ -545,15 +600,9 @@ export default function AnpCdpPage() {
               const rows = await fetchAnpCdpRawFiltered(supabase, exportFilters);
               await downloadAnpCdpRawExcel(rows);
             } else {
-              const rows = await rpcGetAnpCdpPocoSerie(supabase, {
-                bacoes:          exportFilters.bacoes,
-                operadores:      exportFilters.operadores,
-                locais:          exportFilters.locais,
-                tiposInstalacao: exportFilters.tiposInstalacao,
-                anoInicio:       exportFilters.anoInicio,
-                anoFim:          exportFilters.anoFim,
-              });
-              await downloadAnpCdpExcel(rows);
+              const groupBy = ANP_CDP_GROUPBY_MAP[exportGranularity];
+              const rows = await rpcGetAnpCdpAggregated(supabase, exportFilters, groupBy);
+              await downloadAnpCdpAggregatedExcel(rows, groupBy);
             }
             setExportOpen(false);
           } catch (e) {
@@ -582,17 +631,28 @@ export default function AnpCdpPage() {
                 filename: `anp_cdp_raw_${dd}-${mm}-${yy}`,
               });
             } else {
-              const rows = await rpcGetAnpCdpPocoSerie(supabase, {
-                bacoes:          exportFilters.bacoes,
-                operadores:      exportFilters.operadores,
-                locais:          exportFilters.locais,
-                tiposInstalacao: exportFilters.tiposInstalacao,
-                anoInicio:       exportFilters.anoInicio,
-                anoFim:          exportFilters.anoFim,
+              const groupBy = ANP_CDP_GROUPBY_MAP[exportGranularity];
+              const rows = await rpcGetAnpCdpAggregated(supabase, exportFilters, groupBy);
+              // CSV: include only the requested dim columns + metric columns,
+              // matching the Excel layout (avoid spurious null columns from
+              // the unused dimensions in the row payload).
+              const metricKeys = [
+                "petroleo_bbl_dia", "oleo_bbl_dia", "condensado_bbl_dia",
+                "gas_total_mm3_dia", "gas_natural_assoc_mm3_dia",
+                "gas_natural_n_assoc_mm3_dia", "gas_royalties",
+                "agua_bbl_dia", "tempo_prod_hs_mes",
+              ] as const;
+              const wantedCols = [...groupBy, ...metricKeys] as readonly string[];
+              const projected = rows.map((r) => {
+                const out: Record<string, unknown> = {};
+                for (const k of wantedCols) {
+                  out[k] = (r as unknown as Record<string, unknown>)[k];
+                }
+                return out;
               });
               downloadCsv({
-                rows: rows as unknown as Record<string, unknown>[],
-                filename: `anp_cdp_${dd}-${mm}-${yy}`,
+                rows: projected,
+                filename: `anp_cdp_${exportGranularity}_${dd}-${mm}-${yy}`,
               });
             }
             setExportOpen(false);
@@ -610,46 +670,28 @@ export default function AnpCdpPage() {
                 Granularidade
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <div className="form-check" style={{ marginBottom: 0 }}>
-                  <input
-                    className="form-check-input"
-                    type="radio"
-                    id="cdp-export-g-raw"
-                    name="cdp-export-granularity"
-                    checked={exportGranularity === "raw"}
-                    onChange={() => setExportGranularity("raw")}
-                  />
-                  <label
-                    className="form-check-label"
-                    htmlFor="cdp-export-g-raw"
-                    style={{ fontFamily: "Arial", fontSize: 12, cursor: "pointer" }}
-                  >
-                    <strong>Por poço (raw)</strong>
-                    <span style={{ color: "#888", marginLeft: 6, fontSize: 11 }}>
-                      — 1 linha por poço × mês × demais dimensões (recomendado p/ análise)
-                    </span>
-                  </label>
-                </div>
-                <div className="form-check" style={{ marginBottom: 0 }}>
-                  <input
-                    className="form-check-input"
-                    type="radio"
-                    id="cdp-export-g-anomes"
-                    name="cdp-export-granularity"
-                    checked={exportGranularity === "ano_mes"}
-                    onChange={() => setExportGranularity("ano_mes")}
-                  />
-                  <label
-                    className="form-check-label"
-                    htmlFor="cdp-export-g-anomes"
-                    style={{ fontFamily: "Arial", fontSize: 12, cursor: "pointer" }}
-                  >
-                    <strong>Por ano/mês (agregado)</strong>
-                    <span style={{ color: "#888", marginLeft: 6, fontSize: 11 }}>
-                      — soma das métricas por mês (≤252 linhas)
-                    </span>
-                  </label>
-                </div>
+                {ANP_CDP_GRANULARITY_OPTIONS.map((opt) => (
+                  <div key={opt.value} className="form-check" style={{ marginBottom: 0 }}>
+                    <input
+                      className="form-check-input"
+                      type="radio"
+                      id={`cdp-export-g-${opt.value}`}
+                      name="cdp-export-granularity"
+                      checked={exportGranularity === opt.value}
+                      onChange={() => setExportGranularity(opt.value)}
+                    />
+                    <label
+                      className="form-check-label"
+                      htmlFor={`cdp-export-g-${opt.value}`}
+                      style={{ fontFamily: "Arial", fontSize: 12, cursor: "pointer" }}
+                    >
+                      <strong>{opt.label}</strong>
+                      <span style={{ color: "#888", marginLeft: 6, fontSize: 11 }}>
+                        — {opt.hint}
+                      </span>
+                    </label>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -668,8 +710,8 @@ export default function AnpCdpPage() {
                 }}
               >
                 Volume muito alto ({(exportRawCount ?? 0).toLocaleString("pt-BR")} linhas).
-                Use granularidade <strong>Por ano/mês (agregado)</strong> ou aplique mais filtros
-                (bacia, operador, período).
+                Escolha uma <strong>granularidade agregada</strong> (campo, bacia, operador,
+                ambiente, estado ou ano/mês) ou aplique mais filtros (bacia, operador, período).
               </div>
             )}
             {!rawOverAbs && rawOverExcel && (

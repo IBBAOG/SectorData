@@ -22,11 +22,17 @@ import {
   rpcGetMdicComexTopPaises,
   rpcGetMdicComexFiltros,
   getMdicComexExportCount,
+  rpcGetMdicComexAggregated,
+  fetchMdicComexRawFiltered,
   type MdicComexSerieRow,
   type MdicComexTopPaisRow,
-  type MdicComexExportCountFilters,
+  type MdicComexAggregatedFilters,
+  type MdicComexGroupBy,
 } from "../../../lib/rpc";
-import { downloadMdicComexExcel } from "../../../lib/exportExcel";
+import {
+  downloadMdicComexRawExcel,
+  downloadMdicComexAggregatedExcel,
+} from "../../../lib/exportExcel";
 import { downloadCsv } from "../../../lib/exportCsv";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -37,6 +43,51 @@ const NCM_INFO: Record<string, { label: string; color: string }> = {
   "27101921": { label: "Diesel",       color: "#2196F3" },
 };
 const ALL_NCMS = Object.keys(NCM_INFO);
+
+// Hard limits for raw export. Above EXCEL_MAX, disable Excel and route the
+// user to CSV. Above ABS_MAX, both are disabled. The `mdic_comex` table is
+// small (~1.2k rows) so the default unfiltered case never trips these — but
+// the contract from /anp-cdp is mirrored here for consistency.
+const RAW_EXCEL_MAX_ROWS = 200_000;
+const RAW_ABS_MAX_ROWS   = 500_000;
+
+// Export granularity for /mdic-comex. "raw" pulls from `mdic_comex` directly
+// via PostgREST (paginated). All others use the dynamic-aggregator RPC. The
+// table has no `uf` column so "Por UF" is intentionally omitted (would require
+// a schema change in dept supabase).
+type MdicComexGranularity =
+  | "raw"
+  | "ncm"
+  | "pais"
+  | "flow"
+  | "ano_mes";
+
+const MDIC_GROUPBY_MAP: Record<Exclude<MdicComexGranularity, "raw">, MdicComexGroupBy[]> = {
+  ncm:     ["ano", "mes", "ncm_codigo", "ncm_nome"],
+  pais:    ["ano", "mes", "pais"],
+  flow:    ["ano", "mes", "flow"],
+  ano_mes: ["ano", "mes"],
+};
+
+const MDIC_GRANULARITY_OPTIONS: Array<{
+  value: MdicComexGranularity;
+  label: string;
+  hint: string;
+}> = [
+  { value: "raw",     label: "Por linha bruta (raw — todas as dimensões)", hint: "1 linha por (ano, mês, fluxo, NCM, país)" },
+  { value: "ncm",     label: "Por NCM",                                    hint: "soma por (ano, mês, NCM)" },
+  { value: "pais",    label: "Por país",                                   hint: "soma por (ano, mês, país)" },
+  { value: "flow",    label: "Por fluxo (IMP/EXP)",                        hint: "soma por (ano, mês, fluxo)" },
+  { value: "ano_mes", label: "Por ano/mês (total)",                        hint: "soma total por mês (≤252 linhas)" },
+];
+
+// Hardcoded estimate for aggregated paths (no extra round-trip).
+const MDIC_AGG_ESTIMATE: Record<Exclude<MdicComexGranularity, "raw">, number> = {
+  ano_mes: 252,
+  flow:    252 * 2,    // import | export
+  ncm:     252 * 3,    // 3 NCMs fixos (Petróleo Cru, Gasolina, Diesel)
+  pais:    252 * 60,   // ~60 países distintos com fluxo
+};
 
 // ── Chart helpers ──────────────────────────────────────────────────────────────
 
@@ -142,6 +193,9 @@ export default function MdicComexPage() {
   const [exportFlow, setExportFlow]       = useState<string>("ALL");
   const [exportNcms, setExportNcms]       = useState<string[]>(ALL_NCMS);
   const [exportRange, setExportRange]     = useState<[number, number]>([0, 0]);
+  // Default = raw (1 row per ano × mes × flow × ncm × pais).
+  const [exportGranularity, setExportGranularity] = useState<MdicComexGranularity>("raw");
+  const [exportRawCount, setExportRawCount]       = useState<number | null>(null);
 
   // ── Initial load: filtros + first serie fetch (last 10 years) ────────────
   useEffect(() => {
@@ -231,19 +285,32 @@ export default function MdicComexPage() {
     setExportFlow("ALL");
     setExportNcms(selectedNCMs.length ? selectedNCMs : ALL_NCMS);
     setExportRange(yearRange);
+    setExportGranularity("raw");
+    setExportRawCount(null);
     setExportOpen(true);
   }
 
-  const exportFilters = useMemo<MdicComexExportCountFilters>(() => {
+  const exportFilters = useMemo<MdicComexAggregatedFilters>(() => {
     const yMin = anos[exportRange[0]] ?? null;
     const yMax = anos[exportRange[1]] ?? null;
     return {
       flow:      exportFlow === "ALL" ? null : exportFlow,
       ncms:      exportNcms.length === ALL_NCMS.length ? null : exportNcms,
+      paises:    null,
       anoInicio: yMin,
       anoFim:    yMax,
     };
   }, [exportFlow, exportNcms, exportRange, anos]);
+
+  // Hard-limit flags (raw only — aggregated path is bounded by MDIC_AGG_ESTIMATE).
+  const rawOverExcel =
+    exportGranularity === "raw" &&
+    exportRawCount !== null &&
+    exportRawCount > RAW_EXCEL_MAX_ROWS;
+  const rawOverAbs =
+    exportGranularity === "raw" &&
+    exportRawCount !== null &&
+    exportRawCount > RAW_ABS_MAX_ROWS;
 
   if (visLoading || !visible) return null;
 
@@ -422,25 +489,45 @@ export default function MdicComexPage() {
         onClose={() => setExportOpen(false)}
         title="Exportar — MDIC Comex"
         datasetKey="mdic_comex"
-        currentFilters={exportFilters}
+        // Re-key by granularity so useExportSize debounces independently for
+        // raw vs each aggregated path.
+        currentFilters={{ ...exportFilters, _g: exportGranularity }}
         countFetcher={async () => {
           if (!supabase) return 0;
-          return getMdicComexExportCount(supabase, exportFilters);
+          // Aggregated paths return the hardcoded upper-bound estimate so the
+          // size strip doesn't flash misleading numbers (real count would
+          // require an extra round-trip we don't pay).
+          if (exportGranularity !== "raw") {
+            setExportRawCount(null);
+            return MDIC_AGG_ESTIMATE[exportGranularity];
+          }
+          const c = await getMdicComexExportCount(supabase, exportFilters);
+          setExportRawCount(c);
+          return c;
         }}
         excelBusy={excelLoading}
         csvBusy={csvLoading}
         loadingLabel={excelLoading ? "Gerando Excel..." : "Baixando CSV..."}
         onExportExcel={async () => {
           if (!supabase) return;
+          if (rawOverAbs) {
+            console.warn("MDIC Comex raw Excel blocked: rows exceed RAW_ABS_MAX_ROWS");
+            return;
+          }
+          if (rawOverExcel) {
+            console.warn("MDIC Comex raw Excel blocked: rows exceed RAW_EXCEL_MAX_ROWS — use CSV");
+            return;
+          }
           setExcelLoading(true);
           try {
-            const rows = await rpcGetMdicComexSerie(supabase, {
-              flow:      exportFilters.flow,
-              ncms:      exportFilters.ncms,
-              anoInicio: exportFilters.anoInicio,
-              anoFim:    exportFilters.anoFim,
-            });
-            await downloadMdicComexExcel(rows);
+            if (exportGranularity === "raw") {
+              const rows = await fetchMdicComexRawFiltered(supabase, exportFilters);
+              await downloadMdicComexRawExcel(rows);
+            } else {
+              const groupBy = MDIC_GROUPBY_MAP[exportGranularity];
+              const rows = await rpcGetMdicComexAggregated(supabase, exportFilters, groupBy);
+              await downloadMdicComexAggregatedExcel(rows, groupBy);
+            }
             setExportOpen(false);
           } catch (e) {
             console.error("MDIC Comex Excel export failed", e);
@@ -450,22 +537,40 @@ export default function MdicComexPage() {
         }}
         onExportCsv={async () => {
           if (!supabase) return;
+          if (rawOverAbs) {
+            console.warn("MDIC Comex raw CSV blocked: rows exceed RAW_ABS_MAX_ROWS");
+            return;
+          }
           setCsvLoading(true);
           try {
-            const rows = await rpcGetMdicComexSerie(supabase, {
-              flow:      exportFilters.flow,
-              ncms:      exportFilters.ncms,
-              anoInicio: exportFilters.anoInicio,
-              anoFim:    exportFilters.anoFim,
-            });
             const now = new Date();
             const dd = String(now.getDate()).padStart(2, "0");
             const mm = String(now.getMonth() + 1).padStart(2, "0");
             const yy = String(now.getFullYear()).slice(-2);
-            downloadCsv({
-              rows: rows as unknown as Record<string, unknown>[],
-              filename: `mdic_comex_${dd}-${mm}-${yy}`,
-            });
+
+            if (exportGranularity === "raw") {
+              const rows = await fetchMdicComexRawFiltered(supabase, exportFilters);
+              downloadCsv({
+                rows: rows as unknown as Record<string, unknown>[],
+                filename: `mdic_comex_raw_${dd}-${mm}-${yy}`,
+              });
+            } else {
+              const groupBy = MDIC_GROUPBY_MAP[exportGranularity];
+              const rows = await rpcGetMdicComexAggregated(supabase, exportFilters, groupBy);
+              const metricKeys = ["volume_kg", "valor_fob_usd"] as const;
+              const wantedCols = [...groupBy, ...metricKeys] as readonly string[];
+              const projected = rows.map((r) => {
+                const out: Record<string, unknown> = {};
+                for (const k of wantedCols) {
+                  out[k] = (r as unknown as Record<string, unknown>)[k];
+                }
+                return out;
+              });
+              downloadCsv({
+                rows: projected,
+                filename: `mdic_comex_${exportGranularity}_${dd}-${mm}-${yy}`,
+              });
+            }
             setExportOpen(false);
           } catch (e) {
             console.error("MDIC Comex CSV export failed", e);
@@ -475,6 +580,75 @@ export default function MdicComexPage() {
         }}
         filters={
           <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: "Arial" }}>
+            {/* Granularidade — default "raw" ───────────────────────────────── */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                Granularidade
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {MDIC_GRANULARITY_OPTIONS.map((opt) => (
+                  <div key={opt.value} className="form-check" style={{ marginBottom: 0 }}>
+                    <input
+                      className="form-check-input"
+                      type="radio"
+                      id={`mdic-export-g-${opt.value}`}
+                      name="mdic-export-granularity"
+                      checked={exportGranularity === opt.value}
+                      onChange={() => setExportGranularity(opt.value)}
+                    />
+                    <label
+                      className="form-check-label"
+                      htmlFor={`mdic-export-g-${opt.value}`}
+                      style={{ fontFamily: "Arial", fontSize: 12, cursor: "pointer" }}
+                    >
+                      <strong>{opt.label}</strong>
+                      <span style={{ color: "#888", marginLeft: 6, fontSize: 11 }}>
+                        — {opt.hint}
+                      </span>
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Hard-limit warnings (raw only) ────────────────────────────────── */}
+            {rawOverAbs && (
+              <div
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  color: "#7a1a1a",
+                  backgroundColor: "#fdecea",
+                  border: "1px solid #f5c2bc",
+                  borderRadius: 4,
+                  padding: "8px 10px",
+                  lineHeight: 1.4,
+                }}
+              >
+                Volume muito alto ({(exportRawCount ?? 0).toLocaleString("pt-BR")} linhas).
+                Escolha uma <strong>granularidade agregada</strong> (NCM, país, fluxo ou ano/mês)
+                ou aplique mais filtros (NCM, fluxo, período).
+              </div>
+            )}
+            {!rawOverAbs && rawOverExcel && (
+              <div
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  color: "#7a4a00",
+                  backgroundColor: "#fff3cd",
+                  border: "1px solid #ffe69c",
+                  borderRadius: 4,
+                  padding: "8px 10px",
+                  lineHeight: 1.4,
+                }}
+              >
+                Volume alto para Excel ({(exportRawCount ?? 0).toLocaleString("pt-BR")} linhas).
+                Recomendamos baixar em <strong>CSV</strong> (mais leve) — Excel pode falhar no
+                navegador.
+              </div>
+            )}
+
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Período</div>
               {hasYears && (
