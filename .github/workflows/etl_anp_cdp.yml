@@ -74,10 +74,11 @@ jobs:
             exit 1
           fi
 
-      # NOTA: upload pro Supabase foi movido pro alerter (alertas/bases/anp_cdp_producao_poco.py).
-      # Este workflow agora só faz "session refresh" — captura nova session via Selenium+CAPTCHA
-      # quando alerter detecta que session em alertas_session expirou. Alerter (a cada 2h)
-      # cuida de download via replay + diff + email + upload em fluxo único.
+      - name: Upload to Supabase
+        run: python scripts/pipelines/anp/cdp/02_upload.py --from-csv-dir output/anp/
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
       - name: Upload CSVs como artifact
         uses: actions/upload-artifact@v4
