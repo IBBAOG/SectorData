@@ -167,6 +167,25 @@ Workflows ativos para as tabelas novas: `etl_mdic_comex.yml`, `etl_anp_precos.ym
 
 ## Convenções gerais
 
+### Padrão de Export (Fase B — 2026-05)
+
+Todos os dashboards com dataset tabular exportam Excel + CSV. Dois tiers conforme volume estimado:
+
+| Tier | Critério | UX | Componentes |
+|---|---|---|---|
+| **Tier 1** | Dataset < 50k linhas (download imediato seguro) | Botões diretos no `ExportPanel` | [`ExportPanel.tsx`](../src/components/dashboard/ExportPanel.tsx) + [`exportExcel.ts`](../src/lib/exportExcel.ts) + [`exportCsv.ts`](../src/lib/exportCsv.ts) |
+| **Tier 2** | Dataset >= 50k linhas (export pode ser pesado) | Modal com filtros ativos + calculadora live de tamanho | `ExportPanel` com `mode="modal"` + [`ExportModal.tsx`](../src/components/dashboard/ExportModal.tsx) + [`useExportSize.ts`](../src/hooks/useExportSize.ts) |
+
+**Dashboards Tier 2:** `/market-share`, `/sales-volumes` (dataset `vendas`), `/mdic-comex`, `/anp-cdp`, `/anp-lpc`.
+
+**Dashboards Tier 1:** `/diesel-gasoline-margins`, `/price-bands`, `/navios-diesel`, `/anp-glp`, `/anp-daie`, `/anp-desembaracos`, `/anp-precos-produtores`, `/sindicom`, `/anp-ppi`, `/anp-painel-importacoes`.
+
+**Skip (sem dataset tabular):** `/home`, `/profile`, `/admin-panel`, `/stocks`, `/news-hunter`.
+
+**Como o tamanho é estimado (Tier 2):** RPC `get_*_export_count(filtros)` retorna `bigint` (count filtrado) → multiplicado pelo `AVG_BYTES_PER_ROW[datasetKey]` em [`exportSizeHeuristics.ts`](../src/lib/exportSizeHeuristics.ts) → `formatBytes(b)` formata para display. O debounce de 300ms está em [`useExportSize.ts`](../src/hooks/useExportSize.ts).
+
+**Ao criar dashboard novo:** escolha o tier pelo volume esperado da tabela alvo. Para Tier 2, criar RPC `get_<domínio>_export_count(mesmos filtros do RPC de série)` no dept `worker_supabase` + wrapper JS em `src/lib/rpc.ts` + adicionar `datasetKey` em `AVG_BYTES_PER_ROW` em `exportSizeHeuristics.ts`.
+
 ### Idioma
 
 - **UI**: português (`lang="pt-BR"` no root layout).

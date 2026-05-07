@@ -61,6 +61,8 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 
 `template-module/` is a starter template, not a deployed module. RPC wrappers: [`src/lib/rpc.ts`](src/lib/rpc.ts) (by module) and [`src/lib/profileRpc.ts`](src/lib/profileRpc.ts).
 
+**Export pattern (Fase B):** all tabular dashboards export both Excel and CSV. Heavy datasets (`/market-share`, `/sales-volumes`, `/mdic-comex`, `/anp-cdp`, `/anp-lpc`) open a modal with active filters and a live size calculator before downloading (Tier 2). Lighter datasets download directly (Tier 1). `/stocks` and `/news-hunter` have no tabular export by design.
+
 ## Project Structure
 
 ```
@@ -215,7 +217,8 @@ Extracted from the 10 Fase 3 dashboards to prevent visual drift. All live in [`s
 | `MultiSelectFilter.tsx` | Checkbox list with Limpar button, `(N/total)` counter and optional color swatch |
 | `PeriodSlider.tsx` | rc-slider wrapper; accepts `years: number[]` or `dates: string[]` |
 | `ChartSection.tsx` | Section title + "atualizando..." indicator + opacity 0.5 loading state |
-| `ExportPanel.tsx` | Declarative `actions[]` array with `kind=excel\|csv`, busy state, loading label |
+| `ExportPanel.tsx` | Declarative `actions[]` array with `kind=excel\|csv`, busy state, loading label. Accepts `mode="modal"` for Tier 2 |
+| `ExportModal.tsx` | Bootstrap modal with active-filter slot + live size calculator ("X MB · Y rows") + >200k warning. Tier 2 only |
 | `SegmentedToggle.tsx` | Orange-pill toggle for full vs compact view |
 | `BarrelLoading.tsx` | Barrel spinner via next/image; supports `bare` mode for inline use |
 
@@ -224,8 +227,11 @@ Extracted from the 10 Fase 3 dashboards to prevent visual drift. All live in [`s
 | File | Purpose |
 |------|---------|
 | [`src/hooks/useDebouncedFetch.ts`](src/hooks/useDebouncedFetch.ts) | useCallback + useRef debounce (400ms) with in-flight cancel |
+| [`src/hooks/useExportSize.ts`](src/hooks/useExportSize.ts) | Calls `get_*_export_count` RPC with 300ms debounce; returns `{ bytes, rows, label }` for ExportModal |
 | [`src/lib/plotlyDefaults.ts`](src/lib/plotlyDefaults.ts) | `COMMON_LAYOUT`, `AXIS_LINE`, `emptyPlot()`, `BRAND_ORANGE`, `PALETTE` |
 | [`src/lib/units.ts`](src/lib/units.ts) | `kgToMilTon`, `m3ToMilM3` converters + `LABEL` constants |
+| [`src/lib/exportCsv.ts`](src/lib/exportCsv.ts) | `downloadCsv<T>(opts)` — single RFC4180 CSV helper |
+| [`src/lib/exportSizeHeuristics.ts`](src/lib/exportSizeHeuristics.ts) | `estimateSize(rows, datasetKey)`, `formatBytes(b)`, `AVG_BYTES_PER_ROW` empirical map |
 
 ## Auth & Roles
 

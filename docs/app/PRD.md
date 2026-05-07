@@ -42,7 +42,9 @@ src/lib/                            Helpers compartilhados (JS — chamando o qu
   rpc.ts                            Agregador de wrappers JS (cada seção pertence a um dash-*)
   profileRpc.ts                     Wrappers JS de perfil (compartilhado com dash-admin)
   filterUtils.ts                    REGIAO_UF_MAP, helpers de data
-  exportExcel.ts                    Export ExcelJS para todos os dashboards
+  exportExcel.ts                    Export ExcelJS — downloadGenericExcel<T> (Tier 1) + wrappers específicos
+  exportCsv.ts                      downloadCsv<T> único RFC4180 (substitui inline duplicado)
+  exportSizeHeuristics.ts           estimateSize(rows, datasetKey), formatBytes(b), AVG_BYTES_PER_ROW map
 
 src/types/                          Tipos compartilhados (tipos scoped ficam com dash-*)
 
@@ -51,6 +53,44 @@ public/                             Assets estáticos (logos, previews)
 next.config.ts, tsconfig.json,
 package.json, eslint.config.mjs     Configs do projeto
 ```
+
+## Export padronizado (Fase B — 2026-05)
+
+### Componentes em `src/components/dashboard/`
+
+| Componente | Uso |
+|---|---|
+| [`ExportPanel.tsx`](../../src/components/dashboard/ExportPanel.tsx) | Botões declarativos `actions[]` com `kind=excel\|csv`. Para Tier 2: aceita `mode="modal"` numa action para abrir ExportModal. |
+| [`ExportModal.tsx`](../../src/components/dashboard/ExportModal.tsx) | Modal Bootstrap com slot de filtros ativos + calculadora live "X MB · Y linhas" + warning >200k linhas. Usado exclusivamente por Tier 2. |
+
+### Hooks e libs compartilhados
+
+| Arquivo | Descrição |
+|---|---|
+| [`src/hooks/useExportSize.ts`](../../src/hooks/useExportSize.ts) | Chama RPC `get_*_export_count` com debounce 300ms; retorna `{ bytes, rows, label }` para o ExportModal |
+| [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) | `downloadCsv<T>(opts)` — helper único RFC4180 (substituiu duplicatas em market-share e price-bands) |
+| [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) | `downloadGenericExcel<T>` (Tier 1 genérico) + `downloadSimpleSheet<T>` (Tier 2 heavy) + wrappers: `downloadMdicComexExcel`, `downloadAnpCdpExcel`, `downloadAnpLpcExcel` |
+| [`src/lib/exportSizeHeuristics.ts`](../../src/lib/exportSizeHeuristics.ts) | `estimateSize(rows, datasetKey)`, `formatBytes(b)`, `AVG_BYTES_PER_ROW` (constantes empíricas por dataset) |
+
+### RPC wrappers em `src/lib/rpc.ts` (usados pelo ExportModal via useExportSize)
+
+| Wrapper | RPC | Dashboards |
+|---|---|---|
+| `getMsExportCount` | `get_ms_export_count` | `/market-share`, `/sales-volumes` |
+| `getMdicComexExportCount` | `get_mdic_comex_export_count` | `/mdic-comex` |
+| `getAnpCdpExportCount` | `get_anp_cdp_export_count` | `/anp-cdp` |
+| `getAnpLpcExportCount` | `get_anp_lpc_export_count` | `/anp-lpc` |
+
+### Tier 1 vs Tier 2 — critério de decisão
+
+| Tier | Critério | UX | Quando usar |
+|---|---|---|---|
+| **Tier 1** | Dataset < ~50k linhas | Botões diretos no `ExportPanel` | `/navios-diesel`, `/anp-glp`, `/anp-daie`, `/anp-desembaracos`, `/anp-precos-produtores`, `/sindicom`, `/anp-ppi`, `/anp-painel-importacoes`, `/diesel-gasoline-margins`, `/price-bands` |
+| **Tier 2** | Dataset >= ~50k linhas | `ExportPanel mode="modal"` + ExportModal | `/market-share`, `/sales-volumes`, `/mdic-comex`, `/anp-cdp`, `/anp-lpc` |
+
+### Como ajustar `AVG_BYTES_PER_ROW` para dataset novo
+
+Adicionar chave em `AVG_BYTES_PER_ROW` em [`exportSizeHeuristics.ts`](../../src/lib/exportSizeHeuristics.ts) com valor empírico (bytes médios por row do dataset). Medir exportando ~1k rows e dividindo pelo tamanho do arquivo resultante.
 
 ## NÃO está mais no escopo (foi pro dept `worker_supabase`)
 
