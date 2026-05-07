@@ -85,7 +85,7 @@ package.json, eslint.config.mjs     Configs do projeto
 
 | Tier | Critério | UX | Quando usar |
 |---|---|---|---|
-| **Tier 1** | Dataset < ~50k linhas | Botões diretos no `ExportPanel` | `/navios-diesel`, `/anp-glp`, `/anp-daie`, `/anp-desembaracos`, `/anp-precos-produtores`, `/sindicom`, `/anp-ppi`, `/anp-painel-importacoes`, `/diesel-gasoline-margins`, `/price-bands` |
+| **Tier 1** | Dataset < ~50k linhas | Botões diretos no `ExportPanel` | `/navios-diesel`, `/anp-glp`, `/anp-daie`, `/anp-desembaracos`, `/anp-precos-produtores`, `/sindicom`, `/anp-ppi`, `/anp-painel-importacoes`, `/anp-precos-distribuicao`, `/diesel-gasoline-margins`, `/price-bands` |
 | **Tier 2** | Dataset >= ~50k linhas | `ExportPanel mode="modal"` + ExportModal | `/market-share`, `/sales-volumes`, `/mdic-comex`, `/anp-cdp`, `/anp-lpc` |
 
 ### Como ajustar `AVG_BYTES_PER_ROW` para dataset novo
@@ -127,6 +127,7 @@ Para qualquer mudança em código de um dashboard específico, delegue ao agente
 | `/anp-daie` | `worker_dash-anp-daie` | [anp-daie.md](anp-daie.md) |
 | `/anp-desembaracos` | `worker_dash-anp-desembaracos` | [anp-desembaracos.md](anp-desembaracos.md) |
 | `/anp-painel-importacoes` | `worker_dash-anp-painel-importacoes` | [anp-painel-importacoes.md](anp-painel-importacoes.md) |
+| `/anp-precos-distribuicao` | `worker_dash-anp-precos-distribuicao` | [anp-precos-distribuicao.md](anp-precos-distribuicao.md) |
 
 ### Dashboards adicionados na Fase 3 (categoria NavBar / tabela alvo)
 
@@ -142,6 +143,7 @@ Para qualquer mudança em código de um dashboard específico, delegue ao agente
 | `anp-daie` | Fuel Distribution | `anp_daie` (~7k) |
 | `anp-desembaracos` | Fuel Distribution | `anp_desembaracos` (~6k) |
 | `anp-painel-importacoes` | Fuel Distribution | `anp_painel_imp_dist` (~1.4k) |
+| `anp-precos-distribuicao` | Fuel Distribution | `anp_precos_distribuicao` (volume a crescer) |
 
 ## Stack
 

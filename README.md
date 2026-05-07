@@ -44,7 +44,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/profile` | `get_my_profile`, `upsert_my_profile` | — |
 | `/admin-panel` | `get_module_visibility`, `set_module_visibility`, `get_all_users_with_roles`, `set_user_role` | — |
 
-### Estatísticas (Fase 3 — 10 novos dashboards)
+### Estatísticas (Fase 3 — 11 novos dashboards)
 
 | Route | Categoria | RPC functions | Export |
 |-------|-----------|---------------|--------|
@@ -58,6 +58,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/anp-daie` | Fuel Distribution | `get_anp_daie_serie`, `get_anp_daie_filtros` | Yes |
 | `/anp-desembaracos` | Fuel Distribution | `get_anp_desembaracos_serie`, `get_anp_desembaracos_top_paises`, `get_anp_desembaracos_filtros` | Yes |
 | `/anp-painel-importacoes` | Fuel Distribution | `get_anp_painel_imp_serie`, `get_anp_painel_imp_top_dist`, `get_anp_painel_imp_filtros` | Yes |
+| `/anp-precos-distribuicao` | Fuel Distribution | `get_anp_precos_distribuicao_serie`, `get_anp_precos_distribuicao_top_distribuidoras`, `get_anp_precos_distribuicao_filtros` | Yes |
 
 `template-module/` is a starter template, not a deployed module. RPC wrappers: [`src/lib/rpc.ts`](src/lib/rpc.ts) (by module) and [`src/lib/profileRpc.ts`](src/lib/profileRpc.ts).
 
@@ -69,7 +70,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 dashboard_projeto/
 ├── .claude/                       # local-only (gitignored) — agent definitions
 │   └── agents/                    # worker_* agents per department/dashboard
-├── .github/workflows/             # 14 workflows (ETL scrapers + supabase deploy)
+├── .github/workflows/             # 15 workflows (ETL scrapers + supabase deploy)
 ├── docs/                          # internal collaboration docs
 │   ├── master.md                  # PRD mestre — departments, contracts, conventions
 │   ├── app/                       # APP department + per-dashboard sub-PRDs
@@ -174,12 +175,13 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | `anp_lpc` | id | data_referencia, municipio, estado, produto, preco_medio, preco_minimo, preco_maximo, numero_postos |
 | `sindicom` | id | data_referencia, produto, regiao, volume_m3 |
 | `anp_cdp_producao` | id | poco, campo, bacia, operador, data_producao, prod_oleo_bbl, prod_gas_mm3, prod_agua_m3, tipo_poco, ambiente |
+| `anp_precos_distribuicao` | id | data_referencia, distribuidora, produto, uf, preco_distribuicao, unidade |
 
 **Materialized views:** `mv_ms_serie`, `mv_ms_serie_fast` — pre-aggregated monthly sales, refreshed by `classificar_agentes()`.
 
 > **Tech debt:** `price_bands`, `profiles`, `module_visibility` were created via DDL in [`sql/`](sql/) applied directly to the Supabase Dashboard rather than versioned migrations (`create_price_bands.sql`, `create_profiles_and_visibility.sql`, `create_user_management.sql`). See [`docs/supabase/PRD.md`](docs/supabase/PRD.md) for conversion plan.
 
-## Data Pipelines (14 workflows + 1 external)
+## Data Pipelines (15 workflows + 1 external)
 
 | # | Workflow | Schedule | Script(s) | Target |
 |---|----------|----------|-----------|--------|
@@ -197,6 +199,7 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | 12 | `etl_sindicom.yml` | Monthly 5th, 15:00 UTC | `pipelines/sindicom_sync.py` (Playwright + Chromium) | `sindicom` |
 | 13 | `manual_dg_margins.yml` | Weekly Mon | `manual/dg_margins_upload.py` | `d_g_margins` (manual Excel) |
 | 14 | `supabase_deploy.yml` | On push to main | `supabase db push` | migrations |
+| 15 | `etl_anp_precos_distribuicao.yml` | Monthly 5th 14:00 UTC + Weekly Tue 14:30 UTC | `pipelines/anp/precos_distribuicao_sync.py` | `anp_precos_distribuicao` |
 | ext | News Hunter scanner | Every ~5min via cron-job.org | `news_hunter_service.py --once` (in repo `IBBAOG/news-hunter-scanner`) | `news_articles` |
 
 **News Hunter scanner** lives in a separate repo. Uses `SUPABASE_SERVICE_KEY`. Keywords from UNION of all users' rows in `news_hunter_keywords`. Frontend polls `news_articles` every 60s incrementally (`found_at` watermark).
@@ -205,7 +208,7 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 
 **Manual data subsystem (`data/`):** `data/d_g_margins.xlsx` and `data/price_bands.xlsx` are edited by hand and uploaded via `scripts/manual/dg_margins_upload.py` (weekly automated) and `scripts/manual/price_bands_upload.py` (manual). Both files are gitignored.
 
-**Alert subsystem (`alertas/`):** local-only (gitignored), self-contained. 11 detection bases over Supabase tables/parquet files, sends notifications via Gmail API. See `alertas/PRD_ALERTAS.md`.
+**Alert subsystem (`alertas/`):** local-only (gitignored), self-contained. 12 detection bases over Supabase tables/parquet files, sends notifications via Gmail API. See `alertas/PRD_ALERTAS.md`.
 
 ## Shared Dashboard Components (Fase 4)
 
