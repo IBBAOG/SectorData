@@ -48,6 +48,15 @@ const NAV_ENTRIES: NavEntry[] = [
     items: [], // populated via groups (mega-menu)
     groups: [
       {
+        heading: "Proprietary data",
+        items: [
+          { href: "/market-share", label: "Market Share" },
+          { href: "/navios-diesel", label: "Diesel Imports Line-Up" },
+          { href: "/diesel-gasoline-margins", label: "Diesel and Gasoline Margins" },
+          { href: "/price-bands", label: "Price Bands" },
+        ],
+      },
+      {
         heading: "ANP data",
         items: [
           { href: "/sales-volumes", label: "Sales Volumes — ANP" },
@@ -71,15 +80,6 @@ const NAV_ENTRIES: NavEntry[] = [
         heading: "Comex data",
         items: [
           { href: "/mdic-comex", label: "MDIC Comex" },
-        ],
-      },
-      {
-        heading: "Proprietary data",
-        items: [
-          { href: "/market-share", label: "Market Share" },
-          { href: "/navios-diesel", label: "Diesel Imports Line-Up" },
-          { href: "/diesel-gasoline-margins", label: "Diesel and Gasoline Margins" },
-          { href: "/price-bands", label: "Price Bands" },
         ],
       },
     ],
