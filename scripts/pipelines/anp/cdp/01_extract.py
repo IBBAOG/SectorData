@@ -304,7 +304,11 @@ def do_buscar(driver, ocr_engine, periodo, ambiente):
     """
     Navigate to the ANP page, fill the form, solve CAPTCHA, click Buscar,
     and wait for the IR table to load.
-    Returns True on success.
+    Returns:
+      "ok"          → data loaded successfully
+      "no_data"     → CAPTCHA was correct but ANP has no data for (period, ambiente).
+                      Caller should NOT retry — it's a final answer.
+      "captcha_err" → CAPTCHA wrong or other transient error. Caller should retry.
     """
     driver.get(PAGE_URL)
     WebDriverWait(driver, 15).until(
@@ -320,7 +324,7 @@ def do_buscar(driver, ocr_engine, periodo, ambiente):
     print(f"    CAPTCHA: {captcha}")
     if len(captcha) != 5:
         print(f"    ✗ CAPTCHA inválido ({len(captcha)} chars)")
-        return False
+        return "captcha_err"
 
     driver.find_element(By.ID, "P54_CAPTCHA").clear()
     driver.find_element(By.ID, "P54_CAPTCHA").send_keys(captcha)
@@ -339,14 +343,15 @@ def do_buscar(driver, ocr_engine, periodo, ambiente):
             EC.presence_of_element_located((By.CSS_SELECTOR, ".a-IRR-table tbody tr"))
         )
         print(f"    OK Dados carregados")
-        return True
+        return "ok"
     except Exception:
         try:
             driver.find_element(By.CSS_SELECTOR, ".t-Alert--warning, .t-Alert--danger")
             print(f"    FAIL CAPTCHA errado (alerta na pagina)")
+            return "captcha_err"
         except Exception:
-            print(f"    FAIL Sem dados apos Buscar")
-        return False
+            print(f"    OK CAPTCHA passou — ANP sem dados para ({periodo}, {ambiente})")
+            return "no_data"
 
 
 def do_acoes_download(driver):
@@ -436,7 +441,13 @@ def capture_session(ocr_engine, periodo, ambiente, output_dir, download_dir):
             for f in glob.glob(os.path.join(download_dir, "*.csv")):
                 os.remove(f)
 
-            if not do_buscar(driver, ocr_engine, periodo, ambiente):
+            buscar_status = do_buscar(driver, ocr_engine, periodo, ambiente)
+            if buscar_status == "no_data":
+                # ANP confirmou que não há dados para esse (período, ambiente) — não é erro.
+                # Sai do retry loop com sucesso "vazio": sem CSV, sem session capturada.
+                print(f"  Captura encerrada: ANP sem dados para ({periodo}, {AMBIENTES[ambiente]}). Nenhum retry necessário.")
+                return True
+            if buscar_status != "ok":
                 save_debug_screenshot(driver, output_dir, f"cap_buscar_{attempt}")
                 continue
 
@@ -594,7 +605,11 @@ def extract_one_selenium(ocr_engine, periodo, ambiente, output_dir, download_dir
             for f in glob.glob(os.path.join(download_dir, "*.csv")):
                 os.remove(f)
 
-            if not do_buscar(driver, ocr_engine, periodo, ambiente):
+            buscar_status = do_buscar(driver, ocr_engine, periodo, ambiente)
+            if buscar_status == "no_data":
+                print(f"    [selenium] ANP sem dados para ({periodo}, {AMBIENTES[ambiente]}). Sem retry.")
+                return True  # exit cleanly — caller deve tratar como "sem CSV gerado"
+            if buscar_status != "ok":
                 save_debug_screenshot(
                     driver, output_dir,
                     f"{periodo.replace('/', '-')}_{ambiente}_buscar_{attempt}"
