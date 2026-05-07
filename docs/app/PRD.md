@@ -69,7 +69,7 @@ package.json, eslint.config.mjs     Configs do projeto
 |---|---|
 | [`src/hooks/useExportSize.ts`](../../src/hooks/useExportSize.ts) | Chama RPC `get_*_export_count` com debounce 300ms; retorna `{ bytes, rows, label }` para o ExportModal |
 | [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) | `downloadCsv<T>(opts)` — helper único RFC4180 (substituiu duplicatas em market-share e price-bands) |
-| [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) | `downloadGenericExcel<T>` (Tier 1 genérico) + `downloadSimpleSheet<T>` (Tier 2 heavy) + wrappers: `downloadMdicComexExcel`, `downloadAnpCdpExcel`, `downloadAnpLpcExcel` |
+| [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) | `downloadGenericExcel<T>` — função canônica única (aceita `key: keyof T` ou `value: (row: T) => unknown`, `mergeTitleCells?: boolean`, alias `numFmt` para `format`). Wrappers Tier 2 que chamam internamente: `downloadMdicComexExcel`, `downloadAnpCdpExcel`, `downloadAnpLpcExcel`. Handlers especiais (OOXML/custom): `downloadMarketShareExcel`, `downloadSalesVolumesExcel`, `downloadDgMarginsExcel`, `downloadPriceBandsExcel`. |
 | [`src/lib/exportSizeHeuristics.ts`](../../src/lib/exportSizeHeuristics.ts) | `estimateSize(rows, datasetKey)`, `formatBytes(b)`, `AVG_BYTES_PER_ROW` (constantes empíricas por dataset) |
 
 ### RPC wrappers em `src/lib/rpc.ts` (usados pelo ExportModal via useExportSize)
