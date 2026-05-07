@@ -544,7 +544,29 @@ BEGIN
     WHERE n.nspname = 'public' AND p.proname = 'get_mdic_comex_aggregated';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_mdic_comex_aggregated'; END IF;
 
+  -- ─── ANP PRECOS DISTRIBUICAO (20260507000005) ─────────────────────────────
+
+  PERFORM 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'anp_precos_distribuicao';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing table: anp_precos_distribuicao'; END IF;
+
+  PERFORM 1 FROM pg_tables
+    WHERE schemaname = 'public' AND tablename = 'anp_precos_distribuicao' AND rowsecurity = TRUE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: anp_precos_distribuicao'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_anp_precos_distribuicao_filtros';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_precos_distribuicao_filtros'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_anp_precos_distribuicao_serie';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_precos_distribuicao_serie'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_anp_precos_distribuicao_export_count';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_precos_distribuicao_export_count'; END IF;
+
   RAISE NOTICE 'migration_smoke: all % checks passed.',
-    '25 tables + 3 materialized views + 64 functions + 18 RLS checks';
+    '26 tables + 3 materialized views + 67 functions + 19 RLS checks';
 
 END $smoke$;
