@@ -9,6 +9,9 @@
 import { createClient } from "@supabase/supabase-js";
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ── Config ───────────────────────────────────────────────────────────────────
 // Prefer env vars (CI), fall back to .env file (local)
@@ -69,7 +72,7 @@ function parseISOish(raw) {
 }
 
 // ── Read and parse CSV ───────────────────────────────────────────────────────
-const csvPath = path.resolve("output/navios_diesel.csv");
+const csvPath = path.join(__dirname, "output", "navios_diesel.csv");
 let csvText = fs.readFileSync(csvPath, "utf8");
 // Strip BOM if present
 if (csvText.charCodeAt(0) === 0xfeff) csvText = csvText.slice(1);
