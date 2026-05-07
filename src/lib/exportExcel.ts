@@ -1,6 +1,13 @@
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
-import type { MsSerieRow, DgMarginsRow, PriceBandsRow } from "./rpc";
+import type {
+  MsSerieRow,
+  DgMarginsRow,
+  PriceBandsRow,
+  MdicComexSerieRow,
+  AnpCdpSeriePonto,
+  AnpLpcSerieRow,
+} from "./rpc";
 
 const BIG3_MEMBERS = ["Vibra", "Ipiranga", "Raizen"];
 
@@ -1184,4 +1191,160 @@ export async function downloadSalesVolumesExcel(
   svA.click();
   document.body.removeChild(svA);
   URL.revokeObjectURL(svUrl);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Generic single-sheet workbook helper for Fase B Tier 2 dashboards
+// (mdic-comex, anp-cdp, anp-lpc). One sheet, header row + data rows, brand
+// styling that matches Market Share (black header, orange title, Arial 10).
+// No OOXML charts — kept intentionally simple.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type SimpleColumn<T> = {
+  header: string;
+  width?: number;
+  /** Cell value extractor — return raw value, not a string. */
+  value: (row: T) => unknown;
+  /** Excel numFmt (e.g. "0.00", "#,##0"). */
+  numFmt?: string;
+  /** Cell horizontal alignment. */
+  align?: "left" | "center" | "right";
+};
+
+async function downloadSimpleSheet<T>(opts: {
+  rows: T[];
+  sheetName: string;
+  columns: SimpleColumn<T>[];
+  /** Title shown above the header in orange (Market Share style). */
+  titleText: string;
+  filename: string;
+}): Promise<void> {
+  const { rows, sheetName, columns, titleText, filename } = opts;
+  if (!rows || rows.length === 0) return;
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet(sheetName);
+  ws.views = [{ showGridLines: false }];
+
+  // Column widths
+  columns.forEach((c, i) => {
+    ws.getColumn(i + 1).width = c.width ?? 16;
+  });
+
+  // Title row (row 1)
+  const titleRow = ws.getRow(1);
+  titleRow.height = ROW_H + 4;
+  const titleCell = ws.getCell(1, 1);
+  titleCell.value = titleText;
+  titleCell.font = { name: "Arial", size: 12, bold: true, color: C.titleFg };
+  titleCell.alignment = { horizontal: "left", vertical: "middle" };
+  if (columns.length > 1) {
+    ws.mergeCells(1, 1, 1, columns.length);
+  }
+
+  // Header row (row 2)
+  const hRow = ws.getRow(2);
+  hRow.height = ROW_H;
+  columns.forEach((c, i) => {
+    const cell = ws.getCell(2, i + 1);
+    cell.value = c.header;
+    cell.font = { name: "Arial", size: 10, bold: true, color: C.headerFg };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: C.headerBg };
+    cell.alignment = { horizontal: i === 0 ? "left" : "center" };
+  });
+
+  // Data rows (start at row 3)
+  rows.forEach((r, idx) => {
+    const row = ws.getRow(idx + 3);
+    row.height = ROW_H;
+    columns.forEach((c, i) => {
+      const cell = ws.getCell(idx + 3, i + 1);
+      const v = c.value(r);
+      cell.value = (v === undefined ? null : v) as ExcelJS.CellValue;
+      cell.font = { name: "Arial", size: 10, color: C.cellFg };
+      if (c.numFmt) cell.numFmt = c.numFmt;
+      if (c.align) cell.alignment = { horizontal: c.align };
+      else if (i > 0) cell.alignment = { horizontal: "center" };
+    });
+  });
+
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, "0");
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const yy = String(now.getFullYear()).slice(-2);
+  a.download = `${filename} ${dd}-${mm}-${yy}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ── MDIC Comex export ────────────────────────────────────────────────────────
+
+export async function downloadMdicComexExcel(rows: MdicComexSerieRow[]): Promise<void> {
+  await downloadSimpleSheet<MdicComexSerieRow>({
+    rows,
+    sheetName: "MDIC Comex",
+    titleText: "MDIC Comex Stat — Importações e Exportações",
+    filename: "MDIC Comex",
+    columns: [
+      { header: "Ano",            width: 8,  value: r => r.ano,           align: "center" },
+      { header: "Mês",            width: 6,  value: r => r.mes,           align: "center" },
+      { header: "Fluxo",          width: 12, value: r => r.flow,          align: "center" },
+      { header: "NCM",            width: 14, value: r => r.ncm_codigo,    align: "center" },
+      { header: "Descrição NCM",  width: 36, value: r => r.ncm_nome ?? "" },
+      { header: "Volume (kg)",    width: 18, value: r => r.volume_kg,     numFmt: "#,##0", align: "right" },
+      { header: "Valor FOB (US$)",width: 20, value: r => r.valor_fob_usd, numFmt: "#,##0.00", align: "right" },
+    ],
+  });
+}
+
+// ── ANP CDP export ───────────────────────────────────────────────────────────
+
+export async function downloadAnpCdpExcel(rows: AnpCdpSeriePonto[]): Promise<void> {
+  await downloadSimpleSheet<AnpCdpSeriePonto>({
+    rows,
+    sheetName: "ANP CDP",
+    titleText: "ANP CDP — Produção por Poço",
+    filename: "ANP CDP",
+    columns: [
+      { header: "Ano",                      width: 8,  value: r => r.ano, align: "center" },
+      { header: "Mês",                      width: 6,  value: r => r.mes, align: "center" },
+      { header: "Petróleo (bbl/dia)",       width: 18, value: r => r.petroleo_bbl_dia,            numFmt: "#,##0.00", align: "right" },
+      { header: "Óleo (bbl/dia)",           width: 18, value: r => r.oleo_bbl_dia,                numFmt: "#,##0.00", align: "right" },
+      { header: "Condensado (bbl/dia)",     width: 20, value: r => r.condensado_bbl_dia,          numFmt: "#,##0.00", align: "right" },
+      { header: "Gás Total (Mm³/dia)",      width: 20, value: r => r.gas_total_mm3_dia,           numFmt: "#,##0.00", align: "right" },
+      { header: "Gás Assoc. (Mm³/dia)",     width: 22, value: r => r.gas_natural_assoc_mm3_dia,   numFmt: "#,##0.00", align: "right" },
+      { header: "Gás N-Assoc. (Mm³/dia)",   width: 22, value: r => r.gas_natural_n_assoc_mm3_dia, numFmt: "#,##0.00", align: "right" },
+      { header: "Gás Royalties",            width: 18, value: r => r.gas_royalties,               numFmt: "#,##0.00", align: "right" },
+      { header: "Água (bbl/dia)",           width: 16, value: r => r.agua_bbl_dia,                numFmt: "#,##0.00", align: "right" },
+      { header: "Tempo Produção (hs/mês)",  width: 22, value: r => r.tempo_prod_hs_mes,           numFmt: "#,##0.00", align: "right" },
+    ],
+  });
+}
+
+// ── ANP LPC export ───────────────────────────────────────────────────────────
+
+export async function downloadAnpLpcExcel(rows: AnpLpcSerieRow[]): Promise<void> {
+  await downloadSimpleSheet<AnpLpcSerieRow>({
+    rows,
+    sheetName: "ANP LPC",
+    titleText: "ANP LPC — Levantamento de Preços de Combustíveis",
+    filename: "ANP LPC",
+    columns: [
+      { header: "Data Fim",          width: 12, value: r => r.data_fim,           align: "center" },
+      { header: "Produto",           width: 22, value: r => r.produto },
+      { header: "Estado",            width: 8,  value: r => r.estado,             align: "center" },
+      { header: "Preço Médio Venda", width: 18, value: r => r.preco_medio_venda,  numFmt: "0.000", align: "right" },
+      { header: "Preço Médio Compra",width: 20, value: r => r.preco_medio_compra, numFmt: "0.000", align: "right" },
+      { header: "Nº Postos",         width: 12, value: r => r.n_postos,           numFmt: "#,##0", align: "right" },
+    ],
+  });
 }

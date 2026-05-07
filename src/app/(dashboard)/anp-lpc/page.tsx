@@ -5,11 +5,14 @@ import type { Layout, PlotData } from "plotly.js";
 
 import NavBar from "../../../components/NavBar";
 import PlotlyChart from "../../../components/PlotlyChart";
+import SearchableMultiSelect from "../../../components/SearchableMultiSelect";
 import DashboardHeader from "../../../components/dashboard/DashboardHeader";
 import MultiSelectFilter from "../../../components/dashboard/MultiSelectFilter";
 import PeriodSlider from "../../../components/dashboard/PeriodSlider";
 import ChartSection from "../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../components/dashboard/BarrelLoading";
+import ExportPanel from "../../../components/dashboard/ExportPanel";
+import ExportModal from "../../../components/dashboard/ExportModal";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
@@ -18,10 +21,14 @@ import {
   rpcGetAnpLpcNacional,
   rpcGetAnpLpcSerie,
   rpcGetAnpLpcFiltros,
+  getAnpLpcExportCount,
   type AnpLpcNacionalRow,
   type AnpLpcSerieRow,
   type AnpLpcFiltros,
+  type AnpLpcExportCountFilters,
 } from "../../../lib/rpc";
+import { downloadAnpLpcExcel } from "../../../lib/exportExcel";
+import { downloadCsv } from "../../../lib/exportCsv";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -154,6 +161,14 @@ export default function AnpLpcPage() {
   const [selectedProdutos, setSelectedProdutos] = useState<string[]>([]);
   const [detailProduto, setDetailProduto]     = useState<string>("");
 
+  // ── Export modal state (Fase B Tier 2) ────────────────────────────────────
+  const [exportOpen, setExportOpen]               = useState(false);
+  const [excelLoading, setExcelLoading]           = useState(false);
+  const [csvLoading, setCsvLoading]               = useState(false);
+  const [exportProdutos, setExportProdutos]       = useState<string[]>([]);
+  const [exportEstados, setExportEstados]         = useState<string[]>([]);
+  const [exportRange, setExportRange]             = useState<[number, number]>([0, 0]);
+
   // ── Initial load: filtros + first fetches ────────────────────────────────
   useEffect(() => {
     if (!supabase) return;
@@ -225,6 +240,25 @@ export default function AnpLpcPage() {
     () => buildRegiaoChart(estadoRows, detailProduto),
     [estadoRows, detailProduto],
   );
+
+  // ── Export modal helpers (Fase B Tier 2) ──────────────────────────────────
+  function openExportModal() {
+    setExportProdutos(selectedProdutos);
+    setExportEstados([]);
+    setExportRange(yearRange);
+    setExportOpen(true);
+  }
+
+  const exportFilters = useMemo<AnpLpcExportCountFilters>(() => {
+    const yMinExp = allYears[exportRange[0]] ?? null;
+    const yMaxExp = allYears[exportRange[1]] ?? null;
+    return {
+      produtos:   exportProdutos.length === filtros.produtos.length ? null : exportProdutos,
+      estados:    exportEstados.length ? exportEstados : null,
+      dataInicio: yMinExp ? `${yMinExp}-01-01` : null,
+      dataFim:    yMaxExp ? `${yMaxExp}-12-31` : null,
+    };
+  }, [exportProdutos, exportEstados, exportRange, allYears, filtros.produtos.length]);
 
   if (visLoading || !visible) return null;
 
@@ -303,6 +337,30 @@ export default function AnpLpcPage() {
                 title="ANP LPC — Levantamento de Preços de Combustíveis"
                 sub="Preço médio semanal nos postos por produto e UF (média ponderada por número de postos pesquisados)"
                 period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
+                rightSlot={
+                  <ExportPanel
+                    actions={[
+                      {
+                        kind: "excel",
+                        mode: "modal",
+                        label: "Excel",
+                        busy: excelLoading,
+                        loadingLabel: "Gerando Excel...",
+                        disabled: loading || excelLoading || csvLoading,
+                        onClick: openExportModal,
+                      },
+                      {
+                        kind: "csv",
+                        mode: "modal",
+                        label: "CSV",
+                        busy: csvLoading,
+                        loadingLabel: "Baixando CSV...",
+                        disabled: loading || excelLoading || csvLoading,
+                        onClick: openExportModal,
+                      },
+                    ]}
+                  />
+                }
               />
 
               {loading ? (
@@ -349,6 +407,107 @@ export default function AnpLpcPage() {
 
         </div>
       </div>
+
+      <ExportModal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title="Exportar — ANP LPC"
+        datasetKey="anp_lpc"
+        currentFilters={exportFilters}
+        countFetcher={async () => {
+          if (!supabase) return 0;
+          return getAnpLpcExportCount(supabase, exportFilters);
+        }}
+        excelBusy={excelLoading}
+        csvBusy={csvLoading}
+        loadingLabel={excelLoading ? "Gerando Excel..." : "Baixando CSV..."}
+        onExportExcel={async () => {
+          if (!supabase) return;
+          setExcelLoading(true);
+          try {
+            const rows = await rpcGetAnpLpcSerie(supabase, {
+              produtos:   exportFilters.produtos,
+              estados:    exportFilters.estados,
+              dataInicio: exportFilters.dataInicio,
+              dataFim:    exportFilters.dataFim,
+            });
+            await downloadAnpLpcExcel(rows);
+            setExportOpen(false);
+          } catch (e) {
+            console.error("ANP LPC Excel export failed", e);
+          } finally {
+            setExcelLoading(false);
+          }
+        }}
+        onExportCsv={async () => {
+          if (!supabase) return;
+          setCsvLoading(true);
+          try {
+            const rows = await rpcGetAnpLpcSerie(supabase, {
+              produtos:   exportFilters.produtos,
+              estados:    exportFilters.estados,
+              dataInicio: exportFilters.dataInicio,
+              dataFim:    exportFilters.dataFim,
+            });
+            const now = new Date();
+            const dd = String(now.getDate()).padStart(2, "0");
+            const mm = String(now.getMonth() + 1).padStart(2, "0");
+            const yy = String(now.getFullYear()).slice(-2);
+            downloadCsv({
+              rows: rows as unknown as Record<string, unknown>[],
+              filename: `anp_lpc_${dd}-${mm}-${yy}`,
+            });
+            setExportOpen(false);
+          } catch (e) {
+            console.error("ANP LPC CSV export failed", e);
+          } finally {
+            setCsvLoading(false);
+          }
+        }}
+        filters={
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: "Arial" }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Período</div>
+              {hasYears && (
+                <PeriodSlider years={allYears} value={exportRange} onChange={setExportRange} />
+              )}
+            </div>
+
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Produtos</div>
+              <MultiSelectFilter
+                label="Produtos"
+                items={filtros.produtos}
+                selected={exportProdutos}
+                onToggle={(p) =>
+                  setExportProdutos(prev =>
+                    prev.includes(p)
+                      ? prev.length > 1 ? prev.filter(x => x !== p) : prev
+                      : [...prev, p]
+                  )
+                }
+                onClear={exportProdutos.length < filtros.produtos.length ? () => setExportProdutos(filtros.produtos) : undefined}
+                swatch={(p) => {
+                  const i = filtros.produtos.indexOf(p);
+                  return PRODUTO_COLORS[p] ?? PALETTE[i % PALETTE.length];
+                }}
+                idPrefix="lpc-export"
+              />
+            </div>
+
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                Estados <span style={{ color: "#888", fontWeight: 400 }}>({exportEstados.length === 0 ? filtros.estados.length : exportEstados.length}/{filtros.estados.length})</span>
+              </div>
+              <SearchableMultiSelect
+                options={filtros.estados}
+                value={exportEstados}
+                onChange={setExportEstados}
+              />
+            </div>
+          </div>
+        }
+      />
     </div>
   );
 }

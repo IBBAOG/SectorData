@@ -10,6 +10,8 @@ import MultiSelectFilter from "../../../components/dashboard/MultiSelectFilter";
 import PeriodSlider from "../../../components/dashboard/PeriodSlider";
 import ChartSection from "../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../components/dashboard/BarrelLoading";
+import ExportPanel from "../../../components/dashboard/ExportPanel";
+import ExportModal from "../../../components/dashboard/ExportModal";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
@@ -19,9 +21,13 @@ import {
   rpcGetMdicComexSerie,
   rpcGetMdicComexTopPaises,
   rpcGetMdicComexFiltros,
+  getMdicComexExportCount,
   type MdicComexSerieRow,
   type MdicComexTopPaisRow,
+  type MdicComexExportCountFilters,
 } from "../../../lib/rpc";
+import { downloadMdicComexExcel } from "../../../lib/exportExcel";
+import { downloadCsv } from "../../../lib/exportCsv";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -129,6 +135,14 @@ export default function MdicComexPage() {
   const [topImport, setTopImport]                 = useState<MdicComexTopPaisRow[]>([]);
   const [topExport, setTopExport]                 = useState<MdicComexTopPaisRow[]>([]);
 
+  // ── Export modal state (Fase B Tier 2) ────────────────────────────────────
+  const [exportOpen, setExportOpen]       = useState(false);
+  const [excelLoading, setExcelLoading]   = useState(false);
+  const [csvLoading, setCsvLoading]       = useState(false);
+  const [exportFlow, setExportFlow]       = useState<string>("ALL");
+  const [exportNcms, setExportNcms]       = useState<string[]>(ALL_NCMS);
+  const [exportRange, setExportRange]     = useState<[number, number]>([0, 0]);
+
   // ── Initial load: filtros + first serie fetch (last 10 years) ────────────
   useEffect(() => {
     if (!supabase) return;
@@ -212,6 +226,25 @@ export default function MdicComexPage() {
   const topImportChart = useMemo(() => buildBarChart(topImport, "import", selectedNcmPaises), [topImport, selectedNcmPaises]);
   const topExportChart = useMemo(() => buildBarChart(topExport, "export", selectedNcmPaises), [topExport, selectedNcmPaises]);
 
+  // ── Export modal helpers (Fase B Tier 2) ──────────────────────────────────
+  function openExportModal() {
+    setExportFlow("ALL");
+    setExportNcms(selectedNCMs.length ? selectedNCMs : ALL_NCMS);
+    setExportRange(yearRange);
+    setExportOpen(true);
+  }
+
+  const exportFilters = useMemo<MdicComexExportCountFilters>(() => {
+    const yMin = anos[exportRange[0]] ?? null;
+    const yMax = anos[exportRange[1]] ?? null;
+    return {
+      flow:      exportFlow === "ALL" ? null : exportFlow,
+      ncms:      exportNcms.length === ALL_NCMS.length ? null : exportNcms,
+      anoInicio: yMin,
+      anoFim:    yMax,
+    };
+  }, [exportFlow, exportNcms, exportRange, anos]);
+
   if (visLoading || !visible) return null;
 
   const toggleNcm = (ncm: string) => {
@@ -289,6 +322,30 @@ export default function MdicComexPage() {
                 title="MDIC Comex Stat — Importações e Exportações"
                 sub="Volume mensal de importação e exportação de petróleo cru, gasolina e diesel por NCM e país de origem/destino"
                 period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
+                rightSlot={
+                  <ExportPanel
+                    actions={[
+                      {
+                        kind: "excel",
+                        mode: "modal",
+                        label: "Excel",
+                        busy: excelLoading,
+                        loadingLabel: "Gerando Excel...",
+                        disabled: loading || excelLoading || csvLoading,
+                        onClick: openExportModal,
+                      },
+                      {
+                        kind: "csv",
+                        mode: "modal",
+                        label: "CSV",
+                        busy: csvLoading,
+                        loadingLabel: "Baixando CSV...",
+                        disabled: loading || excelLoading || csvLoading,
+                        onClick: openExportModal,
+                      },
+                    ]}
+                  />
+                }
               />
 
               {loading ? (
@@ -361,6 +418,109 @@ export default function MdicComexPage() {
 
         </div>
       </div>
+
+      <ExportModal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title="Exportar — MDIC Comex"
+        datasetKey="mdic_comex"
+        currentFilters={exportFilters}
+        countFetcher={async () => {
+          if (!supabase) return 0;
+          return getMdicComexExportCount(supabase, exportFilters);
+        }}
+        excelBusy={excelLoading}
+        csvBusy={csvLoading}
+        loadingLabel={excelLoading ? "Gerando Excel..." : "Baixando CSV..."}
+        onExportExcel={async () => {
+          if (!supabase) return;
+          setExcelLoading(true);
+          try {
+            const rows = await rpcGetMdicComexSerie(supabase, {
+              flow:      exportFilters.flow,
+              ncms:      exportFilters.ncms,
+              anoInicio: exportFilters.anoInicio,
+              anoFim:    exportFilters.anoFim,
+            });
+            await downloadMdicComexExcel(rows);
+            setExportOpen(false);
+          } catch (e) {
+            console.error("MDIC Comex Excel export failed", e);
+          } finally {
+            setExcelLoading(false);
+          }
+        }}
+        onExportCsv={async () => {
+          if (!supabase) return;
+          setCsvLoading(true);
+          try {
+            const rows = await rpcGetMdicComexSerie(supabase, {
+              flow:      exportFilters.flow,
+              ncms:      exportFilters.ncms,
+              anoInicio: exportFilters.anoInicio,
+              anoFim:    exportFilters.anoFim,
+            });
+            const now = new Date();
+            const dd = String(now.getDate()).padStart(2, "0");
+            const mm = String(now.getMonth() + 1).padStart(2, "0");
+            const yy = String(now.getFullYear()).slice(-2);
+            downloadCsv({
+              rows: rows as unknown as Record<string, unknown>[],
+              filename: `mdic_comex_${dd}-${mm}-${yy}`,
+            });
+            setExportOpen(false);
+          } catch (e) {
+            console.error("MDIC Comex CSV export failed", e);
+          } finally {
+            setCsvLoading(false);
+          }
+        }}
+        filters={
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: "Arial" }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Período</div>
+              {hasYears && (
+                <PeriodSlider years={anos} value={exportRange} onChange={setExportRange} />
+              )}
+            </div>
+
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Fluxo</div>
+              <select
+                className="form-select form-select-sm"
+                value={exportFlow}
+                onChange={e => setExportFlow(e.target.value)}
+                style={{ fontFamily: "Arial", fontSize: 12, maxWidth: 220 }}
+              >
+                <option value="ALL">Importação + Exportação</option>
+                <option value="import">Importação</option>
+                <option value="export">Exportação</option>
+              </select>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>NCMs</div>
+              <MultiSelectFilter
+                label="NCMs"
+                items={ALL_NCMS}
+                selected={exportNcms}
+                onToggle={(ncm) =>
+                  setExportNcms(prev =>
+                    prev.includes(ncm)
+                      ? prev.length > 1 ? prev.filter(n => n !== ncm) : prev
+                      : [...prev, ncm]
+                  )
+                }
+                onClear={exportNcms.length < ALL_NCMS.length ? () => setExportNcms(ALL_NCMS) : undefined}
+                swatch={(n) => NCM_INFO[n].color}
+                itemLabel={(n) => NCM_INFO[n].label}
+                idPrefix="ncm-export"
+                counterTotal={ALL_NCMS.length}
+              />
+            </div>
+          </div>
+        }
+      />
     </div>
   );
 }

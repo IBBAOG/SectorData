@@ -10,6 +10,7 @@ import PeriodSlider from "../../../components/dashboard/PeriodSlider";
 import DashboardHeader from "../../../components/dashboard/DashboardHeader";
 import SegmentedToggle from "../../../components/dashboard/SegmentedToggle";
 import ExportPanel from "../../../components/dashboard/ExportPanel";
+import ExportModal from "../../../components/dashboard/ExportModal";
 import BarrelLoading from "../../../components/dashboard/BarrelLoading";
 import CheckList from "../../../components/CheckList";
 import SearchableMultiSelect from "../../../components/SearchableMultiSelect";
@@ -22,8 +23,10 @@ import {
   rpcGetMsSerieOthers,
   fetchAllVendas,
   rpcGetOthersPlayers,
+  getMsExportCount,
   type MarketShareFilters,
   type MsSerieRow,
+  type MsExportCountFilters,
 } from "../../../lib/rpc";
 import { downloadMarketShareExcel } from "../../../lib/exportExcel";
 import { downloadCsv } from "../../../lib/exportCsv";
@@ -435,6 +438,13 @@ export default function MarketSharePage() {
   const [excelLoading, setExcelLoading] = useState(false);
   const [cachedOthersPlayers, setCachedOthersPlayers] = useState<string[]>([]);
 
+  // ── Export modal state (Fase B Tier 2) ────────────────────────────────────
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportRegioes, setExportRegioes] = useState<string[]>([]);
+  const [exportUfs, setExportUfs] = useState<string[]>([]);
+  const [exportMercados, setExportMercados] = useState<string[]>([]);
+  const [exportRange, setExportRange] = useState<[number, number]>([0, 0]);
+
   // Unique agente_regulado values: from current data or cached list
   const othersPlayers = useMemo(() => {
     const seen = new Set<string>();
@@ -628,6 +638,34 @@ export default function MarketSharePage() {
     setUfsSelected([]);
   }
 
+  // Hydrate modal filters from currently-applied page filters when opened.
+  function openExportModal() {
+    setExportRegioes(regioesSelected ?? []);
+    setExportUfs(ufsSelected ?? []);
+    setExportMercados([]); // page does not currently expose mercados — start empty
+    setExportRange(sliderRange);
+    setExportOpen(true);
+  }
+
+  // Snapshot of the modal filters used by both the size estimator and the
+  // export handlers (Excel/CSV) so the user gets exactly what was previewed.
+  const exportFilters = useMemo<MsExportCountFilters>(() => {
+    const [a, b] = exportRange;
+    const dataInicio = datas[a] ?? null;
+    const dataFim    = datas[b] ?? null;
+    return {
+      dataInicio,
+      dataFim,
+      regioes:  exportRegioes.length  ? exportRegioes  : null,
+      ufs:      exportUfs.length      ? exportUfs      : null,
+      mercados: exportMercados.length ? exportMercados : null,
+    };
+  }, [exportRange, exportRegioes, exportUfs, exportMercados, datas]);
+
+  const regioesAll = (opcoes?.regioes ?? []) as string[];
+  const ufsAll     = (opcoes?.ufs     ?? []) as string[];
+  const mercadosAll = (opcoes?.mercados ?? []) as string[];
+
   if (!opcoes) return null;
   if (visLoading || !visible) return null;
 
@@ -747,39 +785,21 @@ export default function MarketSharePage() {
                     actions={[
                       {
                         kind: "excel",
+                        mode: "modal",
                         label: "formated data .xl",
                         busy: excelLoading,
                         loadingLabel: "Gerando Excel...",
-                        disabled: !serieRows || serieRows.length === 0 || seriesLoading || excelLoading,
-                        onClick: async () => {
-                          setExcelLoading(true);
-                          try {
-                            await downloadMarketShareExcel(serieRows, players, big3);
-                          } catch (e) {
-                            console.error("Excel export failed", e);
-                          } finally {
-                            setExcelLoading(false);
-                          }
-                        },
+                        disabled: seriesLoading || excelLoading || csvLoading,
+                        onClick: openExportModal,
                       },
                       {
                         kind: "csv",
+                        mode: "modal",
                         label: "all data .csv",
                         busy: csvLoading,
                         loadingLabel: "Baixando CSV...",
-                        disabled: csvLoading || seriesLoading,
-                        onClick: async () => {
-                          if (!supabase) return;
-                          setCsvLoading(true);
-                          try {
-                            const rows = await fetchAllVendas(supabase);
-                            downloadCsv({ rows, filename: "vendas" });
-                          } catch (e) {
-                            console.error("Failed to fetch vendas", e);
-                          } finally {
-                            setCsvLoading(false);
-                          }
-                        },
+                        disabled: seriesLoading || excelLoading || csvLoading,
+                        onClick: openExportModal,
                       },
                     ]}
                   />
@@ -1027,6 +1047,100 @@ export default function MarketSharePage() {
           </div>
         </div>
       </div>
+
+      <ExportModal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title="Exportar — Market Share"
+        datasetKey="vendas"
+        currentFilters={exportFilters}
+        countFetcher={async () => {
+          if (!supabase) return 0;
+          return getMsExportCount(supabase, exportFilters);
+        }}
+        excelBusy={excelLoading}
+        csvBusy={csvLoading}
+        loadingLabel={excelLoading ? "Gerando Excel..." : "Baixando CSV..."}
+        onExportExcel={async () => {
+          setExcelLoading(true);
+          try {
+            await downloadMarketShareExcel(serieRows, players, big3);
+            setExportOpen(false);
+          } catch (e) {
+            console.error("Excel export failed", e);
+          } finally {
+            setExcelLoading(false);
+          }
+        }}
+        onExportCsv={async () => {
+          if (!supabase) return;
+          setCsvLoading(true);
+          try {
+            const rows = await fetchAllVendas(supabase);
+            downloadCsv({ rows, filename: "market_share_vendas" });
+            setExportOpen(false);
+          } catch (e) {
+            console.error("Failed to fetch vendas", e);
+          } finally {
+            setCsvLoading(false);
+          }
+        }}
+        filters={
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: "Arial" }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Período</div>
+              {datas.length > 0 && (
+                <PeriodSlider
+                  dates={datas}
+                  value={exportRange}
+                  onChange={setExportRange}
+                  sliderId="ms-export-slider"
+                  fmtLabel={(d) => {
+                    try {
+                      const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+                      return `${MONTHS[parseInt(d.slice(5,7),10)-1]}, ${d.slice(0,4)}`;
+                    } catch { return d; }
+                  }}
+                />
+              )}
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Regiões</div>
+                <CheckList
+                  label="Regiões"
+                  options={regioesAll}
+                  value={exportRegioes}
+                  onChange={setExportRegioes}
+                  allLabel="Todas"
+                  clearLabel="Limpar"
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>UFs</div>
+                <SearchableMultiSelect
+                  options={ufsAll}
+                  value={exportUfs}
+                  onChange={setExportUfs}
+                />
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Mercados</div>
+              <CheckList
+                label="Mercados"
+                options={mercadosAll}
+                value={exportMercados}
+                onChange={setExportMercados}
+                allLabel="Todos"
+                clearLabel="Limpar"
+              />
+            </div>
+          </div>
+        }
+      />
     </div>
   );
 }
