@@ -1650,3 +1650,122 @@ export async function rpcGetAnpCdpFiltros(
     };
   }
 }
+
+// ─── MODULE: Export size calculator RPCs (Fase B) ────────────────────────────
+//
+// Each function below mirrors the filter signature of its "sister" serie RPC
+// but returns only count(*)::bigint. Used by the ExportModal calculator to
+// estimate XLSX/CSV file size before the user clicks download.
+//
+// Migration: supabase/migrations/20260507000003_export_count_rpcs.sql
+
+export type MsExportCountFilters = {
+  dataInicio?: string | null;
+  dataFim?: string | null;
+  regioes?: string[] | null;
+  ufs?: string[] | null;
+  mercados?: string[] | null;
+};
+
+/** Count for /market-share + /sales-volumes (vendas table). */
+export async function getMsExportCount(
+  supabase: SupabaseClient,
+  filters: MsExportCountFilters,
+): Promise<number> {
+  const { data, error } = await supabase.rpc("get_ms_export_count", {
+    p_data_inicio: filters.dataInicio ?? null,
+    p_data_fim:    filters.dataFim    ?? null,
+    p_regioes:     toListOrNull(filters.regioes),
+    p_ufs:         toListOrNull(filters.ufs),
+    p_mercados:    toListOrNull(filters.mercados),
+  });
+  if (error) {
+    console.error("get_ms_export_count failed", error);
+    return 0;
+  }
+  return Number(data ?? 0);
+}
+
+export type MdicComexExportCountFilters = {
+  flow?: string | null;
+  ncms?: string[] | null;
+  anoInicio?: number | null;
+  anoFim?: number | null;
+};
+
+export async function getMdicComexExportCount(
+  supabase: SupabaseClient,
+  filters: MdicComexExportCountFilters,
+): Promise<number> {
+  const { data, error } = await supabase.rpc("get_mdic_comex_export_count", {
+    p_flow:       filters.flow      ?? null,
+    p_ncms:       toListOrNull(filters.ncms),
+    p_ano_inicio: filters.anoInicio ?? null,
+    p_ano_fim:    filters.anoFim    ?? null,
+  });
+  if (error) {
+    console.error("get_mdic_comex_export_count failed", error);
+    return 0;
+  }
+  return Number(data ?? 0);
+}
+
+export type AnpCdpExportCountFilters = {
+  pocos?: string[] | null;
+  campos?: string[] | null;
+  bacoes?: string[] | null;
+  locais?: string[] | null;
+  estados?: string[] | null;
+  operadores?: string[] | null;
+  instalacoes?: string[] | null;
+  tiposInstalacao?: string[] | null;
+  anoInicio?: number | null;
+  anoFim?: number | null;
+};
+
+export async function getAnpCdpExportCount(
+  supabase: SupabaseClient,
+  filters: AnpCdpExportCountFilters,
+): Promise<number> {
+  const { data, error } = await supabase.rpc("get_anp_cdp_export_count", {
+    p_pocos:            toListOrNull(filters.pocos),
+    p_campos:           toListOrNull(filters.campos),
+    p_bacoes:           toListOrNull(filters.bacoes),
+    p_locais:           toListOrNull(filters.locais),
+    p_estados:          toListOrNull(filters.estados),
+    p_operadores:       toListOrNull(filters.operadores),
+    p_instalacoes:      toListOrNull(filters.instalacoes),
+    p_tipos_instalacao: toListOrNull(filters.tiposInstalacao),
+    p_ano_inicio:       filters.anoInicio ?? null,
+    p_ano_fim:          filters.anoFim    ?? null,
+  });
+  if (error) {
+    console.error("get_anp_cdp_export_count failed", error);
+    return 0;
+  }
+  return Number(data ?? 0);
+}
+
+export type AnpLpcExportCountFilters = {
+  produtos?: string[] | null;
+  estados?: string[] | null;
+  dataInicio?: string | null;
+  dataFim?: string | null;
+};
+
+export async function getAnpLpcExportCount(
+  supabase: SupabaseClient,
+  filters: AnpLpcExportCountFilters,
+): Promise<number> {
+  const { data, error } = await supabase.rpc("get_anp_lpc_export_count", {
+    p_produtos:    toListOrNull(filters.produtos),
+    p_estados:     toListOrNull(filters.estados),
+    p_data_inicio: filters.dataInicio ?? null,
+    p_data_fim:    filters.dataFim    ?? null,
+  });
+  if (error) {
+    console.error("get_anp_lpc_export_count failed", error);
+    return 0;
+  }
+  return Number(data ?? 0);
+}

@@ -7,10 +7,11 @@ import NavBar from "../../../components/NavBar";
 import PlotlyChart from "../../../components/PlotlyChart";
 import SearchableMultiSelect from "../../../components/SearchableMultiSelect";
 import DashboardHeader from "../../../components/dashboard/DashboardHeader";
-import MultiSelectFilter from "../../../components/dashboard/MultiSelectFilter";
 import PeriodSlider from "../../../components/dashboard/PeriodSlider";
 import ChartSection from "../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../components/dashboard/BarrelLoading";
+import ExportPanel from "../../../components/dashboard/ExportPanel";
+import ExportModal from "../../../components/dashboard/ExportModal";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
@@ -19,10 +20,14 @@ import {
   rpcGetAnpCdpPocoSerie,
   rpcGetAnpCdpPocosJson,
   rpcGetAnpCdpFiltros,
+  getAnpCdpExportCount,
   type AnpCdpSeriePonto,
   type AnpCdpPocoSimples,
   type AnpCdpFiltros,
+  type AnpCdpExportCountFilters,
 } from "../../../lib/rpc";
+import { downloadAnpCdpExcel } from "../../../lib/exportExcel";
+import { downloadCsv } from "../../../lib/exportCsv";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -183,6 +188,16 @@ export default function AnpCdpPage() {
   const [selectedTipos,       setSelectedTipos]       = useState<string[]>([]);
   const [metric, setMetric]             = useState(METRICS[0]);
 
+  // ── Export modal state (Fase B Tier 2) ────────────────────────────────────
+  const [exportOpen, setExportOpen]                 = useState(false);
+  const [excelLoading, setExcelLoading]             = useState(false);
+  const [csvLoading, setCsvLoading]                 = useState(false);
+  const [exportBacoes, setExportBacoes]             = useState<string[]>([]);
+  const [exportOperadores, setExportOperadores]     = useState<string[]>([]);
+  const [exportLocais, setExportLocais]             = useState<string[]>([]);
+  const [exportTipos, setExportTipos]               = useState<string[]>([]);
+  const [exportRange, setExportRange]               = useState<[number, number]>([0, 0]);
+
   // ── Initial load ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (!supabase) return;
@@ -259,6 +274,29 @@ export default function AnpCdpPage() {
     () => buildChart(serieData, metric.key, metric.label, selectedPocos.length),
     [serieData, metric, selectedPocos.length],
   );
+
+  // ── Export modal helpers (Fase B Tier 2) ──────────────────────────────────
+  function openExportModal() {
+    setExportBacoes(selectedBacoes);
+    setExportOperadores(selectedOperadores);
+    setExportLocais(selectedLocais);
+    setExportTipos(selectedTipos);
+    setExportRange(yearRange);
+    setExportOpen(true);
+  }
+
+  const exportFilters = useMemo<AnpCdpExportCountFilters>(() => {
+    const yMin = allYears[exportRange[0]] ?? null;
+    const yMax = allYears[exportRange[1]] ?? null;
+    return {
+      bacoes:          exportBacoes.length     ? exportBacoes     : null,
+      operadores:      exportOperadores.length ? exportOperadores : null,
+      locais:          exportLocais.length     ? exportLocais     : null,
+      tiposInstalacao: exportTipos.length      ? exportTipos      : null,
+      anoInicio:       yMin,
+      anoFim:          yMax,
+    };
+  }, [exportBacoes, exportOperadores, exportLocais, exportTipos, exportRange, allYears]);
 
   if (visLoading || !visible) return null;
 
@@ -387,6 +425,30 @@ export default function AnpCdpPage() {
                 title="ANP CDP — Produção por Poço"
                 sub="Produção mensal declarada à ANP por poço, campo e operador"
                 period={allYears.length > 0 ? [yMin, yMax] : null}
+                rightSlot={
+                  <ExportPanel
+                    actions={[
+                      {
+                        kind: "excel",
+                        mode: "modal",
+                        label: "Excel",
+                        busy: excelLoading,
+                        loadingLabel: "Gerando Excel...",
+                        disabled: loading || excelLoading || csvLoading,
+                        onClick: openExportModal,
+                      },
+                      {
+                        kind: "csv",
+                        mode: "modal",
+                        label: "CSV",
+                        busy: csvLoading,
+                        loadingLabel: "Baixando CSV...",
+                        disabled: loading || excelLoading || csvLoading,
+                        onClick: openExportModal,
+                      },
+                    ]}
+                  />
+                }
               />
 
               {loading ? (
@@ -411,6 +473,124 @@ export default function AnpCdpPage() {
 
         </div>
       </div>
+
+      <ExportModal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        title="Exportar — ANP CDP"
+        datasetKey="anp_cdp_producao"
+        currentFilters={exportFilters}
+        countFetcher={async () => {
+          if (!supabase) return 0;
+          return getAnpCdpExportCount(supabase, exportFilters);
+        }}
+        excelBusy={excelLoading}
+        csvBusy={csvLoading}
+        loadingLabel={excelLoading ? "Gerando Excel..." : "Baixando CSV..."}
+        onExportExcel={async () => {
+          if (!supabase) return;
+          setExcelLoading(true);
+          try {
+            const rows = await rpcGetAnpCdpPocoSerie(supabase, {
+              bacoes:          exportFilters.bacoes,
+              operadores:      exportFilters.operadores,
+              locais:          exportFilters.locais,
+              tiposInstalacao: exportFilters.tiposInstalacao,
+              anoInicio:       exportFilters.anoInicio,
+              anoFim:          exportFilters.anoFim,
+            });
+            await downloadAnpCdpExcel(rows);
+            setExportOpen(false);
+          } catch (e) {
+            console.error("ANP CDP Excel export failed", e);
+          } finally {
+            setExcelLoading(false);
+          }
+        }}
+        onExportCsv={async () => {
+          if (!supabase) return;
+          setCsvLoading(true);
+          try {
+            const rows = await rpcGetAnpCdpPocoSerie(supabase, {
+              bacoes:          exportFilters.bacoes,
+              operadores:      exportFilters.operadores,
+              locais:          exportFilters.locais,
+              tiposInstalacao: exportFilters.tiposInstalacao,
+              anoInicio:       exportFilters.anoInicio,
+              anoFim:          exportFilters.anoFim,
+            });
+            const now = new Date();
+            const dd = String(now.getDate()).padStart(2, "0");
+            const mm = String(now.getMonth() + 1).padStart(2, "0");
+            const yy = String(now.getFullYear()).slice(-2);
+            downloadCsv({
+              rows: rows as unknown as Record<string, unknown>[],
+              filename: `anp_cdp_${dd}-${mm}-${yy}`,
+            });
+            setExportOpen(false);
+          } catch (e) {
+            console.error("ANP CDP CSV export failed", e);
+          } finally {
+            setCsvLoading(false);
+          }
+        }}
+        filters={
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: "Arial" }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Período</div>
+              {allYears.length > 0 && (
+                <PeriodSlider years={allYears} value={exportRange} onChange={setExportRange} />
+              )}
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                  Bacias <span style={{ color: "#888", fontWeight: 400 }}>({exportBacoes.length === 0 ? filtros.bacoes.length : exportBacoes.length}/{filtros.bacoes.length})</span>
+                </div>
+                <SearchableMultiSelect
+                  options={filtros.bacoes}
+                  value={exportBacoes}
+                  onChange={setExportBacoes}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                  Operadores <span style={{ color: "#888", fontWeight: 400 }}>({exportOperadores.length === 0 ? filtros.operadores.length : exportOperadores.length}/{filtros.operadores.length})</span>
+                </div>
+                <SearchableMultiSelect
+                  options={filtros.operadores}
+                  value={exportOperadores}
+                  onChange={setExportOperadores}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                  Ambientes (Locais)
+                </div>
+                <SearchableMultiSelect
+                  options={allLocais}
+                  value={exportLocais}
+                  onChange={setExportLocais}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                  Tipo Instalação <span style={{ color: "#888", fontWeight: 400 }}>({exportTipos.length === 0 ? filtros.tipos_instalacao.length : exportTipos.length}/{filtros.tipos_instalacao.length})</span>
+                </div>
+                <SearchableMultiSelect
+                  options={filtros.tipos_instalacao}
+                  value={exportTipos}
+                  onChange={setExportTipos}
+                />
+              </div>
+            </div>
+          </div>
+        }
+      />
     </div>
   );
 }
