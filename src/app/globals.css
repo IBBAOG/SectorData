@@ -442,6 +442,20 @@ body {
   }
 }
 
+/* Mega-menu uses translateX(-50%) for centering; keyframe must preserve it
+   in both frames, otherwise the panel jumps from right-aligned to centered
+   when the inherited navDropdownIn animation finishes. */
+@keyframes navMegaDropdownIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
 #main-navbar .nav-module-item {
   display: block;
   padding: 8px 20px;
@@ -469,6 +483,8 @@ body {
   /* Center the panel relative to the trigger so it doesn't clip on the right */
   left: 50%;
   transform: translateX(-50%);
+  /* Override inherited navDropdownIn so translateX(-50%) survives the animation */
+  animation: navMegaDropdownIn 0.2s ease-out;
 }
 
 #main-navbar .nav-megamenu-col {
