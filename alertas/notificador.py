@@ -4,6 +4,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
 
+import requests as _requests
+
 from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -16,9 +18,54 @@ _DIR = Path(__file__).parent
 _CREDENTIALS = _DIR / "credentials.json"
 _TOKEN = _DIR / "token.json"
 
-# Destination email: env var takes priority (GitHub Actions secret ALERTAS_DEST_EMAIL),
-# falls back to the hard-coded address for local development.
-DESTINATARIO = os.environ.get("ALERTAS_DEST_EMAIL", "eduardo.mendes@itaubba.com")
+_FALLBACK_EMAIL = os.environ.get("ALERTAS_DEST_EMAIL", "eduardo.mendes@itaubba.com")
+
+# Configure no ambiente local ou no .env do alertas:
+#   SUPABASE_URL=https://<ref>.supabase.co
+#   SUPABASE_SERVICE_KEY=<service-role key>
+_SUPABASE_URL = (
+    os.environ.get("SUPABASE_URL")
+    or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
+    or ""
+)
+_SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY") or ""
+
+
+def get_alert_recipients() -> list[str]:
+    """Busca destinatários ativos de alertas no Supabase. Fallback: email hardcoded."""
+    fallback = [_FALLBACK_EMAIL]
+
+    if not _SUPABASE_URL or not _SUPABASE_SERVICE_KEY:
+        print(
+            "[alertas] Aviso: SUPABASE_URL ou SUPABASE_SERVICE_KEY não configurados. "
+            "Usando fallback."
+        )
+        return fallback
+
+    try:
+        resp = _requests.get(
+            f"{_SUPABASE_URL}/rest/v1/alert_recipients",
+            headers={
+                "apikey": _SUPABASE_SERVICE_KEY,
+                "Authorization": f"Bearer {_SUPABASE_SERVICE_KEY}",
+            },
+            params={"is_active": "eq.true", "select": "email"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        emails = [row["email"] for row in data if row.get("email")]
+        if emails:
+            print(f"[alertas] {len(emails)} destinatário(s) carregado(s) do Supabase.")
+            return emails
+        print("[alertas] Nenhum destinatário ativo no Supabase. Usando fallback.")
+        return fallback
+    except Exception as exc:
+        print(
+            f"[alertas] Aviso: não foi possível buscar destinatários ({exc}). "
+            "Usando fallback."
+        )
+        return fallback
 
 
 def _get_service():
@@ -34,18 +81,13 @@ def _get_service():
     if not creds or not creds.valid:
         refreshed = False
         if creds and creds.expired and creds.refresh_token:
-            # NOTE: In GitHub Actions there is no browser, so if the refresh
-            # token is revoked the run will still fail (no interactive flow
-            # possible).  This try/except only helps local re-authentication.
             try:
                 creds.refresh(Request())
                 refreshed = True
             except RefreshError as e:
-                # Refresh token revoked / invalid — fall through to interactive flow.
                 print(f"  [auth] Refresh token revogado ({e}). Iniciando fluxo OAuth interativo...")
                 creds = None
         if not refreshed:
-            # Interactive OAuth flow — only works locally (GHA has no browser).
             flow = InstalledAppFlow.from_client_secrets_file(str(_CREDENTIALS), SCOPES)
             creds = flow.run_local_server(port=0)
         _TOKEN.write_text(creds.to_json())
@@ -55,6 +97,9 @@ def _get_service():
 def enviar_alerta(nome_base: str, mensagem: str, link: str = "", arquivo: str = ""):
     """Envia email de alerta para nova publicação de base de dados."""
     service = _get_service()
+
+    destinatarios = get_alert_recipients()
+    to_header = ", ".join(destinatarios)
 
     assunto = f"[ALERTA ANP] {nome_base} — nova publicação"
 
@@ -66,9 +111,9 @@ def enviar_alerta(nome_base: str, mensagem: str, link: str = "", arquivo: str = 
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = assunto
-    msg["To"] = DESTINATARIO
+    msg["To"] = to_header
     msg.attach(MIMEText(corpo, "html"))
 
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
     service.users().messages().send(userId="me", body={"raw": raw}).execute()
-    print(f"  [email] Enviado → {DESTINATARIO} | {assunto}")
+    print(f"  [email] Enviado → {to_header} | {assunto}")
