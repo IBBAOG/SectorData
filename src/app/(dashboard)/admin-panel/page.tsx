@@ -22,7 +22,15 @@ const SIDEBAR_BG = "#1a1a1a";
 const SIDEBAR_WIDTH = 220;
 
 // ── Sidebar sections ──────────────────────────────────────────────────────────
-type SectionId = "members" | "permissions" | "card-images";
+type SectionId = "members" | "permissions" | "card-images" | "alert-recipients";
+
+type AlertRecipient = {
+  id: string;
+  email: string;
+  is_active: boolean;
+  created_at: string;
+  added_by: string | null;
+};
 
 const SECTIONS: { id: SectionId; label: string; description: string; icon: React.ReactNode }[] = [
   {
@@ -58,6 +66,17 @@ const SECTIONS: { id: SectionId; label: string; description: string; icon: React
         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
         <circle cx="8.5" cy="8.5" r="1.5"/>
         <polyline points="21 15 16 10 5 21"/>
+      </svg>
+    ),
+  },
+  {
+    id: "alert-recipients",
+    label: "Alert Emails",
+    description: "Notification recipients",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+        <polyline points="22,6 12,13 2,6"/>
       </svg>
     ),
   },
@@ -141,6 +160,18 @@ export default function AdminPanelPage() {
     setTimeout(() => setSavedSlug((s) => (s === slug ? null : s)), 1500);
   }
 
+  // ── Alert Recipients ───────────────────────────────────────────────────────
+  const [recipients, setRecipients] = useState<AlertRecipient[]>([]);
+  const [recipientsLoading, setRecipientsLoading] = useState(false);
+  const [recipientsError, setRecipientsError] = useState<string | null>(null);
+  const [newEmail, setNewEmail] = useState("");
+  const [addingEmail, setAddingEmail] = useState(false);
+  const [addEmailError, setAddEmailError] = useState<string | null>(null);
+  const [addEmailSuccess, setAddEmailSuccess] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+
   // ── Members ────────────────────────────────────────────────────────────────
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
@@ -160,6 +191,69 @@ export default function AdminPanelPage() {
   }, [supabase]);
 
   useEffect(() => { if (allowed) loadUsers(); }, [allowed, loadUsers]);
+
+  // ── Alert Recipient helpers ────────────────────────────────────────────────
+  function isValidEmail(email: string) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  }
+
+  function formatDateBR(dateStr: string) {
+    return new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  }
+
+  const loadRecipients = useCallback(async () => {
+    if (!supabase) return;
+    setRecipientsLoading(true);
+    setRecipientsError(null);
+    const { data, error } = await supabase
+      .from("alert_recipients")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) setRecipientsError(error.message);
+    else setRecipients((data as AlertRecipient[]) ?? []);
+    setRecipientsLoading(false);
+  }, [supabase]);
+
+  useEffect(() => {
+    if (allowed && activeSection === "alert-recipients") loadRecipients();
+  }, [allowed, activeSection, loadRecipients]);
+
+  async function handleAddRecipient() {
+    if (!supabase || addingEmail || !isValidEmail(newEmail)) return;
+    setAddingEmail(true);
+    setAddEmailError(null);
+    const { error } = await supabase.from("alert_recipients").insert({
+      email: newEmail.trim().toLowerCase(),
+      is_active: true,
+      added_by: myProfile?.id ?? null,
+    });
+    if (error) {
+      setAddEmailError(error.code === "23505" ? "Este email já está cadastrado." : error.message);
+    } else {
+      setNewEmail("");
+      setAddEmailSuccess(true);
+      setTimeout(() => setAddEmailSuccess(false), 2000);
+      await loadRecipients();
+    }
+    setAddingEmail(false);
+  }
+
+  async function handleToggleRecipient(id: string, currentActive: boolean) {
+    if (!supabase || togglingId) return;
+    setTogglingId(id);
+    await supabase.from("alert_recipients").update({ is_active: !currentActive }).eq("id", id);
+    await loadRecipients();
+    setTogglingId(null);
+  }
+
+  async function handleRemoveRecipient(id: string) {
+    if (!supabase || removingId) return;
+    setRemovingId(id);
+    await supabase.from("alert_recipients").delete().eq("id", id);
+    setConfirmRemoveId(null);
+    await loadRecipients();
+    setRemovingId(null);
+  }
 
   async function handleRoleChange(userId: string, newRole: "Admin" | "Client") {
     if (!supabase || savingUser) return;
@@ -454,6 +548,132 @@ export default function AdminPanelPage() {
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {/* ── Alert Recipients ─────────────────────────────────────────────── */}
+          {activeSection === "alert-recipients" && (
+            <div className="settings-card">
+              <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>
+                Destinatários de Alertas
+              </h2>
+              <p style={{ fontSize: 13, color: "#888", margin: "0 0 20px" }}>
+                Emails que receberão notificações automáticas de novas publicações de dados (ANP, MDIC, etc.).
+              </p>
+
+              {/* Add form */}
+              <div style={{ display: "flex", gap: 10, marginBottom: 24, alignItems: "flex-start" }}>
+                <div style={{ flex: 1 }}>
+                  <input
+                    type="email"
+                    value={newEmail}
+                    onChange={e => { setNewEmail(e.target.value); setAddEmailError(null); }}
+                    onKeyDown={e => e.key === "Enter" && handleAddRecipient()}
+                    placeholder="email@empresa.com"
+                    disabled={addingEmail}
+                    style={{
+                      width: "100%", padding: "8px 12px", borderRadius: 8,
+                      border: `1px solid ${addEmailError ? "#e53e3e" : "#e0e0e0"}`,
+                      fontSize: 13, fontFamily: "Arial, sans-serif", outline: "none",
+                      boxSizing: "border-box",
+                    }}
+                  />
+                  {addEmailError && (
+                    <div style={{ fontSize: 12, color: "#e53e3e", marginTop: 4 }}>{addEmailError}</div>
+                  )}
+                </div>
+                <button
+                  onClick={handleAddRecipient}
+                  disabled={addingEmail || !isValidEmail(newEmail)}
+                  style={{
+                    padding: "8px 18px", borderRadius: 8, border: "none",
+                    background: addingEmail || !isValidEmail(newEmail) ? "#e0e0e0" : ORANGE,
+                    color: addingEmail || !isValidEmail(newEmail) ? "#aaa" : "#fff",
+                    fontSize: 13, fontWeight: 600,
+                    cursor: addingEmail || !isValidEmail(newEmail) ? "not-allowed" : "pointer",
+                    fontFamily: "Arial, sans-serif", whiteSpace: "nowrap",
+                    transition: "background 0.15s",
+                  }}
+                >
+                  {addingEmail ? "Adicionando…" : addEmailSuccess ? "✓ Adicionado" : "Adicionar"}
+                </button>
+              </div>
+
+              {/* List */}
+              {recipientsLoading ? (
+                <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>Carregando…</div>
+              ) : recipientsError ? (
+                <div style={{ padding: "16px", background: "#fff5f5", borderRadius: 8, color: "#e53e3e", fontSize: 13 }}>
+                  Erro: {recipientsError}
+                </div>
+              ) : recipients.length === 0 ? (
+                <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>Nenhum destinatário cadastrado.</div>
+              ) : (
+                recipients.map((r) => {
+                  const isToggling = togglingId === r.id;
+                  const isRemoving = removingId === r.id;
+                  const isConfirming = confirmRemoveId === r.id;
+                  return (
+                    <div key={r.id} className="settings-module-row" style={{ alignItems: "center", gap: 12 }}>
+                      {/* Email + date */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a1a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {r.email}
+                        </div>
+                        <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>
+                          Adicionado em {formatDateBR(r.created_at)}
+                        </div>
+                      </div>
+                      {/* Status badge */}
+                      <span style={{
+                        fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 12,
+                        background: r.is_active ? "rgba(72,187,120,0.15)" : "rgba(160,160,160,0.15)",
+                        color: r.is_active ? "#38a169" : "#999",
+                        flexShrink: 0,
+                      }}>
+                        {r.is_active ? "Ativo" : "Inativo"}
+                      </span>
+                      {/* Actions */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                        {isConfirming ? (
+                          <>
+                            <span style={{ fontSize: 12, color: "#e53e3e" }}>Tem certeza?</span>
+                            <button
+                              onClick={() => handleRemoveRecipient(r.id)}
+                              disabled={isRemoving}
+                              style={{ fontSize: 12, fontWeight: 600, padding: "4px 10px", borderRadius: 6, border: "none", background: "#e53e3e", color: "#fff", cursor: isRemoving ? "wait" : "pointer", fontFamily: "Arial, sans-serif" }}
+                            >
+                              {isRemoving ? "…" : "Remover"}
+                            </button>
+                            <button
+                              onClick={() => setConfirmRemoveId(null)}
+                              style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, border: "1px solid #e0e0e0", background: "#fff", color: "#555", cursor: "pointer", fontFamily: "Arial, sans-serif" }}
+                            >
+                              Cancelar
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleToggleRecipient(r.id, r.is_active)}
+                              disabled={!!togglingId}
+                              style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, border: `1px solid ${r.is_active ? "#e0e0e0" : ORANGE}`, background: "#fff", color: r.is_active ? "#666" : ORANGE, cursor: isToggling ? "wait" : "pointer", fontFamily: "Arial, sans-serif", opacity: isToggling ? 0.6 : 1 }}
+                            >
+                              {r.is_active ? "Desativar" : "Ativar"}
+                            </button>
+                            <button
+                              onClick={() => setConfirmRemoveId(r.id)}
+                              style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, border: "1px solid #e0e0e0", background: "#fff", color: "#e53e3e", cursor: "pointer", fontFamily: "Arial, sans-serif" }}
+                            >
+                              Remover
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           )}
 
