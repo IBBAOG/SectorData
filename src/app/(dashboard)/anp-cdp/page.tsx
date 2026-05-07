@@ -21,13 +21,24 @@ import {
   rpcGetAnpCdpPocosJson,
   rpcGetAnpCdpFiltros,
   getAnpCdpExportCount,
+  fetchAnpCdpRawFiltered,
   type AnpCdpSeriePonto,
   type AnpCdpPocoSimples,
   type AnpCdpFiltros,
   type AnpCdpExportCountFilters,
 } from "../../../lib/rpc";
-import { downloadAnpCdpExcel } from "../../../lib/exportExcel";
+import { downloadAnpCdpExcel, downloadAnpCdpRawExcel } from "../../../lib/exportExcel";
 import { downloadCsv } from "../../../lib/exportCsv";
+
+// Hard limits for raw (per-poço × per-mês) export. Above EXCEL_MAX, we
+// disable the Excel button and route the user to CSV. Above ABS_MAX, both
+// are disabled with a stronger warning. Numbers are conservative — the
+// /anp-cdp table has ~1.8M raw rows, so the unfiltered case must always
+// hit ABS_MAX and force the user to narrow filters first.
+const RAW_EXCEL_MAX_ROWS = 200_000;
+const RAW_ABS_MAX_ROWS   = 500_000;
+
+type ExportGranularity = "raw" | "ano_mes";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -197,6 +208,11 @@ export default function AnpCdpPage() {
   const [exportLocais, setExportLocais]             = useState<string[]>([]);
   const [exportTipos, setExportTipos]               = useState<string[]>([]);
   const [exportRange, setExportRange]               = useState<[number, number]>([0, 0]);
+  // Default = raw (1 row per poço × mês × demais dimensões). Aggregated is
+  // an explicit opt-in (users picking "Por ano/mês" get the 113-row summary
+  // that used to be the silent default and caused the bug).
+  const [exportGranularity, setExportGranularity]   = useState<ExportGranularity>("raw");
+  const [exportRawCount, setExportRawCount]         = useState<number | null>(null);
 
   // ── Initial load ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -282,8 +298,21 @@ export default function AnpCdpPage() {
     setExportLocais(selectedLocais);
     setExportTipos(selectedTipos);
     setExportRange(yearRange);
+    setExportGranularity("raw");
+    setExportRawCount(null);
     setExportOpen(true);
   }
+
+  // Hard-limit flags (only meaningful for raw export — the aggregated path
+  // is always tiny). When the modal is showing aggregated, we never block.
+  const rawOverExcel =
+    exportGranularity === "raw" &&
+    exportRawCount !== null &&
+    exportRawCount > RAW_EXCEL_MAX_ROWS;
+  const rawOverAbs =
+    exportGranularity === "raw" &&
+    exportRawCount !== null &&
+    exportRawCount > RAW_ABS_MAX_ROWS;
 
   const exportFilters = useMemo<AnpCdpExportCountFilters>(() => {
     const yMin = allYears[exportRange[0]] ?? null;
@@ -477,27 +506,55 @@ export default function AnpCdpPage() {
         onClose={() => setExportOpen(false)}
         title="Exportar — ANP CDP"
         datasetKey="anp_cdp_producao"
-        currentFilters={exportFilters}
+        // Re-key by granularity so useExportSize debounces independently for
+        // raw vs ano_mes (we feed the modal a different count in each case).
+        currentFilters={{ ...exportFilters, _g: exportGranularity }}
         countFetcher={async () => {
           if (!supabase) return 0;
-          return getAnpCdpExportCount(supabase, exportFilters);
+          // For raw granularity the count == raw rows in anp_cdp_producao.
+          // For aggregated (ano_mes) the result is groupwise — at most one
+          // row per (ano, mes) pair: clamp to a tight constant so the size
+          // strip doesn't flash a misleading 100MB+ estimate.
+          if (exportGranularity === "ano_mes") {
+            // Worst case ~252 rows (21 years × 12 months). Reset stored raw
+            // count so over-limit flags stay false on aggregated path.
+            setExportRawCount(null);
+            return 252;
+          }
+          const c = await getAnpCdpExportCount(supabase, exportFilters);
+          setExportRawCount(c);
+          return c;
         }}
         excelBusy={excelLoading}
         csvBusy={csvLoading}
         loadingLabel={excelLoading ? "Gerando Excel..." : "Baixando CSV..."}
         onExportExcel={async () => {
           if (!supabase) return;
+          // Hard-limit gating for raw — early-bail before allocating memory.
+          if (rawOverAbs) {
+            console.warn("ANP CDP raw Excel blocked: rows exceed RAW_ABS_MAX_ROWS");
+            return;
+          }
+          if (rawOverExcel) {
+            console.warn("ANP CDP raw Excel blocked: rows exceed RAW_EXCEL_MAX_ROWS — use CSV");
+            return;
+          }
           setExcelLoading(true);
           try {
-            const rows = await rpcGetAnpCdpPocoSerie(supabase, {
-              bacoes:          exportFilters.bacoes,
-              operadores:      exportFilters.operadores,
-              locais:          exportFilters.locais,
-              tiposInstalacao: exportFilters.tiposInstalacao,
-              anoInicio:       exportFilters.anoInicio,
-              anoFim:          exportFilters.anoFim,
-            });
-            await downloadAnpCdpExcel(rows);
+            if (exportGranularity === "raw") {
+              const rows = await fetchAnpCdpRawFiltered(supabase, exportFilters);
+              await downloadAnpCdpRawExcel(rows);
+            } else {
+              const rows = await rpcGetAnpCdpPocoSerie(supabase, {
+                bacoes:          exportFilters.bacoes,
+                operadores:      exportFilters.operadores,
+                locais:          exportFilters.locais,
+                tiposInstalacao: exportFilters.tiposInstalacao,
+                anoInicio:       exportFilters.anoInicio,
+                anoFim:          exportFilters.anoFim,
+              });
+              await downloadAnpCdpExcel(rows);
+            }
             setExportOpen(false);
           } catch (e) {
             console.error("ANP CDP Excel export failed", e);
@@ -507,24 +564,37 @@ export default function AnpCdpPage() {
         }}
         onExportCsv={async () => {
           if (!supabase) return;
+          if (rawOverAbs) {
+            console.warn("ANP CDP raw CSV blocked: rows exceed RAW_ABS_MAX_ROWS");
+            return;
+          }
           setCsvLoading(true);
           try {
-            const rows = await rpcGetAnpCdpPocoSerie(supabase, {
-              bacoes:          exportFilters.bacoes,
-              operadores:      exportFilters.operadores,
-              locais:          exportFilters.locais,
-              tiposInstalacao: exportFilters.tiposInstalacao,
-              anoInicio:       exportFilters.anoInicio,
-              anoFim:          exportFilters.anoFim,
-            });
             const now = new Date();
             const dd = String(now.getDate()).padStart(2, "0");
             const mm = String(now.getMonth() + 1).padStart(2, "0");
             const yy = String(now.getFullYear()).slice(-2);
-            downloadCsv({
-              rows: rows as unknown as Record<string, unknown>[],
-              filename: `anp_cdp_${dd}-${mm}-${yy}`,
-            });
+
+            if (exportGranularity === "raw") {
+              const rows = await fetchAnpCdpRawFiltered(supabase, exportFilters);
+              downloadCsv({
+                rows: rows as unknown as Record<string, unknown>[],
+                filename: `anp_cdp_raw_${dd}-${mm}-${yy}`,
+              });
+            } else {
+              const rows = await rpcGetAnpCdpPocoSerie(supabase, {
+                bacoes:          exportFilters.bacoes,
+                operadores:      exportFilters.operadores,
+                locais:          exportFilters.locais,
+                tiposInstalacao: exportFilters.tiposInstalacao,
+                anoInicio:       exportFilters.anoInicio,
+                anoFim:          exportFilters.anoFim,
+              });
+              downloadCsv({
+                rows: rows as unknown as Record<string, unknown>[],
+                filename: `anp_cdp_${dd}-${mm}-${yy}`,
+              });
+            }
             setExportOpen(false);
           } catch (e) {
             console.error("ANP CDP CSV export failed", e);
@@ -534,6 +604,93 @@ export default function AnpCdpPage() {
         }}
         filters={
           <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: "Arial" }}>
+            {/* Granularidade — default "raw" (1 linha por poço × mês) ─────────── */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
+                Granularidade
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <div className="form-check" style={{ marginBottom: 0 }}>
+                  <input
+                    className="form-check-input"
+                    type="radio"
+                    id="cdp-export-g-raw"
+                    name="cdp-export-granularity"
+                    checked={exportGranularity === "raw"}
+                    onChange={() => setExportGranularity("raw")}
+                  />
+                  <label
+                    className="form-check-label"
+                    htmlFor="cdp-export-g-raw"
+                    style={{ fontFamily: "Arial", fontSize: 12, cursor: "pointer" }}
+                  >
+                    <strong>Por poço (raw)</strong>
+                    <span style={{ color: "#888", marginLeft: 6, fontSize: 11 }}>
+                      — 1 linha por poço × mês × demais dimensões (recomendado p/ análise)
+                    </span>
+                  </label>
+                </div>
+                <div className="form-check" style={{ marginBottom: 0 }}>
+                  <input
+                    className="form-check-input"
+                    type="radio"
+                    id="cdp-export-g-anomes"
+                    name="cdp-export-granularity"
+                    checked={exportGranularity === "ano_mes"}
+                    onChange={() => setExportGranularity("ano_mes")}
+                  />
+                  <label
+                    className="form-check-label"
+                    htmlFor="cdp-export-g-anomes"
+                    style={{ fontFamily: "Arial", fontSize: 12, cursor: "pointer" }}
+                  >
+                    <strong>Por ano/mês (agregado)</strong>
+                    <span style={{ color: "#888", marginLeft: 6, fontSize: 11 }}>
+                      — soma das métricas por mês (≤252 linhas)
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Hard-limit warnings (raw only) ─────────────────────────────────── */}
+            {rawOverAbs && (
+              <div
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  color: "#7a1a1a",
+                  backgroundColor: "#fdecea",
+                  border: "1px solid #f5c2bc",
+                  borderRadius: 4,
+                  padding: "8px 10px",
+                  lineHeight: 1.4,
+                }}
+              >
+                Volume muito alto ({(exportRawCount ?? 0).toLocaleString("pt-BR")} linhas).
+                Use granularidade <strong>Por ano/mês (agregado)</strong> ou aplique mais filtros
+                (bacia, operador, período).
+              </div>
+            )}
+            {!rawOverAbs && rawOverExcel && (
+              <div
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  color: "#7a4a00",
+                  backgroundColor: "#fff3cd",
+                  border: "1px solid #ffe69c",
+                  borderRadius: 4,
+                  padding: "8px 10px",
+                  lineHeight: 1.4,
+                }}
+              >
+                Volume alto para Excel ({(exportRawCount ?? 0).toLocaleString("pt-BR")} linhas).
+                Recomendamos baixar em <strong>CSV</strong> (mais leve) — Excel pode falhar no
+                navegador.
+              </div>
+            )}
+
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Período</div>
               {allYears.length > 0 && (

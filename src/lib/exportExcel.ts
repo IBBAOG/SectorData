@@ -6,6 +6,7 @@ import type {
   PriceBandsRow,
   MdicComexSerieRow,
   AnpCdpSeriePonto,
+  AnpCdpRawRow,
   AnpLpcSerieRow,
 } from "./rpc";
 
@@ -1260,6 +1261,46 @@ export async function downloadAnpCdpExcel(rows: AnpCdpSeriePonto[]): Promise<voi
     columns: [
       { key: "ano",                          header: "Ano",                     width: 8 },
       { key: "mes",                          header: "Mês",                     width: 6 },
+      { key: "petroleo_bbl_dia",             header: "Petróleo (bbl/dia)",      width: 18, format: "#,##0.00" },
+      { key: "oleo_bbl_dia",                 header: "Óleo (bbl/dia)",          width: 18, format: "#,##0.00" },
+      { key: "condensado_bbl_dia",           header: "Condensado (bbl/dia)",    width: 20, format: "#,##0.00" },
+      { key: "gas_total_mm3_dia",            header: "Gás Total (Mm³/dia)",     width: 20, format: "#,##0.00" },
+      { key: "gas_natural_assoc_mm3_dia",    header: "Gás Assoc. (Mm³/dia)",    width: 22, format: "#,##0.00" },
+      { key: "gas_natural_n_assoc_mm3_dia",  header: "Gás N-Assoc. (Mm³/dia)",  width: 22, format: "#,##0.00" },
+      { key: "gas_royalties",                header: "Gás Royalties",           width: 18, format: "#,##0.00" },
+      { key: "agua_bbl_dia",                 header: "Água (bbl/dia)",          width: 16, format: "#,##0.00" },
+      { key: "tempo_prod_hs_mes",            header: "Tempo Produção (hs/mês)", width: 22, format: "#,##0.00" },
+    ],
+  });
+}
+
+// ── ANP CDP raw export (1 row per poço × mês × demais dimensões) ─────────────
+//
+// Default export path for /anp-cdp. Mirrors the columns of `anp_cdp_producao`
+// 1:1 (do not invent fields). Uses `key:` lookups (NOT `value:` extractors)
+// because the `value` + `mergeTitleCells:true` combo is known-broken in the
+// browser bundle (see commit ee640e53). Title is set but not merged here, so
+// we are within the safe path.
+
+export async function downloadAnpCdpRawExcel(rows: AnpCdpRawRow[]): Promise<void> {
+  await downloadGenericExcel<AnpCdpRawRow>({
+    rows,
+    sheetName: "ANP CDP — Raw",
+    title: "ANP CDP — Produção por Poço (raw)",
+    filename: "ANP CDP raw",
+    columns: [
+      { key: "ano",                          header: "Ano",                     width: 8 },
+      { key: "mes",                          header: "Mês",                     width: 6 },
+      { key: "estado",                       header: "Estado",                  width: 10 },
+      { key: "bacia",                        header: "Bacia",                   width: 18, align: "left" },
+      { key: "campo",                        header: "Campo",                   width: 22, align: "left" },
+      { key: "poco",                         header: "Poço",                    width: 18, align: "left" },
+      { key: "operador",                     header: "Operador",                width: 22, align: "left" },
+      { key: "nome_poco_operador",           header: "Nome Poço (Operador)",    width: 22, align: "left" },
+      { key: "num_contrato",                 header: "Nº Contrato",             width: 16, align: "left" },
+      { key: "instalacao_destino",           header: "Instalação Destino",      width: 22, align: "left" },
+      { key: "tipo_instalacao",              header: "Tipo Instalação",         width: 18, align: "left" },
+      { key: "local",                        header: "Ambiente",                width: 12 },
       { key: "petroleo_bbl_dia",             header: "Petróleo (bbl/dia)",      width: 18, format: "#,##0.00" },
       { key: "oleo_bbl_dia",                 header: "Óleo (bbl/dia)",          width: 18, format: "#,##0.00" },
       { key: "condensado_bbl_dia",           header: "Condensado (bbl/dia)",    width: 20, format: "#,##0.00" },

@@ -1781,6 +1781,105 @@ export async function getAnpCdpExportCount(
   return Number(data ?? 0);
 }
 
+/**
+ * Raw row type for `anp_cdp_producao` — mirrors the table columns exactly
+ * (do not invent fields). Used by the /anp-cdp export when the user picks
+ * granularity = "raw" (default).
+ *
+ * Schema source-of-truth:
+ *   - 20260504000007 (v3) — added poco, campo
+ *   - 20260504000008 (v4) — added instalacao_destino, agua_bbl_dia
+ *   - 20260504000009 (v5) — added estado, nome_poco_operador, operador,
+ *                           num_contrato, oleo_bbl_dia, condensado_bbl_dia,
+ *                           gas_natural_assoc_mm3_dia,
+ *                           gas_natural_n_assoc_mm3_dia, gas_royalties,
+ *                           tipo_instalacao, tempo_prod_hs_mes
+ */
+export type AnpCdpRawRow = {
+  ano: number;
+  mes: number;
+  poco: string;
+  campo: string;
+  bacia: string;
+  local: string;
+  estado: string | null;
+  operador: string | null;
+  nome_poco_operador: string | null;
+  num_contrato: string | null;
+  instalacao_destino: string | null;
+  tipo_instalacao: string | null;
+  petroleo_bbl_dia: number | null;
+  oleo_bbl_dia: number | null;
+  condensado_bbl_dia: number | null;
+  gas_total_mm3_dia: number | null;
+  gas_natural_assoc_mm3_dia: number | null;
+  gas_natural_n_assoc_mm3_dia: number | null;
+  gas_royalties: number | null;
+  agua_bbl_dia: number | null;
+  tempo_prod_hs_mes: number | null;
+};
+
+/**
+ * Paginated SELECT * FROM anp_cdp_producao with the same filter predicate as
+ * `get_anp_cdp_export_count`. Used by the /anp-cdp export when the user picks
+ * granularity = "raw" (default) so the rows downloaded match exactly the row
+ * count shown in the export modal.
+ *
+ * RLS allows `authenticated` SELECT (see migration 20260504000013), so the
+ * anon-key client running in the browser hits the same predicate path.
+ */
+export async function fetchAnpCdpRawFiltered(
+  supabase: SupabaseClient,
+  filters: AnpCdpExportCountFilters,
+): Promise<AnpCdpRawRow[]> {
+  const PAGE = 1000;
+  let offset = 0;
+  const allRows: AnpCdpRawRow[] = [];
+
+  const pocos            = toListOrNull(filters.pocos);
+  const campos           = toListOrNull(filters.campos);
+  const bacoes           = toListOrNull(filters.bacoes);
+  const locais           = toListOrNull(filters.locais);
+  const estados          = toListOrNull(filters.estados);
+  const operadores       = toListOrNull(filters.operadores);
+  const instalacoes      = toListOrNull(filters.instalacoes);
+  const tiposInstalacao  = toListOrNull(filters.tiposInstalacao);
+
+  while (true) {
+    let q = supabase
+      .from("anp_cdp_producao")
+      .select(
+        "ano,mes,poco,campo,bacia,local,estado,operador,nome_poco_operador,num_contrato,instalacao_destino,tipo_instalacao,petroleo_bbl_dia,oleo_bbl_dia,condensado_bbl_dia,gas_total_mm3_dia,gas_natural_assoc_mm3_dia,gas_natural_n_assoc_mm3_dia,gas_royalties,agua_bbl_dia,tempo_prod_hs_mes",
+      );
+
+    if (pocos)            q = q.in("poco", pocos);
+    if (campos)           q = q.in("campo", campos);
+    if (bacoes)           q = q.in("bacia", bacoes);
+    if (locais)           q = q.in("local", locais);
+    if (estados)          q = q.in("estado", estados);
+    if (operadores)       q = q.in("operador", operadores);
+    if (instalacoes)      q = q.in("instalacao_destino", instalacoes);
+    if (tiposInstalacao)  q = q.in("tipo_instalacao", tiposInstalacao);
+    if (filters.anoInicio != null) q = q.gte("ano", filters.anoInicio);
+    if (filters.anoFim    != null) q = q.lte("ano", filters.anoFim);
+
+    const { data, error } = await q
+      .order("ano",  { ascending: true })
+      .order("mes",  { ascending: true })
+      .order("poco", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+
+    const rows = (data ?? []) as AnpCdpRawRow[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
+  }
+
+  return allRows;
+}
+
 export type AnpLpcExportCountFilters = {
   produtos?: string[] | null;
   estados?: string[] | null;
