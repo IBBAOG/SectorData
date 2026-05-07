@@ -107,11 +107,13 @@ export default function AnpPrecosDistribuicaoPage() {
   const supabase = getSupabaseClient();
 
   const [loading, setLoading]       = useState(true);
+  const [filtrosLoading, setFiltrosLoading] = useState(true);
   const [filtros, setFiltros]       = useState<AnpPdistFiltros>({
     produtos: [], granularidades: [], ufs: [], municipios: [], regioes: [],
     data_min: null, data_max: null,
   });
   const [serieRows, setSerieRows]   = useState<AnpPdistSerieRow[]>([]);
+  const [hasFetchedSerie, setHasFetchedSerie] = useState(false);
   const [allYears, setAllYears]     = useState<number[]>([]);
   const [yearRange, setYearRange]   = useState<[number, number]>([0, 0]);
 
@@ -133,42 +135,57 @@ export default function AnpPrecosDistribuicaoPage() {
     if (!supabase) return;
     let cancelled = false;
     (async () => {
-      const f = await rpcGetAnpPdistFiltros(supabase);
-      if (cancelled) return;
-      setFiltros(f);
+      try {
+        const f = await rpcGetAnpPdistFiltros(supabase);
+        if (cancelled) return;
+        setFiltros(f);
+        setFiltrosLoading(false);
 
-      const yMin = f.data_min ? parseInt(f.data_min.slice(0, 4)) : new Date().getFullYear() - 5;
-      const yMax = f.data_max ? parseInt(f.data_max.slice(0, 4)) : new Date().getFullYear();
-      const years: number[] = [];
-      for (let y = yMin; y <= yMax; y++) years.push(y);
-      const startIdx = Math.max(0, years.findIndex(y => y >= yMax - 4));
-      const fromYear = years[startIdx] ?? yMin;
-      setAllYears(years);
-      setYearRange([startIdx, Math.max(0, years.length - 1)]);
+        const yMin = f.data_min ? parseInt(f.data_min.slice(0, 4)) : new Date().getFullYear() - 5;
+        const yMax = f.data_max ? parseInt(f.data_max.slice(0, 4)) : new Date().getFullYear();
+        const years: number[] = [];
+        for (let y = yMin; y <= yMax; y++) years.push(y);
+        const startIdx = Math.max(0, years.findIndex(y => y >= yMax - 4));
+        const fromYear = years[startIdx] ?? yMin;
+        setAllYears(years);
+        setYearRange([startIdx, Math.max(0, years.length - 1)]);
 
-      const defaultProduto =
-        f.produtos.find(p => p === "Gasolina Comum")
-        ?? f.produtos[0]
-        ?? "";
-      setProduto(defaultProduto);
+        const defaultProduto =
+          f.produtos.find(p => p === "Gasolina Comum")
+          ?? f.produtos[0]
+          ?? "";
+        setProduto(defaultProduto);
 
-      const defaultGran: Granularidade =
-        (f.granularidades.includes("brasil")
-          ? "brasil"
-          : (f.granularidades[0] as Granularidade | undefined)) ?? "brasil";
-      setGran(defaultGran);
+        const defaultGran: Granularidade =
+          (f.granularidades.includes("brasil")
+            ? "brasil"
+            : (f.granularidades[0] as Granularidade | undefined)) ?? "brasil";
+        setGran(defaultGran);
 
-      // Initial fetch — only if we have a produto
-      if (defaultProduto) {
-        const rows = await rpcGetAnpPdistSerie(supabase, {
-          produto:       defaultProduto,
-          granularidade: defaultGran,
-          dataInicio:    `${fromYear}-01-01`,
-          dataFim:       `${yMax}-12-31`,
-        });
-        if (!cancelled) setSerieRows(rows);
+        // Initial fetch — only if we have a produto
+        if (defaultProduto) {
+          const rows = await rpcGetAnpPdistSerie(supabase, {
+            produto:       defaultProduto,
+            granularidade: defaultGran,
+            dataInicio:    `${fromYear}-01-01`,
+            dataFim:       `${yMax}-12-31`,
+          });
+          if (!cancelled) {
+            setSerieRows(rows);
+            setHasFetchedSerie(true);
+          }
+        } else {
+          if (!cancelled) setHasFetchedSerie(true);
+        }
+      } catch (e) {
+        console.error("ANP PDist initial load failed", e);
+        if (!cancelled) {
+          setFiltrosLoading(false);
+          setHasFetchedSerie(true);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     })();
     return () => { cancelled = true; };
   }, [supabase]);
@@ -195,6 +212,25 @@ export default function AnpPrecosDistribuicaoPage() {
         : availableLocais.slice(0, MAX_LOCAIS_CHART);
     setSelectedLocais(defaults);
   }, [selectedGran, availableLocais]);
+
+  // Granularity setter — flips the chart to "Loading data..." immediately,
+  // before the next debounced refetch resolves. Without this, there is a
+  // visible flicker where buildChart runs against a stale serieRows + empty
+  // selectedLocais, briefly showing the empty state.
+  const handleGranChange = (g: Granularidade) => {
+    if (g === selectedGran) return;
+    setGran(g);
+    setSelectedLocais([]);
+    setHasFetchedSerie(false);
+  };
+
+  // Produto setter — same idea: avoid showing stale data / empty state while
+  // the next debounced fetch is in-flight.
+  const handleProdutoChange = (p: string) => {
+    if (p === selectedProduto) return;
+    setProduto(p);
+    setHasFetchedSerie(false);
+  };
 
   // ── Reactive serie fetch (debounced 400ms) ───────────────────────────────
   const { data: refetched, loading: serieLoading } = useDebouncedFetch(
@@ -224,12 +260,15 @@ export default function AnpPrecosDistribuicaoPage() {
     if (refetched) setSerieRows(refetched);
   }, [refetched]);
 
+  // Show "Loading data..." while: filtros loading, initial serie not yet fetched,
+  // any in-flight serie refetch, or while initial page-level loading is true.
+  const chartLoading = filtrosLoading || !hasFetchedSerie || serieLoading || loading;
   const chart = useMemo(
     () =>
-      serieLoading
+      chartLoading
         ? emptyPlot(360, "Loading data...")
         : buildChart(serieRows, selectedLocais, selectedGran),
-    [serieRows, selectedLocais, selectedGran, serieLoading],
+    [serieRows, selectedLocais, selectedGran, chartLoading],
   );
 
   // ── Export modal helpers ─────────────────────────────────────────────────
@@ -314,47 +353,88 @@ export default function AnpPrecosDistribuicaoPage() {
                 <select
                   className="form-select form-select-sm"
                   value={selectedProduto}
-                  onChange={e => setProduto(e.target.value)}
+                  onChange={e => handleProdutoChange(e.target.value)}
                   style={{ fontFamily: "Arial", fontSize: 12 }}
-                  disabled={filtros.produtos.length === 0}
+                  disabled={filtrosLoading || filtros.produtos.length === 0}
+                  aria-busy={filtrosLoading}
                 >
-                  {filtros.produtos.length === 0 && (
+                  {filtrosLoading ? (
+                    <option value="">Carregando...</option>
+                  ) : filtros.produtos.length === 0 ? (
                     <option value="">— sem dados —</option>
+                  ) : (
+                    filtros.produtos.map(p => (
+                      <option key={p} value={p}>{p}</option>
+                    ))
                   )}
-                  {filtros.produtos.map(p => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
                 </select>
               </div>
 
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Granularidade</div>
-                <SegmentedToggle<Granularidade>
-                  options={[...GRAN_OPTIONS]}
-                  value={selectedGran}
-                  onChange={(v) => setGran(v)}
-                  variant="full"
-                />
+                {filtrosLoading ? (
+                  <div
+                    aria-busy="true"
+                    style={{
+                      fontFamily: "Arial",
+                      fontSize: 12,
+                      color: "#888",
+                      padding: "6px 10px",
+                      border: "1px solid #e0e0e0",
+                      borderRadius: 6,
+                      background: "#fafafa",
+                    }}
+                  >
+                    Carregando...
+                  </div>
+                ) : (
+                  <SegmentedToggle<Granularidade>
+                    options={[...GRAN_OPTIONS]}
+                    value={selectedGran}
+                    onChange={handleGranChange}
+                    variant="full"
+                  />
+                )}
               </div>
 
-              {selectedGran !== "brasil" && (
-                <MultiSelectFilter
-                  label={
-                    selectedGran === "uf"        ? "UF" :
-                    selectedGran === "municipio" ? "Município" :
-                    "Região"
-                  }
-                  items={availableLocais}
-                  selected={selectedLocais}
-                  onToggle={toggleLocal}
-                  onClear={
-                    selectedLocais.length > 0
-                      ? () => setSelectedLocais([])
-                      : undefined
-                  }
-                  counterTotal={availableLocais.length}
-                  idPrefix={`pdist-${selectedGran}`}
-                />
+              {filtrosLoading ? (
+                <div className="sidebar-filter-section">
+                  <div className="sidebar-filter-label">Locais</div>
+                  <div
+                    aria-busy="true"
+                    style={{
+                      fontFamily: "Arial",
+                      fontSize: 12,
+                      color: "#888",
+                      padding: "6px 10px",
+                      border: "1px solid #e0e0e0",
+                      borderRadius: 6,
+                      background: "#fafafa",
+                    }}
+                  >
+                    Carregando...
+                  </div>
+                </div>
+              ) : (
+                selectedGran !== "brasil" && (
+                  <MultiSelectFilter
+                    label={
+                      selectedGran === "uf"        ? "UF" :
+                      selectedGran === "municipio" ? "Município" :
+                      "Região"
+                    }
+                    items={availableLocais}
+                    selected={selectedLocais}
+                    onToggle={toggleLocal}
+                    onClear={
+                      selectedLocais.length > 0
+                        ? () => setSelectedLocais([])
+                        : undefined
+                    }
+                    counterTotal={availableLocais.length}
+                    idPrefix={`pdist-${selectedGran}`}
+                  />
+                )
               )}
 
               {selectedGran === "municipio" && (
@@ -415,7 +495,7 @@ export default function AnpPrecosDistribuicaoPage() {
                             })`
                           : "Preço Médio"
                       }
-                      loading={serieLoading}
+                      loading={chartLoading}
                       height={360}
                     >
                       <PlotlyChart
