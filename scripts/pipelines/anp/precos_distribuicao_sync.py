@@ -4,27 +4,27 @@ precos_distribuicao_sync.py
 ===========================
 Baixa os XLSX de Precos de Distribuicao de Combustiveis da ANP,
 parseia cada um e upserta em anp_precos_distribuicao.
-Idempotente — ON CONFLICT DO UPDATE via UNIQUE(data_referencia, produto, granularidade, uf, municipio).
+Idempotente — ON CONFLICT DO UPDATE via UNIQUE(data_referencia, produto, granularidade, uf, municipio, regiao).
 
 Fontes (semanal — /pdc/semanal/):
   - combustiveis-liquidos-brasil.xlsx     → semanal, granularidade='brasil'
   - combustiveis-liquidos-estados.xlsx    → semanal, granularidade='uf', liquidos
   - combustiveis-liquidos-municipios-*.xlsx → semanal, granularidade='municipio', liquidos (split 2020-2023 / desde2024)
+  - combustiveis-liquidos-regioes.xlsx    → semanal, granularidade='regiao', liquidos
   - glp-brasil.xlsx                       → semanal, granularidade='brasil', GLP P13
   - glp-estados.xlsx                      → semanal, granularidade='uf', GLP P13
   - glp-municipios.xlsx                   → semanal, granularidade='municipio', GLP P13
+  - glp-regioes.xlsx                      → semanal, granularidade='regiao', GLP P13
 
 Fontes (mensal — /pdc/mensal/):
   - combustiveis-liquidos-brasil.xlsx     → mensal, granularidade='brasil', liquidos
   - combustiveis-liquidos-estados.xlsx    → mensal, granularidade='uf', liquidos
   - combustiveis-liquidos-municipios.xlsx → mensal, granularidade='municipio', liquidos
+  - combustiveis-liquidos-regioes.xlsx    → mensal, granularidade='regiao', liquidos
   - glp-brasil.xlsx                       → mensal, granularidade='brasil', GLP P13
   - glp-estados.xlsx                      → mensal, granularidade='uf', GLP P13
   - glp-municipios.xlsx                   → mensal, granularidade='municipio', GLP P13
-
-Ignorados intencionalmente (eixo 'regiao' nao existe no schema):
-  - combustiveis-liquidos-regioes.xlsx (semanal e mensal)
-  - glp-regioes.xlsx (semanal e mensal)
+  - glp-regioes.xlsx                      → mensal, granularidade='regiao', GLP P13
 
 Ignorados intencionalmente (produto fora dos 6 canonicos):
   - combustiveis-aviacao-*.xlsx
@@ -128,6 +128,8 @@ _FILE_CATALOG: list[tuple[str, str, str, str]] = [
     ("municipio", f"{_BASE_SEMANAL}/combustiveis-liquidos-municipios_desde2024.xlsx",
                                                                                    "municipio_semanal", "semanal"),
     ("municipio", f"{_BASE_SEMANAL}/glp-municipios.xlsx",                         "municipio_semanal", "semanal"),
+    ("regiao",    f"{_BASE_SEMANAL}/combustiveis-liquidos-regioes.xlsx",           "regiao_semanal",    "semanal"),
+    ("regiao",    f"{_BASE_SEMANAL}/glp-regioes.xlsx",                            "regiao_semanal",    "semanal"),
     # --- Mensal ---
     ("brasil",    f"{_BASE_MENSAL}/combustiveis-liquidos-brasil.xlsx",             "brasil_mensal",     "mensal"),
     ("brasil",    f"{_BASE_MENSAL}/glp-brasil.xlsx",                              "brasil_mensal",     "mensal"),
@@ -135,6 +137,8 @@ _FILE_CATALOG: list[tuple[str, str, str, str]] = [
     ("uf",        f"{_BASE_MENSAL}/glp-estados.xlsx",                             "uf_mensal",         "mensal"),
     ("municipio", f"{_BASE_MENSAL}/combustiveis-liquidos-municipios.xlsx",         "municipio_mensal",  "mensal"),
     ("municipio", f"{_BASE_MENSAL}/glp-municipios.xlsx",                          "municipio_mensal",  "mensal"),
+    ("regiao",    f"{_BASE_MENSAL}/combustiveis-liquidos-regioes.xlsx",            "regiao_mensal",     "mensal"),
+    ("regiao",    f"{_BASE_MENSAL}/glp-regioes.xlsx",                             "regiao_mensal",     "mensal"),
 ]
 
 # Legacy HTML-scrape patterns (kept for backward compat / extra files ANP may add):
@@ -198,8 +202,8 @@ def _discover_links() -> list[tuple[str, str, str, str]]:
             if full_url in catalog_urls:
                 continue  # already included
             fname = href.split("/")[-1].lower()
-            # Skip: regiao, aviacao (unsupported eixos/produtos)
-            if re.search(r"regioes?|aviacao", fname, re.I):
+            # Skip: aviacao (produtos fora dos 6 canonicos)
+            if re.search(r"aviacao", fname, re.I):
                 continue
             # Classify extra files
             if re.search(r"combustiveis-liquidos-brasil|glp-brasil", fname, re.I):
@@ -213,6 +217,10 @@ def _discover_links() -> list[tuple[str, str, str, str]]:
             elif re.search(r"municipio", fname, re.I):
                 parser_type = "municipio_semanal"
                 key = "municipio"
+                period = "semanal"
+            elif re.search(r"regioes?", fname, re.I):
+                parser_type = "regiao_semanal"
+                key = "regiao"
                 period = "semanal"
             else:
                 continue
@@ -866,6 +874,129 @@ def _parse_glp_municipio_semanal(content: bytes, fname: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Parser: Regioes semanal e mensal
+# Semanal: DATA INICIAL | DATA FINAL | REGIAO | PRODUTO | UNIDADE DE MEDIDA |
+#          PRECO MEDIO DISTRIBUICAO | DESVIO PADRAO
+# Mensal:  MES | PRODUTO | REGIAO | UNIDADE DE MEDIDA |
+#          PRECO MEDIO DE DISTRIBUICAO | DESVIO PADRAO
+# Nao tem PRECO MINIMO / PRECO MAXIMO / NUMERO POSTOS.
+# Regioes possíveis: NORTE, NORDESTE, CENTRO OESTE, SUDESTE, SUL
+# (ANP usa "CENTRO OESTE" sem hifen — verificado nos arquivos reais)
+# ---------------------------------------------------------------------------
+
+_VALID_REGIOES = {"NORTE", "NORDESTE", "CENTRO OESTE", "SUDESTE", "SUL"}
+
+
+def _parse_regiao(content: bytes, fname: str, periodicidade: str) -> list[dict]:
+    """
+    Parser para *-regioes.xlsx (semanal e mensal, combustiveis-liquidos e glp).
+
+    Semanal layout: DATA INICIAL / DATA FINAL / REGIAO / PRODUTO /
+                    UNIDADE DE MEDIDA / PRECO MEDIO DISTRIBUICAO / DESVIO PADRAO
+    Mensal layout:  MES / PRODUTO / REGIAO /
+                    UNIDADE DE MEDIDA / PRECO MEDIO DE DISTRIBUICAO / DESVIO PADRAO
+
+    Nenhum dos 4 arquivos tem PRECO MINIMO, PRECO MAXIMO ou NUMERO POSTOS —
+    essas colunas ficam None.
+    """
+    rows_out: list[dict] = []
+    try:
+        xl = pd.ExcelFile(io.BytesIO(content))
+    except Exception as e:
+        print(f"  [regiao] Erro ao abrir {fname}: {e}")
+        return rows_out
+
+    for sheet in xl.sheet_names:
+        try:
+            raw = xl.parse(sheet, header=None)
+        except Exception:
+            continue
+
+        # Find header row: must have a REGIAO-like col AND a date-like col.
+        # The column name has U+FFFD corruption: "REGI��O" — use regex dot-wildcard.
+        header_row = None
+        for i, row in raw.iterrows():
+            vals = [str(v).strip().lower() for v in row if pd.notna(v) and str(v).strip() not in ("", "nan")]
+            has_regiao = any(re.search(r"regi.o", v) for v in vals)
+            has_date = any(v.startswith("data") or v in ("mes", "mês", "m�s") for v in vals)
+            if has_regiao and has_date:
+                header_row = i
+                break
+
+        if header_row is None:
+            continue
+
+        df = raw.iloc[header_row:].copy()
+        df.columns = [
+            str(v).strip().lower() if pd.notna(v) and str(v).strip() not in ("", "nan") else f"col_{j}"
+            for j, v in enumerate(df.iloc[0])
+        ]
+        df = df.iloc[1:].reset_index(drop=True)
+
+        col_map: dict[str, str] = {}
+        for col in df.columns:
+            c = col.lower()
+            # date: prefer 'data inicial' for semanal, 'mes' for mensal
+            if re.search(r"data\s*inicial|^data$|^m.s$|^mes$", c) and "data" not in col_map:
+                col_map["data"] = col
+            elif re.search(r"regi.o", c) and "regiao" not in col_map:
+                col_map["regiao"] = col
+            elif re.search(r"produto|combustivel", c) and "produto" not in col_map:
+                col_map["produto"] = col
+            elif re.search(r"m.dio|medio|media", c) and "medio" not in col_map:
+                col_map["medio"] = col
+            elif re.search(r"unidade", c) and "unidade" not in col_map:
+                col_map["unidade"] = col
+
+        if "data" not in col_map or "medio" not in col_map or "regiao" not in col_map:
+            continue
+
+        for _, row in df.iterrows():
+            data_val = _parse_date(row.get(col_map["data"]))
+            if not data_val:
+                continue
+            preco_medio = _to_float(row.get(col_map["medio"]))
+            if preco_medio is None:
+                continue
+
+            regiao_raw = str(row.get(col_map["regiao"], "")).strip().upper()
+            # Normalise corruption variants (e.g. "CENTRO�OESTE") — replace
+            # any non-ASCII with space and collapse, then strip.
+            regiao_val = re.sub(r"[^\x00-\x7F]+", " ", regiao_raw)
+            regiao_val = re.sub(r"\s+", " ", regiao_val).strip()
+            if regiao_val not in _VALID_REGIOES:
+                continue  # skip header repetitions or garbage rows
+
+            produto_raw = str(row.get(col_map.get("produto", ""), "")).strip()
+            produto = _normalise_produto(produto_raw)
+            if not produto:
+                continue
+
+            unidade_raw = str(row.get(col_map.get("unidade", ""), "R$/L")).strip()
+            unidade = unidade_raw if unidade_raw and unidade_raw != "nan" else "R$/L"
+
+            rows_out.append({
+                "data_referencia": data_val,
+                "periodicidade":   periodicidade,
+                "produto":         produto,
+                "granularidade":   "regiao",
+                "uf":              None,
+                "municipio":       None,
+                "regiao":          regiao_val,
+                "preco_medio":     preco_medio,
+                "preco_minimo":    None,
+                "preco_maximo":    None,
+                "numero_postos":   None,
+                "unidade":         unidade,
+                "fonte_arquivo":   fname,
+            })
+
+    if len(rows_out) == 0:
+        print(f"  WARNING [{fname}]: 0 linhas parseadas — possivel mudanca de layout no XLSX da ANP")
+    return rows_out
+
+
+# ---------------------------------------------------------------------------
 # Dispatch: seleciona parser pelo parser_type
 # ---------------------------------------------------------------------------
 
@@ -896,6 +1027,10 @@ def _dispatch_parser(content: bytes, fname: str, parser_type: str) -> list[dict]
             for r in rows:
                 r["periodicidade"] = "mensal"
         return rows
+    elif parser_type == "regiao_semanal":
+        return _parse_regiao(content, fname, periodicidade="semanal")
+    elif parser_type == "regiao_mensal":
+        return _parse_regiao(content, fname, periodicidade="mensal")
     else:
         print(f"  WARNING: parser_type desconhecido '{parser_type}' para {fname}")
         return []
@@ -915,6 +1050,7 @@ def _dedup(records: list[dict]) -> list[dict]:
             r["granularidade"],
             r.get("uf"),
             r.get("municipio"),
+            r.get("regiao"),
         )
         if key not in seen:
             seen.add(key)
@@ -933,7 +1069,7 @@ def _upsert(sb, records: list[dict], label: str) -> int:
         batch = records[i: i + _BATCH]
         sb.table("anp_precos_distribuicao").upsert(
             batch,
-            on_conflict="data_referencia,produto,granularidade,uf,municipio",
+            on_conflict="data_referencia,produto,granularidade,uf,municipio,regiao",
         ).execute()
         total += len(batch)
         print(f"  [{label}] batch {i // _BATCH + 1}/{n_batches} — {total:,}/{len(records):,}")
