@@ -1,12 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { getSupabaseClient } from "../../lib/supabaseClient";
 import { UserProfileProvider } from "../../context/UserProfileContext";
 import { useUserProfile } from "../../context/UserProfileContext";
 import { NewsHunterProvider } from "../../context/NewsHunterContext";
 import { rpcUpsertMyProfile } from "../../lib/profileRpc";
+import { trackEvent } from "../../lib/tracking";
+
+// Routes excluded from page_view tracking — meta/admin pages should not
+// pollute the dashboard engagement metrics they themselves report on.
+const TRACKING_EXCLUDED_ROUTES = new Set<string>([
+  "/login",
+  "/profile",
+  "/admin-panel",
+  "/admin-analytics",
+]);
 
 export default function DashboardLayout({
   children,
@@ -14,6 +24,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const supabase = getSupabaseClient();
   const [checking, setChecking] = useState(true);
 
@@ -25,13 +36,35 @@ export default function DashboardLayout({
     let cancelled = false;
     supabase.auth.getSession().then(({ data }) => {
       if (cancelled) return;
-      if (!data.session) router.replace("/login");
-      else setChecking(false);
+      if (!data.session) {
+        router.replace("/login");
+      } else {
+        // Fire 'login' event once per browser session, keyed by Supabase
+        // session access token so a refresh in the same tab does not retrigger.
+        try {
+          const sessionId = data.session.access_token?.slice(0, 24) ?? "anon";
+          const storageKey = `analytics_login_logged_${sessionId}`;
+          if (typeof window !== "undefined" && !window.sessionStorage.getItem(storageKey)) {
+            window.sessionStorage.setItem(storageKey, "1");
+            trackEvent("login");
+          }
+        } catch {
+          // sessionStorage unavailable (private mode, etc.) — fail silent.
+        }
+        setChecking(false);
+      }
     });
     return () => {
       cancelled = true;
     };
   }, [router, supabase]);
+
+  // Page-view tracking: fires on every pathname change once auth is settled.
+  useEffect(() => {
+    if (checking || !pathname) return;
+    if (TRACKING_EXCLUDED_ROUTES.has(pathname)) return;
+    trackEvent("page_view", pathname);
+  }, [pathname, checking]);
 
   if (!supabase) {
     return (

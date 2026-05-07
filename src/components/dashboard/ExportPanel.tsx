@@ -15,7 +15,9 @@
 // itself does not branch on action "mode".
 
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { trackEvent } from "@/lib/tracking";
 
 export type ExportActionKind = "excel" | "csv";
 
@@ -31,12 +33,26 @@ export interface ExportAction {
   loadingLabel?: string;
 }
 
+export interface ExportCompleteInfo {
+  format: ExportActionKind;
+  rows?: number;
+  bytes?: number;
+}
+
 export interface ExportPanelProps {
   /** Card heading — defaults to "EXPORT DATA". */
   heading?: string;
   actions: ExportAction[];
   /** Extra style for the outer relative wrapper (e.g. minWidth tuning). */
   style?: React.CSSProperties;
+  /**
+   * Optional callback fired after a successful download. The component
+   * resolves `onClick` and only fires the callback if no error was thrown.
+   * Also automatically dispatches a `track_event('export', route, ...)`
+   * with the same info — callers do not need to instrument tracking
+   * themselves.
+   */
+  onExportComplete?: (info: ExportCompleteInfo) => void;
 }
 
 const EXCEL_ICON = (
@@ -73,8 +89,26 @@ export default function ExportPanel({
   heading = "Export Data",
   actions,
   style,
+  onExportComplete,
 }: ExportPanelProps) {
   const busyAction = actions.find((a) => a.busy);
+  const pathname = usePathname();
+
+  async function runAction(a: ExportAction) {
+    try {
+      await a.onClick();
+      // Tracking — fire-and-forget. Rows/bytes unknown at this layer (Tier 1
+      // dashboards download directly without a size precount), so we emit
+      // the event without those fields and let the consumer enrich it via
+      // `onExportComplete` if it knows the count.
+      trackEvent("export", pathname ?? null, { format: a.kind });
+      onExportComplete?.({ format: a.kind });
+    } catch (err) {
+      // Re-surface to the console — the action's own onClick is responsible
+      // for user-facing error handling.
+      console.error(`[ExportPanel] ${a.kind} export failed`, err);
+    }
+  }
 
   return (
     <div style={{ position: "relative", minWidth: 180, ...style }}>
@@ -138,7 +172,7 @@ export default function ExportPanel({
               key={i}
               type="button"
               className="btn btn-outline-secondary btn-sm"
-              onClick={() => void a.onClick()}
+              onClick={() => void runAction(a)}
               disabled={a.disabled}
               style={{ fontFamily: "Arial" }}
             >

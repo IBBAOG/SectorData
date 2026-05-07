@@ -21,11 +21,21 @@
 
 import { useEffect, type ReactNode } from "react";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import { useExportSize } from "@/hooks/useExportSize";
 import { formatBytes } from "@/lib/exportSizeHeuristics";
+import { trackEvent } from "@/lib/tracking";
 
 const BRAND_ORANGE = "#ff5000";
 const HARD_LIMIT_ROWS = 200_000;
+
+export type ExportFormat = "excel" | "csv";
+
+export interface ExportCompleteInfo {
+  format: ExportFormat;
+  rows?: number;
+  bytes?: number;
+}
 
 export type ExportModalProps = {
   open: boolean;
@@ -50,6 +60,13 @@ export type ExportModalProps = {
   csvBusy?: boolean;
   /** Caption shown in the loading overlay. */
   loadingLabel?: string;
+  /**
+   * Optional callback fired after a successful download. The modal also
+   * automatically emits `track_event('export', route, { format, rows, bytes })`
+   * using the live size estimate — callers do not need to instrument
+   * tracking themselves.
+   */
+  onExportComplete?: (info: ExportCompleteInfo) => void;
 };
 
 const EXCEL_ICON = (
@@ -100,12 +117,32 @@ export default function ExportModal({
   excelBusy = false,
   csvBusy = false,
   loadingLabel = "Gerando…",
+  onExportComplete,
 }: ExportModalProps) {
   const { estimate, loading, error } = useExportSize(
     currentFilters,
     countFetcher,
     datasetKey,
   );
+  const pathname = usePathname();
+
+  async function runExport(format: ExportFormat) {
+    const handler = format === "excel" ? onExportExcel : onExportCsv;
+    try {
+      await handler();
+      const rows = estimate?.rows;
+      const bytes = format === "excel" ? estimate?.bytesXlsx : estimate?.bytesCsv;
+      trackEvent("export", pathname ?? null, {
+        format,
+        rows,
+        bytes,
+        dataset: datasetKey,
+      });
+      onExportComplete?.({ format, rows, bytes });
+    } catch (err) {
+      console.error(`[ExportModal] ${format} export failed`, err);
+    }
+  }
 
   // Close on Escape.
   useEffect(() => {
@@ -323,7 +360,7 @@ export default function ExportModal({
           <button
             type="button"
             className="btn btn-sm"
-            onClick={() => void onExportCsv()}
+            onClick={() => void runExport("csv")}
             disabled={busy || !!error || !estimate || estimate.rows === 0}
             style={{
               fontFamily: "Arial",
@@ -338,7 +375,7 @@ export default function ExportModal({
           <button
             type="button"
             className="btn btn-sm"
-            onClick={() => void onExportExcel()}
+            onClick={() => void runExport("excel")}
             disabled={busy || !!error || !estimate || estimate.rows === 0}
             style={{
               fontFamily: "Arial",
