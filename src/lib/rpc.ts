@@ -1491,6 +1491,108 @@ export async function rpcGetAnpLpcFiltros(
   }
 }
 
+// ─── MODULE: ANP Preços Distribuição (/src/app/(dashboard)/anp-precos-distribuicao/page.tsx) ─
+
+export type AnpPdistSerieRow = {
+  data_referencia: string;     // "YYYY-MM-DD"
+  local: string;               // "Brasil" | UF | nome do município
+  preco_medio: number | null;
+  preco_minimo: number | null;
+  preco_maximo: number | null;
+  unidade: string | null;
+};
+
+export type AnpPdistFiltros = {
+  produtos: string[];
+  granularidades: string[];    // 'brasil' | 'uf' | 'municipio'
+  ufs: string[];
+  municipios: string[];
+  data_min: string | null;
+  data_max: string | null;
+};
+
+export async function rpcGetAnpPdistFiltros(
+  supabase: SupabaseClient,
+): Promise<AnpPdistFiltros> {
+  try {
+    const { data, error } = await supabase.rpc("get_anp_precos_distribuicao_filtros", {});
+    if (error) throw error;
+    const d = (data ?? {}) as Partial<AnpPdistFiltros>;
+    return {
+      produtos:        d.produtos        ?? [],
+      granularidades:  d.granularidades  ?? [],
+      ufs:             d.ufs             ?? [],
+      municipios:      d.municipios      ?? [],
+      data_min:        d.data_min        ?? null,
+      data_max:        d.data_max        ?? null,
+    };
+  } catch (e) {
+    console.error("get_anp_precos_distribuicao_filtros failed", e);
+    return { produtos: [], granularidades: [], ufs: [], municipios: [], data_min: null, data_max: null };
+  }
+}
+
+export async function rpcGetAnpPdistSerie(
+  supabase: SupabaseClient,
+  params: {
+    produto: string;
+    granularidade: string;
+    locais?: string[] | null;
+    dataInicio?: string | null;
+    dataFim?: string | null;
+  },
+): Promise<AnpPdistSerieRow[]> {
+  if (!params.produto || !params.granularidade) return [];
+  const PAGE = 1000;
+  let offset = 0;
+  const allRows: AnpPdistSerieRow[] = [];
+  const rpcParams = {
+    p_produto:       params.produto,
+    p_granularidade: params.granularidade,
+    p_locais:        toListOrNull(params.locais),
+    p_data_inicio:   params.dataInicio ?? null,
+    p_data_fim:      params.dataFim    ?? null,
+  };
+  while (true) {
+    const { data, error } = await supabase
+      .rpc("get_anp_precos_distribuicao_serie", rpcParams)
+      .range(offset, offset + PAGE - 1);
+    if (error) { console.error("get_anp_precos_distribuicao_serie failed", error); break; }
+    const rows = (data ?? []) as AnpPdistSerieRow[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
+  }
+  return allRows;
+}
+
+export type AnpPdistExportCountFilters = {
+  produtos?: string[] | null;
+  granularidades?: string[] | null;
+  locais?: string[] | null;
+  dataInicio?: string | null;
+  dataFim?: string | null;
+};
+
+export async function getAnpPdistExportCount(
+  supabase: SupabaseClient,
+  filters: AnpPdistExportCountFilters,
+): Promise<number> {
+  const { data, error } = await supabase.rpc("get_anp_precos_distribuicao_export_count", {
+    p_produtos:        toListOrNull(filters.produtos),
+    p_granularidades:  toListOrNull(filters.granularidades),
+    p_locais:          toListOrNull(filters.locais),
+    p_data_inicio:     filters.dataInicio ?? null,
+    p_data_fim:        filters.dataFim    ?? null,
+  });
+  if (error) {
+    console.error("get_anp_precos_distribuicao_export_count failed", error);
+    throw error;
+  }
+  return Number(data ?? 0);
+}
+
 // ─── MODULE: SINDICOM (/src/app/(dashboard)/sindicom/page.tsx) ────────────────
 
 export type SindicomSerieRow = {
