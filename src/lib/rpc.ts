@@ -219,18 +219,53 @@ export async function rpcGetMsSerieOthers(supabase: SupabaseClient, filters: Mar
   return paginatedRpc(supabase, "get_ms_serie_others", filters);
 }
 
-export async function fetchAllVendas(
+/**
+ * Filters accepted by `fetchVendasFiltered` (CSV export of /market-share +
+ * /sales-volumes). Mirrors `MsExportCountFilters` 1:1 so the modal estimate
+ * and the actual download share the exact same predicate.
+ *
+ * Column mapping (vendas table):
+ *   dataInicio / dataFim → vendas.date
+ *   regioes              → vendas.regiao_destinatario
+ *   ufs                  → vendas.uf_destino
+ *   mercados             → vendas.mercado_destinatario
+ */
+export type FetchVendasFilters = {
+  dataInicio?: string | null;
+  dataFim?: string | null;
+  regioes?: string[] | null;
+  ufs?: string[] | null;
+  mercados?: string[] | null;
+};
+
+/**
+ * Paginated SELECT * FROM vendas with the same filter predicate used by
+ * `get_ms_export_count`. Used by the CSV export path on /market-share and
+ * /sales-volumes so the rows downloaded match exactly the size estimate
+ * shown in the export modal.
+ */
+export async function fetchVendasFiltered(
   supabase: SupabaseClient,
+  filters: FetchVendasFilters,
 ): Promise<Record<string, unknown>[]> {
   const PAGE = 1000;
   let offset = 0;
   const allRows: Record<string, unknown>[] = [];
 
+  const regioes  = toListOrNull(filters.regioes);
+  const ufs      = toListOrNull(filters.ufs);
+  const mercados = toListOrNull(filters.mercados);
+
   while (true) {
-    const { data, error } = await supabase
-      .from("vendas")
-      .select("*")
-      .range(offset, offset + PAGE - 1);
+    let q = supabase.from("vendas").select("*");
+
+    if (filters.dataInicio) q = q.gte("date", filters.dataInicio);
+    if (filters.dataFim)    q = q.lte("date", filters.dataFim);
+    if (regioes)            q = q.in("regiao_destinatario", regioes);
+    if (ufs)                q = q.in("uf_destino", ufs);
+    if (mercados)           q = q.in("mercado_destinatario", mercados);
+
+    const { data, error } = await q.range(offset, offset + PAGE - 1);
     if (error) throw error;
     const rows = (data ?? []) as Record<string, unknown>[];
     if (!rows.length) break;

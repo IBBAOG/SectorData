@@ -22,7 +22,7 @@ import {
   rpcGetSvSerieFast,
   rpcGetSvSerieOthers,
   rpcGetSvOthersPlayers,
-  fetchAllVendas,
+  fetchVendasFiltered,
   getMsExportCount,
   type MarketShareFilters,
   type MsSerieRow,
@@ -1022,7 +1022,9 @@ export default function SalesVolumesPage() {
           if (!supabase) return;
           setCsvLoading(true);
           try {
-            const rows = await fetchAllVendas(supabase);
+            // Respect modal filters — same predicate as getMsExportCount so
+            // the size estimate shown in the modal matches the actual rows.
+            const rows = await fetchVendasFiltered(supabase, exportFilters);
             downloadCsv({ rows, filename: "sales_volumes_vendas" });
             setExportOpen(false);
           } catch (e) {
