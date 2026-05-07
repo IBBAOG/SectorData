@@ -102,6 +102,7 @@ Cada um possui um módulo (ou bundle, no caso de admin). Cada um auto-documenta 
 | Documentador | [`worker_documentador`](../.claude/agents/worker_documentador.md) | Após qualquer mudança que altere contrato cross-dept. Mantém `master.md` + PRDs de departamento. (Sub-PRDs por dashboard são auto-mantidos pelo `dash-*` correspondente.) |
 | Designer | [`worker_designer`](../.claude/agents/worker_designer.md) | Antes de qualquer mudança visual ou em `globals.css`. Carrega [`docs/design/identity.md`](design/identity.md) e [`docs/design/best-practices.md`](design/best-practices.md). |
 | Revisor / QA | [`worker_revisor-qa`](../.claude/agents/worker_revisor-qa.md) | Antes do commit, sobre o diff staged. Aplica checklist de segurança, contratos e simplicidade. |
+| Orquestrador | [`worker_orquestrador`](../.claude/agents/worker_orquestrador.md) | Após múltiplos workers finalizarem em worktrees paralelas. Mergeia N branches em main, sincroniza `schema_migrations.version`, valida tsc/lint, push, cleanup das worktrees. Único responsável por "merge ≥2 worktrees". |
 
 ---
 
