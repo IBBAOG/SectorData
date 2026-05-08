@@ -618,7 +618,44 @@ BEGIN
     WHERE n.nspname = 'public' AND p.proname = 'get_anp_cdp_diaria_serie';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_cdp_diaria_serie'; END IF;
 
+  -- ─── ANP CDP DIARIA LEVELS (20260508120001) ───────────────────────────────
+  -- Granularidade Instalacao
+
+  PERFORM 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'anp_cdp_diaria_instalacao';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing table: anp_cdp_diaria_instalacao'; END IF;
+
+  PERFORM 1 FROM pg_tables
+    WHERE schemaname = 'public' AND tablename = 'anp_cdp_diaria_instalacao' AND rowsecurity = TRUE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: anp_cdp_diaria_instalacao'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_anp_cdp_diaria_instalacao_filtros';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_cdp_diaria_instalacao_filtros'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_anp_cdp_diaria_instalacao_serie';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_cdp_diaria_instalacao_serie'; END IF;
+
+  -- Granularidade Poco
+
+  PERFORM 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'anp_cdp_diaria_poco';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing table: anp_cdp_diaria_poco'; END IF;
+
+  PERFORM 1 FROM pg_tables
+    WHERE schemaname = 'public' AND tablename = 'anp_cdp_diaria_poco' AND rowsecurity = TRUE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: anp_cdp_diaria_poco'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_anp_cdp_diaria_poco_filtros';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_cdp_diaria_poco_filtros'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_anp_cdp_diaria_poco_serie';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_cdp_diaria_poco_serie'; END IF;
+
   RAISE NOTICE 'migration_smoke: all % checks passed.',
-    '28 tables + 3 materialized views + 75 functions + 21 RLS checks';
+    '30 tables + 3 materialized views + 79 functions + 23 RLS checks';
 
 END $smoke$;
