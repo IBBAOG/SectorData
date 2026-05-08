@@ -192,7 +192,7 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | 3 | `etl_navios_positions.yml` | After #2 | `pipelines/navios/05_positions_sync.py` (VF port-call) | `vessel_positions`, `port_arrivals` |
 | 4 | `etl_ais_positions.yml` | Every 6h+15min | `pipelines/ais/positions_sync.py` (AISStream WebSocket) | `vessel_registry`, `vessel_positions`, `port_arrivals` |
 | 5 | `etl_ais_candidates.yml` | Every 4h | `pipelines/ais/candidates_discover.py` (AIS global scan, score 0–100) | `import_candidates` |
-| 6 | `etl_anp_cdp.yml` | Monthly 5th | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` (Selenium + ddddocr CAPTCHA) | `anp_cdp_producao` |
+| 6 | `etl_anp_cdp.yml` | Internal cron `0 8 5 * *` (monthly fallback) + external cron-job.org `workflow_dispatch` every ~2h (incremental ANP wells) | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` (Selenium + ddddocr CAPTCHA) | `anp_cdp_producao` |
 | 7 | `etl_anp_vendas.yml` | External trigger (cron-job.org → workflow_dispatch) | `pipelines/anp/vendas_watch.py --force` | `vendas` (ANP fuel sales) |
 | 8 | `etl_anp_fase3.yml` | Monthly 1st, 13:00 UTC | `pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` → `03_painel_imp_sync.py` | `anp_daie`, `anp_desembaracos`, `anp_painel_imp_dist` |
 | 9 | `etl_anp_lpc.yml` | Weekly Wed 14:30 UTC | `pipelines/anp/lpc_sync.py` | `anp_lpc` |
