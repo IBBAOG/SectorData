@@ -194,6 +194,15 @@ const CARDS: CardDef[] = [
     disabled: false,
   },
   {
+    slug: "anp-cdp-diaria",
+    preview: null,
+    title: "ANP CDP Diária",
+    description: "Daily oil and gas production by field from ANP Power BI",
+    badge: "Available",
+    href: "/anp-cdp-diaria",
+    disabled: false,
+  },
+  {
     slug: null,
     preview: null,
     title: "Coming Soon",

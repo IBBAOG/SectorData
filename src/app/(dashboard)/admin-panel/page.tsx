@@ -103,6 +103,7 @@ const MODULE_LABELS: { slug: string; label: string; description: string }[] = [
   { slug: "anp-lpc",                 label: "ANP LPC Preços",               description: "ANP consumer price survey across Brazilian gas stations" },
   { slug: "sindicom",                label: "SINDICOM",                     description: "Fuel distribution data from the SINDICOM industry association" },
   { slug: "anp-cdp",                 label: "ANP CDP Produção",             description: "ANP CDP oil and gas production data by well and field" },
+  { slug: "anp-cdp-diaria",          label: "ANP CDP Diária",               description: "Daily oil and gas production by field from ANP Power BI" },
   // Other
   { slug: "stocks",                  label: "Market Watch",                 description: "Real-time stock quotes, historical charts, and market overview" },
   { slug: "news-hunter",             label: "News Hunter",                  description: "Live oil & gas news feed with incremental polling across ~60 sources" },
