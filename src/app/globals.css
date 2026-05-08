@@ -488,12 +488,16 @@ body {
 }
 
 #main-navbar .nav-megamenu-col {
-  flex: 1 1 0;
-  min-width: 200px;
+  flex: 0 0 auto;
+  min-width: 160px;
   padding: 0 18px;
   border-right: 1px solid rgba(0, 0, 0, 0.06);
   display: flex;
   flex-direction: column;
+}
+
+#main-navbar .nav-megamenu-col--no-sep {
+  border-right: none;
 }
 
 #main-navbar .nav-megamenu-col:last-child {

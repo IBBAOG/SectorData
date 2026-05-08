@@ -13,7 +13,7 @@ import { getInitials } from "../lib/avatarUtils";
 
 interface NavItem { label: string; href: string }
 interface NavSubGroup { label: string; items: NavItem[] }
-interface NavGroup { heading: string; items: NavItem[]; subGroups?: NavSubGroup[]; hideHeading?: boolean }
+interface NavGroup { heading: string; items: NavItem[]; subGroups?: NavSubGroup[]; hideHeading?: boolean; noBorderRight?: boolean }
 interface NavModule {
   label: string;
   items: NavItem[];
@@ -63,6 +63,7 @@ const NAV_ENTRIES: NavEntry[] = [
       },
       {
         heading: "ANP data",
+        noBorderRight: true,
         items: [],
         subGroups: [
           {
@@ -271,7 +272,7 @@ export default function NavBar() {
                   isMega && visibleGroups && visibleGroups.length > 0 ? (
                     <div className="nav-module-dropdown nav-megamenu">
                       {visibleGroups.map((group, i) => (
-                        <div key={`${group.heading}-${i}`} className="nav-megamenu-col">
+                        <div key={`${group.heading}-${i}`} className={`nav-megamenu-col${group.noBorderRight ? " nav-megamenu-col--no-sep" : ""}`}>
                           {!group.hideHeading && <div className="nav-megamenu-heading">{group.heading}</div>}
                           {group.subGroups ? (
                             group.subGroups.map((sg) => (
