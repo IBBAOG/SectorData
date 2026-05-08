@@ -12,7 +12,8 @@ import { getInitials } from "../lib/avatarUtils";
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
 interface NavItem { label: string; href: string }
-interface NavGroup { heading: string; items: NavItem[] }
+interface NavSubGroup { label: string; items: NavItem[] }
+interface NavGroup { heading: string; items: NavItem[]; subGroups?: NavSubGroup[] }
 interface NavModule {
   label: string;
   items: NavItem[];
@@ -28,7 +29,9 @@ function isModule(entry: NavEntry): entry is NavModule {
 /** Flatten optional groups into a single items list (for visibility filtering, mobile fallback). */
 function flattenModuleItems(mod: NavModule): NavItem[] {
   if (mod.groups && mod.groups.length > 0) {
-    return mod.groups.flatMap((g) => g.items);
+    return mod.groups.flatMap((g) =>
+      g.subGroups ? g.subGroups.flatMap((sg) => sg.items) : g.items
+    );
   }
   return mod.items;
 }
@@ -59,16 +62,32 @@ const NAV_ENTRIES: NavEntry[] = [
       },
       {
         heading: "ANP data",
-        items: [
-          { href: "/sales-volumes", label: "Sales Volumes — ANP" },
-          { href: "/anp-ppi", label: "PPI" },
-          { href: "/anp-precos-produtores", label: "Producer Prices" },
-          { href: "/anp-precos-distribuicao", label: "Distribution Prices" },
-          { href: "/anp-glp", label: "LPG" },
-          { href: "/anp-daie", label: "Imports and Exports" },
-          { href: "/anp-desembaracos", label: "Customs Clearances" },
-          { href: "/anp-painel-importacoes", label: "Imports Panel" },
-          { href: "/anp-lpc", label: "LPC Prices" },
+        items: [],
+        subGroups: [
+          {
+            label: "Prices",
+            items: [
+              { href: "/anp-ppi",                label: "PPI" },
+              { href: "/anp-precos-produtores",   label: "Producer Prices" },
+              { href: "/anp-precos-distribuicao", label: "Distribution Prices" },
+              { href: "/anp-lpc",                label: "LPC Prices" },
+            ],
+          },
+          {
+            label: "Imports",
+            items: [
+              { href: "/anp-daie",               label: "Imports and Exports" },
+              { href: "/anp-desembaracos",        label: "Customs Clearances" },
+              { href: "/anp-painel-importacoes",  label: "Imports Panel" },
+            ],
+          },
+          {
+            label: "Volumes",
+            items: [
+              { href: "/sales-volumes", label: "Sales Volumes — ANP" },
+              { href: "/anp-glp",       label: "LPG" },
+            ],
+          },
         ],
       },
       {
@@ -203,10 +222,18 @@ export default function NavBar() {
               return moduleVisibility[slug] ?? true;
             };
 
-            // Mega-menu path: filter inside each group, hide empty groups
+            // Mega-menu path: filter inside each group (or each subGroup), hide empty groups
             const visibleGroups: NavGroup[] | undefined = mod.groups
-              ?.map((g) => ({ ...g, items: g.items.filter(isVisibleItem) }))
-              .filter((g) => g.items.length > 0);
+              ?.map((g) => {
+                if (g.subGroups) {
+                  const filteredSubs = g.subGroups
+                    .map((sg) => ({ ...sg, items: sg.items.filter(isVisibleItem) }))
+                    .filter((sg) => sg.items.length > 0);
+                  return { ...g, subGroups: filteredSubs };
+                }
+                return { ...g, items: g.items.filter(isVisibleItem) };
+              })
+              .filter((g) => (g.subGroups ? g.subGroups.length > 0 : g.items.length > 0));
 
             // Flat list (used by simple dropdown OR by mobile fallback for mega-menu)
             const visibleItems = flattenModuleItems(mod).filter(isVisibleItem);
@@ -238,16 +265,34 @@ export default function NavBar() {
                       {visibleGroups.map((group) => (
                         <div key={group.heading} className="nav-megamenu-col">
                           <div className="nav-megamenu-heading">{group.heading}</div>
-                          {group.items.map((item) => (
-                            <Link
-                              key={item.href}
-                              href={item.href}
-                              className="nav-module-item"
-                              onClick={() => setOpenModule(null)}
-                            >
-                              {item.label}
-                            </Link>
-                          ))}
+                          {group.subGroups ? (
+                            group.subGroups.map((sg) => (
+                              <div key={sg.label} className="nav-megamenu-subgroup">
+                                <div className="nav-megamenu-subheading">{sg.label}</div>
+                                {sg.items.map((item) => (
+                                  <Link
+                                    key={item.href}
+                                    href={item.href}
+                                    className="nav-module-item"
+                                    onClick={() => setOpenModule(null)}
+                                  >
+                                    {item.label}
+                                  </Link>
+                                ))}
+                              </div>
+                            ))
+                          ) : (
+                            group.items.map((item) => (
+                              <Link
+                                key={item.href}
+                                href={item.href}
+                                className="nav-module-item"
+                                onClick={() => setOpenModule(null)}
+                              >
+                                {item.label}
+                              </Link>
+                            ))
+                          )}
                         </div>
                       ))}
                     </div>
