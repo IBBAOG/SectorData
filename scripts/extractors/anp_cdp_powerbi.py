@@ -1,22 +1,26 @@
 """
 anp_cdp_powerbi.py
 ==================
-Extrator da tabela "Producao por Campo" do Power BI ANP/CDP.
+Extrator do Power BI ANP/CDP — 3 niveis de granularidade:
+  - Campo       (pagina 4, entidade v_campos_detalhe)
+  - Instalacao  (pagina 5, entidade v_instalacoes_final)
+  - Poco        (pagina 6, entidade v_poco_instalacao_sigep_ultimo)
 
 Fonte: relatorio publico "Painel Dinamico de Producao Diaria de Petroleo e Gas Natural"
-       pagina 4 ("Campos"), tabela inferior direita "Producao por Campo".
 URL:   https://app.powerbi.com/view?r=eyJrIjoiZjQ0NjIzNmYtNzY3Ni00MzZkLWI0MTQtYzk4ZWY0ZGI4ODQ5IiwidCI6IjQ0OTlmNGZmLTI0YTYtNGI0Mi1iN2VmLTEyNGFmY2FkYzkxMyJ9
-
-Granularidade: diaria x campo x bacia
-Colunas: data, bacia, campo, petroleo_bbl_dia, gas_mm3_dia
 
 Constantes descobertas via Chrome MCP em 2026-05-08.
 
 Uso:
+  python scripts/extractors/anp_cdp_powerbi.py --level all --upload
+  python scripts/extractors/anp_cdp_powerbi.py --level campo --start 2025-01-01
+  python scripts/extractors/anp_cdp_powerbi.py --level instalacao
+  python scripts/extractors/anp_cdp_powerbi.py --level poco
+
+  # Backward compat (equivalente a --level campo):
   python scripts/extractors/anp_cdp_powerbi.py --all
-  python scripts/extractors/anp_cdp_powerbi.py --all --start 2025-01-01
+  python scripts/extractors/anp_cdp_powerbi.py --all --start 2025-01-01 --upload
   python scripts/extractors/anp_cdp_powerbi.py --campo PEREGRINO
-  python scripts/extractors/anp_cdp_powerbi.py --campo PEREGRINO --window 1000
 """
 
 import argparse
@@ -33,7 +37,6 @@ import requests
 try:
     from scripts.extractors._powerbi_common import post_query, extract_row_count
 except ModuleNotFoundError:
-    import os
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
     from extractors._powerbi_common import post_query, extract_row_count  # type: ignore[import]
@@ -44,18 +47,17 @@ RESOURCE_KEY = "f446236f-7676-436d-b414-c98ef4db8849"   # decodificado do ?r= vi
 MODEL_ID     = 3418545
 DATASET_ID   = "5dd23708-9095-4e35-b585-d1039d481990"
 REPORT_ID    = "0f6fa041-4098-458c-a4ac-1603e4eebbd2"
-VISUAL_ID    = "0cb9bc972ac667eac72b"   # tabela "Producao por Campo"
 
-APP_CTX = {
-    "DatasetId": DATASET_ID,
-    "Sources": [{"ReportId": REPORT_ID, "VisualId": VISUAL_ID}],
-}
+# Visual IDs por nivel (para ApplicationContext)
+VISUAL_ID_CAMPO      = "0cb9bc972ac667eac72b"   # tabela "Producao por Campo" (pagina 4)
+VISUAL_ID_INSTALACAO = "876655dd87739eb64d9b"   # visual pagina 5
+VISUAL_ID_POCO       = "cb0856053370c87f38d5"   # chart visual pagina 6
 
 DEFAULT_OUTPUT = Path("output")
 DEFAULT_CAMPO  = "PEREGRINO"
 
 
-# ─── Helpers de construcao do payload (especificos para CDP) ─────────────────
+# ─── Helpers de construcao do payload ────────────────────────────────────────
 
 def _column(src: str, prop: str) -> dict:
     return {"Column": {"Expression": {"SourceRef": {"Source": src}}, "Property": prop}}
@@ -91,8 +93,63 @@ def _where_date_range(src: str, prop: str, start_date: date, end_date_excl: date
     }}}
 
 
-def _select_cols() -> list:
-    """Select — 5 entradas; ordem define os indices 0-4 para o mapeamento."""
+def _app_ctx(visual_id: str) -> dict:
+    return {
+        "DatasetId": DATASET_ID,
+        "Sources": [{"ReportId": REPORT_ID, "VisualId": visual_id}],
+    }
+
+
+def _build_query_body(
+    entities: list,
+    select_cols: list,
+    where_conds: list,
+    visual_id: str,
+    window: int,
+    n_projections: int,
+    order_desc: bool = True,
+) -> dict:
+    order_by = [{"Direction": 2, "Expression": _column("d", "Data")}] if order_desc else []
+    projections = list(range(n_projections))
+    return {
+        "version": "1.0.0",
+        "queries": [{
+            "Query": {"Commands": [{"SemanticQueryDataShapeCommand": {
+                "Query": {
+                    "Version": 2,
+                    "From":    entities,
+                    "Select":  select_cols,
+                    "Where":   where_conds,
+                    "OrderBy": order_by,
+                },
+                "Binding": {
+                    "Primary": {"Groupings": [{"Projections": projections, "Subtotal": 1}]},
+                    "DataReduction": {"DataVolume": 3, "Primary": {"Window": {"Count": window}}},
+                    "Version": 1,
+                },
+                "ExecutionMetricsKind": 1,
+            }}]},
+            "QueryId": "",
+            "ApplicationContext": _app_ctx(visual_id),
+        }],
+        "cancelQueries": [],
+        "modelId": MODEL_ID,
+    }
+
+
+# ─── Definicoes por nivel ──────────────────────────────────────────────────────
+
+def _entities_campo() -> list:
+    return [
+        {"Name": "d", "Entity": "Datas",            "Type": 0},
+        {"Name": "v", "Entity": "v_campos_detalhe", "Type": 0},
+        {"Name": "m", "Entity": "Medidas",          "Type": 0},
+        {"Name": "c", "Entity": "Correção",         "Type": 0},
+    ]
+
+
+def _select_campo() -> list:
+    """5 colunas: Data, Campo, Bacia, Petroleo, Gas"""
     return [
         {**_column("d", "Data"),      "Name": "Datas.Data"},
         {**_column("v", "Campo"),     "Name": "v_campos_detalhe.Campo"},
@@ -102,72 +159,85 @@ def _select_cols() -> list:
     ]
 
 
-def _from_entities() -> list:
+def _entities_instalacao() -> list:
     return [
-        {"Name": "d", "Entity": "Datas",            "Type": 0},
-        {"Name": "v", "Entity": "v_campos_detalhe", "Type": 0},
-        {"Name": "m", "Entity": "Medidas",          "Type": 0},
-        {"Name": "c", "Entity": "Correção",         "Type": 0},
+        {"Name": "d", "Entity": "Datas",               "Type": 0},
+        {"Name": "v", "Entity": "v_instalacoes_final",  "Type": 0},
+        {"Name": "m", "Entity": "Medidas",              "Type": 0},
+        {"Name": "c", "Entity": "Correção",             "Type": 0},
     ]
 
 
-def _build_query_body(where_conds: list, window: int, order_desc: bool = True) -> dict:
-    order_by = [{"Direction": 2, "Expression": _column("d", "Data")}] if order_desc else []
-    return {
-        "version": "1.0.0",
-        "queries": [{
-            "Query": {"Commands": [{"SemanticQueryDataShapeCommand": {
-                "Query": {
-                    "Version": 2,
-                    "From":    _from_entities(),
-                    "Select":  _select_cols(),
-                    "Where":   where_conds,
-                    "OrderBy": order_by,
-                },
-                "Binding": {
-                    "Primary": {"Groupings": [{"Projections": [0, 1, 2, 3, 4], "Subtotal": 1}]},
-                    "DataReduction": {"DataVolume": 3, "Primary": {"Window": {"Count": window}}},
-                    "Version": 1,
-                },
-                "ExecutionMetricsKind": 1,
-            }}]},
-            "QueryId": "",
-            "ApplicationContext": APP_CTX,
-        }],
-        "cancelQueries": [],
-        "modelId": MODEL_ID,
-    }
+def _select_instalacao() -> list:
+    """5 colunas: Data, Campo, Instalacao, Petroleo, Gas"""
+    return [
+        {**_column("d", "Data"),        "Name": "Datas.Data"},
+        {**_column("v", "Campo"),       "Name": "v_instalacoes_final.Campo"},
+        {**_column("v", "Instalação"),  "Name": "v_instalacoes_final.Instalação"},
+        {**_measure("m", "Petróleo"),   "Name": "Medidas.Petroleo"},
+        {**_measure("m", "Gás Mm3"),    "Name": "Medidas.Gás"},
+    ]
+
+
+def _entities_poco() -> list:
+    return [
+        {"Name": "d", "Entity": "Datas",                          "Type": 0},
+        {"Name": "v", "Entity": "v_poco_instalacao_sigep_ultimo", "Type": 0},
+        {"Name": "m", "Entity": "Medidas",                        "Type": 0},
+        {"Name": "c", "Entity": "Correção",                       "Type": 0},
+    ]
+
+
+def _select_poco() -> list:
+    """6 colunas: Data, NOME CAMPO, BACIA, NOME POCO ANP, Petroleo, Gas"""
+    return [
+        {**_column("d", "Data"),            "Name": "Datas.Data"},
+        {**_column("v", "NOME CAMPO"),      "Name": "v_poco_instalacao_sigep_ultimo.NOME CAMPO"},
+        {**_column("v", "BACIA"),           "Name": "v_poco_instalacao_sigep_ultimo.BACIA"},
+        {**_column("v", "NOME POÇO ANP"),   "Name": "v_poco_instalacao_sigep_ultimo.NOME POÇO ANP"},
+        {**_measure("m", "Petróleo"),       "Name": "Medidas.Petroleo"},
+        {**_measure("m", "Gás Mm3"),        "Name": "Medidas.Gás"},
+    ]
+
+
+# ─── Backward compat (build_cdp_payload* usados por imports externos) ─────────
+
+def _select_cols() -> list:
+    return _select_campo()
+
+
+def _from_entities() -> list:
+    return _entities_campo()
 
 
 def build_cdp_payload(campo: str, start_date: date, end_date_excl: date,
                       window: int = 500) -> dict:
-    """
-    Monta payload para um unico campo (modo debug/single-campo).
-    Mantido para compatibilidade retroativa.
-    """
+    """Monta payload para um unico campo (modo debug/single-campo). Mantido para compat."""
     where_conds = [
         _where_in("c", "Unidade", ["bbl"]),
         _where_date_range("d", "Data", start_date, end_date_excl),
         _where_in("v", "Campo", [campo]),
     ]
-    return _build_query_body(where_conds, window)
+    return _build_query_body(
+        _entities_campo(), _select_campo(), where_conds,
+        VISUAL_ID_CAMPO, window, 5,
+    )
 
 
 def build_cdp_payload_todos(start_date: date, end_date_excl: date,
                             window: int = 100_000) -> dict:
-    """
-    Monta payload SEM filtro de Campo — retorna todos os campos para o
-    intervalo de datas informado. Usado pela paginacao mensal.
-    """
+    """Monta payload sem filtro de Campo. Mantido para compat."""
     where_conds = [
         _where_in("c", "Unidade", ["bbl"]),
         _where_date_range("d", "Data", start_date, end_date_excl),
-        # sem _where_in de Campo
     ]
-    return _build_query_body(where_conds, window)
+    return _build_query_body(
+        _entities_campo(), _select_campo(), where_conds,
+        VISUAL_ID_CAMPO, window, 5,
+    )
 
 
-# ─── Conversores (definidos antes do parser que os usa) ──────────────────────
+# ─── Conversor numerico ───────────────────────────────────────────────────────
 
 def _to_float(v) -> float | None:
     if v is None:
@@ -178,48 +248,46 @@ def _to_float(v) -> float | None:
         return None
 
 
-# ─── Parser DSR especifico para o relatorio CDP ──────────────────────────────
+# ─── Parser DSR generico para o relatorio CDP ────────────────────────────────
 
-def parse_dsr_cdp(result_json: dict) -> list[dict]:
+def _parse_dsr_cdp_generic(result_json: dict, n_cols: int, debug_dump_path: Path | None = None) -> list[list]:
     """
-    Parser dedicado para o formato DSR retornado pelo relatorio CDP (producao diaria).
+    Parser dedicado para o formato DSR retornado pelo relatorio CDP.
 
-    Diferencas vs. relatorio de Vendas:
-    - Os dados detalhados estao em PH[1].DM1 (nao PH[0].DM0 que contem subtotais)
-    - A data e Unix timestamp em milissegundos, nao uma string
-    - Measures (Petroleo, Gas) nao passam por ValueDict; sao strings numericas diretas
-    - R: 6 (bits 1+2) indica heranca de Campo e Bacia do item anterior
+    - Dados em PH[1].DM1
+    - Data e Unix timestamp em ms
+    - R-mask indica heranca de colunas do item anterior
+    - Measures sao strings numericas diretas (sem ValueDict)
 
-    Schema das colunas em DM1 (ordem dos indices 0-4 em PH[1].DM1[0].S):
-      idx 0 -> G0 = Data (timestamp ms)
-      idx 1 -> G1 = Campo  (lookup em D0 — indice inteiro ou string)
-      idx 2 -> G2 = Bacia  (lookup em D1 — indice inteiro ou string)
-      idx 3 -> M0 = Petroleo (string numerica, bbl/dia)
-      idx 4 -> M1 = Gas     (string numerica, Mm3/dia)
+    Retorna lista de listas com n_cols valores (raw, sem mapear para dict).
     """
-    dsr   = result_json["results"][0]["result"]["data"]["dsr"]
-    ds    = dsr["DS"][0]
-    dicts = ds.get("ValueDicts", {})
+    try:
+        dsr   = result_json["results"][0]["result"]["data"]["dsr"]
+        ds    = dsr["DS"][0]
+        dicts = ds.get("ValueDicts", {})
+        items = ds["PH"][1]["DM1"]
+    except (KeyError, IndexError, TypeError) as exc:
+        if debug_dump_path:
+            debug_dump_path.parent.mkdir(parents=True, exist_ok=True)
+            debug_dump_path.write_text(
+                json.dumps(result_json, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            print(f"   [debug dump -> {debug_dump_path}]")
+        raise ValueError(f"Estrutura DSR inesperada: {exc}") from exc
 
-    # Dados detalhados estao em PH[1].DM1 (PH[0].DM0 tem subtotais/totais)
-    items = ds["PH"][1]["DM1"]
-
-    # Schema: esquema da primeira linha (contem "S")
     schema_item = next((i for i in items if "S" in i), None)
-    col_dicts: list[str | None] = []
+    col_dicts: list[str | None] = [None] * n_cols
     if schema_item:
-        col_dicts = [s.get("DN") for s in schema_item["S"]]
-    # col_dicts = [None, "D0", "D1", None, None]
-    # (G0=Data sem dict, G1=Campo via D0, G2=Bacia via D1, M0=Petroleo sem dict, M1=Gas sem dict)
+        for idx, s in enumerate(schema_item["S"]):
+            if idx < n_cols:
+                col_dicts[idx] = s.get("DN")
 
     def resolve(v, dk):
-        """Resolve valor via ValueDict se disponivel."""
         if dk and dk in dicts and isinstance(v, int) and v < len(dicts[dk]):
             return dicts[dk][v]
         return v
 
     def ts_to_date(ts) -> str | None:
-        """Converte Unix timestamp em ms para string ISO YYYY-MM-DD."""
         if ts is None:
             return None
         try:
@@ -227,38 +295,229 @@ def parse_dsr_cdp(result_json: dict) -> list[dict]:
         except (TypeError, ValueError, OSError):
             return str(ts)
 
-    rows: list[dict] = []
-    prev = [None] * len(col_dicts)
+    rows: list[list] = []
+    prev = [None] * n_cols
 
     for item in items:
         if "C" not in item:
             continue
         row = list(prev)
         if "R" in item:
-            # Mascara de bits: bit i=1 -> herda coluna i do anterior
             mask, c_idx = item["R"], 0
-            for i in range(len(col_dicts)):
+            for i in range(n_cols):
                 if not ((mask >> i) & 1):
                     if c_idx < len(item["C"]):
                         row[i] = resolve(item["C"][c_idx], col_dicts[i])
                         c_idx += 1
         else:
             for i, v in enumerate(item["C"]):
-                if i < len(col_dicts):
+                if i < n_cols:
                     row[i] = resolve(v, col_dicts[i])
         prev = row[:]
-        rows.append({
-            "data":             ts_to_date(row[0]),
-            "campo":            row[1],
-            "bacia":            row[2],
-            "petroleo_bbl_dia": _to_float(row[3]),
-            "gas_mm3_dia":      _to_float(row[4]),
-        })
+        # Converter coluna 0 (sempre Data) de timestamp para ISO
+        out_row = list(row)
+        out_row[0] = ts_to_date(row[0])
+        rows.append(out_row)
 
     return rows
 
 
-# ─── Extracao single-campo (mantida para debug) ───────────────────────────────
+def parse_dsr_cdp(result_json: dict) -> list[dict]:
+    """
+    Parser de compatibilidade para 5 colunas (nivel Campo).
+    Mantido com a mesma assinatura para nao quebrar imports externos.
+
+    Schema idx: 0=Data, 1=Campo, 2=Bacia, 3=Petroleo, 4=Gas
+    """
+    raw = _parse_dsr_cdp_generic(result_json, 5)
+    return [
+        {
+            "data":             row[0],
+            "campo":            row[1],
+            "bacia":            row[2],
+            "petroleo_bbl_dia": _to_float(row[3]),
+            "gas_mm3_dia":      _to_float(row[4]),
+        }
+        for row in raw
+    ]
+
+
+def _parse_instalacao(result_json: dict) -> list[dict]:
+    """Schema idx: 0=Data, 1=Campo, 2=Instalacao, 3=Petroleo, 4=Gas"""
+    raw = _parse_dsr_cdp_generic(result_json, 5)
+    return [
+        {
+            "data":             row[0],
+            "campo":            row[1],
+            "instalacao":       row[2],
+            "petroleo_bbl_dia": _to_float(row[3]),
+            "gas_mm3_dia":      _to_float(row[4]),
+        }
+        for row in raw
+    ]
+
+
+def _parse_poco(result_json: dict, debug_dump_path: Path | None = None) -> list[dict]:
+    """Schema idx: 0=Data, 1=NOME CAMPO, 2=BACIA, 3=NOME POCO ANP, 4=Petroleo, 5=Gas"""
+    raw = _parse_dsr_cdp_generic(result_json, 6, debug_dump_path=debug_dump_path)
+    return [
+        {
+            "data":             row[0],
+            "campo":            row[1],
+            "bacia":            row[2],
+            "poco":             row[3],
+            "petroleo_bbl_dia": _to_float(row[4]),
+            "gas_mm3_dia":      _to_float(row[5]),
+        }
+        for row in raw
+    ]
+
+
+# ─── Paginacao mensal generica ────────────────────────────────────────────────
+
+def _extract_paginado(
+    nivel: str,
+    start: date,
+    end_excl: date,
+    entities_fn,
+    select_fn,
+    visual_id: str,
+    n_cols: int,
+    parse_fn,
+    window: int = 100_000,
+) -> list[dict]:
+    """
+    Extrai todos os registros de um nivel paginando mes a mes.
+    """
+    all_rows: list[dict] = []
+    truncated_months: list[str] = []
+    first_chunk = True
+
+    cursor = date(start.year, start.month, 1)
+    DEFAULT_OUTPUT.mkdir(parents=True, exist_ok=True)
+    t0 = time.time()
+
+    while cursor < end_excl:
+        if cursor.month == 12:
+            next_month = date(cursor.year + 1, 1, 1)
+        else:
+            next_month = date(cursor.year, cursor.month + 1, 1)
+        chunk_end = min(next_month, end_excl)
+
+        label = cursor.strftime("%Y-%m")
+        print(f"  [{nivel}] Chunk {cursor.isoformat()} -> {chunk_end.isoformat()}", end="  ", flush=True)
+
+        where_conds = [
+            _where_in("c", "Unidade", ["bbl"]),
+            _where_date_range("d", "Data", cursor, chunk_end),
+        ]
+        payload = _build_query_body(
+            entities_fn(), select_fn(), where_conds,
+            visual_id, window, n_cols,
+        )
+        data = post_query(payload, RESOURCE_KEY)
+
+        rc, complete = extract_row_count(data)
+
+        if first_chunk:
+            debug_path = DEFAULT_OUTPUT / f"_debug_cdp_{nivel.lower()}_chunk_{label}.json"
+            debug_path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            print(f"[debug dump -> {debug_path.name}]", end="  ", flush=True)
+            first_chunk = False
+
+        if complete is False:
+            print(f"AVISO: TRUNCADO (rc={rc}) !", end="  ", flush=True)
+            truncated_months.append(label)
+
+        if nivel.lower() == "poco":
+            debug_dump = DEFAULT_OUTPUT / "_debug_cdp_poco_response.json" if rc == 0 else None
+            rows = _parse_poco(data, debug_dump_path=debug_dump)
+        else:
+            rows = parse_fn(data)
+
+        print(f"{len(rows)} linhas")
+        all_rows.extend(rows)
+        cursor = next_month
+
+    elapsed = time.time() - t0
+    print(f"\n  [{nivel}] Total: {len(all_rows)} linhas em {elapsed:.1f}s")
+
+    if truncated_months:
+        print(f"  [{nivel}] AVISO meses truncados: {truncated_months}")
+    else:
+        print(f"  [{nivel}] Nenhum mes truncado.")
+
+    return all_rows
+
+
+# ─── Funcoes de extracao por nivel ────────────────────────────────────────────
+
+def extract_producao_diaria_campo_todos(
+    start: date,
+    end_excl: date,
+    window: int = 100_000,
+) -> list[dict]:
+    """
+    Extrai producao diaria de todos os campos, paginando mes a mes.
+    Output rows: {data, campo, bacia, petroleo_bbl_dia, gas_mm3_dia}
+    """
+    return _extract_paginado(
+        nivel="CAMPO",
+        start=start, end_excl=end_excl,
+        entities_fn=_entities_campo,
+        select_fn=_select_campo,
+        visual_id=VISUAL_ID_CAMPO,
+        n_cols=5,
+        parse_fn=parse_dsr_cdp,
+        window=window,
+    )
+
+
+def extract_producao_diaria_instalacao_todos(
+    start: date,
+    end_excl: date,
+    window: int = 100_000,
+) -> list[dict]:
+    """
+    Extrai producao diaria por instalacao, paginando mes a mes.
+    Output rows: {data, campo, instalacao, petroleo_bbl_dia, gas_mm3_dia}
+    """
+    return _extract_paginado(
+        nivel="INSTALACAO",
+        start=start, end_excl=end_excl,
+        entities_fn=_entities_instalacao,
+        select_fn=_select_instalacao,
+        visual_id=VISUAL_ID_INSTALACAO,
+        n_cols=5,
+        parse_fn=_parse_instalacao,
+        window=window,
+    )
+
+
+def extract_producao_diaria_poco_todos(
+    start: date,
+    end_excl: date,
+    window: int = 100_000,
+) -> list[dict]:
+    """
+    Extrai producao diaria por poco, paginando mes a mes.
+    Output rows: {data, campo, bacia, poco, petroleo_bbl_dia, gas_mm3_dia}
+    """
+    return _extract_paginado(
+        nivel="POCO",
+        start=start, end_excl=end_excl,
+        entities_fn=_entities_poco,
+        select_fn=_select_poco,
+        visual_id=VISUAL_ID_POCO,
+        n_cols=6,
+        parse_fn=_parse_poco,
+        window=window,
+    )
+
+
+# ─── Extracao single-campo (mantida para debug / --campo CLI) ─────────────────
 
 def extract_producao_diaria_campo(
     campo: str = DEFAULT_CAMPO,
@@ -266,12 +525,7 @@ def extract_producao_diaria_campo(
     end_date_excl: date | None = None,
     window: int = 500,
 ) -> list[dict]:
-    """
-    Extrai producao diaria do campo indicado (modo debug/single-campo).
-
-    Retorna lista de dicts com:
-      data, campo, bacia, petroleo_bbl_dia, gas_mm3_dia
-    """
+    """Extrai producao diaria do campo indicado (modo debug/single-campo)."""
     start    = start_date    or date(2025, 1, 1)
     end_excl = end_date_excl or (date.today() + timedelta(days=1))
 
@@ -280,15 +534,12 @@ def extract_producao_diaria_campo(
 
     payload = build_cdp_payload(campo, start, end_excl, window)
 
-    # Salvar payload para debug
     DEFAULT_OUTPUT.mkdir(parents=True, exist_ok=True)
     (DEFAULT_OUTPUT / "_debug_cdp_payload.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
     data = post_query(payload, RESOURCE_KEY)
-
-    # Salvar resposta crua para debug
     (DEFAULT_OUTPUT / "_debug_cdp_response.json").write_text(
         json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -306,103 +557,44 @@ def extract_producao_diaria_campo(
 # Alias legado (mantido para compatibilidade com imports externos)
 extract_producao_diaria = extract_producao_diaria_campo
 
-
-# ─── Extracao todos os campos (paginacao mensal) ─────────────────────────────
-
+# Alias legado para extract_producao_diaria_todos
 def extract_producao_diaria_todos(
     start: date,
     end_excl: date,
     window: int = 100_000,
 ) -> list[dict]:
+    """Alias legado — equivale a extract_producao_diaria_campo_todos."""
+    return extract_producao_diaria_campo_todos(start, end_excl, window=window)
+
+
+# ─── Upload para Supabase (generico) ─────────────────────────────────────────
+
+def upload_to_supabase(records: list[dict], table: str = "anp_cdp_diaria",
+                       on_conflict: str = "data,campo,bacia") -> bool:
     """
-    Extrai producao diaria de TODOS os campos, paginando mes a mes.
-
-    Sem filtro de Campo — cada chunk cobre [mes_inicio, proximo_mes_inicio).
-    Window.Count=100_000 (suficiente: ~700 campos x ~31 dias = ~21k linhas/mes).
-
-    Salva dump de debug do primeiro chunk em output/_debug_cdp_chunk_<YYYY-MM>.json.
-
-    Retorna lista consolidada de dicts com:
-      data, campo, bacia, petroleo_bbl_dia, gas_mm3_dia
-    """
-    all_rows: list[dict] = []
-    truncated_months: list[str] = []
-    first_chunk = True
-
-    cursor = date(start.year, start.month, 1)
-
-    DEFAULT_OUTPUT.mkdir(parents=True, exist_ok=True)
-
-    t0 = time.time()
-
-    while cursor < end_excl:
-        # Calcular limite do chunk (proximo mes)
-        if cursor.month == 12:
-            next_month = date(cursor.year + 1, 1, 1)
-        else:
-            next_month = date(cursor.year, cursor.month + 1, 1)
-        chunk_end = min(next_month, end_excl)
-
-        label = cursor.strftime("%Y-%m")
-        print(f"Chunk {cursor.isoformat()} -> {chunk_end.isoformat()}", end="  ", flush=True)
-
-        payload = build_cdp_payload_todos(cursor, chunk_end, window=window)
-        data = post_query(payload, RESOURCE_KEY)
-
-        rc, complete = extract_row_count(data)
-
-        # Dump de debug apenas no primeiro chunk
-        if first_chunk:
-            debug_path = DEFAULT_OUTPUT / f"_debug_cdp_chunk_{label}.json"
-            debug_path.write_text(
-                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
-            print(f"[debug dump -> {debug_path.name}]", end="  ", flush=True)
-            first_chunk = False
-
-        if complete is False:
-            print(f"AVISO: TRUNCADO (rc={rc}) !", end="  ", flush=True)
-            truncated_months.append(label)
-
-        rows = parse_dsr_cdp(data)
-        print(f"{len(rows)} linhas")
-        all_rows.extend(rows)
-
-        cursor = next_month
-
-    elapsed = time.time() - t0
-    print(f"\nTotal acumulado: {len(all_rows)} linhas em {elapsed:.1f}s")
-
-    if truncated_months:
-        print(f"AVISO: Meses truncados (requer investigacao): {truncated_months}")
-    else:
-        print("Nenhum mes truncado.")
-
-    return all_rows
-
-
-# ─── Upload para Supabase ────────────────────────────────────────────────────
-
-def upload_to_supabase(records: list[dict]) -> bool:
-    """
-    Upsert por PK composta (data, campo, bacia). Idempotente.
+    Upsert idempotente para tabela indicada. Lotes de 500.
     Le SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY do env.
-    Lotes de 500.
+
+    PKs por nivel:
+      anp_cdp_diaria            -> on_conflict="data,campo,bacia"
+      anp_cdp_diaria_instalacao -> on_conflict="data,instalacao"
+      anp_cdp_diaria_poco       -> on_conflict="data,poco"
     """
     url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    if not url or not key:
+    svc_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    if not url or not svc_key:
         print("ERRO: SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY nao definidos", file=sys.stderr)
         return False
 
     from supabase import create_client  # type: ignore[import]
-    client = create_client(url, key)
+    client = create_client(url, svc_key)
 
     # Deduplicar por PK composta antes do upsert
+    pk_keys = [k.strip() for k in on_conflict.split(",")]
     seen: set[tuple] = set()
     deduped: list[dict] = []
     for r in records:
-        key_tuple = (r.get("data"), r.get("campo"), r.get("bacia"))
+        key_tuple = tuple(r.get(k) for k in pk_keys)
         if key_tuple not in seen:
             seen.add(key_tuple)
             deduped.append(r)
@@ -412,41 +604,75 @@ def upload_to_supabase(records: list[dict]) -> bool:
 
     BATCH = 500
     total = len(deduped)
-    print(f"Upsert {total} linhas em anp_cdp_diaria...")
+    print(f"Upsert {total} linhas em {table}...")
     for i in range(0, total, BATCH):
         batch = deduped[i:i + BATCH]
-        client.table("anp_cdp_diaria").upsert(
-            batch,
-            on_conflict="data,campo,bacia"
-        ).execute()
+        client.table(table).upsert(batch, on_conflict=on_conflict).execute()
         print(f"   {min(i + BATCH, total)}/{total} ok")
-    print("Upsert concluido")
+    print(f"Upsert concluido: {table}")
     return True
 
 
 # ─── Escrita do CSV ───────────────────────────────────────────────────────────
 
-def write_csv(rows: list[dict], output_path: Path) -> None:
+FIELDNAMES_BY_LEVEL = {
+    "campo":      ["data", "campo", "bacia", "petroleo_bbl_dia", "gas_mm3_dia"],
+    "instalacao": ["data", "campo", "instalacao", "petroleo_bbl_dia", "gas_mm3_dia"],
+    "poco":       ["data", "campo", "bacia", "poco", "petroleo_bbl_dia", "gas_mm3_dia"],
+}
+
+TABLE_BY_LEVEL = {
+    "campo":      "anp_cdp_diaria",
+    "instalacao": "anp_cdp_diaria_instalacao",
+    "poco":       "anp_cdp_diaria_poco",
+}
+
+CONFLICT_BY_LEVEL = {
+    "campo":      "data,campo,bacia",
+    "instalacao": "data,instalacao",
+    "poco":       "data,poco",
+}
+
+
+def write_csv(rows: list[dict], output_path: Path, level: str = "campo") -> None:
     """Escreve CSV virgula UTF-8 BOM (Excel-friendly)."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = ["data", "campo", "bacia", "petroleo_bbl_dia", "gas_mm3_dia"]
+    fieldnames = FIELDNAMES_BY_LEVEL.get(level, list(rows[0].keys()) if rows else [])
     with open(output_path, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.DictWriter(f, fieldnames=fieldnames, delimiter=",")
+        w = csv.DictWriter(f, fieldnames=fieldnames, delimiter=",", extrasaction="ignore")
         w.writeheader()
         w.writerows(rows)
     print(f"CSV salvo: {output_path} ({len(rows)} linhas)")
 
 
+def _print_stats(level: str, rows: list[dict]) -> None:
+    if not rows:
+        print(f"  [{level.upper()}] Nenhuma linha.")
+        return
+    datas = sorted({r["data"] for r in rows if r["data"]})
+    min_data = datas[0] if datas else "N/A"
+    max_data = datas[-1] if datas else "N/A"
+    print(f"\n--- Estatisticas [{level.upper()}] ---")
+    print(f"  Total linhas  : {len(rows)}")
+    print(f"  Range de datas: {min_data} -> {max_data}")
+    print("  Sample (3 linhas):")
+    for r in rows[:3]:
+        print(f"    {r}")
+
+
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 
 def main():
-    p = argparse.ArgumentParser(description="ANP CDP Power BI extractor")
+    p = argparse.ArgumentParser(description="ANP CDP Power BI extractor — 3 niveis")
 
-    mode = p.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--all",   action="store_true",
-                      help="Extrair TODOS os campos, paginando mes a mes")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--all", action="store_true",
+                      help="[LEGADO] Extrair todos os campos (equiv. a --level campo). "
+                           "Mantido para backward compat.")
     mode.add_argument("--campo", default=None, metavar="NOME",
-                      help="Extrair um campo especifico (ex: PEREGRINO)")
+                      help="[LEGADO] Extrair campo especifico (ex: PEREGRINO)")
+    mode.add_argument("--level", choices=["campo", "instalacao", "poco", "all"], default=None,
+                      help="Nivel de granularidade. Default: all (3 niveis)")
 
     p.add_argument("--start",  type=lambda s: date.fromisoformat(s),
                    default=date(2025, 1, 1),
@@ -455,61 +681,108 @@ def main():
                    default=None,
                    help="Data final exclusiva ISO (padrao: amanha)")
     p.add_argument("--output", type=Path, default=None,
-                   help="Caminho de saida do CSV")
+                   help="Caminho de saida do CSV (ignorado quando --level all)")
     p.add_argument("--window", type=int, default=None,
                    help="Override da Window.Count do Power BI")
     p.add_argument("--upload", action="store_true",
-                   help="Apos extrair, fazer upsert em anp_cdp_diaria (requer SUPABASE_SERVICE_ROLE_KEY)")
+                   help="Apos extrair, fazer upsert no Supabase (requer SUPABASE_SERVICE_ROLE_KEY)")
 
     args = p.parse_args()
 
     end_excl = args.end or (date.today() + timedelta(days=1))
 
-    try:
-        if args.all:
-            window = args.window or 100_000
-            out = args.output or (DEFAULT_OUTPUT / "anp_cdp_diaria_completo.csv")
-            rows = extract_producao_diaria_todos(args.start, end_excl, window=window)
-        else:
-            window = args.window or 500
-            campo = args.campo
-            out = args.output or (DEFAULT_OUTPUT / f"anp_cdp_diaria_{campo.lower()}.csv")
+    # ── Normalizar modo ──────────────────────────────────────────────────────
+    # --campo NOME  => modo legado single-campo
+    # --all         => legado, equiv. a --level campo
+    # --level X     => novo
+    # (nenhum)      => default all
+    if args.campo:
+        mode_str = "_single_campo"
+    elif args.all:
+        mode_str = "campo"
+    elif args.level:
+        mode_str = args.level
+    else:
+        mode_str = "all"
+
+    # ── Modo single-campo (legado debug) ─────────────────────────────────────
+    if mode_str == "_single_campo":
+        window = args.window or 500
+        campo = args.campo
+        out = args.output or (DEFAULT_OUTPUT / f"anp_cdp_diaria_{campo.lower()}.csv")
+        try:
             rows = extract_producao_diaria_campo(campo, args.start, end_excl, window=window)
-    except requests.HTTPError as e:
-        print(f"ERRO HTTP {e.response.status_code}: {e.response.text[:400]}", file=sys.stderr)
-        sys.exit(1)
-
-    if not rows:
-        print("ERRO: Nenhuma linha retornada.", file=sys.stderr)
-        print("Inspecione output/_debug_cdp_*.json para diagnostico.", file=sys.stderr)
-        sys.exit(1)
-
-    write_csv(rows, out)
-
-    # Spot check: primeiras 3 linhas
-    print("\n--- Spot check (primeiras 3 linhas) ---")
-    for r in rows[:3]:
-        print(f"  data={r['data']}  campo={r['campo']}  bacia={r['bacia']}  "
-              f"petroleo={r['petroleo_bbl_dia']}  gas={r['gas_mm3_dia']}")
-
-    # Estatisticas
-    if args.all:
-        campos_unicos = len({r["campo"] for r in rows if r["campo"]})
-        bacias_unicas = len({r["bacia"] for r in rows if r["bacia"]})
-        datas = [r["data"] for r in rows if r["data"]]
-        min_data = min(datas) if datas else "N/A"
-        max_data = max(datas) if datas else "N/A"
-        print(f"\n--- Estatisticas ---")
-        print(f"  Total linhas   : {len(rows)}")
-        print(f"  Campos unicos  : {campos_unicos}")
-        print(f"  Bacias unicas  : {bacias_unicas}")
-        print(f"  Range de datas : {min_data} -> {max_data}")
-
-    # Upload para Supabase
-    if args.upload:
-        ok = upload_to_supabase(rows)
-        if not ok:
+        except (requests.HTTPError, ValueError) as e:
+            print(f"ERRO: {e}", file=sys.stderr)
             sys.exit(1)
+        if not rows:
+            print("ERRO: Nenhuma linha retornada.", file=sys.stderr)
+            sys.exit(1)
+        write_csv(rows, out, level="campo")
+        _print_stats("campo", rows)
+        if args.upload:
+            ok = upload_to_supabase(rows, TABLE_BY_LEVEL["campo"], CONFLICT_BY_LEVEL["campo"])
+            if not ok:
+                sys.exit(1)
+        return
+
+    # ── Determinar quais niveis executar ──────────────────────────────────────
+    if mode_str == "all":
+        levels = ["campo", "instalacao", "poco"]
+    else:
+        levels = [mode_str]
+
+    window = args.window or 100_000
+    results: dict[str, list[dict]] = {}
+
+    for lvl in levels:
+        print(f"\n📦 Extraindo nivel {lvl.upper()}...")
+        try:
+            if lvl == "campo":
+                rows = extract_producao_diaria_campo_todos(args.start, end_excl, window=window)
+            elif lvl == "instalacao":
+                rows = extract_producao_diaria_instalacao_todos(args.start, end_excl, window=window)
+            else:  # poco
+                rows = extract_producao_diaria_poco_todos(args.start, end_excl, window=window)
+        except (requests.HTTPError, ValueError) as e:
+            print(f"ERRO [{lvl.upper()}]: {e}", file=sys.stderr)
+            if len(levels) == 1:
+                sys.exit(1)
+            print(f"  -> Continuando com proximos niveis...")
+            results[lvl] = []
+            continue
+
+        if not rows:
+            print(f"AVISO [{lvl.upper()}]: Nenhuma linha retornada.", file=sys.stderr)
+            results[lvl] = []
+        else:
+            results[lvl] = rows
+
+    # ── CSV output ────────────────────────────────────────────────────────────
+    any_ok = any(len(v) > 0 for v in results.values())
+    if not any_ok:
+        print("ERRO: Nenhuma linha retornada em nenhum nivel.", file=sys.stderr)
+        sys.exit(1)
+
+    for lvl, rows in results.items():
+        if not rows:
+            continue
+        if args.output and len(levels) == 1:
+            out = args.output
+        else:
+            out = DEFAULT_OUTPUT / f"anp_cdp_diaria_{lvl}_completo.csv"
+        write_csv(rows, out, level=lvl)
+        _print_stats(lvl, rows)
+
+    # ── Upload ────────────────────────────────────────────────────────────────
+    if args.upload:
+        for lvl, rows in results.items():
+            if not rows:
+                print(f"[{lvl.upper()}] Skip upsert (0 linhas)")
+                continue
+            ok = upload_to_supabase(rows, TABLE_BY_LEVEL[lvl], CONFLICT_BY_LEVEL[lvl])
+            if not ok:
+                sys.exit(1)
 
 
 if __name__ == "__main__":
