@@ -203,6 +203,15 @@ const CARDS: CardDef[] = [
     disabled: false,
   },
   {
+    slug: "anp-cdp-bsw",
+    preview: null,
+    title: "ANP CDP — BSW by Well",
+    description: "Water cut vs months since first production, by well",
+    badge: "Available",
+    href: "/anp-cdp-bsw",
+    disabled: false,
+  },
+  {
     slug: null,
     preview: null,
     title: "Coming Soon",
