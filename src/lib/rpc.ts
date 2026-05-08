@@ -1882,6 +1882,91 @@ export async function rpcGetAnpCdpBswCampos(
   }
 }
 
+// ─── MODULE: ANP CDP — Depletion (/src/app/(dashboard)/anp-cdp-depletion/page.tsx)
+//
+// Uptime-normalized monthly oil production (NP) per (poco × month) or per
+// (campo × month). NP is the production the well would have delivered if it
+// had run at 100% uptime during the calendar month. Formula (server-side):
+//
+//   NP_bbl_mes = (petroleo_bbl_dia × dias_cal × dias_cal × 24)
+//              / NULLIF(tempo_prod_hs_mes, 0)
+//
+// Field-aggregate variant adds % VOIP recovered (cumulative oil ÷ VOIP) and
+// returns the data as RETURNS jsonb (single row, single column) to bypass
+// PostgREST's default max_rows=1000 — same pattern as get_anp_cdp_bsw_field_aggregate.
+
+export type AnpCdpDepletionPoint = {
+  poco: string;
+  campo: string;
+  ano: number;
+  mes: number;
+  mes_desde_t0: number;
+  np_bbl_mes: number;
+  pct_voip_poco: number | null; // optional well-level VOIP fraction; may be null
+};
+
+export type AnpCdpDepletionFieldPoint = {
+  campo: string;
+  ano: number;
+  mes: number;
+  np_bbl_mes: number;             // sum of NP across wells in the field
+  n_pocos: number;                // wells contributing to this calendar month
+  pct_voip: number;               // cumulative_oil_bbl / voip_bbl, fraction 0..1
+  cumulative_oil_bbl: number;     // cumulative oil up to (ano,mes), bbl
+};
+
+// Field list for the /anp-cdp-depletion sidebar dropdown. Returns
+// alphabetically ordered field names available for the depletion analysis.
+export async function rpcGetAnpCdpDepletionCampos(
+  supabase: SupabaseClient,
+): Promise<string[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_anp_cdp_depletion_campos");
+    if (error) throw error;
+    return (data ?? []) as string[];
+  } catch (e) {
+    console.error("get_anp_cdp_depletion_campos failed", e);
+    return [];
+  }
+}
+
+// Per-well scatter — RETURNS TABLE with up to ~500k rows (server-side cap).
+export async function rpcGetAnpCdpDepletionScatter(
+  supabase: SupabaseClient,
+  campos: string[],
+): Promise<AnpCdpDepletionPoint[]> {
+  if (!campos || campos.length === 0) return [];
+  try {
+    const { data, error } = await supabase
+      .rpc("get_anp_cdp_depletion_scatter", { p_campos: campos })
+      .limit(500000); // bypass PostgREST default max_rows=1000 (server caps at 500k)
+    if (error) throw error;
+    return (data ?? []) as AnpCdpDepletionPoint[];
+  } catch (e) {
+    console.error("get_anp_cdp_depletion_scatter failed", e);
+    return [];
+  }
+}
+
+// Field-aggregate — RETURNS jsonb (single row). Do NOT call .limit() here:
+// it's a single-row jsonb response and limit() would cap it incorrectly.
+export async function rpcGetAnpCdpDepletionFieldAggregate(
+  supabase: SupabaseClient,
+  campos: string[],
+): Promise<AnpCdpDepletionFieldPoint[]> {
+  if (!campos || campos.length === 0) return [];
+  try {
+    const { data, error } = await supabase.rpc("get_anp_cdp_depletion_field_aggregate", {
+      p_campos: campos,
+    });
+    if (error) throw error;
+    return ((data as unknown) ?? []) as AnpCdpDepletionFieldPoint[];
+  } catch (e) {
+    console.error("get_anp_cdp_depletion_field_aggregate failed", e);
+    return [];
+  }
+}
+
 // ─── MODULE: ANP CDP Diária (/src/app/(dashboard)/anp-cdp-diaria/page.tsx) ────
 //
 // Daily petroleum/gas production by `(data, campo, bacia)`. Sourced from the
