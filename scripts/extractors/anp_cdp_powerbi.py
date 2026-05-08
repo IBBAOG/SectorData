@@ -1,7 +1,7 @@
 """
 anp_cdp_powerbi.py
 ==================
-POC de extracao da tabela "Producao por Campo" do Power BI ANP/CDP.
+Extrator da tabela "Producao por Campo" do Power BI ANP/CDP.
 
 Fonte: relatorio publico "Painel Dinamico de Producao Diaria de Petroleo e Gas Natural"
        pagina 4 ("Campos"), tabela inferior direita "Producao por Campo".
@@ -10,13 +10,11 @@ URL:   https://app.powerbi.com/view?r=eyJrIjoiZjQ0NjIzNmYtNzY3Ni00MzZkLWI0MTQtYz
 Granularidade: diaria x campo x bacia
 Colunas: data, bacia, campo, petroleo_bbl_dia, gas_mm3_dia
 
-Filtro inicial: campo = PEREGRINO (validacao com 1 campo antes de generalizar)
-Output: output/anp_cdp_diaria_<campo>.csv  (CSV virgula UTF-8 BOM)
-
 Constantes descobertas via Chrome MCP em 2026-05-08.
 
 Uso:
-  python scripts/extractors/anp_cdp_powerbi.py
+  python scripts/extractors/anp_cdp_powerbi.py --all
+  python scripts/extractors/anp_cdp_powerbi.py --all --start 2025-01-01
   python scripts/extractors/anp_cdp_powerbi.py --campo PEREGRINO
   python scripts/extractors/anp_cdp_powerbi.py --campo PEREGRINO --window 1000
 """
@@ -25,6 +23,7 @@ import argparse
 import csv
 import json
 import sys
+import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -91,17 +90,9 @@ def _where_date_range(src: str, prop: str, start_date: date, end_date_excl: date
     }}}
 
 
-def build_cdp_payload(campo: str, start_date: date, end_date_excl: date,
-                      window: int = 500) -> dict:
-    """
-    Monta o payload SemanticQueryDataShapeCommand para a tabela "Producao por Campo".
-
-    Usa Binding Window (paginado) em vez de Top — o shape exato capturado no
-    Power BI para este visual. Window.Count=500 e suficiente para PEREGRINO
-    (~16 meses diarios = ~485 linhas). Aumente 'window' se necessario.
-    """
-    # Select — 5 entradas; ordem define os indices 0-4 para o mapeamento
-    select_cols = [
+def _select_cols() -> list:
+    """Select — 5 entradas; ordem define os indices 0-4 para o mapeamento."""
+    return [
         {**_column("d", "Data"),      "Name": "Datas.Data"},
         {**_column("v", "Campo"),     "Name": "v_campos_detalhe.Campo"},
         {**_column("v", "Bacia"),     "Name": "v_campos_detalhe.Bacia"},
@@ -109,29 +100,26 @@ def build_cdp_payload(campo: str, start_date: date, end_date_excl: date,
         {**_measure("m", "Gás Mm3"),  "Name": "Medidas.Gas"},
     ]
 
-    where_conds = [
-        _where_in("c", "Unidade", ["bbl"]),          # filtro de unidade
-        _where_date_range("d", "Data", start_date, end_date_excl),
-        _where_in("v", "Campo", [campo]),             # filtro do campo
+
+def _from_entities() -> list:
+    return [
+        {"Name": "d", "Entity": "Datas",            "Type": 0},
+        {"Name": "v", "Entity": "v_campos_detalhe", "Type": 0},
+        {"Name": "m", "Entity": "Medidas",          "Type": 0},
+        {"Name": "c", "Entity": "Correção",         "Type": 0},
     ]
 
-    order_by = [
-        {"Direction": 2, "Expression": _column("d", "Data")}   # DESC
-    ]
 
+def _build_query_body(where_conds: list, window: int, order_desc: bool = True) -> dict:
+    order_by = [{"Direction": 2, "Expression": _column("d", "Data")}] if order_desc else []
     return {
         "version": "1.0.0",
         "queries": [{
             "Query": {"Commands": [{"SemanticQueryDataShapeCommand": {
                 "Query": {
                     "Version": 2,
-                    "From": [
-                        {"Name": "d", "Entity": "Datas",            "Type": 0},
-                        {"Name": "v", "Entity": "v_campos_detalhe", "Type": 0},
-                        {"Name": "m", "Entity": "Medidas",          "Type": 0},
-                        {"Name": "c", "Entity": "Correção",         "Type": 0},
-                    ],
-                    "Select":  select_cols,
+                    "From":    _from_entities(),
+                    "Select":  _select_cols(),
                     "Where":   where_conds,
                     "OrderBy": order_by,
                 },
@@ -148,6 +136,34 @@ def build_cdp_payload(campo: str, start_date: date, end_date_excl: date,
         "cancelQueries": [],
         "modelId": MODEL_ID,
     }
+
+
+def build_cdp_payload(campo: str, start_date: date, end_date_excl: date,
+                      window: int = 500) -> dict:
+    """
+    Monta payload para um unico campo (modo debug/single-campo).
+    Mantido para compatibilidade retroativa.
+    """
+    where_conds = [
+        _where_in("c", "Unidade", ["bbl"]),
+        _where_date_range("d", "Data", start_date, end_date_excl),
+        _where_in("v", "Campo", [campo]),
+    ]
+    return _build_query_body(where_conds, window)
+
+
+def build_cdp_payload_todos(start_date: date, end_date_excl: date,
+                            window: int = 100_000) -> dict:
+    """
+    Monta payload SEM filtro de Campo — retorna todos os campos para o
+    intervalo de datas informado. Usado pela paginacao mensal.
+    """
+    where_conds = [
+        _where_in("c", "Unidade", ["bbl"]),
+        _where_date_range("d", "Data", start_date, end_date_excl),
+        # sem _where_in de Campo
+    ]
+    return _build_query_body(where_conds, window)
 
 
 # ─── Conversores (definidos antes do parser que os usa) ──────────────────────
@@ -241,25 +257,21 @@ def parse_dsr_cdp(result_json: dict) -> list[dict]:
     return rows
 
 
-# ─── Extracao ─────────────────────────────────────────────────────────────────
+# ─── Extracao single-campo (mantida para debug) ───────────────────────────────
 
-def extract_producao_diaria(
+def extract_producao_diaria_campo(
     campo: str = DEFAULT_CAMPO,
     start_date: date | None = None,
     end_date_excl: date | None = None,
     window: int = 500,
 ) -> list[dict]:
     """
-    Extrai producao diaria do campo indicado.
+    Extrai producao diaria do campo indicado (modo debug/single-campo).
 
     Retorna lista de dicts com:
       data, campo, bacia, petroleo_bbl_dia, gas_mm3_dia
-
-    O select tem 5 colunas na ordem: Data(0), Campo(1), Bacia(2), Petroleo(3), Gas(4).
-    O mapeamento abaixo pressupoe essa ordem — confirmar com _debug_cdp_response.json
-    no primeiro run.
     """
-    start   = start_date   or date(2025, 1, 1)
+    start    = start_date    or date(2025, 1, 1)
     end_excl = end_date_excl or (date.today() + timedelta(days=1))
 
     print(f"[CDP] Extraindo producao diaria: campo={campo}, "
@@ -267,7 +279,7 @@ def extract_producao_diaria(
 
     payload = build_cdp_payload(campo, start, end_excl, window)
 
-    # Salvar payload para debug (util para inspecionar se a resposta vier vazia)
+    # Salvar payload para debug
     DEFAULT_OUTPUT.mkdir(parents=True, exist_ok=True)
     (DEFAULT_OUTPUT / "_debug_cdp_payload.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -275,7 +287,7 @@ def extract_producao_diaria(
 
     data = post_query(payload, RESOURCE_KEY)
 
-    # Salvar resposta crua para debug e validacao da ordem das colunas
+    # Salvar resposta crua para debug
     (DEFAULT_OUTPUT / "_debug_cdp_response.json").write_text(
         json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
     )
@@ -288,6 +300,84 @@ def extract_producao_diaria(
     rows = parse_dsr_cdp(data)
     print(f"   Linhas parseadas: {len(rows)}")
     return rows
+
+
+# Alias legado (mantido para compatibilidade com imports externos)
+extract_producao_diaria = extract_producao_diaria_campo
+
+
+# ─── Extracao todos os campos (paginacao mensal) ─────────────────────────────
+
+def extract_producao_diaria_todos(
+    start: date,
+    end_excl: date,
+    window: int = 100_000,
+) -> list[dict]:
+    """
+    Extrai producao diaria de TODOS os campos, paginando mes a mes.
+
+    Sem filtro de Campo — cada chunk cobre [mes_inicio, proximo_mes_inicio).
+    Window.Count=100_000 (suficiente: ~700 campos x ~31 dias = ~21k linhas/mes).
+
+    Salva dump de debug do primeiro chunk em output/_debug_cdp_chunk_<YYYY-MM>.json.
+
+    Retorna lista consolidada de dicts com:
+      data, campo, bacia, petroleo_bbl_dia, gas_mm3_dia
+    """
+    all_rows: list[dict] = []
+    truncated_months: list[str] = []
+    first_chunk = True
+
+    cursor = date(start.year, start.month, 1)
+
+    DEFAULT_OUTPUT.mkdir(parents=True, exist_ok=True)
+
+    t0 = time.time()
+
+    while cursor < end_excl:
+        # Calcular limite do chunk (proximo mes)
+        if cursor.month == 12:
+            next_month = date(cursor.year + 1, 1, 1)
+        else:
+            next_month = date(cursor.year, cursor.month + 1, 1)
+        chunk_end = min(next_month, end_excl)
+
+        label = cursor.strftime("%Y-%m")
+        print(f"Chunk {cursor.isoformat()} -> {chunk_end.isoformat()}", end="  ", flush=True)
+
+        payload = build_cdp_payload_todos(cursor, chunk_end, window=window)
+        data = post_query(payload, RESOURCE_KEY)
+
+        rc, complete = extract_row_count(data)
+
+        # Dump de debug apenas no primeiro chunk
+        if first_chunk:
+            debug_path = DEFAULT_OUTPUT / f"_debug_cdp_chunk_{label}.json"
+            debug_path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            print(f"[debug dump -> {debug_path.name}]", end="  ", flush=True)
+            first_chunk = False
+
+        if complete is False:
+            print(f"AVISO: TRUNCADO (rc={rc}) !", end="  ", flush=True)
+            truncated_months.append(label)
+
+        rows = parse_dsr_cdp(data)
+        print(f"{len(rows)} linhas")
+        all_rows.extend(rows)
+
+        cursor = next_month
+
+    elapsed = time.time() - t0
+    print(f"\nTotal acumulado: {len(all_rows)} linhas em {elapsed:.1f}s")
+
+    if truncated_months:
+        print(f"AVISO: Meses truncados (requer investigacao): {truncated_months}")
+    else:
+        print("Nenhum mes truncado.")
+
+    return all_rows
 
 
 # ─── Escrita do CSV ───────────────────────────────────────────────────────────
@@ -306,26 +396,46 @@ def write_csv(rows: list[dict], output_path: Path) -> None:
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 
 def main():
-    p = argparse.ArgumentParser(description="POC ANP CDP Power BI extractor")
-    p.add_argument("--campo",  default=DEFAULT_CAMPO,
-                   help=f"Nome do campo (padrao: {DEFAULT_CAMPO})")
+    p = argparse.ArgumentParser(description="ANP CDP Power BI extractor")
+
+    mode = p.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--all",   action="store_true",
+                      help="Extrair TODOS os campos, paginando mes a mes")
+    mode.add_argument("--campo", default=None, metavar="NOME",
+                      help="Extrair um campo especifico (ex: PEREGRINO)")
+
+    p.add_argument("--start",  type=lambda s: date.fromisoformat(s),
+                   default=date(2025, 1, 1),
+                   help="Data inicial ISO (padrao: 2025-01-01)")
+    p.add_argument("--end",    type=lambda s: date.fromisoformat(s),
+                   default=None,
+                   help="Data final exclusiva ISO (padrao: amanha)")
     p.add_argument("--output", type=Path, default=None,
-                   help="Caminho de saida do CSV (padrao: output/anp_cdp_diaria_<campo>.csv)")
-    p.add_argument("--window", type=int, default=500,
-                   help="Limite de linhas da Window do Power BI (padrao: 500)")
+                   help="Caminho de saida do CSV")
+    p.add_argument("--window", type=int, default=None,
+                   help="Override da Window.Count do Power BI")
+
     args = p.parse_args()
 
-    out = args.output or (DEFAULT_OUTPUT / f"anp_cdp_diaria_{args.campo.lower()}.csv")
+    end_excl = args.end or (date.today() + timedelta(days=1))
 
     try:
-        rows = extract_producao_diaria(args.campo, window=args.window)
+        if args.all:
+            window = args.window or 100_000
+            out = args.output or (DEFAULT_OUTPUT / "anp_cdp_diaria_completo.csv")
+            rows = extract_producao_diaria_todos(args.start, end_excl, window=window)
+        else:
+            window = args.window or 500
+            campo = args.campo
+            out = args.output or (DEFAULT_OUTPUT / f"anp_cdp_diaria_{campo.lower()}.csv")
+            rows = extract_producao_diaria_campo(campo, args.start, end_excl, window=window)
     except requests.HTTPError as e:
         print(f"ERRO HTTP {e.response.status_code}: {e.response.text[:400]}", file=sys.stderr)
         sys.exit(1)
 
     if not rows:
         print("ERRO: Nenhuma linha retornada.", file=sys.stderr)
-        print("Inspecione output/_debug_cdp_response.json para diagnostico.", file=sys.stderr)
+        print("Inspecione output/_debug_cdp_*.json para diagnostico.", file=sys.stderr)
         sys.exit(1)
 
     write_csv(rows, out)
@@ -335,6 +445,19 @@ def main():
     for r in rows[:3]:
         print(f"  data={r['data']}  campo={r['campo']}  bacia={r['bacia']}  "
               f"petroleo={r['petroleo_bbl_dia']}  gas={r['gas_mm3_dia']}")
+
+    # Estatisticas
+    if args.all:
+        campos_unicos = len({r["campo"] for r in rows if r["campo"]})
+        bacias_unicas = len({r["bacia"] for r in rows if r["bacia"]})
+        datas = [r["data"] for r in rows if r["data"]]
+        min_data = min(datas) if datas else "N/A"
+        max_data = max(datas) if datas else "N/A"
+        print(f"\n--- Estatisticas ---")
+        print(f"  Total linhas   : {len(rows)}")
+        print(f"  Campos unicos  : {campos_unicos}")
+        print(f"  Bacias unicas  : {bacias_unicas}")
+        print(f"  Range de datas : {min_data} -> {max_data}")
 
 
 if __name__ == "__main__":
