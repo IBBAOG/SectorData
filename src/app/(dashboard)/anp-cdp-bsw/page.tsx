@@ -31,11 +31,27 @@ const VIEW_OPTIONS: { value: ViewMode; label: string }[] = [
   { value: "field", label: "Field average" },
 ];
 
+// ── Plot style ────────────────────────────────────────────────────────────────
+// Trace mode toggle shared by both views. Default is "markers+lines" because
+// it carries more information (trend visible) than markers-only.
+
+type LineStyle = "markers" | "markers+lines";
+
+const LINE_STYLE_OPTIONS: { value: LineStyle; label: string }[] = [
+  { value: "markers",       label: "Markers" },
+  { value: "markers+lines", label: "Markers + lines" },
+];
+
+// Maps the toggle value to Plotly's `mode` string.
+const plotlyMode = (style: LineStyle): "markers" | "lines+markers" =>
+  style === "markers" ? "markers" : "lines+markers";
+
 // ── Chart builders ────────────────────────────────────────────────────────────
 
 function buildPerWellChart(
   points: AnpCdpBswPoint[],
   selectedCampos: string[],
+  lineStyle: LineStyle,
 ): { data: PlotData[]; layout: Partial<Layout> } {
   if (!selectedCampos.length) {
     return emptyPlot(
@@ -54,17 +70,19 @@ function buildPerWellChart(
   for (const p of points) {
     if (!seen.includes(p.poco)) seen.push(p.poco);
   }
+  const mode = plotlyMode(lineStyle);
   const traces: PlotData[] = seen.map((poco, i) => {
     const subset = points.filter((p) => p.poco === poco);
     const color = PALETTE[i % PALETTE.length];
     return {
       type: "scattergl",
-      mode: "markers",
+      mode,
       name: poco,
       x: subset.map((p) => p.mes_desde_t0),
       y: subset.map((p) => p.bsw),
       customdata: subset.map((p) => [p.poco, p.ano, p.mes] as [string, number, number]),
       marker: { size: 4, opacity: 0.7, color },
+      line: { color, width: 1 },
       hovertemplate:
         "<b>%{customdata[0]}</b><br>" +
         "Reference month: %{customdata[1]}-%{customdata[2]:02d}<br>" +
@@ -107,6 +125,7 @@ function buildPerWellChart(
 function buildFieldAverageChart(
   points: AnpCdpBswFieldPoint[],
   selectedCampos: string[],
+  lineStyle: LineStyle,
 ): { data: PlotData[]; layout: Partial<Layout> } {
   if (!selectedCampos.length) {
     return emptyPlot(
@@ -123,7 +142,10 @@ function buildFieldAverageChart(
   // by the field's VOIP (Volume Original In Place, from anp_voip). This is
   // a more physical/geological X than raw time and lets fields of very
   // different sizes be compared on the same depletion curve.
-  // lines+markers, low-volume scatter (not gl).
+  // Trace mode is driven by the shared "Plot style" toggle (markers vs
+  // markers+lines). Renderer stays as plain `scatter` (SVG) — volume is low
+  // and SVG lines are crisper than scattergl.
+  const mode = plotlyMode(lineStyle);
   const traces: PlotData[] = selectedCampos.map((campo, i) => {
     const subset = points
       .filter((p) => p.campo === campo)
@@ -131,7 +153,7 @@ function buildFieldAverageChart(
     const color = PALETTE[i % PALETTE.length];
     return {
       type: "scatter",
-      mode: "lines+markers",
+      mode,
       name: campo,
       x: subset.map((p) => p.pct_voip),
       y: subset.map((p) => p.bsw),
@@ -202,6 +224,7 @@ export default function AnpCdpBswPage() {
   const [filtrosLoading, setFiltrosLoading] = useState(true);
   const [selectedCampos, setSelectedCampos] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("well");
+  const [lineStyle, setLineStyle] = useState<LineStyle>("markers+lines");
   const [wellPoints,  setWellPoints]  = useState<AnpCdpBswPoint[]>([]);
   const [fieldPoints, setFieldPoints] = useState<AnpCdpBswFieldPoint[]>([]);
 
@@ -263,9 +286,9 @@ export default function AnpCdpBswPage() {
 
   const chart = useMemo(() => {
     return viewMode === "well"
-      ? buildPerWellChart(wellPoints, selectedCampos)
-      : buildFieldAverageChart(fieldPoints, selectedCampos);
-  }, [viewMode, wellPoints, fieldPoints, selectedCampos]);
+      ? buildPerWellChart(wellPoints, selectedCampos, lineStyle)
+      : buildFieldAverageChart(fieldPoints, selectedCampos, lineStyle);
+  }, [viewMode, wellPoints, fieldPoints, selectedCampos, lineStyle]);
 
   const chartLoading = viewMode === "well" ? wellLoading : fieldLoading;
 
@@ -338,6 +361,16 @@ export default function AnpCdpBswPage() {
                   options={VIEW_OPTIONS}
                   value={viewMode}
                   onChange={handleModeChange}
+                />
+              </div>
+
+              {/* ── Plot-style toggle (shared by both views) ────────── */}
+              <div className="sidebar-filter-section">
+                <div className="sidebar-filter-label">Plot style</div>
+                <SegmentedToggle<LineStyle>
+                  options={LINE_STYLE_OPTIONS}
+                  value={lineStyle}
+                  onChange={setLineStyle}
                 />
               </div>
 

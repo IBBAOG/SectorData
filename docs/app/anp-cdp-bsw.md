@@ -21,8 +21,10 @@ Plots **BSW (water cut)** versus a depletion / age proxy that depends on the vie
 
 | View | X axis | Granularity | RPC | Renderer | Trace style |
 |---|---|---|---|---|---|
-| **Per well** (default) | months since first production for that well | one point per (well × month) | `get_anp_cdp_bsw_scatter` | `scattergl` (WebGL) | `mode: "markers"`, size 4, opacity 0.55 |
-| **Field average** | **% of VOIP recovered** for that field (cumulative oil ÷ VOIP) | one point per (field × calendar month), volume-weighted across wells | `get_anp_cdp_bsw_field_aggregate` | `scatter` (SVG, low volume) | `mode: "lines+markers"`, marker size 6 |
+| **Per well** (default) | months since first production for that well | one point per (well × month) | `get_anp_cdp_bsw_scatter` | `scattergl` (WebGL) | mode driven by Plot-style toggle, marker size 4, opacity 0.7 |
+| **Field average** | **% of VOIP recovered** for that field (cumulative oil ÷ VOIP) | one point per (field × calendar month), volume-weighted across wells | `get_anp_cdp_bsw_field_aggregate` | `scatter` (SVG, low volume) | mode driven by Plot-style toggle, marker size 6 |
+
+**Plot-style toggle** — sidebar `SegmentedToggle` with two options: **Markers** and **Markers + lines** (default). The toggle is shared by both views: switching between Per well and Field average preserves the chosen plot style. The Plotly `mode` is `"markers"` or `"lines+markers"` accordingly. Renderer choice (`scattergl` vs `scatter`) is independent of the toggle: per-well stays on WebGL even with lines (Chrome/Firefox handle this fine; performance is preferred over edge-case compatibility).
 
 Each selected field is rendered as its own colored trace using the shared 16-color `PALETTE`, in selection order. Colors are stable while a session is open (the chart-trace color matches the chip color in the sidebar).
 
@@ -106,7 +108,8 @@ Schema columns relevant to this dashboard: `poco, campo, ano, mes, petroleo_bbl_
 | Filter | Component | Behavior |
 |---|---|---|
 | Field | `SearchableMultiSelect` (in sidebar) | Server-side via `p_campos`. Empty selection → empty state. Each selected field gets a color from `PALETTE` in selection order. The "Selected fields" section below lists chips with the same colors. |
-| View mode | `SegmentedToggle` (above chart) | "Per well" (default) calls `get_anp_cdp_bsw_scatter`; "Field average" calls `get_anp_cdp_bsw_field_aggregate`. Both fetches are debounced 400ms via `useDebouncedFetch`. |
+| View mode | `SegmentedToggle` (sidebar) | "Per well" (default) calls `get_anp_cdp_bsw_scatter`; "Field average" calls `get_anp_cdp_bsw_field_aggregate`. Both fetches are debounced 400ms via `useDebouncedFetch`. |
+| Plot style | `SegmentedToggle` (sidebar, below View) | "Markers" or "Markers + lines" (default). Pure client-side: maps to Plotly `mode: "markers"` vs `"lines+markers"` on every trace. Shared by both views — preserves choice when switching Per well ↔ Field average. |
 
 ## Reused components
 
