@@ -1,8 +1,8 @@
 # Sub-PRD — `/anp-cdp-diaria`
 
-Dashboard ANP CDP Diária — Produção Diária por Campo (Oil & Gas). Owner: [`worker_dash-anp-cdp-diaria`](../../.claude/agents/worker_dash-anp-cdp-diaria.md).
+Dashboard ANP CDP Diária — Produção Diária por Campo / Instalação / Poço (Oil & Gas). Owner: [`worker_dash-anp-cdp-diaria`](../../.claude/agents/worker_dash-anp-cdp-diaria.md).
 
-> Item do dropdown "Oil & Gas" da NavBar (irmão de `/anp-cdp`). Distinção crítica: `/anp-cdp` é mensal por **poço** (formulário CDP); `/anp-cdp-diaria` é diário por **campo** (Power BI ANP).
+> Item do dropdown "Oil & Gas" da NavBar (irmão de `/anp-cdp`). Distinção crítica: `/anp-cdp` é mensal por **poço** (formulário CDP); `/anp-cdp-diaria` é diário e cobre **três níveis de granularidade** (campo, instalação, poço) via Power BI ANP.
 
 ## Escopo de código
 
@@ -11,90 +11,139 @@ src/app/(dashboard)/anp-cdp-diaria/
   page.tsx
 ```
 
-RPC wrappers: seção "ANP CDP Diária" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (`rpcGetAnpCdpDiariaFiltros`, `rpcGetAnpCdpDiariaSerie`).
+RPC wrappers: seções "ANP CDP Diária" + "ANP CDP Diária — Installation level" + "ANP CDP Diária — Well level" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts).
 
-Heurística de tamanho de export: chave `anp_cdp_diaria` em [`src/lib/exportSizeHeuristics.ts`](../../src/lib/exportSizeHeuristics.ts).
+Heurística de tamanho de export: chaves `anp_cdp_diaria` (field), `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco` em [`src/lib/exportSizeHeuristics.ts`](../../src/lib/exportSizeHeuristics.ts).
 
 ## Produto
 
-Visualização da **produção diária de petróleo e gás natural por campo** declarada no Power BI público da ANP. Permite ao usuário:
+Visualização da **produção diária de petróleo e gás natural** declarada no Power BI público da ANP em **3 níveis de granularidade**, escolhidos via toggle no topo dos filtros (`SegmentedToggle` "pill deslizante laranja"):
 
-- Selecionar **bacias** via checkbox list (default: todas, server-side via `p_bacias`).
-- Selecionar **campos** via `SearchableMultiSelect` (94 opções; sem seleção → gráficos mostram Top 10 por média no período).
-- Restringir o **período** via `PeriodSlider` em modo `dates` (granularidade diária — server-side via `p_data_inicio`/`p_data_fim`).
-- Ver duas séries temporais (Petróleo `bbl/dia` e Gás `Mm³/dia`) para os campos selecionados ou Top 10.
-- Inspecionar a tabela de produção mais recente (ordem desc por data + campo, primeiras 500 linhas).
+| Nível | Label UI | Tabela alvo | Páginas Power BI |
+|---|---|---|---|
+| `field` | **Field** | `anp_cdp_diaria` | Página 4 |
+| `installation` | **Installation** | `anp_cdp_diaria_instalacao` | Página 5 |
+| `well` | **Well** | `anp_cdp_diaria_poco` | Página 6 |
+
+Por nível, o usuário pode:
+
+- Selecionar **bacias** (apenas Field/Well — installation não tem bacia) via `MultiSelectFilter` (server-side via `p_bacias`).
+- Selecionar **campos** via `SearchableMultiSelect`.
+- Selecionar **instalações** (apenas Installation) via `SearchableMultiSelect`.
+- Selecionar **poços** (apenas Well) via `SearchableMultiSelect`.
+- Restringir o **período** via `PeriodSlider` em modo `dates` (server-side).
+- Ver duas séries temporais (Petróleo `bbl/dia` e Gás `Mm³/dia`) para a "dimensão" do nível atual (Top 10 por média se sem seleção, ou exatos selecionados).
+- Inspecionar a tabela de produção mais recente (até 500 linhas).
 - Exportar Excel/CSV via `ExportPanel` Tier 2 (`ExportModal` com calculadora de tamanho).
 
-Header: `ANP CDP — Produção Diária por Campo` + sub `Petróleo e gás natural por campo, atualizado 3×/dia (fonte: Power BI ANP)` + badge de período `data_min – data_max` quando dados existem.
+Header: título e sub variam por nível ("ANP CDP — Produção Diária por Campo/Instalação/Poço").
 
 ### Diferença vs `/anp-cdp`
 
 | | `/anp-cdp` | `/anp-cdp-diaria` |
 |---|---|---|
-| Granularidade | Mensal | Diária |
-| Unidade | Poço × campo | Campo × bacia |
+| Granularidade temporal | Mensal | Diária |
+| Granularidades possíveis | Poço × campo (mensal) | Field, Installation, Well (diário, toggle) |
 | Fonte | Formulário CDP (Selenium + CAPTCHA, mensal) | Power BI ANP (3×/dia automático) |
-| Volume | ~1.8M linhas | ~16.5k linhas iniciais, +94/dia |
-| Tabela | `anp_cdp_producao` | `anp_cdp_diaria` |
+| Tabela | `anp_cdp_producao` | `anp_cdp_diaria` + `anp_cdp_diaria_instalacao` + `anp_cdp_diaria_poco` |
 | Range | Histórico longo (dezenas de anos) | Começa em 2025-11-30 (limitação da fonte) |
+
+## Filtros UI por nível
+
+Os filtros visíveis na sidebar dependem do `granularity`:
+
+| Nível | Filtros visíveis |
+|---|---|
+| **Field** | Bacia (server), Campo (client), Período (server) |
+| **Installation** | Campo (server, push se selecionado), Instalação (client), Período (server) |
+| **Well** | Bacia (server), Campo (client), Poço (client), Período (server) |
+
+A troca de nível (`onChange` do `SegmentedToggle`) **reseta todas as seleções de filtros** para evitar carregar termos estranhos entre vocabulários (ex: poço selecionado quando ainda estava no nível Field).
 
 ## RPCs consumidas
 
-| Wrapper TS | RPC PostgreSQL | Retorno (T) |
+| Wrapper TS | RPC PostgreSQL | Retorno |
 |---|---|---|
 | `rpcGetAnpCdpDiariaFiltros` | `get_anp_cdp_diaria_filtros()` | `{ campos[], bacias[], data_min, data_max }` |
-| `rpcGetAnpCdpDiariaSerie` | `get_anp_cdp_diaria_serie(p_campos, p_bacias, p_data_inicio, p_data_fim)` | `Array<{ data, campo, bacia, petroleo_bbl_dia, gas_mm3_dia }>` (sem agregação — front agrega) |
+| `rpcGetAnpCdpDiariaSerie` | `get_anp_cdp_diaria_serie(p_campos, p_bacias, p_data_inicio, p_data_fim)` | `Array<{ data, campo, bacia, petroleo_bbl_dia, gas_mm3_dia }>` |
+| `rpcGetAnpCdpDiariaInstalacaoFiltros` | `get_anp_cdp_diaria_instalacao_filtros()` | `{ campos[], instalacoes[], data_min, data_max }` |
+| `rpcGetAnpCdpDiariaInstalacaoSerie` | `get_anp_cdp_diaria_instalacao_serie(p_campos, p_instalacoes, p_data_inicio, p_data_fim)` | `Array<{ data, campo, instalacao, petroleo_bbl_dia, gas_mm3_dia }>` |
+| `rpcGetAnpCdpDiariaPocoFiltros` | `get_anp_cdp_diaria_poco_filtros()` | `{ campos[], bacias[], pocos[], data_min, data_max }` |
+| `rpcGetAnpCdpDiariaPocoSerie` | `get_anp_cdp_diaria_poco_serie(p_campos, p_bacias, p_pocos, p_data_inicio, p_data_fim)` | `Array<{ data, campo, bacia, poco, petroleo_bbl_dia, gas_mm3_dia }>` |
 
-## Schema da tabela alvo
+Tabelas e RPCs dos níveis Installation e Well foram criadas pela migration `20260508120001_anp_cdp_diaria_levels.sql`.
 
-Tabela: `public.anp_cdp_diaria` (~16.5k linhas iniciais; cresce ~94/dia × 1 dia × 3 refreshes/dia ≈ 282 linhas/dia se sempre houver dado novo).
+## Schema das tabelas alvo
 
-| Coluna | Tipo | PK? | Notas |
-|---|---|---|---|
-| `data` | DATE | ✓ | Day of measurement |
-| `campo` | TEXT | ✓ | Nome do campo |
-| `bacia` | TEXT | ✓ | Nome da bacia |
-| `petroleo_bbl_dia` | REAL | | bbl/dia |
-| `gas_mm3_dia` | REAL | | Mm³/dia |
+Todas com `RLS: SELECT TO authenticated USING (true)` — padrão Phase 3.
 
-**RLS**: `SELECT TO authenticated USING (true)` — padrão Phase 3.
+### `anp_cdp_diaria` (Field — pré-existente)
+
+| Coluna | Tipo | PK? |
+|---|---|---|
+| `data` | DATE | ✓ |
+| `campo` | TEXT | ✓ |
+| `bacia` | TEXT | ✓ |
+| `petroleo_bbl_dia` | REAL | |
+| `gas_mm3_dia` | REAL | |
+
+### `anp_cdp_diaria_instalacao` (Installation — novo)
+
+| Coluna | Tipo | PK? |
+|---|---|---|
+| `data` | DATE | ✓ |
+| `campo` | TEXT | ✓ |
+| `instalacao` | TEXT | ✓ |
+| `petroleo_bbl_dia` | REAL | |
+| `gas_mm3_dia` | REAL | |
+
+### `anp_cdp_diaria_poco` (Well — novo)
+
+| Coluna | Tipo | PK? |
+|---|---|---|
+| `data` | DATE | ✓ |
+| `campo` | TEXT | ✓ |
+| `bacia` | TEXT | ✓ |
+| `poco` | TEXT | ✓ |
+| `petroleo_bbl_dia` | REAL | |
+| `gas_mm3_dia` | REAL | |
 
 ## Pipeline de origem
 
-- **Script**: `scripts/extractors/anp_cdp_powerbi.py` (extrator Power BI — owner: `worker_etl-pipelines`)
-- **Workflow**: `.github/workflows/etl_anp_cdp_diaria.yml` (em construção em paralelo)
+- **Script**: `scripts/extractors/anp_cdp_powerbi.py` (extrator Power BI — owner: `worker_etl-pipelines`). Estendido para extrair as 3 páginas (4, 5, 6).
+- **Workflow**: `.github/workflows/etl_anp_cdp_diaria.yml`
 - **Schedule**: 3×/dia (10:00, 15:00, 20:00 UTC)
 - **Range**: dataset começa em **2025-11-30** (limite da fonte Power BI)
 
-## Filtros UI
+> Installation e Well começam vazios até o primeiro run pós-deploy do ETL atualizado. UI lida bem com `data: []` (mensagem amigável "Sem dados de produção <level> ainda. O ETL desta granularidade roda 3×/dia — aguarde primeiro pull pós-deploy.").
 
-| Filtro | Componente | Comportamento |
-|---|---|---|
-| Bacia | `<MultiSelectFilter>` com `emptyMeansAll` | server-side via `p_bacias` (debounced 400ms); empty = sem filtro |
-| Campo | `<SearchableMultiSelect>` | client-side; sem seleção → Top 10 por média |
-| Período | `<PeriodSlider>` modo `dates` | server-side via `p_data_inicio`/`p_data_fim` (debounced 400ms) |
+## Charts esperados (todos os níveis)
 
-## Charts esperados
-
-| Chart | Tipo Plotly | Source RPC | Notas |
+| Chart | Tipo Plotly | Source RPC | Top-N agrupador |
 |---|---|---|---|
-| Petróleo (bbl/dia) | line (multi-trace) | `get_anp_cdp_diaria_serie` | Top 10 campos por média se sem seleção; senão exatos selecionados |
-| Gás (Mm³/dia) | line (multi-trace) | `get_anp_cdp_diaria_serie` | mesma lógica de seleção |
-| Produção por Campo (tabela) | HTML table com sticky thead | mesma série | Top 500 linhas mais recentes (desc por data + campo) |
+| Petróleo (bbl/dia) | line (multi-trace) | RPC do nível atual | campo / instalacao / poco |
+| Gás (Mm³/dia) | line (multi-trace) | RPC do nível atual | campo / instalacao / poco |
+| Production by ... (tabela) | HTML table com sticky thead | mesma série | colunas por nível |
 
-**Coerência unidade↔label**: tabela já guarda valores em `bbl/dia` e `Mm³/dia` — sem divisor adicional. Mm³ = milhões de m³.
+A tabela "Production by ..." muda colunas por nível:
+
+| Nível | Colunas |
+|---|---|
+| Field | Date · Bacia · Campo · Oil · Gas |
+| Installation | Date · Campo · Instalação · Oil · Gas |
+| Well | Date · Bacia · Campo · Poço · Oil · Gas |
 
 ## Padrões consolidados aplicados
 
 - [x] Header: `<DashboardHeader title sub period>` com `<hr>` separator
 - [x] Period badge: condicional ao `hasDates` (`[string, string] | null`)
-- [x] Push período + bacia para RPC server-side (não filtrar série inteira no client)
+- [x] Push período + bacia (Field/Well) ou campos (Installation) para RPC server-side
 - [x] Debounce 400ms via `useDebouncedFetch`
 - [x] Loading: `<BarrelLoading>` no init; `<ChartSection loading>` inline durante refetch
-- [x] Filtros: `<MultiSelectFilter>` (Bacia) + `<SearchableMultiSelect>` (Campo) com counter `(N/total)`
-- [x] Empty state amigável (tabela e charts) quando filtros sem dados
-- [x] Identidade visual: `#FF5000` first color, Arial, padrão `COMMON_LAYOUT` + `AXIS_LINE`
+- [x] Filtros: `<MultiSelectFilter>` (Bacia) + `<SearchableMultiSelect>` (Campo, Instalação, Poço) com counter `(N/total)`
+- [x] **`<SegmentedToggle>` (Field/Installation/Well) no topo dos filtros**, abaixo do "TBD" e acima da seção "Filtros"
+- [x] Empty state amigável (chart e tabela) quando filtros sem dados, e mensagem específica quando o ETL ainda não populou Installation/Well
+- [x] Identidade visual: `#FF5000` first color, Arial, padrão `COMMON_LAYOUT` + `AXIS_LINE`, pill desliza laranja
 - [x] pt-BR consistente (labels, hovertemplate, números via `Intl.NumberFormat("pt-BR")`)
 - [x] Visibility guard: `useModuleVisibilityGuard("anp-cdp-diaria")`
 
@@ -102,32 +151,34 @@ Tabela: `public.anp_cdp_diaria` (~16.5k linhas iniciais; cresce ~94/dia × 1 dia
 
 1. **`npx tsc --noEmit` clean** — passou (zero erros).
 2. **`npx eslint src/app/(dashboard)/anp-cdp-diaria` clean** — passou (zero warnings).
-3. **Smoke test em dev server**: filtros populam (94 campos, 8 bacias), charts renderizam, slider de datas funciona.
-4. **Self-QA estática**: comparado com `/anp-glp` (granularidade temporal), `/anp-lpc` (slider de datas), `/anp-precos-distribuicao` (export modal Tier 2).
-5. **Sub-PRD (este arquivo)** atualizado quando ganhar nova RPC/coluna/chart.
+3. **Smoke test em dev server**: toggle alterna entre Field/Installation/Well, filtros do nível populam, charts e tabela renderizam (ou empty state coerente quando Installation/Well vazios pré-ETL).
+4. **Self-QA estática**: comparado com `/anp-glp` (granularidade temporal), `/anp-lpc` (slider de datas), `/anp-precos-distribuicao` (export modal Tier 2), `/sales-volumes` (uso do `SegmentedToggle` para View Mode).
+5. **Sub-PRD (este arquivo)** atualizado.
 
 ## Dependências cross-departamentais
 
-- **Schema/RPCs (`worker_supabase`)**: criou `anp_cdp_diaria` + 2 RPCs + RLS + entrada em `module_visibility`. Consumimos read-only via anon authenticated.
-- **Pipeline ETL (`worker_etl-pipelines`)**: `scripts/extractors/anp_cdp_powerbi.py` + workflow `etl_anp_cdp_diaria.yml` (3×/dia). Tabela é populada e mantida por eles.
-- **Admin (`worker_dash-admin`)**: slug `anp-cdp-diaria` em `module_visibility` (default visível); precisa de upload de imagem de home + toggle no `/admin-panel` (memória do CEO: TODO módulo novo precisa disso).
+- **Schema/RPCs (`worker_supabase`)**: criou `anp_cdp_diaria` + 2 RPCs originais (Phase 3) + migration `20260508120001_anp_cdp_diaria_levels.sql` adicionando `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco` + 4 RPCs novas + RLS.
+- **Pipeline ETL (`worker_etl-pipelines`)**: extrator estendido para processar páginas 5 e 6 do Power BI; workflow já roda 3×/dia. Tabelas Installation/Well começam vazias até primeiro pull pós-deploy.
+- **Admin (`worker_dash-admin`)**: slug `anp-cdp-diaria` em `module_visibility` (default visível) — sem mudança nesta tarefa.
 
 ## Anti-padrões / decisões técnicas
 
-- **Sem RPC dedicada `get_anp_cdp_diaria_export_count`**: para a primeira versão usamos heurística (~50 bytes/linha × `rpcGetAnpCdpDiariaSerie(...).length`). TODO: virar RPC se export pesado virar gargalo.
-- **Filtro de Campo não é empurrado pra RPC do chart**: queremos buscar todos os campos no período/bacia para que a Top-N (defaults) seja estável — só o slider de período e o filtro de bacia disparam refetch debounced. Filtro de campo é client-side puro.
-- **Sem `MultiSelectFilter` para Campo**: 94 opções → list muito longa; `SearchableMultiSelect` (search + virtual list) é mais usável.
-- **Sem `useMemo` da tabela com `useExportSize`**: `countFetcher` é uma função sem cache — chamada custa um round-trip de RPC. Aceitável em export modal (low frequency).
-- **Tabela mostra apenas top 500 linhas**: visualização de auditoria/spot-check, não é UI de download. Para o dump completo, usar Export.
+- **Sem RPC dedicada `get_anp_cdp_diaria_*_export_count`**: para a primeira versão usamos heurística (refetch + length) por nível. TODO: virar RPC se export pesado virar gargalo.
+- **Filtro de "dimensão" não é empurrado pra RPC do chart no nível Field e Well**: queremos buscar todos os campos/poços no período/bacia para que a Top-N (defaults) seja estável — só o slider de período e o filtro de bacia disparam refetch debounced. Filtro de dimensão é client-side.
+- **No nível Installation, push de campos para RPC**: como instalação não pertence a uma bacia explícita e o universo de instalações pode ser denso, o filtro de campos é empurrado server-side para reduzir payload. Filtro de instalação é client-side.
+- **Reset de filtros ao trocar nível**: vocabulários diferentes (bacia só existe em Field/Well, instalação só em Installation, poço só em Well) — manter seleções antigas após troca causaria filtros vazios silenciosos.
+- **Linha unificada (`UnifiedRow`) para chart/table**: cada nível projeta seu shape específico para `{ data, campo, bacia, dimension, ... }` antes de alimentar `pickTopDimensions` e `buildSerieChart`, mantendo o downstream level-agnostic.
 
 ## Performance
 
-- **`anp_cdp_diaria` é pequena (~16.5k inicial)** — fetch sem filtros traz tudo (~3MB descomprimido, gzip ~1MB).
-- **Crescimento ~94 linhas/dia**: em 2 anos teremos ~70k linhas — ainda confortável para fetch full.
-- **Top 10 client-side via `useMemo`** — sem refetch ao mudar seleção de campos.
-- **Debounce 400ms** no fetch ao mudar slider de datas ou checkbox de bacia.
-- **Paginação PostgREST**: `rpcGetAnpCdpDiariaSerie` usa `.range(offset, offset+999)` em loop até esgotar.
+- **Field**: `anp_cdp_diaria` é pequena (~16.5k inicial); fetch sem filtros traz tudo (~3MB descomprimido).
+- **Installation**: tamanho similar a Field × ~N instalações por campo; primeiros runs mostrarão a magnitude real.
+- **Well**: nível mais profundo — pode crescer rápido (centenas de poços × dia). Fetch de série pode pular de "wide" para "narrow filter required" se passar de ~100k linhas. TODO: monitorar e adicionar filtro obrigatório de período se necessário.
+- **Top 10 client-side via `useMemo`** — sem refetch ao mudar seleção de campos/instalações/poços.
+- **Debounce 400ms** no fetch ao mudar slider de datas ou filtro server-side.
+- **Paginação PostgREST**: cada wrapper usa `.range(offset, offset+999)` em loop até esgotar.
 
 ## Histórico
 
-- `2026-05-08` — Implementação inicial (commit pendente — coordenado com `worker_etl-pipelines` em paralelo).
+- `2026-05-08` — Implementação inicial (Field-only).
+- `2026-05-08` — **Adicionada granularidade Installation e Well via `SegmentedToggle`**. 4 RPC wrappers novos, 2 chaves novas em export heuristics, sub-PRD atualizado. Migration `20260508120001_anp_cdp_diaria_levels.sql` aplicada via supabase_deploy.yml.

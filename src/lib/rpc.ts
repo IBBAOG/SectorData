@@ -1866,6 +1866,156 @@ export async function rpcGetAnpCdpDiariaSerie(
   return allRows;
 }
 
+// ─── MODULE: ANP CDP Diária — Installation level (`anp_cdp_diaria_instalacao`) ─
+//
+// Page 5 of the ANP Power BI feed. Same daily cadence as the Field-level
+// dataset, broken down one level deeper: produção by `(data, campo, instalacao)`.
+// Migration: `20260508120001_anp_cdp_diaria_levels.sql`.
+
+export type AnpCdpDiariaInstalacaoFiltros = {
+  campos: string[];
+  instalacoes: string[];
+  data_min: string | null;
+  data_max: string | null;
+};
+
+export async function rpcGetAnpCdpDiariaInstalacaoFiltros(
+  supabase: SupabaseClient,
+): Promise<AnpCdpDiariaInstalacaoFiltros> {
+  try {
+    const { data, error } = await supabase.rpc("get_anp_cdp_diaria_instalacao_filtros");
+    if (error) throw error;
+    const d = (data ?? {}) as Partial<AnpCdpDiariaInstalacaoFiltros>;
+    return {
+      campos:      d.campos      ?? [],
+      instalacoes: d.instalacoes ?? [],
+      data_min:    d.data_min    ?? null,
+      data_max:    d.data_max    ?? null,
+    };
+  } catch (e) {
+    console.error("get_anp_cdp_diaria_instalacao_filtros failed", e);
+    return { campos: [], instalacoes: [], data_min: null, data_max: null };
+  }
+}
+
+export type AnpCdpDiariaInstalacaoPonto = {
+  data: string;
+  campo: string;
+  instalacao: string;
+  petroleo_bbl_dia: number | null;
+  gas_mm3_dia: number | null;
+};
+
+export async function rpcGetAnpCdpDiariaInstalacaoSerie(
+  supabase: SupabaseClient,
+  params?: {
+    campos?: string[] | null;
+    instalacoes?: string[] | null;
+    dataInicio?: string | null;
+    dataFim?: string | null;
+  },
+): Promise<AnpCdpDiariaInstalacaoPonto[]> {
+  // Daily × ~94 campos × ~N instalacoes per campo × ~365 days — paginate.
+  const PAGE = 1000;
+  let offset = 0;
+  const allRows: AnpCdpDiariaInstalacaoPonto[] = [];
+  const rpcParams = {
+    p_campos:      params?.campos      ?? null,
+    p_instalacoes: params?.instalacoes ?? null,
+    p_data_inicio: params?.dataInicio  ?? null,
+    p_data_fim:    params?.dataFim     ?? null,
+  };
+  while (true) {
+    const { data, error } = await supabase
+      .rpc("get_anp_cdp_diaria_instalacao_serie", rpcParams)
+      .range(offset, offset + PAGE - 1);
+    if (error) { console.error("get_anp_cdp_diaria_instalacao_serie failed", error); break; }
+    const rows = (data ?? []) as AnpCdpDiariaInstalacaoPonto[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
+  }
+  return allRows;
+}
+
+// ─── MODULE: ANP CDP Diária — Well level (`anp_cdp_diaria_poco`) ─────────────
+//
+// Page 6 of the ANP Power BI feed. Deepest granularity: `(data, campo, bacia, poco)`.
+// Migration: `20260508120001_anp_cdp_diaria_levels.sql`.
+
+export type AnpCdpDiariaPocoFiltros = {
+  campos: string[];
+  bacias: string[];
+  pocos: string[];
+  data_min: string | null;
+  data_max: string | null;
+};
+
+export async function rpcGetAnpCdpDiariaPocoFiltros(
+  supabase: SupabaseClient,
+): Promise<AnpCdpDiariaPocoFiltros> {
+  try {
+    const { data, error } = await supabase.rpc("get_anp_cdp_diaria_poco_filtros");
+    if (error) throw error;
+    const d = (data ?? {}) as Partial<AnpCdpDiariaPocoFiltros>;
+    return {
+      campos:   d.campos   ?? [],
+      bacias:   d.bacias   ?? [],
+      pocos:    d.pocos    ?? [],
+      data_min: d.data_min ?? null,
+      data_max: d.data_max ?? null,
+    };
+  } catch (e) {
+    console.error("get_anp_cdp_diaria_poco_filtros failed", e);
+    return { campos: [], bacias: [], pocos: [], data_min: null, data_max: null };
+  }
+}
+
+export type AnpCdpDiariaPocoPonto = {
+  data: string;
+  campo: string;
+  bacia: string;
+  poco: string;
+  petroleo_bbl_dia: number | null;
+  gas_mm3_dia: number | null;
+};
+
+export async function rpcGetAnpCdpDiariaPocoSerie(
+  supabase: SupabaseClient,
+  params?: {
+    campos?: string[] | null;
+    bacias?: string[] | null;
+    pocos?: string[] | null;
+    dataInicio?: string | null;
+    dataFim?: string | null;
+  },
+): Promise<AnpCdpDiariaPocoPonto[]> {
+  // Deepest level — many more rows per (campo, day). Paginate aggressively.
+  const PAGE = 1000;
+  let offset = 0;
+  const allRows: AnpCdpDiariaPocoPonto[] = [];
+  const rpcParams = {
+    p_campos:      params?.campos     ?? null,
+    p_bacias:      params?.bacias     ?? null,
+    p_pocos:       params?.pocos      ?? null,
+    p_data_inicio: params?.dataInicio ?? null,
+    p_data_fim:    params?.dataFim    ?? null,
+  };
+  while (true) {
+    const { data, error } = await supabase
+      .rpc("get_anp_cdp_diaria_poco_serie", rpcParams)
+      .range(offset, offset + PAGE - 1);
+    if (error) { console.error("get_anp_cdp_diaria_poco_serie failed", error); break; }
+    const rows = (data ?? []) as AnpCdpDiariaPocoPonto[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
+  }
+  return allRows;
+}
+
 // ─── MODULE: Export size calculator RPCs (Fase B) ────────────────────────────
 //
 // Each function below mirrors the filter signature of its "sister" serie RPC

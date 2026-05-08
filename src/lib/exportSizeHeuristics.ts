@@ -31,6 +31,10 @@ export const AVG_BYTES_PER_ROW: Record<string, { xlsx: number; csv: number }> = 
   anp_cdp_producao: { xlsx: 200, csv: 100 },
   // ANP CDP Diária — daily by campo×bacia (5 cols: data, campo, bacia, petroleo, gas)
   anp_cdp_diaria: { xlsx: 180, csv: 90 },
+  // ANP CDP Diária por instalação — adds installation column (5 cols: data, campo, instalacao, petroleo, gas)
+  anp_cdp_diaria_instalacao: { xlsx: 200, csv: 100 },
+  // ANP CDP Diária por poço — deepest level (6 cols: data, campo, bacia, poco, petroleo, gas)
+  anp_cdp_diaria_poco: { xlsx: 220, csv: 110 },
   // ANP LPC — city + state + product + 4 numeric cols
   anp_lpc: { xlsx: 240, csv: 120 },
   // ANP Distribution Prices — local (state/city) + product + 3 numeric cols + unit
