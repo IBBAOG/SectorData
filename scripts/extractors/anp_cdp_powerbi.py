@@ -181,10 +181,11 @@ def _select_instalacao() -> list:
 
 def _entities_poco() -> list:
     return [
-        {"Name": "d", "Entity": "Datas",                          "Type": 0},
-        {"Name": "v", "Entity": "v_poco_instalacao_sigep_ultimo", "Type": 0},
-        {"Name": "m", "Entity": "Medidas",                        "Type": 0},
-        {"Name": "c", "Entity": "Correção",                       "Type": 0},
+        {"Name": "d",  "Entity": "Datas",                          "Type": 0},
+        {"Name": "v",  "Entity": "v_poco_instalacao_sigep_ultimo", "Type": 0},
+        {"Name": "v1", "Entity": "v_instalacoes_final",            "Type": 0},  # auto-JOIN para acessar Instalação
+        {"Name": "m",  "Entity": "Medidas",                        "Type": 0},
+        {"Name": "c",  "Entity": "Correção",                       "Type": 0},
     ]
 
 
@@ -195,7 +196,7 @@ def _select_poco() -> list:
         {**_column("v", "Campo (Poço)"),     "Name": "v_poco_instalacao_sigep_ultimo.NOME CAMPO"},
         {**_column("v", "BACIA"),           "Name": "v_poco_instalacao_sigep_ultimo.BACIA"},
         {**_column("v", "NOME POÇO ANP"),   "Name": "v_poco_instalacao_sigep_ultimo.NOME POÇO ANP"},
-        {**_column("v", "Instalação"),      "Name": "v_poco_instalacao_sigep_ultimo.Instalação"},
+        {**_column("v1", "Instalação"),     "Name": "v_instalacoes_final.Instalação"},   # v1, nao v
         {**_measure("m", "Petróleo"),       "Name": "Medidas.Petroleo"},
         {**_measure("m", "Gás Mm3"),        "Name": "Medidas.Gás"},
     ]
