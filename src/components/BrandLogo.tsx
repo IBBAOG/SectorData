@@ -34,7 +34,7 @@ interface BrandLogoProps {
 // target heights so next/image gets numeric width/height; CSS keeps the image
 // "contained" inside any narrower parent.
 const VARIANTS: Record<Variant, { src: string; w: number; h: number; priority: boolean }> = {
-  navbar:  { src: "/logo-navbar.png", w: 114, h: 36, priority: true },
+  navbar:  { src: "/blood-drop-navbar.png", w: 36, h: 36, priority: true },
   auth:    { src: "/logo.png",        w: 203, h: 64, priority: true },
   sidebar: { src: "/logo.png",        w: 286, h: 90, priority: false },
 };
