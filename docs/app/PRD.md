@@ -128,6 +128,7 @@ Para qualquer mudança em código de um dashboard específico, delegue ao agente
 | `/anp-desembaracos` | `worker_dash-anp-desembaracos` | [anp-desembaracos.md](anp-desembaracos.md) |
 | `/anp-painel-importacoes` | `worker_dash-anp-painel-importacoes` | [anp-painel-importacoes.md](anp-painel-importacoes.md) |
 | `/anp-precos-distribuicao` | `worker_dash-anp-precos-distribuicao` | [anp-precos-distribuicao.md](anp-precos-distribuicao.md) |
+| `/anp-cdp-diaria` | `worker_dash-anp-cdp-diaria` | [anp-cdp-diaria.md](anp-cdp-diaria.md) |
 
 ### Dashboards adicionados na Fase 3 (categoria NavBar / tabela alvo)
 
@@ -144,6 +145,7 @@ Para qualquer mudança em código de um dashboard específico, delegue ao agente
 | `anp-desembaracos` | Fuel Distribution | `anp_desembaracos` (~6k) |
 | `anp-painel-importacoes` | Fuel Distribution | `anp_painel_imp_dist` (~1.4k) |
 | `anp-precos-distribuicao` | Fuel Distribution | `anp_precos_distribuicao` (volume a crescer) |
+| `anp-cdp-diaria` | Oil & Gas | `anp_cdp_diaria` (~16.5k iniciais; histórico desde 2025-11-09) |
 
 ## Stack
 

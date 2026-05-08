@@ -59,6 +59,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/anp-desembaracos` | Fuel Distribution | `get_anp_desembaracos_serie`, `get_anp_desembaracos_top_paises`, `get_anp_desembaracos_filtros` | Yes |
 | `/anp-painel-importacoes` | Fuel Distribution | `get_anp_painel_imp_serie`, `get_anp_painel_imp_top_dist`, `get_anp_painel_imp_filtros` | Yes |
 | `/anp-precos-distribuicao` | Fuel Distribution | `get_anp_precos_distribuicao_serie`, `get_anp_precos_distribuicao_top_distribuidoras`, `get_anp_precos_distribuicao_filtros` | Yes |
+| `/anp-cdp-diaria` | Oil & Gas | `get_anp_cdp_diaria_filtros`, `get_anp_cdp_diaria_serie` | Yes |
 
 `template-module/` is a starter template, not a deployed module. RPC wrappers: [`src/lib/rpc.ts`](src/lib/rpc.ts) (by module) and [`src/lib/profileRpc.ts`](src/lib/profileRpc.ts).
 
@@ -70,7 +71,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 dashboard_projeto/
 ├── .claude/                       # local-only (gitignored) — agent definitions
 │   └── agents/                    # worker_* agents per department/dashboard
-├── .github/workflows/             # 15 workflows (ETL scrapers + supabase deploy)
+├── .github/workflows/             # 16 workflows (ETL scrapers + supabase deploy)
 ├── docs/                          # internal collaboration docs
 │   ├── master.md                  # PRD mestre — departments, contracts, conventions
 │   ├── app/                       # APP department + per-dashboard sub-PRDs
@@ -176,12 +177,13 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | `sindicom` | id | data_referencia, produto, regiao, volume_m3 |
 | `anp_cdp_producao` | id | poco, campo, bacia, operador, data_producao, prod_oleo_bbl, prod_gas_mm3, prod_agua_m3, tipo_poco, ambiente |
 | `anp_precos_distribuicao` | id | data_referencia, distribuidora, produto, uf, preco_distribuicao, unidade |
+| `anp_cdp_diaria` | (data, campo, bacia) | petroleo_bbl_dia, gas_mm3_dia; histórico desde 2025-11-09 |
 
 **Materialized views:** `mv_ms_serie`, `mv_ms_serie_fast` — pre-aggregated monthly sales, refreshed by `classificar_agentes()`.
 
 > **Tech debt:** `price_bands`, `profiles`, `module_visibility` were created via DDL in [`sql/`](sql/) applied directly to the Supabase Dashboard rather than versioned migrations (`create_price_bands.sql`, `create_profiles_and_visibility.sql`, `create_user_management.sql`). See [`docs/supabase/PRD.md`](docs/supabase/PRD.md) for conversion plan.
 
-## Data Pipelines (15 workflows + 1 external)
+## Data Pipelines (16 workflows + 1 external)
 
 | # | Workflow | Schedule | Script(s) | Target |
 |---|----------|----------|-----------|--------|
@@ -200,6 +202,7 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | 13 | `manual_dg_margins.yml` | Weekly Mon | `manual/dg_margins_upload.py` | `d_g_margins` (manual Excel) |
 | 14 | `supabase_deploy.yml` | On push to main | `supabase db push` | migrations |
 | 15 | `etl_anp_precos_distribuicao.yml` | Monthly 5th 14:00 UTC + Weekly Tue 14:30 UTC | `pipelines/anp/precos_distribuicao_sync.py` | `anp_precos_distribuicao` |
+| 16 | `etl_anp_cdp_diaria.yml` | 3×/day `0 10,15,20 * * *` UTC | `scripts/extractors/anp_cdp_powerbi.py` (Power BI public API, no Selenium) | `anp_cdp_diaria` |
 | ext | News Hunter scanner | Every ~5min via cron-job.org | `news_hunter_service.py --once` (in repo `IBBAOG/news-hunter-scanner`) | `news_articles` |
 
 **News Hunter scanner** lives in a separate repo. Uses `SUPABASE_SERVICE_KEY`. Keywords from UNION of all users' rows in `news_hunter_keywords`. Frontend polls `news_articles` every 60s incrementally (`found_at` watermark).
