@@ -42,6 +42,7 @@ const NAV_ENTRIES: NavEntry[] = [
     items: [
       { href: "/anp-cdp", label: "ANP CDP Production" },
       { href: "/anp-cdp-diaria", label: "ANP CDP Diária" },
+      { href: "/anp-cdp-bsw", label: "ANP CDP — BSW by Well" },
     ],
   },
   {
