@@ -74,20 +74,20 @@ const NAV_ENTRIES: NavEntry[] = [
             ],
           },
           {
-            label: "Imports",
-            items: [
-              { href: "/anp-daie",               label: "Imports and Exports" },
-              { href: "/anp-desembaracos",        label: "Customs Clearances" },
-              { href: "/anp-painel-importacoes",  label: "Imports Panel" },
-            ],
-          },
-          {
             label: "Volumes",
             items: [
               { href: "/sales-volumes", label: "Sales Volumes — ANP" },
               { href: "/anp-glp",       label: "LPG" },
             ],
           },
+        ],
+      },
+      {
+        heading: "ANP imports",
+        items: [
+          { href: "/anp-daie",               label: "Imports and Exports" },
+          { href: "/anp-desembaracos",        label: "Customs Clearances" },
+          { href: "/anp-painel-importacoes",  label: "Imports Panel" },
         ],
       },
       {
