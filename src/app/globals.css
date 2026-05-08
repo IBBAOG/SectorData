@@ -500,6 +500,10 @@ body {
   border-right: none;
 }
 
+#main-navbar .nav-megamenu-heading--hidden {
+  visibility: hidden;
+}
+
 #main-navbar .nav-megamenu-col:last-child {
   border-right: none;
 }

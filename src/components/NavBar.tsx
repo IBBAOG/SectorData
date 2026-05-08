@@ -273,7 +273,7 @@ export default function NavBar() {
                     <div className="nav-module-dropdown nav-megamenu">
                       {visibleGroups.map((group, i) => (
                         <div key={`${group.heading}-${i}`} className={`nav-megamenu-col${group.noBorderRight ? " nav-megamenu-col--no-sep" : ""}`}>
-                          {!group.hideHeading && <div className="nav-megamenu-heading">{group.heading}</div>}
+                          <div className={`nav-megamenu-heading${group.hideHeading ? " nav-megamenu-heading--hidden" : ""}`}>{group.heading}</div>
                           {group.subGroups ? (
                             group.subGroups.map((sg) => (
                               <div key={sg.label} className="nav-megamenu-subgroup">
