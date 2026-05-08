@@ -119,21 +119,26 @@ function buildFieldAverageChart(
   }
 
   // One trace per campo (volume-weighted average across wells at each
-  // month-since-first-production). lines+markers, low-volume scatter (not gl).
+  // calendar month). X axis is % of VOIP recovered — cumulative oil divided
+  // by the field's VOIP (Volume Original In Place, from anp_voip). This is
+  // a more physical/geological X than raw time and lets fields of very
+  // different sizes be compared on the same depletion curve.
+  // lines+markers, low-volume scatter (not gl).
   const traces: PlotData[] = selectedCampos.map((campo, i) => {
     const subset = points
       .filter((p) => p.campo === campo)
-      .sort((a, b) => a.mes_desde_t0 - b.mes_desde_t0);
+      .sort((a, b) => a.pct_voip - b.pct_voip);
     const color = PALETTE[i % PALETTE.length];
     return {
       type: "scatter",
       mode: "lines+markers",
       name: campo,
-      x: subset.map((p) => p.mes_desde_t0),
+      x: subset.map((p) => p.pct_voip),
       y: subset.map((p) => p.bsw),
       customdata: subset.map(
         (p) =>
-          [p.n_pocos, p.volume_total, p.ref_ano, p.ref_mes] as [
+          [p.n_pocos, p.volume_total, p.ref_ano, p.ref_mes, p.cumulative_oil_bbl] as [
+            number,
             number,
             number,
             number,
@@ -145,10 +150,11 @@ function buildFieldAverageChart(
       hovertemplate:
         "<b>" + campo + "</b><br>" +
         "Reference month: %{customdata[2]}-%{customdata[3]:02d}<br>" +
-        "Months since start: %{x}<br>" +
-        "BSW (vol-weighted): %{y:.1%}<br>" +
-        "Wells contributing: %{customdata[0]}<br>" +
-        "Total volume: %{customdata[1]:,.0f} bbl/d" +
+        "VOIP recovered: %{x:.1%}<br>" +
+        "BSW: %{y:.1%}<br>" +
+        "Cumulative oil: %{customdata[4]:,.0f} bbl<br>" +
+        "Wells active: %{customdata[0]}<br>" +
+        "Daily volume: %{customdata[1]:,.0f} bbl/d" +
         "<extra></extra>",
     } as unknown as PlotData;
   });
@@ -161,7 +167,8 @@ function buildFieldAverageChart(
       margin: { t: 30, b: 60, l: 70, r: 30 },
       xaxis: {
         ...AXIS_LINE,
-        title: { text: "Months since first production" },
+        title: { text: "% of VOIP recovered" },
+        tickformat: ",.1%",
         rangemode: "tozero",
       },
       yaxis: {
@@ -447,7 +454,7 @@ export default function AnpCdpBswPage() {
                         ? selectedCampos.length === 1
                           ? `BSW evolution per well — ${selectedCampos[0]}`
                           : "BSW evolution per well"
-                        : "BSW evolution — field average (volume-weighted)"
+                        : "BSW evolution — % of VOIP recovered (volume-weighted)"
                     }
                     loading={chartLoading}
                     height={460}

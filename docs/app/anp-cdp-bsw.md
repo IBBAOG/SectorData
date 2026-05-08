@@ -17,18 +17,19 @@ RPC wrappers: `rpcGetAnpCdpBswCampos`, `rpcGetAnpCdpBswScatter`, `rpcGetAnpCdpBs
 
 ## Product
 
-Plots **BSW (water cut)** versus **months since first production**, with two view modes selectable from a pill toggle above the chart:
+Plots **BSW (water cut)** versus a depletion / age proxy that depends on the view mode:
 
-| View | Granularity | RPC | Renderer | Trace style |
-|---|---|---|---|---|
-| **Per well** (default) | one point per (well × month) | `get_anp_cdp_bsw_scatter` | `scattergl` (WebGL) | `mode: "markers"`, size 4, opacity 0.55 |
-| **Field average** | one point per (field × month-since-t0), volume-weighted across wells | `get_anp_cdp_bsw_field_aggregate` | `scatter` (SVG, low volume) | `mode: "lines+markers"`, marker size 6 |
+| View | X axis | Granularity | RPC | Renderer | Trace style |
+|---|---|---|---|---|---|
+| **Per well** (default) | months since first production for that well | one point per (well × month) | `get_anp_cdp_bsw_scatter` | `scattergl` (WebGL) | `mode: "markers"`, size 4, opacity 0.55 |
+| **Field average** | **% of VOIP recovered** for that field (cumulative oil ÷ VOIP) | one point per (field × calendar month), volume-weighted across wells | `get_anp_cdp_bsw_field_aggregate` | `scatter` (SVG, low volume) | `mode: "lines+markers"`, marker size 6 |
 
 Each selected field is rendered as its own colored trace using the shared 16-color `PALETTE`, in selection order. Colors are stable while a session is open (the chart-trace color matches the chip color in the sidebar).
 
 - **Y axis**: `BSW = agua_bbl_dia / (petroleo_bbl_dia + agua_bbl_dia)` (range 0–1, formatted as percentage on hover).
-- **X axis**: months since the first month where `petroleo_bbl_dia > 0` for that well (linear, `rangemode: "tozero"`).
-- **Single filter**: searchable multi-select of field (`campo`), in a left sidebar.
+- **X axis (Per-well mode)**: months since the first month where `petroleo_bbl_dia > 0` for that well (linear, `rangemode: "tozero"`).
+- **X axis (Field-average mode)**: `pct_voip = cumulative(petroleo_bbl_dia × dias_do_mês) / voip_bbl_atual`, formatted with `tickformat: ",.1%"`. This is a more physical/geological X than raw time and lets fields of very different sizes share a comparable depletion curve. Plotly auto-ranges the axis — most fields stay in `[0, 1]` but a value can occasionally exceed 100% if the published VOIP is conservative; the auto-range absorbs that without clipping.
+- **Single filter**: searchable multi-select of field (`campo`), in a left sidebar. **Fields without a corresponding row in `anp_voip` are hidden from the dropdown** (the field-aggregate RPC inner-joins against `anp_voip` and `get_anp_cdp_bsw_campos` mirrors that filter).
 - **No export, no period slider, no additional filters** — by design.
 
 When no field is selected, the chart renders an instructional empty state ("Select one or more fields to plot BSW evolution.").
@@ -36,7 +37,7 @@ When no field is selected, the chart renders an instructional empty state ("Sele
 ### Tooltips
 
 - **Per well**: well code, reference month (`ano-mm`), BSW, and months-since-start.
-- **Field average**: field name, **reference month** (`ref_ano-ref_mes`, the most recent calendar month among contributors to that aggregate point — argmax of `ano*12+mes`), months-since-start, volume-weighted BSW, wells contributing, and total volume in bbl/d.
+- **Field average**: field name, **reference month** (`ref_ano-ref_mes`, the most recent calendar month among contributors to that aggregate point — argmax of `ano*12+mes`), VOIP recovered (`pct_voip`), volume-weighted BSW, cumulative oil in bbl, wells active, and daily volume in bbl/d.
 
 ## Layout
 
@@ -61,9 +62,9 @@ The "Selected fields" section in the sidebar shows colored chips matching the ch
 
 | RPC | Type | Purpose |
 |---|---|---|
-| `get_anp_cdp_bsw_campos()` | own (sidebar dropdown) | Returns an alphabetically ordered `text[]` of offshore field names (`local IN ('PreSal','PosSal')`). Source for the sidebar's field multi-select — replaces the previous reuse of `get_anp_cdp_filtros`, which mixed onshore and offshore fields. |
+| `get_anp_cdp_bsw_campos()` | own (sidebar dropdown) | Returns an alphabetically ordered `text[]` of offshore field names (`local IN ('PreSal','PosSal')`) **that also have a published VOIP in `anp_voip`**. Source for the sidebar's field multi-select — replaces the previous reuse of `get_anp_cdp_filtros`, which mixed onshore and offshore fields. |
 | `get_anp_cdp_bsw_scatter(p_campos text[])` | own (per-well view) | Returns one row per (well × month) for the filtered fields, with server-computed `bsw` and `mes_desde_t0`. Filters internally to `local IN ('PreSal','PosSal')` (defense-in-depth). Capped at 500k points server-side. |
-| `get_anp_cdp_bsw_field_aggregate(p_campos text[])` | own (field-average view) | Returns one row per (field × month-since-t0) with volume-weighted BSW, well count, total volume, and the reference (`ref_ano`, `ref_mes`) — the (year, month) with the maximum `ano*12 + mes` among the wells contributing to that aggregate point (i.e., the most recent calendar month any contributor had data for that month-since-t0). Filters internally to `local IN ('PreSal','PosSal')`. Low-volume output (one row per month per field). |
+| `get_anp_cdp_bsw_field_aggregate(p_campos text[])` | own (field-average view) | Returns one row per (field × calendar month) with volume-weighted BSW, well count, daily volume, **cumulative oil produced** (in bbl), **% of VOIP recovered** (`cumulative_oil_bbl / voip_bbl`), and the reference (`ref_ano`, `ref_mes`). Inner-joins against `anp_voip` so fields without a published VOIP are silently dropped. Filters internally to `local IN ('PreSal','PosSal')`. Low-volume output (one row per calendar month per field). |
 
 ### Output contracts
 
@@ -79,12 +80,13 @@ type AnpCdpBswPoint = {
 
 type AnpCdpBswFieldPoint = {
   campo: string;
-  mes_desde_t0: number;
-  bsw: number;           // 0..1 (volume-weighted across wells)
-  n_pocos: number;       // wells contributing at this month-since-t0
-  volume_total: number;  // total liquid (oil + water) volume — weight used
-  ref_ano: number;       // reference year (argmax of ano*12+mes among contributors)
-  ref_mes: number;       // reference month (argmax of ano*12+mes among contributors)
+  pct_voip: number;            // cumulative_oil_bbl / voip_bbl, fraction 0..1
+  bsw: number;                 // 0..1 (volume-weighted across wells)
+  n_pocos: number;             // wells contributing at this reference month
+  volume_total: number;        // total liquid (oil + water) volume — weight used
+  cumulative_oil_bbl: number;  // cumulative oil up to ref_ano/ref_mes (bbl)
+  ref_ano: number;             // reference year (argmax of ano*12+mes among contributors)
+  ref_mes: number;             // reference month (argmax of ano*12+mes among contributors)
 };
 ```
 
@@ -95,8 +97,9 @@ The wrappers pass `{ p_campos: string[] }` and return `AnpCdpBswPoint[]` / `AnpC
 | Object | Volume | Populated by |
 |---|---|---|
 | `anp_cdp_producao` | ~1.8M rows | ETL `scripts/pipelines/anp/cdp/01_extract.py` (Selenium + ddddocr CAPTCHA) → `02_upload.py` |
+| `anp_voip` | ~hundreds of rows (one per field × year) | ETL `scripts/pipelines/anp/voip_sync.py` — pulls the yearly VOIP (Volume Original In Place) bulletin from ANP. The field-aggregate RPC joins to the **most recent** VOIP per field. |
 
-Schema columns relevant to this dashboard: `poco, campo, ano, mes, petroleo_bbl_dia, agua_bbl_dia`. Both RPCs compute BSW and `mes_desde_t0` server-side via window functions on `(poco)` ordered by `(ano, mes)`. The aggregate RPC additionally groups by `(campo, mes_desde_t0)` weighting BSW by `(petroleo_bbl_dia + agua_bbl_dia)`.
+Schema columns relevant to this dashboard: `poco, campo, ano, mes, petroleo_bbl_dia, agua_bbl_dia`. The per-well RPC computes BSW and `mes_desde_t0` server-side via window functions on `(poco)` ordered by `(ano, mes)`. The aggregate RPC groups by `(campo, ano, mes)` weighting BSW by `(petroleo_bbl_dia + agua_bbl_dia)`, accumulates oil as `petroleo_bbl_dia × dias_do_mês` over `(ano, mes)`, and divides by the latest `voip_bbl` from `anp_voip` to yield `pct_voip`.
 
 ## Filters available (UI)
 
@@ -123,8 +126,8 @@ Sidebar visual classes (`#sidebar`, `.sidebar-section-label`, `.sidebar-filter-s
 
 | Source | How it depends |
 |---|---|
-| `worker_supabase` | Owns the `get_anp_cdp_bsw_campos`, `get_anp_cdp_bsw_scatter` and `get_anp_cdp_bsw_field_aggregate` SQL functions + `module_visibility` row for `anp-cdp-bsw`. The aggregate function is delivered in migration `20260508000003_anp_cdp_bsw_aggregate.sql`; the offshore-only field list + internal `local IN ('PreSal','PosSal')` filter on the existing RPCs is delivered in `20260508000004_anp_cdp_bsw_offshore.sql`. |
-| ETL (`scripts/pipelines/anp/cdp/`) | Populates `anp_cdp_producao` monthly. Schema/columns must include `petroleo_bbl_dia`, `agua_bbl_dia`, and `local` (used to filter offshore fields). |
+| `worker_supabase` | Owns the `get_anp_cdp_bsw_campos`, `get_anp_cdp_bsw_scatter` and `get_anp_cdp_bsw_field_aggregate` SQL functions, the `anp_voip` table + RLS, and the `module_visibility` row for `anp-cdp-bsw`. The aggregate function was delivered in migration `20260508000003_anp_cdp_bsw_aggregate.sql`; the offshore-only field list + internal `local IN ('PreSal','PosSal')` filter on the existing RPCs is in `20260508000004_anp_cdp_bsw_offshore.sql`. The VOIP-based X-axis variant (`anp_voip` table + updated aggregate RPC + filtered `get_anp_cdp_bsw_campos`) is delivered alongside Frente B. |
+| ETL (`scripts/pipelines/anp/cdp/` and `scripts/pipelines/anp/voip_sync.py`) | Populates `anp_cdp_producao` monthly and `anp_voip` yearly. Schema/columns must include `petroleo_bbl_dia`, `agua_bbl_dia`, and `local` (used to filter offshore fields). The `voip_sync.py` pipeline (Frente A) parses ANP's annual VOIP bulletin and upserts into `anp_voip`. |
 | `worker_dash-admin` | Visibility toggle in `/admin-panel` + home image. |
 | Designer | Visual identity (Arial 12, brand orange `#FF5000`, axis line style, sidebar section/label classes). |
 
@@ -142,7 +145,8 @@ Sidebar visual classes (`#sidebar`, `.sidebar-section-label`, `.sidebar-filter-s
 - Calling `anp_cdp_producao` directly from the client. Always go through one of the two RPCs.
 - Multiplying `bsw` by 100 in the front-end — `tickformat: ",.0%"` already formats the 0..1 range as a percentage.
 - Adding an `ExportPanel` "for symmetry" with the rest of `/anp-*` — this dashboard intentionally has no export.
-- Adding a `PeriodSlider` — the X axis IS time-since-production, not calendar time, so a calendar period slider is meaningless here.
+- Adding a `PeriodSlider` — the X axis IS depletion (% VOIP recovered) or well-age (months since first production), never calendar time, so a calendar period slider is meaningless here.
+- Multiplying `pct_voip` by 100 in the front-end — `tickformat: ",.1%"` already formats the 0..1 range as a percentage on the axis, and `:.1%` does the same in the hovertemplate.
 - Re-fetching the filtros list on every render — it loads once on mount.
 - Re-using `MultiSelectFilter` for the field list — with hundreds of fields the horizontal grid becomes unusable; prefer `SearchableMultiSelect`.
 - Using `scattergl` for the field-average view — its volume is too low to justify WebGL, and lines render crisper in SVG.

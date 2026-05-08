@@ -1825,17 +1825,20 @@ export async function rpcGetAnpCdpBswScatter(
   }
 }
 
-// Field-aggregate variant: one point per (campo × mes_desde_t0) — volume-weighted
-// BSW averaged across all wells in the field at that month-since-first-production.
-// Used by the "Field average" view in /anp-cdp-bsw.
+// Field-aggregate variant: one point per (campo × calendar month) — volume-weighted
+// BSW averaged across all wells in the field, plotted against cumulative oil
+// recovered as a fraction of the field's VOIP (Volume Original In Place,
+// published yearly by ANP and stored in `anp_voip`). Used by the "Field
+// average" view in /anp-cdp-bsw.
 export type AnpCdpBswFieldPoint = {
   campo: string;
-  mes_desde_t0: number;
-  bsw: number;          // 0..1 (volume-weighted water cut across wells)
-  n_pocos: number;      // number of wells contributing at this month-since-t0
-  volume_total: number; // total liquid (oil + water) volume used as the weight
-  ref_ano: number;      // reference year (argmax of ano*12+mes among contributors)
-  ref_mes: number;      // reference month (argmax of ano*12+mes among contributors)
+  pct_voip: number;            // cumulative_oil_bbl / voip_bbl, fraction 0..1
+  bsw: number;                 // 0..1 (volume-weighted water cut across wells)
+  n_pocos: number;             // number of wells contributing at this reference month
+  volume_total: number;        // total liquid (oil + water) volume used as the weight
+  cumulative_oil_bbl: number;  // cumulative oil recovered up to ref_ano/ref_mes (bbl)
+  ref_ano: number;             // reference year (argmax of ano*12+mes among contributors)
+  ref_mes: number;             // reference month (argmax of ano*12+mes among contributors)
 };
 
 export async function rpcGetAnpCdpBswFieldAggregate(
