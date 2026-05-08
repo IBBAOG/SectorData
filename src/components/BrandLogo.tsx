@@ -33,14 +33,14 @@ interface BrandLogoProps {
 // Source PNG is 1243x392 (ratio 3.17). Widths below are computed from the
 // target heights so next/image gets numeric width/height; CSS keeps the image
 // "contained" inside any narrower parent.
-const VARIANTS: Record<Variant, { src: string; w: number; h: number; priority: boolean }> = {
-  navbar:  { src: "/blood-drop-navbar.png", w: 36, h: 36, priority: true },
+const VARIANTS: Record<Variant, { src: string; w: number; h: number; priority: boolean; extraStyle?: React.CSSProperties }> = {
+  navbar:  { src: "/blood-drop-navbar.png", w: 30, h: 30, priority: true, extraStyle: { opacity: 0.75 } },
   auth:    { src: "/logo.png",        w: 203, h: 64, priority: true },
   sidebar: { src: "/logo.png",        w: 286, h: 90, priority: false },
 };
 
 export default function BrandLogo({ variant, className }: BrandLogoProps) {
-  const { src, w, h, priority } = VARIANTS[variant];
+  const { src, w, h, priority, extraStyle } = VARIANTS[variant];
   return (
     <Image
       src={src}
@@ -49,7 +49,7 @@ export default function BrandLogo({ variant, className }: BrandLogoProps) {
       height={h}
       priority={priority}
       className={className}
-      style={{ height: h, width: "auto", maxWidth: "100%", objectFit: "contain" }}
+      style={{ height: h, width: "auto", maxWidth: "100%", objectFit: "contain", ...extraStyle }}
     />
   );
 }
