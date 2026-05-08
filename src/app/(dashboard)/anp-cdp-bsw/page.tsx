@@ -46,6 +46,13 @@ const LINE_STYLE_OPTIONS: { value: LineStyle; label: string }[] = [
 const plotlyMode = (style: LineStyle): "markers" | "lines+markers" =>
   style === "markers" ? "markers" : "lines+markers";
 
+// Maximum number of fields plottable simultaneously in "Field average" mode.
+// Beyond this, the legend/colors become hard to distinguish and the chart
+// loses its narrative value. PALETTE recycles after 16 entries (palette index
+// `i % PALETTE.length`), but allowing up to 20 selections keeps short bursts
+// of comparison usable while still capping at a sane number.
+const MAX_FIELDS_IN_FIELD_MODE = 20;
+
 // ── Chart builders ────────────────────────────────────────────────────────────
 
 function buildPerWellChart(
@@ -310,6 +317,8 @@ export default function AnpCdpBswPage() {
   // Mode-aware setters. In Per-well mode the field filter behaves as a
   // single-select: picking a 2nd field replaces the first, and switching
   // from Field-average → Per-well trims the selection to the first field.
+  // In Field-average mode the selection is capped at MAX_FIELDS_IN_FIELD_MODE
+  // (older selections are kept; new picks beyond the cap are dropped).
   const handleModeChange = (next: ViewMode) => {
     setViewMode(next);
     if (next === "well" && selectedCampos.length > 1) {
@@ -328,6 +337,12 @@ export default function AnpCdpBswPage() {
       // detectable (e.g. user used "Select all").
       const added = next.find((c) => !selectedCampos.includes(c));
       setSelectedCampos([added ?? next[next.length - 1]]);
+      return;
+    }
+    // Field-average mode: enforce the plot cap. If the user exceeds it (e.g.
+    // via "Select all"), keep the first MAX_FIELDS_IN_FIELD_MODE entries.
+    if (next.length > MAX_FIELDS_IN_FIELD_MODE) {
+      setSelectedCampos(next.slice(0, MAX_FIELDS_IN_FIELD_MODE));
       return;
     }
     setSelectedCampos(next);
@@ -400,7 +415,7 @@ export default function AnpCdpBswPage() {
                 }}>
                   {viewMode === "well"
                     ? "Single-select: each well gets its own color in the chart legend."
-                    : "Each field gets a chart color in selection order."}
+                    : `Each field gets a chart color in selection order (up to ${MAX_FIELDS_IN_FIELD_MODE}).`}
                 </div>
                 {viewMode === "well" && selectedCampos.length === 1 && uniqueWellCount > 0 && (
                   <div style={{
