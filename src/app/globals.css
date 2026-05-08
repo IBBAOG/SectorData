@@ -383,7 +383,7 @@ body {
   transition: opacity 0.15s;
 }
 
-#main-navbar .navbar-brand:hover img {
+#main-navbar .navbar-brand img:hover {
   opacity: 1 !important;
 }
 
