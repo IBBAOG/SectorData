@@ -1790,6 +1790,41 @@ export async function rpcGetAnpCdpFiltros(
   }
 }
 
+// ─── MODULE: ANP CDP — BSW by Well (/src/app/(dashboard)/anp-cdp-bsw/page.tsx)
+//
+// Scatter of BSW (water cut = agua_bbl_dia / (petroleo_bbl_dia + agua_bbl_dia))
+// vs months-since-first-production, point per (poco × month). The RPC
+// computes both the BSW ratio and the "months since first month with
+// petroleo_bbl_dia > 0" server-side over the ~1.8M-row anp_cdp_producao
+// table (server-side limit ~500k points). Reuses `get_anp_cdp_filtros` for
+// the field list (no separate filtros RPC needed).
+
+export type AnpCdpBswPoint = {
+  poco: string;
+  campo: string;
+  mes_desde_t0: number; // months since first month with petroleo>0 for this well
+  bsw: number;          // 0..1 (water cut)
+  ano: number;
+  mes: number;
+};
+
+export async function rpcGetAnpCdpBswScatter(
+  supabase: SupabaseClient,
+  campos: string[],
+): Promise<AnpCdpBswPoint[]> {
+  if (!campos || campos.length === 0) return [];
+  try {
+    const { data, error } = await supabase.rpc("get_anp_cdp_bsw_scatter", {
+      p_campos: campos,
+    });
+    if (error) throw error;
+    return (data ?? []) as AnpCdpBswPoint[];
+  } catch (e) {
+    console.error("get_anp_cdp_bsw_scatter failed", e);
+    return [];
+  }
+}
+
 // ─── MODULE: ANP CDP Diária (/src/app/(dashboard)/anp-cdp-diaria/page.tsx) ────
 //
 // Daily petroleum/gas production by `(data, campo, bacia)`. Sourced from the
