@@ -50,6 +50,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 |-------|-----------|---------------|--------|
 | `/anp-cdp` | Oil & Gas | `get_anp_cdp_poco_serie`, `get_anp_cdp_pocos_json`, `get_anp_cdp_filtros` | Yes |
 | `/anp-cdp-bsw` | Oil & Gas | `get_anp_cdp_bsw_scatter`, `get_anp_cdp_bsw_field_aggregate` (X axis: `pct_voip`), `get_anp_cdp_bsw_campos` | No |
+| `/anp-cdp-depletion` | Oil & Gas | `get_anp_cdp_depletion_campos`, `get_anp_cdp_depletion_scatter`, `get_anp_cdp_depletion_field_aggregate` | No |
 | `/anp-ppi` | Fuel Distribution | `get_anp_ppi_media_serie`, `get_anp_ppi_locais_serie`, `get_anp_ppi_filtros` | Yes |
 | `/anp-precos-produtores` | Fuel Distribution | `get_anp_precos_produtores_serie`, `get_anp_precos_produtores_filtros` | Yes |
 | `/anp-glp` | Fuel Distribution | `get_anp_glp_serie`, `get_anp_glp_filtros` | Yes |

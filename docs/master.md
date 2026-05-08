@@ -38,6 +38,7 @@ CEO (Eduardo)
      │   ├─ dash-admin                    (/home + /profile + /admin-panel)
      │   ├─ dash-anp-cdp                  (/anp-cdp — Oil & Gas)
      │   ├─ dash-anp-cdp-bsw             (/anp-cdp-bsw — Oil & Gas)
+     │   ├─ dash-anp-cdp-depletion       (/anp-cdp-depletion — Oil & Gas)
      │   ├─ dash-anp-ppi                  (/anp-ppi — Fuel Distribution)
      │   ├─ dash-anp-precos-produtores    (/anp-precos-produtores — Fuel Distribution)
      │   ├─ dash-anp-glp                  (/anp-glp — Fuel Distribution)
@@ -89,6 +90,7 @@ Cada um possui um módulo (ou bundle, no caso de admin). Cada um auto-documenta 
 | [`worker_dash-admin`](../.claude/agents/worker_dash-admin.md) | `/home` + `/profile` + `/admin-panel` | [`docs/app/admin.md`](app/admin.md) |
 | [`worker_dash-anp-cdp`](../.claude/agents/worker_dash-anp-cdp.md) | `/anp-cdp` | [`docs/app/anp-cdp.md`](app/anp-cdp.md) |
 | [`worker_dash-anp-cdp-bsw`](../.claude/agents/worker_dash-anp-cdp-bsw.md) | `/anp-cdp-bsw` (Oil & Gas) | [`docs/app/anp-cdp-bsw.md`](app/anp-cdp-bsw.md) |
+| [`worker_dash-anp-cdp-depletion`](../.claude/agents/worker_dash-anp-cdp-depletion.md) | `/anp-cdp-depletion` (Oil & Gas) | [`docs/app/anp-cdp-depletion.md`](app/anp-cdp-depletion.md) |
 | [`worker_dash-anp-ppi`](../.claude/agents/worker_dash-anp-ppi.md) | `/anp-ppi` | [`docs/app/anp-ppi.md`](app/anp-ppi.md) |
 | [`worker_dash-anp-precos-produtores`](../.claude/agents/worker_dash-anp-precos-produtores.md) | `/anp-precos-produtores` | [`docs/app/anp-precos-produtores.md`](app/anp-precos-produtores.md) |
 | [`worker_dash-anp-glp`](../.claude/agents/worker_dash-anp-glp.md) | `/anp-glp` | [`docs/app/anp-glp.md`](app/anp-glp.md) |
@@ -386,7 +388,7 @@ Workflow controlado pelo **Subgerente APP** (não pelo Gerente Geral). Ver detal
 ## Estado atual (snapshot)
 
 - 4 departamentos + 3 papéis transversais.
-- 22 dashboards ativos (8 originais + 11 adicionados na Fase 3 + 1 Admin Analytics + 1 ANP CDP Diária + 1 ANP CDP BSW).
+- 23 dashboards ativos (8 originais + 11 adicionados na Fase 3 + 1 Admin Analytics + 1 ANP CDP Diária + 1 ANP CDP BSW + 1 ANP CDP Depletion).
 - Documentação inicial criada em **2026-05-05**.
 
 ### Limpeza inicial (2026-05-05)
