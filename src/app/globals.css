@@ -511,6 +511,22 @@ body {
   margin-bottom: 2px;
 }
 
+#main-navbar .nav-megamenu-subgroup {
+  margin-top: 10px;
+}
+#main-navbar .nav-megamenu-subgroup:first-child {
+  margin-top: 0;
+}
+#main-navbar .nav-megamenu-subheading {
+  font-family: Arial, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.38);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: 4px 12px 3px;
+}
+
 /* In the mega-menu, items use slightly tighter horizontal padding so the
    columns feel balanced. Vertical rhythm and hover state remain identical. */
 #main-navbar .nav-megamenu .nav-module-item {
@@ -553,6 +569,10 @@ body {
   #main-navbar .nav-megamenu-heading {
     color: rgba(255, 255, 255, 0.55);
     padding: 8px 12px 4px;
+  }
+  #main-navbar .nav-megamenu-subheading {
+    color: rgba(255, 255, 255, 0.35);
+    padding: 6px 12px 2px;
   }
   #main-navbar .nav-megamenu .nav-module-item {
     padding: 4px 12px;
