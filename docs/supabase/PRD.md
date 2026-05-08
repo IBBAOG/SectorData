@@ -104,6 +104,8 @@ Todas com RLS habilitada, policy `acesso autenticado` FOR SELECT TO authenticate
 | `anp_cdp_producao` | (ano, mes, operador, bacia, local) | petroleo_bbl_dia, gas_total_mm3_dia, oleo_bbl_dia, condensado_bbl_dia, agua_bbl_dia, n_pocos | `20260504000005_anp_cdp.sql` (v1) → `_v7` (schema final) → `20260504000013` (RLS authenticated) | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` (~1.8M rows) |
 | `anp_precos_distribuicao` | (data_referencia, distribuidora, produto, uf) | preco_distribuicao, unidade | `20260507000005_anp_precos_distribuicao.sql` | `pipelines/anp/precos_distribuicao_sync.py` |
 | `anp_cdp_diaria` | (data, campo, bacia) | petroleo_bbl_dia, gas_mm3_dia; histórico desde 2025-11-09 (limitação da fonte Power BI) | `20260508000001_anp_cdp_diaria.sql` | `scripts/extractors/anp_cdp_powerbi.py` (workflow `etl_anp_cdp_diaria.yml`, 3×/dia) |
+| `anp_cdp_diaria_instalacao` | (data, campo, instalacao) | petroleo_bbl_dia, gas_mm3_dia. Sem coluna bacia — entidade Power BI `v_instalacoes_final` não expõe bacia. ~16.3k rows (93 instalações; range 2025-11-09 → presente). | `20260508120001_anp_cdp_diaria_levels.sql` | `scripts/extractors/anp_cdp_powerbi.py --level instalacao` |
+| `anp_cdp_diaria_poco` | (data, campo, bacia, poco) | petroleo_bbl_dia, gas_mm3_dia. Tem bacia — entidade Power BI `v_poco_instalacao_sigep_ultimo` expõe BACIA. ~180.7k rows (1.219 poços; range 2025-11-09 → presente). | `20260508120001_anp_cdp_diaria_levels.sql` | `scripts/extractors/anp_cdp_powerbi.py --level poco` |
 
 ### Materialized views
 
@@ -139,7 +141,9 @@ Todas com RLS habilitada, policy `acesso autenticado` FOR SELECT TO authenticate
 | SINDICOM | `get_sindicom_filtros`, `get_sindicom_serie` | dash-sindicom |
 | ANP CDP | `get_anp_cdp_filtros`, `get_anp_cdp_serie`, `get_anp_cdp_pocos_json` | dash-anp-cdp |
 | ANP Preços Distribuição | `get_anp_precos_distribuicao_filtros`, `get_anp_precos_distribuicao_serie`, `get_anp_precos_distribuicao_top_distribuidoras` | dash-anp-precos-distribuicao |
-| ANP CDP Diária | `get_anp_cdp_diaria_filtros`, `get_anp_cdp_diaria_serie` | dash-anp-cdp-diaria |
+| ANP CDP Diária — Field | `get_anp_cdp_diaria_filtros`, `get_anp_cdp_diaria_serie` | dash-anp-cdp-diaria |
+| ANP CDP Diária — Installation | `get_anp_cdp_diaria_instalacao_filtros`, `get_anp_cdp_diaria_instalacao_serie` | dash-anp-cdp-diaria |
+| ANP CDP Diária — Well | `get_anp_cdp_diaria_poco_filtros`, `get_anp_cdp_diaria_poco_serie` | dash-anp-cdp-diaria |
 | Export count (Tier 2) | `get_ms_export_count(p_data_inicio, p_data_fim, p_regioes, p_ufs, p_mercados) → bigint`, `get_mdic_comex_export_count(p_flow, p_ncms, p_ano_inicio, p_ano_fim) → bigint`, `get_anp_cdp_export_count(p_pocos, p_campos, p_bacoes, p_locais, p_estados, p_operadores, p_instalacoes, p_tipos_instalacao, p_ano_inicio, p_ano_fim) → bigint`, `get_anp_lpc_export_count(p_produtos, p_estados, p_data_inicio, p_data_fim) → bigint` | APP (useExportSize) — retornam count filtrado para estimar tamanho do export antes do download. Migration: `20260507000003_export_count_rpcs.sql`. |
 
 ## Migration smoke test

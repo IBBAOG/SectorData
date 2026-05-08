@@ -44,7 +44,7 @@ scripts/pipelines/                  # rodam via GitHub Actions (todos os ETL)
 
 scripts/extractors/                 # extratores reutilizáveis (não são scripts de pipeline direto)
   _powerbi_common.py                Helper compartilhado para requisições à API querydata do Power BI
-  anp_cdp_powerbi.py                ANP CDP Power BI público → anp_cdp_diaria (campo × bacia, granularidade diária)
+  anp_cdp_powerbi.py                ANP CDP Power BI público → anp_cdp_diaria / _instalacao / _poco. CLI: --level campo|instalacao|poco|all. 3 levels extraídos por run (pages 4, 5, 6 do Power BI).
 
 scripts/manual/                     # humano-no-loop (dept Dados Locais)
   dg_margins_upload.py              Excel data/d_g_margins.xlsx → d_g_margins
@@ -74,7 +74,7 @@ scripts/utils/                      # one-shots (não-ETL)
 | `etl_navios_imo_lookup.yml` | Após `etl_navios_lineup` | `pipelines/navios/03_imo_lookup.py` → `04_cabotage_cleanup.py` | `navios_diesel.imo/mmsi` |
 | `etl_navios_positions.yml` | Após `etl_navios_imo_lookup` | `pipelines/navios/05_positions_sync.py` | `vessel_positions`, `port_arrivals` |
 | `etl_anp_precos_distribuicao.yml` | Mensal — dia 5, 14:00 UTC (`0 14 5 * *`) + Semanal — terça, 14:30 UTC (`30 14 * * 2`) | `pipelines/anp/precos_distribuicao_sync.py` | `anp_precos_distribuicao` |
-| `etl_anp_cdp_diaria.yml` | 3×/dia — `0 10,15,20 * * *` UTC (7h/12h/17h BRT) | `scripts/extractors/anp_cdp_powerbi.py` (via `_powerbi_common.py`) | `anp_cdp_diaria` (~16.5k rows iniciais; upsert on conflict `(data, campo, bacia)`) |
+| `etl_anp_cdp_diaria.yml` | 3×/dia — `0 10,15,20 * * *` UTC (7h/12h/17h BRT) | `scripts/extractors/anp_cdp_powerbi.py --level all --upload` (via `_powerbi_common.py`) | `anp_cdp_diaria` (~16.5k rows; upsert `(data, campo, bacia)`), `anp_cdp_diaria_instalacao` (~16.3k rows; upsert `(data, campo, instalacao)`), `anp_cdp_diaria_poco` (~180.7k rows; upsert `(data, campo, bacia, poco)`). Timeout workflow: 25min. Pegadinha: property names Power BI são case-sensitive e diferem do display name — ex: nível Poço usa `Campo (Poço)` (property) e não `NOME CAMPO` (display name); retorna 0 linhas se property errada. |
 
 > Workflows confirmados ativos em 2026-05-05. Row counts atualizados após backfill histórico de 2026-05-06. README está desatualizado (não os menciona). Quando atualizar README, incluir.
 

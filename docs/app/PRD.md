@@ -145,7 +145,7 @@ Para qualquer mudança em código de um dashboard específico, delegue ao agente
 | `anp-desembaracos` | Fuel Distribution | `anp_desembaracos` (~6k) |
 | `anp-painel-importacoes` | Fuel Distribution | `anp_painel_imp_dist` (~1.4k) |
 | `anp-precos-distribuicao` | Fuel Distribution | `anp_precos_distribuicao` (volume a crescer) |
-| `anp-cdp-diaria` | Oil & Gas | `anp_cdp_diaria` (~16.5k iniciais; histórico desde 2025-11-09) |
+| `anp-cdp-diaria` | Oil & Gas | `anp_cdp_diaria` (~16.5k — Field), `anp_cdp_diaria_instalacao` (~16.3k — Installation), `anp_cdp_diaria_poco` (~180.7k — Well). 3 níveis de granularidade via `SegmentedToggle` (Field / Installation / Well). Histórico desde 2025-11-09. |
 
 ## Stack
 

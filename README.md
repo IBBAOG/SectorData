@@ -177,7 +177,9 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | `sindicom` | id | data_referencia, produto, regiao, volume_m3 |
 | `anp_cdp_producao` | id | poco, campo, bacia, operador, data_producao, prod_oleo_bbl, prod_gas_mm3, prod_agua_m3, tipo_poco, ambiente |
 | `anp_precos_distribuicao` | id | data_referencia, distribuidora, produto, uf, preco_distribuicao, unidade |
-| `anp_cdp_diaria` | (data, campo, bacia) | petroleo_bbl_dia, gas_mm3_dia; histórico desde 2025-11-09 |
+| `anp_cdp_diaria` | (data, campo, bacia) | petroleo_bbl_dia, gas_mm3_dia; Field level; histórico desde 2025-11-09 |
+| `anp_cdp_diaria_instalacao` | (data, campo, instalacao) | petroleo_bbl_dia, gas_mm3_dia; Installation level; sem coluna bacia |
+| `anp_cdp_diaria_poco` | (data, campo, bacia, poco) | petroleo_bbl_dia, gas_mm3_dia; Well level; ~180k rows |
 
 **Materialized views:** `mv_ms_serie`, `mv_ms_serie_fast` — pre-aggregated monthly sales, refreshed by `classificar_agentes()`.
 
@@ -202,7 +204,7 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | 13 | `manual_dg_margins.yml` | Weekly Mon | `manual/dg_margins_upload.py` | `d_g_margins` (manual Excel) |
 | 14 | `supabase_deploy.yml` | On push to main | `supabase db push` | migrations |
 | 15 | `etl_anp_precos_distribuicao.yml` | Monthly 5th 14:00 UTC + Weekly Tue 14:30 UTC | `pipelines/anp/precos_distribuicao_sync.py` | `anp_precos_distribuicao` |
-| 16 | `etl_anp_cdp_diaria.yml` | 3×/day `0 10,15,20 * * *` UTC | `scripts/extractors/anp_cdp_powerbi.py` (Power BI public API, no Selenium) | `anp_cdp_diaria` |
+| 16 | `etl_anp_cdp_diaria.yml` | 3×/day `0 10,15,20 * * *` UTC | `scripts/extractors/anp_cdp_powerbi.py --level all --upload` (Power BI public API, no Selenium) | `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco` |
 | ext | News Hunter scanner | Every ~5min via cron-job.org | `news_hunter_service.py --once` (in repo `IBBAOG/news-hunter-scanner`) | `news_articles` |
 
 **News Hunter scanner** lives in a separate repo. Uses `SUPABASE_SERVICE_KEY`. Keywords from UNION of all users' rows in `news_hunter_keywords`. Frontend polls `news_articles` every 60s incrementally (`found_at` watermark).
