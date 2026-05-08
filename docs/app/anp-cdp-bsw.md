@@ -3,6 +3,8 @@
 ANP CDP — BSW by Well dashboard (Oil & Gas). Owner: [`worker_dash-anp-cdp-bsw`](../../.claude/agents/worker_dash-anp-cdp-bsw.md).
 
 > Item of the **Oil & Gas** dropdown in the NavBar (alongside `/anp-cdp` and `/anp-cdp-diaria`). One chart, one filter (field), one toggle (per-well vs field average).
+>
+> **Scope**: this dashboard is restricted to **offshore** fields only (`local IN ('PreSal','PosSal')`). Onshore/terra fields are intentionally excluded — both at the dropdown level (via `get_anp_cdp_bsw_campos`) and inside the data RPCs (defense-in-depth).
 
 ## Code scope
 
@@ -11,7 +13,7 @@ src/app/(dashboard)/anp-cdp-bsw/
   page.tsx
 ```
 
-RPC wrappers: `rpcGetAnpCdpBswScatter`, `rpcGetAnpCdpBswFieldAggregate` in [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (section "ANP CDP — BSW by Well").
+RPC wrappers: `rpcGetAnpCdpBswCampos`, `rpcGetAnpCdpBswScatter`, `rpcGetAnpCdpBswFieldAggregate` in [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (section "ANP CDP — BSW by Well").
 
 ## Product
 
@@ -54,9 +56,9 @@ The "Selected fields" section in the sidebar shows colored chips matching the ch
 
 | RPC | Type | Purpose |
 |---|---|---|
-| `get_anp_cdp_bsw_scatter(p_campos text[])` | own (per-well view) | Returns one row per (well × month) for the filtered fields, with server-computed `bsw` and `mes_desde_t0`. Capped at 500k points server-side. |
-| `get_anp_cdp_bsw_field_aggregate(p_campos text[])` | own (field-average view) | Returns one row per (field × month-since-t0) with volume-weighted BSW, well count, and total volume. Low-volume output (one row per month per field). |
-| `get_anp_cdp_filtros` | shared with `/anp-cdp` | Reused only for its `.campos` array (alphabetical list of fields). |
+| `get_anp_cdp_bsw_campos()` | own (sidebar dropdown) | Returns an alphabetically ordered `text[]` of offshore field names (`local IN ('PreSal','PosSal')`). Source for the sidebar's field multi-select — replaces the previous reuse of `get_anp_cdp_filtros`, which mixed onshore and offshore fields. |
+| `get_anp_cdp_bsw_scatter(p_campos text[])` | own (per-well view) | Returns one row per (well × month) for the filtered fields, with server-computed `bsw` and `mes_desde_t0`. Filters internally to `local IN ('PreSal','PosSal')` (defense-in-depth). Capped at 500k points server-side. |
+| `get_anp_cdp_bsw_field_aggregate(p_campos text[])` | own (field-average view) | Returns one row per (field × month-since-t0) with volume-weighted BSW, well count, and total volume. Filters internally to `local IN ('PreSal','PosSal')`. Low-volume output (one row per month per field). |
 
 ### Output contracts
 
@@ -114,9 +116,8 @@ Sidebar visual classes (`#sidebar`, `.sidebar-section-label`, `.sidebar-filter-s
 
 | Source | How it depends |
 |---|---|
-| `worker_supabase` | Owns the `get_anp_cdp_bsw_scatter` and `get_anp_cdp_bsw_field_aggregate` SQL functions + `module_visibility` row for `anp-cdp-bsw`. The aggregate function is delivered in migration `20260508000003_anp_cdp_bsw_aggregate.sql`. |
-| ETL (`scripts/pipelines/anp/cdp/`) | Populates `anp_cdp_producao` monthly. Schema/columns must include `petroleo_bbl_dia` and `agua_bbl_dia`. |
-| `worker_dash-anp-cdp` | Owns `get_anp_cdp_filtros` (shared); changes to its return shape can break this page. |
+| `worker_supabase` | Owns the `get_anp_cdp_bsw_campos`, `get_anp_cdp_bsw_scatter` and `get_anp_cdp_bsw_field_aggregate` SQL functions + `module_visibility` row for `anp-cdp-bsw`. The aggregate function is delivered in migration `20260508000003_anp_cdp_bsw_aggregate.sql`; the offshore-only field list + internal `local IN ('PreSal','PosSal')` filter on the existing RPCs is delivered in `20260508000004_anp_cdp_bsw_offshore.sql`. |
+| ETL (`scripts/pipelines/anp/cdp/`) | Populates `anp_cdp_producao` monthly. Schema/columns must include `petroleo_bbl_dia`, `agua_bbl_dia`, and `local` (used to filter offshore fields). |
 | `worker_dash-admin` | Visibility toggle in `/admin-panel` + home image. |
 | Designer | Visual identity (Arial 12, brand orange `#FF5000`, axis line style, sidebar section/label classes). |
 

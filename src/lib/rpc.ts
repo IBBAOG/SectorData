@@ -1853,6 +1853,24 @@ export async function rpcGetAnpCdpBswFieldAggregate(
   }
 }
 
+// Offshore-only field list for the /anp-cdp-bsw sidebar dropdown. Returns
+// alphabetically ordered field names where `local IN ('PreSal','PosSal')`,
+// i.e. excludes onshore/terra fields that aren't relevant for BSW analysis
+// in this dashboard. Owner: worker_supabase (migration
+// `20260508000004_anp_cdp_bsw_offshore.sql`).
+export async function rpcGetAnpCdpBswCampos(
+  supabase: SupabaseClient,
+): Promise<string[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_anp_cdp_bsw_campos");
+    if (error) throw error;
+    return (data ?? []) as string[];
+  } catch (e) {
+    console.error("get_anp_cdp_bsw_campos failed", e);
+    return [];
+  }
+}
+
 // ─── MODULE: ANP CDP Diária (/src/app/(dashboard)/anp-cdp-diaria/page.tsx) ────
 //
 // Daily petroleum/gas production by `(data, campo, bacia)`. Sourced from the

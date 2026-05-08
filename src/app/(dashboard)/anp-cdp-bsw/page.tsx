@@ -15,10 +15,9 @@ import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { COMMON_LAYOUT, AXIS_LINE, emptyPlot, PALETTE } from "../../../lib/plotlyDefaults";
 import {
-  rpcGetAnpCdpFiltros,
+  rpcGetAnpCdpBswCampos,
   rpcGetAnpCdpBswScatter,
   rpcGetAnpCdpBswFieldAggregate,
-  type AnpCdpFiltros,
   type AnpCdpBswPoint,
   type AnpCdpBswFieldPoint,
 } from "../../../lib/rpc";
@@ -176,24 +175,24 @@ export default function AnpCdpBswPage() {
   const { visible, loading: visLoading } = useModuleVisibilityGuard("anp-cdp-bsw");
   const supabase = getSupabaseClient();
 
-  const [filtros, setFiltros] = useState<AnpCdpFiltros>({
-    bacoes: [], campos: [], locais: [], estados: [], operadores: [],
-    instalacoes: [], tipos_instalacao: [], ano_min: null, ano_max: null,
-  });
+  // Offshore-only field list (PreSal + PosSal). Sourced from the dedicated
+  // `get_anp_cdp_bsw_campos` RPC so the sidebar dropdown never shows onshore
+  // fields that aren't relevant for this dashboard's BSW analysis.
+  const [campos, setCampos] = useState<string[]>([]);
   const [filtrosLoading, setFiltrosLoading] = useState(true);
   const [selectedCampos, setSelectedCampos] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("well");
   const [wellPoints,  setWellPoints]  = useState<AnpCdpBswPoint[]>([]);
   const [fieldPoints, setFieldPoints] = useState<AnpCdpBswFieldPoint[]>([]);
 
-  // ── Initial load: only the campos list ────────────────────────────────────
+  // ── Initial load: only the offshore campos list ──────────────────────────
   useEffect(() => {
     if (!supabase) return;
     let cancelled = false;
     (async () => {
-      const f = await rpcGetAnpCdpFiltros(supabase);
+      const list = await rpcGetAnpCdpBswCampos(supabase);
       if (cancelled) return;
-      setFiltros(f);
+      setCampos(list);
       setFiltrosLoading(false);
     })();
     return () => { cancelled = true; };
@@ -277,17 +276,17 @@ export default function AnpCdpBswPage() {
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
               <div className="sidebar-section-label">Filters</div>
 
-              {/* Field — searchable multi-select */}
+              {/* Field — searchable multi-select (offshore: Pre-Salt + Post-Salt) */}
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">
                   Field{" "}
                   <span style={{ color: "#888", fontWeight: 400 }}>
-                    ({selectedCampos.length === 0 ? filtros.campos.length : selectedCampos.length}/{filtros.campos.length})
+                    ({selectedCampos.length === 0 ? campos.length : selectedCampos.length}/{campos.length})
                   </span>
                 </div>
                 {!filtrosLoading && (
                   <SearchableMultiSelect
-                    options={filtros.campos}
+                    options={campos}
                     value={selectedCampos}
                     onChange={setSelectedCampos}
                   />
