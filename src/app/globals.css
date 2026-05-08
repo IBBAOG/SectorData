@@ -379,6 +379,14 @@ body {
   color: #ffffff !important;
 }
 
+#main-navbar .navbar-brand img {
+  transition: opacity 0.15s;
+}
+
+#main-navbar .navbar-brand:hover img {
+  opacity: 1 !important;
+}
+
 #main-navbar .nav-link {
   font-family: Arial, sans-serif;
   font-size: 15px;
