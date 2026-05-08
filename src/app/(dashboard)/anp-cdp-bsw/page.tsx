@@ -153,12 +153,25 @@ function buildFieldAverageChart(
   // Trace mode is driven by the shared "Plot style" toggle (markers vs
   // markers+lines). Renderer stays as plain `scatter` (SVG) — volume is low
   // and SVG lines are crisper than scattergl.
+  // We always emit one trace per selected campo (in selection order), even
+  // when its `subset` is empty, so the legend matches the sidebar chips 1:1
+  // and the user can never silently lose a field from the chart. Empty
+  // subsets render as legend-only entries with no markers/lines.
   const mode = plotlyMode(lineStyle);
   const traces: PlotData[] = selectedCampos.map((campo, i) => {
     const subset = points
       .filter((p) => p.campo === campo)
       .sort((a, b) => a.pct_voip - b.pct_voip);
     const color = PALETTE[i % PALETTE.length];
+    if (typeof window !== "undefined" && points.length > 0 && subset.length === 0) {
+      // Only warn when we actually received points but none for this campo —
+      // this signals a server/client mismatch worth investigating, not the
+      // expected pre-fetch empty state.
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[anp-cdp-bsw] field "${campo}" is selected but has no points in the RPC result; rendering empty trace.`,
+      );
+    }
     return {
       type: "scatter",
       mode,
@@ -343,13 +356,14 @@ export default function AnpCdpBswPage() {
       }
       // Field is single-select in well mode → all wells share the field's color
       // index. We keep PALETTE color per well based on first-appearance order.
-      const rows: Row[] = seen
-        .map((poco, i) => ({
-          item: poco,
-          color: PALETTE[i % PALETTE.length],
-          values: byPoco.get(poco) ?? {},
-        }))
-        .filter((r) => Object.keys(r.values).length > 0);
+      // We intentionally KEEP wells whose data is older than the 12-month window
+      // (their `values` map is empty) so the user always sees every well that
+      // actually appears in the chart — the table renders "—" placeholders.
+      const rows: Row[] = seen.map((poco, i) => ({
+        item: poco,
+        color: PALETTE[i % PALETTE.length],
+        values: byPoco.get(poco) ?? {},
+      }));
       return { months, rows };
     }
 
@@ -360,17 +374,21 @@ export default function AnpCdpBswPage() {
     const months = Array.from(allKeys).sort().slice(-12);
     const monthSet = new Set(months);
 
-    const rows: Row[] = selectedCampos
-      .map((campo, i) => {
-        const values: Record<string, number> = {};
-        for (const p of fieldPoints) {
-          if (p.campo !== campo) continue;
-          const k = ymKey(p.ref_ano, p.ref_mes);
-          if (monthSet.has(k)) values[k] = p.bsw;
-        }
-        return { item: campo, color: PALETTE[i % PALETTE.length], values };
-      })
-      .filter((r) => Object.keys(r.values).length > 0);
+    // We map over `selectedCampos` (not over `fieldPoints`) so EVERY selected
+    // field always produces a row, even if (a) the RPC returned no points for
+    // that field or (b) all of its points are older than the 12-month window
+    // formed by the union of months across the other selected fields. This
+    // matches the chart legend 1:1 and prevents "field disappears from table"
+    // surprises when one field's data ends earlier than the rest of the selection.
+    const rows: Row[] = selectedCampos.map((campo, i) => {
+      const values: Record<string, number> = {};
+      for (const p of fieldPoints) {
+        if (p.campo !== campo) continue;
+        const k = ymKey(p.ref_ano, p.ref_mes);
+        if (monthSet.has(k)) values[k] = p.bsw;
+      }
+      return { item: campo, color: PALETTE[i % PALETTE.length], values };
+    });
     return { months, rows };
   }, [viewMode, wellPoints, fieldPoints, selectedCampos]);
 
