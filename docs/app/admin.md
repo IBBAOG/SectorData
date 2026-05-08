@@ -80,6 +80,7 @@ Lista completa dos slugs atualmente registrados na tabela `module_visibility` (t
 | `anp-lpc` | Estatísticas / Fuel Distribution | ANP LPC Preços |
 | `sindicom` | Estatísticas / Fuel Distribution | SINDICOM |
 | `anp-cdp` | Estatísticas / Oil & Gas | ANP CDP Produção |
+| `anp-cdp-bsw` | Estatísticas / Oil & Gas | ANP CDP — BSW by Well |
 | `stocks` | Other | Market Watch |
 | `news-hunter` | Other | News Hunter |
 
