@@ -63,7 +63,7 @@ function buildPerWellChart(
       marker: { size: 4, opacity: 0.55, color },
       hovertemplate:
         "<b>%{customdata[0]}</b><br>" +
-        "%{customdata[1]}-%{customdata[2]:02d}<br>" +
+        "Reference month: %{customdata[1]}-%{customdata[2]:02d}<br>" +
         "BSW: %{y:.1%}<br>" +
         "Months since start: %{x}" +
         "<extra>" + campo + "</extra>",
@@ -135,8 +135,8 @@ function buildFieldAverageChart(
         "<b>" + campo + "</b><br>" +
         "Months since start: %{x}<br>" +
         "BSW (vol-weighted): %{y:.1%}<br>" +
-        "Wells: %{customdata[0]}<br>" +
-        "Total volume: %{customdata[1]:,.0f}" +
+        "Wells contributing: %{customdata[0]}<br>" +
+        "Total volume: %{customdata[1]:,.0f} bbl/d" +
         "<extra></extra>",
     } as unknown as PlotData;
   });
