@@ -81,6 +81,7 @@ Lista completa dos slugs atualmente registrados na tabela `module_visibility` (t
 | `sindicom` | Estatísticas / Fuel Distribution | SINDICOM |
 | `anp-cdp` | Estatísticas / Oil & Gas | ANP CDP Produção |
 | `anp-cdp-diaria` | Estatísticas / Oil & Gas | ANP CDP Diária |
+| `anp-cdp-bsw` | Estatísticas / Oil & Gas | ANP CDP — BSW by Well |
 | `stocks` | Other | Market Watch |
 | `news-hunter` | Other | News Hunter |
 
