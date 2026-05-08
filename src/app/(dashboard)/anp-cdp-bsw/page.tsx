@@ -281,6 +281,17 @@ export default function AnpCdpBswPage() {
                 }}>TBD</div>
               </div>
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
+
+              {/* ── View-mode toggle (pill) ─────────────────────────── */}
+              <div className="sidebar-filter-section">
+                <div className="sidebar-filter-label">View</div>
+                <SegmentedToggle<ViewMode>
+                  options={VIEW_OPTIONS}
+                  value={viewMode}
+                  onChange={setViewMode}
+                />
+              </div>
+
               <div className="sidebar-section-label">Filters</div>
 
               {/* Field — searchable multi-select (offshore: Pre-Salt + Post-Salt) */}
@@ -371,22 +382,6 @@ export default function AnpCdpBswPage() {
                 <BarrelLoading />
               ) : (
                 <>
-                  {/* View-mode toggle (above chart, right-aligned) */}
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "flex-end",
-                      marginBottom: 10,
-                    }}
-                  >
-                    <SegmentedToggle<ViewMode>
-                      variant="compact"
-                      options={VIEW_OPTIONS}
-                      value={viewMode}
-                      onChange={setViewMode}
-                    />
-                  </div>
-
                   <ChartSection
                     title={
                       viewMode === "well"
