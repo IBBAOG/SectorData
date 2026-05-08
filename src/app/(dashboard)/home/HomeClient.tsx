@@ -212,6 +212,15 @@ const CARDS: CardDef[] = [
     disabled: false,
   },
   {
+    slug: "anp-cdp-depletion",
+    preview: null,
+    title: "ANP CDP — Depletion",
+    description: "Uptime-normalized oil production and decline analysis by field",
+    badge: "Available",
+    href: "/anp-cdp-depletion",
+    disabled: false,
+  },
+  {
     slug: null,
     preview: null,
     title: "Coming Soon",

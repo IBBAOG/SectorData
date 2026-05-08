@@ -82,6 +82,7 @@ Lista completa dos slugs atualmente registrados na tabela `module_visibility` (t
 | `anp-cdp` | Estatísticas / Oil & Gas | ANP CDP Produção |
 | `anp-cdp-diaria` | Estatísticas / Oil & Gas | ANP CDP Diária |
 | `anp-cdp-bsw` | Estatísticas / Oil & Gas | ANP CDP — BSW by Well |
+| `anp-cdp-depletion` | Estatísticas / Oil & Gas | ANP CDP — Depletion |
 | `stocks` | Other | Market Watch |
 | `news-hunter` | Other | News Hunter |
 
