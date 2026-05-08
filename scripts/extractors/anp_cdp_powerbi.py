@@ -575,8 +575,16 @@ def extract_producao_diaria_todos(
 def upload_to_supabase(records: list[dict], table: str = "anp_cdp_diaria",
                        on_conflict: str = "data,campo,bacia") -> bool:
     """
-    Upsert idempotente para tabela indicada. Lotes de 500.
+    Upsert append-only para tabela indicada. Lotes de 500.
     Le SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY do env.
+
+    Semantica: ignore_duplicates=True -> ON CONFLICT DO NOTHING
+      - (data, dim) inedito  : INSERT
+      - (data, dim) ja existe: SKIP (valor original preservado — historico imutavel)
+
+    Trade-off conhecido: revisoes retroativas de figuras pela ANP nao sao
+    refletidas (decisao do usuario em 2026-05-08). O snapshot historico
+    nunca e sobrescrito.
 
     PKs por nivel:
       anp_cdp_diaria            -> on_conflict="data,campo,bacia"
@@ -592,7 +600,7 @@ def upload_to_supabase(records: list[dict], table: str = "anp_cdp_diaria",
     from supabase import create_client  # type: ignore[import]
     client = create_client(url, svc_key)
 
-    # Deduplicar por PK composta antes do upsert
+    # Deduplicar por PK composta antes do upsert (evita double-update em batch)
     pk_keys = [k.strip() for k in on_conflict.split(",")]
     seen: set[tuple] = set()
     deduped: list[dict] = []
@@ -607,11 +615,17 @@ def upload_to_supabase(records: list[dict], table: str = "anp_cdp_diaria",
 
     BATCH = 500
     total = len(deduped)
-    print(f"Upsert {total} linhas em {table}...")
+    print(f"Upsert (append-only) {total} linhas em {table}...")
     for i in range(0, total, BATCH):
         batch = deduped[i:i + BATCH]
-        client.table(table).upsert(batch, on_conflict=on_conflict).execute()
-        print(f"   {min(i + BATCH, total)}/{total} ok")
+        result = client.table(table).upsert(
+            batch,
+            on_conflict=on_conflict,
+            ignore_duplicates=True,
+        ).execute()
+        inserted = len(result.data) if result.data else 0
+        skipped = len(batch) - inserted
+        print(f"   {min(i + BATCH, total)}/{total} ok (inserted={inserted}, skipped={skipped})")
     print(f"Upsert concluido: {table}")
     return True
 
@@ -678,8 +692,8 @@ def main():
                       help="Nivel de granularidade. Default: all (3 niveis)")
 
     p.add_argument("--start",  type=lambda s: date.fromisoformat(s),
-                   default=date(2025, 1, 1),
-                   help="Data inicial ISO (padrao: 2025-01-01)")
+                   default=date(2025, 11, 9),
+                   help="Data inicial ISO (padrao: 2025-11-09 — primeira data com dados no Power BI ANP CDP)")
     p.add_argument("--end",    type=lambda s: date.fromisoformat(s),
                    default=None,
                    help="Data final exclusiva ISO (padrao: amanha)")
