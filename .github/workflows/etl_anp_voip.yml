@@ -1,0 +1,33 @@
+name: ETL ANP VOIP (BAR annual)
+
+on:
+  schedule:
+    - cron: '0 12 1 5 *'   # May 1st 12:00 UTC (BAR publishes ~April)
+  workflow_dispatch:
+    inputs:
+      bar_year:
+        description: 'BAR year (e.g. 2025). Empty = current year, fallback to prev year on 404.'
+        required: false
+        type: string
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run VOIP sync
+        run: python scripts/pipelines/anp/voip_sync.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          BAR_YEAR: ${{ inputs.bar_year }}
