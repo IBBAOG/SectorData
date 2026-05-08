@@ -150,6 +150,12 @@ def _upsert(sb, rows: list[dict]) -> None:
 
 def _rows_from_df(df: pd.DataFrame) -> list[dict]:
     df = df.dropna(subset=_PK)
+    # Fill NaN in numeric cols with 0 (production cols) before serialisation.
+    # This prevents "Out of range float values are not JSON compliant: nan"
+    # when pandas groupby leaves NaN in columns that were entirely missing.
+    for col in _SUM_COLS:
+        if col in df.columns:
+            df[col] = df[col].fillna(0.0)
     rows = df.where(pd.notna(df), None).to_dict("records")
     for r in rows:
         r["ano"] = int(r["ano"])
