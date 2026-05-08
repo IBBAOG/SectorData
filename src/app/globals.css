@@ -595,7 +595,7 @@ body {
 @media (max-width: 1100px) {
   #main-navbar { padding: 4px 16px; }
   #main-navbar .navbar-nav-center { gap: 20px; }
-  .nav-username-label { display: none; }
+  .nav-user-greeting-btn { display: none; }
 }
 
 @media (max-width: 900px) {
@@ -1024,38 +1024,28 @@ a {
    Profile + Settings — new UI components
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ─── Nav: avatar button ──────────────────────────────────────────────────── */
-.nav-avatar-btn {
+/* ─── Nav: user greeting button ───────────────────────────────────────────── */
+.nav-user-greeting-btn {
+  font-family: Arial, sans-serif;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.75);
   background: none;
   border: none;
   padding: 0;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  position: relative;
-}
-
-.nav-avatar-circle {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: #FF5000;
-  color: #fff;
-  font-family: Arial, sans-serif;
-  font-size: 12px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  letter-spacing: 0.04em;
+  white-space: nowrap;
+  line-height: 1;
   user-select: none;
-  transition: opacity 0.15s ease, transform 0.15s ease;
-  flex-shrink: 0;
+  transition: color 0.15s;
 }
 
-.nav-avatar-btn:hover .nav-avatar-circle {
-  opacity: 0.82;
-  transform: scale(1.06);
+.nav-user-greeting-btn:hover,
+.nav-user-greeting-btn:focus-visible {
+  color: #ffffff;
+}
+
+.nav-user-greeting-btn:disabled {
+  cursor: default;
 }
 
 /* ─── Nav: user dropdown ──────────────────────────────────────────────────── */
@@ -1319,17 +1309,6 @@ a {
 .nav-hamburger-icon::before { top: -6px; }
 .nav-hamburger-icon::after  { top: 6px; }
 
-/* ─── NavBar: first-name label ────────────────────────────────────────────── */
-.nav-username-label {
-  font-family: Arial, sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.85);
-  white-space: nowrap;
-  margin-right: 8px;
-  line-height: 1;
-  user-select: none;
-}
 
 /* ─── Profile inline name edit ────────────────────────────────────────────── */
 .profile-name-edit-icon-btn {

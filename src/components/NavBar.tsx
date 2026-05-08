@@ -7,7 +7,6 @@ import { useEffect, useRef, useState } from "react";
 import BrandLogo from "./BrandLogo";
 import { getSupabaseClient } from "../lib/supabaseClient";
 import { useUserProfile } from "../context/UserProfileContext";
-import { getInitials } from "../lib/avatarUtils";
 
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
@@ -183,7 +182,6 @@ export default function NavBar() {
     }
   }
 
-  const initials = getInitials(profile, userEmail);
   const isAdmin = profile?.role === "Admin";
   const firstName = profile?.full_name?.trim().split(/\s+/)[0] ?? null;
 
@@ -331,17 +329,14 @@ export default function NavBar() {
           ref={menuRef}
           style={{ position: "relative", display: "flex", alignItems: "center" }}
         >
-          {firstName && (
-            <span className="nav-username-label">{firstName}</span>
-          )}
           <button
-            className="nav-avatar-btn"
+            className="nav-user-greeting-btn"
             onClick={() => setOpenUserMenu((v) => !v)}
             aria-label="Open user menu"
             aria-expanded={openUserMenu}
             disabled={!supabase}
           >
-            <span className="nav-avatar-circle">{initials}</span>
+            Hello,&nbsp;<strong>{firstName ?? "User"}</strong>
           </button>
 
           {openUserMenu && (
