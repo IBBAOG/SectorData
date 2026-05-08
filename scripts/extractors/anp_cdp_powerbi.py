@@ -192,7 +192,7 @@ def _select_poco() -> list:
     """6 colunas: Data, NOME CAMPO, BACIA, NOME POCO ANP, Petroleo, Gas"""
     return [
         {**_column("d", "Data"),            "Name": "Datas.Data"},
-        {**_column("v", "NOME CAMPO"),      "Name": "v_poco_instalacao_sigep_ultimo.NOME CAMPO"},
+        {**_column("v", "Campo (Poço)"),     "Name": "v_poco_instalacao_sigep_ultimo.NOME CAMPO"},
         {**_column("v", "BACIA"),           "Name": "v_poco_instalacao_sigep_ultimo.BACIA"},
         {**_column("v", "NOME POÇO ANP"),   "Name": "v_poco_instalacao_sigep_ultimo.NOME POÇO ANP"},
         {**_measure("m", "Petróleo"),       "Name": "Medidas.Petroleo"},
