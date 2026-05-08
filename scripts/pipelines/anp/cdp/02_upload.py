@@ -310,7 +310,7 @@ def _from_csv_dir(sb, csv_dir: str, incremental: bool = True) -> None:
             continue
         mes_c, ano_c, amb = int(m.group(1)), int(m.group(2)), m.group(3).upper()
         if incremental and (
-            ano_c < max_ano or (ano_c == max_ano and mes_c <= max_mes)
+            ano_c < max_ano or (ano_c == max_ano and mes_c < max_mes)
         ):
             continue
         local = _AMBIENTE_TO_LOCAL.get(amb)
