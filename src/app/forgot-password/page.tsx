@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+
+import BrandLogo from "../../components/BrandLogo";
 import { getSupabaseClient } from "../../lib/supabaseClient";
 
 
@@ -65,8 +67,8 @@ export default function ForgotPasswordPage() {
         </defs>
       </svg>
       <div id="login-card">
-        <div style={{ textAlign: "center" }}>
-          <div style={{ width: "100%", maxWidth: 280, height: 64, display: "flex", alignItems: "center", justifyContent: "center", border: "2px dashed #ccc", color: "#aaa", fontSize: 18, fontWeight: 700, letterSpacing: 3, marginBottom: 24, borderRadius: 6 }}>TBD</div>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <BrandLogo variant="auth" />
         </div>
 
         <h5
