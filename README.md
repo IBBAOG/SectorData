@@ -44,11 +44,12 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/profile` | `get_my_profile`, `upsert_my_profile` | — |
 | `/admin-panel` | `get_module_visibility`, `set_module_visibility`, `get_all_users_with_roles`, `set_user_role` | — |
 
-### Estatísticas (Fase 3 — 11 novos dashboards)
+### Estatísticas (Fase 3 — 12 novos dashboards)
 
 | Route | Categoria | RPC functions | Export |
 |-------|-----------|---------------|--------|
 | `/anp-cdp` | Oil & Gas | `get_anp_cdp_poco_serie`, `get_anp_cdp_pocos_json`, `get_anp_cdp_filtros` | Yes |
+| `/anp-cdp-bsw` | Oil & Gas | `get_anp_cdp_bsw_scatter` | No |
 | `/anp-ppi` | Fuel Distribution | `get_anp_ppi_media_serie`, `get_anp_ppi_locais_serie`, `get_anp_ppi_filtros` | Yes |
 | `/anp-precos-produtores` | Fuel Distribution | `get_anp_precos_produtores_serie`, `get_anp_precos_produtores_filtros` | Yes |
 | `/anp-glp` | Fuel Distribution | `get_anp_glp_serie`, `get_anp_glp_filtros` | Yes |
