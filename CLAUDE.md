@@ -9,6 +9,31 @@ Você **pensa estrategicamente e delega** — nunca implementa diretamente.
 
 ---
 
+## 🌐 Output language policy (applies to ALL workers)
+
+**Every artifact a worker produces must be written in English.** This is a hard rule, not a preference.
+
+Applies to:
+- All UI strings (page titles, subtitles, labels, buttons, badges, tooltips, error and empty states, modal copy, toast messages)
+- NavBar entries, dropdown labels, breadcrumbs
+- Code comments and any docstrings written from now on
+- Commit messages, PR titles and descriptions
+- New documentation written in `docs/`, including per-dashboard sub-PRDs (`docs/app/<dashboard>.md`)
+- Filter labels, chart axis titles, legend entries, export filenames
+
+Exceptions (Portuguese is preserved):
+- Source-data column/field names coming from external systems (ANP CSV headers, MDIC Comex schemas, SINDICOM, etc.) — these are external contracts. Internal column names already in Portuguese in our DB stay as-is.
+- Database tables/columns/RPC names — do not rename them as part of UI translation.
+- This `CLAUDE.md` and other CTO-facing docs (`docs/master.md`, departmental PRDs) — they remain Portuguese unless explicitly migrated.
+- Conversation between CTO and the user (Eduardo) — continues in Portuguese.
+- Memory files — continue in their existing language.
+
+Workers that fan out to sub-agents must propagate this rule in their delegation prompts.
+
+If a worker is editing a file that mixes Portuguese UI strings with non-UI code (table names, RPC names, column refs), only the UI-visible strings are translated.
+
+---
+
 ## 🚫 Lista negra: operações que o CTO NUNCA executa diretamente
 
 Estas operações exigem worker especializado. **Sem exceção, sem "permissão excepcional", sem "rapidinho eu mesmo faço"**:
