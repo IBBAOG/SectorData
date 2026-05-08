@@ -49,7 +49,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | Route | Categoria | RPC functions | Export |
 |-------|-----------|---------------|--------|
 | `/anp-cdp` | Oil & Gas | `get_anp_cdp_poco_serie`, `get_anp_cdp_pocos_json`, `get_anp_cdp_filtros` | Yes |
-| `/anp-cdp-bsw` | Oil & Gas | `get_anp_cdp_bsw_scatter` | No |
+| `/anp-cdp-bsw` | Oil & Gas | `get_anp_cdp_bsw_scatter`, `get_anp_cdp_bsw_field_aggregate` (X axis: `pct_voip`), `get_anp_cdp_bsw_campos` | No |
 | `/anp-ppi` | Fuel Distribution | `get_anp_ppi_media_serie`, `get_anp_ppi_locais_serie`, `get_anp_ppi_filtros` | Yes |
 | `/anp-precos-produtores` | Fuel Distribution | `get_anp_precos_produtores_serie`, `get_anp_precos_produtores_filtros` | Yes |
 | `/anp-glp` | Fuel Distribution | `get_anp_glp_serie`, `get_anp_glp_filtros` | Yes |
@@ -178,6 +178,7 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | `sindicom` | id | data_referencia, produto, regiao, volume_m3 |
 | `anp_cdp_producao` | id | poco, campo, bacia, operador, data_producao, prod_oleo_bbl, prod_gas_mm3, prod_agua_m3, tipo_poco, ambiente |
 | `anp_precos_distribuicao` | id | data_referencia, distribuidora, produto, uf, preco_distribuicao, unidade |
+| `anp_voip` | (ano_publicacao, campo) | bacia, estado, voip_bbl, vgip_m3, petroleo_acumulado_bbl, gas_acumulado_m3, fracao_recuperada, situacao |
 | `anp_cdp_diaria` | (data, campo, bacia) | petroleo_bbl_dia, gas_mm3_dia; Field level; histórico desde 2025-11-09 |
 | `anp_cdp_diaria_instalacao` | (data, campo, instalacao) | petroleo_bbl_dia, gas_mm3_dia; Installation level; sem coluna bacia |
 | `anp_cdp_diaria_poco` | (data, campo, bacia, poco) | petroleo_bbl_dia, gas_mm3_dia; Well level; ~180k rows |
@@ -186,7 +187,7 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 
 > **Tech debt:** `price_bands`, `profiles`, `module_visibility` were created via DDL in [`sql/`](sql/) applied directly to the Supabase Dashboard rather than versioned migrations (`create_price_bands.sql`, `create_profiles_and_visibility.sql`, `create_user_management.sql`). See [`docs/supabase/PRD.md`](docs/supabase/PRD.md) for conversion plan.
 
-## Data Pipelines (16 workflows + 1 external)
+## Data Pipelines (17 workflows + 1 external)
 
 | # | Workflow | Schedule | Script(s) | Target |
 |---|----------|----------|-----------|--------|
@@ -206,6 +207,7 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | 14 | `supabase_deploy.yml` | On push to main | `supabase db push` | migrations |
 | 15 | `etl_anp_precos_distribuicao.yml` | Monthly 5th 14:00 UTC + Weekly Tue 14:30 UTC | `pipelines/anp/precos_distribuicao_sync.py` | `anp_precos_distribuicao` |
 | 16 | `etl_anp_cdp_diaria.yml` | 3×/day `0 10,15,20 * * *` UTC | `scripts/extractors/anp_cdp_powerbi.py --level all --upload` (Power BI public API, no Selenium) | `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco` |
+| 17 | `etl_anp_voip.yml` | Annual `0 12 1 5 *` (May 1st 12:00 UTC) | `pipelines/anp/voip_sync.py` | `anp_voip` |
 | ext | News Hunter scanner | Every ~5min via cron-job.org | `news_hunter_service.py --once` (in repo `IBBAOG/news-hunter-scanner`) | `news_articles` |
 
 **News Hunter scanner** lives in a separate repo. Uses `SUPABASE_SERVICE_KEY`. Keywords from UNION of all users' rows in `news_hunter_keywords`. Frontend polls `news_articles` every 60s incrementally (`found_at` watermark).
