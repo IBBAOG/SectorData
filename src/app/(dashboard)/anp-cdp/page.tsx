@@ -110,7 +110,7 @@ const METRICS = [
 
 const LOCAL_LABELS: Record<string, string> = {
   PreSal: "Pre-Salt",
-  PosSal: "Post-Salt (Sea)",
+  PosSal: "Post-Salt (Offshore)",
   Terra:  "Onshore",
 };
 
