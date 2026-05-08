@@ -110,10 +110,25 @@ Todas com `RLS: SELECT TO authenticated USING (true)` — padrão Phase 3.
 
 ## Pipeline de origem
 
+<!-- editado por worker_documentador 2026-05-08 — agent dash-anp-cdp-diaria não invocável nesta sessão -->
+
 - **Script**: `scripts/extractors/anp_cdp_powerbi.py` (extrator Power BI — owner: `worker_etl-pipelines`). Estendido para extrair as 3 páginas (4, 5, 6).
 - **Workflow**: `.github/workflows/etl_anp_cdp_diaria.yml`
 - **Schedule**: 3×/dia (10:00, 15:00, 20:00 UTC)
-- **Range**: dataset começa em **2025-11-30** (limite da fonte Power BI)
+- **Range**: dataset começa em **2025-11-09** (base point — primeira data com dados Power BI; `--start` default ajustado em commit `397a108c`)
+
+### Semântica de upload — append-only (desde 2026-05-08)
+
+Upload usa `ignore_duplicates=True` (PostgREST `Prefer: resolution=ignore-duplicates` → SQL `ON CONFLICT DO NOTHING`). Comportamento:
+
+| Caso | Resultado |
+|---|---|
+| (data, dim) inédito | INSERT |
+| (data, dim) já existe | SKIP — valor original preservado |
+
+Aplica-se às 3 tabelas (`anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco`) — todas passam pela mesma `upload_to_supabase()`.
+
+**Trade-off:** revisões retroativas do Power BI ANP não são refletidas (ex: se a ANP revisar a produção de um poço de Nov/2025 em Jun/2026, o valor original persiste). Decisão explícita do usuário — snapshot histórico tem prioridade sobre fidelidade a revisões.
 
 > Installation e Well começam vazios até o primeiro run pós-deploy do ETL atualizado. UI lida bem com `data: []` (mensagem amigável "Sem dados de produção <level> ainda. O ETL desta granularidade roda 3×/dia — aguarde primeiro pull pós-deploy.").
 
