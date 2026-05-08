@@ -6,7 +6,7 @@
 //   <div className="chart-container" style={{ position: "relative" }}>
 //     <div className="section-title">
 //       {title}
-//       {loading && <span style={...}>atualizando…</span>}
+//       {loading && <span style={...}>updating…</span>}
 //     </div>
 //     <hr className="section-hr" />
 //     <PlotlyChart ... style={{ ..., opacity: loading ? 0.5 : 1 }} />
@@ -27,7 +27,7 @@ export interface ChartSectionProps {
   className?: string;
   /** Optional additional style overrides for the wrapper. */
   containerStyle?: React.CSSProperties;
-  /** Hide the "atualizando…" suffix even when loading is true. Default false. */
+  /** Hide the "updating…" suffix even when loading is true. Default false. */
   hideLoadingHint?: boolean;
 }
 
@@ -47,7 +47,7 @@ export default function ChartSection({
         {title}
         {loading && !hideLoadingHint && (
           <span style={{ marginLeft: 10, fontSize: 11, color: "#aaa", fontWeight: 400 }}>
-            atualizando…
+            updating…
           </span>
         )}
       </div>

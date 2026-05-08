@@ -38,9 +38,9 @@ import { downloadCsv } from "../../../lib/exportCsv";
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const NCM_INFO: Record<string, { label: string; color: string }> = {
-  "27090010": { label: "Petróleo Cru", color: "#1a1a1a" },
-  "27101259": { label: "Gasolina",     color: "#FF5000" },
-  "27101921": { label: "Diesel",       color: "#2196F3" },
+  "27090010": { label: "Crude Oil",  color: "#1a1a1a" },
+  "27101259": { label: "Gasoline",   color: "#FF5000" },
+  "27101921": { label: "Diesel",     color: "#2196F3" },
 };
 const ALL_NCMS = Object.keys(NCM_INFO);
 
@@ -74,11 +74,11 @@ const MDIC_GRANULARITY_OPTIONS: Array<{
   label: string;
   hint: string;
 }> = [
-  { value: "raw",     label: "Por linha bruta (raw — todas as dimensões)", hint: "1 linha por (ano, mês, fluxo, NCM, país)" },
-  { value: "ncm",     label: "Por NCM",                                    hint: "soma por (ano, mês, NCM)" },
-  { value: "pais",    label: "Por país",                                   hint: "soma por (ano, mês, país)" },
-  { value: "flow",    label: "Por fluxo (IMP/EXP)",                        hint: "soma por (ano, mês, fluxo)" },
-  { value: "ano_mes", label: "Por ano/mês (total)",                        hint: "soma total por mês (≤252 linhas)" },
+  { value: "raw",     label: "Raw rows (all dimensions)",                 hint: "1 row per (year, month, flow, NCM, country)" },
+  { value: "ncm",     label: "By NCM",                                    hint: "sum by (year, month, NCM)" },
+  { value: "pais",    label: "By country",                                hint: "sum by (year, month, country)" },
+  { value: "flow",    label: "By flow (IMP/EXP)",                         hint: "sum by (year, month, flow)" },
+  { value: "ano_mes", label: "By year/month (total)",                     hint: "total sum by month (≤252 rows)" },
 ];
 
 // Hardcoded estimate for aggregated paths (no extra round-trip).
@@ -128,7 +128,7 @@ function buildLineChart(
       height: 280,
       margin: { t: 10, b: 50, l: 70, r: 30 },
       hovermode: "x unified",
-      yaxis: { ...AXIS_LINE, title: { text: `${LABEL.MIL_T} / mês` } },
+      yaxis: { ...AXIS_LINE, title: { text: `${LABEL.MIL_T} / month` } },
       xaxis: { ...AXIS_LINE, type: "date" as const },
       legend: { orientation: "h", yanchor: "bottom", y: 1.01, xanchor: "left", x: 0 },
     },
@@ -145,7 +145,7 @@ function buildBarChart(
   const sorted = [...rows].sort((a, b) => (b.volume_kg ?? 0) - (a.volume_kg ?? 0));
   const color  = flow === "import" ? "#2196F3" : "#FF5000";
   const label  = NCM_INFO[ncm]?.label ?? ncm;
-  const flowPt = flow === "import" ? "Importação" : "Exportação";
+  const flowPt = flow === "import" ? "Imports" : "Exports";
 
   return {
     data: [{
@@ -162,7 +162,7 @@ function buildBarChart(
       xaxis: { ...AXIS_LINE, title: { text: LABEL.MIL_T } },
       yaxis: { autorange: "reversed" as const, showgrid: false, zeroline: false, tickfont: { size: 10 } },
       title: {
-        text: `Top Países — ${flowPt} · ${label}`,
+        text: `Top Countries — ${flowPt} · ${label}`,
         font: { size: 13, family: "Arial" },
         x: 0, xanchor: "left",
         pad: { l: 0 },
@@ -345,10 +345,10 @@ export default function MdicComexPage() {
               </div>
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
 
-              <div className="sidebar-section-label">Filtros</div>
+              <div className="sidebar-section-label">Filters</div>
 
               <MultiSelectFilter
-                label="Produto"
+                label="Product"
                 items={ALL_NCMS}
                 selected={selectedNCMs}
                 onToggle={toggleNcm}
@@ -360,14 +360,14 @@ export default function MdicComexPage() {
               />
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Período</div>
+                <div className="sidebar-filter-label">Period</div>
                 {!loading && hasYears && (
                   <PeriodSlider years={anos} value={yearRange} onChange={setYearRange} />
                 )}
               </div>
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Top Países — Produto</div>
+                <div className="sidebar-filter-label">Top Countries — Product</div>
                 <select
                   className="form-select form-select-sm"
                   value={selectedNcmPaises}
@@ -386,8 +386,8 @@ export default function MdicComexPage() {
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
               <DashboardHeader
-                title="MDIC Comex Stat — Importações e Exportações"
-                sub="Volume mensal de importação e exportação de petróleo cru, gasolina e diesel por NCM e país de origem/destino"
+                title="MDIC Comex Stat — Imports and Exports"
+                sub="Monthly import and export volumes of crude oil, gasoline, and diesel by NCM and origin/destination country"
                 period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
                 rightSlot={
                   <ExportPanel
@@ -413,11 +413,11 @@ export default function MdicComexPage() {
                 <BarrelLoading />
               ) : (
                 <>
-                  {/* ── Volume Importado ─────────────────────────────── */}
+                  {/* ── Imported Volume ─────────────────────────────── */}
                   <div className="row mb-2">
                     <div className="col-12">
                       <ChartSection
-                        title={`Importações (${LABEL.MIL_T} / mês)`}
+                        title={`Imports (${LABEL.MIL_T} / month)`}
                         loading={serieLoading}
                         height={280}
                       >
@@ -431,11 +431,11 @@ export default function MdicComexPage() {
                     </div>
                   </div>
 
-                  {/* ── Volume Exportado ─────────────────────────────── */}
+                  {/* ── Exported Volume ─────────────────────────────── */}
                   <div className="row mb-2">
                     <div className="col-12">
                       <ChartSection
-                        title={`Exportações (${LABEL.MIL_T} / mês)`}
+                        title={`Exports (${LABEL.MIL_T} / month)`}
                         loading={serieLoading}
                         height={280}
                       >
@@ -449,7 +449,7 @@ export default function MdicComexPage() {
                     </div>
                   </div>
 
-                  {/* ── Top Países ───────────────────────────────────── */}
+                  {/* ── Top Countries ───────────────────────────────────── */}
                   <div className="row mb-2">
                     <div className="col-lg-6">
                       <div className="chart-container" style={{ minHeight: 420, position: "relative", opacity: topLoading ? 0.5 : 1 }}>
@@ -483,7 +483,7 @@ export default function MdicComexPage() {
       <ExportModal
         open={exportOpen}
         onClose={() => setExportOpen(false)}
-        title="Exportar — MDIC Comex"
+        title="Export — MDIC Comex"
         datasetKey="mdic_comex"
         // Re-key by granularity so useExportSize debounces independently for
         // raw vs each aggregated path.
@@ -503,7 +503,7 @@ export default function MdicComexPage() {
         }}
         excelBusy={excelLoading}
         csvBusy={csvLoading}
-        loadingLabel={excelLoading ? "Gerando Excel..." : "Baixando CSV..."}
+        loadingLabel={excelLoading ? "Generating Excel..." : "Downloading CSV..."}
         onExportExcel={async () => {
           if (!supabase) return;
           if (rawOverAbs) {
@@ -576,10 +576,10 @@ export default function MdicComexPage() {
         }}
         filters={
           <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: "Arial" }}>
-            {/* Granularidade — default "raw" ───────────────────────────────── */}
+            {/* Granularity — default "raw" ───────────────────────────────── */}
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                Granularidade
+                Granularity
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 {MDIC_GRANULARITY_OPTIONS.map((opt) => (
@@ -621,9 +621,9 @@ export default function MdicComexPage() {
                   lineHeight: 1.4,
                 }}
               >
-                Volume muito alto ({(exportRawCount ?? 0).toLocaleString("pt-BR")} linhas).
-                Escolha uma <strong>granularidade agregada</strong> (NCM, país, fluxo ou ano/mês)
-                ou aplique mais filtros (NCM, fluxo, período).
+                Very high volume ({(exportRawCount ?? 0).toLocaleString("en-US")} rows).
+                Choose an <strong>aggregated granularity</strong> (NCM, country, flow, or year/month)
+                or apply more filters (NCM, flow, period).
               </div>
             )}
             {!rawOverAbs && rawOverExcel && (
@@ -639,30 +639,30 @@ export default function MdicComexPage() {
                   lineHeight: 1.4,
                 }}
               >
-                Volume alto para Excel ({(exportRawCount ?? 0).toLocaleString("pt-BR")} linhas).
-                Recomendamos baixar em <strong>CSV</strong> (mais leve) — Excel pode falhar no
-                navegador.
+                High volume for Excel ({(exportRawCount ?? 0).toLocaleString("en-US")} rows).
+                We recommend downloading as <strong>CSV</strong> (lighter) — Excel may fail in
+                the browser.
               </div>
             )}
 
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Período</div>
+              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Period</div>
               {hasYears && (
                 <PeriodSlider years={anos} value={exportRange} onChange={setExportRange} />
               )}
             </div>
 
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Fluxo</div>
+              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Flow</div>
               <select
                 className="form-select form-select-sm"
                 value={exportFlow}
                 onChange={e => setExportFlow(e.target.value)}
                 style={{ fontFamily: "Arial", fontSize: 12, maxWidth: 220 }}
               >
-                <option value="ALL">Importação + Exportação</option>
-                <option value="import">Importação</option>
-                <option value="export">Exportação</option>
+                <option value="ALL">Imports + Exports</option>
+                <option value="import">Imports</option>
+                <option value="export">Exports</option>
               </select>
             </div>
 

@@ -32,10 +32,10 @@ import {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const GRAN_OPTIONS = [
-  { value: "brasil",    label: "Brasil" },
-  { value: "uf",        label: "UF" },
-  { value: "municipio", label: "Município" },
-  { value: "regiao",    label: "Região" },
+  { value: "brasil",    label: "Brazil" },
+  { value: "uf",        label: "State" },
+  { value: "municipio", label: "City" },
+  { value: "regiao",    label: "Region" },
 ] as const;
 type Granularidade = typeof GRAN_OPTIONS[number]["value"];
 
@@ -346,10 +346,10 @@ export default function AnpPrecosDistribuicaoPage() {
               </div>
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
 
-              <div className="sidebar-section-label">Filtros</div>
+              <div className="sidebar-section-label">Filters</div>
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Produto</div>
+                <div className="sidebar-filter-label">Product</div>
                 <select
                   className="form-select form-select-sm"
                   value={selectedProduto}
@@ -359,9 +359,9 @@ export default function AnpPrecosDistribuicaoPage() {
                   aria-busy={filtrosLoading}
                 >
                   {filtrosLoading ? (
-                    <option value="">Carregando...</option>
+                    <option value="">Loading...</option>
                   ) : filtros.produtos.length === 0 ? (
-                    <option value="">— sem dados —</option>
+                    <option value="">— no data —</option>
                   ) : (
                     filtros.produtos.map(p => (
                       <option key={p} value={p}>{p}</option>
@@ -371,7 +371,7 @@ export default function AnpPrecosDistribuicaoPage() {
               </div>
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Granularidade</div>
+                <div className="sidebar-filter-label">Granularity</div>
                 {filtrosLoading ? (
                   <div
                     aria-busy="true"
@@ -385,7 +385,7 @@ export default function AnpPrecosDistribuicaoPage() {
                       background: "#fafafa",
                     }}
                   >
-                    Carregando...
+                    Loading...
                   </div>
                 ) : (
                   <SegmentedToggle<Granularidade>
@@ -399,7 +399,7 @@ export default function AnpPrecosDistribuicaoPage() {
 
               {filtrosLoading ? (
                 <div className="sidebar-filter-section">
-                  <div className="sidebar-filter-label">Locais</div>
+                  <div className="sidebar-filter-label">Locations</div>
                   <div
                     aria-busy="true"
                     style={{
@@ -412,16 +412,16 @@ export default function AnpPrecosDistribuicaoPage() {
                       background: "#fafafa",
                     }}
                   >
-                    Carregando...
+                    Loading...
                   </div>
                 </div>
               ) : (
                 selectedGran !== "brasil" && (
                   <MultiSelectFilter
                     label={
-                      selectedGran === "uf"        ? "UF" :
-                      selectedGran === "municipio" ? "Município" :
-                      "Região"
+                      selectedGran === "uf"        ? "State" :
+                      selectedGran === "municipio" ? "City" :
+                      "Region"
                     }
                     items={availableLocais}
                     selected={selectedLocais}
@@ -439,12 +439,12 @@ export default function AnpPrecosDistribuicaoPage() {
 
               {selectedGran === "municipio" && (
                 <div style={{ fontSize: 11, color: "#888", marginTop: -6, marginBottom: 12, paddingLeft: 2 }}>
-                  Máx. {MAX_LOCAIS_CHART} municípios no gráfico ({localsCounter}/{MAX_LOCAIS_CHART}).
+                  Max. {MAX_LOCAIS_CHART} cities in the chart ({localsCounter}/{MAX_LOCAIS_CHART}).
                 </div>
               )}
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Período</div>
+                <div className="sidebar-filter-label">Period</div>
                 {!loading && hasYears && (
                   <PeriodSlider years={allYears} value={yearRange} onChange={setYearRange} />
                 )}
@@ -456,8 +456,8 @@ export default function AnpPrecosDistribuicaoPage() {
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
               <DashboardHeader
-                title="ANP — Preços de Distribuição de Combustíveis"
-                sub="Preços médios praticados por distribuidoras (Brasil semanal, UF/Município mensal)"
+                title="ANP — Fuel Distribution Prices"
+                sub="Average prices charged by distributors (Brazil weekly, State/City monthly)"
                 period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
                 rightSlot={
                   <ExportPanel
@@ -487,13 +487,13 @@ export default function AnpPrecosDistribuicaoPage() {
                     <ChartSection
                       title={
                         selectedProduto
-                          ? `Preço Médio — ${selectedProduto} (${
-                              selectedGran === "brasil"    ? "Brasil" :
-                              selectedGran === "uf"        ? "por UF" :
-                              selectedGran === "municipio" ? "por Município" :
-                              "por Região"
+                          ? `Average Price — ${selectedProduto} (${
+                              selectedGran === "brasil"    ? "Brazil" :
+                              selectedGran === "uf"        ? "by State" :
+                              selectedGran === "municipio" ? "by City" :
+                              "by Region"
                             })`
-                          : "Preço Médio"
+                          : "Average Price"
                       }
                       loading={chartLoading}
                       height={360}
@@ -517,7 +517,7 @@ export default function AnpPrecosDistribuicaoPage() {
       <ExportModal
         open={exportOpen}
         onClose={() => setExportOpen(false)}
-        title="Exportar — ANP Preços Distribuição"
+        title="Export — ANP Distribution Prices"
         datasetKey="anp-precos-distribuicao"
         currentFilters={exportFilters}
         countFetcher={async () => {
@@ -526,7 +526,7 @@ export default function AnpPrecosDistribuicaoPage() {
         }}
         excelBusy={excelLoading}
         csvBusy={csvLoading}
-        loadingLabel={excelLoading ? "Gerando Excel..." : "Baixando CSV..."}
+        loadingLabel={excelLoading ? "Generating Excel..." : "Downloading CSV..."}
         onExportExcel={async () => {
           if (!supabase) return;
           setExcelLoading(true);
@@ -587,7 +587,7 @@ export default function AnpPrecosDistribuicaoPage() {
         filters={
           <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: "Arial" }}>
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Período</div>
+              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Period</div>
               {hasYears && (
                 <PeriodSlider years={allYears} value={exportRange} onChange={setExportRange} />
               )}
@@ -595,10 +595,10 @@ export default function AnpPrecosDistribuicaoPage() {
 
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                Produtos <span style={{ color: "#888", fontWeight: 400 }}>({exportProdutos.length}/{filtros.produtos.length})</span>
+                Products <span style={{ color: "#888", fontWeight: 400 }}>({exportProdutos.length}/{filtros.produtos.length})</span>
               </div>
               <MultiSelectFilter
-                label="Produtos"
+                label="Products"
                 items={filtros.produtos}
                 selected={exportProdutos}
                 onToggle={(p) =>
@@ -615,10 +615,10 @@ export default function AnpPrecosDistribuicaoPage() {
 
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                Granularidades <span style={{ color: "#888", fontWeight: 400 }}>({exportGranularidades.length}/{filtros.granularidades.length})</span>
+                Granularities <span style={{ color: "#888", fontWeight: 400 }}>({exportGranularidades.length}/{filtros.granularidades.length})</span>
               </div>
               <MultiSelectFilter
-                label="Granularidades"
+                label="Granularities"
                 items={filtros.granularidades}
                 selected={exportGranularidades}
                 onToggle={(g) =>
@@ -636,7 +636,7 @@ export default function AnpPrecosDistribuicaoPage() {
             {exportAvailableLocais.length > 0 && (
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                  Locais <span style={{ color: "#888", fontWeight: 400 }}>({exportLocais.length === 0 ? "todos" : `${exportLocais.length}/${exportAvailableLocais.length}`})</span>
+                  Locations <span style={{ color: "#888", fontWeight: 400 }}>({exportLocais.length === 0 ? "all" : `${exportLocais.length}/${exportAvailableLocais.length}`})</span>
                 </div>
                 <SearchableMultiSelect
                   options={exportAvailableLocais}

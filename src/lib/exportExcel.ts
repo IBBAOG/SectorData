@@ -553,13 +553,13 @@ export async function downloadMarketShareExcel(
 // Usage:
 //   await downloadGenericExcel({
 //     rows,
-//     filename: "ANP GLP",
-//     title:    "ANP — Vendas de GLP",
+//     filename: "ANP LPG",
+//     title:    "ANP — LPG Sales",
 //     columns:  [
-//       { key: "ano",           header: "Ano" },
-//       { key: "mes",           header: "Mês" },
-//       { key: "distribuidora", header: "Distribuidora" },
-//       { key: "vendas_kg",     header: "Vendas (kg)", format: "#,##0" },
+//       { key: "ano",           header: "Year" },
+//       { key: "mes",           header: "Month" },
+//       { key: "distribuidora", header: "Distributor" },
+//       { key: "vendas_kg",     header: "Sales (kg)", format: "#,##0" },
 //     ],
 //   });
 //
@@ -598,7 +598,7 @@ export type GenericExcelOptions<T extends Record<string, unknown>> = {
   filename: string;
   /** Optional title shown on row 1 in brand orange. When omitted, the header row is row 1. */
   title?: string;
-  /** Worksheet name. Defaults to "Dados". */
+  /** Worksheet name. Defaults to "Data". */
   sheetName?: string;
   /** Explicit column order + headers + formatting. When omitted, falls back to `Object.keys(rows[0])`. */
   columns?: GenericExcelColumn<T>[];
@@ -609,7 +609,7 @@ export type GenericExcelOptions<T extends Record<string, unknown>> = {
 export async function downloadGenericExcel<T extends Record<string, unknown>>(
   opts: GenericExcelOptions<T>,
 ): Promise<void> {
-  const { rows, filename, title, sheetName = "Dados", columns, mergeTitleCells = false } = opts;
+  const { rows, filename, title, sheetName = "Data", columns, mergeTitleCells = false } = opts;
   if (!rows || rows.length === 0) return;
 
   const cols: GenericExcelColumn<T>[] = columns ?? (
@@ -1051,7 +1051,7 @@ export async function downloadSalesVolumesExcel(
       const hRow = ws.getRow(row);
       hRow.height = ROW_H;
       const lbl = ws.getCell(row, 1);
-      lbl.value = "Volume (mil m³)";
+      lbl.value = "Volume (thousand m³)";
       lbl.font = { name: "Arial", size: 10, bold: true, color: C.headerFg };
       lbl.fill = { type: "pattern", pattern: "solid", fgColor: C.headerBg };
       lbl.alignment = { horizontal: "left" };
@@ -1242,16 +1242,16 @@ export async function downloadMdicComexExcel(rows: MdicComexSerieRow[]): Promise
   await downloadGenericExcel<MdicComexSerieRow>({
     rows,
     sheetName: "MDIC Comex",
-    title: "MDIC Comex Stat — Importações e Exportações",
+    title: "MDIC Comex Stat — Imports and Exports",
     filename: "MDIC Comex",
     columns: [
-      { key: "ano",           header: "Ano",             width: 8 },
-      { key: "mes",           header: "Mês",             width: 6 },
-      { key: "flow",          header: "Fluxo",           width: 12 },
+      { key: "ano",           header: "Year",             width: 8 },
+      { key: "mes",           header: "Month",             width: 6 },
+      { key: "flow",          header: "Flow",            width: 12 },
       { key: "ncm_codigo",    header: "NCM",             width: 14 },
-      { key: "ncm_nome",      header: "Descrição NCM",   width: 36, align: "left" },
+      { key: "ncm_nome",      header: "NCM Description", width: 36, align: "left" },
       { key: "volume_kg",     header: "Volume (kg)",     width: 18, format: "#,##0" },
-      { key: "valor_fob_usd", header: "Valor FOB (US$)", width: 20, format: "#,##0.00" },
+      { key: "valor_fob_usd", header: "FOB Value (US$)", width: 20, format: "#,##0.00" },
     ],
   });
 }
@@ -1262,20 +1262,20 @@ export async function downloadAnpCdpExcel(rows: AnpCdpSeriePonto[]): Promise<voi
   await downloadGenericExcel<AnpCdpSeriePonto>({
     rows,
     sheetName: "ANP CDP",
-    title: "ANP CDP — Produção por Poço",
+    title: "ANP CDP — Production by Well",
     filename: "ANP CDP",
     columns: [
-      { key: "ano",                          header: "Ano",                     width: 8 },
-      { key: "mes",                          header: "Mês",                     width: 6 },
-      { key: "petroleo_bbl_dia",             header: "Petróleo (bbl/dia)",      width: 18, format: "#,##0.00" },
-      { key: "oleo_bbl_dia",                 header: "Óleo (bbl/dia)",          width: 18, format: "#,##0.00" },
-      { key: "condensado_bbl_dia",           header: "Condensado (bbl/dia)",    width: 20, format: "#,##0.00" },
-      { key: "gas_total_mm3_dia",            header: "Gás Total (Mm³/dia)",     width: 20, format: "#,##0.00" },
-      { key: "gas_natural_assoc_mm3_dia",    header: "Gás Assoc. (Mm³/dia)",    width: 22, format: "#,##0.00" },
-      { key: "gas_natural_n_assoc_mm3_dia",  header: "Gás N-Assoc. (Mm³/dia)",  width: 22, format: "#,##0.00" },
-      { key: "gas_royalties",                header: "Gás Royalties",           width: 18, format: "#,##0.00" },
-      { key: "agua_bbl_dia",                 header: "Água (bbl/dia)",          width: 16, format: "#,##0.00" },
-      { key: "tempo_prod_hs_mes",            header: "Tempo Produção (hs/mês)", width: 22, format: "#,##0.00" },
+      { key: "ano",                          header: "Year",                     width: 8 },
+      { key: "mes",                          header: "Month",                     width: 6 },
+      { key: "petroleo_bbl_dia",             header: "Petroleum (bbl/day)",      width: 18, format: "#,##0.00" },
+      { key: "oleo_bbl_dia",                 header: "Oil (bbl/day)",          width: 18, format: "#,##0.00" },
+      { key: "condensado_bbl_dia",           header: "Condensate (bbl/day)",    width: 20, format: "#,##0.00" },
+      { key: "gas_total_mm3_dia",            header: "Total Gas (Mm³/day)",     width: 20, format: "#,##0.00" },
+      { key: "gas_natural_assoc_mm3_dia",    header: "Assoc. Gas (Mm³/day)",    width: 22, format: "#,##0.00" },
+      { key: "gas_natural_n_assoc_mm3_dia",  header: "Non-Assoc. Gas (Mm³/day)",  width: 22, format: "#,##0.00" },
+      { key: "gas_royalties",                header: "Gas Royalties",           width: 18, format: "#,##0.00" },
+      { key: "agua_bbl_dia",                 header: "Water (bbl/day)",          width: 16, format: "#,##0.00" },
+      { key: "tempo_prod_hs_mes",            header: "Production Time (hrs/month)", width: 22, format: "#,##0.00" },
     ],
   });
 }
@@ -1292,49 +1292,49 @@ export async function downloadAnpCdpRawExcel(rows: AnpCdpRawRow[]): Promise<void
   await downloadGenericExcel<AnpCdpRawRow>({
     rows,
     sheetName: "ANP CDP — Raw",
-    title: "ANP CDP — Produção por Poço (raw)",
+    title: "ANP CDP — Production by Well (raw)",
     filename: "ANP CDP raw",
     columns: [
-      { key: "ano",                          header: "Ano",                     width: 8 },
-      { key: "mes",                          header: "Mês",                     width: 6 },
-      { key: "estado",                       header: "Estado",                  width: 10 },
-      { key: "bacia",                        header: "Bacia",                   width: 18, align: "left" },
-      { key: "campo",                        header: "Campo",                   width: 22, align: "left" },
-      { key: "poco",                         header: "Poço",                    width: 18, align: "left" },
-      { key: "operador",                     header: "Operador",                width: 22, align: "left" },
-      { key: "nome_poco_operador",           header: "Nome Poço (Operador)",    width: 22, align: "left" },
-      { key: "num_contrato",                 header: "Nº Contrato",             width: 16, align: "left" },
-      { key: "instalacao_destino",           header: "Instalação Destino",      width: 22, align: "left" },
-      { key: "tipo_instalacao",              header: "Tipo Instalação",         width: 18, align: "left" },
-      { key: "local",                        header: "Ambiente",                width: 12 },
-      { key: "petroleo_bbl_dia",             header: "Petróleo (bbl/dia)",      width: 18, format: "#,##0.00" },
-      { key: "oleo_bbl_dia",                 header: "Óleo (bbl/dia)",          width: 18, format: "#,##0.00" },
-      { key: "condensado_bbl_dia",           header: "Condensado (bbl/dia)",    width: 20, format: "#,##0.00" },
-      { key: "gas_total_mm3_dia",            header: "Gás Total (Mm³/dia)",     width: 20, format: "#,##0.00" },
-      { key: "gas_natural_assoc_mm3_dia",    header: "Gás Assoc. (Mm³/dia)",    width: 22, format: "#,##0.00" },
-      { key: "gas_natural_n_assoc_mm3_dia",  header: "Gás N-Assoc. (Mm³/dia)",  width: 22, format: "#,##0.00" },
-      { key: "gas_royalties",                header: "Gás Royalties",           width: 18, format: "#,##0.00" },
-      { key: "agua_bbl_dia",                 header: "Água (bbl/dia)",          width: 16, format: "#,##0.00" },
-      { key: "tempo_prod_hs_mes",            header: "Tempo Produção (hs/mês)", width: 22, format: "#,##0.00" },
+      { key: "ano",                          header: "Year",                     width: 8 },
+      { key: "mes",                          header: "Month",                     width: 6 },
+      { key: "estado",                       header: "State",                  width: 10 },
+      { key: "bacia",                        header: "Basin",                   width: 18, align: "left" },
+      { key: "campo",                        header: "Field",                   width: 22, align: "left" },
+      { key: "poco",                         header: "Well",                    width: 18, align: "left" },
+      { key: "operador",                     header: "Operator",                width: 22, align: "left" },
+      { key: "nome_poco_operador",           header: "Well Name (Operator)",    width: 22, align: "left" },
+      { key: "num_contrato",                 header: "Contract No.",            width: 16, align: "left" },
+      { key: "instalacao_destino",           header: "Destination Facility",    width: 22, align: "left" },
+      { key: "tipo_instalacao",              header: "Facility Type",           width: 18, align: "left" },
+      { key: "local",                        header: "Environment",             width: 12 },
+      { key: "petroleo_bbl_dia",             header: "Petroleum (bbl/day)",     width: 18, format: "#,##0.00" },
+      { key: "oleo_bbl_dia",                 header: "Oil (bbl/day)",           width: 18, format: "#,##0.00" },
+      { key: "condensado_bbl_dia",           header: "Condensate (bbl/day)",    width: 20, format: "#,##0.00" },
+      { key: "gas_total_mm3_dia",            header: "Total Gas (Mm³/day)",     width: 20, format: "#,##0.00" },
+      { key: "gas_natural_assoc_mm3_dia",    header: "Assoc. Gas (Mm³/day)",    width: 22, format: "#,##0.00" },
+      { key: "gas_natural_n_assoc_mm3_dia",  header: "Non-Assoc. Gas (Mm³/day)", width: 22, format: "#,##0.00" },
+      { key: "gas_royalties",                header: "Gas Royalties",           width: 18, format: "#,##0.00" },
+      { key: "agua_bbl_dia",                 header: "Water (bbl/day)",         width: 16, format: "#,##0.00" },
+      { key: "tempo_prod_hs_mes",            header: "Production Time (hrs/month)", width: 22, format: "#,##0.00" },
     ],
   });
 }
 
-// ── ANP Preços Distribuição export ───────────────────────────────────────────
+// ── ANP Distribution Prices export ───────────────────────────────────────────
 
 export async function downloadAnpPdistExcel(rows: AnpPdistSerieRow[]): Promise<void> {
   await downloadGenericExcel<AnpPdistSerieRow>({
     rows,
-    sheetName: "ANP Preços Distrib.",
-    title: "ANP — Preços de Distribuição de Combustíveis",
-    filename: "ANP Precos Distribuicao",
+    sheetName: "ANP Distrib. Prices",
+    title: "ANP — Fuel Distribution Prices",
+    filename: "ANP Distribution Prices",
     columns: [
-      { key: "data_referencia", header: "Data Referência", width: 16 },
-      { key: "local",           header: "Local",           width: 26, align: "left" },
-      { key: "preco_medio",     header: "Preço Médio",     width: 14, format: "0.0000" },
-      { key: "preco_minimo",    header: "Preço Mínimo",    width: 14, format: "0.0000" },
-      { key: "preco_maximo",    header: "Preço Máximo",    width: 14, format: "0.0000" },
-      { key: "unidade",         header: "Unidade",         width: 10 },
+      { key: "data_referencia", header: "Reference Date",  width: 16 },
+      { key: "local",           header: "Location",        width: 26, align: "left" },
+      { key: "preco_medio",     header: "Avg. Price",      width: 14, format: "0.0000" },
+      { key: "preco_minimo",    header: "Min. Price",      width: 14, format: "0.0000" },
+      { key: "preco_maximo",    header: "Max. Price",      width: 14, format: "0.0000" },
+      { key: "unidade",         header: "Unit",            width: 10 },
     ],
   });
 }
@@ -1345,15 +1345,15 @@ export async function downloadAnpLpcExcel(rows: AnpLpcSerieRow[]): Promise<void>
   await downloadGenericExcel<AnpLpcSerieRow>({
     rows,
     sheetName: "ANP LPC",
-    title: "ANP LPC — Levantamento de Preços de Combustíveis",
+    title: "ANP LPC — Fuel Price Survey",
     filename: "ANP LPC",
     columns: [
-      { key: "data_fim",           header: "Data Fim",           width: 12 },
-      { key: "produto",            header: "Produto",            width: 22, align: "left" },
-      { key: "estado",             header: "Estado",             width: 8 },
-      { key: "preco_medio_venda",  header: "Preço Médio Venda",  width: 18, format: "0.000" },
-      { key: "preco_medio_compra", header: "Preço Médio Compra", width: 20, format: "0.000" },
-      { key: "n_postos",           header: "Nº Postos",          width: 12, format: "#,##0" },
+      { key: "data_fim",           header: "End Date",          width: 12 },
+      { key: "produto",            header: "Product",           width: 22, align: "left" },
+      { key: "estado",             header: "State",             width: 8 },
+      { key: "preco_medio_venda",  header: "Avg. Sale Price",   width: 18, format: "0.000" },
+      { key: "preco_medio_compra", header: "Avg. Purchase Price", width: 20, format: "0.000" },
+      { key: "n_postos",           header: "Stations",          width: 12, format: "#,##0" },
     ],
   });
 }
@@ -1384,15 +1384,15 @@ type AnpCdpDimColumn = {
 };
 
 const ANP_CDP_DIM_COLS: Record<AnpCdpGroupBy, AnpCdpDimColumn> = {
-  ano:                { header: "Ano",                width: 8 },
-  mes:                { header: "Mês",                width: 6 },
-  campo:              { header: "Campo",              width: 22, align: "left" },
-  bacia:              { header: "Bacia",              width: 18, align: "left" },
-  operador:           { header: "Operador",           width: 22, align: "left" },
-  estado:             { header: "Estado",             width: 10 },
-  local:              { header: "Ambiente",           width: 12 },
-  instalacao_destino: { header: "Instalação Destino", width: 22, align: "left" },
-  tipo_instalacao:    { header: "Tipo Instalação",    width: 18, align: "left" },
+  ano:                { header: "Year",               width: 8 },
+  mes:                { header: "Month",              width: 6 },
+  campo:              { header: "Field",              width: 22, align: "left" },
+  bacia:              { header: "Basin",              width: 18, align: "left" },
+  operador:           { header: "Operator",           width: 22, align: "left" },
+  estado:             { header: "State",              width: 10 },
+  local:              { header: "Environment",        width: 12 },
+  instalacao_destino: { header: "Destination Facility", width: 22, align: "left" },
+  tipo_instalacao:    { header: "Facility Type",      width: 18, align: "left" },
 };
 
 const ANP_CDP_METRIC_COLS: Array<{
@@ -1401,15 +1401,15 @@ const ANP_CDP_METRIC_COLS: Array<{
   width: number;
   format: string;
 }> = [
-  { key: "petroleo_bbl_dia",            header: "Petróleo (bbl/dia)",      width: 18, format: "#,##0.00" },
-  { key: "oleo_bbl_dia",                header: "Óleo (bbl/dia)",          width: 18, format: "#,##0.00" },
-  { key: "condensado_bbl_dia",          header: "Condensado (bbl/dia)",    width: 20, format: "#,##0.00" },
-  { key: "gas_total_mm3_dia",           header: "Gás Total (Mm³/dia)",     width: 20, format: "#,##0.00" },
-  { key: "gas_natural_assoc_mm3_dia",   header: "Gás Assoc. (Mm³/dia)",    width: 22, format: "#,##0.00" },
-  { key: "gas_natural_n_assoc_mm3_dia", header: "Gás N-Assoc. (Mm³/dia)",  width: 22, format: "#,##0.00" },
-  { key: "gas_royalties",               header: "Gás Royalties",           width: 18, format: "#,##0.00" },
-  { key: "agua_bbl_dia",                header: "Água (bbl/dia)",          width: 16, format: "#,##0.00" },
-  { key: "tempo_prod_hs_mes",           header: "Tempo Produção (hs/mês)", width: 22, format: "#,##0.00" },
+  { key: "petroleo_bbl_dia",            header: "Petroleum (bbl/day)",      width: 18, format: "#,##0.00" },
+  { key: "oleo_bbl_dia",                header: "Oil (bbl/day)",          width: 18, format: "#,##0.00" },
+  { key: "condensado_bbl_dia",          header: "Condensate (bbl/day)",    width: 20, format: "#,##0.00" },
+  { key: "gas_total_mm3_dia",           header: "Total Gas (Mm³/day)",     width: 20, format: "#,##0.00" },
+  { key: "gas_natural_assoc_mm3_dia",   header: "Assoc. Gas (Mm³/day)",    width: 22, format: "#,##0.00" },
+  { key: "gas_natural_n_assoc_mm3_dia", header: "Non-Assoc. Gas (Mm³/day)",  width: 22, format: "#,##0.00" },
+  { key: "gas_royalties",               header: "Gas Royalties",           width: 18, format: "#,##0.00" },
+  { key: "agua_bbl_dia",                header: "Water (bbl/day)",          width: 16, format: "#,##0.00" },
+  { key: "tempo_prod_hs_mes",           header: "Production Time (hrs/month)", width: 22, format: "#,##0.00" },
 ];
 
 export async function downloadAnpCdpAggregatedExcel(
@@ -1433,7 +1433,7 @@ export async function downloadAnpCdpAggregatedExcel(
   await downloadGenericExcel<AnpCdpAggregatedRow>({
     rows,
     sheetName: "ANP CDP",
-    title: `ANP CDP — Agregado (${groupBy.join(", ")})`,
+    title: `ANP CDP — Aggregated (${groupBy.join(", ")})`,
     filename: filenameBase,
     columns: [
       ...dimCols,
@@ -1456,12 +1456,12 @@ type MdicComexDimColumn = {
 };
 
 const MDIC_COMEX_DIM_COLS: Record<MdicComexGroupBy, MdicComexDimColumn> = {
-  ano:        { header: "Ano",          width: 8 },
-  mes:        { header: "Mês",          width: 6 },
-  flow:       { header: "Fluxo",        width: 12 },
+  ano:        { header: "Year",         width: 8 },
+  mes:        { header: "Month",        width: 6 },
+  flow:       { header: "Flow",         width: 12 },
   ncm_codigo: { header: "NCM",          width: 14 },
-  ncm_nome:   { header: "Descrição NCM", width: 36, align: "left" },
-  pais:       { header: "País",         width: 22, align: "left" },
+  ncm_nome:   { header: "NCM Description", width: 36, align: "left" },
+  pais:       { header: "Country",      width: 22, align: "left" },
 };
 
 const MDIC_COMEX_METRIC_COLS: Array<{
@@ -1471,7 +1471,7 @@ const MDIC_COMEX_METRIC_COLS: Array<{
   format: string;
 }> = [
   { key: "volume_kg",     header: "Volume (kg)",     width: 18, format: "#,##0" },
-  { key: "valor_fob_usd", header: "Valor FOB (US$)", width: 20, format: "#,##0.00" },
+  { key: "valor_fob_usd", header: "FOB Value (US$)", width: 20, format: "#,##0.00" },
 ];
 
 export async function downloadMdicComexAggregatedExcel(
@@ -1493,7 +1493,7 @@ export async function downloadMdicComexAggregatedExcel(
   await downloadGenericExcel<MdicComexAggregatedRow>({
     rows,
     sheetName: "MDIC Comex",
-    title: `MDIC Comex — Agregado (${groupBy.join(", ")})`,
+    title: `MDIC Comex — Aggregated (${groupBy.join(", ")})`,
     filename: filenameBase,
     columns: [
       ...dimCols,
@@ -1516,17 +1516,17 @@ export async function downloadMdicComexRawExcel(rows: MdicComexRawRow[]): Promis
   await downloadGenericExcel<MdicComexRawRow>({
     rows,
     sheetName: "MDIC Comex — Raw",
-    title: "MDIC Comex — Importações e Exportações (raw)",
+    title: "MDIC Comex — Imports and Exports (raw)",
     filename: "MDIC Comex raw",
     columns: [
-      { key: "ano",           header: "Ano",             width: 8 },
-      { key: "mes",           header: "Mês",             width: 6 },
-      { key: "flow",          header: "Fluxo",           width: 12 },
+      { key: "ano",           header: "Year",             width: 8 },
+      { key: "mes",           header: "Month",             width: 6 },
+      { key: "flow",          header: "Flow",            width: 12 },
       { key: "ncm_codigo",    header: "NCM",             width: 14 },
-      { key: "ncm_nome",      header: "Descrição NCM",   width: 36, align: "left" },
-      { key: "pais",          header: "País",            width: 22, align: "left" },
+      { key: "ncm_nome",      header: "NCM Description", width: 36, align: "left" },
+      { key: "pais",          header: "Country",         width: 22, align: "left" },
       { key: "volume_kg",     header: "Volume (kg)",     width: 18, format: "#,##0" },
-      { key: "valor_fob_usd", header: "Valor FOB (US$)", width: 20, format: "#,##0.00" },
+      { key: "valor_fob_usd", header: "FOB Value (US$)", width: 20, format: "#,##0.00" },
     ],
   });
 }

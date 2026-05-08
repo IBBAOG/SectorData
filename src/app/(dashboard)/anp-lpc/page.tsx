@@ -92,7 +92,7 @@ function buildNacionalChart(
       height: 320,
       margin: { t: 10, b: 50, l: 75, r: 30 },
       hovermode: "x unified",
-      yaxis: { ...AXIS_LINE, title: { text: "R$ / L (ou kg)" } },
+      yaxis: { ...AXIS_LINE, title: { text: "R$ / L (or kg)" } },
       xaxis: { ...AXIS_LINE, type: "date" as const },
       legend: { orientation: "h", yanchor: "bottom", y: 1.01, xanchor: "left", x: 0 },
     },
@@ -292,10 +292,10 @@ export default function AnpLpcPage() {
               </div>
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
 
-              <div className="sidebar-section-label">Filtros</div>
+              <div className="sidebar-section-label">Filters</div>
 
               <MultiSelectFilter
-                label="Produto"
+                label="Product"
                 items={filtros.produtos}
                 selected={selectedProdutos}
                 onToggle={toggleProduto}
@@ -308,14 +308,14 @@ export default function AnpLpcPage() {
               />
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Período</div>
+                <div className="sidebar-filter-label">Period</div>
                 {!loading && hasYears && (
                   <PeriodSlider years={allYears} value={yearRange} onChange={setYearRange} />
                 )}
               </div>
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Detalhe por Região — Produto</div>
+                <div className="sidebar-filter-label">Detail by Region — Product</div>
                 <select
                   className="form-select form-select-sm"
                   value={detailProduto}
@@ -334,8 +334,8 @@ export default function AnpLpcPage() {
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
               <DashboardHeader
-                title="ANP LPC — Levantamento de Preços de Combustíveis"
-                sub="Preço médio semanal nos postos por produto e UF (média ponderada por número de postos pesquisados)"
+                title="ANP LPC — Fuel Price Survey"
+                sub="Weekly average price at gas stations by product and state (weighted by number of surveyed stations)"
                 period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
                 rightSlot={
                   <ExportPanel
@@ -364,7 +364,7 @@ export default function AnpLpcPage() {
                   <div className="row mb-2">
                     <div className="col-12">
                       <ChartSection
-                        title="Preço Médio Nacional — Venda (R$/L ou R$/kg)"
+                        title="Average National Price — Sale (R$/L or R$/kg)"
                         loading={serieLoading}
                         height={320}
                       >
@@ -381,7 +381,7 @@ export default function AnpLpcPage() {
                   <div className="row mb-2">
                     <div className="col-12">
                       <ChartSection
-                        title={`Preço por Região — ${detailProduto}`}
+                        title={`Price by Region — ${detailProduto}`}
                         loading={serieLoading}
                         height={280}
                       >
@@ -405,7 +405,7 @@ export default function AnpLpcPage() {
       <ExportModal
         open={exportOpen}
         onClose={() => setExportOpen(false)}
-        title="Exportar — ANP LPC"
+        title="Export — ANP LPC"
         datasetKey="anp_lpc"
         currentFilters={exportFilters}
         countFetcher={async () => {
@@ -414,7 +414,7 @@ export default function AnpLpcPage() {
         }}
         excelBusy={excelLoading}
         csvBusy={csvLoading}
-        loadingLabel={excelLoading ? "Gerando Excel..." : "Baixando CSV..."}
+        loadingLabel={excelLoading ? "Generating Excel..." : "Downloading CSV..."}
         onExportExcel={async () => {
           if (!supabase) return;
           setExcelLoading(true);
@@ -461,16 +461,16 @@ export default function AnpLpcPage() {
         filters={
           <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: "Arial" }}>
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Período</div>
+              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Period</div>
               {hasYears && (
                 <PeriodSlider years={allYears} value={exportRange} onChange={setExportRange} />
               )}
             </div>
 
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Produtos</div>
+              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Products</div>
               <MultiSelectFilter
-                label="Produtos"
+                label="Products"
                 items={filtros.produtos}
                 selected={exportProdutos}
                 onToggle={(p) =>
@@ -491,7 +491,7 @@ export default function AnpLpcPage() {
 
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                Estados <span style={{ color: "#888", fontWeight: 400 }}>({exportEstados.length === 0 ? filtros.estados.length : exportEstados.length}/{filtros.estados.length})</span>
+                States <span style={{ color: "#888", fontWeight: 400 }}>({exportEstados.length === 0 ? filtros.estados.length : exportEstados.length}/{filtros.estados.length})</span>
               </div>
               <SearchableMultiSelect
                 options={filtros.estados}

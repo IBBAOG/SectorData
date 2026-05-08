@@ -3,12 +3,13 @@
 // Standard page header for dashboard modules.
 //
 // Renders the same .page-header-title / .page-header-sub structure used
-// across Phase 3 dashboards, plus an optional "Período: yMin–yMax" badge
+// across Phase 3 dashboards, plus an optional "Period: yMin–yMax" badge
 // and the divider <hr> beneath. Visual output matches the previous inline
 // markup byte-for-byte.
 //
 // Phase 4 Bis additions (back-compat — defaults preserve old behavior):
-//   • lang?: "pt" | "en"        — toggles "Período" vs "Period" label.
+//   • lang?: "pt" | "en"        — kept for backward compatibility; both
+//                                  options now render the English "Period" label.
 //   • extraBadge?: ReactNode    — arbitrary node rendered after the period
 //                                  badge (e.g. "Last update: ...", date
 //                                  filter chip).
@@ -24,7 +25,7 @@ export interface DashboardHeaderProps {
   sub?: ReactNode;
   /** Optional [yMin, yMax] tuple. When truthy, renders a small grey badge. */
   period?: [number | string, number | string] | null;
-  /** Localizes the "Período/Period:" label of the period badge. Default "pt". */
+  /** Kept for backward compatibility; both values render the English "Period" label. Default "pt". */
   lang?: "pt" | "en";
   /** Extra inline badge/chip rendered after the period badge inside .page-header-sub. */
   extraBadge?: ReactNode;
@@ -44,7 +45,9 @@ export default function DashboardHeader({
   hideDivider = false,
 }: DashboardHeaderProps) {
   const showPeriod = period != null;
-  const periodLabel = lang === "en" ? "Period" : "Período";
+  // Always render English label regardless of `lang` (kept for back-compat).
+  void lang;
+  const periodLabel = "Period";
 
   const titleBlock = (
     <div className="mb-2">

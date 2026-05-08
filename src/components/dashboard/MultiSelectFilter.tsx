@@ -9,7 +9,7 @@
 //       <span style={...}>(N/total)</span>
 //     </div>
 //     {items.map(c => <div className="form-check">...</div>)}
-//     <button className="filter-btn-link">Limpar</button>
+//     <button className="filter-btn-link">Clear</button>
 //   </div>
 //
 // Visual matches existing dashboards: 9×9 round swatch (when `swatch` provided),
@@ -22,13 +22,13 @@ export interface MultiSelectFilterProps {
   items: string[];
   selected: string[];
   onToggle: (item: string) => void;
-  /** Optional clear handler — only renders the "Limpar" button when provided. */
+  /** Optional clear handler — only renders the "Clear" button when provided. */
   onClear?: () => void;
   /** Optional color for a 9×9 round swatch left of each label. */
   swatch?: (item: string) => string;
-  /** Optional pretty label per item (e.g. PreSal → "Pré-Sal"). Falls back to item itself. */
+  /** Optional pretty label per item (e.g. PreSal → "Pre-Salt"). Falls back to item itself. */
   itemLabel?: (item: string) => ReactNode;
-  /** Hides the "Limpar" button while selected.length <= minSelection. Default 0. */
+  /** Hides the "Clear" button while selected.length <= minSelection. Default 0. */
   minSelection?: number;
   /** Stable id prefix for input elements. */
   idPrefix?: string;
@@ -106,7 +106,7 @@ export default function MultiSelectFilter({
           style={{ marginTop: 4, fontFamily: "Arial", fontSize: 10 }}
           onClick={onClear}
         >
-          Limpar
+          Clear
         </button>
       )}
     </div>

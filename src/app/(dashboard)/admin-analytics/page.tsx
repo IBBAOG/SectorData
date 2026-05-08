@@ -45,20 +45,20 @@ import {
 
 const ORANGE = "#ff5000";
 const PERIOD_OPTIONS: { label: string; days: number }[] = [
-  { label: "7 dias", days: 7 },
-  { label: "30 dias", days: 30 },
-  { label: "90 dias", days: 90 },
+  { label: "7 days", days: 7 },
+  { label: "30 days", days: 30 },
+  { label: "90 days", days: 90 },
 ];
 
-// Janelas longas (> 90 dias) expostas via dropdown.
+// Long windows (> 90 days) exposed via dropdown.
 const LONG_PERIOD_OPTIONS: { label: string; days: number }[] = [
-  { label: "180 dias (6 meses)", days: 180 },
-  { label: "365 dias (1 ano)", days: 365 },
-  { label: "730 dias (2 anos)", days: 730 },
-  { label: "1825 dias (5 anos)", days: 1825 },
+  { label: "180 days (6 months)", days: 180 },
+  { label: "365 days (1 year)", days: 365 },
+  { label: "730 days (2 years)", days: 730 },
+  { label: "1825 days (5 years)", days: 1825 },
 ];
 
-const DOW_LABELS_PT = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+const DOW_LABELS_PT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 type SortField = keyof Pick<
   AnalyticsByDashboardRow,
@@ -69,12 +69,12 @@ type SortDir = "asc" | "desc";
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatNumber(n: number): string {
-  return new Intl.NumberFormat("pt-BR").format(n);
+  return new Intl.NumberFormat("en-US").format(n);
 }
 
 function formatTimestampBR(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleString("pt-BR", {
+  return d.toLocaleString("en-US", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -235,7 +235,7 @@ export default function AdminAnalyticsPage() {
       <div style={{ padding: "clamp(16px, 3vw, 32px)", maxWidth: 1400, margin: "0 auto" }}>
         <DashboardHeader
           title="Admin Analytics"
-          sub="Engajamento da plataforma — eventos de login, navegação e exportação."
+          sub="Platform engagement — login, navigation, and export events."
           extraBadge={
             <span style={{ marginLeft: 12, fontSize: 11, color: ORANGE, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>
               Admin only
@@ -246,7 +246,7 @@ export default function AdminAnalyticsPage() {
         {/* ── Period filter ───────────────────────────────────────────────── */}
         <div style={{ display: "flex", gap: 8, marginBottom: 24, alignItems: "center", flexWrap: "wrap" }}>
           <span style={{ fontSize: 12, color: "#666", fontWeight: 600, marginRight: 4 }}>
-            Período:
+            Period:
           </span>
           {PERIOD_OPTIONS.map((opt) => {
             const active = periodDays === opt.days;
@@ -273,10 +273,10 @@ export default function AdminAnalyticsPage() {
             );
           })}
 
-          {/* Separador visual entre pílulas e dropdown */}
+          {/* Visual separator between pills and dropdown */}
           <span style={{ color: "#ddd", fontSize: 14, margin: "0 2px", userSelect: "none" }}>|</span>
 
-          {/* Dropdown de janelas longas (> 90 dias) */}
+          {/* Long-window dropdown (> 90 days) */}
           <select
             value={LONG_PERIOD_OPTIONS.some((o) => o.days === periodDays) ? periodDays : ""}
             onChange={(e) => {
@@ -303,7 +303,7 @@ export default function AdminAnalyticsPage() {
             }}
           >
             <option value="" disabled>
-              Janela longa…
+              Long window…
             </option>
             {LONG_PERIOD_OPTIONS.map((opt) => (
               <option key={opt.days} value={opt.days}>
@@ -315,21 +315,21 @@ export default function AdminAnalyticsPage() {
 
         {/* ── Section 2: KPIs ─────────────────────────────────────────────── */}
         <section style={{ marginBottom: 32 }}>
-          <SectionTitle text="Visão geral" />
+          <SectionTitle text="Overview" />
           {kpisLoading ? (
             <BarrelLoading />
           ) : !kpis ? (
-            <EmptyMessage text="Sem dados de KPI." />
+            <EmptyMessage text="No KPI data." />
           ) : (
             <>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 12 }}>
-                <KpiCard label="DAU" value={kpis.dau} hint="Active hoje" big />
+                <KpiCard label="DAU" value={kpis.dau} hint="Active today" big />
                 <KpiCard label="WAU" value={kpis.wau} hint="Active 7d" big />
                 <KpiCard label="MAU" value={kpis.mau} hint="Active 30d" big />
                 <KpiCard
-                  label="Ativos no período"
+                  label="Active in period"
                   value={kpis.active_users_period}
-                  hint={`de ${formatNumber(kpis.total_users)} cadastrados`}
+                  hint={`of ${formatNumber(kpis.total_users)} registered`}
                   big
                 />
               </div>
@@ -344,22 +344,22 @@ export default function AdminAnalyticsPage() {
 
         {/* ── Section 3: By dashboard ─────────────────────────────────────── */}
         <section style={{ marginBottom: 32 }}>
-          <SectionTitle text="Engajamento por dashboard" />
+          <SectionTitle text="Engagement by dashboard" />
           <div className="settings-card" style={{ padding: 0, overflow: "hidden" }}>
             {byDashboardLoading ? (
               <div style={{ padding: 32 }}><BarrelLoading /></div>
             ) : sortedByDashboard.length === 0 ? (
-              <EmptyMessage text="Sem eventos no período selecionado." padded />
+              <EmptyMessage text="No events in the selected period." padded />
             ) : (
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead style={{ background: "#fafafa", borderBottom: "1px solid #eee" }}>
                     <tr>
-                      <ThSort label="Rota" field="route" current={sortField} dir={sortDir} onSort={handleSort} align="left" />
+                      <ThSort label="Route" field="route" current={sortField} dir={sortDir} onSort={handleSort} align="left" />
                       <ThSort label="Page views" field="page_views" current={sortField} dir={sortDir} onSort={handleSort} />
-                      <ThSort label="Usuários únicos" field="unique_users" current={sortField} dir={sortDir} onSort={handleSort} />
+                      <ThSort label="Unique users" field="unique_users" current={sortField} dir={sortDir} onSort={handleSort} />
                       <ThSort label="Exports" field="exports" current={sortField} dir={sortDir} onSort={handleSort} />
-                      <ThSort label="Bytes baixados" field="bytes_total" current={sortField} dir={sortDir} onSort={handleSort} />
+                      <ThSort label="Bytes downloaded" field="bytes_total" current={sortField} dir={sortDir} onSort={handleSort} />
                     </tr>
                   </thead>
                   <tbody>
@@ -383,14 +383,14 @@ export default function AdminAnalyticsPage() {
 
         {/* ── Section 4: By user ──────────────────────────────────────────── */}
         <section style={{ marginBottom: 32 }}>
-          <SectionTitle text="Engajamento por usuário" />
+          <SectionTitle text="Engagement by user" />
           <div className="settings-card" style={{ padding: 0, overflow: "hidden" }}>
             <div style={{ padding: "14px 16px", borderBottom: "1px solid #eee", background: "#fafafa" }}>
               <input
                 type="text"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Buscar por nome ou email…"
+                placeholder="Search by name or email…"
                 style={{
                   width: "100%",
                   maxWidth: 360,
@@ -407,15 +407,15 @@ export default function AdminAnalyticsPage() {
             {byUserLoading ? (
               <div style={{ padding: 32 }}><BarrelLoading /></div>
             ) : byUser.length === 0 ? (
-              <EmptyMessage text="Nenhum usuário com atividade no período." padded />
+              <EmptyMessage text="No user activity in the period." padded />
             ) : (
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead style={{ background: "#fafafa", borderBottom: "1px solid #eee" }}>
                     <tr>
-                      <Th label="Nome" align="left" />
+                      <Th label="Name" align="left" />
                       <Th label="Role" />
-                      <Th label="Último login" />
+                      <Th label="Last login" />
                       <Th label="Page views" />
                       <Th label="Exports" />
                       <Th label="Top dashboards" align="left" />
@@ -446,7 +446,7 @@ export default function AdminAnalyticsPage() {
 
         {/* ── Section 5: Heatmap ──────────────────────────────────────────── */}
         <section style={{ marginBottom: 64 }}>
-          <SectionTitle text="Heatmap horário" />
+          <SectionTitle text="Hourly heatmap" />
           <div className="settings-card" style={{ padding: 16 }}>
             {heatmapLoading ? (
               <BarrelLoading />
@@ -465,7 +465,7 @@ export default function AdminAnalyticsPage() {
                       [1, BRAND_ORANGE],
                     ],
                     hovertemplate:
-                      "<b>%{y} · %{x}</b><br>Eventos: %{z}<extra></extra>",
+                      "<b>%{y} · %{x}</b><br>Events: %{z}<extra></extra>",
                     showscale: true,
                     colorbar: { thickness: 10, len: 0.85 },
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -474,8 +474,8 @@ export default function AdminAnalyticsPage() {
                 layout={{
                   ...COMMON_LAYOUT,
                   margin: { t: 20, b: 40, l: 60, r: 40 },
-                  xaxis: { title: { text: "Hora" }, side: "bottom", fixedrange: true },
-                  yaxis: { title: { text: "Dia da semana" }, autorange: "reversed", fixedrange: true },
+                  xaxis: { title: { text: "Hour" }, side: "bottom", fixedrange: true },
+                  yaxis: { title: { text: "Day of week" }, autorange: "reversed", fixedrange: true },
                 }}
                 config={{ displayModeBar: false, responsive: true }}
               />
@@ -643,7 +643,7 @@ function UserRow({
           <span style={{ marginRight: 6, color: "#aaa", fontSize: 10 }}>
             {isOpen ? "▼" : "▶"}
           </span>
-          <strong style={{ color: "#1a1a1a" }}>{user.full_name || "(sem nome)"}</strong>
+          <strong style={{ color: "#1a1a1a" }}>{user.full_name || "(no name)"}</strong>
         </td>
         <td style={{ padding: "10px 16px", textAlign: "right" }}>
           <span
@@ -691,13 +691,13 @@ function UserRow({
         <tr style={{ borderBottom: "1px solid #f0f0f0", background: "#fff8f3" }}>
           <td colSpan={6} style={{ padding: "12px 24px 18px" }}>
             {timelineLoading ? (
-              <div style={{ padding: 12, color: "#888", fontSize: 12 }}>Carregando timeline…</div>
+              <div style={{ padding: 12, color: "#888", fontSize: 12 }}>Loading timeline…</div>
             ) : timeline.length === 0 ? (
-              <div style={{ padding: 12, color: "#999", fontSize: 12 }}>Sem eventos no período.</div>
+              <div style={{ padding: 12, color: "#999", fontSize: 12 }}>No events in the period.</div>
             ) : (
               <>
                 <div style={{ fontSize: 11, color: "#888", marginBottom: 8, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase" }}>
-                  Timeline · {formatNumber(timeline.length)} eventos
+                  Timeline · {formatNumber(timeline.length)} events
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 360, overflowY: "auto" }}>
                   {timeline.slice(0, timelineLimit).map((ev, i) => (
@@ -719,7 +719,7 @@ function UserRow({
                       color: "#555",
                     }}
                   >
-                    Mostrar mais ({formatNumber(timeline.length - timelineLimit)} restantes)
+                    Show more ({formatNumber(timeline.length - timelineLimit)} remaining)
                   </button>
                 )}
               </>

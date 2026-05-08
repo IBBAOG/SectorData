@@ -2,7 +2,7 @@
 //
 // Wraps a count-fetcher (typically a `count: 'exact', head: true` Supabase
 // query, or a dedicated RPC like `get_<dataset>_count`) with debounce + stale
-// response cancellation so the modal can show "~12.4 MB · 87 200 linhas" and
+// response cancellation so the modal can show "~12.4 MB · 87,200 rows" and
 // update live as the user tweaks filters.
 //
 // Contract:
@@ -57,7 +57,7 @@ export function useExportSize<F>(
         // Supabase RPC errors are plain `PostgrestError` objects (not Error
         // instances) but expose a `.message` field. Extract whatever message
         // we can find, otherwise fall back to a generic label.
-        let msg = "Erro ao estimar tamanho";
+        let msg = "Error estimating size";
         if (e instanceof Error) {
           msg = e.message;
         } else if (e && typeof e === "object" && "message" in e) {

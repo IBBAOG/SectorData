@@ -46,7 +46,7 @@ export interface DataErrorBoundaryProps {
    *  the caller wants this component to also handle the "no data" branch.
    *  Most dashboards skip this and render their own empty state inside `children`. */
   emptyState?: ReactNode;
-  /** Optional callback wired to the "Tentar novamente" button. */
+  /** Optional callback wired to the "Try again" button. */
   retry?: () => void;
 }
 
@@ -99,7 +99,7 @@ export default function DataErrorBoundary({
             color: "#212529",
           }}
         >
-          Erro ao carregar dados
+          Failed to load data
         </div>
         <div
           style={{
@@ -110,8 +110,8 @@ export default function DataErrorBoundary({
           }}
         >
           {isDev
-            ? error.message || "Erro desconhecido."
-            : "Detalhe técnico disponível no console."}
+            ? error.message || "Unknown error."
+            : "Technical details available in the console."}
         </div>
         {retry && (
           <button
@@ -129,7 +129,7 @@ export default function DataErrorBoundary({
               fontFamily: "Arial, sans-serif",
             }}
           >
-            Tentar novamente
+            Try again
           </button>
         )}
       </div>
