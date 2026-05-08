@@ -264,14 +264,14 @@ Breakpoints usados (alinhados com Bootstrap 5.3):
 
 A marca da plataforma é **Oil & Gas Data House** (gota preta sobre quadrado laranja, título em laranja sobre branco).
 
-- **Asset único:** [`public/logo.svg`](../../public/logo.svg) — SVG nativo (1240×340, ratio 3.65:1). Use SVG (não PNG) para escalar nítido nos três tamanhos.
+- **Asset único:** [`public/logo.png`](../../public/logo.png) — PNG fornecido pelo cliente (1243×392, ratio 3.17:1, ~32KB).
 - **Componente único:** [`src/components/BrandLogo.tsx`](../../src/components/BrandLogo.tsx) — wrapper sobre `next/image` com 3 variantes:
-  - `variant="navbar"` → 132×36 (canto superior esquerdo da NavBar, `priority`)
-  - `variant="auth"` → 234×64 (cards de login / forgot-password / reset-password, `priority`)
-  - `variant="sidebar"` → 219×60 (topo das sidebars de todos os dashboards, lazy)
-- **Como rebrandear no futuro:** substituir `public/logo.svg` por uma nova arte. Se a proporção mudar, ajustar `DIMS` em `BrandLogo.tsx` (manter `height: h, width: "auto"` no inline style para que o `object-fit: contain` funcione em containers menores).
+  - `variant="navbar"` → 114×36 (canto superior esquerdo da NavBar, `priority`)
+  - `variant="auth"` → 203×64 (cards de login / forgot-password / reset-password, `priority`)
+  - `variant="sidebar"` → 190×60 (topo das sidebars de todos os dashboards, lazy)
+- **Como rebrandear no futuro:** substituir `public/logo.png` por uma nova arte. Se a proporção mudar, ajustar `DIMS` em `BrandLogo.tsx` (manter `height: h, width: "auto"` no inline style para que o `object-fit: contain` funcione em containers menores).
 - **Nunca** copie o markup do `<BrandLogo>` em outro componente — sempre importe `BrandLogo` para que uma futura troca de marca seja **uma única edição**.
-- Os arquivos legados `public/logo.png`, `public/logo-navbar.png` e `public/logo.webp` ainda existem mas não são consumidos por código atual.
+- Os arquivos legados `public/logo-navbar.png` e `public/logo.webp` ainda existem mas não são consumidos por código atual.
 
 ## Pontos de drift conhecidos
 
