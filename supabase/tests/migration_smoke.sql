@@ -686,7 +686,21 @@ BEGIN
     WHERE n.nspname = 'public' AND p.proname = 'get_anp_cdp_bsw_campos';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_cdp_bsw_campos'; END IF;
 
+  -- ─── ANP CDP DEPLETION RPCs (20260508000012) ─────────────────────────────
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_anp_cdp_depletion_campos';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_cdp_depletion_campos'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_anp_cdp_depletion_scatter';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_cdp_depletion_scatter'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_anp_cdp_depletion_field_aggregate';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_cdp_depletion_field_aggregate'; END IF;
+
   RAISE NOTICE 'migration_smoke: all % checks passed.',
-    '31 tables + 3 materialized views + 82 functions + 23 RLS checks';
+    '31 tables + 3 materialized views + 85 functions + 23 RLS checks';
 
 END $smoke$;
