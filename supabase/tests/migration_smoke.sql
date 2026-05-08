@@ -643,6 +643,13 @@ BEGIN
     WHERE table_schema = 'public' AND table_name = 'anp_cdp_diaria_poco';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing table: anp_cdp_diaria_poco'; END IF;
 
+  -- Column anp_cdp_diaria_poco.instalacao (20260508130001)
+  PERFORM 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'anp_cdp_diaria_poco'
+      AND column_name = 'instalacao';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing column: anp_cdp_diaria_poco.instalacao'; END IF;
+
   PERFORM 1 FROM pg_tables
     WHERE schemaname = 'public' AND tablename = 'anp_cdp_diaria_poco' AND rowsecurity = TRUE;
   IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: anp_cdp_diaria_poco'; END IF;
@@ -655,7 +662,17 @@ BEGIN
     WHERE n.nspname = 'public' AND p.proname = 'get_anp_cdp_diaria_poco_serie';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_cdp_diaria_poco_serie'; END IF;
 
+  -- ─── ANP CDP BSW RPCs ─────────────────────────────────────────────────────
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_anp_cdp_bsw_scatter';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_cdp_bsw_scatter'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_anp_cdp_bsw_field_aggregate';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_cdp_bsw_field_aggregate'; END IF;
+
   RAISE NOTICE 'migration_smoke: all % checks passed.',
-    '30 tables + 3 materialized views + 79 functions + 23 RLS checks';
+    '30 tables + 3 materialized views + 81 functions + 23 RLS checks';
 
 END $smoke$;

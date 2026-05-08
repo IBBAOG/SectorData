@@ -13,7 +13,7 @@ import { getInitials } from "../lib/avatarUtils";
 
 interface NavItem { label: string; href: string }
 interface NavSubGroup { label: string; items: NavItem[] }
-interface NavGroup { heading: string; items: NavItem[]; subGroups?: NavSubGroup[] }
+interface NavGroup { heading: string; items: NavItem[]; subGroups?: NavSubGroup[]; hideHeading?: boolean }
 interface NavModule {
   label: string;
   items: NavItem[];
@@ -75,18 +75,25 @@ const NAV_ENTRIES: NavEntry[] = [
             ],
           },
           {
+            label: "Volumes",
+            items: [
+              { href: "/sales-volumes", label: "Sales Volumes — ANP" },
+              { href: "/anp-glp",       label: "LPG" },
+            ],
+          },
+        ],
+      },
+      {
+        heading: "ANP data",
+        hideHeading: true,
+        items: [],
+        subGroups: [
+          {
             label: "Imports",
             items: [
               { href: "/anp-daie",               label: "Imports and Exports" },
               { href: "/anp-desembaracos",        label: "Customs Clearances" },
               { href: "/anp-painel-importacoes",  label: "Imports Panel" },
-            ],
-          },
-          {
-            label: "Volumes",
-            items: [
-              { href: "/sales-volumes", label: "Sales Volumes — ANP" },
-              { href: "/anp-glp",       label: "LPG" },
             ],
           },
         ],
@@ -263,9 +270,9 @@ export default function NavBar() {
                 {openModule === mod.label && visibleItems.length > 0 && (
                   isMega && visibleGroups && visibleGroups.length > 0 ? (
                     <div className="nav-module-dropdown nav-megamenu">
-                      {visibleGroups.map((group) => (
-                        <div key={group.heading} className="nav-megamenu-col">
-                          <div className="nav-megamenu-heading">{group.heading}</div>
+                      {visibleGroups.map((group, i) => (
+                        <div key={`${group.heading}-${i}`} className="nav-megamenu-col">
+                          {!group.hideHeading && <div className="nav-megamenu-heading">{group.heading}</div>}
                           {group.subGroups ? (
                             group.subGroups.map((sg) => (
                               <div key={sg.label} className="nav-megamenu-subgroup">
