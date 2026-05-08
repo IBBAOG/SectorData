@@ -662,7 +662,17 @@ BEGIN
     WHERE n.nspname = 'public' AND p.proname = 'get_anp_cdp_diaria_poco_serie';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_cdp_diaria_poco_serie'; END IF;
 
-  -- ─── ANP CDP BSW RPCs ─────────────────────────────────────────────────────
+  -- ─── ANP VOIP (20260508000009) ────────────────────────────────────────────
+
+  PERFORM 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'anp_voip';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing table: anp_voip'; END IF;
+
+  PERFORM 1 FROM pg_tables
+    WHERE schemaname = 'public' AND tablename = 'anp_voip' AND rowsecurity = TRUE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: anp_voip'; END IF;
+
+  -- ─── ANP CDP BSW RPCs (20260508000002 + 20260508000010) ──────────────────
 
   PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public' AND p.proname = 'get_anp_cdp_bsw_scatter';
@@ -677,6 +687,6 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_cdp_bsw_campos'; END IF;
 
   RAISE NOTICE 'migration_smoke: all % checks passed.',
-    '30 tables + 3 materialized views + 82 functions + 23 RLS checks';
+    '31 tables + 3 materialized views + 82 functions + 23 RLS checks';
 
 END $smoke$;
