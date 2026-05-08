@@ -178,6 +178,35 @@ A tabela "Production by ..." muda colunas por nível:
 - **Debounce 400ms** no fetch ao mudar slider de datas ou filtro server-side.
 - **Paginação PostgREST**: cada wrapper usa `.range(offset, offset+999)` em loop até esgotar.
 
+## Limitação: filtro Campo em Installation/Well mostra 76 (vs 94 em Field)
+
+<!-- editado por worker_documentador 2026-05-08 — agent dash-anp-cdp-diaria não invocável nesta sessão -->
+
+A discrepância vem da fonte (Power BI ANP), não do nosso ETL.
+
+- **Field** usa a entity `v_campos_detalhe` → atribuição **N:N** (mesma produção atribuída a múltiplos campos via rateio ANP). Retorna **94 campos**.
+- **Installation / Well** usam a entity `v_poco_instalacao_sigep_ultimo` → atribuição **1:1** ("último" mapping — cada poço linka a apenas UM campo principal contratual). Retornam **76 campos**.
+
+Os 19 campos ausentes em Installation/Well são todos casos onde 100% dos poços são compartilhados com outro campo "principal", e `v_poco_instalacao_sigep_ultimo` mapeia cada poço apenas ao principal.
+
+### Exemplos confirmados (cross-check com `anp_cdp_producao` mensal)
+
+| Poço representativo | Campo principal (Well/Installation) | Campo(s) "perdidos" (Field-only) |
+|---|---|---|
+| `7-BUZ-10-RJS` | BÚZIOS | TAMBUATÁ (32 poços compartilhados) |
+| `7-LL-100-RJS` | TUPI | AnC_TUPI (51 poços) |
+| `7-MRO-10B-RJS` | MERO | AnC_MERO |
+| `7-SPH-1-SPS` | SAPINHOÁ | NE / SO / NO de SAPINHOÁ (14 poços) |
+| `7-PRG-76HB-RJS` | PEREGRINO | PITANGOLA (9 poços) |
+| `7-PM-21D-RJS` | PAMPO | LINGUADO (4 poços) |
+| `7-BAC-1-SPS` | BACALHAU | BACALHAU NORTE |
+| `6-BRSA-770D-RJS` | MARLIM | ESPADIM + VOADOR |
+| `7-JUB-57DPA-ESS` | JUBARTE | AnC_Jubarte_Nordeste/Sudoeste |
+
+Os 19 campos faltantes representam ~0,3% da produção nacional (maioria são buckets `AnC_*` ou produção zerada).
+
+**Decisão:** documentar e manter como está. Implementar atribuição N:N de fato exigiria criar tabela de mapping `(poco, campo, share_pct)` derivada de `anp_cdp_producao` (mensal × poço × campo, PK composta suporta N:N nativamente) — fora de escopo.
+
 ## Histórico
 
 - `2026-05-08` — Implementação inicial (Field-only).
