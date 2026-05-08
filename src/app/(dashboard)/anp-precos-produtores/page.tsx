@@ -190,10 +190,10 @@ export default function AnpPrecosProdutoresPage() {
               </div>
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
 
-              <div className="sidebar-section-label">Filtros</div>
+              <div className="sidebar-section-label">Filters</div>
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Produto</div>
+                <div className="sidebar-filter-label">Product</div>
                 <select
                   className="form-select form-select-sm"
                   value={selectedProduto}
@@ -207,7 +207,7 @@ export default function AnpPrecosProdutoresPage() {
               </div>
 
               <MultiSelectFilter
-                label="Região"
+                label="Region"
                 items={ALL_REGIOES}
                 selected={selectedRegioes}
                 onToggle={toggleRegiao}
@@ -217,7 +217,7 @@ export default function AnpPrecosProdutoresPage() {
               />
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Período</div>
+                <div className="sidebar-filter-label">Period</div>
                 {!loading && hasYears && (
                   <PeriodSlider years={allYears} value={yearRange} onChange={setYearRange} />
                 )}
@@ -229,8 +229,8 @@ export default function AnpPrecosProdutoresPage() {
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
               <DashboardHeader
-                title="ANP — Preços Médios Ponderados Produtores e Importadores"
-                sub="Preços semanais médios ponderados praticados por produtores e importadores, por região"
+                title="ANP — Weighted Average Prices: Producers and Importers"
+                sub="Weekly weighted-average prices charged by producers and importers, by region"
                 period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
                 rightSlot={
                   <ExportPanel
@@ -239,23 +239,23 @@ export default function AnpPrecosProdutoresPage() {
                         kind: "excel",
                         label: "formatted data .xl",
                         busy: excelLoading,
-                        loadingLabel: "Gerando Excel...",
+                        loadingLabel: "Generating Excel...",
                         disabled: loading || serieRows.length === 0 || excelLoading,
                         onClick: async () => {
                           setExcelLoading(true);
                           try {
                             await downloadGenericExcel<AnpPprodutoresRow>({
                               rows: serieRows,
-                              filename: "ANP-Precos-Produtores",
-                              title: `ANP — Preços Produtores e Importadores — ${selectedProduto}`,
-                              sheetName: "Preços",
+                              filename: "ANP-Producer-Prices",
+                              title: `ANP — Producer and Importer Prices — ${selectedProduto}`,
+                              sheetName: "Prices",
                               columns: [
-                                { key: "data_inicio", header: "Início" },
-                                { key: "data_fim",    header: "Fim" },
-                                { key: "produto",     header: "Produto", width: 28 },
-                                { key: "regiao",      header: "Região",  width: 16 },
-                                { key: "preco",       header: "Preço",   format: "0.0000" },
-                                { key: "unidade",     header: "Unidade" },
+                                { key: "data_inicio", header: "Start" },
+                                { key: "data_fim",    header: "End" },
+                                { key: "produto",     header: "Product", width: 28 },
+                                { key: "regiao",      header: "Region",  width: 16 },
+                                { key: "preco",       header: "Price",   format: "0.0000" },
+                                { key: "unidade",     header: "Unit" },
                               ],
                             });
                           } catch (e) {
@@ -272,7 +272,7 @@ export default function AnpPrecosProdutoresPage() {
                         onClick: () => {
                           downloadCsv({
                             rows: serieRows as unknown as Record<string, unknown>[],
-                            filename: "ANP-Precos-Produtores",
+                            filename: "ANP-Producer-Prices",
                           });
                         },
                       },
@@ -287,7 +287,7 @@ export default function AnpPrecosProdutoresPage() {
                 <div className="row mb-2">
                   <div className="col-12">
                     <ChartSection
-                      title={`Preço por Região — ${selectedProduto}`}
+                      title={`Price by Region — ${selectedProduto}`}
                       loading={serieLoading}
                       height={360}
                     >

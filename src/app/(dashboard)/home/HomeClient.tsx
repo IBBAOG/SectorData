@@ -92,7 +92,7 @@ const CARDS: CardDef[] = [
     href: "/news-hunter",
     disabled: false,
   },
-  // Estatísticas — Fuel Distribution
+  // Statistics — Fuel Distribution
   {
     slug: "mdic-comex",
     preview: null,
@@ -114,7 +114,7 @@ const CARDS: CardDef[] = [
   {
     slug: "anp-precos-produtores",
     preview: null,
-    title: "ANP Preços Produtores",
+    title: "ANP Producer Prices",
     description: "Producer prices for fuels tracked by ANP",
     badge: "Available",
     href: "/anp-precos-produtores",
@@ -123,7 +123,7 @@ const CARDS: CardDef[] = [
   {
     slug: "anp-precos-distribuicao",
     preview: null,
-    title: "ANP Preços Distribuição",
+    title: "ANP Distribution Prices",
     description: "Distribution prices for fuels tracked by ANP",
     badge: "Available",
     href: "/anp-precos-distribuicao",
@@ -132,7 +132,7 @@ const CARDS: CardDef[] = [
   {
     slug: "anp-glp",
     preview: null,
-    title: "ANP GLP",
+    title: "ANP LPG",
     description: "LPG production and distribution data from ANP",
     badge: "Available",
     href: "/anp-glp",
@@ -141,7 +141,7 @@ const CARDS: CardDef[] = [
   {
     slug: "anp-daie",
     preview: null,
-    title: "ANP Dados Abertos IE",
+    title: "ANP Open Data IE",
     description: "Open import/export energy data from ANP's DAIE dataset",
     badge: "Available",
     href: "/anp-daie",
@@ -150,7 +150,7 @@ const CARDS: CardDef[] = [
   {
     slug: "anp-desembaracos",
     preview: null,
-    title: "ANP Desembaraços",
+    title: "ANP Customs Clearances",
     description: "Fuel customs clearance volumes from ANP",
     badge: "Available",
     href: "/anp-desembaracos",
@@ -159,7 +159,7 @@ const CARDS: CardDef[] = [
   {
     slug: "anp-painel-importacoes",
     preview: null,
-    title: "ANP Painel Importações",
+    title: "ANP Imports Panel",
     description: "ANP fuel import dashboard with volume and origin country tracking",
     badge: "Available",
     href: "/anp-painel-importacoes",
@@ -168,7 +168,7 @@ const CARDS: CardDef[] = [
   {
     slug: "anp-lpc",
     preview: null,
-    title: "ANP LPC Preços",
+    title: "ANP LPC Prices",
     description: "ANP consumer price survey across Brazilian gas stations",
     badge: "Available",
     href: "/anp-lpc",
@@ -183,11 +183,11 @@ const CARDS: CardDef[] = [
     href: "/sindicom",
     disabled: false,
   },
-  // Estatísticas — Oil & Gas
+  // Statistics — Oil & Gas
   {
     slug: "anp-cdp",
     preview: null,
-    title: "ANP CDP Produção",
+    title: "ANP CDP Production",
     description: "ANP CDP oil and gas production data by well and field",
     badge: "Available",
     href: "/anp-cdp",

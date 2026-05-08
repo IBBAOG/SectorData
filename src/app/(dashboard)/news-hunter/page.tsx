@@ -16,10 +16,10 @@ function humanizeAge(iso: string): string {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return "";
   const secs = Math.max(0, Math.floor((Date.now() - then) / 1000));
-  if (secs < 60) return "agora";
-  if (secs < 3600) return `há ${Math.floor(secs / 60)} min`;
-  if (secs < 86400) return `há ${Math.floor(secs / 3600)} h`;
-  return `há ${Math.floor(secs / 86400)} d`;
+  if (secs < 60) return "now";
+  if (secs < 3600) return `${Math.floor(secs / 60)} min ago`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)} h ago`;
+  return `${Math.floor(secs / 86400)} d ago`;
 }
 
 function formatTimeLocal(iso: string): string {
@@ -53,7 +53,7 @@ export default function NewsHunterPage() {
   const [newKeyword, setNewKeyword] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  // Triggers re-render so "há X min" labels stay fresh without re-fetching.
+  // Triggers re-render so "X min ago" labels stay fresh without re-fetching.
   const [, setAgeTick] = useState(0);
 
   useEffect(() => {
@@ -135,11 +135,11 @@ export default function NewsHunterPage() {
 
   if (visLoading || !visible) return null;
 
-  // "última manchete há X" uses the newest published_at — not found_at, which
+  // "latest headline X ago" uses the newest published_at — not found_at, which
   // advances on every scanner re-upsert regardless of actual new content.
   const lastPublishedAt = filtered[0]?.published_at ?? null;
   const lastScanLabel = lastPublishedAt
-    ? `última manchete ${humanizeAge(lastPublishedAt)}`
+    ? `latest headline ${humanizeAge(lastPublishedAt)}`
     : "";
 
   return (
@@ -150,7 +150,7 @@ export default function NewsHunterPage() {
           <div className={styles.topLabel}>
             <h1 className={styles.title}>News Hunter</h1>
             <span className={styles.subMuted}>
-              {loading ? "⏳ carregando…" : lastScanLabel}
+              {loading ? "⏳ loading…" : lastScanLabel}
             </span>
           </div>
           <div className={styles.topActions}>
@@ -160,11 +160,11 @@ export default function NewsHunterPage() {
               onClick={toggleTheme}
               aria-pressed={theme === "dark"}
             >
-              {theme === "dark" ? "Modo claro" : "Modo escuro"}
+              {theme === "dark" ? "Light mode" : "Dark mode"}
             </button>
             <span
               className={styles.autoNote}
-              title="Scanner roda no GitHub Actions a cada ~5 min; o painel revalida a cada 60s."
+              title="Scanner runs on GitHub Actions every ~5 min; the panel revalidates every 60s."
             >
               scanner ~5 min · refresh 60s
             </span>
@@ -173,7 +173,7 @@ export default function NewsHunterPage() {
 
         <section className={styles.panel}>
           <div className={styles.panelHeader}>
-            <h3 className={styles.panelTitle}>Palavras-chave</h3>
+            <h3 className={styles.panelTitle}>Keywords</h3>
           </div>
           <div className={styles.panelBody}>
             <ul className={styles.chips}>
@@ -184,7 +184,7 @@ export default function NewsHunterPage() {
                     type="button"
                     className={styles.chipRemove}
                     onClick={() => removeKeyword(kw)}
-                    aria-label={`remover ${kw}`}
+                    aria-label={`remove ${kw}`}
                   >
                     ×
                   </button>
@@ -192,7 +192,7 @@ export default function NewsHunterPage() {
               ))}
               {keywords.length === 0 && (
                 <li className={styles.emptyKw}>
-                  Nenhum filtro ativo — todas as manchetes são exibidas.
+                  No active filter — all headlines are displayed.
                 </li>
               )}
             </ul>
@@ -203,11 +203,11 @@ export default function NewsHunterPage() {
               <input
                 type="text"
                 className={styles.addInput}
-                placeholder="+ adicionar palavra-chave"
+                placeholder="+ add keyword"
                 value={newKeyword}
                 onChange={(e) => setNewKeyword(e.target.value)}
               />
-              <button type="submit" className={styles.addBtn} aria-label="adicionar">+</button>
+              <button type="submit" className={styles.addBtn} aria-label="add">+</button>
             </form>
           </div>
         </section>
@@ -217,17 +217,17 @@ export default function NewsHunterPage() {
             <input
               type="search"
               className={styles.searchInput}
-              placeholder="Buscar por título ou fonte…"
+              placeholder="Search by title or source…"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              aria-label="Buscar notícias"
+              aria-label="Search news"
             />
             {searchTerm && (
               <button
                 type="button"
                 className={styles.searchClear}
                 onClick={() => setSearchTerm("")}
-                aria-label="Limpar busca"
+                aria-label="Clear search"
               >
                 ×
               </button>
@@ -238,7 +238,7 @@ export default function NewsHunterPage() {
         <section className={styles.headlinesSection}>
           <div className={styles.headlinesMeta}>
             <span className={styles.metaCount}>
-              {filtered.length} manchete{filtered.length === 1 ? "" : "s"}
+              {filtered.length} headline{filtered.length === 1 ? "" : "s"}
             </span>
             {lastPublishedAt && (
               <>
@@ -248,20 +248,20 @@ export default function NewsHunterPage() {
             )}
           </div>
 
-          {error && <div className={styles.error}>Erro ao carregar: {error}</div>}
+          {error && <div className={styles.error}>Failed to load: {error}</div>}
 
           {!loading && filtered.length === 0 && (
             <div className={styles.empty}>
               <p>
                 {articles.length === 0
-                  ? "Ainda sem manchetes."
-                  : "Nenhuma notícia corresponde aos filtros selecionados."}
+                  ? "No headlines yet."
+                  : "No news matches the selected filters."}
               </p>
               {articles.length === 0 && (
                 <p className={styles.metaMuted}>
-                  O scanner roda no GitHub Actions a cada ~5 min e grava
-                  artigos novos no Supabase. Esta página revalida sozinha
-                  conforme novas manchetes chegam.
+                  The scanner runs on GitHub Actions every ~5 min and writes
+                  new articles to Supabase. This page revalidates itself as
+                  new headlines arrive.
                 </p>
               )}
             </div>

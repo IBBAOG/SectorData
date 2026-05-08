@@ -18,7 +18,7 @@ export interface BarrelLoadingProps {
   bare?: boolean;
 }
 
-export default function BarrelLoading({ size = 160, alt = "Carregando...", bare = false }: BarrelLoadingProps) {
+export default function BarrelLoading({ size = 160, alt = "Loading...", bare = false }: BarrelLoadingProps) {
   const img = <Image src="/barrel_loading.png" alt={alt} width={size} height={size} />;
   if (bare) return img;
   return (

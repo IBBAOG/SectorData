@@ -29,9 +29,9 @@ export const AVG_BYTES_PER_ROW: Record<string, { xlsx: number; csv: number }> = 
   mdic_comex: { xlsx: 280, csv: 140 },
   // ANP CDP producao — narrower (numeric heavy)
   anp_cdp_producao: { xlsx: 200, csv: 100 },
-  // ANP LPC — municipio + estado + product + 4 numeric cols
+  // ANP LPC — city + state + product + 4 numeric cols
   anp_lpc: { xlsx: 240, csv: 120 },
-  // ANP Preços Distribuição — local (UF/município) + product + 3 numeric cols + unit
+  // ANP Distribution Prices — local (state/city) + product + 3 numeric cols + unit
   "anp-precos-distribuicao": { xlsx: 240, csv: 120 },
   // Vessel positions — compact (mmsi, lat, lon, timestamp)
   vessel_positions: { xlsx: 180, csv: 90 },

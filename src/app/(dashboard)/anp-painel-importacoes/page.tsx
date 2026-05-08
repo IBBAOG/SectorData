@@ -29,9 +29,9 @@ import {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-// volume_m3 → mil m³: m3 / 1e3 = thousands of cubic meters.
+// volume_m3 → thousand m³: m3 / 1e3 = thousand cubic meters.
 // Source pipeline: scraper reads "Quantidade (mil m³)" * 1000 → stores as m³.
-// Math: 1 mil m³ = 1.000 m³. Divisor 1e3 matches label "mil m³".
+// Math: 1 thousand m³ = 1,000 m³. Divisor 1e3 matches label "thousand m³".
 function buildSerieChart(
   rows: AnpPainelImpSerieRow[],
   produtos: string[],
@@ -65,7 +65,7 @@ function buildSerieChart(
       ...COMMON_LAYOUT, height: 300,
       margin: { t: 10, b: 50, l: 80, r: 30 },
       hovermode: "x unified",
-      yaxis: { ...AXIS_LINE, title: { text: `${LABEL.MIL_M3} / mês` } },
+      yaxis: { ...AXIS_LINE, title: { text: `${LABEL.MIL_M3} / month` } },
       xaxis: { ...AXIS_LINE, type: "date" as const },
       legend: { orientation: "h", yanchor: "bottom", y: 1.01, xanchor: "left", x: 0, font: { size: 10 } },
     },
@@ -239,10 +239,10 @@ export default function AnpPainelImportacoesPage() {
               </div>
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
 
-              <div className="sidebar-section-label">Filtros</div>
+              <div className="sidebar-section-label">Filters</div>
 
               <MultiSelectFilter
-                label="Produto (Série)"
+                label="Product (Series)"
                 items={filtros.produtos}
                 selected={selectedProdutos}
                 onToggle={toggleProduto}
@@ -257,14 +257,14 @@ export default function AnpPainelImportacoesPage() {
               />
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Período</div>
+                <div className="sidebar-filter-label">Period</div>
                 {!loading && hasYears && (
                   <PeriodSlider years={allYears} value={yearRange} onChange={setYearRange} />
                 )}
               </div>
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Top Distribuidores — Produto</div>
+                <div className="sidebar-filter-label">Top Distributors — Product</div>
                 <select
                   className="form-select form-select-sm"
                   value={topProduto}
@@ -283,8 +283,8 @@ export default function AnpPainelImportacoesPage() {
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
               <DashboardHeader
-                title="ANP Painel — Importações de Distribuidores"
-                sub={`Volumes mensais importados por distribuidor, UF e produto (volume em ${LABEL.MIL_M3})`}
+                title="ANP Panel — Distributor Imports"
+                sub={`Monthly volumes imported by distributor, state and product (volume in ${LABEL.MIL_M3})`}
                 period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
                 rightSlot={hasData ? (
                   <ExportPanel
@@ -293,20 +293,20 @@ export default function AnpPainelImportacoesPage() {
                         kind: "excel",
                         label: "formatted data .xl",
                         busy: excelLoading,
-                        loadingLabel: "Gerando Excel...",
+                        loadingLabel: "Generating Excel...",
                         disabled: loading || serieRows.length === 0 || excelLoading,
                         onClick: async () => {
                           setExcelLoading(true);
                           try {
                             await downloadGenericExcel<AnpPainelImpSerieRow>({
                               rows: serieRows,
-                              filename: "ANP-Painel-Importacoes",
-                              title: "ANP Painel — Importações de Distribuidores (Total Nacional)",
-                              sheetName: "Importações",
+                              filename: "ANP-Imports-Panel",
+                              title: "ANP Panel — Distributor Imports (National Total)",
+                              sheetName: "Imports",
                               columns: [
-                                { key: "ano",          header: "Ano" },
-                                { key: "mes",          header: "Mês" },
-                                { key: "nome_produto", header: "Produto", width: 26 },
+                                { key: "ano",          header: "Year" },
+                                { key: "mes",          header: "Month" },
+                                { key: "nome_produto", header: "Product",     width: 26 },
                                 { key: "volume_m3",    header: "Volume (m³)", format: "#,##0" },
                               ],
                             });
@@ -324,7 +324,7 @@ export default function AnpPainelImportacoesPage() {
                         onClick: () => {
                           downloadCsv({
                             rows: serieRows as unknown as Record<string, unknown>[],
-                            filename: "ANP-Painel-Importacoes",
+                            filename: "ANP-Imports-Panel",
                           });
                         },
                       },
@@ -338,14 +338,14 @@ export default function AnpPainelImportacoesPage() {
               ) : !hasData ? (
                 <div className="d-flex justify-content-center align-items-center my-5"
                   style={{ minHeight: 240, color: "#888", fontFamily: "Arial", fontSize: 14 }}>
-                  Sem dados disponíveis para este módulo no momento.
+                  No data available for this module at this time.
                 </div>
               ) : (
                 <>
                   <div className="row mb-2">
                     <div className="col-12">
                       <ChartSection
-                        title={`Volume Mensal Importado por Produto — Total Nacional (${LABEL.MIL_M3} / mês)`}
+                        title={`Monthly Imported Volume by Product — National Total (${LABEL.MIL_M3} / month)`}
                         loading={serieLoading}
                         height={300}
                       >
@@ -362,7 +362,7 @@ export default function AnpPainelImportacoesPage() {
                   <div className="row mb-2">
                     <div className="col-12">
                       <ChartSection
-                        title={`Top 15 Distribuidores — ${topProduto} (${LABEL.MIL_M3})`}
+                        title={`Top 15 Distributors — ${topProduto} (${LABEL.MIL_M3})`}
                         loading={topLoading}
                         height={420}
                         containerStyle={{ minHeight: 460 }}

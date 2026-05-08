@@ -91,18 +91,18 @@ const MODULE_LABELS: { slug: string; label: string; description: string }[] = [
   { slug: "navios-diesel",           label: "Diesel Imports Line-Up",       description: "Scheduled vessel arrivals and diesel import line-up by port" },
   { slug: "diesel-gasoline-margins", label: "Diesel and Gasoline Margins",  description: "Diesel and gasoline margin tracking across regions and time" },
   { slug: "price-bands",             label: "Price Bands",                  description: "Price band distribution and competitive positioning by fuel type" },
-  // Estatísticas
+  // Statistics
   { slug: "mdic-comex",              label: "MDIC Comex",                   description: "Brazilian trade balance and import/export volumes by product and origin" },
   { slug: "anp-ppi",                 label: "ANP PPI",                      description: "ANP import price parity reference benchmarks for fuel pricing" },
-  { slug: "anp-precos-produtores",   label: "ANP Preços Produtores",        description: "Producer prices for fuels tracked by ANP" },
-  { slug: "anp-precos-distribuicao", label: "ANP Preços Distribuição",      description: "Distribution prices for fuels tracked by ANP" },
-  { slug: "anp-glp",                 label: "ANP GLP",                      description: "LPG production and distribution data from ANP" },
-  { slug: "anp-daie",                label: "ANP Dados Abertos IE",         description: "Open import/export energy data from ANP's DAIE dataset" },
-  { slug: "anp-desembaracos",        label: "ANP Desembaraços",             description: "Fuel customs clearance volumes from ANP" },
-  { slug: "anp-painel-importacoes",  label: "ANP Painel Importações",       description: "ANP fuel import dashboard with volume and origin country tracking" },
-  { slug: "anp-lpc",                 label: "ANP LPC Preços",               description: "ANP consumer price survey across Brazilian gas stations" },
+  { slug: "anp-precos-produtores",   label: "ANP Producer Prices",          description: "Producer prices for fuels tracked by ANP" },
+  { slug: "anp-precos-distribuicao", label: "ANP Distribution Prices",      description: "Distribution prices for fuels tracked by ANP" },
+  { slug: "anp-glp",                 label: "ANP LPG",                      description: "LPG production and distribution data from ANP" },
+  { slug: "anp-daie",                label: "ANP Open Data IE",             description: "Open import/export energy data from ANP's DAIE dataset" },
+  { slug: "anp-desembaracos",        label: "ANP Customs Clearances",       description: "Fuel customs clearance volumes from ANP" },
+  { slug: "anp-painel-importacoes",  label: "ANP Imports Panel",            description: "ANP fuel import dashboard with volume and origin country tracking" },
+  { slug: "anp-lpc",                 label: "ANP LPC Prices",               description: "ANP consumer price survey across Brazilian gas stations" },
   { slug: "sindicom",                label: "SINDICOM",                     description: "Fuel distribution data from the SINDICOM industry association" },
-  { slug: "anp-cdp",                 label: "ANP CDP Produção",             description: "ANP CDP oil and gas production data by well and field" },
+  { slug: "anp-cdp",                 label: "ANP CDP Production",           description: "ANP CDP oil and gas production data by well and field" },
   // Other
   { slug: "stocks",                  label: "Market Watch",                 description: "Real-time stock quotes, historical charts, and market overview" },
   { slug: "news-hunter",             label: "News Hunter",                  description: "Live oil & gas news feed with incremental polling across ~60 sources" },
@@ -199,7 +199,7 @@ export default function AdminPanelPage() {
   }
 
   function formatDateBR(dateStr: string) {
-    return new Date(dateStr).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+    return new Date(dateStr).toLocaleDateString("en-US", { day: "2-digit", month: "2-digit", year: "numeric" });
   }
 
   const loadRecipients = useCallback(async () => {
@@ -229,7 +229,7 @@ export default function AdminPanelPage() {
       added_by: myProfile?.id ?? null,
     });
     if (error) {
-      setAddEmailError(error.code === "23505" ? "Este email já está cadastrado." : error.message);
+      setAddEmailError(error.code === "23505" ? "This email is already registered." : error.message);
     } else {
       setNewEmail("");
       setAddEmailSuccess(true);
@@ -428,7 +428,7 @@ export default function AdminPanelPage() {
                   Analytics dashboard
                 </div>
                 <div style={{ fontSize: 11.5, color: "#666", marginTop: 1 }}>
-                  Engajamento, exports e logins por usuário e dashboard.
+                  Engagement, exports, and logins by user and dashboard.
                 </div>
               </div>
             </div>
@@ -598,10 +598,10 @@ export default function AdminPanelPage() {
           {activeSection === "alert-recipients" && (
             <div className="settings-card">
               <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>
-                Destinatários de Alertas
+                Alert Recipients
               </h2>
               <p style={{ fontSize: 13, color: "#888", margin: "0 0 20px" }}>
-                Emails que receberão notificações automáticas de novas publicações de dados (ANP, MDIC, etc.).
+                Emails that will receive automatic notifications of new data releases (ANP, MDIC, etc.).
               </p>
 
               {/* Add form */}
@@ -638,19 +638,19 @@ export default function AdminPanelPage() {
                     transition: "background 0.15s",
                   }}
                 >
-                  {addingEmail ? "Adicionando…" : addEmailSuccess ? "✓ Adicionado" : "Adicionar"}
+                  {addingEmail ? "Adding…" : addEmailSuccess ? "✓ Added" : "Add"}
                 </button>
               </div>
 
               {/* List */}
               {recipientsLoading ? (
-                <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>Carregando…</div>
+                <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>Loading…</div>
               ) : recipientsError ? (
                 <div style={{ padding: "16px", background: "#fff5f5", borderRadius: 8, color: "#e53e3e", fontSize: 13 }}>
-                  Erro: {recipientsError}
+                  Error: {recipientsError}
                 </div>
               ) : recipients.length === 0 ? (
-                <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>Nenhum destinatário cadastrado.</div>
+                <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>No recipients registered.</div>
               ) : (
                 recipients.map((r) => {
                   const isToggling = togglingId === r.id;
@@ -664,7 +664,7 @@ export default function AdminPanelPage() {
                           {r.email}
                         </div>
                         <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>
-                          Adicionado em {formatDateBR(r.created_at)}
+                          Added on {formatDateBR(r.created_at)}
                         </div>
                       </div>
                       {/* Status badge */}
@@ -674,25 +674,25 @@ export default function AdminPanelPage() {
                         color: r.is_active ? "#38a169" : "#999",
                         flexShrink: 0,
                       }}>
-                        {r.is_active ? "Ativo" : "Inativo"}
+                        {r.is_active ? "Active" : "Inactive"}
                       </span>
                       {/* Actions */}
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                         {isConfirming ? (
                           <>
-                            <span style={{ fontSize: 12, color: "#e53e3e" }}>Tem certeza?</span>
+                            <span style={{ fontSize: 12, color: "#e53e3e" }}>Are you sure?</span>
                             <button
                               onClick={() => handleRemoveRecipient(r.id)}
                               disabled={isRemoving}
                               style={{ fontSize: 12, fontWeight: 600, padding: "4px 10px", borderRadius: 6, border: "none", background: "#e53e3e", color: "#fff", cursor: isRemoving ? "wait" : "pointer", fontFamily: "Arial, sans-serif" }}
                             >
-                              {isRemoving ? "…" : "Remover"}
+                              {isRemoving ? "…" : "Remove"}
                             </button>
                             <button
                               onClick={() => setConfirmRemoveId(null)}
                               style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, border: "1px solid #e0e0e0", background: "#fff", color: "#555", cursor: "pointer", fontFamily: "Arial, sans-serif" }}
                             >
-                              Cancelar
+                              Cancel
                             </button>
                           </>
                         ) : (
@@ -702,7 +702,7 @@ export default function AdminPanelPage() {
                               disabled={!!togglingId}
                               style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, border: `1px solid ${r.is_active ? "#e0e0e0" : ORANGE}`, background: "#fff", color: r.is_active ? "#666" : ORANGE, cursor: isToggling ? "wait" : "pointer", fontFamily: "Arial, sans-serif", opacity: isToggling ? 0.6 : 1 }}
                             >
-                              {r.is_active ? "Desativar" : "Ativar"}
+                              {r.is_active ? "Deactivate" : "Activate"}
                             </button>
                             <button
                               onClick={() => setConfirmRemoveId(r.id)}

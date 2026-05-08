@@ -1047,7 +1047,7 @@ export default function MarketSharePage() {
       <ExportModal
         open={exportOpen}
         onClose={() => setExportOpen(false)}
-        title="Exportar — Market Share"
+        title="Export — Market Share"
         datasetKey="vendas"
         currentFilters={exportFilters}
         countFetcher={async () => {
@@ -1086,7 +1086,7 @@ export default function MarketSharePage() {
         filters={
           <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: "Arial" }}>
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Período</div>
+              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Period</div>
               {datas.length > 0 && (
                 <PeriodSlider
                   dates={datas}
@@ -1105,18 +1105,18 @@ export default function MarketSharePage() {
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Regiões</div>
+                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Regions</div>
                 <CheckList
-                  label="Regiões"
+                  label="Regions"
                   options={regioesAll}
                   value={exportRegioes}
                   onChange={setExportRegioes}
-                  allLabel="Todas"
-                  clearLabel="Limpar"
+                  allLabel="All"
+                  clearLabel="Clear"
                 />
               </div>
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>UFs</div>
+                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>States</div>
                 <SearchableMultiSelect
                   options={ufsAll}
                   value={exportUfs}
@@ -1126,14 +1126,14 @@ export default function MarketSharePage() {
             </div>
 
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Mercados</div>
+              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Markets</div>
               <CheckList
-                label="Mercados"
+                label="Markets"
                 options={mercadosAll}
                 value={exportMercados}
                 onChange={setExportMercados}
-                allLabel="Todos"
-                clearLabel="Limpar"
+                allLabel="All"
+                clearLabel="Clear"
               />
             </div>
           </div>

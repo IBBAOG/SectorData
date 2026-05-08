@@ -29,8 +29,8 @@ import {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-// quantidade_kg → mil t (kton): kg / 1e6 = thousands of metric tons.
-// Math: 1 mil t = 1.000 t = 1.000.000 kg. Divisor 1e6 matches label "mil t".
+// quantidade_kg → kt (thousand tons): kg / 1e6 = thousand metric tons.
+// Math: 1 kt = 1,000 t = 1,000,000 kg. Divisor 1e6 matches label "kt".
 function buildSerieChart(
   rows: AnpDesembaracosRow[],
   ncms: string[],
@@ -68,7 +68,7 @@ function buildSerieChart(
       ...COMMON_LAYOUT, height: 300,
       margin: { t: 10, b: 50, l: 80, r: 30 },
       hovermode: "x unified",
-      yaxis: { ...AXIS_LINE, title: { text: `${LABEL.MIL_T} / mês` } },
+      yaxis: { ...AXIS_LINE, title: { text: `${LABEL.MIL_T} / month` } },
       xaxis: { ...AXIS_LINE, type: "date" as const },
       legend: { orientation: "h", yanchor: "bottom", y: 1.01, xanchor: "left", x: 0, font: { size: 10 } },
     },
@@ -95,7 +95,7 @@ function buildTopChart(
       xaxis: { ...AXIS_LINE, title: { text: LABEL.MIL_T } },
       yaxis: { autorange: "reversed" as const, showgrid: false, zeroline: false, tickfont: { size: 10 } },
       title: {
-        text: `Top Países Origem — ${ncmNome}`,
+        text: `Top Origin Countries — ${ncmNome}`,
         font: { size: 13, family: "Arial" }, x: 0, xanchor: "left", pad: { l: 0 },
       },
     },
@@ -263,12 +263,12 @@ export default function AnpDesembaracosPage() {
               </div>
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
 
-              <div className="sidebar-section-label">Filtros</div>
+              <div className="sidebar-section-label">Filters</div>
 
               {/* NCM uses 11px font / 8x8 swatch in original — small variation
                   acceptable; default 12px+9x9 from MultiSelectFilter is close enough. */}
               <MultiSelectFilter
-                label="NCM (Série)"
+                label="NCM (Series)"
                 items={ncmCodigos}
                 selected={selectedNcms}
                 onToggle={toggleNcm}
@@ -284,14 +284,14 @@ export default function AnpDesembaracosPage() {
               />
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Período</div>
+                <div className="sidebar-filter-label">Period</div>
                 {!loading && hasYears && (
                   <PeriodSlider years={allYears} value={yearRange} onChange={setYearRange} />
                 )}
               </div>
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Top Países — NCM</div>
+                <div className="sidebar-filter-label">Top Countries — NCM</div>
                 <select
                   className="form-select form-select-sm"
                   value={topNcm}
@@ -312,8 +312,8 @@ export default function AnpDesembaracosPage() {
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
               <DashboardHeader
-                title="ANP — Desembaraços de Importação (Petróleo, Gás e Derivados)"
-                sub={`Volumes mensais desembaraçados na importação por NCM e país de origem (massa em ${LABEL.MIL_T})`}
+                title="ANP — Import Customs Clearances (Petroleum, Gas and Derivatives)"
+                sub={`Monthly volumes cleared in imports by NCM and country of origin (mass in ${LABEL.MIL_T})`}
                 period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
                 rightSlot={hasData ? (
                   <ExportPanel
@@ -322,23 +322,23 @@ export default function AnpDesembaracosPage() {
                         kind: "excel",
                         label: "formatted data .xl",
                         busy: excelLoading,
-                        loadingLabel: "Gerando Excel...",
+                        loadingLabel: "Generating Excel...",
                         disabled: loading || serieRows.length === 0 || excelLoading,
                         onClick: async () => {
                           setExcelLoading(true);
                           try {
                             await downloadGenericExcel<AnpDesembaracosRow>({
                               rows: serieRows,
-                              filename: "ANP-Desembaracos",
-                              title: "ANP — Desembaraços de Importação",
-                              sheetName: "Desembaraços",
+                              filename: "ANP-Customs-Clearances",
+                              title: "ANP — Import Customs Clearances",
+                              sheetName: "Clearances",
                               columns: [
-                                { key: "ano",           header: "Ano" },
-                                { key: "mes",           header: "Mês" },
+                                { key: "ano",           header: "Year" },
+                                { key: "mes",           header: "Month" },
                                 { key: "ncm_codigo",    header: "NCM" },
-                                { key: "ncm_nome",      header: "Descrição NCM", width: 36 },
-                                { key: "pais_origem",   header: "País origem",   width: 22 },
-                                { key: "quantidade_kg", header: "Quantidade (kg)", format: "#,##0" },
+                                { key: "ncm_nome",      header: "NCM Description", width: 36 },
+                                { key: "pais_origem",   header: "Origin Country",  width: 22 },
+                                { key: "quantidade_kg", header: "Quantity (kg)",   format: "#,##0" },
                               ],
                             });
                           } catch (e) {
@@ -355,7 +355,7 @@ export default function AnpDesembaracosPage() {
                         onClick: () => {
                           downloadCsv({
                             rows: serieRows as unknown as Record<string, unknown>[],
-                            filename: "ANP-Desembaracos",
+                            filename: "ANP-Customs-Clearances",
                           });
                         },
                       },
@@ -369,14 +369,14 @@ export default function AnpDesembaracosPage() {
               ) : !hasData ? (
                 <div className="d-flex justify-content-center align-items-center my-5"
                   style={{ minHeight: 240, color: "#888", fontFamily: "Arial", fontSize: 14 }}>
-                  Sem dados disponíveis para este módulo no momento.
+                  No data available for this module at this time.
                 </div>
               ) : (
                 <>
                   <div className="row mb-2">
                     <div className="col-12">
                       <ChartSection
-                        title={`Volumes Importados por NCM — Total Nacional (${LABEL.MIL_T} / mês)`}
+                        title={`Imported Volumes by NCM — National Total (${LABEL.MIL_T} / month)`}
                         loading={serieLoading}
                         height={300}
                       >
@@ -393,7 +393,7 @@ export default function AnpDesembaracosPage() {
                   <div className="row mb-2">
                     <div className="col-12">
                       <ChartSection
-                        title={`Top Países Origem — ${topNcmNome} (${LABEL.MIL_T})`}
+                        title={`Top Origin Countries — ${topNcmNome} (${LABEL.MIL_T})`}
                         loading={topLoading}
                         height={420}
                         containerStyle={{ minHeight: 460 }}

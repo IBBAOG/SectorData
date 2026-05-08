@@ -136,7 +136,7 @@ function buildMarketShareChart(
       ...COMMON_LAYOUT,
       height: 400,
       margin: { t: 10, b: 50, l: 180, r: 60 },
-      xaxis: { ...AXIS_LINE, title: { text: "Participação (%)" }, range: [0, Math.min(100, topShare * 1.1 + 5)] },
+      xaxis: { ...AXIS_LINE, title: { text: "Share (%)" }, range: [0, Math.min(100, topShare * 1.1 + 5)] },
       yaxis: { ...AXIS_LINE, autorange: "reversed" as const },
     },
   };
@@ -265,10 +265,10 @@ export default function SindicomPage() {
               </div>
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
 
-              <div className="sidebar-section-label">Filtros</div>
+              <div className="sidebar-section-label">Filters</div>
 
               <MultiSelectFilter
-                label="Produto"
+                label="Product"
                 items={filtros.produtos}
                 selected={selectedProdutos}
                 onToggle={toggleProduto}
@@ -283,7 +283,7 @@ export default function SindicomPage() {
               />
 
               <MultiSelectFilter
-                label="Segmento"
+                label="Segment"
                 items={filtros.segmentos}
                 selected={selectedSegmentos}
                 onToggle={toggleSegmento}
@@ -294,14 +294,14 @@ export default function SindicomPage() {
               />
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Período</div>
+                <div className="sidebar-filter-label">Period</div>
                 {!loading && hasYears && (
                   <PeriodSlider years={allYears} value={yearRange} onChange={setYearRange} />
                 )}
               </div>
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Market Share — Produto</div>
+                <div className="sidebar-filter-label">Market Share — Product</div>
                 <select
                   className="form-select form-select-sm"
                   value={msProduto}
@@ -320,8 +320,8 @@ export default function SindicomPage() {
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
               <DashboardHeader
-                title="SINDICOM — Distribuição de Combustíveis por Empresa"
-                sub="Volumes mensais de venda das distribuidoras associadas ao SINDICOM, por empresa, produto e segmento (mercado / consumidor)"
+                title="SINDICOM — Fuel Distribution by Company"
+                sub="Monthly sales volumes of SINDICOM-associated distributors, by company, product and segment (market / consumer)"
                 period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
                 rightSlot={hasData ? (
                   <ExportPanel
@@ -330,7 +330,7 @@ export default function SindicomPage() {
                         kind: "excel",
                         label: "formatted data .xl",
                         busy: excelLoading,
-                        loadingLabel: "Gerando Excel...",
+                        loadingLabel: "Generating Excel...",
                         disabled: loading || allRows.length === 0 || excelLoading,
                         onClick: async () => {
                           setExcelLoading(true);
@@ -338,14 +338,14 @@ export default function SindicomPage() {
                             await downloadGenericExcel<SindicomSerieRow>({
                               rows: allRows,
                               filename: "SINDICOM",
-                              title: "SINDICOM — Distribuição de Combustíveis por Empresa",
+                              title: "SINDICOM — Fuel Distribution by Company",
                               sheetName: "SINDICOM",
                               columns: [
-                                { key: "ano",          header: "Ano" },
-                                { key: "mes",          header: "Mês" },
-                                { key: "empresa",      header: "Empresa", width: 24 },
-                                { key: "nome_produto", header: "Produto", width: 22 },
-                                { key: "segmento",     header: "Segmento", width: 18 },
+                                { key: "ano",          header: "Year" },
+                                { key: "mes",          header: "Month" },
+                                { key: "empresa",      header: "Company", width: 24 },
+                                { key: "nome_produto", header: "Product", width: 22 },
+                                { key: "segmento",     header: "Segment", width: 18 },
                                 { key: "volume",       header: "Volume (m³)", format: "#,##0" },
                               ],
                             });
@@ -377,13 +377,13 @@ export default function SindicomPage() {
               ) : !hasData ? (
                 <div className="chart-container" style={{ padding: "32px 24px", textAlign: "center" }}>
                   <div style={{ fontFamily: "Arial", fontSize: 14, color: "#555", marginBottom: 8 }}>
-                    Aguardando dados — pipeline ainda não rodou.
+                    Waiting for data — pipeline has not run yet.
                   </div>
                   <div style={{ fontFamily: "Arial", fontSize: 12, color: "#888" }}>
-                    O scraper SINDICOM é bloqueado por Cloudflare quando rodado localmente. Dispare o workflow{" "}
+                    The SINDICOM scraper is blocked by Cloudflare when run locally. Trigger the workflow{" "}
                     <code style={{ fontSize: 11 }}>sindicom_sync.yml</code> via GitHub Actions{" "}
-                    (<em>Actions → SINDICOM — Sync → Run workflow</em>) para popular a tabela.
-                    Ver <code style={{ fontSize: 11 }}>docs/app/sindicom.md</code> para detalhes.
+                    (<em>Actions → SINDICOM — Sync → Run workflow</em>) to populate the table.
+                    See <code style={{ fontSize: 11 }}>docs/app/sindicom.md</code> for details.
                   </div>
                 </div>
               ) : (
@@ -391,7 +391,7 @@ export default function SindicomPage() {
                   <div className="row mb-2">
                     <div className="col-12">
                       <ChartSection
-                        title="Volume Mensal por Produto (m³)"
+                        title="Monthly Volume by Product (m³)"
                         loading={serieLoading}
                         height={320}
                       >
@@ -408,7 +408,7 @@ export default function SindicomPage() {
                   <div className="row mb-2">
                     <div className="col-12">
                       <ChartSection
-                        title={`Market Share por Empresa — ${msProduto} (Top 15)`}
+                        title={`Market Share by Company — ${msProduto} (Top 15)`}
                         loading={serieLoading}
                         height={400}
                       >
