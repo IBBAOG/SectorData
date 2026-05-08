@@ -1825,6 +1825,34 @@ export async function rpcGetAnpCdpBswScatter(
   }
 }
 
+// Field-aggregate variant: one point per (campo × mes_desde_t0) — volume-weighted
+// BSW averaged across all wells in the field at that month-since-first-production.
+// Used by the "Field average" view in /anp-cdp-bsw.
+export type AnpCdpBswFieldPoint = {
+  campo: string;
+  mes_desde_t0: number;
+  bsw: number;          // 0..1 (volume-weighted water cut across wells)
+  n_pocos: number;      // number of wells contributing at this month-since-t0
+  volume_total: number; // total liquid (oil + water) volume used as the weight
+};
+
+export async function rpcGetAnpCdpBswFieldAggregate(
+  supabase: SupabaseClient,
+  campos: string[],
+): Promise<AnpCdpBswFieldPoint[]> {
+  if (!campos || campos.length === 0) return [];
+  try {
+    const { data, error } = await supabase.rpc("get_anp_cdp_bsw_field_aggregate", {
+      p_campos: campos,
+    });
+    if (error) throw error;
+    return (data ?? []) as AnpCdpBswFieldPoint[];
+  } catch (e) {
+    console.error("get_anp_cdp_bsw_field_aggregate failed", e);
+    return [];
+  }
+}
+
 // ─── MODULE: ANP CDP Diária (/src/app/(dashboard)/anp-cdp-diaria/page.tsx) ────
 //
 // Daily petroleum/gas production by `(data, campo, bacia)`. Sourced from the
