@@ -24,18 +24,38 @@ cada execução. Se o site estiver fora do ar, usa a última key conhecida como
 fallback. Você não precisa atualizar nada manualmente.
 """
 
-import base64
 import csv
-import json
-import re
 import sys
 import requests
 
+try:
+    from scripts.extractors._powerbi_common import (
+        fetch_key_from_pages,
+        col,
+        agg,
+        where_in,
+        build_payload,
+        post_query,
+        parse_dsr,
+        extract_row_count,
+    )
+except ModuleNotFoundError:
+    # Execução direta: scripts/extractors/ não está no sys.path como pacote
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+    from extractors._powerbi_common import (  # type: ignore[import]
+        fetch_key_from_pages,
+        col,
+        agg,
+        where_in,
+        build_payload,
+        post_query,
+        parse_dsr,
+        extract_row_count,
+    )
+
 # ─── Endpoints e configuração ─────────────────────────────────────────────────
-API_URL = (
-    "https://wabi-brazil-south-api.analysis.windows.net"
-    "/public/reports/querydata?synchronous=true"
-)
 
 # Páginas oficiais da ANP — o script tenta cada uma até achar a resource key
 ANP_PAGE_URLS = [
@@ -59,29 +79,16 @@ _FALLBACK_APP_CTX  = {
 
 MESES_ORDER = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"]
 
+# Entidades do modelo semântico de Vendas
+VENDAS_ENTITIES = [
+    {"Name": "f", "Entity": "(Movimento) - FT_SDL_MOVIMENTO",  "Type": 0},
+    {"Name": "d", "Entity": "DM_TEMPO",                        "Type": 0},
+    {"Name": "p", "Entity": "(Movimento) - DM_PRODUTO_SIMP",   "Type": 0},
+    {"Name": "e", "Entity": "(Movimento) - DM_SIMP_EMPRESA",   "Type": 0},
+]
+
 
 # ─── Resolução da key de acesso ───────────────────────────────────────────────
-
-def _fetch_key_from_anp_page() -> str | None:
-    """Busca a resource key nas páginas oficiais da ANP."""
-    for url in ANP_PAGE_URLS:
-        try:
-            r = requests.get(url, timeout=15,
-                             headers={"User-Agent": "Mozilla/5.0"})
-            r.raise_for_status()
-            for match in re.findall(r'powerbi\.com/view\?r=([A-Za-z0-9+/=_-]+)', r.text):
-                try:
-                    pad = match + '=' * (-len(match) % 4)
-                    decoded = json.loads(base64.b64decode(pad))
-                    if 'k' in decoded:
-                        return decoded['k']
-                except Exception:
-                    continue
-        except Exception:
-            continue
-    print("   [aviso] Não foi possível obter key em nenhuma página da ANP.")
-    return None
-
 
 def resolve_config() -> tuple[str, int, dict]:
     """
@@ -89,7 +96,7 @@ def resolve_config() -> tuple[str, int, dict]:
     Prioriza a key publicada no site da ANP; usa fallback se necessário.
     """
     print("🔑 Buscando key de acesso no site oficial da ANP...")
-    key = _fetch_key_from_anp_page()
+    key = fetch_key_from_pages(ANP_PAGE_URLS, _FALLBACK_KEY)
     if key and key != _FALLBACK_KEY:
         print(f"   ✅ Nova key encontrada: {key[:8]}... (fallback atualizado)")
     elif key:
@@ -100,124 +107,13 @@ def resolve_config() -> tuple[str, int, dict]:
     return key, _FALLBACK_MODEL_ID, _FALLBACK_APP_CTX
 
 
-# ─── Funções de consulta ──────────────────────────────────────────────────────
-
-def post_query(payload: dict, resource_key: str) -> dict:
-    headers = {
-        "Content-Type": "application/json",
-        "X-PowerBI-ResourceKey": resource_key,
-    }
-    r = requests.post(API_URL, headers=headers, json=payload, timeout=60)
-    r.raise_for_status()
-    return r.json()
-
-
-def col(source: str, prop: str) -> dict:
-    return {"Column": {"Expression": {"SourceRef": {"Source": source}},
-                       "Property": prop}}
-
-
-def agg(source: str, prop: str, func: int = 0) -> dict:
-    return {"Aggregation": {"Expression": col(source, prop), "Function": func}}
-
-
-def where_in(source: str, prop: str, values: list) -> dict:
-    return {"Condition": {"In": {
-        "Expressions": [col(source, prop)],
-        "Values": [[{"Literal": {"Value": f"'{v}'"}}] for v in values],
-    }}}
-
-
-def build_payload(select_cols: list, where_conds: list,
-                  model_id: int, app_ctx: dict, limit: int = 100_000) -> dict:
-    return {
-        "version": "1.0.0",
-        "queries": [{
-            "Query": {
-                "Commands": [{
-                    "SemanticQueryDataShapeCommand": {
-                        "Query": {
-                            "Version": 2,
-                            "From": [
-                                {"Name": "f", "Entity": "(Movimento) - FT_SDL_MOVIMENTO",  "Type": 0},
-                                {"Name": "d", "Entity": "DM_TEMPO",                        "Type": 0},
-                                {"Name": "p", "Entity": "(Movimento) - DM_PRODUTO_SIMP",   "Type": 0},
-                                {"Name": "e", "Entity": "(Movimento) - DM_SIMP_EMPRESA",   "Type": 0},
-                            ],
-                            "Select": select_cols,
-                            "Where":  where_conds,
-                        },
-                        "Binding": {
-                            "Primary": {"Groupings": [{"Projections": list(range(len(select_cols)))}]},
-                            "DataReduction": {"DataVolume": 4, "Primary": {"Top": {"Count": limit}}},
-                            "Version": 1,
-                        },
-                        "ExecutionMetricsKind": 1,
-                    }
-                }]
-            },
-            "QueryId": "",
-            "ApplicationContext": app_ctx,
-        }],
-        "cancelQueries": [],
-        "modelId": model_id,
-    }
-
-
-# ─── Parser do formato DSR comprimido do Power BI ────────────────────────────
-
-def parse_dsr(result_json: dict) -> list[list]:
-    """
-    Converte a resposta DSR comprimida do Power BI em lista de linhas.
-    O DSR usa dicionários de valores e máscaras de bits (R) para compressão.
-    """
-    dsr   = result_json["results"][0]["result"]["data"]["dsr"]
-    ds    = dsr["DS"][0]
-    dicts = ds.get("ValueDicts", {})
-    items = ds["PH"][0]["DM0"]
-
-    # Schema: posição → chave do dicionário de valores (ex: 'D0', 'D1'...)
-    schema_item = next((i for i in items if "S" in i), None)
-    col_dicts: list[str | None] = []
-    if schema_item:
-        col_dicts = [s.get("DN") for s in schema_item["S"]]
-
-    def resolve(v, dk):
-        if dk and dk in dicts and isinstance(v, int) and v < len(dicts[dk]):
-            return dicts[dk][v]
-        return v
-
-    rows: list[list] = []
-    prev = [None] * len(col_dicts)
-
-    for item in items:
-        if "C" not in item:
-            continue
-        row = list(prev)
-        if "R" in item:
-            # Máscara de bits: bit i=1 → herda coluna i do anterior
-            mask, c_idx = item["R"], 0
-            for i in range(len(col_dicts)):
-                if not ((mask >> i) & 1):
-                    if c_idx < len(item["C"]):
-                        row[i] = resolve(item["C"][c_idx], col_dicts[i])
-                        c_idx += 1
-        else:
-            for i, v in enumerate(item["C"]):
-                if i < len(col_dicts):
-                    row[i] = resolve(v, col_dicts[i])
-        prev = row
-        rows.append(list(row))
-
-    return rows
-
-
 # ─── Passo 1: descobrir último mês disponível ─────────────────────────────────
 
 def get_ultimo_mes(resource_key: str, model_id: int, app_ctx: dict) -> tuple[str, str]:
     print("🔍 Buscando último mês disponível na base...")
 
     payload = build_payload(
+        entities=VENDAS_ENTITIES,
         select_cols=[
             {**col("d", "ANO"),           "Name": "ANO"},
             {**col("d", "NOM_MES_ABREV"), "Name": "MES"},
@@ -251,6 +147,7 @@ def get_dados_mes(ano: str, mes: str,
     print(f"📦 Extraindo dados de {mes}/{ano} (todos os produtos e estados)...")
 
     payload = build_payload(
+        entities=VENDAS_ENTITIES,
         select_cols=[
             {**col("d", "ANO"),              "Name": "ANO"},
             {**col("d", "NOM_MES_ABREV"),    "Name": "MES"},
@@ -269,12 +166,8 @@ def get_dados_mes(ano: str, mes: str,
         model_id=model_id, app_ctx=app_ctx, limit=100_000,
     )
 
-    data   = post_query(payload, resource_key)
-    dsr_ds = data["results"][0]["result"]["data"]["dsr"]["DS"][0]
-    ic     = dsr_ds.get("IC", False)
-    events = data["results"][0]["result"]["data"]["metrics"]["Events"]
-    row_count = next((e["Metrics"]["RowCount"]
-                      for e in events if e["Name"] == "Execute DAX Query"), "?")
+    data = post_query(payload, resource_key)
+    row_count, ic = extract_row_count(data)
 
     print(f"   Linhas na API: {row_count} | Conjunto completo: {ic}")
     if not ic:
