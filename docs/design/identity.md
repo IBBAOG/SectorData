@@ -264,14 +264,16 @@ Breakpoints usados (alinhados com Bootstrap 5.3):
 
 A marca da plataforma é **Oil & Gas Data House** (gota preta sobre quadrado laranja, título em laranja sobre branco).
 
-- **Asset único:** [`public/logo.png`](../../public/logo.png) — PNG fornecido pelo cliente (1243×392, ratio 3.17:1, ~32KB).
-- **Componente único:** [`src/components/BrandLogo.tsx`](../../src/components/BrandLogo.tsx) — wrapper sobre `next/image` com 3 variantes:
-  - `variant="navbar"` → 114×36 (canto superior esquerdo da NavBar, `priority`)
-  - `variant="auth"` → 203×64 (cards de login / forgot-password / reset-password, `priority`)
-  - `variant="sidebar"` → 190×60 (topo das sidebars de todos os dashboards, lazy)
-- **Como rebrandear no futuro:** substituir `public/logo.png` por uma nova arte. Se a proporção mudar, ajustar `DIMS` em `BrandLogo.tsx` (manter `height: h, width: "auto"` no inline style para que o `object-fit: contain` funcione em containers menores).
+- **Assets (2 variantes do mesmo logo):**
+  - [`public/logo.png`](../../public/logo.png) — versão laranja (gota preta + título laranja sobre fundo branco). PNG fornecido pelo cliente, 1243×392, ratio 3.17:1, ~32KB. Uso em **fundos claros**: cards de auth e topo da sidebar.
+  - [`public/logo-navbar.png`](../../public/logo-navbar.png) — versão branca (laranja recolorido para branco puro, fundo branco original convertido para transparente; gota preta preservada). Uso na **NavBar com fundo navy `#000512`**, onde o laranja sumiria. Gerada por [`scripts/utils/generate_navbar_logo.py`](../../scripts/utils/generate_navbar_logo.py) — regenerar com `python scripts/utils/generate_navbar_logo.py` sempre que `logo.png` for substituído.
+- **Componente único:** [`src/components/BrandLogo.tsx`](../../src/components/BrandLogo.tsx) — wrapper sobre `next/image` com 3 variantes (cada uma já mapeia para o asset correto):
+  - `variant="navbar"` → `/logo-navbar.png` 114×36 (canto superior esquerdo da NavBar, `priority`)
+  - `variant="auth"` → `/logo.png` 203×64 (cards de login / forgot-password / reset-password, `priority`)
+  - `variant="sidebar"` → `/logo.png` 286×90 (topo das sidebars de todos os dashboards, lazy)
+- **Como rebrandear no futuro:** (1) substituir `public/logo.png` pela nova arte, (2) rodar `python scripts/utils/generate_navbar_logo.py` para regenerar a variante branca, (3) se a proporção mudar, ajustar `VARIANTS` em `BrandLogo.tsx` (manter `height: h, width: "auto"` no inline style para que o `object-fit: contain` funcione em containers menores).
 - **Nunca** copie o markup do `<BrandLogo>` em outro componente — sempre importe `BrandLogo` para que uma futura troca de marca seja **uma única edição**.
-- Os arquivos legados `public/logo-navbar.png` e `public/logo.webp` ainda existem mas não são consumidos por código atual.
+- O arquivo legado `public/logo.webp` ainda existe mas não é consumido por código atual.
 
 ## Pontos de drift conhecidos
 
