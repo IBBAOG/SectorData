@@ -305,6 +305,137 @@ export default function AnpCdpBswPage() {
     return i >= 0 ? PALETTE[i % PALETTE.length] : "#dcdcdc";
   };
 
+  // ── 12-month BSW history table ────────────────────────────────────────────
+  // Rebuilt from the same `points` already used by the chart — no extra RPC.
+  // Per-well mode → 1 row per poco; Field-average mode → 1 row per campo.
+  // Columns: Item + last 12 `YYYY-MM` (chronological) + MoM% + YTD%.
+  const tableModel = useMemo(() => {
+    type Row = {
+      item: string;
+      color: string;
+      // BSW values keyed by `YYYY-MM`. Missing months are absent.
+      values: Record<string, number>;
+    };
+    type Model = { months: string[]; rows: Row[] };
+    const empty: Model = { months: [], rows: [] };
+
+    const ymKey = (y: number, m: number) => `${y}-${String(m).padStart(2, "0")}`;
+
+    if (viewMode === "well") {
+      if (!selectedCampos.length || !wellPoints.length) return empty;
+      const allKeys = new Set<string>();
+      for (const p of wellPoints) allKeys.add(ymKey(p.ano, p.mes));
+      const months = Array.from(allKeys).sort().slice(-12);
+      const monthSet = new Set(months);
+
+      // Preserve first-appearance order of wells (matches chart legend).
+      const seen: string[] = [];
+      const byPoco = new Map<string, Record<string, number>>();
+      for (const p of wellPoints) {
+        if (!seen.includes(p.poco)) {
+          seen.push(p.poco);
+          byPoco.set(p.poco, {});
+        }
+        const k = ymKey(p.ano, p.mes);
+        if (monthSet.has(k)) {
+          byPoco.get(p.poco)![k] = p.bsw;
+        }
+      }
+      // Field is single-select in well mode → all wells share the field's color
+      // index. We keep PALETTE color per well based on first-appearance order.
+      const rows: Row[] = seen
+        .map((poco, i) => ({
+          item: poco,
+          color: PALETTE[i % PALETTE.length],
+          values: byPoco.get(poco) ?? {},
+        }))
+        .filter((r) => Object.keys(r.values).length > 0);
+      return { months, rows };
+    }
+
+    // Field-average mode
+    if (!selectedCampos.length || !fieldPoints.length) return empty;
+    const allKeys = new Set<string>();
+    for (const p of fieldPoints) allKeys.add(ymKey(p.ref_ano, p.ref_mes));
+    const months = Array.from(allKeys).sort().slice(-12);
+    const monthSet = new Set(months);
+
+    const rows: Row[] = selectedCampos
+      .map((campo, i) => {
+        const values: Record<string, number> = {};
+        for (const p of fieldPoints) {
+          if (p.campo !== campo) continue;
+          const k = ymKey(p.ref_ano, p.ref_mes);
+          if (monthSet.has(k)) values[k] = p.bsw;
+        }
+        return { item: campo, color: PALETTE[i % PALETTE.length], values };
+      })
+      .filter((r) => Object.keys(r.values).length > 0);
+    return { months, rows };
+  }, [viewMode, wellPoints, fieldPoints, selectedCampos]);
+
+  // Format BSW value (0..1) as percentage with 1 decimal.
+  const fmtBsw = (v: number | undefined): string =>
+    v === undefined || v === null || Number.isNaN(v) ? "—" : `${(v * 100).toFixed(1)}%`;
+
+  // Format signed delta percentage (already in %, e.g. +2.45) with 2 decimals.
+  const fmtDelta = (
+    v: number | null,
+  ): { text: string; color: string } => {
+    if (v === null || !Number.isFinite(v)) return { text: "—", color: "#888" };
+    const sign = v > 0 ? "+" : v < 0 ? "" : "";
+    // Green when BSW falls (less water = good), red when it rises.
+    const color = v < 0 ? "#28a745" : v > 0 ? "#dc3545" : "#666";
+    return { text: `${sign}${v.toFixed(2)}%`, color };
+  };
+
+  // Compute MoM% and YTD% for a row given the active months window.
+  const computeDeltas = (
+    months: string[],
+    values: Record<string, number>,
+  ): { mom: number | null; ytd: number | null } => {
+    if (!months.length) return { mom: null, ytd: null };
+    const tKey = months[months.length - 1];
+    const tVal = values[tKey];
+    if (tVal === undefined || tVal === 0) return { mom: null, ytd: null };
+
+    // MoM: t vs t-1 (calendar previous month). t-1 must be exactly one month
+    // earlier in calendar terms — use months[length-2] only if it is.
+    let mom: number | null = null;
+    if (months.length >= 2) {
+      const prevKey = months[months.length - 2];
+      const prevVal = values[prevKey];
+      if (prevVal !== undefined && prevVal !== 0) {
+        // Confirm calendar adjacency.
+        const [ty, tm] = tKey.split("-").map(Number);
+        const [py, pm] = prevKey.split("-").map(Number);
+        const adjacent =
+          (ty === py && tm === pm + 1) || (ty === py + 1 && tm === 1 && pm === 12);
+        if (adjacent) {
+          mom = (tVal / prevVal - 1) * 100;
+        }
+      }
+    }
+
+    // YTD: t vs January (or earliest available month) of t's calendar year.
+    const tYear = tKey.split("-")[0];
+    const sameYearMonths = months
+      .filter((k) => k.startsWith(`${tYear}-`))
+      .sort();
+    let ytd: number | null = null;
+    if (sameYearMonths.length >= 2) {
+      // Prefer January if available; otherwise first month of the same year.
+      const baseKey = sameYearMonths[0] === tKey ? null : sameYearMonths[0];
+      if (baseKey) {
+        const baseVal = values[baseKey];
+        if (baseVal !== undefined && baseVal !== 0) {
+          ytd = (tVal / baseVal - 1) * 100;
+        }
+      }
+    }
+    return { mom, ytd };
+  };
+
   // Per-well mode: count unique wells in the currently fetched points so the
   // sidebar can hint at the legend size for the selected field.
   const uniqueWellCount = useMemo(() => {
@@ -510,6 +641,146 @@ export default function AnpCdpBswPage() {
                       style={{ width: "100%", height: 460 }}
                     />
                   </ChartSection>
+
+                  {tableModel.rows.length > 0 && (
+                    <div style={{ marginTop: 24 }}>
+                      <h3 className="section-title">Recent BSW history (last 12 months)</h3>
+                      <hr className="section-hr" />
+                      <div
+                        style={{
+                          maxHeight: 400,
+                          overflowY: "auto",
+                          overflowX: "auto",
+                          border: "1px solid #ececec",
+                          borderRadius: 4,
+                        }}
+                      >
+                        <table
+                          className="table table-sm table-striped mb-0"
+                          style={{ fontFamily: "Arial", fontSize: 12 }}
+                        >
+                          <thead
+                            style={{
+                              position: "sticky",
+                              top: 0,
+                              background: "#fff",
+                              zIndex: 1,
+                            }}
+                          >
+                            <tr>
+                              <th
+                                style={{
+                                  textAlign: "left",
+                                  whiteSpace: "nowrap",
+                                  borderBottom: "2px solid #888",
+                                }}
+                              >
+                                Item
+                              </th>
+                              {tableModel.months.map((m) => (
+                                <th
+                                  key={m}
+                                  style={{
+                                    textAlign: "right",
+                                    whiteSpace: "nowrap",
+                                    borderBottom: "2px solid #888",
+                                  }}
+                                >
+                                  {m}
+                                </th>
+                              ))}
+                              <th
+                                style={{
+                                  textAlign: "right",
+                                  whiteSpace: "nowrap",
+                                  borderBottom: "2px solid #888",
+                                }}
+                              >
+                                MoM%
+                              </th>
+                              <th
+                                style={{
+                                  textAlign: "right",
+                                  whiteSpace: "nowrap",
+                                  borderBottom: "2px solid #888",
+                                }}
+                              >
+                                YTD%
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {tableModel.rows.map((row) => {
+                              const { mom, ytd } = computeDeltas(tableModel.months, row.values);
+                              const momFmt = fmtDelta(mom);
+                              const ytdFmt = fmtDelta(ytd);
+                              return (
+                                <tr key={row.item}>
+                                  <td
+                                    style={{
+                                      whiteSpace: "nowrap",
+                                      maxWidth: 220,
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                    }}
+                                    title={row.item}
+                                  >
+                                    <span
+                                      aria-hidden
+                                      style={{
+                                        display: "inline-block",
+                                        width: 8,
+                                        height: 8,
+                                        borderRadius: "50%",
+                                        backgroundColor: row.color,
+                                        marginRight: 6,
+                                        verticalAlign: "middle",
+                                      }}
+                                    />
+                                    {row.item}
+                                  </td>
+                                  {tableModel.months.map((m) => (
+                                    <td
+                                      key={m}
+                                      style={{
+                                        textAlign: "right",
+                                        whiteSpace: "nowrap",
+                                        fontVariantNumeric: "tabular-nums",
+                                      }}
+                                    >
+                                      {fmtBsw(row.values[m])}
+                                    </td>
+                                  ))}
+                                  <td
+                                    style={{
+                                      textAlign: "right",
+                                      whiteSpace: "nowrap",
+                                      fontVariantNumeric: "tabular-nums",
+                                      color: momFmt.color,
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    {momFmt.text}
+                                  </td>
+                                  <td
+                                    style={{
+                                      textAlign: "right",
+                                      whiteSpace: "nowrap",
+                                      fontVariantNumeric: "tabular-nums",
+                                      color: ytdFmt.color,
+                                      fontWeight: 600,
+                                    }}
+                                  >
+                                    {ytdFmt.text}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </div>
