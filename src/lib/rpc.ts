@@ -1834,6 +1834,8 @@ export type AnpCdpBswFieldPoint = {
   bsw: number;          // 0..1 (volume-weighted water cut across wells)
   n_pocos: number;      // number of wells contributing at this month-since-t0
   volume_total: number; // total liquid (oil + water) volume used as the weight
+  ref_ano: number;      // reference year (argmax of ano*12+mes among contributors)
+  ref_mes: number;      // reference month (argmax of ano*12+mes among contributors)
 };
 
 export async function rpcGetAnpCdpBswFieldAggregate(

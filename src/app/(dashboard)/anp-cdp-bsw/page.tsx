@@ -126,12 +126,19 @@ function buildFieldAverageChart(
       x: subset.map((p) => p.mes_desde_t0),
       y: subset.map((p) => p.bsw),
       customdata: subset.map(
-        (p) => [p.n_pocos, p.volume_total] as [number, number],
+        (p) =>
+          [p.n_pocos, p.volume_total, p.ref_ano, p.ref_mes] as [
+            number,
+            number,
+            number,
+            number,
+          ],
       ),
       line: { color, width: 2 },
       marker: { size: 6, color },
       hovertemplate:
         "<b>" + campo + "</b><br>" +
+        "Reference month: %{customdata[2]}-%{customdata[3]:02d}<br>" +
         "Months since start: %{x}<br>" +
         "BSW (vol-weighted): %{y:.1%}<br>" +
         "Wells contributing: %{customdata[0]}<br>" +

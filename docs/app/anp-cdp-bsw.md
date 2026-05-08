@@ -33,6 +33,11 @@ Each selected field is rendered as its own colored trace using the shared 16-col
 
 When no field is selected, the chart renders an instructional empty state ("Select one or more fields to plot BSW evolution.").
 
+### Tooltips
+
+- **Per well**: well code, reference month (`ano-mm`), BSW, and months-since-start.
+- **Field average**: field name, **reference month** (`ref_ano-ref_mes`, the most recent calendar month among contributors to that aggregate point — argmax of `ano*12+mes`), months-since-start, volume-weighted BSW, wells contributing, and total volume in bbl/d.
+
 ## Layout
 
 Two-column layout matching `/anp-cdp` and `/anp-cdp-diaria` (Bootstrap `col-xxl-2 col-md-3` sidebar + `col-xxl-10 col-md-9` content):
@@ -58,7 +63,7 @@ The "Selected fields" section in the sidebar shows colored chips matching the ch
 |---|---|---|
 | `get_anp_cdp_bsw_campos()` | own (sidebar dropdown) | Returns an alphabetically ordered `text[]` of offshore field names (`local IN ('PreSal','PosSal')`). Source for the sidebar's field multi-select — replaces the previous reuse of `get_anp_cdp_filtros`, which mixed onshore and offshore fields. |
 | `get_anp_cdp_bsw_scatter(p_campos text[])` | own (per-well view) | Returns one row per (well × month) for the filtered fields, with server-computed `bsw` and `mes_desde_t0`. Filters internally to `local IN ('PreSal','PosSal')` (defense-in-depth). Capped at 500k points server-side. |
-| `get_anp_cdp_bsw_field_aggregate(p_campos text[])` | own (field-average view) | Returns one row per (field × month-since-t0) with volume-weighted BSW, well count, and total volume. Filters internally to `local IN ('PreSal','PosSal')`. Low-volume output (one row per month per field). |
+| `get_anp_cdp_bsw_field_aggregate(p_campos text[])` | own (field-average view) | Returns one row per (field × month-since-t0) with volume-weighted BSW, well count, total volume, and the reference (`ref_ano`, `ref_mes`) — the (year, month) with the maximum `ano*12 + mes` among the wells contributing to that aggregate point (i.e., the most recent calendar month any contributor had data for that month-since-t0). Filters internally to `local IN ('PreSal','PosSal')`. Low-volume output (one row per month per field). |
 
 ### Output contracts
 
@@ -78,6 +83,8 @@ type AnpCdpBswFieldPoint = {
   bsw: number;           // 0..1 (volume-weighted across wells)
   n_pocos: number;       // wells contributing at this month-since-t0
   volume_total: number;  // total liquid (oil + water) volume — weight used
+  ref_ano: number;       // reference year (argmax of ano*12+mes among contributors)
+  ref_mes: number;       // reference month (argmax of ano*12+mes among contributors)
 };
 ```
 
