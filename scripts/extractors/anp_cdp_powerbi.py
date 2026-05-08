@@ -22,6 +22,7 @@ Uso:
 import argparse
 import csv
 import json
+import os
 import sys
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -380,6 +381,49 @@ def extract_producao_diaria_todos(
     return all_rows
 
 
+# ─── Upload para Supabase ────────────────────────────────────────────────────
+
+def upload_to_supabase(records: list[dict]) -> bool:
+    """
+    Upsert por PK composta (data, campo, bacia). Idempotente.
+    Le SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY do env.
+    Lotes de 500.
+    """
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    if not url or not key:
+        print("ERRO: SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY nao definidos", file=sys.stderr)
+        return False
+
+    from supabase import create_client  # type: ignore[import]
+    client = create_client(url, key)
+
+    # Deduplicar por PK composta antes do upsert
+    seen: set[tuple] = set()
+    deduped: list[dict] = []
+    for r in records:
+        key_tuple = (r.get("data"), r.get("campo"), r.get("bacia"))
+        if key_tuple not in seen:
+            seen.add(key_tuple)
+            deduped.append(r)
+
+    if len(deduped) < len(records):
+        print(f"   Deduplicacao: {len(records)} -> {len(deduped)} linhas")
+
+    BATCH = 500
+    total = len(deduped)
+    print(f"Upsert {total} linhas em anp_cdp_diaria...")
+    for i in range(0, total, BATCH):
+        batch = deduped[i:i + BATCH]
+        client.table("anp_cdp_diaria").upsert(
+            batch,
+            on_conflict="data,campo,bacia"
+        ).execute()
+        print(f"   {min(i + BATCH, total)}/{total} ok")
+    print("Upsert concluido")
+    return True
+
+
 # ─── Escrita do CSV ───────────────────────────────────────────────────────────
 
 def write_csv(rows: list[dict], output_path: Path) -> None:
@@ -414,6 +458,8 @@ def main():
                    help="Caminho de saida do CSV")
     p.add_argument("--window", type=int, default=None,
                    help="Override da Window.Count do Power BI")
+    p.add_argument("--upload", action="store_true",
+                   help="Apos extrair, fazer upsert em anp_cdp_diaria (requer SUPABASE_SERVICE_ROLE_KEY)")
 
     args = p.parse_args()
 
@@ -458,6 +504,12 @@ def main():
         print(f"  Campos unicos  : {campos_unicos}")
         print(f"  Bacias unicas  : {bacias_unicas}")
         print(f"  Range de datas : {min_data} -> {max_data}")
+
+    # Upload para Supabase
+    if args.upload:
+        ok = upload_to_supabase(rows)
+        if not ok:
+            sys.exit(1)
 
 
 if __name__ == "__main__":

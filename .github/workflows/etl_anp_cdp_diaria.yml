@@ -1,0 +1,41 @@
+name: ETL ANP CDP Diaria (Power BI)
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Forcar run mesmo se ja rodou hoje"
+        required: false
+        default: "true"
+        type: boolean
+  schedule:
+    # 7h, 12h, 17h BRT (UTC-3) = 10h, 15h, 20h UTC. Sem DST no Brasil desde 2019.
+    - cron: "0 10,15,20 * * *"
+
+concurrency:
+  group: etl-anp-cdp-diaria
+  cancel-in-progress: false
+
+jobs:
+  extract-upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      PYTHONIOENCODING: utf-8
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install deps
+        run: pip install requests supabase python-dotenv
+
+      - name: Extract + upload
+        run: python scripts/extractors/anp_cdp_powerbi.py --all --upload
