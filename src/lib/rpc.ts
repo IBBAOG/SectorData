@@ -1814,9 +1814,9 @@ export async function rpcGetAnpCdpBswScatter(
 ): Promise<AnpCdpBswPoint[]> {
   if (!campos || campos.length === 0) return [];
   try {
-    const { data, error } = await supabase.rpc("get_anp_cdp_bsw_scatter", {
-      p_campos: campos,
-    });
+    const { data, error } = await supabase
+      .rpc("get_anp_cdp_bsw_scatter", { p_campos: campos })
+      .limit(500000); // bypass PostgREST default max_rows=1000 (server caps at 500k)
     if (error) throw error;
     return (data ?? []) as AnpCdpBswPoint[];
   } catch (e) {
@@ -1847,9 +1847,9 @@ export async function rpcGetAnpCdpBswFieldAggregate(
 ): Promise<AnpCdpBswFieldPoint[]> {
   if (!campos || campos.length === 0) return [];
   try {
-    const { data, error } = await supabase.rpc("get_anp_cdp_bsw_field_aggregate", {
-      p_campos: campos,
-    });
+    const { data, error } = await supabase
+      .rpc("get_anp_cdp_bsw_field_aggregate", { p_campos: campos })
+      .limit(200000); // bypass PostgREST default max_rows=1000 (was truncating large field selections at 1000 rows)
     if (error) throw error;
     return (data ?? []) as AnpCdpBswFieldPoint[];
   } catch (e) {
