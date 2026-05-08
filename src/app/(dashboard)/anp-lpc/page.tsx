@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Layout, PlotData } from "plotly.js";
 
 import NavBar from "../../../components/NavBar";
+import BrandLogo from "../../../components/BrandLogo";
 import PlotlyChart from "../../../components/PlotlyChart";
 import SearchableMultiSelect from "../../../components/SearchableMultiSelect";
 import DashboardHeader from "../../../components/dashboard/DashboardHeader";
@@ -283,12 +284,7 @@ export default function AnpLpcPage() {
           <div className="col-xxl-2 col-md-3 p-0">
             <div id="sidebar">
               <div style={{ textAlign: "center" }}>
-                <div style={{
-                  width: "100%", maxWidth: 300, height: 60,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  border: "2px dashed #ccc", color: "#aaa", fontSize: 18,
-                  fontWeight: 700, letterSpacing: 3, marginBottom: 16, borderRadius: 6,
-                }}>TBD</div>
+                <BrandLogo variant="sidebar" />
               </div>
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
 

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 340" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Oil and Gas Data House">
+  <!-- White background -->
+  <rect x="0" y="0" width="1240" height="340" fill="#ffffff"/>
+
+  <!-- Left orange square (340x340) with black water drop -->
+  <rect x="0" y="0" width="340" height="340" fill="#ff5000"/>
+  <path
+    d="M170,60 C 170,60 80,180 80,225 C 80,265 120,295 170,295 C 220,295 260,265 260,225 C 260,180 170,60 170,60 Z"
+    fill="#000000"/>
+
+  <!-- Vertical divider bar between square and text -->
+  <rect x="340" y="0" width="5" height="340" fill="#ff5000"/>
+
+  <!-- Right text (orange on white) -->
+  <g font-family="Arial, Helvetica, sans-serif" fill="#ff5000" text-anchor="start">
+    <text x="375" y="170" font-size="150" font-weight="700">Oil &amp; Gas</text>
+    <text x="375" y="285" font-size="95" font-weight="500">Data House</text>
+  </g>
+
+  <!-- Outer border (drawn last so it sits on top) -->
+  <rect x="3" y="3" width="1234" height="334" fill="none" stroke="#ff5000" stroke-width="6"/>
+</svg>
