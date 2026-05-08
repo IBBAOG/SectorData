@@ -1847,11 +1847,17 @@ export async function rpcGetAnpCdpBswFieldAggregate(
 ): Promise<AnpCdpBswFieldPoint[]> {
   if (!campos || campos.length === 0) return [];
   try {
-    const { data, error } = await supabase
-      .rpc("get_anp_cdp_bsw_field_aggregate", { p_campos: campos })
-      .limit(200000); // bypass PostgREST default max_rows=1000 (was truncating large field selections at 1000 rows)
+    // RPC now returns RETURNS jsonb (single row, single column) to bypass
+    // PostgREST default max_rows=1000 that was truncating large field selections.
+    // The previous `.limit(200000)` workaround did not help because PostgREST
+    // caps row count regardless of explicit limit on TABLE-returning RPCs.
+    // With jsonb return, the entire array arrives as one row and supabase-js
+    // automatically deserializes it into the expected array shape.
+    const { data, error } = await supabase.rpc("get_anp_cdp_bsw_field_aggregate", {
+      p_campos: campos,
+    });
     if (error) throw error;
-    return (data ?? []) as AnpCdpBswFieldPoint[];
+    return ((data as unknown) ?? []) as AnpCdpBswFieldPoint[];
   } catch (e) {
     console.error("get_anp_cdp_bsw_field_aggregate failed", e);
     return [];
