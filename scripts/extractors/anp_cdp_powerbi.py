@@ -189,12 +189,13 @@ def _entities_poco() -> list:
 
 
 def _select_poco() -> list:
-    """6 colunas: Data, NOME CAMPO, BACIA, NOME POCO ANP, Petroleo, Gas"""
+    """7 colunas: Data, NOME CAMPO, BACIA, NOME POCO ANP, Instalacao, Petroleo, Gas"""
     return [
         {**_column("d", "Data"),            "Name": "Datas.Data"},
         {**_column("v", "Campo (Poço)"),     "Name": "v_poco_instalacao_sigep_ultimo.NOME CAMPO"},
         {**_column("v", "BACIA"),           "Name": "v_poco_instalacao_sigep_ultimo.BACIA"},
         {**_column("v", "NOME POÇO ANP"),   "Name": "v_poco_instalacao_sigep_ultimo.NOME POÇO ANP"},
+        {**_column("v", "Instalação"),      "Name": "v_poco_instalacao_sigep_ultimo.Instalação"},
         {**_measure("m", "Petróleo"),       "Name": "Medidas.Petroleo"},
         {**_measure("m", "Gás Mm3"),        "Name": "Medidas.Gás"},
     ]
@@ -358,16 +359,17 @@ def _parse_instalacao(result_json: dict) -> list[dict]:
 
 
 def _parse_poco(result_json: dict, debug_dump_path: Path | None = None) -> list[dict]:
-    """Schema idx: 0=Data, 1=NOME CAMPO, 2=BACIA, 3=NOME POCO ANP, 4=Petroleo, 5=Gas"""
-    raw = _parse_dsr_cdp_generic(result_json, 6, debug_dump_path=debug_dump_path)
+    """Schema idx: 0=Data, 1=NOME CAMPO, 2=BACIA, 3=NOME POCO ANP, 4=Instalacao, 5=Petroleo, 6=Gas"""
+    raw = _parse_dsr_cdp_generic(result_json, 7, debug_dump_path=debug_dump_path)
     return [
         {
             "data":             row[0],
             "campo":            row[1],
             "bacia":            row[2],
             "poco":             row[3],
-            "petroleo_bbl_dia": _to_float(row[4]),
-            "gas_mm3_dia":      _to_float(row[5]),
+            "instalacao":       row[4],
+            "petroleo_bbl_dia": _to_float(row[5]),
+            "gas_mm3_dia":      _to_float(row[6]),
         }
         for row in raw
     ]
@@ -503,7 +505,7 @@ def extract_producao_diaria_poco_todos(
 ) -> list[dict]:
     """
     Extrai producao diaria por poco, paginando mes a mes.
-    Output rows: {data, campo, bacia, poco, petroleo_bbl_dia, gas_mm3_dia}
+    Output rows: {data, campo, bacia, poco, instalacao, petroleo_bbl_dia, gas_mm3_dia}
     """
     return _extract_paginado(
         nivel="POCO",
@@ -511,7 +513,7 @@ def extract_producao_diaria_poco_todos(
         entities_fn=_entities_poco,
         select_fn=_select_poco,
         visual_id=VISUAL_ID_POCO,
-        n_cols=6,
+        n_cols=7,
         parse_fn=_parse_poco,
         window=window,
     )
@@ -618,7 +620,7 @@ def upload_to_supabase(records: list[dict], table: str = "anp_cdp_diaria",
 FIELDNAMES_BY_LEVEL = {
     "campo":      ["data", "campo", "bacia", "petroleo_bbl_dia", "gas_mm3_dia"],
     "instalacao": ["data", "campo", "instalacao", "petroleo_bbl_dia", "gas_mm3_dia"],
-    "poco":       ["data", "campo", "bacia", "poco", "petroleo_bbl_dia", "gas_mm3_dia"],
+    "poco":       ["data", "campo", "bacia", "poco", "instalacao", "petroleo_bbl_dia", "gas_mm3_dia"],
 }
 
 TABLE_BY_LEVEL = {
