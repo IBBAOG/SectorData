@@ -16,7 +16,7 @@ import io
 import math
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -226,11 +226,19 @@ def _dedup(records: list[dict]) -> list[dict]:
     return list(seen.values())
 
 
+def _clean_row(row: dict) -> dict:
+    """Replace any nan/inf float with None so the dict is JSON-safe."""
+    return {
+        k: (None if (isinstance(v, float) and (math.isnan(v) or math.isinf(v))) else v)
+        for k, v in row.items()
+    }
+
+
 def _upsert(sb, records: list[dict]) -> int:
     total = 0
     n_batches = math.ceil(len(records) / BATCH)
     for i in range(0, len(records), BATCH):
-        chunk = records[i : i + BATCH]
+        chunk = [_clean_row(r) for r in records[i : i + BATCH]]
         sb.table(TABLE).upsert(
             chunk, on_conflict="ano_publicacao,campo"
         ).execute()
@@ -242,7 +250,7 @@ def _upsert(sb, records: list[dict]) -> int:
 def main() -> None:
     # Determine target year: env var BAR_YEAR > current UTC year
     raw_year = os.environ.get("BAR_YEAR", "").strip()
-    year = int(raw_year) if raw_year else datetime.utcnow().year
+    year = int(raw_year) if raw_year else datetime.now(timezone.utc).year
 
     content, actual_year = _download(year)
 
