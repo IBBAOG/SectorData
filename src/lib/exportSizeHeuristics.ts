@@ -29,6 +29,8 @@ export const AVG_BYTES_PER_ROW: Record<string, { xlsx: number; csv: number }> = 
   mdic_comex: { xlsx: 280, csv: 140 },
   // ANP CDP producao — narrower (numeric heavy)
   anp_cdp_producao: { xlsx: 200, csv: 100 },
+  // ANP CDP Diária — daily by campo×bacia (5 cols: data, campo, bacia, petroleo, gas)
+  anp_cdp_diaria: { xlsx: 180, csv: 90 },
   // ANP LPC — city + state + product + 4 numeric cols
   anp_lpc: { xlsx: 240, csv: 120 },
   // ANP Distribution Prices — local (state/city) + product + 3 numeric cols + unit

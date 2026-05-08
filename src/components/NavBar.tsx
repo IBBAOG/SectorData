@@ -41,6 +41,7 @@ const NAV_ENTRIES: NavEntry[] = [
     label: "Oil & Gas",
     items: [
       { href: "/anp-cdp", label: "ANP CDP Production" },
+      { href: "/anp-cdp-diaria", label: "ANP CDP Diária" },
     ],
   },
   {
