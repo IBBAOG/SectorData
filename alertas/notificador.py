@@ -27,8 +27,11 @@ _SUPABASE_URL = (
     os.environ.get("SUPABASE_URL")
     or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
     or ""
-)
-_SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY") or ""
+).strip()
+# .strip() é essencial: GitHub Secrets podem ter \n ou whitespace invisível,
+# e a lib `requests` rejeita header values com return characters
+# ("Invalid leading whitespace, reserved character(s), or return character(s)").
+_SUPABASE_SERVICE_KEY = (os.environ.get("SUPABASE_SERVICE_KEY") or "").strip()
 
 
 def get_alert_recipients() -> list[str]:
@@ -43,8 +46,9 @@ def get_alert_recipients() -> list[str]:
         return fallback
 
     try:
+        base_url = _SUPABASE_URL.rstrip("/")
         resp = _requests.get(
-            f"{_SUPABASE_URL}/rest/v1/alert_recipients",
+            f"{base_url}/rest/v1/alert_recipients",
             headers={
                 "apikey": _SUPABASE_SERVICE_KEY,
                 "Authorization": f"Bearer {_SUPABASE_SERVICE_KEY}",
@@ -54,9 +58,11 @@ def get_alert_recipients() -> list[str]:
         )
         resp.raise_for_status()
         data = resp.json()
-        emails = [row["email"] for row in data if row.get("email")]
+        # Sanitize: strip whitespace/newlines de cada email (defensivo)
+        emails = [row["email"].strip() for row in data if row.get("email")]
+        emails = [e for e in emails if e]
         if emails:
-            print(f"[alertas] {len(emails)} destinatário(s) carregado(s) do Supabase.")
+            print(f"[alertas] {len(emails)} destinatário(s) carregado(s) do Supabase: {emails}")
             return emails
         print("[alertas] Nenhum destinatário ativo no Supabase. Usando fallback.")
         return fallback
