@@ -40,7 +40,8 @@ const NAV_ENTRIES: NavEntry[] = [
   {
     label: "Oil & Gas",
     items: [
-      { href: "/anp-cdp", label: "ANP CDP Produção" },
+      { href: "/anp-cdp", label: "ANP CDP Production" },
+      { href: "/anp-cdp-diaria", label: "ANP CDP Diária" },
     ],
   },
   {
@@ -61,13 +62,13 @@ const NAV_ENTRIES: NavEntry[] = [
         items: [
           { href: "/sales-volumes", label: "Sales Volumes — ANP" },
           { href: "/anp-ppi", label: "PPI" },
-          { href: "/anp-precos-produtores", label: "Preços Produtores" },
-          { href: "/anp-precos-distribuicao", label: "Preços Distribuição" },
-          { href: "/anp-glp", label: "GLP" },
-          { href: "/anp-daie", label: "Importações e Exportações" },
-          { href: "/anp-desembaracos", label: "Desembaraços" },
-          { href: "/anp-painel-importacoes", label: "Painel Importações" },
-          { href: "/anp-lpc", label: "LPC Preços" },
+          { href: "/anp-precos-produtores", label: "Producer Prices" },
+          { href: "/anp-precos-distribuicao", label: "Distribution Prices" },
+          { href: "/anp-glp", label: "LPG" },
+          { href: "/anp-daie", label: "Imports and Exports" },
+          { href: "/anp-desembaracos", label: "Customs Clearances" },
+          { href: "/anp-painel-importacoes", label: "Imports Panel" },
+          { href: "/anp-lpc", label: "LPC Prices" },
         ],
       },
       {

@@ -41,7 +41,7 @@ export const AXIS_LINE = {
 // Empty-state placeholder used when a series has no data for the current filters.
 export function emptyPlot(
   height = 300,
-  message = "Sem dados para o período selecionado.",
+  message = "No data for the selected period.",
 ): { data: PlotData[]; layout: Partial<Layout> } {
   return {
     data: [],

@@ -48,7 +48,7 @@ const RAW_ABS_MAX_ROWS   = 500_000;
 // each granularity to the `groupBy` array passed to `rpcGetAnpCdpAggregated`.
 //
 // "ambiente" maps to the SQL column `local` (the table column is named `local`,
-// the dashboard label is "Ambiente").
+// the dashboard label is "Environment").
 type AnpCdpGranularity =
   | "raw"
   | "campo"
@@ -72,13 +72,13 @@ const ANP_CDP_GRANULARITY_OPTIONS: Array<{
   label: string;
   hint: string;
 }> = [
-  { value: "raw",      label: "Por poço (raw — todas as dimensões)",       hint: "1 linha por poço × mês × demais dimensões (recomendado p/ análise)" },
-  { value: "campo",    label: "Por campo (agregado por ano/mês/campo)",    hint: "soma das métricas por (ano, mês, campo)" },
-  { value: "bacia",    label: "Por bacia (agregado por ano/mês/bacia)",    hint: "soma das métricas por (ano, mês, bacia)" },
-  { value: "operador", label: "Por operador (agregado por ano/mês/operador)", hint: "soma das métricas por (ano, mês, operador)" },
-  { value: "ambiente", label: "Por ambiente (agregado por ano/mês/ambiente)",  hint: "soma das métricas por (ano, mês, ambiente)" },
-  { value: "estado",   label: "Por estado (agregado por ano/mês/estado)",  hint: "soma das métricas por (ano, mês, estado)" },
-  { value: "ano_mes",  label: "Por ano/mês (total agregado)",              hint: "soma total das métricas por mês (≤252 linhas)" },
+  { value: "raw",      label: "By well (raw — all dimensions)",            hint: "1 row per well × month × other dimensions (recommended for analysis)" },
+  { value: "campo",    label: "By field (aggregated by year/month/field)", hint: "sum of metrics by (year, month, field)" },
+  { value: "bacia",    label: "By basin (aggregated by year/month/basin)", hint: "sum of metrics by (year, month, basin)" },
+  { value: "operador", label: "By operator (aggregated by year/month/operator)", hint: "sum of metrics by (year, month, operator)" },
+  { value: "ambiente", label: "By environment (aggregated by year/month/environment)", hint: "sum of metrics by (year, month, environment)" },
+  { value: "estado",   label: "By state (aggregated by year/month/state)", hint: "sum of metrics by (year, month, state)" },
+  { value: "ano_mes",  label: "By year/month (overall aggregate)",         hint: "total sum of metrics per month (≤252 rows)" },
 ];
 
 // Hardcoded estimate of aggregated row counts (no extra round-trip). The raw
@@ -97,21 +97,21 @@ const ANP_CDP_AGG_ESTIMATE: Record<Exclude<AnpCdpGranularity, "raw">, number> = 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const METRICS = [
-  { key: "petroleo_bbl_dia",             label: "Petróleo (bbl/dia)" },
-  { key: "oleo_bbl_dia",                 label: "Óleo (bbl/dia)" },
-  { key: "condensado_bbl_dia",           label: "Condensado (bbl/dia)" },
-  { key: "gas_total_mm3_dia",            label: "Gás Total (Mm³/dia)" },
-  { key: "gas_natural_assoc_mm3_dia",    label: "Gás Assoc. (Mm³/dia)" },
-  { key: "gas_natural_n_assoc_mm3_dia",  label: "Gás N-Assoc. (Mm³/dia)" },
-  { key: "gas_royalties",                label: "Gás Royalties (Mm³/dia)" },
-  { key: "agua_bbl_dia",                 label: "Água (bbl/dia)" },
-  { key: "tempo_prod_hs_mes",            label: "Tempo Produção (hs/mês)" },
+  { key: "petroleo_bbl_dia",             label: "Petroleum (bbl/day)" },
+  { key: "oleo_bbl_dia",                 label: "Oil (bbl/day)" },
+  { key: "condensado_bbl_dia",           label: "Condensate (bbl/day)" },
+  { key: "gas_total_mm3_dia",            label: "Total Gas (Mm³/day)" },
+  { key: "gas_natural_assoc_mm3_dia",    label: "Assoc. Gas (Mm³/day)" },
+  { key: "gas_natural_n_assoc_mm3_dia",  label: "Non-Assoc. Gas (Mm³/day)" },
+  { key: "gas_royalties",                label: "Gas Royalties (Mm³/day)" },
+  { key: "agua_bbl_dia",                 label: "Water (bbl/day)" },
+  { key: "tempo_prod_hs_mes",            label: "Production Time (hrs/month)" },
 ];
 
 const LOCAL_LABELS: Record<string, string> = {
-  PreSal: "Pré-Sal",
-  PosSal: "Pós-Sal (Mar)",
-  Terra:  "Terra",
+  PreSal: "Pre-Salt",
+  PosSal: "Post-Salt (Offshore)",
+  Terra:  "Onshore",
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -122,10 +122,10 @@ function buildChart(
   metricLabel: string,
   nPocos: number,
 ): { data: PlotData[]; layout: Partial<Layout> } {
-  if (!serie.length) return emptyPlot(340, "Sem dados.");
+  if (!serie.length) return emptyPlot(340, "No data.");
   const titleText = nPocos === 0
-    ? "Todos os poços"
-    : `${nPocos.toLocaleString("pt-BR")} poço${nPocos !== 1 ? "s" : ""} selecionado${nPocos !== 1 ? "s" : ""}`;
+    ? "All wells"
+    : `${nPocos.toLocaleString("en-US")} well${nPocos !== 1 ? "s" : ""} selected`;
   return {
     data: [{
       type: "scatter", mode: "lines",
@@ -192,7 +192,7 @@ function InvertedCheckboxGroup({
         <button className="filter-btn-link filter-btn-link--secondary"
           style={{ marginTop: 4, fontFamily: "Arial", fontSize: 10 }}
           onClick={() => onChange([])}>
-          Limpar
+          Clear
         </button>
       )}
     </>
@@ -404,11 +404,11 @@ export default function AnpCdpPage() {
                 }}>TBD</div>
               </div>
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
-              <div className="sidebar-section-label">Filtros</div>
+              <div className="sidebar-section-label">Filters</div>
 
-              {/* Métrica */}
+              {/* Metric */}
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Métrica</div>
+                <div className="sidebar-filter-label">Metric</div>
                 {METRICS.map(m => (
                   <div key={m.key} className="form-check" style={{ marginBottom: 4 }}>
                     <input className="form-check-input" type="radio" id={`cdp-m-${m.key}`}
@@ -421,40 +421,40 @@ export default function AnpCdpPage() {
                 ))}
               </div>
 
-              {/* Ambiente — uses inverted toggle (empty = all) */}
+              {/* Environment — uses inverted toggle (empty = all) */}
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Ambiente</div>
+                <div className="sidebar-filter-label">Environment</div>
                 <InvertedCheckboxGroup id="cdp-l" items={allLocais} selected={selectedLocais}
                   onChange={setSelectedLocais} labelMap={LOCAL_LABELS} />
               </div>
 
-              {/* Bacia — uses inverted toggle */}
+              {/* Basin — uses inverted toggle */}
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Bacia</div>
+                <div className="sidebar-filter-label">Basin</div>
                 <InvertedCheckboxGroup id="cdp-b" items={filtros.bacoes} selected={selectedBacoes}
                   onChange={setSelectedBacoes} />
               </div>
 
-              {/* Estado */}
-              <MultiFilter label="Estado" options={filtros.estados}
+              {/* State */}
+              <MultiFilter label="State" options={filtros.estados}
                 value={selectedEstados} onChange={setSelectedEstados} loading={loading} />
 
-              {/* Operador */}
-              <MultiFilter label="Operador" options={filtros.operadores}
+              {/* Operator */}
+              <MultiFilter label="Operator" options={filtros.operadores}
                 value={selectedOperadores} onChange={setSelectedOperadores} loading={loading} />
 
-              {/* Instalação Destino */}
-              <MultiFilter label="Instalação Destino" options={filtros.instalacoes}
+              {/* Destination Facility */}
+              <MultiFilter label="Destination Facility" options={filtros.instalacoes}
                 value={selectedInstalacoes} onChange={setSelectedInstalacoes} loading={loading} />
 
-              {/* Tipo Instalação */}
-              <MultiFilter label="Tipo Instalação" options={filtros.tipos_instalacao}
+              {/* Facility Type */}
+              <MultiFilter label="Facility Type" options={filtros.tipos_instalacao}
                 value={selectedTipos} onChange={setSelectedTipos} loading={loading} />
 
-              {/* Campo */}
+              {/* Field */}
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">
-                  Campo{" "}
+                  Field{" "}
                   <span style={{ color: "#888", fontWeight: 400 }}>
                     ({selectedCampos.length === 0 ? filtros.campos.length : selectedCampos.length}/{filtros.campos.length})
                   </span>
@@ -468,14 +468,14 @@ export default function AnpCdpPage() {
                 )}
               </div>
 
-              {/* Poço — all wells, filtered client-side */}
+              {/* Well — all wells, filtered client-side */}
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">
-                  Poço{" "}
+                  Well{" "}
                   <span style={{ color: "#888", fontWeight: 400 }}>
                     {pocosReady
                       ? `(${selectedPocos.length === 0 ? pocoOptions.length : selectedPocos.length}/${pocoOptions.length})`
-                      : "(carregando…)"}
+                      : "(loading…)"}
                   </span>
                 </div>
                 {!loading && pocosReady && (
@@ -487,14 +487,14 @@ export default function AnpCdpPage() {
                 )}
                 {!loading && !pocosReady && (
                   <div style={{ fontSize: 10, color: "#aaa", fontFamily: "Arial", paddingTop: 4 }}>
-                    Carregando lista de poços…
+                    Loading well list…
                   </div>
                 )}
               </div>
 
-              {/* Período */}
+              {/* Period */}
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Período</div>
+                <div className="sidebar-filter-label">Period</div>
                 {!loading && allYears.length > 0 && (
                   <PeriodSlider years={allYears} value={yearRange} onChange={setYearRange} />
                 )}
@@ -505,8 +505,8 @@ export default function AnpCdpPage() {
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
               <DashboardHeader
-                title="ANP CDP — Produção por Poço"
-                sub="Produção mensal declarada à ANP por poço, campo e operador"
+                title="ANP CDP — Production by Well"
+                sub="Monthly production reported to ANP by well, field, and operator"
                 period={allYears.length > 0 ? [yMin, yMax] : null}
                 rightSlot={
                   <ExportPanel
@@ -534,7 +534,7 @@ export default function AnpCdpPage() {
                 <div className="row mb-2">
                   <div className="col-12">
                     <ChartSection
-                      title={`Produção Total Selecionada — ${metric.label}`}
+                      title={`Total Selected Production — ${metric.label}`}
                       loading={serieLoading}
                       height={340}
                     >
@@ -554,7 +554,7 @@ export default function AnpCdpPage() {
       <ExportModal
         open={exportOpen}
         onClose={() => setExportOpen(false)}
-        title="Exportar — ANP CDP"
+        title="Export — ANP CDP"
         datasetKey="anp_cdp_producao"
         // Re-key by granularity so useExportSize debounces independently for
         // raw vs ano_mes (we feed the modal a different count in each case).
@@ -578,7 +578,7 @@ export default function AnpCdpPage() {
         }}
         excelBusy={excelLoading}
         csvBusy={csvLoading}
-        loadingLabel={excelLoading ? "Gerando Excel..." : "Baixando CSV..."}
+        loadingLabel={excelLoading ? "Generating Excel..." : "Downloading CSV..."}
         onExportExcel={async () => {
           if (!supabase) return;
           // Hard-limit gating for raw — early-bail before allocating memory.
@@ -660,10 +660,10 @@ export default function AnpCdpPage() {
         }}
         filters={
           <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: "Arial" }}>
-            {/* Granularidade — default "raw" (1 linha por poço × mês) ─────────── */}
+            {/* Granularity — default "raw" (1 row per well × month) ─────────── */}
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                Granularidade
+                Granularity
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 {ANP_CDP_GRANULARITY_OPTIONS.map((opt) => (
@@ -705,9 +705,9 @@ export default function AnpCdpPage() {
                   lineHeight: 1.4,
                 }}
               >
-                Volume muito alto ({(exportRawCount ?? 0).toLocaleString("pt-BR")} linhas).
-                Escolha uma <strong>granularidade agregada</strong> (campo, bacia, operador,
-                ambiente, estado ou ano/mês) ou aplique mais filtros (bacia, operador, período).
+                Very high volume ({(exportRawCount ?? 0).toLocaleString("en-US")} rows).
+                Choose an <strong>aggregated granularity</strong> (field, basin, operator,
+                environment, state, or year/month) or apply more filters (basin, operator, period).
               </div>
             )}
             {!rawOverAbs && rawOverExcel && (
@@ -723,14 +723,14 @@ export default function AnpCdpPage() {
                   lineHeight: 1.4,
                 }}
               >
-                Volume alto para Excel ({(exportRawCount ?? 0).toLocaleString("pt-BR")} linhas).
-                Recomendamos baixar em <strong>CSV</strong> (mais leve) — Excel pode falhar no
-                navegador.
+                High volume for Excel ({(exportRawCount ?? 0).toLocaleString("en-US")} rows).
+                We recommend downloading as <strong>CSV</strong> (lighter) — Excel may fail in
+                the browser.
               </div>
             )}
 
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Período</div>
+              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Period</div>
               {allYears.length > 0 && (
                 <PeriodSlider years={allYears} value={exportRange} onChange={setExportRange} />
               )}
@@ -739,7 +739,7 @@ export default function AnpCdpPage() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                  Bacias <span style={{ color: "#888", fontWeight: 400 }}>({exportBacoes.length === 0 ? filtros.bacoes.length : exportBacoes.length}/{filtros.bacoes.length})</span>
+                  Basins <span style={{ color: "#888", fontWeight: 400 }}>({exportBacoes.length === 0 ? filtros.bacoes.length : exportBacoes.length}/{filtros.bacoes.length})</span>
                 </div>
                 <SearchableMultiSelect
                   options={filtros.bacoes}
@@ -749,7 +749,7 @@ export default function AnpCdpPage() {
               </div>
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                  Operadores <span style={{ color: "#888", fontWeight: 400 }}>({exportOperadores.length === 0 ? filtros.operadores.length : exportOperadores.length}/{filtros.operadores.length})</span>
+                  Operators <span style={{ color: "#888", fontWeight: 400 }}>({exportOperadores.length === 0 ? filtros.operadores.length : exportOperadores.length}/{filtros.operadores.length})</span>
                 </div>
                 <SearchableMultiSelect
                   options={filtros.operadores}
@@ -762,7 +762,7 @@ export default function AnpCdpPage() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                  Ambientes (Locais)
+                  Environments (Locations)
                 </div>
                 <SearchableMultiSelect
                   options={allLocais}
@@ -772,7 +772,7 @@ export default function AnpCdpPage() {
               </div>
               <div>
                 <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                  Tipo Instalação <span style={{ color: "#888", fontWeight: 400 }}>({exportTipos.length === 0 ? filtros.tipos_instalacao.length : exportTipos.length}/{filtros.tipos_instalacao.length})</span>
+                  Facility Type <span style={{ color: "#888", fontWeight: 400 }}>({exportTipos.length === 0 ? filtros.tipos_instalacao.length : exportTipos.length}/{filtros.tipos_instalacao.length})</span>
                 </div>
                 <SearchableMultiSelect
                   options={filtros.tipos_instalacao}

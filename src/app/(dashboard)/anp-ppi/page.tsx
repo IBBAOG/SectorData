@@ -28,10 +28,10 @@ import {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const PRODUTO_INFO: Record<string, { label: string; color: string; unidade: string }> = {
-  "Gasolina A Comum": { label: "Gasolina A Comum", color: "#FF5000", unidade: "R$/litro" },
-  "Diesel A S10":     { label: "Diesel A S10",     color: "#2196F3", unidade: "R$/litro" },
-  "QAV":              { label: "QAV",              color: "#8BC34A", unidade: "R$/litro" },
-  "GLP":              { label: "GLP",              color: "#FF9800", unidade: "R$/13kg"  },
+  "Gasolina A Comum": { label: "Regular Gasoline A", color: "#FF5000", unidade: "R$/liter" },
+  "Diesel A S10":     { label: "Diesel A S10",       color: "#2196F3", unidade: "R$/liter" },
+  "QAV":              { label: "Jet Fuel",           color: "#8BC34A", unidade: "R$/liter" },
+  "GLP":              { label: "LPG",                color: "#FF9800", unidade: "R$/13kg"  },
 };
 const ALL_PRODUTOS = Object.keys(PRODUTO_INFO);
 
@@ -78,7 +78,7 @@ function buildMediaChart(
       height: 300,
       margin: { t: 10, b: 50, l: 70, r: 30 },
       hovermode: "x unified",
-      yaxis: { ...AXIS_LINE, title: { text: "R$ / L (ou kg)" } },
+      yaxis: { ...AXIS_LINE, title: { text: "R$ / L (or kg)" } },
       xaxis: { ...AXIS_LINE, type: "date" as const },
       legend: { orientation: "h", yanchor: "bottom", y: 1.01, xanchor: "left", x: 0 },
     },
@@ -120,7 +120,7 @@ function buildLocaisChart(
       height: 320,
       margin: { t: 10, b: 50, l: 70, r: 10 },
       hovermode: "x unified",
-      yaxis: { ...AXIS_LINE, title: { text: "R$ / L (ou kg)" } },
+      yaxis: { ...AXIS_LINE, title: { text: "R$ / L (or kg)" } },
       xaxis: { ...AXIS_LINE, type: "date" as const },
       legend: { orientation: "h", yanchor: "bottom", y: 1.01, xanchor: "left", x: 0, font: { size: 10 } },
     },
@@ -230,10 +230,10 @@ export default function AnpPpiPage() {
               </div>
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
 
-              <div className="sidebar-section-label">Filtros</div>
+              <div className="sidebar-section-label">Filters</div>
 
               <MultiSelectFilter
-                label="Produto"
+                label="Product"
                 items={ALL_PRODUTOS}
                 selected={selectedProdutos}
                 onToggle={toggleProduto}
@@ -244,14 +244,14 @@ export default function AnpPpiPage() {
               />
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Período</div>
+                <div className="sidebar-filter-label">Period</div>
                 {!loading && hasYears && (
                   <PeriodSlider years={allYears} value={yearRange} onChange={setYearRange} />
                 )}
               </div>
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Detalhe por Local — Produto</div>
+                <div className="sidebar-filter-label">Detail by Location — Product</div>
                 <select
                   className="form-select form-select-sm"
                   value={detailProduto}
@@ -270,8 +270,8 @@ export default function AnpPpiPage() {
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
               <DashboardHeader
-                title="ANP — Preços de Paridade de Importação (PPI)"
-                sub="Preços semanais de paridade publicados pela ANP, por produto e local de entrega"
+                title="ANP — Import Parity Prices (PPI)"
+                sub="Weekly parity prices published by ANP, by product and delivery location"
                 period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
                 rightSlot={
                   <ExportPanel
@@ -280,7 +280,7 @@ export default function AnpPpiPage() {
                         kind: "excel",
                         label: "formatted data .xl",
                         busy: excelLoading,
-                        loadingLabel: "Gerando Excel...",
+                        loadingLabel: "Generating Excel...",
                         disabled: loading || allSerie.length === 0 || excelLoading,
                         onClick: async () => {
                           setExcelLoading(true);
@@ -288,14 +288,14 @@ export default function AnpPpiPage() {
                             await downloadGenericExcel<AnpPpiSerieRow>({
                               rows: allSerie,
                               filename: "ANP-PPI",
-                              title: "ANP — Preços de Paridade de Importação (Média Nacional)",
-                              sheetName: "PPI Média",
+                              title: "ANP — Import Parity Prices (National Average)",
+                              sheetName: "PPI Avg.",
                               columns: [
-                                { key: "data_inicio", header: "Início" },
-                                { key: "data_fim",    header: "Fim" },
-                                { key: "produto",     header: "Produto", width: 22 },
-                                { key: "preco_medio", header: "Preço Médio", format: "0.0000" },
-                                { key: "unidade",     header: "Unidade" },
+                                { key: "data_inicio", header: "Start" },
+                                { key: "data_fim",    header: "End" },
+                                { key: "produto",     header: "Product",    width: 22 },
+                                { key: "preco_medio", header: "Avg. Price", format: "0.0000" },
+                                { key: "unidade",     header: "Unit" },
                               ],
                             });
                           } catch (e) {
@@ -328,7 +328,7 @@ export default function AnpPpiPage() {
                   <div className="row mb-2">
                     <div className="col-12">
                       <ChartSection
-                        title="PPI — Média Nacional (R$/L ou R$/kg)"
+                        title="PPI — National Average (R$/L or R$/kg)"
                         height={300}
                       >
                         <PlotlyChart
@@ -344,7 +344,7 @@ export default function AnpPpiPage() {
                   <div className="row mb-2">
                     <div className="col-12">
                       <ChartSection
-                        title={`PPI por Local — ${PRODUTO_INFO[detailProduto]?.label ?? detailProduto}`}
+                        title={`PPI by Location — ${PRODUTO_INFO[detailProduto]?.label ?? detailProduto}`}
                         loading={locaisLoading}
                         height={320}
                       >

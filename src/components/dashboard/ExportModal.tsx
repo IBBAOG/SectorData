@@ -9,7 +9,7 @@
 //   1. Re-confirm filters (the dashboard passes its own filter UI through
 //      the `filters` slot — usually a stack of `MultiSelectFilter` /
 //      `PeriodSlider` / `RegionStateFilter` components).
-//   2. See a real-time size estimate ("~12.4 MB · 87 200 linhas") that
+//   2. See a real-time size estimate ("~12.4 MB · 87,200 rows") that
 //      updates as filters change, courtesy of `useExportSize`.
 //   3. Pick Excel or CSV.
 //
@@ -35,7 +35,7 @@ export type { ExportCompleteInfo, ExportFormat } from "./exportTypes";
 export type ExportModalProps = {
   open: boolean;
   onClose: () => void;
-  /** Modal title — e.g. "Exportar Vendas ANP". */
+  /** Modal title — e.g. "Export ANP Sales". */
   title: string;
   /** Dataset key (used by `useExportSize` to pick the heuristic). */
   datasetKey: string;
@@ -95,8 +95,8 @@ const CSV_ICON = (
 );
 
 function formatRows(n: number): string {
-  // Brazilian thousand separator (non-breaking thin space).
-  return new Intl.NumberFormat("pt-BR").format(n);
+  // English (US) thousand separator.
+  return new Intl.NumberFormat("en-US").format(n);
 }
 
 export default function ExportModal({
@@ -111,7 +111,7 @@ export default function ExportModal({
   onExportCsv,
   excelBusy = false,
   csvBusy = false,
-  loadingLabel = "Gerando…",
+  loadingLabel = "Generating…",
   onExportComplete,
 }: ExportModalProps) {
   const { estimate, loading, error } = useExportSize(
@@ -211,7 +211,7 @@ export default function ExportModal({
           >
             <Image
               src="/barrel_loading.png"
-              alt="Carregando..."
+              alt="Loading..."
               width={120}
               height={120}
             />
@@ -253,7 +253,7 @@ export default function ExportModal({
           </div>
           <button
             type="button"
-            aria-label="Fechar"
+            aria-label="Close"
             onClick={onClose}
             disabled={busy}
             style={{
@@ -301,12 +301,12 @@ export default function ExportModal({
           <div>
             {error ? (
               <span style={{ color: "#c0392b" }}>
-                Erro ao calcular tamanho: {error}
+                Error calculating size: {error}
               </span>
             ) : loading || estimate === null ? (
-              <span style={{ color: "#888" }}>Calculando…</span>
+              <span style={{ color: "#888" }}>Calculating…</span>
             ) : estimate.rows === 0 ? (
-              <span style={{ color: "#888" }}>Nenhuma linha para os filtros atuais.</span>
+              <span style={{ color: "#888" }}>No rows for the current filters.</span>
             ) : (
               <span>
                 <strong style={{ color: "#1a1a1a" }}>
@@ -315,7 +315,7 @@ export default function ExportModal({
                 {" · "}
                 <span>{formatBytes(estimate.bytesCsv)} (CSV)</span>
                 {" · "}
-                <span>{formatRows(estimate.rows)} linhas</span>
+                <span>{formatRows(estimate.rows)} rows</span>
               </span>
             )}
           </div>
@@ -330,9 +330,9 @@ export default function ExportModal({
                 fontSize: 11.5,
                 fontWeight: 600,
               }}
-              title="Volume alto — pode demorar ou falhar no navegador"
+              title="Large volume — may be slow or fail in the browser"
             >
-              Volume alto — pode demorar/falhar
+              Large volume — may be slow/fail
             </div>
           )}
         </div>
@@ -355,7 +355,7 @@ export default function ExportModal({
             disabled={busy}
             style={{ fontFamily: "Arial" }}
           >
-            Cancelar
+            Cancel
           </button>
           <button
             type="button"

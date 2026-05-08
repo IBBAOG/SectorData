@@ -86,14 +86,14 @@ function buildOperacaoChart(
       ...COMMON_LAYOUT, height: 280,
       margin: { t: 10, b: 50, l: 80, r: 30 },
       hovermode: "x unified",
-      yaxis: { ...AXIS_LINE, title: { text: `${LABEL.MIL_M3} / mês` } },
+      yaxis: { ...AXIS_LINE, title: { text: `${LABEL.MIL_M3} / month` } },
       xaxis: { ...AXIS_LINE, type: "date" as const },
       legend: { orientation: "h", yanchor: "bottom", y: 1.01, xanchor: "left", x: 0, font: { size: 10 } },
     },
   };
 }
 
-// Capitaliza só a primeira letra (resto lowercase). Suporta acento.
+// Capitalize only the first letter (rest lowercase). Accent-aware.
 function capitalize(s: string): string {
   if (!s) return s;
   return s.charAt(0).toLocaleUpperCase("pt-BR") + s.slice(1).toLocaleLowerCase("pt-BR");
@@ -174,8 +174,8 @@ export default function AnpDaiePage() {
     if (refetched) setSerieRows(refetched);
   }, [refetched]);
 
-  // Detect Importação / Exportação operations defensively (alphabetic order
-  // in pt-BR puts "Exportação" before "Importação", so don't trust [0]/[1])
+  // Detect Import / Export operations defensively (alphabetic order
+  // in pt-BR data puts "Exportação" before "Importação", so don't trust [0]/[1])
   const operacoes = useMemo(() => filtros.operacoes ?? [], [filtros.operacoes]);
   const importOp = useMemo(
     () => operacoes.find(o => o.toLowerCase().includes("import")) ?? "",
@@ -229,13 +229,13 @@ export default function AnpDaiePage() {
               </div>
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
 
-              <div className="sidebar-section-label">Filtros</div>
+              <div className="sidebar-section-label">Filters</div>
 
               {/* DAIE has its own swatch size (8x8 instead of 9x9) and capitalize labels.
                   We pass swatch+itemLabel to MultiSelectFilter; small swatch deviation
                   acceptable since the tighter sidebar uses 11px font. */}
               <MultiSelectFilter
-                label="Produto"
+                label="Product"
                 items={filtros.produtos}
                 selected={selectedProdutos}
                 onToggle={toggleProduto}
@@ -251,7 +251,7 @@ export default function AnpDaiePage() {
               />
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Período</div>
+                <div className="sidebar-filter-label">Period</div>
                 {!loading && hasYears && (
                   <PeriodSlider years={allYears} value={yearRange} onChange={setYearRange} />
                 )}
@@ -263,8 +263,8 @@ export default function AnpDaiePage() {
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
               <DashboardHeader
-                title="ANP — Dados Abertos Importações e Exportações"
-                sub={`Volumes mensais de importações e exportações de derivados de petróleo (volume em ${LABEL.MIL_M3})`}
+                title="ANP — Open Data Imports and Exports"
+                sub={`Monthly import and export volumes of petroleum derivatives (volume in ${LABEL.MIL_M3})`}
                 period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
                 rightSlot={hasData ? (
                   <ExportPanel
@@ -273,7 +273,7 @@ export default function AnpDaiePage() {
                         kind: "excel",
                         label: "formatted data .xl",
                         busy: excelLoading,
-                        loadingLabel: "Gerando Excel...",
+                        loadingLabel: "Generating Excel...",
                         disabled: loading || serieRows.length === 0 || excelLoading,
                         onClick: async () => {
                           setExcelLoading(true);
@@ -281,15 +281,15 @@ export default function AnpDaiePage() {
                             await downloadGenericExcel<AnpDaieRow>({
                               rows: serieRows,
                               filename: "ANP-DAIE",
-                              title: "ANP — Dados Abertos Importações e Exportações",
+                              title: "ANP — Open Data Imports and Exports",
                               sheetName: "DAIE",
                               columns: [
-                                { key: "ano",       header: "Ano" },
-                                { key: "mes",       header: "Mês" },
-                                { key: "produto",   header: "Produto", width: 32 },
-                                { key: "operacao",  header: "Operação", width: 16 },
+                                { key: "ano",       header: "Year" },
+                                { key: "mes",       header: "Month" },
+                                { key: "produto",   header: "Product",     width: 32 },
+                                { key: "operacao",  header: "Operation",   width: 16 },
                                 { key: "volume_m3", header: "Volume (m³)", format: "#,##0" },
-                                { key: "valor_usd", header: "Valor (USD)", format: "#,##0.00" },
+                                { key: "valor_usd", header: "Value (USD)", format: "#,##0.00" },
                               ],
                             });
                           } catch (e) {
@@ -320,14 +320,14 @@ export default function AnpDaiePage() {
               ) : !hasData ? (
                 <div className="d-flex justify-content-center align-items-center my-5"
                   style={{ minHeight: 240, color: "#888", fontFamily: "Arial", fontSize: 14 }}>
-                  Sem dados disponíveis para este módulo no momento.
+                  No data available for this module at this time.
                 </div>
               ) : (
                 <>
                   <div className="row mb-2">
                     <div className="col-12">
                       <ChartSection
-                        title={`${capitalize(importOp || "Importação")} (${LABEL.MIL_M3} / mês)`}
+                        title={`${capitalize(importOp || "Import")} (${LABEL.MIL_M3} / month)`}
                         loading={serieLoading}
                         height={280}
                       >
@@ -344,7 +344,7 @@ export default function AnpDaiePage() {
                   <div className="row mb-2">
                     <div className="col-12">
                       <ChartSection
-                        title={`${capitalize(exportOp || "Exportação")} (${LABEL.MIL_M3} / mês)`}
+                        title={`${capitalize(exportOp || "Export")} (${LABEL.MIL_M3} / month)`}
                         loading={serieLoading}
                         height={280}
                       >

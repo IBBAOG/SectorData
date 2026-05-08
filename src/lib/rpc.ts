@@ -1790,6 +1790,82 @@ export async function rpcGetAnpCdpFiltros(
   }
 }
 
+// ─── MODULE: ANP CDP Diária (/src/app/(dashboard)/anp-cdp-diaria/page.tsx) ────
+//
+// Daily petroleum/gas production by `(data, campo, bacia)`. Sourced from the
+// ANP Power BI feed via `scripts/extractors/anp_cdp_powerbi.py`, refreshed
+// 3×/day by `etl_anp_cdp_diaria.yml`. Distinct from `/anp-cdp` (which is
+// monthly per poço/campo from the CDP form).
+
+export type AnpCdpDiariaFiltros = {
+  campos: string[];
+  bacias: string[];
+  data_min: string | null;
+  data_max: string | null;
+};
+
+export async function rpcGetAnpCdpDiariaFiltros(
+  supabase: SupabaseClient,
+): Promise<AnpCdpDiariaFiltros> {
+  try {
+    const { data, error } = await supabase.rpc("get_anp_cdp_diaria_filtros");
+    if (error) throw error;
+    const d = (data ?? {}) as Partial<AnpCdpDiariaFiltros>;
+    return {
+      campos:   d.campos   ?? [],
+      bacias:   d.bacias   ?? [],
+      data_min: d.data_min ?? null,
+      data_max: d.data_max ?? null,
+    };
+  } catch (e) {
+    console.error("get_anp_cdp_diaria_filtros failed", e);
+    return { campos: [], bacias: [], data_min: null, data_max: null };
+  }
+}
+
+export type AnpCdpDiariaPonto = {
+  data: string;
+  campo: string;
+  bacia: string;
+  petroleo_bbl_dia: number | null;
+  gas_mm3_dia: number | null;
+};
+
+export async function rpcGetAnpCdpDiariaSerie(
+  supabase: SupabaseClient,
+  params?: {
+    campos?: string[] | null;
+    bacias?: string[] | null;
+    dataInicio?: string | null;
+    dataFim?: string | null;
+  },
+): Promise<AnpCdpDiariaPonto[]> {
+  // Daily granularity × ~94 campos × ~8 bacias × ~365 days ≈ tens of thousands
+  // of rows for full-history requests. Page through PostgREST 1000-row windows
+  // to avoid silent truncation when no filters are set.
+  const PAGE = 1000;
+  let offset = 0;
+  const allRows: AnpCdpDiariaPonto[] = [];
+  const rpcParams = {
+    p_campos:      params?.campos     ?? null,
+    p_bacias:      params?.bacias     ?? null,
+    p_data_inicio: params?.dataInicio ?? null,
+    p_data_fim:    params?.dataFim    ?? null,
+  };
+  while (true) {
+    const { data, error } = await supabase
+      .rpc("get_anp_cdp_diaria_serie", rpcParams)
+      .range(offset, offset + PAGE - 1);
+    if (error) { console.error("get_anp_cdp_diaria_serie failed", error); break; }
+    const rows = (data ?? []) as AnpCdpDiariaPonto[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
+  }
+  return allRows;
+}
+
 // ─── MODULE: Export size calculator RPCs (Fase B) ────────────────────────────
 //
 // Each function below mirrors the filter signature of its "sister" serie RPC

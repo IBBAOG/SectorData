@@ -132,7 +132,7 @@ export default function ExportPanel({
             gap: 12,
           }}
         >
-          <Image src="/barrel_loading.png" alt="Carregando..." width={120} height={120} />
+          <Image src="/barrel_loading.png" alt="Loading..." width={120} height={120} />
           <span
             style={{
               fontFamily: "Arial",
@@ -142,7 +142,7 @@ export default function ExportPanel({
               letterSpacing: "0.3px",
             }}
           >
-            {busyAction.loadingLabel ?? "Gerando…"}
+            {busyAction.loadingLabel ?? "Generating…"}
           </span>
         </div>
       )}

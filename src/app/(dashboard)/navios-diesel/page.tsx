@@ -1081,8 +1081,8 @@ export default function NaviosDieselPage() {
                       <div style={{ marginTop: 8, fontFamily: "Arial", fontSize: 10, color: "#999" }}>
                         {errorPorts.map(p => p.replace("Porto de ", "")).join(", ")}
                         {errorPorts.length === 1
-                          ? ": dados não disponíveis nesta coleta."
-                          : ": dados não disponíveis nesta coleta."}
+                          ? ": data not available in this collection."
+                          : ": data not available in this collection."}
                       </div>
                     )}
 

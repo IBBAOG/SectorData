@@ -28,9 +28,9 @@ import {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const CATEGORIA_INFO: Record<string, { label: string; color: string }> = {
-  "P13":                { label: "P13 (Botijão 13 kg)", color: "#2196F3" },
-  "Outros - GLP":       { label: "Outros - GLP",        color: "#4CAF50" },
-  "Outros - Especiais": { label: "Outros - Especiais",  color: "#9C27B0" },
+  "P13":                { label: "P13 (13 kg cylinder)", color: "#2196F3" },
+  "Outros - GLP":       { label: "Other - LPG",          color: "#4CAF50" },
+  "Outros - Especiais": { label: "Other - Special",      color: "#9C27B0" },
 };
 const MAIN_CATEGORIAS = Object.keys(CATEGORIA_INFO);
 
@@ -76,7 +76,7 @@ function buildTrendChart(
       height: 300,
       margin: { t: 10, b: 50, l: 80, r: 30 },
       hovermode: "x unified",
-      yaxis: { ...AXIS_LINE, title: { text: `${LABEL.MIL_T} / mês` } },
+      yaxis: { ...AXIS_LINE, title: { text: `${LABEL.MIL_T} / month` } },
       xaxis: { ...AXIS_LINE, type: "date" as const },
       legend: { orientation: "h", yanchor: "bottom", y: 1.01, xanchor: "left", x: 0 },
     },
@@ -116,7 +116,7 @@ function buildTopDistChart(
       xaxis: { ...AXIS_LINE, title: { text: LABEL.MIL_T } },
       yaxis: { autorange: "reversed" as const, showgrid: false, zeroline: false, tickfont: { size: 10 } },
       title: {
-        text: `Top 15 Distribuidoras — ${CATEGORIA_INFO[categoria]?.label ?? categoria}`,
+        text: `Top 15 Distributors — ${CATEGORIA_INFO[categoria]?.label ?? categoria}`,
         font: { size: 13, family: "Arial" },
         x: 0, xanchor: "left",
         pad: { l: 0 },
@@ -231,10 +231,10 @@ export default function AnpGlpPage() {
               </div>
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
 
-              <div className="sidebar-section-label">Filtros</div>
+              <div className="sidebar-section-label">Filters</div>
 
               <MultiSelectFilter
-                label="Categoria"
+                label="Category"
                 items={MAIN_CATEGORIAS}
                 selected={selectedCats}
                 onToggle={toggleCat}
@@ -246,14 +246,14 @@ export default function AnpGlpPage() {
               />
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Período</div>
+                <div className="sidebar-filter-label">Period</div>
                 {!loading && hasYears && (
                   <PeriodSlider years={allYears} value={yearRange} onChange={setYearRange} />
                 )}
               </div>
 
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Top Distribuidoras — Categoria</div>
+                <div className="sidebar-filter-label">Top Distributors — Category</div>
                 <select
                   className="form-select form-select-sm"
                   value={topDistCat}
@@ -272,8 +272,8 @@ export default function AnpGlpPage() {
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
               <DashboardHeader
-                title="ANP — Vendas de GLP por Recipiente"
-                sub="Vendas mensais de GLP por distribuidora e categoria de recipiente (P13, Outros - GLP, Outros - Especiais)"
+                title="ANP — LPG Sales by Container"
+                sub="Monthly LPG sales by distributor and container category (P13, Other - LPG, Other - Special)"
                 period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
                 rightSlot={
                   <ExportPanel
@@ -282,7 +282,7 @@ export default function AnpGlpPage() {
                         kind: "excel",
                         label: "formatted data .xl",
                         busy: excelLoading,
-                        loadingLabel: "Gerando Excel...",
+                        loadingLabel: "Generating Excel...",
                         disabled: loading || serieRows.length === 0 || excelLoading,
                         onClick: async () => {
                           setExcelLoading(true);
@@ -290,14 +290,14 @@ export default function AnpGlpPage() {
                             await downloadGenericExcel<AnpGlpSerieRow>({
                               rows: serieRows,
                               filename: "ANP-GLP",
-                              title: "ANP — Vendas de GLP por Distribuidora",
-                              sheetName: "Vendas GLP",
+                              title: "ANP — LPG Sales by Distributor",
+                              sheetName: "LPG Sales",
                               columns: [
-                                { key: "ano",           header: "Ano" },
-                                { key: "mes",           header: "Mês" },
-                                { key: "distribuidora", header: "Distribuidora", width: 28 },
-                                { key: "categoria",     header: "Categoria",     width: 22 },
-                                { key: "vendas_kg",     header: "Vendas (kg)",   format: "#,##0" },
+                                { key: "ano",           header: "Year" },
+                                { key: "mes",           header: "Month" },
+                                { key: "distribuidora", header: "Distributor", width: 28 },
+                                { key: "categoria",     header: "Category",    width: 22 },
+                                { key: "vendas_kg",     header: "Sales (kg)",  format: "#,##0" },
                               ],
                             });
                           } catch (e) {
@@ -330,7 +330,7 @@ export default function AnpGlpPage() {
                   <div className="row mb-2">
                     <div className="col-12">
                       <ChartSection
-                        title={`Vendas Mensais — Total Nacional (${LABEL.MIL_T})`}
+                        title={`Monthly Sales — National Total (${LABEL.MIL_T})`}
                         loading={serieLoading}
                         height={300}
                       >
