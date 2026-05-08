@@ -40,32 +40,37 @@ function buildPerWellChart(
   if (!selectedCampos.length) {
     return emptyPlot(
       460,
-      "Select one or more fields to plot BSW evolution.",
+      "Select a field to plot BSW evolution.",
     );
   }
   if (!points.length) {
-    return emptyPlot(460, "No data for the selected fields.");
+    return emptyPlot(460, "No data for the selected field.");
   }
 
-  // One trace per campo (in the order the user selected them, so colors stay
-  // sticky per-field while a session is open). Each point = (poco × month).
-  const traces: PlotData[] = selectedCampos.map((campo, i) => {
-    const subset = points.filter((p) => p.campo === campo);
+  // Per-well mode: one trace per unique poco (in first-appearance order so
+  // colors stay stable between renders). Single field is selected at a time
+  // in this mode, so the legend shows the wells of that field.
+  const seen: string[] = [];
+  for (const p of points) {
+    if (!seen.includes(p.poco)) seen.push(p.poco);
+  }
+  const traces: PlotData[] = seen.map((poco, i) => {
+    const subset = points.filter((p) => p.poco === poco);
     const color = PALETTE[i % PALETTE.length];
     return {
       type: "scattergl",
       mode: "markers",
-      name: campo,
+      name: poco,
       x: subset.map((p) => p.mes_desde_t0),
       y: subset.map((p) => p.bsw),
       customdata: subset.map((p) => [p.poco, p.ano, p.mes] as [string, number, number]),
-      marker: { size: 4, opacity: 0.55, color },
+      marker: { size: 4, opacity: 0.7, color },
       hovertemplate:
         "<b>%{customdata[0]}</b><br>" +
         "Reference month: %{customdata[1]}-%{customdata[2]:02d}<br>" +
         "BSW: %{y:.1%}<br>" +
         "Months since start: %{x}" +
-        "<extra>" + campo + "</extra>",
+        "<extra></extra>",
     } as unknown as PlotData;
   });
 
@@ -92,6 +97,7 @@ function buildPerWellChart(
         xanchor: "left",
         y: 1,
         yanchor: "top",
+        itemsizing: "constant",
       },
       hovermode: "closest",
     },
@@ -261,6 +267,42 @@ export default function AnpCdpBswPage() {
     return i >= 0 ? PALETTE[i % PALETTE.length] : "#dcdcdc";
   };
 
+  // Per-well mode: count unique wells in the currently fetched points so the
+  // sidebar can hint at the legend size for the selected field.
+  const uniqueWellCount = useMemo(() => {
+    if (viewMode !== "well") return 0;
+    if (!wellPoints.length) return 0;
+    const set = new Set<string>();
+    for (const p of wellPoints) set.add(p.poco);
+    return set.size;
+  }, [viewMode, wellPoints]);
+
+  // Mode-aware setters. In Per-well mode the field filter behaves as a
+  // single-select: picking a 2nd field replaces the first, and switching
+  // from Field-average → Per-well trims the selection to the first field.
+  const handleModeChange = (next: ViewMode) => {
+    setViewMode(next);
+    if (next === "well" && selectedCampos.length > 1) {
+      setSelectedCampos(selectedCampos.slice(0, 1));
+    }
+  };
+
+  const handleCamposChange = (next: string[]) => {
+    if (viewMode === "well") {
+      if (next.length === 0) {
+        setSelectedCampos([]);
+        return;
+      }
+      // Single-select: prefer the newly added field (the one not in the
+      // previous selection); fall back to the last entry if no diff is
+      // detectable (e.g. user used "Select all").
+      const added = next.find((c) => !selectedCampos.includes(c));
+      setSelectedCampos([added ?? next[next.length - 1]]);
+      return;
+    }
+    setSelectedCampos(next);
+  };
+
   if (visLoading || !visible) return null;
 
   return (
@@ -288,7 +330,7 @@ export default function AnpCdpBswPage() {
                 <SegmentedToggle<ViewMode>
                   options={VIEW_OPTIONS}
                   value={viewMode}
-                  onChange={setViewMode}
+                  onChange={handleModeChange}
                 />
               </div>
 
@@ -306,7 +348,7 @@ export default function AnpCdpBswPage() {
                   <SearchableMultiSelect
                     options={campos}
                     value={selectedCampos}
-                    onChange={setSelectedCampos}
+                    onChange={handleCamposChange}
                   />
                 )}
                 <div style={{
@@ -316,14 +358,31 @@ export default function AnpCdpBswPage() {
                   marginTop: 8,
                   lineHeight: 1.4,
                 }}>
-                  Each field gets a chart color in selection order.
+                  {viewMode === "well"
+                    ? "Single-select: each well gets its own color in the chart legend."
+                    : "Each field gets a chart color in selection order."}
                 </div>
+                {viewMode === "well" && selectedCampos.length === 1 && uniqueWellCount > 0 && (
+                  <div style={{
+                    fontSize: 10,
+                    color: "#888",
+                    fontFamily: "Arial",
+                    marginTop: 4,
+                    lineHeight: 1.4,
+                  }}>
+                    {uniqueWellCount} {uniqueWellCount === 1 ? "well" : "wells"} in this field
+                  </div>
+                )}
               </div>
 
               {/* Selected fields — colored chips */}
               {selectedCampos.length > 0 && (
                 <div className="sidebar-filter-section">
-                  <div className="sidebar-filter-label">Selected fields</div>
+                  <div className="sidebar-filter-label">
+                    {viewMode === "well" && selectedCampos.length === 1
+                      ? "Selected field"
+                      : "Selected fields"}
+                  </div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                     {selectedCampos.map((c) => (
                       <span
@@ -385,7 +444,9 @@ export default function AnpCdpBswPage() {
                   <ChartSection
                     title={
                       viewMode === "well"
-                        ? "BSW evolution per well"
+                        ? selectedCampos.length === 1
+                          ? `BSW evolution per well — ${selectedCampos[0]}`
+                          : "BSW evolution per well"
                         : "BSW evolution — field average (volume-weighted)"
                     }
                     loading={chartLoading}
