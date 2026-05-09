@@ -504,11 +504,13 @@ export default function AnpCdpDepletionPage() {
 
   // ── Period comparison helper text ─────────────────────────────────────────
   // Resolves the absolute calendar months that the recent/prior windows map to,
-  // based on the latest (ano, mes) in the currently fetched points. If any
-  // selected item has a shorter history than `priorMonths`, surfaces a subtle
-  // warning so the user knows the comparison is on a clipped window.
+  // based on the latest (ano, mes) in the currently fetched points. Surfaces
+  // both endpoints separately so each can be rendered directly under its input,
+  // plus a subtle clipping warning when the prior window extends past the
+  // earliest available data for any selected item.
   const periodHelper = useMemo<{
-    text: string;
+    recentLabel: string;
+    priorLabel: string;
     warning: string | null;
   } | null>(() => {
     const fmt = (ano: number, mes: number) =>
@@ -557,9 +559,8 @@ export default function AnpCdpDepletionPage() {
     const priorEnd = ymToDate(priorEndYm);
     const priorStart = ymToDate(priorStartYm);
 
-    const text =
-      `Comparing last ${recentMonths} months (${fmt(recentStart.ano, recentStart.mes)} → ${fmt(recentEnd.ano, recentEnd.mes)}) ` +
-      `vs prior ${priorMonths} months (${fmt(priorStart.ano, priorStart.mes)} → ${fmt(priorEnd.ano, priorEnd.mes)}).`;
+    const recentLabel = `${fmt(recentStart.ano, recentStart.mes)} → ${fmt(recentEnd.ano, recentEnd.mes)}`;
+    const priorLabel = `${fmt(priorStart.ano, priorStart.mes)} → ${fmt(priorEnd.ano, priorEnd.mes)}`;
 
     // Warning detection: find the earliest (ano, mes) per selected item and
     // check whether the prior window extends earlier than that item's history.
@@ -596,7 +597,7 @@ export default function AnpCdpDepletionPage() {
         `(data starts ${fmt(earliest.ano, earliest.mes)}) — limited window.`;
     }
 
-    return { text, warning };
+    return { recentLabel, priorLabel, warning };
   }, [viewMode, wellPoints, fieldPoints, selectedCampos, recentMonths, priorMonths]);
 
   // ── Depletion comparison table ────────────────────────────────────────────
@@ -810,6 +811,21 @@ export default function AnpCdpDepletionPage() {
                         borderRadius: 4,
                       }}
                     />
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: periodHelper === null ? "#999" : "#FF5500",
+                        fontFamily: "Arial",
+                        marginTop: 4,
+                        lineHeight: 1.3,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                      title={periodHelper?.recentLabel ?? ""}
+                    >
+                      {periodHelper?.recentLabel ?? "—"}
+                    </div>
                   </div>
                   <div style={{ flex: 1 }}>
                     <label
@@ -840,44 +856,41 @@ export default function AnpCdpDepletionPage() {
                         borderRadius: 4,
                       }}
                     />
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: periodHelper === null ? "#999" : "#FF5500",
+                        fontFamily: "Arial",
+                        marginTop: 4,
+                        lineHeight: 1.3,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                      title={periodHelper?.priorLabel ?? ""}
+                    >
+                      {periodHelper?.priorLabel ?? "—"}
+                    </div>
                   </div>
                 </div>
                 <div style={{
                   fontSize: 10,
                   color: "#888",
                   fontFamily: "Arial",
-                  marginTop: 6,
+                  marginTop: 8,
                   lineHeight: 1.4,
                 }}>
-                  Recent vs prior windows for the chart Y axis and the table below (1–60 months). Points without a full N+M-point history are omitted.
+                  Recent vs prior windows for the chart Y axis and the table below (1–60 months).
                 </div>
-                {periodHelper === null ? (
+                {periodHelper?.warning && (
                   <div style={{
                     fontSize: 11,
-                    color: "#666",
+                    color: "#b8860b",
                     fontFamily: "Arial",
                     marginTop: 6,
                     lineHeight: 1.4,
                   }}>
-                    Select a field to see the comparison range.
-                  </div>
-                ) : (
-                  <div style={{
-                    fontSize: 11,
-                    color: "#666",
-                    fontFamily: "Arial",
-                    marginTop: 6,
-                    lineHeight: 1.4,
-                  }}>
-                    {periodHelper.text}
-                    {periodHelper.warning !== null && (
-                      <>
-                        <br />
-                        <span style={{ color: "#b8860b" }}>
-                          {periodHelper.warning}
-                        </span>
-                      </>
-                    )}
+                    {periodHelper.warning}
                   </div>
                 )}
               </div>
