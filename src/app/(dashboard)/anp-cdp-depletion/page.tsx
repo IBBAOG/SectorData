@@ -35,9 +35,11 @@ const VIEW_OPTIONS: { value: ViewMode; label: string }[] = [
 // ── X axis ────────────────────────────────────────────────────────────────────
 // Calendar (default) plots NP against calendar date. % VOIP recovered plots
 // NP against the share of the field's VOIP that has been recovered cumulatively.
-// % VOIP only makes sense in Field-average mode (the well-level VOIP fraction
-// is incomplete/optional in the data); when the user is in Per-well mode we
-// silently force Calendar regardless of the toggle's last value.
+// Both modes are supported in Per-well and Field-average views: in Per-well
+// each point inherits its field's pct_voip for the corresponding month
+// (`pct_voip_poco`), so all wells of a field share the same X scale as the
+// Field-average view. Points with `pct_voip_poco = NULL` (no VOIP join) are
+// dropped from the % VOIP plot but still rendered in Calendar mode.
 
 type XMode = "calendar" | "voip";
 
@@ -73,6 +75,7 @@ function buildPerWellChart(
   points: AnpCdpDepletionPoint[],
   selectedCampos: string[],
   lineStyle: LineStyle,
+  xMode: XMode,
 ): { data: PlotData[]; layout: Partial<Layout> } {
   if (!selectedCampos.length) {
     return emptyPlot(
@@ -84,34 +87,85 @@ function buildPerWellChart(
     return emptyPlot(460, "No data for the selected field.");
   }
 
+  // In % VOIP mode, drop any point that lacks a field-level VOIP value
+  // (pct_voip_poco is null when no VOIP record could be joined for the
+  // well's field). Empty traces are still emitted so the legend stays stable.
+  const usablePoints =
+    xMode === "voip"
+      ? points.filter((p) => p.pct_voip_poco !== null && Number.isFinite(p.pct_voip_poco))
+      : points;
+
+  if (xMode === "voip" && !usablePoints.length) {
+    return emptyPlot(
+      460,
+      "No VOIP-anchored data for the selected field.",
+    );
+  }
+
   // Per-well mode: one trace per unique poco (in first-appearance order so
   // colors stay stable between renders).
   const seen: string[] = [];
-  for (const p of points) {
+  for (const p of usablePoints) {
     if (!seen.includes(p.poco)) seen.push(p.poco);
   }
   const mode = plotlyMode(lineStyle);
   const traces: PlotData[] = seen.map((poco, i) => {
-    const subset = points
+    const subset = usablePoints
       .filter((p) => p.poco === poco)
-      .sort((a, b) => ymSort(a.ano, a.mes) - ymSort(b.ano, b.mes));
+      .sort((a, b) =>
+        xMode === "voip"
+          ? (a.pct_voip_poco ?? 0) - (b.pct_voip_poco ?? 0)
+          : ymSort(a.ano, a.mes) - ymSort(b.ano, b.mes),
+      );
     const color = PALETTE[i % PALETTE.length];
     return {
       type: "scattergl",
       mode,
       name: poco,
-      x: subset.map((p) => `${p.ano}-${String(p.mes).padStart(2, "0")}-01`),
+      x:
+        xMode === "voip"
+          ? subset.map((p) => p.pct_voip_poco ?? 0)
+          : subset.map((p) => `${p.ano}-${String(p.mes).padStart(2, "0")}-01`),
       y: subset.map((p) => p.np_bbl_mes),
-      customdata: subset.map((p) => [p.poco, p.ano, p.mes] as [string, number, number]),
+      customdata: subset.map(
+        (p) =>
+          [p.poco, p.ano, p.mes, p.pct_voip_poco ?? 0] as [
+            string,
+            number,
+            number,
+            number,
+          ],
+      ),
       marker: { size: 4, opacity: 0.7, color },
       line: { color, width: 1 },
       hovertemplate:
-        "<b>%{customdata[0]}</b><br>" +
-        "Reference month: %{customdata[1]}-%{customdata[2]:02d}<br>" +
-        "NP: %{y:,.0f} bbl/month" +
-        "<extra></extra>",
+        xMode === "voip"
+          ? "<b>%{customdata[0]}</b><br>" +
+            "Reference month: %{customdata[1]}-%{customdata[2]:02d}<br>" +
+            "VOIP recovered: %{customdata[3]:.1%}<br>" +
+            "NP: %{y:,.0f} bbl/month" +
+            "<extra></extra>"
+          : "<b>%{customdata[0]}</b><br>" +
+            "Reference month: %{customdata[1]}-%{customdata[2]:02d}<br>" +
+            "NP: %{y:,.0f} bbl/month" +
+            "<extra></extra>",
     } as unknown as PlotData;
   });
+
+  const xaxis: Partial<Layout["xaxis"]> =
+    xMode === "voip"
+      ? {
+          ...AXIS_LINE,
+          type: "linear",
+          title: { text: "% of VOIP recovered" },
+          tickformat: ",.1%",
+          rangemode: "tozero",
+        }
+      : {
+          ...AXIS_LINE,
+          type: "date",
+          title: { text: "Date" },
+        };
 
   return {
     data: traces,
@@ -119,11 +173,7 @@ function buildPerWellChart(
       ...COMMON_LAYOUT,
       height: 460,
       margin: { t: 30, b: 60, l: 80, r: 30 },
-      xaxis: {
-        ...AXIS_LINE,
-        type: "date",
-        title: { text: "Date" },
-      },
+      xaxis,
       yaxis: {
         ...AXIS_LINE,
         title: { text: "NP (oil bbl/month, uptime-normalized)" },
@@ -290,10 +340,10 @@ export default function AnpCdpDepletionPage() {
   const [wellPoints,  setWellPoints]  = useState<AnpCdpDepletionPoint[]>([]);
   const [fieldPoints, setFieldPoints] = useState<AnpCdpDepletionFieldPoint[]>([]);
 
-  // Effective X mode — % VOIP only meaningful in Field-average mode. In Per
-  // well, force Calendar regardless of toggle position (we keep the toggle
-  // value sticky so switching back to Field restores it).
-  const effectiveXMode: XMode = viewMode === "well" ? "calendar" : xMode;
+  // Effective X mode — both views now support Calendar and % VOIP recovered.
+  // In Per-well, each point's pct_voip_poco inherits its field's VOIP fraction
+  // for the corresponding month, so the X scale matches the Field-average view.
+  const effectiveXMode: XMode = xMode;
 
   // ── Initial load: only the campos list ───────────────────────────────────
   useEffect(() => {
@@ -351,7 +401,7 @@ export default function AnpCdpDepletionPage() {
 
   const chart = useMemo(() => {
     return viewMode === "well"
-      ? buildPerWellChart(wellPoints, selectedCampos, lineStyle)
+      ? buildPerWellChart(wellPoints, selectedCampos, lineStyle, effectiveXMode)
       : buildFieldAverageChart(fieldPoints, selectedCampos, lineStyle, effectiveXMode);
   }, [viewMode, wellPoints, fieldPoints, selectedCampos, lineStyle, effectiveXMode]);
 
@@ -634,17 +684,6 @@ export default function AnpCdpDepletionPage() {
                   value={xMode}
                   onChange={setXMode}
                 />
-                {viewMode === "well" && xMode === "voip" && (
-                  <div style={{
-                    fontSize: 10,
-                    color: "#888",
-                    fontFamily: "Arial",
-                    marginTop: 6,
-                    lineHeight: 1.4,
-                  }}>
-                    % VOIP requires Field average mode — using Calendar.
-                  </div>
-                )}
               </div>
 
               {/* ── Plot-style toggle ───────────────────────────────── */}
@@ -873,8 +912,12 @@ export default function AnpCdpDepletionPage() {
                     title={
                       viewMode === "well"
                         ? selectedCampos.length === 1
-                          ? `Uptime-normalized production per well — ${selectedCampos[0]}`
-                          : "Uptime-normalized production per well"
+                          ? effectiveXMode === "voip"
+                            ? `Uptime-normalized production per well — ${selectedCampos[0]} (% of VOIP recovered)`
+                            : `Uptime-normalized production per well — ${selectedCampos[0]}`
+                          : effectiveXMode === "voip"
+                            ? "Uptime-normalized production per well — % of VOIP recovered"
+                            : "Uptime-normalized production per well"
                         : effectiveXMode === "voip"
                           ? "Uptime-normalized production — % of VOIP recovered"
                           : "Uptime-normalized production — calendar"

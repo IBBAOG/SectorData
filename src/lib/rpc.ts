@@ -1902,7 +1902,7 @@ export type AnpCdpDepletionPoint = {
   mes: number;
   mes_desde_t0: number;
   np_bbl_mes: number;
-  pct_voip_poco: number | null; // optional well-level VOIP fraction; may be null
+  pct_voip_poco: number | null; // field-level VOIP fraction inherited per (campo, ano, mes); null only when the field has no VOIP record
 };
 
 export type AnpCdpDepletionFieldPoint = {

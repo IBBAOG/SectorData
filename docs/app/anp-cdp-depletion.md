@@ -48,9 +48,9 @@ In Field-average mode the metric is **summed**, not averaged: it's the field's t
 | Option | When available | Meaning |
 |---|---|---|
 | **Calendar** (default) | both views | calendar date `YYYY-MM-01` (Plotly `xaxis.type = "date"`) |
-| **% VOIP recovered** | Field average only | `cumulative_oil_bbl / voip_bbl`, formatted `,.1%` (Plotly `xaxis.type = "linear"`) |
+| **% VOIP recovered** | both views | `cumulative_oil_bbl / voip_bbl` of the field for the row's `(ano, mes)`, formatted `,.1%` (Plotly `xaxis.type = "linear"`) |
 
-In Per-well mode the page silently forces Calendar even if the toggle is set to `% VOIP recovered` (the well-level VOIP fraction is incomplete in the data; an empty state would be confusing). The toggle value is sticky — switching back to Field-average mode restores the user's intended axis. A small note in the sidebar explains the override when it kicks in.
+In **Field-average** mode the X coordinate is the field's own `pct_voip` for that calendar month. In **Per-well** mode each point inherits `pct_voip_poco` — the same field-level fraction propagated from `voip_latest` per `(campo, ano, mes)` — so all wells of a field share the X scale used by the Field-average view. Points whose `pct_voip_poco` is null (no VOIP record for the field) are dropped from the % VOIP plot but still rendered in Calendar mode. The toggle value is independent of the view-mode toggle.
 
 ### Plot-style toggle
 
@@ -124,8 +124,9 @@ NP values are formatted compactly: `1_500_000` → `"1.50M bbl"`, `12_345` → `
 
 ### Tooltips
 
-- **Per well**: well code, reference month (`ano-mm`), NP in bbl/month.
-- **Field average**: field name, reference month, NP in bbl/month, wells active, VOIP recovered, cumulative oil in bbl.
+- **Per well — Calendar**: well code, reference month (`ano-mm`), NP in bbl/month.
+- **Per well — % VOIP recovered**: well code, reference month, % VOIP recovered (formatted `,.1%`), NP in bbl/month.
+- **Field average — Calendar / % VOIP**: field name, reference month, NP in bbl/month, wells active, VOIP recovered, cumulative oil in bbl.
 
 When no field is selected, the chart renders an instructional empty state ("Select one or more fields to plot uptime-normalized production.").
 
@@ -169,7 +170,7 @@ type AnpCdpDepletionPoint = {
   mes: number;
   mes_desde_t0: number;       // months since first month with petroleo_bbl_dia > 0
   np_bbl_mes: number;         // uptime-normalized monthly oil production
-  pct_voip_poco: number | null; // optional well-level VOIP fraction; may be null
+  pct_voip_poco: number | null; // field-level VOIP fraction inherited per (campo, ano, mes); null only when the field has no VOIP record
 };
 
 type AnpCdpDepletionFieldPoint = {
@@ -200,7 +201,7 @@ Schema columns relevant to this dashboard: `poco, campo, ano, mes, petroleo_bbl_
 |---|---|---|
 | Field | `SearchableMultiSelect` (in sidebar) | Server-side via `p_campos`. Empty selection → empty state. Each selected field gets a color from `PALETTE` in selection order. The "Selected fields" section below lists chips with the same colors. |
 | View mode | `SegmentedToggle` (sidebar) | "Per well" (default) calls `get_anp_cdp_depletion_scatter`; "Field average" calls `get_anp_cdp_depletion_field_aggregate`. Both fetches are debounced 400ms via `useDebouncedFetch`. |
-| X axis | `SegmentedToggle` (sidebar) | "Calendar" (default) or "% VOIP recovered". Pure client-side. % VOIP is silently overridden to Calendar in Per-well mode. |
+| X axis | `SegmentedToggle` (sidebar) | "Calendar" (default) or "% VOIP recovered". Pure client-side. Both options apply to both view modes — Per-well points inherit `pct_voip_poco` from the field-level VOIP fraction. |
 | Plot style | `SegmentedToggle` (sidebar) | "Markers" or "Markers + lines" (default). Pure client-side. |
 | Period comparison | Two number inputs (sidebar) | Recent / Prior windows in months (1..60 each). Drives the depletion table only — no extra fetch. |
 
