@@ -563,7 +563,9 @@ export default function AnpCdpDepletionPage() {
     const priorLabel = `${fmt(priorStart.ano, priorStart.mes)} → ${fmt(priorEnd.ano, priorEnd.mes)}`;
 
     // Warning detection: find the earliest (ano, mes) per selected item and
-    // check whether the prior window extends earlier than that item's history.
+    // check whether either the recent or prior window extends earlier than
+    // that item's history. Both windows can be independently clipped — a
+    // shallow history can shrink Recent while wiping out Prior entirely.
     const earliestByKey = new Map<string, number>();
     for (const p of activePoints) {
       const ym = ymSort(p.ano, p.mes);
@@ -573,28 +575,73 @@ export default function AnpCdpDepletionPage() {
       }
     }
 
-    let worstClipKey: string | null = null;
-    let worstAvailable = -Infinity;
-    let worstEarliestYm = 0;
+    type ClipInfo = {
+      key: string;
+      earliestYm: number;
+      recentClippedTo: number | null; // null when not clipped
+      priorClippedTo: number | null;  // null when not clipped (0 means fully outside)
+    };
+    const clipped: ClipInfo[] = [];
     for (const [key, earliestYm] of earliestByKey) {
-      if (earliestYm > priorStartYm) {
-        // The item's history starts after the prior window's start → clipped.
-        const available = priorEndYm - earliestYm + 1;
-        if (available > worstAvailable || worstClipKey === null) {
-          worstAvailable = available;
-          worstClipKey = key;
-          worstEarliestYm = earliestYm;
-        }
+      // Recent clipped when the item's first month falls inside the recent
+      // window (i.e. recent_start < earliest <= recent_end).
+      const recentClipped = earliestYm > recentStartYm && earliestYm <= recentEndYm;
+      const recentAvailable = recentClipped
+        ? Math.max(0, recentEndYm - earliestYm + 1)
+        : null;
+
+      // Prior clipped when the item's first month is later than prior_start.
+      // If earliestYm > priorEndYm, the entire prior window is gone (0 months).
+      const priorClipped = earliestYm > priorStartYm;
+      const priorAvailable = priorClipped
+        ? Math.max(0, priorEndYm - earliestYm + 1)
+        : null;
+
+      if (recentClipped || priorClipped) {
+        clipped.push({
+          key,
+          earliestYm,
+          recentClippedTo: recentAvailable,
+          priorClippedTo: priorAvailable,
+        });
       }
     }
 
     let warning: string | null = null;
-    if (worstClipKey !== null) {
-      const earliest = ymToDate(worstEarliestYm);
-      const availableMonths = Math.max(0, worstAvailable);
-      warning =
-        `Prior window clipped to ${availableMonths} months for "${worstClipKey}" ` +
-        `(data starts ${fmt(earliest.ano, earliest.mes)}) — limited window.`;
+    if (clipped.length > 0) {
+      // Order by earliest data first (worst clipping shown first), then by key
+      // for deterministic output.
+      const ordered = clipped.slice().sort((a, b) => {
+        if (a.earliestYm !== b.earliestYm) return b.earliestYm - a.earliestYm;
+        return a.key.localeCompare(b.key);
+      });
+
+      const MAX_ITEMS = 4;
+      const shown = ordered.slice(0, MAX_ITEMS);
+
+      const lines = shown.map((c) => {
+        const earliest = ymToDate(c.earliestYm);
+        const parts: string[] = [];
+        if (c.recentClippedTo !== null) {
+          parts.push(`recent ${c.recentClippedTo} months`);
+        }
+        if (c.priorClippedTo !== null) {
+          parts.push(`prior ${c.priorClippedTo} months`);
+        }
+        return (
+          `Windows clipped for "${c.key}" ` +
+          `(data starts ${fmt(earliest.ano, earliest.mes)}): ` +
+          parts.join(", ") +
+          "."
+        );
+      });
+
+      if (ordered.length > shown.length) {
+        const remaining = ordered.length - shown.length;
+        lines.push(`...and ${remaining} more clipped item${remaining === 1 ? "" : "s"}.`);
+      }
+
+      warning = lines.join("\n");
     }
 
     return { recentLabel, priorLabel, warning };
@@ -889,6 +936,7 @@ export default function AnpCdpDepletionPage() {
                     fontFamily: "Arial",
                     marginTop: 6,
                     lineHeight: 1.4,
+                    whiteSpace: "pre-line",
                   }}>
                     {periodHelper.warning}
                   </div>
