@@ -2,7 +2,7 @@
 
 ANP CDP — Depletion dashboard (Oil & Gas). Owner: [`worker_dash-anp-cdp-depletion`](../../.claude/agents/worker_dash-anp-cdp-depletion.md).
 
-> Item of the **Oil & Gas** dropdown in the NavBar (alongside `/anp-cdp`, `/anp-cdp-diaria`, and `/anp-cdp-bsw`). One chart, one filter (field), three toggles (View, X axis, Plot style), plus a reactive period-comparison table.
+> Item of the **Oil & Gas** dropdown in the NavBar (alongside `/anp-cdp`, `/anp-cdp-diaria`, and `/anp-cdp-bsw`). One chart, one filter (field), three toggles (View, X axis, Plot style), plus reactive Recent / Prior period inputs that drive both the chart Y axis (rolling depletion %) and the comparison table.
 
 ## Code scope
 
@@ -15,7 +15,7 @@ RPC wrappers: `rpcGetAnpCdpDepletionCampos`, `rpcGetAnpCdpDepletionScatter`, `rp
 
 ## Product
 
-Plots **NP — uptime-normalized monthly oil production** versus time, with two view modes and two X-axis options.
+Plots **rolling depletion %** of uptime-normalized monthly oil production (NP) versus time, with two view modes and two X-axis options. The Y axis is computed entirely client-side from the NP series returned by the RPCs (no SQL change).
 
 ### NP formula (server-side)
 
@@ -34,6 +34,28 @@ Where:
 
 Multiplying by `dias_cal` once converts daily to monthly; the additional `dias_cal × 24 / tempo_prod_hs_mes` term scales up by the inverse of the uptime fraction. When `tempo_prod_hs_mes = 0` the row produces NULL (filtered upstream); when uptime is 100% the formula reduces to `petroleo_bbl_dia × dias_cal` (raw monthly production).
 
+### Rolling depletion (Y axis, client-side)
+
+For each item (well or field) and each reference month `t` in its series:
+
+```
+recent_window  = NP at points [t − N + 1 … t]      (N most recent available points up to t)
+prior_window   = NP at points [t − N − M + 1 … t − N]   (M points immediately before recent)
+avg_recent_t   = mean(NP, recent_window)
+avg_prior_t    = mean(NP, prior_window)
+depletion_t    = (avg_recent_t − avg_prior_t) / avg_prior_t
+```
+
+`N = recentMonths`, `M = priorMonths` from the sidebar inputs (1..60 each, defaults `12 / 12`).
+
+A point `t` is rendered on the chart **only when both windows are full**, i.e. the item has at least `N + M` points up to and including `t`. Points without a full back-history are silently omitted from the chart (they still contribute to the Depletion comparison table at the latest month).
+
+> **Caveat on calendar gaps.** Windows are over the N+M most recent **available** points in the series, not over N+M consecutive **calendar** months. ANP CDP series can have gaps (a well stops for one or more months). Treating gaps as missing-data is acceptable for v1 — the alternative would be to fill missing months with 0, which would skew the averages downward. A future iteration may move this computation server-side with calendar-aware windows.
+
+The Y axis uses Plotly `tickformat: ",.1%"` and shows a zero line. Hovertemplate displays `Depletion: %{y:.2%}` with the reference month and (in % VOIP mode) the VOIP fraction.
+
+The helper is implemented as `rollingDepletion(items, nRecent, nPrior)` in `page.tsx`. It is called once per series during chart memoization; the depletion is keyed by `(ano, mes)` so the % VOIP X mode can re-sort rendered points by `pct_voip` without losing the calendar-anchored computation.
+
 ### View modes
 
 | View | Granularity | RPC | Renderer | Trace style |
@@ -41,7 +63,7 @@ Multiplying by `dias_cal` once converts daily to monthly; the additional `dias_c
 | **Per well** (default) | one point per (well × month) | `get_anp_cdp_depletion_scatter` | `scattergl` (WebGL) | mode driven by Plot-style toggle, marker size 4, opacity 0.7 |
 | **Field average** | one point per (field × calendar month), summed across active wells | `get_anp_cdp_depletion_field_aggregate` | `scatter` (SVG, low volume) | mode driven by Plot-style toggle, marker size 6 |
 
-In Field-average mode the metric is **summed**, not averaged: it's the field's total uptime-normalized monthly production across all reporting wells. `n_pocos` and `pct_voip` are emitted alongside for context (tooltip + table).
+In Field-average mode the underlying NP metric is **summed**, not averaged: it's the field's total uptime-normalized monthly production across all reporting wells. `n_pocos` and `pct_voip` are emitted alongside for context (tooltip + table). The chart Y axis is then the rolling depletion of that field-level NP sum (computed client-side per the formula above).
 
 ### X-axis toggle
 
@@ -65,7 +87,7 @@ Two number inputs in the sidebar:
 | **Recent (m)** | 12 | 1..60 |
 | **Prior (m)** | 12 | 1..60 |
 
-These windows feed the **Depletion comparison** table below the chart. Changes are reactive — no extra RPC fetch.
+These windows feed **both** the chart Y axis (rolling depletion %) and the **Depletion comparison** table below the chart. Changes are reactive — no extra RPC fetch; `useMemo` recomputes the chart synchronously.
 
 #### Date-range helper text
 
@@ -124,11 +146,11 @@ NP values are formatted compactly: `1_500_000` → `"1.50M bbl"`, `12_345` → `
 
 ### Tooltips
 
-- **Per well — Calendar**: well code, reference month (`ano-mm`), NP in bbl/month.
-- **Per well — % VOIP recovered**: well code, reference month, % VOIP recovered (formatted `,.1%`), NP in bbl/month.
-- **Field average — Calendar / % VOIP**: field name, reference month, NP in bbl/month, wells active, VOIP recovered, cumulative oil in bbl.
+- **Per well — Calendar**: well code, reference month (`ano-mm`), depletion as `%{y:.2%}`.
+- **Per well — % VOIP recovered**: well code, reference month, % VOIP recovered (formatted `,.1%`), depletion as `%{y:.2%}`.
+- **Field average — Calendar / % VOIP**: field name, reference month, depletion as `%{y:.2%}`, wells active, VOIP recovered, cumulative oil in bbl.
 
-When no field is selected, the chart renders an instructional empty state ("Select one or more fields to plot uptime-normalized production.").
+When no field is selected, the chart renders an instructional empty state ("Select one or more fields to plot rolling depletion.").
 
 ## Layout
 
@@ -203,7 +225,7 @@ Schema columns relevant to this dashboard: `poco, campo, ano, mes, petroleo_bbl_
 | View mode | `SegmentedToggle` (sidebar) | "Per well" (default) calls `get_anp_cdp_depletion_scatter`; "Field average" calls `get_anp_cdp_depletion_field_aggregate`. Both fetches are debounced 400ms via `useDebouncedFetch`. |
 | X axis | `SegmentedToggle` (sidebar) | "Calendar" (default) or "% VOIP recovered". Pure client-side. Both options apply to both view modes — Per-well points inherit `pct_voip_poco` from the field-level VOIP fraction. |
 | Plot style | `SegmentedToggle` (sidebar) | "Markers" or "Markers + lines" (default). Pure client-side. |
-| Period comparison | Two number inputs (sidebar) | Recent / Prior windows in months (1..60 each). Drives the depletion table only — no extra fetch. |
+| Period comparison | Two number inputs (sidebar) | Recent / Prior windows in months (1..60 each). Drives **both** the chart Y axis (rolling depletion %) and the depletion table — no extra fetch. |
 
 ## Reused components
 
@@ -235,13 +257,13 @@ Sidebar visual classes (`#sidebar`, `.sidebar-section-label`, `.sidebar-filter-s
 - **Field-average is low-volume**: a few hundred points total; `scatter` (SVG) renders crisper lines.
 - **Two independent fetches**: per-view useDebouncedFetch hooks each guard with `viewMode !== "<their-view>" → []`.
 - **Debounce 400ms** on field selection / view-mode change.
-- **Period inputs are client-only**: no fetch round-trip when adjusting Recent/Prior windows.
+- **Period inputs are client-only**: no fetch round-trip when adjusting Recent/Prior windows. Both the chart (rolling depletion Y) and the table recompute via `useMemo` on the cached series.
 - **No export by design** — for analyses that need raw data, use `/anp-cdp` (Tier 2 export with all dimensions).
 
 ## Anti-patterns
 
 - Calling `anp_cdp_producao` directly from the client. Always go through one of the three RPCs.
-- Computing NP client-side. The formula is owned by `worker_supabase` — request changes via the Subgerente.
+- Computing NP client-side. The formula is owned by `worker_supabase` — request changes via the Subgerente. Note: rolling depletion **is** computed client-side, on top of NP returned by the RPC, because it depends on UI-controlled window sizes.
 - Adding an `ExportPanel` "for symmetry" with the rest of `/anp-*` — this dashboard intentionally has no export (consistent with `/anp-cdp-bsw`).
 - Adding a `PeriodSlider` — the Recent / Prior inputs in the sidebar already drive the comparison; calendar slicing of NP itself is not in scope (use `/anp-cdp` for that).
 - Using the BSW color convention (red for rising, green for falling). For NP it is **inverted**: green for rising, red for falling. `fmtDelta` in `page.tsx` hard-codes this and should not be re-used between BSW and Depletion.

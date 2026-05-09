@@ -69,6 +69,51 @@ const MAX_FIELDS_IN_FIELD_MODE = 20;
 // Sort key for `(ano, mes)` tuples → number (ano*12 + mes).
 const ymSort = (a: number, m: number) => a * 12 + m;
 
+// ── Rolling depletion helper ──────────────────────────────────────────────────
+//
+// For each point t in a per-item time series, compute the depletion as
+//   depletion_t = (avg(NP, recent window) − avg(NP, prior window)) / avg(NP, prior window)
+// where:
+//   - recent window  = the last N points up to and including t
+//   - prior window   = the M points immediately before the recent window
+// Points without a full N+M-point history (i.e. with insufficient back-history)
+// are silently dropped.
+//
+// IMPORTANT: the windows are over the N most recent **available** points, not
+// over N **calendar** months. ANP CDP can have gaps (well stopped for a month).
+// Treating gaps as missing-data is acceptable for v1 — the alternative would be
+// to fill missing months with zeros and skew the averages towards 0. A future
+// iteration may move this computation server-side with calendar-aware windows.
+type RollingDepletionInput = { ano: number; mes: number; np: number };
+type RollingDepletionOutput = { ano: number; mes: number; depletion: number };
+
+function rollingDepletion(
+  items: RollingDepletionInput[],
+  nRecent: number,
+  nPrior: number,
+): RollingDepletionOutput[] {
+  if (nRecent < 1 || nPrior < 1) return [];
+  if (items.length < nRecent + nPrior) return [];
+  // Defensive: ensure ascending order by (ano, mes). The caller should already
+  // sort, but the math is silent-broken if the assumption is violated.
+  const sorted = items.slice().sort((a, b) => ymSort(a.ano, a.mes) - ymSort(b.ano, b.mes));
+  const out: RollingDepletionOutput[] = [];
+  for (let i = nRecent + nPrior - 1; i < sorted.length; i++) {
+    const recent = sorted.slice(i - nRecent + 1, i + 1);
+    const prior = sorted.slice(i - nRecent - nPrior + 1, i - nRecent + 1);
+    if (recent.length !== nRecent || prior.length !== nPrior) continue;
+    const sumR = recent.reduce((s, x) => s + x.np, 0);
+    const sumP = prior.reduce((s, x) => s + x.np, 0);
+    const avgR = sumR / recent.length;
+    const avgP = sumP / prior.length;
+    if (!Number.isFinite(avgR) || !Number.isFinite(avgP) || avgP === 0) continue;
+    const dep = (avgR - avgP) / avgP;
+    if (!Number.isFinite(dep)) continue;
+    out.push({ ano: sorted[i].ano, mes: sorted[i].mes, depletion: dep });
+  }
+  return out;
+}
+
 // ── Chart builders ────────────────────────────────────────────────────────────
 
 function buildPerWellChart(
@@ -76,47 +121,65 @@ function buildPerWellChart(
   selectedCampos: string[],
   lineStyle: LineStyle,
   xMode: XMode,
+  recentMonths: number,
+  priorMonths: number,
 ): { data: PlotData[]; layout: Partial<Layout> } {
   if (!selectedCampos.length) {
     return emptyPlot(
       460,
-      "Select a field to plot uptime-normalized production.",
+      "Select a field to plot rolling depletion.",
     );
   }
   if (!points.length) {
     return emptyPlot(460, "No data for the selected field.");
   }
 
-  // In % VOIP mode, drop any point that lacks a field-level VOIP value
-  // (pct_voip_poco is null when no VOIP record could be joined for the
-  // well's field). Empty traces are still emitted so the legend stays stable.
-  const usablePoints =
-    xMode === "voip"
-      ? points.filter((p) => p.pct_voip_poco !== null && Number.isFinite(p.pct_voip_poco))
-      : points;
-
-  if (xMode === "voip" && !usablePoints.length) {
-    return emptyPlot(
-      460,
-      "No VOIP-anchored data for the selected field.",
-    );
-  }
-
   // Per-well mode: one trace per unique poco (in first-appearance order so
   // colors stay stable between renders).
   const seen: string[] = [];
-  for (const p of usablePoints) {
+  for (const p of points) {
     if (!seen.includes(p.poco)) seen.push(p.poco);
   }
   const mode = plotlyMode(lineStyle);
   const traces: PlotData[] = seen.map((poco, i) => {
-    const subset = usablePoints
+    // Per-well rolling depletion is computed in calendar order. We keep the
+    // full series (including points with null pct_voip_poco) so that gaps in
+    // the VOIP join do not break the rolling computation; the % VOIP filtering
+    // happens at the render step below.
+    const fullSeries = points
       .filter((p) => p.poco === poco)
-      .sort((a, b) =>
-        xMode === "voip"
-          ? (a.pct_voip_poco ?? 0) - (b.pct_voip_poco ?? 0)
-          : ymSort(a.ano, a.mes) - ymSort(b.ano, b.mes),
-      );
+      .sort((a, b) => ymSort(a.ano, a.mes) - ymSort(b.ano, b.mes));
+    const depletionByYm = new Map<number, number>();
+    for (const d of rollingDepletion(
+      fullSeries.map((p) => ({ ano: p.ano, mes: p.mes, np: p.np_bbl_mes })),
+      recentMonths,
+      priorMonths,
+    )) {
+      depletionByYm.set(ymSort(d.ano, d.mes), d.depletion);
+    }
+
+    // Each point that has a depletion value AND (in % VOIP mode) a non-null
+    // pct_voip_poco is rendered. Points without a depletion (insufficient
+    // history) are dropped. In % VOIP mode, points without VOIP also drop.
+    const renderedPoints = fullSeries
+      .map((p) => {
+        const dep = depletionByYm.get(ymSort(p.ano, p.mes));
+        if (dep === undefined) return null;
+        if (xMode === "voip" && (p.pct_voip_poco === null || !Number.isFinite(p.pct_voip_poco))) {
+          return null;
+        }
+        return { p, dep };
+      })
+      .filter((x): x is { p: AnpCdpDepletionPoint; dep: number } => x !== null);
+
+    // For % VOIP mode, sort by pct_voip_poco so the line connects in VOIP order.
+    const subset =
+      xMode === "voip"
+        ? renderedPoints.slice().sort(
+            (a, b) => (a.p.pct_voip_poco ?? 0) - (b.p.pct_voip_poco ?? 0),
+          )
+        : renderedPoints;
+
     const color = PALETTE[i % PALETTE.length];
     return {
       type: "scattergl",
@@ -124,11 +187,11 @@ function buildPerWellChart(
       name: poco,
       x:
         xMode === "voip"
-          ? subset.map((p) => p.pct_voip_poco ?? 0)
-          : subset.map((p) => `${p.ano}-${String(p.mes).padStart(2, "0")}-01`),
-      y: subset.map((p) => p.np_bbl_mes),
+          ? subset.map(({ p }) => p.pct_voip_poco ?? 0)
+          : subset.map(({ p }) => `${p.ano}-${String(p.mes).padStart(2, "0")}-01`),
+      y: subset.map(({ dep }) => dep),
       customdata: subset.map(
-        (p) =>
+        ({ p }) =>
           [p.poco, p.ano, p.mes, p.pct_voip_poco ?? 0] as [
             string,
             number,
@@ -143,11 +206,11 @@ function buildPerWellChart(
           ? "<b>%{customdata[0]}</b><br>" +
             "Reference month: %{customdata[1]}-%{customdata[2]:02d}<br>" +
             "VOIP recovered: %{customdata[3]:.1%}<br>" +
-            "NP: %{y:,.0f} bbl/month" +
+            "Depletion: %{y:.2%}" +
             "<extra></extra>"
           : "<b>%{customdata[0]}</b><br>" +
             "Reference month: %{customdata[1]}-%{customdata[2]:02d}<br>" +
-            "NP: %{y:,.0f} bbl/month" +
+            "Depletion: %{y:.2%}" +
             "<extra></extra>",
     } as unknown as PlotData;
   });
@@ -176,9 +239,9 @@ function buildPerWellChart(
       xaxis,
       yaxis: {
         ...AXIS_LINE,
-        title: { text: "NP (oil bbl/month, uptime-normalized)" },
-        tickformat: ",.2s",
-        rangemode: "tozero",
+        title: { text: `Depletion (rolling, ${recentMonths}m vs prior ${priorMonths}m)` },
+        tickformat: ",.1%",
+        zeroline: true,
       },
       legend: {
         orientation: "v",
@@ -198,11 +261,13 @@ function buildFieldAverageChart(
   selectedCampos: string[],
   lineStyle: LineStyle,
   xMode: XMode,
+  recentMonths: number,
+  priorMonths: number,
 ): { data: PlotData[]; layout: Partial<Layout> } {
   if (!selectedCampos.length) {
     return emptyPlot(
       460,
-      "Select one or more fields to plot uptime-normalized production.",
+      "Select one or more fields to plot rolling depletion.",
     );
   }
   if (!points.length) {
@@ -213,31 +278,50 @@ function buildFieldAverageChart(
   // selected campo (even if empty) so the legend matches the sidebar chips.
   const mode = plotlyMode(lineStyle);
   const traces: PlotData[] = selectedCampos.map((campo, i) => {
-    const subset = points
+    // Compute rolling depletion in calendar order, then map back to render order.
+    const fullSeries = points
       .filter((p) => p.campo === campo)
-      .sort((a, b) =>
-        xMode === "voip"
-          ? a.pct_voip - b.pct_voip
-          : ymSort(a.ano, a.mes) - ymSort(b.ano, b.mes),
-      );
+      .sort((a, b) => ymSort(a.ano, a.mes) - ymSort(b.ano, b.mes));
     const color = PALETTE[i % PALETTE.length];
-    if (typeof window !== "undefined" && points.length > 0 && subset.length === 0) {
+    if (typeof window !== "undefined" && points.length > 0 && fullSeries.length === 0) {
       // eslint-disable-next-line no-console
       console.warn(
         `[anp-cdp-depletion] field "${campo}" is selected but has no points in the RPC result; rendering empty trace.`,
       );
     }
+    const depletionByYm = new Map<number, number>();
+    for (const d of rollingDepletion(
+      fullSeries.map((p) => ({ ano: p.ano, mes: p.mes, np: p.np_bbl_mes })),
+      recentMonths,
+      priorMonths,
+    )) {
+      depletionByYm.set(ymSort(d.ano, d.mes), d.depletion);
+    }
+
+    const renderedPoints = fullSeries
+      .map((p) => {
+        const dep = depletionByYm.get(ymSort(p.ano, p.mes));
+        if (dep === undefined) return null;
+        return { p, dep };
+      })
+      .filter((x): x is { p: AnpCdpDepletionFieldPoint; dep: number } => x !== null);
+
+    const subset =
+      xMode === "voip"
+        ? renderedPoints.slice().sort((a, b) => a.p.pct_voip - b.p.pct_voip)
+        : renderedPoints;
+
     return {
       type: "scatter",
       mode,
       name: campo,
       x:
         xMode === "voip"
-          ? subset.map((p) => p.pct_voip)
-          : subset.map((p) => `${p.ano}-${String(p.mes).padStart(2, "0")}-01`),
-      y: subset.map((p) => p.np_bbl_mes),
+          ? subset.map(({ p }) => p.pct_voip)
+          : subset.map(({ p }) => `${p.ano}-${String(p.mes).padStart(2, "0")}-01`),
+      y: subset.map(({ dep }) => dep),
       customdata: subset.map(
-        (p) =>
+        ({ p }) =>
           [p.ano, p.mes, p.n_pocos, p.pct_voip, p.cumulative_oil_bbl] as [
             number,
             number,
@@ -251,7 +335,7 @@ function buildFieldAverageChart(
       hovertemplate:
         "<b>" + campo + "</b><br>" +
         "Reference month: %{customdata[0]}-%{customdata[1]:02d}<br>" +
-        "NP: %{y:,.0f} bbl/month<br>" +
+        "Depletion: %{y:.2%}<br>" +
         "Wells active: %{customdata[2]}<br>" +
         "VOIP recovered: %{customdata[3]:.1%}<br>" +
         "Cumulative oil: %{customdata[4]:,.0f} bbl" +
@@ -283,9 +367,9 @@ function buildFieldAverageChart(
       xaxis,
       yaxis: {
         ...AXIS_LINE,
-        title: { text: "NP (oil bbl/month, uptime-normalized)" },
-        tickformat: ",.2s",
-        rangemode: "tozero",
+        title: { text: `Depletion (rolling, ${recentMonths}m vs prior ${priorMonths}m)` },
+        tickformat: ",.1%",
+        zeroline: true,
       },
       legend: {
         orientation: "v",
@@ -401,9 +485,9 @@ export default function AnpCdpDepletionPage() {
 
   const chart = useMemo(() => {
     return viewMode === "well"
-      ? buildPerWellChart(wellPoints, selectedCampos, lineStyle, effectiveXMode)
-      : buildFieldAverageChart(fieldPoints, selectedCampos, lineStyle, effectiveXMode);
-  }, [viewMode, wellPoints, fieldPoints, selectedCampos, lineStyle, effectiveXMode]);
+      ? buildPerWellChart(wellPoints, selectedCampos, lineStyle, effectiveXMode, recentMonths, priorMonths)
+      : buildFieldAverageChart(fieldPoints, selectedCampos, lineStyle, effectiveXMode, recentMonths, priorMonths);
+  }, [viewMode, wellPoints, fieldPoints, selectedCampos, lineStyle, effectiveXMode, recentMonths, priorMonths]);
 
   const chartLoading = viewMode === "well" ? wellLoading : fieldLoading;
 
@@ -768,7 +852,7 @@ export default function AnpCdpDepletionPage() {
                   marginTop: 6,
                   lineHeight: 1.4,
                 }}>
-                  Recent vs prior windows for the depletion table below the chart (1–60 months).
+                  Recent vs prior windows for the chart Y axis and the table below (1–60 months). Points without a full N+M-point history are omitted.
                 </div>
                 {periodHelper === null ? (
                   <div style={{
@@ -901,7 +985,7 @@ export default function AnpCdpDepletionPage() {
             <div id="page-content">
               <DashboardHeader
                 title="ANP CDP — Depletion"
-                sub="Uptime-normalized monthly oil production (NP) with depletion comparison"
+                sub="Rolling depletion (recent vs prior windows of uptime-normalized NP) with comparison table"
               />
 
               {filtrosLoading ? (
@@ -913,14 +997,14 @@ export default function AnpCdpDepletionPage() {
                       viewMode === "well"
                         ? selectedCampos.length === 1
                           ? effectiveXMode === "voip"
-                            ? `Uptime-normalized production per well — ${selectedCampos[0]} (% of VOIP recovered)`
-                            : `Uptime-normalized production per well — ${selectedCampos[0]}`
+                            ? `Rolling depletion per well — ${selectedCampos[0]} (% of VOIP recovered)`
+                            : `Rolling depletion per well — ${selectedCampos[0]}`
                           : effectiveXMode === "voip"
-                            ? "Uptime-normalized production per well — % of VOIP recovered"
-                            : "Uptime-normalized production per well"
+                            ? "Rolling depletion per well — % of VOIP recovered"
+                            : "Rolling depletion per well"
                         : effectiveXMode === "voip"
-                          ? "Uptime-normalized production — % of VOIP recovered"
-                          : "Uptime-normalized production — calendar"
+                          ? "Rolling depletion — % of VOIP recovered"
+                          : "Rolling depletion — calendar"
                     }
                     loading={chartLoading}
                     height={460}
