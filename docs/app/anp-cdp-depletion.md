@@ -19,20 +19,30 @@ Plots **rolling depletion %** of uptime-normalized monthly oil production (NP) v
 
 ### NP formula (server-side)
 
-NP normalizes monthly production for the share of the month the well was actually running (`tempo_prod_hs_mes`). It answers: "how much oil would this well have produced if it had run 100% of the calendar month?"
+NP normalizes monthly production for the share of the month the well was actually running and expresses the result as a **per-day** flow in **kbpd** (thousand barrels per day). It answers: "what is the well's average daily flow over the days it was actually producing?"
 
 ```
-NP_bbl_mes = (petroleo_bbl_dia × dias_cal × dias_cal × 24)
-           / NULLIF(tempo_prod_hs_mes, 0)
+Per well:
+  np_bbl_mes = (petroleo_bbl_dia × dias_cal × dias_cal × 24)
+             / NULLIF(tempo_prod_hs_mes, 0)            -- intermediate, monthly bbl
+  np_kbpd    = (np_bbl_mes / (tempo_prod_hs_mes / 24)) / 1000
+
+Per field (aggregate):
+  np_kbpd    = sum(np_poco_bbl_mes) × 24
+             / (sum(hs_op_poco) × 1000)
 ```
 
 Where:
 - `petroleo_bbl_dia` — average daily oil production reported for the month (bbl/day, but only over the hours the well was up).
 - `dias_cal` — calendar days in the month (28..31).
 - `dias_cal × 24` — calendar hours in the month.
-- `tempo_prod_hs_mes` — actual production hours in the month.
+- `tempo_prod_hs_mes` (`hs_op`) — actual production hours in the month.
 
-Multiplying by `dias_cal` once converts daily to monthly; the additional `dias_cal × 24 / tempo_prod_hs_mes` term scales up by the inverse of the uptime fraction. When `tempo_prod_hs_mes = 0` the row produces NULL (filtered upstream); when uptime is 100% the formula reduces to `petroleo_bbl_dia × dias_cal` (raw monthly production).
+The intermediate `np_bbl_mes` first scales the reported daily flow up by `dias_cal × 24 / tempo_prod_hs_mes` (the inverse of the uptime fraction). Dividing again by the actual production days `(tempo_prod_hs_mes / 24)` yields a per-day flow that is normalized by **days produced**, not by calendar days. Finally, `/ 1000` converts to kbpd. When `tempo_prod_hs_mes = 0` the row produces NULL (filtered upstream).
+
+For the field-aggregate view the total monthly bbl across active wells is divided by the total production days across the same wells (and then by 1000), so the field-level kbpd represents the mean per-day flow weighted by each well's uptime.
+
+> **Breaking change (2026-05-08).** The RPCs `get_anp_cdp_depletion_scatter` and `get_anp_cdp_depletion_field_aggregate` were updated to return `np_kbpd` (in kbpd) **in place of** the legacy column `np_bbl_mes` (monthly bbl). Frontend types `AnpCdpDepletionPoint` / `AnpCdpDepletionFieldPoint` and the table renderer were updated accordingly. The chart Y axis is unchanged because rolling depletion is a ratio, but the table columns are now displayed as kbpd with two decimals.
 
 ### Rolling depletion (Y axis, client-side)
 
@@ -125,14 +135,14 @@ Style: `font-size: 11px; color: #666; font-family: Arial; margin-top: 6px; line-
 
 ### Depletion comparison table
 
-| Item | NP last month | Avg recent N | Avg prior M | Depletion % | YoY % |
+| Item | NP last month (kbpd) | Avg recent (Nm, kbpd) | Avg prior (Mm, kbpd) | Depletion % | YoY % |
 
 Where:
 - **Item** — well code (Per-well) or field name (Field average), with the chart trace's color swatch.
-- **NP last month** — `np_bbl_mes` of the latest month available for that item.
-- **Avg recent N** — `mean(np_bbl_mes)` over the last `recentMonths` points (chronological tail).
-- **Avg prior M** — `mean(np_bbl_mes)` over the `priorMonths` points immediately preceding the recent slice.
-- **Depletion %** — `(avg_recent − avg_prior) / avg_prior × 100`.
+- **NP last month (kbpd)** — `np_kbpd` of the latest month available for that item.
+- **Avg recent (Nm, kbpd)** — `mean(np_kbpd)` over the last `recentMonths` points (chronological tail).
+- **Avg prior (Mm, kbpd)** — `mean(np_kbpd)` over the `priorMonths` points immediately preceding the recent slice.
+- **Depletion %** — `(avg_recent − avg_prior) / avg_prior × 100` (ratio — unit-independent).
 - **YoY %** — `(NP_last / NP_last_minus_12 − 1) × 100`, where `NP_last_minus_12` is the NP exactly 12 calendar months before the latest available month (calendar lookup in the series, not positional).
 
 #### Color semantics (INVERSE of `/anp-cdp-bsw`)
@@ -142,7 +152,7 @@ For NP, **rising = good** (the asset is producing more): green (`#28a745`).
 
 This is the opposite of BSW where falling water-cut is good. The page's `fmtDelta` helper hard-codes this inversion.
 
-NP values are formatted compactly: `1_500_000` → `"1.50M bbl"`, `12_345` → `"12.3k bbl"`. Percentages use 2 decimals with a leading sign for positives.
+NP values are formatted as `,.2f kbpd` (two decimals — field-typical kbpd ranges from 0.5 to ~500). Percentages use 2 decimals with a leading sign for positives.
 
 ### Tooltips
 
@@ -179,8 +189,8 @@ The "Selected fields" section in the sidebar shows colored chips matching the ch
 | RPC | Type | Purpose |
 |---|---|---|
 | `get_anp_cdp_depletion_campos()` | own (sidebar dropdown) | Returns alphabetically ordered `text[]` of field names available for the depletion analysis. |
-| `get_anp_cdp_depletion_scatter(p_campos text[])` | own (per-well view) | Returns one row per (well × month) for the filtered fields, with server-computed `np_bbl_mes` and `mes_desde_t0`. RETURNS TABLE. Capped at 500k points server-side. |
-| `get_anp_cdp_depletion_field_aggregate(p_campos text[])` | own (field-average view) | Returns one row per (field × calendar month) with summed `np_bbl_mes`, `n_pocos`, `pct_voip` (cumulative oil ÷ VOIP), and `cumulative_oil_bbl`. RETURNS jsonb (single row, single column) to bypass PostgREST default `max_rows=1000`. |
+| `get_anp_cdp_depletion_scatter(p_campos text[])` | own (per-well view) | Returns one row per (well × month) for the filtered fields, with server-computed `np_kbpd` (uptime-normalized daily flow, kbpd) and `mes_desde_t0`. RETURNS TABLE. Capped at 500k points server-side. |
+| `get_anp_cdp_depletion_field_aggregate(p_campos text[])` | own (field-average view) | Returns one row per (field × calendar month) with `np_kbpd` (field-aggregate kbpd), `n_pocos`, `pct_voip` (cumulative oil ÷ VOIP), and `cumulative_oil_bbl`. RETURNS jsonb (single row, single column) to bypass PostgREST default `max_rows=1000`. |
 
 ### Output contracts
 
@@ -190,8 +200,8 @@ type AnpCdpDepletionPoint = {
   campo: string;
   ano: number;
   mes: number;
-  mes_desde_t0: number;       // months since first month with petroleo_bbl_dia > 0
-  np_bbl_mes: number;         // uptime-normalized monthly oil production
+  mes_desde_t0: number;        // months since first month with petroleo_bbl_dia > 0
+  np_kbpd: number;             // uptime-normalized daily oil production, kbpd (RENAMED from np_bbl_mes — breaking change 2026-05-08)
   pct_voip_poco: number | null; // field-level VOIP fraction inherited per (campo, ano, mes); null only when the field has no VOIP record
 };
 
@@ -199,7 +209,7 @@ type AnpCdpDepletionFieldPoint = {
   campo: string;
   ano: number;
   mes: number;
-  np_bbl_mes: number;          // sum of NP across wells in the field
+  np_kbpd: number;             // field-aggregate uptime-normalized daily oil production, kbpd (RENAMED from np_bbl_mes — breaking change 2026-05-08)
   n_pocos: number;             // wells contributing in this calendar month
   pct_voip: number;            // cumulative_oil_bbl / voip_bbl, fraction 0..1
   cumulative_oil_bbl: number;  // cumulative oil up to (ano,mes), bbl
@@ -215,7 +225,7 @@ The `Scatter` wrapper passes `{ p_campos: string[] }` and uses `.limit(500000)`.
 | `anp_cdp_producao` | ~1.8M rows | ETL `scripts/pipelines/anp/cdp/01_extract.py` (Selenium + ddddocr CAPTCHA) → `02_upload.py` |
 | `anp_voip` | ~hundreds of rows (one per field × year) | ETL `scripts/pipelines/anp/voip_sync.py` — yearly VOIP bulletin from ANP. The field-aggregate RPC inner-joins to the most recent VOIP per field. |
 
-Schema columns relevant to this dashboard: `poco, campo, ano, mes, petroleo_bbl_dia, tempo_prod_hs_mes`. The per-well RPC computes NP via the formula above and `mes_desde_t0` via window functions on `(poco)` ordered by `(ano, mes)`. The aggregate RPC sums NP by `(campo, ano, mes)`, accumulates oil as `petroleo_bbl_dia × dias_do_mês` over `(ano, mes)`, and divides by the latest `voip_bbl` from `anp_voip` to yield `pct_voip`.
+Schema columns relevant to this dashboard: `poco, campo, ano, mes, petroleo_bbl_dia, tempo_prod_hs_mes`. The per-well RPC computes the intermediate `np_bbl_mes` then divides by the well's actual production days `(tempo_prod_hs_mes / 24)` and by 1000 to yield `np_kbpd`; `mes_desde_t0` is computed via window functions on `(poco)` ordered by `(ano, mes)`. The aggregate RPC computes `np_kbpd` per `(campo, ano, mes)` as `sum(np_poco_bbl_mes) × 24 / (sum(hs_op_poco) × 1000)`, accumulates oil as `petroleo_bbl_dia × dias_do_mês` over `(ano, mes)`, and divides by the latest `voip_bbl` from `anp_voip` to yield `pct_voip`.
 
 ## Filters available (UI)
 
@@ -260,15 +270,15 @@ Sidebar visual classes (`#sidebar`, `.sidebar-section-label`, `.sidebar-filter-s
 - **Period inputs are client-only**: no fetch round-trip when adjusting Recent/Prior windows. Both the chart (rolling depletion Y) and the table recompute via `useMemo` on the cached series.
 - **No export by design** — for analyses that need raw data, use `/anp-cdp` (Tier 2 export with all dimensions).
 
-## Display units (kbpd vs raw bbl/day)
+## Display units (kbpd)
 
-This dashboard does **not** render any per-day flow metric, so no kbpd conversion is needed:
+This dashboard now reports NP as a per-day flow in **kbpd** (thousand barrels per day), aligning with the rest of the Oil & Gas dashboards (`/anp-cdp`, `/anp-cdp-diaria`, `/anp-cdp-bsw`):
 
-- **Y axis** is rolling **depletion %** (a unitless ratio).
-- **NP** values (table columns "NP last month", "Avg recent N", "Avg prior M", and the cumulative-oil tooltip) are stocks measured in **bbl** (cumulative production over a month or window), not bbl/day flow rates. They remain in raw bbl and are formatted compactly via `fmtNp` (k bbl, M bbl, B bbl).
-- **Cumulative oil** in tooltips is also a stock (bbl total), kept as-is.
+- **Y axis** is rolling **depletion %** (a unitless ratio — unaffected by the unit change).
+- **NP** values (table columns "NP last month (kbpd)", "Avg recent (Nm, kbpd)", "Avg prior (Mm, kbpd)") are uptime-normalized **per-day** flows in kbpd, formatted as `,.2f kbpd` via `fmtNp`. Two decimals are sufficient because field-typical kbpd ranges from 0.5 to ~500.
+- **Cumulative oil** in field-average tooltips is still a stock measured in **bbl total**, kept as-is.
 
-The kbpd convention applied to the other Oil & Gas dashboards (`/anp-cdp`, `/anp-cdp-diaria`, `/anp-cdp-bsw`) is not relevant here because no `bbl_dia` column is shown in the chart, table, or tooltip.
+Historical note: prior to 2026-05-08 the RPCs returned `np_bbl_mes` (uptime-normalized monthly bbl); the table headers were "NP last month / Avg recent N / Avg prior M" with values formatted as `k/M/B bbl`. The migration to `np_kbpd` is a breaking change in the RPC signature.
 
 ## Anti-patterns
 

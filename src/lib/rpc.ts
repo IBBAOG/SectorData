@@ -1884,12 +1884,15 @@ export async function rpcGetAnpCdpBswCampos(
 
 // ─── MODULE: ANP CDP — Depletion (/src/app/(dashboard)/anp-cdp-depletion/page.tsx)
 //
-// Uptime-normalized monthly oil production (NP) per (poco × month) or per
-// (campo × month). NP is the production the well would have delivered if it
-// had run at 100% uptime during the calendar month. Formula (server-side):
+// Uptime-normalized daily oil production (NP) per (poco × month) or per
+// (campo × month), expressed in **kbpd** (thousand barrels per day). NP is
+// the average daily flow the well would have delivered if it had run at
+// 100% uptime during the calendar month, normalized by actual production
+// days. Formulas (server-side):
 //
-//   NP_bbl_mes = (petroleo_bbl_dia × dias_cal × dias_cal × 24)
-//              / NULLIF(tempo_prod_hs_mes, 0)
+//   Per well:   np_kbpd = (np_bbl_mes / (hs_op / 24)) / 1000
+//   Per field:  np_kbpd = sum(np_poco_bbl_mes) × 24
+//                       / (sum(hs_op_poco) × 1000)
 //
 // Field-aggregate variant adds % VOIP recovered (cumulative oil ÷ VOIP) and
 // returns the data as RETURNS jsonb (single row, single column) to bypass
@@ -1901,15 +1904,15 @@ export type AnpCdpDepletionPoint = {
   ano: number;
   mes: number;
   mes_desde_t0: number;
-  np_bbl_mes: number;
-  pct_voip_poco: number | null; // field-level VOIP fraction inherited per (campo, ano, mes); null only when the field has no VOIP record
+  np_kbpd: number;                // uptime-normalized daily oil production, kbpd
+  pct_voip_poco: number | null;   // field-level VOIP fraction inherited per (campo, ano, mes); null only when the field has no VOIP record
 };
 
 export type AnpCdpDepletionFieldPoint = {
   campo: string;
   ano: number;
   mes: number;
-  np_bbl_mes: number;             // sum of NP across wells in the field
+  np_kbpd: number;                // field-aggregate uptime-normalized daily oil production, kbpd
   n_pocos: number;                // wells contributing to this calendar month
   pct_voip: number;               // cumulative_oil_bbl / voip_bbl, fraction 0..1
   cumulative_oil_bbl: number;     // cumulative oil up to (ano,mes), bbl

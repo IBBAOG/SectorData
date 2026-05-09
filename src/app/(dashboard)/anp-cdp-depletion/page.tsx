@@ -151,7 +151,7 @@ function buildPerWellChart(
       .sort((a, b) => ymSort(a.ano, a.mes) - ymSort(b.ano, b.mes));
     const depletionByYm = new Map<number, number>();
     for (const d of rollingDepletion(
-      fullSeries.map((p) => ({ ano: p.ano, mes: p.mes, np: p.np_bbl_mes })),
+      fullSeries.map((p) => ({ ano: p.ano, mes: p.mes, np: p.np_kbpd })),
       recentMonths,
       priorMonths,
     )) {
@@ -291,7 +291,7 @@ function buildFieldAverageChart(
     }
     const depletionByYm = new Map<number, number>();
     for (const d of rollingDepletion(
-      fullSeries.map((p) => ({ ano: p.ano, mes: p.mes, np: p.np_bbl_mes })),
+      fullSeries.map((p) => ({ ano: p.ano, mes: p.mes, np: p.np_kbpd })),
       recentMonths,
       priorMonths,
     )) {
@@ -385,14 +385,11 @@ function buildFieldAverageChart(
 
 // ── Number formatters ─────────────────────────────────────────────────────────
 
-// Format NP values compactly: 1_500_000 → "1.5M bbl", 12_345 → "12.3k bbl".
+// Format NP values in kbpd (thousand barrels per day). Field-typical kbpd
+// ranges from 0.5 to ~500, so two decimals are sufficient.
 const fmtNp = (v: number | undefined | null): string => {
   if (v === undefined || v === null || !Number.isFinite(v)) return "—";
-  const abs = Math.abs(v);
-  if (abs >= 1e9) return `${(v / 1e9).toFixed(2)}B bbl`;
-  if (abs >= 1e6) return `${(v / 1e6).toFixed(2)}M bbl`;
-  if (abs >= 1e3) return `${(v / 1e3).toFixed(1)}k bbl`;
-  return `${v.toFixed(0)} bbl`;
+  return `${v.toFixed(2)} kbpd`;
 };
 
 // Format signed delta percentage with 2 decimals; pick a sensible sign.
@@ -628,7 +625,7 @@ export default function AnpCdpDepletionPage() {
           seen.push(p.poco);
           byPoco.set(p.poco, []);
         }
-        byPoco.get(p.poco)!.push({ ym: ymKey(p.ano, p.mes), np: p.np_bbl_mes });
+        byPoco.get(p.poco)!.push({ ym: ymKey(p.ano, p.mes), np: p.np_kbpd });
       }
       const rows: Row[] = seen.map((poco, i) => ({
         item: poco,
@@ -643,7 +640,7 @@ export default function AnpCdpDepletionPage() {
     const rows: Row[] = selectedCampos.map((campo, i) => {
       const series = fieldPoints
         .filter((p) => p.campo === campo)
-        .map((p) => ({ ym: ymKey(p.ano, p.mes), np: p.np_bbl_mes }))
+        .map((p) => ({ ym: ymKey(p.ano, p.mes), np: p.np_kbpd }))
         .sort((a, b) => a.ym.localeCompare(b.ym));
       return { item: campo, color: PALETTE[i % PALETTE.length], series };
     });
@@ -1059,7 +1056,7 @@ export default function AnpCdpDepletionPage() {
                                   borderBottom: "2px solid #888",
                                 }}
                               >
-                                NP last month
+                                NP last month (kbpd)
                               </th>
                               <th
                                 style={{
@@ -1068,7 +1065,7 @@ export default function AnpCdpDepletionPage() {
                                   borderBottom: "2px solid #888",
                                 }}
                               >
-                                Avg recent ({recentMonths}m)
+                                Avg recent ({recentMonths}m, kbpd)
                               </th>
                               <th
                                 style={{
@@ -1077,7 +1074,7 @@ export default function AnpCdpDepletionPage() {
                                   borderBottom: "2px solid #888",
                                 }}
                               >
-                                Avg prior ({priorMonths}m)
+                                Avg prior ({priorMonths}m, kbpd)
                               </th>
                               <th
                                 style={{
