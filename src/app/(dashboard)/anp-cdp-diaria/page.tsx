@@ -19,6 +19,7 @@ import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuar
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../lib/plotlyDefaults";
+import { bblDiaToKbpd } from "../../../lib/units";
 import { downloadGenericExcel } from "../../../lib/exportExcel";
 import { downloadCsv } from "../../../lib/exportCsv";
 import {
@@ -85,6 +86,11 @@ function buildSerieChart(
   dims: string[],
   unitLabel: string,
   height: number,
+  // Display-time rescaler (e.g. bbl/day → kbpd via /1000). Defaults to identity
+  // so gas (Mm³/day) keeps its native unit. Applied AFTER per-dimension/day
+  // aggregation so the divisor is consistent regardless of how many wells are
+  // grouped under the same field.
+  scale: (v: number) => number = (v) => v,
 ): { data: PlotData[]; layout: Partial<Layout> } {
   const filtered = rows.filter(r => dims.includes(r.dimension) && r[metric] != null);
   if (!filtered.length) return emptyPlot(height);
@@ -104,7 +110,7 @@ function buildSerieChart(
         type: "scatter", mode: "lines",
         name: c,
         x: entries.map(([d]) => d),
-        y: entries.map(([, v]) => v),
+        y: entries.map(([, v]) => scale(v)),
         line: { width: 1.5, color: PALETTE[i % PALETTE.length] },
         hovertemplate: `${c}: %{y:,.1f} ${unitLabel}<extra></extra>`,
       } as PlotData;
@@ -405,7 +411,9 @@ export default function AnpCdpDiariaPage() {
   }, [serieRows, granularity, selectedCampos, selectedInstalacoes, selectedPocos]);
 
   const petroleoChart = useMemo(
-    () => buildSerieChart(visibleRows, "petroleo_bbl_dia", dimsPetroleoChart, "bbl/dia", 320),
+    // bbl/day → kbpd at display time. Source rows still hold raw bbl/day; the
+    // scale fn divides by 1000 so the trace and Y axis read in thousand bbl/day.
+    () => buildSerieChart(visibleRows, "petroleo_bbl_dia", dimsPetroleoChart, "kbpd", 320, bblDiaToKbpd),
     [visibleRows, dimsPetroleoChart],
   );
   const gasChart = useMemo(
@@ -682,8 +690,8 @@ export default function AnpCdpDiariaPage() {
                       <ChartSection
                         title={
                           explicitDims.length > 0
-                            ? `Petróleo (bbl/dia) — ${explicitDims.length} ${dimLabel.plural} selecionado(s)`
-                            : `Petróleo (bbl/dia) — Top ${TOP_N} ${dimLabel.singular.toLowerCase()}(s) por média no período`
+                            ? `Petróleo (kbpd) — ${explicitDims.length} ${dimLabel.plural} selecionado(s)`
+                            : `Petróleo (kbpd) — Top ${TOP_N} ${dimLabel.singular.toLowerCase()}(s) por média no período`
                         }
                         loading={serieLoading}
                         height={320}
@@ -749,7 +757,7 @@ export default function AnpCdpDiariaPage() {
                                     <th style={{ padding: "8px 12px", textAlign: "left" }}>Poço</th>
                                   </>
                                 )}
-                                <th style={{ padding: "8px 12px", textAlign: "right" }}>Petróleo (bbl/dia)</th>
+                                <th style={{ padding: "8px 12px", textAlign: "right" }}>Petróleo (kbpd)</th>
                                 <th style={{ padding: "8px 12px", textAlign: "right" }}>Gás (Mm³/dia)</th>
                               </tr>
                             </thead>
@@ -776,7 +784,7 @@ export default function AnpCdpDiariaPage() {
                                       <td style={{ padding: "6px 12px" }}>{r.dimension}</td>
                                     </>
                                   )}
-                                  <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmtNumber(r.petroleo_bbl_dia, 1)}</td>
+                                  <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmtNumber(r.petroleo_bbl_dia == null ? null : bblDiaToKbpd(r.petroleo_bbl_dia), 1)}</td>
                                   <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmtNumber(r.gas_mm3_dia, 3)}</td>
                                 </tr>
                               ))}

@@ -17,6 +17,7 @@ import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuar
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../lib/plotlyDefaults";
+import { bblDiaToKbpd } from "../../../lib/units";
 import {
   rpcGetAnpCdpPocoSerie,
   rpcGetAnpCdpPocosJson,
@@ -97,15 +98,27 @@ const ANP_CDP_AGG_ESTIMATE: Record<Exclude<AnpCdpGranularity, "raw">, number> = 
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
+// Display unit policy: liquid metrics are stored in bbl/day server-side and
+// rescaled to kbpd (thousand barrels per day) at render time so the Y axis
+// stays legible (e.g. ~3,000 kbpd vs 3,000,000 bbl/day). Gas metrics keep
+// their native Mm³/day. The set of keys below is whitelisted for the kbpd
+// transform applied by `buildChart` and used by the Y-axis label fallback.
+const KBPD_METRIC_KEYS = new Set<string>([
+  "petroleo_bbl_dia",
+  "oleo_bbl_dia",
+  "condensado_bbl_dia",
+  "agua_bbl_dia",
+]);
+
 const METRICS = [
-  { key: "petroleo_bbl_dia",             label: "Petroleum (bbl/day)" },
-  { key: "oleo_bbl_dia",                 label: "Oil (bbl/day)" },
-  { key: "condensado_bbl_dia",           label: "Condensate (bbl/day)" },
+  { key: "petroleo_bbl_dia",             label: "Petroleum (kbpd)" },
+  { key: "oleo_bbl_dia",                 label: "Oil (kbpd)" },
+  { key: "condensado_bbl_dia",           label: "Condensate (kbpd)" },
   { key: "gas_total_mm3_dia",            label: "Total Gas (Mm³/day)" },
   { key: "gas_natural_assoc_mm3_dia",    label: "Assoc. Gas (Mm³/day)" },
   { key: "gas_natural_n_assoc_mm3_dia",  label: "Non-Assoc. Gas (Mm³/day)" },
   { key: "gas_royalties",                label: "Gas Royalties (Mm³/day)" },
-  { key: "agua_bbl_dia",                 label: "Water (bbl/day)" },
+  { key: "agua_bbl_dia",                 label: "Water (kbpd)" },
   { key: "tempo_prod_hs_mes",            label: "Production Time (hrs/month)" },
 ];
 
@@ -127,12 +140,19 @@ function buildChart(
   const titleText = nPocos === 0
     ? "All wells"
     : `${nPocos.toLocaleString("en-US")} well${nPocos !== 1 ? "s" : ""} selected`;
+  // Liquid-flow metrics (bbl/day) are rescaled to kbpd (thousand barrels per
+  // day) at the display layer. RPCs still return raw bbl/day; we divide here
+  // and the metric label already reads "(kbpd)".
+  const isKbpd = KBPD_METRIC_KEYS.has(metricKey);
   return {
     data: [{
       type: "scatter", mode: "lines",
       name: metricLabel,
       x: serie.map(r => `${r.ano}-${String(r.mes).padStart(2, "0")}-01`),
-      y: serie.map(r => r[metricKey as keyof AnpCdpSeriePonto] as number),
+      y: serie.map(r => {
+        const raw = r[metricKey as keyof AnpCdpSeriePonto] as number;
+        return isKbpd ? bblDiaToKbpd(raw) : raw;
+      }),
       line: { width: 2.5, color: "#FF5000" },
       hovertemplate: `%{x|%b %Y}: %{y:,.1f}<extra></extra>`,
       fill: "tozeroy",

@@ -39,7 +39,7 @@ When no field is selected, the chart renders an instructional empty state ("Sele
 ### Tooltips
 
 - **Per well**: well code, reference month (`ano-mm`), BSW, and months-since-start.
-- **Field average**: field name, **reference month** (`ref_ano-ref_mes`, the most recent calendar month among contributors to that aggregate point — argmax of `ano*12+mes`), VOIP recovered (`pct_voip`), volume-weighted BSW, cumulative oil in bbl, wells active, and daily volume in bbl/d.
+- **Field average**: field name, **reference month** (`ref_ano-ref_mes`, the most recent calendar month among contributors to that aggregate point — argmax of `ano*12+mes`), VOIP recovered (`pct_voip`), volume-weighted BSW, cumulative oil in bbl (stock, not converted), wells active, and daily volume in **kbpd** (thousand barrels per day — converted from `volume_total` bbl/day at customdata-pack time).
 
 ## Layout
 
@@ -142,6 +142,10 @@ Sidebar visual classes (`#sidebar`, `.sidebar-section-label`, `.sidebar-filter-s
 - **Two independent fetches**: per-view useDebouncedFetch hooks each guard with `viewMode !== "<their-view>" → []`, so the inactive view doesn't fire requests when the user toggles.
 - **Debounce 400ms** on field selection / view-mode change — avoids hammering the DB during checkbox bursts.
 - **No export by design** — for analyses that need raw data, use `/anp-cdp` (Tier 2 export with all dimensions).
+
+## Display units (kbpd vs raw bbl/day)
+
+The Field-average tooltip's **Daily volume** is shown in **kbpd** (thousand barrels per day). The aggregate RPC `get_anp_cdp_bsw_field_aggregate` continues to emit `volume_total` in raw **bbl/day**; the page divides by 1000 via `bblDiaToKbpd()` from [`src/lib/units.ts`](../../src/lib/units.ts) when packing Plotly customdata, and the hovertemplate formats with 1 decimal in kbpd. The BSW ratio itself is dimensionless and unaffected by the display unit. `cumulative_oil_bbl` is a stock (not a flow) and stays in raw bbl on the tooltip.
 
 ## Anti-patterns
 

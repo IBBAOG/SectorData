@@ -32,7 +32,7 @@ Por nível, o usuário pode:
 - Selecionar **instalações** (apenas Installation) via `SearchableMultiSelect`.
 - Selecionar **poços** (apenas Well) via `SearchableMultiSelect`.
 - Restringir o **período** via `PeriodSlider` em modo `dates` (server-side).
-- Ver duas séries temporais (Petróleo `bbl/dia` e Gás `Mm³/dia`) para a "dimensão" do nível atual (Top 10 por média se sem seleção, ou exatos selecionados).
+- Ver duas séries temporais (Petróleo `kbpd` e Gás `Mm³/dia`) para a "dimensão" do nível atual (Top 10 por média se sem seleção, ou exatos selecionados).
 - Inspecionar a tabela de produção mais recente (até 500 linhas).
 - Exportar Excel/CSV via `ExportPanel` Tier 2 (`ExportModal` com calculadora de tamanho).
 
@@ -136,7 +136,7 @@ Aplica-se às 3 tabelas (`anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp
 
 | Chart | Tipo Plotly | Source RPC | Top-N agrupador |
 |---|---|---|---|
-| Petróleo (bbl/dia) | line (multi-trace) | RPC do nível atual | campo / instalacao / poco |
+| Petróleo (kbpd) | line (multi-trace) | RPC do nível atual | campo / instalacao / poco |
 | Gás (Mm³/dia) | line (multi-trace) | RPC do nível atual | campo / instalacao / poco |
 | Production by ... (tabela) | HTML table com sticky thead | mesma série | colunas por nível |
 
@@ -147,6 +147,10 @@ A tabela "Production by ..." muda colunas por nível:
 | Field | Date · Bacia · Campo · Oil · Gas |
 | Installation | Date · Campo · Instalação · Oil · Gas |
 | Well | Date · Bacia · Campo · Poço · Oil · Gas |
+
+## Display units (kbpd vs raw bbl/day)
+
+The petroleum trace, the table column "Petróleo", and the chart Y-axis label are rendered in **kbpd** (thousand barrels per day). The underlying column `petroleo_bbl_dia` returned by all three level RPCs (`get_anp_cdp_diaria_serie`, `*_instalacao_serie`, `*_poco_serie`) is still in **bbl/day**; the page divides by 1000 at display time via `bblDiaToKbpd()` from [`src/lib/units.ts`](../../src/lib/units.ts). Excel/CSV exports keep the raw bbl/day column header for data fidelity. Gas remains in its native `Mm³/dia`.
 
 ## Padrões consolidados aplicados
 

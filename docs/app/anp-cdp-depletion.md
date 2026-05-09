@@ -260,6 +260,16 @@ Sidebar visual classes (`#sidebar`, `.sidebar-section-label`, `.sidebar-filter-s
 - **Period inputs are client-only**: no fetch round-trip when adjusting Recent/Prior windows. Both the chart (rolling depletion Y) and the table recompute via `useMemo` on the cached series.
 - **No export by design** — for analyses that need raw data, use `/anp-cdp` (Tier 2 export with all dimensions).
 
+## Display units (kbpd vs raw bbl/day)
+
+This dashboard does **not** render any per-day flow metric, so no kbpd conversion is needed:
+
+- **Y axis** is rolling **depletion %** (a unitless ratio).
+- **NP** values (table columns "NP last month", "Avg recent N", "Avg prior M", and the cumulative-oil tooltip) are stocks measured in **bbl** (cumulative production over a month or window), not bbl/day flow rates. They remain in raw bbl and are formatted compactly via `fmtNp` (k bbl, M bbl, B bbl).
+- **Cumulative oil** in tooltips is also a stock (bbl total), kept as-is.
+
+The kbpd convention applied to the other Oil & Gas dashboards (`/anp-cdp`, `/anp-cdp-diaria`, `/anp-cdp-bsw`) is not relevant here because no `bbl_dia` column is shown in the chart, table, or tooltip.
+
 ## Anti-patterns
 
 - Calling `anp_cdp_producao` directly from the client. Always go through one of the three RPCs.

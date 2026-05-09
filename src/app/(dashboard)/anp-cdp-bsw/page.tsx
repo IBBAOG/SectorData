@@ -15,6 +15,7 @@ import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuar
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { COMMON_LAYOUT, AXIS_LINE, emptyPlot, PALETTE } from "../../../lib/plotlyDefaults";
+import { bblDiaToKbpd } from "../../../lib/units";
 import {
   rpcGetAnpCdpBswCampos,
   rpcGetAnpCdpBswScatter,
@@ -179,8 +180,11 @@ function buildFieldAverageChart(
       x: subset.map((p) => p.pct_voip),
       y: subset.map((p) => p.bsw),
       customdata: subset.map(
+        // Daily volume is rescaled bbl/day → kbpd at customdata-pack time so
+        // the hover template can format with 1 decimal in kbpd. The cumulative
+        // oil column stays in raw bbl (it's a stock, not a flow).
         (p) =>
-          [p.n_pocos, p.volume_total, p.ref_ano, p.ref_mes, p.cumulative_oil_bbl] as [
+          [p.n_pocos, bblDiaToKbpd(p.volume_total), p.ref_ano, p.ref_mes, p.cumulative_oil_bbl] as [
             number,
             number,
             number,
@@ -197,7 +201,7 @@ function buildFieldAverageChart(
         "BSW: %{y:.1%}<br>" +
         "Cumulative oil: %{customdata[4]:,.0f} bbl<br>" +
         "Wells active: %{customdata[0]}<br>" +
-        "Daily volume: %{customdata[1]:,.0f} bbl/d" +
+        "Daily volume: %{customdata[1]:,.1f} kbpd" +
         "<extra></extra>",
     } as unknown as PlotData;
   });
