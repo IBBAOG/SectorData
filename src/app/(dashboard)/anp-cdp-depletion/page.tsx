@@ -371,6 +371,103 @@ export default function AnpCdpDepletionPage() {
     return set.size;
   }, [viewMode, wellPoints]);
 
+  // ── Period comparison helper text ─────────────────────────────────────────
+  // Resolves the absolute calendar months that the recent/prior windows map to,
+  // based on the latest (ano, mes) in the currently fetched points. If any
+  // selected item has a shorter history than `priorMonths`, surfaces a subtle
+  // warning so the user knows the comparison is on a clipped window.
+  const periodHelper = useMemo<{
+    text: string;
+    warning: string | null;
+  } | null>(() => {
+    const fmt = (ano: number, mes: number) =>
+      `${ano}-${String(mes).padStart(2, "0")}`;
+
+    // Pull the active points list based on viewMode.
+    const activePoints =
+      viewMode === "well"
+        ? wellPoints.map((p) => ({ key: p.poco, ano: p.ano, mes: p.mes }))
+        : fieldPoints.map((p) => ({ key: p.campo, ano: p.ano, mes: p.mes }));
+
+    if (selectedCampos.length === 0 || activePoints.length === 0) {
+      return null;
+    }
+
+    // Latest (ano, mes) across all selected items.
+    let maxYm = -Infinity;
+    let maxAno = 0;
+    let maxMes = 0;
+    for (const p of activePoints) {
+      const ym = ymSort(p.ano, p.mes);
+      if (ym > maxYm) {
+        maxYm = ym;
+        maxAno = p.ano;
+        maxMes = p.mes;
+      }
+    }
+    if (!Number.isFinite(maxYm)) return null;
+
+    // Recent window: [recent_start ... recent_end == max].
+    // Prior window:  [prior_start ... prior_end == recent_start - 1 month].
+    const recentEndYm = maxYm;
+    const recentStartYm = recentEndYm - (recentMonths - 1);
+    const priorEndYm = recentStartYm - 1;
+    const priorStartYm = priorEndYm - (priorMonths - 1);
+
+    const ymToDate = (ym: number): { ano: number; mes: number } => {
+      // ym = ano*12 + mes, with mes in 1..12.
+      const ano = Math.floor((ym - 1) / 12);
+      const mes = ((ym - 1) % 12) + 1;
+      return { ano, mes };
+    };
+
+    const recentEnd = { ano: maxAno, mes: maxMes };
+    const recentStart = ymToDate(recentStartYm);
+    const priorEnd = ymToDate(priorEndYm);
+    const priorStart = ymToDate(priorStartYm);
+
+    const text =
+      `Comparing last ${recentMonths} months (${fmt(recentStart.ano, recentStart.mes)} → ${fmt(recentEnd.ano, recentEnd.mes)}) ` +
+      `vs prior ${priorMonths} months (${fmt(priorStart.ano, priorStart.mes)} → ${fmt(priorEnd.ano, priorEnd.mes)}).`;
+
+    // Warning detection: find the earliest (ano, mes) per selected item and
+    // check whether the prior window extends earlier than that item's history.
+    const earliestByKey = new Map<string, number>();
+    for (const p of activePoints) {
+      const ym = ymSort(p.ano, p.mes);
+      const cur = earliestByKey.get(p.key);
+      if (cur === undefined || ym < cur) {
+        earliestByKey.set(p.key, ym);
+      }
+    }
+
+    let worstClipKey: string | null = null;
+    let worstAvailable = -Infinity;
+    let worstEarliestYm = 0;
+    for (const [key, earliestYm] of earliestByKey) {
+      if (earliestYm > priorStartYm) {
+        // The item's history starts after the prior window's start → clipped.
+        const available = priorEndYm - earliestYm + 1;
+        if (available > worstAvailable || worstClipKey === null) {
+          worstAvailable = available;
+          worstClipKey = key;
+          worstEarliestYm = earliestYm;
+        }
+      }
+    }
+
+    let warning: string | null = null;
+    if (worstClipKey !== null) {
+      const earliest = ymToDate(worstEarliestYm);
+      const availableMonths = Math.max(0, worstAvailable);
+      warning =
+        `Prior window clipped to ${availableMonths} months for "${worstClipKey}" ` +
+        `(data starts ${fmt(earliest.ano, earliest.mes)}) — limited window.`;
+    }
+
+    return { text, warning };
+  }, [viewMode, wellPoints, fieldPoints, selectedCampos, recentMonths, priorMonths]);
+
   // ── Depletion comparison table ────────────────────────────────────────────
   // Built from the same `points` already in state — no extra RPC.
   // Per-well mode → 1 row per poco; Field-average mode → 1 row per campo.
@@ -634,6 +731,35 @@ export default function AnpCdpDepletionPage() {
                 }}>
                   Recent vs prior windows for the depletion table below the chart (1–60 months).
                 </div>
+                {periodHelper === null ? (
+                  <div style={{
+                    fontSize: 11,
+                    color: "#666",
+                    fontFamily: "Arial",
+                    marginTop: 6,
+                    lineHeight: 1.4,
+                  }}>
+                    Select a field to see the comparison range.
+                  </div>
+                ) : (
+                  <div style={{
+                    fontSize: 11,
+                    color: "#666",
+                    fontFamily: "Arial",
+                    marginTop: 6,
+                    lineHeight: 1.4,
+                  }}>
+                    {periodHelper.text}
+                    {periodHelper.warning !== null && (
+                      <>
+                        <br />
+                        <span style={{ color: "#b8860b" }}>
+                          {periodHelper.warning}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="sidebar-section-label">Filters</div>

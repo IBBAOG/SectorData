@@ -67,6 +67,40 @@ Two number inputs in the sidebar:
 
 These windows feed the **Depletion comparison** table below the chart. Changes are reactive — no extra RPC fetch.
 
+#### Date-range helper text
+
+Directly below the two inputs (and before the **Filters** section) the page renders a dynamic helper that resolves the absolute calendar months the windows map to, using the latest `(ano, mes)` available in the currently fetched points (`wellPoints` in Per-well mode, `fieldPoints` in Field-average mode).
+
+Format:
+
+```
+Comparing last N months (YYYY-MM → YYYY-MM)
+vs prior M months (YYYY-MM → YYYY-MM).
+```
+
+Example — if the latest data is `2026-04`, `recent = 12`, `prior = 24`:
+
+```
+Comparing last 12 months (2025-05 → 2026-04)
+vs prior 24 months (2023-05 → 2025-04).
+```
+
+Empty / loading state (no field selected, or fetch hasn't returned yet):
+
+```
+Select a field to see the comparison range.
+```
+
+When at least one selected item has a shorter history than the prior window (its earliest `(ano, mes)` is later than `prior_start`), a subtle clipping warning is appended on a second line (color `#b8860b`):
+
+```
+Prior window clipped to K months for "<item>" (data starts YYYY-MM) — limited window.
+```
+
+The helper recomputes synchronously whenever `recentMonths`, `priorMonths`, `viewMode`, or the active points list changes. It does not affect the table calculation — the table still slices `series.slice(-nRecent)` / `series.slice(priorStart, priorEnd)`; the helper only mirrors those slices in absolute calendar terms for the user.
+
+Style: `font-size: 11px; color: #666; font-family: Arial; margin-top: 6px; line-height: 1.4`, matching the other sidebar hints (e.g. "Each field gets a chart color in selection order").
+
 ### Depletion comparison table
 
 | Item | NP last month | Avg recent N | Avg prior M | Depletion % | YoY % |
