@@ -18,7 +18,7 @@ export const EDITABLE_TABLES: EditableTableConfig[] = [
     label: "Price Bands",
     tableName: "price_bands",
     conflictColumns: ["product", "date"],
-    defaultSort: { key: "date", dir: "desc" },
+    defaultSort: { key: "id", dir: "desc" },
     partitionBy: {
       column: "product",
       values: [
@@ -86,7 +86,7 @@ export const EDITABLE_TABLES: EditableTableConfig[] = [
     label: "D&G Margins",
     tableName: "d_g_margins",
     conflictColumns: ["fuel_type", "week"],
-    defaultSort: { key: "week", dir: "desc" },
+    defaultSort: { key: "id", dir: "desc" },
     partitionBy: {
       column: "fuel_type",
       values: [
