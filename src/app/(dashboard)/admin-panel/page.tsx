@@ -16,6 +16,9 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { getInitials } from "../../../lib/avatarUtils";
 import { getCardPreviews, uploadCardPreview } from "../../../lib/cardPreviewRpc";
 import type { UserWithRole } from "../../../types/profile";
+import { EDITABLE_TABLES } from "@/lib/dataInput/registry";
+import { EditableTableEditor } from "@/components/dataInput/EditableTableEditor";
+import { TableSelector } from "@/components/dataInput/TableSelector";
 
 const ORANGE = "#FF5000";
 const BG = "#f5f5f5";
@@ -23,7 +26,7 @@ const SIDEBAR_BG = "#1a1a1a";
 const SIDEBAR_WIDTH = 220;
 
 // ── Sidebar sections ──────────────────────────────────────────────────────────
-type SectionId = "members" | "permissions" | "card-images" | "alert-recipients";
+type SectionId = "members" | "permissions" | "card-images" | "alert-recipients" | "data-input";
 
 type AlertRecipient = {
   id: string;
@@ -81,6 +84,17 @@ const SECTIONS: { id: SectionId; label: string; description: string; icon: React
       </svg>
     ),
   },
+  {
+    id: "data-input",
+    label: "Data Input",
+    description: "Edit reference tables",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+      </svg>
+    ),
+  },
 ];
 
 // ── Module labels ─────────────────────────────────────────────────────────────
@@ -118,6 +132,7 @@ export default function AdminPanelPage() {
   const supabase = getSupabaseClient();
 
   const [activeSection, setActiveSection] = useState<SectionId>("members");
+  const [activeDataInputSlug, setActiveDataInputSlug] = useState<string>(EDITABLE_TABLES[0].slug);
 
   // ── Card Previews ──────────────────────────────────────────────────────────
   const [localPreviews, setLocalPreviews] = useState<Record<string, string>>({});
@@ -594,6 +609,25 @@ export default function AdminPanelPage() {
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {/* ── Data Input ───────────────────────────────────────────────────── */}
+          {activeSection === "data-input" && (
+            <div className="settings-card">
+              <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>
+                Data Input
+              </h2>
+              <p style={{ fontSize: 13, color: "#888", margin: "0 0 20px" }}>
+                Add, edit, or delete rows in reference tables. Changes write directly to Supabase.
+                Editing a <code>(product, date)</code> or <code>(fuel_type, week)</code> that already
+                exists will update the existing row (upsert behavior).
+              </p>
+              <TableSelector activeSlug={activeDataInputSlug} onChange={setActiveDataInputSlug} />
+              <EditableTableEditor
+                key={activeDataInputSlug}
+                config={EDITABLE_TABLES.find((t) => t.slug === activeDataInputSlug)!}
+              />
             </div>
           )}
 
