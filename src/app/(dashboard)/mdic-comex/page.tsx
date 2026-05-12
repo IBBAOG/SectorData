@@ -499,13 +499,11 @@ export default function MdicComexPage() {
 
               {/* ── Metric toggle ─────────────────────────────────── */}
               {!loading && (
-                <div style={{ marginBottom: 16 }}>
+                <div style={{ maxWidth: 720, margin: "0 auto 16px auto" }}>
                   <SegmentedToggle<Metric>
                     options={METRIC_OPTIONS}
                     value={metric}
                     onChange={setMetric}
-                    variant="compact"
-                    style={{ display: "inline-flex" }}
                   />
                 </div>
               )}
