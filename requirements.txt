@@ -14,3 +14,7 @@ python-dotenv
 schedule
 websockets
 shapely
+pdfplumber
+# pdf2image and pytesseract are NOT listed here — they are opt-in for the
+# --enable-ocr-fallback flag in subsidy_diesel_sync.py and require a system
+# Tesseract binary. Install them manually if needed: pip install pdf2image pytesseract
