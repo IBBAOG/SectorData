@@ -700,7 +700,29 @@ BEGIN
     WHERE n.nspname = 'public' AND p.proname = 'get_anp_cdp_depletion_field_aggregate';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_cdp_depletion_field_aggregate'; END IF;
 
+  -- ─── SUBSIDY TRACKER (20260513000001) ────────────────────────────────────
+
+  PERFORM 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'anp_subsidy_diesel_reference';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing table: anp_subsidy_diesel_reference'; END IF;
+
+  PERFORM 1 FROM pg_tables
+    WHERE schemaname = 'public' AND tablename = 'anp_subsidy_diesel_reference' AND rowsecurity = TRUE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: anp_subsidy_diesel_reference'; END IF;
+
+  PERFORM 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'anp_subsidy_history';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing table: anp_subsidy_history'; END IF;
+
+  PERFORM 1 FROM pg_tables
+    WHERE schemaname = 'public' AND tablename = 'anp_subsidy_history' AND rowsecurity = TRUE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: anp_subsidy_history'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_subsidy_tracker_diesel';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_subsidy_tracker_diesel'; END IF;
+
   RAISE NOTICE 'migration_smoke: all % checks passed.',
-    '31 tables + 3 materialized views + 85 functions + 23 RLS checks';
+    '33 tables + 3 materialized views + 86 functions + 25 RLS checks';
 
 END $smoke$;
