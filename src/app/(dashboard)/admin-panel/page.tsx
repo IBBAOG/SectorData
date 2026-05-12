@@ -105,6 +105,10 @@ const MODULE_LABELS: { slug: string; label: string; description: string }[] = [
   { slug: "navios-diesel",           label: "Diesel Imports Line-Up",       description: "Scheduled vessel arrivals and diesel import line-up by port" },
   { slug: "diesel-gasoline-margins", label: "Diesel and Gasoline Margins",  description: "Diesel and gasoline margin tracking across regions and time" },
   { slug: "price-bands",             label: "Price Bands",                  description: "Price band distribution and competitive positioning by fuel type" },
+  // TODO: anp_subsidy_history (PK: vigente_desde, columns: vigente_desde DATE, subsidio_brl_l NUMERIC, observacao TEXT)
+  // is currently edited via SQL. Register it in src/lib/dataInput/registry.ts once worker_supabase
+  // applies the table + RLS migration for subsidy-tracker.
+  { slug: "subsidy-tracker",         label: "Subsidy Tracker",              description: "ANP diesel subsidy tracking vs IPP and Petrobras" },
   // Statistics
   { slug: "mdic-comex",              label: "MDIC Comex",                   description: "Brazilian trade balance and import/export volumes by product and origin" },
   { slug: "anp-ppi",                 label: "ANP PPI",                      description: "ANP import price parity reference benchmarks for fuel pricing" },

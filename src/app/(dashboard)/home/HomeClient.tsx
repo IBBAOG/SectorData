@@ -75,6 +75,15 @@ const CARDS: CardDef[] = [
     disabled: false,
   },
   {
+    slug: "subsidy-tracker",
+    preview: "/previews/preview-subsidy-tracker.jpg",
+    title: "Subsidy Tracker",
+    description: "ANP diesel reference vs commercialization price",
+    badge: "Available",
+    href: "/subsidy-tracker",
+    disabled: false,
+  },
+  {
     slug: "stocks",
     preview: null,
     title: "Market Watch",
