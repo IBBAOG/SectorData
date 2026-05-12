@@ -26,11 +26,12 @@ Landing visual. Mostra cards/imagens dos módulos disponíveis pro user (filtrad
 Perfil do usuário logado. Edição inline do nome (`profile-name-edit-icon-btn`). Mostra: avatar (iniciais), full_name, email, role badge.
 
 ### `/admin-panel`
-Protegida por `useRoleGuard("Admin")`. Funcionalidades:
-- Listar todos os users com role.
-- Promover/demover Admin ↔ Client.
-- Toggle de visibilidade por módulo (`module_visibility`).
-- (futuro) upload de imagem por módulo (memória do CEO).
+Protegida por `useRoleGuard("Admin")`. Funcionalidades (5 seções na sidebar):
+- **Members** — listar todos os users com role; promover/demover Admin ↔ Client.
+- **Permissions** — toggle de visibilidade por módulo (`module_visibility`).
+- **Card Images** — upload de imagem por módulo (home page cards).
+- **Alert Emails** — gerenciar destinatários de alertas automáticos.
+- **Data Input** — editar linhas de tabelas de referência diretamente via PostgREST (ver seção abaixo).
 
 ## RPCs
 
@@ -138,6 +139,45 @@ Workflow disparado pelo Subgerente APP quando ele cria um dashboard novo:
 | Subgerente APP | Trigger do onboarding de dashboard novo |
 | dash-news-hunter | first-login chama `seed_my_news_hunter_keywords` |
 | Designer | Padrão liquid glass do profile card, cores de role badge |
+
+## Data Input — seção de edição de tabelas de referência
+
+Arquitetura extensível baseada em registry. Substitui o workflow de editar `data/*.xlsx` localmente e rodar `scripts/manual/*_upload.py`.
+
+### Arquivos
+
+| Arquivo | Função |
+|---|---|
+| `src/lib/dataInput/types.ts` | Tipos compartilhados (`EditableTableConfig`, `ColumnConfig`, `EditState`, `SaveResult`, etc.) |
+| `src/lib/dataInput/registry.ts` | `EDITABLE_TABLES: EditableTableConfig[]` — lista de tabelas editáveis |
+| `src/lib/dataInput/validation.ts` | Funções puras de validação (`validateCell`, `validateRow`, `validateAll`) |
+| `src/lib/dataInput/persistence.ts` | `loadRows` + `saveChanges` (upsert + delete via PostgREST anon key) |
+| `src/components/dataInput/EditableTableEditor.tsx` | Editor de tabela inline (client component) |
+| `src/components/dataInput/TableSelector.tsx` | Seletor de tabela (SegmentedToggle ≤4, select >4) |
+
+### Tabelas atualmente registradas
+
+| slug | tableName | conflictColumns | partitionBy |
+|---|---|---|---|
+| `price-bands` | `price_bands` | `['product', 'date']` | `product` (Diesel / Gasoline) |
+| `d-g-margins` | `d_g_margins` | `['fuel_type', 'week']` | — |
+
+### Como adicionar uma nova tabela
+
+1. Appende uma entrada `EditableTableConfig` em `src/lib/dataInput/registry.ts`.
+2. Crie uma migration com a policy RLS:
+   ```sql
+   CREATE POLICY "<table>_admin_write" ON public.<table>
+     AS PERMISSIVE FOR ALL TO authenticated
+     USING (public.is_admin()) WITH CHECK (public.is_admin());
+   ```
+3. Pronto — a UI pega automaticamente.
+
+### RLS
+
+As políticas de escrita para `price_bands` e `d_g_margins` são criadas pela migration
+`supabase/migrations/20260512000000_data_input_admin_policies.sql` (worker_supabase, branch paralela).
+Sem a migration, writes retornam 403 — a UI renderiza mas não persiste.
 
 ## Anti-padrões
 
