@@ -19,12 +19,13 @@ import type { Annotations, Layout, PlotData } from "plotly.js";
 import NavBar from "../../../components/NavBar";
 import BrandLogo from "../../../components/BrandLogo";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
-import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
+import { useRpcResult } from "../../../hooks/useRpcResult";
 import PlotlyChart from "../../../components/PlotlyChart";
 import DashboardHeader from "../../../components/dashboard/DashboardHeader";
 import PeriodSlider from "../../../components/dashboard/PeriodSlider";
 import ExportPanel from "../../../components/dashboard/ExportPanel";
 import BarrelLoading from "../../../components/dashboard/BarrelLoading";
+import DataErrorBoundary from "../../../components/dashboard/DataErrorBoundary";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import {
   rpcGetSubsidyTrackerDiesel,
@@ -69,6 +70,32 @@ function addDays(dateStr: string, days: number): string {
 // Default selection = last 90 days within the available range.
 const DEFAULT_WINDOW_DAYS = 90;
 
+// ── Regional hover formatter ──────────────────────────────────────────────────
+// Produces a single-line breakdown e.g.
+//   "NORTE: 5.21 - NORDESTE: 5.30 - CENTRO-OESTE: 5.15 - SUDESTE: 5.21 - SUL: 5.18"
+// for points that have a `regions` payload; returns the explicit
+// "No regional breakdown" sentinel otherwise so the hover never renders blank
+// or `NaN` cells.
+const REGION_ORDER = [
+  "NORTE",
+  "NORDESTE",
+  "CENTRO-OESTE",
+  "SUDESTE",
+  "SUL",
+] as const;
+
+function formatRegions(regions: Record<string, number | null> | null): string {
+  if (!regions) return "No regional breakdown";
+  const parts: string[] = [];
+  for (const key of REGION_ORDER) {
+    const v = regions[key];
+    if (v != null && Number.isFinite(v)) {
+      parts.push(`${key}: ${v.toFixed(2)}`);
+    }
+  }
+  return parts.length > 0 ? parts.join(" - ") : "No regional breakdown";
+}
+
 // ── Chart builder ─────────────────────────────────────────────────────────────
 
 function buildChart(
@@ -87,27 +114,18 @@ function buildChart(
   const dates = filtered.map((r) => r.date);
 
   // ── Regional hover for ANP Reference ────────────────────────────────────
-  // Customdata is per-point: { NORTE, NORDESTE, "CENTRO-OESTE", SUDESTE, SUL }
-  // or null when the day has no ETL extraction yet. Plotly's hovertemplate
-  // can't conditionally suppress lines, so we pre-build the breakdown text
-  // per point and fall back to a single string when `regions` is null.
-  const regionCustomdata = filtered.map((r) => r.regions ?? null);
+  // We pre-build the breakdown string per point. Plotly's hovertemplate cannot
+  // conditionally suppress its own substitution lines, so feeding it raw
+  // `regions` objects (with possible null entries for days that have no ETL
+  // extraction yet) produces blank/NaN cells. Building the string up front
+  // keeps a single `%{customdata}` token and renders the explicit
+  // "No regional breakdown" sentinel for null days.
+  const regionCustomdata = filtered.map((r) => formatRegions(r.regions ?? null));
 
-  const referenceHoverWith = (
+  const referenceHover =
     "<b>%{x}</b><br>" +
     "ANP Reference: R$ %{y:.2f}/L<br><br>" +
-    "NORTE: %{customdata.NORTE:.2f}<br>" +
-    "NORDESTE: %{customdata.NORDESTE:.2f}<br>" +
-    "CENTRO-OESTE: %{customdata['CENTRO-OESTE']:.2f}<br>" +
-    "SUDESTE: %{customdata.SUDESTE:.2f}<br>" +
-    "SUL: %{customdata.SUL:.2f}<extra></extra>"
-  );
-
-  // Default hover when `regions` is null on every visible point.
-  const referenceHoverDefault =
-    "<b>%{x}</b><br>ANP Reference: R$ %{y:.2f}/L<extra></extra>";
-
-  const anyRegions = regionCustomdata.some((r) => r != null);
+    "%{customdata}<extra></extra>";
 
   const traces: PlotData[] = SERIES.map((s) => {
     const y = filtered.map((r) => r[s.field] as number | null);
@@ -122,7 +140,7 @@ function buildChart(
         line: { color: s.color, width: 2, shape: "linear" },
         connectgaps: true,
         customdata: regionCustomdata,
-        hovertemplate: anyRegions ? referenceHoverWith : referenceHoverDefault,
+        hovertemplate: referenceHover,
       } as unknown as PlotData;
     }
 
@@ -204,30 +222,31 @@ export default function SubsidyTrackerPage() {
   const { visible, loading: visLoading } = useModuleVisibilityGuard("subsidy-tracker");
   const supabase = getSupabaseClient();
 
-  const [initialLoading, setInitialLoading] = useState(true);
   const [sliderRange, setSliderRange] = useState<[number, number]>([0, 0]);
   const [resetHovered, setResetHovered] = useState(false);
   const [excelLoading, setExcelLoading] = useState(false);
   const [csvLoading, setCsvLoading]     = useState(false);
 
-  // Debounced RPC fetch with in-flight cancellation. The fetchFn closes over
-  // the supabase client; we re-run whenever the client is (re)created.
-  const { data: fetchedRows } = useDebouncedFetch<SubsidyTrackerRow[]>(
+  // RPC fetch with explicit error state. Replaces the previous
+  // `useDebouncedFetch` usage so that failures surface via `<DataErrorBoundary>`
+  // instead of freezing the page in its loading state (CLAUDE.md pegadinha #2).
+  const {
+    data: rows,
+    loading: rpcLoading,
+    error: rpcError,
+    refetch: rpcRefetch,
+  } = useRpcResult<SubsidyTrackerRow[]>(
     async () => {
       if (!supabase) return [];
       return rpcGetSubsidyTrackerDiesel(supabase);
     },
     [supabase],
-    { ms: 400 },
+    [],
   );
 
-  const rows: SubsidyTrackerRow[] = useMemo(() => fetchedRows ?? [], [fetchedRows]);
-
-  // Flip initialLoading off after the first resolved fetch (data may legitimately
-  // be []).
-  useEffect(() => {
-    if (fetchedRows !== null) setInitialLoading(false);
-  }, [fetchedRows]);
+  // First-load spinner is shown while the very first fetch is in flight AND
+  // we have no rows yet. Subsequent refetches keep the existing chart visible.
+  const initialLoading = rpcLoading && rows.length === 0 && rpcError == null;
 
   const dates = useMemo(() => {
     const seen = new Set<string>();
@@ -322,7 +341,7 @@ export default function SubsidyTrackerPage() {
                     actions={[
                       {
                         kind: "excel",
-                        label: "formated data .xl",
+                        label: "formatted data .xl",
                         busy: excelLoading,
                         loadingLabel: "Generating Excel...",
                         disabled: rows.length === 0 || initialLoading || excelLoading,
@@ -386,17 +405,23 @@ export default function SubsidyTrackerPage() {
               </h5>
               <hr className="section-hr" style={{ marginBottom: 0 }} />
 
-              {initialLoading ? (
-                <BarrelLoading />
-              ) : (
-                <div style={{ marginTop: 16 }}>
-                  <PlotlyChart
-                    data={chart.data}
-                    layout={chart.layout}
-                    config={{ displayModeBar: false }}
-                  />
-                </div>
-              )}
+              <DataErrorBoundary
+                error={rpcError}
+                loading={rpcLoading}
+                retry={rpcRefetch}
+              >
+                {initialLoading ? (
+                  <BarrelLoading />
+                ) : (
+                  <div style={{ marginTop: 16 }}>
+                    <PlotlyChart
+                      data={chart.data}
+                      layout={chart.layout}
+                      config={{ displayModeBar: false }}
+                    />
+                  </div>
+                )}
+              </DataErrorBoundary>
             </div>
           </div>
 
