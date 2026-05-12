@@ -23,7 +23,7 @@ Visualização dos **volumes mensais de importação e exportação** dos 3 NCMs
 
 Header: `MDIC Comex Stat — Imports and Exports` + sub `Monthly import and export volumes of crude oil, gasoline, and diesel by NCM and origin/destination country` + period badge when data exists.
 
-A **metric toggle** (5 options) sits just below the header and drives all 4 charts simultaneously:
+A **metric toggle** (6 options) sits just below the header and drives all 4 charts simultaneously:
 
 | Value | Label | Y-axis unit | Formula |
 |---|---|---|---|
@@ -32,8 +32,11 @@ A **metric toggle** (5 options) sits just below the header and drives all 4 char
 | `fob` | FOB (USD M) | USD M | `valor_fob_usd / 1e6` |
 | `fob_per_ton` | FOB / ton | USD/ton | `valor_fob_usd / (volume_kg / 1000)` |
 | `fob_per_m3` | FOB / m³ | USD/m³ | `valor_fob_usd / quantidade_estatistica` |
+| `fob_per_bbl` | FOB / bbl | USD/bbl | `valor_fob_usd / (quantidade_estatistica * 6.28981)` |
 
-FOB values come directly from the API in USD (raw). The toggle uses `SegmentedToggle` (`variant="compact"`) and is client-side only — no refetch. Ranking in Top Countries bar charts re-orders based on the active metric.
+Conversion constant: `M3_TO_BBL = 6.28981` (industry standard: 1 m³ = 6.28981 bbl). Defined inline in `page.tsx` — not in `src/lib/units.ts` (local scope only). Like `fob_per_m3`, this metric falls back to `emptyPlot` when `quantidade_estatistica` is entirely null for the current filter.
+
+FOB values come directly from the API in USD (raw). The toggle uses `SegmentedToggle` and is client-side only — no refetch. Ranking in Top Countries bar charts re-orders based on the active metric. Toggle container `maxWidth` is 840px (increased from 720px to accommodate 6 buttons).
 
 Diferença vs `/anp-cdp`: aqui é o **fluxo internacional** (import/export) reportado pela alfândega, não a produção doméstica. Diferença vs `/navios-diesel`: agregação mensal por NCM/país, não navio individual em tempo real.
 
@@ -108,7 +111,7 @@ Y-axis unit and bar ordering driven by the active metric (toggle above the chart
 3. **Top Countries — Imports · {NCM}** — horizontal bars, color `#2196F3`, re-sorted by active metric.
 4. **Top Countries — Exports · {NCM}** — horizontal bars, color `#FF5000`, re-sorted by active metric.
 
-Edge case: when the active metric is `qty_stat` or `fob_per_m3` and all rows in scope have `quantidade_estatistica = null`, each chart renders `emptyPlot` with a descriptive message instead of NaN traces.
+Edge case: when the active metric is `qty_stat`, `fob_per_m3`, or `fob_per_bbl` and all rows in scope have `quantidade_estatistica = null`, each chart renders `emptyPlot` with a descriptive message instead of NaN traces.
 
 ## Componentes consumidos
 
@@ -144,7 +147,7 @@ Edge case: when the active metric is `qty_stat` or `fob_per_m3` and all rows in 
 - Bloquear página inteira com barrel em `serieLoading` ou `topLoading` — barrel é só pro `loading` inicial; subsequentes usam indicador inline + opacity 0.5.
 - Adicionar NCM novo apenas no `NCM_INFO` sem coordenar com ETL para incluir em `_NCMS` — vai ficar sem dados.
 - Mexer em `scripts/pipelines/mdic_comex_sync.py` — pertence ao ETL.
-- Renderizar trace com NaN quando `quantidade_estatistica` é 100% null — usar `emptyPlot(height, "No statistical quantity data for the current filter")` para `qty_stat` e `fob_per_m3` quando nenhuma linha tem valor não-null (backfill ainda incompleto).
+- Renderizar trace com NaN quando `quantidade_estatistica` é 100% null — usar `emptyPlot(height, "No statistical quantity data for the current filter")` para `qty_stat`, `fob_per_m3` e `fob_per_bbl` quando nenhuma linha tem valor não-null (backfill ainda incompleto).
 
 ## Export
 
