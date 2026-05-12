@@ -443,7 +443,8 @@ export default function MdicComexPage() {
     [viewMode],
   );
 
-  // paises filter: null when all selected (avoids large IN clause), list otherwise
+  // paises filter: null when all selected (avoids large IN clause), list otherwise.
+  // Empty array (user cleared all) is passed as-is → RPC returns 0 rows → empty state.
   const paisesFilter: string[] | null = useMemo(
     () => (selectedPaises.length === allPaises.length ? null : selectedPaises),
     [selectedPaises, allPaises],
@@ -587,11 +588,33 @@ export default function MdicComexPage() {
 
               {/* Country filter */}
               <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">
-                  Countries
+                <div className="sidebar-filter-label" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span>
+                    Countries
+                    {allPaises.length > 0 && (
+                      <span style={{ color: "#888", fontWeight: 400, marginLeft: 4 }}>
+                        ({selectedPaises.length}/{allPaises.length})
+                      </span>
+                    )}
+                  </span>
                   {allPaises.length > 0 && (
-                    <span style={{ color: "#888", fontWeight: 400, marginLeft: 4 }}>
-                      ({selectedPaises.length}/{allPaises.length})
+                    <span style={{ display: "flex", gap: 6 }}>
+                      <button
+                        type="button"
+                        className="filter-btn-link filter-btn-link--secondary"
+                        onClick={() => setSelectedPaises(allPaises)}
+                        title="Select all countries"
+                      >
+                        All
+                      </button>
+                      <button
+                        type="button"
+                        className="filter-btn-link filter-btn-link--secondary"
+                        onClick={() => setSelectedPaises([])}
+                        title="Clear country selection"
+                      >
+                        Clear
+                      </button>
                     </span>
                   )}
                 </div>
@@ -600,8 +623,6 @@ export default function MdicComexPage() {
                     options={allPaises}
                     value={selectedPaises}
                     onChange={(next) => {
-                      // Enforce minimum 1 country
-                      if (next.length === 0) return;
                       setSelectedPaises(next);
                       // Show advisory if switching to individual mode with many countries
                       if (viewMode === "individual" && next.length > INDIVIDUAL_WARN_THRESHOLD) {
