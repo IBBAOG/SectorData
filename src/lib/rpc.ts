@@ -2848,10 +2848,24 @@ export type SubsidyTrackerRow = {
 export async function rpcGetSubsidyTrackerDiesel(
   supabase: SupabaseClient,
 ): Promise<SubsidyTrackerRow[]> {
-  const { data, error } = await supabase.rpc("get_subsidy_tracker_diesel");
-  if (error) {
-    console.error("rpcGetSubsidyTrackerDiesel:", error);
-    throw error;
+  const PAGE = 1000;
+  let offset = 0;
+  const allRows: SubsidyTrackerRow[] = [];
+
+  while (true) {
+    const { data, error } = await supabase
+      .rpc("get_subsidy_tracker_diesel")
+      .range(offset, offset + PAGE - 1);
+    if (error) {
+      console.error("rpcGetSubsidyTrackerDiesel:", error);
+      break;
+    }
+    const rows = (data ?? []) as SubsidyTrackerRow[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
   }
-  return (data ?? []) as SubsidyTrackerRow[];
+
+  return allRows;
 }
