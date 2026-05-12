@@ -41,6 +41,24 @@ import { downloadCsv } from "../../../lib/exportCsv";
 
 const M3_TO_BBL = 6.28981; // industry standard: 1 m³ = 6.28981 bbl
 
+// Standard ANP densities (kg/m³) used to derive volume in m³ from net weight.
+// The `quantidade_estatistica` column from the Comex Stat API is sparse
+// (~30% NULL in 2017–2021, 100% NULL pre-2014) and has been dropped as the
+// source-of-truth for volumetric metrics.
+const NCM_DENSITY_KG_PER_M3: Record<string, number> = {
+  "27090010": 870, // crude oil
+  "27101259": 745, // gasoline
+  "27101921": 832, // diesel
+};
+
+/** Derive volume in m³ from net weight using standard ANP densities. */
+function volumeM3(r: { volume_kg?: number | null; ncm_codigo?: string }): number | null {
+  if (!r.volume_kg || r.volume_kg <= 0) return null;
+  const density = r.ncm_codigo ? NCM_DENSITY_KG_PER_M3[r.ncm_codigo] : undefined;
+  if (!density) return null;
+  return r.volume_kg / density;
+}
+
 const NCM_INFO: Record<string, { label: string; color: string }> = {
   "27090010": { label: "Crude Oil",  color: "#1a1a1a" },
   "27101259": { label: "Gasoline",   color: "#FF5000" },
@@ -50,11 +68,11 @@ const ALL_NCMS = Object.keys(NCM_INFO);
 
 // ── Metric toggle ─────────────────────────────────────────────────────────────
 
-type Metric = "volume" | "qty_stat" | "fob" | "fob_per_ton" | "fob_per_m3" | "fob_per_bbl";
+type Metric = "volume" | "volume_m3" | "fob" | "fob_per_ton" | "fob_per_m3" | "fob_per_bbl";
 
 const METRIC_OPTIONS: Array<{ value: Metric; label: string }> = [
   { value: "volume",      label: "Volume (kt)" },
-  { value: "qty_stat",    label: "Statistical qty" },
+  { value: "volume_m3",   label: "Volume (k m³)" },
   { value: "fob",         label: "FOB (USD M)" },
   { value: "fob_per_ton", label: "FOB / ton" },
   { value: "fob_per_m3",  label: "FOB / m³" },
@@ -62,15 +80,14 @@ const METRIC_OPTIONS: Array<{ value: Metric; label: string }> = [
 ];
 
 type MetricRow = {
-  volume_kg:               number | null;
-  valor_fob_usd:           number | null;
-  quantidade_estatistica?: number | null;
-  unidade_estatistica?:    string | null;
+  volume_kg:     number | null;
+  valor_fob_usd: number | null;
+  ncm_codigo?:   string;
 };
 
 const METRIC_CONFIG: Record<Metric, {
-  axisTitle: (unit?: string | null) => string;
-  hoverUnit: (unit?: string | null) => string;
+  axisTitle: () => string;
+  hoverUnit: () => string;
   select:    (r: MetricRow) => number | null;
 }> = {
   volume:      {
@@ -78,10 +95,10 @@ const METRIC_CONFIG: Record<Metric, {
     hoverUnit: () => "kt",
     select:    r => (r.volume_kg ?? 0) / 1e6,
   },
-  qty_stat:    {
-    axisTitle: u => u ?? "unit",
-    hoverUnit: u => u ?? "",
-    select:    r => r.quantidade_estatistica ?? null,
+  volume_m3:   {
+    axisTitle: () => "k m³",
+    hoverUnit: () => "k m³",
+    select:    r => { const v = volumeM3(r); return v != null ? v / 1000 : null; },
   },
   fob:         {
     axisTitle: () => "USD M",
@@ -99,18 +116,12 @@ const METRIC_CONFIG: Record<Metric, {
   fob_per_m3:  {
     axisTitle: () => "USD/m³",
     hoverUnit: () => "USD/m³",
-    select:    r =>
-      (r.quantidade_estatistica && r.quantidade_estatistica > 0 && r.valor_fob_usd != null)
-        ? r.valor_fob_usd / r.quantidade_estatistica
-        : null,
+    select:    r => { const v = volumeM3(r); return (v && v > 0 && r.valor_fob_usd != null) ? r.valor_fob_usd / v : null; },
   },
   fob_per_bbl: {
     axisTitle: () => "USD/bbl",
     hoverUnit: () => "USD/bbl",
-    select:    r =>
-      (r.quantidade_estatistica && r.quantidade_estatistica > 0 && r.valor_fob_usd != null)
-        ? r.valor_fob_usd / (r.quantidade_estatistica * M3_TO_BBL)
-        : null,
+    select:    r => { const v = volumeM3(r); return (v && v > 0 && r.valor_fob_usd != null) ? r.valor_fob_usd / (v * M3_TO_BBL) : null; },
   },
 };
 
@@ -170,16 +181,7 @@ function buildLineChart(
   const filtered = rows.filter(r => r.flow === flow && ncms.includes(r.ncm_codigo));
   if (!filtered.length) return emptyPlot(280);
 
-  // For qty_stat / fob_per_m3 / fob_per_bbl: if all rows have null quantidade_estatistica,
-  // render an empty-state chart rather than an all-NaN trace.
-  if (metric === "qty_stat" || metric === "fob_per_m3" || metric === "fob_per_bbl") {
-    const hasQty = filtered.some(r => r.quantidade_estatistica != null);
-    if (!hasQty) return emptyPlot(280, "No statistical quantity data for the current filter");
-  }
-
-  const cfg       = METRIC_CONFIG[metric];
-  // Pick the first non-null unidade_estatistica across all filtered rows.
-  const commonUnit = filtered.find(r => r.unidade_estatistica)?.unidade_estatistica ?? null;
+  const cfg = METRIC_CONFIG[metric];
 
   const byNcm: Record<string, MdicComexSerieRow[]> = {};
   for (const r of filtered) {
@@ -193,7 +195,7 @@ function buildLineChart(
         a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes
       );
       const info = NCM_INFO[ncm];
-      const unit = cfg.hoverUnit(commonUnit);
+      const unit = cfg.hoverUnit();
       return {
         type: "scatter", mode: "lines",
         name: info?.label ?? ncm,
@@ -206,7 +208,7 @@ function buildLineChart(
       } as PlotData;
     });
 
-  const axisLabel = cfg.axisTitle(commonUnit);
+  const axisLabel = cfg.axisTitle();
   return {
     data: traces,
     layout: {
@@ -229,15 +231,7 @@ function buildBarChart(
 ): { data: PlotData[]; layout: Partial<Layout> } {
   if (!rows.length) return emptyPlot(340);
 
-  const cfg        = METRIC_CONFIG[metric];
-  const commonUnit = rows.find(r => r.unidade_estatistica)?.unidade_estatistica ?? null;
-
-  // For qty_stat / fob_per_m3 / fob_per_bbl: if all rows have null quantidade_estatistica,
-  // render empty-state rather than NaN bars.
-  if (metric === "qty_stat" || metric === "fob_per_m3" || metric === "fob_per_bbl") {
-    const hasQty = rows.some(r => r.quantidade_estatistica != null);
-    if (!hasQty) return emptyPlot(340, "No statistical quantity data for the current filter");
-  }
+  const cfg = METRIC_CONFIG[metric];
 
   const sel    = (r: MdicComexTopPaisRow) => cfg.select(r) ?? -Infinity;
   const sorted = [...rows].sort((a, b) => sel(b) - sel(a)).slice(0, 15);
@@ -245,8 +239,8 @@ function buildBarChart(
   const color   = flow === "import" ? "#2196F3" : "#FF5000";
   const label   = NCM_INFO[ncm]?.label ?? ncm;
   const flowPt  = flow === "import" ? "Imports" : "Exports";
-  const unit    = cfg.hoverUnit(commonUnit);
-  const axLabel = cfg.axisTitle(commonUnit);
+  const unit    = cfg.hoverUnit();
+  const axLabel = cfg.axisTitle();
 
   return {
     data: [{
@@ -527,7 +521,7 @@ export default function MdicComexPage() {
                   <div className="row mb-2">
                     <div className="col-12">
                       <ChartSection
-                        title={`Imports (${METRIC_CONFIG[metric].axisTitle(serieRows.find(r => r.unidade_estatistica)?.unidade_estatistica)} / month)`}
+                        title={`Imports (${METRIC_CONFIG[metric].axisTitle()} / month)`}
                         loading={serieLoading}
                         height={280}
                       >
@@ -545,7 +539,7 @@ export default function MdicComexPage() {
                   <div className="row mb-2">
                     <div className="col-12">
                       <ChartSection
-                        title={`Exports (${METRIC_CONFIG[metric].axisTitle(serieRows.find(r => r.unidade_estatistica)?.unidade_estatistica)} / month)`}
+                        title={`Exports (${METRIC_CONFIG[metric].axisTitle()} / month)`}
                         loading={serieLoading}
                         height={280}
                       >

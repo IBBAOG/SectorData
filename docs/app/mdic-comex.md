@@ -28,13 +28,23 @@ A **metric toggle** (6 options) sits just below the header and drives all 4 char
 | Value | Label | Y-axis unit | Formula |
 |---|---|---|---|
 | `volume` | Volume (kt) | kt | `volume_kg / 1e6` |
-| `qty_stat` | Statistical qty | `unidade_estatistica` (e.g. "m³") | `quantidade_estatistica` |
+| `volume_m3` | Volume (k m³) | k m³ | `volumeM3(r) / 1000` — derived via ANP density |
 | `fob` | FOB (USD M) | USD M | `valor_fob_usd / 1e6` |
 | `fob_per_ton` | FOB / ton | USD/ton | `valor_fob_usd / (volume_kg / 1000)` |
-| `fob_per_m3` | FOB / m³ | USD/m³ | `valor_fob_usd / quantidade_estatistica` |
-| `fob_per_bbl` | FOB / bbl | USD/bbl | `valor_fob_usd / (quantidade_estatistica * 6.28981)` |
+| `fob_per_m3` | FOB / m³ | USD/m³ | `valor_fob_usd / volumeM3(r)` — derived via ANP density |
+| `fob_per_bbl` | FOB / bbl | USD/bbl | `valor_fob_usd / (volumeM3(r) * 6.28981)` — derived via ANP density |
 
-Conversion constant: `M3_TO_BBL = 6.28981` (industry standard: 1 m³ = 6.28981 bbl). Defined inline in `page.tsx` — not in `src/lib/units.ts` (local scope only). Like `fob_per_m3`, this metric falls back to `emptyPlot` when `quantidade_estatistica` is entirely null for the current filter.
+Conversion constant: `M3_TO_BBL = 6.28981` (industry standard: 1 m³ = 6.28981 bbl). Defined inline in `page.tsx` — not in `src/lib/units.ts` (local scope only).
+
+**Volume derivation from weight:** `volume_kg` is present on 100% of rows. Volume in m³ is derived by dividing by the standard ANP density for the NCM:
+
+| NCM | Product | Density (kg/m³) |
+|---|---|---|
+| `27090010` | Crude oil | 870 |
+| `27101259` | Gasoline | 745 |
+| `27101921` | Diesel | 832 |
+
+The helper `volumeM3(r)` in `page.tsx` performs this conversion. If the NCM is unknown, it returns `null` gracefully. The `quantidade_estatistica` column from the Comex Stat API is **not used in the UI** — it is sparse (~30% NULL in 2017–2021, 100% NULL pre-2014) and caused visible discontinuities in FOB/m³ and FOB/bbl lines. The column still exists in the database and is included in exports.
 
 FOB values come directly from the API in USD (raw). The toggle uses `SegmentedToggle` and is client-side only — no refetch. Ranking in Top Countries bar charts re-orders based on the active metric. Toggle container `maxWidth` is 840px (increased from 720px to accommodate 6 buttons).
 
@@ -111,7 +121,7 @@ Y-axis unit and bar ordering driven by the active metric (toggle above the chart
 3. **Top Countries — Imports · {NCM}** — horizontal bars, color `#2196F3`, re-sorted by active metric.
 4. **Top Countries — Exports · {NCM}** — horizontal bars, color `#FF5000`, re-sorted by active metric.
 
-Edge case: when the active metric is `qty_stat`, `fob_per_m3`, or `fob_per_bbl` and all rows in scope have `quantidade_estatistica = null`, each chart renders `emptyPlot` with a descriptive message instead of NaN traces.
+Since `volume_kg` is present on all rows, `volume_m3`, `fob_per_m3`, and `fob_per_bbl` produce continuous lines for all date ranges. No `emptyPlot` fallback is needed for these metrics.
 
 ## Componentes consumidos
 
@@ -147,7 +157,8 @@ Edge case: when the active metric is `qty_stat`, `fob_per_m3`, or `fob_per_bbl` 
 - Bloquear página inteira com barrel em `serieLoading` ou `topLoading` — barrel é só pro `loading` inicial; subsequentes usam indicador inline + opacity 0.5.
 - Adicionar NCM novo apenas no `NCM_INFO` sem coordenar com ETL para incluir em `_NCMS` — vai ficar sem dados.
 - Mexer em `scripts/pipelines/mdic_comex_sync.py` — pertence ao ETL.
-- Renderizar trace com NaN quando `quantidade_estatistica` é 100% null — usar `emptyPlot(height, "No statistical quantity data for the current filter")` para `qty_stat`, `fob_per_m3` e `fob_per_bbl` quando nenhuma linha tem valor não-null (backfill ainda incompleto).
+- Usar `quantidade_estatistica` para derivar volume em m³ — esse campo é esparso e foi abandonado. Sempre usar `volumeM3(r)` com densidades ANP padrão.
+- Adicionar `connectgaps: true` como workaround para dados esparsos — após o fix de densidades, não há gaps.
 
 ## Export
 
