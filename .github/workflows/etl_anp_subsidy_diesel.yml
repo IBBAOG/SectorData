@@ -1,0 +1,40 @@
+name: ANP Subsidy Diesel — Sync (daily reference price)
+
+on:
+  schedule:
+    - cron: '30 11 * * *'   # Daily at 11:30 UTC (08:30 BRT) — after ANP typically publishes
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Sync mode'
+        required: false
+        default: 'incremental'
+        type: choice
+        options:
+          - incremental
+          - backfill
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Sync ANP Diesel Subsidy Reference Prices → Supabase
+        run: |
+          if [ "${{ github.event.inputs.mode }}" = "backfill" ]; then
+            python scripts/pipelines/anp/subsidy_diesel_sync.py --backfill
+          else
+            python scripts/pipelines/anp/subsidy_diesel_sync.py
+          fi
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
