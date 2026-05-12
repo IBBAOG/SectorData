@@ -5,6 +5,28 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { EditableTableConfig, EditState, Row, SaveResult } from "./types";
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Coerce a raw cell value (always a string from <input>) to the correct JS type
+ * expected by PostgREST:
+ *   - "number" columns → JavaScript number (NaN stays as-is; PostgREST rejects it)
+ *   - everything else → keep the string (PostgREST casts date/text itself)
+ *
+ * Null/undefined passthrough so required-field guards can detect missing values.
+ */
+function coerceValue(
+  value: unknown,
+  type: import("./types").ColumnType
+): unknown {
+  if (value === null || value === undefined) return value;
+  if (type === "number") {
+    const n = Number(value);
+    return isNaN(n) ? null : n;
+  }
+  return value;
+}
+
 /**
  * Load all rows for a table, ordered by defaultSort.
  * Returns an empty array on error (logs to console).
@@ -63,11 +85,39 @@ export async function saveChanges(
     toUpsert.push({ id, ...partial });
   }
 
-  // New drafts — strip the negative synthetic id so Postgres auto-generates
+  // New drafts — strip the negative synthetic id so Postgres auto-generates.
+  // Also coerce cell values to their proper JS types (inputs always yield strings)
+  // and guard required columns: if a required column is null/undefined here it
+  // means the stale-closure race fired (saveDisabled was false in the old render
+  // but state had already transitioned to an invalid draft). Return an error
+  // immediately rather than letting Postgres surface a cryptic NOT NULL violation.
   for (const draft of drafts) {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { id: _negativeId, ...rest } = draft;
-    toUpsert.push(rest);
+
+    // Build a column-typed payload
+    const payload: Record<string, unknown> = { ...rest };
+    for (const col of config.columns) {
+      const raw = payload[col.key];
+      const coerced = coerceValue(raw, col.type);
+      payload[col.key] = coerced;
+
+      // Guard: required column is null/undefined — abort before hitting Postgres
+      const isEmpty =
+        coerced === null ||
+        coerced === undefined ||
+        (typeof coerced === "string" && coerced.trim() === "");
+      if (col.required && isEmpty) {
+        return {
+          inserted: 0,
+          updated: 0,
+          deleted: 0,
+          error: `${col.label} is required and cannot be empty.`,
+        };
+      }
+    }
+
+    toUpsert.push(payload);
   }
 
   // ── Upsert ────────────────────────────────────────────────────────────────

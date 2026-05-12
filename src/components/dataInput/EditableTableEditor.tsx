@@ -164,7 +164,28 @@ export function EditableTableEditor({ config }: EditableTableEditorProps) {
   // ── Save ──────────────────────────────────────────────────────────────────
 
   async function handleSave() {
-    if (!supabase || saveDisabled) return;
+    if (!supabase || saving) return;
+
+    // Re-validate from current state before sending to the server.
+    // The `saveDisabled` variable in scope is a derived value captured by closure
+    // from the last render snapshot. In React 19 concurrent mode a blur-then-click
+    // sequence can commit new state (e.g. date: null) AFTER the render that set
+    // saveDisabled=false, so the closure guard is stale. Reading `drafts` and
+    // `editedRows` directly here gives us the committed state at click time.
+    const hasPending = editedRows.size > 0 || drafts.length > 0 || deletedIds.size > 0;
+    if (!hasPending) return;
+
+    for (const draft of drafts) {
+      const errs = validateRow(draft as Record<string, unknown>, config.columns);
+      if (errs.size > 0) return; // still invalid — don't send
+    }
+    for (const [id, partial] of editedRows) {
+      const original = rows.find((r) => r.id === id) ?? {};
+      const merged = { ...original, ...partial } as Record<string, unknown>;
+      const errs = validateRow(merged, config.columns);
+      if (errs.size > 0) return;
+    }
+
     setSaving(true);
     const result = await saveChanges(supabase, config, { editedRows, drafts, deletedIds });
     setSaving(false);
