@@ -823,6 +823,7 @@ export type MdicComexTopPaisRow = {
 export type MdicComexFiltros = {
   anos: number[];
   ncms: { ncm_codigo: string; ncm_nome: string }[];
+  paises: string[];
 };
 
 export async function rpcGetMdicComexSerie(
@@ -888,10 +889,10 @@ export async function rpcGetMdicComexFiltros(
     const { data, error } = await supabase.rpc("get_mdic_comex_filtros", {});
     if (error) throw error;
     const d = (data ?? {}) as Partial<MdicComexFiltros>;
-    return { anos: d.anos ?? [], ncms: d.ncms ?? [] };
+    return { anos: d.anos ?? [], ncms: d.ncms ?? [], paises: d.paises ?? [] };
   } catch (e) {
     console.error("get_mdic_comex_filtros failed", e);
-    return { anos: [], ncms: [] };
+    return { anos: [], ncms: [], paises: [] };
   }
 }
 

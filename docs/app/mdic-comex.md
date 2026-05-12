@@ -1,29 +1,31 @@
 # Sub-PRD — `/mdic-comex`
 
-Dashboard MDIC Comex Stat — Importações e Exportações de Combustíveis (Oil & Gas / Fuel Distribution). Owner: [`worker_dash-mdic-comex`](../../.claude/agents/worker_dash-mdic-comex.md).
+Dashboard MDIC Comex Stat — Imports and Exports of Fuels (Oil & Gas / Fuel Distribution). Owner: [`worker_dash-mdic-comex`](../../.claude/agents/worker_dash-mdic-comex.md).
 
-> Item da NavBar.
+> NavBar item.
 
-## Escopo de código
+## Code scope
 
 ```
 src/app/(dashboard)/mdic-comex/
   page.tsx
 ```
 
-RPC wrappers: seção "MDIC Comex" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (linhas ~765–857).
+RPC wrappers: "MDIC Comex" section in [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (~lines 800–897 and ~2494–2630).
 
-## Produto
+## Product
 
-Visualização dos **volumes mensais de importação e exportação** dos 3 NCMs principais de petróleo/combustíveis publicados pelo **MDIC Comex Stat** (Ministério do Desenvolvimento, Indústria, Comércio e Serviços), com breakdown por país de origem/destino. Permite ao usuário:
+Visualisation of **monthly import and export volumes** of the 3 main petroleum/fuel NCMs published by **MDIC Comex Stat** (Ministério do Desenvolvimento, Indústria, Comércio e Serviços). Allows the user to:
 
-- Selecionar via checkboxes quais **NCMs** comparar nos charts de série (Petróleo Cru, Gasolina, Diesel) — ao menos 1 sempre marcada.
-- Restringir o **período** via range slider (default: últimos 10 anos), aplicado server-side via RPC.
-- Escolher **um NCM** (select único) e ver o ranking **Top 15 Países** acumulado no período em 2 charts de barras horizontais — um para Importação e um para Exportação.
+- Select via checkboxes which **NCMs** to compare in the time-series charts (Crude Oil, Gasoline, Diesel) — at least 1 always checked.
+- Filter by **country** — multi-select dropdown with search (155 options), default = all selected. Minimum 1 country always required.
+- Restrict the **period** via range slider (default: last 10 years), applied server-side via RPC.
+- Toggle between **Consolidated** view (3 NCM lines, summed across selected countries) and **Individual** view (1 line per country, summed across selected NCMs).
+- Read a **24-month summary table** with MoM% and YoY% for Imports and Exports.
 
 Header: `MDIC Comex Stat — Imports and Exports` + sub `Monthly import and export volumes of crude oil, gasoline, and diesel by NCM and origin/destination country` + period badge when data exists.
 
-A **metric toggle** (6 options) sits just below the header and drives all 4 charts simultaneously:
+A **metric toggle** (6 options) sits just below the header and drives all charts and the table simultaneously:
 
 | Value | Label | Y-axis unit | Formula |
 |---|---|---|---|
@@ -34,9 +36,9 @@ A **metric toggle** (6 options) sits just below the header and drives all 4 char
 | `fob_per_m3` | FOB / m³ | USD/m³ | `valor_fob_usd / volumeM3(r)` — derived via ANP density |
 | `fob_per_bbl` | FOB / bbl | USD/bbl | `valor_fob_usd / (volumeM3(r) * 6.28981)` — derived via ANP density |
 
-Conversion constant: `M3_TO_BBL = 6.28981` (industry standard: 1 m³ = 6.28981 bbl). Defined inline in `page.tsx` — not in `src/lib/units.ts` (local scope only).
+Conversion constant: `M3_TO_BBL = 6.28981` (industry standard: 1 m³ = 6.28981 bbl). Defined inline in `page.tsx`.
 
-**Volume derivation from weight:** `volume_kg` is present on 100% of rows. Volume in m³ is derived by dividing by the standard ANP density for the NCM:
+**Volume derivation from weight:** `volume_kg` is present on 100% of rows. Volume in m³ is derived using standard ANP densities:
 
 | NCM | Product | Density (kg/m³) |
 |---|---|---|
@@ -44,131 +46,158 @@ Conversion constant: `M3_TO_BBL = 6.28981` (industry standard: 1 m³ = 6.28981 b
 | `27101259` | Gasoline | 745 |
 | `27101921` | Diesel | 832 |
 
-The helper `volumeM3(r)` in `page.tsx` performs this conversion. If the NCM is unknown, it returns `null` gracefully. The `quantidade_estatistica` column from the Comex Stat API is **not used in the UI** — it is sparse (~30% NULL in 2017–2021, 100% NULL pre-2014) and caused visible discontinuities in FOB/m³ and FOB/bbl lines. The column still exists in the database and is included in exports.
+The helper `volumeM3(r)` in `page.tsx` performs this conversion. The `quantidade_estatistica` column from the Comex Stat API is **not used in the UI** — it is sparse and caused visible discontinuities.
 
-FOB values come directly from the API in USD (raw). The toggle uses `SegmentedToggle` and is client-side only — no refetch. Ranking in Top Countries bar charts re-orders based on the active metric. Toggle container `maxWidth` is 840px (increased from 720px to accommodate 6 buttons).
-
-Diferença vs `/anp-cdp`: aqui é o **fluxo internacional** (import/export) reportado pela alfândega, não a produção doméstica. Diferença vs `/navios-diesel`: agregação mensal por NCM/país, não navio individual em tempo real.
+Difference from `/anp-cdp`: this is **international trade flow** (import/export) reported by customs, not domestic production. Difference from `/navios-diesel`: monthly aggregation by NCM/country, not individual vessel tracking in real time.
 
 ## RPCs
 
-| RPC | Tipo | Função |
+| RPC | Type | Purpose |
 |---|---|---|
-| `get_mdic_comex_filtros` | próprio | `anos[]`, `ncms[{ncm_codigo, ncm_nome}]` |
-| `get_mdic_comex_serie` | próprio | Série mensal agregada por NCM (sem breakdown por país). Retorna `quantidade_estatistica`, `unidade_estatistica`. Aceita `p_flow`, `p_ncms`, `p_ano_inicio`, `p_ano_fim` (todos opcionais) |
-| `get_mdic_comex_top_paises` | próprio | Top N países por volume para uma combinação flow+NCM+período. Retorna `quantidade_estatistica`, `unidade_estatistica`. Aceita `p_flow`, `p_ncm_codigo`, `p_ano_inicio`, `p_ano_fim`, `p_limit` (default 15) |
-| `get_mdic_comex_aggregated` | próprio | Agrega por dimensões dinâmicas (`p_group_by`). Retorna `quantidade_estatistica`, `unidade_estatistica`. Usado pelo export modal | 
-| `get_mdic_comex_export_count` | próprio | Conta linhas para o Tier 2 modal | 
+| `get_mdic_comex_filtros` | own | Returns `anos[]`, `ncms[{ncm_codigo, ncm_nome}]`, `paises: text[]` (155 countries) |
+| `get_mdic_comex_serie` | own | Monthly series aggregated by NCM (no country breakdown). Kept for backward compatibility. |
+| `get_mdic_comex_aggregated` | own | Dynamic aggregator with `p_group_by`. Accepts `p_paises text[]`. Used for all chart and table fetches. |
+| `get_mdic_comex_top_paises` | own | Top N countries by volume for 1 flow+NCM+period. **Not used in UI** (bar charts removed) — kept for future use / export. |
+| `get_mdic_comex_export_count` | own | Row count for Tier 2 export modal. |
 
-## Tabelas
+## Tables
 
-| Objeto | Volume | Populado por |
+| Object | Volume | Populated by |
 |---|---|---|
-| `mdic_comex` | ~1.238 linhas | ETL `scripts/pipelines/mdic_comex_sync.py` (chama API `api-comexstat.mdic.gov.br/general` para os 3 NCMs × 2 flows × últimos N meses, parse + upsert idempotente) |
+| `mdic_comex` | ~1,238 rows | ETL `scripts/pipelines/mdic_comex_sync.py` |
 
-### Colunas de `mdic_comex`
+### Columns of `mdic_comex`
 
 `ano (smallint), mes (smallint), flow (text), ncm_codigo (text), ncm_nome (text), pais (text), volume_kg (float8), valor_fob_usd (float8), quantidade_estatistica (float8, nullable), unidade_estatistica (text, nullable)`.
 
 PK: `(ano, mes, flow, ncm_codigo, pais)`. Indexes: `(ano, mes)`, `(ncm_codigo)`, `(flow)`.
 
-`quantidade_estatistica` contains the metric statistic from the Comex Stat API (e.g. cubic metres for diesel/gasoline, metric tonnes for crude oil). `unidade_estatistica` holds the unit label (e.g. "m³", "Metros Cúbicos"). Both columns are nullable: rows backfilled before the pipeline update (Stage 2a) will have NULL until the next ETL run.
+### Relevant migrations
 
-### Migrations relevantes
+- `20260504000012_mdic_comex.sql` — original schema + indexes + RLS + 3 RPCs + INSERT into `module_visibility('mdic-comex', true)`.
+- `20260512000001` — Stage 1: adds `quantidade_estatistica` and `unidade_estatistica`; updates `get_mdic_comex_filtros` to return `paises: text[]`; updates `get_mdic_comex_serie`, `get_mdic_comex_top_paises`, `get_mdic_comex_aggregated` to SELECT/SUM the new columns.
 
-- `20260504000012_mdic_comex.sql` — original schema + indexes + RLS + 3 RPCs + INSERT em `module_visibility('mdic-comex', true)`.
-- `20260512000001` — Stage 1: adds `quantidade_estatistica` and `unidade_estatistica` columns; updates RPCs `get_mdic_comex_serie`, `get_mdic_comex_top_paises`, `get_mdic_comex_aggregated` to SELECT/SUM the new columns.
-
-## Pipeline de origem
+## Pipeline
 
 | Workflow | Schedule | Scripts |
 |---|---|---|
-| `.github/workflows/etl_mdic_comex.yml` | Diário 14:00 UTC (11:00 BRT) | `scripts/pipelines/mdic_comex_sync.py` |
+| `.github/workflows/etl_mdic_comex.yml` | Daily 14:00 UTC (11:00 BRT) | `scripts/pipelines/mdic_comex_sync.py` |
 
-Comportamento do scraper:
-- Default: re-baixa últimos 3 meses (`--meses 3`) e faz upsert idempotente.
-- Manual: `--desde YYYY-MM` permite backfill a partir de mês específico.
-- Retries: 4 tentativas com backoff `[2, 5, 12, 30]s` por chunk.
-- Batch upsert: 500 linhas por request via supabase-py.
-- Os 3 NCMs `_NCMS = ["27090010", "27101259", "27101921"]` são fixos no script — adicionar NCM exige mudança no scraper E no `NCM_INFO` da página.
+Scraper behaviour:
+- Default: re-downloads last 3 months (`--meses 3`) + idempotent upsert.
+- Manual: `--desde YYYY-MM` for backfill from a specific month.
+- Retries: 4 attempts with backoff `[2, 5, 12, 30]s` per chunk.
+- Batch upsert: 500 rows per request via supabase-py.
+- The 3 NCMs `_NCMS = ["27090010", "27101259", "27101921"]` are fixed — adding an NCM requires changes to the scraper AND `NCM_INFO` in the page.
 
-## NCMs fixos (3)
+## Fixed NCMs (3)
 
-Mesmas 3 entradas em `NCM_INFO` no `page.tsx` e em `_NCMS` no scraper:
-
-| NCM | Label | Cor | Significado |
-|---|---|---|---|
-| `27090010` | Petróleo Cru | `#1a1a1a` | Óleos brutos de petróleo |
-| `27101259` | Gasolina | `#FF5000` | Gasolinas para motores |
-| `27101921` | Diesel | `#2196F3` | Óleos combustíveis tipo diesel |
-
-> Lista é **fechada client-side** — `get_mdic_comex_filtros` retorna `ncms[]` mas a UI usa o constante para garantir cor + label + ordem fixos.
-
-## Filtros disponíveis (UI)
-
-| Filtro | Componente | Comportamento |
+| NCM | Label | Color |
 |---|---|---|
-| Produto (chart série) | checkboxes c/ swatch de cor (3 fixas) | client-side; mínimo 1 sempre selecionada; botão "Limpar" restaura todas; counter `(N/3)` |
-| Período | `rc-slider` range | server-side em `get_mdic_comex_serie` E `get_mdic_comex_top_paises` (debounced 400ms) |
-| Top Países — Produto | `<select>` único | server-side em `get_mdic_comex_top_paises` (debounced 400ms) |
+| `27090010` | Crude Oil | `#1a1a1a` |
+| `27101259` | Gasoline | `#FF5000` |
+| `27101921` | Diesel | `#2196F3` |
 
-## Charts esperados (4)
+> List is **closed client-side** — `get_mdic_comex_filtros` returns `ncms[]` but the UI uses the constant to guarantee color + label + fixed order.
 
-Y-axis unit and bar ordering driven by the active metric (toggle above the charts).
+## Filters (UI — 3 filters)
 
-1. **Imports ({unit} / month)** — multi-line chart, 1 trace per selected NCM (client-side filtered).
-2. **Exports ({unit} / month)** — multi-line chart, 1 trace per selected NCM.
-3. **Top Countries — Imports · {NCM}** — horizontal bars, color `#2196F3`, re-sorted by active metric.
-4. **Top Countries — Exports · {NCM}** — horizontal bars, color `#FF5000`, re-sorted by active metric.
+| Filter | Component | Behaviour |
+|---|---|---|
+| Product | `MultiSelectFilter` (3 fixed, with color swatch) | client-side; minimum 1 always selected; "Clear" button restores all; counter `(N/3)` |
+| Countries | `SearchableMultiSelect` (155 options, search by name) | server-side via `p_paises` in `get_mdic_comex_aggregated`; minimum 1; debounced 400ms |
+| Period | `rc-slider` range | server-side in `get_mdic_comex_aggregated` (debounced 400ms) |
 
-Since `volume_kg` is present on all rows, `volume_m3`, `fob_per_m3`, and `fob_per_bbl` produce continuous lines for all date ranges. No `emptyPlot` fallback is needed for these metrics.
+## View modes
 
-## Componentes consumidos
+| Mode | Toggle option | Chart behaviour |
+|---|---|---|
+| Consolidated (default) | `SegmentedToggle` — "Consolidated" | 2 line charts: 1 trace per NCM, summed across selected countries. `groupBy = ['ano','mes','flow','ncm_codigo']` |
+| Individual | `SegmentedToggle` — "Individual" | 2 line charts: 1 trace per country, summed across selected NCMs. `groupBy = ['ano','mes','flow','pais']`. PALETTE colors cycle. |
 
-- `PlotlyChart` — 4 charts (2 de linha + 2 de barras horizontais).
-- `rc-slider` — slider de período.
-- `NavBar`.
-- `useModuleVisibilityGuard("mdic-comex")` — guard de role.
+**UX guard for Individual mode**: if the user switches to Individual with >20 countries selected, a dismissible amber banner is shown: *"Individual mode shows 1 series per country. Narrow your country filter to compare more clearly."* — advisory only, does not block.
 
-## Dependências cross-dept
+## Charts (2)
 
-| Origem | Como depende |
+1. **Imports ({unit} / month)** — multi-line chart.
+   - Consolidated: 1 trace per selected NCM.
+   - Individual: 1 trace per selected country. Title appends "— by country".
+2. **Exports ({unit} / month)** — same structure as Imports.
+
+Y-axis unit and chart title driven by the active metric toggle.
+
+## 24-month summary table
+
+Located below the 2 charts. Columns:
+
+| Month | Imports (unit) | Exports (unit) | IMP MoM% | EXP MoM% | IMP YoY% | EXP YoY% |
+
+Specifications:
+- 24 rows: most recent 24 months, descending order (newest on top).
+- Values: sum of IMP/EXP for the active filters (country + NCM + period) and active metric.
+- **MoM%** = (current / previous month − 1) × 100. Color-coded: green positive, red negative.
+- **YoY%** = (current / same month 1 year ago − 1) × 100. Same formatting.
+- To compute YoY% for all 24 shown rows, the table fetch uses `anoInicio − 2` (36-month window), displays 24.
+- If MoM% / YoY% cannot be computed (base is zero or missing), shows "—".
+- Table header unit responds to the active metric (e.g., "Imports (USD/bbl)").
+- Uses Bootstrap `table table-sm table-hover` — no custom table component needed.
+
+## Components consumed
+
+- `PlotlyChart` — 2 line charts.
+- `SearchableMultiSelect` — country filter (155 options, search).
+- `MultiSelectFilter` — product filter (3 fixed).
+- `PeriodSlider` — period range slider.
+- `ChartSection` — chart title + loading opacity.
+- `SegmentedToggle` — metric toggle (6 options) + view mode toggle (Consolidated / Individual).
+- `BarrelLoading` — initial full-page loader.
+- `ExportPanel` + `ExportModal` — Tier 2 export.
+- `NavBar`, `BrandLogo`, `DashboardHeader`.
+- `useModuleVisibilityGuard("mdic-comex")`.
+- `useDebouncedFetch` — 400ms debounce on country/period changes.
+
+## Cross-dept dependencies
+
+| Origin | Dependency |
 |---|---|
-| ETL (`mdic_comex_sync`) | Popula `mdic_comex` diariamente; define os 3 NCMs |
-| Subgerente APP | Schema/migration de `mdic_comex` e RPCs |
-| Designer | Cores por NCM fixas client-side, Arial, padrão de chart de linha + barra horizontal |
-| Supabase | RLS habilitado em `mdic_comex` (read-only via anon authenticated); 3 RPCs SECURITY DEFINER |
-| `worker_dash-admin` | Visibilidade do módulo (`module_visibility.mdic-comex`) e imagem da home (memória do CEO: todo módulo novo precisa) |
+| ETL (`mdic_comex_sync`) | Populates `mdic_comex` daily; defines the 3 NCMs |
+| Subgerente APP | Schema/migrations for `mdic_comex` and RPCs |
+| Designer | NCM colors fixed client-side, Arial, line chart style |
+| Supabase | RLS enabled on `mdic_comex` (read-only via anon authenticated); RPCs SECURITY DEFINER |
+| `worker_dash-admin` | Module visibility (`module_visibility.mdic-comex`) and home image |
 
 ## Performance
 
-- **`mdic_comex` é pequena (~1.2k)** — `get_mdic_comex_serie` agrega por (ano, mes, flow, ncm_codigo) reduzindo a algumas centenas de linhas. Período via `p_ano_inicio/p_ano_fim` reduz adicionalmente.
-- **Filtragem por NCM** no chart de série é client-side via `useMemo` — sem refetch (3 opções fixas).
-- **Top Países** via RPC dedicado com `LIMIT 15` ordem `SUM(volume_kg) DESC` — server-side, executado em paralelo (Promise.all) para import + export.
-- **Debounce 400ms** no fetch ao mudar slider de período OU NCM do top países — evita rajadas durante drag.
+- **`mdic_comex` is small (~1.2k rows)** — aggregation via `get_mdic_comex_aggregated` reduces to a few hundred rows. Period filter via `p_ano_inicio/p_ano_fim` reduces further.
+- **Country filter**: when all 155 countries are selected, `p_paises = null` is passed (no IN clause) for efficiency.
+- **Debounce 400ms** on country filter and period slider changes.
+- **Two parallel fetches on load**: chart data + table data (`Promise.all`).
+- **Table fetch requests extra 2 years** (for YoY calculation) but is still bounded to `mdic_comex` aggregate size.
 
-## Anti-padrões
+## Anti-patterns
 
-- Query direta em `mdic_comex` do front — sempre via RPC.
-- Refetch sem debounce — usar 400ms.
-- Filtrar série inteira client-side por período — empurrar para RPC via `p_ano_inicio/p_ano_fim`.
-- Permitir `selectedNCMs.length === 0` — sempre manter ao menos 1.
-- Resetar `yearRange` em mudança de NCM — slider é setado uma vez no mount a partir de `filtros.anos`.
-- Bloquear página inteira com barrel em `serieLoading` ou `topLoading` — barrel é só pro `loading` inicial; subsequentes usam indicador inline + opacity 0.5.
-- Adicionar NCM novo apenas no `NCM_INFO` sem coordenar com ETL para incluir em `_NCMS` — vai ficar sem dados.
-- Mexer em `scripts/pipelines/mdic_comex_sync.py` — pertence ao ETL.
-- Usar `quantidade_estatistica` para derivar volume em m³ — esse campo é esparso e foi abandonado. Sempre usar `volumeM3(r)` com densidades ANP padrão.
-- Adicionar `connectgaps: true` como workaround para dados esparsos — após o fix de densidades, não há gaps.
+- Direct query on `mdic_comex` from the frontend — always via RPC.
+- Fetch without debounce — use 400ms.
+- Filter full series client-side by period — push to RPC via `p_ano_inicio/p_ano_fim`.
+- Allow `selectedNCMs.length === 0` — always keep at least 1.
+- Allow `selectedPaises.length === 0` — always keep at least 1.
+- Reset `yearRange` on NCM/country change — slider is set once on mount.
+- Full-page barrel in `chartLoading` / `tableLoading` — barrel is only for the initial `loading`; subsequent updates use inline indicator + opacity 0.5.
+- Adding a new NCM only in `NCM_INFO` without coordinating with ETL to include it in `_NCMS` — will have no data.
+- Touching `scripts/pipelines/mdic_comex_sync.py` — belongs to ETL.
+- Using `quantidade_estatistica` to derive volume in m³ — sparse field, abandoned. Always use `volumeM3(r)` with standard ANP densities.
+- Adding `connectgaps: true` as a workaround — after the density fix, there are no gaps.
+- Rendering bar charts for Top Countries — removed in Stage 2 refactor. The RPC `get_mdic_comex_top_paises` and its wrapper remain in `rpc.ts` for potential future use.
 
 ## Export
 
-Tier 2 — `<ExportPanel mode="modal">` abre `<ExportModal>` com filtros + calculadora live de tamanho (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
+Tier 2 — `<ExportPanel mode="modal">` opens `<ExportModal>` with filters + live size calculator.
 
-- RPC count: `get_mdic_comex_export_count` (`p_ano_inicio`, `p_ano_fim`, `p_flow`, `p_ncms`) → `bigint`, em `supabase/migrations/20260507000003_export_count_rpcs.sql`.
-- JS wrapper: `getMdicComexExportCount` em [`src/lib/rpc.ts`](../../src/lib/rpc.ts).
-- datasetKey heuristic: `mdic_comex` (ver [`src/lib/exportSizeHeuristics.ts`](../../src/lib/exportSizeHeuristics.ts) → `AVG_BYTES_PER_ROW.mdic_comex`).
-- Filtros expostos no modal: período (slider de anos), flow (IMP/EXP), NCMs (3 fixos: Petróleo Cru, Gasolina, Diesel).
-- Excel handler: `downloadMdicComexExcel` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
-- CSV handler: paginated fetch direto em `mdic_comex` (PostgREST com filtros equivalentes) + `downloadCsv` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
+- RPC count: `get_mdic_comex_export_count` (`p_ano_inicio`, `p_ano_fim`, `p_flow`, `p_ncms`) → `bigint`.
+- JS wrapper: `getMdicComexExportCount` in [`src/lib/rpc.ts`](../../src/lib/rpc.ts).
+- datasetKey heuristic: `mdic_comex`.
+- Filters in modal: period (year slider), flow (IMP/EXP), NCMs (3 fixed).
+- Excel handler: `downloadMdicComexRawExcel` / `downloadMdicComexAggregatedExcel` in [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts).
+- CSV handler: `fetchMdicComexRawFiltered` + `downloadCsv` in [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts).
 - Filename pattern: `MdicComex_DD-MM-YY.<xlsx|csv>`.
-- Warning visual quando estimativa > 200 000 linhas.
+- Warning when estimate > 200,000 rows.
