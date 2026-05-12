@@ -131,18 +131,41 @@ export async function saveChanges(
     toUpsert.push(payload);
   }
 
-  // ── Upsert ────────────────────────────────────────────────────────────────
-  if (toUpsert.length > 0) {
-    const { error: upsertError } = await supabase
-      .from(config.tableName)
-      .upsert(toUpsert, { onConflict: config.conflictColumns.join(",") });
+  // ── Upsert: split edits (have id) and drafts (no id) into separate calls ──
+  //
+  // PostgREST serializes a mixed array by computing the UNION of all object
+  // keys, then builds a single INSERT column list. Rows missing "id" are sent
+  // with an explicit NULL for that column — but Postgres only auto-generates
+  // IDENTITY values when the column is *omitted* from the INSERT list entirely,
+  // not when an explicit NULL is provided. Splitting guarantees each batch has
+  // a uniform key set so neither batch includes "id" for drafts.
+  const editsPayload = toUpsert.filter(
+    (r) => "id" in r && (r.id as number) > 0
+  );
+  const draftsPayload = toUpsert.filter((r) => !("id" in r));
 
-    if (upsertError) {
-      return { inserted: 0, updated: 0, deleted: 0, error: upsertError.message };
+  if (editsPayload.length > 0) {
+    const { error: editsError } = await supabase
+      .from(config.tableName)
+      .upsert(editsPayload, { onConflict: config.conflictColumns.join(",") });
+
+    if (editsError) {
+      return { inserted: 0, updated: 0, deleted: 0, error: editsError.message };
+    }
+
+    updated = editedRows.size;
+  }
+
+  if (draftsPayload.length > 0) {
+    const { error: draftsError } = await supabase
+      .from(config.tableName)
+      .upsert(draftsPayload, { onConflict: config.conflictColumns.join(",") });
+
+    if (draftsError) {
+      return { inserted: 0, updated, deleted: 0, error: draftsError.message };
     }
 
     inserted = drafts.length;
-    updated = editedRows.size;
   }
 
   // ── Delete ────────────────────────────────────────────────────────────────
