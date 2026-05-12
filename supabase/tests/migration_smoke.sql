@@ -369,6 +369,13 @@ BEGIN
     WHERE n.nspname = 'public' AND p.proname = 'get_mdic_comex_filtros';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_mdic_comex_filtros'; END IF;
 
+  -- get_mdic_comex_filtros must return paises field (20260512000002)
+  PERFORM 1
+  FROM (SELECT get_mdic_comex_filtros() AS r) t
+  WHERE (t.r)->'paises' IS NOT NULL
+    AND json_array_length((t.r)->'paises') > 0;
+  IF NOT FOUND THEN RAISE EXCEPTION 'get_mdic_comex_filtros: paises field missing or empty'; END IF;
+
   PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public' AND p.proname = 'get_mdic_comex_serie';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_mdic_comex_serie'; END IF;

@@ -37,7 +37,7 @@ jobs:
       - name: Mark all pre-existing migrations as applied
         # All migrations applied before this workflow was fixed (via MCP or SQL
         # Editor). Marking them as applied ensures db push only processes truly
-        # new migrations. List covers baseline through 20260512000001 inclusive.
+        # new migrations. List covers baseline through 20260512000002 inclusive.
         run: |
           for v in \
             20260327174919 \
@@ -121,7 +121,8 @@ jobs:
             20260508120001 \
             20260508130001 \
             20260512000000 \
-            20260512000001; do
+            20260512000001 \
+            20260512000002; do
             supabase migration repair "$v" --status applied || true
           done
         env:
