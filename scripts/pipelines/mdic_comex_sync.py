@@ -71,7 +71,7 @@ def _post_retry(flow: str, pf: str, pt: str) -> list[dict]:
         "period":      {"from": pf, "to": pt},
         "filters":     [{"filter": "ncm", "values": _NCMS}],
         "details":     ["ncm", "country"],
-        "metrics":     ["metricFOB", "metricKG"],
+        "metrics":     ["metricFOB", "metricKG", "metricStatistic"],
     }
     for attempt in range(_RETRIES):
         try:
@@ -109,6 +109,15 @@ def _normalizar(rows: list[dict], flow: str) -> list[dict]:
 
         volume_kg     = _num("metricKG")    or _num("volume_kg")
         valor_fob_usd = _num("metricFOB")   or _num("valor_fob_usd")
+        quantidade_estatistica = _num("metricStatistic") or _num("quantidade_estatistica")
+        unidade_estatistica = (
+            str(
+                r.get("metricStatisticUnit")
+                or r.get("unidadeEstatistica")
+                or r.get("unidade_estatistica")
+                or ""
+            ).strip() or None
+        )
 
         if not ncm_codigo or not pais:
             continue
@@ -117,6 +126,8 @@ def _normalizar(rows: list[dict], flow: str) -> list[dict]:
             "ncm_codigo": ncm_codigo, "ncm_nome": ncm_nome,
             "pais": pais,
             "volume_kg": volume_kg, "valor_fob_usd": valor_fob_usd,
+            "quantidade_estatistica": quantidade_estatistica,
+            "unidade_estatistica": unidade_estatistica,
         })
     return out
 
