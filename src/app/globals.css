@@ -429,7 +429,7 @@ body {
   position: absolute;
   top: 100%;
   left: 0;
-  min-width: 220px;
+  min-width: max-content;
   padding: 8px 0;
   background: #ffffff;
   border: 1px solid rgba(0, 0, 0, 0.08);
@@ -471,6 +471,7 @@ body {
   font-size: 15px;
   color: rgba(0, 0, 0, 0.75);
   text-decoration: none;
+  white-space: nowrap;
   transition: background-color 0.15s ease, border-left 0.15s ease;
   border-left: 3px solid transparent;
 }
