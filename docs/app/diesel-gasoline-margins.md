@@ -39,15 +39,23 @@ Visualização típica: **stacked bar/area chart** ao longo de semanas, com filt
 
 ## Como o dado chega
 
-**Manualmente, pelo CEO.** Fluxo:
+**Two paths — both use the same upsert conflict key `(fuel_type, week)` and are fully interchangeable.**
+
+### UI path (preferred for small additions/edits)
+
+Admins open `/admin-panel → Data Input → D&G Margins` and add or update rows directly. The form POSTs via PostgREST upsert on `(fuel_type, week)`. No file required.
+
+See [`docs/app/admin.md`](admin.md) for the full Data Input section spec.
+
+### Bulk path (fallback for large imports)
 
 ```
-CEO edita data/d_g_margins.xlsx → scripts/manual/dg_margins_upload.py → upsert em d_g_margins
+CEO edits data/d_g_margins.xlsx → scripts/manual/dg_margins_upload.py → upsert into d_g_margins
 ```
 
-Workflow GitHub Action: `.github/workflows/manual_dg_margins.yml` roda semanalmente (segunda).
+GitHub Action: `.github/workflows/manual_dg_margins.yml` runs weekly (Monday).
 
-**Dono do dado:** `worker_dados-locais` (não ETL automático). Este dashboard só consome.
+**Data owner:** `worker_dados-locais` (not an automated ETL). This dashboard is read-only.
 
 ## Dependências cross-dept
 

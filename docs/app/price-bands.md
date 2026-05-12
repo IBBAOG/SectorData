@@ -44,13 +44,21 @@ Output típico: linhas temporais sobrepostas, por produto.
 
 ## Como o dado chega
 
-**Manualmente, pelo CEO.** Fluxo:
+**Two paths — both use the same upsert conflict key `(product, date)` and are fully interchangeable.**
+
+### UI path (preferred for small additions/edits)
+
+Admins open `/admin-panel → Data Input → Price Bands` and add or update rows directly. The form POSTs via PostgREST upsert on `(product, date)`. No file required.
+
+See [`docs/app/admin.md`](admin.md) for the full Data Input section spec.
+
+### Bulk path (fallback for large imports)
 
 ```
-CEO edita data/price_bands.xlsx → scripts/manual/price_bands_upload.py → upsert em price_bands
+CEO edits data/price_bands.xlsx → scripts/manual/price_bands_upload.py → upsert into price_bands
 ```
 
-Hoje o upload é manual (rodado localmente). **Dono do dado:** `worker_dados-locais`.
+Run locally. **Data owner:** `worker_dados-locais`.
 
 ## Dependências cross-dept
 
