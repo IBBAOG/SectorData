@@ -324,14 +324,6 @@ def _get_existing_dates(sb) -> set[str]:
     Returns the set of data_referencia values that already have 5 rows
     (i.e. all 5 regions are present) — these dates are skipped.
     """
-    try:
-        result = sb.rpc(
-            "query",
-            {},
-        )
-    except Exception:
-        pass
-
     # Use a direct table query with grouping via PostgREST aggregate approach:
     # We select all data_referencia rows and count client-side to avoid
     # needing a custom RPC. For large archives this is acceptable
