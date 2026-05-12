@@ -11,7 +11,7 @@ import { useUserProfile } from "../context/UserProfileContext";
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
 
-interface NavItem { label: string; href: string }
+interface NavItem { label: string; href: string; adminOnly?: boolean }
 interface NavSubGroup { label: string; items: NavItem[] }
 interface NavGroup { heading: string; items: NavItem[]; subGroups?: NavSubGroup[]; hideHeading?: boolean; noBorderRight?: boolean }
 interface NavModule {
@@ -116,6 +116,7 @@ const NAV_ENTRIES: NavEntry[] = [
   },
   { label: "Market Watch", href: "/stocks" },
   { label: "News Hunter", href: "/news-hunter" },
+  { label: "Analytics dashboard", href: "/admin-analytics", adminOnly: true },
 ];
 
 /** Map nested/alternate routes to the root module slug for visibility checks */
@@ -207,6 +208,8 @@ export default function NavBar() {
           {NAV_ENTRIES.map((entry) => {
             /* ── Standalone link ── */
             if (!isModule(entry)) {
+              // Admin-only links are hidden for non-Admins (and during profile load)
+              if (entry.adminOnly && !isAdmin) return null;
               // Hide visibility-controlled links from Client users when toggled off
               if (!profileLoading && profile?.role !== "Admin") {
                 const rawSlug = entry.href.replace(/^\//, "");

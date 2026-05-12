@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
-import Link from "next/link";
 
 import NavBar from "../../../components/NavBar";
 import { useRoleGuard } from "../../../hooks/useRoleGuard";
@@ -412,48 +411,6 @@ export default function AdminPanelPage() {
               {currentSection.description}
             </p>
           </div>
-
-          {/* Analytics callout — link to /admin-analytics. Lives above every
-              admin-panel section so admins always see it; non-Admins never reach
-              this component (useRoleGuard redirects them). */}
-          <Link
-            href="/admin-analytics"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-              background: "linear-gradient(90deg, rgba(255,80,0,0.08), rgba(255,80,0,0.02))",
-              border: "1px solid rgba(255,80,0,0.25)",
-              borderRadius: 12,
-              padding: "12px 16px",
-              marginBottom: 24,
-              textDecoration: "none",
-              color: "inherit",
-              fontFamily: "Arial, sans-serif",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span style={{ color: ORANGE, display: "inline-flex" }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="20" x2="18" y2="10" />
-                  <line x1="12" y1="20" x2="12" y2="4" />
-                  <line x1="6" y1="20" x2="6" y2="14" />
-                </svg>
-              </span>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a" }}>
-                  Analytics dashboard
-                </div>
-                <div style={{ fontSize: 11.5, color: "#666", marginTop: 1 }}>
-                  Engagement, exports, and logins by user and dashboard.
-                </div>
-              </div>
-            </div>
-            <span style={{ fontSize: 12, fontWeight: 700, color: ORANGE, letterSpacing: "0.05em", textTransform: "uppercase" }}>
-              Abrir →
-            </span>
-          </Link>
 
           {/* ── Members ────────────────────────────────────────────────────── */}
           {activeSection === "members" && (
