@@ -2821,3 +2821,37 @@ export async function rpcGetAnalyticsHeatmap(
     return [];
   }
 }
+
+// ============================================================
+// MODULE: Subsidy Tracker (/src/app/(dashboard)/subsidy-tracker/page.tsx)
+// ============================================================
+//
+// Tracks the federal diesel subsidy impact: ANP Reference price (regional
+// average) vs. ANP Commercialization price (Reference - active subsidy),
+// alongside BBA Import Parity (IPP) and Petrobras reference price.
+//
+// The RPC FULL OUTER JOINs `price_bands` (Diesel) with the daily regional
+// average of `anp_subsidy_diesel_reference`, then applies the subsidy
+// vigente from `anp_subsidy_history` to derive `anp_commercialization`.
+// `regions` is a JSONB object with the 5 regional reference prices for the
+// hover tooltip; it may be null when no ETL extraction exists for the day.
+
+export type SubsidyTrackerRow = {
+  date: string;                            // YYYY-MM-DD
+  ipp: number | null;                      // BBA import parity, Diesel
+  anp_reference: number | null;            // daily avg across 5 regions
+  anp_commercialization: number | null;    // anp_reference - active_subsidy
+  petrobras: number | null;                // Petrobras price, Diesel
+  regions: Record<string, number> | null;  // { NORTE, NORDESTE, ... }
+};
+
+export async function rpcGetSubsidyTrackerDiesel(
+  supabase: SupabaseClient,
+): Promise<SubsidyTrackerRow[]> {
+  const { data, error } = await supabase.rpc("get_subsidy_tracker_diesel");
+  if (error) {
+    console.error("rpcGetSubsidyTrackerDiesel:", error);
+    throw error;
+  }
+  return (data ?? []) as SubsidyTrackerRow[];
+}
