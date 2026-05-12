@@ -21,7 +21,19 @@ Visualização dos **volumes mensais de importação e exportação** dos 3 NCMs
 - Restringir o **período** via range slider (default: últimos 10 anos), aplicado server-side via RPC.
 - Escolher **um NCM** (select único) e ver o ranking **Top 15 Países** acumulado no período em 2 charts de barras horizontais — um para Importação e um para Exportação.
 
-Header: `MDIC Comex Stat — Importações e Exportações` + sub `Volume mensal de importação e exportação de petróleo cru, gasolina e diesel por NCM e país de origem/destino` + badge de período quando dados existem.
+Header: `MDIC Comex Stat — Imports and Exports` + sub `Monthly import and export volumes of crude oil, gasoline, and diesel by NCM and origin/destination country` + period badge when data exists.
+
+A **metric toggle** (5 options) sits just below the header and drives all 4 charts simultaneously:
+
+| Value | Label | Y-axis unit | Formula |
+|---|---|---|---|
+| `volume` | Volume (kt) | kt | `volume_kg / 1e6` |
+| `qty_stat` | Statistical qty | `unidade_estatistica` (e.g. "m³") | `quantidade_estatistica` |
+| `fob` | FOB (USD M) | USD M | `valor_fob_usd / 1e6` |
+| `fob_per_ton` | FOB / ton | USD/ton | `valor_fob_usd / (volume_kg / 1000)` |
+| `fob_per_m3` | FOB / m³ | USD/m³ | `valor_fob_usd / quantidade_estatistica` |
+
+FOB values come directly from the API in USD (raw). The toggle uses `SegmentedToggle` (`variant="compact"`) and is client-side only — no refetch. Ranking in Top Countries bar charts re-orders based on the active metric.
 
 Diferença vs `/anp-cdp`: aqui é o **fluxo internacional** (import/export) reportado pela alfândega, não a produção doméstica. Diferença vs `/navios-diesel`: agregação mensal por NCM/país, não navio individual em tempo real.
 
@@ -30,8 +42,10 @@ Diferença vs `/anp-cdp`: aqui é o **fluxo internacional** (import/export) repo
 | RPC | Tipo | Função |
 |---|---|---|
 | `get_mdic_comex_filtros` | próprio | `anos[]`, `ncms[{ncm_codigo, ncm_nome}]` |
-| `get_mdic_comex_serie` | próprio | Série mensal agregada por NCM (sem breakdown por país). Aceita `p_flow`, `p_ncms`, `p_ano_inicio`, `p_ano_fim` (todos opcionais) |
-| `get_mdic_comex_top_paises` | próprio | Top N países por volume para uma combinação flow+NCM+período. Aceita `p_flow`, `p_ncm_codigo`, `p_ano_inicio`, `p_ano_fim`, `p_limit` (default 15) |
+| `get_mdic_comex_serie` | próprio | Série mensal agregada por NCM (sem breakdown por país). Retorna `quantidade_estatistica`, `unidade_estatistica`. Aceita `p_flow`, `p_ncms`, `p_ano_inicio`, `p_ano_fim` (todos opcionais) |
+| `get_mdic_comex_top_paises` | próprio | Top N países por volume para uma combinação flow+NCM+período. Retorna `quantidade_estatistica`, `unidade_estatistica`. Aceita `p_flow`, `p_ncm_codigo`, `p_ano_inicio`, `p_ano_fim`, `p_limit` (default 15) |
+| `get_mdic_comex_aggregated` | próprio | Agrega por dimensões dinâmicas (`p_group_by`). Retorna `quantidade_estatistica`, `unidade_estatistica`. Usado pelo export modal | 
+| `get_mdic_comex_export_count` | próprio | Conta linhas para o Tier 2 modal | 
 
 ## Tabelas
 
@@ -41,11 +55,16 @@ Diferença vs `/anp-cdp`: aqui é o **fluxo internacional** (import/export) repo
 
 ### Colunas de `mdic_comex`
 
-`ano (smallint), mes (smallint), flow (text), ncm_codigo (text), ncm_nome (text), pais (text), volume_kg (float8), valor_fob_usd (float8)`. PK: `(ano, mes, flow, ncm_codigo, pais)`. Indexes: `(ano, mes)`, `(ncm_codigo)`, `(flow)`.
+`ano (smallint), mes (smallint), flow (text), ncm_codigo (text), ncm_nome (text), pais (text), volume_kg (float8), valor_fob_usd (float8), quantidade_estatistica (float8, nullable), unidade_estatistica (text, nullable)`.
 
-### Migration relevante
+PK: `(ano, mes, flow, ncm_codigo, pais)`. Indexes: `(ano, mes)`, `(ncm_codigo)`, `(flow)`.
 
-- `20260504000012_mdic_comex.sql` — schema + indexes + RLS + 3 RPCs + INSERT em `module_visibility('mdic-comex', true)`.
+`quantidade_estatistica` contains the metric statistic from the Comex Stat API (e.g. cubic metres for diesel/gasoline, metric tonnes for crude oil). `unidade_estatistica` holds the unit label (e.g. "m³", "Metros Cúbicos"). Both columns are nullable: rows backfilled before the pipeline update (Stage 2a) will have NULL until the next ETL run.
+
+### Migrations relevantes
+
+- `20260504000012_mdic_comex.sql` — original schema + indexes + RLS + 3 RPCs + INSERT em `module_visibility('mdic-comex', true)`.
+- `20260512000001` — Stage 1: adds `quantidade_estatistica` and `unidade_estatistica` columns; updates RPCs `get_mdic_comex_serie`, `get_mdic_comex_top_paises`, `get_mdic_comex_aggregated` to SELECT/SUM the new columns.
 
 ## Pipeline de origem
 
@@ -82,10 +101,14 @@ Mesmas 3 entradas em `NCM_INFO` no `page.tsx` e em `_NCMS` no scraper:
 
 ## Charts esperados (4)
 
-1. **Importações (mil t / mês)** — chart de linha múltipla, 1 trace por NCM selecionado (filtrado client-side).
-2. **Exportações (mil t / mês)** — chart de linha múltipla, 1 trace por NCM selecionado.
-3. **Top 15 Países — Importação · {NCM}** — barras horizontais, cor `#2196F3`.
-4. **Top 15 Países — Exportação · {NCM}** — barras horizontais, cor `#FF5000`.
+Y-axis unit and bar ordering driven by the active metric (toggle above the charts).
+
+1. **Imports ({unit} / month)** — multi-line chart, 1 trace per selected NCM (client-side filtered).
+2. **Exports ({unit} / month)** — multi-line chart, 1 trace per selected NCM.
+3. **Top Countries — Imports · {NCM}** — horizontal bars, color `#2196F3`, re-sorted by active metric.
+4. **Top Countries — Exports · {NCM}** — horizontal bars, color `#FF5000`, re-sorted by active metric.
+
+Edge case: when the active metric is `qty_stat` or `fob_per_m3` and all rows in scope have `quantidade_estatistica = null`, each chart renders `emptyPlot` with a descriptive message instead of NaN traces.
 
 ## Componentes consumidos
 
@@ -121,6 +144,7 @@ Mesmas 3 entradas em `NCM_INFO` no `page.tsx` e em `_NCMS` no scraper:
 - Bloquear página inteira com barrel em `serieLoading` ou `topLoading` — barrel é só pro `loading` inicial; subsequentes usam indicador inline + opacity 0.5.
 - Adicionar NCM novo apenas no `NCM_INFO` sem coordenar com ETL para incluir em `_NCMS` — vai ficar sem dados.
 - Mexer em `scripts/pipelines/mdic_comex_sync.py` — pertence ao ETL.
+- Renderizar trace com NaN quando `quantidade_estatistica` é 100% null — usar `emptyPlot(height, "No statistical quantity data for the current filter")` para `qty_stat` e `fob_per_m3` quando nenhuma linha tem valor não-null (backfill ainda incompleto).
 
 ## Export
 

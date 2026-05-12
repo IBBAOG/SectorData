@@ -807,6 +807,8 @@ export type MdicComexSerieRow = {
   ncm_nome: string | null;
   volume_kg: number | null;
   valor_fob_usd: number | null;
+  quantidade_estatistica?: number | null;
+  unidade_estatistica?: string | null;
 };
 
 export type MdicComexTopPaisRow = {
@@ -814,6 +816,8 @@ export type MdicComexTopPaisRow = {
   ncm_codigo: string;
   volume_kg: number | null;
   valor_fob_usd: number | null;
+  quantidade_estatistica?: number | null;
+  unidade_estatistica?: string | null;
 };
 
 export type MdicComexFiltros = {
@@ -2515,6 +2519,8 @@ export type MdicComexAggregatedRow = {
   pais: string | null;
   volume_kg: number;
   valor_fob_usd: number;
+  quantidade_estatistica?: number | null;
+  unidade_estatistica?: string | null;
 };
 
 export async function rpcGetMdicComexAggregated(
@@ -2571,6 +2577,8 @@ export type MdicComexRawRow = {
   pais: string;
   volume_kg: number | null;
   valor_fob_usd: number | null;
+  quantidade_estatistica?: number | null;
+  unidade_estatistica?: string | null;
 };
 
 export async function fetchMdicComexRawFiltered(
