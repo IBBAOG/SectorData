@@ -179,6 +179,18 @@ As políticas de escrita para `price_bands` e `d_g_margins` são criadas pela mi
 `supabase/migrations/20260512000000_data_input_admin_policies.sql` (worker_supabase, branch paralela).
 Sem a migration, writes retornam 403 — a UI renderiza mas não persiste.
 
+## Known bugs fixed
+
+### `null value in column "date"` on draft save (2026-05-12)
+
+**Symptom**: user adds a new row, fills all fields including date via the calendar picker, clicks Save — Postgres returns `null value in column "date"`.
+
+**Root cause**: stale-closure race in React 19 concurrent mode. `handleSave` checked `saveDisabled`, a derived variable captured in the render closure. A `blur` on the date input right before the click could commit a new state (`date: null`) after the render that set `saveDisabled=false`, letting the old closure skip the guard while `drafts` already reflected the invalid state.
+
+**Fix (commit 69a8839e)**:
+- `EditableTableEditor.tsx` — `handleSave` now re-validates all drafts and edited rows from current committed state before calling `saveChanges`.
+- `persistence.ts` — `saveChanges` now (a) coerces number strings to JS numbers for PostgREST, and (b) short-circuits with a clear error if any required column in a draft is null/undefined, blocking the Postgres call entirely.
+
 ## Anti-padrões
 
 - Páginas administrativas sem `useRoleGuard("Admin")`.
