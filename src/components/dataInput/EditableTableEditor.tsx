@@ -187,7 +187,7 @@ export function EditableTableEditor({ config }: EditableTableEditorProps) {
     }
 
     setSaving(true);
-    const result = await saveChanges(supabase, config, { editedRows, drafts, deletedIds });
+    const result = await saveChanges(supabase, config, { editedRows, drafts, deletedIds, rows });
     setSaving(false);
 
     if (result.error) {

@@ -80,9 +80,20 @@ export async function saveChanges(
   // ── Build upsert payload ──────────────────────────────────────────────────
   const toUpsert: Record<string, unknown>[] = [];
 
-  // Edited existing rows (keep their positive id so upsert matches by id)
+  // Edited existing rows — merge full original row so conflict-key columns
+  // (e.g. "product"+"date" for price_bands, "fuel_type"+"week" for d_g_margins)
+  // are always present in the payload. Without them PostgREST cannot match the
+  // ON CONFLICT target and either fails or inserts a duplicate instead of updating.
   for (const [id, partial] of editedRows) {
-    toUpsert.push({ id, ...partial });
+    const original: Row = state.rows.find((r) => r.id === id) ?? ({ id } as Row);
+    const merged: Record<string, unknown> = { ...original, ...partial };
+    // Coerce edited number cells (inputs always yield strings)
+    for (const col of config.columns) {
+      if (col.key in partial) {
+        merged[col.key] = coerceValue(partial[col.key as keyof typeof partial], col.type);
+      }
+    }
+    toUpsert.push(merged);
   }
 
   // New drafts — strip the negative synthetic id so Postgres auto-generates.

@@ -52,6 +52,8 @@ export interface EditState {
   editedRows: Map<number, Partial<Row>>;
   drafts: DraftRow[];
   deletedIds: Set<number>;
+  /** Snapshot of the loaded rows, needed to build full upsert payloads for edits. */
+  rows: Row[];
 }
 
 export interface SaveResult {
