@@ -11,7 +11,7 @@ import SegmentedToggle from "@/components/dashboard/SegmentedToggle";
 import { getSupabaseClient } from "@/lib/supabaseClient";
 import type { EditableTableConfig, DraftRow, Row } from "@/lib/dataInput/types";
 import { loadRows, saveChanges } from "@/lib/dataInput/persistence";
-import { validateCell, validateRow } from "@/lib/dataInput/validation";
+import { validateRow } from "@/lib/dataInput/validation";
 
 interface EditableTableEditorProps {
   config: EditableTableConfig;
@@ -71,6 +71,9 @@ export function EditableTableEditor({ config }: EditableTableEditorProps) {
   }, [supabase, config]);
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    // Standard data-fetch effect: fetchRows is async/useCallback; state resets are
+    // intentional config-change cleanup (same pattern as admin-panel/page.tsx:212/237).
     fetchRows();
     // Reset partition to first value whenever config changes
     setActivePartition(config.partitionBy?.values[0]?.value ?? "");
@@ -78,6 +81,7 @@ export function EditableTableEditor({ config }: EditableTableEditorProps) {
     setEditedRows(new Map());
     setDrafts([]);
     setDeletedIds(new Set());
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [fetchRows, config]);
 
   // ── Helpers — edits ───────────────────────────────────────────────────────
