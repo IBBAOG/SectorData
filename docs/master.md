@@ -50,6 +50,7 @@ CEO (Eduardo)
      │   ├─ dash-anp-painel-importacoes   (/anp-painel-importacoes — Oil & Gas / Fuel Distribution)
      │   ├─ dash-anp-precos-distribuicao  (/anp-precos-distribuicao — Fuel Distribution)
      │   ├─ dash-anp-cdp-diaria          (/anp-cdp-diaria — Oil & Gas)
+     │   ├─ dash-subsidy-tracker          (/subsidy-tracker — Fuel Distribution, dados proprietários)
      │   └─ dash-admin-analytics          (/admin-analytics — Admin-only, sem module_visibility)
      │
      ├─ Supabase / DB    (schema Postgres, migrations, RLS, RPCs SQL,
@@ -102,6 +103,7 @@ Cada um possui um módulo (ou bundle, no caso de admin). Cada um auto-documenta 
 | [`worker_dash-anp-painel-importacoes`](../.claude/agents/worker_dash-anp-painel-importacoes.md) | `/anp-painel-importacoes` | [`docs/app/anp-painel-importacoes.md`](app/anp-painel-importacoes.md) |
 | [`worker_dash-anp-precos-distribuicao`](../.claude/agents/worker_dash-anp-precos-distribuicao.md) | `/anp-precos-distribuicao` | [`docs/app/anp-precos-distribuicao.md`](app/anp-precos-distribuicao.md) |
 | [`worker_dash-anp-cdp-diaria`](../.claude/agents/worker_dash-anp-cdp-diaria.md) | `/anp-cdp-diaria` | [`docs/app/anp-cdp-diaria.md`](app/anp-cdp-diaria.md) |
+| [`worker_dash-subsidy-tracker`](../.claude/agents/worker_dash-subsidy-tracker.md) | `/subsidy-tracker` (Fuel Distribution — dados proprietários) | [`docs/app/subsidy-tracker.md`](app/subsidy-tracker.md) |
 | [`worker_dash-admin-analytics`](../.claude/agents/worker_dash-admin-analytics.md) | `/admin-analytics` (Admin-only — sem `module_visibility`; backed por `app_events`) | [`docs/app/admin-analytics.md`](app/admin-analytics.md) |
 
 ## Papéis transversais (não donos de pasta)
@@ -127,7 +129,7 @@ São os pontos onde um departamento depende de outro. Mudanças nestes contratos
 | Quem consome | Como |
 |---|---|
 | APP | Lê via supabase-js (anon key) chamando RPCs. Wrappers em `src/lib/rpc.ts` (este código é do APP, mas as RPCs em si pertencem ao Supabase). Também **escreve** `app_events` via RPC `track_event` (fire-and-forget, auth.uid() capturado no SQL). |
-| ETL | Escreve via supabase-py (service key) — popula `vendas`, `navios_diesel`, `news_articles`, `mdic_comex`, `anp_ppi`, `anp_precos_produtores`, `anp_glp`, `anp_daie`, `anp_desembaracos`, `anp_painel_imp_dist`, `anp_lpc`, `sindicom`, `anp_cdp_producao`, `anp_precos_distribuicao`, `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco`, `anp_voip`. |
+| ETL | Escreve via supabase-py (service key) — popula `vendas`, `navios_diesel`, `news_articles`, `mdic_comex`, `anp_ppi`, `anp_precos_produtores`, `anp_glp`, `anp_daie`, `anp_desembaracos`, `anp_painel_imp_dist`, `anp_lpc`, `sindicom`, `anp_cdp_producao`, `anp_precos_distribuicao`, `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco`, `anp_voip`, `anp_subsidy_diesel_reference`. |
 | Dados Locais | Escreve via supabase-py (service key) — popula `d_g_margins`, `price_bands` |
 | Alertas | Lê via supabase-py — verifica mudanças em fontes monitoradas |
 
@@ -185,7 +187,7 @@ ETL pode ler para análise; somente Alertas escreve.
 
 Cada workflow novo precisa: secrets registrados no GitHub, schedule cron, e linha no `docs/etl-pipelines/PRD.md`.
 
-Workflows ativos para as tabelas novas: `etl_mdic_comex.yml`, `etl_anp_precos.yml` (PPI + preços produtores + GLP), `etl_anp_fase3.yml` (DAIE + desembaraços + painel importações), `etl_anp_lpc.yml`, `etl_sindicom.yml`, `etl_anp_cdp.yml` (CDP), `etl_anp_precos_distribuicao.yml` (preços de distribuição), `etl_anp_cdp_diaria.yml` (produção diária 3 níveis — campo/instalação/poço — 3×/dia, CLI `--level all --upload`), `etl_anp_voip.yml` (VOIP por campo — anual, 1º de maio, source BAR/ANP). Ver `docs/etl-pipelines/PRD.md` para schedules e scripts.
+Workflows ativos para as tabelas novas: `etl_mdic_comex.yml`, `etl_anp_precos.yml` (PPI + preços produtores + GLP), `etl_anp_fase3.yml` (DAIE + desembaraços + painel importações), `etl_anp_lpc.yml`, `etl_sindicom.yml`, `etl_anp_cdp.yml` (CDP), `etl_anp_precos_distribuicao.yml` (preços de distribuição), `etl_anp_cdp_diaria.yml` (produção diária 3 níveis — campo/instalação/poço — 3×/dia, CLI `--level all --upload`), `etl_anp_voip.yml` (VOIP por campo — anual, 1º de maio, source BAR/ANP), `etl_anp_subsidy_diesel.yml` (referência de preços subsídio diesel — diário 11:30 UTC, script `pipelines/anp/subsidy_diesel_sync.py`, target `anp_subsidy_diesel_reference`). Ver `docs/etl-pipelines/PRD.md` para schedules e scripts.
 
 ---
 
@@ -388,7 +390,7 @@ Workflow controlado pelo **Subgerente APP** (não pelo Gerente Geral). Ver detal
 ## Estado atual (snapshot)
 
 - 4 departamentos + 3 papéis transversais.
-- 23 dashboards ativos (8 originais + 11 adicionados na Fase 3 + 1 Admin Analytics + 1 ANP CDP Diária + 1 ANP CDP BSW + 1 ANP CDP Depletion).
+- 24 dashboards ativos (8 originais + 11 adicionados na Fase 3 + 1 Admin Analytics + 1 ANP CDP Diária + 1 ANP CDP BSW + 1 ANP CDP Depletion + 1 Subsidy Tracker).
 - Documentação inicial criada em **2026-05-05**.
 
 ### Limpeza inicial (2026-05-05)
