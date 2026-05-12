@@ -116,7 +116,6 @@ const NAV_ENTRIES: NavEntry[] = [
   },
   { label: "Market Watch", href: "/stocks" },
   { label: "News Hunter", href: "/news-hunter" },
-  { label: "Analytics dashboard", href: "/admin-analytics", adminOnly: true },
 ];
 
 /** Map nested/alternate routes to the root module slug for visibility checks */

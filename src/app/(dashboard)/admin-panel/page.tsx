@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 
 import NavBar from "../../../components/NavBar";
 import { useRoleGuard } from "../../../hooks/useRoleGuard";
@@ -387,6 +388,51 @@ export default function AdminPanelPage() {
               );
             })}
           </nav>
+
+          {/* Divider before navigation link */}
+          <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "10px 20px 10px" }} />
+
+          {/* Analytics dashboard — navigation link (not a section toggle) */}
+          <div style={{ padding: "0 10px" }}>
+            <Link
+              href="/admin-analytics"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                padding: "10px 12px",
+                borderRadius: 8,
+                color: "#aaa",
+                textDecoration: "none",
+                transition: "background 0.15s, color 0.15s",
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLAnchorElement).style.background = "rgba(255,255,255,0.05)"; (e.currentTarget as HTMLAnchorElement).style.color = "#fff"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLAnchorElement).style.background = "transparent"; (e.currentTarget as HTMLAnchorElement).style.color = "#aaa"; }}
+            >
+              {/* Bar chart icon */}
+              <span style={{ flexShrink: 0, opacity: 0.6 }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="20" x2="18" y2="10" />
+                  <line x1="12" y1="20" x2="12" y2="4" />
+                  <line x1="6" y1="20" x2="6" y2="14" />
+                </svg>
+              </span>
+              <span>
+                <div style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.3 }}>
+                  Analytics dashboard
+                </div>
+                <div style={{ fontSize: 10, opacity: 0.55, marginTop: 1 }}>
+                  Open analytics view
+                </div>
+              </span>
+              {/* External-style arrow to signal navigation */}
+              <span style={{ marginLeft: "auto", opacity: 0.4, flexShrink: 0 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </span>
+            </Link>
+          </div>
 
           {/* Footer */}
           <div style={{ padding: "16px 20px 0", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
