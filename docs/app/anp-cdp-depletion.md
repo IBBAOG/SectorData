@@ -188,7 +188,7 @@ The "Selected fields" section in the sidebar shows colored chips matching the ch
 
 | RPC | Type | Purpose |
 |---|---|---|
-| `get_anp_cdp_depletion_campos()` | own (sidebar dropdown) | Returns alphabetically ordered `text[]` of field names available for the depletion analysis. |
+| `get_anp_cdp_depletion_campos()` | own (sidebar dropdown) | Returns alphabetically ordered `text[]` of all field names (Mar + Terra) that have a published VOIP in `anp_voip`. The previous offshore-only restriction (`local IN ('PreSal','PosSal')`) was removed in migration `20260508000015_anp_cdp_bsw_depletion_allow_onshore.sql`. |
 | `get_anp_cdp_depletion_scatter(p_campos text[])` | own (per-well view) | Returns one row per (well × month) for the filtered fields, with server-computed `np_kbpd` (uptime-normalized daily flow, kbpd) and `mes_desde_t0`. RETURNS TABLE. Capped at 500k points server-side. |
 | `get_anp_cdp_depletion_field_aggregate(p_campos text[])` | own (field-average view) | Returns one row per (field × calendar month) with `np_kbpd` (field-aggregate kbpd), `n_pocos`, `pct_voip` (cumulative oil ÷ VOIP), and `cumulative_oil_bbl`. RETURNS jsonb (single row, single column) to bypass PostgREST default `max_rows=1000`. |
 
@@ -255,7 +255,7 @@ Sidebar visual classes (`#sidebar`, `.sidebar-section-label`, `.sidebar-filter-s
 
 | Source | How it depends |
 |---|---|
-| `worker_supabase` | Owns the `get_anp_cdp_depletion_campos`, `get_anp_cdp_depletion_scatter`, and `get_anp_cdp_depletion_field_aggregate` SQL functions, and the `module_visibility` row for `anp-cdp-depletion`. Reuses the `anp_voip` table introduced for `/anp-cdp-bsw`. |
+| `worker_supabase` | Owns the `get_anp_cdp_depletion_campos`, `get_anp_cdp_depletion_scatter`, and `get_anp_cdp_depletion_field_aggregate` SQL functions, and the `module_visibility` row for `anp-cdp-depletion`. Reuses the `anp_voip` table introduced for `/anp-cdp-bsw`. The offshore-only restriction was **reverted** in migration `20260508000015_anp_cdp_bsw_depletion_allow_onshore.sql` — all campos (Mar + Terra) are now included. |
 | ETL (`scripts/pipelines/anp/cdp/` and `scripts/pipelines/anp/voip_sync.py`) | Populates `anp_cdp_producao` monthly and `anp_voip` yearly. Schema must include `petroleo_bbl_dia` and `tempo_prod_hs_mes` for NP to be computable. |
 | `worker_dash-admin` | Visibility toggle in `/admin-panel` + home image. |
 | Designer | Visual identity (Arial 12, brand orange `#FF5000`, axis line style, sidebar section/label classes). |

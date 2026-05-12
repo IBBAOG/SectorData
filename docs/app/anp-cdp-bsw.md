@@ -4,7 +4,7 @@ ANP CDP — BSW by Well dashboard (Oil & Gas). Owner: [`worker_dash-anp-cdp-bsw`
 
 > Item of the **Oil & Gas** dropdown in the NavBar (alongside `/anp-cdp` and `/anp-cdp-diaria`). One chart, one filter (field), one toggle (per-well vs field average).
 >
-> **Scope**: this dashboard is restricted to **offshore** fields only (`local IN ('PreSal','PosSal')`). Onshore/terra fields are intentionally excluded — both at the dropdown level (via `get_anp_cdp_bsw_campos`) and inside the data RPCs (defense-in-depth).
+> **Scope**: all campos (Mar + Terra) with a published VOIP in `anp_voip` are available. The previous offshore-only restriction (`local IN ('PreSal','PosSal')`) was removed in migration `20260508000015_anp_cdp_bsw_depletion_allow_onshore.sql`. Onshore/terra fields now appear alongside offshore fields in the dropdown and in all RPCs.
 
 ## Code scope
 
@@ -64,9 +64,9 @@ The "Selected fields" section in the sidebar shows colored chips matching the ch
 
 | RPC | Type | Purpose |
 |---|---|---|
-| `get_anp_cdp_bsw_campos()` | own (sidebar dropdown) | Returns an alphabetically ordered `text[]` of offshore field names (`local IN ('PreSal','PosSal')`) **that also have a published VOIP in `anp_voip`**. Source for the sidebar's field multi-select — replaces the previous reuse of `get_anp_cdp_filtros`, which mixed onshore and offshore fields. |
-| `get_anp_cdp_bsw_scatter(p_campos text[])` | own (per-well view) | Returns one row per (well × month) for the filtered fields, with server-computed `bsw` and `mes_desde_t0`. Filters internally to `local IN ('PreSal','PosSal')` (defense-in-depth). Capped at 500k points server-side. |
-| `get_anp_cdp_bsw_field_aggregate(p_campos text[])` | own (field-average view) | Returns one row per (field × calendar month) with volume-weighted BSW, well count, daily volume, **cumulative oil produced** (in bbl), **% of VOIP recovered** (`cumulative_oil_bbl / voip_bbl`), and the reference (`ref_ano`, `ref_mes`). Inner-joins against `anp_voip` so fields without a published VOIP are silently dropped. Filters internally to `local IN ('PreSal','PosSal')`. Low-volume output (one row per calendar month per field). |
+| `get_anp_cdp_bsw_campos()` | own (sidebar dropdown) | Returns an alphabetically ordered `text[]` of all field names (Mar + Terra) **that have a published VOIP in `anp_voip`**. Source for the sidebar's field multi-select. |
+| `get_anp_cdp_bsw_scatter(p_campos text[])` | own (per-well view) | Returns one row per (well × month) for the filtered fields, with server-computed `bsw` and `mes_desde_t0`. Capped at 500k points server-side. |
+| `get_anp_cdp_bsw_field_aggregate(p_campos text[])` | own (field-average view) | Returns one row per (field × calendar month) with volume-weighted BSW, well count, daily volume, **cumulative oil produced** (in bbl), **% of VOIP recovered** (`cumulative_oil_bbl / voip_bbl`), and the reference (`ref_ano`, `ref_mes`). Inner-joins against `anp_voip` so fields without a published VOIP are silently dropped. Low-volume output (one row per calendar month per field). |
 
 ### Output contracts
 
@@ -129,8 +129,8 @@ Sidebar visual classes (`#sidebar`, `.sidebar-section-label`, `.sidebar-filter-s
 
 | Source | How it depends |
 |---|---|
-| `worker_supabase` | Owns the `get_anp_cdp_bsw_campos`, `get_anp_cdp_bsw_scatter` and `get_anp_cdp_bsw_field_aggregate` SQL functions, the `anp_voip` table + RLS, and the `module_visibility` row for `anp-cdp-bsw`. The aggregate function was delivered in migration `20260508000003_anp_cdp_bsw_aggregate.sql`; the offshore-only field list + internal `local IN ('PreSal','PosSal')` filter on the existing RPCs is in `20260508000004_anp_cdp_bsw_offshore.sql`. The VOIP-based X-axis variant (`anp_voip` table + updated aggregate RPC + filtered `get_anp_cdp_bsw_campos`) is delivered alongside Frente B. |
-| ETL (`scripts/pipelines/anp/cdp/` and `scripts/pipelines/anp/voip_sync.py`) | Populates `anp_cdp_producao` monthly and `anp_voip` yearly. Schema/columns must include `petroleo_bbl_dia`, `agua_bbl_dia`, and `local` (used to filter offshore fields). The `voip_sync.py` pipeline (Frente A) parses ANP's annual VOIP bulletin and upserts into `anp_voip`. |
+| `worker_supabase` | Owns the `get_anp_cdp_bsw_campos`, `get_anp_cdp_bsw_scatter` and `get_anp_cdp_bsw_field_aggregate` SQL functions, the `anp_voip` table + RLS, and the `module_visibility` row for `anp-cdp-bsw`. The aggregate function was delivered in migration `20260508000003_anp_cdp_bsw_aggregate.sql`; the previous offshore restriction was introduced in `20260508000004_anp_cdp_bsw_offshore.sql` and **reverted** in `20260508000015_anp_cdp_bsw_depletion_allow_onshore.sql`. |
+| ETL (`scripts/pipelines/anp/cdp/` and `scripts/pipelines/anp/voip_sync.py`) | Populates `anp_cdp_producao` monthly and `anp_voip` yearly. Schema/columns must include `petroleo_bbl_dia`, `agua_bbl_dia`. The `voip_sync.py` pipeline parses ANP's annual VOIP bulletin and upserts into `anp_voip`. |
 | `worker_dash-admin` | Visibility toggle in `/admin-panel` + home image. |
 | Designer | Visual identity (Arial 12, brand orange `#FF5000`, axis line style, sidebar section/label classes). |
 
