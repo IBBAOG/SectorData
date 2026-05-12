@@ -87,14 +87,14 @@ export const EDITABLE_TABLES: EditableTableConfig[] = [
     tableName: "d_g_margins",
     conflictColumns: ["fuel_type", "week"],
     defaultSort: { key: "week", dir: "desc" },
+    partitionBy: {
+      column: "fuel_type",
+      values: [
+        { value: "Diesel B", label: "Diesel" },
+        { value: "Gasoline C", label: "Gasoline" },
+      ],
+    },
     columns: [
-      {
-        key: "fuel_type",
-        label: "Fuel Type",
-        type: "select",
-        options: ["Diesel B", "Gasoline C"],
-        required: true,
-      },
       {
         key: "week",
         label: "Week",
