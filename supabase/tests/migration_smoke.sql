@@ -213,6 +213,19 @@ BEGIN
     WHERE schemaname = 'public' AND tablename = 'mdic_comex' AND rowsecurity = TRUE;
   IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: mdic_comex'; END IF;
 
+  -- Column mdic_comex.quantidade_estatistica + unidade_estatistica (20260512000001)
+  PERFORM 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'mdic_comex'
+      AND column_name = 'quantidade_estatistica';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing column: mdic_comex.quantidade_estatistica'; END IF;
+
+  PERFORM 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'mdic_comex'
+      AND column_name = 'unidade_estatistica';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing column: mdic_comex.unidade_estatistica'; END IF;
+
   -- ─── MATERIALIZED VIEWS ───────────────────────────────────────────────────
 
   PERFORM 1 FROM pg_matviews
