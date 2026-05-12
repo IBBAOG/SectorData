@@ -60,6 +60,7 @@ const NAV_ENTRIES: NavEntry[] = [
           { href: "/navios-diesel", label: "Diesel Imports Line-Up" },
           { href: "/diesel-gasoline-margins", label: "Diesel and Gasoline Margins" },
           { href: "/price-bands", label: "Price Bands" },
+          { href: "/subsidy-tracker", label: "Subsidy Tracker" },
         ],
       },
       {
