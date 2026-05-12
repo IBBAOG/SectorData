@@ -13,11 +13,12 @@ import ChartSection from "../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../components/dashboard/BarrelLoading";
 import ExportPanel from "../../../components/dashboard/ExportPanel";
 import ExportModal from "../../../components/dashboard/ExportModal";
+import SegmentedToggle from "../../../components/dashboard/SegmentedToggle";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../lib/plotlyDefaults";
-import { kgToMilTon, LABEL } from "../../../lib/units";
+// units.ts helpers not needed here — volume conversion is inlined in METRIC_CONFIG
 import {
   rpcGetMdicComexSerie,
   rpcGetMdicComexTopPaises,
@@ -44,6 +45,63 @@ const NCM_INFO: Record<string, { label: string; color: string }> = {
   "27101921": { label: "Diesel",     color: "#2196F3" },
 };
 const ALL_NCMS = Object.keys(NCM_INFO);
+
+// ── Metric toggle ─────────────────────────────────────────────────────────────
+
+type Metric = "volume" | "qty_stat" | "fob" | "fob_per_ton" | "fob_per_m3";
+
+const METRIC_OPTIONS: Array<{ value: Metric; label: string }> = [
+  { value: "volume",      label: "Volume (kt)" },
+  { value: "qty_stat",    label: "Statistical qty" },
+  { value: "fob",         label: "FOB (USD M)" },
+  { value: "fob_per_ton", label: "FOB / ton" },
+  { value: "fob_per_m3",  label: "FOB / m³" },
+];
+
+type MetricRow = {
+  volume_kg:               number | null;
+  valor_fob_usd:           number | null;
+  quantidade_estatistica?: number | null;
+  unidade_estatistica?:    string | null;
+};
+
+const METRIC_CONFIG: Record<Metric, {
+  axisTitle: (unit?: string | null) => string;
+  hoverUnit: (unit?: string | null) => string;
+  select:    (r: MetricRow) => number | null;
+}> = {
+  volume:      {
+    axisTitle: () => "kt",
+    hoverUnit: () => "kt",
+    select:    r => (r.volume_kg ?? 0) / 1e6,
+  },
+  qty_stat:    {
+    axisTitle: u => u ?? "unit",
+    hoverUnit: u => u ?? "",
+    select:    r => r.quantidade_estatistica ?? null,
+  },
+  fob:         {
+    axisTitle: () => "USD M",
+    hoverUnit: () => "USD M",
+    select:    r => (r.valor_fob_usd ?? 0) / 1e6,
+  },
+  fob_per_ton: {
+    axisTitle: () => "USD/ton",
+    hoverUnit: () => "USD/ton",
+    select:    r =>
+      (r.volume_kg && r.volume_kg > 0 && r.valor_fob_usd != null)
+        ? r.valor_fob_usd / (r.volume_kg / 1000)
+        : null,
+  },
+  fob_per_m3:  {
+    axisTitle: () => "USD/m³",
+    hoverUnit: () => "USD/m³",
+    select:    r =>
+      (r.quantidade_estatistica && r.quantidade_estatistica > 0 && r.valor_fob_usd != null)
+        ? r.valor_fob_usd / r.quantidade_estatistica
+        : null,
+  },
+};
 
 // Hard limits for raw export. Above EXCEL_MAX, disable Excel and route the
 // user to CSV. Above ABS_MAX, both are disabled. The `mdic_comex` table is
@@ -96,9 +154,21 @@ function buildLineChart(
   rows: MdicComexSerieRow[],
   flow: string,
   ncms: string[],
+  metric: Metric,
 ): { data: PlotData[]; layout: Partial<Layout> } {
   const filtered = rows.filter(r => r.flow === flow && ncms.includes(r.ncm_codigo));
   if (!filtered.length) return emptyPlot(280);
+
+  // For qty_stat / fob_per_m3: if all rows have null quantidade_estatistica,
+  // render an empty-state chart rather than an all-NaN trace.
+  if (metric === "qty_stat" || metric === "fob_per_m3") {
+    const hasQty = filtered.some(r => r.quantidade_estatistica != null);
+    if (!hasQty) return emptyPlot(280, "No statistical quantity data for the current filter");
+  }
+
+  const cfg       = METRIC_CONFIG[metric];
+  // Pick the first non-null unidade_estatistica across all filtered rows.
+  const commonUnit = filtered.find(r => r.unidade_estatistica)?.unidade_estatistica ?? null;
 
   const byNcm: Record<string, MdicComexSerieRow[]> = {};
   for (const r of filtered) {
@@ -112,16 +182,20 @@ function buildLineChart(
         a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes
       );
       const info = NCM_INFO[ncm];
+      const unit = cfg.hoverUnit(commonUnit);
       return {
         type: "scatter", mode: "lines",
         name: info?.label ?? ncm,
         x: data.map(r => `${r.ano}-${String(r.mes).padStart(2, "0")}`),
-        y: data.map(r => kgToMilTon(r.volume_kg ?? 0)),
+        y: data.map(r => cfg.select(r)),
         line:  { width: 2, color: info?.color ?? "#999" },
-        hovertemplate: `${info?.label}: %{y:.0f} ${LABEL.MIL_T}<extra></extra>`,
+        hovertemplate: unit
+          ? `${info?.label ?? ncm}: %{y:.2f} ${unit}<extra></extra>`
+          : `${info?.label ?? ncm}: %{y:.2f}<extra></extra>`,
       } as PlotData;
     });
 
+  const axisLabel = cfg.axisTitle(commonUnit);
   return {
     data: traces,
     layout: {
@@ -129,7 +203,7 @@ function buildLineChart(
       height: 280,
       margin: { t: 10, b: 50, l: 70, r: 30 },
       hovermode: "x unified",
-      yaxis: { ...AXIS_LINE, title: { text: `${LABEL.MIL_T} / month` } },
+      yaxis: { ...AXIS_LINE, title: { text: `${axisLabel} / month` } },
       xaxis: { ...AXIS_LINE, type: "date" as const },
       legend: { orientation: "h", yanchor: "bottom", y: 1.01, xanchor: "left", x: 0 },
     },
@@ -140,27 +214,44 @@ function buildBarChart(
   rows: MdicComexTopPaisRow[],
   flow: string,
   ncm: string,
+  metric: Metric,
 ): { data: PlotData[]; layout: Partial<Layout> } {
   if (!rows.length) return emptyPlot(340);
 
-  const sorted = [...rows].sort((a, b) => (b.volume_kg ?? 0) - (a.volume_kg ?? 0));
-  const color  = flow === "import" ? "#2196F3" : "#FF5000";
-  const label  = NCM_INFO[ncm]?.label ?? ncm;
-  const flowPt = flow === "import" ? "Imports" : "Exports";
+  const cfg        = METRIC_CONFIG[metric];
+  const commonUnit = rows.find(r => r.unidade_estatistica)?.unidade_estatistica ?? null;
+
+  // For qty_stat / fob_per_m3: if all rows have null quantidade_estatistica,
+  // render empty-state rather than NaN bars.
+  if (metric === "qty_stat" || metric === "fob_per_m3") {
+    const hasQty = rows.some(r => r.quantidade_estatistica != null);
+    if (!hasQty) return emptyPlot(340, "No statistical quantity data for the current filter");
+  }
+
+  const sel    = (r: MdicComexTopPaisRow) => cfg.select(r) ?? -Infinity;
+  const sorted = [...rows].sort((a, b) => sel(b) - sel(a)).slice(0, 15);
+
+  const color   = flow === "import" ? "#2196F3" : "#FF5000";
+  const label   = NCM_INFO[ncm]?.label ?? ncm;
+  const flowPt  = flow === "import" ? "Imports" : "Exports";
+  const unit    = cfg.hoverUnit(commonUnit);
+  const axLabel = cfg.axisTitle(commonUnit);
 
   return {
     data: [{
       type: "bar", orientation: "h",
-      x: sorted.map(r => kgToMilTon(r.volume_kg ?? 0)),
+      x: sorted.map(r => cfg.select(r) ?? 0),
       y: sorted.map(r => r.pais),
       marker: { color },
-      hovertemplate: `%{y}: %{x:.0f} ${LABEL.MIL_T}<extra></extra>`,
+      hovertemplate: unit
+        ? `%{y}: %{x:.2f} ${unit}<extra></extra>`
+        : `%{y}: %{x:.2f}<extra></extra>`,
     } as PlotData],
     layout: {
       ...COMMON_LAYOUT,
       height: 380,
       margin: { t: 36, b: 40, l: 130, r: 20 },
-      xaxis: { ...AXIS_LINE, title: { text: LABEL.MIL_T } },
+      xaxis: { ...AXIS_LINE, title: { text: axLabel } },
       yaxis: { autorange: "reversed" as const, showgrid: false, zeroline: false, tickfont: { size: 10 } },
       title: {
         text: `Top Countries — ${flowPt} · ${label}`,
@@ -186,6 +277,7 @@ export default function MdicComexPage() {
   const [selectedNcmPaises, setSelectedNcmPaises] = useState<string>("27090010");
   const [topImport, setTopImport]                 = useState<MdicComexTopPaisRow[]>([]);
   const [topExport, setTopExport]                 = useState<MdicComexTopPaisRow[]>([]);
+  const [metric, setMetric]                       = useState<Metric>("volume");
 
   // ── Export modal state (Fase B Tier 2) ────────────────────────────────────
   const [exportOpen, setExportOpen]       = useState(false);
@@ -276,10 +368,10 @@ export default function MdicComexPage() {
   }, [refetchedTop]);
 
   // ── Charts ────────────────────────────────────────────────────────────────
-  const importChart    = useMemo(() => buildLineChart(serieRows, "import", selectedNCMs), [serieRows, selectedNCMs]);
-  const exportChart    = useMemo(() => buildLineChart(serieRows, "export", selectedNCMs), [serieRows, selectedNCMs]);
-  const topImportChart = useMemo(() => buildBarChart(topImport, "import", selectedNcmPaises), [topImport, selectedNcmPaises]);
-  const topExportChart = useMemo(() => buildBarChart(topExport, "export", selectedNcmPaises), [topExport, selectedNcmPaises]);
+  const importChart    = useMemo(() => buildLineChart(serieRows, "import", selectedNCMs, metric), [serieRows, selectedNCMs, metric]);
+  const exportChart    = useMemo(() => buildLineChart(serieRows, "export", selectedNCMs, metric), [serieRows, selectedNCMs, metric]);
+  const topImportChart = useMemo(() => buildBarChart(topImport, "import", selectedNcmPaises, metric), [topImport, selectedNcmPaises, metric]);
+  const topExportChart = useMemo(() => buildBarChart(topExport, "export", selectedNcmPaises, metric), [topExport, selectedNcmPaises, metric]);
 
   // ── Export modal helpers (Fase B Tier 2) ──────────────────────────────────
   function openExportModal() {
@@ -405,15 +497,28 @@ export default function MdicComexPage() {
                 }
               />
 
+              {/* ── Metric toggle ─────────────────────────────────── */}
+              {!loading && (
+                <div style={{ marginBottom: 16 }}>
+                  <SegmentedToggle<Metric>
+                    options={METRIC_OPTIONS}
+                    value={metric}
+                    onChange={setMetric}
+                    variant="compact"
+                    style={{ display: "inline-flex" }}
+                  />
+                </div>
+              )}
+
               {loading ? (
                 <BarrelLoading />
               ) : (
                 <>
-                  {/* ── Imported Volume ─────────────────────────────── */}
+                  {/* ── Imports ─────────────────────────────────────── */}
                   <div className="row mb-2">
                     <div className="col-12">
                       <ChartSection
-                        title={`Imports (${LABEL.MIL_T} / month)`}
+                        title={`Imports (${METRIC_CONFIG[metric].axisTitle(serieRows.find(r => r.unidade_estatistica)?.unidade_estatistica)} / month)`}
                         loading={serieLoading}
                         height={280}
                       >
@@ -427,11 +532,11 @@ export default function MdicComexPage() {
                     </div>
                   </div>
 
-                  {/* ── Exported Volume ─────────────────────────────── */}
+                  {/* ── Exports ─────────────────────────────────────── */}
                   <div className="row mb-2">
                     <div className="col-12">
                       <ChartSection
-                        title={`Exports (${LABEL.MIL_T} / month)`}
+                        title={`Exports (${METRIC_CONFIG[metric].axisTitle(serieRows.find(r => r.unidade_estatistica)?.unidade_estatistica)} / month)`}
                         loading={serieLoading}
                         height={280}
                       >
@@ -549,7 +654,7 @@ export default function MdicComexPage() {
             } else {
               const groupBy = MDIC_GROUPBY_MAP[exportGranularity];
               const rows = await rpcGetMdicComexAggregated(supabase, exportFilters, groupBy);
-              const metricKeys = ["volume_kg", "valor_fob_usd"] as const;
+              const metricKeys = ["volume_kg", "valor_fob_usd", "quantidade_estatistica", "unidade_estatistica"] as const;
               const wantedCols = [...groupBy, ...metricKeys] as readonly string[];
               const projected = rows.map((r) => {
                 const out: Record<string, unknown> = {};

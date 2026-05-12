@@ -1468,10 +1468,12 @@ const MDIC_COMEX_METRIC_COLS: Array<{
   key: keyof MdicComexAggregatedRow;
   header: string;
   width: number;
-  format: string;
+  format?: string;
 }> = [
-  { key: "volume_kg",     header: "Volume (kg)",     width: 18, format: "#,##0" },
-  { key: "valor_fob_usd", header: "FOB Value (US$)", width: 20, format: "#,##0.00" },
+  { key: "volume_kg",              header: "Volume (kg)",          width: 18, format: "#,##0" },
+  { key: "valor_fob_usd",          header: "FOB Value (US$)",      width: 20, format: "#,##0.00" },
+  { key: "quantidade_estatistica", header: "Statistical qty",      width: 22, format: "#,##0.###" },
+  { key: "unidade_estatistica",    header: "Unit",                 width: 16 },
 ];
 
 export async function downloadMdicComexAggregatedExcel(
@@ -1519,14 +1521,16 @@ export async function downloadMdicComexRawExcel(rows: MdicComexRawRow[]): Promis
     title: "MDIC Comex — Imports and Exports (raw)",
     filename: "MDIC Comex raw",
     columns: [
-      { key: "ano",           header: "Year",             width: 8 },
-      { key: "mes",           header: "Month",             width: 6 },
-      { key: "flow",          header: "Flow",            width: 12 },
-      { key: "ncm_codigo",    header: "NCM",             width: 14 },
-      { key: "ncm_nome",      header: "NCM Description", width: 36, align: "left" },
-      { key: "pais",          header: "Country",         width: 22, align: "left" },
-      { key: "volume_kg",     header: "Volume (kg)",     width: 18, format: "#,##0" },
-      { key: "valor_fob_usd", header: "FOB Value (US$)", width: 20, format: "#,##0.00" },
+      { key: "ano",                    header: "Year",              width: 8 },
+      { key: "mes",                    header: "Month",             width: 6 },
+      { key: "flow",                   header: "Flow",              width: 12 },
+      { key: "ncm_codigo",             header: "NCM",               width: 14 },
+      { key: "ncm_nome",               header: "NCM Description",   width: 36, align: "left" },
+      { key: "pais",                   header: "Country",           width: 22, align: "left" },
+      { key: "volume_kg",              header: "Volume (kg)",       width: 18, format: "#,##0" },
+      { key: "valor_fob_usd",          header: "FOB Value (US$)",   width: 20, format: "#,##0.00" },
+      { key: "quantidade_estatistica", header: "Statistical qty",   width: 22, format: "#,##0.###" },
+      { key: "unidade_estatistica",    header: "Unit",              width: 16 },
     ],
   });
 }
