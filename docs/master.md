@@ -87,7 +87,7 @@ Cada um possui um módulo (ou bundle, no caso de admin). Cada um auto-documenta 
 | [`worker_dash-margins`](../.claude/agents/worker_dash-margins.md) | `/diesel-gasoline-margins` | [`docs/app/diesel-gasoline-margins.md`](app/diesel-gasoline-margins.md) |
 | [`worker_dash-price-bands`](../.claude/agents/worker_dash-price-bands.md) | `/price-bands` | [`docs/app/price-bands.md`](app/price-bands.md) |
 | [`worker_dash-stocks`](../.claude/agents/worker_dash-stocks.md) | `/stocks` + Yahoo proxy + `components/stocks/` | [`docs/app/stocks.md`](app/stocks.md) |
-| [`worker_dash-news-hunter`](../.claude/agents/worker_dash-news-hunter.md) | `/news-hunter` (coord. com repo scanner) | [`docs/app/news-hunter.md`](app/news-hunter.md) |
+| [`worker_dash-news-hunter`](../.claude/agents/worker_dash-news-hunter.md) | `/news-hunter` (coord. com repo scanner); Admin-only clipping: selects articles → `POST /api/clipping/scrape` → .eml download + HTML preview | [`docs/app/news-hunter.md`](app/news-hunter.md) |
 | [`worker_dash-admin`](../.claude/agents/worker_dash-admin.md) | `/home` + `/profile` + `/admin-panel` | [`docs/app/admin.md`](app/admin.md) |
 | [`worker_dash-anp-cdp`](../.claude/agents/worker_dash-anp-cdp.md) | `/anp-cdp` | [`docs/app/anp-cdp.md`](app/anp-cdp.md) |
 | [`worker_dash-anp-cdp-bsw`](../.claude/agents/worker_dash-anp-cdp-bsw.md) | `/anp-cdp-bsw` (Oil & Gas) | [`docs/app/anp-cdp-bsw.md`](app/anp-cdp-bsw.md) |
@@ -157,6 +157,12 @@ São os pontos onde um departamento depende de outro. Mudanças nestes contratos
 
 `is_visible_for_clients`: controla acesso do role Client ao módulo. Admin sempre acessa.
 `is_visible_on_home`: controla exibição do card na galeria `/home` para TODOS os usuários (inclusive Admin). Default `true`.
+
+**Contrato clipping (`/news-hunter` → Next.js API):**
+
+| Endpoint | Auth gate | Consumidor | Fonte de dados |
+|---|---|---|---|
+| `POST /api/clipping/scrape` | Admin-only (gated via `profiles.role` check server-side) | `worker_dash-news-hunter` (UI modal) | `news_articles` rows selected by Admin; ~80 domain extractors via cheerio |
 
 **Regra de divisão:** SQL = `worker_supabase`. JS chamando SQL = `worker_subgerente-app` / `dash-*`.
 
