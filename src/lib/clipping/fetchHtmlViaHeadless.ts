@@ -25,11 +25,70 @@ async function getBrowser(): Promise<import("playwright-core").Browser> {
       // fixes chrome.runtime, normalizes navigator.plugins/languages, etc. — all signals
       // inspected by Cloudflare Bot Management to distinguish real browsers from headless ones.
       const { chromium } = await import("playwright-extra");
-      const stealthPluginMod = await import("puppeteer-extra-plugin-stealth");
-      const stealth = stealthPluginMod.default();
-      // Disable evasions that may have missing transitive deps and aren't critical
-      // for Cloudflare Turnstile bypass. The big ones for CF are navigator.webdriver,
-      // chrome.runtime, navigator.plugins, navigator.languages, user-agent-override.
+      const StealthPlugin = (await import("puppeteer-extra-plugin-stealth")).default;
+
+      // Static imports of each evasion so the Next.js / Vercel bundler can trace them
+      // at build time. playwright-extra's default behaviour is to require() each
+      // dependency path dynamically at runtime, which the bundler cannot trace and
+      // therefore omits from the deployment bundle — causing "Plugin dependency not found"
+      // errors in production. Pre-registering with setDependencyResolution() replaces the
+      // dynamic require() with a value we supply directly.
+      //
+      // The dependency path key MUST match what stealth's `dependencies` getter emits:
+      //   `${plugin.name}/evasions/${evasionName}` → "stealth/evasions/<name>"
+      // (plugin.name === "stealth" — see puppeteer-extra-plugin-stealth/index.js line 78)
+      //
+      // Reduced set: 9 evasions most critical for Cloudflare Bot Management bypass.
+      const [
+        EvasionWebdriver,
+        EvasionLanguages,
+        EvasionPlugins,
+        EvasionVendor,
+        EvasionRuntime,
+        EvasionApp,
+        EvasionUserAgent,
+        EvasionWebgl,
+        EvasionMedia,
+      ] = await Promise.all([
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        import("puppeteer-extra-plugin-stealth/evasions/navigator.webdriver").then((m: any) => m.default),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        import("puppeteer-extra-plugin-stealth/evasions/navigator.languages").then((m: any) => m.default),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        import("puppeteer-extra-plugin-stealth/evasions/navigator.plugins").then((m: any) => m.default),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        import("puppeteer-extra-plugin-stealth/evasions/navigator.vendor").then((m: any) => m.default),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        import("puppeteer-extra-plugin-stealth/evasions/chrome.runtime").then((m: any) => m.default),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        import("puppeteer-extra-plugin-stealth/evasions/chrome.app").then((m: any) => m.default),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        import("puppeteer-extra-plugin-stealth/evasions/user-agent-override").then((m: any) => m.default),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        import("puppeteer-extra-plugin-stealth/evasions/webgl.vendor").then((m: any) => m.default),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        import("puppeteer-extra-plugin-stealth/evasions/media.codecs").then((m: any) => m.default),
+      ]);
+
+      // Register each evasion module under the exact key the plugin's `dependencies`
+      // getter emits. This bypasses dynamic require() at runtime — the bundler traces
+      // the static import() literals above at build time and includes them in the bundle.
+      const prefix = "stealth/evasions/";
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const plugins = (chromium as any).plugins;
+      plugins.setDependencyResolution(prefix + "navigator.webdriver", EvasionWebdriver);
+      plugins.setDependencyResolution(prefix + "navigator.languages", EvasionLanguages);
+      plugins.setDependencyResolution(prefix + "navigator.plugins", EvasionPlugins);
+      plugins.setDependencyResolution(prefix + "navigator.vendor", EvasionVendor);
+      plugins.setDependencyResolution(prefix + "chrome.runtime", EvasionRuntime);
+      plugins.setDependencyResolution(prefix + "chrome.app", EvasionApp);
+      plugins.setDependencyResolution(prefix + "user-agent-override", EvasionUserAgent);
+      plugins.setDependencyResolution(prefix + "webgl.vendor", EvasionWebgl);
+      plugins.setDependencyResolution(prefix + "media.codecs", EvasionMedia);
+
+      // Configure the stealth plugin with only the 9 evasions registered above,
+      // then attach it to chromium.
+      const stealth = StealthPlugin();
       const keepEvasions = new Set([
         "navigator.webdriver",
         "navigator.languages",
@@ -42,9 +101,7 @@ async function getBrowser(): Promise<import("playwright-core").Browser> {
         "media.codecs",
       ]);
       for (const e of [...stealth.enabledEvasions]) {
-        if (!keepEvasions.has(e)) {
-          stealth.enabledEvasions.delete(e);
-        }
+        if (!keepEvasions.has(e)) stealth.enabledEvasions.delete(e);
       }
       chromium.use(stealth);
 
