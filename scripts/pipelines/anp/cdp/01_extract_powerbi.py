@@ -126,9 +126,10 @@ def _build_campo_local_map() -> dict[str, str]:
         from supabase import create_client
         sb = create_client(url, key)
 
-        # Fetch distinct (campo, local) from existing data
-        # Use ordering so that offshore locals win over Terra on campo name collision
-        result = sb.table("anp_cdp_producao").select("campo,local").execute()
+        # Fetch distinct (campo, local) from the materialized view (much smaller than base table)
+        # mv_anp_cdp_pocos has one row per (poco, campo, bacia, local) — still manageable.
+        # We only need campo→local mapping so we deduplicate in Python below.
+        result = sb.table("mv_anp_cdp_pocos").select("campo,local").execute()
         mapping: dict[str, str] = {}
         for row in (result.data or []):
             c = (row.get("campo") or "").upper().strip()
@@ -189,7 +190,7 @@ def _generate_periods(de: str, ate: str) -> list[tuple[int, int]]:
     while (y, m) <= (a_y, a_m):
         periods.append((y, m))
         m += 1
-        if m > 13:
+        if m > 12:
             m, y = 1, y + 1
     return periods
 
