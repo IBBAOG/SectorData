@@ -10,7 +10,7 @@ import { parseNetscapeCookies, buildCookieHeader, canonicalDomain } from "@/lib/
 import type { ScrapeResult } from "@/lib/clipping/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 180;
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;

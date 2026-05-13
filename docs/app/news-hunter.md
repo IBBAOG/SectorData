@@ -22,8 +22,9 @@ src/lib/clipping/
   extract.ts        cheerio-based extraction (port of clipinator.py _extract)
   clean.ts          cleanTitle, cleanParagraphs, looksPaywalled
   cookies.ts        parseNetscapeCookies + buildCookieHeader + canonicalDomain
-  fetch.ts          fetchHtml (optional Cookie header) + Wayback fallback (no TLS impersonation)
-  scrape.ts         scrape() orchestrator — Wayback also covers fetch failures
+  fetch.ts                fetchHtml (undici) + fetchHtmlViaCurl + fetchHtmlViaImpersonate + fetchFromWayback
+  fetchHtmlViaHeadless.ts playwright-core + @sparticuz/chromium headless tier (4th cascade layer)
+  scrape.ts               scrape() orchestrator — 5-tier cascade (undici/curl/impersonate/headless/wayback)
   buildHtml.ts      buildHtml() — email HTML template
   buildPlainText.ts buildPlainText() — plain-text alternative
   buildEml.ts       buildEml() — hand-rolled RFC 5322 multipart/alternative
@@ -47,7 +48,7 @@ Admins têm uma funcionalidade extra de **clipping de notícias**:
 
 1. **Selection Mode toggle** — aparece no top row para Admins. Ativa checkboxes em cada artigo.
 2. **SelectionSidebar** — painel direito com artigos selecionados em ordem, controles de reordenação (↑/↓), botão "Generate Clipping".
-3. **POST /api/clipping/scrape** — rota Admin-gated (mirror do padrão de auth em `upload-card-preview/route.ts`). Cap de 15 URLs, 12s timeout por URL, `maxDuration = 60`.
+3. **POST /api/clipping/scrape** — rota Admin-gated (mirror do padrão de auth em `upload-card-preview/route.ts`). Cap de 15 URLs, 12s timeout por URL, `maxDuration = 180` (bumped from 60 to accommodate headless tier worst-case).
 4. **ClippingModal** — modal com:
    - Aba "Preview": iframe renderizando o HTML do clipping (Calibri 11pt, header laranja #FF5000, "Main Headlines" TOC, TEAM_BLOCK com 3 emails).
    - Aba "Status": pills por artigo (ok/paywall/fetch_failed/etc) + textarea manual para sites bloqueados.
@@ -92,9 +93,9 @@ O fallback para o Wayback Machine agora dispara em **dois** cenários:
 
 Quando um artigo vem do Wayback, o modal exibe um badge "via Wayback" azul ao lado do pill de status na aba Status. Isso cobre Reuters e outros sites com bot blocking forte que não têm cookies disponíveis. O campo `via` em `ScrapeResult` rastreia a origem: `"curl"` | `"wayback"` | omitido (fetch direto).
 
-#### Curl dual-binary cascade (Cloudflare / bot-detection bypass)
+#### Fetch cascade (Cloudflare / bot-detection / JS-challenge bypass)
 
-Node's `undici` fetch has a TLS ClientHello fingerprint that many sites reject with 403. Two bundled binaries cover the full spectrum:
+Node's `undici` fetch has a TLS ClientHello fingerprint that many sites reject with 403. A 4-tier cascade covers the full spectrum:
 
 ```
 undici fetch
@@ -104,18 +105,24 @@ fetchHtmlViaCurl  — plain static curl 8.20.0 (musl, 10 MB)
   ↓ fetch_failed (or paywall → skip to Wayback directly)
 fetchHtmlViaImpersonate  — curl-impersonate chrome131 (4.1 MB ELF + wrapper)
   Full Chrome 131 TLS fingerprint (ciphers, curves, extensions, HTTP/2, browser headers).
-  Covers sites with deep bot-detection (Cloudflare, Investing.com).
+  Covers Cloudflare sites that use TLS fingerprinting (plain TLS impersonation sufficient).
+  ↓ fetch_failed
+fetchHtmlViaHeadless  — playwright-core + @sparticuz/chromium (~62 MB serverless Chromium)
+  Executes JavaScript — passes Cloudflare JS challenge (Investing.com, etc.) that static
+  TLS impersonation alone cannot. Blocks images/media/fonts/stylesheets for speed.
+  Waits 3s after 403/429/503 for challenge JS to resolve, then 1.5s for body hydration.
+  Browser instance cached module-level (browserPromise); fresh BrowserContext per request.
   ↓ fetch_failed
 fetchFromWayback
   ↓ fetch_failed
 return fetch_failed  (all details concatenated in ScrapeResult.error)
 ```
 
-`via` field values: `"curl"` | `"curl_impersonate"` | `"wayback"`.
+`via` field values: `"curl"` | `"curl_impersonate"` | `"headless"` | `"wayback"`.
 
-Final error string format: `"undici: <d>; curl: <d>; curl_impersonate: <d>; wayback: <d>"`.
+Final error string format: `"undici: <d>; curl: <d>; curl_impersonate: <d>; headless: <d>; wayback: <d>"`.
 
-Paywall logic: if any curl level returns OK but `looksPaywalled`, **skip the next curl level** — paywall is an auth problem, not a fingerprint problem. Jump directly to Wayback.
+Paywall logic: if any tier returns OK but `looksPaywalled`, **skip directly to Wayback** — paywall is an auth problem, not a fingerprint/JS problem. Headless would see the same gate.
 
 Implementation details:
 - `child_process.execFile` (not `exec`) — URL and cookies passed as array args, no shell injection.
@@ -126,21 +133,26 @@ Implementation details:
 - On non-Linux (dev Windows/macOS): `resolveCurlStaticPath` returns `"curl"` (system); `resolveCurlImpersonatePath` returns `null` → `curl_impersonate_not_found`.
 
 The ClippingModal Status tab shows:
-- Blue "via curl" badge for articles from plain static curl.
-- Orange-tinted "via curl-impersonate" badge for articles from chrome131 impersonate.
-- Blue "via Wayback" badge for Wayback snapshots.
+- Blue (`#e8f4fd`) "via curl" badge for articles from plain static curl.
+- Orange-tinted (`#fff0e6`) "via curl-impersonate" badge for articles from chrome131 impersonate.
+- Green (`#e6f9ee`) "via headless" badge for articles retrieved via headless Chromium.
+- Blue (`#e8f4fd`) "via Wayback" badge for Wayback snapshots.
 
-#### Bundled binaries (`vendor/`)
+#### Bundled binaries / libs
 
-| File | Size | Source | Purpose |
+| Artifact | Size | Source | Purpose |
 |---|---|---|---|
-| `vendor/curl-static-amd64` | ~10 MB | [curl/curl releases](https://github.com/curl/curl/releases) — musl static-pie ELF | Plain curl (level 1 fallback). Covers majority of sites. |
-| `vendor/curl-impersonate` | ~4.1 MB | [lexiforest/curl-impersonate](https://github.com/lexiforest/curl-impersonate) v1.1.0, dynamically linked ELF | Binary called by `curl_chrome131` wrapper. |
-| `vendor/curl_chrome131` | ~1.9 KB | Same release | Bash wrapper — injects Chrome 131 TLS ciphers/curves/extensions/HTTP/2 settings + browser headers. |
+| `vendor/curl-static-amd64` | ~10 MB | [curl/curl releases](https://github.com/curl/curl/releases) — musl static-pie ELF | Plain curl (tier 1 fallback). |
+| `vendor/curl-impersonate` | ~4.1 MB | [lexiforest/curl-impersonate](https://github.com/lexiforest/curl-impersonate) v1.1.0 ELF | Binary called by `curl_chrome131` wrapper. |
+| `vendor/curl_chrome131` | ~1.9 KB | Same release | Bash wrapper — injects Chrome 131 TLS fingerprint + browser headers. |
+| `node_modules/@sparticuz/chromium/bin/` | ~62 MB | [@sparticuz/chromium](https://github.com/Sparticuz/chromium) | Serverless Chromium for playwright-core (tier 3 headless). |
+| `playwright-core` (npm) | ~5 MB | [microsoft/playwright](https://github.com/microsoft/playwright) | Browser automation API (no bundled browser — uses sparticuz). |
 
-Bundle total: ~14 MB added to the `/api/clipping/scrape` Vercel function.
+Estimated bundle total: ~100–120 MB (Vercel Pro limit: 250 MB unzipped).
 
-**Bundling**: `next.config.ts` `outputFileTracingIncludes` includes all three files.
+**If Vercel reports bundle size exceeded**: switch from `@sparticuz/chromium` to `@sparticuz/chromium-min` — it downloads Chromium at runtime from CDN instead of bundling it (smaller bundle, ~2s extra cold start on first use).
+
+**Bundling**: `next.config.ts` `outputFileTracingIncludes` includes all four vendor paths. `serverExternalPackages` prevents webpack from trying to bundle `@sparticuz/chromium` and `playwright-core` — they must be `require()`d at runtime.
 
 **Path resolution**:
 - `resolveCurlStaticPath()` — checks `.next/server/vendor/curl-static-amd64` → `vendor/curl-static-amd64` → `/var/task/...`. Non-Linux → `"curl"` (system).

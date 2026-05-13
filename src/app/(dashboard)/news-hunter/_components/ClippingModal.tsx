@@ -331,6 +331,23 @@ export default function ClippingModal({
                           via curl-impersonate
                         </span>
                       )}
+                      {r.via === "headless" && (
+                        <span
+                          title="Content retrieved via headless Chromium browser (playwright-core + @sparticuz/chromium — JS challenge execution)"
+                          style={{
+                            background: "#e6f9ee",
+                            color: "#155724",
+                            borderRadius: 4,
+                            padding: "2px 7px",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            whiteSpace: "nowrap",
+                            flexShrink: 0,
+                          }}
+                        >
+                          via headless
+                        </span>
+                      )}
                       {(r.via === "wayback" || r.via_wayback) && (
                         <span
                           title="Content retrieved from Wayback Machine (live fetch failed or paywalled)"
