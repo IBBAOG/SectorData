@@ -79,27 +79,41 @@ export async function fetchHtmlViaHeadless(
 
     const page = await context.newPage();
 
-    // Block heavy resource types to reduce load time.
-    await page.route("**/*", (route) => {
-      const type = route.request().resourceType();
-      if (["image", "media", "font", "stylesheet"].includes(type)) {
-        return route.abort();
-      }
-      return route.continue();
-    });
+    // NOTE: Resource blocking intentionally removed.
+    // Cloudflare's JS challenge sometimes inspects whether sub-resources load;
+    // blocking images/fonts/stylesheets can flag the request as non-browser and
+    // prevent the challenge from resolving. Latency cost is acceptable given we
+    // only reach headless after undici + curl + curl-impersonate have all failed.
 
     const response = await page.goto(url, {
-      waitUntil: "domcontentloaded",
+      // "networkidle" lets Cloudflare's challenge JS complete its network activity
+      // (XHR/fetch calls used to verify the browser) before we capture HTML.
+      waitUntil: "networkidle",
       timeout: 25_000,
     });
 
-    // Cloudflare JS challenge returns 403/503 initially — give JS time to resolve.
-    if (response && (response.status() === 403 || response.status() === 429 || response.status() === 503)) {
-      await page.waitForTimeout(3000);
+    // Detect Cloudflare (or similar) JS challenge pages.
+    const challengeStatus = response != null && [403, 429, 503].includes(response.status());
+    let title = "";
+    try {
+      title = await page.title();
+    } catch { /* ignore — page may not be ready */ }
+    const challengeTitle = /just a moment|checking your browser|please wait|cloudflare/i.test(title);
+
+    if (challengeStatus || challengeTitle) {
+      // Challenges typically resolve in 5-8s. Wait up to 12s for the title to clear.
+      try {
+        await page.waitForFunction(
+          () => !/just a moment|checking your browser/i.test(document.title),
+          { timeout: 12_000, polling: 500 },
+        );
+      } catch {
+        // Title never cleared — challenge did not resolve; return whatever HTML we have.
+      }
     }
 
-    // Brief wait for any post-load JS (article body hydration, lazy content).
-    await page.waitForTimeout(1500);
+    // Brief hydration wait for article body lazy-loaded by JS on normal pages.
+    await page.waitForTimeout(1000);
 
     const html = await page.content();
     return { ok: true, html };
