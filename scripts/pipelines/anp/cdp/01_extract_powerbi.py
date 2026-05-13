@@ -33,6 +33,37 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
+# ─── Well-name normalisation ──────────────────────────────────────────────────
+# The Power BI API returns well names in compact format without hyphens
+# (e.g. "7SPH6SPS").  The historical anp_cdp_producao table was populated by
+# the APEX Selenium extractor which returned the canonical ANP SIGEP hyphenated
+# format ("7-SPH-6-SPS").  Without normalisation the PK (poco) differs between
+# old and new rows, preventing upsert deduplication and creating duplicates.
+#
+# The rule is deterministic: insert a hyphen at every transition between a run
+# of digits and a run of letters (or vice versa).
+#   "7SPH6SPS"  → "7-SPH-6-SPS"
+#   "7SPH2DSPS" → "7-SPH-2D-SPS"   (2D is one letter-group with a digit suffix)
+#   "9SPS77A"   → "9-SPS-77-A"
+#   "7OATP1RJS" → "7-OAT-P-1-RJS"  splits every digit↔letter boundary
+#
+# NOTE: this normalisation is intentionally applied ONLY in this script
+# (monthly snapshot → anp_cdp_producao).  The daily table anp_cdp_diaria_poco
+# has always stored compact names and is NOT changed here.
+
+_RE_HYPHEN_SPLIT = re.compile(r"(?<=\d)(?=[A-Za-z])|(?<=[A-Za-z])(?=\d)")
+
+
+def _normalise_poco(name: str) -> str:
+    """Convert compact ANP well code to canonical hyphenated SIGEP format."""
+    if not name:
+        return name
+    # Already contains hyphens → assume already normalised, just strip/upper
+    if "-" in name:
+        return name.strip().upper()
+    return _RE_HYPHEN_SPLIT.sub("-", name.strip().upper())
+
+
 # Allow running from repo root or from the script directory.
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
 if str(_REPO_ROOT) not in sys.path:
@@ -150,12 +181,24 @@ def _build_campo_local_map() -> dict[str, str]:
         return {}
 
 
+_heuristic_fallback_warned: set[str] = set()
+
+
 def _resolve_local(campo: str, bacia: str, campo_map: dict[str, str]) -> str:
-    """Resolve local for a (campo, bacia) pair using DB map first, then heuristic."""
+    """Resolve local for a (campo, bacia) pair using DB map first, then heuristic.
+
+    DB map is authoritative — it reflects the historical classification already
+    stored in anp_cdp_producao.  Heuristic is only used for genuinely new campos.
+    Each heuristic fallback is logged once (per session) so drift is visible.
+    """
     key = (campo or "").upper().strip()
     if key in campo_map:
         return campo_map[key]
-    return _derive_local_heuristic(campo, bacia)
+    result = _derive_local_heuristic(campo, bacia)
+    if key not in _heuristic_fallback_warned:
+        _heuristic_fallback_warned.add(key)
+        print(f"  [local-heuristic] New campo not in DB: campo='{campo}' bacia='{bacia}' → {result}")
+    return result
 
 
 def _month_date_range(ano: int, mes: int) -> tuple[date, date]:
@@ -235,7 +278,7 @@ def extract_and_write(ano: int, mes: int, output_dir: str, campo_map: dict[str, 
     # Key: (poco, campo, bacia)
     agg: dict[tuple, dict] = {}
     for r in rows:
-        poco  = (r.get("poco")  or "").strip()
+        poco  = _normalise_poco((r.get("poco")  or "").strip())
         campo = (r.get("campo") or "").strip()
         bacia = (r.get("bacia") or "").strip()
         petro = r.get("petroleo_bbl_dia") or 0.0
