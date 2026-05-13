@@ -1,3 +1,17 @@
+# ============================================================
+# DATA SOURCE: ANP CDP portal (Selenium + APEX + ddddocr CAPTCHA)
+#   URL: https://cdp.anp.gov.br/ords/r/cdp_apex/consulta-dados-publicos-cdp
+#
+# DO NOT migrate this pipeline to Power BI. The Power BI source feeds the
+# SEPARATE dashboard /anp-cdp-diaria (table anp_cdp_diaria*), which is a
+# distinct product. Mixing sources contaminates anp_cdp_producao with
+# divergent well-name formats and conflicting basin classification.
+#
+# If you genuinely need to change source, you must:
+#   1. Update docs/app/anp-cdp.md "Data source" section
+#   2. Remove the format guard in 02_upload.py
+#   3. Get CTO sign-off explicitly
+# ============================================================
 name: Extração ANP - Produção por Poço
 
 on:
@@ -21,24 +35,22 @@ on:
         type: choice
         options: ['false', 'true']
 
-# Extraction uses the ANP Power BI public API (no CAPTCHA, no Selenium).
-# Script: 01_extract_powerbi.py
-#   - Queries Power BI well-level (poco) data for the target month
-#   - Aggregates daily rows → monthly averages per (poco, campo, bacia)
-#   - Derives local (PosSal / PreSal / Terra) from DB lookup + basin heuristic
+# Extraction uses the ANP CDP APEX portal via Selenium + ddddocr CAPTCHA.
+# Script: 01_extract.py
+#   - Resolves CAPTCHA and navigates the APEX IR report
+#   - Downloads the official monthly production CSV per ambiente (M/S/T)
 #   - Writes 3 CSVs (one per local bucket) consumed by 02_upload.py
 #
-# Advantages over Selenium/CAPTCHA:
-#   - No browser dependencies, no CAPTCHA retry loop
-#   - Returns all wells (Power BI coverage: ~937 offshore wells in 04/2026
-#     vs ~197 from APEX portal which had an undocumented row cap)
+# Note: anp_cdp_powerbi.py and etl_anp_cdp_diaria.yml use the Power BI source
+# for the SEPARATE /anp-cdp-diaria dashboard. That is a different product.
+# Do not merge these pipelines.
 
 jobs:
   extrair:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +61,10 @@ jobs:
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
+
+      - name: Setup Chrome (for Selenium)
+        uses: browser-actions/setup-chrome@v1
+        id: setup-chrome
 
       - name: Compute target period
         id: periodo
@@ -61,15 +77,16 @@ jobs:
             echo "primeiro=$PRIMEIRO" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Extract via Power BI (all ambientes)
+      - name: Extract via Selenium + CAPTCHA (all ambientes)
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          CHROME_BINARY:        ${{ steps.setup-chrome.outputs.chrome-path }}
         run: |
           PERIODO="${{ steps.periodo.outputs.primeiro }}"
-          echo "=== Extracting $PERIODO via Power BI ==="
+          echo "=== Extracting $PERIODO via Selenium/APEX CAPTCHA ==="
           mkdir -p output/anp
-          python scripts/pipelines/anp/cdp/01_extract_powerbi.py \
+          python scripts/pipelines/anp/cdp/01_extract.py \
             --periodo "$PERIODO" \
             --output output/anp
 

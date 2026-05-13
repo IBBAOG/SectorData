@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# ============================================================
+# DATA SOURCE: ANP CDP portal (Selenium + APEX + ddddocr CAPTCHA)
+#   URL: https://cdp.anp.gov.br/ords/r/cdp_apex/consulta-dados-publicos-cdp
+#
+# DO NOT migrate this pipeline to Power BI. The Power BI source feeds the
+# SEPARATE dashboard /anp-cdp-diaria (table anp_cdp_diaria*), which is a
+# distinct product. Mixing sources contaminates anp_cdp_producao with
+# divergent well-name formats and conflicting basin classification.
+#
+# If you genuinely need to change source, you must:
+#   1. Update docs/app/anp-cdp.md "Data source" section
+#   2. Remove the format guard in 02_upload.py
+#   3. Get CTO sign-off explicitly
+# ============================================================
 import sys
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -356,8 +370,20 @@ def do_buscar(driver, ocr_engine, periodo, ambiente):
 
 def do_acoes_download(driver):
     """
-    Click Ações → Fazer Download → confirm CSV download in dialog.
+    Click Ações → Fazer Download → select "All rows" → confirm CSV download in dialog.
     Returns True on success.
+
+    Root cause of the ~197-well undercount (vs 427 actual):
+        The APEX IR download dialog has two mutually exclusive options:
+          - "Dados visualizados" (current page / default rows = 200 at most)
+          - "Todos os registros" (full dataset, no pagination cap)
+        Without explicitly selecting "Todos os registros", the download only
+        exports the rows currently visible in the paginated IR table.
+        For 04/2026 the default page shows ~197 offshore wells; the full set is 427.
+
+    Fix: before clicking the dialog confirm button, we use JS to select the
+    "all rows" radio input.  The radio is identified by its value attribute
+    ("all") or by being the sibling of the "Todos os registros" label.
     """
     # APEX IR actions button — class selector is stable across locales
     try:
@@ -372,14 +398,53 @@ def do_acoes_download(driver):
     )
     menu_item.click()
 
-    # Wait for the download dialog to appear, then click its confirm button via JS.
-    # We use JS click because Selenium's click can fail on APEX overlay dialogs that
-    # don't use standard jQuery UI (.ui-dialog) structure.
-    def _click_dialog_confirm(d):
+    # Wait for the download dialog to appear, then:
+    #   1. Select the "all rows" radio (Todos os registros) if present.
+    #   2. Click the dialog confirm button.
+    # We use JS for both actions because Selenium's click can fail on APEX overlay
+    # dialogs that don't use standard jQuery UI (.ui-dialog) structure.
+    def _select_all_rows_and_confirm(d):
         return d.execute_script("""
+            // ── Step 1: select "Todos os registros" radio ──────────────────────
+            // APEX IR download dialog uses a radio group to choose the row scope.
+            // Try three increasingly broad selectors:
+            var selected = false;
+
+            // Selector A: radio with value="all" (APEX 21+)
+            var radioAll = document.querySelector('input[type="radio"][value="all"]');
+            if (!radioAll) {
+                // Selector B: radio adjacent to label containing "Todos"
+                var allLabels = Array.from(document.querySelectorAll('label'));
+                var todosLabel = allLabels.find(function(l) {
+                    return l.textContent.trim().toLowerCase().indexOf('todos') !== -1
+                        && l.offsetParent !== null;
+                });
+                if (todosLabel) {
+                    // The radio is either the for= target or an adjacent sibling
+                    var radioId = todosLabel.htmlFor;
+                    radioAll = radioId
+                        ? document.getElementById(radioId)
+                        : todosLabel.parentElement.querySelector('input[type="radio"]');
+                }
+            }
+            if (!radioAll) {
+                // Selector C: any visible radio in the download dialog that is not
+                // already checked (assumes the first radio = current page,
+                // second radio = all rows — standard APEX layout)
+                var radios = Array.from(document.querySelectorAll('input[type="radio"]'))
+                    .filter(function(r) { return r.offsetParent !== null; });
+                if (radios.length >= 2) { radioAll = radios[1]; }
+            }
+
+            if (radioAll && !radioAll.checked) {
+                radioAll.click();
+                selected = true;
+            } else if (radioAll && radioAll.checked) {
+                selected = true;  // already selected
+            }
+
+            // ── Step 2: click the dialog confirm "Fazer Download" button ───────
             var btns = Array.from(document.querySelectorAll('button'));
-            // Find a visible "Fazer Download" button that is NOT the menu item
-            // (menu closes after click, so any remaining visible match is the dialog confirm)
             var btn = btns.find(function(b) {
                 return b.textContent.trim().indexOf('Fazer Download') !== -1
                     && b.offsetParent !== null;  // offsetParent == null means hidden
@@ -388,7 +453,7 @@ def do_acoes_download(driver):
             return false;
         """)
 
-    WebDriverWait(driver, 10).until(_click_dialog_confirm)
+    WebDriverWait(driver, 10).until(_select_all_rows_and_confirm)
     return True
 
 
