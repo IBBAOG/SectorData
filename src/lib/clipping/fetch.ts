@@ -1,6 +1,12 @@
 // Port of clipinator.py lines 373–496: fetchHtml + Wayback fallback.
-// curl_cffi TLS impersonation is intentionally skipped — Node has no equivalent.
-// 403 / Cloudflare-blocked sites surface as { ok: false } and rely on the manual-body UI.
+// curl_cffi TLS impersonation: approximated via shell-out to system curl (fetchHtmlViaCurl).
+// curl uses a different TLS fingerprint than Node's undici, which Cloudflare accepts.
+// If curl is not in PATH (ENOENT), fetchHtmlViaCurl returns { ok: false } silently.
+
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -51,6 +57,59 @@ export async function fetchHtml(
     const html = await resp.text();
     return { ok: true, html };
   } catch {
+    return { ok: false, reason: "fetch_failed" };
+  }
+}
+
+/**
+ * Fetch HTML via system curl instead of Node's undici fetch.
+ * curl uses a different TLS ClientHello fingerprint that Cloudflare accepts even when
+ * undici's fingerprint is rejected with 403. Falls back gracefully if curl is not in PATH.
+ *
+ * Uses execFile (not exec) so url/cookieHeader are passed as array args — no shell injection.
+ */
+export async function fetchHtmlViaCurl(
+  url: string,
+  signal: AbortSignal,
+  cookieHeader?: string,
+): Promise<FetchResult> {
+  const args = [
+    "-sS",                              // silent + show errors
+    "--max-time", "20",                 // hard timeout (seconds)
+    "-A", USER_AGENT,
+    "-H", `Accept: ${DEFAULT_HEADERS.Accept}`,
+    "-H", `Accept-Language: ${DEFAULT_HEADERS["Accept-Language"]}`,
+    "-H", `Referer: ${DEFAULT_HEADERS.Referer}`,
+    "-w", "\n---STATUS:%{http_code}",   // append status code marker to stdout
+    "-L",                               // follow redirects
+  ];
+  if (cookieHeader) {
+    args.push("-H", `Cookie: ${cookieHeader}`);
+  }
+  args.push(url);
+
+  try {
+    const { stdout } = await execFileAsync("curl", args, {
+      signal,
+      maxBuffer: 10 * 1024 * 1024,     // 10 MB cap on body
+      timeout: 22_000,
+    });
+
+    // Extract HTTP status from the appended marker.
+    const statusMatch = stdout.match(/\n---STATUS:(\d+)$/);
+    if (!statusMatch) return { ok: false, reason: "fetch_failed" };
+    const status = parseInt(statusMatch[1], 10);
+    const html = stdout.slice(0, statusMatch.index);
+
+    if (status === 403 || status === 429 || status === 401) {
+      return { ok: false, reason: "fetch_failed" };
+    }
+    if (status < 200 || status >= 300) {
+      return { ok: false, reason: "fetch_failed" };
+    }
+    return { ok: true, html };
+  } catch {
+    // curl missing (ENOENT), timeout, abort signal, or non-zero exit.
     return { ok: false, reason: "fetch_failed" };
   }
 }

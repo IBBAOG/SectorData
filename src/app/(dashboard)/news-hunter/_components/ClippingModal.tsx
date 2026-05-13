@@ -297,7 +297,24 @@ export default function ClippingModal({
                       >
                         {pill.label}
                       </span>
-                      {r.via_wayback && (
+                      {(r.via === "curl") && (
+                        <span
+                          title="Content retrieved via system curl (Cloudflare TLS fingerprint bypass)"
+                          style={{
+                            background: "#e8f4fd",
+                            color: "#0c5460",
+                            borderRadius: 4,
+                            padding: "2px 7px",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            whiteSpace: "nowrap",
+                            flexShrink: 0,
+                          }}
+                        >
+                          via curl
+                        </span>
+                      )}
+                      {(r.via === "wayback" || r.via_wayback) && (
                         <span
                           title="Content retrieved from Wayback Machine (live fetch failed or paywalled)"
                           style={{

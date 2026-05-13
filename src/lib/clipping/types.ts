@@ -20,7 +20,14 @@ export interface ScrapeResult {
   status: ScrapeStatus;
   item?: ClippingItem;
   error?: string;
-  /** True when the content was retrieved from Wayback Machine (live fetch failed or paywalled). */
+  /**
+   * How the content was retrieved when the primary undici fetch failed or was paywalled.
+   * - "curl"    — system curl shell-out succeeded (Cloudflare TLS fingerprint bypass)
+   * - "wayback" — Wayback Machine snapshot
+   * Omitted for direct (undici) fetches.
+   */
+  via?: "wayback" | "curl";
+  /** @deprecated Use `via === "wayback"` instead. Kept for backwards compat. */
   via_wayback?: boolean;
 }
 
