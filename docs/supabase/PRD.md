@@ -311,6 +311,19 @@ Cinco migrations de hardening aplicadas após auditoria `get_advisors` (53 perf 
 - Dropado apenas `anp_cdp_v3_poco_idx` (redundante com `anp_cdp_v6_poco_grupo_idx`).
 - 20 outros índices suspeitos retidos pendentes de verificação de stats de produção.
 
+### Clipping Cookies (adicionada 2026-05-13)
+
+Migration: `20260513130000_clipping_cookies.sql`.
+
+Tabela `clipping_cookies` — armazena strings de cookies no formato Netscape por domínio de notícia, usadas pela rota `/api/clipping/scrape` para acessar sites com paywall (ex: Valor Econômico, Brasil Energia).
+
+RLS: Admin-only para SELECT / INSERT / UPDATE / DELETE (`profiles.role = 'Admin'`). Service role bypassa RLS (usado pela API route). Usa `(select auth.uid())` em todas as policies (Hardening A).
+
+Convenções:
+- `domain` é canonical sem prefixo `www.` (PK). A aplicação faz strip de `www.` antes de consultar.
+- `cookies_netscape` armazena o arquivo Netscape HTTP Cookie completo (tabs literais preservados).
+- Seed de cookies (dados sensíveis) aplicado via `execute_sql` — **nunca commitado em arquivo**.
+
 ## Contratos com outros departamentos
 
 ### Recebo solicitações de:
