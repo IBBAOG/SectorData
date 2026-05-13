@@ -25,8 +25,28 @@ async function getBrowser(): Promise<import("playwright-core").Browser> {
       // fixes chrome.runtime, normalizes navigator.plugins/languages, etc. — all signals
       // inspected by Cloudflare Bot Management to distinguish real browsers from headless ones.
       const { chromium } = await import("playwright-extra");
-      const stealthPlugin = (await import("puppeteer-extra-plugin-stealth")).default;
-      chromium.use(stealthPlugin());
+      const stealthPluginMod = await import("puppeteer-extra-plugin-stealth");
+      const stealth = stealthPluginMod.default();
+      // Disable evasions that may have missing transitive deps and aren't critical
+      // for Cloudflare Turnstile bypass. The big ones for CF are navigator.webdriver,
+      // chrome.runtime, navigator.plugins, navigator.languages, user-agent-override.
+      const keepEvasions = new Set([
+        "navigator.webdriver",
+        "navigator.languages",
+        "navigator.plugins",
+        "navigator.vendor",
+        "chrome.runtime",
+        "chrome.app",
+        "user-agent-override",
+        "webgl.vendor",
+        "media.codecs",
+      ]);
+      for (const e of [...stealth.enabledEvasions]) {
+        if (!keepEvasions.has(e)) {
+          stealth.enabledEvasions.delete(e);
+        }
+      }
+      chromium.use(stealth);
 
       const chromiumPkg = await import("@sparticuz/chromium");
       return chromium.launch({
@@ -137,7 +157,7 @@ export async function fetchHtmlViaHeadless(
     if (errMsg.toLowerCase().includes("timeout")) {
       return { ok: false, reason: "fetch_failed", detail: "headless_timeout" };
     }
-    const sanitized = errMsg.slice(0, 60).replace(/[^a-z0-9_]/gi, "_");
+    const sanitized = errMsg.slice(0, 200).replace(/[^a-z0-9_]/gi, "_");
     return { ok: false, reason: "fetch_failed", detail: `headless_error_${sanitized}` };
   } finally {
     if (context) await context.close().catch(() => {});

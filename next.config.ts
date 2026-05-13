@@ -29,6 +29,8 @@ const nextConfig: NextConfig = {
       "./node_modules/playwright-extra/**/*",
       "./node_modules/puppeteer-extra/**/*",
       "./node_modules/puppeteer-extra-plugin-stealth/**/*",
+      "./node_modules/puppeteer-extra-plugin-stealth/evasions/**/package.json",
+      "./node_modules/puppeteer-extra-plugin-stealth/evasions/**/index.js",
       "./node_modules/puppeteer-extra-plugin/**/*",
       "./node_modules/puppeteer-extra-plugin-user-preferences/**/*",
       "./node_modules/puppeteer-extra-plugin-user-data-dir/**/*",
