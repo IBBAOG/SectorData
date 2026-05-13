@@ -10,6 +10,24 @@ Dashboard de News Hunter (radar de notícias). Owner: [`worker_dash-news-hunter`
 src/app/(dashboard)/news-hunter/
   page.tsx
   page.module.css                   Estilos scoped (não polui globals.css)
+  _components/
+    SelectionSidebar.tsx            Admin-only: clipping queue panel
+    ClippingModal.tsx               Admin-only: preview + download modal
+  _hooks/
+    useClippingSelection.ts         Admin-only: ordered selection state hook
+
+src/lib/clipping/
+  types.ts          ClippingItem, ScrapeResult, ArticleSnapshot
+  sources.ts        SOURCE_NAMES + EXTRACTORS (~80 domains, port of clipinator.py)
+  extract.ts        cheerio-based extraction (port of clipinator.py _extract)
+  clean.ts          cleanTitle, cleanParagraphs, looksPaywalled
+  fetch.ts          fetchHtml + Wayback fallback (no TLS impersonation)
+  scrape.ts         scrape() orchestrator
+  buildHtml.ts      buildHtml() — email HTML template
+  buildPlainText.ts buildPlainText() — plain-text alternative
+  buildEml.ts       buildEml() — hand-rolled RFC 5322 multipart/alternative
+
+src/app/api/clipping/scrape/route.ts   POST route (Admin-gated, nodejs runtime)
 ```
 
 RPC wrapper: seção "news_hunter" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts).
@@ -21,6 +39,45 @@ Lista de **notícias** publicadas que matchearam keywords salvas pelo user. Atua
 - Filtros por keyword, domínio, fonte.
 - Gestão de keywords (adicionar / remover).
 - Snapshot/excerpt de cada artigo + link pra fonte.
+
+### Admin-only: Clipping (port do Clipinator)
+
+Admins têm uma funcionalidade extra de **clipping de notícias**:
+
+1. **Selection Mode toggle** — aparece no top row para Admins. Ativa checkboxes em cada artigo.
+2. **SelectionSidebar** — painel direito com artigos selecionados em ordem, controles de reordenação (↑/↓), botão "Generate Clipping".
+3. **POST /api/clipping/scrape** — rota Admin-gated (mirror do padrão de auth em `upload-card-preview/route.ts`). Cap de 15 URLs, 12s timeout por URL, `maxDuration = 60`.
+4. **ClippingModal** — modal com:
+   - Aba "Preview": iframe renderizando o HTML do clipping (Calibri 11pt, header laranja #FF5000, "Main Headlines" TOC, TEAM_BLOCK com 3 emails).
+   - Aba "Status": pills por artigo (ok/paywall/fetch_failed/etc) + textarea manual para sites bloqueados.
+   - Botões: **Download .eml** (RFC 5322 multipart/alternative, hand-rolled), **Copy HTML**, **Regenerate preview**.
+5. **Rendering é client-side** — build_html/buildPlainText/buildEml rodam no browser, sem round-trip ao servidor para re-renderizar.
+
+#### Template do clipping (fidelidade ao clipinator.py)
+
+- Header: `*** IBBA Oil & Gas News – DD Month YYYY ***` (18pt bold laranja, centrado; `–` U+2013)
+- "Main Headlines" subheader 14pt laranja + bullet list `<título> (<fonte>)`
+- TEAM_BLOCK hardcoded:
+  - Itaú BBA Oil & Gas Team (laranja)
+  - Monique Greco Natal / monique.greco@itaubba.com
+  - Eric de Mello / eric.mello@itaubba.com
+  - Eduardo Mendes / eduardo.mendes@itaubba.com
+- Por artigo: 14pt bold `título (fonte)`, parágrafos, `Fonte: <link>`
+- Arquivo salvo como `ibba_oil_gas_news_YYYY-MM-DD.eml`
+
+#### SSRF guard
+
+A rota só processa URLs cujo domínio está no `EXTRACTORS` whitelist (~80 domínios jornalísticos). Domínio desconhecido → `{ status: "unknown_domain" }` sem fazer fetch.
+
+#### TLS impersonation (limitação conhecida)
+
+`curl_cffi` não tem equivalente limpo em Node. Sites com Cloudflare/403 retornam `{ status: "fetch_failed" }`. O modal exibe textarea para o admin colar o corpo manualmente → Regenerate re-scrapa os outros e usa o body manual para os bloqueados.
+
+#### Estado de seleção
+
+- Vive em `page.tsx` (NÃO no NewsHunterContext).
+- Persistido em `localStorage` com chave versionada `nh_clipping_selection_v1`.
+- Hook: `useClippingSelection` (em `_hooks/useClippingSelection.ts`).
 
 ## Arquitetura cross-repo
 
@@ -96,6 +153,11 @@ Nunca baixe a tabela inteira. Sempre incremental.
 
 `page.module.css` (CSS Module) — único módulo do app que usa esse padrão. **Não polua `globals.css`**.
 
+Classes adicionadas para a feature de clipping:
+- `.themeBtnActive` — botão "Exit Selection Mode" com destaque laranja
+- `.checkbox` — checkbox de seleção por artigo
+- `.selected` — fundo tintado em artigos selecionados
+
 ## Mudanças que cruzam fronteira (cuidado especial)
 
 ### Schema de `news_articles`
@@ -115,3 +177,5 @@ Nunca baixe a tabela inteira. Sempre incremental.
 - Mexer no repo `news-hunter-scanner` daqui.
 - Misturar estilos no `globals.css` em vez do `page.module.css`.
 - Mostrar keywords cross-user (quebra o conceito de RLS).
+- `buildHtml`/`buildEml` no servidor — eles rodam no cliente, mantendo o servidor pequeno.
+- Adicionar domínios ao scraper sem adicionar ao `EXTRACTORS` — o SSRF guard usa `EXTRACTORS` como allowlist.
