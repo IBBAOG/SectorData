@@ -227,6 +227,54 @@ def _refresh_mv(sb) -> None:
         print(f"  WARN: could not refresh view: {e}")
 
 
+def _warn_partial_offshore(sb, periods_uploaded: set[tuple[int, int]]) -> None:
+    """
+    Emit a warning when offshore (PosSal/PreSal) well counts for the uploaded month
+    are less than 50% of the previous month.  This signals partial data — the ANP
+    publishes incrementally throughout month M+1 as operators submit their reports.
+    Does NOT fail the pipeline; informational only.
+    """
+    offshore_locals = ("PosSal", "PreSal")
+    for ano, mes in sorted(periods_uploaded):
+        prev_ano, prev_mes = (ano, mes - 1) if mes > 1 else (ano - 1, 12)
+        for local in offshore_locals:
+            try:
+                cur = (
+                    sb.table("anp_cdp_producao")
+                    .select("poco", count="exact")
+                    .eq("local", local)
+                    .eq("ano", ano)
+                    .eq("mes", mes)
+                    .execute()
+                )
+                prev = (
+                    sb.table("anp_cdp_producao")
+                    .select("poco", count="exact")
+                    .eq("local", local)
+                    .eq("ano", prev_ano)
+                    .eq("mes", prev_mes)
+                    .execute()
+                )
+                cur_count = cur.count or 0
+                prev_count = prev.count or 0
+                if prev_count > 0:
+                    ratio = cur_count / prev_count
+                    status = "OK" if ratio >= 0.5 else "PARTIAL"
+                    print(
+                        f"  [coverage] {local} {ano}/{mes:02d}: "
+                        f"{cur_count} wells vs {prev_count} in {prev_ano}/{prev_mes:02d} "
+                        f"({ratio:.0%}) — {status}"
+                    )
+                    if ratio < 0.5:
+                        print(
+                            f"  [WARN] {local} {ano}/{mes:02d} has only {ratio:.0%} of prior month wells. "
+                            f"ANP data for this month is likely still being submitted by operators. "
+                            f"Pipeline will re-run automatically to capture more data as it becomes available."
+                        )
+            except Exception as e:
+                print(f"  [coverage] {local} {ano}/{mes:02d}: could not compare ({e})")
+
+
 def _from_parquet(sb, path: str, ano_inicio: int = 0) -> None:
     print(f"Reading parquet: {path}")
     df = pd.read_parquet(path)
@@ -415,6 +463,9 @@ def _from_csv_dir(sb, csv_dir: str, incremental: bool = True, purge: bool = Fals
     print(f"  {len(rows)} aggregated rows, upserting…")
     _upsert(sb, rows)
     _refresh_mv(sb)
+    # periods_to_purge collects all (ano, mes) pairs from successfully parsed CSVs
+    # regardless of the --purge flag, so it's always available for the coverage check.
+    _warn_partial_offshore(sb, periods_to_purge)
 
 
 def main() -> None:
