@@ -20,6 +20,8 @@ export interface ScrapeResult {
   status: ScrapeStatus;
   item?: ClippingItem;
   error?: string;
+  /** True when the content was retrieved from Wayback Machine (live fetch failed or paywalled). */
+  via_wayback?: boolean;
 }
 
 /** Snapshot stored in localStorage for selection persistence. */

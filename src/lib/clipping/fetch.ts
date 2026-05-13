@@ -17,11 +17,22 @@ export type FetchResult =
   | { ok: true; html: string }
   | { ok: false; reason: "fetch_failed" | "paywall" };
 
-/** Fetch the HTML of a URL, respecting the caller's AbortSignal. */
-export async function fetchHtml(url: string, signal: AbortSignal): Promise<FetchResult> {
+/**
+ * Fetch the HTML of a URL, respecting the caller's AbortSignal.
+ * @param cookieHeader  Optional pre-built Cookie header value (e.g. from clipping_cookies table).
+ */
+export async function fetchHtml(
+  url: string,
+  signal: AbortSignal,
+  cookieHeader?: string,
+): Promise<FetchResult> {
   let resp: Response;
   try {
-    resp = await fetch(url, { headers: DEFAULT_HEADERS, signal, redirect: "follow" });
+    const headers: Record<string, string> = { ...DEFAULT_HEADERS };
+    if (cookieHeader) {
+      headers["Cookie"] = cookieHeader;
+    }
+    resp = await fetch(url, { headers, signal, redirect: "follow" });
   } catch {
     // Network error, timeout, or abort.
     return { ok: false, reason: "fetch_failed" };

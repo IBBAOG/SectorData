@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { scrape } from "@/lib/clipping/scrape";
+import { parseNetscapeCookies, buildCookieHeader, canonicalDomain } from "@/lib/clipping/cookies";
 import type { ScrapeResult } from "@/lib/clipping/types";
 
 export const runtime = "nodejs";
@@ -72,13 +73,35 @@ export async function POST(req: NextRequest) {
       error: "Batch limit exceeded (max 15 URLs per request).",
     }));
 
-    // ── 4. Scrape concurrently with per-URL timeout ──────────────────────────────
+    // ── 4. Resolve cookies for all unique domains in the batch ───────────────────
+    const domains = [...new Set(toProcess.map(canonicalDomain).filter(Boolean))];
+    const cookieHeaderByDomain: Record<string, string> = {};
+
+    if (domains.length > 0) {
+      const { data: cookieRows } = await admin
+        .from("clipping_cookies")
+        .select("domain, cookies_netscape")
+        .in("domain", domains);
+
+      if (cookieRows) {
+        for (const row of cookieRows as Array<{ domain: string; cookies_netscape: string }>) {
+          const parsed = parseNetscapeCookies(row.cookies_netscape);
+          if (parsed.length > 0) {
+            cookieHeaderByDomain[row.domain] = buildCookieHeader(parsed);
+          }
+        }
+      }
+    }
+
+    // ── 5. Scrape concurrently with per-URL timeout ──────────────────────────────
     const settled = await Promise.allSettled(
       toProcess.map(async (url): Promise<ScrapeResult> => {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), PER_URL_TIMEOUT_MS);
         try {
-          return await scrape(url, controller.signal, manualBodies[url]);
+          const domain = canonicalDomain(url);
+          const cookieHeader = cookieHeaderByDomain[domain];
+          return await scrape(url, controller.signal, manualBodies[url], cookieHeader);
         } finally {
           clearTimeout(timer);
         }

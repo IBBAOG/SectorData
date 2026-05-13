@@ -21,8 +21,9 @@ src/lib/clipping/
   sources.ts        SOURCE_NAMES + EXTRACTORS (~80 domains, port of clipinator.py)
   extract.ts        cheerio-based extraction (port of clipinator.py _extract)
   clean.ts          cleanTitle, cleanParagraphs, looksPaywalled
-  fetch.ts          fetchHtml + Wayback fallback (no TLS impersonation)
-  scrape.ts         scrape() orchestrator
+  cookies.ts        parseNetscapeCookies + buildCookieHeader + canonicalDomain
+  fetch.ts          fetchHtml (optional Cookie header) + Wayback fallback (no TLS impersonation)
+  scrape.ts         scrape() orchestrator — Wayback also covers fetch failures
   buildHtml.ts      buildHtml() — email HTML template
   buildPlainText.ts buildPlainText() — plain-text alternative
   buildEml.ts       buildEml() — hand-rolled RFC 5322 multipart/alternative
@@ -69,9 +70,31 @@ Admins têm uma funcionalidade extra de **clipping de notícias**:
 
 A rota só processa URLs cujo domínio está no `EXTRACTORS` whitelist (~80 domínios jornalísticos). Domínio desconhecido → `{ status: "unknown_domain" }` sem fazer fetch.
 
+#### Authenticated paywall bypass (cookies por domínio)
+
+A tabela `clipping_cookies` armazena cookies em formato Netscape HTTP Cookie File por domínio canônico (sem `www.`). A route consulta essa tabela antes de iniciar o scrape:
+
+1. Coleta todos os domínios únicos do batch via `canonicalDomain(url)`.
+2. Faz um único SELECT `clipping_cookies WHERE domain IN (...)` usando o service-role client.
+3. Para cada row, parseia os cookies com `parseNetscapeCookies` (filtrando expirados), monta o header com `buildCookieHeader`, e passa o resultado para `scrape()` como argumento `cookieHeader`.
+4. `fetchHtml` injeta o header `Cookie:` na request live quando recebido.
+
+Quando os cookies expirarem, um Admin deve fazer re-seed diretamente na tabela `clipping_cookies` (uma UI de upload é follow-up). Cookies de sessão (`expires = 0` no arquivo Netscape) nunca expiram pela lógica de parsing e são mantidos.
+
+Domínios atualmente com cookies seedados: `valor.globo.com`, `brasilenergia.com.br`.
+
+#### Wayback Machine fallback — fetch failure e paywall
+
+O fallback para o Wayback Machine agora dispara em **dois** cenários:
+
+1. **Paywall detectado** (comportamento original): fetch teve sucesso, mas `looksPaywalled(paragraphs)` retornou true após extração.
+2. **Fetch failure** (novo): fetch retornou 403/4xx/5xx ou lançou erro de rede/timeout. Antes de retornar `fetch_failed`, `scrape()` tenta buscar a URL no Wayback. Se o snapshot existir e não estiver paywalled, retorna `status: "ok"` com `via_wayback: true`.
+
+Quando um artigo vem do Wayback, o modal exibe um badge "via Wayback" azul ao lado do pill de status na aba Status. Isso cobre Reuters e outros sites com bot blocking forte que não têm cookies disponíveis.
+
 #### TLS impersonation (limitação conhecida)
 
-`curl_cffi` não tem equivalente limpo em Node. Sites com Cloudflare/403 retornam `{ status: "fetch_failed" }`. O modal exibe textarea para o admin colar o corpo manualmente → Regenerate re-scrapa os outros e usa o body manual para os bloqueados.
+`curl_cffi` não tem equivalente limpo em Node. Sites com Cloudflare que bloqueiam mesmo com cookies retornam `{ status: "fetch_failed" }` se o Wayback não tiver snapshot. O modal exibe textarea para o admin colar o corpo manualmente → Regenerate re-scrapa os outros e usa o body manual para os bloqueados.
 
 #### Estado de seleção
 
