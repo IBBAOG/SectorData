@@ -16,7 +16,9 @@ scripts/pipelines/                  # rodam via GitHub Actions (todos os ETL)
 
   anp/
     cdp/                            chain (workflow etl_anp_cdp.yml)
-      01_extract.py                 Selenium + ddddocr CAPTCHA → output/anp/ (roda em CI via --capture)
+      01_extract_powerbi.py         Power BI public API (no CAPTCHA) → output/anp/ CSVs (active script)
+      01_extract.py                 [LEGACY] Selenium + ddddocr CAPTCHA — replaced by 01_extract_powerbi.py
+                                    (kept for reference; not called by workflow)
       _replay.py                    Módulo standalone (zero Selenium): replay_download() → usado por alertas/
       02_upload.py                  CSVs → Supabase
     fase3/                          chain (workflow etl_anp_fase3.yml)
@@ -66,7 +68,7 @@ scripts/utils/                      # one-shots (não-ETL)
 | `etl_anp_fase3.yml` | Mensal — 1º dia, 13:00 UTC | `pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` → `03_painel_imp_sync.py` | `anp_daie` (6.912 rows), `anp_desembaracos` (6.204), `anp_painel_imp_dist` (1.444) |
 | `etl_anp_lpc.yml` | Semanal — quarta, 14:30 UTC (`30 14 * * 3`) | `pipelines/anp/lpc_sync.py` | `anp_lpc` (160.243 rows — histórico 2004–2026 após backfill) |
 | `etl_anp_precos.yml` | Semanal — segunda, 12:00 UTC (`0 12 * * 1`) | `pipelines/anp/glp_sync.py` + `precos/01_ppi_sync.py` → `02_precos_produtores_sync.py` | `anp_glp` (3.106), `anp_ppi` (18.131), `anp_precos_produtores` (54.738 — histórico 2002–2026 após backfill) |
-| `etl_anp_cdp.yml` | Cron interno mensal (5º), 08:00 UTC (`0 8 5 * *`) como fallback + trigger externo via cron-job.org (`workflow_dispatch`) a cada ~2h — pipeline desenhado para rodar incrementalmente com alta frequência | `pipelines/anp/cdp/01_extract.py --capture` (×3 ambientes) → `02_upload.py` | `output/anp/` + `anp_cdp_producao` (2.045.515 rows). 3 captures sequenciais (M, S, T), cada um com 10 retries de CAPTCHA ddddocr (~50% por tentativa → ~99.9% por ambiente). |
+| `etl_anp_cdp.yml` | Cron interno mensal (5º), 08:00 UTC (`0 8 5 * *`) como fallback + trigger externo via cron-job.org (`workflow_dispatch`) a cada ~2h — pipeline desenhado para rodar incrementalmente com alta frequência | `pipelines/anp/cdp/01_extract_powerbi.py` (Power BI, no CAPTCHA) → `02_upload.py` | `output/anp/` + `anp_cdp_producao` (2.045.515+ rows). Power BI poco-level data aggregated daily→monthly; local derived from DB lookup + basin heuristic. Replaces Selenium/CAPTCHA (01_extract.py) which had an undocumented APEX row cap (~197 offshore wells vs ~937 in Power BI for 04/2026). |
 | `etl_mdic_comex.yml` | Diário, 14:00 UTC (`0 14 * * *`) | `pipelines/mdic_comex_sync.py` | `mdic_comex` (10.029 rows — histórico 1997–2026 após backfill) |
 | `etl_navios_lineup.yml` | Cada 6h | `pipelines/navios/01_lineup_scrape.py` → `02_diesel_import.mjs` | `navios_diesel` |
 | `etl_sindicom.yml` | Mensal — dia 5, 15:00 UTC (`0 15 5 * *`) | `pipelines/sindicom_sync.py` | `sindicom` — BLOQUEADO por Cloudflare em IP residencial; só roda via GitHub Actions runner. Aguardando dispatch manual. |
@@ -167,14 +169,20 @@ output/
 
 ## Tarefas comuns
 
-### Debug de falha ANP CDP (quando CI reportar ambiente com 10 retries esgotados)
+### Debug de falha ANP CDP
 
-O workflow `etl_anp_cdp.yml` roda `01_extract.py --capture` 3× (ambientes M, S, T) via Selenium + ddddocr. Taxa ddddocr ~40-50% por tentativa; 10 retries internos por capture → ~99.9% de sucesso por ambiente. Se algum ambiente falhar completamente:
+O workflow `etl_anp_cdp.yml` usa `01_extract_powerbi.py` (Power BI public API, sem CAPTCHA, sem Selenium).
+Se o run falhar:
 
-1. **Baixar artifact** `anp-debug-info` do run com falha — contém screenshots e HTMLs de debug em `output/anp/_debug/`.
-2. **Verificar** se o site ANP CDP mudou layout (seletores Selenium), ou se o CAPTCHA mudou formato (afeta ddddocr).
-3. **Dispatch manual** com `periodo` explícito se o problema foi transitório — re-rodar costuma resolver.
-4. Se o layout do site mudou, atualizar os seletores em `scripts/pipelines/anp/cdp/01_extract.py`.
+1. **Verificar artifact** `anp-producao-poco` — contém os CSVs gerados (ou ausência deles indica falha na extração).
+2. **Verificar logs** do step "Extract via Power BI" — erros comuns:
+   - `HTTPError 4xx/5xx` → API Power BI temporariamente indisponível (re-dispatch manual geralmente resolve).
+   - `AVISO: TRUNCADO` → chunk mensal excedeu window=100_000 linhas (pouco plausível para 1 mês, mas aumentar `--window` se ocorrer).
+   - `0 rows returned` → `RESOURCE_KEY` ou `MODEL_ID` mudou (ANP atualizou o relatório Power BI — veja `scripts/extractors/anp_cdp_powerbi.py`).
+3. **Dispatch manual** com `periodo` explícito se o problema foi transitório.
+4. Se o Power BI mudou estrutura (novos campos no modelo semântico), atualizar constantes em `scripts/extractors/anp_cdp_powerbi.py` (`RESOURCE_KEY`, `MODEL_ID`, `DATASET_ID`, `REPORT_ID`).
+
+**Nota (histórico)**: o script legado `01_extract.py` (Selenium + ddddocr CAPTCHA) foi mantido no repositório mas não é chamado pelo workflow. Revelou-se que o APEX CDP tinha um limite implícito de ~197 linhas no export CSV, enquanto o Power BI retorna ~937 wells offshore para 04/2026. O Power BI é a fonte correta.
 
 ### Adicionar pipeline novo
 

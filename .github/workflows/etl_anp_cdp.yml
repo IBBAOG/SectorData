@@ -2,11 +2,11 @@ name: Extração ANP - Produção por Poço
 
 on:
   schedule:
-    - cron: '0 8 5 * *'  # dia 5 de cada mês, 08:00 UTC (05:00 BRT)
+    - cron: '0 8 5 * *'  # 5th of each month, 08:00 UTC (05:00 BRT)
   workflow_dispatch:
     inputs:
       periodo:
-        description: 'Período único MM/YYYY (ex: 01/2025)'
+        description: 'Single period MM/YYYY (e.g. 04/2026)'
         required: false
       force_upload:
         description: 'Pass --no-incremental to 02_upload.py (re-upserts all CSVs regardless of DB max date)'
@@ -15,22 +15,30 @@ on:
         type: choice
         options: ['false', 'true']
       purge:
-        description: 'Pass --purge to 02_upload.py — delete existing rows for target month before upserting (removes stale legacy-format rows)'
+        description: 'Pass --purge to 02_upload.py — delete existing rows for target month before upserting'
         required: false
         default: 'false'
         type: choice
         options: ['false', 'true']
 
-# Workflow roda --capture para os 3 ambientes (M, S, T) sequencialmente.
-# Cada capture usa Selenium + ddddocr com 10 retries internos de CAPTCHA.
-# Taxa ddddocr ~40-50% por tentativa → ~99.9% de sucesso por ambiente em 10 retries.
-# Falha total se qualquer ambiente esgotar os 10 retries — inspecionar screenshots no artifact.
+# Extraction uses the ANP Power BI public API (no CAPTCHA, no Selenium).
+# Script: 01_extract_powerbi.py
+#   - Queries Power BI well-level (poco) data for the target month
+#   - Aggregates daily rows → monthly averages per (poco, campo, bacia)
+#   - Derives local (PosSal / PreSal / Terra) from DB lookup + basin heuristic
+#   - Writes 3 CSVs (one per local bucket) consumed by 02_upload.py
+#
+# Advantages over Selenium/CAPTCHA:
+#   - No browser dependencies, no CAPTCHA retry loop
+#   - Returns all wells (Power BI coverage: ~937 offshore wells in 04/2026
+#     vs ~197 from APEX portal which had an undocumented row cap)
 
 jobs:
   extrair:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
@@ -39,52 +47,31 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Instalar dependências Python
+      - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Instalar Chrome
-        id: chrome
-        uses: browser-actions/setup-chrome@latest
-
-      - name: Remover chromedriver do sistema
-        run: |
-          sudo rm -f /usr/bin/chromedriver /usr/local/bin/chromedriver || true
-
-      - name: Calcular período
+      - name: Compute target period
         id: periodo
         run: |
           if [ -n "${{ github.event.inputs.periodo }}" ]; then
             echo "primeiro=${{ github.event.inputs.periodo }}" >> "$GITHUB_OUTPUT"
           else
-            # Agendado: mês incompleto (mês anterior — operadores submetem dados durante o mês N+1)
+            # Scheduled: previous month (operators submit data during month N+1)
             PRIMEIRO=$(python -c "from datetime import date, timedelta; d=date.today().replace(day=1)-timedelta(days=1); print(f'{d.month:02d}/{d.year}')")
             echo "primeiro=$PRIMEIRO" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Extrair 3 ambientes (capture per ambiente)
+      - name: Extract via Power BI (all ambientes)
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-          CHROME_BINARY:        ${{ steps.chrome.outputs.chrome-path }}
         run: |
           PERIODO="${{ steps.periodo.outputs.primeiro }}"
+          echo "=== Extracting $PERIODO via Power BI ==="
           mkdir -p output/anp
-          failed=0
-          for ambiente in M S T; do
-            echo "=== Capturando $PERIODO ambiente=$ambiente ==="
-            if python scripts/pipelines/anp/cdp/01_extract.py \
-                 --capture --periodo "$PERIODO" --ambiente "$ambiente" \
-                 --output output/anp; then
-              echo "✓ $ambiente capturado"
-            else
-              echo "✗ $ambiente falhou após 10 retries"
-              failed=$((failed+1))
-            fi
-          done
-          if [ "$failed" -gt 0 ]; then
-            echo "$failed/3 ambientes falharam"
-            exit 1
-          fi
+          python scripts/pipelines/anp/cdp/01_extract_powerbi.py \
+            --periodo "$PERIODO" \
+            --output output/anp
 
       - name: Upload to Supabase
         run: |
@@ -102,18 +89,10 @@ jobs:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
-      - name: Upload CSVs como artifact
+      - name: Upload CSVs as artifact
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: anp-producao-poco
           path: output/anp/*.csv
           retention-days: 90
-
-      - name: Upload debug screenshots em caso de falha
-        uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: anp-debug-info
-          path: output/anp/_debug/
-          retention-days: 14

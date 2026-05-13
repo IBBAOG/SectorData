@@ -289,16 +289,20 @@ def _from_parquet(sb, path: str, ano_inicio: int = 0) -> None:
 
 
 def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
-    # ANP CDP CSVs (formato atual): comma-separated, decimal '.', encoding cp1252.
-    # Tenta primeiro o formato atual; se falhar, fallback para legado (sep=';', decimal=',').
+    # ANP CDP CSVs: try multiple encodings/separators.
+    # Order: cp1252 (APEX portal legacy), utf-8-sig (PowerBI extractor output),
+    #        plain utf-8, then semicolon-separated legacy format.
+    # Break on the first parse that yields >5 columns AND detects the key columns.
     last_exc: Exception | None = None
+    df = None
     for sep, decimal, enc in [
-        (",", ".", "cp1252"),  # formato atual (2026)
+        (",", ".", "utf-8-sig"),  # Power BI extractor output (UTF-8 BOM)
+        (",", ".", "cp1252"),     # APEX portal legacy (2026)
         (",", ".", "utf-8"),
-        (";", ",", "utf-8"),   # legado
+        (";", ",", "utf-8"),      # legado
     ]:
         try:
-            df = pd.read_csv(
+            _df = pd.read_csv(
                 path,
                 encoding=enc,
                 encoding_errors="ignore",
@@ -307,11 +311,21 @@ def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
                 on_bad_lines="skip",
                 decimal=decimal,
             )
-            if not df.empty and len(df.columns) > 5:
-                break  # parse válido — múltiplas colunas
+            if _df.empty or len(_df.columns) <= 5:
+                continue
+            # Quick check: does this parse yield the required columns?
+            _cols_lower = [c.lower() for c in _df.columns]
+            _has_poco   = any("poco" in c or "poço" in c for c in _cols_lower)
+            _has_petroleo = any("petrleo" in c or "petróleo" in c or "petroleo" in c for c in _cols_lower)
+            _has_periodo  = any("perodo" in c or "período" in c or "periodo" in c for c in _cols_lower)
+            if _has_poco and _has_petroleo and _has_periodo:
+                df = _df
+                break  # good parse
+            # Column names parsed but key cols not detected yet — keep trying other encodings
+            if df is None:
+                df = _df  # keep as candidate in case no encoding produces better results
         except Exception as e:
             last_exc = e
-            df = None
     if df is None or df.empty:
         if last_exc:
             print(f"  WARN: could not parse {path}: {last_exc}")
@@ -338,9 +352,9 @@ def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
             col_map["instalacao_destino"] = c
         elif "tipo" in cl and "instal" in cl:
             col_map["tipo_instalacao"] = c
-        elif ("perodo" in cl or "período" in cl) and "carga" not in cl:
+        elif ("perodo" in cl or "período" in cl or cl == "periodo") and "carga" not in cl:
             col_map["periodo"] = c
-        elif "petrleo" in cl or "petróleo" in cl:
+        elif "petrleo" in cl or "petróleo" in cl or (cl.startswith("petroleo") and "bbl" in cl):
             col_map["petroleo"] = c
         elif "leo (bbl" in cl and "petr" not in cl:
             col_map["oleo"] = c
