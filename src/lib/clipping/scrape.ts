@@ -151,7 +151,14 @@ export async function scrape(
         // headless extract failed — fall through to Wayback.
       }
     }
-    const headlessDetail = (!headlessResult.ok && headlessResult.detail) ? headlessResult.detail : "headless_failed";
+    let headlessDetail: string;
+    if (!headlessResult.ok) {
+      headlessDetail = headlessResult.detail ?? "headless_failed_unknown";
+    } else {
+      // ok=true but paragraphs were empty or paywalled — browser loaded but got
+      // a Cloudflare challenge page that didn't resolve, or a paywall fragment.
+      headlessDetail = "headless_empty_or_paywall";
+    }
 
     // Step 4: Wayback Machine.
     const wbResult = await fetchFromWayback(url, signal);

@@ -16,7 +16,7 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 const BATCH_LIMIT = 15;
-const PER_URL_TIMEOUT_MS = 12_000;
+const PER_URL_TIMEOUT_MS = 30_000;
 
 interface ScrapeRequestBody {
   urls: string[];
