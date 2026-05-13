@@ -347,9 +347,10 @@ def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
     df = None
     for sep, decimal, enc in [
         (",", ".", "utf-8-sig"),  # Power BI extractor output (UTF-8 BOM)
-        (",", ".", "cp1252"),     # APEX portal legacy (2026)
+        (",", ".", "cp1252"),     # APEX portal legacy comma-decimal (2026)
         (",", ".", "utf-8"),
-        (";", ",", "utf-8"),      # legado
+        (";", ",", "cp1252"),     # ANP 2026 European format: semicolon + comma decimal + cp1252
+        (";", ",", "utf-8"),      # legado semicolon
     ]:
         try:
             _df = pd.read_csv(
