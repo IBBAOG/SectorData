@@ -35,7 +35,8 @@ export async function scrape(
 
   const source = SOURCE_NAMES[domain] ?? domain;
 
-  // If the caller supplies a manual body, skip the network fetch entirely.
+  // If the caller supplies a manual body, we still fetch the URL to extract <title>
+  // (falls back to "" on failure), but body paragraphs come from manualBody — no body scraping.
   if (manualBody) {
     const { title } = await (async () => {
       const fetched = await fetchHtml(url, signal);

@@ -1,6 +1,6 @@
 // Port of clipinator.py lines 639–723: build_html().
 // Runs client-side (browser) — no Node-only APIs.
-// Verbatim port: STYLE_BLOCK, _P, _P_CTR, _P_JUS, BLANK, TEAM_BLOCK, MONTH_EN, build_html.
+// Verbatim port: STYLE_BLOCK, _P, _P_JUS, BLANK, TEAM_BLOCK, MONTH_EN, build_html.
 
 import type { ClippingItem } from "./types";
 
@@ -28,11 +28,8 @@ const STYLE_BLOCK =
 
 const _P_BASE = "margin:0;font-size:11.0pt;font-family:'Calibri',sans-serif";
 const _P = `<p class="MsoNormal" style="${_P_BASE}">`;
-const _P_CTR = `<p class="MsoNormal" style="${_P_BASE};text-align:center">`;
 const _P_JUS = `<p class="MsoNormal" style="${_P_BASE};text-align:justify">`;
 
-// Exported so buildEml can reference it (unused _P_CTR kept to match Python source).
-export { _P_CTR };
 
 const BLANK = `${_P}&nbsp;</p>`;
 

@@ -10,11 +10,6 @@ import { formatDateHeader } from "./buildHtml";
 
 const BOUNDARY = "----=_Part_IBBA_ClippingBoundary_001";
 
-function encodeUtf8(s: string): string {
-  // Encode a string so it's safe inside a MIME text part.
-  // We use 8bit transfer encoding — email clients handle UTF-8 fine.
-  return s;
-}
 
 export function buildEml(items: ClippingItem[], d: Date): Uint8Array {
   const subject = `*** IBBA Oil & Gas News – ${formatDateHeader(d)} ***`;
@@ -32,13 +27,13 @@ export function buildEml(items: ClippingItem[], d: Date): Uint8Array {
     `Content-Type: text/plain; charset="utf-8"`,
     `Content-Transfer-Encoding: 8bit`,
     ``,
-    encodeUtf8(plain),
+    plain,
     ``,
     `--${BOUNDARY}`,
     `Content-Type: text/html; charset="utf-8"`,
     `Content-Transfer-Encoding: 8bit`,
     ``,
-    encodeUtf8(html),
+    html,
     ``,
     `--${BOUNDARY}--`,
     ``,
