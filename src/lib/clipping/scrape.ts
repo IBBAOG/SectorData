@@ -4,7 +4,7 @@
 import { EXTRACTORS, SOURCE_NAMES } from "./sources";
 import { extract } from "./extract";
 import { cleanParagraphs, looksPaywalled } from "./clean";
-import { fetchHtml, fetchFromWayback } from "./fetch";
+import { fetchHtml, fetchHtmlViaCurl, fetchFromWayback } from "./fetch";
 import type { ScrapeResult } from "./types";
 
 function getDomain(url: string): string {
@@ -71,7 +71,38 @@ export async function scrape(
   const fetchResult = await fetchHtml(url, signal, cookieHeader);
 
   if (!fetchResult.ok) {
-    // Live fetch failed (403, network error, timeout) — try Wayback before giving up.
+    // Live fetch failed (403, network error, Cloudflare TLS block, timeout).
+    // Step 1: retry with system curl — different TLS fingerprint, accepted by Cloudflare.
+    // Paywall is NOT a reason to try curl: paywall = site responded OK but with a gate.
+    const curlResult = await fetchHtmlViaCurl(url, signal, cookieHeader);
+    if (curlResult.ok) {
+      try {
+        const curlExtracted = extract(curlResult.html, domain);
+        const curlParagraphs = curlExtracted.paragraphs;
+        if (!looksPaywalled(curlParagraphs) && curlParagraphs.length > 0) {
+          const title = curlExtracted.title;
+          if (!title) {
+            return {
+              url,
+              status: "error",
+              error: "Could not extract article title (via curl).",
+              via: "curl",
+            };
+          }
+          return {
+            url,
+            status: "ok",
+            item: { url, source, title, paragraphs: curlParagraphs },
+            via: "curl",
+          };
+        }
+        // curl got a paywall page — fall through to Wayback.
+      } catch {
+        // curl extract failed — fall through to Wayback.
+      }
+    }
+
+    // Step 2: try Wayback Machine before giving up.
     const wbResult = await fetchFromWayback(url, signal);
     if (wbResult.ok) {
       try {
@@ -84,6 +115,7 @@ export async function scrape(
               url,
               status: "error",
               error: "Could not extract article title (via Wayback).",
+              via: "wayback",
               via_wayback: true,
             };
           }
@@ -91,6 +123,7 @@ export async function scrape(
             url,
             status: "ok",
             item: { url, source, title, paragraphs: wbParagraphs },
+            via: "wayback",
             via_wayback: true,
           };
         }
@@ -103,7 +136,7 @@ export async function scrape(
 
   let { title, paragraphs } = extract(fetchResult.html, domain);
 
-  // Paywall detected → try Wayback Machine once.
+  // Paywall detected → try Wayback Machine once (not curl — paywall = site responded, curl would too).
   if (looksPaywalled(paragraphs)) {
     const wbResult = await fetchFromWayback(url, signal);
     if (wbResult.ok) {
@@ -114,7 +147,7 @@ export async function scrape(
       ) {
         paragraphs = wbExtracted.paragraphs;
         if (wbExtracted.title) title = wbExtracted.title;
-        // Mark via_wayback when we actually used the Wayback content.
+        // Mark via when we actually used the Wayback content.
         if (!looksPaywalled(paragraphs)) {
           if (!title) {
             return { url, status: "error", error: "Could not extract article title." };
@@ -123,6 +156,7 @@ export async function scrape(
             url,
             status: "ok",
             item: { url, source, title, paragraphs },
+            via: "wayback",
             via_wayback: true,
           };
         }

@@ -90,11 +90,33 @@ O fallback para o Wayback Machine agora dispara em **dois** cenários:
 1. **Paywall detectado** (comportamento original): fetch teve sucesso, mas `looksPaywalled(paragraphs)` retornou true após extração.
 2. **Fetch failure** (novo): fetch retornou 403/4xx/5xx ou lançou erro de rede/timeout. Antes de retornar `fetch_failed`, `scrape()` tenta buscar a URL no Wayback. Se o snapshot existir e não estiver paywalled, retorna `status: "ok"` com `via_wayback: true`.
 
-Quando um artigo vem do Wayback, o modal exibe um badge "via Wayback" azul ao lado do pill de status na aba Status. Isso cobre Reuters e outros sites com bot blocking forte que não têm cookies disponíveis.
+Quando um artigo vem do Wayback, o modal exibe um badge "via Wayback" azul ao lado do pill de status na aba Status. Isso cobre Reuters e outros sites com bot blocking forte que não têm cookies disponíveis. O campo `via` em `ScrapeResult` rastreia a origem: `"curl"` | `"wayback"` | omitido (fetch direto).
 
-#### TLS impersonation (limitação conhecida)
+#### Curl shell-out fallback (Cloudflare TLS fingerprint bypass)
 
-`curl_cffi` não tem equivalente limpo em Node. Sites com Cloudflare que bloqueiam mesmo com cookies retornam `{ status: "fetch_failed" }` se o Wayback não tiver snapshot. O modal exibe textarea para o admin colar o corpo manualmente → Regenerate re-scrapa os outros e usa o body manual para os bloqueados.
+Node's `undici` fetch has a TLS ClientHello fingerprint that Cloudflare rejects with 403, even with fresh valid cookies. The system `curl` binary has a different fingerprint that Cloudflare accepts.
+
+When `fetchHtml` (undici) fails with a `fetch_failed` reason, `scrape()` now retries via `fetchHtmlViaCurl` before falling through to Wayback:
+
+```
+undici fetch → 403/network error
+  → fetchHtmlViaCurl (child_process.execFile, no shell, args as array)
+    → success: return { status: "ok", via: "curl" }
+    → paywall or failure: try Wayback Machine
+      → success: return { status: "ok", via: "wayback" }
+      → failure: return { status: "fetch_failed" }
+```
+
+Implementation details:
+- `child_process.execFile` (not `exec`) — URL and cookies are separate args, no shell injection risk.
+- `--max-time 20` + `maxBuffer: 10 MB` + `timeout: 22_000` ms in the Node wrapper.
+- Status code extracted from stdout via `-w "\n---STATUS:%{http_code}"` marker.
+- If `curl` is not in PATH (ENOENT), `fetchHtmlViaCurl` returns `{ ok: false }` silently — flow falls to Wayback. No production breakage.
+- Paywall is NOT retried via curl — if the site returned a paywall over undici, curl would return the same gate page. Wayback remains the only paywall fallback.
+
+The ClippingModal Status tab shows a blue "via curl" badge for articles retrieved this way, and "via Wayback" for Wayback snapshots.
+
+**Known risk:** if Vercel's Amazon Linux 2 runtime does not have `curl` in PATH, `fetchHtmlViaCurl` silently no-ops and flow degrades to Wayback. If this is observed in production logs, next step is to bundle curl via `INCLUDE_FILES_PATTERNS` in `vercel.json` or migrate to `cycletls`.
 
 #### Estado de seleção
 
