@@ -22,7 +22,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 - **No API routes for Supabase data** — all backend logic in PostgreSQL RPC functions, called directly from browser via supabase-js anon key.
 - **Yahoo Finance proxied** through `/api/stocks/*` to avoid CORS.
 - **Auth guard** in `(dashboard)/layout.tsx` — redirects to `/login` if no session.
-- **Role-based visibility** — Admins toggle module access for Clients; state in `module_visibility` table, loaded via `UserProfileContext`.
+- **Role-based visibility** — Two independent axes in `module_visibility`, loaded via `UserProfileContext`: `is_visible_for_clients` (Client access to module — Admin always sees) and `is_visible_on_home` (Home card gallery visibility for **all** users including Admin).
 - **Materialized views** `mv_ms_serie` / `mv_ms_serie_fast` for Market Share / Sales Volumes performance.
 - **GitHub Actions** as ETL — scrape → CSV/parquet → Supabase upsert.
 - **All tables have RLS enabled** — frontend cannot bypass; only service-role pipelines write to ingestion tables.
@@ -42,7 +42,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/stocks` | `stock_portfolios` (direct PostgREST) + Yahoo Finance proxy | No |
 | `/news-hunter` | `seed_my_news_hunter_keywords` | No |
 | `/profile` | `get_my_profile`, `upsert_my_profile` | — |
-| `/admin-panel` | `get_module_visibility`, `set_module_visibility`, `get_all_users_with_roles`, `set_user_role` | — |
+| `/admin-panel` | `get_module_visibility`, `set_module_visibility`, `set_module_home_visibility`, `get_all_users_with_roles`, `set_user_role` | — |
 
 ### Estatísticas (Fase 3 — 12 novos dashboards)
 
@@ -166,7 +166,7 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | `d_g_margins` | id | fuel_type, week, base_fuel, biofuel_component, federal_tax, state_tax, distribution_and_resale_margin, total |
 | `price_bands` | id | date, product, bba_import_parity, bba_import_parity_w_subsidy, bba_export_parity, petrobras_price |
 | `stock_portfolios` | uuid | user_id, name, tickers text[], groups jsonb, is_active |
-| `module_visibility` | module_slug | is_visible_for_clients |
+| `module_visibility` | module_slug | is_visible_for_clients, is_visible_on_home (default true) |
 | `news_articles` | url | domain, source_name, title, snippet, published_at, found_at, matched_keywords text[] |
 | `news_hunter_keywords` | (user_id, keyword) | created_at — per-user, RLS scoped |
 | `profiles` | id (FK auth.users) | role (Admin/Client), full_name, avatar_url |
@@ -256,6 +256,9 @@ Extracted from the 10 Fase 3 dashboards to prevent visual drift. All live in [`s
 - **Admin**: all modules + `/admin-panel` (role/visibility management)
 - **Client**: modules allowed by Admin only; enforced via `useModuleVisibilityGuard(slug)`
 - Role stored in `profiles`, loaded via `UserProfileContext`; `useRoleGuard` protects Admin pages
+- **Module visibility axes** (both in `module_visibility`, loaded once by `UserProfileContext`):
+  - `is_visible_for_clients` — whether a Client can access the module (Admin always can). Managed via Admin Panel → Permissions tab. RPC: `set_module_visibility`.
+  - `is_visible_on_home` — whether the module card appears in the `/home` gallery for **all** users (including Admin). Default `true`. Managed via Admin Panel → Card Images tab (Show on Home toggle). RPC: `set_module_home_visibility`.
 
 ## Adding a New Dashboard (developer quick-start)
 
