@@ -150,6 +150,9 @@ export function NewsHunterProvider({
 
     if (cachedWatermark && cached.length > 0) {
       // 2a. Cache existe: busca apenas artigos mais novos que o watermark.
+      // Initialize watermark immediately so polling works even if the query below
+      // fails due to a transient error (without this, the ref stays null forever).
+      lastFoundAtRef.current = cachedWatermark;
       const { data, error: err } = await supabase
         .from("news_articles")
         .select("*")
@@ -179,7 +182,14 @@ export function NewsHunterProvider({
         if (err) { setError(err.message); setLoading(false); return; }
         const rows = (data as NewsArticle[]) ?? [];
         if (rows.length === 0) break;
-        for (const r of rows) allRows.push(r);
+        for (const r of rows) {
+          allRows.push(r);
+          // Update watermark incrementally so polling works even if we break
+          // mid-pagination due to a transient error on a subsequent page.
+          if (!lastFoundAtRef.current || r.found_at > lastFoundAtRef.current) {
+            lastFoundAtRef.current = r.found_at;
+          }
+        }
         setArticles((prev) => mergeArticles(prev, rows));
         if (rows.length < PAGE_SIZE) break;
         offset += PAGE_SIZE;
