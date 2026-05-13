@@ -297,9 +297,9 @@ export default function ClippingModal({
                       >
                         {pill.label}
                       </span>
-                      {(r.via === "curl") && (
+                      {r.via === "curl" && (
                         <span
-                          title="Content retrieved via system curl (Cloudflare TLS fingerprint bypass)"
+                          title="Content retrieved via plain static curl (bypasses Node TLS fingerprint rejection)"
                           style={{
                             background: "#e8f4fd",
                             color: "#0c5460",
@@ -312,6 +312,23 @@ export default function ClippingModal({
                           }}
                         >
                           via curl
+                        </span>
+                      )}
+                      {r.via === "curl_impersonate" && (
+                        <span
+                          title="Content retrieved via curl-impersonate chrome131 (full TLS fingerprint — Cloudflare / Investing.com)"
+                          style={{
+                            background: "#fff0e6",
+                            color: "#7a3200",
+                            borderRadius: 4,
+                            padding: "2px 7px",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            whiteSpace: "nowrap",
+                            flexShrink: 0,
+                          }}
+                        >
+                          via curl-impersonate
                         </span>
                       )}
                       {(r.via === "wayback" || r.via_wayback) && (
