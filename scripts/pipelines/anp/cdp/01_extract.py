@@ -57,6 +57,7 @@ from PIL import Image
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
@@ -220,7 +221,16 @@ def create_driver(download_dir):
     }
     opts.add_experimental_option("prefs", prefs)
 
-    driver = webdriver.Chrome(options=opts)
+    # Use matching ChromeDriver when CHROMEDRIVER_PATH is set by CI (setup-chrome
+    # with install-chromedriver: true). Prevents SessionNotCreatedException when
+    # the runner PATH contains a stale chromedriver version from the system image.
+    chromedriver_path = os.environ.get("CHROMEDRIVER_PATH")
+    if chromedriver_path:
+        print(f"  [config] ChromeDriver forçado: {chromedriver_path}")
+        service = Service(executable_path=chromedriver_path)
+        driver = webdriver.Chrome(service=service, options=opts)
+    else:
+        driver = webdriver.Chrome(options=opts)
     driver.set_page_load_timeout(60)
     driver.execute_cdp_cmd("Page.setDownloadBehavior", {
         "behavior": "allow",
