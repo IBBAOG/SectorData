@@ -267,7 +267,8 @@ A migration `20260504000001` foi originalmente `add_brasil_energia_keyword` (com
 | Migration criada | Schema coberto |
 |---|---|
 | `20260505000007_legacy_price_bands.sql` | `price_bands`, `get_price_bands_data` |
-| `20260505000008_legacy_profiles_and_visibility.sql` | `profiles`, `module_visibility`, policies, `get_my_profile`, `upsert_my_profile`, `get_module_visibility`, `set_module_visibility` |
+| `20260505000008_legacy_profiles_and_visibility.sql` | `profiles`, `module_visibility` (`module_slug`, `is_visible_for_clients`), policies, `get_my_profile`, `upsert_my_profile`, `get_module_visibility` (returns `module_slug, is_visible_for_clients`), `set_module_visibility` |
+| `20260513120000_add_home_visibility.sql` | `module_visibility`: adds `is_visible_on_home BOOLEAN NOT NULL DEFAULT true`; updates `get_module_visibility()` to also return `is_visible_on_home`; adds `set_module_home_visibility(p_slug, p_is_visible)` Admin-only RPC |
 | `20260505000009_legacy_user_management.sql` | `get_all_users_with_roles`, `set_user_role`, `ensure_user_profile` |
 
 Drift documentado nas migrations:

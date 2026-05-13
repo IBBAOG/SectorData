@@ -249,7 +249,7 @@ export default function HomeClient({ initialPreviews }: HomeClientProps) {
   const router = useRouter();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
-  const { profile, moduleVisibility, loading: profileLoading } = useUserProfile();
+  const { profile, moduleVisibility, homeVisibility, loading: profileLoading } = useUserProfile();
 
   // initialPreviews arrive from the server — no client-side fetch needed.
   const cardPreviews = initialPreviews;
@@ -257,7 +257,14 @@ export default function HomeClient({ initialPreviews }: HomeClientProps) {
   const visibleCards = profileLoading
     ? CARDS
     : CARDS.filter((card) => {
-        if (card.href === null) return true;
+        // Disabled/Coming Soon cards always pass through.
+        if (card.slug === null) return true;
+
+        // homeVisibility applies to ALL users (Admin + Client).
+        // Default true when key is missing (safe degradation).
+        if (!(homeVisibility[card.slug] ?? true)) return false;
+
+        // moduleVisibility (is_visible_for_clients) only restricts Client users.
         if (profile?.role === "Admin") return true;
         return moduleVisibility[hrefToSlug(card.href)] ?? true;
       });

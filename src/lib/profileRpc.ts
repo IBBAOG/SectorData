@@ -134,3 +134,26 @@ export async function rpcSetModuleVisibility(
     return null;
   }
 }
+
+/**
+ * Toggles one module's visibility on the Home page for ALL users (including Admins).
+ * Only succeeds if the caller has role='Admin' (enforced server-side).
+ * Returns the updated row, or null on error.
+ */
+export async function rpcSetModuleHomeVisibility(
+  supabase: SupabaseClient,
+  slug: string,
+  isVisible: boolean,
+): Promise<ModuleConfig | null> {
+  try {
+    const { data, error } = await supabase.rpc("set_module_home_visibility", {
+      p_slug: slug,
+      p_is_visible: isVisible,
+    });
+    if (error) throw error;
+    return (data as ModuleConfig) ?? null;
+  } catch (e) {
+    console.error("[profileRpc] set_module_home_visibility error:", e);
+    return null;
+  }
+}

@@ -120,7 +120,7 @@ const NAV_ENTRIES: NavEntry[] = [
 ];
 
 /** Map nested/alternate routes to the root module slug for visibility checks */
-const SLUG_MAP: Record<string, string> = {};
+const SLUG_MAP: Record<string, string> = { "sales-volumes": "sales" };
 
 /* ── Chevron SVG ───────────────────────────────────────────────────────────── */
 

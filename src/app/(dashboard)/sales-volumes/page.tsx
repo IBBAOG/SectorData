@@ -380,7 +380,7 @@ function ComparisonTable({ rows, colors }: { rows: CompRow[]; colors: Record<str
 }
 
 export default function SalesVolumesPage() {
-  const { visible, loading: visLoading } = useModuleVisibilityGuard("sales-volumes");
+  const { visible, loading: visLoading } = useModuleVisibilityGuard("sales");
   const supabase = getSupabaseClient();
 
   type AppliedSvFilters = {

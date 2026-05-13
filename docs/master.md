@@ -147,6 +147,17 @@ São os pontos onde um departamento depende de outro. Mudanças nestes contratos
 | `get_analytics_user_timeline(user_id, period)` | Timeline de eventos de um usuário específico |
 | `get_analytics_heatmap(period)` | Matriz dia-da-semana × hora |
 
+**Contrato `module_visibility` (APP ↔ Supabase):**
+
+| RPC | Assinatura | Consumidor |
+|---|---|---|
+| `get_module_visibility` | `() → (module_slug, is_visible_for_clients, is_visible_on_home)` | `UserProfileContext` — carregado no login |
+| `set_module_visibility` | `(p_slug, p_is_visible)` | Admin Panel → aba Permissions |
+| `set_module_home_visibility` | `(p_slug, p_is_visible)` | Admin Panel → aba Card Images (Show on Home toggle) |
+
+`is_visible_for_clients`: controla acesso do role Client ao módulo. Admin sempre acessa.
+`is_visible_on_home`: controla exibição do card na galeria `/home` para TODOS os usuários (inclusive Admin). Default `true`.
+
 **Regra de divisão:** SQL = `worker_supabase`. JS chamando SQL = `worker_subgerente-app` / `dash-*`.
 
 **Quando algum dept precisa de coluna/tabela nova:** abre solicitação ao agente `worker_supabase` via Gerente. `worker_supabase` cria migration + RLS + (se for o caso) RPC. Avisa o dept consumidor pra atualizar wrapper JS / popular dados. Documentador atualiza este arquivo + `docs/supabase/PRD.md` + PRD do dept consumidor.
@@ -357,7 +368,7 @@ Ver `C:/Users/eduar/.claude/projects/C--Users-eduar-dashboard-projeto/memory/MEM
 
 - **Sempre commit + push para `origin/main`** automaticamente após qualquer mudança de código (sem ser pedido).
 - **Sempre fazer merge** de feature branch direto para main após commit (não esperar PR review).
-- **Todo módulo novo** tem (a) controle de visibilidade no admin panel e (b) upload de imagem de home.
+- **Todo módulo novo** tem (a) controle de visibilidade no admin panel (`is_visible_for_clients` via Permissions tab + `is_visible_on_home` via Card Images tab) e (b) upload de imagem de home.
 - **Parquet é corrigido in-place** — nunca delete e refaça.
 
 ---
@@ -402,5 +413,5 @@ Resolvido:
 - Workflows `etl_anp_vendas.yml` e `etl_anp_fase3.yml` — confirmados ATIVOS (anp-watcher é trigger externo via cron-job.org; etl_anp_fase3 roda mensal). Adicionados aos PRDs do ETL.
 
 Tech debt conhecido (não resolvido):
-- **`sql/` na raiz contém DDL aplicado direto no Supabase Dashboard, NÃO versionado em `supabase/migrations/`.** Tabelas afetadas: `price_bands`, `profiles`, `module_visibility`. Recriar o DB apenas das migrations resultaria em DB incompleto. **Ação futura**: APP deve converter os 3 arquivos em migrations próprias, depois remover `sql/`.
+- **`sql/` na raiz contém DDL aplicado direto no Supabase Dashboard, NÃO versionado em `supabase/migrations/`.** Tabelas afetadas: `price_bands`, `profiles`, `module_visibility` (colunas: `module_slug PK`, `is_visible_for_clients`, `is_visible_on_home DEFAULT true`). Recriar o DB apenas das migrations resultaria em DB incompleto. **Ação futura**: APP deve converter os 3 arquivos em migrations próprias, depois remover `sql/`.
 - **Scripts Python na raiz** (`ais_*.py`, `pipelines/navios/01_lineup_scrape.py`, `vessel_*.py`, `pipelines/navios/04_cabotage_cleanup.py`, `pipelines/anp/vendas_watch.py`, `scripts/manual/dg_margins_upload.py`) convivem com `scripts/`. Mover requer atualizar workflows correspondentes — feito quando houver janela.

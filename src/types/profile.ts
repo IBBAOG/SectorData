@@ -19,6 +19,7 @@ export interface UserProfile {
 export interface ModuleConfig {
   module_slug: string;
   is_visible_for_clients: boolean;
+  is_visible_on_home: boolean;
   updated_at: string;       // ISO 8601 timestamptz string
 }
 
@@ -44,6 +45,12 @@ export interface UserProfileContextValue {
    * regardless of this map.
    */
   moduleVisibility: Record<string, boolean>;
+  /**
+   * Home visibility map keyed by module_slug (uses CARDS[].slug, not href).
+   * Missing key → treat as `true` (visible). Applies to ALL users including Admins.
+   * Controlled via the "Show on Home" toggle in Admin Panel > Card Images.
+   */
+  homeVisibility: Record<string, boolean>;
   /** True while either profile or visibility is still being fetched. */
   loading: boolean;
   /**
