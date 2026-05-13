@@ -72,8 +72,9 @@ export async function scrape(
 
   if (!fetchResult.ok) {
     // Live fetch failed (403, network error, Cloudflare TLS block, timeout).
-    // Step 1: retry with system curl — different TLS fingerprint, accepted by Cloudflare.
+    // Step 1: retry with bundled static curl — different TLS fingerprint, accepted by Cloudflare.
     // Paywall is NOT a reason to try curl: paywall = site responded OK but with a gate.
+    const undiciDetail = fetchResult.detail ?? "undici_failed";
     const curlResult = await fetchHtmlViaCurl(url, signal, cookieHeader);
     if (curlResult.ok) {
       try {
@@ -131,7 +132,13 @@ export async function scrape(
         // Wayback extract failed — fall through to fetch_failed.
       }
     }
-    return { url, status: "fetch_failed", error: "Could not fetch page (403/network error)." };
+    const curlDetail = (!curlResult.ok && curlResult.detail) ? curlResult.detail : "curl_failed";
+    const wbDetail = (!wbResult.ok && wbResult.detail) ? wbResult.detail : "no_snapshot";
+    return {
+      url,
+      status: "fetch_failed",
+      error: `undici: ${undiciDetail}; curl: ${curlDetail}; wayback: ${wbDetail}`,
+    };
   }
 
   let { title, paragraphs } = extract(fetchResult.html, domain);

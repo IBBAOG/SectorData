@@ -94,7 +94,7 @@ Quando um artigo vem do Wayback, o modal exibe um badge "via Wayback" azul ao la
 
 #### Curl shell-out fallback (Cloudflare TLS fingerprint bypass)
 
-Node's `undici` fetch has a TLS ClientHello fingerprint that Cloudflare rejects with 403, even with fresh valid cookies. The system `curl` binary has a different fingerprint that Cloudflare accepts.
+Node's `undici` fetch has a TLS ClientHello fingerprint that Cloudflare rejects with 403, even with fresh valid cookies. The bundled `curl` binary has a different fingerprint that Cloudflare accepts.
 
 When `fetchHtml` (undici) fails with a `fetch_failed` reason, `scrape()` now retries via `fetchHtmlViaCurl` before falling through to Wayback:
 
@@ -104,19 +104,38 @@ undici fetch → 403/network error
     → success: return { status: "ok", via: "curl" }
     → paywall or failure: try Wayback Machine
       → success: return { status: "ok", via: "wayback" }
-      → failure: return { status: "fetch_failed" }
+      → failure: return { status: "fetch_failed", error: "undici: ...; curl: ...; wayback: ..." }
 ```
 
 Implementation details:
 - `child_process.execFile` (not `exec`) — URL and cookies are separate args, no shell injection risk.
 - `--max-time 20` + `maxBuffer: 10 MB` + `timeout: 22_000` ms in the Node wrapper.
 - Status code extracted from stdout via `-w "\n---STATUS:%{http_code}"` marker.
-- If `curl` is not in PATH (ENOENT), `fetchHtmlViaCurl` returns `{ ok: false }` silently — flow falls to Wayback. No production breakage.
+- `FetchResult` has an optional `detail` field on all failure paths for debugging (e.g. `curl_http_403`, `curl_binary_not_found`, `wayback_no_snapshot`). When all three paths fail, `ScrapeResult.error` concatenates all three details: `"undici: <d>; curl: <d>; wayback: <d>"`.
 - Paywall is NOT retried via curl — if the site returned a paywall over undici, curl would return the same gate page. Wayback remains the only paywall fallback.
 
 The ClippingModal Status tab shows a blue "via curl" badge for articles retrieved this way, and "via Wayback" for Wayback snapshots.
 
-**Known risk:** if Vercel's Amazon Linux 2 runtime does not have `curl` in PATH, `fetchHtmlViaCurl` silently no-ops and flow degrades to Wayback. If this is observed in production logs, next step is to bundle curl via `INCLUDE_FILES_PATTERNS` in `vercel.json` or migrate to `cycletls`.
+#### Bundled static curl binary (`vendor/curl-static-amd64`)
+
+Vercel's Amazon Linux 2 minimal runtime does not have `curl` in PATH, so `fetchHtmlViaCurl` was silently no-oping there. The fix: bundle a static curl binary in the repo.
+
+**Binary**: `vendor/curl-static-amd64` — [stunnel/static-curl](https://github.com/stunnel/static-curl) v8.20.0, `curl-linux-x86_64-musl` (~10 MB, static-pie linked, x86_64 only).
+
+**Bundling**: `next.config.ts` uses `outputFileTracingIncludes` to include the binary in the `/api/clipping/scrape` Vercel function bundle. Without this, Next.js file tracing would omit it.
+
+**Path resolution** (`resolveCurlPath()` in `fetch.ts`):
+- **Linux (Vercel prod)**: checks `process.cwd()/.next/server/vendor/curl-static-amd64`, then `process.cwd()/vendor/curl-static-amd64`, then `/var/task/...`. Also runs `chmod 0o755` in case Vercel stripped the exec bit on deploy.
+- **Non-Linux (dev — Windows/macOS)**: uses `"curl"` (system binary from PATH).
+- Result is cached in module-level promise (resolved once per process lifetime).
+
+**Limitation**: x86_64 only. Vercel does not currently use ARM for Node.js functions, so this is not an issue.
+
+**Updating the binary** (e.g. for a libcurl CVE):
+1. Download new release: `curl-linux-x86_64-musl-<version>.tar.xz` from [stunnel/static-curl releases](https://github.com/stunnel/static-curl/releases).
+2. Extract: `tar -xf curl-linux-x86_64-musl-<ver>.tar.xz curl && chmod +x curl && mv curl vendor/curl-static-amd64`.
+3. Commit `vendor/curl-static-amd64` (binary is committed directly — no Git LFS).
+4. Update version note in this doc.
 
 #### Estado de seleção
 
