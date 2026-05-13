@@ -28,8 +28,8 @@ Perfil do usuário logado. Edição inline do nome (`profile-name-edit-icon-btn`
 ### `/admin-panel`
 Protegida por `useRoleGuard("Admin")`. Funcionalidades (5 seções na sidebar):
 - **Members** — listar todos os users com role; promover/demover Admin ↔ Client.
-- **Permissions** — toggle de visibilidade por módulo (`module_visibility`).
-- **Card Images** — upload de imagem por módulo (home page cards).
+- **Permissions** — toggle `is_visible_for_clients` por módulo; afeta só Clients. Admin sempre vê tudo.
+- **Card Images** — upload de imagem por módulo (home page cards) + toggle **"Show on Home"** (`is_visible_on_home`): liga/desliga a exibição do card na galeria `/home` para TODOS os usuários (incluindo Admin). Default `true`. Controles independentes: pode ter `is_visible_on_home=false` (card some do Home pra todos) e `is_visible_for_clients=true` (não afeta, já sumiu). Ou `is_visible_on_home=true` + `is_visible_for_clients=false` (Admin vê no Home, Client não vê).
 - **Alert Emails** — gerenciar destinatários de alertas automáticos.
 - **Data Input** — editar linhas de tabelas de referência diretamente via PostgREST (ver seção abaixo).
 
@@ -39,8 +39,9 @@ Protegida por `useRoleGuard("Admin")`. Funcionalidades (5 seções na sidebar):
 |---|---|---|
 | `get_my_profile` | leitura | profile |
 | `upsert_my_profile` | escrita | profile (edição de nome) |
-| `get_module_visibility` | leitura | admin-panel + UserProfileContext |
-| `set_module_visibility` | escrita | admin-panel |
+| `get_module_visibility` | leitura | admin-panel + UserProfileContext — retorna `(module_slug, is_visible_for_clients, is_visible_on_home)` |
+| `set_module_visibility` | escrita | admin-panel → aba Permissions |
+| `set_module_home_visibility` | escrita | admin-panel → aba Card Images (Show on Home toggle) |
 | `get_all_users_with_roles` | leitura | admin-panel |
 | `set_user_role` | escrita | admin-panel |
 | `seed_my_news_hunter_keywords` | escrita | first-login (chamada por dash-admin para popular keywords default no novo user) |
@@ -54,14 +55,18 @@ Protegida por `useRoleGuard("Admin")`. Funcionalidades (5 seções na sidebar):
 
 ### `module_visibility`
 - PK: `module_slug`
-- Colunas: `is_visible_for_clients BOOLEAN`
+- Colunas: `is_visible_for_clients BOOLEAN`, `is_visible_on_home BOOLEAN NOT NULL DEFAULT true`
 - RLS: read pra authenticated, write pra Admin via RPC.
+- `is_visible_for_clients`: controls Client visibility only (Admin always sees). Managed via Permissions tab.
+- `is_visible_on_home`: controls Home gallery visibility for ALL users including Admin. Managed via Card Images tab "Show on Home" toggle. Default `true` (backward-compatible).
 
 > **Tech debt**: ambas criadas via [`sql/create_profiles_and_visibility.sql`](../../sql/create_profiles_and_visibility.sql) aplicado direto no Dashboard, **não em migration versionada**.
 
 ## Slugs gerenciados em `module_visibility`
 
-Lista completa dos slugs atualmente registrados na tabela `module_visibility` (todos com `is_visible_for_clients = true` por padrão):
+Lista completa dos slugs atualmente registrados na tabela `module_visibility` (todos com `is_visible_for_clients = true` e `is_visible_on_home = true` por padrão):
+
+> **Nota de slug**: `MODULE_LABELS` em `admin-panel/page.tsx` usa `sales` (não `sales-volumes`) para alinhar com `CARDS[].slug` em `HomeClient.tsx` e com a chave real em `module_visibility`. O href `/sales-volumes` é mapeado para slug `sales` via `hrefToSlug()` em `HomeClient.tsx`.
 
 | Slug | Categoria | Label na UI |
 |---|---|---|
@@ -114,11 +119,16 @@ Workflow disparado pelo Subgerente APP quando ele cria um dashboard novo:
 ## Visibility flow (tempo de execução)
 
 1. User loga.
-2. `UserProfileContext` carrega `profiles` (próprio) + `module_visibility` (todos).
-3. NavBar usa esse estado pra filtrar `NAV_ENTRIES`:
+2. `UserProfileContext` carrega `profiles` (próprio) + `module_visibility` (todos). Uma única chamada RPC `get_module_visibility` popula dois maps:
+   - `moduleVisibility: Record<string, boolean>` — derivado de `is_visible_for_clients`
+   - `homeVisibility: Record<string, boolean>` — derivado de `is_visible_on_home`
+3. NavBar usa `moduleVisibility` pra filtrar `NAV_ENTRIES`:
    - Admin vê tudo.
    - Client vê só módulos onde `is_visible_for_clients = true`.
-4. Cada módulo tem `useModuleVisibilityGuard("<slug>")` que bloqueia acesso direto via URL.
+4. `/home` (HomeClient) aplica dois filtros combinados:
+   - Primeiro: `homeVisibility[card.slug] ?? true` — para TODOS os usuários. Card com `false` some do Home inclusive pra Admin.
+   - Segundo: `moduleVisibility` — só para Clients. Admin passa direto.
+5. Cada módulo tem `useModuleVisibilityGuard("<slug>")` que bloqueia acesso direto via URL (não afetado pelo `homeVisibility` — é só visibilidade no Home).
 
 ## Componentes/CSS específicos
 

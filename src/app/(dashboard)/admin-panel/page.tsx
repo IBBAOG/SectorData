@@ -9,6 +9,7 @@ import { useRoleGuard } from "../../../hooks/useRoleGuard";
 import { useUserProfile } from "../../../context/UserProfileContext";
 import {
   rpcSetModuleVisibility,
+  rpcSetModuleHomeVisibility,
   rpcGetAllUsersWithRoles,
   rpcSetUserRole,
 } from "../../../lib/profileRpc";
@@ -100,7 +101,8 @@ const SECTIONS: { id: SectionId; label: string; description: string; icon: React
 // ── Module labels ─────────────────────────────────────────────────────────────
 const MODULE_LABELS: { slug: string; label: string; description: string }[] = [
   // Fuel Distribution
-  { slug: "sales-volumes",           label: "Sales Dashboard",              description: "Volume analysis by product, segment, agent, region, and period" },
+  // Note: slug "sales" matches CARDS[].slug and module_visibility DB row (href /sales-volumes).
+  { slug: "sales",                   label: "Sales Dashboard",              description: "Volume analysis by product, segment, agent, region, and period" },
   { slug: "market-share",            label: "Market Share",                 description: "Market share evolution over time broken down by distributor" },
   { slug: "navios-diesel",           label: "Diesel Imports Line-Up",       description: "Scheduled vessel arrivals and diesel import line-up by port" },
   { slug: "diesel-gasoline-margins", label: "Diesel and Gasoline Margins",  description: "Diesel and gasoline margin tracking across regions and time" },
@@ -132,7 +134,7 @@ const MODULE_LABELS: { slug: string; label: string; description: string }[] = [
 // ── Main component ────────────────────────────────────────────────────────────
 export default function AdminPanelPage() {
   const { allowed, loading: roleLoading } = useRoleGuard("Admin");
-  const { moduleVisibility, refreshVisibility, profile: myProfile } = useUserProfile();
+  const { moduleVisibility, homeVisibility, refreshVisibility, profile: myProfile } = useUserProfile();
   const supabase = getSupabaseClient();
 
   const [activeSection, setActiveSection] = useState<SectionId>("members");
@@ -181,6 +183,35 @@ export default function AdminPanelPage() {
     setSaving(null);
     setSavedSlug(slug);
     setTimeout(() => setSavedSlug((s) => (s === slug ? null : s)), 1500);
+  }
+
+  // ── Home Visibility ────────────────────────────────────────────────────────
+  const [localHomeVis, setLocalHomeVis] = useState<Record<string, boolean>>({});
+  const [savingHome, setSavingHome] = useState<string | null>(null);
+  const [savedHomeSlug, setSavedHomeSlug] = useState<string | null>(null);
+  const [homeToggleError, setHomeToggleError] = useState<{ slug: string; message: string } | null>(null);
+
+  useEffect(() => { setLocalHomeVis({ ...homeVisibility }); }, [homeVisibility]);
+
+  async function handleHomeToggle(slug: string, newValue: boolean) {
+    if (!supabase || savingHome) return;
+    const prevValue = localHomeVis[slug] ?? true;
+    // Optimistic update
+    setLocalHomeVis((prev) => ({ ...prev, [slug]: newValue }));
+    setSavingHome(slug);
+    setHomeToggleError(null);
+    const result = await rpcSetModuleHomeVisibility(supabase, slug, newValue);
+    if (!result) {
+      // Rollback on error
+      setLocalHomeVis((prev) => ({ ...prev, [slug]: prevValue }));
+      setHomeToggleError({ slug, message: "Failed to save. Please try again." });
+      setTimeout(() => setHomeToggleError((e) => (e?.slug === slug ? null : e)), 4000);
+    } else {
+      await refreshVisibility();
+      setSavedHomeSlug(slug);
+      setTimeout(() => setSavedHomeSlug((s) => (s === slug ? null : s)), 1500);
+    }
+    setSavingHome(null);
   }
 
   // ── Alert Recipients ───────────────────────────────────────────────────────
@@ -562,6 +593,7 @@ export default function AdminPanelPage() {
               <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>Card Preview Images</h2>
               <p style={{ fontSize: 13, color: "#888", margin: "0 0 20px" }}>
                 Upload a custom preview image for each dashboard card shown on the Home page.
+                Use the <strong>Show on Home</strong> toggle to hide a card from the Home gallery for all users (including Admins).
                 Images are stored in Supabase and replace the default screenshots immediately.
               </p>
               {MODULE_LABELS.map(({ slug, label }) => {
@@ -569,6 +601,10 @@ export default function AdminPanelPage() {
                 const isUploading = uploadingSlug === slug;
                 const justSaved = savedPreviewSlug === slug;
                 const errorForSlug = uploadError?.slug === slug ? uploadError.message : null;
+                const isHomeVisible = localHomeVis[slug] ?? true;
+                const isSavingHome = savingHome === slug;
+                const justSavedHome = savedHomeSlug === slug;
+                const homeError = homeToggleError?.slug === slug ? homeToggleError.message : null;
                 return (
                   <div key={slug} className="settings-module-row" style={{ alignItems: "center", gap: 16 }}>
                     {/* Thumbnail */}
@@ -582,6 +618,33 @@ export default function AdminPanelPage() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="settings-module-label">{label}</div>
                       <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>{slug}</div>
+                    </div>
+                    {/* Show on Home toggle */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                      {justSavedHome && <span className="settings-saved-tick" aria-live="polite">✓ Saved</span>}
+                      {homeError && (
+                        <span style={{ fontSize: 12, color: "#c0392b" }} title={homeError}>Error</span>
+                      )}
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                        <div className="form-check form-switch" style={{ margin: 0 }}>
+                          <input
+                            className="form-check-input"
+                            type="checkbox"
+                            role="switch"
+                            id={`home-toggle-${slug}`}
+                            checked={isHomeVisible}
+                            disabled={isSavingHome}
+                            onChange={(e) => handleHomeToggle(slug, e.target.checked)}
+                            style={{ width: "2.5em", height: "1.25em", cursor: isSavingHome ? "wait" : "pointer", opacity: isSavingHome ? 0.6 : 1 }}
+                          />
+                        </div>
+                        <label
+                          htmlFor={`home-toggle-${slug}`}
+                          style={{ fontSize: 10, color: "#999", whiteSpace: "nowrap", cursor: "pointer", userSelect: "none" }}
+                        >
+                          Show on Home
+                        </label>
+                      </div>
                     </div>
                     {/* Upload */}
                     <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>

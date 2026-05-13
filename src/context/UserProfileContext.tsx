@@ -20,6 +20,7 @@ import type { UserProfile, UserProfileContextValue } from "../types/profile";
 const UserProfileContext = createContext<UserProfileContextValue>({
   profile: null,
   moduleVisibility: {},
+  homeVisibility: {},
   loading: true,
   refreshVisibility: async () => {},
   refreshProfile: async () => {},
@@ -46,6 +47,7 @@ export function UserProfileProvider({
   const [moduleVisibility, setModuleVisibility] = useState<
     Record<string, boolean>
   >({});
+  const [homeVisibility, setHomeVisibility] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
 
   const loadProfile = useCallback(async () => {
@@ -53,14 +55,18 @@ export function UserProfileProvider({
     setProfile(profileData ?? null);
   }, [supabase]);
 
-  // Convert the ModuleConfig array into a flat slug→boolean map
+  // Convert the ModuleConfig array into two flat slug→boolean maps:
+  // moduleVisibility (is_visible_for_clients) and homeVisibility (is_visible_on_home).
   const loadVisibility = useCallback(async () => {
     const rows = await rpcGetModuleVisibility(supabase);
-    const map: Record<string, boolean> = {};
+    const clientMap: Record<string, boolean> = {};
+    const homeMap: Record<string, boolean> = {};
     for (const row of rows) {
-      map[row.module_slug] = row.is_visible_for_clients;
+      clientMap[row.module_slug] = row.is_visible_for_clients;
+      homeMap[row.module_slug] = row.is_visible_on_home;
     }
-    setModuleVisibility(map);
+    setModuleVisibility(clientMap);
+    setHomeVisibility(homeMap);
   }, [supabase]);
 
   useEffect(() => {
@@ -81,6 +87,7 @@ export function UserProfileProvider({
       value={{
         profile,
         moduleVisibility,
+        homeVisibility,
         loading,
         refreshVisibility: loadVisibility,
         refreshProfile: loadProfile,
