@@ -19,7 +19,7 @@ const ORANGE = "#E85D20";
 const BG = "#f5f5f5";
 
 interface CardDef {
-  slug: string | null;
+  slug: string;
   preview: string | null;
   title: string;
   description: string;
@@ -229,15 +229,6 @@ const CARDS: CardDef[] = [
     href: "/anp-cdp-depletion",
     disabled: false,
   },
-  {
-    slug: null,
-    preview: null,
-    title: "Coming Soon",
-    description: "New modules are currently under development",
-    badge: "Soon",
-    href: null,
-    disabled: true,
-  },
 ];
 
 interface HomeClientProps {
@@ -257,9 +248,6 @@ export default function HomeClient({ initialPreviews }: HomeClientProps) {
   const visibleCards = profileLoading
     ? CARDS
     : CARDS.filter((card) => {
-        // Disabled/Coming Soon cards always pass through.
-        if (card.slug === null) return true;
-
         // homeVisibility applies to ALL users (Admin + Client).
         // Default true when key is missing (safe degradation).
         if (!(homeVisibility[card.slug] ?? true)) return false;
@@ -330,9 +318,7 @@ export default function HomeClient({ initialPreviews }: HomeClientProps) {
         <div className="row g-4">
           {visibleCards.map((card, i) => {
             const isHovered = hoveredIndex === i && !card.disabled;
-            const imgSrc = card.slug
-              ? (cardPreviews[card.slug] ?? card.preview)
-              : card.preview;
+            const imgSrc = cardPreviews[card.slug] ?? card.preview;
 
             return (
               <div key={card.title} className="col-md-6 col-lg-4">
