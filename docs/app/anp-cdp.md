@@ -104,6 +104,39 @@ Backfill histórico foi feito via `02_upload.py --from-parquet`. Cargas mensais 
 
 Liquid-flow metrics (`petroleo_bbl_dia`, `oleo_bbl_dia`, `condensado_bbl_dia`, `agua_bbl_dia`) are stored in **bbl/day** server-side but displayed in **kbpd** (thousand barrels per day) on the chart and in the metric labels. The conversion (`/1000`) is applied at render time via `bblDiaToKbpd()` from [`src/lib/units.ts`](../../src/lib/units.ts); the RPC `get_anp_cdp_poco_serie` is unchanged and continues to return raw bbl/day. Excel/CSV exports also keep raw bbl/day for data fidelity (column headers explicitly say `bbl/day`). Gas metrics keep their native `Mm³/day`.
 
+## Partial-month data — preservation contract
+
+### Principle
+
+Partial data for the **current (or most recent incomplete) month must be preserved in the database and displayed as-is on the dashboard.** Do not filter, hide, or delete it.
+
+### Why
+
+The ANP releases CDP production data well by well, incrementally — some fields are published days after month-end; others take weeks. The dashboard is the primary tool for monitoring this real-time disclosure. A month that looks "low" compared to history may simply have fewer wells reported so far, not bad data.
+
+Additionally, the alert subsystem (`alertas/bases/anp_cdp_producao_poco.py`) consumes the same table to detect newly disclosed fields (especially offshore Pré-Sal / Pós-Sal Mar) and sends email notifications for each new arrival. If partial rows are filtered or deleted, the alert baseline is broken and offshore-field alerts stop firing.
+
+### What "partial" looks like in practice
+
+A freshly published month may show aggregate production that is dramatically lower than historical averages (e.g., `~79 kbpd` vs `~4 000 kbpd`). This is expected and correct: fewer wells have been reported yet. The value rises over the following weeks as the ANP adds more wells.
+
+**Do not interpret a low kbpd reading on the most recent month as a data quality problem.** It is a monitoring signal.
+
+### Curation rules
+
+| Scenario | Correct action |
+|---|---|
+| Month has only ~50 % of wells published | Leave as-is; pipeline will upsert the rest incrementally |
+| Genuinely duplicate rows (same well, different key format — e.g., hyphenated vs non-hyphenated `poco`) | Filter by the duplication pattern (e.g., `poco NOT LIKE '%-%'`), **not** by month |
+| `02_upload.py --purge` flag | Safe: does `DELETE … WHERE ano=X AND mes=Y AND local=Z` then immediately re-upserts the same batch. Not equivalent to a manual month-level delete |
+| Manual `DELETE FROM anp_cdp_producao WHERE ano=YYYY AND mes=MM` | **Prohibited** — destroys incremental disclosure data and breaks alert baseline |
+
+### Anti-patterns (additions)
+
+- Hiding or clipping the most recent month on the frontend because "it looks low" — this destroys the incremental-monitoring feature.
+- Running a manual month-level DELETE for curation purposes — breaks the alert subsystem and loses disclosure-order information.
+- Treating a partial-month kbpd value as erroneous without first checking how many wells the ANP has published for that month.
+
 ## Anti-padrões
 
 - Query direta em `anp_cdp_producao` do front — sempre via RPC agregada.
@@ -111,6 +144,8 @@ Liquid-flow metrics (`petroleo_bbl_dia`, `oleo_bbl_dia`, `condensado_bbl_dia`, `
 - Adicionar métrica nova no array `METRICS` sem garantir que a coluna existe em `AnpCdpSeriePonto` (TS) E na RPC SQL `get_anp_cdp_poco_serie`.
 - Mexer em `scripts/pipelines/anp/cdp/` — pertence ao ETL.
 - Mostrar nome de coluna SQL na UI sem traduzir (ex: `PreSal` → "Pré-Sal").
+- Filtrar/esconder o mês mais recente no front porque "parece baixo" — destrói a feature de monitoramento incremental (ver "Partial-month data — preservation contract" acima).
+- Deletar dados parciais por curadoria manual — quebra o sistema de alertas.
 
 ## Export
 
