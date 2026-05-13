@@ -5,6 +5,7 @@ import { EXTRACTORS, SOURCE_NAMES } from "./sources";
 import { extract } from "./extract";
 import { cleanParagraphs, looksPaywalled } from "./clean";
 import { fetchHtml, fetchHtmlViaCurl, fetchHtmlViaImpersonate, fetchFromWayback } from "./fetch";
+import { fetchHtmlViaHeadless } from "./fetchHtmlViaHeadless";
 import type { ScrapeResult } from "./types";
 
 function getDomain(url: string): string {
@@ -130,7 +131,29 @@ export async function scrape(
     }
     const impDetail = (!impResult.ok && impResult.detail) ? impResult.detail : "curl_impersonate_failed";
 
-    // Step 3: Wayback Machine.
+    // Step 3: headless browser (playwright-core + @sparticuz/chromium).
+    // Executes JavaScript — passes Cloudflare JS challenge that TLS impersonation alone can't.
+    // Paywall logic: same as impersonate — if headless gets a paywall page, skip to Wayback.
+    const headlessResult = await fetchHtmlViaHeadless(url, signal, cookieHeader);
+    if (headlessResult.ok) {
+      try {
+        const headlessExtracted = extract(headlessResult.html, domain);
+        const headlessParagraphs = headlessExtracted.paragraphs;
+        if (!looksPaywalled(headlessParagraphs) && headlessParagraphs.length > 0) {
+          const title = headlessExtracted.title;
+          if (!title) {
+            return { url, status: "error", error: "Could not extract article title (via headless).", via: "headless" };
+          }
+          return { url, status: "ok", item: { url, source, title, paragraphs: headlessParagraphs }, via: "headless" };
+        }
+        // headless got a paywall page — Wayback is last resort.
+      } catch {
+        // headless extract failed — fall through to Wayback.
+      }
+    }
+    const headlessDetail = (!headlessResult.ok && headlessResult.detail) ? headlessResult.detail : "headless_failed";
+
+    // Step 4: Wayback Machine.
     const wbResult = await fetchFromWayback(url, signal);
     if (wbResult.ok) {
       try {
@@ -151,7 +174,7 @@ export async function scrape(
     return {
       url,
       status: "fetch_failed",
-      error: `undici: ${undiciDetail}; curl: ${curlDetail}; curl_impersonate: ${impDetail}; wayback: ${wbDetail}`,
+      error: `undici: ${undiciDetail}; curl: ${curlDetail}; curl_impersonate: ${impDetail}; headless: ${headlessDetail}; wayback: ${wbDetail}`,
     };
   }
 
