@@ -1687,6 +1687,10 @@ export type AnpCdpSeriePonto = {
   gas_royalties: number;
   agua_bbl_dia: number;
   tempo_prod_hs_mes: number;
+  /** Number of distinct wells reported for this month (COUNT DISTINCT poco). */
+  wells_count: number;
+  /** Number of distinct fields reported for this month (COUNT DISTINCT campo). */
+  fields_count: number;
 };
 
 export type AnpCdpPocoMeta = {
