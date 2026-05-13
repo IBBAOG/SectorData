@@ -8,6 +8,12 @@ on:
       periodo:
         description: 'Período único MM/YYYY (ex: 01/2025)'
         required: false
+      force_upload:
+        description: 'Pass --no-incremental to 02_upload.py (re-upserts all CSVs regardless of DB max date)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
 
 # Workflow roda --capture para os 3 ambientes (M, S, T) sequencialmente.
 # Cada capture usa Selenium + ddddocr com 10 retries internos de CAPTCHA.
@@ -75,7 +81,13 @@ jobs:
           fi
 
       - name: Upload to Supabase
-        run: python scripts/pipelines/anp/cdp/02_upload.py --from-csv-dir output/anp/
+        run: |
+          EXTRA_FLAGS=""
+          if [ "${{ github.event.inputs.force_upload }}" = "true" ]; then
+            EXTRA_FLAGS="--no-incremental"
+            echo "force_upload=true — passing --no-incremental to bypass per-local date check"
+          fi
+          python scripts/pipelines/anp/cdp/02_upload.py --from-csv-dir output/anp/ $EXTRA_FLAGS
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

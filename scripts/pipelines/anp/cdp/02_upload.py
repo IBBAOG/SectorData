@@ -82,6 +82,7 @@ _META_COLS = [
 
 
 def _get_max_date(sb) -> tuple[int, int]:
+    """Return overall (max_ano, max_mes) across all locals — kept for parquet backfill."""
     r = (
         sb.table("anp_cdp_producao")
         .select("ano,mes")
@@ -93,6 +94,33 @@ def _get_max_date(sb) -> tuple[int, int]:
     if r.data:
         return (r.data[0]["ano"], r.data[0]["mes"])
     return (0, 0)
+
+
+def _get_max_date_per_local(sb) -> dict[str, tuple[int, int]]:
+    """Return {local: (max_ano, max_mes)} for each local value in the DB.
+
+    The ANP publishes offshore (Mar/Pre-Sal) and onshore (Terra) data at different
+    times within the same reporting month.  Using a single global max-date for the
+    incremental-skip check causes previously-missing offshore data to be silently
+    skipped once Terra is already loaded for that month.  Tracking per-local prevents
+    that gap.
+    """
+    result: dict[str, tuple[int, int]] = {}
+    for local in _AMBIENTE_TO_LOCAL.values():
+        r = (
+            sb.table("anp_cdp_producao")
+            .select("ano,mes")
+            .eq("local", local)
+            .order("ano", desc=True)
+            .order("mes", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if r.data:
+            result[local] = (r.data[0]["ano"], r.data[0]["mes"])
+        else:
+            result[local] = (0, 0)
+    return result
 
 
 def _prepare(df: pd.DataFrame) -> pd.DataFrame:
@@ -305,9 +333,15 @@ def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
 
 
 def _from_csv_dir(sb, csv_dir: str, incremental: bool = True) -> None:
-    max_ano, max_mes = _get_max_date(sb) if incremental else (0, 0)
-    if max_ano:
-        print(f"DB max date: {max_ano}/{max_mes:02d} — skipping older files")
+    # Fetch per-local max dates so that an ambiente whose data arrived later than
+    # another for the same month is not incorrectly skipped.
+    max_dates: dict[str, tuple[int, int]] = (
+        _get_max_date_per_local(sb) if incremental else {}
+    )
+    if incremental and max_dates:
+        for loc, (ano, mes) in sorted(max_dates.items()):
+            if ano:
+                print(f"  DB max date [{loc}]: {ano}/{mes:02d}")
     else:
         print("DB is empty — uploading all CSVs")
 
@@ -319,13 +353,19 @@ def _from_csv_dir(sb, csv_dir: str, incremental: bool = True) -> None:
         if not m:
             continue
         mes_c, ano_c, amb = int(m.group(1)), int(m.group(2)), m.group(3).upper()
-        if incremental and (
-            ano_c < max_ano or (ano_c == max_ano and mes_c < max_mes)
-        ):
-            continue
         local = _AMBIENTE_TO_LOCAL.get(amb)
         if not local:
             continue
+        # Per-local incremental skip: only skip if this local already has a newer
+        # or equal month in the DB.  A missing local (max_date=(0,0)) means the DB
+        # has no rows for it yet — always upload in that case.
+        if incremental:
+            max_ano, max_mes = max_dates.get(local, (0, 0))
+            if max_ano and (
+                ano_c < max_ano or (ano_c == max_ano and mes_c < max_mes)
+            ):
+                print(f"  Skipping {os.path.basename(path)} — {local} already at {max_ano}/{max_mes:02d}")
+                continue
         frame = _parse_csv(path, local)
         if frame is not None and not frame.empty:
             print(f"  Parsed {os.path.basename(path)}: {len(frame)} well-rows")
