@@ -92,8 +92,8 @@ Todas com `RLS: SELECT TO authenticated USING (true)` — padrão Phase 3.
 | Coluna | Tipo | PK? |
 |---|---|---|
 | `data` | DATE | ✓ |
-| `campo` | TEXT | ✓ |
 | `instalacao` | TEXT | ✓ |
+| `campo` | TEXT NOT NULL | |
 | `petroleo_bbl_dia` | REAL | |
 | `gas_mm3_dia` | REAL | |
 
@@ -102,9 +102,10 @@ Todas com `RLS: SELECT TO authenticated USING (true)` — padrão Phase 3.
 | Coluna | Tipo | PK? |
 |---|---|---|
 | `data` | DATE | ✓ |
-| `campo` | TEXT | ✓ |
-| `bacia` | TEXT | ✓ |
 | `poco` | TEXT | ✓ |
+| `campo` | TEXT nullable | |
+| `bacia` | TEXT nullable | |
+| `instalacao` | TEXT nullable | |
 | `petroleo_bbl_dia` | REAL | |
 | `gas_mm3_dia` | REAL | |
 

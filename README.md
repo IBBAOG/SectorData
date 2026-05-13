@@ -179,12 +179,12 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | `anp_painel_imp_dist` | id | data_referencia, distribuidora, produto, quantidade_m3 |
 | `anp_lpc` | id | data_referencia, municipio, estado, produto, preco_medio, preco_minimo, preco_maximo, numero_postos |
 | `sindicom` | id | data_referencia, produto, regiao, volume_m3 |
-| `anp_cdp_producao` | id | poco, campo, bacia, operador, data_producao, prod_oleo_bbl, prod_gas_mm3, prod_agua_m3, tipo_poco, ambiente |
+| `anp_cdp_producao` | (ano, mes, poco, campo, bacia, local) | ano, mes, poco, campo, bacia, local (PosSal/PreSal/Terra), petroleo_bbl_dia, gas_total_mm3_dia, agua_bbl_dia, operador |
 | `anp_precos_distribuicao` | id | data_referencia, distribuidora, produto, uf, preco_distribuicao, unidade |
 | `anp_voip` | (ano_publicacao, campo) | bacia, estado, voip_bbl, vgip_m3, petroleo_acumulado_bbl, gas_acumulado_m3, fracao_recuperada, situacao |
 | `anp_cdp_diaria` | (data, campo, bacia) | petroleo_bbl_dia, gas_mm3_dia; Field level; histórico desde 2025-11-09 |
-| `anp_cdp_diaria_instalacao` | (data, campo, instalacao) | petroleo_bbl_dia, gas_mm3_dia; Installation level; sem coluna bacia |
-| `anp_cdp_diaria_poco` | (data, campo, bacia, poco) | petroleo_bbl_dia, gas_mm3_dia; Well level; ~180k rows |
+| `anp_cdp_diaria_instalacao` | (data, instalacao) | campo (NOT NULL), petroleo_bbl_dia, gas_mm3_dia; Installation level; sem coluna bacia |
+| `anp_cdp_diaria_poco` | (data, poco) | campo (nullable), bacia (nullable), instalacao (nullable), petroleo_bbl_dia, gas_mm3_dia; Well level; ~180k rows |
 | `anp_subsidy_diesel_reference` | (data_referencia, regiao) | data_referencia, regiao, preco_referencia |
 | `anp_subsidy_history` | vigente_desde | vigente_desde, subsidio_brl_l, observacao |
 
