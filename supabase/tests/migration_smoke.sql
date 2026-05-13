@@ -742,7 +742,17 @@ BEGIN
     WHERE n.nspname = 'public' AND p.proname = 'get_subsidy_tracker_diesel';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_subsidy_tracker_diesel'; END IF;
 
+  -- ─── CLIPPING COOKIES (20260513130000) ──────────────────────────────────
+
+  PERFORM 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'clipping_cookies';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing table: clipping_cookies'; END IF;
+
+  PERFORM 1 FROM pg_tables
+    WHERE schemaname = 'public' AND tablename = 'clipping_cookies' AND rowsecurity = TRUE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: clipping_cookies'; END IF;
+
   RAISE NOTICE 'migration_smoke: all % checks passed.',
-    '33 tables + 3 materialized views + 86 functions + 25 RLS checks';
+    '34 tables + 3 materialized views + 86 functions + 26 RLS checks';
 
 END $smoke$;
