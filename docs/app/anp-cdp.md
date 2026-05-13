@@ -61,6 +61,50 @@ Header dinâmico: "ANP CDP — Produção por Poço · {métrica} · {ano iníci
 
 Backfill histórico foi feito via `02_upload.py --from-parquet`. Cargas mensais usam `--from-csv-dir`.
 
+## Data source: CDP APEX portal (do not migrate to Power BI)
+
+The authoritative source for `anp_cdp_producao` is the **ANP CDP APEX portal**:
+`https://cdp.anp.gov.br/ords/r/cdp_apex/consulta-dados-publicos-cdp`
+
+### Why this must stay Selenium/APEX
+
+The **Power BI public API** is a completely different product. It feeds the **separate** `/anp-cdp-diaria` dashboard (tables `anp_cdp_diaria*`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco`). These are daily intermediate figures — NOT the official monthly CDP declarations.
+
+Mixing these two sources contaminates `anp_cdp_producao` in two ways:
+
+1. **Well-name format divergence**: APEX uses canonical SIGEP hyphenated codes (`7-SPH-6-SPS`); Power BI uses compact codes (`7SPH6SPS`). Same well gets two PKs → duplicate rows that survive `ON CONFLICT`.
+2. **Conflicting `local` classification**: Power BI derives PosSal/PreSal from basin heuristics; APEX derives it from the actual CDP submission. They disagree for borderline wells.
+
+### The ~197 vs 427 wells discrepancy (root cause, resolved)
+
+The original Selenium scraper returned only ~197 offshore wells for 04/2026 because `do_acoes_download()` did not explicitly select **"Todos os registros"** in the APEX IR download dialog. Without this selection, the download exports only the currently visible paginated rows (≤200 by default).
+
+**Fix applied in `01_extract.py`** (`do_acoes_download`): before clicking the confirm button, the JS now selects the "Todos os registros" radio (value `"all"`, or the second visible radio in the dialog as fallback). This allows the full 427-well dataset to be exported.
+
+### Guards
+
+Two guardrails prevent this confusion from recurring:
+
+**Guard 1 — Header comments**: `01_extract.py` and `etl_anp_cdp.yml` both carry a top-of-file warning block explaining the source separation and listing the 3 steps required to legitimately change the source.
+
+**Guard 2 — Format check in `02_upload.py`**: `_check_poco_format()` inspects the `poco` column before any upsert. If >20% of rows have compact (non-hyphenated) codes, the upload aborts with a clear error message identifying the probable source contamination. Bypass: `--allow-non-apex-format` (requires CTO sign-off).
+
+### How to legitimately change the source (requires CTO sign-off)
+
+1. Update this section ("Data source") in `docs/app/anp-cdp.md`.
+2. Remove or update the `_check_poco_format()` guard in `02_upload.py`.
+3. Get explicit CTO approval before merging.
+
+### Related files
+
+| File | Role |
+|---|---|
+| `scripts/pipelines/anp/cdp/01_extract.py` | Selenium + APEX extraction (this pipeline) |
+| `scripts/pipelines/anp/cdp/01_extract_powerbi.py` | Power BI extraction — feeds `/anp-cdp-diaria` ONLY |
+| `scripts/extractors/anp_cdp_powerbi.py` | Core Power BI client used by `etl_anp_cdp_diaria.yml` |
+| `.github/workflows/etl_anp_cdp.yml` | Monthly CDP APEX pipeline (this dashboard) |
+| `.github/workflows/etl_anp_cdp_diaria.yml` | Daily Power BI pipeline (separate dashboard) |
+
 ## Filtros disponíveis (UI)
 
 | Filtro | Componente | Comportamento |

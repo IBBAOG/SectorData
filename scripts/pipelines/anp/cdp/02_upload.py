@@ -49,6 +49,53 @@ BATCH = 200
 _AMBIENTE_TO_LOCAL = {"M": "PosSal", "S": "PreSal", "T": "Terra"}
 _PAT_CSV = re.compile(r"producao_poco_(\d{2})-(\d{4})_([MST])\.csv$", re.IGNORECASE)
 
+# ── Source format guard ────────────────────────────────────────────────────────
+# The CDP APEX portal produces well codes (poco) in SIGEP hyphenated format:
+#   e.g. "7-SPH-6-SPS", "1-RJS-400-RJ", "3-FRA-77D-SES"
+# Power BI exports compact codes without hyphens:
+#   e.g. "7SPH6SPS", "1RJS400RJ", "3FRA77DSES"
+# If a dataset is predominantly in compact format, it was NOT sourced from the
+# CDP APEX portal and must not be uploaded into anp_cdp_producao.
+_PAT_APEX_POCO = re.compile(r"^\d+-[A-Z0-9]+-", re.IGNORECASE)
+_COMPACT_FORMAT_THRESHOLD = 0.20   # abort if >20% of rows are compact (non-hyphenated)
+
+
+def _check_poco_format(df: pd.DataFrame, allow_non_apex: bool = False) -> None:
+    """
+    Validate that poco values are in APEX hyphenated format.
+
+    Raises SystemExit if more than _COMPACT_FORMAT_THRESHOLD fraction of rows
+    have compact (non-hyphenated) poco codes, unless allow_non_apex is True.
+    This guards against accidentally uploading Power BI data into anp_cdp_producao.
+    """
+    if "poco" not in df.columns or df.empty:
+        return
+    total = len(df)
+    compact = df["poco"].apply(
+        lambda v: bool(v) and not _PAT_APEX_POCO.match(str(v).strip())
+    ).sum()
+    ratio = compact / total if total > 0 else 0.0
+    if ratio > _COMPACT_FORMAT_THRESHOLD:
+        pct = ratio * 100
+        sample = df.loc[
+            df["poco"].apply(lambda v: bool(v) and not _PAT_APEX_POCO.match(str(v).strip())),
+            "poco"
+        ].head(5).tolist()
+        msg = (
+            f"\nERROR: {pct:.1f}% of rows have poco in compact format "
+            f"(e.g. {sample[0]!r} ...),\n"
+            f"       expected APEX hyphenated format (e.g. '7-SPH-6-SPS').\n"
+            f"       This pipeline must consume the CDP APEX portal, not Power BI.\n"
+            f"       Power BI feeds the SEPARATE /anp-cdp-diaria dashboard "
+            f"(table anp_cdp_diaria*).\n"
+            f"       If you intend to change source, update docs/app/anp-cdp.md\n"
+            f"       and remove this guard explicitly (--allow-non-apex-format)."
+        )
+        if allow_non_apex:
+            print(f"  [WARN] {msg.strip()} (suppressed by --allow-non-apex-format)")
+        else:
+            raise SystemExit(msg)
+
 _PK = ["ano", "mes", "poco", "campo", "bacia", "local"]
 
 # Parquet → canonical column names
@@ -123,7 +170,7 @@ def _get_max_date_per_local(sb) -> dict[str, tuple[int, int]]:
     return result
 
 
-def _prepare(df: pd.DataFrame) -> pd.DataFrame:
+def _prepare(df: pd.DataFrame, allow_non_apex: bool = False) -> pd.DataFrame:
     df = df.rename(columns=_RENAME)
 
     # Ensure all required columns exist; fill missing with defaults
@@ -138,6 +185,9 @@ def _prepare(df: pd.DataFrame) -> pd.DataFrame:
     for col in ("poco", "campo", "bacia") + tuple(_META_COLS):
         if col in df.columns and df[col].dtype == object:
             df[col] = df[col].str.strip()
+
+    # Guard: validate poco format before any dedup/upsert
+    _check_poco_format(df, allow_non_apex=allow_non_apex)
 
     # Deduplicate: sum numeric, keep first non-null metadata per PK
     agg_spec = {c: "sum" for c in _SUM_COLS}
@@ -275,10 +325,10 @@ def _warn_partial_offshore(sb, periods_uploaded: set[tuple[int, int]]) -> None:
                 print(f"  [coverage] {local} {ano}/{mes:02d}: could not compare ({e})")
 
 
-def _from_parquet(sb, path: str, ano_inicio: int = 0) -> None:
+def _from_parquet(sb, path: str, ano_inicio: int = 0, allow_non_apex: bool = False) -> None:
     print(f"Reading parquet: {path}")
     df = pd.read_parquet(path)
-    df = _prepare(df)
+    df = _prepare(df, allow_non_apex=allow_non_apex)
     if ano_inicio:
         df = df[df["ano"] >= ano_inicio]
         print(f"  Filtering from ano >= {ano_inicio}")
@@ -417,7 +467,7 @@ def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
     return out.drop(columns=["periodo"])
 
 
-def _from_csv_dir(sb, csv_dir: str, incremental: bool = True, purge: bool = False) -> None:
+def _from_csv_dir(sb, csv_dir: str, incremental: bool = True, purge: bool = False, allow_non_apex: bool = False) -> None:
     # Fetch per-local max dates so that an ambiente whose data arrived later than
     # another for the same month is not incorrectly skipped.
     max_dates: dict[str, tuple[int, int]] = (
@@ -472,7 +522,7 @@ def _from_csv_dir(sb, csv_dir: str, incremental: bool = True, purge: bool = Fals
             _purge_period(sb, ano_p, mes_p)
 
     df = pd.concat(frames, ignore_index=True)
-    df = _prepare(df)
+    df = _prepare(df, allow_non_apex=allow_non_apex)
     rows = _rows_from_df(df)
     print(f"  {len(rows)} aggregated rows, upserting…")
     _upsert(sb, rows)
@@ -497,6 +547,15 @@ def main() -> None:
         ),
     )
     ap.add_argument("--ano-inicio", type=int, default=0, metavar="ANO", help="Skip rows before this year (parquet mode)")
+    ap.add_argument(
+        "--allow-non-apex-format",
+        action="store_true",
+        help=(
+            "Suppress the poco format guard that aborts uploads when >20%% of rows "
+            "have compact (non-hyphenated) well codes. Use only for deliberate "
+            "backfills from non-APEX sources with CTO sign-off."
+        ),
+    )
     args = ap.parse_args()
 
     if not args.from_parquet and not args.from_csv_dir:
@@ -505,9 +564,18 @@ def main() -> None:
     sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
     if args.from_parquet:
-        _from_parquet(sb, args.from_parquet, ano_inicio=args.ano_inicio)
+        _from_parquet(
+            sb, args.from_parquet,
+            ano_inicio=args.ano_inicio,
+            allow_non_apex=args.allow_non_apex_format,
+        )
     else:
-        _from_csv_dir(sb, args.from_csv_dir, incremental=not args.no_incremental, purge=args.purge)
+        _from_csv_dir(
+            sb, args.from_csv_dir,
+            incremental=not args.no_incremental,
+            purge=args.purge,
+            allow_non_apex=args.allow_non_apex_format,
+        )
 
 
 if __name__ == "__main__":
