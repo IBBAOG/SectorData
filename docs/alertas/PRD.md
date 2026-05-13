@@ -29,7 +29,7 @@ alertas/                            # local-only (gitignored)
 | 6 | `anp_dados_abertos_ie` | ANP Dados Abertos IE | MAX(ano, mes) | Sim (`anp_daie`) |
 | 7 | `anp_painel_combustiveis` | ANP Painel Combustíveis | MAX(data_referencia) por distribuidora | Sim (`anp_painel_imp_dist`) |
 | 8 | `anp_glp` | ANP GLP | MAX(ano, mes) por distribuidora | Sim (`anp_glp`) |
-| 9 | `anp_cdp_producao_poco` | ANP CDP Produção | MAX(data_producao) | Sim (`anp_cdp_producao`) |
+| 9 | `anp_cdp_producao_poco` | ANP CDP Produção | MAX(ano, mes) | Sim (`anp_cdp_producao`) |
 | 10 | `mdic_comex` | MDIC Comex | MAX(ano, mes) por flow | Sim (`mdic_comex`) |
 | 11 | `sindicom` | SINDICOM | MAX(ano, mes) | Sim (`sindicom`) — base heavy (Playwright) |
 | 12 | `precos_distribuicao` | ANP PDC — Preços de Distribuição | MAX(data_referencia) por periodicidade | Sim (`anp_precos_distribuicao`) |
