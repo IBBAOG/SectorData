@@ -107,9 +107,11 @@ fetchHtmlViaImpersonate  — curl-impersonate chrome131 (4.1 MB ELF + wrapper)
   Full Chrome 131 TLS fingerprint (ciphers, curves, extensions, HTTP/2, browser headers).
   Covers Cloudflare sites that use TLS fingerprinting (plain TLS impersonation sufficient).
   ↓ fetch_failed
-fetchHtmlViaHeadless  — playwright-core + @sparticuz/chromium (~62 MB serverless Chromium)
-  Executes JavaScript — passes Cloudflare JS challenge (Investing.com, etc.) that static
-  TLS impersonation alone cannot. Blocks images/media/fonts/stylesheets for speed.
+fetchHtmlViaHeadless  — playwright-extra + puppeteer-extra-plugin-stealth + @sparticuz/chromium (~62 MB serverless Chromium)
+  Executes JavaScript — passes Cloudflare Bot Management JS challenge (Investing.com, etc.)
+  that static TLS impersonation alone cannot. Stealth plugin overrides navigator.webdriver,
+  chrome.runtime, navigator.plugins, languages and other signals inspected by Cloudflare.
+  Confirmed working: 3 sequential runs against Investing.com ~14s each, status 200.
   Waits 3s after 403/429/503 for challenge JS to resolve, then 1.5s for body hydration.
   Browser instance cached module-level (browserPromise); fresh BrowserContext per request.
   ↓ fetch_failed
@@ -147,8 +149,10 @@ The ClippingModal Status tab shows:
 | `vendor/curl_chrome131` | ~1.9 KB | Same release | Bash wrapper — injects Chrome 131 TLS fingerprint + browser headers. |
 | `node_modules/@sparticuz/chromium/bin/` | ~62 MB | [@sparticuz/chromium](https://github.com/Sparticuz/chromium) | Serverless Chromium for playwright-core (tier 3 headless). |
 | `playwright-core` (npm) | ~5 MB | [microsoft/playwright](https://github.com/microsoft/playwright) | Browser automation API (no bundled browser — uses sparticuz). |
+| `playwright-extra` (npm) | ~0.5 MB | [berstend/puppeteer-extra](https://github.com/berstend/puppeteer-extra) | Wraps playwright-core's chromium with plugin support. |
+| `puppeteer-extra-plugin-stealth` (npm) | ~0.5 MB | Same repo | Stealth overrides: navigator.webdriver, chrome.runtime, plugins, languages — required to pass Cloudflare Bot Management. |
 
-Estimated bundle total: ~100–120 MB (Vercel Pro limit: 250 MB unzipped).
+Estimated bundle total: ~100–120 MB + ~3 MB (stealth deps) ≈ ~113 MB (Vercel Pro limit: 250 MB unzipped).
 
 **If Vercel reports bundle size exceeded**: switch from `@sparticuz/chromium` to `@sparticuz/chromium-min` — it downloads Chromium at runtime from CDN instead of bundling it (smaller bundle, ~2s extra cold start on first use).
 

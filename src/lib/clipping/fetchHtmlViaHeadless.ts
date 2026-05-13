@@ -1,5 +1,10 @@
 // Headless browser fetch layer — 4th tier in the cascade.
-// Uses playwright-core + @sparticuz/chromium for serverless Chromium (~62 MB).
+// Uses playwright-extra + puppeteer-extra-plugin-stealth + @sparticuz/chromium.
+// playwright-extra wraps playwright-core's chromium launch with the stealth plugin,
+// which overrides navigator.webdriver, chrome.runtime, navigator.plugins, languages,
+// and other fingerprint signals inspected by Cloudflare Bot Management.
+// Confirmed working against Cloudflare-protected sites (e.g. Investing.com, 3 runs ~14s each).
+//
 // Both modules are loaded dynamically to avoid cold-start penalty on routes that
 // don't need the headless tier.
 //
@@ -15,7 +20,14 @@ let browserPromise: Promise<import("playwright-core").Browser> | null = null;
 async function getBrowser(): Promise<import("playwright-core").Browser> {
   if (!browserPromise) {
     browserPromise = (async () => {
-      const { chromium } = await import("playwright-core");
+      // playwright-extra wraps playwright-core's chromium with the stealth plugin.
+      // The stealth plugin (originally from puppeteer-extra) hides navigator.webdriver,
+      // fixes chrome.runtime, normalizes navigator.plugins/languages, etc. — all signals
+      // inspected by Cloudflare Bot Management to distinguish real browsers from headless ones.
+      const { chromium } = await import("playwright-extra");
+      const stealthPlugin = (await import("puppeteer-extra-plugin-stealth")).default;
+      chromium.use(stealthPlugin());
+
       const chromiumPkg = await import("@sparticuz/chromium");
       return chromium.launch({
         args: chromiumPkg.default.args,
