@@ -195,6 +195,29 @@ def _rows_from_df(df: pd.DataFrame) -> list[dict]:
     return rows
 
 
+def _purge_period(sb, ano: int, mes: int) -> None:
+    """Delete all rows for a given (ano, mes) before re-uploading.
+
+    Use this to guarantee a clean slate when re-processing a month that may
+    contain rows from an old data format (e.g. compact poco codes without
+    dashes) that would otherwise survive a PK-based upsert and create
+    apparent duplicates.
+    """
+    print(f"  Purging existing rows for {ano}/{mes:02d}…")
+    deleted = 0
+    for local in _AMBIENTE_TO_LOCAL.values():
+        r = (
+            sb.table("anp_cdp_producao")
+            .delete()
+            .eq("ano", ano)
+            .eq("mes", mes)
+            .eq("local", local)
+            .execute()
+        )
+        deleted += len(r.data)
+    print(f"  Purged {deleted} rows for {ano}/{mes:02d}.")
+
+
 def _refresh_mv(sb) -> None:
     print("  Refreshing materialized view mv_anp_cdp_pocos…")
     try:
@@ -332,7 +355,7 @@ def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
     return out.drop(columns=["periodo"])
 
 
-def _from_csv_dir(sb, csv_dir: str, incremental: bool = True) -> None:
+def _from_csv_dir(sb, csv_dir: str, incremental: bool = True, purge: bool = False) -> None:
     # Fetch per-local max dates so that an ambiente whose data arrived later than
     # another for the same month is not incorrectly skipped.
     max_dates: dict[str, tuple[int, int]] = (
@@ -343,10 +366,12 @@ def _from_csv_dir(sb, csv_dir: str, incremental: bool = True) -> None:
             if ano:
                 print(f"  DB max date [{loc}]: {ano}/{mes:02d}")
     else:
-        print("DB is empty — uploading all CSVs")
+        print("No incremental check — uploading all CSVs found in dir")
 
     csvs = sorted(glob.glob(os.path.join(csv_dir, "producao_poco_*.csv")))
     frames: list[pd.DataFrame] = []
+    # Track which (ano, mes) pairs are being uploaded so we can purge them first.
+    periods_to_purge: set[tuple[int, int]] = set()
 
     for path in csvs:
         m = _PAT_CSV.search(os.path.basename(path))
@@ -370,10 +395,19 @@ def _from_csv_dir(sb, csv_dir: str, incremental: bool = True) -> None:
         if frame is not None and not frame.empty:
             print(f"  Parsed {os.path.basename(path)}: {len(frame)} well-rows")
             frames.append(frame)
+            periods_to_purge.add((ano_c, mes_c))
 
     if not frames:
         print("No new CSV data to upload.")
         return
+
+    # Purge existing rows for each target period before upserting.  This removes
+    # stale rows that used a different poco naming convention (e.g. compact codes
+    # without dashes from legacy ANP exports) that would otherwise survive a
+    # PK-based upsert and create apparent duplicates in the dashboard.
+    if purge:
+        for ano_p, mes_p in sorted(periods_to_purge):
+            _purge_period(sb, ano_p, mes_p)
 
     df = pd.concat(frames, ignore_index=True)
     df = _prepare(df)
@@ -388,6 +422,15 @@ def main() -> None:
     ap.add_argument("--from-parquet", metavar="PATH", help="Historical backfill from Parquet")
     ap.add_argument("--from-csv-dir", metavar="DIR", help="Incremental update from CSV directory")
     ap.add_argument("--no-incremental", action="store_true", help="Re-upload even if data already in DB")
+    ap.add_argument(
+        "--purge",
+        action="store_true",
+        help=(
+            "Delete all existing rows for each target (ano, mes) before upserting "
+            "(csv-dir mode only).  Use when re-uploading a month that may contain "
+            "stale rows from a legacy poco naming format — guarantees a clean slate."
+        ),
+    )
     ap.add_argument("--ano-inicio", type=int, default=0, metavar="ANO", help="Skip rows before this year (parquet mode)")
     args = ap.parse_args()
 
@@ -399,7 +442,7 @@ def main() -> None:
     if args.from_parquet:
         _from_parquet(sb, args.from_parquet, ano_inicio=args.ano_inicio)
     else:
-        _from_csv_dir(sb, args.from_csv_dir, incremental=not args.no_incremental)
+        _from_csv_dir(sb, args.from_csv_dir, incremental=not args.no_incremental, purge=args.purge)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,12 @@ on:
         default: 'false'
         type: choice
         options: ['false', 'true']
+      purge:
+        description: 'Pass --purge to 02_upload.py — delete existing rows for target month before upserting (removes stale legacy-format rows)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
 
 # Workflow roda --capture para os 3 ambientes (M, S, T) sequencialmente.
 # Cada capture usa Selenium + ddddocr com 10 retries internos de CAPTCHA.
@@ -86,6 +92,10 @@ jobs:
           if [ "${{ github.event.inputs.force_upload }}" = "true" ]; then
             EXTRA_FLAGS="--no-incremental"
             echo "force_upload=true — passing --no-incremental to bypass per-local date check"
+          fi
+          if [ "${{ github.event.inputs.purge }}" = "true" ]; then
+            EXTRA_FLAGS="$EXTRA_FLAGS --purge"
+            echo "purge=true — passing --purge to delete existing rows for target month before upserting"
           fi
           python scripts/pipelines/anp/cdp/02_upload.py --from-csv-dir output/anp/ $EXTRA_FLAGS
         env:
