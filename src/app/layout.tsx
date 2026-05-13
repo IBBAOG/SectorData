@@ -3,7 +3,7 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Dashboard",
+  title: "O&G Data",
   description: "Analytics dashboard",
 };
 
