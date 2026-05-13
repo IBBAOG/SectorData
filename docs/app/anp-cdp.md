@@ -29,7 +29,7 @@ Header dinâmico: "ANP CDP — Produção por Poço · {métrica} · {ano iníci
 | RPC | Tipo | Função |
 |---|---|---|
 | `get_anp_cdp_filtros` | próprio | Opções de filtros (8 listas + `ano_min`/`ano_max`) |
-| `get_anp_cdp_poco_serie` | próprio | Série mensal agregada filtrada (10 params: pocos, campos, bacoes, locais, estados, operadores, instalacoes, tipos_instalacao, ano_inicio, ano_fim) |
+| `get_anp_cdp_poco_serie` | próprio | Série mensal agregada filtrada (10 params: pocos, campos, bacoes, locais, estados, operadores, instalacoes, tipos_instalacao, ano_inicio, ano_fim) — returns `wells_count` + `fields_count` per month since migration `20260513140000` |
 | `get_anp_cdp_pocos_json` | próprio | Dump completo de poços via MV (lista para multi-select de Poço, filtrada client-side) |
 | `refresh_anp_cdp_pocos` | próprio (chamado pelo ETL) | Refresh do `mv_anp_cdp_pocos` após upload |
 
@@ -136,6 +136,24 @@ A freshly published month may show aggregate production that is dramatically low
 - Hiding or clipping the most recent month on the frontend because "it looks low" — this destroys the incremental-monitoring feature.
 - Running a manual month-level DELETE for curation purposes — breaks the alert subsystem and loses disclosure-order information.
 - Treating a partial-month kbpd value as erroneous without first checking how many wells the ANP has published for that month.
+
+## Partial-month coverage UX — wells & fields counts
+
+Since migration `20260513140000_anp_cdp_poco_serie_counts.sql`, `get_anp_cdp_poco_serie` returns two extra columns per month:
+
+| Column | Type | Meaning |
+|---|---|---|
+| `wells_count` | `bigint` | `COUNT(DISTINCT poco)` for that `(ano, mes)` slice |
+| `fields_count` | `bigint` | `COUNT(DISTINCT campo)` for that `(ano, mes)` slice |
+
+These are surfaced in the chart in two ways (UX Option A + B):
+
+1. **Enriched hover tooltip** — every data point shows `{value} · {N} wells · {N} fields` when the user hovers.
+2. **Last-point annotation** — a small muted label (`font-size 10, color #aaa`) floats above the most recent point showing `{N} wells · {N} fields`. It has a faint arrow and white background so it does not obscure the trace. This makes partial-month coverage visible without needing to hover.
+
+If `wells_count` / `fields_count` are `0` (migration not yet applied, or filtered to an empty set), the annotation is suppressed and the hover falls back gracefully.
+
+**TypeScript contract:** `AnpCdpSeriePonto` in `src/lib/rpc.ts` now includes `wells_count: number` and `fields_count: number`. The `buildChart` helper in `page.tsx` reads these via Plotly `customdata`.
 
 ## Anti-padrões
 

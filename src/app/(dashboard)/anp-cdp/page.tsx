@@ -130,6 +130,9 @@ const LOCAL_LABELS: Record<string, string> = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+// Month abbreviations for annotation label (Jan–Dec).
+const MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
 function buildChart(
   serie: AnpCdpSeriePonto[],
   metricKey: string,
@@ -144,19 +147,67 @@ function buildChart(
   // day) at the display layer. RPCs still return raw bbl/day; we divide here
   // and the metric label already reads "(kbpd)".
   const isKbpd = KBPD_METRIC_KEYS.has(metricKey);
+
+  const xs = serie.map(r => `${r.ano}-${String(r.mes).padStart(2, "0")}-01`);
+  const ys = serie.map(r => {
+    const raw = r[metricKey as keyof AnpCdpSeriePonto] as number;
+    return isKbpd ? bblDiaToKbpd(raw) : raw;
+  });
+
+  // Enriched hover: value + wells count + fields count per month.
+  // wells_count / fields_count may be 0 if the migration has not yet been
+  // applied (RPC returns the old schema). We show them only when > 0.
+  const customdata = serie.map(r => [
+    r.wells_count  ?? 0,
+    r.fields_count ?? 0,
+  ]);
+  const unitSuffix = isKbpd ? " kbpd" : ` ${metricLabel.match(/\(([^)]+)\)/)?.[1] ?? ""}`;
+  const hovertemplate =
+    `<b>%{x|%b %Y}</b>: %{y:,.1f}${unitSuffix}<br>` +
+    `%{customdata[0]:,} wells · %{customdata[1]:,} fields<extra></extra>`;
+
+  // Annotation on the last (most recent) data point — shows coverage counts
+  // in a small, muted label so the user immediately sees partial-month signals.
+  const lastIdx = serie.length - 1;
+  const lastPt  = serie[lastIdx];
+  const lastW   = lastPt.wells_count  ?? 0;
+  const lastF   = lastPt.fields_count ?? 0;
+  const annotations: Partial<Layout>["annotations"] = [];
+  if (lastW > 0 || lastF > 0) {
+    const mon = MONTH_ABBR[(lastPt.mes - 1) % 12];
+    annotations.push({
+      x:          xs[lastIdx],
+      y:          ys[lastIdx],
+      xref:       "x" as const,
+      yref:       "y" as const,
+      text:       `${lastW.toLocaleString("en-US")} wells · ${lastF.toLocaleString("en-US")} fields`,
+      showarrow:  true,
+      arrowhead:  0,
+      arrowcolor: "#ccc",
+      arrowwidth: 1,
+      ax:         0,
+      ay:         -32,
+      font:       { size: 10, color: "#aaa", family: "Arial" },
+      bgcolor:    "rgba(255,255,255,0.85)",
+      bordercolor: "#ddd",
+      borderwidth: 1,
+      borderpad:  3,
+      // Accessibility: include month name so screen-readers can parse it.
+      hovertext:  `${mon} ${lastPt.ano}: ${lastW.toLocaleString("en-US")} wells, ${lastF.toLocaleString("en-US")} fields`,
+    });
+  }
+
   return {
     data: [{
       type: "scatter", mode: "lines",
       name: metricLabel,
-      x: serie.map(r => `${r.ano}-${String(r.mes).padStart(2, "0")}-01`),
-      y: serie.map(r => {
-        const raw = r[metricKey as keyof AnpCdpSeriePonto] as number;
-        return isKbpd ? bblDiaToKbpd(raw) : raw;
-      }),
-      line: { width: 2.5, color: "#FF5000" },
-      hovertemplate: `%{x|%b %Y}: %{y:,.1f}<extra></extra>`,
-      fill: "tozeroy",
-      fillcolor: "rgba(255,80,0,0.07)",
+      x:          xs,
+      y:          ys,
+      customdata,
+      line:       { width: 2.5, color: "#FF5000" },
+      hovertemplate,
+      fill:       "tozeroy",
+      fillcolor:  "rgba(255,80,0,0.07)",
     } as PlotData],
     layout: {
       ...COMMON_LAYOUT, height: 340,
@@ -168,6 +219,7 @@ function buildChart(
       },
       yaxis: { ...AXIS_LINE, title: { text: metricLabel } },
       xaxis: { ...AXIS_LINE, type: "date" as const },
+      annotations,
     },
   };
 }
