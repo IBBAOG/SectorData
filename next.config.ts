@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
   // curl_chrome131 is the bash wrapper; curl-impersonate is the actual ELF binary it calls.
   outputFileTracingIncludes: {
     "/api/clipping/scrape": [
+      "./vendor/curl-static-amd64",
       "./vendor/curl-impersonate",
       "./vendor/curl_chrome131",
     ],

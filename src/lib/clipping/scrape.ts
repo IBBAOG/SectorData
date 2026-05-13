@@ -4,7 +4,7 @@
 import { EXTRACTORS, SOURCE_NAMES } from "./sources";
 import { extract } from "./extract";
 import { cleanParagraphs, looksPaywalled } from "./clean";
-import { fetchHtml, fetchHtmlViaCurl, fetchFromWayback } from "./fetch";
+import { fetchHtml, fetchHtmlViaCurl, fetchHtmlViaImpersonate, fetchFromWayback } from "./fetch";
 import type { ScrapeResult } from "./types";
 
 function getDomain(url: string): string {
@@ -72,9 +72,12 @@ export async function scrape(
 
   if (!fetchResult.ok) {
     // Live fetch failed (403, network error, Cloudflare TLS block, timeout).
-    // Step 1: retry with curl-impersonate (Chrome 131 TLS fingerprint) — accepted by Cloudflare.
-    // Paywall is NOT a reason to try curl-impersonate: paywall = site responded OK but with a gate.
+    // Cascade: plain curl → curl-impersonate → Wayback Machine.
+    // Paywall is NOT retried via curl — if the site returned a gate page over undici,
+    // any curl variant would return the same gate. Wayback is the only paywall fallback.
     const undiciDetail = fetchResult.detail ?? "undici_failed";
+
+    // Step 1: plain static curl — covers most sites (BE Globo, etc.).
     const curlResult = await fetchHtmlViaCurl(url, signal, cookieHeader);
     if (curlResult.ok) {
       try {
@@ -83,27 +86,51 @@ export async function scrape(
         if (!looksPaywalled(curlParagraphs) && curlParagraphs.length > 0) {
           const title = curlExtracted.title;
           if (!title) {
-            return {
-              url,
-              status: "error",
-              error: "Could not extract article title (via curl).",
-              via: "curl",
-            };
+            return { url, status: "error", error: "Could not extract article title (via curl).", via: "curl" };
           }
-          return {
-            url,
-            status: "ok",
-            item: { url, source, title, paragraphs: curlParagraphs },
-            via: "curl",
-          };
+          return { url, status: "ok", item: { url, source, title, paragraphs: curlParagraphs }, via: "curl" };
         }
-        // curl got a paywall page — fall through to Wayback.
+        // plain curl got a paywall page — skip impersonate, go to Wayback.
+        const wbResultPaywall = await fetchFromWayback(url, signal);
+        if (wbResultPaywall.ok) {
+          try {
+            const wbEx = extract(wbResultPaywall.html, domain);
+            if (!looksPaywalled(wbEx.paragraphs) && wbEx.paragraphs.length > 0) {
+              const title = wbEx.title;
+              if (!title) return { url, status: "error", error: "Could not extract article title (via Wayback).", via: "wayback", via_wayback: true };
+              return { url, status: "ok", item: { url, source, title, paragraphs: wbEx.paragraphs }, via: "wayback", via_wayback: true };
+            }
+          } catch { /* fall through */ }
+        }
+        const wbD = (!wbResultPaywall.ok && wbResultPaywall.detail) ? wbResultPaywall.detail : "no_snapshot";
+        return { url, status: "fetch_failed", error: `undici: ${undiciDetail}; curl: paywall; curl_impersonate: skipped; wayback: ${wbD}` };
       } catch {
-        // curl extract failed — fall through to Wayback.
+        // curl extract threw — fall through to impersonate.
       }
     }
+    const curlDetail = (!curlResult.ok && curlResult.detail) ? curlResult.detail : "curl_failed";
 
-    // Step 2: try Wayback Machine before giving up.
+    // Step 2: curl-impersonate chrome131 — full TLS fingerprint, covers Cloudflare / Investing.com.
+    const impResult = await fetchHtmlViaImpersonate(url, signal, cookieHeader);
+    if (impResult.ok) {
+      try {
+        const impExtracted = extract(impResult.html, domain);
+        const impParagraphs = impExtracted.paragraphs;
+        if (!looksPaywalled(impParagraphs) && impParagraphs.length > 0) {
+          const title = impExtracted.title;
+          if (!title) {
+            return { url, status: "error", error: "Could not extract article title (via curl-impersonate).", via: "curl_impersonate" };
+          }
+          return { url, status: "ok", item: { url, source, title, paragraphs: impParagraphs }, via: "curl_impersonate" };
+        }
+        // impersonate got a paywall page — Wayback is last resort.
+      } catch {
+        // impersonate extract failed — fall through to Wayback.
+      }
+    }
+    const impDetail = (!impResult.ok && impResult.detail) ? impResult.detail : "curl_impersonate_failed";
+
+    // Step 3: Wayback Machine.
     const wbResult = await fetchFromWayback(url, signal);
     if (wbResult.ok) {
       try {
@@ -112,32 +139,19 @@ export async function scrape(
         if (!looksPaywalled(wbParagraphs) && wbParagraphs.length > 0) {
           const title = wbExtracted.title;
           if (!title) {
-            return {
-              url,
-              status: "error",
-              error: "Could not extract article title (via Wayback).",
-              via: "wayback",
-              via_wayback: true,
-            };
+            return { url, status: "error", error: "Could not extract article title (via Wayback).", via: "wayback", via_wayback: true };
           }
-          return {
-            url,
-            status: "ok",
-            item: { url, source, title, paragraphs: wbParagraphs },
-            via: "wayback",
-            via_wayback: true,
-          };
+          return { url, status: "ok", item: { url, source, title, paragraphs: wbParagraphs }, via: "wayback", via_wayback: true };
         }
       } catch {
         // Wayback extract failed — fall through to fetch_failed.
       }
     }
-    const curlDetail = (!curlResult.ok && curlResult.detail) ? curlResult.detail : "curl_impersonate_failed";
     const wbDetail = (!wbResult.ok && wbResult.detail) ? wbResult.detail : "no_snapshot";
     return {
       url,
       status: "fetch_failed",
-      error: `undici: ${undiciDetail}; curl_impersonate: ${curlDetail}; wayback: ${wbDetail}`,
+      error: `undici: ${undiciDetail}; curl: ${curlDetail}; curl_impersonate: ${impDetail}; wayback: ${wbDetail}`,
     };
   }
 

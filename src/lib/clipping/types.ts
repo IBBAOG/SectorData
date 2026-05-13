@@ -22,11 +22,12 @@ export interface ScrapeResult {
   error?: string;
   /**
    * How the content was retrieved when the primary undici fetch failed or was paywalled.
-   * - "curl"    — system curl shell-out succeeded (Cloudflare TLS fingerprint bypass)
-   * - "wayback" — Wayback Machine snapshot
+   * - "curl"             — plain static curl 8.20.0 (musl) succeeded.
+   * - "curl_impersonate" — curl-impersonate chrome131 (full TLS fingerprint) succeeded.
+   * - "wayback"          — Wayback Machine snapshot.
    * Omitted for direct (undici) fetches.
    */
-  via?: "wayback" | "curl";
+  via?: "wayback" | "curl" | "curl_impersonate";
   /** @deprecated Use `via === "wayback"` instead. Kept for backwards compat. */
   via_wayback?: boolean;
 }
