@@ -17,14 +17,16 @@ function getDomain(url: string): string {
 
 /**
  * Scrape one URL and return a ScrapeResult.
- * @param url      Article URL (must be in the EXTRACTORS allowlist).
- * @param signal   AbortController signal (caller sets a 12-second deadline).
- * @param manualBody  Optional manually-pasted article body text.
+ * @param url          Article URL (must be in the EXTRACTORS allowlist).
+ * @param signal       AbortController signal (caller sets a 12-second deadline).
+ * @param manualBody   Optional manually-pasted article body text.
+ * @param cookieHeader Optional Cookie header value resolved from clipping_cookies (by the route).
  */
 export async function scrape(
   url: string,
   signal: AbortSignal,
   manualBody?: string,
+  cookieHeader?: string,
 ): Promise<ScrapeResult> {
   const domain = getDomain(url);
 
@@ -39,7 +41,7 @@ export async function scrape(
   // (falls back to "" on failure), but body paragraphs come from manualBody — no body scraping.
   if (manualBody) {
     const { title } = await (async () => {
-      const fetched = await fetchHtml(url, signal);
+      const fetched = await fetchHtml(url, signal, cookieHeader);
       if (fetched.ok) return extract(fetched.html, domain);
       return { title: "", paragraphs: [] };
     })();
@@ -66,8 +68,36 @@ export async function scrape(
   }
 
   // Normal path: fetch → extract.
-  const fetchResult = await fetchHtml(url, signal);
+  const fetchResult = await fetchHtml(url, signal, cookieHeader);
+
   if (!fetchResult.ok) {
+    // Live fetch failed (403, network error, timeout) — try Wayback before giving up.
+    const wbResult = await fetchFromWayback(url, signal);
+    if (wbResult.ok) {
+      try {
+        const wbExtracted = extract(wbResult.html, domain);
+        const wbParagraphs = wbExtracted.paragraphs;
+        if (!looksPaywalled(wbParagraphs) && wbParagraphs.length > 0) {
+          const title = wbExtracted.title;
+          if (!title) {
+            return {
+              url,
+              status: "error",
+              error: "Could not extract article title (via Wayback).",
+              via_wayback: true,
+            };
+          }
+          return {
+            url,
+            status: "ok",
+            item: { url, source, title, paragraphs: wbParagraphs },
+            via_wayback: true,
+          };
+        }
+      } catch {
+        // Wayback extract failed — fall through to fetch_failed.
+      }
+    }
     return { url, status: "fetch_failed", error: "Could not fetch page (403/network error)." };
   }
 
@@ -84,6 +114,18 @@ export async function scrape(
       ) {
         paragraphs = wbExtracted.paragraphs;
         if (wbExtracted.title) title = wbExtracted.title;
+        // Mark via_wayback when we actually used the Wayback content.
+        if (!looksPaywalled(paragraphs)) {
+          if (!title) {
+            return { url, status: "error", error: "Could not extract article title." };
+          }
+          return {
+            url,
+            status: "ok",
+            item: { url, source, title, paragraphs },
+            via_wayback: true,
+          };
+        }
       }
     }
   }
