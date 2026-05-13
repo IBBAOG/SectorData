@@ -87,6 +87,41 @@ Sua função: garantir que o passo 5 nunca quebre por mismatch entre Excel e sch
 - Comitar Excel inflado/grande sem necessidade.
 - Truncar tabela e re-popular do zero (memória do CEO: corrigir in-place).
 
+## Clipping cookies (News Hunter)
+
+### O que é
+
+`scripts/manual/upload_clipping_cookies.mjs` lê arquivos Netscape-format cookie (`.txt`) de uma pasta local e faz upsert de cada um na tabela `public.clipping_cookies` via service role key (bypassa RLS).
+
+Cada arquivo deve ter o nome do domínio canônico: `valor.globo.com.txt`, `brasilenergia.com.br.txt`, etc.
+
+### Quando rodar
+
+A cada ~2 meses, ou quando o News Hunter (`/news-hunter`) reportar `fetch_failed` para valor.globo.com ou brasilenergia.com.br — sinal de cookie expirado.
+
+### Pré-requisitos
+
+1. Gerar os arquivos de cookie com o script `login.py` do clipinator (repo externo). Os arquivos ficam em `C:\Users\eduar\Documents\clipinator\cookies\`.
+2. Ter as variáveis de ambiente disponíveis em `.env.local` (ou como env vars):
+   - `SUPABASE_URL` (ou `NEXT_PUBLIC_SUPABASE_URL`)
+   - `SUPABASE_SERVICE_ROLE_KEY` (ou `SUPABASE_SERVICE_KEY`)
+
+### Como rodar
+
+```bash
+node scripts/manual/upload_clipping_cookies.mjs
+# ou apontando para outra pasta:
+node scripts/manual/upload_clipping_cookies.mjs C:\caminho\alternativo
+# ou via env var:
+CLIPPING_COOKIES_DIR=C:\caminho\alternativo node scripts/manual/upload_clipping_cookies.mjs
+```
+
+### Tabela-alvo
+
+| Arquivo | Tabela | Chave de upsert |
+|---|---|---|
+| `*.txt` em `CLIPPING_COOKIES_DIR` | `clipping_cookies` | `domain` |
+
 ## Contratos com outros departamentos
 
 - **APP** é dono do schema das tabelas-alvo. Mudança de schema vai via APP. Você só consome.
