@@ -18,7 +18,8 @@ const nextConfig: NextConfig = {
       "./vendor/curl-static-amd64",
       "./vendor/curl-impersonate",
       "./vendor/curl_chrome131",
-      "./node_modules/@sparticuz/chromium/bin/**/*",
+      "./node_modules/@sparticuz/chromium/**/*",
+      "./node_modules/playwright-core/**/*",
     ],
   },
 };
