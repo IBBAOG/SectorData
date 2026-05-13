@@ -261,60 +261,8 @@ export default function HomeClient({ initialPreviews }: HomeClientProps) {
     <main style={{ background: BG, minHeight: "100vh", color: "#1a1a1a", fontFamily: "Arial, sans-serif" }}>
       <NavBar />
 
-      {/* Hero */}
-      <section style={{ margin: 0, padding: "72px 24px 20px" }}>
-        <div
-          style={{
-            display: "inline-block",
-            background: "rgba(232,93,32,0.10)",
-            color: ORANGE,
-            borderRadius: 20,
-            padding: "3px 12px",
-            fontSize: 12,
-            fontWeight: 600,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            marginBottom: 20,
-          }}
-        >
-          Analytics
-        </div>
-        <h1
-          style={{
-            fontSize: "clamp(2rem, 5vw, 3.5rem)",
-            fontWeight: 700,
-            lineHeight: 1.1,
-            margin: "0 0 20px",
-            letterSpacing: "-0.01em",
-            color: "#111",
-          }}
-        >
-          Sectorial data{" "}
-          <span style={{ color: ORANGE }}>promptly available</span>
-        </h1>
-        <p style={{ fontSize: "clamp(1rem, 2vw, 1.15rem)", color: "#666", lineHeight: 1.6, margin: 0, whiteSpace: "nowrap" }}>
-          Easy access to up-to-date data for the Fuel Distribution and Oil &amp; Gas industries.
-        </p>
-      </section>
-
-      {/* Divider */}
-      <hr style={{ border: "none", borderTop: "1px solid rgba(0,0,0,0.08)", margin: "0 24px" }} />
-
       {/* Cards */}
-      <section style={{ margin: 0, padding: "24px 24px 80px" }}>
-        <h2
-          style={{
-            fontSize: "1.5rem",
-            fontWeight: 600,
-            color: "#FF5000",
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            marginBottom: 24,
-          }}
-        >
-          Check it out!
-        </h2>
-
+      <section style={{ margin: 0, padding: "32px 24px 80px" }}>
         <div className="row g-4">
           {visibleCards.map((card, i) => {
             const isHovered = hoveredIndex === i && !card.disabled;
