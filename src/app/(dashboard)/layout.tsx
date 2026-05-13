@@ -8,6 +8,7 @@ import { useUserProfile } from "../../context/UserProfileContext";
 import { NewsHunterProvider } from "../../context/NewsHunterContext";
 import { rpcUpsertMyProfile } from "../../lib/profileRpc";
 import { trackEvent } from "../../lib/tracking";
+import { ROUTE_TITLES } from "../../components/NavBar";
 
 // Routes excluded from page_view tracking — meta/admin pages should not
 // pollute the dashboard engagement metrics they themselves report on.
@@ -65,6 +66,13 @@ export default function DashboardLayout({
     if (TRACKING_EXCLUDED_ROUTES.has(pathname)) return;
     trackEvent("page_view", pathname);
   }, [pathname, checking]);
+
+  // Per-route browser tab title.
+  useEffect(() => {
+    if (!pathname) return;
+    const label = ROUTE_TITLES[pathname];
+    document.title = label ? `${label} | O&G Data` : "O&G Data";
+  }, [pathname]);
 
   if (!supabase) {
     return (

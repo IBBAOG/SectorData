@@ -122,6 +122,33 @@ const NAV_ENTRIES: NavEntry[] = [
 /** Map nested/alternate routes to the root module slug for visibility checks */
 const SLUG_MAP: Record<string, string> = { "sales-volumes": "sales" };
 
+/* ── Route → tab title map ─────────────────────────────────────────────────── */
+
+/**
+ * Flat map of pathname → human label, derived from NAV_ENTRIES.
+ * Used by the dashboard layout to set `document.title` on route changes.
+ * Includes admin/profile routes that are not in the NavBar.
+ */
+export const ROUTE_TITLES: Record<string, string> = (() => {
+  const map: Record<string, string> = {};
+  const collect = (items: NavItem[]) => items.forEach((i) => { map[i.href] = i.label; });
+  for (const entry of NAV_ENTRIES) {
+    if ("href" in entry) {
+      map[entry.href] = entry.label;
+    } else {
+      if (entry.items) collect(entry.items);
+      entry.groups?.forEach((g) => {
+        collect(g.items);
+        g.subGroups?.forEach((sg) => collect(sg.items));
+      });
+    }
+  }
+  map["/profile"] = "Profile";
+  map["/admin-panel"] = "Admin Panel";
+  map["/admin-analytics"] = "Admin Analytics";
+  return map;
+})();
+
 /* ── Chevron SVG ───────────────────────────────────────────────────────────── */
 
 function Chevron() {
