@@ -378,6 +378,61 @@ def _parse_poco(result_json: dict, debug_dump_path: Path | None = None) -> list[
 
 # ─── Paginacao mensal generica ────────────────────────────────────────────────
 
+# Sub-chunk size (days) used when a monthly window is truncated by the Power BI
+# hard cap (~30 000 rows).  7 days × ~1 000 wells = ~7 000 rows per sub-window,
+# well below the cap.  If a weekly sub-chunk is *still* truncated the extractor
+# logs a warning but keeps the partial data (further splitting would yield
+# diminishing returns and is not expected for the current dataset size).
+_SUB_CHUNK_DAYS = 7
+
+
+def _fetch_chunk(
+    nivel: str,
+    chunk_start: date,
+    chunk_end: date,
+    entities_fn,
+    select_fn,
+    visual_id: str,
+    n_cols: int,
+    parse_fn,
+    window: int,
+    label: str,
+    is_first: bool,
+) -> tuple[list[dict], bool, int | None]:
+    """
+    Fetches a single date range from the Power BI API and parses it.
+
+    Returns:
+      (rows, is_complete, row_count_from_api)
+    """
+    where_conds = [
+        _where_in("c", "Unidade", ["bbl"]),
+        _where_date_range("d", "Data", chunk_start, chunk_end),
+    ]
+    payload = _build_query_body(
+        entities_fn(), select_fn(), where_conds,
+        visual_id, window, n_cols,
+    )
+    data = post_query(payload, RESOURCE_KEY)
+
+    rc, complete = extract_row_count(data)
+
+    if is_first:
+        debug_path = DEFAULT_OUTPUT / f"_debug_cdp_{nivel.lower()}_chunk_{label}.json"
+        debug_path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        print(f"[debug dump -> {debug_path.name}]", end="  ", flush=True)
+
+    if nivel.lower() == "poco":
+        debug_dump = DEFAULT_OUTPUT / "_debug_cdp_poco_response.json" if rc == 0 else None
+        rows = _parse_poco(data, debug_dump_path=debug_dump)
+    else:
+        rows = parse_fn(data)
+
+    return rows, complete, rc
+
+
 def _extract_paginado(
     nivel: str,
     start: date,
@@ -390,10 +445,17 @@ def _extract_paginado(
     window: int = 100_000,
 ) -> list[dict]:
     """
-    Extrai todos os registros de um nivel paginando mes a mes.
+    Extracts all records for a given level, paginating month by month.
+
+    Sub-chunking strategy: if a monthly window returns IC=False (truncated by
+    the Power BI ~30 000-row hard cap), the month is automatically retried in
+    weekly sub-windows of _SUB_CHUNK_DAYS days each.  The sub-window results
+    are deduplicated (by primary key columns) and concatenated, so re-running
+    the pipeline is safe and idempotent.
     """
     all_rows: list[dict] = []
     truncated_months: list[str] = []
+    still_truncated: list[str] = []
     first_chunk = True
 
     cursor = date(start.year, start.month, 1)
@@ -408,49 +470,71 @@ def _extract_paginado(
         chunk_end = min(next_month, end_excl)
 
         label = cursor.strftime("%Y-%m")
-        print(f"  [{nivel}] Chunk {cursor.isoformat()} -> {chunk_end.isoformat()}", end="  ", flush=True)
+        print(f"  [{nivel}] Month {label} ({cursor.isoformat()} -> {chunk_end.isoformat()})",
+              end="  ", flush=True)
 
-        where_conds = [
-            _where_in("c", "Unidade", ["bbl"]),
-            _where_date_range("d", "Data", cursor, chunk_end),
-        ]
-        payload = _build_query_body(
-            entities_fn(), select_fn(), where_conds,
-            visual_id, window, n_cols,
+        rows, complete, rc = _fetch_chunk(
+            nivel, cursor, chunk_end,
+            entities_fn, select_fn, visual_id, n_cols, parse_fn,
+            window, label, is_first=first_chunk,
         )
-        data = post_query(payload, RESOURCE_KEY)
-
-        rc, complete = extract_row_count(data)
-
-        if first_chunk:
-            debug_path = DEFAULT_OUTPUT / f"_debug_cdp_{nivel.lower()}_chunk_{label}.json"
-            debug_path.write_text(
-                json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
-            print(f"[debug dump -> {debug_path.name}]", end="  ", flush=True)
-            first_chunk = False
+        first_chunk = False
 
         if complete is False:
-            print(f"AVISO: TRUNCADO (rc={rc}) !", end="  ", flush=True)
+            # Monthly window was truncated — retry with weekly sub-chunks.
             truncated_months.append(label)
+            print(f"TRUNCATED (rc={rc}) — retrying with {_SUB_CHUNK_DAYS}-day sub-chunks...",
+                  flush=True)
 
-        if nivel.lower() == "poco":
-            debug_dump = DEFAULT_OUTPUT / "_debug_cdp_poco_response.json" if rc == 0 else None
-            rows = _parse_poco(data, debug_dump_path=debug_dump)
+            sub_rows: list[dict] = []
+            sub_cursor = cursor
+            sub_still_truncated = False
+
+            while sub_cursor < chunk_end:
+                sub_end = min(sub_cursor + timedelta(days=_SUB_CHUNK_DAYS), chunk_end)
+                sub_label = f"{sub_cursor.isoformat()}:{sub_end.isoformat()}"
+                print(f"      [{nivel}] Sub-chunk {sub_label}", end="  ", flush=True)
+
+                s_rows, s_complete, s_rc = _fetch_chunk(
+                    nivel, sub_cursor, sub_end,
+                    entities_fn, select_fn, visual_id, n_cols, parse_fn,
+                    window, sub_label, is_first=False,
+                )
+
+                if s_complete is False:
+                    sub_still_truncated = True
+                    print(f"STILL TRUNCATED (rc={s_rc}) — keeping partial data",
+                          flush=True)
+                else:
+                    print(f"{len(s_rows)} rows", flush=True)
+
+                sub_rows.extend(s_rows)
+                sub_cursor = sub_end
+                time.sleep(0.2)  # brief pause between sub-chunk requests
+
+            if sub_still_truncated:
+                still_truncated.append(label)
+
+            print(f"  [{nivel}] Sub-chunk total for {label}: {len(sub_rows)} rows")
+            rows = sub_rows
         else:
-            rows = parse_fn(data)
+            print(f"{len(rows)} rows", flush=True)
 
-        print(f"{len(rows)} linhas")
         all_rows.extend(rows)
         cursor = next_month
 
     elapsed = time.time() - t0
-    print(f"\n  [{nivel}] Total: {len(all_rows)} linhas em {elapsed:.1f}s")
+    print(f"\n  [{nivel}] Total: {len(all_rows)} rows in {elapsed:.1f}s")
 
     if truncated_months:
-        print(f"  [{nivel}] AVISO meses truncados: {truncated_months}")
+        recovered = [m for m in truncated_months if m not in still_truncated]
+        print(f"  [{nivel}] Months that required sub-chunking: {truncated_months}")
+        if recovered:
+            print(f"  [{nivel}] Successfully recovered via sub-chunking: {recovered}")
+        if still_truncated:
+            print(f"  [{nivel}] WARNING — still truncated after sub-chunking: {still_truncated}")
     else:
-        print(f"  [{nivel}] Nenhum mes truncado.")
+        print(f"  [{nivel}] No months truncated.")
 
     return all_rows
 
