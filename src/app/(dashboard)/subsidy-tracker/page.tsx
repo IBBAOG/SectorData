@@ -144,30 +144,57 @@ function buildChart(
     } as unknown as PlotData;
   });
 
-  // ── End-of-line value annotations ───────────────────────────────────────
-  // For each trace, find the last non-null point and render a small label
-  // anchored to the right of it. Labels sit exactly at each line's Y value;
-  // if two values overlap because they're equal, that's acceptable.
-  const annotations: Partial<Annotations>[] = SERIES.flatMap((s) => {
+  // ── End-of-line value annotations (right-column stack) ──────────────────
+  // All 4 labels share the same X (max last-non-null date across series), so
+  // they sit in a vertical column at the right edge. Y starts at each series'
+  // true last value, then we walk top→bottom and push any label down by at
+  // least MIN_GAP if it would visually overlap its neighbor. The displayed
+  // text always reflects the real value — only the marker position shifts.
+  const tips = SERIES.map((s, idx) => {
     for (let i = filtered.length - 1; i >= 0; i--) {
-      const val = filtered[i][s.field] as number | null;
-      if (val != null) {
-        return [{
-          x: filtered[i].date,
-          y: val,
-          xref: "x" as const,
-          yref: "y" as const,
-          xanchor: "left" as const,
-          yanchor: "middle" as const,
-          xshift: 8,
-          text: val.toFixed(2),
-          showarrow: false,
-          font: { size: 11, color: s.color, family: "Arial" },
-        }];
+      const v = filtered[i][s.field] as number | null;
+      if (v != null) {
+        return { idx, series: s, value: v, date: filtered[i].date };
       }
     }
-    return [];
-  });
+    return null;
+  }).filter((x): x is NonNullable<typeof x> => x != null);
+
+  let annotations: Partial<Annotations>[] = [];
+  if (tips.length > 0) {
+    // Anchor X = max last-non-null date across all series
+    const anchorX = tips.reduce((m, t) => (t.date > m ? t.date : m), tips[0].date);
+
+    // Sort by value desc, tie-break by declared SERIES order (idx asc)
+    const sorted = [...tips].sort((a, b) => b.value - a.value || a.idx - b.idx);
+
+    // Min gap in data units — floor 0.10 BRL/L handles the all-equal edge case
+    const yVals = tips.map((t) => t.value);
+    const yRange = Math.max(...yVals) - Math.min(...yVals);
+    const minGap = Math.max(0.10, yRange * 0.025);
+
+    // Walk top→bottom, pushing collisions downward
+    const displayY = new Map<number, number>();
+    displayY.set(sorted[0].idx, sorted[0].value);
+    for (let i = 1; i < sorted.length; i++) {
+      const prevDisplay = displayY.get(sorted[i - 1].idx)!;
+      const wantedDisplay = sorted[i].value;
+      displayY.set(sorted[i].idx, Math.min(wantedDisplay, prevDisplay - minGap));
+    }
+
+    annotations = tips.map((t) => ({
+      x: anchorX,
+      y: displayY.get(t.idx)!,
+      xref: "x" as const,
+      yref: "y" as const,
+      xanchor: "left" as const,
+      yanchor: "middle" as const,
+      xshift: 8,
+      text: t.value.toFixed(2),
+      showarrow: false,
+      font: { size: 11, color: t.series.color, family: "Arial" },
+    }));
+  }
 
   return {
     data: traces,
