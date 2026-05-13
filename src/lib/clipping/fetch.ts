@@ -1,8 +1,8 @@
 // Port of clipinator.py lines 373–496: fetchHtml + Wayback fallback.
-// curl_cffi TLS impersonation: approximated via shell-out to bundled static curl (fetchHtmlViaCurl).
-// curl uses a different TLS fingerprint than Node's undici, which Cloudflare accepts.
-// On Vercel (Linux) we use vendor/curl-static-amd64 bundled via outputFileTracingIncludes.
-// On dev (Windows/macOS) we fall back to the system curl in PATH.
+// TLS impersonation: shell-out to curl-impersonate (lexiforest/curl-impersonate v1.1.0).
+// curl_chrome131 wrapper sets Chrome 131 TLS ciphers/curves/extensions — Cloudflare accepts it.
+// On Vercel (Linux) we use vendor/curl_chrome131 + vendor/curl-impersonate bundled via outputFileTracingIncludes.
+// On dev (Windows/macOS) we fall back to the system curl in PATH (no impersonation).
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -12,32 +12,39 @@ import { promises as fs } from "node:fs";
 const execFileAsync = promisify(execFile);
 
 // ---------------------------------------------------------------------------
-// Resolve the curl binary path once per process lifetime.
-// On Vercel (Linux) we use the bundled static binary; on dev we use system curl.
+// Resolve the curl-impersonate wrapper path once per process lifetime.
+// On Vercel (Linux) we use vendor/curl_chrome131 (bash wrapper for curl-impersonate).
+// On dev (Windows/macOS) we use system curl (no TLS impersonation).
 // ---------------------------------------------------------------------------
 let _curlPathPromise: Promise<string> | null = null;
 
-async function resolveCurlPath(): Promise<string> {
+async function resolveCurlImpersonatePath(): Promise<string> {
   if (_curlPathPromise) return _curlPathPromise;
   _curlPathPromise = (async (): Promise<string> => {
     if (process.platform !== "linux") {
-      // Dev on Windows/macOS: rely on system curl in PATH.
+      // Dev on Windows/macOS: rely on system curl in PATH (no impersonation).
       return "curl";
     }
-    // Production on Vercel (Linux/x86_64): try bundled static binary first.
+    // Production on Vercel (Linux/x86_64): try bundled curl_chrome131 wrapper first.
+    // The wrapper calls curl-impersonate (must be in same dir) with Chrome 131 TLS flags.
     const candidates = [
       // Next.js copies outputFileTracingIncludes relative to .next/server
-      path.join(process.cwd(), ".next/server/vendor/curl-static-amd64"),
-      path.join(process.cwd(), "vendor/curl-static-amd64"),
+      path.join(process.cwd(), ".next/server/vendor/curl_chrome131"),
+      path.join(process.cwd(), "vendor/curl_chrome131"),
       // Vercel may also land the function root at /var/task
-      "/var/task/.next/server/vendor/curl-static-amd64",
-      "/var/task/vendor/curl-static-amd64",
+      "/var/task/.next/server/vendor/curl_chrome131",
+      "/var/task/vendor/curl_chrome131",
     ];
     for (const candidate of candidates) {
       try {
         await fs.access(candidate);
         // Ensure executable bit — Vercel may strip it on deploy.
         try { await fs.chmod(candidate, 0o755); } catch { /* read-only FS is fine */ }
+        // Also chmod the companion binary in the same dir.
+        try {
+          const dir = path.dirname(candidate);
+          await fs.chmod(path.join(dir, "curl-impersonate"), 0o755);
+        } catch { /* best-effort */ }
         return candidate;
       } catch {
         continue;
@@ -103,12 +110,13 @@ export async function fetchHtml(
 }
 
 /**
- * Fetch HTML via bundled static curl instead of Node's undici fetch.
- * curl uses a different TLS ClientHello fingerprint that Cloudflare accepts even when
- * undici's fingerprint is rejected with 403.
+ * Fetch HTML via curl-impersonate (Chrome 131 TLS fingerprint) instead of Node's undici.
+ * curl_chrome131 wrapper injects Chrome 131 TLS ciphers/curves/extensions/HTTP2 settings
+ * and all browser request headers — Cloudflare accepts it even when undici is rejected.
  *
- * On Vercel (Linux) uses vendor/curl-static-amd64 bundled via outputFileTracingIncludes.
- * On dev (Windows/macOS) uses system curl from PATH.
+ * On Vercel (Linux) uses vendor/curl_chrome131 wrapper + vendor/curl-impersonate binary,
+ * bundled via outputFileTracingIncludes. On dev (Windows/macOS) falls back to system curl
+ * (no impersonation — manual headers are added instead).
  * Uses execFile (not exec) so url/cookieHeader are passed as array args — no shell injection.
  */
 export async function fetchHtmlViaCurl(
@@ -116,18 +124,30 @@ export async function fetchHtmlViaCurl(
   signal: AbortSignal,
   cookieHeader?: string,
 ): Promise<FetchResult> {
-  const curlPath = await resolveCurlPath();
+  const curlPath = await resolveCurlImpersonatePath();
+
+  // curl_chrome131 wrapper already injects User-Agent, Accept, Accept-Language,
+  // sec-ch-ua-*, sec-fetch-*, Priority, and all Chrome 131 TLS parameters.
+  // Only add manual headers when falling back to plain system curl (dev).
+  const isImpersonate = curlPath.endsWith("curl_chrome131");
 
   const args = [
     "-sS",                              // silent + show errors
     "--max-time", "20",                 // hard timeout (seconds)
-    "-A", USER_AGENT,
-    "-H", `Accept: ${DEFAULT_HEADERS.Accept}`,
-    "-H", `Accept-Language: ${DEFAULT_HEADERS["Accept-Language"]}`,
-    "-H", `Referer: ${DEFAULT_HEADERS.Referer}`,
     "-w", "\n---STATUS:%{http_code}",   // append status code marker to stdout
     "-L",                               // follow redirects
   ];
+
+  if (!isImpersonate) {
+    // Dev local: plain curl needs manual headers to avoid bot detection.
+    args.push(
+      "-A", USER_AGENT,
+      "-H", `Accept: ${DEFAULT_HEADERS.Accept}`,
+      "-H", `Accept-Language: ${DEFAULT_HEADERS["Accept-Language"]}`,
+      "-H", `Referer: ${DEFAULT_HEADERS.Referer}`,
+    );
+  }
+
   if (cookieHeader) {
     args.push("-H", `Cookie: ${cookieHeader}`);
   }
@@ -142,23 +162,26 @@ export async function fetchHtmlViaCurl(
 
     // Extract HTTP status from the appended marker.
     const statusMatch = stdout.match(/\n---STATUS:(\d+)$/);
-    if (!statusMatch) return { ok: false, reason: "fetch_failed", detail: "curl_no_status_marker" };
+    if (!statusMatch) return { ok: false, reason: "fetch_failed", detail: "curl_impersonate_no_status_marker" };
     const status = parseInt(statusMatch[1], 10);
     const html = stdout.slice(0, statusMatch.index);
 
-    if (status === 403 || status === 429 || status === 401) {
-      return { ok: false, reason: "fetch_failed", detail: `curl_http_${status}` };
+    if (status >= 400 && status < 500) {
+      return { ok: false, reason: "fetch_failed", detail: `curl_impersonate_http_${status}` };
+    }
+    if (status >= 500) {
+      return { ok: false, reason: "fetch_failed", detail: `curl_impersonate_http_${status}` };
     }
     if (status < 200 || status >= 300) {
-      return { ok: false, reason: "fetch_failed", detail: `curl_http_${status}` };
+      return { ok: false, reason: "fetch_failed", detail: `curl_impersonate_http_${status}` };
     }
     return { ok: true, html };
   } catch (err) {
     // Binary not found (ENOENT), timeout, abort signal, or non-zero exit.
     const code = (err as NodeJS.ErrnoException).code;
-    const detail = code === "ENOENT" ? "curl_binary_not_found"
-      : code === "ETIMEDOUT"        ? "curl_timeout"
-      : `curl_exit_error`;
+    const detail = code === "ENOENT"   ? "curl_impersonate_not_found"
+      : code === "ETIMEDOUT"           ? "curl_impersonate_timeout"
+      : `curl_impersonate_exit_${(err as NodeJS.ErrnoException & { exitCode?: number }).exitCode ?? "unknown"}`;
     return { ok: false, reason: "fetch_failed", detail };
   }
 }

@@ -94,9 +94,9 @@ Quando um artigo vem do Wayback, o modal exibe um badge "via Wayback" azul ao la
 
 #### Curl shell-out fallback (Cloudflare TLS fingerprint bypass)
 
-Node's `undici` fetch has a TLS ClientHello fingerprint that Cloudflare rejects with 403, even with fresh valid cookies. The bundled `curl` binary has a different fingerprint that Cloudflare accepts.
+Node's `undici` fetch has a TLS ClientHello fingerprint that Cloudflare rejects with 403, even with fresh valid cookies. The bundled `curl-impersonate` binary impersonates Chrome 131's full TLS profile (ciphers, curves, extensions, HTTP/2 settings, browser headers) — Cloudflare accepts it.
 
-When `fetchHtml` (undici) fails with a `fetch_failed` reason, `scrape()` now retries via `fetchHtmlViaCurl` before falling through to Wayback:
+When `fetchHtml` (undici) fails with a `fetch_failed` reason, `scrape()` retries via `fetchHtmlViaCurl` before falling through to Wayback:
 
 ```
 undici fetch → 403/network error
@@ -104,38 +104,42 @@ undici fetch → 403/network error
     → success: return { status: "ok", via: "curl" }
     → paywall or failure: try Wayback Machine
       → success: return { status: "ok", via: "wayback" }
-      → failure: return { status: "fetch_failed", error: "undici: ...; curl: ...; wayback: ..." }
+      → failure: return { status: "fetch_failed", error: "undici: ...; curl_impersonate: ...; wayback: ..." }
 ```
 
 Implementation details:
 - `child_process.execFile` (not `exec`) — URL and cookies are separate args, no shell injection risk.
 - `--max-time 20` + `maxBuffer: 10 MB` + `timeout: 22_000` ms in the Node wrapper.
 - Status code extracted from stdout via `-w "\n---STATUS:%{http_code}"` marker.
-- `FetchResult` has an optional `detail` field on all failure paths for debugging (e.g. `curl_http_403`, `curl_binary_not_found`, `wayback_no_snapshot`). When all three paths fail, `ScrapeResult.error` concatenates all three details: `"undici: <d>; curl: <d>; wayback: <d>"`.
-- Paywall is NOT retried via curl — if the site returned a paywall over undici, curl would return the same gate page. Wayback remains the only paywall fallback.
+- `FetchResult` has an optional `detail` field on all failure paths for debugging (e.g. `curl_impersonate_http_403`, `curl_impersonate_not_found`, `wayback_no_snapshot`). When all three paths fail, `ScrapeResult.error` concatenates all three details: `"undici: <d>; curl_impersonate: <d>; wayback: <d>"`.
+- Paywall is NOT retried via curl-impersonate — if the site returned a paywall over undici, curl-impersonate would return the same gate page. Wayback remains the only paywall fallback.
+- `isImpersonate` flag: when the resolved path ends with `curl_chrome131`, manual `-A`/`-H Accept`/`-H Accept-Language`/`-H Referer` args are omitted — the wrapper already injects them. On dev (system curl), headers are added manually.
 
 The ClippingModal Status tab shows a blue "via curl" badge for articles retrieved this way, and "via Wayback" for Wayback snapshots.
 
-#### Bundled static curl binary (`vendor/curl-static-amd64`)
+#### Bundled curl-impersonate binaries (`vendor/curl-impersonate` + `vendor/curl_chrome131`)
 
-Vercel's Amazon Linux 2 minimal runtime does not have `curl` in PATH, so `fetchHtmlViaCurl` was silently no-oping there. The fix: bundle a static curl binary in the repo.
+Vercel's Amazon Linux 2 minimal runtime does not have `curl` in PATH. The fix: bundle `curl-impersonate` with the Chrome 131 wrapper script.
 
-**Binary**: `vendor/curl-static-amd64` — [stunnel/static-curl](https://github.com/stunnel/static-curl) v8.20.0, `curl-linux-x86_64-musl` (~10 MB, static-pie linked, x86_64 only).
+**Binaries**:
+- `vendor/curl-impersonate` — [lexiforest/curl-impersonate](https://github.com/lexiforest/curl-impersonate) v1.1.0, ELF 64-bit, dynamically linked (requires glibc + dynamic linker, present on Vercel Amazon Linux 2). Size: ~4.1 MB.
+- `vendor/curl_chrome131` — bash wrapper script (~1.9 KB) that calls `${0%/*}/curl-impersonate` with exact Chrome 131 TLS flags (ciphers, curves, HTTP/2 settings, browser headers). Both files must be in the same directory.
 
-**Bundling**: `next.config.ts` uses `outputFileTracingIncludes` to include the binary in the `/api/clipping/scrape` Vercel function bundle. Without this, Next.js file tracing would omit it.
+**Bundling**: `next.config.ts` uses `outputFileTracingIncludes` to include both files in the `/api/clipping/scrape` Vercel function bundle. Without this, Next.js file tracing would omit them.
 
-**Path resolution** (`resolveCurlPath()` in `fetch.ts`):
-- **Linux (Vercel prod)**: checks `process.cwd()/.next/server/vendor/curl-static-amd64`, then `process.cwd()/vendor/curl-static-amd64`, then `/var/task/...`. Also runs `chmod 0o755` in case Vercel stripped the exec bit on deploy.
-- **Non-Linux (dev — Windows/macOS)**: uses `"curl"` (system binary from PATH).
+**Path resolution** (`resolveCurlImpersonatePath()` in `fetch.ts`):
+- **Linux (Vercel prod)**: checks `process.cwd()/.next/server/vendor/curl_chrome131`, then `process.cwd()/vendor/curl_chrome131`, then `/var/task/...`. Runs `chmod 0o755` on both `curl_chrome131` and `curl-impersonate` in the same dir in case Vercel stripped exec bits on deploy.
+- **Non-Linux (dev — Windows/macOS)**: uses `"curl"` (system binary from PATH, no TLS impersonation).
 - Result is cached in module-level promise (resolved once per process lifetime).
 
-**Limitation**: x86_64 only. Vercel does not currently use ARM for Node.js functions, so this is not an issue.
+**Limitation**: Linux x86_64 only. Vercel does not currently use ARM for Node.js functions.
 
-**Updating the binary** (e.g. for a libcurl CVE):
-1. Download new release: `curl-linux-x86_64-musl-<version>.tar.xz` from [stunnel/static-curl releases](https://github.com/stunnel/static-curl/releases).
-2. Extract: `tar -xf curl-linux-x86_64-musl-<ver>.tar.xz curl && chmod +x curl && mv curl vendor/curl-static-amd64`.
-3. Commit `vendor/curl-static-amd64` (binary is committed directly — no Git LFS).
-4. Update version note in this doc.
+**Updating the binary** (new curl-impersonate release):
+1. Download tarball from [lexiforest/curl-impersonate releases](https://github.com/lexiforest/curl-impersonate/releases).
+2. Extract `curl-impersonate` and `curl_chrome131` (or the Chrome version you want).
+3. `chmod +x vendor/curl-impersonate vendor/curl_chrome131`
+4. Commit both files directly (no Git LFS needed — no LFS configured in this repo).
+5. Update version note in this doc.
 
 #### Estado de seleção
 
