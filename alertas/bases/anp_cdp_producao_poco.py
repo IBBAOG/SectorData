@@ -168,11 +168,29 @@ class AnpCdpProducaoPoco(BaseMonitor):
                 ambiente=ambiente,
                 output_dir=download_dir,
             )
-            if res in ("expired", "error") or res is None:
+            # replay_download returns a ReplayResult dataclass (status, csv_path, message).
+            # Guard against both the dataclass API and old string-return fallback.
+            if hasattr(res, "status"):
+                # ReplayResult dataclass
+                if res.status in ("expired", "error"):
+                    raise RuntimeError(
+                        f"replay_download returned status='{res.status}' for "
+                        f"ambiente={ambiente}, periodo={periodo}: {res.message}"
+                    )
+                csv_path = res.csv_path
+            else:
+                # Legacy: function returned a string path or sentinel string
+                if res in ("expired", "error") or res is None:
+                    raise RuntimeError(
+                        f"replay_download returned '{res}' for ambiente={ambiente}, periodo={periodo}."
+                    )
+                csv_path = res
+
+            if not csv_path:
                 raise RuntimeError(
-                    f"replay_download retornou '{res}' para ambiente={ambiente}, periodo={periodo}."
+                    f"replay_download returned no csv_path for ambiente={ambiente}, periodo={periodo}."
                 )
-            resultado[ambiente] = res
+            resultado[ambiente] = csv_path
 
         return resultado
 
