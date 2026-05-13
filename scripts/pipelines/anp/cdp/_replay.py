@@ -90,6 +90,23 @@ def _looks_like_expired(response: requests.Response) -> bool:
     return False
 
 
+def _looks_like_csv(text: str) -> bool:
+    """
+    Heuristic check: first non-empty line should look like a CSV header, not HTML.
+    Guards against silently accepting an APEX error page or login redirect as CSV data.
+    """
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped:
+            # HTML documents start with '<!', '<html', or '<!' (BOM may precede)
+            low = stripped.lower().lstrip("﻿")
+            if low.startswith("<!") or low.startswith("<html") or low.startswith("<head"):
+                return False
+            # A CSV header should contain at least one comma
+            return "," in stripped or ";" in stripped
+    return False
+
+
 def _try_download_url(
     s: requests.Session,
     url: str,
@@ -109,7 +126,7 @@ def _try_download_url(
 
         if r.status_code == 200 and ("csv" in ct.lower() or "attachment" in cd.lower()):
             lines = [line for line in r.text.splitlines() if line.strip()]
-            if len(lines) > 1:
+            if len(lines) > 1 and _looks_like_csv(r.text):
                 print(f"    [fast] {label} funcionou ({len(lines)-1} linhas)")
                 safe_periodo = periodo.replace("/", "-")
                 p = os.path.join(download_dir, f"fast_{safe_periodo}_{ambiente}.csv")
@@ -117,8 +134,11 @@ def _try_download_url(
                 with open(p, "wb") as f:
                     f.write(r.content)
                 return p
+            elif len(lines) > 1:
+                print(f"    [fast] {label}: response has {len(lines)} lines but does not look like CSV "
+                      f"(first line: {lines[0][:100]!r})")
 
-        print(f"    [fast] {label}: HTTP {r.status_code} ct={ct!r}")
+        print(f"    [fast] {label}: HTTP {r.status_code} ct={ct!r} cd={cd!r}")
     except Exception as e:
         print(f"    [fast] {label} erro: {e}")
     return None
@@ -247,7 +267,7 @@ def _strategy_1_apex_get_download_link(
             if dl_path.startswith("/") or dl_path.startswith("http"):
                 host = base_url.split("/ords")[0]
                 dl_url = host + dl_path if not dl_path.startswith("http") else dl_path
-                print(f"    [fast] Download URL (text): {dl_url[:100]}")
+                print(f"    [fast] Download URL (text): {dl_url[:200]}")
                 result = _try_download_url(s, dl_url, "GET_DOWNLOAD_LINK->GET(text)", download_dir, periodo, ambiente)
                 if result:
                     return ("ok", result)
