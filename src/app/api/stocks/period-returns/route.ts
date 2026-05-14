@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { stocksLimiter, enforceLimit, rateLimitResponse, getClientIp } from "@/lib/rateLimit";
 
 const YAHOO_BASE = "https://query1.finance.yahoo.com/v8/finance/chart";
 const UA = "Mozilla/5.0";
@@ -59,6 +60,14 @@ async function fetchPeriodReturns(ticker: string) {
 }
 
 export async function GET(request: NextRequest) {
+  if (stocksLimiter) {
+    const ip = getClientIp(request);
+    const result = await enforceLimit(stocksLimiter, ip);
+    if (!result.success) {
+      return rateLimitResponse(result.limit, result.remaining, result.reset);
+    }
+  }
+
   const { searchParams } = request.nextUrl;
   const tickersParam = searchParams.get("tickers");
 

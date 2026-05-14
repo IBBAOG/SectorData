@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { stocksLimiter, enforceLimit, rateLimitResponse, getClientIp } from "@/lib/rateLimit";
 
 const YAHOO_SEARCH = "https://query1.finance.yahoo.com/v1/finance/search";
 const UA = "Mozilla/5.0";
@@ -13,6 +14,14 @@ function stripSA(symbol: string): string {
 }
 
 export async function GET(request: NextRequest) {
+  if (stocksLimiter) {
+    const ip = getClientIp(request);
+    const result = await enforceLimit(stocksLimiter, ip);
+    if (!result.success) {
+      return rateLimitResponse(result.limit, result.remaining, result.reset);
+    }
+  }
+
   const { searchParams } = request.nextUrl;
   const q = searchParams.get("q")?.trim();
 

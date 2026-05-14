@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { stocksLimiter, enforceLimit, rateLimitResponse, getClientIp } from "@/lib/rateLimit";
 
 const YAHOO_BASE = "https://query1.finance.yahoo.com/v8/finance/chart";
 const UA = "Mozilla/5.0";
@@ -30,6 +31,14 @@ function rangeToPeriod1(range: string): number {
 const VALID_INTERVALS = new Set(["1m", "2m", "5m", "15m", "30m", "60m", "1h", "1d", "5d", "1wk", "1mo"]);
 
 export async function GET(request: NextRequest) {
+  if (stocksLimiter) {
+    const ip = getClientIp(request);
+    const result = await enforceLimit(stocksLimiter, ip);
+    if (!result.success) {
+      return rateLimitResponse(result.limit, result.remaining, result.reset);
+    }
+  }
+
   const { searchParams } = request.nextUrl;
   const ticker = searchParams.get("ticker");
   const range = searchParams.get("range") ?? "1y";

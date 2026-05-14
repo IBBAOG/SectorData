@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { scrape } from "@/lib/clipping/scrape";
 import { parseNetscapeCookies, buildCookieHeader, canonicalDomain } from "@/lib/clipping/cookies";
+import { scrapeLimiter, enforceLimit, rateLimitResponse, getClientIp } from "@/lib/rateLimit";
 import type { ScrapeResult } from "@/lib/clipping/types";
 
 export const runtime = "nodejs";
@@ -49,6 +50,15 @@ export async function POST(req: NextRequest) {
       .single();
     if (profileErr || !profileRow || profileRow.role !== "Admin") {
       return NextResponse.json({ error: "Forbidden — Admin only" }, { status: 403 });
+    }
+
+    // ── 1b. Rate limit (10/min/user; IP fallback handled by auth gate above) ────
+    if (scrapeLimiter) {
+      const identifier = user.id || getClientIp(req);
+      const rl = await enforceLimit(scrapeLimiter, identifier);
+      if (!rl.success) {
+        return rateLimitResponse(rl.limit, rl.remaining, rl.reset);
+      }
     }
 
     // ── 2. Parse body ────────────────────────────────────────────────────────────

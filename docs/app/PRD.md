@@ -306,6 +306,43 @@ return (
 - **Alertas** lê tabelas; mudanças de schema podem quebrar bases.
 - **Designer** é consultado antes de mudanças visuais.
 
+## Hardenings de segurança P0 (2026-05-14)
+
+Três hardenings P0 aplicados antes do go-live para clientes externos (plano completo em `C:\Users\eduar\.claude\plans\o-app-est-em-unified-wilkinson.md`).
+
+### F1.1 — Next.js 16.2.1 → 16.2.6
+
+Bump via `npm audit fix --force`. Resolve 14 CVEs do Next.js (entre eles GHSA-c4j6-fc7j-m34r SSRF, GHSA-gx5p-jg67-6x7h XSS, GHSA-h64f-5h5j-jqjh DoS de Image Optimization). `npm audit` agora não reporta nenhum issue high/critical (sobram 2 moderate em `postcss` interno do Next — não acionáveis sem downgrade catastrófico).
+
+### F1.2 — Security headers HTTP
+
+Função `async headers()` em `next.config.ts` aplica a todas as respostas (`source: '/(.*)'`):
+
+- `Content-Security-Policy` — `script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.plot.ly` (Plotly injeta inline scripts + Function() — `unsafe-inline`/`unsafe-eval` são necessários). TODO futuro: migrar para nonces.
+- `Strict-Transport-Security` — `max-age=63072000; includeSubDomains; preload` (2 anos).
+- `X-Frame-Options: DENY` + `frame-ancestors 'none'` — clickjacking impossível.
+- `X-Content-Type-Options: nosniff`.
+- `Referrer-Policy: strict-origin-when-cross-origin`.
+- `Permissions-Policy` — desabilita camera, microphone, geolocation, payment.
+
+Allowlist do `connect-src` cobre `*.supabase.co` (REST + WS) e `query1/query2.finance.yahoo.com` (proxy do `/api/stocks/*`).
+
+### F1.3 — Rate limit em API routes próprias
+
+Helper em `src/lib/rateLimit.ts` exporta três limiters (`stocksLimiter`, `scrapeLimiter`, `uploadLimiter`) baseados em `@upstash/ratelimit` + `@upstash/redis`. Fallback gracioso: se `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` não estiverem setadas, os limiters viram `null` e o rate limit é skipado (dev local). Em produção (Vercel), CTO cria as env vars.
+
+| Rota | Limiter | Identifier |
+|---|---|---|
+| `/api/stocks/quote` | 60/min | IP (`x-forwarded-for`) |
+| `/api/stocks/history` | 60/min | IP |
+| `/api/stocks/search` | 60/min | IP |
+| `/api/stocks/futures-curve` | 60/min | IP |
+| `/api/stocks/period-returns` | 60/min | IP |
+| `/api/clipping/scrape` | 10/min | `user.id` (auth obrigatório; fallback IP) |
+| `/api/upload-card-preview` | 20/hora | `user.id` (auth obrigatório; fallback IP) |
+
+Resposta 429 inclui `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
+
 ## Padrões consolidados na Fase 3 (referência para futuros dashboards)
 
 A Fase 3 entregou 10 dashboards (ANP CDP, PPI, Preços Produtores, GLP, MDIC Comex, ANP LPC, SINDICOM, DAIE, Desembaraços, Painel Importações) e cristalizou os seguintes padrões. Use como checklist ao criar dashboard novo:

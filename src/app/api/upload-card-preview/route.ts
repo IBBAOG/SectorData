@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { uploadLimiter, enforceLimit, rateLimitResponse, getClientIp } from "@/lib/rateLimit";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -49,6 +50,15 @@ export async function POST(req: NextRequest) {
       .single();
     if (profileErr || !profileRow || profileRow.role !== "Admin") {
       return NextResponse.json({ error: "Forbidden — Admin only" }, { status: 403 });
+    }
+
+    // ── 2b. Rate limit (20/hour/user) ───────────────────────────────────────
+    if (uploadLimiter) {
+      const identifier = user.id || getClientIp(req);
+      const rl = await enforceLimit(uploadLimiter, identifier);
+      if (!rl.success) {
+        return rateLimitResponse(rl.limit, rl.remaining, rl.reset);
+      }
     }
 
     const ext = (file instanceof File ? file.name.split(".").pop() : null) ?? "jpg";
