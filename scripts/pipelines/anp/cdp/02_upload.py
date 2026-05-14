@@ -629,6 +629,28 @@ def _from_csv_dir(sb, csv_dir: str, incremental: bool = True, purge: bool = Fals
 
     df = pd.concat(frames, ignore_index=True)
     df = _prepare(df, allow_non_apex=allow_non_apex)
+
+    # Guard against PK duplicates in the source data (e.g. legacy dumps 2005-2013
+    # where the same (poco, campo, bacia) appears multiple times in the same month
+    # with different instalacao_destino values — the DB PK does not include that
+    # column, so Postgres raises 21000 "ON CONFLICT DO UPDATE command cannot affect
+    # row a second time" when a batch contains two rows with the same PK.
+    # keep='last' preserves the last occurrence (arbitrary but deterministic).
+    before_dedup = len(df)
+    df = df.drop_duplicates(subset=_PK, keep="last")
+    n_dropped = before_dedup - len(df)
+    if n_dropped > 0:
+        pct = n_dropped / before_dedup * 100
+        level = "WARN" if pct > 5 else "INFO"
+        print(
+            f"  [{level}] Dropped {n_dropped} PK-duplicate rows before upsert "
+            f"({pct:.1f}% of {before_dedup} total). "
+            f"This is expected for legacy ANP dumps (2005-2013) where a well can "
+            f"appear multiple times per month with different instalacao_destino."
+        )
+    else:
+        print(f"  [INFO] No PK duplicates found ({before_dedup} rows are all unique).")
+
     rows = _rows_from_df(df)
     print(f"  {len(rows)} rows to upsert (as-is, no aggregation)…")
     _upsert(sb, rows)
