@@ -15,7 +15,7 @@
 - Supabase Auth logs (login failures > 50/h)
 - Sentry JS error tracking (to be configured)
 - Automated issue opened by `security_audit.yml` workflow
-- Suspicious row in `admin_audit_log`
+- Suspicious row in `app_events` (query with `WHERE event_type LIKE 'admin.%'`, or use view `admin_audit_log` which filters this automatically)
 
 ## Response Steps (Sev 1)
 
@@ -33,7 +33,7 @@
 - **Emergency token invalidation** (if Supabase exposes this endpoint in the future — currently manual via dashboard)
 
 ### 3. Eradication
-- Identify root cause via `admin_audit_log` + Vercel logs + Supabase Auth logs
+- Identify root cause via `app_events` (view `admin_audit_log` = alias for `event_type LIKE 'admin.%'`) + Vercel logs + Supabase Auth logs
 - Remove malicious access / revoke compromised credential
 - Patch vulnerability or disable affected endpoint
 
