@@ -154,33 +154,49 @@ function buildChart(
     return isKbpd ? bblDiaToKbpd(raw) : raw;
   });
 
-  // Enriched hover: value + wells count + fields count per month.
-  // wells_count / fields_count may be 0 if the migration has not yet been
-  // applied (RPC returns the old schema). We show them only when > 0.
+  // Enriched hover: value + wells count + records count + fields count per month.
+  // wells_count / fields_count may be 0 if the old migration has not yet been
+  // applied. records_count is optional (new migration); omit gracefully if absent.
   const customdata = serie.map(r => [
-    r.wells_count  ?? 0,
-    r.fields_count ?? 0,
+    r.wells_count   ?? 0,
+    r.records_count ?? 0,
+    r.fields_count  ?? 0,
   ]);
   const unitSuffix = isKbpd ? " kbpd" : ` ${metricLabel.match(/\(([^)]+)\)/)?.[1] ?? ""}`;
+  // Build hover line: always show wells & fields; append records only when present.
+  // We use a sentinel: customdata[1] === 0 means "not available" (either migration
+  // not applied yet, or genuinely 0 — suppressed in either case to avoid confusion).
+  const recordsPart = serie.some(r => (r.records_count ?? 0) > 0)
+    ? " · %{customdata[1]:,} records"
+    : "";
   const hovertemplate =
     `<b>%{x|%b %Y}</b>: %{y:,.1f}${unitSuffix}<br>` +
-    `%{customdata[0]:,} wells · %{customdata[1]:,} fields<extra></extra>`;
+    `%{customdata[0]:,} wells${recordsPart} · %{customdata[2]:,} fields<extra></extra>`;
 
   // Annotation on the last (most recent) data point — shows coverage counts
   // in a small, muted label so the user immediately sees partial-month signals.
   const lastIdx = serie.length - 1;
   const lastPt  = serie[lastIdx];
-  const lastW   = lastPt.wells_count  ?? 0;
-  const lastF   = lastPt.fields_count ?? 0;
+  const lastW   = lastPt.wells_count   ?? 0;
+  const lastR   = lastPt.records_count ?? 0;
+  const lastF   = lastPt.fields_count  ?? 0;
   const annotations: Partial<Layout>["annotations"] = [];
   if (lastW > 0 || lastF > 0) {
     const mon = MONTH_ABBR[(lastPt.mes - 1) % 12];
+    // Build annotation text: always include wells & fields; insert records in
+    // the middle only when the new migration column is available (lastR > 0).
+    const annotText = lastR > 0
+      ? `${lastW.toLocaleString("en-US")} wells · ${lastR.toLocaleString("en-US")} records · ${lastF.toLocaleString("en-US")} fields`
+      : `${lastW.toLocaleString("en-US")} wells · ${lastF.toLocaleString("en-US")} fields`;
+    const hoverText = lastR > 0
+      ? `${mon} ${lastPt.ano}: ${lastW.toLocaleString("en-US")} wells, ${lastR.toLocaleString("en-US")} records, ${lastF.toLocaleString("en-US")} fields`
+      : `${mon} ${lastPt.ano}: ${lastW.toLocaleString("en-US")} wells, ${lastF.toLocaleString("en-US")} fields`;
     annotations.push({
       x:          xs[lastIdx],
       y:          ys[lastIdx],
       xref:       "x" as const,
       yref:       "y" as const,
-      text:       `${lastW.toLocaleString("en-US")} wells · ${lastF.toLocaleString("en-US")} fields`,
+      text:       annotText,
       showarrow:  true,
       arrowhead:  0,
       arrowcolor: "#ccc",
@@ -193,7 +209,7 @@ function buildChart(
       borderwidth: 1,
       borderpad:  3,
       // Accessibility: include month name so screen-readers can parse it.
-      hovertext:  `${mon} ${lastPt.ano}: ${lastW.toLocaleString("en-US")} wells, ${lastF.toLocaleString("en-US")} fields`,
+      hovertext:  hoverText,
     });
   }
 
