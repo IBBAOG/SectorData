@@ -263,7 +263,7 @@ export default function AdminPanelPage() {
       .from("alert_recipients")
       .select("*")
       .order("created_at", { ascending: false });
-    if (error) setRecipientsError(error.message);
+    if (error) setRecipientsError("Could not load recipients. Please try again.");
     else setRecipients((data as AlertRecipient[]) ?? []);
     setRecipientsLoading(false);
   }, [supabase]);
@@ -282,7 +282,7 @@ export default function AdminPanelPage() {
       added_by: myProfile?.id ?? null,
     });
     if (error) {
-      setAddEmailError(error.code === "23505" ? "This email is already registered." : error.message);
+      setAddEmailError("Could not add recipient. Please verify the email and try again.");
     } else {
       setNewEmail("");
       setAddEmailSuccess(true);

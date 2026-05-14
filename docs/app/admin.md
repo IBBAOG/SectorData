@@ -201,6 +201,16 @@ Sem a migration, writes retornam 403 — a UI renderiza mas não persiste.
 - `EditableTableEditor.tsx` — `handleSave` now re-validates all drafts and edited rows from current committed state before calling `saveChanges`.
 - `persistence.ts` — `saveChanges` now (a) coerces number strings to JS numbers for PostgREST, and (b) short-circuits with a clear error if any required column in a draft is null/undefined, blocking the Postgres call entirely.
 
+## Security — Email Enumeration (F2.3, 2026-05-14)
+
+`handleAddRecipient` in `admin-panel/page.tsx` previously differentiated error `23505` (duplicate key) with the message "This email is already registered.", enabling an Admin-credential attacker to enumerate registered emails via the Alert Emails form.
+
+**Fix:** both error paths now return the same generic message: "Could not add recipient. Please verify the email and try again."
+
+`loadRecipients` also exposed raw Postgres error messages via `setRecipientsError(error.message)`. Replaced with "Could not load recipients. Please try again."
+
+`forgot-password/page.tsx` and `login/page.tsx` were audited and confirmed clean: forgot-password always shows generic success (catch also calls `setSent(true)`), and login uses a single "Incorrect email or password." message regardless of error type.
+
 ## Anti-padrões
 
 - Páginas administrativas sem `useRoleGuard("Admin")`.
@@ -208,3 +218,4 @@ Sem a migration, writes retornam 403 — a UI renderiza mas não persiste.
 - Esquecer slot de imagem na home (CEO vai notar).
 - Mexer no padrão de avatar / first-login modal sem consultar Designer.
 - Adicionar role novo sem revisar CHECK constraint + RLS de outras tabelas.
+- Expor mensagem raw de erro do Postgres no frontend — usar mensagem genérica sempre.
