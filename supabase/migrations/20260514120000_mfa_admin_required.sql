@@ -29,7 +29,7 @@
 CREATE OR REPLACE FUNCTION public.has_verified_mfa(p_user_id UUID)
 RETURNS BOOLEAN
 LANGUAGE plpgsql
-STABLE
+VOLATILE
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
@@ -55,7 +55,7 @@ REVOKE EXECUTE ON FUNCTION public.has_verified_mfa(UUID) FROM anon;
 CREATE OR REPLACE FUNCTION public.require_admin_mfa()
 RETURNS void
 LANGUAGE plpgsql
-STABLE
+VOLATILE
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
