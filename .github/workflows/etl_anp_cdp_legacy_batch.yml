@@ -1,0 +1,175 @@
+# ============================================================
+# DATA SOURCE: ANP Dados Estatísticos — annual "Produção por Poço" dumps
+#   URL pattern: https://www.gov.br/anp/pt-br/centrais-de-conteudo/dados-estatisticos/de/ppg/pp/producao-pocos-{year}.zip
+#
+# This pipeline is for PRE-2023 years only (no CAPTCHA needed).
+# For 2023 onwards, use etl_anp_cdp.yml (Selenium + APEX CDP portal).
+#
+# DO NOT use this workflow to load post-2022 data. The APEX portal (etl_anp_cdp.yml)
+# is the authoritative source for 2023+. Mixing sources for the same period
+# contaminates anp_cdp_producao. Requires CTO sign-off to change year range.
+# ============================================================
+name: ETL ANP CDP Legacy Batch (multi-year pre-2023)
+
+on:
+  workflow_dispatch:
+    inputs:
+      from_year:
+        description: 'First year to extract (2005–2022). Example: 2005'
+        required: true
+      to_year:
+        description: 'Last year to extract (2005–2022). Example: 2016'
+        required: true
+      purge:
+        description: 'Delete existing rows per (ano, mes, local) before upserting (strongly recommended).'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+
+# Batch variant of etl_anp_cdp_legacy.yml.
+# Extracts all years in [from_year, to_year] into output/anp/ first, then
+# uploads everything in a single 02_upload.py call.
+#
+# Per-year failures (URL 404, parsing error) are caught and logged; the loop
+# continues with the remaining years. Failed years are reported at the end.
+#
+# Estimated runtime: ~5 min per year (ZIP ~10-20 MB + parse XLSX + write CSVs)
+#                    + ~3-5 min for the single upload pass.
+# Example: from_year=2005 to_year=2016 (12 years) → ~60-75 min total.
+#
+# Script: 01_extract_legacy.py
+#   - Downloads producao-pocos-{year}.zip from gov.br
+#   - Extracts 3 XLSX files (mar, presal, terra) from the ZIP
+#   - Converts each XLSX to per-month CSVs matching 02_upload.py format
+#   - Writes CSVs to output/anp/
+#
+# Upload: 02_upload.py --from-csv-dir (same as the regular and single-year legacy pipelines)
+#   - Deduplicates M/S overlap via _deduplicate_m_vs_s()
+#   - Purges existing rows for each (ano, mes) before upserting (--purge)
+#   - Refreshes mv_anp_cdp_pocos after upload
+
+jobs:
+  batch-extract-and-upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300  # 5 hours — covers up to ~12 years comfortably
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Validate year range inputs
+        run: |
+          FROM_YEAR="${{ github.event.inputs.from_year }}"
+          TO_YEAR="${{ github.event.inputs.to_year }}"
+
+          if ! [[ "$FROM_YEAR" =~ ^[0-9]{4}$ ]] || [ "$FROM_YEAR" -lt 2005 ] || [ "$FROM_YEAR" -gt 2022 ]; then
+            echo "ERROR: from_year must be between 2005 and 2022. Got: $FROM_YEAR"
+            echo "For 2023 and later, use etl_anp_cdp.yml (Selenium + APEX)."
+            exit 1
+          fi
+
+          if ! [[ "$TO_YEAR" =~ ^[0-9]{4}$ ]] || [ "$TO_YEAR" -lt 2005 ] || [ "$TO_YEAR" -gt 2022 ]; then
+            echo "ERROR: to_year must be between 2005 and 2022. Got: $TO_YEAR"
+            echo "For 2023 and later, use etl_anp_cdp.yml (Selenium + APEX)."
+            exit 1
+          fi
+
+          if [ "$FROM_YEAR" -gt "$TO_YEAR" ]; then
+            echo "ERROR: from_year ($FROM_YEAR) must be <= to_year ($TO_YEAR)."
+            exit 1
+          fi
+
+          TOTAL=$(( TO_YEAR - FROM_YEAR + 1 ))
+          echo "Year range: $FROM_YEAR → $TO_YEAR ($TOTAL year(s))"
+          echo "Estimated runtime: ~$(( TOTAL * 5 + 4 )) min (5 min/year + 4 min upload)"
+
+      - name: Extract all years to monthly CSVs
+        run: |
+          FROM_YEAR="${{ github.event.inputs.from_year }}"
+          TO_YEAR="${{ github.event.inputs.to_year }}"
+
+          mkdir -p output/anp
+
+          FAILED_YEARS=""
+
+          for YEAR in $(seq "$FROM_YEAR" "$TO_YEAR"); do
+            echo ""
+            echo "=============================================="
+            echo "=== Extracting year $YEAR ==="
+            echo "=============================================="
+            if python scripts/pipelines/anp/cdp/01_extract_legacy.py \
+                --year "$YEAR" \
+                --output output/anp; then
+              echo ">>> year $YEAR: OK"
+            else
+              echo "WARNING: year $YEAR failed — skipping and continuing with remaining years."
+              FAILED_YEARS="$FAILED_YEARS $YEAR"
+            fi
+          done
+
+          echo ""
+          if [ -n "$FAILED_YEARS" ]; then
+            echo "FAILED_YEARS=$FAILED_YEARS" >> "$GITHUB_ENV"
+            echo "WARNING: the following years failed extraction:$FAILED_YEARS"
+            echo "Upload will proceed with successfully extracted years only."
+          else
+            echo "All years extracted successfully."
+          fi
+
+          echo "CSVs written to output/anp/:"
+          ls output/anp/*.csv 2>/dev/null | wc -l | xargs -I{} echo "  {} CSV files"
+
+      - name: Upload all extracted CSVs to Supabase
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          CSV_COUNT=$(ls output/anp/*.csv 2>/dev/null | wc -l)
+          if [ "$CSV_COUNT" -eq 0 ]; then
+            echo "ERROR: no CSV files found in output/anp/ — nothing to upload."
+            exit 1
+          fi
+          echo "Found $CSV_COUNT CSV files. Starting upload..."
+
+          PURGE_FLAG=""
+          if [ "${{ github.event.inputs.purge }}" = "true" ]; then
+            PURGE_FLAG="--purge"
+            echo "purge=true -- passing --purge to replace existing rows per (ano, mes, local)"
+          fi
+
+          python scripts/pipelines/anp/cdp/02_upload.py \
+            --from-csv-dir output/anp/ \
+            --no-incremental \
+            $PURGE_FLAG
+
+      - name: Report failed years (if any)
+        if: always()
+        run: |
+          if [ -n "${{ env.FAILED_YEARS }}" ]; then
+            echo ""
+            echo "=============================================="
+            echo "BATCH SUMMARY — FAILED YEARS"
+            echo "=============================================="
+            echo "The following years could not be extracted and were NOT uploaded:"
+            echo "${{ env.FAILED_YEARS }}"
+            echo ""
+            echo "To retry individual years, use etl_anp_cdp_legacy.yml with the specific year."
+            echo "=============================================="
+          else
+            echo "Batch completed — no failures."
+          fi
+
+      - name: Upload CSVs as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: anp-cdp-legacy-batch-${{ github.event.inputs.from_year }}-${{ github.event.inputs.to_year }}
+          path: output/anp/*.csv
+          retention-days: 90
