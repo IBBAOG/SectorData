@@ -343,14 +343,23 @@ def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
     # Order: cp1252 (APEX portal legacy), utf-8-sig (PowerBI extractor output),
     #        plain utf-8, then semicolon-separated legacy format.
     # Break on the first parse that yields >5 columns AND detects the key columns.
+    #
+    # Thousand-separator handling:
+    #   ANP switched to European locale format in 2026: separator=';', decimal=',',
+    #   thousands separator='.'.  pandas decimal=',' alone does NOT strip the dot
+    #   thousand-separator, causing values like "10.498,7882" to parse as NaN.
+    #   We pass thousands='.' when decimal=',' so that high-production wells (>999
+    #   bbl/dia) are not silently dropped.  For the legacy comma-sep format
+    #   (decimal='.') there is no thousand-separator in the source, so thousands=None.
     last_exc: Exception | None = None
     df = None
-    for sep, decimal, enc in [
-        (",", ".", "utf-8-sig"),  # Power BI extractor output (UTF-8 BOM)
-        (",", ".", "cp1252"),     # APEX portal legacy comma-decimal (2026)
-        (",", ".", "utf-8"),
-        (";", ",", "cp1252"),     # ANP 2026 European format: semicolon + comma decimal + cp1252
-        (";", ",", "utf-8"),      # legado semicolon
+    # Tuple: (sep, decimal, encoding, thousands)
+    for sep, decimal, enc, thousands in [
+        (",", ".", "utf-8-sig", None),  # Power BI extractor output (UTF-8 BOM)
+        (",", ".", "cp1252",    None),  # APEX portal legacy comma-decimal (pre-2026)
+        (",", ".", "utf-8",     None),
+        (";", ",", "cp1252",    "."),   # ANP 2026 European: semicolon + comma-decimal + dot-thousands
+        (";", ",", "utf-8",     "."),   # Same but UTF-8
     ]:
         try:
             _df = pd.read_csv(
@@ -361,6 +370,7 @@ def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
                 sep=sep,
                 on_bad_lines="skip",
                 decimal=decimal,
+                thousands=thousands,
             )
             if _df.empty or len(_df.columns) <= 5:
                 continue
