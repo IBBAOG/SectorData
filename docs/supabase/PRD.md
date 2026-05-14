@@ -341,6 +341,64 @@ Convenções:
 - **Documentador** (atualiza contratos em `master.md`)
 - **dash-*** específico (se afeta um dashboard)
 
+## Backups & PITR
+
+### Status (2026-05-14)
+
+PITR must be manually confirmed in the Supabase dashboard:
+**Project Settings → Database → Point in Time Recovery**.
+
+PITR requires a Pro (or higher) plan. On Free plan there is no PITR — only daily snapshots retained for 7 days.
+
+### Recovery targets
+
+| Metric | Expected value | Notes |
+|--------|----------------|-------|
+| RTO (Recovery Time Objective) | ~24 h | Supabase restore spins a new project from backup; DNS/env update takes additional time |
+| RPO (Recovery Point Objective) | ~5 min | PITR granularity on Pro plan |
+
+### Backup test cadence
+
+Quarterly: create a Supabase branch from a past PITR snapshot and run `supabase/tests/migration_smoke.sql` against it. Validate that key RPCs and tables exist and return data. Document result as a comment in this file.
+
+### pg_cron for retention jobs
+
+`pg_cron` extension is required by migration `20260514110001_app_events_retention.sql`.
+On Supabase hosted (Pro plan) `pg_cron` is available in the `extensions` schema. To confirm:
+
+```sql
+SELECT extname, extversion FROM pg_extension WHERE extname = 'pg_cron';
+```
+
+If not installed, enable it via **Project Settings → Database → Extensions → pg_cron** in the Supabase dashboard, then re-run the migration.
+
+## Audit trail (added 2026-05-14)
+
+Migration `20260514110000_audit_admin_actions.sql` instruments three admin RPCs with INSERT into `app_events`:
+
+| RPC | event_type logged |
+|-----|-------------------|
+| `set_user_role` | `admin.set_user_role` |
+| `set_module_visibility` | `admin.set_module_visibility` |
+| `set_module_home_visibility` | `admin.set_module_home_visibility` |
+
+Audit rows use `payload` (jsonb) to store before/after values; `route` is NULL.
+
+The `app_events.event_type` CHECK constraint was relaxed to also allow `event_type LIKE 'admin.%'` (previously only `IN ('login', 'page_view', 'export')`).
+
+View `admin_audit_log` filters `event_type LIKE 'admin.%'` from `app_events`. Uses `security_invoker = true` so the existing Admin-only RLS policy on `app_events` applies to the caller automatically.
+
+## Retention policy (added 2026-05-14)
+
+Migration `20260514110001_app_events_retention.sql`:
+
+| Event category | Retention |
+|----------------|-----------|
+| `login`, `page_view`, `export` | 12 months |
+| `admin.*` | 5 years |
+
+Implemented as a `pg_cron` weekly job (`app_events_cleanup`, Sunday 03:00 UTC).
+
 ## Tarefas comuns
 
 Ver `.claude/agents/worker_supabase.md` (mesma seção). Resumo:

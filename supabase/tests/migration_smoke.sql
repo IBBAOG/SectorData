@@ -752,7 +752,29 @@ BEGIN
     WHERE schemaname = 'public' AND tablename = 'clipping_cookies' AND rowsecurity = TRUE;
   IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: clipping_cookies'; END IF;
 
+  -- ─── AUDIT ADMIN ACTIONS + HOME VISIBILITY (20260514110000) ─────────────
+  -- set_module_home_visibility (added in 20260513120000, instrumented here)
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'set_module_home_visibility';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: set_module_home_visibility'; END IF;
+
+  -- admin_audit_log view
+  PERFORM 1 FROM information_schema.views
+    WHERE table_schema = 'public' AND table_name = 'admin_audit_log';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing view: admin_audit_log'; END IF;
+
+  -- app_events CHECK constraint must accept admin.* event types
+  PERFORM 1 FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+  WHERE n.nspname = 'public'
+    AND t.relname = 'app_events'
+    AND c.contype = 'c'
+    AND pg_get_constraintdef(c.oid) LIKE '%admin.%';
+  IF NOT FOUND THEN RAISE EXCEPTION 'app_events CHECK constraint does not allow admin.* event types'; END IF;
+
   RAISE NOTICE 'migration_smoke: all % checks passed.',
-    '34 tables + 3 materialized views + 86 functions + 26 RLS checks';
+    '34 tables + 1 view + 3 materialized views + 88 functions + 26 RLS checks';
 
 END $smoke$;
