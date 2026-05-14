@@ -32,6 +32,9 @@ Output file naming matches 01_extract.py convention:
   producao_poco_MM-YYYY_S.csv   (Pre-Sal subset)
   producao_poco_MM-YYYY_T.csv   (Terra = onshore)
 
+The Período column inside each CSV is written as 'YYYY/MM' so that 02_upload.py
+_parse_csv() can correctly extract ano = str[:4] and mes = str[5:7].
+
 02_upload.py is then called as-is with --from-csv-dir and --purge.
 
 Important: the ANP annual dump DOES contain both Mar (M) and Pre-Sal (S) files,
@@ -85,7 +88,7 @@ _COL = {
     "campo":           4,
     "operador":        5,
     "num_contrato":    6,
-    "periodo":         7,   # YYYY/MM in dump; converted to MM/YYYY for CSV
+    "periodo":         7,   # YYYY/MM in dump; kept as YYYY/MM in CSV (required by 02_upload.py)
     "oleo":            8,   # Óleo (bbl/dia)
     "condensado":      9,   # Condensado (bbl/dia)
     "petroleo":        10,  # Petróleo (bbl/dia)
@@ -110,7 +113,7 @@ _CSV_HEADERS = [
     "Campo",
     "Operador",
     "Número do Contrato",
-    "Período",                  # detected by: "perodo"/"período"/"periodo" in cl
+    "Período",                  # detected by: "perodo"/"período"/"periodo" in cl; value is YYYY/MM
     "Óleo (bbl/dia)",           # detected by: "leo (bbl" in cl
     "Condensado (bbl/dia)",     # detected by: "condensado" in cl
     "Petróleo (bbl/dia)",       # detected by: "petroleo"/"petróleo" in cl + "bbl" in cl
@@ -185,8 +188,13 @@ def _read_xlsx(zf: zipfile.ZipFile, xlsx_name: str) -> list[tuple]:
 
 def _fmt_periodo(raw) -> str:
     """
-    Convert XLSX period format 'YYYY/MM' to CSV format 'MM/YYYY'.
-    Handles both string and date-like values.
+    Normalise XLSX period to 'YYYY/MM' format — the format that 02_upload.py
+    expects (it extracts ano = str[:4], mes = str[5:7]).
+
+    The XLSX dump stores periods as 'YYYY/MM' (e.g. '2017/06').
+    If the value is already 'YYYY/MM' it is returned as-is.
+    If it arrives in 'MM/YYYY' form (should not happen from the ANP dump, but
+    guard anyway) it is converted to 'YYYY/MM'.
     """
     s = str(raw).strip() if raw is not None else ""
     if "/" in s:
@@ -194,9 +202,11 @@ def _fmt_periodo(raw) -> str:
         if len(parts) == 2:
             left, right = parts[0].strip(), parts[1].strip()
             if len(left) == 4 and left.isdigit():
-                # YYYY/MM ->MM/YYYY
-                return f"{right.zfill(2)}/{left}"
-            # Already MM/YYYY or other format — return as-is
+                # Already YYYY/MM — return as-is
+                return f"{left}/{right.zfill(2)}"
+            if len(right) == 4 and right.isdigit():
+                # MM/YYYY — convert to YYYY/MM
+                return f"{right}/{left.zfill(2)}"
             return s
     return s
 
@@ -269,7 +279,7 @@ def _split_by_month(
 ) -> dict[str, list[tuple]]:
     """
     Split XLSX rows into {month_str: [rows]} groups.
-    month_str is in 'MM/YYYY' format (as it will appear in the CSV).
+    month_str is in 'YYYY/MM' format (as required by 02_upload.py _parse_csv).
     Only includes rows matching the requested year.
     """
     buckets: dict[str, list[tuple]] = {}
@@ -278,11 +288,11 @@ def _split_by_month(
         periodo = _fmt_periodo(raw)
         if not periodo:
             continue
-        # Validate month is in the target year
+        # Validate month is in the target year — periodo is now 'YYYY/MM'
         parts = periodo.split("/")
         if len(parts) != 2:
             continue
-        mm, yyyy = parts[0], parts[1]
+        yyyy, mm = parts[0], parts[1]
         if yyyy != str(year):
             continue
         if periodo not in buckets:
@@ -319,7 +329,8 @@ def _extract_year(year: int, output_dir: str, zip_path: str) -> int:
             print(f"  ->Months found: {months}")
 
             for periodo, month_rows in buckets.items():
-                mm, yyyy = periodo.split("/")
+                # periodo is now 'YYYY/MM' — split accordingly
+                yyyy, mm = periodo.split("/")
                 csv_filename = f"producao_poco_{mm}-{yyyy}_{amb}.csv"
                 dest = os.path.join(output_dir, csv_filename)
 
