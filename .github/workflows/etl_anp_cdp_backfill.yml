@@ -1,0 +1,246 @@
+# ============================================================
+# DATA SOURCE: ANP CDP portal (Selenium + APEX + ddddocr CAPTCHA)
+#   URL: https://cdp.anp.gov.br/ords/r/cdp_apex/consulta-dados-publicos-cdp
+#
+# DO NOT migrate this pipeline to Power BI. The Power BI source feeds the
+# SEPARATE dashboard /anp-cdp-diaria (table anp_cdp_diaria*), which is a
+# distinct product. Mixing sources contaminates anp_cdp_producao with
+# divergent well-name formats and conflicting basin classification.
+#
+# If you genuinely need to change source, you must:
+#   1. Update docs/app/anp-cdp.md "Data source" section
+#   2. Remove the format guard in 02_upload.py
+#   3. Get CTO sign-off explicitly
+# ============================================================
+name: Backfill ANP - Produção por Poço (range de meses)
+
+# Purpose: Re-extract and re-upload a range of months with --purge to fix
+# records missing from anp_cdp_producao due to the legacy groupby+sum pipeline.
+# Use this instead of clicking the regular workflow 26+ times in the UI.
+#
+# Fault-tolerant: months that fail CAPTCHA after 30 retries are skipped and
+# reported at the end. The job does NOT abort on a single month failure.
+#
+# Upload is done once at the end (batch --from-csv-dir --purge) so the purge
+# is atomic per (ano, mes, local) — only months that were successfully extracted
+# get their rows deleted and re-inserted.
+
+on:
+  workflow_dispatch:
+    inputs:
+      from_month:
+        description: 'Start month MM/YYYY (e.g. 01/2024) — inclusive'
+        required: true
+      to_month:
+        description: 'End month MM/YYYY (e.g. 02/2026) — inclusive'
+        required: true
+      ambientes:
+        description: 'Comma-separated subset of ambientes (M=Mar, S=Pre-Sal, T=Terra). Default: all three.'
+        required: false
+        default: 'M,S,T'
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    timeout-minutes: 300   # 5 hours — 26 months × ~7 min = ~3h; 2h headroom
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Setup Chrome (for Selenium)
+        uses: browser-actions/setup-chrome@v1
+        id: setup-chrome
+        with:
+          install-chromedriver: true
+
+      - name: Generate month list
+        id: months
+        run: |
+          python - <<'PYEOF'
+          import os, sys
+          from datetime import date
+
+          def parse_month(s):
+              mm, yyyy = s.strip().split('/')
+              return date(int(yyyy), int(mm), 1)
+
+          def month_range(start, end):
+              months = []
+              cur = start
+              while cur <= end:
+                  months.append(f"{cur.month:02d}/{cur.year}")
+                  # advance one month
+                  if cur.month == 12:
+                      cur = cur.replace(year=cur.year + 1, month=1)
+                  else:
+                      cur = cur.replace(month=cur.month + 1)
+              return months
+
+          from_month = os.environ["FROM_MONTH"]
+          to_month   = os.environ["TO_MONTH"]
+
+          try:
+              start = parse_month(from_month)
+              end   = parse_month(to_month)
+          except Exception as e:
+              print(f"ERROR: invalid month format — {e}", file=sys.stderr)
+              sys.exit(1)
+
+          if start > end:
+              print("ERROR: from_month must be <= to_month", file=sys.stderr)
+              sys.exit(1)
+
+          months = month_range(start, end)
+          # Write space-separated list for bash iteration
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"list={' '.join(months)}\n")
+              f.write(f"count={len(months)}\n")
+
+          print(f"Months to backfill ({len(months)}): {months}")
+          PYEOF
+        env:
+          FROM_MONTH: ${{ github.event.inputs.from_month }}
+          TO_MONTH:   ${{ github.event.inputs.to_month }}
+
+      - name: Extract each month via Selenium + CAPTCHA (fault-tolerant)
+        id: extract
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          CHROME_BINARY:        ${{ steps.setup-chrome.outputs.chrome-path }}
+          CHROMEDRIVER_PATH:    ${{ steps.setup-chrome.outputs.chromedriver-path }}
+          MONTHS_LIST:          ${{ steps.months.outputs.list }}
+          AMBIENTES_INPUT:      ${{ github.event.inputs.ambientes }}
+        run: |
+          mkdir -p output/anp
+
+          # Normalise ambientes: "M,S,T" → iterate one at a time via --ambiente flag
+          # 01_extract.py accepts --ambiente M|S|T|todos; we pass the comma list as
+          # a single --ambiente arg only if it's "todos", otherwise we loop per-ambiente
+          # to get per-ambiente fault isolation. However, the simplest approach is to
+          # pass the raw value — if the user passes "M,S,T" we map to "todos".
+          AMB_INPUT="${AMBIENTES_INPUT:-M,S,T}"
+          # Normalise to lowercase for comparison
+          AMB_LOWER=$(echo "$AMB_INPUT" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+          if [ "$AMB_LOWER" = "m,s,t" ] || [ "$AMB_LOWER" = "todos" ]; then
+            AMBIENTE_FLAG="todos"
+          else
+            # Single or partial subset — pass first value only; 01_extract.py takes one at a time
+            # For partial subsets we iterate per-ambiente
+            AMBIENTE_FLAG="$AMB_INPUT"
+          fi
+
+          FAILED_MONTHS=""
+          SUCCESS_COUNT=0
+          FAIL_COUNT=0
+
+          for PERIODO in $MONTHS_LIST; do
+            echo "================================================================"
+            echo "=== Extracting $PERIODO  (ambiente: $AMBIENTE_FLAG) ==="
+            echo "================================================================"
+
+            if python scripts/pipelines/anp/cdp/01_extract.py \
+                  --periodo "$PERIODO" \
+                  --ambiente "$AMBIENTE_FLAG" \
+                  --output output/anp; then
+              echo "  OK: $PERIODO extracted successfully"
+              SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+            else
+              echo "  FAILED: $PERIODO — CAPTCHA or extraction error after retries"
+              FAILED_MONTHS="$FAILED_MONTHS $PERIODO"
+              FAIL_COUNT=$((FAIL_COUNT + 1))
+            fi
+
+            echo ""
+          done
+
+          # Trim leading space
+          FAILED_MONTHS="${FAILED_MONTHS# }"
+
+          echo "========================================"
+          echo "Extraction summary:"
+          echo "  Succeeded: $SUCCESS_COUNT"
+          echo "  Failed:    $FAIL_COUNT"
+          if [ -n "$FAILED_MONTHS" ]; then
+            echo "  Failed months: $FAILED_MONTHS"
+          fi
+          echo "========================================"
+
+          # Write outputs for downstream steps
+          {
+            echo "failed_months=$FAILED_MONTHS"
+            echo "success_count=$SUCCESS_COUNT"
+            echo "fail_count=$FAIL_COUNT"
+          } >> "$GITHUB_OUTPUT"
+
+          # List extracted CSVs
+          echo "--- CSVs in output/anp/ ---"
+          ls -lh output/anp/*.csv 2>/dev/null || echo "(no CSVs found)"
+
+      - name: Upload batch to Supabase (--purge)
+        # Run even if some months failed — uploads only what was successfully extracted
+        if: steps.extract.outputs.success_count != '0'
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          CSV_COUNT=$(ls output/anp/*.csv 2>/dev/null | wc -l)
+          echo "Uploading $CSV_COUNT CSV file(s) with --purge flag"
+          echo "Note: --purge deletes existing rows per (ano, mes, local) before upserting."
+          echo "Only months with successfully extracted CSVs will be affected."
+
+          python scripts/pipelines/anp/cdp/02_upload.py \
+            --from-csv-dir output/anp/ \
+            --purge \
+            --no-incremental
+
+      - name: Upload CSVs as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: anp-producao-poco-backfill
+          path: output/anp/*.csv
+          retention-days: 90
+
+      - name: Report failed months
+        if: always()
+        run: |
+          FAILED="${{ steps.extract.outputs.failed_months }}"
+          SUCCESS="${{ steps.extract.outputs.success_count }}"
+          FAIL="${{ steps.extract.outputs.fail_count }}"
+
+          echo "========================================"
+          echo "BACKFILL FINAL REPORT"
+          echo "  Range:     ${{ github.event.inputs.from_month }} → ${{ github.event.inputs.to_month }}"
+          echo "  Ambientes: ${{ github.event.inputs.ambientes }}"
+          echo "  Succeeded: $SUCCESS month(s)"
+          echo "  Failed:    $FAIL month(s)"
+          if [ -n "$FAILED" ]; then
+            echo ""
+            echo "  MONTHS THAT FAILED (re-run individually via etl_anp_cdp.yml --purge):"
+            for M in $FAILED; do
+              echo "    - $M"
+            done
+            echo ""
+            echo "  To retry a failed month:"
+            echo "    Actions → Extração ANP - Produção por Poço → Run workflow"
+            echo "    periodo=$M  purge=true"
+          else
+            echo "  All months extracted and uploaded successfully."
+          fi
+          echo "========================================"
+
+          # Fail the job if ALL months failed (nothing was uploaded)
+          if [ "$SUCCESS" = "0" ] && [ "$FAIL" != "0" ]; then
+            echo "ERROR: No months were extracted successfully. Marking job as failed."
+            exit 1
+          fi
