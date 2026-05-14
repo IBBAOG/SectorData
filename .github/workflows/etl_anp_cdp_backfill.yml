@@ -43,7 +43,7 @@ jobs:
   backfill:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     timeout-minutes: 300   # 5 hours — 26 months × ~7 min = ~3h; 2h headroom
 
     steps:
