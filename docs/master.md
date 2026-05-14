@@ -74,6 +74,7 @@ CEO (Eduardo)
 | Dados Locais | [`worker_dados-locais`](../.claude/agents/worker_dados-locais.md) | `data/`, `scripts/manual/dg_margins_upload.py`, `scripts/manual/price_bands_upload.py` | [`docs/dados-locais/PRD.md`](dados-locais/PRD.md) |
 | ETL / Pipelines | [`worker_etl-pipelines`](../.claude/agents/worker_etl-pipelines.md) | `DADOS/`, `output/`, `scripts/pipelines/` (todos os scrapers), `.github/workflows/` dos scrapers | [`docs/etl-pipelines/PRD.md`](etl-pipelines/PRD.md) |
 | Alertas | [`worker_alertas`](../.claude/agents/worker_alertas.md) | `alertas/` (autocontido) | [`docs/alertas/PRD.md`](alertas/PRD.md) |
+| Security | [`worker_pen-test`](../.claude/agents/worker_pen-test.md) (a contratar) | `docs/security/` — threat model, incident response, secret rotation, pen-test reports | [`docs/security/README.md`](security/README.md) |
 
 ## Sub-agentes do APP (donos de dashboard)
 
@@ -242,6 +243,8 @@ Todos os dashboards com dataset tabular exportam Excel + CSV. Dois tiers conform
 - **Pipelines usam service key** (bypassam RLS).
 - Nunca confunda. Nunca comite secrets.
 - Toda tabela nova **deve ter RLS habilitada**.
+- Documentação operacional de segurança: [`docs/security/README.md`](security/README.md) — threat model, incident response playbook, secret rotation cadence, token storage decision.
+- Pen-test externo (firma especializada): **trimestral**. Reports em `docs/security/pen-test-YYYY-MM.md`, gerados pelo `worker_pen-test`.
 
 ### Workflow padrão (ordem de qualquer tarefa)
 
