@@ -48,8 +48,10 @@ export default function DashboardLayout({
       // aal1), send them back to /login so the second-factor challenge form
       // can be presented before we render protected UI.
       try {
+        if (cancelled) return;
         const { data: aalData } =
           await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        if (cancelled) return;
         const currentLevel = aalData?.currentLevel;
         const nextLevel = aalData?.nextLevel;
         if (nextLevel === "aal2" && currentLevel !== "aal2") {
@@ -59,9 +61,12 @@ export default function DashboardLayout({
       } catch {
         // If the MFA call fails (network etc.), prefer hard fail-closed —
         // sending the user back to the login screen surfaces the issue.
+        if (cancelled) return;
         router.replace("/login");
         return;
       }
+
+      if (cancelled) return;
 
       // Fire 'login' event once per browser session, keyed by Supabase
       // session access token so a refresh in the same tab does not retrigger.
@@ -78,6 +83,7 @@ export default function DashboardLayout({
       } catch {
         // sessionStorage unavailable (private mode, etc.) — fail silent.
       }
+      if (cancelled) return;
       setChecking(false);
     });
     return () => {
