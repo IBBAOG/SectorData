@@ -36,25 +36,49 @@ export default function DashboardLayout({
       return;
     }
     let cancelled = false;
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       if (cancelled) return;
       if (!data.session) {
         router.replace("/login");
-      } else {
-        // Fire 'login' event once per browser session, keyed by Supabase
-        // session access token so a refresh in the same tab does not retrigger.
-        try {
-          const sessionId = data.session.access_token?.slice(0, 24) ?? "anon";
-          const storageKey = `analytics_login_logged_${sessionId}`;
-          if (typeof window !== "undefined" && !window.sessionStorage.getItem(storageKey)) {
-            window.sessionStorage.setItem(storageKey, "1");
-            trackEvent("login");
-          }
-        } catch {
-          // sessionStorage unavailable (private mode, etc.) — fail silent.
-        }
-        setChecking(false);
+        return;
       }
+
+      // MFA assurance check: if the user has a verified factor but has not
+      // satisfied the AAL2 challenge yet (nextLevel = aal2, currentLevel =
+      // aal1), send them back to /login so the second-factor challenge form
+      // can be presented before we render protected UI.
+      try {
+        const { data: aalData } =
+          await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        const currentLevel = aalData?.currentLevel;
+        const nextLevel = aalData?.nextLevel;
+        if (nextLevel === "aal2" && currentLevel !== "aal2") {
+          router.replace("/login");
+          return;
+        }
+      } catch {
+        // If the MFA call fails (network etc.), prefer hard fail-closed —
+        // sending the user back to the login screen surfaces the issue.
+        router.replace("/login");
+        return;
+      }
+
+      // Fire 'login' event once per browser session, keyed by Supabase
+      // session access token so a refresh in the same tab does not retrigger.
+      try {
+        const sessionId = data.session.access_token?.slice(0, 24) ?? "anon";
+        const storageKey = `analytics_login_logged_${sessionId}`;
+        if (
+          typeof window !== "undefined" &&
+          !window.sessionStorage.getItem(storageKey)
+        ) {
+          window.sessionStorage.setItem(storageKey, "1");
+          trackEvent("login");
+        }
+      } catch {
+        // sessionStorage unavailable (private mode, etc.) — fail silent.
+      }
+      setChecking(false);
     });
     return () => {
       cancelled = true;

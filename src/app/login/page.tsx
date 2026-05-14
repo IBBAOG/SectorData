@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import BrandLogo from "../../components/BrandLogo";
+import MfaChallenge from "../../components/MfaChallenge";
 import { getSupabaseClient } from "../../lib/supabaseClient";
 import Footer from "../../components/Footer";
 
@@ -26,12 +27,34 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [checking, setChecking] = useState(true);
 
+  // When the signed-in user has a verified MFA factor but has not yet
+  // completed the AAL2 challenge for this session, we display the challenge
+  // form instead of the credential form.
+  const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("password_reset") === "success") {
       setSuccess("Password updated successfully. Please sign in.");
     }
   }, []);
+
+  // Helper: returns the id of an enrolled verified TOTP factor, or null.
+  // Used to decide whether the user must pass an AAL2 challenge before
+  // we forward them to /home.
+  async function findVerifiedFactor(): Promise<string | null> {
+    if (!supabase) return null;
+    const { data } = await supabase.auth.mfa.listFactors();
+    const factor = data?.totp?.find((f) => f.status === "verified");
+    return factor?.id ?? null;
+  }
+
+  // Returns true if the active session already satisfies AAL2.
+  async function isAal2Satisfied(): Promise<boolean> {
+    if (!supabase) return false;
+    const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    return data?.currentLevel === "aal2";
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -43,9 +66,20 @@ export default function LoginPage() {
     }
     supabase.auth
       .getSession()
-      .then(({ data }) => {
+      .then(async ({ data }) => {
         if (cancelled) return;
-        if (data.session) router.replace("/home");
+        if (data.session) {
+          // If MFA is enrolled but not satisfied, surface the challenge here
+          // instead of redirecting — the user still needs a second factor.
+          const factorId = await findVerifiedFactor();
+          if (factorId && !(await isAal2Satisfied())) {
+            if (!cancelled) {
+              setMfaFactorId(factorId);
+            }
+          } else if (!cancelled) {
+            router.replace("/home");
+          }
+        }
       })
       .finally(() => {
         if (!cancelled) setChecking(false);
@@ -75,7 +109,16 @@ export default function LoginPage() {
           password,
         });
       if (signInError) throw signInError;
-      router.replace("/home");
+
+      // After password auth, decide whether to enter the MFA stage or
+      // forward straight to /home. A verified TOTP factor implies AAL2 is
+      // required (Supabase reports nextLevel === 'aal2').
+      const factorId = await findVerifiedFactor();
+      if (factorId && !(await isAal2Satisfied())) {
+        setMfaFactorId(factorId);
+      } else {
+        router.replace("/home");
+      }
     } catch (e) {
       setError("Incorrect email or password.");
       // eslint-disable-next-line no-console
@@ -138,100 +181,108 @@ export default function LoginPage() {
           <BrandLogo variant="auth" />
         </div>
 
-        <h5
-          style={{
-            fontFamily: "Arial",
-            fontWeight: 600,
-            color: "#1a1a1a",
-            marginBottom: 4,
-            textAlign: "center",
-          }}
-        >
-          Sign in to your account
-        </h5>
-        <p
-          style={{
-            fontFamily: "Arial",
-            fontSize: 13,
-            color: "#888",
-            marginBottom: 20,
-            textAlign: "center",
-          }}
-        >
-          Enter your credentials to continue.
-        </p>
+        {mfaFactorId ? (
+          <MfaChallenge
+            factorId={mfaFactorId}
+            onSuccess={() => router.replace("/home")}
+          />
+        ) : (
+          <>
+            <h5
+              style={{
+                fontFamily: "Arial",
+                fontWeight: 600,
+                color: "#1a1a1a",
+                marginBottom: 4,
+                textAlign: "center",
+              }}
+            >
+              Sign in to your account
+            </h5>
+            <p
+              style={{
+                fontFamily: "Arial",
+                fontSize: 13,
+                color: "#888",
+                marginBottom: 20,
+                textAlign: "center",
+              }}
+            >
+              Enter your credentials to continue.
+            </p>
 
-        <hr />
+            <hr />
 
-        <label htmlFor="input-email" className="form-label" style={{ fontFamily: "Arial" }}>
-          Email
-        </label>
-        <input
-          id="input-email"
-          className="form-control mb-3"
-          type="email"
-          placeholder="name@email.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-        />
+            <label htmlFor="input-email" className="form-label" style={{ fontFamily: "Arial" }}>
+              Email
+            </label>
+            <input
+              id="input-email"
+              className="form-control mb-3"
+              type="email"
+              placeholder="name@email.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+            />
 
-        <label
-          htmlFor="input-password"
-          className="form-label"
-          style={{ fontFamily: "Arial" }}
-        >
-          Password
-        </label>
-        <input
-          id="input-password"
-          className="form-control"
-          type="password"
-          placeholder="••••••••"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-        />
+            <label
+              htmlFor="input-password"
+              className="form-label"
+              style={{ fontFamily: "Arial" }}
+            >
+              Password
+            </label>
+            <input
+              id="input-password"
+              className="form-control"
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+            />
 
-        <div style={{ textAlign: "right", marginBottom: 16, marginTop: 6 }}>
-          <a
-            href="/forgot-password"
-            className="forgot-password-link"
-          >
-            Forgot your password?
-          </a>
-        </div>
+            <div style={{ textAlign: "right", marginBottom: 16, marginTop: 6 }}>
+              <a
+                href="/forgot-password"
+                className="forgot-password-link"
+              >
+                Forgot your password?
+              </a>
+            </div>
 
-        <button
-          id="btn-login"
-          className="btn"
-          onClick={handleLogin}
-          disabled={submitting}
-        >
-          {submitting ? "Signing in..." : "Go!"}
-        </button>
+            <button
+              id="btn-login"
+              className="btn"
+              onClick={handleLogin}
+              disabled={submitting}
+            >
+              {submitting ? "Signing in..." : "Go!"}
+            </button>
 
-        {success ? (
-          <div
-            className="alert alert-success"
-            style={{ fontSize: 13, marginTop: 8, marginBottom: 0 }}
-          >
-            {success}
-          </div>
-        ) : null}
+            {success ? (
+              <div
+                className="alert alert-success"
+                style={{ fontSize: 13, marginTop: 8, marginBottom: 0 }}
+              >
+                {success}
+              </div>
+            ) : null}
 
-        {error ? (
-          <div
-            id="login-error"
-            className="alert alert-danger"
-            style={{ fontSize: 13, marginTop: 8, marginBottom: 0 }}
-          >
-            {error}
-          </div>
-        ) : null}
+            {error ? (
+              <div
+                id="login-error"
+                className="alert alert-danger"
+                style={{ fontSize: 13, marginTop: 8, marginBottom: 0 }}
+              >
+                {error}
+              </div>
+            ) : null}
+          </>
+        )}
       </div>
       <Footer />
     </div>
   );
 }
-

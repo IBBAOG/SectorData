@@ -362,6 +362,33 @@ Consumidores atuais:
 >
 > Sem isso, um atacante via API direta consegue setar senha fraca.
 
+### F3.1 — TOTP MFA (Admin mandatório, Client opcional)
+
+App passou a aceitar clientes externos; Admin tem blast radius alto (promoção de roles e visibility de módulos). Por isso, MFA TOTP é exigido para Admin e oferecido como opt-in para Client.
+
+#### Pre-requisito (CTO)
+
+Supabase Dashboard → Authentication → Multi-Factor Auth → ligar TOTP provider. Sem isso, `supabase.auth.mfa.enroll` falha em runtime.
+
+#### Frontend
+
+| Arquivo | Função |
+|---|---|
+| [`src/components/MfaChallenge.tsx`](../../src/components/MfaChallenge.tsx) | Componente de challenge — recebe `factorId`, chama `mfa.challenge` + `mfa.verify` |
+| [`src/app/(dashboard)/profile/mfa/page.tsx`](../../src/app/(dashboard)/profile/mfa/page.tsx) | Página de enrollment (QR + secret + verify) e disable |
+| [`src/app/login/page.tsx`](../../src/app/login/page.tsx) | Após `signInWithPassword`, se há factor verificado e a sessão não está em AAL2, renderiza `MfaChallenge` antes de redirecionar |
+| [`src/app/(dashboard)/layout.tsx`](../../src/app/(dashboard)/layout.tsx) | Auth guard agora checa `getAuthenticatorAssuranceLevel()`; se `nextLevel='aal2'` && `currentLevel!='aal2'` → redirect `/login` |
+| [`src/hooks/useRoleGuard.ts`](../../src/hooks/useRoleGuard.ts) | Admin sem factor → `/profile/mfa`; Admin com factor mas sem AAL2 → `/login` |
+| [`src/app/(dashboard)/profile/page.tsx`](../../src/app/(dashboard)/profile/page.tsx) | Seção "Security" linkando para `/profile/mfa` |
+
+#### Backend (migration `20260514120000_mfa_admin_required.sql`)
+
+- `public.has_verified_mfa(uuid)` — boolean helper (SECURITY DEFINER, lê `auth.mfa_factors`).
+- `public.require_admin_mfa()` — raise `28000` se caller é Admin sem factor verificado.
+- `set_user_role`, `set_module_visibility`, `set_module_home_visibility` — chamam `require_admin_mfa()` antes de qualquer mutation. Audit trail F2.2 preservado.
+
+Clients **não** são bloqueados em nenhum RPC; MFA é apenas defesa adicional opcional.
+
 ## Padrões consolidados na Fase 3 (referência para futuros dashboards)
 
 A Fase 3 entregou 10 dashboards (ANP CDP, PPI, Preços Produtores, GLP, MDIC Comex, ANP LPC, SINDICOM, DAIE, Desembaraços, Painel Importações) e cristalizou os seguintes padrões. Use como checklist ao criar dashboard novo:

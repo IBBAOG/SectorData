@@ -116,6 +116,36 @@ Workflow disparado pelo Subgerente APP quando ele cria um dashboard novo:
 
 4. **Avisar Subgerente APP** que onboarding terminou.
 
+## Two-factor authentication (MFA TOTP) — F3.1
+
+The platform supports TOTP-based MFA. Behaviour differs by role:
+
+- **Admin** — MFA is **required** to perform admin actions. After enrolling and verifying a factor, the admin RPCs (`set_user_role`, `set_module_visibility`, `set_module_home_visibility`) refuse to run unless the caller has a verified factor in `auth.mfa_factors`. The DB-side guard is `public.require_admin_mfa()`. Admins reaching `/admin-panel` without a verified factor are redirected to `/profile/mfa` so they enroll before doing anything else.
+- **Client** — MFA is **optional**. Clients can opt in from `/profile/mfa` for extra protection. There is no backend gate for Client RPCs.
+
+### User-visible flow
+
+| Step | UI |
+|---|---|
+| Enroll | `/profile/mfa` → "Enable MFA" → QR code + secret → enter 6-digit code → factor moves to `verified` |
+| Sign-in (post-enroll) | `/login` after password challenge surfaces the `MfaChallenge` component until AAL2 is reached |
+| Disable | `/profile/mfa` → "Disable". Blocked for Admins on their last verified factor |
+| Admin guard | `useRoleGuard("Admin")` requires both verified factor and `currentLevel === 'aal2'`; otherwise redirects to `/profile/mfa` or `/login` |
+
+### Pre-requisite
+
+Supabase Dashboard → Authentication → Multi-Factor Auth → TOTP provider must be enabled. This is configured outside the codebase by the platform owner.
+
+### Backend objects
+
+| Object | Purpose |
+|---|---|
+| `public.has_verified_mfa(uuid)` | Boolean helper. SECURITY DEFINER (reads `auth.mfa_factors`). |
+| `public.require_admin_mfa()` | Raises if caller has role Admin without a verified factor. Reused by admin RPCs. |
+| `public.set_user_role` / `set_module_visibility` / `set_module_home_visibility` | All call `require_admin_mfa()` before mutation. |
+
+Migration: `20260514120000_mfa_admin_required.sql`.
+
 ## Visibility flow (tempo de execução)
 
 1. User loga.

@@ -212,6 +212,48 @@ export default function ProfilePage() {
           </div>
         </div>
 
+        {/* Security section — link to MFA enrollment page */}
+        <div
+          style={{
+            marginTop: 28,
+            background: "white",
+            borderRadius: 8,
+            padding: 24,
+            boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+          }}
+        >
+          <h2
+            style={{
+              fontSize: 16,
+              fontWeight: 700,
+              color: "#1a1a1a",
+              margin: "0 0 8px",
+            }}
+          >
+            Security
+          </h2>
+          <p style={{ fontSize: 13, color: "#666", margin: "0 0 16px" }}>
+            {isAdmin
+              ? "Admin accounts must keep two-factor authentication enabled."
+              : "Add two-factor authentication for extra protection (optional)."}
+          </p>
+          <a
+            href="/profile/mfa"
+            style={{
+              display: "inline-block",
+              background: ORANGE,
+              color: "white",
+              padding: "8px 16px",
+              borderRadius: 4,
+              fontSize: 14,
+              fontWeight: 600,
+              textDecoration: "none",
+            }}
+          >
+            Manage two-factor authentication
+          </a>
+        </div>
+
       </section>
     </main>
   );
