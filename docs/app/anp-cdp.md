@@ -58,8 +58,35 @@ Header dinâmico: "ANP CDP — Produção por Poço · {métrica} · {ano iníci
 | Workflow | Schedule | Scripts |
 |---|---|---|
 | `.github/workflows/etl_anp_cdp.yml` | Mensal (dia 5) | `scripts/pipelines/anp/cdp/01_extract.py` (CAPTCHA + Selenium) → `02_upload.py` (upsert via service key + refresh MV) |
+| `.github/workflows/etl_anp_cdp_legacy.yml` | `workflow_dispatch` only | `scripts/pipelines/anp/cdp/01_extract_legacy.py` → `02_upload.py --purge` — for pre-2023 backfills via public annual dumps (no Selenium, no CAPTCHA) |
 
 Backfill histórico foi feito via `02_upload.py --from-parquet`. Cargas mensais usam `--from-csv-dir`.
+
+### Alternative source: ANP Dados Estatísticos annual dumps (pre-2023 only)
+
+For years **2005–2022**, the ANP publishes complete annual well-production dumps at:
+```
+https://www.gov.br/anp/pt-br/centrais-de-conteudo/dados-estatisticos/de/ppg/pp/producao-pocos-{YEAR}.zip
+```
+
+Each ZIP contains three XLSX files per year (the SIGEP annual export):
+- `{YEAR}_producao_mar.xlsx` — all offshore wells (Mar = M, maps to `local=PosSal` after M/S dedup)
+- `{YEAR}_producao_presal.xlsx` — Pre-Sal subset (S, maps to `local=PreSal`)
+- `{YEAR}_producao_terra.xlsx` — onshore wells (T, maps to `local=Terra`)
+
+**This source is authoritative for pre-2023 data.** Validated 2026-05-14:
+- Row counts match the parquet exactly (e.g., 2017: 149,116 rows after M/S dedup)
+- kbpd aggregates match ANP Boletim Mensal to < 0.02% (e.g., Jan/2017: 2686.6 vs ANP 2687)
+- Poco format is SIGEP hyphenated (0% compact format) — format guard in `02_upload.py` passes without `--allow-non-apex-format`
+- M/S overlap structure is identical to APEX portal — `_deduplicate_m_vs_s()` handles it correctly
+
+**How to fix 2017 BAD months** (dispatch via GitHub Actions UI):
+1. Go to Actions → "ETL ANP CDP Legacy (pre-2023 annual dumps)"
+2. Click "Run workflow"
+3. Set `year=2017`, `purge=true`
+4. Click "Run workflow" — estimated runtime < 5 minutes
+
+See extractor: `scripts/pipelines/anp/cdp/01_extract_legacy.py`
 
 ## Data source: CDP APEX portal (do not migrate to Power BI)
 
