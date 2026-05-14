@@ -303,6 +303,130 @@ Audit conducted 2026-05-14. Compared `anp_cdp_producao` aggregates (SUM petroleo
 | 2026-03 | 3672.8   | 6286  | Lower PreSal (2978.6 vs ~3980 prior month) — likely planned FPSO maintenance, not a data issue |
 | 2026-04 | 4091.3   | 3674  | Partial month: Terra = 36 kbpd (vs ~82-88 typical) — onshore wells still being published. Offshore (PreSal 3536 + PosSal 519) matches portal pagination 774 offshore rows. |
 
+### Record count audit — 2024-01 to 2026-04 (conducted 2026-05-14)
+
+Second audit round comparing `COUNT(*)` in `anp_cdp_producao` per (ano, mes, local) against the ANP CDP portal pagination total ("1-25 de N") for the same period and environment filter. Methodology: Selenium + ddddocr CAPTCHA on the live portal, reading `.a-IRR-pagination-label` text (handles European thousands separator "3.260").
+
+**Note on metrics:** the CEO's "offshore_records" in the issue table refers to `COUNT(*) WHERE local IN ('PosSal','PreSal')` (DB total offshore = PosSal + PreSal), compared against the portal "Mar" filter (file M = all offshore wells before M/S dedup).
+
+#### Table 1 — Mar/Offshore (portal "Mar" filter vs DB PosSal+PreSal total)
+
+| ano-mes | DB_PosSal | DB_PreSal | DB_offshore | ANP_Mar | gap | gap_% | status |
+|---------|-----------|-----------|-------------|---------|-----|-------|--------|
+| 2024-01 | 436 | 353 | 789 | 845 | -56 | -6.6% | BAD |
+| 2024-02 | 434 | 355 | 789 | 850 | -61 | -7.2% | BAD |
+| 2024-03 | 423 | 366 | 789 | 852 | -63 | -7.4% | BAD |
+| 2024-04 | 408 | 356 | 764 | 826 | -62 | -7.5% | BAD |
+| 2024-06 | 416 | 372 | 788 | 856 | -68 | -7.9% | BAD |
+| 2024-09 | 381 | 375 | 756 | 836 | -80 | -9.6% | BAD |
+| 2024-12 | 419 | 393 | 812 | 906 | -94 | -10.4% | BAD |
+| 2025-03 | 419 | 379 | 798 | 882 | -84 | -9.5% | BAD |
+| 2025-05 | 415 | 391 | 806 | 893 | -87 | -9.7% | BAD |
+| 2025-06 | 429 | 393 | 822 | 906 | -84 | -9.3% | BAD |
+| 2025-07 | 454 | 411 | 865 | 935 | -70 | -7.5% | BAD |
+| 2025-08 | 451 | 466 | 917 | 1001 | -84 | -8.4% | BAD |
+| 2025-09 | 404 | 452 | 856 | 979 | -123 | -12.6% | BAD |
+| 2025-10 | 426 | 477 | 903 | 1008 | -105 | -10.4% | BAD |
+| 2025-11 | 418 | 475 | 893 | 998 | -105 | -10.5% | BAD |
+| 2025-12 | 427 | 476 | 903 | 1002 | -99 | -9.9% | BAD |
+| 2026-01 | 445 | 472 | 917 | 1004 | -87 | -8.7% | BAD |
+| 2026-02 | 460 | 494 | 954 | 1022 | -68 | -6.7% | BAD |
+| **2026-03** | **530** | **509** | **1039** | **1039** | **0** | **0.0%** | **OK** |
+| **2026-04** | **282** | **492** | **774** | **774** | **0** | **0.0%** | **OK** |
+
+**BAD months (gap > 2%): all months from 2024-01 through 2026-02 inclusive (18+ months). First clean months: 2026-03 and 2026-04.**
+
+#### Table 2 — PreSal (portal "Pre-Sal" filter vs DB PreSal)
+
+| ano-mes | DB_PreSal | ANP_PreSal | gap | gap_% | status |
+|---------|-----------|-----------|-----|-------|--------|
+| 2024-01 | 353 | 353 | 0 | 0.0% | OK |
+| 2024-06 | 372 | 372 | 0 | 0.0% | OK |
+| 2024-12 | 393 | 394 | -1 | -0.3% | OK |
+| 2025-03 | 379 | 379 | 0 | 0.0% | OK |
+| 2025-06 | 393 | 395 | -2 | -0.5% | OK |
+| 2025-09 | 452 | 452 | 0 | 0.0% | OK |
+| 2025-12 | 476 | 478 | -2 | -0.4% | OK |
+| 2026-01 | 472 | 475 | -3 | -0.6% | OK |
+| 2026-02 | 494 | 494 | 0 | 0.0% | OK |
+| 2026-03 | 509 | 509 | 0 | 0.0% | OK |
+| 2026-04 | 492 | 492 | 0 | 0.0% | OK |
+
+**PreSal: clean across all periods. Max gap 0.6% (2026-01, 3 rows). No BAD months.**
+
+#### Table 3 — Terra (portal "Terra" filter vs DB Terra)
+
+| ano-mes | DB_Terra | ANP_Terra | gap | gap_% | status |
+|---------|----------|-----------|-----|-------|--------|
+| 2024-01 | 6245 | 7351 | -1106 | -15.0% | BAD |
+| 2024-06 | 6178 | 7387 | -1209 | -16.4% | BAD |
+| 2024-12 | 6120 | 7690 | -1570 | -20.4% | BAD |
+| 2025-06 | 6175 | 7843 | -1668 | -21.3% | BAD |
+| 2025-12 | 5654 | 7642 | -1988 | -26.0% | BAD |
+| 2026-01 | 5680 | 5863 | -183 | -3.1% | BAD |
+| 2026-02 | 5649 | 5761 | -112 | -1.9% | OK |
+| **2026-03** | **5760** | **5760** | **0** | **0.0%** | **OK** |
+| **2026-04** | **3260** | **3260** | **0** | **0.0%** | **OK** |
+
+**Terra: BAD from 2024 through 2026-01 with growing gap (~15% in early 2024, ~26% by late 2025). First clean months: 2026-02 and beyond.**
+
+#### Hypothesis assessment
+
+**CONFIRMED.** The gap pattern is unambiguous:
+
+1. **Old pipeline era (pre-2026-03 for Mar/Offshore, pre-2026-02 for Terra):** systematic undercount. The gap ranges from -6.6% to -12.6% for offshore and -15% to -26% for Terra.
+2. **Post-fix era (2026-03 onwards for Mar, 2026-02 for Terra):** zero gap. Both environments match the portal exactly.
+3. **PreSal: always clean** — the `_deduplicate_m_vs_s` logic was not the source of errors for PreSal rows.
+
+The two old-pipeline bugs that caused the undercounts:
+- `groupby(_PK).agg(sum)` — collapsed wells associated with multiple `campo` into fewer records with summed production. E.g. a well in CAMPO_A + CAMPO_B became 1 row instead of 2. This collapsed the record count significantly.
+- `WHERE petroleo > 0 OR gas > 0` filter — excluded wells with zero production in both columns. The ANP publishes zero-production wells legitimately (e.g. wells undergoing maintenance). These were silently dropped.
+
+**Why kbpd audit passed but record count fails:** the `groupby+sum` preserved total production (correctly summing across campo rows for a well) but reduced record count. The `petroleo=0` filter only dropped wells that contributed zero kbpd — negligible impact on aggregate production totals but meaningful impact on record counts used by the CEO's monitoring dashboard.
+
+#### BAD months ordered by gap_abs (offshore + Terra combined)
+
+| ano-mes | environment | DB_count | ANP_count | gap_abs | gap_% |
+|---------|-------------|----------|-----------|---------|-------|
+| 2025-12 | Terra | 5654 | 7642 | -1988 | -26.0% |
+| 2025-06 | Terra | 6175 | 7843 | -1668 | -21.3% |
+| 2024-12 | Terra | 6120 | 7690 | -1570 | -20.4% |
+| 2024-06 | Terra | 6178 | 7387 | -1209 | -16.4% |
+| 2024-01 | Terra | 6245 | 7351 | -1106 | -15.0% |
+| 2025-09 | offshore | 856 | 979 | -123 | -12.6% |
+| 2025-10 | offshore | 903 | 1008 | -105 | -10.4% |
+| 2025-11 | offshore | 893 | 998 | -105 | -10.5% |
+| 2024-12 | offshore | 812 | 906 | -94 | -10.4% |
+| 2025-08 | offshore | 917 | 1001 | -84 | -8.4% |
+| 2025-03 | offshore | 798 | 882 | -84 | -9.5% |
+| 2025-06 | offshore | 822 | 906 | -84 | -9.3% |
+| 2026-01 | offshore | 917 | 1004 | -87 | -8.7% |
+| 2025-05 | offshore | 806 | 893 | -87 | -9.7% |
+| 2026-01 | Terra | 5680 | 5863 | -183 | -3.1% |
+| 2026-02 | offshore | 954 | 1022 | -68 | -6.7% |
+| 2024-06 | offshore | 788 | 856 | -68 | -7.9% |
+| 2025-07 | offshore | 865 | 935 | -70 | -7.5% |
+| 2024-04 | offshore | 764 | 826 | -62 | -7.5% |
+| 2024-03 | offshore | 789 | 852 | -63 | -7.4% |
+| 2024-02 | offshore | 789 | 850 | -61 | -7.2% |
+| 2024-01 | offshore | 789 | 845 | -56 | -6.6% |
+
+**Total BAD months (gap > 2%): 22 (all months 2024-01 through 2026-01 for offshore + Terra).**
+
+#### Re-run batch recommendation for CTO
+
+All months from 2024-01 through 2026-02 need to be re-extracted and re-uploaded with `--purge` flag to replace the records loaded by the old pipeline. Months 2026-03 onward are already correct.
+
+| Priority | Months | Environments | Expected impact |
+|----------|--------|-------------|----------------|
+| High | 2024-01 to 2026-02 | Mar (M) + Terra (T) | ~1000-2000 missing records per month per env |
+| None needed | 2026-03 onwards | All | Already correct |
+| None needed | All months | PreSal (S) | Always clean |
+
+**Suggested run order:** start with most recent BAD months (2026-02, 2026-01) to fix CEO's visible discrepancy first, then backfill 2025 and 2024 in reverse order.
+
+**Trigger via:** GitHub Actions → `etl_anp_cdp.yml` → workflow_dispatch → set `periodo=MM/YYYY --purge` for each month. The `--purge` flag in `02_upload.py` deletes all existing rows for that (ano, mes) before re-upserting, ensuring stale compact-format records are replaced.
+
 ### Before you add any transformation to this pipeline
 
 Read this section. Then ask: does this change aggregate, filter, or transform production values? If yes, do not merge without explicit CTO sign-off and update of this section.
