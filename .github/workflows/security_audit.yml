@@ -1,0 +1,84 @@
+name: Security audit (deps)
+
+# Runs pip-audit on all requirements.txt files and npm audit on package.json.
+# Opens a GitHub issue with label 'security' if high/critical findings are detected.
+# Local audit result (2026-05-14): pip-audit exit 0, 0 vulns across requirements.txt
+# and alertas/requirements.txt. npm audit: 0 high/critical (post F1.1 lockfile clean).
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"  # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  npm-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: npm audit (high+)
+        id: npm
+        run: |
+          npm ci --no-audit --ignore-scripts
+          npm audit --audit-level=high --json > npm-audit.json || true
+          HIGH=$(jq '[.vulnerabilities[]? | select(.severity=="high" or .severity=="critical")] | length' npm-audit.json)
+          echo "high_count=$HIGH" >> $GITHUB_OUTPUT
+          cat npm-audit.json
+      - name: Open issue on findings
+        if: steps.npm.outputs.high_count != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = '```json\n' + fs.readFileSync('npm-audit.json', 'utf8').slice(0, 50000) + '\n```';
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `npm audit: ${'${{ steps.npm.outputs.high_count }}'} high/critical findings`,
+              body,
+              labels: ['security', 'automated']
+            });
+
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: pip-audit on all requirements
+        id: pip
+        run: |
+          pip install pip-audit
+          set +e
+          pip-audit -r requirements.txt --format json > pip-audit-main.json
+          MAIN_EXIT=$?
+          pip-audit -r alertas/requirements.txt --format json > pip-audit-alertas.json
+          ALERTAS_EXIT=$?
+          set -e
+          if [ "$MAIN_EXIT" -ne 0 ] || [ "$ALERTAS_EXIT" -ne 0 ]; then
+            echo "has_findings=1" >> $GITHUB_OUTPUT
+          else
+            echo "has_findings=0" >> $GITHUB_OUTPUT
+          fi
+      - name: Open issue on findings
+        if: steps.pip.outputs.has_findings == '1'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const main = fs.existsSync('pip-audit-main.json') ? fs.readFileSync('pip-audit-main.json', 'utf8') : '{}';
+            const alertas = fs.existsSync('pip-audit-alertas.json') ? fs.readFileSync('pip-audit-alertas.json', 'utf8') : '{}';
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'pip-audit: vulnerabilities found in Python deps',
+              body: `### requirements.txt\n\`\`\`json\n${main.slice(0,25000)}\n\`\`\`\n\n### alertas/requirements.txt\n\`\`\`json\n${alertas.slice(0,25000)}\n\`\`\``,
+              labels: ['security', 'automated']
+            });

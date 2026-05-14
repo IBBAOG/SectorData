@@ -214,6 +214,17 @@ Ordem de diagnóstico:
 5. Quota/rate limit (especialmente VesselFinder/MarineTraffic).
 6. RLS bloqueando upsert? Confirme que o workflow usa `SUPABASE_SERVICE_KEY`, não anon.
 
+## Security audit cadence
+
+Workflow `security_audit.yml` runs every Monday at 06:00 UTC (`cron: "0 6 * * 1"`) and on `workflow_dispatch`.
+
+- **npm audit**: runs `npm audit --audit-level=high`. Opens a GitHub issue (labels: `security`, `automated`) if any `high` or `critical` finding is found.
+- **pip-audit**: runs against `requirements.txt` and `alertas/requirements.txt`. Opens a GitHub issue if either audit exits non-zero (i.e., any known CVE detected).
+
+Baseline audit (2026-05-14): both pip audits exit 0 with 0 vulnerabilities. No npm high/critical findings post F1.1.
+
+Maintenance: review open `security` issues monthly. When a CVE is found, bump the affected package in `requirements.txt` (or `alertas/requirements.txt`) and re-run pip-audit locally to confirm clean before pushing.
+
 ## Anti-padrões
 
 - Deletar parquet inteiro pra "começar do zero". **Sempre in-place.**
