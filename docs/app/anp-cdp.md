@@ -226,14 +226,27 @@ The ANP CDP APEX portal exports one row per `(poco, campo, bacia)` per file. The
 - No deduplication is needed before upsert
 - `ON CONFLICT (ano,mes,poco,campo,bacia,local) DO UPDATE` is the correct upsert strategy
 
+### APEX file structure: M is a superset of S
+
+The ANP CDP APEX portal exports three files per month:
+- **File M** (`amb=M`, mapped to `local=PosSal`): ALL offshore wells — both Pós-Sal and Pré-Sal.
+- **File S** (`amb=S`, mapped to `local=PreSal`): ONLY the Pré-Sal subset. Rows in S are **identical** to the corresponding rows in M.
+- **File T** (`amb=T`, `local=Terra`): onshore wells only, no overlap.
+
+This means:
+- Files M and S are NOT additive. Loading both as-is would store ~187 wells twice (once as PosSal, once as PreSal), doubling their production in any aggregate query.
+- The pipeline (`_deduplicate_m_vs_s`) removes from M any `poco` that also appears in S. Only the M-exclusive wells (genuine Pós-Sal) are stored with `local=PosSal`; the PreSal wells come from S only.
+- Total offshore rows after deduplication = `len(M-exclusive) + len(S)` = the same count as file M alone, matching the portal pagination.
+
 ### Validation baseline
 
-After a complete Apr/2026 load:
-- File M (PosSal): **774 rows** (matches portal pagination `1-25 de 774`)
-- File S (PreSal): **492 rows**
-- File T (Terra): **3 260 rows**
+After a complete Apr/2026 load (post-deduplication):
+- PosSal rows: **282** (M-exclusive wells)
+- PreSal rows: **492** (from file S)
+- Terra rows: **3 260**
+- Total offshore rows: **774** (= portal pagination `1-25 de 774`)
+- Offshore kbpd: **~4 055** (PosSal ~519 + PreSal ~3 536)
 - `7-TUP-121DA-RJS` TUPI Apr/2026: `petroleo_bbl_dia ≈ 30 234.9198`
-- Offshore distinct wells (PosSal + PreSal): **≈ 1 200 rows total** (count of rows, not distinct poco — a poco can appear in multiple fields)
 
 ### Before you add any transformation to this pipeline
 

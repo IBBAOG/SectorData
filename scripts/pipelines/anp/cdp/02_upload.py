@@ -511,6 +511,63 @@ def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
     return out.drop(columns=["periodo"])
 
 
+def _deduplicate_m_vs_s(
+    frames_by_period: dict[tuple[int, int, str], pd.DataFrame],
+) -> list[pd.DataFrame]:
+    """Remove PreSal rows from the M (PosSal) frame when an S (PreSal) frame exists.
+
+    The ANP CDP APEX portal exports overlapping data:
+      - File M (ambiente=M, local=PosSal): contains ALL offshore wells, including
+        wells that are Pré-Sal.  These rows are IDENTICAL to those in file S.
+      - File S (ambiente=S, local=PreSal): contains only the Pré-Sal subset.
+
+    If both M and S are present for the same (ano, mes), loading both as-is would
+    store the shared 187 (for Apr/2026) wells twice — once as PosSal and once as
+    PreSal — doubling their production in any aggregate query.
+
+    Correct treatment:
+      - From M: keep ONLY the rows whose 'poco' does NOT appear in the S frame
+        (these are the genuinely Pós-Sal wells not present in S).
+      - From S: keep all rows (these are the Pré-Sal wells).
+      - From T: keep all rows (onshore).
+
+    This preserves the exact 774-row count from the portal (282 PosSal + 492 PreSal
+    = 774 total offshore rows for Apr/2026, matching the portal's pagination).
+    """
+    result: list[pd.DataFrame] = []
+    # Group by (ano, mes) to process pairs
+    period_keys: set[tuple[int, int]] = set()
+    for (ano_c, mes_c, amb) in frames_by_period:
+        period_keys.add((ano_c, mes_c))
+
+    for (ano_c, mes_c) in sorted(period_keys):
+        frame_m = frames_by_period.get((ano_c, mes_c, "M"))
+        frame_s = frames_by_period.get((ano_c, mes_c, "S"))
+        frame_t = frames_by_period.get((ano_c, mes_c, "T"))
+
+        if frame_m is not None and frame_s is not None:
+            # Both M and S present: keep M rows whose poco is NOT in S
+            presal_pocos = set(frame_s["poco"].dropna())
+            possal_rows = frame_m[~frame_m["poco"].isin(presal_pocos)].copy()
+            n_removed = len(frame_m) - len(possal_rows)
+            print(
+                f"  [dedup M/S] {ano_c}/{mes_c:02d}: removed {n_removed} PreSal rows from M "
+                f"(kept {len(possal_rows)} PosSal-only rows); S has {len(frame_s)} PreSal rows"
+            )
+            result.append(possal_rows)
+            result.append(frame_s)
+        else:
+            if frame_m is not None:
+                result.append(frame_m)
+            if frame_s is not None:
+                result.append(frame_s)
+
+        if frame_t is not None:
+            result.append(frame_t)
+
+    return result
+
+
 def _from_csv_dir(sb, csv_dir: str, incremental: bool = True, purge: bool = False, allow_non_apex: bool = False) -> None:
     # Fetch per-local max dates so that an ambiente whose data arrived later than
     # another for the same month is not incorrectly skipped.
@@ -525,7 +582,8 @@ def _from_csv_dir(sb, csv_dir: str, incremental: bool = True, purge: bool = Fals
         print("No incremental check — uploading all CSVs found in dir")
 
     csvs = sorted(glob.glob(os.path.join(csv_dir, "producao_poco_*.csv")))
-    frames: list[pd.DataFrame] = []
+    # Keyed by (ano, mes, amb) to enable M/S deduplication
+    frames_by_period: dict[tuple[int, int, str], pd.DataFrame] = {}
     # Track which (ano, mes) pairs are being uploaded so we can purge them first.
     periods_to_purge: set[tuple[int, int]] = set()
 
@@ -550,12 +608,16 @@ def _from_csv_dir(sb, csv_dir: str, incremental: bool = True, purge: bool = Fals
         frame = _parse_csv(path, local)
         if frame is not None and not frame.empty:
             print(f"  Parsed {os.path.basename(path)}: {len(frame)} rows")
-            frames.append(frame)
+            frames_by_period[(ano_c, mes_c, amb)] = frame
             periods_to_purge.add((ano_c, mes_c))
 
-    if not frames:
+    if not frames_by_period:
         print("No new CSV data to upload.")
         return
+
+    # Resolve M/S overlap: wells in both M and S files are PreSal — keep them
+    # only in the S frame (local=PreSal).  Remove them from M to avoid double-counting.
+    frames = _deduplicate_m_vs_s(frames_by_period)
 
     # Purge existing rows for each target period before upserting.  This removes
     # stale rows that used a different poco naming convention (e.g. compact codes
