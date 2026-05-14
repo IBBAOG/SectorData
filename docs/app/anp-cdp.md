@@ -199,6 +199,46 @@ If `wells_count` / `fields_count` are `0` (migration not yet applied, or filtere
 
 **TypeScript contract:** `AnpCdpSeriePonto` in `src/lib/rpc.ts` now includes `wells_count: number` and `fields_count: number`. The `buildChart` helper in `page.tsx` reads these via Plotly `customdata`.
 
+## As-is loading contract
+
+**The CDP APEX CSV is the authoritative source. Load it row-by-row, exactly as published by the ANP. No exceptions.**
+
+### What "as-is" means
+
+| Prohibited | Correct |
+|---|---|
+| `groupby(PK).agg({"petroleo_bbl_dia": "sum"})` | Each CSV row becomes exactly one DB row |
+| Filtering `WHERE petroleo > 0 OR gas > 0` | Wells with zero production are published by the ANP and must be stored |
+| Dividing or multiplying any production value | Values go to DB in the same units as the CSV (bbl/day, Mm³/day) |
+| Summing rows from different `campo` for the same `poco` | A well tied to two fields is two separate rows — both go in |
+
+### Why this rule exists (2026-05-14)
+
+The pipeline had a `groupby(_PK).agg(sum)` step introduced as a "deduplication fix". The intent was to handle apparent duplicates, but the PK included `campo` — meaning the groupby was collapsing rows for the same well across **different fields**, summing their production. A well appearing in `ITAPU` and `ITAPU_ECO` with ~12 kbpd each ended up stored as ~24 kbpd. Multiplied across hundreds of offshore wells, this doubled the reported aggregate production for Apr/2026 (~7,591 kbpd vs the correct ~3,800 kbpd).
+
+The CEO directive (2026-05-14): **"Just extract the data as-is. The production figures are already correct."**
+
+### The APEX CSV is already unique by PK
+
+The ANP CDP APEX portal exports one row per `(poco, campo, bacia)` per file. The file is already scoped to one `(periodo, ambiente)`. Therefore:
+
+- PK `(ano, mes, poco, campo, bacia, local)` is naturally unique in each CSV
+- No deduplication is needed before upsert
+- `ON CONFLICT (ano,mes,poco,campo,bacia,local) DO UPDATE` is the correct upsert strategy
+
+### Validation baseline
+
+After a complete Apr/2026 load:
+- File M (PosSal): **774 rows** (matches portal pagination `1-25 de 774`)
+- File S (PreSal): **492 rows**
+- File T (Terra): **3 260 rows**
+- `7-TUP-121DA-RJS` TUPI Apr/2026: `petroleo_bbl_dia ≈ 30 234.9198`
+- Offshore distinct wells (PosSal + PreSal): **≈ 1 200 rows total** (count of rows, not distinct poco — a poco can appear in multiple fields)
+
+### Before you add any transformation to this pipeline
+
+Read this section. Then ask: does this change aggregate, filter, or transform production values? If yes, do not merge without explicit CTO sign-off and update of this section.
+
 ## Anti-padrões
 
 - Query direta em `anp_cdp_producao` do front — sempre via RPC agregada.
