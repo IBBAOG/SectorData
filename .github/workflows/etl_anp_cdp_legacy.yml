@@ -1,0 +1,102 @@
+# ============================================================
+# DATA SOURCE: ANP Dados Estatísticos — annual "Produção por Poço" dumps
+#   URL pattern: https://www.gov.br/anp/pt-br/centrais-de-conteudo/dados-estatisticos/de/ppg/pp/producao-pocos-{year}.zip
+#
+# This pipeline is for PRE-2023 years only (no CAPTCHA needed).
+# For 2023 onwards, use etl_anp_cdp.yml (Selenium + APEX CDP portal).
+#
+# DO NOT use this workflow to load post-2022 data. The APEX portal (etl_anp_cdp.yml)
+# is the authoritative source for 2023+. Mixing sources for the same period
+# contaminates anp_cdp_producao. Requires CTO sign-off to change year range.
+# ============================================================
+name: ETL ANP CDP Legacy (pre-2023 annual dumps)
+
+on:
+  workflow_dispatch:
+    inputs:
+      year:
+        description: 'Year to extract and upload (2005–2022). Default: 2017 (BAD months fix).'
+        required: false
+        default: '2017'
+      purge:
+        description: 'Delete existing rows for the target year before upserting (strongly recommended).'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+
+# This pipeline downloads the annual XLSX ZIP from gov.br (no CAPTCHA, ~20 MB),
+# converts each XLSX to per-month CSVs in the format expected by 02_upload.py,
+# and uploads with --purge to replace any stale rows loaded by the old pipeline.
+#
+# Estimated runtime: < 5 minutes (no Selenium, no CAPTCHA).
+# Typical use: fix 2017 BAD months (all 12) by dispatching with year=2017 purge=true.
+#
+# Script: 01_extract_legacy.py
+#   - Downloads producao-pocos-{year}.zip from gov.br
+#   - Extracts 3 XLSX files (mar, presal, terra) from the ZIP
+#   - Converts each XLSX to per-month CSVs matching 02_upload.py format
+#   - Writes CSVs to output/anp/
+#
+# Upload: 02_upload.py --from-csv-dir (same as the regular pipeline)
+#   - Deduplicates M/S overlap via _deduplicate_m_vs_s()
+#   - Purges existing rows for each (ano, mes) before upserting (--purge)
+#   - Refreshes mv_anp_cdp_pocos after upload
+
+jobs:
+  extract-and-upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Validate year input
+        run: |
+          YEAR="${{ github.event.inputs.year || '2017' }}"
+          if ! [[ "$YEAR" =~ ^[0-9]{4}$ ]] || [ "$YEAR" -lt 2005 ] || [ "$YEAR" -gt 2022 ]; then
+            echo "ERROR: year must be between 2005 and 2022. Got: $YEAR"
+            echo "For 2023 and later, use etl_anp_cdp.yml (Selenium + APEX)."
+            exit 1
+          fi
+          echo "Target year: $YEAR"
+
+      - name: Extract annual XLSX dump to monthly CSVs
+        run: |
+          YEAR="${{ github.event.inputs.year || '2017' }}"
+          echo "=== Extracting year $YEAR from ANP Dados Estatísticos ==="
+          mkdir -p output/anp
+          python scripts/pipelines/anp/cdp/01_extract_legacy.py \
+            --year "$YEAR" \
+            --output output/anp
+
+      - name: Upload to Supabase
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          PURGE_FLAG=""
+          if [ "${{ github.event.inputs.purge }}" = "true" ]; then
+            PURGE_FLAG="--purge"
+            echo "purge=true -- passing --purge to replace all existing rows for target year"
+          fi
+          echo "=== Uploading CSVs to Supabase ==="
+          python scripts/pipelines/anp/cdp/02_upload.py \
+            --from-csv-dir output/anp/ \
+            --no-incremental \
+            $PURGE_FLAG
+
+      - name: Upload CSVs as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: anp-cdp-legacy-${{ github.event.inputs.year || '2017' }}
+          path: output/anp/*.csv
+          retention-days: 90
