@@ -7,6 +7,11 @@ Modes:
 
 Environment:
   SUPABASE_URL, SUPABASE_SERVICE_KEY
+
+# IMPORTANT: This pipeline must NOT aggregate, dedupe, or transform production
+# values. The CDP APEX CSV is authoritative — load it row-by-row as-is.
+# Any "fix" that sums/averages/filters production has been a regression.
+# See docs/app/anp-cdp.md "As-is loading contract" before changing.
 """
 
 import argparse
@@ -59,6 +64,40 @@ _PAT_CSV = re.compile(r"producao_poco_(\d{2})-(\d{4})_([MST])\.csv$", re.IGNOREC
 _PAT_APEX_POCO = re.compile(r"^\d+-[A-Z0-9]+-", re.IGNORECASE)
 _COMPACT_FORMAT_THRESHOLD = 0.20   # abort if >20% of rows are compact (non-hyphenated)
 
+# Primary key columns for upsert conflict resolution.
+# The APEX CSV has one row per (poco, campo, bacia) per file (per local per period).
+# This is guaranteed unique by the ANP portal structure — no aggregation is needed.
+_PK = ["ano", "mes", "poco", "campo", "bacia", "local"]
+
+# Parquet → canonical column names
+_RENAME = {
+    "nome_poco_anp":             "poco",
+    "gas_natural_total_mm3_dia": "gas_total_mm3_dia",
+}
+
+# All production numeric columns — stored as-is from the CSV (no transformation)
+_NUM_COLS = [
+    "petroleo_bbl_dia",
+    "oleo_bbl_dia",
+    "condensado_bbl_dia",
+    "gas_total_mm3_dia",
+    "gas_natural_assoc_mm3_dia",
+    "gas_natural_n_assoc_mm3_dia",
+    "gas_royalties",
+    "agua_bbl_dia",
+    "tempo_prod_hs_mes",
+]
+
+# Text metadata columns
+_META_COLS = [
+    "estado",
+    "nome_poco_operador",
+    "operador",
+    "num_contrato",
+    "instalacao_destino",
+    "tipo_instalacao",
+]
+
 
 def _check_poco_format(df: pd.DataFrame, allow_non_apex: bool = False) -> None:
     """
@@ -95,37 +134,6 @@ def _check_poco_format(df: pd.DataFrame, allow_non_apex: bool = False) -> None:
             print(f"  [WARN] {msg.strip()} (suppressed by --allow-non-apex-format)")
         else:
             raise SystemExit(msg)
-
-_PK = ["ano", "mes", "poco", "campo", "bacia", "local"]
-
-# Parquet → canonical column names
-_RENAME = {
-    "nome_poco_anp":           "poco",
-    "gas_natural_total_mm3_dia": "gas_total_mm3_dia",
-}
-
-# All numeric production columns (will be summed on dedup)
-_SUM_COLS = [
-    "petroleo_bbl_dia",
-    "oleo_bbl_dia",
-    "condensado_bbl_dia",
-    "gas_total_mm3_dia",
-    "gas_natural_assoc_mm3_dia",
-    "gas_natural_n_assoc_mm3_dia",
-    "gas_royalties",
-    "agua_bbl_dia",
-    "tempo_prod_hs_mes",
-]
-
-# Text metadata columns (first non-null per PK group)
-_META_COLS = [
-    "estado",
-    "nome_poco_operador",
-    "operador",
-    "num_contrato",
-    "instalacao_destino",
-    "tipo_instalacao",
-]
 
 
 def _get_max_date(sb) -> tuple[int, int]:
@@ -171,10 +179,15 @@ def _get_max_date_per_local(sb) -> dict[str, tuple[int, int]]:
 
 
 def _prepare(df: pd.DataFrame, allow_non_apex: bool = False) -> pd.DataFrame:
+    # IMPORTANT: This pipeline must NOT aggregate, dedupe, or transform production
+    # values. The CDP APEX CSV is authoritative — load it row-by-row as-is.
+    # Any "fix" that sums/averages/filters production has been a regression.
+    # See docs/app/anp-cdp.md "As-is loading contract" before changing.
+
     df = df.rename(columns=_RENAME)
 
     # Ensure all required columns exist; fill missing with defaults
-    for col in _SUM_COLS:
+    for col in _NUM_COLS:
         if col not in df.columns:
             df[col] = 0.0
     for col in _META_COLS:
@@ -186,21 +199,12 @@ def _prepare(df: pd.DataFrame, allow_non_apex: bool = False) -> pd.DataFrame:
         if col in df.columns and df[col].dtype == object:
             df[col] = df[col].str.strip()
 
-    # Guard: validate poco format before any dedup/upsert
+    # Guard: validate poco format before upsert
     _check_poco_format(df, allow_non_apex=allow_non_apex)
 
-    # Deduplicate: sum numeric, keep first non-null metadata per PK
-    agg_spec = {c: "sum" for c in _SUM_COLS}
-    agg_spec.update({c: "first" for c in _META_COLS})
-
-    df = (
-        df[_PK + _SUM_COLS + _META_COLS]
-        .groupby(_PK, as_index=False, dropna=False)
-        .agg(agg_spec)
-    )
-
-    # Keep only active wells (non-zero oil or gas)
-    df = df[(df["petroleo_bbl_dia"] > 0) | (df["gas_total_mm3_dia"] > 0)].copy()
+    # NO aggregation, NO deduplication, NO filtering of "zero-production" wells.
+    # The ANP CSV is the source of truth. Each row goes into the DB exactly as-is.
+    # Wells with zero production are legitimate — they are still published by the ANP.
     return df
 
 
@@ -229,10 +233,8 @@ def _upsert(sb, rows: list[dict]) -> None:
 def _rows_from_df(df: pd.DataFrame) -> list[dict]:
     import math
     df = df.dropna(subset=_PK)
-    # Fill NaN in numeric cols with 0 before serialisation.
-    for col in _SUM_COLS:
-        if col in df.columns:
-            df[col] = df[col].fillna(0.0)
+    # Fill NaN in numeric cols with None (NULL in DB) — not 0.
+    # The ANP may publish NULL for a column legitimately.
     rows = df.where(pd.notna(df), None).to_dict("records")
     for r in rows:
         r["ano"] = int(r["ano"])
@@ -325,6 +327,32 @@ def _warn_partial_offshore(sb, periods_uploaded: set[tuple[int, int]]) -> None:
                 print(f"  [coverage] {local} {ano}/{mes:02d}: could not compare ({e})")
 
 
+def _validate_row_count(sb, ano: int, mes: int) -> None:
+    """Print offshore distinct-well count for the uploaded period.
+
+    Expected baseline for a complete month: ~774 wells (PosSal + PreSal combined)
+    matching the ANP portal pagination.
+    """
+    try:
+        from supabase import PostgrestAPIError
+    except ImportError:
+        PostgrestAPIError = Exception
+
+    for local in ("PosSal", "PreSal"):
+        try:
+            r = (
+                sb.table("anp_cdp_producao")
+                .select("poco", count="exact")
+                .eq("ano", ano)
+                .eq("mes", mes)
+                .eq("local", local)
+                .execute()
+            )
+            print(f"  [validate] {local} {ano}/{mes:02d}: {r.count or 0} rows in DB")
+        except Exception as e:
+            print(f"  [validate] {local} {ano}/{mes:02d}: could not count ({e})")
+
+
 def _from_parquet(sb, path: str, ano_inicio: int = 0, allow_non_apex: bool = False) -> None:
     print(f"Reading parquet: {path}")
     df = pd.read_parquet(path)
@@ -333,7 +361,7 @@ def _from_parquet(sb, path: str, ano_inicio: int = 0, allow_non_apex: bool = Fal
         df = df[df["ano"] >= ano_inicio]
         print(f"  Filtering from ano >= {ano_inicio}")
     rows = _rows_from_df(df)
-    print(f"  {len(rows)} well-month rows to upsert…")
+    print(f"  {len(rows)} rows to upsert…")
     _upsert(sb, rows)
     _refresh_mv(sb)
 
@@ -447,8 +475,8 @@ def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
     def _num(key: str) -> pd.Series:
         col = col_map.get(key)
         if col is None:
-            return pd.Series([0.0] * len(df), dtype=float)
-        return pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+            return pd.Series([None] * len(df), dtype=object)
+        return pd.to_numeric(df[col], errors="coerce")
 
     def _txt(key: str):
         col = col_map.get(key)
@@ -521,7 +549,7 @@ def _from_csv_dir(sb, csv_dir: str, incremental: bool = True, purge: bool = Fals
                 continue
         frame = _parse_csv(path, local)
         if frame is not None and not frame.empty:
-            print(f"  Parsed {os.path.basename(path)}: {len(frame)} well-rows")
+            print(f"  Parsed {os.path.basename(path)}: {len(frame)} rows")
             frames.append(frame)
             periods_to_purge.add((ano_c, mes_c))
 
@@ -540,9 +568,14 @@ def _from_csv_dir(sb, csv_dir: str, incremental: bool = True, purge: bool = Fals
     df = pd.concat(frames, ignore_index=True)
     df = _prepare(df, allow_non_apex=allow_non_apex)
     rows = _rows_from_df(df)
-    print(f"  {len(rows)} aggregated rows, upserting…")
+    print(f"  {len(rows)} rows to upsert (as-is, no aggregation)…")
     _upsert(sb, rows)
     _refresh_mv(sb)
+
+    # Validation: report offshore row counts for each uploaded period
+    for ano_p, mes_p in sorted(periods_to_purge):
+        _validate_row_count(sb, ano_p, mes_p)
+
     # periods_to_purge collects all (ano, mes) pairs from successfully parsed CSVs
     # regardless of the --purge flag, so it's always available for the coverage check.
     _warn_partial_offshore(sb, periods_to_purge)
