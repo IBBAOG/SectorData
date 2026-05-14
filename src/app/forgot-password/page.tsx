@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import BrandLogo from "../../components/BrandLogo";
 import { getSupabaseClient } from "../../lib/supabaseClient";
+import Footer from "../../components/Footer";
 
 
 const BG_GIFS = [
@@ -57,7 +58,10 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div id="login-container" style={{ backgroundImage: `url("${bgUrl}")` }}>
+    <div
+      id="login-container"
+      style={{ backgroundImage: `url("${bgUrl}")`, display: "flex", flexDirection: "column", minHeight: "100vh" }}
+    >
       <svg style={{ position: "absolute", width: 0, height: 0 }} aria-hidden="true">
         <defs>
           <filter id="glass-distortion">
@@ -151,6 +155,7 @@ export default function ForgotPasswordPage() {
           </a>
         </div>
       </div>
+      <Footer />
     </div>
   );
 }

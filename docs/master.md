@@ -418,6 +418,19 @@ Resolvido:
 - `news-hunter-handoff.txt` na raiz — movido para [`docs/etl-pipelines/news-hunter-architecture.md`](etl-pipelines/news-hunter-architecture.md).
 - Workflows `etl_anp_vendas.yml` e `etl_anp_fase3.yml` — confirmados ATIVOS (anp-watcher é trigger externo via cron-job.org; etl_anp_fase3 roda mensal). Adicionados aos PRDs do ETL.
 
+## Compliance / LGPD
+
+| Página | Rota | Tipo | Owner |
+|---|---|---|---|
+| Terms of Service | `/terms` | Página estática pública (sem auth) | `worker_subgerente-app` |
+| Privacy Policy | `/privacy` | Página estática pública (sem auth) | `worker_subgerente-app` |
+
+- Ambas as páginas são **públicas** (fora do grupo `(dashboard)`, sem auth guard).
+- Footer com links para `/terms`, `/privacy` e `mailto:eduardo.mendes@itaubba.com` integrado em: `(dashboard)/layout.tsx`, `login/page.tsx`, `forgot-password/page.tsx`.
+- Conteúdo é **DRAFT** — requer revisão jurídica antes de uso em produção.
+- Em mudanças materiais (novos sub-processadores, novos dados coletados, alteração de retenção), o Documentador deve atualizar `src/app/privacy/page.tsx` e notificar usuários por email conforme seção 11 da Privacy Policy.
+- DPO: eduardo.mendes@itaubba.com
+
 Tech debt conhecido (não resolvido):
 - **`sql/` na raiz contém DDL aplicado direto no Supabase Dashboard, NÃO versionado em `supabase/migrations/`.** Tabelas afetadas: `price_bands`, `profiles`, `module_visibility` (colunas: `module_slug PK`, `is_visible_for_clients`, `is_visible_on_home DEFAULT true`). Recriar o DB apenas das migrations resultaria em DB incompleto. **Ação futura**: APP deve converter os 3 arquivos em migrations próprias, depois remover `sql/`.
 - **Scripts Python na raiz** (`ais_*.py`, `pipelines/navios/01_lineup_scrape.py`, `vessel_*.py`, `pipelines/navios/04_cabotage_cleanup.py`, `pipelines/anp/vendas_watch.py`, `scripts/manual/dg_margins_upload.py`) convivem com `scripts/`. Mover requer atualizar workflows correspondentes — feito quando houver janela.

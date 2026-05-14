@@ -9,6 +9,7 @@ import { NewsHunterProvider } from "../../context/NewsHunterContext";
 import { rpcUpsertMyProfile } from "../../lib/profileRpc";
 import { trackEvent } from "../../lib/tracking";
 import { ROUTE_TITLES } from "../../components/NavBar";
+import Footer from "../../components/Footer";
 
 // Routes excluded from page_view tracking — meta/admin pages should not
 // pollute the dashboard engagement metrics they themselves report on.
@@ -92,8 +93,11 @@ export default function DashboardLayout({
   return (
     <UserProfileProvider supabase={supabase}>
       <NewsHunterProvider supabase={supabase}>
-        <FirstLoginGate />
-        {children}
+        <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+          <FirstLoginGate />
+          <div style={{ flex: 1 }}>{children}</div>
+          <Footer />
+        </div>
       </NewsHunterProvider>
     </UserProfileProvider>
   );

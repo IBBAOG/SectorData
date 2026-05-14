@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import BrandLogo from "../../components/BrandLogo";
 import { getSupabaseClient } from "../../lib/supabaseClient";
+import Footer from "../../components/Footer";
 
 
 const BG_GIFS = [
@@ -107,7 +108,10 @@ export default function LoginPage() {
   }
 
   return (
-    <div id="login-container" style={{ backgroundImage: `url("${BG_URL}")` }}>
+    <div
+      id="login-container"
+      style={{ backgroundImage: `url("${BG_URL}")`, display: "flex", flexDirection: "column", minHeight: "100vh" }}
+    >
       {/* SVG filter for glass distortion */}
       <svg style={{ position: "absolute", width: 0, height: 0 }} aria-hidden="true">
         <defs>
@@ -226,6 +230,7 @@ export default function LoginPage() {
           </div>
         ) : null}
       </div>
+      <Footer />
     </div>
   );
 }
