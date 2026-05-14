@@ -114,7 +114,11 @@ ORDS_BASE = "https://cdp.anp.gov.br/ords"
 SESSION_FILENAME = "session.json"
 
 AMBIENTES = {"M": "Mar", "S": "Pre-Sal", "T": "Terra"}
-MAX_RETRIES = 10
+# Terra environment CAPTCHAs are empirically harder (more noise/distortion) than
+# Mar and Pre-Sal. At a ~20% per-attempt success rate, 30 retries gives >99.9%
+# cumulative probability of at least one success (1 - 0.8^30 ≈ 99.94%).
+# Previously 10 retries (~89% cumulative) was insufficient for Terra.
+MAX_RETRIES = 30
 
 # JS injected before triggering download to capture the exact APEX download mechanism.
 # Intercepts form.submit(), fetch(), XHR, and window.location navigation.
@@ -347,7 +351,12 @@ def do_buscar(driver, ocr_engine, periodo, ambiente):
     captcha = solve_captcha(driver, ocr_engine)
     print(f"    CAPTCHA: {captcha}")
     if len(captcha) != 5:
-        print(f"    ✗ CAPTCHA inválido ({len(captcha)} chars)")
+        # Skip pre-submission: all ANP APEX CAPTCHAs are exactly 5 chars.
+        # A shorter/longer result means ddddocr mis-read the image — submitting
+        # would waste ~20s on a guaranteed failure. The caller's retry loop will
+        # reload the page (driver.get at top of do_buscar) which also refreshes
+        # the CAPTCHA image, so no extra step is needed here.
+        print(f"    [skip] CAPTCHA invalid length ({len(captcha)} chars) — skipping submit, will retry")
         return "captcha_err"
 
     driver.find_element(By.ID, "P54_CAPTCHA").clear()
@@ -642,7 +651,13 @@ def capture_session(ocr_engine, periodo, ambiente, output_dir, download_dir):
         print(f"    ✗ CSV não obtido, mas session.json foi salvo")
         return dest  # session is captured even without CSV
 
-      print(f"    ✗ Captura falhou após {MAX_RETRIES} tentativas")
+      # All retries exhausted. Log a summary to help estimate per-environment
+      # success rates and decide if Terra needs special handling in the future.
+      # (At 30 retries with ~20% per-attempt rate the cumulative p(success) > 99.9%,
+      # so repeated exhaustion here signals a structural change in the CAPTCHA difficulty.)
+      print(f"    ✗ Capture failed after {MAX_RETRIES} attempts for {AMBIENTES[ambiente]} ({ambiente})")
+      print(f"    [stats] If this keeps happening for Terra, consider bumping MAX_RETRIES")
+      print(f"            or investigating CAPTCHA image quality differences vs Mar/Pre-Sal.")
       return None
     finally:
         try:
@@ -735,7 +750,10 @@ def extract_one_selenium(ocr_engine, periodo, ambiente, output_dir, download_dir
             elif attempt < MAX_RETRIES:
                 time.sleep(2)
 
-      print(f"    ✗ Falhou após {MAX_RETRIES} tentativas")
+      # All retries exhausted — log summary for per-environment diagnosis.
+      print(f"    ✗ Failed after {MAX_RETRIES} attempts for {AMBIENTES.get(ambiente, ambiente)} ({ambiente})")
+      print(f"    [stats] If Terra consistently exhausts retries, review CAPTCHA image")
+      print(f"            noise level or increase MAX_RETRIES above current {MAX_RETRIES}.")
       return False
     finally:
         try:
