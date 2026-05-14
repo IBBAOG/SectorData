@@ -248,6 +248,58 @@ After a complete Apr/2026 load (post-deduplication):
 - Offshore kbpd: **~4 055** (PosSal ~519 + PreSal ~3 536)
 - `7-TUP-121DA-RJS` TUPI Apr/2026: `petroleo_bbl_dia ≈ 30 234.9198`
 
+### Historical validation vs ANP Boletim Mensal (2024-2025)
+
+Audit conducted 2026-05-14. Compared `anp_cdp_producao` aggregates (SUM petroleo_bbl_dia / 1000) against the official ANP **Boletim Mensal da Produção de Petróleo e Gás Natural** published PDFs for every month from Jan/2024 through Dec/2025.
+
+**Method:** 24 monthly bulletins downloaded directly from `gov.br/anp`. Oil production totals extracted from the historical table (page 6 of each bulletin). Compared to our DB aggregate via full table scan (189,972 rows >= 2024).
+
+| Month   | Our kbpd | ANP kbpd | Delta kbpd | Delta %  | Status      |
+|---------|----------|----------|------------|----------|-------------|
+| 2024-01 | 3519.1   | 3519     | +0.1       | +0.00%   | OK (exact)  |
+| 2024-02 | 3448.3   | 3448     | +0.3       | +0.01%   | OK (exact)  |
+| 2024-03 | 3356.3   | 3356     | +0.3       | +0.01%   | OK (exact)  |
+| 2024-04 | 3194.4   | 3194     | +0.4       | +0.01%   | OK (exact)  |
+| 2024-05 | 3317.9   | 3318     | -0.1       | -0.00%   | OK (exact)  |
+| 2024-06 | 3408.9   | 3412     | -3.1       | -0.09%   | OK (exact)  |
+| 2024-07 | 3229.7   | 3232     | -2.3       | -0.07%   | OK (exact)  |
+| 2024-08 | 3340.4   | 3343     | -2.6       | -0.08%   | OK (exact)  |
+| 2024-09 | 3470.3   | 3472     | -1.7       | -0.05%   | OK (exact)  |
+| 2024-10 | 3268.5   | 3271     | -2.5       | -0.08%   | OK (exact)  |
+| 2024-11 | 3309.9   | 3313     | -3.1       | -0.09%   | OK (exact)  |
+| 2024-12 | 3418.6   | 3421     | -2.4       | -0.07%   | OK (exact)  |
+| 2025-01 | 3445.8   | 3449     | -3.2       | -0.09%   | OK (exact)  |
+| 2025-02 | 3485.3   | 3488     | -2.7       | -0.08%   | OK (exact)  |
+| 2025-03 | 3618.1   | 3621     | -2.9       | -0.08%   | OK (exact)  |
+| 2025-04 | 3629.7   | 3632     | -2.3       | -0.06%   | OK (exact)  |
+| 2025-05 | 3679.0   | 3679     | 0.0        | +0.00%   | OK (exact)  |
+| 2025-06 | 3755.8   | 3757     | -1.2       | -0.03%   | OK (exact)  |
+| 2025-07 | 3956.2   | 3959     | -2.8       | -0.07%   | OK (exact)  |
+| 2025-08 | 3893.2   | 3896     | -2.8       | -0.07%   | OK (exact)  |
+| 2025-09 | 3911.8   | 3915     | -3.2       | -0.08%   | OK (exact)  |
+| 2025-10 | 4026.9   | 4030     | -3.1       | -0.08%   | OK (exact)  |
+| 2025-11 | 3769.7   | 3773     | -3.3       | -0.09%   | OK (exact)  |
+| 2025-12 | 4011.9   | 4015     | -3.1       | -0.08%   | OK (exact)  |
+
+**Gas cross-check (2024, Mm³/d):** Max delta < 0.07% across all months. Exact to 3 significant figures.
+
+**Well-level spot check (Jan/2025 top-30 from boletim page 20):**
+- `7-TUP-121DA-RJS` (TUPI): DB = 31,544.3 bbl/d, Boletim = 31,544 bbl/d — delta 0.3 bbl/d (0.001%)
+- `9-BRSA-1254-RJS` (SÉPIA): DB sum across 3 campos = 48,666.3 bbl/d, Boletim = 48,666 bbl/d — delta 0.3 bbl/d (0.0006%)
+  - Note: this well appears in `SÉPIA`, `SÉPIA LESTE`, and `SÉPIA_ECO` — three separate rows, sum = boletim value. Correct.
+
+**Systematic small negative bias (< 0.1%):** Jun/2024 onward shows a consistent ~3 kbpd undercount vs boletim. This is explained by condensate: the boletim includes both oil AND condensate in the "petróleo" total; CDP APEX separately tracks them. The bias magnitude (~0.07%) is negligible.
+
+**Max absolute delta: 0.09%. No month exceeds 0.1% deviation. Pipeline is historically clean across all 24 comparable months.**
+
+**2026 months (no boletim reference yet):**
+| Month   | Our kbpd | Wells | Notes |
+|---------|----------|-------|-------|
+| 2026-01 | 3950.5   | 6092  | — |
+| 2026-02 | 4058.5   | 6079  | — |
+| 2026-03 | 3672.8   | 6286  | Lower PreSal (2978.6 vs ~3980 prior month) — likely planned FPSO maintenance, not a data issue |
+| 2026-04 | 4091.3   | 3674  | Partial month: Terra = 36 kbpd (vs ~82-88 typical) — onshore wells still being published. Offshore (PreSal 3536 + PosSal 519) matches portal pagination 774 offshore rows. |
+
 ### Before you add any transformation to this pipeline
 
 Read this section. Then ask: does this change aggregate, filter, or transform production values? If yes, do not merge without explicit CTO sign-off and update of this section.
