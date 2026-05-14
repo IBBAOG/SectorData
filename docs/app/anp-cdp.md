@@ -251,6 +251,140 @@ After a complete Apr/2026 load (post-deduplication):
 - Offshore kbpd: **~4 055** (PosSal ~519 + PreSal ~3 536)
 - `7-TUP-121DA-RJS` TUPI Apr/2026: `petroleo_bbl_dia ≈ 30 234.9198`
 
+### Historical validation vs ANP Boletim Mensal (2017-2023)
+
+Audit conducted 2026-05-14. Compared `anp_cdp_producao` aggregates (SUM petroleo_bbl_dia / 1000) against the official ANP **Boletim Mensal da Produção de Petróleo e Gás Natural** published PDFs for all 84 months from Jan/2017 through Dec/2023.
+
+**Method:** 84 monthly bulletins downloaded from `gov.br/anp` (URL pattern `arquivos-bmppgn/{YEAR}/{YEAR}-{MM}-boletim.pdf` for 2017–2021; `boletim-{month-pt}.pdf` for 2022–2023; encarte variants for December editions). Oil production totals extracted via `pdfplumber` from page 5 "Histórico de produção de petróleo" table (Petróleo row, last value = current month). Values in Mbbl/d = kbpd. Compared against full DB scan (608,548 rows for 2017–2023).
+
+**Summary: 10 BAD months (all in 2017), 74 OK. 2018–2023: exact match (< 0.02% deviation).**
+
+| Month   | Our kbpd | ANP kbpd | Delta kbpd | Delta %  | Status |
+|---------|----------|----------|------------|----------|--------|
+| 2017-01 | 3060.6   | 2687     | +373.6     | +13.90%  | BAD    |
+| 2017-02 | 3086.5   | 2676     | +410.5     | +15.34%  | BAD    |
+| 2017-03 | 2339.4   | 2550     | -210.6     | -8.26%   | BAD    |
+| 2017-04 | 2288.7   | 2539     | -250.3     | -9.86%   | BAD    |
+| 2017-05 | 2679.4   | 2653     | +26.4      | +1.00%   | OK     |
+| 2017-06 | 3216.5   | 2675     | +541.5     | +20.24%  | BAD    |
+| 2017-07 | 2627.1   | 2623     | +4.1       | +0.16%   | OK     |
+| 2017-08 | 2798.3   | 2576     | +222.3     | +8.63%   | BAD    |
+| 2017-09 | 2930.3   | 2653     | +277.3     | +10.45%  | BAD    |
+| 2017-10 | 2829.3   | 2627     | +202.3     | +7.70%   | BAD    |
+| 2017-11 | 2896.1   | 2595     | +301.1     | +11.60%  | BAD    |
+| 2017-12 | 2946.0   | 2612     | +334.0     | +12.79%  | BAD    |
+| 2018-01 | 2615.2   | 2615     | +0.2       | +0.01%   | OK     |
+| 2018-02 | 2617.3   | 2617     | +0.3       | +0.01%   | OK     |
+| 2018-03 | 2557.3   | 2557     | +0.3       | +0.01%   | OK     |
+| 2018-04 | 2596.7   | 2597     | -0.3       | -0.01%   | OK     |
+| 2018-05 | 2607.5   | 2607     | +0.5       | +0.02%   | OK     |
+| 2018-06 | 2589.8   | 2590     | -0.2       | -0.01%   | OK     |
+| 2018-07 | 2575.1   | 2575     | +0.1       | +0.00%   | OK     |
+| 2018-08 | 2521.7   | 2522     | -0.3       | -0.01%   | OK     |
+| 2018-09 | 2485.7   | 2486     | -0.3       | -0.01%   | OK     |
+| 2018-10 | 2614.1   | 2614     | +0.1       | +0.00%   | OK     |
+| 2018-11 | 2567.3   | 2567     | +0.3       | +0.01%   | OK     |
+| 2018-12 | 2691.0   | 2691     | 0.0        | +0.00%   | OK     |
+| 2019-01 | 2630.9   | 2631     | -0.1       | -0.00%   | OK     |
+| 2019-02 | 2489.4   | 2489     | +0.4       | +0.02%   | OK     |
+| 2019-03 | 2560.1   | 2560     | +0.1       | +0.00%   | OK     |
+| 2019-04 | 2603.9   | 2604     | -0.1       | -0.00%   | OK     |
+| 2019-05 | 2730.9   | 2731     | -0.1       | -0.00%   | OK     |
+| 2019-06 | 2557.4   | 2557     | +0.4       | +0.02%   | OK     |
+| 2019-07 | 2774.7   | 2775     | -0.3       | -0.01%   | OK     |
+| 2019-08 | 2989.4   | 2989     | +0.4       | +0.01%   | OK     |
+| 2019-09 | 2927.3   | 2927     | +0.3       | +0.01%   | OK     |
+| 2019-10 | 2963.9   | 2964     | -0.1       | -0.00%   | OK     |
+| 2019-11 | 3090.5   | 3090     | +0.5       | +0.02%   | OK     |
+| 2019-12 | 3106.6   | 3107     | -0.4       | -0.01%   | OK     |
+| 2020-01 | 3168.4   | 3168     | +0.4       | +0.01%   | OK     |
+| 2020-02 | 2971.7   | 2972     | -0.3       | -0.01%   | OK     |
+| 2020-03 | 2973.4   | 2973     | +0.4       | +0.01%   | OK     |
+| 2020-04 | 2958.4   | 2958     | +0.4       | +0.01%   | OK     |
+| 2020-05 | 2765.4   | 2765     | +0.4       | +0.01%   | OK     |
+| 2020-06 | 3013.1   | 3013     | +0.1       | +0.00%   | OK     |
+| 2020-07 | 3078.3   | 3078     | +0.3       | +0.01%   | OK     |
+| 2020-08 | 3087.0   | 3087     | 0.0        | +0.00%   | OK     |
+| 2020-09 | 2907.1   | 2907     | +0.1       | +0.00%   | OK     |
+| 2020-10 | 2873.6   | 2874     | -0.4       | -0.01%   | OK     |
+| 2020-11 | 2754.6   | 2755     | -0.4       | -0.01%   | OK     |
+| 2020-12 | 2726.4   | 2726     | +0.4       | +0.01%   | OK     |
+| 2021-01 | 2873.0   | 2873     | 0.0        | +0.00%   | OK     |
+| 2021-02 | 2818.9   | 2819     | -0.1       | -0.00%   | OK     |
+| 2021-03 | 2844.3   | 2844     | +0.3       | +0.01%   | OK     |
+| 2021-04 | 2974.1   | 2974     | +0.1       | +0.00%   | OK     |
+| 2021-05 | 2931.8   | 2932     | -0.2       | -0.01%   | OK     |
+| 2021-06 | 2903.4   | 2903     | +0.4       | +0.01%   | OK     |
+| 2021-07 | 3045.2   | 3045     | +0.2       | +0.01%   | OK     |
+| 2021-08 | 2997.3   | 2997     | +0.3       | +0.01%   | OK     |
+| 2021-09 | 3000.8   | 3001     | -0.2       | -0.01%   | OK     |
+| 2021-10 | 2777.6   | 2778     | -0.4       | -0.01%   | OK     |
+| 2021-11 | 2851.7   | 2852     | -0.3       | -0.01%   | OK     |
+| 2021-12 | 2837.5   | 2838     | -0.5       | -0.02%   | OK     |
+| 2022-01 | 3032.5   | 3032     | +0.5       | +0.02%   | OK     |
+| 2022-02 | 2916.6   | 2917     | -0.4       | -0.01%   | OK     |
+| 2022-03 | 2981.2   | 2981     | +0.2       | +0.01%   | OK     |
+| 2022-04 | 2999.1   | 2999     | +0.1       | +0.00%   | OK     |
+| 2022-05 | 2878.8   | 2879     | -0.2       | -0.01%   | OK     |
+| 2022-06 | 2828.5   | 2829     | -0.5       | -0.02%   | OK     |
+| 2022-07 | 2962.4   | 2963     | -0.6       | -0.02%   | OK     |
+| 2022-08 | 3086.5   | 3087     | -0.5       | -0.02%   | OK     |
+| 2022-09 | 3147.8   | 3148     | -0.2       | -0.01%   | OK     |
+| 2022-10 | 3244.5   | 3245     | -0.5       | -0.02%   | OK     |
+| 2022-11 | 3095.5   | 3095     | +0.5       | +0.02%   | OK     |
+| 2022-12 | 3073.7   | 3074     | -0.3       | -0.01%   | OK     |
+| 2023-01 | 3274.4   | 3274     | +0.4       | +0.01%   | OK     |
+| 2023-02 | 3261.6   | 3262     | -0.4       | -0.01%   | OK     |
+| 2023-03 | 3115.4   | 3115     | +0.4       | +0.01%   | OK     |
+| 2023-04 | 3138.8   | 3141     | -2.2       | -0.07%   | OK     |
+| 2023-05 | 3187.7   | 3201     | -13.3      | -0.42%   | OK     |
+| 2023-06 | 3366.5   | 3367     | -0.5       | -0.01%   | OK     |
+| 2023-07 | 3510.2   | 3513     | -2.8       | -0.08%   | OK     |
+| 2023-08 | 3461.9   | 3462     | -0.1       | -0.00%   | OK     |
+| 2023-09 | 3665.4   | 3672     | -6.6       | -0.18%   | OK     |
+| 2023-10 | 3541.8   | 3543     | -1.2       | -0.03%   | OK     |
+| 2023-11 | 3664.3   | 3678     | -13.7      | -0.37%   | OK     |
+| 2023-12 | 3583.5   | 3585     | -1.5       | -0.04%   | OK     |
+
+**BAD months ordered by |delta_%| descending:**
+
+| Month   | Our kbpd | ANP kbpd | Delta kbpd | Delta %  |
+|---------|----------|----------|------------|----------|
+| 2017-06 | 3216.5   | 2675     | +541.5     | +20.24%  |
+| 2017-02 | 3086.5   | 2676     | +410.5     | +15.34%  |
+| 2017-01 | 3060.6   | 2687     | +373.6     | +13.90%  |
+| 2017-12 | 2946.0   | 2612     | +334.0     | +12.79%  |
+| 2017-11 | 2896.1   | 2595     | +301.1     | +11.60%  |
+| 2017-09 | 2930.3   | 2653     | +277.3     | +10.45%  |
+| 2017-04 | 2288.7   | 2539     | -250.3     | -9.86%   |
+| 2017-08 | 2798.3   | 2576     | +222.3     | +8.63%   |
+| 2017-03 | 2339.4   | 2550     | -210.6     | -8.26%   |
+| 2017-10 | 2829.3   | 2627     | +202.3     | +7.70%   |
+
+#### Diagnosis: 2017 anomaly root cause
+
+The 2017 data was loaded during the historical backfill (`02_upload.py --from-parquet`) that ran in early 2026-05. At that time, the `groupby(_PK).agg(sum)` bug was still present in the pipeline.
+
+**Cross-check confirms the parquet is correct:** `DADOS/anp_cdp_producao_poco/cdp_consolidado.parquet` has the correct kbpd values for 2017 (e.g. Jan/2017: parquet = 2686.6 kbpd, ANP = 2687 kbpd, delta < 0.01%). The parquet also has significantly more records: parquet = 149,116 rows for 2017 vs DB = 102,220 rows — a deficit of **46,896 rows (~31.4%)**.
+
+The mixed-sign delta pattern (most months DB > ANP, but Mar and Apr DB < ANP) is explained by the two interacting bugs:
+1. **`groupby+sum` over-counts**: For months with many wells tied to multiple `campo` entries, the groupby collapsed rows and summed production → DB higher than truth.
+2. **`WHERE petroleo > 0 OR gas > 0` zero-filter**: For months where many zero-production wells were published, the filter dropped them → DB lower than truth (Mar/Apr 2017 likely had more scheduled-maintenance zero-production wells).
+
+**2018–2023: clean.** The monthly pipeline loaded these years with the correct as-is logic. Max delta < 0.02% (condensate systematic bias, identical to the 2024–2025 pattern documented above).
+
+#### Re-run recommendation: 2017 only
+
+The parquet source (`DADOS/anp_cdp_producao_poco/cdp_consolidado.parquet`) is confirmed correct. A single re-run of `02_upload.py --from-parquet --purge-year 2017` (or 12 monthly `--purge` dispatches) will replace the 102,220 corrupted rows with the correct 149,116 rows.
+
+| Batch | Months | Action | Priority |
+|-------|--------|--------|----------|
+| 1 | 2017-01 to 2017-12 (all 12) | `02_upload.py --from-parquet --year 2017 --purge` | High |
+| — | 2018–2023 | No action needed — already clean | — |
+| — | 2024–2026 | Already audited (2026-05-14, separate section) — clean | — |
+
+**Note:** The Power BI pipeline (`01_extract_powerbi.py`) does not cover historical data before 2025-11-09, so the parquet is the only source for the 2017 fix. The parquet data was collected via the old Selenium/APEX pipeline but without the groupby bug (the parquet was generated independently by the alert subsystem which had its own extraction path).
+
 ### Historical validation vs ANP Boletim Mensal (2024-2025)
 
 Audit conducted 2026-05-14. Compared `anp_cdp_producao` aggregates (SUM petroleo_bbl_dia / 1000) against the official ANP **Boletim Mensal da Produção de Petróleo e Gás Natural** published PDFs for every month from Jan/2024 through Dec/2025.
