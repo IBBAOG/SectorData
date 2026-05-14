@@ -389,7 +389,12 @@ def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
         cl = c.lower()
         if "bacia" in cl:
             col_map["bacia"] = c
-        elif "poco" in cl or "poço" in cl:
+        elif ("poco" in cl or "po\xe7o" in cl) and "anp" in cl:
+            # Prefer "Nome Poço ANP" (official SIGEP hyphenated code) over
+            # "Nome Poço Operador" (compact operator-internal code without hyphens).
+            col_map["poco"] = c
+        elif ("poco" in cl or "po\xe7o" in cl) and "poco" not in col_map:
+            # Fallback: any poço column if ANP column was not found yet.
             col_map["poco"] = c
         elif "campo" in cl:
             col_map["campo"] = c
