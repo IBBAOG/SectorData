@@ -29,7 +29,7 @@ Header dinâmico: "ANP CDP — Produção por Poço · {métrica} · {ano iníci
 | RPC | Tipo | Função |
 |---|---|---|
 | `get_anp_cdp_filtros` | próprio | Opções de filtros (8 listas + `ano_min`/`ano_max`) |
-| `get_anp_cdp_poco_serie` | próprio | Série mensal agregada filtrada (10 params: pocos, campos, bacoes, locais, estados, operadores, instalacoes, tipos_instalacao, ano_inicio, ano_fim) — returns `wells_count` + `fields_count` per month since migration `20260513140000` |
+| `get_anp_cdp_poco_serie` | próprio | Série mensal agregada filtrada (10 params: pocos, campos, bacoes, locais, estados, operadores, instalacoes, tipos_instalacao, ano_inicio, ano_fim) — returns `wells_count` + `records_count` + `fields_count` per month (records_count added after `20260513140000`) |
 | `get_anp_cdp_pocos_json` | próprio | Dump completo de poços via MV (lista para multi-select de Poço, filtrada client-side) |
 | `refresh_anp_cdp_pocos` | próprio (chamado pelo ETL) | Refresh do `mv_anp_cdp_pocos` após upload |
 
@@ -181,23 +181,26 @@ A freshly published month may show aggregate production that is dramatically low
 - Running a manual month-level DELETE for curation purposes — breaks the alert subsystem and loses disclosure-order information.
 - Treating a partial-month kbpd value as erroneous without first checking how many wells the ANP has published for that month.
 
-## Partial-month coverage UX — wells & fields counts
+## Partial-month coverage UX — wells, records & fields counts
 
-Since migration `20260513140000_anp_cdp_poco_serie_counts.sql`, `get_anp_cdp_poco_serie` returns two extra columns per month:
+Since migration `20260513140000_anp_cdp_poco_serie_counts.sql`, `get_anp_cdp_poco_serie` returns two extra columns per month, and a third was added subsequently:
 
 | Column | Type | Meaning |
 |---|---|---|
-| `wells_count` | `bigint` | `COUNT(DISTINCT poco)` for that `(ano, mes)` slice |
-| `fields_count` | `bigint` | `COUNT(DISTINCT campo)` for that `(ano, mes)` slice |
+| `wells_count` | `bigint` | `COUNT(DISTINCT poco)` — distinct wells reported for that `(ano, mes)` slice (geological count) |
+| `records_count` | `bigint` | `COUNT(*)` — total rows for that slice; matches ANP portal pagination (e.g. "1-25 de 774") |
+| `fields_count` | `bigint` | `COUNT(DISTINCT campo)` — distinct fields reported for that `(ano, mes)` slice |
 
-These are surfaced in the chart in two ways (UX Option A + B):
+**wells vs records distinction:** A single well can appear in multiple records when it is tied to more than one field (e.g. `SÉPIA`, `SÉPIA LESTE`, `SÉPIA_ECO`). `wells_count` is the geologically meaningful number; `records_count` is the pagination count shown on the ANP portal. For Apr/2026 offshore: 414 distinct wells → 774 records (because many wells are tied to 2+ fields). Both numbers are informative to different audiences.
 
-1. **Enriched hover tooltip** — every data point shows `{value} · {N} wells · {N} fields` when the user hovers.
-2. **Last-point annotation** — a small muted label (`font-size 10, color #aaa`) floats above the most recent point showing `{N} wells · {N} fields`. It has a faint arrow and white background so it does not obscure the trace. This makes partial-month coverage visible without needing to hover.
+These are surfaced in the chart in two ways:
 
-If `wells_count` / `fields_count` are `0` (migration not yet applied, or filtered to an empty set), the annotation is suppressed and the hover falls back gracefully.
+1. **Enriched hover tooltip** — every data point shows `{value} · {N} wells · {N} records · {N} fields` when the user hovers. Example: `"4,055.2 kbpd — 414 wells · 774 records · 55 fields"`.
+2. **Last-point annotation** — a small muted label (`font-size 10, color #aaa`) floats above the most recent point showing `"{N} wells · {N} records · {N} fields"`. It has a faint arrow and white background so it does not obscure the trace. This makes partial-month coverage visible without needing to hover.
 
-**TypeScript contract:** `AnpCdpSeriePonto` in `src/lib/rpc.ts` now includes `wells_count: number` and `fields_count: number`. The `buildChart` helper in `page.tsx` reads these via Plotly `customdata`.
+**Graceful fallback:** if `records_count` is `undefined` or `0` (migration not yet deployed, or pre-merge deploy window), it is omitted from both hover and annotation — the label falls back to `"{N} wells · {N} fields"`. If `wells_count` / `fields_count` are also `0`, the annotation is suppressed entirely.
+
+**TypeScript contract:** `AnpCdpSeriePonto` in `src/lib/rpc.ts` includes `wells_count: number`, `records_count?: number` (optional — new migration), and `fields_count: number`. The `buildChart` helper in `page.tsx` reads these via Plotly `customdata[0..2]`.
 
 ## As-is loading contract
 

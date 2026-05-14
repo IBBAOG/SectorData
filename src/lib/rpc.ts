@@ -1689,6 +1689,8 @@ export type AnpCdpSeriePonto = {
   tempo_prod_hs_mes: number;
   /** Number of distinct wells reported for this month (COUNT DISTINCT poco). */
   wells_count: number;
+  /** Total row count for this month (COUNT(*) — matches ANP portal pagination). */
+  records_count?: number;
   /** Number of distinct fields reported for this month (COUNT DISTINCT campo). */
   fields_count: number;
 };
