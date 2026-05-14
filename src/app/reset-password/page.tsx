@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import BrandLogo from "../../components/BrandLogo";
 import { getSupabaseClient } from "../../lib/supabaseClient";
+import { checkStrength, scoreLabel } from "../../lib/passwordPolicy";
 
 
 const BG_GIFS = [
@@ -23,6 +24,8 @@ export default function ResetPasswordPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+
+  const strength = useMemo(() => checkStrength(password), [password]);
 
   useEffect(() => {
     setBgUrl(BG_GIFS[Math.floor(Math.random() * BG_GIFS.length)]);
@@ -67,8 +70,8 @@ export default function ResetPasswordPage() {
       setError("Passwords do not match.");
       return;
     }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
+    if (!strength.ok) {
+      setError(strength.message);
       return;
     }
 
@@ -176,13 +179,41 @@ export default function ResetPasswordPage() {
         </label>
         <input
           id="input-password"
-          className="form-control mb-3"
+          className="form-control"
           type="password"
           placeholder="••••••••"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleReset()}
         />
+
+        {password && (
+          <div className="mt-2 mb-3">
+            <div className="progress" style={{ height: 4 }}>
+              <div
+                className="progress-bar"
+                style={{
+                  width: `${(strength.score + 1) * 20}%`,
+                  backgroundColor:
+                    strength.score >= 3
+                      ? "#28a745"
+                      : strength.score >= 2
+                        ? "#ffc107"
+                        : "#dc3545",
+                }}
+              />
+            </div>
+            <small className="text-muted">{scoreLabel(strength.score)}</small>
+            {strength.suggestions.length > 0 && (
+              <ul className="small text-muted mb-0 mt-1">
+                {strength.suggestions.map((s) => (
+                  <li key={s}>{s}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        {!password && <div className="mb-3" />}
 
         <label
           htmlFor="input-confirm-password"

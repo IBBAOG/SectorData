@@ -343,6 +343,25 @@ Helper em `src/lib/rateLimit.ts` exporta três limiters (`stocksLimiter`, `scrap
 
 Resposta 429 inclui `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
 
+### F2.1 — Password policy (12 chars + zxcvbn)
+
+Política centralizada em [`src/lib/passwordPolicy.ts`](../../src/lib/passwordPolicy.ts):
+
+- `MIN_LENGTH = 12` — mínimo absoluto de caracteres.
+- `MIN_SCORE = 3` — entropia mínima via `zxcvbn` (escala 0–4; 3 = "Good", 4 = "Strong").
+- `checkStrength(password)` retorna `{ ok, score, message, suggestions[] }` — consumido por qualquer formulário que defina/altere senha.
+- `scoreLabel(score)` mapeia `0..4` → `"Very weak" | "Weak" | "Fair" | "Good" | "Strong"`.
+
+Consumidores atuais:
+- `src/app/reset-password/page.tsx` — bloqueia submit se `!strength.ok`; exibe meter visual (`progress-bar` vermelho/amarelo/verde) + sugestões do zxcvbn em tempo real (`useMemo` recalcula a cada keystroke).
+
+> **Enforcement backend (CTO action item):** a validação client-side é UX, não enforcement. O backend tem que repetir a regra. CTO deve configurar manualmente em **Supabase Dashboard → Authentication → Policies → Password Requirements**:
+> - Min Length: 12
+> - Require lowercase / uppercase / digits / special chars (recomendado)
+> - Reject common passwords (built-in)
+>
+> Sem isso, um atacante via API direta consegue setar senha fraca.
+
 ## Padrões consolidados na Fase 3 (referência para futuros dashboards)
 
 A Fase 3 entregou 10 dashboards (ANP CDP, PPI, Preços Produtores, GLP, MDIC Comex, ANP LPC, SINDICOM, DAIE, Desembaraços, Painel Importações) e cristalizou os seguintes padrões. Use como checklist ao criar dashboard novo:
