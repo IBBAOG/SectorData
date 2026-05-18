@@ -34,6 +34,12 @@ on:
         default: 'false'
         type: choice
         options: ['false', 'true']
+      capture_session:
+        description: 'Pass --capture to 01_extract.py (refreshes alertas_session for alertas/ monitor)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
 
 # Extraction uses the ANP CDP APEX portal via Selenium + ddddocr CAPTCHA.
 # Script: 01_extract.py
@@ -89,9 +95,15 @@ jobs:
           PERIODO="${{ steps.periodo.outputs.primeiro }}"
           echo "=== Extracting $PERIODO via Selenium/APEX CAPTCHA ==="
           mkdir -p output/anp
+          EXTRA_FLAGS=""
+          if [ "${{ github.event.inputs.capture_session }}" = "true" ]; then
+            EXTRA_FLAGS="--capture"
+            echo "capture_session=true — passing --capture to refresh alertas_session APEX cookies"
+          fi
           python scripts/pipelines/anp/cdp/01_extract.py \
             --periodo "$PERIODO" \
-            --output output/anp
+            --output output/anp \
+            $EXTRA_FLAGS
 
       - name: Upload to Supabase
         run: |
