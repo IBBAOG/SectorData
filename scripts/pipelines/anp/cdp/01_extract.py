@@ -925,29 +925,37 @@ def main():
     # ── CAPTURE mode ──────────────────────────────────────────────────────────
     if args.capture:
         periodo_cap = periodos[0]
-        ambiente_cap = ambientes[0]
-        if len(periodos) > 1 or len(ambientes) > 1:
-            print(f"AVISO: --capture usa apenas {periodo_cap}/{AMBIENTES[ambiente_cap]}")
+        if len(periodos) > 1:
+            print(f"AVISO: --capture usa apenas o período {periodo_cap}")
 
-        print(f"Modo: CAPTURA")
+        print(f"Modo: CAPTURA ({periodo_cap} × {len(ambientes)} ambiente(s))")
         ocr_engine = ddddocr.DdddOcr(show_ad=False)
+
+        failures = []
         try:
-            result = capture_session(
-                ocr_engine, periodo_cap, ambiente_cap, args.output, download_dir
-            )
+            for ambiente_cap in ambientes:
+                print(f"\n=== Capturando {periodo_cap} / {AMBIENTES[ambiente_cap]} ===")
+                result = capture_session(
+                    ocr_engine, periodo_cap, ambiente_cap, args.output, download_dir
+                )
+                if result:
+                    # Upload captured session to Supabase so the alertas monitor can
+                    # use it without needing Selenium between monthly captures.
+                    _upload_session_to_supabase(
+                        Path(args.output) / SESSION_FILENAME,
+                        periodo_cap,
+                        ambiente_cap,
+                    )
+                else:
+                    failures.append(ambiente_cap)
         finally:
             shutil.rmtree(download_dir, ignore_errors=True)
 
-        if result:
-            # Upload captured session to Supabase so the alertas monitor can use it
-            # without needing Selenium between monthly captures.
-            _upload_session_to_supabase(
-                Path(args.output) / SESSION_FILENAME,
-                periodo_cap,
-                ambiente_cap,
-            )
-
-        sys.exit(0 if result else 1)
+        if failures:
+            print(f"\nCaptura FALHOU em {len(failures)} ambiente(s): {failures}")
+            sys.exit(1)
+        print(f"\nCaptura OK em todos os {len(ambientes)} ambientes.")
+        sys.exit(0)
 
     # ── REPLAY / DEFAULT mode ─────────────────────────────────────────────────
     session_data = None
