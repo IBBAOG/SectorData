@@ -26,7 +26,7 @@ except ImportError as _replay_import_err:
 # GitHub dispatch settings
 _GITHUB_REPO  = "IBBAOG/SectorData"
 _WORKFLOW_ID  = "etl_anp_cdp.yml"
-_DEBOUNCE_HOURS = 6
+_DEBOUNCE_HOURS = 0.5
 
 
 def _mes_esperado() -> str:
@@ -139,7 +139,12 @@ class AnpCdpProducaoPoco(BaseMonitor):
             "Content-Type": "application/json",
         }
         try:
-            resp = requests.post(url, json={"ref": "main"}, headers=headers, timeout=15)
+            resp = requests.post(
+                url,
+                json={"ref": "main", "inputs": {"capture_session": "true"}},
+                headers=headers,
+                timeout=15,
+            )
             resp.raise_for_status()
             # Atualizar timestamp do debounce no estado
             estado["last_capture_attempt"] = datetime.now(timezone.utc).isoformat()
