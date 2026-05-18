@@ -41,6 +41,15 @@ _EXPIRED_PATTERNS = [
     re.compile(r"apex_authentication\.process_credentials", re.IGNORECASE),
 ]
 
+# Padrões que indicam que a resposta é a página APEX completa (form HTML) em vez do CSV.
+# Isso acontece quando a sessão expirou no servidor mas retorna HTTP 200 sem redirect para login.
+# Detectado em 2026-05-18: strategy 2 (f?p:CSV) retornava a página de busca como HTML.
+_APEX_PAGE_PATTERNS = [
+    re.compile(r'<form[^>]+action="wwv_flow\.accept', re.IGNORECASE),
+    re.compile(r'id="wwvFlowForm"', re.IGNORECASE),
+    re.compile(r'wwv_flow\.accept\?p_context=', re.IGNORECASE),
+]
+
 
 # ─── Result type ─────────────────────────────────────────────────────────────
 
@@ -72,7 +81,15 @@ def _build_requests_session(session_data: dict) -> requests.Session:
 
 
 def _looks_like_expired(response: requests.Response) -> bool:
-    """Return True if the response body/headers indicate an expired APEX session."""
+    """Return True if the response body/headers indicate an expired APEX session.
+
+    Covers two cases:
+    1. Explicit redirect/message: ORA-20876, 'Session expired', login redirect URL.
+    2. Silent expiry: server returns HTTP 200 with the full APEX page (form HTML)
+       instead of a CSV or JSON download link. This happens when the APEX session token
+       is no longer valid on the server side but there is no redirect.
+       Detected in production on 2026-05-18 (f?p:CSV strategy returned page-54 HTML).
+    """
     # Redirect to login URL
     if response.history:
         for redir in response.history:
@@ -85,6 +102,10 @@ def _looks_like_expired(response: requests.Response) -> bool:
     if "text/html" in content_type:
         snippet = response.text[:4096]
         for pat in _EXPIRED_PATTERNS:
+            if pat.search(snippet):
+                return True
+        # Detect silent expiry: APEX returned the full page form instead of CSV/JSON
+        for pat in _APEX_PAGE_PATTERNS:
             if pat.search(snippet):
                 return True
     return False
@@ -208,7 +229,7 @@ def _strategy_1_apex_get_download_link(
             r = s.get(raw_url, params=params_list, timeout=30)
 
         print(
-            f"    [fast] GET_DOWNLOAD_LINK → HTTP {r.status_code} "
+            f"    [fast] GET_DOWNLOAD_LINK -> HTTP {r.status_code} "
             f"ct={r.headers.get('Content-Type','')!r}"
         )
 

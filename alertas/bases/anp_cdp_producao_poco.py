@@ -39,6 +39,15 @@ def _mes_esperado() -> str:
     return f"{mes:02d}/{ano}"
 
 
+class _SessionExpiredError(RuntimeError):
+    """Raised when replay_download signals the APEX session is expired on the server side.
+
+    Callers should treat this differently from a generic download error: an expired session
+    requires re-capture via Selenium (etl_anp_cdp.yml), while a generic error may be
+    transient (network, parsing) and can be retried on the next run.
+    """
+
+
 class AnpCdpProducaoPoco(BaseMonitor):
     slug = "anp_cdp_producao_poco"
     nome = "ANP CDP — Producao por Poco"
@@ -55,16 +64,16 @@ class AnpCdpProducaoPoco(BaseMonitor):
 
     def _get_sessions_by_ambiente(self, slug: str) -> dict:
         """
-        Lê rows de alertas_session para o slug, indexadas por ambiente válido (M/S/T)
-        e não expirado. Retorna dict parcial — pode ter 0, 1, 2 ou 3 entradas.
+        Le rows de alertas_session para o slug, indexadas por ambiente valido (M/S/T)
+        e nao expirado. Retorna dict parcial -- pode ter 0, 1, 2 ou 3 entradas.
 
         Caller deve decidir o que fazer baseado no que voltou:
-        - dict vazio → nenhuma session → dispara recaptura
-        - dict parcial → ANP pode não ter dados em todos os ambientes; processa o que tem
-        - dict cheio → todos os 3 ambientes prontos
+        - dict vazio -> nenhuma session -> dispara recaptura
+        - dict parcial -> ANP pode nao ter dados em todos os ambientes; processa o que tem
+        - dict cheio -> todos os 3 ambientes prontos
         """
         if self._sb is None:
-            print(f"[{self.slug}]   Supabase não configurado — não é possível ler sessão.")
+            print(f"[{self.slug}]   Supabase nao configurado -- nao e possivel ler sessao.")
             return {}
         try:
             res = (
@@ -81,7 +90,7 @@ class AnpCdpProducaoPoco(BaseMonitor):
         rows = res.data if res else []
         by_amb = {row["ambiente"]: row for row in rows if row.get("ambiente") in ("M", "S", "T")}
 
-        # Filtrar expirados (mas não tudo-ou-nada — só remove o expirado)
+        # Filtrar expirados (mas nao tudo-ou-nada -- so remove o expirado)
         now_utc = datetime.now(timezone.utc)
         for amb in list(by_amb.keys()):
             expires_at_str = by_amb[amb].get("expires_at")
@@ -90,7 +99,7 @@ class AnpCdpProducaoPoco(BaseMonitor):
             try:
                 expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
                 if now_utc >= expires_at:
-                    print(f"[{self.slug}]   Sessão {amb} expirada em {expires_at_str} — removendo.")
+                    print(f"[{self.slug}]   Sessao {amb} expirada em {expires_at_str} -- removendo.")
                     del by_amb[amb]
             except ValueError:
                 pass
@@ -107,7 +116,7 @@ class AnpCdpProducaoPoco(BaseMonitor):
         """
         pat = os.environ.get("WORKFLOW_DISPATCH_PAT", "")
         if not pat:
-            print(f"[{self.slug}]   WORKFLOW_DISPATCH_PAT não configurado — não é possível disparar workflow.")
+            print(f"[{self.slug}]   WORKFLOW_DISPATCH_PAT nao configurado -- nao e possivel disparar workflow.")
             return False
 
         # Verificar debounce via estado local
@@ -141,17 +150,19 @@ class AnpCdpProducaoPoco(BaseMonitor):
             print(f"[{self.slug}]   Erro ao disparar workflow: {e}")
             return False
 
-    # ── Download dos CSVs do mês via _replay ─────────────────────────────────
+    # ── Download dos CSVs do mes via _replay ──────────────────────────────────
 
     def _baixar_csvs_mes(self, sessions_by_ambiente: dict, periodo: str) -> dict:
         """
-        Chama replay_download usando a session específica de cada ambiente.
+        Chama replay_download usando a session especifica de cada ambiente.
         sessions_by_ambiente = {"M": row, "S": row, "T": row} (cada row tem .session jsonb).
-        Retorna {"M": path, "S": path, "T": path} ou levanta RuntimeError.
+        Retorna {"M": path, "S": path, "T": path}.
+        Levanta _SessionExpiredError quando replay retorna status="expired" (re-capture needed).
+        Levanta RuntimeError para outros erros de download.
         """
         if replay_download is None:
             raise ImportError(
-                f"Frente B não criou scripts/pipelines/anp/cdp/_replay.py ainda. "
+                f"Frente B nao criou scripts/pipelines/anp/cdp/_replay.py ainda. "
                 f"Erro original: {_REPLAY_MISSING_MSG}"
             )
 
@@ -172,15 +183,24 @@ class AnpCdpProducaoPoco(BaseMonitor):
             # Guard against both the dataclass API and old string-return fallback.
             if hasattr(res, "status"):
                 # ReplayResult dataclass
-                if res.status in ("expired", "error"):
+                if res.status == "expired":
+                    raise _SessionExpiredError(
+                        f"replay_download returned status='expired' for "
+                        f"ambiente={ambiente}, periodo={periodo}: {res.message}"
+                    )
+                if res.status == "error":
                     raise RuntimeError(
-                        f"replay_download returned status='{res.status}' for "
+                        f"replay_download returned status='error' for "
                         f"ambiente={ambiente}, periodo={periodo}: {res.message}"
                     )
                 csv_path = res.csv_path
             else:
                 # Legacy: function returned a string path or sentinel string
-                if res in ("expired", "error") or res is None:
+                if res == "expired":
+                    raise _SessionExpiredError(
+                        f"replay_download returned 'expired' for ambiente={ambiente}, periodo={periodo}."
+                    )
+                if res in ("error", None):
                     raise RuntimeError(
                         f"replay_download returned '{res}' for ambiente={ambiente}, periodo={periodo}."
                     )
@@ -194,7 +214,7 @@ class AnpCdpProducaoPoco(BaseMonitor):
 
         return resultado
 
-    # ── Extração de campos do CSV ─────────────────────────────────────────────
+    # ── Extracao de campos do CSV ─────────────────────────────────────────────
 
     def _extrair_campos(self, csv_path: str) -> set:
         campos = set()
@@ -214,7 +234,7 @@ class AnpCdpProducaoPoco(BaseMonitor):
             print(f"    [aviso] Erro ao parsear CSV: {e}")
         return campos
 
-    # ── Lógica principal ──────────────────────────────────────────────────────
+    # ── Logica principal ──────────────────────────────────────────────────────
 
     def run(self) -> bool:
         print(f"[{self.slug}] {self.nome}...")
@@ -222,12 +242,12 @@ class AnpCdpProducaoPoco(BaseMonitor):
         # Carregar estado atual para uso em _trigger_capture_workflow_with_debounce
         self._estado_atual = self.ler_estado()
 
-        # 1. Tentar obter sessions (M, S, T) do Supabase — pode vir parcial
+        # 1. Tentar obter sessions (M, S, T) do Supabase -- pode vir parcial
         sessions = self._get_sessions_by_ambiente(self.slug)
         periodo = _mes_esperado()
 
-        # 2. Filtrar sessions cujo captured_periodo bate com o mês esperado.
-        # Sessions de meses passados são consideradas inválidas pra esta rodada.
+        # 2. Filtrar sessions cujo captured_periodo bate com o mes esperado.
+        # Sessions de meses passados sao consideradas invalidas pra esta rodada.
         sessions_validas = {}
         for amb, row in sessions.items():
             captured_periodo = (row.get("metadata") or {}).get("captured_periodo")
@@ -235,16 +255,16 @@ class AnpCdpProducaoPoco(BaseMonitor):
                 sessions_validas[amb] = row
             else:
                 print(
-                    f"[{self.slug}]   Session {amb} é de {captured_periodo!r}, "
-                    f"mês esperado é {periodo!r} — descartada."
+                    f"[{self.slug}]   Session {amb} e de {captured_periodo!r}, "
+                    f"mes esperado e {periodo!r} -- descartada."
                 )
 
-        # 3. Se 0 sessions válidas, dispara recaptura (com debounce)
+        # 3. Se 0 sessions validas, dispara recaptura (com debounce)
         if not sessions_validas:
             if self._trigger_capture_workflow_with_debounce(self.slug):
-                print(f"[{self.slug}]   Sem sessions válidas para {periodo}; capture workflow disparado.")
+                print(f"[{self.slug}]   Sem sessions validas para {periodo}; capture workflow disparado.")
             else:
-                print(f"[{self.slug}]   Sem sessions válidas; capture já disparado nas últimas {_DEBOUNCE_HOURS}h (debounce). Pulando.")
+                print(f"[{self.slug}]   Sem sessions validas; capture ja disparado nas ultimas {_DEBOUNCE_HOURS}h (debounce). Pulando.")
             return False
 
         # 4. Logar o que vai processar (parcial ou cheio)
@@ -252,20 +272,41 @@ class AnpCdpProducaoPoco(BaseMonitor):
         ambientes_ausentes  = sorted(set(["M", "S", "T"]) - set(ambientes_presentes))
         if ambientes_ausentes:
             print(f"[{self.slug}]   Processando {ambientes_presentes}; ausentes: {ambientes_ausentes}.")
-            # Dispara ETL pra retentar capturar os ambientes faltantes — talvez ANP publicou
-            # algo desde a última captura. Debounce de 6h evita spam de dispatches.
+            # Dispara ETL pra retentar capturar os ambientes faltantes -- talvez ANP publicou
+            # algo desde a ultima captura. Debounce de 6h evita spam de dispatches.
             if self._trigger_capture_workflow_with_debounce(self.slug):
                 print(f"[{self.slug}]   ETL re-disparado pra tentar capturar {ambientes_ausentes}.")
 
-        # 5. Baixar CSVs apenas dos ambientes com session válida
+        # 5. Baixar CSVs apenas dos ambientes com session valida
         try:
             csvs = self._baixar_csvs_mes(sessions_validas, periodo)
+        except _SessionExpiredError as e:
+            # Session expired on the ANP server side (HTTP 200 but returned APEX page HTML).
+            # Trigger a fresh Selenium capture run to obtain new sessions.
+            print(f"[{self.slug}]   SESSAO EXPIRADA (servidor ANP): {e}")
+            self.registrar_historico(
+                f"Sessao APEX expirada para {periodo} -- recaptura disparada",
+                self._estado_atual,
+                [],
+            )
+            if self._trigger_capture_workflow_with_debounce(self.slug):
+                print(f"[{self.slug}]   Workflow de recaptura disparado.")
+            else:
+                print(f"[{self.slug}]   Recaptura dentro do debounce de {_DEBOUNCE_HOURS}h. Aguardando.")
+            return False
         except Exception as e:
             print(f"[{self.slug}]   ERRO ao baixar CSVs: {e}")
+            # Log the failure in history so consecutive failures are visible.
+            # Do NOT advance ultimo_periodo on download failure -- we need to retry.
+            self.registrar_historico(
+                f"ERRO ao baixar CSVs para {periodo}: {e}",
+                self._estado_atual,
+                [],
+            )
             return False
 
-        # 3b. Upload dos CSVs para Supabase (idempotente — sempre roda, não só quando há campo novo)
-        # Antes esse passo vivia em etl_anp_cdp.yml; unificado aqui pra eliminar duplicação.
+        # 5b. Upload dos CSVs para Supabase (idempotente -- sempre roda, nao so quando ha campo novo)
+        # Antes esse passo vivia em etl_anp_cdp.yml; unificado aqui pra eliminar duplicacao.
         try:
             upload_script = _SCRIPTS_DIR / "pipelines" / "anp" / "cdp" / "02_upload.py"
             csv_dir       = str(_DADOS_DIR / "_downloads")
@@ -275,24 +316,24 @@ class AnpCdpProducaoPoco(BaseMonitor):
                 capture_output=True, text=True, timeout=300,
             )
             if result.returncode == 0:
-                print(f"[{self.slug}]   ✓ Upload OK")
+                print(f"[{self.slug}]   Upload OK")
             else:
                 print(
-                    f"[{self.slug}]   ⚠ Upload falhou (rc={result.returncode}): "
+                    f"[{self.slug}]   Upload falhou (rc={result.returncode}): "
                     f"{(result.stderr or result.stdout)[:500]}"
                 )
         except Exception as e:
-            print(f"[{self.slug}]   ⚠ Erro ao chamar upload: {e}")
+            print(f"[{self.slug}]   Erro ao chamar upload: {e}")
 
-        # 4. Comparar campos por ambiente com baseline NO MESMO PERÍODO.
-        # Semântica: alerta = "dados de produção do mês X para o campo Y foram divulgados".
-        # Se mês mudou desde o último run, baseline é resetada — o que existia em meses
-        # anteriores não importa, queremos saber quando cada campo aparece NESTE mês.
+        # 6. Comparar campos por ambiente com baseline NO MESMO PERIODO.
+        # Semantica: alerta = "dados de producao do mes X para o campo Y foram divulgados".
+        # Se mes mudou desde o ultimo run, baseline e resetada -- o que existia em meses
+        # anteriores nao importa, queremos saber quando cada campo aparece NESTE mes.
         novidades = []
         novo_estado = dict(self._estado_atual)
         ultimo_periodo = self._estado_atual.get("ultimo_periodo")
         if ultimo_periodo != periodo:
-            print(f"[{self.slug}]   Período mudou ({ultimo_periodo!r} → {periodo!r}); resetando baseline de campos.")
+            print(f"[{self.slug}]   Periodo mudou ({ultimo_periodo!r} -> {periodo!r}); resetando baseline de campos.")
             for amb in ("M", "S", "T"):
                 novo_estado[f"campos_{amb.lower()}"] = []
 
@@ -303,53 +344,60 @@ class AnpCdpProducaoPoco(BaseMonitor):
             novos    = sorted(atuais - baseline)
             if novos:
                 novidades.append((ambiente, novos))
+            # Always update baseline for successfully downloaded ambientes.
+            # This prevents stale baselines even when 0 new fields are found.
+            if atuais:
                 novo_estado[baseline_key] = sorted(atuais)
+
+        # Persist estado whenever CSVs were downloaded successfully, even with 0 novelties.
+        # This advances ultimo_periodo so the state does not get stuck on the previous month
+        # if replay succeeds but no new fields are found (e.g. no changes since last run).
+        novo_estado["ultimo_periodo"] = periodo
+        self.salvar_estado(novo_estado)
 
         if not novidades:
             print(f"[{self.slug}]   >> Sem campos novos")
             return False
 
-        # 5. Enviar alerta(s)
+        # 7. Enviar alerta(s)
         sys.path.insert(0, str(_ALERTAS_DIR))
         from notificador import enviar_alerta  # type: ignore
 
         total_campos = sum(len(novos) for _, novos in novidades)
 
         if total_campos <= 10:
-            # 1 email por campo (granular — CEO quer cada novo campo)
+            # 1 email por campo (granular -- CEO quer cada novo campo)
             for ambiente, novos in novidades:
                 for campo in novos:
                     print(f"[{self.slug}]   >> Novo campo: {campo} ({ambiente})")
                     enviar_alerta(
-                        f"ANP CDP — Novo campo identificado: {campo} ({ambiente})",
+                        f"ANP CDP -- Novo campo identificado: {campo} ({ambiente})",
                         (
                             f"Campo '{campo}' apareceu pela primeira vez no ambiente "
-                            f"{ambiente} para o período {periodo}."
+                            f"{ambiente} para o periodo {periodo}."
                         ),
                         link=self.url,
                     )
         else:
-            # Digest único quando há mais de 10 campos novos
-            print(f"[{self.slug}]   >> {total_campos} campos novos — enviando digest")
-            msg = f"{total_campos} campos novos no período {periodo}:\n\n"
+            # Digest unico quando ha mais de 10 campos novos
+            print(f"[{self.slug}]   >> {total_campos} campos novos -- enviando digest")
+            msg = f"{total_campos} campos novos no periodo {periodo}:\n\n"
             for ambiente, novos in novidades:
                 msg += f"## {ambiente}\n" + "\n".join(f"  - {c}" for c in novos) + "\n\n"
             enviar_alerta(
-                f"ANP CDP — {total_campos} campos novos no período {periodo}",
+                f"ANP CDP -- {total_campos} campos novos no periodo {periodo}",
                 msg,
                 link=self.url,
             )
 
-        # 6. Salvar estado atualizado
-        novo_estado["ultimo_periodo"] = periodo
-        self.salvar_estado(novo_estado)
+        # 8. Registrar historico (estado ja foi salvo antes do bloco de envio)
         self.registrar_historico(
             f"{total_campos} campo(s) novo(s) em {periodo}",
             novo_estado,
             list(csvs.values()),
         )
 
-        # 7. Atualizar last_used_at nas 3 rows de alertas_session (M, S, T)
+        # 9. Atualizar last_used_at nas 3 rows de alertas_session (M, S, T)
         if self._sb is not None:
             try:
                 self._sb.table("alertas_session").update(
@@ -360,7 +408,7 @@ class AnpCdpProducaoPoco(BaseMonitor):
 
         return True
 
-    # ── Stubs para interface abstrata (lógica completa está em run()) ─────────
+    # ── Stubs para interface abstrata (logica completa esta em run()) ──────────
 
     def verificar(self):
         return False, {}, ""
