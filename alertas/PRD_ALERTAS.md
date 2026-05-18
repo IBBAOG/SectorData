@@ -517,6 +517,44 @@ python alertas/monitor.py --base anp_ppi
 python alertas/monitor.py --loop --intervalo 30
 ```
 
+---
+
+## Pegadinhas conhecidas
+
+### ANP CDP — sessao APEX expirada sem redirect (detectado 2026-05-18)
+
+**Sintoma**: `anp_cdp_producao_poco` fica travado por dias: `ultimo_periodo` nao avanca,
+sessions `last_used_at = NULL` em `alertas_session`, mas outras bases funcionam.
+
+**Causa**: A sessao APEX expira no servidor ANP, mas o servidor retorna HTTP 200 com
+a pagina HTML completa (page-54, formulario de busca) em vez de um redirect para `/login`.
+O codigo antigo de `_looks_like_expired` so detectava redirects e patterns como ORA-20876 --
+nao detectava o pattern `wwvFlowForm` HTML.
+
+**Fix aplicado (2026-05-18 commit e6fff55c)**:
+- `_replay.py`: adicionado `_APEX_PAGE_PATTERNS` que detecta `wwvFlowForm` como sessao expirada.
+  Com isso, `_looks_like_expired()` retorna `True` e `replay_download` retorna `status="expired"`.
+- `anp_cdp_producao_poco.py`: separado `_SessionExpiredError` de `RuntimeError` generico.
+  Quando `_SessionExpiredError` e capturado, o monitor tenta re-disparar `etl_anp_cdp.yml`
+  (workflow Selenium) via `WORKFLOW_DISPATCH_PAT`.
+- `anp_cdp_producao_poco.py`: estado (`ultimo_periodo` + baselines) e salvo sempre que os CSVs
+  sao baixados com sucesso, mesmo sem novidades. Antes so salvava quando havia campo novo,
+  causando trava no mes anterior.
+
+**Canario**: `monitor.py` agora envia digest "bases em silencio >48h" ao final de todo run
+completo, com debounce de 24h via `_meta_stale_check` em `alertas_estado`.
+
+**Sequencia de recuperacao manual** (se GHA nao conseguir re-disparar automaticamente):
+1. Confirmar que `WORKFLOW_DISPATCH_PAT` esta configurado nos secrets do repo.
+2. Disparar manualmente: `gh workflow run etl_anp_cdp.yml --ref main -f periodo="04/2026"` 
+   (requer permissao admin no repo).
+3. Aguardar o workflow Selenium completar (~30min) e criar novas sessions em `alertas_session`.
+4. Na proxima rodada do monitor (automatica a cada 2h), o replay usara as novas sessions.
+
+**Observacao**: o debounce de `last_capture_attempt` em `alertas_estado` controla quantas vezes
+o `etl_anp_cdp.yml` pode ser disparado (maximos 1 vez a cada 6h). Se o Supabase mostrar que
+`last_capture_attempt` e recente (< 6h), aguardar ou apagar o campo para forcar re-disparo.
+
 Para depurar estado no Supabase localmente, exporte as variaveis:
 
 ```bash
