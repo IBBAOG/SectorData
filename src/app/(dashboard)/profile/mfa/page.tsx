@@ -80,24 +80,40 @@ export default function MfaPage() {
     setInfo(null);
     setEnrolling(true);
     try {
-      // Reuse any pre-existing unverified factor before enrolling a new one;
-      // Supabase rejects a second enroll if one is already in-flight.
-      const existingUnverified = factors.find((f) => f.status === "unverified");
-      if (existingUnverified) {
-        // We cannot recover the original QR code, so unenroll and start fresh.
-        await supabase.auth.mfa.unenroll({ factorId: existingUnverified.id });
+      const { data: freshList, error: listError } = await supabase.auth.mfa.listFactors();
+      if (listError) throw listError;
+      const totpFactors = (freshList?.totp ?? []) as Factor[];
+
+      for (const factor of totpFactors.filter((f) => f.status === "unverified")) {
+        const { error: unenrollError } = await supabase.auth.mfa.unenroll({ factorId: factor.id });
+        if (unenrollError) throw new Error(`Could not clean up pending enrollment: ${unenrollError.message}`);
       }
 
-      const { data, error } = await supabase.auth.mfa.enroll({ factorType: "totp" });
-      if (error || !data) throw error ?? new Error("Could not start enrollment.");
-      setEnrollment({
-        factorId: data.id,
-        qrCode: data.totp.qr_code,
-        secret: data.totp.secret,
-      });
+      const baseFriendlyName = `Authenticator (${new Date().toISOString().slice(0, 10)})`;
 
-      // Issue the challenge so we can verify the first code immediately.
-      const challenge = await supabase.auth.mfa.challenge({ factorId: data.id });
+      let enrollResult = await supabase.auth.mfa.enroll({ factorType: "totp", friendlyName: baseFriendlyName });
+      if (enrollResult.error && /already exists/i.test(enrollResult.error.message)) {
+        // Edge case: another tab created an orphan after our cleanup. Force-clean and retry once.
+        const { data: retryList } = await supabase.auth.mfa.listFactors();
+        for (const factor of ((retryList?.totp ?? []) as Factor[]).filter((f) => f.status === "unverified")) {
+          const { error: unenrollError } = await supabase.auth.mfa.unenroll({ factorId: factor.id });
+          if (unenrollError) throw new Error(`Could not clean up pending enrollment: ${unenrollError.message}`);
+        }
+        enrollResult = await supabase.auth.mfa.enroll({
+          factorType: "totp",
+          friendlyName: `${baseFriendlyName} (retry)`,
+        });
+      }
+      if (enrollResult.error || !enrollResult.data) {
+        throw enrollResult.error ?? new Error("Could not start enrollment.");
+      }
+
+      setEnrollment({
+        factorId: enrollResult.data.id,
+        qrCode: enrollResult.data.totp.qr_code,
+        secret: enrollResult.data.totp.secret,
+      });
+      const challenge = await supabase.auth.mfa.challenge({ factorId: enrollResult.data.id });
       if (challenge.error || !challenge.data) {
         throw challenge.error ?? new Error("Could not start MFA challenge.");
       }
@@ -107,6 +123,30 @@ export default function MfaPage() {
       setError(message);
     } finally {
       setEnrolling(false);
+    }
+  }
+
+  async function handleResetPending() {
+    if (!supabase) return;
+    setError(null);
+    setInfo(null);
+    try {
+      const { data, error } = await supabase.auth.mfa.listFactors();
+      if (error) throw error;
+      const unverified = ((data?.totp ?? []) as Factor[]).filter((f) => f.status === "unverified");
+      if (unverified.length === 0) {
+        setInfo("No pending enrollment to reset.");
+        return;
+      }
+      for (const factor of unverified) {
+        const { error: unenrollError } = await supabase.auth.mfa.unenroll({ factorId: factor.id });
+        if (unenrollError) throw unenrollError;
+      }
+      setInfo(`Cleared ${unverified.length} pending enrollment${unverified.length === 1 ? "" : "s"}. You can now enable MFA.`);
+      await refreshFactors();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Could not reset pending enrollment.";
+      setError(message);
     }
   }
 
@@ -425,6 +465,27 @@ export default function MfaPage() {
               >
                 {enrolling ? "Starting..." : "Enable MFA"}
               </button>
+              <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid #eee" }}>
+                <div style={{ fontSize: 12, color: "#888", marginBottom: 8 }}>
+                  Stuck? If you tried to enable MFA before and got an error, click below to
+                  clear any pending enrollment and try again.
+                </div>
+                <button
+                  type="button"
+                  onClick={handleResetPending}
+                  style={{
+                    background: "transparent",
+                    color: "#666",
+                    border: "1px solid #ccc",
+                    padding: "6px 12px",
+                    borderRadius: 4,
+                    fontWeight: 500,
+                    fontSize: 13,
+                  }}
+                >
+                  Reset pending enrollment
+                </button>
+              </div>
             </div>
           )}
 
