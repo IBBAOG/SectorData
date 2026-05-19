@@ -10,8 +10,11 @@ import path from "path";
  *   for chart compilation. Removing these breaks every Plotly-based dashboard.
  * - TODO (future hardening): migrate to nonce-based CSP. Requires either SSR
  *   wrappers for Plotly or replacing it with a CSP-friendly library.
- * - `https://cdn.plot.ly` is reserved for future Plotly script-loading via CDN
- *   (not currently used — we bundle plotly.js-dist-min — but kept as a hedge).
+ * - `https://cdn.plot.ly` is required by Plotly scattergeo/choropleth at runtime
+ *   to fetch the topojson basemap (world_110m.json). plotly.js-dist-min ships the
+ *   plotting engine but NOT the geo assets — these must be fetched on demand.
+ *   Allowed in both `script-src` (for any future CDN script loading) and
+ *   `connect-src` (for the basemap fetch).
  * - `connect-src` lists Supabase (REST + Realtime WS) and the Yahoo Finance
  *   endpoints proxied via `/api/stocks/*`.
  * - `img-src` allows `data:` and `blob:` for ExcelJS/JSZip exports and
@@ -26,7 +29,7 @@ const CSP_DIRECTIVES = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://*.supabase.co",
   "font-src 'self' data:",
-  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://query1.finance.yahoo.com https://query2.finance.yahoo.com",
+  "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://query1.finance.yahoo.com https://query2.finance.yahoo.com https://cdn.plot.ly",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
