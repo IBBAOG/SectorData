@@ -614,3 +614,17 @@ Tier 2 — `<ExportPanel mode="modal">` abre `<ExportModal>` com filtros + calcu
 - CSV handler: paginated fetch direto em `anp_cdp_producao` (PostgREST 1.000 linhas/página) + `downloadCsv` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
 - Filename pattern: `AnpCdp_DD-MM-YY.<xlsx|csv>`.
 - Warning visual quando estimativa > 200 000 linhas — particularmente importante neste dashboard, dado o volume da tabela.
+
+## Incidents
+
+### 2026-05-19 — Apr/2026 PosSal double-count (~2× inflation)
+
+**Symptom:** `/anp-cdp` chart showed Apr/2026 petroleum production at ~7,900 kbpd, roughly 2× the historical baseline of ~4,000 kbpd.
+
+**Root cause:** `etl_anp_cdp.yml` was re-run for 04/2026 with `force_upload=true, purge=false`. The first run had loaded the partition cleanly (282 PosSal + 492 PreSal rows). The re-run wrote PreSal rows for Santos-basin wells (MERO, BÚZIOS_ECO, TUPI) on top, but the original PosSal rows for those same wells survived — because PK `(ano, mes, poco, campo, bacia, local)` treats `(..., PosSal)` and `(..., PreSal)` as distinct keys. Net result: 488 pre-salt wells double-counted; PosSal Apr/2026 inflated from ~690 kbpd to ~4,258 kbpd.
+
+**Fix:** Re-dispatched `etl_anp_cdp.yml` with `periodo=04/2026, force_upload=true, purge=true`. Post-fix: PosSal 690.4 kbpd, total 4,337 kbpd, 0 wells appearing in multiple `local`. Validated against `anp_cdp_diaria` (independent Power BI source): 4,179 kbpd avg for April — consistent.
+
+**Permanent guard (in flight):** `force_upload=true` will imply `--purge` automatically going forward, preventing this class of silent duplication.
+
+**Key rule:** `force_upload=true` without `--purge` is unsafe for any month that has already been loaded. Always pair with `--purge` on re-runs.
