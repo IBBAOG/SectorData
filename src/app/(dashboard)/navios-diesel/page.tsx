@@ -508,7 +508,7 @@ export default function NaviosDieselPage() {
     const layout: Partial<Layout> = {
       geo: {
         scope: "south america",
-        resolution: 50,
+        resolution: 110,
         lonaxis: { range: [-65, -30] },
         lataxis: { range: [-35, 10] },
         showland: true,
