@@ -109,11 +109,10 @@ jobs:
         run: |
           EXTRA_FLAGS=""
           if [ "${{ github.event.inputs.force_upload }}" = "true" ]; then
-            EXTRA_FLAGS="--no-incremental"
-            echo "force_upload=true — passing --no-incremental to bypass per-local date check"
-          fi
-          if [ "${{ github.event.inputs.purge }}" = "true" ]; then
-            EXTRA_FLAGS="$EXTRA_FLAGS --purge"
+            EXTRA_FLAGS="--no-incremental --purge"
+            echo "force_upload=true — passing --no-incremental and --purge (purge implied by force_upload to prevent PK overlap)"
+          elif [ "${{ github.event.inputs.purge }}" = "true" ]; then
+            EXTRA_FLAGS="--purge"
             echo "purge=true — passing --purge to delete existing rows for target month before upserting"
           fi
           python scripts/pipelines/anp/cdp/02_upload.py --from-csv-dir output/anp/ $EXTRA_FLAGS
