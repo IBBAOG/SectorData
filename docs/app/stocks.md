@@ -1,5 +1,70 @@
 # Sub-PRD — `/stocks` (Market Watch)
 
+## Dual-view structure (added 2026-05-20)
+
+The dashboard follows the canonical dual-view pattern. Four files under the route:
+
+```
+src/app/(dashboard)/stocks/
+├── page.tsx                 ← viewport router (useIsMobile → DesktopView or MobileView)
+├── useStocksData.ts         ← THE BRAIN — all state, quotes, portfolios, blink, cards
+├── desktop/
+│   └── View.tsx             ← Bloomberg trading-terminal UX (drag-and-drop grid)
+└── mobile/
+    └── View.tsx             ← Standard mobile tokens (liquid glass, orange accent)
+```
+
+### Hook contract (`useStocksData`)
+
+Returns:
+
+| Field | Type | Description |
+|---|---|---|
+| `theme / isDark / toggleTheme` | — | Dark/light preference, persisted to localStorage |
+| `portfolios / activePortfolio` | `StockPortfolio[]` | All user portfolios; active is the one marked `is_active` |
+| `portfolioLoading` | boolean | Supabase loading state |
+| `createPortfolio / updatePortfolio / deletePortfolio / setActivePortfolio` | functions | PostgREST CRUD |
+| `quotes / quoteMap / quotesLoading / refetchQuotes` | — | Live quotes for all portfolio tickers + CHART_SHORTCUTS |
+| `isMarketOpen` | boolean | B3 market status (useAutoRefresh) |
+| `periodReturns` | `Map<symbol, PeriodReturn>` | YTD / MTD ref prices |
+| `blinkMap` | `Map<symbol, "up"\|"down">` | Bloomberg blink state (1.2s window) |
+| `cards / layouts / addCard / updateCard / handleLayoutChange / persistCards` | — | Desktop drag-and-drop grid state (localStorage) |
+| `mobileTab / setMobileTab` | `MobileTab` | Active bottom tab ("portfolios"\|"watch"\|"compare") |
+| `compareTickers / addCompareTicker / removeCompareTicker` | — | Mobile compare set (max 5) |
+| `mobileRange / setMobileRange` | `TimeRange` | Shared chart range for mobile expanded + compare views |
+| `expandedTicker / setExpandedTicker` | `string\|null` | Which ticker is expanded in mobile list |
+| `tickers / groups` | derived | Flattened from activePortfolio |
+
+### Visual theme decision
+
+- **Desktop** keeps `.stocks-dark` / `.stocks-light` Bloomberg terminal theme (uppercase 11px, border-radius 0, accent orange #ff5000).
+- **Mobile** uses **standard mobile CSS vars** (`--mobile-*`): liquid glass top/bottom bars, orange #ff5000 accent, 14px text, rounded cards. The trading-terminal scoped classes are NOT applied on mobile — intentional per approved mockup.
+
+### Analyses preserved on both views
+
+| Analysis | Desktop | Mobile |
+|---|---|---|
+| Portfolio ticker table (price, CHG%, YTD%, MTD%, VOL) | Portfolio card | Portfolios tab card list |
+| Live quote polling (useAutoRefresh) | All cards | Both tabs (quotes from hook) |
+| Price blink animations | Bloomberg-style | Standard colors (no blink class on mobile) |
+| Time-series chart | Chart card (candlestick or line) | Expanded inline chart (MobileChart, line) |
+| Multi-asset comparison | Compare card (base100 or percent, date range) | Compare tab (base100, time range pills) |
+| Market overview (indices + FX) | Market card | Available via quoteMap / Watch tab |
+| Search (StockSearch) | Watchlist / Compare cards, Portfolio modal | Inline search bar (top of every tab) |
+| Portfolio CRUD | PortfolioModal | PortfolioEditorSheet (BottomSheet) |
+| B3 market status | Top-bar badge | isMarketOpen available (not shown on mobile per mockup) |
+| Brent futures curve | FuturesCurveChart card | Not surfaced on mobile [desktop-only: chart card type not present on mobile] |
+| News Hunter card | News card | Not surfaced on mobile [desktop-only: card type not present on mobile] |
+
+### Mobile components used
+
+- `MobileTopBar` — sticky liquid-glass top bar, theme toggle, avatar
+- `MobileBottomTabBar` — Portfolios / Watch / Compare / Profile bottom nav
+- `MobileDataCard` — ticker rows with inline sparkline
+- `MobileChart` — Plotly wrapper tuned for mobile (no modebar, fixedrange)
+- `MobileTabBar` — time-range pills (container variant) inside expanded detail and compare tab
+- `BottomSheet` — portfolio editor sheet
+
 Dashboard de Stocks com tema **dark trading terminal** (Bloomberg-like). Owner: [`worker_dash-stocks`](../../.claude/agents/worker_dash-stocks.md).
 
 > Único módulo do app com identidade visual própria. Mantida intencionalmente distinta.
