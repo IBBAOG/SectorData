@@ -8,7 +8,10 @@ Dashboard ANP — Preços Médios Ponderados Produtores e Importadores (Fuel Dis
 
 ```
 src/app/(dashboard)/anp-precos-produtores/
-  page.tsx
+  page.tsx                          ← viewport router (useIsMobile)
+  useAnpPrecosProdutoresData.ts     ← hook: RPCs, filtros, derivações
+  desktop/View.tsx                  ← UI desktop (sidebar + chart)
+  mobile/View.tsx                   ← UI mobile (MobileTopBar + tabs + chart + cards)
 ```
 
 RPC wrappers: seção "ANP Preços Produtores" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (linhas ~955–1022).
@@ -94,9 +97,57 @@ A série 2002-2012 é baixada uma única vez (estática); a 2013+ é rebaixada e
 - Bloquear página inteira com barrel em `serieLoading` — barrel é só pro `loading` inicial; subsequentes usam indicador inline + opacity 0.5.
 - Mexer em `scripts/pipelines/anp/precos/02_precos_produtores_sync.py` — pertence ao ETL.
 
+## Dual-view structure (2026-05-20)
+
+Dashboard foi refatorado para o padrão dual-view (Phase 2 / Wave 2).
+
+### Shared hook — `useAnpPrecosProdutoresData.ts`
+
+Único cérebro do dashboard. Exporta:
+
+| Export | Tipo | Descrição |
+|---|---|---|
+| `useAnpPrecosProdutoresData()` | hook | RPCs, filtros, derivações — consumido pelas duas Views |
+| `REGIAO_COLOR` | const | Mapa região → cor (Norte, Nordeste, etc.) |
+| `ALL_REGIOES` | const | Ordem canônica das 5 regiões |
+| `buildChart()` | fn | Traces + layout Plotly para desktop (360px) |
+| `buildMobileChart()` | fn | Traces Plotly para mobile (sem layout) |
+| `AnpPprodutoresRow` | type | re-export de rpc.ts |
+| `AnpPprodutoresFiltros` | type | re-export de rpc.ts |
+| `AnpPrecosProdutoresDerivedRegiao` | type | stats por região (latestPreco, latestDate) |
+
+### Desktop view — `desktop/View.tsx`
+
+Equivalente ao antigo `page.tsx`. Sidebar (filtros product/region/period) + `ChartSection` + `PlotlyChart`.
+
+### Mobile view — `mobile/View.tsx`
+
+Arquétipo chart-heavy (próximo de `/market-share`):
+
+| Componente | Função |
+|---|---|
+| `MobileTopBar` | Top bar sticky liquid-glass |
+| `MobileTabBar` (underline) | Seleção de produto — uma tab por produto |
+| `ActiveChips` (local) | Chips de região ativos + botão "+ Filters" (sticky) |
+| `MobileChart` | Linha por região, unidade no yAxis |
+| Legend 2 colunas | Cor + label por região selecionada |
+| `MobileDataCard` (local `RegionCard`) | Ranking por preço + sparkline 52 semanas |
+| `ExportFAB` | Download Excel (fallback CSV) |
+| `FilterDrawer` | Região (multi-select) + período (slider) |
+
+### Análises preservadas em ambas as views
+
+- Chart multi-região (1 trace por região, cor fixa)
+- Filtro região client-side (mínimo 1 sempre marcado)
+- Seleção de produto (server-side, debounce 400ms)
+- Período via range slider (set once at mount, não reset ao mudar produto)
+- Export Tier 1 (Excel + CSV)
+
+---
+
 ## Export
 
-Tier 1 — download direto via `<ExportPanel>` (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
+Tier 1 — download direto via `<ExportPanel>` (desktop) ou `<ExportFAB>` (mobile) (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
 
 - Excel: `downloadGenericExcel<T>` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
 - CSV: `downloadCsv<T>` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
