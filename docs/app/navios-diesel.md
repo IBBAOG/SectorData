@@ -107,11 +107,64 @@ Valores de `navios_diesel.status`:
 - Tentar chamar `ais_candidates_discover` ou `navios_imo_lookup` do frontend — são pipelines do ETL.
 - Visualizar lista grande sem paginação/virtualização.
 
+## Dual-view structure
+
+Dashboard migrated to the dual-view pattern (2026-05-20). File layout:
+
+```
+src/app/(dashboard)/navios-diesel/
+├── page.tsx                    ← viewport router (useIsMobile → desktop or mobile)
+├── useNaviosDieselData.ts      ← THE BRAIN: all RPCs, filter state, derived values, types
+├── desktop/
+│   └── View.tsx                ← full desktop layout (sidebar calendar, map, AIS layer, monthly chart)
+└── mobile/
+    └── View.tsx                ← mobile-first layout (port scroller, vessel cards, BottomSheet detail)
+```
+
+### Hook contract (`useNaviosDieselData`)
+
+The hook is the single source of truth for all data. Both Views import from it and never call Supabase directly. Key exports:
+
+| Export | Type | Description |
+|---|---|---|
+| `naviosDisplay` | `NavioDieselRow[]` | Active line-up (excludes ERRO_COLETA + Despachado) |
+| `portSummaries` | `PortSummary[]` | Per-port aggregates for scroller / map |
+| `resumoByPorto` | `Map` | Used by desktop map trace builder |
+| `portMonthlySummary` | `object` | ports × months × {vessels, volume} |
+| `volumeMensal` | `NdVolumeMensalDescargaRow[]` | Monthly stacked bar chart data |
+| `naviosDescarregados` | `NdNavioDescarregadoRow[]` | Delivered vessels table |
+| `statusToTone` | `function` | Maps status string → mobile tone token |
+| `STATUS_LABELS` | `Record` | Maps status string → English label |
+
+### Mobile view elements
+
+- `MobileTopBar` — sticky glass top bar (SECTORDATA wordmark)
+- Status segmented control (Active / Recent / Expected tabs)
+- Port summary horizontal scroller — 140px snap cards with volume, vessel count, status dots
+- Sticky filter chip row — port filter chip + snapshot date chip + "Add filter" button
+- Vessel list — `MobileDataCard` with `status` prop; `expanded` variant
+- `BottomSheet` — vessel detail (IMO / MMSI / flag / origin / voyage timeline)
+- `BottomSheet` — filter pane (port selection)
+- `ExportFAB` — download Excel (falls back to CSV on error)
+- `MobileBottomTabBar` — Vessels / Ports / Map / Profile
+- Map tab: placeholder (map + AIS is [desktop-only] — desktop renders full Plotly scattergeo + AIS overlay)
+
+### Desktop-only divergences
+
+- AIS layer toggle (AIS On/Off `SegmentedToggle`) — not available on mobile
+- Inline sidebar calendar + collection-time picker
+- Plotly scattergeo map with port circles + AIS vessel markers
+- Monthly stacked bar chart (Discharged / Pending / Indeterminate)
+- Monthly Summary by Port cross-tab table
+- Live AIS port arrivals table
+
+These are tagged `[desktop-only]` in `desktop/View.tsx` per the binding sync rule.
+
 ## Export
 
-Tier 1 — download direto via `<ExportPanel>` (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
+Tier 1 — download direto via `<ExportPanel>` (desktop) / `ExportFAB` (mobile).
 
 - Excel: `downloadGenericExcel<T>` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
 - CSV: `downloadCsv<T>` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
-- Filename pattern: `NaviosDiesel_DD-MM-YY.<xlsx|csv>`.
-- Dados exportados: linhas correspondentes ao estado `naviosDisplay` da página (saída de `get_nd_navios` já filtrada por porto/produto/status/período + `WHERE NOT is_cabotagem`).
+- Filename pattern: `Navios-Diesel-Lineup.<xlsx|csv>`.
+- Dados exportados: linhas correspondentes ao estado `naviosDisplay` (saída de `get_nd_navios` já filtrada + `WHERE NOT is_cabotagem`).
