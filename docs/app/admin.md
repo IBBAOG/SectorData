@@ -58,9 +58,51 @@ home/
 
 **Divergence from mockup** — the mockup's `MDIC Comex` card is in the Oil & Gas section. This reflects the module's dual classification (`Estatísticas / Oil & Gas` and `Fuel Distribution`). In code, `mdic-comex` is assigned `oilgas` category (matching mockup) even though it also covers fuel distribution.
 
-### Wave 5 — `/profile` and `/admin-panel` (deferred)
+### Wave 5 — `/admin-panel` (completed 2026-05-20)
 
-`/profile` and `/admin-panel` dual-view refactor is planned for Wave 5. Both pages currently render as desktop-only (no `useIsMobile` routing). This is acceptable — admin pages are rarely used on mobile.
+`/admin-panel` is now a full dual-view module. File layout:
+
+```
+admin-panel/
+├── page.tsx               "use client" — useIsMobile → DesktopView | MobileView
+├── useAdminPanelData.ts   Brain hook — RPCs, all state, all handlers,
+│                           SECTIONS & MODULE_LABELS metadata
+├── desktop/View.tsx       Desktop: sidebar (5 sections) + content panel
+│                           (verbatim port of original page.tsx body)
+└── mobile/View.tsx        Mobile: sticky horizontal pill row for sections +
+                            search bar + MobileDataCard rows per item
+```
+
+**Shared hook (`useAdminPanelData`):**
+- Owns `useRoleGuard("Admin")` invocation (MFA-aware) — both Views early-return `null` if not allowed
+- Owns ALL state: `activeSection`, `localVis`, `localHomeVis`, `localPreviews`, `users`/`localRoles`, `recipients`, plus all `saving*`/`saved*`/`*Error` flags
+- Owns ALL handlers: `handleToggle`, `handleHomeToggle`, `handlePreviewUpload`, `handleRoleChange`, `handleAddRecipient`, `handleToggleRecipient`, `handleRemoveRecipient`
+- Owns pure helpers `isValidEmail` and `formatDateBR`
+- Exports `SECTIONS` (id, label, shortLabel, description) and `MODULE_LABELS` (slug, label, description) as static module-level constants so both Views render the same catalog
+
+**Desktop view** — identical to original. Dark left sidebar (220px wide, 5 buttons + Analytics link), white content panel with section header + module-specific cards.
+
+**Mobile view** — list-based archetype:
+- `MobileTopBar` with "Admin" pill + "Admin Panel" title + avatar (initials)
+- Sticky horizontal scroll of section pills (Members / Access / Cards / Alerts / Tables) — pill row needed because 5 tabs don't fit in `MobileTabBar` container variant
+- Per-section search bar (placeholder adapts: "Search by name, email, or role" / "Search modules" / "Search recipients")
+- **Members**: `MobileDataCard` per user with avatar, name+email, role pill. Tapping the row opens a `BottomSheet` with the Admin/Client picker.
+- **Permissions**: `MobileDataCard` (expanded variant) per module with switch on the right.
+- **Card Images**: custom card per module with two rows — thumb+label+slug, then a controls row with Show-on-Home switch + Upload button. Inline error message under the row when upload fails.
+- **Alert Emails**: Add form (input + button, 44px min-height for touch), then `MobileDataCard` per recipient with status pill + Enable/Disable button. Removing opens a `BottomSheet` with a confirm prompt (replaces the inline "Are you sure?" pattern from desktop, which doesn't fit on a 320px row).
+- **Data Input**: shows a desktop-only notice because `EditableTableEditor` needs a wide layout.
+
+**Divergence from desktop** (`[mobile-only]` deltas):
+- The desktop's Analytics sidebar link is omitted on mobile — navigation to `/admin-analytics` happens through `/home`.
+- Inline "Are you sure?" confirm for recipient removal becomes a `BottomSheet` with explicit Cancel/Remove buttons.
+- Recipient row's primary action (tap whole row) is "remove" (opens confirm sheet); secondary action (button) is "Disable/Enable". On desktop both are inline buttons.
+- `Data Input` section shows a placeholder explaining desktop-only; the embedded `EditableTableEditor` is not rendered on mobile.
+- Per-section search filter is mobile-only (desktop has no search; the sidebar's narrow nav makes it unnecessary).
+- The original Portuguese string `"Remover"` in the recipients list was corrected to `"Remove"` in BOTH views (English-only policy).
+
+### Wave 5 — `/profile` (parallel)
+
+`/profile` dual-view refactor is in flight on a parallel worktree (Wave 5).
 
 ## Páginas — descrição rápida
 
