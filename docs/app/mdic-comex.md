@@ -8,7 +8,10 @@ Dashboard MDIC Comex Stat — Imports and Exports of Fuels (Oil & Gas / Fuel Dis
 
 ```
 src/app/(dashboard)/mdic-comex/
-  page.tsx
+  page.tsx                  ← viewport router (useIsMobile)
+  useMdicComexData.ts       ← single shared hook (RPCs, filters, derivations)
+  desktop/View.tsx          ← desktop UX (sidebar + 2 charts + 24-month table)
+  mobile/View.tsx           ← mobile UX (MobileTopBar + flow tabs + chart + summary cards)
 ```
 
 RPC wrappers: "MDIC Comex" section in [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (~lines 800–897 and ~2494–2630).
@@ -155,6 +158,45 @@ Specifications:
 - `NavBar`, `BrandLogo`, `DashboardHeader`.
 - `useModuleVisibilityGuard("mdic-comex")`.
 - `useDebouncedFetch` — 400ms debounce on country/period changes.
+
+## Dual-view structure
+
+Refactored 2026-05-20 into the canonical dual-view pattern (CLAUDE.md § "Dual-view policy").
+
+### Hook — `useMdicComexData.ts`
+
+Single source of truth for all data, filters, derivations, and export logic. Both Views consume it; neither calls Supabase directly. Exports:
+
+- All state: `anos`, `allPaises`, `yearRange`, `selectedNCMs`, `selectedPaises`, `metric`, `viewMode`, `showIndividualWarn`
+- Setters: `setYearRange`, `toggleNcm`, `resetNcms`, `setSelectedPaises`, `setMetric`, `setViewMode`, `setShowIndividualWarn`
+- Derived: `hasYears`, `yMin`, `yMax`, `paisesFilter`, `chartRows`, `tableRows`, `chartLoading`, `tableLoading`, `tableData`, `chartGroupBy`
+- Export pipeline: `exportOpen`, `openExportModal`, `handleExportExcel`, `handleExportCsv` + all modal state
+- Pure helpers (also exported for reuse): `volumeM3`, `NCM_INFO`, `ALL_NCMS`, `METRIC_CONFIG`, `METRIC_OPTIONS`, `buildTableRows`, `formatPct`, `NCM_DENSITY_KG_PER_M3`, `M3_TO_BBL`
+
+### Desktop view — `desktop/View.tsx`
+
+Verbatim behaviour of the previous `page.tsx`:
+- Sidebar (Product filter + Countries SearchableMultiSelect + View mode toggle + Period slider)
+- 2 Plotly line charts (Imports / Exports, consolidated or individual mode)
+- 24-month summary table (MoM% + YoY%, color-coded)
+- ExportModal (Tier 2, granularity selector)
+
+### Mobile view — `mobile/View.tsx`
+
+Same analyses, mobile-first layout:
+- `MobileTopBar` (sticky glass header)
+- `MobileTabBar` (Imports / Exports flow selection)
+- Metric pills (horizontal scrollable row — 6 options)
+- `MobileTabBar` (product tabs, underline variant — only in Consolidated mode)
+- `MobileChart` (240px Plotly line, consolidated or individual)
+- `MobileDataCard` list (top 3 months, MoM% + YoY% for active flow)
+- View mode (Consolidated / Individual) pill toggle
+- Filter FAB → `FilterDrawer` (country chips + PeriodSlider + MultiSelectFilter)
+- `ExportFAB` → `ExportModal` (identical Tier 2 modal as desktop)
+
+### Binding sync rule
+
+Any change to `desktop/View.tsx` (new filter, chart, metric) must land in `mobile/View.tsx` in the same commit, or the commit message must declare `[desktop-only]` / `[mobile-only]` with explicit reason.
 
 ## Cross-dept dependencies
 
