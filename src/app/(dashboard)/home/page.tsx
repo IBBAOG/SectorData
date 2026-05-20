@@ -9,7 +9,7 @@
 export const dynamic = "force-dynamic";
 
 import { createClient } from "@supabase/supabase-js";
-import HomeClient from "./HomeClient";
+import HomeRouter from "./HomeRouter";
 
 async function getCardPreviews(): Promise<Record<string, string>> {
   try {
@@ -32,5 +32,5 @@ async function getCardPreviews(): Promise<Record<string, string>> {
 
 export default async function HomePage() {
   const initialPreviews = await getCardPreviews();
-  return <HomeClient initialPreviews={initialPreviews} />;
+  return <HomeRouter initialPreviews={initialPreviews} />;
 }

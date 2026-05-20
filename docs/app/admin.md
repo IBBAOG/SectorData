@@ -8,12 +8,59 @@ Bundle administrativo. Owner: [`worker_dash-admin`](../../.claude/agents/worker_
 
 ```
 src/app/(dashboard)/
-  home/page.tsx                     Landing — cards/imagens dos módulos
+  home/
+    page.tsx                        Server Component (fetches card_previews, renders HomeRouter)
+    HomeRouter.tsx                  Client viewport router (useIsMobile → desktop or mobile)
+    HomeClient.tsx                  Legacy (kept as reference; superseded by desktop/View.tsx)
+    useHomeData.ts                  Shared hook — visibility filter, search, collapsed sections
+    desktop/View.tsx                Desktop view (grid of image cards, hover reveal)
+    mobile/View.tsx                 Mobile view (category sections, gradient thumbs, search)
   profile/page.tsx                  Perfil do user (nome, email, role badge)
   admin-panel/page.tsx              Gestão de roles + visibilidade de módulos
 ```
 
 RPC wrappers: [`src/lib/profileRpc.ts`](../../src/lib/profileRpc.ts) (perfil) + seção em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (admin).
+
+## Dual-view structure
+
+This bundle is being migrated to the dual-view pattern (desktop + mobile) in waves.
+
+### Wave 4 — `/home` (completed 2026-05-20)
+
+`/home` is now a full dual-view module. File layout:
+
+```
+home/
+├── page.tsx            Server Component — fetches card_previews (service role), renders HomeRouter
+├── HomeRouter.tsx      "use client" — useIsMobile → DesktopView | MobileView
+├── HomeClient.tsx      Legacy client component (kept, no longer rendered)
+├── useHomeData.ts      Brain hook — visibility filter, search, section-collapse state
+├── desktop/View.tsx    Desktop: grid of 220px image cards with hover-reveal animation
+└── mobile/View.tsx     Mobile: 4 collapsible category sections (Markets / Oil & Gas /
+                         Fuel Distribution / Admin), gradient thumbnails, sticky search
+```
+
+**Desktop view** — identical to original HomeClient. 3-column Bootstrap grid (`col-md-6 col-lg-4`), hover `translateY(-5px)` + description reveal. Server-fetched previews (`initialPreviews` prop) override static paths.
+
+**Mobile view** — per `mockups/home-mobile.html`. Components used:
+- `MobileTopBar` (wordmark + avatar initials)
+- `MobileBottomTabBar` (Home / Discover / Saved / Profile; Profile tab navigates to `/profile`)
+- Inline sticky section headers (no separate component — matched mockup exactly)
+- Per-slug SVG icons per mockup
+
+**Shared hook (`useHomeData`):**
+- Reads `moduleVisibility` + `homeVisibility` + `profile` from `UserProfileContext`
+- Applies two-axis visibility filter (same logic as original HomeClient)
+- `search` state: live-filters title + description across all cards
+- `collapsed` state: per-category expand/collapse (mobile only; desktop ignores it)
+- `cardsByCategory`: `Record<HomeCategory, HomeCardDef[]>` for mobile category sections
+  - Admin section appends static cards (`/profile`, `/admin-panel`) not in `module_visibility`
+
+**Divergence from mockup** — the mockup's `MDIC Comex` card is in the Oil & Gas section. This reflects the module's dual classification (`Estatísticas / Oil & Gas` and `Fuel Distribution`). In code, `mdic-comex` is assigned `oilgas` category (matching mockup) even though it also covers fuel distribution.
+
+### Wave 5 — `/profile` and `/admin-panel` (deferred)
+
+`/profile` and `/admin-panel` dual-view refactor is planned for Wave 5. Both pages currently render as desktop-only (no `useIsMobile` routing). This is acceptable — admin pages are rarely used on mobile.
 
 ## Páginas — descrição rápida
 
