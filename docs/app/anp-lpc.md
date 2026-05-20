@@ -8,10 +8,57 @@ Dashboard ANP LPC — Levantamento de Preços de Combustíveis (Fuel Distributio
 
 ```
 src/app/(dashboard)/anp-lpc/
-  page.tsx
+├── page.tsx                ← viewport router (useIsMobile)
+├── useAnpLpcData.ts        ← THE BRAIN — RPCs, filters, derivations, types
+├── desktop/View.tsx        ← desktop UX (sidebar + dual-chart)
+└── mobile/View.tsx         ← mobile UX (chart-heavy + per-UF ranking)
 ```
 
-RPC wrappers: seção "ANP LPC" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (linhas ~1353–1457).
+RPC wrappers: seção "ANP LPC" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (linhas ~1393–1497 + 2632–2654 para o export count).
+
+## Dual-view structure (Fase 2 — 2026-05)
+
+A partir de 2026-05-20, `/anp-lpc` é um dashboard **dual-view**: o `page.tsx` é um simples router de viewport que escolhe entre `desktop/View.tsx` (≥769px) e `mobile/View.tsx` (≤768px). Ambas as views consomem o **mesmo hook compartilhado**, `useAnpLpcData`, que é a fonte única de verdade para análises, filtros e derivações.
+
+### `useAnpLpcData` (hook)
+
+Owns:
+- 3 RPC calls (`rpcGetAnpLpcFiltros`, `rpcGetAnpLpcNacional`, `rpcGetAnpLpcSerie`) + `getAnpLpcExportCount` for the Tier 2 modal.
+- Filter state: `selectedProdutos` (multi-select, min 1), `detailProduto` (single product driver for the regional chart and mobile tab), `yearRange` (slider indices into `allYears`).
+- Year → DATE conversion: every fetch maps `[idx0, idx1]` to `${allYears[idx0]}-01-01` / `${allYears[idx1]}-12-31` before hitting the RPC. The slider stays in years for UI consistency; the contract with the RPC stays ISO DATE. This is the canonical pattern for any future DATE-keyed dashboard.
+- Debounce 400ms on slider changes via `useDebouncedFetch`.
+- Derivações para mobile: `ufLatestPrices` (per-UF latest price for `detailProduto`, ranked desc + barWidth relative to highest), `latestDate` (most recent week observed), `unitForProduto(p)` (`"kg"` for GLP, `"L"` otherwise).
+- Export modal state (Tier 2): `exportOpen`, `exportProdutos`, `exportEstados`, `exportRange`, `exportFilters` (memoised snapshot for the count fetcher), plus `excelLoading` / `csvLoading` busy flags.
+
+Contract: ambas as views recebem `{ filtros, nacionalRows, estadoRows, allYears, yearRange, setYearRange, selectedProdutos, toggleProduto, detailProduto, setDetailProduto, initialLoading, serieLoading, latestDate, ufLatestPrices, …export, supabase }`. Nenhuma view chama Supabase diretamente.
+
+### `desktop/View.tsx`
+
+Mantém o layout existente verbatim: sidebar com `MultiSelectFilter` (Product), `PeriodSlider`, `<select>` para Detail by Region, e duas `ChartSection`s (Nacional + Regional). Export via `ExportPanel mode="modal"` → `ExportModal` Tier 2 com `MultiSelectFilter` (produtos) + `SearchableMultiSelect` (estados) + `PeriodSlider` (anos). Sem mudanças visuais frente à versão pré-refactor.
+
+### `mobile/View.tsx`
+
+Layout mobile-first:
+- `MobileTopBar` (liquid glass, sticky)
+- Title block + period badge
+- Sticky filter chip row (período + contagem de produtos + botão "Filters")
+- `MobileTabBar` (variant `underline`, horizontalmente scrollável) — produto ativo dirige a linha em destaque do chart e a coluna do ranking
+- `MobileChart` (280px) — média nacional do produto ativo em laranja brand; outros produtos selecionados aparecem em traços finos e cor muted como contexto. Tooltip x-unified.
+- Card "Top States" — ranking dos 15 UFs com maior preço para `detailProduto`, com pill de macro-região (cores em `REGIAO_COLORS`) e barra de proporção relativa ao maior preço.
+- `ExportFAB` (download) → mesmo `ExportModal` Tier 2 do desktop
+- `FilterDrawer` (BottomSheet) com Period (`PeriodSlider`) + Products (`CheckPills` com swatch) + States (`CheckPills`)
+
+Componentes compartilhados consumidos no mobile: `MobileTopBar`, `MobileTabBar`, `MobileChart`, `FilterDrawer`, `ExportFAB`, `PeriodSlider`, `ExportModal`, `BarrelLoading`. Mesma análise do desktop, embalagem touch-first.
+
+### Binding sync rule
+
+Toda mudança em `desktop/View.tsx` exige mudança equivalente em `mobile/View.tsx` no MESMO commit, OU a mensagem do commit precisa declarar `[desktop-only]` / `[mobile-only]` com justificativa. Mudanças puramente visuais que não alteram análise/conteúdo podem ser view-específicas sem tag.
+
+Aplicação prática para `/anp-lpc`:
+- Novo filtro (ex.: faixa de número de postos) → hook + ambas as views, mesmo commit.
+- Novo chart (ex.: top postos por município) → hook + ambas as views.
+- Novo produto/etiqueta vinda do ETL → reflexo automático via `filtros.produtos` (sem mudança de código).
+- Tweak de pixel em sidebar do desktop → pode ir sozinho com `[desktop-only]`.
 
 ## Produto
 
