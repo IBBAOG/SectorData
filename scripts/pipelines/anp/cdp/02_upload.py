@@ -383,11 +383,13 @@ def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
     df = None
     # Tuple: (sep, decimal, encoding, thousands)
     for sep, decimal, enc, thousands in [
-        (",", ".", "utf-8-sig", None),  # Power BI extractor output (UTF-8 BOM)
-        (",", ".", "cp1252",    None),  # APEX portal legacy comma-decimal (pre-2026)
+        (",", ".", "cp1252",    ","),   # APEX 2026 US-format with quoted thousands ("5,984.1718")
+        (",", ".", "utf-8-sig", ","),   # Same but UTF-8 BOM
+        (",", ".", "utf-8-sig", None),  # Legacy Power BI extractor (kept for safety)
+        (",", ".", "cp1252",    None),  # Legacy APEX comma-decimal (pre-2026, no thousands)
         (",", ".", "utf-8",     None),
-        (";", ",", "cp1252",    "."),   # ANP 2026 European: semicolon + comma-decimal + dot-thousands
-        (";", ",", "utf-8",     "."),   # Same but UTF-8
+        (";", ",", "cp1252",    "."),   # European semicolon/comma-decimal
+        (";", ",", "utf-8",     "."),
     ]:
         try:
             _df = pd.read_csv(
