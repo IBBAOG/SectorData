@@ -8,10 +8,61 @@ Dashboard SINDICOM — Distribuição de Combustíveis por Empresa (Fuel Distrib
 
 ```
 src/app/(dashboard)/sindicom/
-  page.tsx
+├── page.tsx                ← viewport router (useIsMobile → desktop|mobile)
+├── useSindicomData.ts      ← single brain: RPCs, filter state, debounce,
+│                              derived market-share + filtered series
+├── desktop/View.tsx        ← desktop UX (sidebar + 2 charts, verbatim move)
+└── mobile/View.tsx         ← mobile UX (product tab bar + stacked area +
+                              ranking cards + FilterDrawer + ExportFAB)
 ```
 
-RPC wrappers: seção "SINDICOM" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (linhas ~1459–1530).
+RPC wrappers: seção "SINDICOM" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (linhas ~1603–1674).
+
+## Dual-view structure (2026-05 refactor)
+
+Dashboard segue o template canônico de [`docs/app/dual-view-pattern.md`](dual-view-pattern.md): **hook único + duas views**. Mobile é "mesma análise, roupagem adaptada" — nunca cérebro diferente.
+
+### `useSindicomData.ts` — fonte única da verdade
+
+Expõe (contrato consumido pelas duas Views):
+
+- `serieRows` / `filteredSerieRows` — output bruto da RPC e rows filtradas client-side por produto+segmento selecionados (`useMemo`).
+- `filtros` — output de `get_sindicom_filtros` (empresas/produtos/segmentos/ano_min/ano_max).
+- `allYears`, `yMin`, `yMax`, `hasYears` — derivados de `ano_min`/`ano_max` + posição corrente do slider.
+- `hasData` — `filtros.produtos.length > 0`; usado para alternar entre charts e empty state.
+- `loading` — barrel da carga inicial; `serieLoading` — atualização inline debounce 400ms.
+- `filters` (`yearRangeIdx`, `selectedProdutos`, `selectedSegmentos`, `msProduto`) + `setFilters(partial)`.
+- `toggleProduto(p)` / `toggleSegmento(s)` — com guard mínimo de 1.
+- `resetProdutos()` / `resetSegmentos()` — restaura listas completas (botão "Clear").
+- `marketShare: MarketShareEntry[]` — Top 15 empresas para `msProduto`, sort desc, com `sharePct` sobre o total dos top 15.
+- `exportRows` — alias de `serieRows` para os botões de export (Excel/CSV).
+
+Constantes compartilhadas exportadas pelo hook: `PRODUTO_COLORS`, `PALETTE`, `colorForProduto(produto, allProdutos)`.
+
+### `desktop/View.tsx`
+
+Verbatim do layout anterior (sidebar Bootstrap + `MultiSelectFilter` produto/segmento com swatches, `PeriodSlider` em anos, `<select>` único para o Market Share). Charts:
+1. **Monthly Volume by Product (m³)** — multi-line por produto selecionado.
+2. **Market Share by Company — {produto} (Top 15)** — bar horizontal azul `#2196F3`.
+
+Export panel Tier 1 (Excel + CSV) no header.
+
+### `mobile/View.tsx`
+
+Mesma análise, roupagem mobile:
+
+- **MobileTopBar** sticky + título "SINDICOM" + pill com período corrente.
+- **Product MobileTabBar** (variant `container`) substitui o multi-select de produto: tap atualiza `msProduto` + `selectedProdutos` para `[key]` (single-product view). Mantém o cérebro coerente cross-viewport.
+- **Filter chip row** horizontal scroll: "Filters" trigger + período + contador de segmentos.
+- **Chart card** — `<MobileChart>` 240px, **stacked area por empresa Top 6** do produto ativo (uma trace por empresa, fill 20% alpha). Legenda horizontal abaixo.
+- **Market Share section** — Top 15 empresas como `<MobileDataCard variant="compact">` com rank pill (líder em laranja), barra de share %, share % à direita, volume condensado (`1.2M m³` / `540K m³`).
+- **FilterDrawer** (BottomSheet) com `PeriodSlider` (anos) + chip-row de segmentos (multi-select com min-1 guard); botão "Clear" expõe `resetSegmentos`.
+- **ExportFAB** abre um `FilterDrawer` chamado `ExportSheet` que oferece Download Excel (botão laranja primário) + Download CSV.
+- **Empty state** dedicado: card com mensagem amigável + instrução de disparar o workflow `etl_sindicom.yml` via GitHub Actions.
+
+### Regra de sync (CLAUDE.md § Dual-view policy)
+
+Qualquer mudança que afete análise (novo filtro/produto, novo chart, nova métrica, nova copy de label/empty state, nova opção de export) tem de cair em ambas as Views no **mesmo commit**. Mudanças puramente visuais que não alteram conteúdo podem ser view-específicas — declarar `[desktop-only]` / `[mobile-only]` no commit com justificativa.
 
 ## Produto
 
