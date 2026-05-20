@@ -10,10 +10,43 @@ ANP CDP — BSW by Well dashboard (Oil & Gas). Owner: [`worker_dash-anp-cdp-bsw`
 
 ```
 src/app/(dashboard)/anp-cdp-bsw/
-  page.tsx
+├── page.tsx                  ← viewport router (useIsMobile → desktop | mobile)
+├── useAnpCdpBswData.ts       ← THE BRAIN (RPCs, filters, derivations, chart/table)
+├── desktop/View.tsx          ← desktop UX (sidebar + chart + 12-month table)
+└── mobile/View.tsx           ← mobile UX (hero chart + filter chips + 12-month table)
 ```
 
 RPC wrappers: `rpcGetAnpCdpBswCampos`, `rpcGetAnpCdpBswScatter`, `rpcGetAnpCdpBswFieldAggregate` in [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (section "ANP CDP — BSW by Well").
+
+## Dual-view structure
+
+`/anp-cdp-bsw` is a **dual-view dashboard** (see [`CLAUDE.md` § Dual-view policy](../../CLAUDE.md) and [`docs/app/dual-view-pattern.md`](dual-view-pattern.md)).
+
+| Concern | File |
+|---|---|
+| Viewport router (`useIsMobile`) | `page.tsx` |
+| Data fetching, filters, view/style state, chart traces, 12-month table model, format helpers | `useAnpCdpBswData.ts` |
+| Desktop UX — Bootstrap sidebar (`#sidebar`) with `SearchableMultiSelect`, two `SegmentedToggle`s (View, Plot style), chart via `PlotlyChart`, history table | `desktop/View.tsx` |
+| Mobile UX — `MobileTopBar` + page heading + `MobileTabBar` (underline variant — View toggle) + sticky filter chips + hero `MobileChart` (leader-trace BRAND_ORANGE) + 12-month BSW table card; `FilterDrawer` with chip-cloud field picker + plot-style pills | `mobile/View.tsx` |
+
+Both Views consume `useAnpCdpBswData()` exclusively — neither touches Supabase or `rpc.ts`. The hook is the single source of truth:
+
+- All three RPCs (`get_anp_cdp_bsw_campos`, `get_anp_cdp_bsw_scatter`, `get_anp_cdp_bsw_field_aggregate`) run in the hook.
+- Both view modes (Per well / Field average), the Plot-style toggle (Markers / Markers+lines), and the single-/multi-select rules for the field filter live in the hook.
+- The hook also exposes `mobileChartTraces` (layout-less, mobile-tuned: 12-well cap, BRAND_ORANGE leader, smaller markers), `chart` (desktop-tuned with full layout), `tableModel` (12-month history), `fmtBsw` / `fmtDelta` / `computeDeltas` helpers — so both views render the same numbers from the same code path.
+
+**Binding sync rule**: any meaningful change to one View (new filter, chart, KPI, copy) lands in the OTHER View in the SAME commit, OR the commit message declares `[desktop-only]` / `[mobile-only]` with an explicit reason.
+
+### Mobile-specific adaptations (mobile is "same analysis, adapted clothing")
+
+| Adaptation | Reason |
+|---|---|
+| 12-well cap in `Per well` mode trace count | Mobile chart is ~340px wide — beyond 12 traces the legend collapses and the curves become indistinguishable |
+| Leader trace gets `BRAND_ORANGE` (instead of palette index 0) | Mobile mockup parity (`mockups/anp-cdp-mobile.html`); the desktop sidebar already uses palette index for swatches, so this is a mobile-only visual emphasis |
+| Chip-cloud field picker (instead of `SearchableMultiSelect` dropdown) | Touch-friendly; chip swatches double as color legend |
+| Plot-style toggle moves into the `FilterDrawer` | Mobile viewport doesn't have room for two visible toggles |
+| Per-well legend hint ("N wells in this field") rendered below chart instead of in the sidebar | Sidebar doesn't exist on mobile |
+| No `ExportFAB` | Same as desktop — this dashboard has no export by design |
 
 ## Product
 
