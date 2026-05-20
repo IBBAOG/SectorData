@@ -4,12 +4,55 @@ Dashboard de News Hunter (radar de notícias). Owner: [`worker_dash-news-hunter`
 
 > Único dashboard que **coordena com um repo externo** ([`IBBAOG/news-hunter-scanner`](https://github.com/IBBAOG/news-hunter-scanner)).
 
+## Dual-view structure (added 2026-05-20)
+
+`/news-hunter` follows the canonical dual-view pattern (CLAUDE.md § Dual-view policy):
+
+```
+src/app/(dashboard)/news-hunter/
+  page.tsx                  Viewport router — useIsMobile() → DesktopView | MobileView
+  useNewsHunterData.ts      SINGLE BRAIN: polling + watermark, keyword CRUD,
+                              topic filter, search, bookmarks, mobileTab state.
+                              Both Views consume this hook; no direct Supabase
+                              calls inside View files.
+  desktop/View.tsx          Desktop UX (≥769px) — verbatim body of old page.tsx
+                              + admin clipping flow (Selection Mode).
+  mobile/View.tsx           Mobile UX (≤768px) — per mockups/news-hunter-mobile.html.
+                              Components: MobileTopBar, MobileBottomTabBar (Feed/Search/
+                              Saved/Settings), filter pills (keywords as topic pills),
+                              KeywordsSection (compact chip row), ArticleCard
+                              (favicon circle + headline + snippet + kw pills),
+                              BottomSheet (keyword editor), FAB (+), live status row.
+```
+
+### Decision: admin clipping feature is desktop-only (Phase 1 mobile)
+
+The clipping flow (SelectionSidebar + ClippingModal + POST /api/clipping/scrape) was
+intentionally NOT ported to mobile/View.tsx in this wave. It requires multi-select UX,
+a large modal, and relies on desktop real estate. Tag: `[mobile-only-deferred-clipping]`.
+When clipping lands on mobile, the hook already exposes all article data needed.
+
+### Mobile tab navigation
+
+Four tabs in `MobileBottomTabBar`:
+- **Feed** — filtered article list with topic pills and keyword section
+- **Search** — same list but focused on search (filter pills hidden)
+- **Saved** — articles bookmarked locally (localStorage `nh_bookmarks_v1`)
+- **Settings** — full keyword add/remove management
+
+Bookmarks are local-only (no DB column). The `toggleBookmark` callback in
+`useNewsHunterData` manages `bookmarkedUrls: Set<string>` persisted to
+`localStorage (nh_bookmarks_v1)`.
+
 ## Escopo de código
 
 ```
 src/app/(dashboard)/news-hunter/
-  page.tsx
-  page.module.css                   Estilos scoped (não polui globals.css)
+  page.tsx                  Viewport router (useIsMobile)
+  useNewsHunterData.ts      Shared data + state hook
+  page.module.css           Scoped styles (desktop view — não polui globals.css)
+  desktop/View.tsx          Desktop presentation layer
+  mobile/View.tsx           Mobile presentation layer
   _components/
     SelectionSidebar.tsx            Admin-only: clipping queue panel
     ClippingModal.tsx               Admin-only: preview + download modal
