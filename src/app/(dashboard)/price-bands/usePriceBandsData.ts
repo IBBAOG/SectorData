@@ -1,0 +1,604 @@
+"use client";
+
+// ─── usePriceBandsData — single brain for the /price-bands dual-view ─────────
+//
+// Both desktop/View.tsx and mobile/View.tsx consume this hook exclusively.
+// Neither View calls Supabase directly or derives data independently.
+//
+// Contract (same shape as the canonical template):
+//   { rows, loading, error, filters, setFilters, derived }
+//
+// `derived` carries pre-computed chart data and current-value snapshots so
+// both Views get them from the same calculation.
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Annotations, Layout, PlotData } from "plotly.js";
+
+import { getSupabaseClient } from "@/lib/supabaseClient";
+import { rpcGetPriceBandsData, type PriceBandsRow } from "@/lib/rpc";
+import { downloadPriceBandsExcel } from "@/lib/exportExcel";
+import { downloadCsv } from "@/lib/exportCsv";
+
+// ─── Re-export the row type so Views can import from one place ────────────────
+
+export type { PriceBandsRow };
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+export const SUBSIDY_CUTOFF = "2026-03-12";
+export const DEFAULT_START  = "2023-06-01";
+
+// ─── Colors (single source of truth for both Views) ──────────────────────────
+
+export const COLOR_IMPORT = "#E8611A";  // orange — Import Parity
+export const COLOR_EXPORT = "#1a1a1a";  // black  — Export Parity
+export const COLOR_PETRO  = "#4ECDC4";  // teal   — Petrobras Price
+export const COLOR_SUB    = "#aaa";     // grey   — subsidy variant lines
+
+// ─── Series definitions (shared between both Views) ──────────────────────────
+
+export interface SeriesDef {
+  label: string;
+  field: keyof PriceBandsRow;
+  color: string;
+  dash: "solid" | "dash";
+  shape: "linear" | "hv";
+  width: number;
+}
+
+export const GAS_SERIES: SeriesDef[] = [
+  { label: "Import Parity",  field: "bba_import_parity", color: COLOR_IMPORT, dash: "solid", shape: "linear", width: 1.5 },
+  { label: "Export Parity",  field: "bba_export_parity", color: COLOR_EXPORT, dash: "solid", shape: "linear", width: 1.5 },
+  { label: "Petrobras Price", field: "petrobras_price",   color: COLOR_PETRO,  dash: "solid", shape: "hv",     width: 2   },
+];
+
+export const DSL_SERIES: SeriesDef[] = [
+  { label: "BBA - Import Parity",            field: "bba_import_parity",           color: COLOR_IMPORT, dash: "solid", shape: "linear", width: 1.5 },
+  { label: "BBA - Import Parity w/ subsidy", field: "bba_import_parity_w_subsidy", color: COLOR_IMPORT, dash: "dash",  shape: "linear", width: 1.5 },
+  { label: "BBA - Export Parity",            field: "bba_export_parity",           color: COLOR_EXPORT, dash: "solid", shape: "linear", width: 1.5 },
+  { label: "Petrobras Price",                field: "petrobras_price",             color: COLOR_PETRO,  dash: "solid", shape: "hv",     width: 2   },
+  { label: "Petrobras Price w/ subsidy",     field: "petrobras_price_w_subsidy",   color: COLOR_PETRO,  dash: "dash",  shape: "hv",     width: 2   },
+];
+
+// ─── Filters ─────────────────────────────────────────────────────────────────
+
+export type PriceBandsProduct = "Gasoline" | "Diesel";
+
+export interface PriceBandsFilters {
+  /** Active product tab — used by mobile (desktop shows both side by side). */
+  product: PriceBandsProduct;
+  /** Slider range expressed as [startIndex, endIndex] into `datas` array. */
+  sliderRange: [number, number];
+}
+
+// ─── Derived current-value snapshot (used by both Views for badges / cards) ──
+
+export interface PriceBandsCurrentValues {
+  petrobrasPrice: number | null;
+  importParity: number | null;
+  exportParity: number | null;
+  importParitySubsidy: number | null;
+  petrobrasSubsidy: number | null;
+  pctVsIpp: number | null;
+  pctVsEpp: number | null;
+  pctVsIppSubsidy: number | null;
+  pctPetroSubVsIppSub: number | null;
+  lastDate: string | null;
+}
+
+// ─── Hook return type ─────────────────────────────────────────────────────────
+
+export interface UsePriceBandsData {
+  rows: PriceBandsRow[];
+  loading: boolean;
+  error: Error | null;
+  filters: PriceBandsFilters;
+  setFilters: (next: Partial<PriceBandsFilters>) => void;
+  /** Unique sorted date strings across all rows. */
+  datas: string[];
+  /** Computed xMin/xMax from slider position. */
+  xMin: string | null;
+  xMax: string | null;
+  /** Rows filtered to gasoline / diesel respectively. */
+  gasolineRows: PriceBandsRow[];
+  dieselRows: PriceBandsRow[];
+  /** Pre-built chart data for the Price Bands section. */
+  gasolineChart: { data: PlotData[]; layout: Partial<Layout> };
+  dieselChart:   { data: PlotData[]; layout: Partial<Layout> };
+  /** Pre-built chart data for the YTD Average section. */
+  gasolineYtd: { data: PlotData[]; layout: Partial<Layout> };
+  dieselYtd:   { data: PlotData[]; layout: Partial<Layout> };
+  /** Available years for YTD toggle. */
+  ytdYears: number[];
+  ytdYear: number;
+  setYtdYear: (y: number) => void;
+  /** Latest-point badge values per product. */
+  currentValues: {
+    Gasoline: PriceBandsCurrentValues;
+    Diesel:   PriceBandsCurrentValues;
+  };
+  /** Export helpers — Views call these, hook owns state. */
+  exportExcel: () => Promise<void>;
+  exportCsv:   () => void;
+  excelLoading: boolean;
+  csvLoading:   boolean;
+  resetFilters: () => void;
+}
+
+// ─── Utility helpers ──────────────────────────────────────────────────────────
+
+export function fmtPct(ptbr: number | null, ref: number | null): string {
+  if (ptbr == null || ref == null || ref === 0) return "—";
+  const pct = (ptbr / ref - 1) * 100;
+  return (pct >= 0 ? "+" : "") + Math.round(pct) + "%";
+}
+
+export function fmtDateLabel(d: string): string {
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const m = parseInt(d.slice(5, 7), 10);
+  const day = parseInt(d.slice(8, 10), 10);
+  return `${months[m - 1]} ${day}, ${d.slice(0, 4)}`;
+}
+
+function addDays(dateStr: string, days: number): string {
+  const d = new Date(dateStr);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function generateDailyDates(from: string, to: string): string[] {
+  const dates: string[] = [];
+  const d = new Date(from + "T00:00:00Z");
+  const end = new Date(to + "T00:00:00Z");
+  while (d <= end) {
+    dates.push(d.toISOString().slice(0, 10));
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return dates;
+}
+
+// ─── Anti-collision for end-of-line annotations ───────────────────────────────
+
+function deconflictAnnotations(
+  annotations: Partial<Annotations>[],
+  allDataY: number[],
+  chartHeight = 380,
+  marginT = 20,
+  marginB = 110,
+  fontPx = 15,
+): Partial<Annotations>[] {
+  if (annotations.length <= 1) return annotations;
+
+  const yMin = Math.min(...allDataY);
+  const yMax = Math.max(...allDataY);
+  const yRange = yMax - yMin;
+  if (yRange === 0) return annotations;
+
+  const pxPerUnit = (chartHeight - marginT - marginB) / (yRange * 1.10);
+  const minGapUnits = fontPx / pxPerUnit;
+
+  const items = annotations.map((a, i) => ({ i, y: a.y as number }));
+  items.sort((a, b) => a.y - b.y);
+
+  for (let iter = 0; iter < 50; iter++) {
+    let changed = false;
+    for (let j = 1; j < items.length; j++) {
+      const gap = items[j].y - items[j - 1].y;
+      if (gap < minGapUnits) {
+        const shift = (minGapUnits - gap) / 2;
+        items[j - 1].y -= shift;
+        items[j].y += shift;
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+
+  const result = [...annotations];
+  for (const { i, y } of items) {
+    result[i] = { ...annotations[i], y };
+  }
+  return result;
+}
+
+// ─── Shared layout base ───────────────────────────────────────────────────────
+
+const COMMON_LAYOUT_BASE: Partial<Layout> = {
+  paper_bgcolor: "white",
+  plot_bgcolor:  "white",
+  font: { family: "Arial", size: 12, color: "#000000" },
+  hovermode: "x unified",
+  hoverlabel: {
+    bgcolor: "rgba(255,255,255,0.95)",
+    bordercolor: "rgba(180,180,180,0.5)",
+    font: { family: "Arial", color: "#1a1a1a", size: 12 },
+    namelength: -1,
+  },
+};
+
+// ─── Chart builders (shared, called by both Views via the hook) ───────────────
+
+export function buildPriceBandsChart(
+  rows: PriceBandsRow[],
+  product: PriceBandsProduct,
+  xMin: string | null,
+  xMax: string | null,
+): { data: PlotData[]; layout: Partial<Layout> } {
+  const seriesDefs = product === "Gasoline" ? GAS_SERIES : DSL_SERIES;
+
+  const filtered = rows
+    .filter((r) => r.product === product)
+    .filter((r) => (!xMin || r.date >= xMin) && (!xMax || r.date <= xMax))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (filtered.length === 0) {
+    return { data: [], layout: { ...COMMON_LAYOUT_BASE, height: 380, annotations: [{ text: "No data for the selected period.", xref: "paper", yref: "paper", showarrow: false, font: { size: 13, family: "Arial", color: "#888" } }] } };
+  }
+
+  const dates = filtered.map((r) => r.date);
+
+  const pctCustomdata = filtered.map((r) => {
+    const ptbr = r.petrobras_price as number | null;
+    const ipp  = r.bba_import_parity as number | null;
+    const epp  = r.bba_export_parity as number | null;
+    const ippStr = fmtPct(ptbr, ipp);
+    const eppStr = fmtPct(ptbr, epp);
+
+    if (product === "Diesel") {
+      const sub = r.bba_import_parity_w_subsidy as number | null;
+      const subsidyLine =
+        r.date >= SUBSIDY_CUTOFF && sub != null
+          ? `, vs. IPP w/ sub: ${fmtPct(ptbr, sub)}`
+          : "";
+      return [ippStr, eppStr, subsidyLine];
+    }
+    return [ippStr, eppStr];
+  });
+
+  const petrobrasTemplate =
+    product === "Diesel"
+      ? `%{fullData.name}: %{y:.2f} · vs. IPP: %{customdata[0]}, vs. EPP: %{customdata[1]}%{customdata[2]}<extra></extra>`
+      : `%{fullData.name}: %{y:.2f} · vs. IPP: %{customdata[0]}, vs. EPP: %{customdata[1]}<extra></extra>`;
+
+  const pctCustomdataSub: string[] | null = product === "Diesel"
+    ? filtered.map((r) => {
+        const ptbrSub = r.petrobras_price_w_subsidy as number | null;
+        const sub     = r.bba_import_parity_w_subsidy as number | null;
+        if (r.date < SUBSIDY_CUTOFF || ptbrSub == null || sub == null) return "—";
+        return fmtPct(ptbrSub, sub);
+      })
+    : null;
+
+  const petrobrasSubTemplate = `%{fullData.name}: %{y:.2f} · vs. IPP w/ sub: %{customdata}<extra></extra>`;
+
+  const traces: PlotData[] = seriesDefs.map((s) => {
+    const isPetrobras = s.field === "petrobras_price";
+    const isPetroSub  = s.field === "petrobras_price_w_subsidy";
+    return {
+      type: "scatter",
+      mode: "lines",
+      name: s.label,
+      x: dates,
+      y: filtered.map((r) => r[s.field] as number | null),
+      line: { color: s.color, dash: s.dash, shape: s.shape, width: s.width },
+      ...(isPetrobras
+        ? { customdata: pctCustomdata, hovertemplate: petrobrasTemplate }
+        : isPetroSub && pctCustomdataSub
+        ? { customdata: pctCustomdataSub, hovertemplate: petrobrasSubTemplate }
+        : { hovertemplate: `%{fullData.name}: %{y:.2f}<extra></extra>` }),
+    } as unknown as PlotData;
+  });
+
+  const allDataY: number[] = seriesDefs.flatMap((s) =>
+    filtered.map((r) => r[s.field] as number | null).filter((v): v is number => v != null)
+  );
+
+  const rawAnnotations: Partial<Annotations>[] = seriesDefs.flatMap((s) => {
+    for (let i = filtered.length - 1; i >= 0; i--) {
+      const val = filtered[i][s.field] as number | null;
+      if (val != null) {
+        return [{ x: filtered[i].date, y: val, xanchor: "left" as const, yanchor: "middle" as const, text: val.toFixed(2), showarrow: false, font: { size: 11, color: s.color, family: "Arial" }, xref: "x" as const, yref: "y" as const, xshift: 6 }];
+      }
+    }
+    return [];
+  });
+
+  const annotations = deconflictAnnotations(rawAnnotations, allDataY);
+  const xRangeEnd = addDays(filtered[filtered.length - 1].date, 45);
+
+  return {
+    data: traces,
+    layout: {
+      ...COMMON_LAYOUT_BASE,
+      xaxis: { type: "date", tickformat: "%b-%y", hoverformat: "%b %d, %Y", tickangle: -90, range: [filtered[0].date, xRangeEnd], showgrid: false, showline: true, linecolor: "#000000", linewidth: 1, showspikes: true, spikemode: "across", spikedash: "solid", spikecolor: "#555555", spikethickness: 1 },
+      yaxis: { showgrid: false, showline: true, linecolor: "#000000", linewidth: 1, tickformat: ".2f", title: { text: "BRL/litro", font: { family: "Arial", size: 11, color: "#555" } }, automargin: true },
+      legend: { orientation: "h", y: -0.3, x: 0.5, xanchor: "center" },
+      height: 380,
+      margin: { t: 20, b: 110, l: 65, r: 55 },
+      annotations,
+    },
+  };
+}
+
+export function buildYtdChart(
+  rows: PriceBandsRow[],
+  product: PriceBandsProduct,
+  year: number,
+): { data: PlotData[]; layout: Partial<Layout> } {
+  const seriesDefs = product === "Gasoline" ? GAS_SERIES : DSL_SERIES;
+
+  const yearRows = rows
+    .filter((r) => r.product === product && r.date.startsWith(`${year}-`))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (yearRows.length === 0) {
+    return { data: [], layout: { ...COMMON_LAYOUT_BASE, height: 360 } };
+  }
+
+  const lastRow   = yearRows[yearRows.length - 1];
+  const lastDate  = lastRow.date;
+  const yearEnd   = `${year}-12-31`;
+  const projDates = generateDailyDates(addDays(lastDate, 1), yearEnd);
+
+  const traces: PlotData[] = [];
+
+  for (const s of seriesDefs) {
+    let cumSum = 0;
+    let count  = 0;
+    const actualDates: string[] = [];
+    const actualAvgs:  number[] = [];
+
+    for (const r of yearRows) {
+      const val = r[s.field] as number | null;
+      if (val == null) continue;
+      cumSum += val;
+      count++;
+      actualDates.push(r.date);
+      actualAvgs.push(cumSum / count);
+    }
+
+    if (actualDates.length === 0) continue;
+
+    const isPetrobras = s.field === "petrobras_price";
+    let ytdCustomdata: [string, string][] | undefined;
+    if (isPetrobras) {
+      let cumIpp = 0, cumEpp = 0, cntIpp = 0, cntEpp = 0;
+      ytdCustomdata = yearRows.map((r) => {
+        const ipp = r.bba_import_parity as number | null;
+        const epp = r.bba_export_parity as number | null;
+        if (ipp != null) { cumIpp += ipp; cntIpp++; }
+        if (epp != null) { cumEpp += epp; cntEpp++; }
+        return [cntIpp > 0 ? cumIpp / cntIpp : null, cntEpp > 0 ? cumEpp / cntEpp : null];
+      }).filter((_, i) => (yearRows[i][s.field] as number | null) != null)
+        .map((pair, i) => {
+          const avgPtbr = actualAvgs[i];
+          return [fmtPct(avgPtbr, pair[0]), fmtPct(avgPtbr, pair[1])] as [string, string];
+        });
+    }
+
+    traces.push({
+      type: "scatter",
+      mode: "lines",
+      name: s.label,
+      x: actualDates,
+      y: actualAvgs,
+      line: { color: s.color, dash: s.dash === "dash" ? "dash" : "solid", shape: "linear", width: s.width },
+      ...(isPetrobras && ytdCustomdata
+        ? {
+            customdata: ytdCustomdata,
+            hovertemplate: `%{fullData.name}: %{y:.2f} · vs. IPP avg: %{customdata[0]}, vs. EPP avg: %{customdata[1]}<extra></extra>`,
+          }
+        : { hovertemplate: `%{fullData.name}: %{y:.2f}<extra></extra>` }),
+    } as unknown as PlotData);
+
+    if (projDates.length > 0) {
+      const lastPrice = lastRow[s.field] as number | null;
+      if (lastPrice == null) continue;
+
+      let projSum   = cumSum;
+      let projCount = count;
+      const projX: string[] = [];
+      const projY: number[] = [];
+
+      for (const d of projDates) {
+        projSum   += lastPrice;
+        projCount += 1;
+        projX.push(d);
+        projY.push(projSum / projCount);
+      }
+
+      traces.push({
+        type: "scatter",
+        mode: "lines",
+        name: s.label + " (proj.)",
+        x: projX,
+        y: projY,
+        line: { color: s.color, dash: "dot", shape: "linear", width: s.width },
+        showlegend: false,
+        hovertemplate: `%{fullData.name}: %{y:.2f}<extra></extra>`,
+      } as unknown as PlotData);
+    }
+  }
+
+  const annotations: Partial<Annotations>[] = seriesDefs.flatMap((s) => {
+    const lastPrice = lastRow[s.field] as number | null;
+    if (lastPrice == null) return [];
+    const yearRowsForS = yearRows.filter((r) => (r[s.field] as number | null) != null);
+    if (yearRowsForS.length === 0) return [];
+    const cumSum = yearRowsForS.reduce((acc, r) => acc + (r[s.field] as number), 0);
+    const count  = yearRowsForS.length;
+    const remainingDays = projDates.length;
+    const finalAvg = (cumSum + remainingDays * lastPrice) / (count + remainingDays);
+    return [{
+      x: yearEnd,
+      y: finalAvg,
+      xanchor: "left" as const,
+      yanchor: "middle" as const,
+      text: finalAvg.toFixed(2),
+      showarrow: false,
+      font: { size: 11, color: s.color, family: "Arial" },
+      xref: "x" as const,
+      yref: "y" as const,
+      xshift: 6,
+    }];
+  });
+
+  return {
+    data: traces,
+    layout: {
+      ...COMMON_LAYOUT_BASE,
+      xaxis: { type: "date", tickformat: "%b", hoverformat: "%b %d, %Y", dtick: "M1", tickangle: -90, range: [`${year}-01-01`, addDays(yearEnd, 30)], showgrid: false, showline: true, linecolor: "#000000", linewidth: 1, showspikes: true, spikemode: "across", spikecolor: "#555555", spikethickness: 1, spikedash: "solid" },
+      yaxis: { showgrid: false, showline: true, linecolor: "#000000", linewidth: 1, tickformat: ".2f", title: { text: "BRL/litro", font: { family: "Arial", size: 11, color: "#555" } }, automargin: true },
+      legend: { orientation: "h", y: -0.28, x: 0.5, xanchor: "center" },
+      height: 360,
+      margin: { t: 20, b: 100, l: 65, r: 55 },
+      annotations,
+    },
+  };
+}
+
+// ─── Current-values snapshot builder ─────────────────────────────────────────
+
+function buildCurrentValues(
+  rows: PriceBandsRow[],
+  xMax: string | null,
+): PriceBandsCurrentValues {
+  const scoped = xMax ? rows.filter((r) => r.date <= xMax) : rows;
+  const sorted = [...scoped].sort((a, b) => b.date.localeCompare(a.date));
+
+  const last = sorted.find(
+    (r) => r.petrobras_price != null && r.bba_import_parity != null && r.bba_export_parity != null,
+  );
+  const lastSubsidy = sorted.find(
+    (r) => r.date >= SUBSIDY_CUTOFF && r.petrobras_price != null && r.bba_import_parity_w_subsidy != null,
+  );
+  const lastSubPetro = sorted.find(
+    (r) => r.date >= SUBSIDY_CUTOFF && r.petrobras_price_w_subsidy != null && r.bba_import_parity_w_subsidy != null,
+  );
+
+  return {
+    petrobrasPrice:          last?.petrobras_price ?? null,
+    importParity:            last?.bba_import_parity ?? null,
+    exportParity:            last?.bba_export_parity ?? null,
+    importParitySubsidy:     lastSubsidy?.bba_import_parity_w_subsidy ?? null,
+    petrobrasSubsidy:        lastSubPetro?.petrobras_price_w_subsidy ?? null,
+    pctVsIpp:   last ? ((last.petrobras_price! / last.bba_import_parity!) - 1) * 100 : null,
+    pctVsEpp:   last ? ((last.petrobras_price! / last.bba_export_parity!) - 1) * 100 : null,
+    pctVsIppSubsidy: lastSubsidy ? ((lastSubsidy.petrobras_price! / lastSubsidy.bba_import_parity_w_subsidy!) - 1) * 100 : null,
+    pctPetroSubVsIppSub: lastSubPetro ? ((lastSubPetro.petrobras_price_w_subsidy! / lastSubPetro.bba_import_parity_w_subsidy!) - 1) * 100 : null,
+    lastDate: last?.date ?? null,
+  };
+}
+
+// ─── Hook ─────────────────────────────────────────────────────────────────────
+
+const currentYear = new Date().getFullYear();
+const YTD_YEARS   = [currentYear, currentYear - 1, currentYear - 2];
+
+const DEFAULT_FILTERS: PriceBandsFilters = {
+  product:     "Diesel",
+  sliderRange: [0, 0],
+};
+
+export function usePriceBandsData(): UsePriceBandsData {
+  const supabase = getSupabaseClient();
+
+  const [rows,    setRows]    = useState<PriceBandsRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState<Error | null>(null);
+
+  const [filters,       setFiltersState] = useState<PriceBandsFilters>(DEFAULT_FILTERS);
+  const [ytdYear,       setYtdYear]      = useState(currentYear);
+  const [excelLoading,  setExcelLoading] = useState(false);
+  const [csvLoading,    setCsvLoading]   = useState(false);
+
+  const fetchedRef = useRef(false);
+
+  // Initial fetch — price_bands is small, no filters needed at fetch time.
+  useEffect(() => {
+    if (!supabase || fetchedRef.current) return;
+    fetchedRef.current = true;
+    setLoading(true);
+    rpcGetPriceBandsData(supabase)
+      .then((data) => { setRows(data); setLoading(false); })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err : new Error(String(err)));
+        setLoading(false);
+      });
+  }, [supabase]);
+
+  // Stable partial-merge setter.
+  const setFilters = useCallback((next: Partial<PriceBandsFilters>) => {
+    setFiltersState((prev) => ({ ...prev, ...next }));
+  }, []);
+
+  // Unique sorted dates across all rows.
+  const datas = useMemo(() => {
+    const seen = new Set<string>();
+    for (const r of rows) seen.add(r.date);
+    return Array.from(seen).sort();
+  }, [rows]);
+
+  // Initialise slider range once datas are known.
+  useEffect(() => {
+    if (datas.length === 0) return;
+    const startIdx = Math.max(0, datas.findIndex((d) => d >= DEFAULT_START));
+    setFilters({ sliderRange: [startIdx, datas.length - 1] });
+  }, [datas.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const xMin = datas[filters.sliderRange[0]] ?? null;
+  const xMax = datas[filters.sliderRange[1]] ?? null;
+
+  const resetFilters = useCallback(() => {
+    if (datas.length === 0) return;
+    const startIdx = Math.max(0, datas.findIndex((d) => d >= DEFAULT_START));
+    setFilters({ sliderRange: [startIdx, datas.length - 1] });
+  }, [datas, setFilters]);
+
+  const gasolineRows = useMemo(() => rows.filter((r) => r.product === "Gasoline"), [rows]);
+  const dieselRows   = useMemo(() => rows.filter((r) => r.product === "Diesel"),   [rows]);
+
+  const gasolineChart = useMemo(() => buildPriceBandsChart(rows, "Gasoline", xMin, xMax), [rows, xMin, xMax]);
+  const dieselChart   = useMemo(() => buildPriceBandsChart(rows, "Diesel",   xMin, xMax), [rows, xMin, xMax]);
+  const gasolineYtd   = useMemo(() => buildYtdChart(rows, "Gasoline", ytdYear), [rows, ytdYear]);
+  const dieselYtd     = useMemo(() => buildYtdChart(rows, "Diesel",   ytdYear), [rows, ytdYear]);
+
+  const currentValues = useMemo(() => ({
+    Gasoline: buildCurrentValues(gasolineRows, xMax),
+    Diesel:   buildCurrentValues(dieselRows,   xMax),
+  }), [gasolineRows, dieselRows, xMax]);
+
+  const exportExcel = useCallback(async () => {
+    setExcelLoading(true);
+    try {
+      await downloadPriceBandsExcel(rows);
+    } catch (e) {
+      console.error("Excel export failed", e);
+    } finally {
+      setExcelLoading(false);
+    }
+  }, [rows]);
+
+  const exportCsv = useCallback(() => {
+    setCsvLoading(true);
+    try {
+      downloadCsv({ rows: rows as unknown as Record<string, unknown>[], filename: "price_bands" });
+    } finally {
+      setCsvLoading(false);
+    }
+  }, [rows]);
+
+  return {
+    rows, loading, error,
+    filters, setFilters,
+    datas, xMin, xMax,
+    gasolineRows, dieselRows,
+    gasolineChart, dieselChart,
+    gasolineYtd, dieselYtd,
+    ytdYears: YTD_YEARS, ytdYear, setYtdYear,
+    currentValues,
+    exportExcel, exportCsv,
+    excelLoading, csvLoading,
+    resetFilters,
+  };
+}
