@@ -92,6 +92,71 @@ package.json, eslint.config.mjs     Configs do projeto
 
 Adicionar chave em `AVG_BYTES_PER_ROW` em [`exportSizeHeuristics.ts`](../../src/lib/exportSizeHeuristics.ts) com valor empírico (bytes médios por row do dataset). Medir exportando ~1k rows e dividindo pelo tamanho do arquivo resultante.
 
+## Dual-view foundation (Fase 1 — 2026-05)
+
+A partir de 2026-05-20, todo dashboard passa a ter **duas views** — desktop (≥769px) e mobile (≤768px) — dirigidas por um **único hook compartilhado** que detém toda a lógica de dados, filtros e derivações.
+
+> Mobile é **"mesma análise, roupagem adaptada"** — nunca um cérebro diferente. Se uma View precisa de um valor que a outra não tem, primeiro você adiciona ao hook; ambas as Views passam a enxergar.
+
+A política completa está em [`CLAUDE.md` § Dual-view (web + mobile) policy](../../CLAUDE.md). O template copiável para `worker_dash-*` está em [`docs/app/dual-view-pattern.md`](dual-view-pattern.md). Os 6 mockups mobile aprovados estão em `mockups/*-mobile.html`.
+
+### Estrutura canônica por dashboard
+
+```
+src/app/(dashboard)/<slug>/
+├── page.tsx                 ← viewport router (useIsMobile → desktop ou mobile)
+├── use<Slug>Data.ts         ← O CÉREBRO — RPCs, filtros, derivações, types
+├── desktop/View.tsx         ← UX desktop (existente migra pra cá)
+└── mobile/View.tsx          ← UX mobile (mobile-first, redesenhada do zero)
+```
+
+### Contrato do hook compartilhado
+
+Toda `use<Slug>Data` exporta exatamente esta forma:
+
+```ts
+{
+  data: <RowShape>[],
+  loading: boolean,
+  error: Error | null,
+  filters: <Filters>,
+  setFilters: (next: Partial<<Filters>>) => void,
+}
+```
+
+TypeScript propaga essa shape para as duas Views — drift estrutural de dados entre desktop e mobile é **impossível por construção**.
+
+### Regra de sync (enforcement)
+
+Toda mudança significativa em uma View exige mudança equivalente na OUTRA no **mesmo commit**, OU o commit message declara `[desktop-only]` / `[mobile-only]` com justificativa explícita. Detalhe da matriz em [`dual-view-pattern.md` § 6](dual-view-pattern.md#6-binding-sync-rule-enforcement).
+
+Três camadas de enforcement:
+1. **TypeScript** — hook propaga tipos pras duas Views; drift estrutural é erro de compilação.
+2. **`worker_revisor-qa`** — audita diff pré-commit das Views.
+3. **`worker_documentador`** — audita `docs/app/<slug>.md` ↔ ambas as Views periodicamente.
+
+### Infra compartilhada construída na Fase 1 (deste departamento)
+
+| Arquivo | Propósito |
+|---|---|
+| [`src/hooks/useIsMobile.ts`](../../src/hooks/useIsMobile.ts) | Detector de viewport (SSR-safe, threshold 768px). **Fonte única do breakpoint do app.** |
+| [`public/manifest.json`](../../public/manifest.json) | PWA manifest — name SectorData, theme `#ff5000`, display standalone, start_url `/home`, ícones 192×192 e 512×512. |
+| [`public/sw.js`](../../public/sw.js) | Service worker mínimo — habilita Add-to-Home-Screen. **NÃO faz cache de dados de negócio** (sem offline mode por design). |
+| [`src/components/PWAInstallPrompt.tsx`](../../src/components/PWAInstallPrompt.tsx) | Banner dismissível "Install SectorData on your phone" — mobile-only, dismissal persistido em localStorage. Wired em `(dashboard)/layout.tsx`. |
+| [`src/components/ServiceWorkerRegister.tsx`](../../src/components/ServiceWorkerRegister.tsx) | Registra `/sw.js` após mount (só em produção). Mounted no root `app/layout.tsx`. |
+| [`src/app/(dashboard)/template-module/`](../../src/app/(dashboard)/template-module/) | Template canônico dual-view (`page.tsx` + `useTemplateModuleData.ts` + `desktop/View.tsx` + `mobile/View.tsx`). |
+
+### Infra compartilhada construída em paralelo pelo `worker_designer`
+
+`src/components/dashboard/mobile/` — 8 componentes mobile compartilhados:
+- `MobileNavBar`, `BottomSheet`, `FilterDrawer`, `MobileChart`, `MobileDataCard`, `StickyBreadcrumb`, `ExportFAB`, `MobileTabBar`.
+
+Esses componentes ficam no domínio do `worker_designer` e são montados pelos `worker_dash-*` quando refatoram cada dashboard na Fase 2.
+
+### Fase 2 — refactor por dashboard (não executar agora)
+
+Cada `worker_dash-*` é responsável por refatorar o seu próprio dashboard para o pattern dual-view. Receita em [`dual-view-pattern.md` § 8](dual-view-pattern.md#8-migration-recipe-existing-dashboard--dual-view). Ordem sugerida: priorizar primeiro os 6 dashboards com mockup mobile aprovado (`home`, `market-share`, `navios-diesel`, `news-hunter`, `stocks`, `anp-cdp`).
+
 ## NÃO está mais no escopo (foi pro dept `worker_supabase`)
 
 ```

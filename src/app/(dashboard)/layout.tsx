@@ -10,6 +10,7 @@ import { rpcUpsertMyProfile } from "../../lib/profileRpc";
 import { trackEvent } from "../../lib/tracking";
 import { ROUTE_TITLES } from "../../components/NavBar";
 import Footer from "../../components/Footer";
+import PWAInstallPrompt from "../../components/PWAInstallPrompt";
 
 // Routes excluded from page_view tracking — meta/admin pages should not
 // pollute the dashboard engagement metrics they themselves report on.
@@ -127,6 +128,7 @@ export default function DashboardLayout({
           <FirstLoginGate />
           <div style={{ flex: 1 }}>{children}</div>
           <Footer />
+          <PWAInstallPrompt />
         </div>
       </NewsHunterProvider>
     </UserProfileProvider>

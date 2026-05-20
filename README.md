@@ -262,14 +262,27 @@ Extracted from the 10 Fase 3 dashboards to prevent visual drift. All live in [`s
 
 ## Adding a New Dashboard (developer quick-start)
 
-1. Copy `src/app/(dashboard)/template-module/` → new route folder
+Every dashboard ships as a **dual-view module** (desktop + mobile) — see [`docs/app/dual-view-pattern.md`](docs/app/dual-view-pattern.md) for the full template.
+
+1. Copy `src/app/(dashboard)/template-module/` → new route folder. You get the canonical layout:
+   ```
+   <slug>/
+   ├── page.tsx                 ← viewport router (useIsMobile)
+   ├── use<Slug>Data.ts         ← single shared hook (RPCs, filters, derivations)
+   ├── desktop/View.tsx         ← desktop UX
+   └── mobile/View.tsx          ← mobile UX (mobile-first)
+   ```
 2. Add nav entry in `src/components/NavBar.tsx` (`NAV_ENTRIES`)
 3. Create Supabase migration with tables + RPCs + **RLS**
 4. Add RPC wrappers in `src/lib/rpc.ts`
 5. `INSERT INTO module_visibility VALUES ('<slug>', true);`
-6. Use `useModuleVisibilityGuard("<slug>")` in the page component
-7. **Use shared components** from `src/components/dashboard/` — `DashboardHeader`, `MultiSelectFilter`, `PeriodSlider`, `ChartSection`, `ExportPanel`, `SegmentedToggle`, `BarrelLoading` — to avoid visual drift from the Fase 3 standard
-8. **Use shared hooks/libs** — `useDebouncedFetch` for RPC calls, `plotlyDefaults` for chart layout, `units.ts` for volume conversions
+6. Use `useModuleVisibilityGuard("<slug>")` inside both Views (or in the hook)
+7. **Implement the data layer in the hook only.** Both Views consume it — they never call Supabase directly. The hook contract: `{ data, loading, error, filters, setFilters }`.
+8. **Use shared desktop components** from `src/components/dashboard/` — `DashboardHeader`, `MultiSelectFilter`, `PeriodSlider`, `ChartSection`, `ExportPanel`, `SegmentedToggle`, `BarrelLoading` — inside `desktop/View.tsx`.
+9. **Use shared mobile components** from `src/components/dashboard/mobile/` — `MobileNavBar`, `BottomSheet`, `FilterDrawer`, `MobileChart`, `MobileDataCard`, `StickyBreadcrumb`, `ExportFAB`, `MobileTabBar` — inside `mobile/View.tsx`.
+10. **Use shared hooks/libs** — `useIsMobile` (the only breakpoint source), `useDebouncedFetch` for RPC calls, `plotlyDefaults` for chart layout, `units.ts` for volume conversions.
+
+> **Binding sync rule:** any meaningful change to one View (new filter, chart, KPI, copy) must land in the OTHER View in the same commit, or the commit message must declare `[desktop-only]` / `[mobile-only]` with an explicit reason. See [`CLAUDE.md` § Dual-view policy](CLAUDE.md).
 
 > **Internal team workflow** (creating a `worker_dash-<slug>` agent, sub-PRD, dispatching `worker_dash-admin` for visibility/home image, etc.) is documented in [`docs/app/PRD.md`](docs/app/PRD.md) under "Workflow Subgerente: adicionar dashboard novo".
 
