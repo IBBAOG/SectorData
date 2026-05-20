@@ -2,11 +2,60 @@
 
 Dashboard de Market Share (% de participação). Owner: [`worker_dash-market-share`](../../.claude/agents/worker_dash-market-share.md).
 
+## Dual-view structure (added 2026-05-20)
+
+Follows the canonical dual-view pattern (`docs/app/dual-view-pattern.md`). Shared hook is the single brain; both Views are pure presentation layers.
+
+```
+src/app/(dashboard)/market-share/
+  page.tsx                     ← viewport router (useIsMobile)
+  useMarketShareData.ts        ← THE BRAIN — RPCs, filters, derivations, types
+  desktop/
+    View.tsx                   ← desktop UX (sidebar + multi-column grid + ExportModal)
+  mobile/
+    View.tsx                   ← mobile UX (MobileTopBar + chips + hero chart + TopPlayers + FAB)
+```
+
+### Analyses preserved in both Views
+
+| Analysis | Desktop | Mobile |
+|---|---|---|
+| 13 product×segment charts (Diesel B Retail/B2B/TRR/Total, Gasoline C Retail/B2B/Total, Ethanol Retail/B2B/Total, Otto-Cycle Retail/B2B/Total) | Full | Overview tab: hero Diesel B Total (12M stacked area); Compare tab: stub (full table planned) |
+| Comparison table (MoM/QTD/YoY/YTD p.p. delta) | Yes | Compare tab stub |
+| Top players ranking with MoM delta | Implicit via chart | MobileDataCard rows |
+| Export (Tier 2 ExportModal) | Yes | Yes (via ExportFAB) |
+| Period / Region / UF / Mode / Competitors filters | Yes (sidebar) | Yes (FilterDrawer bottom sheet) |
+
+### Hook export contract
+
+`useMarketShareData()` returns the full surface consumed by both views:
+- `serieRows`, `ottoCycleRows`, `seriesLoading`, `seriesError`
+- `opcoes`, `datas`, `regioesAll`, `ufsAll`, `mercadosAll`
+- Filter state + setters: `mode`, `sliderRange`, `regioesSelected`, `ufsSelected`, `competidoresSelected`
+- `applyFilters()`, `clearFilters()`
+- Derived: `charts` (all 13), `compData`, `topPlayers`, `chartColors`, `players`, `big3`, `latestDate`
+- Export state + handlers: `exportOpen`, `openExportModal`, `closeExportModal`, `exportFilters`, `exportSizeEstimate`
+
+Pure helpers also exported from the hook file:
+- `buildMarketShareLine` — builds a single Plotly line chart
+- `buildMobileStackedArea` — builds stacked-area traces for the mobile hero chart
+- `buildComparisonData` — builds the MoM/QTD/YoY/YTD comparison rows
+- `makeOttoCycleRows` — synthesises Otto-Cycle = Gasolina C + Etanol × 0.7
+
+### Shared-RPC coordination note
+
+`get_ms_serie_fast`, `get_ms_serie_others`, `get_others_players` are also consumed by
+`/sales-volumes`. Any signature change requires coordination with `worker_dash-sales-volumes`.
+Both dashboards import from the same wrappers in `src/lib/rpc.ts` (Market Share section).
+
 ## Escopo de código
 
 ```
 src/app/(dashboard)/market-share/
-  page.tsx
+  page.tsx                     (viewport router)
+  useMarketShareData.ts        (hook / brain)
+  desktop/View.tsx             (desktop UX)
+  mobile/View.tsx              (mobile UX)
 ```
 
 RPC wrappers: seção "market-share" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts).
