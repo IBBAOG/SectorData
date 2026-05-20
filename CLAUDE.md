@@ -34,6 +34,48 @@ If a worker is editing a file that mixes Portuguese UI strings with non-UI code 
 
 ---
 
+## 📱 Dual-view (web + mobile) policy
+
+A partir de 2026-05-20, todo dashboard tem **duas views** — uma para desktop (PC, ≥769px) e uma para mobile (celular, ≤768px). Mobile é **"mesma análise, roupagem adaptada"** — nunca um cérebro diferente.
+
+### Estrutura por dashboard (template canônico)
+
+```
+src/app/(dashboard)/<slug>/
+├── page.tsx                 ← detecta viewport via useIsMobile(), rota pra view
+├── use<Slug>Data.ts         ← ÚNICO cérebro: RPCs, filtros, derivações, types
+├── desktop/View.tsx         ← UI desktop (existente, intocado)
+└── mobile/View.tsx          ← UI mobile (refeita do zero, mobile-first)
+```
+
+O hook compartilhado é a **fonte única de verdade** das análises do dashboard. Ambas as views são camadas de apresentação sobre ele. Se uma view precisa de algo que a outra não tem, **primeiro você adiciona ao hook**.
+
+### Regra de sync (binding em todo `worker_dash-*`)
+
+**Toda mudança em `desktop/View.tsx` exige mudança equivalente em `mobile/View.tsx` no MESMO commit, OU a mensagem do commit deve declarar `[desktop-only]` / `[mobile-only]` com justificativa explícita.**
+
+Aplicação:
+- Novos filtros, novos charts, novos KPIs, novas opções de export → ambas as views, mesmo commit
+- Mudanças de copy (labels, axis titles, empty states) → ambas as views
+- Mudança de RPC / schema → `worker_supabase` (DB) + `worker_dash-<slug>` atualiza hook + ambas as views, mesmo commit
+- Ajuste puramente visual que não muda conteúdo → pode ser view-específico, sem tag
+
+### Enforcement (3 camadas)
+
+1. **TypeScript** — hook compartilhado propaga tipos pras duas views; drift estrutural de dados é impossível por construção
+2. **`worker_revisor-qa`** — antes do commit, audita que View edits respeitam a regra de sync (se um foi editado, o outro precisa do equivalente ou tag explícita)
+3. **`worker_documentador`** — audita periodicamente `docs/app/<slug>.md` ↔ `desktop/View.tsx` ↔ `mobile/View.tsx`; se análise listada no sub-PRD falta em uma das views, é bug
+
+### Componentes compartilhados
+
+- `src/components/dashboard/mobile/` (owned by `worker_designer`) — `MobileNavBar`, `BottomSheet`, `FilterDrawer`, `MobileChart`, `MobileDataCard`, `StickyBreadcrumb`, `ExportFAB`, `MobileTabBar`
+- `src/components/dashboard/` (existing) — desktop shared components (`DashboardHeader`, `MultiSelectFilter`, etc.)
+- `src/hooks/useIsMobile.ts` — viewport detector (SSR-safe), single source of breakpoint truth (≤768px)
+
+Vide `docs/app/PRD.md` § "Dual-view foundation" para o template implementado.
+
+---
+
 ## 🚫 Lista negra: operações que o CTO NUNCA executa diretamente
 
 Estas operações exigem worker especializado. **Sem exceção, sem "permissão excepcional", sem "rapidinho eu mesmo faço"**:

@@ -1,0 +1,1289 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>SectorData — Market Share (Mobile Mockup)</title>
+  <script src="https://cdn.plot.ly/plotly-3.4.0.min.js"></script>
+  <style>
+    /* ============================================================
+       SectorData / Market Share — mobile mockup
+       Identity tokens inherited from mockups/stocks-mobile.html
+       (which itself sources docs/design/identity.md).
+       Adds: filter chip row, filter bottom sheet, hero chart,
+       ranked player cards, floating Export FAB.
+       This is the archetype for "heavy chart + many filters"
+       (sales-volumes, anp-glp, anp-lpc, mdic-comex, anp-daie,
+       anp-desembaracos, sindicom...).
+       ============================================================ */
+
+    :root {
+      /* Brand */
+      --accent:        #ff5000;
+      --accent-hover:  #d4561a;
+      --accent-soft:   rgba(255, 80, 0, 0.10);
+      --accent-fill:   rgba(255, 80, 0, 0.08);
+
+      /* Neutrals — light theme */
+      --bg:            #f5f5f7;
+      --surface:       #ffffff;
+      --surface-2:     #fafafc;
+      --text:          #1a1a1a;
+      --text-muted:    #6b6b73;
+      --text-faint:    #9a9aa3;
+      --border:        #e6e6ec;
+      --border-soft:   #f0f0f5;
+      --row-press:     rgba(0, 0, 0, 0.04);
+
+      /* Delta indicators (reuse stocks palette) */
+      --up:            #16a34a;
+      --down:          #dc2626;
+      --up-fill:       rgba(22, 163, 74, 0.10);
+      --down-fill:     rgba(220, 38, 38, 0.10);
+
+      /* Liquid glass — sticky surfaces */
+      --glass-bg:        rgba(255, 255, 255, 0.72);
+      --glass-border:    rgba(0, 0, 0, 0.06);
+      --glass-shadow:    0 1px 0 rgba(255, 255, 255, 0.6) inset,
+                         0 -1px 0 rgba(0, 0, 0, 0.04) inset,
+                         0 4px 16px rgba(0, 0, 0, 0.06);
+
+      /* Sheet (bottom drawer) */
+      --sheet-bg:        #ffffff;
+      --sheet-handle:    #d1d1d8;
+      --scrim:           rgba(0, 0, 0, 0.36);
+
+      /* Plotly tunables */
+      --chart-gridline:  rgba(0, 0, 0, 0.04);
+
+      /* Chart palette — leader gets brand orange, rest are neutral hues */
+      --c-leader:        #ff5000;   /* BR Distribuidora */
+      --c-2:             #3b82f6;   /* Vibra */
+      --c-3:             #8b5cf6;   /* Ipiranga */
+      --c-4:             #14b8a6;   /* Raízen */
+      --c-5:             #94a3b8;   /* Others */
+    }
+
+    [data-theme="dark"] {
+      --bg:            #030814;
+      --surface:       #070d1c;
+      --surface-2:     #0a1124;
+      --text:          #e6edf3;
+      --text-muted:    #8b949e;
+      --text-faint:    #5e6772;
+      --border:        #131a2e;
+      --border-soft:   #161d33;
+      --row-press:     rgba(255, 255, 255, 0.04);
+
+      --up:            #3fb950;
+      --down:          #f85149;
+      --up-fill:       rgba(63, 185, 80, 0.12);
+      --down-fill:     rgba(248, 81, 73, 0.12);
+
+      --glass-bg:        rgba(7, 13, 28, 0.72);
+      --glass-border:    rgba(255, 255, 255, 0.06);
+      --glass-shadow:    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+                         0 -1px 0 rgba(0, 0, 0, 0.4) inset,
+                         0 4px 16px rgba(0, 0, 0, 0.4);
+
+      --sheet-bg:        #0a1124;
+      --sheet-handle:    #2a3144;
+      --scrim:           rgba(0, 0, 0, 0.6);
+
+      --chart-gridline:  rgba(255, 255, 255, 0.05);
+
+      --c-leader:        #ff5000;
+      --c-2:             #60a5fa;
+      --c-3:             #a78bfa;
+      --c-4:             #2dd4bf;
+      --c-5:             #64748b;
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.4;
+      min-height: 100vh;
+      min-height: 100dvh;
+      -webkit-font-smoothing: antialiased;
+      transition: background 0.25s ease, color 0.25s ease;
+    }
+
+    /* ---------- Phone shell ---------- */
+    .phone {
+      max-width: 428px;
+      margin: 0 auto;
+      min-height: 100vh;
+      min-height: 100dvh;
+      background: var(--bg);
+      padding-bottom: calc(72px + env(safe-area-inset-bottom));
+      position: relative;
+    }
+
+    /* ---------- Top bar (inherited liquid glass) ---------- */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      height: 56px;
+      padding: 0 16px;
+      padding-top: env(safe-area-inset-top);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 1px solid var(--glass-border);
+      box-shadow: var(--glass-shadow);
+    }
+    .wordmark {
+      font-weight: 700;
+      font-size: 17px;
+      letter-spacing: 0.04em;
+      color: var(--text);
+    }
+    .wordmark .dot { color: var(--accent); }
+    .topbar-actions { display: flex; align-items: center; gap: 10px; }
+    .icon-btn {
+      width: 44px; height: 44px;
+      border: 0; background: transparent;
+      color: var(--text-muted);
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .icon-btn:active { background: var(--row-press); }
+    .avatar {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25) inset,
+                  0 0 0 2px var(--surface);
+    }
+
+    /* ---------- Title block ---------- */
+    .title-block {
+      padding: 16px 16px 12px;
+    }
+    .title {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: 0.005em;
+      line-height: 1.15;
+    }
+    .subtitle {
+      margin-top: 4px;
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.3;
+    }
+    .period-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .period-badge .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    /* ---------- Filter chip row (sticky, horizontal scroll) ---------- */
+    .chips {
+      position: sticky;
+      top: 56px;
+      z-index: 25;
+      height: 52px;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 1px solid var(--glass-border);
+      display: flex;
+      align-items: center;
+      overflow-x: auto;
+      overflow-y: hidden;
+      gap: 8px;
+      padding: 0 16px;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .chips::-webkit-scrollbar { display: none; }
+    .chip {
+      flex: 0 0 auto;
+      min-height: 32px;
+      padding: 0 8px 0 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .chip:active { background: var(--row-press); }
+    .chip .x {
+      width: 18px; height: 18px;
+      display: inline-flex;
+      align-items: center; justify-content: center;
+      border-radius: 50%;
+      background: var(--row-press);
+      color: var(--text-muted);
+    }
+    .chip-add {
+      flex: 0 0 auto;
+      min-height: 32px;
+      padding: 0 14px;
+      border-radius: 999px;
+      border: 1px solid var(--accent);
+      background: transparent;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .chip-add:active { background: var(--accent-soft); }
+
+    /* ---------- Chart hero card ---------- */
+    .section {
+      padding: 16px;
+    }
+    .card-surface {
+      background: var(--surface);
+      border: 1px solid var(--border-soft);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    .chart-header {
+      padding: 14px 14px 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .chart-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .chart-meta {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .chart-wrap {
+      height: 320px;
+      width: 100%;
+    }
+    .chart-legend {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 4px 12px;
+      padding: 8px 14px 14px;
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+      min-height: 22px;
+    }
+    .legend-swatch {
+      width: 10px; height: 10px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+    .legend-item.leader { font-weight: 700; color: var(--text); }
+
+    /* ---------- Top players list ---------- */
+    .section-title {
+      padding: 4px 4px 10px;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+    .section-title h2 {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .section-title .small {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .players {
+      background: var(--surface);
+      border: 1px solid var(--border-soft);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    .player {
+      min-height: 72px;
+      padding: 12px 14px;
+      display: grid;
+      grid-template-columns: 32px 1fr auto;
+      grid-template-areas:
+        "rank name pct"
+        "rank bar delta";
+      column-gap: 12px;
+      row-gap: 4px;
+      align-items: center;
+      border-bottom: 1px solid var(--border-soft);
+      cursor: pointer;
+      transition: background 0.12s ease;
+    }
+    .player:last-child { border-bottom: 0; }
+    .player:active { background: var(--row-press); }
+    .player-rank {
+      grid-area: rank;
+      width: 28px; height: 28px;
+      border-radius: 8px;
+      background: var(--border-soft);
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .player-rank.is-leader {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 6px rgba(255, 80, 0, 0.30);
+    }
+    .player-name {
+      grid-area: name;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .player-pct {
+      grid-area: pct;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.1;
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+    }
+    .player-bar {
+      grid-area: bar;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--border-soft);
+      overflow: hidden;
+      position: relative;
+    }
+    .player-bar-fill {
+      position: absolute;
+      top: 0; left: 0; bottom: 0;
+      background: var(--accent);
+      border-radius: 2px;
+    }
+    .player-bar-fill.muted { background: var(--text-faint); opacity: 0.55; }
+    .player-delta {
+      grid-area: delta;
+      font-size: 12px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+    }
+    .player-delta.up   { color: var(--up); }
+    .player-delta.down { color: var(--down); }
+
+    .view-all {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
+      min-height: 48px;
+      margin-top: 12px;
+      background: transparent;
+      border: 0;
+      color: var(--accent);
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      border-radius: 12px;
+    }
+    .view-all:active { background: var(--accent-soft); }
+
+    /* ---------- Floating Export FAB ---------- */
+    .fab {
+      position: fixed;
+      right: max(16px, calc((100vw - 428px) / 2 + 16px));
+      bottom: calc(72px + env(safe-area-inset-bottom) + 16px);
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      border: 0;
+      background: var(--accent);
+      color: #fff;
+      display: inline-flex;
+      align-items: center; justify-content: center;
+      cursor: pointer;
+      z-index: 35;
+      box-shadow: 0 6px 20px rgba(255, 80, 0, 0.45),
+                  0 1px 0 rgba(255, 255, 255, 0.30) inset;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .fab:active {
+      transform: translateY(1px);
+      box-shadow: 0 4px 12px rgba(255, 80, 0, 0.40);
+    }
+    .fab svg { width: 24px; height: 24px; }
+
+    /* ---------- Bottom tab bar (inherited) ---------- */
+    .tabbar {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      z-index: 40;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-top: 1px solid var(--glass-border);
+      box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.05);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .tabbar-inner {
+      max-width: 428px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      height: 64px;
+    }
+    .tab {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      background: transparent;
+      border: 0;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      min-height: 44px;
+    }
+    .tab--active { color: var(--accent); }
+    .tab--active::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 28px;
+      height: 2px;
+      background: var(--accent);
+      border-radius: 0 0 2px 2px;
+    }
+    .tab svg { width: 22px; height: 22px; }
+
+    /* ---------- Bottom sheet (filter drawer) ---------- */
+    .sheet-scrim {
+      position: fixed;
+      inset: 0;
+      background: var(--scrim);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+      z-index: 45;
+    }
+    .sheet-scrim.is-open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .sheet {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      z-index: 50;
+      max-width: 428px;
+      margin: 0 auto;
+      background: var(--sheet-bg);
+      border-radius: 20px 20px 0 0;
+      max-height: 85vh;
+      max-height: 85dvh;
+      display: flex;
+      flex-direction: column;
+      transform: translateY(100%);
+      transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.18);
+    }
+    .sheet.is-open { transform: translateY(0); }
+    .sheet-handle {
+      width: 36px; height: 4px;
+      border-radius: 2px;
+      background: var(--sheet-handle);
+      margin: 8px auto 4px;
+      flex-shrink: 0;
+    }
+    .sheet-header {
+      padding: 6px 16px 12px;
+      display: grid;
+      grid-template-columns: 60px 1fr 60px;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid var(--border-soft);
+      flex-shrink: 0;
+    }
+    .sheet-header h2 {
+      margin: 0;
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+      text-align: center;
+    }
+    .sheet-reset {
+      background: transparent;
+      border: 0;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 8px 0;
+      text-align: left;
+      min-height: 36px;
+    }
+    .sheet-reset:active { color: var(--accent); }
+    .sheet-close {
+      width: 36px; height: 36px;
+      margin-left: auto;
+      border: 0;
+      background: var(--border-soft);
+      color: var(--text-muted);
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center; justify-content: center;
+      cursor: pointer;
+    }
+    .sheet-body {
+      flex: 1 1 auto;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 16px;
+    }
+    .sheet-section {
+      margin-bottom: 22px;
+    }
+    .sheet-section:last-child { margin-bottom: 8px; }
+    .sheet-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .sheet-label .hint {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-faint);
+      letter-spacing: 0;
+      text-transform: none;
+    }
+    .check-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .check-pill {
+      min-height: 36px;
+      padding: 0 14px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
+    .check-pill:active { background: var(--row-press); }
+    .check-pill.is-on {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 6px rgba(255, 80, 0, 0.25);
+    }
+    .check-pill .check-dot {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      border: 1.5px solid currentColor;
+      display: inline-flex;
+      align-items: center; justify-content: center;
+      opacity: 0.55;
+    }
+    .check-pill.is-on .check-dot {
+      background: #fff;
+      border-color: #fff;
+      opacity: 1;
+    }
+    .check-pill.is-on .check-dot::after {
+      content: "";
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    /* Range slider (static visual — rc-slider is used at runtime in the app) */
+    .range {
+      padding: 4px 6px 0;
+    }
+    .range-track {
+      position: relative;
+      height: 28px;
+      display: flex;
+      align-items: center;
+    }
+    .range-line {
+      position: absolute;
+      left: 0; right: 0;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--border);
+    }
+    .range-fill {
+      position: absolute;
+      left: 8%;
+      right: 12%;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--accent);
+    }
+    .range-handle {
+      position: absolute;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 2px solid var(--accent);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+    }
+    .range-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .range-labels .now {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    /* Top-N slider */
+    .topn {
+      display: grid;
+      grid-template-columns: 1fr 56px;
+      gap: 16px;
+      align-items: center;
+    }
+    .topn .range { padding: 0; }
+    .topn-value {
+      text-align: center;
+      padding: 6px 0;
+      border-radius: 10px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 18px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* UF chip group with × */
+    .uf-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .uf-chip {
+      min-height: 32px;
+      padding: 0 10px 0 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid transparent;
+    }
+    .uf-chip .x {
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: rgba(255, 80, 0, 0.18);
+      display: inline-flex;
+      align-items: center; justify-content: center;
+      cursor: pointer;
+    }
+    .uf-add {
+      min-height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px dashed var(--border);
+      background: transparent;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    /* Sheet footer (sticky) */
+    .sheet-footer {
+      flex-shrink: 0;
+      padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 10px;
+      align-items: center;
+      border-top: 1px solid var(--border-soft);
+      background: var(--sheet-bg);
+    }
+    .btn-text {
+      min-height: 44px;
+      padding: 0 18px;
+      border: 0;
+      background: transparent;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: 10px;
+    }
+    .btn-text:active { color: var(--accent); background: var(--row-press); }
+    .btn-primary {
+      min-height: 44px;
+      padding: 0 18px;
+      border: 0;
+      border-radius: 12px;
+      background: var(--accent);
+      color: #fff;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(255, 80, 0, 0.30);
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+    }
+    .btn-primary:active {
+      transform: translateY(1px);
+      box-shadow: 0 2px 8px rgba(255, 80, 0, 0.30);
+    }
+
+    /* ---------- Theme toggle icon swap ---------- */
+    .icon-sun  { display: none; }
+    .icon-moon { display: inline-block; }
+    [data-theme="dark"] .icon-sun  { display: inline-block; }
+    [data-theme="dark"] .icon-moon { display: none; }
+  </style>
+</head>
+<body>
+  <div class="phone" id="phone">
+
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="wordmark">SECTORDATA<span class="dot">.</span></div>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="themeBtn" aria-label="Toggle theme">
+          <svg class="icon-moon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          <svg class="icon-sun"  width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg>
+        </button>
+        <div class="avatar" aria-label="Eduardo Mendes">EM</div>
+      </div>
+    </header>
+
+    <!-- Title block -->
+    <section class="title-block">
+      <h1 class="title">Market Share</h1>
+      <p class="subtitle">Brazilian fuel distribution</p>
+      <span class="period-badge" aria-label="Period">
+        <span class="dot"></span>
+        Jan 2020 – Apr 2026
+      </span>
+    </section>
+
+    <!-- Filter chip row (sticky) -->
+    <nav class="chips" aria-label="Active filters">
+      <button class="chip" aria-label="Remove Diesel filter">
+        Diesel
+        <span class="x" aria-hidden="true">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+        </span>
+      </button>
+      <button class="chip" aria-label="Remove Q1 2026 filter">
+        Q1 2026
+        <span class="x" aria-hidden="true">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+        </span>
+      </button>
+      <button class="chip" aria-label="Remove Southeast filter">
+        Southeast
+        <span class="x" aria-hidden="true">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+        </span>
+      </button>
+      <button class="chip-add" id="openSheetBtn" aria-label="Open filters">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        Filters
+      </button>
+    </nav>
+
+    <!-- Hero chart card -->
+    <section class="section">
+      <article class="card-surface">
+        <header class="chart-header">
+          <div class="chart-title">Share over time</div>
+          <div class="chart-meta">12M Rolling</div>
+        </header>
+        <div class="chart-wrap" id="shareChart"></div>
+        <div class="chart-legend">
+          <div class="legend-item leader">
+            <span class="legend-swatch" style="background: var(--c-leader);"></span>
+            BR Distribuidora
+          </div>
+          <div class="legend-item">
+            <span class="legend-swatch" style="background: var(--c-2);"></span>
+            Vibra Energia
+          </div>
+          <div class="legend-item">
+            <span class="legend-swatch" style="background: var(--c-3);"></span>
+            Ipiranga
+          </div>
+          <div class="legend-item">
+            <span class="legend-swatch" style="background: var(--c-4);"></span>
+            Raízen
+          </div>
+          <div class="legend-item">
+            <span class="legend-swatch" style="background: var(--c-5);"></span>
+            Others
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <!-- Top players list -->
+    <section class="section" style="padding-top: 0;">
+      <div class="section-title">
+        <h2>Top Distributors</h2>
+        <span class="small">Mar 2026</span>
+      </div>
+      <div class="players">
+        <article class="player">
+          <div class="player-rank is-leader">1</div>
+          <div class="player-name">BR Distribuidora</div>
+          <div class="player-pct">28.4%</div>
+          <div class="player-bar"><div class="player-bar-fill" style="width: 100%;"></div></div>
+          <div class="player-delta up">+0.4 pp</div>
+        </article>
+        <article class="player">
+          <div class="player-rank">2</div>
+          <div class="player-name">Vibra Energia</div>
+          <div class="player-pct">23.9%</div>
+          <div class="player-bar"><div class="player-bar-fill muted" style="width: 84%;"></div></div>
+          <div class="player-delta down">-0.2 pp</div>
+        </article>
+        <article class="player">
+          <div class="player-rank">3</div>
+          <div class="player-name">Ipiranga</div>
+          <div class="player-pct">20.7%</div>
+          <div class="player-bar"><div class="player-bar-fill muted" style="width: 73%;"></div></div>
+          <div class="player-delta up">+0.6 pp</div>
+        </article>
+        <article class="player">
+          <div class="player-rank">4</div>
+          <div class="player-name">Raízen</div>
+          <div class="player-pct">11.8%</div>
+          <div class="player-bar"><div class="player-bar-fill muted" style="width: 42%;"></div></div>
+          <div class="player-delta down">-0.3 pp</div>
+        </article>
+        <article class="player">
+          <div class="player-rank">5</div>
+          <div class="player-name">Others</div>
+          <div class="player-pct">15.2%</div>
+          <div class="player-bar"><div class="player-bar-fill muted" style="width: 54%;"></div></div>
+          <div class="player-delta down">-0.5 pp</div>
+        </article>
+      </div>
+
+      <button class="view-all">
+        View all distributors
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+      </button>
+    </section>
+
+    <!-- Floating Export FAB -->
+    <button class="fab" aria-label="Export data">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 3v12"></path>
+        <polyline points="7 10 12 15 17 10"></polyline>
+        <path d="M5 21h14"></path>
+      </svg>
+    </button>
+
+    <!-- Bottom tab bar -->
+    <nav class="tabbar" aria-label="Primary">
+      <div class="tabbar-inner">
+        <button class="tab tab--active" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9" rx="1"></rect><rect x="10" y="6" width="4" height="15" rx="1"></rect><rect x="17" y="3" width="4" height="18" rx="1"></rect></svg>
+          <span>Overview</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"></path><polyline points="14 7 21 7 21 14"></polyline></svg>
+          <span>Compare</span>
+        </button>
+        <button class="tab" id="tabFiltersBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+          <span>Filters</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>
+          <span>Profile</span>
+        </button>
+      </div>
+    </nav>
+  </div>
+
+  <!-- Bottom sheet: Filters -->
+  <div class="sheet-scrim is-open" id="sheetScrim" aria-hidden="true"></div>
+  <aside class="sheet is-open" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet-handle" aria-hidden="true"></div>
+    <header class="sheet-header">
+      <button class="sheet-reset" id="resetBtn">Reset</button>
+      <h2 id="sheetTitle">Filters</h2>
+      <button class="sheet-close" id="closeSheetBtn" aria-label="Close filters">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+      </button>
+    </header>
+
+    <div class="sheet-body">
+
+      <!-- Product -->
+      <div class="sheet-section">
+        <div class="sheet-label">
+          <span>Product</span>
+          <span class="hint">1 selected</span>
+        </div>
+        <div class="check-pills" role="group" aria-label="Product">
+          <button class="check-pill is-on"><span class="check-dot"></span>Diesel</button>
+          <button class="check-pill"><span class="check-dot"></span>Gasolina</button>
+          <button class="check-pill"><span class="check-dot"></span>Etanol</button>
+          <button class="check-pill"><span class="check-dot"></span>GLP</button>
+        </div>
+      </div>
+
+      <!-- Period -->
+      <div class="sheet-section">
+        <div class="sheet-label">
+          <span>Period</span>
+          <span class="hint">Jan 2020 – Apr 2026</span>
+        </div>
+        <div class="range">
+          <div class="range-track" aria-label="Period range">
+            <div class="range-line"></div>
+            <div class="range-fill"></div>
+            <div class="range-handle" style="left: 8%;"></div>
+            <div class="range-handle" style="left: 88%;"></div>
+          </div>
+          <div class="range-labels">
+            <span>Jan 2020</span>
+            <span class="now">Apr 2026</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Region -->
+      <div class="sheet-section">
+        <div class="sheet-label">
+          <span>Region</span>
+          <span class="hint">1 of 5</span>
+        </div>
+        <div class="check-pills" role="group" aria-label="Region">
+          <button class="check-pill"><span class="check-dot"></span>North</button>
+          <button class="check-pill"><span class="check-dot"></span>Northeast</button>
+          <button class="check-pill"><span class="check-dot"></span>Center-West</button>
+          <button class="check-pill is-on"><span class="check-dot"></span>Southeast</button>
+          <button class="check-pill"><span class="check-dot"></span>South</button>
+        </div>
+      </div>
+
+      <!-- UF -->
+      <div class="sheet-section">
+        <div class="sheet-label">
+          <span>UF</span>
+          <span class="hint">3 selected</span>
+        </div>
+        <div class="uf-group">
+          <span class="uf-chip">SP
+            <span class="x" aria-label="Remove SP">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+            </span>
+          </span>
+          <span class="uf-chip">RJ
+            <span class="x" aria-label="Remove RJ">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+            </span>
+          </span>
+          <span class="uf-chip">MG
+            <span class="x" aria-label="Remove MG">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+            </span>
+          </span>
+          <button class="uf-add">+ Add UF</button>
+        </div>
+      </div>
+
+      <!-- Segment -->
+      <div class="sheet-section">
+        <div class="sheet-label">
+          <span>Segment</span>
+          <span class="hint">All</span>
+        </div>
+        <div class="check-pills" role="radiogroup" aria-label="Segment">
+          <button class="check-pill is-on" role="radio" aria-checked="true">All</button>
+          <button class="check-pill" role="radio" aria-checked="false">Retail</button>
+          <button class="check-pill" role="radio" aria-checked="false">Wholesale</button>
+        </div>
+      </div>
+
+      <!-- Top N -->
+      <div class="sheet-section">
+        <div class="sheet-label">
+          <span>Top N</span>
+          <span class="hint">5 – 20</span>
+        </div>
+        <div class="topn">
+          <div class="range">
+            <div class="range-track" aria-label="Top N">
+              <div class="range-line"></div>
+              <div class="range-fill" style="left: 0; right: 70%;"></div>
+              <div class="range-handle" style="left: 0%;"></div>
+              <div class="range-handle" style="left: 30%;"></div>
+            </div>
+            <div class="range-labels">
+              <span>5</span>
+              <span>20</span>
+            </div>
+          </div>
+          <div class="topn-value">5</div>
+        </div>
+      </div>
+
+    </div>
+
+    <footer class="sheet-footer">
+      <button class="btn-text" id="resetBtnFooter">Reset</button>
+      <button class="btn-primary" id="applyBtn">Apply filters</button>
+    </footer>
+  </aside>
+
+  <script>
+    /* ============================================================
+       Mock data + rendering
+       Stacked area chart of monthly distributor share (12 months).
+       BR Distribuidora gets brand orange #ff5000 (leader),
+       the rest use neutral hues from the chart palette.
+       ============================================================ */
+
+    function getCssColor(varName) {
+      return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    }
+    function hexToRgba(hex, a) {
+      const h = hex.replace("#", "");
+      const r = parseInt(h.slice(0,2), 16);
+      const g = parseInt(h.slice(2,4), 16);
+      const b = parseInt(h.slice(4,6), 16);
+      return `rgba(${r},${g},${b},${a})`;
+    }
+
+    // Apr 2025 → Mar 2026 monthly labels
+    const MONTHS = [
+      "Apr 2025","May 2025","Jun 2025","Jul 2025","Aug 2025","Sep 2025",
+      "Oct 2025","Nov 2025","Dec 2025","Jan 2026","Feb 2026","Mar 2026"
+    ];
+
+    const SERIES = [
+      { name: "BR Distribuidora", varName: "--c-leader", data: [27, 28, 28, 27, 26, 27, 28, 28, 29, 29, 28, 28] },
+      { name: "Vibra Energia",    varName: "--c-2",      data: [24, 23, 24, 25, 24, 23, 23, 24, 23, 24, 25, 24] },
+      { name: "Ipiranga",         varName: "--c-3",      data: [21, 22, 21, 20, 21, 22, 21, 20, 20, 19, 20, 21] },
+      { name: "Raízen",           varName: "--c-4",      data: [12, 12, 13, 13, 13, 12, 12, 12, 11, 12, 12, 12] },
+      { name: "Others",           varName: "--c-5",      data: [16, 15, 14, 15, 16, 16, 16, 16, 17, 16, 15, 15] },
+    ];
+
+    function renderChart() {
+      const muted   = getCssColor("--text-muted");
+      const grid    = getCssColor("--chart-gridline");
+      const surface = getCssColor("--surface");
+
+      // Build stacked-area traces (Plotly: stackgroup + groupnorm "percent" works on raw values).
+      const traces = SERIES.map(s => {
+        const color = getCssColor(s.varName);
+        return {
+          type: "scatter",
+          mode: "lines",
+          name: s.name,
+          x: MONTHS,
+          y: s.data,
+          stackgroup: "one",
+          line: { color: color, width: 1.4, shape: "spline", smoothing: 0.5 },
+          fillcolor: hexToRgba(color, s.name === "BR Distribuidora" ? 0.85 : 0.78),
+          hovertemplate: "<b>%{fullData.name}</b><br>%{x}<br>%{y}%<extra></extra>",
+        };
+      });
+
+      const layout = {
+        margin: { l: 32, r: 8, t: 4, b: 28 },
+        paper_bgcolor: surface,
+        plot_bgcolor: surface,
+        font: { family: "Arial, Helvetica, sans-serif", size: 11, color: muted },
+        showlegend: false,
+        hovermode: "x unified",
+        hoverlabel: {
+          bgcolor: surface,
+          bordercolor: getCssColor("--accent"),
+          font: { family: "Arial, Helvetica, sans-serif", size: 12, color: getCssColor("--text") },
+        },
+        xaxis: {
+          showgrid: false,
+          zeroline: false,
+          showline: false,
+          tickfont: { size: 10, color: muted },
+          nticks: 5,
+          fixedrange: true,
+          tickangle: 0,
+        },
+        yaxis: {
+          showgrid: true,
+          gridcolor: grid,
+          zeroline: false,
+          showline: false,
+          tickfont: { size: 10, color: muted },
+          ticksuffix: "%",
+          range: [0, 100],
+          nticks: 4,
+          fixedrange: true,
+        },
+      };
+
+      const config = {
+        displayModeBar: false,
+        responsive: true,
+        scrollZoom: false,
+        doubleClick: false,
+        staticPlot: false,
+      };
+
+      Plotly.newPlot("shareChart", traces, layout, config);
+    }
+
+    /* ---------- Theme toggle ---------- */
+    function applyTheme(next) {
+      const root = document.documentElement;
+      if (next === "dark") root.setAttribute("data-theme", "dark");
+      else root.removeAttribute("data-theme");
+      document.querySelector('meta[name="theme-color"]').setAttribute("content", next === "dark" ? "#030814" : "#ffffff");
+      renderChart();
+    }
+    document.getElementById("themeBtn").addEventListener("click", () => {
+      const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+      applyTheme(isDark ? "light" : "dark");
+    });
+
+    /* ---------- Bottom sheet open/close ---------- */
+    const sheet = document.getElementById("sheet");
+    const scrim = document.getElementById("sheetScrim");
+
+    function openSheet() {
+      sheet.classList.add("is-open");
+      scrim.classList.add("is-open");
+      document.body.style.overflow = "hidden";
+    }
+    function closeSheet() {
+      sheet.classList.remove("is-open");
+      scrim.classList.remove("is-open");
+      document.body.style.overflow = "";
+    }
+    document.getElementById("openSheetBtn").addEventListener("click", openSheet);
+    document.getElementById("tabFiltersBtn").addEventListener("click", openSheet);
+    document.getElementById("closeSheetBtn").addEventListener("click", closeSheet);
+    document.getElementById("applyBtn").addEventListener("click", closeSheet);
+    scrim.addEventListener("click", closeSheet);
+
+    /* ---------- Check-pill toggle (visual only) ---------- */
+    document.querySelectorAll(".check-pill").forEach(btn => {
+      btn.addEventListener("click", () => {
+        // Radios only allow one
+        if (btn.getAttribute("role") === "radio") {
+          btn.parentElement.querySelectorAll(".check-pill").forEach(p => {
+            p.classList.remove("is-on");
+            p.setAttribute("aria-checked", "false");
+          });
+          btn.classList.add("is-on");
+          btn.setAttribute("aria-checked", "true");
+        } else {
+          btn.classList.toggle("is-on");
+        }
+      });
+    });
+
+    /* ---------- Boot ---------- */
+    renderChart();
+    window.addEventListener("resize", () => Plotly.Plots.resize(document.getElementById("shareChart")));
+  </script>
+</body>
+</html>

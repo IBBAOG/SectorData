@@ -1,0 +1,994 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>SectorData — Home (Mobile Mockup)</title>
+  <style>
+    /* ============================================================
+       SectorData / Home — mobile mockup
+       Tokens, glass surfaces, theme toggle and bottom tab bar
+       are inherited verbatim from mockups/stocks-mobile.html.
+       Only Home-specific structures (greeting, search, category
+       sections, module cards) are added below.
+       ============================================================ */
+
+    :root {
+      /* Brand */
+      --accent:        #ff5000;
+      --accent-hover:  #d4561a;
+      --accent-soft:   rgba(255, 80, 0, 0.10);
+      --accent-fill:   rgba(255, 80, 0, 0.08);
+
+      /* Neutrals — light theme */
+      --bg:            #f5f5f7;
+      --surface:       #ffffff;
+      --surface-2:     #fafafc;
+      --text:          #1a1a1a;
+      --text-muted:    #6b6b73;
+      --text-faint:    #9a9aa3;
+      --border:        #e6e6ec;
+      --border-soft:   #f0f0f5;
+      --row-press:     rgba(0, 0, 0, 0.04);
+
+      /* Stocks gain/loss (kept for parity though Home doesn't use them) */
+      --up:            #16a34a;
+      --down:          #dc2626;
+      --up-fill:       rgba(22, 163, 74, 0.10);
+      --down-fill:     rgba(220, 38, 38, 0.10);
+
+      /* Liquid glass — sticky surfaces */
+      --glass-bg:        rgba(255, 255, 255, 0.72);
+      --glass-border:    rgba(0, 0, 0, 0.06);
+      --glass-shadow:    0 1px 0 rgba(255, 255, 255, 0.6) inset,
+                         0 -1px 0 rgba(0, 0, 0, 0.04) inset,
+                         0 4px 16px rgba(0, 0, 0, 0.06);
+
+      /* Category gradients — light theme */
+      --grad-markets:   linear-gradient(135deg, #ff5000 0%, #b3370a 100%);
+      --grad-oilgas:    linear-gradient(135deg, #2563eb 0%, #0d9488 100%);
+      --grad-fuel:      linear-gradient(135deg, #059669 0%, #0d9488 100%);
+      --grad-admin:     linear-gradient(135deg, #4b5563 0%, #1f2937 100%);
+
+      /* Sticky stack offsets so multiple sticky elements layer cleanly */
+      --top-h:          56px;
+      --search-h:       60px;
+    }
+
+    [data-theme="dark"] {
+      --bg:            #030814;
+      --surface:       #070d1c;
+      --surface-2:     #0a1124;
+      --text:          #e6edf3;
+      --text-muted:    #8b949e;
+      --text-faint:    #5e6772;
+      --border:        #131a2e;
+      --border-soft:   #161d33;
+      --row-press:     rgba(255, 255, 255, 0.04);
+
+      --up:            #3fb950;
+      --down:          #f85149;
+      --up-fill:       rgba(63, 185, 80, 0.12);
+      --down-fill:     rgba(248, 81, 73, 0.12);
+
+      --glass-bg:        rgba(7, 13, 28, 0.72);
+      --glass-border:    rgba(255, 255, 255, 0.06);
+      --glass-shadow:    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+                         0 -1px 0 rgba(0, 0, 0, 0.4) inset,
+                         0 4px 16px rgba(0, 0, 0, 0.4);
+
+      /* Category gradients — dark theme (slightly brighter to read on dark bg) */
+      --grad-markets:   linear-gradient(135deg, #ff5000 0%, #7a2406 100%);
+      --grad-oilgas:    linear-gradient(135deg, #3b82f6 0%, #0d9488 100%);
+      --grad-fuel:      linear-gradient(135deg, #10b981 0%, #0d9488 100%);
+      --grad-admin:     linear-gradient(135deg, #6b7280 0%, #111827 100%);
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.4;
+      min-height: 100vh;
+      min-height: 100dvh;
+      -webkit-font-smoothing: antialiased;
+      transition: background 0.25s ease, color 0.25s ease;
+    }
+
+    /* ---------- Layout shell ---------- */
+    .phone {
+      max-width: 428px;
+      margin: 0 auto;
+      min-height: 100vh;
+      min-height: 100dvh;
+      background: var(--bg);
+      padding-bottom: calc(72px + env(safe-area-inset-bottom));
+      position: relative;
+    }
+
+    /* ---------- Pull-to-refresh affordance ---------- */
+    .pull-refresh {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 0 6px;
+      color: var(--text-faint);
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      gap: 2px;
+      user-select: none;
+    }
+    .pull-refresh svg { opacity: 0.6; }
+
+    /* ---------- Top bar (sticky, liquid glass) ---------- */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      height: 56px;
+      padding: 0 16px;
+      padding-top: env(safe-area-inset-top);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 1px solid var(--glass-border);
+      box-shadow: var(--glass-shadow);
+    }
+    .wordmark {
+      font-weight: 700;
+      font-size: 17px;
+      letter-spacing: 0.04em;
+      color: var(--text);
+    }
+    .wordmark .dot { color: var(--accent); }
+    .topbar-actions { display: flex; align-items: center; gap: 10px; }
+    .icon-btn {
+      width: 44px; height: 44px;
+      border: 0; background: transparent;
+      color: var(--text-muted);
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .icon-btn:active { background: var(--row-press); }
+    .avatar {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25) inset,
+                  0 0 0 2px var(--surface);
+    }
+
+    /* ---------- Greeting block ---------- */
+    .greeting {
+      padding: 20px 16px 8px;
+      background: var(--bg);
+    }
+    .greeting-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.01em;
+      line-height: 1.15;
+    }
+    .greeting-sub {
+      margin-top: 4px;
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* ---------- Search (sticky) ---------- */
+    .search {
+      position: sticky;
+      top: var(--top-h);
+      z-index: 25;
+      padding: 8px 16px 12px;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 1px solid var(--glass-border);
+    }
+    .search-input-wrap {
+      position: relative;
+      height: 40px;
+    }
+    .search-input {
+      width: 100%;
+      height: 40px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      padding: 0 36px 0 38px;
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .search-input::placeholder { color: var(--text-faint); }
+    .search-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    .search-icon, .search-clear {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-faint);
+      pointer-events: none;
+    }
+    .search-icon { left: 12px; }
+    .search-clear {
+      right: 8px;
+      width: 24px; height: 24px;
+      display: none;
+      align-items: center; justify-content: center;
+      border-radius: 50%;
+      background: var(--row-press);
+      pointer-events: auto;
+      border: 0;
+      cursor: pointer;
+      color: var(--text-muted);
+    }
+    .search-input:not(:placeholder-shown) ~ .search-clear { display: inline-flex; }
+
+    /* ---------- Category sections ---------- */
+    .gallery { padding: 0 0 12px; }
+
+    .section {
+      background: var(--surface);
+      border-top: 1px solid var(--border-soft);
+      border-bottom: 1px solid var(--border-soft);
+      margin-top: 14px;
+    }
+    .section:first-child { margin-top: 8px; }
+
+    .section-header {
+      position: sticky;
+      top: calc(var(--top-h) + var(--search-h));
+      z-index: 18;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 8px;
+      height: 44px;
+      padding: 0 16px;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 1px solid var(--glass-border);
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s ease;
+    }
+    .section-header:active { background: var(--row-press); }
+    .section-chevron {
+      width: 18px; height: 18px;
+      color: var(--text-muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s ease;
+    }
+    .section--collapsed .section-chevron { transform: rotate(-90deg); }
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .section-count {
+      min-width: 24px;
+      height: 22px;
+      padding: 0 8px;
+      border-radius: 999px;
+      background: var(--row-press);
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      letter-spacing: 0.02em;
+    }
+
+    .section-body {
+      display: block;
+    }
+    .section--collapsed .section-body { display: none; }
+
+    /* ---------- Module card ---------- */
+    .module-card {
+      display: grid;
+      grid-template-columns: 56px 1fr auto;
+      grid-template-areas: "thumb body right";
+      column-gap: 14px;
+      align-items: center;
+      min-height: 96px;
+      padding: 14px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border-soft);
+      cursor: pointer;
+      transition: background 0.12s ease;
+    }
+    .module-card:last-child { border-bottom: 0; }
+    .module-card:active { background: var(--row-press); }
+
+    .thumb {
+      grid-area: thumb;
+      width: 56px;
+      height: 56px;
+      border-radius: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.10),
+                  0 1px 0 rgba(255, 255, 255, 0.18) inset;
+    }
+    .thumb svg { width: 26px; height: 26px; }
+    .thumb--markets { background: var(--grad-markets); }
+    .thumb--oilgas  { background: var(--grad-oilgas); }
+    .thumb--fuel    { background: var(--grad-fuel); }
+    .thumb--admin   { background: var(--grad-admin); }
+
+    .module-body {
+      grid-area: body;
+      min-width: 0;
+    }
+    .module-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .module-desc {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.35;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .module-right {
+      grid-area: right;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+      color: var(--text-faint);
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      height: 18px;
+      padding: 0 7px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .badge--new {
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+    .badge--beta {
+      background: var(--row-press);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+    .module-right svg { color: var(--text-faint); }
+
+    /* ---------- Bottom tab bar (sticky, liquid glass) ---------- */
+    .tabbar {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      z-index: 40;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-top: 1px solid var(--glass-border);
+      box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.05);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .tabbar-inner {
+      max-width: 428px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      height: 64px;
+    }
+    .tab {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      background: transparent;
+      border: 0;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      min-height: 44px;
+    }
+    .tab--active { color: var(--accent); }
+    .tab--active::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 28px;
+      height: 2px;
+      background: var(--accent);
+      border-radius: 0 0 2px 2px;
+    }
+    .tab svg { width: 22px; height: 22px; }
+
+    /* ---------- Theme toggle icon swap ---------- */
+    .icon-sun  { display: none; }
+    .icon-moon { display: inline-block; }
+    [data-theme="dark"] .icon-sun  { display: inline-block; }
+    [data-theme="dark"] .icon-moon { display: none; }
+  </style>
+</head>
+<body>
+  <div class="phone" id="phone">
+
+    <!-- Pull to refresh -->
+    <div class="pull-refresh" aria-hidden="true">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      <span>Pull to refresh</span>
+    </div>
+
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="wordmark">SECTORDATA<span class="dot">.</span></div>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="themeBtn" aria-label="Toggle theme">
+          <svg class="icon-moon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          <svg class="icon-sun"  width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg>
+        </button>
+        <div class="avatar" aria-label="Eduardo Mendes">EM</div>
+      </div>
+    </header>
+
+    <!-- Greeting -->
+    <section class="greeting" aria-label="Greeting">
+      <div class="greeting-title">Good morning, Eduardo</div>
+      <div class="greeting-sub">What would you like to explore?</div>
+    </section>
+
+    <!-- Search -->
+    <div class="search">
+      <div class="search-input-wrap">
+        <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+        <input class="search-input" id="searchInput" type="search" placeholder="Search modules..." aria-label="Search modules" />
+        <button class="search-clear" aria-label="Clear search">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Gallery -->
+    <main class="gallery" id="gallery">
+
+      <!-- ============================================================
+           SECTION: Markets
+           ============================================================ -->
+      <section class="section" data-section="markets">
+        <header class="section-header" tabindex="0" role="button" aria-expanded="true">
+          <span class="section-chevron">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </span>
+          <span class="section-title">Markets</span>
+          <span class="section-count">2</span>
+        </header>
+        <div class="section-body">
+
+          <article class="module-card" data-slug="stocks">
+            <div class="thumb thumb--markets">
+              <!-- candlestick / chart icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v3"></path><path d="M7 14v6"></path><rect x="5" y="7" width="4" height="7" rx="1"></rect><path d="M17 3v4"></path><path d="M17 14v7"></path><rect x="15" y="7" width="4" height="7" rx="1"></rect></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">Stocks</div>
+              <div class="module-desc">Real-time market watch</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+          <article class="module-card" data-slug="news-hunter">
+            <div class="thumb thumb--markets">
+              <!-- newspaper icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h13a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"></path><path d="M19 8h2v9a3 3 0 0 1-3 3"></path><path d="M8 8h7"></path><path d="M8 12h7"></path><path d="M8 16h4"></path></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">News Hunter</div>
+              <div class="module-desc">Energy news, live & curated</div>
+            </div>
+            <div class="module-right">
+              <span class="badge badge--beta">Beta</span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SECTION: Oil & Gas
+           ============================================================ -->
+      <section class="section" data-section="oilgas">
+        <header class="section-header" tabindex="0" role="button" aria-expanded="true">
+          <span class="section-chevron">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </span>
+          <span class="section-title">Oil & Gas</span>
+          <span class="section-count">5</span>
+        </header>
+        <div class="section-body">
+
+          <article class="module-card" data-slug="anp-cdp">
+            <div class="thumb thumb--oilgas">
+              <!-- oil rig / pumpjack icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18"></path><path d="M6 20V8l6 4 6-4v12"></path><path d="M9 14h6"></path><path d="M12 4v4"></path></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">ANP CDP</div>
+              <div class="module-desc">Monthly production by well</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+          <article class="module-card" data-slug="anp-cdp-bsw">
+            <div class="thumb thumb--oilgas">
+              <!-- droplet icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5s7 7.5 7 12.5a7 7 0 0 1-14 0c0-5 7-12.5 7-12.5z"></path><path d="M9 15a3 3 0 0 0 3 3"></path></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">ANP CDP BSW</div>
+              <div class="module-desc">Water cut by field over time</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+          <article class="module-card" data-slug="anp-cdp-depletion">
+            <div class="thumb thumb--oilgas">
+              <!-- declining trend icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 9 12 13 8 21 16"></polyline><polyline points="21 16 21 10 15 10"></polyline></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">ANP CDP Depletion</div>
+              <div class="module-desc">Reservoir depletion curves</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+          <article class="module-card" data-slug="anp-cdp-diaria">
+            <div class="thumb thumb--oilgas">
+              <!-- calendar with bar icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18"></path><path d="M8 3v4"></path><path d="M16 3v4"></path><path d="M8 15h2"></path><path d="M14 15h2"></path></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">ANP CDP Diária</div>
+              <div class="module-desc">Daily petroleum & gas output</div>
+            </div>
+            <div class="module-right">
+              <span class="badge badge--new">New</span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+          <article class="module-card" data-slug="mdic-comex">
+            <div class="thumb thumb--oilgas">
+              <!-- container ship / globe-trade icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3a14 14 0 0 1 0 18"></path><path d="M12 3a14 14 0 0 0 0 18"></path></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">MDIC Comex</div>
+              <div class="module-desc">Imports & exports by NCM</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SECTION: Fuel Distribution
+           ============================================================ -->
+      <section class="section" data-section="fuel">
+        <header class="section-header" tabindex="0" role="button" aria-expanded="true">
+          <span class="section-chevron">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </span>
+          <span class="section-title">Fuel Distribution</span>
+          <span class="section-count">15</span>
+        </header>
+        <div class="section-body">
+
+          <article class="module-card" data-slug="market-share">
+            <div class="thumb thumb--fuel">
+              <!-- pie chart icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">Market Share</div>
+              <div class="module-desc">Distributors by product & region</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+          <article class="module-card" data-slug="sales-volumes">
+            <div class="thumb thumb--fuel">
+              <!-- bar chart icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="9" rx="1"></rect><rect x="10" y="6" width="4" height="15" rx="1"></rect><rect x="17" y="9" width="4" height="12" rx="1"></rect></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">Sales Volumes</div>
+              <div class="module-desc">Fuel sales by month & player</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+          <article class="module-card" data-slug="navios-diesel">
+            <div class="thumb thumb--fuel">
+              <!-- ship / anchor icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l1.5 3a1 1 0 0 0 .9.5h13.2a1 1 0 0 0 .9-.5L21 17"></path><path d="M3 17l9-5 9 5"></path><path d="M12 3v9"></path><path d="M8 7h8"></path></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">Navios Diesel</div>
+              <div class="module-desc">Diesel imports vessel tracking</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+          <article class="module-card" data-slug="diesel-gasoline-margins">
+            <div class="thumb thumb--fuel">
+              <!-- gauge / margin icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13a9 9 0 0 1 18 0"></path><path d="M3 13h18"></path><path d="M12 13l4-5"></path><circle cx="12" cy="13" r="1.5"></circle></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">D&G Margins</div>
+              <div class="module-desc">Diesel & gasoline margin breakdown</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+          <article class="module-card" data-slug="price-bands">
+            <div class="thumb thumb--fuel">
+              <!-- range / bands icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h18"></path><path d="M3 16h18"></path><path d="M7 4v16"></path><path d="M17 4v16"></path></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">Price Bands</div>
+              <div class="module-desc">Import parity vs Petrobras price</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+          <article class="module-card" data-slug="subsidy-tracker">
+            <div class="thumb thumb--fuel">
+              <!-- ribbon / award icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"></path><path d="M5 8l7 4 7-4"></path><path d="M5 14l7 4 7-4"></path></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">Subsidy Tracker</div>
+              <div class="module-desc">Diesel subsidy timeline</div>
+            </div>
+            <div class="module-right">
+              <span class="badge badge--new">New</span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+          <article class="module-card" data-slug="anp-ppi">
+            <div class="thumb thumb--fuel">
+              <!-- tag / price icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"></path><circle cx="8" cy="8" r="1.5"></circle></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">ANP PPI</div>
+              <div class="module-desc">Petrobras internal prices</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+          <article class="module-card" data-slug="anp-precos-produtores">
+            <div class="thumb thumb--fuel">
+              <!-- factory / refinery icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V11l5 3V11l5 3V11l5 3V21z"></path><path d="M3 21h18"></path><path d="M7 17h2"></path><path d="M12 17h2"></path><path d="M17 17h2"></path></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">ANP Preços Produtores</div>
+              <div class="module-desc">Producer prices by region</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+          <article class="module-card" data-slug="anp-glp">
+            <div class="thumb thumb--fuel">
+              <!-- gas cylinder icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6v3a3 3 0 0 1-6 0z"></path><rect x="7" y="6" width="10" height="15" rx="3"></rect><path d="M10 11h4"></path><path d="M10 15h4"></path></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">ANP GLP</div>
+              <div class="module-desc">LPG sales by distributor</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+          <article class="module-card" data-slug="anp-lpc">
+            <div class="thumb thumb--fuel">
+              <!-- fuel pump icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="10" height="18" rx="1"></rect><path d="M4 12h10"></path><path d="M14 8h2l3 3v7a2 2 0 0 1-2 2"></path><path d="M19 11v-3"></path></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">ANP LPC</div>
+              <div class="module-desc">Resale fuel prices at stations</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+          <article class="module-card" data-slug="sindicom">
+            <div class="thumb thumb--fuel">
+              <!-- truck icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="11" height="9" rx="1"></rect><path d="M13 10h4l3 3v3h-7z"></path><circle cx="7" cy="18" r="2"></circle><circle cx="17" cy="18" r="2"></circle></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">SINDICOM</div>
+              <div class="module-desc">Affiliated distributor volumes</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+          <article class="module-card" data-slug="anp-daie">
+            <div class="thumb thumb--fuel">
+              <!-- arrows in/out icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h7"></path><path d="M6 9l-3 3 3 3"></path><path d="M21 12h-7"></path><path d="M18 9l3 3-3 3"></path></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">ANP DAIE</div>
+              <div class="module-desc">Imports/exports of derivatives</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+          <article class="module-card" data-slug="anp-desembaracos">
+            <div class="thumb thumb--fuel">
+              <!-- customs / clipboard icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"></rect><path d="M9 4h6v3H9z"></path><path d="M9 12h6"></path><path d="M9 16h4"></path></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">ANP Desembaraços</div>
+              <div class="module-desc">Customs clearances by NCM</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+          <article class="module-card" data-slug="anp-painel-importacoes">
+            <div class="thumb thumb--fuel">
+              <!-- map / dashboard icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 9h18"></path><path d="M9 4v16"></path></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">ANP Painel Importações</div>
+              <div class="module-desc">Distributor imports by UF</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+          <article class="module-card" data-slug="anp-precos-distribuicao">
+            <div class="thumb thumb--fuel">
+              <!-- price-list icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h13l3 3v13H4z"></path><path d="M8 9h8"></path><path d="M8 13h8"></path><path d="M8 17h5"></path></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">ANP Preços Distribuição</div>
+              <div class="module-desc">Distribution prices by UF</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+        </div>
+      </section>
+
+      <!-- ============================================================
+           SECTION: Admin
+           ============================================================ -->
+      <section class="section" data-section="admin">
+        <header class="section-header" tabindex="0" role="button" aria-expanded="true">
+          <span class="section-chevron">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </span>
+          <span class="section-title">Admin</span>
+          <span class="section-count">2</span>
+        </header>
+        <div class="section-body">
+
+          <article class="module-card" data-slug="profile">
+            <div class="thumb thumb--admin">
+              <!-- user icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">Profile</div>
+              <div class="module-desc">Account & preferences</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+          <article class="module-card" data-slug="admin-panel">
+            <div class="thumb thumb--admin">
+              <!-- gear icon -->
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1A2 2 0 1 1 4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1A2 2 0 1 1 7 4.2l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1A2 2 0 1 1 19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path></svg>
+            </div>
+            <div class="module-body">
+              <div class="module-title">Admin Panel</div>
+              <div class="module-desc">Permissions & module visibility</div>
+            </div>
+            <div class="module-right">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+          </article>
+
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Bottom tab bar -->
+    <nav class="tabbar" aria-label="Primary">
+      <div class="tabbar-inner">
+        <button class="tab tab--active" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11.5 12 4l9 7.5"></path><path d="M5 10v10h14V10"></path></svg>
+          <span>Home</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="m9 15 2-6 6-2-2 6z"></path></svg>
+          <span>Discover</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h12v17l-6-4-6 4z"></path></svg>
+          <span>Saved</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>
+          <span>Profile</span>
+        </button>
+      </div>
+    </nav>
+  </div>
+
+  <script>
+    /* ============================================================
+       Theme toggle (inherited behavior from stocks-mobile.html)
+       ============================================================ */
+    function applyTheme(next) {
+      const root = document.documentElement;
+      if (next === "dark") root.setAttribute("data-theme", "dark");
+      else root.removeAttribute("data-theme");
+      document.querySelector('meta[name="theme-color"]').setAttribute("content", next === "dark" ? "#030814" : "#ffffff");
+    }
+    document.getElementById("themeBtn").addEventListener("click", () => {
+      const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+      applyTheme(isDark ? "light" : "dark");
+    });
+
+    /* ============================================================
+       Category section collapse/expand
+       Tap header → toggle `.section--collapsed` on the parent section.
+       Chevron rotates via CSS.
+       ============================================================ */
+    document.querySelectorAll(".section-header").forEach(header => {
+      header.addEventListener("click", () => {
+        const section = header.closest(".section");
+        const collapsed = section.classList.toggle("section--collapsed");
+        header.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      });
+      header.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          header.click();
+        }
+      });
+    });
+
+    /* ============================================================
+       Search filter (purely client-side; no overlay yet — focus state
+       provides the visual affordance requested in the brief).
+       ============================================================ */
+    const searchInput = document.getElementById("searchInput");
+    if (searchInput) {
+      searchInput.addEventListener("input", () => {
+        const q = searchInput.value.trim().toLowerCase();
+        document.querySelectorAll(".section").forEach(sec => {
+          let visibleCount = 0;
+          sec.querySelectorAll(".module-card").forEach(card => {
+            const title = card.querySelector(".module-title").textContent.toLowerCase();
+            const desc  = card.querySelector(".module-desc").textContent.toLowerCase();
+            const hit = !q || title.includes(q) || desc.includes(q);
+            card.style.display = hit ? "" : "none";
+            if (hit) visibleCount++;
+          });
+          // Update the count badge to reflect filtered count
+          const countEl = sec.querySelector(".section-count");
+          if (countEl) {
+            const total = sec.querySelectorAll(".module-card").length;
+            countEl.textContent = q ? `${visibleCount}/${total}` : String(total);
+          }
+          // Hide entire section if nothing matches
+          sec.style.display = (q && visibleCount === 0) ? "none" : "";
+        });
+      });
+    }
+  </script>
+</body>
+</html>

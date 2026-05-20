@@ -1,0 +1,807 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>SectorData — Stocks (Mobile Mockup)</title>
+  <script src="https://cdn.plot.ly/plotly-3.4.0.min.js"></script>
+  <style>
+    /* ============================================================
+       SectorData / Stocks — mobile mockup
+       Identity tokens come from docs/design/identity.md.
+       Stocks-specific colors (#3fb950 up / #f85149 down / #8b949e muted)
+       are reused from the isolated stocks theme rather than the brand's
+       generic green/red, to keep the visual language consistent with
+       the existing /stocks dashboard.
+       ============================================================ */
+
+    :root {
+      /* Brand */
+      --accent:        #ff5000;
+      --accent-hover:  #d4561a;
+      --accent-soft:   rgba(255, 80, 0, 0.10);
+      --accent-fill:   rgba(255, 80, 0, 0.08);
+
+      /* Neutrals — light theme */
+      --bg:            #f5f5f7;
+      --surface:       #ffffff;
+      --surface-2:     #fafafc;
+      --text:          #1a1a1a;
+      --text-muted:    #6b6b73;
+      --text-faint:    #9a9aa3;
+      --border:        #e6e6ec;
+      --border-soft:   #f0f0f5;
+      --row-press:     rgba(0, 0, 0, 0.04);
+
+      /* Stocks gain/loss (matches identity.md:60-61) */
+      --up:            #16a34a;   /* light variant from identity */
+      --down:          #dc2626;
+      --up-fill:       rgba(22, 163, 74, 0.10);
+      --down-fill:     rgba(220, 38, 38, 0.10);
+
+      /* Liquid glass — sticky surfaces */
+      --glass-bg:        rgba(255, 255, 255, 0.72);
+      --glass-border:    rgba(0, 0, 0, 0.06);
+      --glass-shadow:    0 1px 0 rgba(255, 255, 255, 0.6) inset,
+                         0 -1px 0 rgba(0, 0, 0, 0.04) inset,
+                         0 4px 16px rgba(0, 0, 0, 0.06);
+
+      /* Plotly tunables */
+      --chart-gridline: rgba(0, 0, 0, 0.04);
+    }
+
+    [data-theme="dark"] {
+      --bg:            #030814;
+      --surface:       #070d1c;
+      --surface-2:     #0a1124;
+      --text:          #e6edf3;
+      --text-muted:    #8b949e;
+      --text-faint:    #5e6772;
+      --border:        #131a2e;
+      --border-soft:   #161d33;
+      --row-press:     rgba(255, 255, 255, 0.04);
+
+      --up:            #3fb950;
+      --down:          #f85149;
+      --up-fill:       rgba(63, 185, 80, 0.12);
+      --down-fill:     rgba(248, 81, 73, 0.12);
+
+      --glass-bg:        rgba(7, 13, 28, 0.72);
+      --glass-border:    rgba(255, 255, 255, 0.06);
+      --glass-shadow:    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+                         0 -1px 0 rgba(0, 0, 0, 0.4) inset,
+                         0 4px 16px rgba(0, 0, 0, 0.4);
+
+      --chart-gridline: rgba(255, 255, 255, 0.05);
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.4;
+      min-height: 100vh;
+      min-height: 100dvh;
+      -webkit-font-smoothing: antialiased;
+      transition: background 0.25s ease, color 0.25s ease;
+    }
+
+    /* ---------- Layout shell (phone-first, but readable on desktop) ---------- */
+    .phone {
+      max-width: 428px;          /* iPhone Pro Max width as upper bound */
+      margin: 0 auto;
+      min-height: 100vh;
+      min-height: 100dvh;
+      background: var(--bg);
+      padding-bottom: calc(72px + env(safe-area-inset-bottom));
+      position: relative;
+    }
+
+    /* ---------- Pull-to-refresh affordance ---------- */
+    .pull-refresh {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 0 6px;
+      color: var(--text-faint);
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      gap: 2px;
+      user-select: none;
+    }
+    .pull-refresh svg { opacity: 0.6; }
+
+    /* ---------- Top bar (sticky, liquid glass) ---------- */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      height: 56px;
+      padding: 0 16px;
+      padding-top: env(safe-area-inset-top);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 1px solid var(--glass-border);
+      box-shadow: var(--glass-shadow);
+    }
+    .wordmark {
+      font-weight: 700;
+      font-size: 17px;
+      letter-spacing: 0.04em;
+      color: var(--text);
+    }
+    .wordmark .dot { color: var(--accent); }
+    .topbar-actions { display: flex; align-items: center; gap: 10px; }
+    .icon-btn {
+      width: 44px; height: 44px;
+      border: 0; background: transparent;
+      color: var(--text-muted);
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .icon-btn:active { background: var(--row-press); }
+    .avatar {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25) inset,
+                  0 0 0 2px var(--surface);
+    }
+
+    /* ---------- Portfolio pills (snap-scroll) ---------- */
+    .pills {
+      position: sticky;
+      top: 56px;
+      z-index: 25;
+      height: 52px;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 1px solid var(--glass-border);
+      display: flex;
+      align-items: center;
+      overflow-x: auto;
+      overflow-y: hidden;
+      gap: 8px;
+      padding: 0 16px;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .pills::-webkit-scrollbar { display: none; }
+    .pill {
+      flex: 0 0 auto;
+      min-height: 36px;
+      padding: 0 14px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      white-space: nowrap;
+      scroll-snap-align: start;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    }
+    .pill--active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(255, 80, 0, 0.25);
+    }
+    .pill:not(.pill--active):active { background: var(--row-press); }
+
+    /* ---------- Search bar (sticky) ---------- */
+    .search {
+      position: sticky;
+      top: 108px;
+      z-index: 20;
+      height: 48px;
+      padding: 6px 16px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .search-input-wrap {
+      position: relative;
+      height: 36px;
+    }
+    .search-input {
+      width: 100%;
+      height: 36px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      padding: 0 36px 0 36px;
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .search-input::placeholder { color: var(--text-faint); }
+    .search-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    .search-icon, .search-clear {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-faint);
+      pointer-events: none;
+    }
+    .search-icon { left: 10px; }
+    .search-clear {
+      right: 8px;
+      width: 24px; height: 24px;
+      display: none;
+      align-items: center; justify-content: center;
+      border-radius: 50%;
+      background: var(--row-press);
+      pointer-events: auto;
+      border: 0;
+      cursor: pointer;
+      color: var(--text-muted);
+    }
+    .search-input:not(:placeholder-shown) ~ .search-clear { display: inline-flex; }
+
+    /* ---------- Stock card list ---------- */
+    .list {
+      padding: 4px 0 24px;
+    }
+    .card {
+      min-height: 88px;
+      padding: 14px 16px;
+      display: grid;
+      grid-template-columns: 1fr auto 76px;
+      grid-template-areas: "id price spark";
+      column-gap: 12px;
+      align-items: center;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border-soft);
+      cursor: pointer;
+      transition: background 0.12s ease;
+    }
+    .card:active { background: var(--row-press); }
+    .card-id { grid-area: id; min-width: 0; }
+    .ticker {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: 0.01em;
+      line-height: 1.1;
+    }
+    .company {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 180px;
+    }
+    .card-price { grid-area: price; text-align: right; min-width: 0; }
+    .price {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.1;
+      font-variant-numeric: tabular-nums;
+    }
+    .change {
+      margin-top: 4px;
+      font-size: 13px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+    .up   { color: var(--up); }
+    .down { color: var(--down); }
+    .card-spark { grid-area: spark; height: 32px; }
+    .card-spark svg { display: block; width: 100%; height: 100%; }
+
+    /* ---------- Expanded card (detail view) ---------- */
+    .detail {
+      background: var(--surface);
+      border-top: 1px solid var(--border-soft);
+      border-bottom: 1px solid var(--border-soft);
+      padding: 4px 16px 18px;
+    }
+    .range-pills {
+      display: flex;
+      gap: 6px;
+      padding: 12px 0 10px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .range-pills::-webkit-scrollbar { display: none; }
+    .range-pill {
+      flex: 1 1 0;
+      min-width: 44px;
+      min-height: 32px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .range-pill--active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .chart-wrap {
+      height: 280px;
+      width: 100%;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .stats {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: var(--border-soft);
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border-soft);
+    }
+    .stat {
+      background: var(--surface);
+      padding: 12px 14px;
+    }
+    .stat-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .stat-value {
+      margin-top: 4px;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+    .collapse-btn {
+      margin: 14px auto 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
+      min-height: 44px;
+      background: transparent;
+      border: 0;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: 10px;
+    }
+    .collapse-btn:active { background: var(--row-press); }
+
+    /* ---------- Bottom tab bar (sticky, liquid glass) ---------- */
+    .tabbar {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      z-index: 40;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-top: 1px solid var(--glass-border);
+      box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.05);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .tabbar-inner {
+      max-width: 428px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      height: 64px;
+    }
+    .tab {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      background: transparent;
+      border: 0;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      min-height: 44px;
+    }
+    .tab--active { color: var(--accent); }
+    .tab--active::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 28px;
+      height: 2px;
+      background: var(--accent);
+      border-radius: 0 0 2px 2px;
+    }
+    .tab svg { width: 22px; height: 22px; }
+
+    /* ---------- Theme toggle icon swap ---------- */
+    .icon-sun  { display: none; }
+    .icon-moon { display: inline-block; }
+    [data-theme="dark"] .icon-sun  { display: inline-block; }
+    [data-theme="dark"] .icon-moon { display: none; }
+  </style>
+</head>
+<body>
+  <div class="phone" id="phone">
+
+    <!-- Pull to refresh -->
+    <div class="pull-refresh" aria-hidden="true">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      <span>Pull to refresh</span>
+    </div>
+
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="wordmark">SECTORDATA<span class="dot">.</span></div>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="themeBtn" aria-label="Toggle theme">
+          <svg class="icon-moon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          <svg class="icon-sun"  width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg>
+        </button>
+        <div class="avatar" aria-label="Eduardo Mendes">EM</div>
+      </div>
+    </header>
+
+    <!-- Portfolio pills -->
+    <nav class="pills" aria-label="Portfolios">
+      <button class="pill pill--active">Petrobras Peers</button>
+      <button class="pill">Refiners</button>
+      <button class="pill">Distribuidoras</button>
+      <button class="pill">Internationals</button>
+      <button class="pill">Watchlist</button>
+    </nav>
+
+    <!-- Search -->
+    <div class="search">
+      <div class="search-input-wrap">
+        <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+        <input class="search-input" type="search" placeholder="Search ticker or company..." aria-label="Search ticker or company" />
+        <button class="search-clear" aria-label="Clear search">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Stock list -->
+    <main class="list" id="list">
+      <!-- PETR4 expanded -->
+      <article class="card" data-ticker="PETR4" aria-expanded="true">
+        <div class="card-id">
+          <div class="ticker">PETR4</div>
+          <div class="company">Petrobras PN</div>
+        </div>
+        <div class="card-price">
+          <div class="price">R$ 38.45</div>
+          <div class="change up">+1.23%</div>
+        </div>
+        <div class="card-spark"></div>
+      </article>
+
+      <section class="detail" aria-label="PETR4 details">
+        <div class="range-pills" role="tablist" aria-label="Time range">
+          <button class="range-pill">1D</button>
+          <button class="range-pill">5D</button>
+          <button class="range-pill range-pill--active">1M</button>
+          <button class="range-pill">6M</button>
+          <button class="range-pill">1Y</button>
+          <button class="range-pill">5Y</button>
+          <button class="range-pill">MAX</button>
+        </div>
+        <div class="chart-wrap" id="petr4Chart"></div>
+        <div class="stats" role="list">
+          <div class="stat" role="listitem">
+            <div class="stat-label">Open</div>
+            <div class="stat-value">R$ 38.01</div>
+          </div>
+          <div class="stat" role="listitem">
+            <div class="stat-label">High</div>
+            <div class="stat-value">R$ 38.72</div>
+          </div>
+          <div class="stat" role="listitem">
+            <div class="stat-label">Low</div>
+            <div class="stat-value">R$ 37.88</div>
+          </div>
+          <div class="stat" role="listitem">
+            <div class="stat-label">Volume</div>
+            <div class="stat-value">42.3M</div>
+          </div>
+          <div class="stat" role="listitem">
+            <div class="stat-label">Mkt Cap</div>
+            <div class="stat-value">R$ 502B</div>
+          </div>
+          <div class="stat" role="listitem">
+            <div class="stat-label">P/E</div>
+            <div class="stat-value">4.21</div>
+          </div>
+        </div>
+        <button class="collapse-btn" aria-label="Collapse PETR4 details">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"></polyline></svg>
+          Collapse
+        </button>
+      </section>
+
+      <!-- The other tickers are rendered by JS so we can also draw their sparklines. -->
+    </main>
+
+    <!-- Bottom tab bar -->
+    <nav class="tabbar" aria-label="Primary">
+      <div class="tabbar-inner">
+        <button class="tab tab--active" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 10h18"></path><path d="M8 4v6"></path></svg>
+          <span>Portfolios</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+          <span>Watch</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"></path><polyline points="14 7 21 7 21 14"></polyline></svg>
+          <span>Compare</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>
+          <span>Profile</span>
+        </button>
+      </div>
+    </nav>
+  </div>
+
+  <script>
+    /* ============================================================
+       Mock data + rendering
+       ============================================================ */
+
+    const TICKERS = [
+      { sym: "PETR4", name: "Petrobras PN",      price: 38.45, ccy: "R$", pct: +1.23 },
+      { sym: "VBBR3", name: "Vibra Energia",     price: 24.12, ccy: "R$", pct: -0.45 },
+      { sym: "UGPA3", name: "Ultrapar",          price: 18.90, ccy: "R$", pct: +2.10 },
+      { sym: "CSAN3", name: "Cosan",             price: 11.55, ccy: "R$", pct: -1.80 },
+      { sym: "PRIO3", name: "PRIO",              price: 42.30, ccy: "R$", pct: +3.45 },
+      { sym: "RECV3", name: "PetroRecôncavo",    price: 18.20, ccy: "R$", pct: +0.85 },
+      { sym: "XOM",   name: "Exxon Mobil",       price: 118.40, ccy: "$",  pct: +0.92 },
+      { sym: "CVX",   name: "Chevron",           price: 162.85, ccy: "$",  pct: -0.34 },
+      { sym: "SHEL",  name: "Shell",             price: 74.20,  ccy: "$",  pct: +1.45 },
+    ];
+
+    /* Deterministic random walk so the file looks the same on every reload */
+    function seededRandom(seed) {
+      let s = seed >>> 0;
+      return function () {
+        s = (s * 1664525 + 1013904223) >>> 0;
+        return s / 4294967296;
+      };
+    }
+
+    function priceWalk(base, n, vol, seed) {
+      const rnd = seededRandom(seed);
+      const out = new Array(n);
+      let p = base * (1 - 0.04);   // start a little below current
+      for (let i = 0; i < n; i++) {
+        const drift = (base - p) * 0.04;          // pull toward current price
+        const shock = (rnd() - 0.5) * 2 * vol * p;
+        p = p + drift + shock;
+        out[i] = p;
+      }
+      out[n - 1] = base; // pin last point to "current"
+      return out;
+    }
+
+    function fmtPrice(ccy, v) {
+      const d = ccy === "R$" ? 2 : 2;
+      return ccy + " " + v.toFixed(d);
+    }
+    function fmtPct(p) {
+      const sign = p >= 0 ? "+" : "";
+      return sign + p.toFixed(2) + "%";
+    }
+
+    /* ---------- Sparklines (inline SVG, no library) ---------- */
+    function sparkline(values, color, w, h) {
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const span = max - min || 1;
+      const pad = 2;
+      const innerW = w - pad * 2;
+      const innerH = h - pad * 2;
+      const step = innerW / (values.length - 1);
+      const pts = values.map((v, i) => {
+        const x = pad + i * step;
+        const y = pad + innerH - ((v - min) / span) * innerH;
+        return [x, y];
+      });
+      const line = pts.map((p, i) => (i === 0 ? "M" : "L") + p[0].toFixed(2) + "," + p[1].toFixed(2)).join(" ");
+      const area = line +
+        " L" + pts[pts.length - 1][0].toFixed(2) + "," + (h - pad).toFixed(2) +
+        " L" + pts[0][0].toFixed(2) + "," + (h - pad).toFixed(2) + " Z";
+      const fill = color.replace("#", "");
+      // Use a soft fill (10% alpha) to echo the chart's area fill
+      const r = parseInt(fill.slice(0,2), 16);
+      const g = parseInt(fill.slice(2,4), 16);
+      const b = parseInt(fill.slice(4,6), 16);
+      const fillRgba = `rgba(${r},${g},${b},0.12)`;
+      return `
+        <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+          <path d="${area}" fill="${fillRgba}"/>
+          <path d="${line}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      `;
+    }
+
+    /* ---------- Build the list (everything below the expanded PETR4) ---------- */
+    function getCssColor(varName) {
+      return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    }
+
+    function renderList() {
+      const list = document.getElementById("list");
+      // Drop any previously-rendered non-expanded cards
+      list.querySelectorAll(".card[data-generated='1']").forEach(n => n.remove());
+
+      const upColor   = getCssColor("--up");
+      const downColor = getCssColor("--down");
+
+      // PETR4 is already in the DOM as the expanded card → render its sparkline
+      const petr = TICKERS[0];
+      const petrPts = priceWalk(petr.price, 30, 0.018, 7);
+      const petrCard = list.querySelector('.card[data-ticker="PETR4"] .card-spark');
+      petrCard.innerHTML = sparkline(petrPts, upColor, 76, 32);
+
+      // Render the rest after the detail section
+      TICKERS.slice(1).forEach((t, idx) => {
+        const isUp = t.pct >= 0;
+        const color = isUp ? upColor : downColor;
+        const pts = priceWalk(t.price, 30, 0.02, 11 + idx * 7);
+        const el = document.createElement("article");
+        el.className = "card";
+        el.dataset.ticker = t.sym;
+        el.dataset.generated = "1";
+        el.innerHTML = `
+          <div class="card-id">
+            <div class="ticker">${t.sym}</div>
+            <div class="company">${t.name}</div>
+          </div>
+          <div class="card-price">
+            <div class="price">${fmtPrice(t.ccy, t.price)}</div>
+            <div class="change ${isUp ? "up" : "down"}">${fmtPct(t.pct)}</div>
+          </div>
+          <div class="card-spark">${sparkline(pts, color, 76, 32)}</div>
+        `;
+        list.appendChild(el);
+      });
+    }
+
+    /* ---------- Plotly chart for PETR4 ---------- */
+    function renderChart() {
+      const accent = getCssColor("--accent");
+      const muted  = getCssColor("--text-muted");
+      const grid   = getCssColor("--chart-gridline");
+      const surface = getCssColor("--surface");
+
+      const days = 30;
+      const today = new Date(2026, 4, 20); // 2026-05-20 (matches currentDate)
+      const x = [];
+      for (let i = days - 1; i >= 0; i--) {
+        const d = new Date(today); d.setDate(today.getDate() - i);
+        x.push(d);
+      }
+      const y = priceWalk(38.45, days, 0.018, 7);
+
+      const trace = {
+        type: "scatter",
+        mode: "lines",
+        x: x,
+        y: y,
+        line: { color: accent, width: 2, shape: "spline", smoothing: 0.6 },
+        fill: "tozeroy",
+        fillcolor: "rgba(255, 80, 0, 0.10)",
+        hovertemplate: "<b>R$ %{y:.2f}</b><br>%{x|%b %d}<extra></extra>",
+      };
+
+      // Pin y-axis just below min so the area fill looks correct (not all the way to 0)
+      const yMin = Math.min(...y) * 0.99;
+      const yMax = Math.max(...y) * 1.005;
+
+      const layout = {
+        margin: { l: 8, r: 8, t: 8, b: 24 },
+        paper_bgcolor: surface,
+        plot_bgcolor: surface,
+        font: { family: "Arial, Helvetica, sans-serif", size: 11, color: muted },
+        showlegend: false,
+        hoverlabel: { bgcolor: surface, bordercolor: accent, font: { family: "Arial, Helvetica, sans-serif", size: 12 } },
+        xaxis: {
+          showgrid: false,
+          zeroline: false,
+          showline: false,
+          tickfont: { size: 10, color: muted },
+          tickformat: "%b %d",
+          nticks: 4,
+          fixedrange: true,
+        },
+        yaxis: {
+          range: [yMin, yMax],
+          showgrid: true,
+          gridcolor: grid,
+          zeroline: false,
+          showline: false,
+          tickfont: { size: 10, color: muted },
+          tickformat: ".2f",
+          nticks: 3,
+          fixedrange: true,
+          side: "right",
+        },
+      };
+
+      const config = {
+        displayModeBar: false,
+        responsive: true,
+        scrollZoom: false,
+        doubleClick: false,
+        staticPlot: false,
+      };
+
+      Plotly.newPlot("petr4Chart", [trace], layout, config);
+    }
+
+    /* ---------- Theme toggle ---------- */
+    function applyTheme(next) {
+      const root = document.documentElement;
+      if (next === "dark") root.setAttribute("data-theme", "dark");
+      else root.removeAttribute("data-theme");
+      document.querySelector('meta[name="theme-color"]').setAttribute("content", next === "dark" ? "#030814" : "#ffffff");
+      // Recompute color-dependent visuals
+      renderList();
+      renderChart();
+    }
+
+    document.getElementById("themeBtn").addEventListener("click", () => {
+      const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+      applyTheme(isDark ? "light" : "dark");
+    });
+
+    /* ---------- Boot ---------- */
+    renderList();
+    renderChart();
+    window.addEventListener("resize", () => Plotly.Plots.resize(document.getElementById("petr4Chart")));
+  </script>
+</body>
+</html>

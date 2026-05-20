@@ -65,6 +65,10 @@ CEO (Eduardo)
      └─ Revisor / QA     (transversal — audita diff antes do commit)
 ```
 
+## 📱 Dual-view (web + mobile) — princípio cross-cutting
+
+A partir de 2026-05-20, todo dashboard tem 2 views (`desktop/View.tsx` + `mobile/View.tsx`) consumindo um hook compartilhado `use<Slug>Data.ts`. Mobile = mesma análise, roupagem adaptada. **Regra de sync binding**: edição em uma view exige equivalente na outra no mesmo commit, ou tag explícita `[desktop-only]` / `[mobile-only]` na mensagem. Vide `CLAUDE.md` § "Dual-view (web + mobile) policy" e `docs/app/PRD.md` § "Dual-view foundation".
+
 ## Departamentos
 
 | Dept | Slug do agente | Ownership de pastas | PRD |

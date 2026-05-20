@@ -1,0 +1,1112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>SectorData — Diesel Vessels (Mobile Mockup)</title>
+  <style>
+    /* ============================================================
+       SectorData / Diesel Vessels — mobile mockup
+       Inherits all base tokens (brand orange, Arial, liquid glass top bar,
+       theme toggle, tab bar) from mockups/stocks-mobile.html so the visual
+       language stays consistent across the operational-tracker archetype
+       and the stocks archetype.
+
+       Archetype-specific additions:
+         - Status colors (Unloading green, Anchored blue, En-route orange,
+           Completed gray) for vessel state at a glance.
+         - Port summary horizontal scroller (snap, ~140px wide cards).
+         - Filter chip row sticky beneath the segmented control.
+         - Vessel cards (~140px) with status pill, route, payload and a
+           per-status timeline footer (progress bar on unloading).
+       ============================================================ */
+
+    :root {
+      /* Brand */
+      --accent:        #ff5000;
+      --accent-hover:  #d4561a;
+      --accent-soft:   rgba(255, 80, 0, 0.10);
+      --accent-fill:   rgba(255, 80, 0, 0.08);
+
+      /* Neutrals — light theme */
+      --bg:            #f5f5f7;
+      --surface:       #ffffff;
+      --surface-2:     #fafafc;
+      --text:          #1a1a1a;
+      --text-muted:    #6b6b73;
+      --text-faint:    #9a9aa3;
+      --border:        #e6e6ec;
+      --border-soft:   #f0f0f5;
+      --row-press:     rgba(0, 0, 0, 0.04);
+
+      /* Vessel status colors (light) */
+      --status-unloading:      #16a34a;
+      --status-unloading-bg:   rgba(22, 163, 74, 0.10);
+      --status-anchored:       #2563eb;
+      --status-anchored-bg:    rgba(37, 99, 235, 0.10);
+      --status-enroute:        #ff5000;
+      --status-enroute-bg:     rgba(255, 80, 0, 0.10);
+      --status-completed:      #6b6b73;
+      --status-completed-bg:   rgba(107, 107, 115, 0.10);
+
+      /* Liquid glass — sticky surfaces */
+      --glass-bg:        rgba(255, 255, 255, 0.72);
+      --glass-border:    rgba(0, 0, 0, 0.06);
+      --glass-shadow:    0 1px 0 rgba(255, 255, 255, 0.6) inset,
+                         0 -1px 0 rgba(0, 0, 0, 0.04) inset,
+                         0 4px 16px rgba(0, 0, 0, 0.06);
+    }
+
+    [data-theme="dark"] {
+      --bg:            #030814;
+      --surface:       #070d1c;
+      --surface-2:     #0a1124;
+      --text:          #e6edf3;
+      --text-muted:    #8b949e;
+      --text-faint:    #5e6772;
+      --border:        #131a2e;
+      --border-soft:   #161d33;
+      --row-press:     rgba(255, 255, 255, 0.04);
+
+      --status-unloading:      #3fb950;
+      --status-unloading-bg:   rgba(63, 185, 80, 0.14);
+      --status-anchored:       #58a6ff;
+      --status-anchored-bg:    rgba(88, 166, 255, 0.14);
+      --status-enroute:        #ff5000;
+      --status-enroute-bg:     rgba(255, 80, 0, 0.16);
+      --status-completed:      #8b949e;
+      --status-completed-bg:   rgba(139, 148, 158, 0.14);
+
+      --glass-bg:        rgba(7, 13, 28, 0.72);
+      --glass-border:    rgba(255, 255, 255, 0.06);
+      --glass-shadow:    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+                         0 -1px 0 rgba(0, 0, 0, 0.4) inset,
+                         0 4px 16px rgba(0, 0, 0, 0.4);
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.4;
+      min-height: 100vh;
+      min-height: 100dvh;
+      -webkit-font-smoothing: antialiased;
+      transition: background 0.25s ease, color 0.25s ease;
+    }
+
+    /* ---------- Layout shell ---------- */
+    .phone {
+      max-width: 428px;
+      margin: 0 auto;
+      min-height: 100vh;
+      min-height: 100dvh;
+      background: var(--bg);
+      padding-bottom: calc(72px + env(safe-area-inset-bottom));
+      position: relative;
+    }
+
+    /* ---------- Pull-to-refresh ---------- */
+    .pull-refresh {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 0 6px;
+      color: var(--text-faint);
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      gap: 2px;
+      user-select: none;
+    }
+    .pull-refresh svg { opacity: 0.6; }
+
+    /* ---------- Top bar (sticky, liquid glass) ---------- */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      height: 56px;
+      padding: 0 16px;
+      padding-top: env(safe-area-inset-top);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 1px solid var(--glass-border);
+      box-shadow: var(--glass-shadow);
+    }
+    .wordmark {
+      font-weight: 700;
+      font-size: 17px;
+      letter-spacing: 0.04em;
+      color: var(--text);
+    }
+    .wordmark .dot { color: var(--accent); }
+    .topbar-actions { display: flex; align-items: center; gap: 10px; }
+    .icon-btn {
+      width: 44px; height: 44px;
+      border: 0; background: transparent;
+      color: var(--text-muted);
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .icon-btn:active { background: var(--row-press); }
+    .avatar {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25) inset,
+                  0 0 0 2px var(--surface);
+    }
+
+    /* ---------- Title block ---------- */
+    .title-block {
+      padding: 14px 16px 12px;
+    }
+    .title-block h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0.005em;
+      color: var(--text);
+    }
+    .title-block .subtitle {
+      margin-top: 2px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .collected-badge {
+      margin-top: 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .collected-badge .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 0 3px rgba(255, 80, 0, 0.15);
+      animation: pulse-dot 2.2s ease-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { box-shadow: 0 0 0 3px rgba(255, 80, 0, 0.15); }
+      50%      { box-shadow: 0 0 0 5px rgba(255, 80, 0, 0.05); }
+    }
+
+    /* ---------- Status segmented control ---------- */
+    .seg {
+      display: flex;
+      gap: 6px;
+      margin: 0 16px 14px;
+      padding: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    .seg-btn {
+      flex: 1 1 0;
+      min-height: 36px;
+      border: 0;
+      background: transparent;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .seg-btn--active {
+      background: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(255, 80, 0, 0.25);
+    }
+    .seg-btn:not(.seg-btn--active):active { background: var(--row-press); }
+
+    /* ---------- Port summary horizontal scroller ---------- */
+    .ports-wrap {
+      padding: 0 0 8px;
+    }
+    .ports-label {
+      padding: 0 16px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .ports {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 0 16px 6px;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .ports::-webkit-scrollbar { display: none; }
+    .port-card {
+      flex: 0 0 auto;
+      width: 140px;
+      min-height: 110px;
+      padding: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      scroll-snap-align: start;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: transform 0.12s ease, border-color 0.15s ease;
+    }
+    .port-card:active { transform: scale(0.98); border-color: var(--accent); }
+    .port-card--active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-soft);
+    }
+    .port-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.15;
+    }
+    .port-volume {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.1;
+      letter-spacing: -0.005em;
+      font-variant-numeric: tabular-nums;
+    }
+    .port-volume .unit {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-left: 2px;
+    }
+    .port-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+    .port-dots { display: inline-flex; gap: 3px; }
+    .port-dots .dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .dot--unloading { background: var(--status-unloading); }
+    .dot--anchored  { background: var(--status-anchored); }
+    .dot--enroute   { background: var(--status-enroute); }
+    .dot--completed { background: var(--status-completed); }
+
+    /* ---------- Filter chip row (sticky) ---------- */
+    .chips {
+      position: sticky;
+      top: 56px;
+      z-index: 22;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 1px solid var(--glass-border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 10px 16px;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .chips::-webkit-scrollbar { display: none; }
+    .chip {
+      flex: 0 0 auto;
+      min-height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: background 0.12s ease, border-color 0.12s ease;
+    }
+    .chip:active { background: var(--row-press); }
+    .chip--add {
+      background: var(--accent-soft);
+      border-color: transparent;
+      color: var(--accent);
+    }
+    .chip--add:active { background: rgba(255, 80, 0, 0.18); }
+    .chip-x {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: var(--row-press);
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .chip:hover .chip-x { background: rgba(0, 0, 0, 0.08); }
+
+    /* ---------- Vessel card list ---------- */
+    .list {
+      padding: 6px 0 24px;
+    }
+    .vessel {
+      min-height: 140px;
+      padding: 14px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border-soft);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      cursor: pointer;
+      transition: background 0.12s ease;
+    }
+    .vessel:active { background: var(--row-press); }
+    .vessel--dim { opacity: 0.62; }
+
+    .vessel-row1 {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .vessel-id { min-width: 0; flex: 1 1 auto; }
+    .vessel-name {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.2;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .vessel-flag {
+      margin-top: 2px;
+      font-size: 12px;
+      color: var(--text-muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .flag-emoji { font-size: 14px; line-height: 1; }
+
+    .status-pill {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      white-space: nowrap;
+    }
+    .status-pill .pip {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .status--unloading { background: var(--status-unloading-bg); color: var(--status-unloading); }
+    .status--unloading .pip { background: var(--status-unloading); }
+    .status--anchored  { background: var(--status-anchored-bg);  color: var(--status-anchored); }
+    .status--anchored  .pip { background: var(--status-anchored); }
+    .status--enroute   { background: var(--status-enroute-bg);   color: var(--status-enroute); }
+    .status--enroute   .pip { background: var(--status-enroute); }
+    .status--completed { background: var(--status-completed-bg); color: var(--status-completed); }
+    .status--completed .pip { background: var(--status-completed); }
+
+    .vessel-route {
+      font-size: 13px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .vessel-route .arrow {
+      color: var(--text-faint);
+      font-weight: 700;
+      margin: 0 2px;
+    }
+    .vessel-route .origin,
+    .vessel-route .dest {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .vessel-cargo {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+    .vessel-cargo .sep { color: var(--text-faint); margin: 0 4px; }
+    .vessel-cargo .qty {
+      color: var(--text);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .vessel-foot {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .vessel-foot .strong { color: var(--text); font-weight: 600; }
+
+    /* ---------- Unloading progress bar ---------- */
+    .progress {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .progress-bar {
+      position: relative;
+      width: 100%;
+      height: 6px;
+      background: var(--border-soft);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .progress-bar .fill {
+      position: absolute;
+      inset: 0 auto 0 0;
+      background: linear-gradient(90deg, var(--accent) 0%, #ff7a3d 100%);
+      border-radius: 999px;
+      transition: width 0.4s ease;
+    }
+    .progress-text {
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .progress-text .pct {
+      color: var(--accent);
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ---------- Expanded vessel detail ---------- */
+    .detail {
+      background: var(--surface-2);
+      border-top: 1px solid var(--border-soft);
+      border-bottom: 1px solid var(--border-soft);
+      padding: 14px 16px 18px;
+    }
+    .detail h2 {
+      margin: 0 0 10px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: var(--border-soft);
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border-soft);
+      margin-bottom: 16px;
+    }
+    .detail-cell {
+      background: var(--surface);
+      padding: 10px 12px;
+    }
+    .detail-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .detail-value {
+      margin-top: 3px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ---------- Vertical timeline ---------- */
+    .timeline {
+      position: relative;
+      padding: 4px 0 4px 22px;
+      margin-bottom: 14px;
+    }
+    .timeline::before {
+      content: "";
+      position: absolute;
+      left: 6px;
+      top: 6px;
+      bottom: 6px;
+      width: 2px;
+      background: var(--border);
+      border-radius: 2px;
+    }
+    .tl-step {
+      position: relative;
+      padding: 6px 0;
+      font-size: 12px;
+    }
+    .tl-step::before {
+      content: "";
+      position: absolute;
+      left: -22px;
+      top: 9px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 2px solid var(--border);
+      box-sizing: border-box;
+    }
+    .tl-step.done::before {
+      background: var(--status-unloading);
+      border-color: var(--status-unloading);
+    }
+    .tl-step.current::before {
+      background: var(--accent);
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px var(--accent-soft);
+    }
+    .tl-label {
+      color: var(--text);
+      font-weight: 600;
+    }
+    .tl-time {
+      color: var(--text-muted);
+      font-size: 11px;
+      margin-top: 1px;
+    }
+    .tl-step.future .tl-label { color: var(--text-faint); }
+
+    .detail-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      padding: 8px 0;
+    }
+    .detail-link:active { opacity: 0.7; }
+
+    /* ---------- Floating Export button (FAB) ---------- */
+    .fab {
+      position: fixed;
+      right: 16px;
+      bottom: calc(80px + env(safe-area-inset-bottom));
+      z-index: 35;
+      width: 52px; height: 52px;
+      border-radius: 50%;
+      border: 0;
+      background: var(--accent);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(255, 80, 0, 0.35),
+                  0 1px 0 rgba(255, 255, 255, 0.25) inset;
+      transition: transform 0.15s ease, background 0.15s ease;
+    }
+    .fab:active { transform: scale(0.94); background: var(--accent-hover); }
+
+    /* ---------- Bottom tab bar ---------- */
+    .tabbar {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      z-index: 40;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-top: 1px solid var(--glass-border);
+      box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.05);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .tabbar-inner {
+      max-width: 428px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      height: 64px;
+    }
+    .tab {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      background: transparent;
+      border: 0;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      min-height: 44px;
+    }
+    .tab--active { color: var(--accent); }
+    .tab--active::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 28px;
+      height: 2px;
+      background: var(--accent);
+      border-radius: 0 0 2px 2px;
+    }
+    .tab svg { width: 22px; height: 22px; }
+
+    /* ---------- Theme toggle icon swap ---------- */
+    .icon-sun  { display: none; }
+    .icon-moon { display: inline-block; }
+    [data-theme="dark"] .icon-sun  { display: inline-block; }
+    [data-theme="dark"] .icon-moon { display: none; }
+  </style>
+</head>
+<body>
+  <div class="phone" id="phone">
+
+    <!-- Pull to refresh -->
+    <div class="pull-refresh" aria-hidden="true">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      <span>Pull to refresh</span>
+    </div>
+
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="wordmark">SECTORDATA<span class="dot">.</span></div>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="themeBtn" aria-label="Toggle theme">
+          <svg class="icon-moon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          <svg class="icon-sun"  width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg>
+        </button>
+        <div class="avatar" aria-label="Eduardo Mendes">EM</div>
+      </div>
+    </header>
+
+    <!-- Title block -->
+    <section class="title-block">
+      <h1>Diesel Vessels</h1>
+      <div class="subtitle">Imports tracker</div>
+      <div class="collected-badge"><span class="dot"></span>Last collected: 2h ago</div>
+    </section>
+
+    <!-- Status segmented control -->
+    <div class="seg" role="tablist" aria-label="Vessel status filter">
+      <button class="seg-btn seg-btn--active" role="tab" aria-selected="true">Active</button>
+      <button class="seg-btn" role="tab" aria-selected="false">Recent</button>
+      <button class="seg-btn" role="tab" aria-selected="false">Expected</button>
+    </div>
+
+    <!-- Port summary horizontal scroller -->
+    <section class="ports-wrap" aria-label="Port summary">
+      <div class="ports-label">By port</div>
+      <div class="ports">
+        <div class="port-card port-card--active">
+          <div class="port-name">Suape, PE</div>
+          <div class="port-volume">1.2M<span class="unit">m³</span></div>
+          <div class="port-meta">
+            <span>8 vessels</span>
+            <span class="port-dots">
+              <span class="dot dot--unloading"></span>
+              <span class="dot dot--unloading"></span>
+              <span class="dot dot--anchored"></span>
+              <span class="dot dot--enroute"></span>
+            </span>
+          </div>
+        </div>
+        <div class="port-card">
+          <div class="port-name">Santos, SP</div>
+          <div class="port-volume">980K<span class="unit">m³</span></div>
+          <div class="port-meta">
+            <span>6 vessels</span>
+            <span class="port-dots">
+              <span class="dot dot--unloading"></span>
+              <span class="dot dot--enroute"></span>
+              <span class="dot dot--enroute"></span>
+              <span class="dot dot--completed"></span>
+            </span>
+          </div>
+        </div>
+        <div class="port-card">
+          <div class="port-name">Itaqui, MA</div>
+          <div class="port-volume">740K<span class="unit">m³</span></div>
+          <div class="port-meta">
+            <span>5 vessels</span>
+            <span class="port-dots">
+              <span class="dot dot--anchored"></span>
+              <span class="dot dot--anchored"></span>
+              <span class="dot dot--enroute"></span>
+              <span class="dot dot--enroute"></span>
+            </span>
+          </div>
+        </div>
+        <div class="port-card">
+          <div class="port-name">Pecém, CE</div>
+          <div class="port-volume">560K<span class="unit">m³</span></div>
+          <div class="port-meta">
+            <span>4 vessels</span>
+            <span class="port-dots">
+              <span class="dot dot--unloading"></span>
+              <span class="dot dot--enroute"></span>
+              <span class="dot dot--completed"></span>
+            </span>
+          </div>
+        </div>
+        <div class="port-card">
+          <div class="port-name">Rio Grande, RS</div>
+          <div class="port-volume">410K<span class="unit">m³</span></div>
+          <div class="port-meta">
+            <span>3 vessels</span>
+            <span class="port-dots">
+              <span class="dot dot--enroute"></span>
+              <span class="dot dot--enroute"></span>
+              <span class="dot dot--completed"></span>
+            </span>
+          </div>
+        </div>
+        <div class="port-card">
+          <div class="port-name">Paranaguá, PR</div>
+          <div class="port-volume">325K<span class="unit">m³</span></div>
+          <div class="port-meta">
+            <span>2 vessels</span>
+            <span class="port-dots">
+              <span class="dot dot--anchored"></span>
+              <span class="dot dot--enroute"></span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Filter chips -->
+    <div class="chips" aria-label="Active filters">
+      <button class="chip chip--add" aria-label="Add filter">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"></path></svg>
+        Filters
+      </button>
+      <button class="chip">Diesel S10 <span class="chip-x" aria-label="Remove filter">×</span></button>
+      <button class="chip">Houston <span class="chip-x" aria-label="Remove filter">×</span></button>
+      <button class="chip">All ports <span class="chip-x" aria-label="Remove filter">×</span></button>
+    </div>
+
+    <!-- Vessel list -->
+    <main class="list" id="list">
+
+      <!-- #1 MV Eagle Houston — Unloading 47% (EXPANDED) -->
+      <article class="vessel" data-id="eagle-houston" aria-expanded="true">
+        <div class="vessel-row1">
+          <div class="vessel-id">
+            <div class="vessel-name">MV Eagle Houston</div>
+            <div class="vessel-flag"><span class="flag-emoji">🇲🇭</span>Marshall Islands</div>
+          </div>
+          <span class="status-pill status--unloading"><span class="pip"></span>Unloading</span>
+        </div>
+        <div class="vessel-route">
+          <span class="origin"><span class="flag-emoji">🇺🇸</span>Houston</span>
+          <span class="arrow">→</span>
+          <span class="dest">Suape, PE</span>
+        </div>
+        <div class="vessel-cargo">Diesel S10 <span class="sep">·</span> <span class="qty">47.5K m³</span></div>
+        <div class="progress">
+          <div class="progress-bar"><div class="fill" style="width: 47%"></div></div>
+          <div class="progress-text"><span class="pct">47%</span><span>· est. 8h left</span></div>
+        </div>
+      </article>
+
+      <!-- Expanded detail for #1 -->
+      <section class="detail" aria-label="MV Eagle Houston details">
+        <h2>Vessel details</h2>
+        <div class="detail-grid">
+          <div class="detail-cell">
+            <div class="detail-label">IMO</div>
+            <div class="detail-value">9 547 821</div>
+          </div>
+          <div class="detail-cell">
+            <div class="detail-label">MMSI</div>
+            <div class="detail-value">538 005 124</div>
+          </div>
+          <div class="detail-cell">
+            <div class="detail-label">Flag</div>
+            <div class="detail-value">Marshall Islands</div>
+          </div>
+          <div class="detail-cell">
+            <div class="detail-label">Owner</div>
+            <div class="detail-value">Eagle Bulk</div>
+          </div>
+          <div class="detail-cell">
+            <div class="detail-label">Built</div>
+            <div class="detail-value">2014</div>
+          </div>
+          <div class="detail-cell">
+            <div class="detail-label">DWT</div>
+            <div class="detail-value">52 100 t</div>
+          </div>
+        </div>
+
+        <h2>Voyage timeline</h2>
+        <div class="timeline">
+          <div class="tl-step done">
+            <div class="tl-label">Loaded at Houston, TX</div>
+            <div class="tl-time">Sat 03 May · 09:14 UTC</div>
+          </div>
+          <div class="tl-step done">
+            <div class="tl-label">Departed Houston</div>
+            <div class="tl-time">Sun 04 May · 17:22 UTC</div>
+          </div>
+          <div class="tl-step done">
+            <div class="tl-label">ETA Suape, PE</div>
+            <div class="tl-time">Mon 19 May · 06:00 UTC</div>
+          </div>
+          <div class="tl-step done">
+            <div class="tl-label">Arrived &amp; anchored</div>
+            <div class="tl-time">Mon 19 May · 04:48 UTC (1h ahead)</div>
+          </div>
+          <div class="tl-step current">
+            <div class="tl-label">Unloading started</div>
+            <div class="tl-time">Tue 20 May · 08:30 UTC · in progress</div>
+          </div>
+          <div class="tl-step future">
+            <div class="tl-label">Unloading complete</div>
+            <div class="tl-time">Tue 20 May · ~16:30 UTC (est.)</div>
+          </div>
+        </div>
+
+        <a class="detail-link" href="#" aria-label="View MV Eagle Houston on map">
+          View on map
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><polyline points="13 6 19 12 13 18"></polyline></svg>
+        </a>
+      </section>
+
+      <!-- #2 STI Aristotelis — En-route -->
+      <article class="vessel" data-id="sti-aristotelis">
+        <div class="vessel-row1">
+          <div class="vessel-id">
+            <div class="vessel-name">STI Aristotelis</div>
+            <div class="vessel-flag"><span class="flag-emoji">🇲🇭</span>Marshall Islands</div>
+          </div>
+          <span class="status-pill status--enroute"><span class="pip"></span>En-route</span>
+        </div>
+        <div class="vessel-route">
+          <span class="origin"><span class="flag-emoji">🇳🇱</span>Rotterdam</span>
+          <span class="arrow">→</span>
+          <span class="dest">Santos, SP</span>
+        </div>
+        <div class="vessel-cargo">Diesel <span class="sep">·</span> <span class="qty">38.2K m³</span></div>
+        <div class="vessel-foot"><span class="strong">ETA Wed 22 May</span> · 4 days</div>
+      </article>
+
+      <!-- #3 Front Lion — Anchored -->
+      <article class="vessel" data-id="front-lion">
+        <div class="vessel-row1">
+          <div class="vessel-id">
+            <div class="vessel-name">Front Lion</div>
+            <div class="vessel-flag"><span class="flag-emoji">🇳🇴</span>Norway</div>
+          </div>
+          <span class="status-pill status--anchored"><span class="pip"></span>Anchored</span>
+        </div>
+        <div class="vessel-route">
+          <span class="origin"><span class="flag-emoji">🇺🇸</span>Houston</span>
+          <span class="arrow">→</span>
+          <span class="dest">Itaqui, MA</span>
+        </div>
+        <div class="vessel-cargo">Diesel S10 <span class="sep">·</span> <span class="qty">52.1K m³</span></div>
+        <div class="vessel-foot"><span class="strong">Anchored 2h ago</span> · waiting berth</div>
+      </article>
+
+      <!-- #4 NS Captain — En-route -->
+      <article class="vessel" data-id="ns-captain">
+        <div class="vessel-row1">
+          <div class="vessel-id">
+            <div class="vessel-name">NS Captain</div>
+            <div class="vessel-flag"><span class="flag-emoji">🇬🇷</span>Greece</div>
+          </div>
+          <span class="status-pill status--enroute"><span class="pip"></span>En-route</span>
+        </div>
+        <div class="vessel-route">
+          <span class="origin"><span class="flag-emoji">🇺🇸</span>Houston</span>
+          <span class="arrow">→</span>
+          <span class="dest">Pecém, CE</span>
+        </div>
+        <div class="vessel-cargo">Diesel S500 <span class="sep">·</span> <span class="qty">41.8K m³</span></div>
+        <div class="vessel-foot"><span class="strong">ETA Thu 23 May</span> · 5 days</div>
+      </article>
+
+      <!-- #5 Astro Capricorn — Unloading 82% -->
+      <article class="vessel" data-id="astro-capricorn">
+        <div class="vessel-row1">
+          <div class="vessel-id">
+            <div class="vessel-name">Astro Capricorn</div>
+            <div class="vessel-flag"><span class="flag-emoji">🇲🇭</span>Marshall Islands</div>
+          </div>
+          <span class="status-pill status--unloading"><span class="pip"></span>Unloading</span>
+        </div>
+        <div class="vessel-route">
+          <span class="origin"><span class="flag-emoji">🇧🇪</span>Antwerp</span>
+          <span class="arrow">→</span>
+          <span class="dest">Suape, PE</span>
+        </div>
+        <div class="vessel-cargo">Diesel S10 <span class="sep">·</span> <span class="qty">35.0K m³</span></div>
+        <div class="progress">
+          <div class="progress-bar"><div class="fill" style="width: 82%"></div></div>
+          <div class="progress-text"><span class="pct">82%</span><span>· est. 2h left</span></div>
+        </div>
+      </article>
+
+      <!-- #6 Hafnia Andromeda — Completed (dimmed) -->
+      <article class="vessel vessel--dim" data-id="hafnia-andromeda">
+        <div class="vessel-row1">
+          <div class="vessel-id">
+            <div class="vessel-name">Hafnia Andromeda</div>
+            <div class="vessel-flag"><span class="flag-emoji">🇸🇬</span>Singapore</div>
+          </div>
+          <span class="status-pill status--completed"><span class="pip"></span>Completed</span>
+        </div>
+        <div class="vessel-route">
+          <span class="origin"><span class="flag-emoji">🇺🇸</span>Houston</span>
+          <span class="arrow">→</span>
+          <span class="dest">Santos, SP</span>
+        </div>
+        <div class="vessel-cargo">Diesel <span class="sep">·</span> <span class="qty">44.3K m³</span></div>
+        <div class="vessel-foot">Completed <span class="strong">Mon 19 May</span></div>
+      </article>
+
+    </main>
+
+    <!-- Export FAB -->
+    <button class="fab" aria-label="Export vessels">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="7 10 12 15 17 10"></polyline>
+        <line x1="12" y1="15" x2="12" y2="3"></line>
+      </svg>
+    </button>
+
+    <!-- Bottom tab bar -->
+    <nav class="tabbar" aria-label="Primary">
+      <div class="tabbar-inner">
+        <button class="tab tab--active" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 21h20"></path><path d="M3 18l1-8h16l1 8"></path><path d="M5 10V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4"></path><path d="M10 14h4"></path></svg>
+          <span>Vessels</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"></path><path d="M5 21V10l7-4 7 4v11"></path><path d="M9 21v-6h6v6"></path></svg>
+          <span>Ports</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 4 15 6 21 4 21 18 15 20 9 18 3 20 3 6"></polygon><line x1="9" y1="4" x2="9" y2="18"></line><line x1="15" y1="6" x2="15" y2="20"></line></svg>
+          <span>Map</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>
+          <span>Profile</span>
+        </button>
+      </div>
+    </nav>
+  </div>
+
+  <script>
+    /* ============================================================
+       Lightweight interactions only — no chart in this mockup.
+       (The /navios-diesel dashboard is a list, not a timeline view,
+       so Plotly is intentionally omitted to keep the file lean.)
+       ============================================================ */
+
+    /* ---------- Theme toggle ---------- */
+    function applyTheme(next) {
+      const root = document.documentElement;
+      if (next === "dark") root.setAttribute("data-theme", "dark");
+      else root.removeAttribute("data-theme");
+      document.querySelector('meta[name="theme-color"]').setAttribute(
+        "content", next === "dark" ? "#030814" : "#ffffff"
+      );
+    }
+    document.getElementById("themeBtn").addEventListener("click", () => {
+      const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+      applyTheme(isDark ? "light" : "dark");
+    });
+
+    /* ---------- Segmented control: simple visual toggle ---------- */
+    document.querySelectorAll(".seg .seg-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".seg .seg-btn").forEach(b => {
+          b.classList.remove("seg-btn--active");
+          b.setAttribute("aria-selected", "false");
+        });
+        btn.classList.add("seg-btn--active");
+        btn.setAttribute("aria-selected", "true");
+      });
+    });
+
+    /* ---------- Port card: visual selection ---------- */
+    document.querySelectorAll(".port-card").forEach(card => {
+      card.addEventListener("click", () => {
+        document.querySelectorAll(".port-card").forEach(c => c.classList.remove("port-card--active"));
+        card.classList.add("port-card--active");
+      });
+    });
+
+    /* ---------- Tabbar: visual selection ---------- */
+    document.querySelectorAll(".tabbar .tab").forEach(tab => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".tabbar .tab").forEach(t => {
+          t.classList.remove("tab--active");
+          t.removeAttribute("aria-current");
+        });
+        tab.classList.add("tab--active");
+        tab.setAttribute("aria-current", "page");
+      });
+    });
+  </script>
+</body>
+</html>

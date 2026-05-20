@@ -1,0 +1,1305 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>SectorData — ANP Oil Production (Mobile Mockup)</title>
+  <script src="https://cdn.plot.ly/plotly-3.4.0.min.js"></script>
+  <style>
+    /* ============================================================
+       SectorData / ANP Oil Production — mobile mockup
+       Tokens inherited from mockups/stocks-mobile.html (identity.md).
+       Brand orange #ff5000, Arial, liquid-glass sticky surfaces.
+       Production-specific accents (up/down month-over-month) use
+       the same up/down palette as Stocks for consistency.
+       ============================================================ */
+
+    :root {
+      /* Brand */
+      --accent:        #ff5000;
+      --accent-hover:  #d4561a;
+      --accent-soft:   rgba(255, 80, 0, 0.10);
+      --accent-fill:   rgba(255, 80, 0, 0.08);
+
+      /* Neutrals — light theme */
+      --bg:            #f5f5f7;
+      --surface:       #ffffff;
+      --surface-2:     #fafafc;
+      --text:          #1a1a1a;
+      --text-muted:    #6b6b73;
+      --text-faint:    #9a9aa3;
+      --border:        #e6e6ec;
+      --border-soft:   #f0f0f5;
+      --row-press:     rgba(0, 0, 0, 0.04);
+
+      /* Production deltas (matches identity.md:60-61) */
+      --up:            #16a34a;
+      --down:          #dc2626;
+      --up-fill:       rgba(22, 163, 74, 0.10);
+      --down-fill:     rgba(220, 38, 38, 0.10);
+
+      /* Liquid glass — sticky surfaces */
+      --glass-bg:        rgba(255, 255, 255, 0.72);
+      --glass-border:    rgba(0, 0, 0, 0.06);
+      --glass-shadow:    0 1px 0 rgba(255, 255, 255, 0.6) inset,
+                         0 -1px 0 rgba(0, 0, 0, 0.04) inset,
+                         0 4px 16px rgba(0, 0, 0, 0.06);
+
+      /* Plotly tunables */
+      --chart-gridline: rgba(0, 0, 0, 0.04);
+
+      /* Sheet backdrop */
+      --backdrop:        rgba(0, 0, 0, 0.45);
+    }
+
+    [data-theme="dark"] {
+      --bg:            #030814;
+      --surface:       #070d1c;
+      --surface-2:     #0a1124;
+      --text:          #e6edf3;
+      --text-muted:    #8b949e;
+      --text-faint:    #5e6772;
+      --border:        #131a2e;
+      --border-soft:   #161d33;
+      --row-press:     rgba(255, 255, 255, 0.04);
+
+      --up:            #3fb950;
+      --down:          #f85149;
+      --up-fill:       rgba(63, 185, 80, 0.12);
+      --down-fill:     rgba(248, 81, 73, 0.12);
+
+      --glass-bg:        rgba(7, 13, 28, 0.72);
+      --glass-border:    rgba(255, 255, 255, 0.06);
+      --glass-shadow:    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+                         0 -1px 0 rgba(0, 0, 0, 0.4) inset,
+                         0 4px 16px rgba(0, 0, 0, 0.4);
+
+      --chart-gridline: rgba(255, 255, 255, 0.05);
+
+      --backdrop:        rgba(0, 0, 0, 0.65);
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.4;
+      min-height: 100vh;
+      min-height: 100dvh;
+      -webkit-font-smoothing: antialiased;
+      transition: background 0.25s ease, color 0.25s ease;
+    }
+
+    /* ---------- Layout shell ---------- */
+    .phone {
+      max-width: 428px;
+      margin: 0 auto;
+      min-height: 100vh;
+      min-height: 100dvh;
+      background: var(--bg);
+      padding-bottom: calc(72px + env(safe-area-inset-bottom));
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* ---------- Top bar (sticky, liquid glass) ---------- */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      height: 56px;
+      padding: 0 16px;
+      padding-top: env(safe-area-inset-top);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 1px solid var(--glass-border);
+      box-shadow: var(--glass-shadow);
+    }
+    .wordmark {
+      font-weight: 700;
+      font-size: 17px;
+      letter-spacing: 0.04em;
+      color: var(--text);
+    }
+    .wordmark .dot { color: var(--accent); }
+    .topbar-actions { display: flex; align-items: center; gap: 10px; }
+    .icon-btn {
+      width: 44px; height: 44px;
+      border: 0; background: transparent;
+      color: var(--text-muted);
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .icon-btn:active { background: var(--row-press); }
+    .avatar {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25) inset,
+                  0 0 0 2px var(--surface);
+    }
+
+    /* ---------- Page header (title + subtitle + period badge) ---------- */
+    .page-head {
+      padding: 16px 16px 12px;
+      background: var(--bg);
+    }
+    .page-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.15;
+      letter-spacing: -0.005em;
+    }
+    .page-sub {
+      margin-top: 4px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .period-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .period-badge::before {
+      content: "";
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    /* ---------- Breadcrumb scope row (sticky, just below top bar) ---------- */
+    .breadcrumb {
+      position: sticky;
+      top: 56px;
+      z-index: 25;
+      height: 40px;
+      padding: 0 12px 0 16px;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 1px solid var(--glass-border);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      white-space: nowrap;
+    }
+    .breadcrumb::-webkit-scrollbar { display: none; }
+    .crumb {
+      flex: 0 0 auto;
+      padding: 4px 8px;
+      border: 0;
+      background: transparent;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border-radius: 6px;
+      min-height: 28px;
+    }
+    .crumb:active { background: var(--row-press); }
+    .crumb--current {
+      color: var(--accent);
+    }
+    .crumb-sep {
+      flex: 0 0 auto;
+      color: var(--text-faint);
+      font-size: 13px;
+      pointer-events: none;
+      padding: 0 2px;
+    }
+    .crumb-reset {
+      flex: 0 0 auto;
+      margin-left: auto;
+      width: 28px; height: 28px;
+      border: 0;
+      background: var(--row-press);
+      color: var(--text-muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+
+    /* ---------- Product tab segments ---------- */
+    .product-tabs {
+      display: flex;
+      gap: 0;
+      padding: 12px 16px 4px;
+      background: var(--bg);
+      position: relative;
+    }
+    .product-tab {
+      flex: 1;
+      min-height: 36px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-right: 8px;
+      transition: all 0.15s ease;
+    }
+    .product-tab:last-child { margin-right: 0; }
+    .product-tab--active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(255, 80, 0, 0.25);
+    }
+
+    /* ---------- Hero chart section ---------- */
+    .hero {
+      margin: 12px 16px 16px;
+      padding: 14px 14px 12px;
+      background: var(--surface);
+      border-radius: 14px;
+      border: 1px solid var(--border-soft);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    }
+    .hero-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    .hero-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: 0.02em;
+    }
+    .hero-unit {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .chart-wrap {
+      height: 220px;
+      width: 100%;
+      border-radius: 10px;
+      overflow: hidden;
+      position: relative;
+    }
+    .chart-annotation {
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      background: var(--surface);
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 8px;
+      border-radius: 6px;
+      box-shadow: 0 2px 8px rgba(255, 80, 0, 0.12);
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    /* ---------- Mini stat row (3 col) ---------- */
+    .mini-stats {
+      margin-top: 12px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      background: var(--border-soft);
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--border-soft);
+    }
+    .mini-stat {
+      background: var(--surface);
+      padding: 10px 8px;
+      text-align: center;
+    }
+    .mini-stat-label {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .mini-stat-value {
+      margin-top: 4px;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+      line-height: 1.1;
+    }
+
+    /* ---------- Filter chip row (sticky above drill list) ---------- */
+    .chip-row {
+      position: sticky;
+      top: 96px;
+      z-index: 22;
+      padding: 8px 16px;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-top: 1px solid var(--glass-border);
+      border-bottom: 1px solid var(--glass-border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      white-space: nowrap;
+    }
+    .chip-row::-webkit-scrollbar { display: none; }
+    .chip-btn {
+      flex: 0 0 auto;
+      min-height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px dashed var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .chip {
+      flex: 0 0 auto;
+      min-height: 32px;
+      padding: 0 6px 0 12px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border: 1px solid var(--accent);
+    }
+    .chip-x {
+      width: 22px;
+      height: 22px;
+      border: 0;
+      background: transparent;
+      color: var(--accent);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      border-radius: 50%;
+    }
+    .chip-x:active { background: rgba(255, 80, 0, 0.18); }
+
+    /* ---------- Drill-down section header ---------- */
+    .drill-head {
+      padding: 16px 16px 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg);
+    }
+    .drill-title {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .drill-count {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-muted);
+      letter-spacing: 0.02em;
+    }
+    .sort-btn {
+      min-height: 32px;
+      padding: 0 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* ---------- Well card list ---------- */
+    .well-list {
+      padding-bottom: 12px;
+    }
+    .well-card {
+      min-height: 80px;
+      padding: 12px 16px;
+      display: grid;
+      grid-template-columns: 1fr 88px auto;
+      grid-template-areas: "id spark val";
+      column-gap: 12px;
+      align-items: center;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border-soft);
+      cursor: pointer;
+      transition: background 0.12s ease;
+    }
+    .well-card:active { background: var(--row-press); }
+    .well-id { grid-area: id; min-width: 0; }
+    .well-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: 0.01em;
+      line-height: 1.15;
+      font-variant-numeric: tabular-nums;
+    }
+    .well-meta {
+      margin-top: 4px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .op-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .well-spark { grid-area: spark; height: 34px; }
+    .well-spark svg { display: block; width: 100%; height: 100%; }
+    .well-val { grid-area: val; text-align: right; min-width: 0; }
+    .well-prod {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+      line-height: 1.1;
+      white-space: nowrap;
+    }
+    .well-delta {
+      margin-top: 4px;
+      font-size: 12px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+    .up   { color: var(--up); }
+    .down { color: var(--down); }
+
+    /* ---------- Filter sheet (rendered "open" for documentation) ---------- */
+    .sheet-backdrop {
+      position: fixed;
+      left: 0; right: 0; top: 0; bottom: 0;
+      background: var(--backdrop);
+      z-index: 50;
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .sheet {
+      position: fixed;
+      left: 50%;
+      bottom: 0;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 428px;
+      z-index: 51;
+      background: var(--surface);
+      border-top-left-radius: 20px;
+      border-top-right-radius: 20px;
+      box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.2);
+      padding-bottom: env(safe-area-inset-bottom);
+      max-height: 78vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .sheet-grabber {
+      width: 40px;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--border);
+      margin: 8px auto 4px;
+    }
+    .sheet-head {
+      padding: 8px 16px 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .sheet-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .sheet-close {
+      width: 32px; height: 32px;
+      border: 0; background: transparent;
+      color: var(--text-muted);
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+    .sheet-close:active { background: var(--row-press); }
+    .sheet-body {
+      overflow-y: auto;
+      padding: 4px 16px 8px;
+      flex: 1;
+    }
+    .filter-group {
+      padding: 14px 0;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .filter-group:last-child { border-bottom: 0; }
+    .filter-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--text-muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .check-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 4px;
+      min-height: 36px;
+      cursor: pointer;
+      border-radius: 8px;
+    }
+    .check-row:active { background: var(--row-press); }
+    .check-box {
+      width: 20px; height: 20px;
+      border-radius: 6px;
+      border: 1.5px solid var(--border);
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+    }
+    .check-row--checked .check-box {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    .check-text {
+      flex: 1;
+      font-size: 14px;
+      color: var(--text);
+      font-weight: 500;
+    }
+    .check-meta {
+      font-size: 11px;
+      color: var(--text-faint);
+      font-variant-numeric: tabular-nums;
+    }
+    /* Range/period slider visuals (decorative only) */
+    .range-block {
+      padding-top: 4px;
+    }
+    .range-track {
+      position: relative;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      margin: 14px 6px;
+    }
+    .range-fill {
+      position: absolute;
+      top: 0; bottom: 0;
+      left: 15%;
+      right: 8%;
+      background: var(--accent);
+      border-radius: 2px;
+    }
+    .range-thumb {
+      position: absolute;
+      top: 50%;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      border: 2px solid var(--accent);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+      transform: translate(-50%, -50%);
+    }
+    .range-thumb--right { left: 92%; }
+    .range-thumb--left  { left: 15%; }
+    .range-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 600;
+      margin-top: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+    .single-track .range-fill { left: 0; right: 60%; }
+    .single-track .range-thumb--right { left: 40%; }
+    .single-track .range-thumb--left  { display: none; }
+    /* Sort pill row */
+    .sort-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .sort-pill {
+      min-height: 32px;
+      padding: 0 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .sort-pill--active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    /* Sheet footer */
+    .sheet-footer {
+      display: grid;
+      grid-template-columns: 1fr 2fr;
+      gap: 8px;
+      padding: 12px 16px;
+      border-top: 1px solid var(--border-soft);
+      background: var(--surface);
+    }
+    .sheet-btn {
+      min-height: 44px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .sheet-btn--primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(255, 80, 0, 0.25);
+    }
+
+    /* ---------- Floating action buttons (over scroll layer, below sheet) ---------- */
+    .fab {
+      position: fixed;
+      bottom: calc(80px + env(safe-area-inset-bottom));
+      z-index: 35;
+      width: 52px; height: 52px;
+      border-radius: 50%;
+      border: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      cursor: pointer;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+    }
+    .fab-up {
+      left: 16px;
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+    }
+    .fab-export {
+      right: 16px;
+      background: var(--accent);
+      box-shadow: 0 6px 18px rgba(255, 80, 0, 0.35);
+    }
+
+    /* ---------- Bottom tab bar (sticky, liquid glass) ---------- */
+    .tabbar {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      z-index: 40;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-top: 1px solid var(--glass-border);
+      box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.05);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .tabbar-inner {
+      max-width: 428px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      height: 64px;
+    }
+    .tab {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      background: transparent;
+      border: 0;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      min-height: 44px;
+    }
+    .tab--active { color: var(--accent); }
+    .tab--active::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 28px;
+      height: 2px;
+      background: var(--accent);
+      border-radius: 0 0 2px 2px;
+    }
+    .tab svg { width: 22px; height: 22px; }
+
+    /* ---------- Theme toggle icon swap ---------- */
+    .icon-sun  { display: none; }
+    .icon-moon { display: inline-block; }
+    [data-theme="dark"] .icon-sun  { display: inline-block; }
+    [data-theme="dark"] .icon-moon { display: none; }
+  </style>
+</head>
+<body>
+  <div class="phone" id="phone">
+
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="wordmark">SECTORDATA<span class="dot">.</span></div>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="themeBtn" aria-label="Toggle theme">
+          <svg class="icon-moon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          <svg class="icon-sun"  width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg>
+        </button>
+        <div class="avatar" aria-label="Eduardo Mendes">EM</div>
+      </div>
+    </header>
+
+    <!-- Breadcrumb scope row -->
+    <nav class="breadcrumb" aria-label="Hierarchy scope">
+      <button class="crumb">All Brazil</button>
+      <span class="crumb-sep" aria-hidden="true">›</span>
+      <button class="crumb">Santos</button>
+      <span class="crumb-sep" aria-hidden="true">›</span>
+      <button class="crumb">PreSal</button>
+      <span class="crumb-sep" aria-hidden="true">›</span>
+      <button class="crumb crumb--current" aria-current="location">Tupi</button>
+      <button class="crumb-reset" aria-label="Reset scope to All Brazil">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+      </button>
+    </nav>
+
+    <!-- Page title + subtitle + period badge -->
+    <section class="page-head">
+      <h1 class="page-title">ANP Oil Production</h1>
+      <div class="page-sub">Wells, fields, basins</div>
+      <span class="period-badge">Jan 2010 – Mar 2026</span>
+    </section>
+
+    <!-- Product tab segments -->
+    <nav class="product-tabs" role="tablist" aria-label="Product type">
+      <button class="product-tab product-tab--active" role="tab" aria-selected="true">Petroleum</button>
+      <button class="product-tab" role="tab" aria-selected="false">Gas</button>
+      <button class="product-tab" role="tab" aria-selected="false">Water</button>
+    </nav>
+
+    <!-- Hero chart -->
+    <section class="hero" aria-label="Monthly oil production at Tupi field">
+      <div class="hero-head">
+        <div class="hero-title">Monthly Production · Tupi</div>
+        <div class="hero-unit">bbl/day</div>
+      </div>
+      <div class="chart-wrap" id="heroChart">
+        <div class="chart-annotation">Peak: 945k bbl/d in 2024-03</div>
+      </div>
+      <div class="mini-stats">
+        <div class="mini-stat">
+          <div class="mini-stat-label">Total</div>
+          <div class="mini-stat-value">184 MMb</div>
+        </div>
+        <div class="mini-stat">
+          <div class="mini-stat-label">Avg</div>
+          <div class="mini-stat-value">612k bbl/d</div>
+        </div>
+        <div class="mini-stat">
+          <div class="mini-stat-label">Peak</div>
+          <div class="mini-stat-value">945k</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Filter chip row (sticky) -->
+    <div class="chip-row" aria-label="Active filters">
+      <button class="chip-btn" aria-label="Open filters">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"></line><line x1="7" y1="12" x2="17" y2="12"></line><line x1="10" y1="18" x2="14" y2="18"></line></svg>
+        Filters
+      </button>
+      <span class="chip">
+        Petrobras
+        <button class="chip-x" aria-label="Remove Petrobras filter">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+        </button>
+      </span>
+    </div>
+
+    <!-- Drill-down section header -->
+    <div class="drill-head">
+      <div class="drill-title">
+        Wells in Tupi
+        <span class="drill-count">(38)</span>
+      </div>
+      <button class="sort-btn" aria-label="Sort wells">
+        Sort: Production
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      </button>
+    </div>
+
+    <!-- Well card list -->
+    <main class="well-list" id="wellList">
+      <!-- Wells rendered by JS so sparklines stay theme-aware -->
+    </main>
+
+    <!-- Floating action buttons -->
+    <button class="fab fab-up" aria-label="Up one level (back to PreSal fields)">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+    </button>
+    <button class="fab fab-export" aria-label="Export data">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><polyline points="7 8 12 3 17 8"></polyline><path d="M5 21h14"></path></svg>
+    </button>
+
+    <!-- Bottom tab bar -->
+    <nav class="tabbar" aria-label="Primary">
+      <div class="tabbar-inner">
+        <button class="tab tab--active" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><rect x="6" y="13" width="3" height="6"></rect><rect x="11" y="9" width="3" height="10"></rect><rect x="16" y="5" width="3" height="14"></rect></svg>
+          <span>Production</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+          <span>Map</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"></path><polyline points="14 7 21 7 21 14"></polyline></svg>
+          <span>Compare</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>
+          <span>Profile</span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- =========================================================
+         Filter sheet (rendered "open" for documentation)
+         ========================================================= -->
+    <div class="sheet-backdrop" aria-hidden="true"></div>
+    <aside class="sheet" role="dialog" aria-modal="true" aria-label="Filters">
+      <div class="sheet-grabber" aria-hidden="true"></div>
+      <div class="sheet-head">
+        <div class="sheet-title">Filters</div>
+        <button class="sheet-close" aria-label="Close filters">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+        </button>
+      </div>
+      <div class="sheet-body">
+
+        <!-- Operator (multi) -->
+        <div class="filter-group">
+          <div class="filter-label">Operator</div>
+          <div class="check-list">
+            <label class="check-row check-row--checked">
+              <span class="check-box">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+              </span>
+              <span class="check-text">Petrobras</span>
+              <span class="check-meta">142</span>
+            </label>
+            <label class="check-row">
+              <span class="check-box"></span>
+              <span class="check-text">PRIO</span>
+              <span class="check-meta">38</span>
+            </label>
+            <label class="check-row">
+              <span class="check-box"></span>
+              <span class="check-text">Equinor</span>
+              <span class="check-meta">24</span>
+            </label>
+            <label class="check-row">
+              <span class="check-box"></span>
+              <span class="check-text">Shell</span>
+              <span class="check-meta">19</span>
+            </label>
+            <label class="check-row">
+              <span class="check-box"></span>
+              <span class="check-text">ExxonMobil</span>
+              <span class="check-meta">8</span>
+            </label>
+            <label class="check-row">
+              <span class="check-box"></span>
+              <span class="check-text">TotalEnergies</span>
+              <span class="check-meta">12</span>
+            </label>
+            <label class="check-row">
+              <span class="check-box"></span>
+              <span class="check-text">Galp</span>
+              <span class="check-meta">6</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Period range -->
+        <div class="filter-group">
+          <div class="filter-label">Period</div>
+          <div class="range-block">
+            <div class="range-track">
+              <div class="range-fill"></div>
+              <div class="range-thumb range-thumb--left"></div>
+              <div class="range-thumb range-thumb--right"></div>
+            </div>
+            <div class="range-labels">
+              <span>Jan 2012</span>
+              <span>Mar 2026</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Min production threshold -->
+        <div class="filter-group">
+          <div class="filter-label">Min production (bbl/day)</div>
+          <div class="range-block single-track">
+            <div class="range-track">
+              <div class="range-fill"></div>
+              <div class="range-thumb range-thumb--left"></div>
+              <div class="range-thumb range-thumb--right"></div>
+            </div>
+            <div class="range-labels">
+              <span>0</span>
+              <span>10k</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sort -->
+        <div class="filter-group">
+          <div class="filter-label">Sort by</div>
+          <div class="sort-row">
+            <button class="sort-pill sort-pill--active">Production</button>
+            <button class="sort-pill">Name</button>
+            <button class="sort-pill">Operator</button>
+            <button class="sort-pill">Discovery date</button>
+          </div>
+        </div>
+
+      </div>
+      <div class="sheet-footer">
+        <button class="sheet-btn" aria-label="Reset filters">Reset</button>
+        <button class="sheet-btn sheet-btn--primary" aria-label="Apply filters">Apply</button>
+      </div>
+    </aside>
+
+  </div>
+
+  <script>
+    /* ============================================================
+       Mock data + rendering
+       ============================================================ */
+
+    const WELLS = [
+      { name: "7-TUP-15-RJS",   op: "Petrobras", prod: 28.4, delta: +1.2 },
+      { name: "9-TUP-18-RJS",   op: "Petrobras", prod: 24.1, delta: -0.4 },
+      { name: "7-TUP-22-RJS",   op: "Petrobras", prod: 22.8, delta: +2.1 },
+      { name: "7-TUP-08H-RJS",  op: "Petrobras", prod: 19.3, delta: -1.7 },
+      { name: "9-TUP-31D-RJS",  op: "Petrobras", prod: 17.9, delta: +0.8 },
+      { name: "7-TUP-44-RJS",   op: "Petrobras", prod: 15.2, delta: -2.3 },
+      { name: "9-TUP-12-RJS",   op: "Petrobras", prod: 13.7, delta: +0.5 },
+      { name: "7-TUP-50H-RJS",  op: "Petrobras", prod: 11.4, delta: +3.2 },
+    ];
+
+    function seededRandom(seed) {
+      let s = seed >>> 0;
+      return function () {
+        s = (s * 1664525 + 1013904223) >>> 0;
+        return s / 4294967296;
+      };
+    }
+
+    /* 12-month production walk for sparklines.
+       Trend slightly up or slightly down depending on the delta sign. */
+    function prodWalk(currentLevel, deltaPct, n, vol, seed) {
+      const rnd = seededRandom(seed);
+      const out = new Array(n);
+      // Last point should match the current level; start ~ -delta% earlier on average
+      let p = currentLevel * (1 - (deltaPct >= 0 ? 0.06 : -0.04));
+      for (let i = 0; i < n; i++) {
+        const target = currentLevel * (1 + (i / (n - 1) - 1) * (deltaPct >= 0 ? -0.05 : 0.04));
+        const drift = (target - p) * 0.18;
+        const shock = (rnd() - 0.5) * 2 * vol * Math.abs(p);
+        p = p + drift + shock;
+        out[i] = p;
+      }
+      out[n - 1] = currentLevel;
+      return out;
+    }
+
+    function fmtProdK(v) {
+      // Input is in k bbl/d already (e.g. 28.4)
+      return v.toFixed(1).replace(/\.0$/, "") + "k bbl/d";
+    }
+    function fmtPct(p) {
+      const sign = p >= 0 ? "+" : "";
+      return sign + p.toFixed(1) + "%";
+    }
+
+    /* ---------- Sparklines (inline SVG) ---------- */
+    function sparkline(values, color, w, h) {
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const span = max - min || 1;
+      const pad = 2;
+      const innerW = w - pad * 2;
+      const innerH = h - pad * 2;
+      const step = innerW / (values.length - 1);
+      const pts = values.map((v, i) => {
+        const x = pad + i * step;
+        const y = pad + innerH - ((v - min) / span) * innerH;
+        return [x, y];
+      });
+      const line = pts.map((p, i) => (i === 0 ? "M" : "L") + p[0].toFixed(2) + "," + p[1].toFixed(2)).join(" ");
+      const area = line +
+        " L" + pts[pts.length - 1][0].toFixed(2) + "," + (h - pad).toFixed(2) +
+        " L" + pts[0][0].toFixed(2) + "," + (h - pad).toFixed(2) + " Z";
+      const fill = color.replace("#", "");
+      const r = parseInt(fill.slice(0,2), 16);
+      const g = parseInt(fill.slice(2,4), 16);
+      const b = parseInt(fill.slice(4,6), 16);
+      const fillRgba = `rgba(${r},${g},${b},0.14)`;
+      return `
+        <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+          <path d="${area}" fill="${fillRgba}"/>
+          <path d="${line}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      `;
+    }
+
+    function getCssColor(varName) {
+      return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    }
+
+    /* ---------- Build the well drill-down list ---------- */
+    function renderWellList() {
+      const list = document.getElementById("wellList");
+      list.innerHTML = "";
+
+      const accent = getCssColor("--accent");
+
+      WELLS.forEach((w, idx) => {
+        const isUp = w.delta >= 0;
+        const pts = prodWalk(w.prod, w.delta, 12, 0.02, 19 + idx * 13);
+        const el = document.createElement("article");
+        el.className = "well-card";
+        el.dataset.well = w.name;
+        el.innerHTML = `
+          <div class="well-id">
+            <div class="well-name">${w.name}</div>
+            <div class="well-meta">
+              <span class="op-badge">${w.op}</span>
+            </div>
+          </div>
+          <div class="well-spark">${sparkline(pts, accent, 88, 34)}</div>
+          <div class="well-val">
+            <div class="well-prod">${fmtProdK(w.prod)}</div>
+            <div class="well-delta ${isUp ? "up" : "down"}">${fmtPct(w.delta)}</div>
+          </div>
+        `;
+        list.appendChild(el);
+      });
+    }
+
+    /* ---------- Hero Plotly chart: monthly oil production at Tupi ---------- */
+    function renderHeroChart() {
+      const accent = getCssColor("--accent");
+      const muted  = getCssColor("--text-muted");
+      const grid   = getCssColor("--chart-gridline");
+      const surface = getCssColor("--surface");
+
+      // Build monthly x-axis Jan 2010 → Mar 2026 (195 months)
+      const start = new Date(2010, 0, 1);
+      const end   = new Date(2026, 2, 1);
+      const x = [];
+      let cur = new Date(start);
+      while (cur <= end) {
+        x.push(new Date(cur));
+        cur.setMonth(cur.getMonth() + 1);
+      }
+      const n = x.length;
+
+      // Deterministic Tupi-like ramp:
+      // 2010-2014: ramp up 50 → 500
+      // 2015-2019: plateau ~700-850
+      // 2020-2022: dip due to maintenance ~650
+      // 2023-2024: peak 900-945 (Mar 2024)
+      // 2025-2026: gentle decline back to ~720
+      const rnd = seededRandom(73);
+      const y = new Array(n);
+      let peakIdx = 0;
+      let peakVal = 0;
+      for (let i = 0; i < n; i++) {
+        const d = x[i];
+        const year = d.getFullYear() + d.getMonth() / 12;
+        let base;
+        if (year < 2014) {
+          base = 50 + (year - 2010) * 110;
+        } else if (year < 2019) {
+          base = 510 + (year - 2014) * 60;
+        } else if (year < 2022) {
+          base = 810 - (year - 2019) * 50;
+        } else if (year < 2024.25) {
+          base = 660 + (year - 2022) * 130;
+        } else {
+          base = 945 - (year - 2024.25) * 100;
+        }
+        // Force peak at Mar 2024
+        if (d.getFullYear() === 2024 && d.getMonth() === 2) base = 945;
+        const noise = (rnd() - 0.5) * 30;
+        y[i] = Math.max(20, base + noise);
+        if (y[i] > peakVal) { peakVal = y[i]; peakIdx = i; }
+      }
+
+      const trace = {
+        type: "scatter",
+        mode: "lines",
+        x: x,
+        y: y,
+        line: { color: accent, width: 2, shape: "spline", smoothing: 0.5 },
+        fill: "tozeroy",
+        fillcolor: "rgba(255, 80, 0, 0.10)",
+        hovertemplate: "<b>%{y:.0f}k bbl/d</b><br>%{x|%b %Y}<extra></extra>",
+      };
+
+      const yMax = Math.max(...y) * 1.08;
+
+      const layout = {
+        margin: { l: 8, r: 8, t: 6, b: 24 },
+        paper_bgcolor: surface,
+        plot_bgcolor: surface,
+        font: { family: "Arial, Helvetica, sans-serif", size: 11, color: muted },
+        showlegend: false,
+        hoverlabel: { bgcolor: surface, bordercolor: accent, font: { family: "Arial, Helvetica, sans-serif", size: 12 } },
+        xaxis: {
+          showgrid: false,
+          zeroline: false,
+          showline: false,
+          tickfont: { size: 10, color: muted },
+          tickformat: "%Y",
+          nticks: 5,
+          fixedrange: true,
+        },
+        yaxis: {
+          range: [0, yMax],
+          showgrid: true,
+          gridcolor: grid,
+          zeroline: false,
+          showline: false,
+          tickfont: { size: 10, color: muted },
+          tickformat: ".0f",
+          nticks: 3,
+          fixedrange: true,
+          side: "right",
+        },
+      };
+
+      const config = {
+        displayModeBar: false,
+        responsive: true,
+        scrollZoom: false,
+        doubleClick: false,
+        staticPlot: false,
+      };
+
+      Plotly.newPlot("heroChart", [trace], layout, config);
+    }
+
+    /* ---------- Theme toggle ---------- */
+    function applyTheme(next) {
+      const root = document.documentElement;
+      if (next === "dark") root.setAttribute("data-theme", "dark");
+      else root.removeAttribute("data-theme");
+      document.querySelector('meta[name="theme-color"]').setAttribute("content", next === "dark" ? "#030814" : "#ffffff");
+      renderWellList();
+      renderHeroChart();
+    }
+
+    document.getElementById("themeBtn").addEventListener("click", () => {
+      const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+      applyTheme(isDark ? "light" : "dark");
+    });
+
+    /* ---------- Boot ---------- */
+    renderWellList();
+    renderHeroChart();
+    window.addEventListener("resize", () => {
+      const c = document.getElementById("heroChart");
+      if (c && c.data) Plotly.Plots.resize(c);
+    });
+  </script>
+</body>
+</html>

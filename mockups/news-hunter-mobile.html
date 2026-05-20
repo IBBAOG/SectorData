@@ -1,0 +1,812 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>SectorData — News Hunter (Mobile Mockup)</title>
+  <style>
+    /* ============================================================
+       SectorData / News Hunter — mobile mockup
+       Inherits design tokens from mockups/stocks-mobile.html
+       (brand orange #ff5000, Arial, liquid glass top/bottom bars,
+       light/dark theme system). UI strings are English; article
+       headlines stay in Portuguese (external content).
+       ============================================================ */
+
+    :root {
+      /* Brand */
+      --accent:        #ff5000;
+      --accent-hover:  #d4561a;
+      --accent-soft:   rgba(255, 80, 0, 0.10);
+      --accent-fill:   rgba(255, 80, 0, 0.08);
+
+      /* Neutrals — light theme */
+      --bg:            #f5f5f7;
+      --surface:       #ffffff;
+      --surface-2:     #fafafc;
+      --text:          #1a1a1a;
+      --text-muted:    #6b6b73;
+      --text-faint:    #9a9aa3;
+      --border:        #e6e6ec;
+      --border-soft:   #f0f0f5;
+      --row-press:     rgba(0, 0, 0, 0.04);
+
+      /* Live indicator */
+      --live:          #16a34a;
+      --live-soft:     rgba(22, 163, 74, 0.18);
+
+      /* Liquid glass — sticky surfaces */
+      --glass-bg:        rgba(255, 255, 255, 0.72);
+      --glass-border:    rgba(0, 0, 0, 0.06);
+      --glass-shadow:    0 1px 0 rgba(255, 255, 255, 0.6) inset,
+                         0 -1px 0 rgba(0, 0, 0, 0.04) inset,
+                         0 4px 16px rgba(0, 0, 0, 0.06);
+    }
+
+    [data-theme="dark"] {
+      --bg:            #030814;
+      --surface:       #070d1c;
+      --surface-2:     #0a1124;
+      --text:          #e6edf3;
+      --text-muted:    #8b949e;
+      --text-faint:    #5e6772;
+      --border:        #131a2e;
+      --border-soft:   #161d33;
+      --row-press:     rgba(255, 255, 255, 0.04);
+
+      --live:          #3fb950;
+      --live-soft:     rgba(63, 185, 80, 0.22);
+
+      --glass-bg:        rgba(7, 13, 28, 0.72);
+      --glass-border:    rgba(255, 255, 255, 0.06);
+      --glass-shadow:    0 1px 0 rgba(255, 255, 255, 0.05) inset,
+                         0 -1px 0 rgba(0, 0, 0, 0.4) inset,
+                         0 4px 16px rgba(0, 0, 0, 0.4);
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.4;
+      min-height: 100vh;
+      min-height: 100dvh;
+      -webkit-font-smoothing: antialiased;
+      transition: background 0.25s ease, color 0.25s ease;
+    }
+
+    /* ---------- Layout shell ---------- */
+    .phone {
+      max-width: 428px;
+      margin: 0 auto;
+      min-height: 100vh;
+      min-height: 100dvh;
+      background: var(--bg);
+      padding-bottom: calc(72px + env(safe-area-inset-bottom));
+      position: relative;
+    }
+
+    /* ---------- Pull to refresh ---------- */
+    .pull-refresh {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 0 6px;
+      color: var(--text-faint);
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      gap: 2px;
+      user-select: none;
+    }
+    .pull-refresh svg { opacity: 0.6; }
+
+    /* ---------- Top bar (sticky liquid glass) ---------- */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      height: 56px;
+      padding: 0 16px;
+      padding-top: env(safe-area-inset-top);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 1px solid var(--glass-border);
+      box-shadow: var(--glass-shadow);
+    }
+    .wordmark {
+      font-weight: 700;
+      font-size: 17px;
+      letter-spacing: 0.04em;
+      color: var(--text);
+    }
+    .wordmark .dot { color: var(--accent); }
+    .topbar-actions { display: flex; align-items: center; gap: 10px; }
+    .icon-btn {
+      width: 44px; height: 44px;
+      border: 0; background: transparent;
+      color: var(--text-muted);
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .icon-btn:active { background: var(--row-press); }
+    .avatar {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      box-shadow: 0 1px 0 rgba(255, 255, 255, 0.25) inset,
+                  0 0 0 2px var(--surface);
+    }
+
+    /* ---------- Title block ---------- */
+    .title-block {
+      padding: 16px 16px 12px;
+      background: var(--bg);
+    }
+    .title-h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0;
+      letter-spacing: -0.01em;
+    }
+    .live-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .live-dot {
+      position: relative;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--live);
+      flex: 0 0 8px;
+    }
+    .live-dot::before {
+      content: "";
+      position: absolute;
+      inset: -4px;
+      border-radius: 50%;
+      background: var(--live);
+      opacity: 0.6;
+      animation: pulse 1.8s ease-out infinite;
+    }
+    @keyframes pulse {
+      0%   { transform: scale(0.6); opacity: 0.6; }
+      80%  { transform: scale(1.8); opacity: 0; }
+      100% { transform: scale(1.8); opacity: 0; }
+    }
+    .live-label { font-weight: 600; color: var(--text); }
+
+    /* ---------- Sticky search ---------- */
+    .search {
+      position: sticky;
+      top: 56px;
+      z-index: 25;
+      padding: 8px 16px 8px;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 1px solid var(--glass-border);
+    }
+    .search-input-wrap {
+      position: relative;
+      height: 36px;
+    }
+    .search-input {
+      width: 100%;
+      height: 36px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      padding: 0 36px 0 36px;
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .search-input::placeholder { color: var(--text-faint); }
+    .search-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+    .search-icon, .search-clear {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-faint);
+      pointer-events: none;
+    }
+    .search-icon { left: 10px; }
+    .search-clear {
+      right: 8px;
+      width: 24px; height: 24px;
+      display: none;
+      align-items: center; justify-content: center;
+      border-radius: 50%;
+      background: var(--row-press);
+      pointer-events: auto;
+      border: 0;
+      cursor: pointer;
+      color: var(--text-muted);
+    }
+    .search-input:not(:placeholder-shown) ~ .search-clear { display: inline-flex; }
+
+    /* ---------- Filter pills (snap scroll) ---------- */
+    .filters {
+      position: sticky;
+      top: 108px;
+      z-index: 22;
+      height: 52px;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-bottom: 1px solid var(--glass-border);
+      display: flex;
+      align-items: center;
+      overflow-x: auto;
+      overflow-y: hidden;
+      gap: 8px;
+      padding: 0 16px;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .filters::-webkit-scrollbar { display: none; }
+    .pill {
+      flex: 0 0 auto;
+      min-height: 36px;
+      padding: 0 14px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      white-space: nowrap;
+      scroll-snap-align: start;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    }
+    .pill--active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(255, 80, 0, 0.25);
+    }
+    .pill:not(.pill--active):active { background: var(--row-press); }
+
+    /* ---------- My Keywords mini section ---------- */
+    .keywords-section {
+      padding: 16px 16px 12px;
+      background: var(--bg);
+    }
+    .keywords-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .keywords-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .keywords-add {
+      background: transparent;
+      border: 0;
+      color: var(--accent);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .keywords-add:active { background: var(--accent-soft); }
+    .keywords-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .kw {
+      display: inline-flex;
+      align-items: center;
+      height: 26px;
+      padding: 0 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: -0.005em;
+      cursor: pointer;
+      transition: background 0.12s ease;
+    }
+    .kw:active { background: rgba(255, 80, 0, 0.18); }
+    .kw--more {
+      background: transparent;
+      color: var(--text-muted);
+      border: 1px dashed var(--border);
+    }
+
+    /* ---------- Article feed ---------- */
+    .feed {
+      padding: 4px 0 24px;
+    }
+    .article {
+      padding: 14px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border-soft);
+      cursor: pointer;
+      transition: background 0.12s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .article:active { background: var(--row-press); }
+    .article--dimmed { opacity: 0.6; }
+
+    .art-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+      min-width: 0;
+    }
+    .favicon {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      font-weight: 700;
+      color: #fff;
+      flex: 0 0 16px;
+      letter-spacing: 0;
+    }
+    .art-source {
+      font-weight: 600;
+      color: var(--text);
+      max-width: 50%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .art-sep { color: var(--text-faint); }
+    .art-time { color: var(--text-muted); }
+
+    .art-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.32;
+      letter-spacing: -0.005em;
+      margin: 0;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .art-snippet {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.4;
+      margin: 0;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .art-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 2px;
+    }
+    .art-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .kw-out {
+      display: inline-flex;
+      align-items: center;
+      height: 22px;
+      padding: 0 8px;
+      border-radius: 999px;
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .art--dimmed .kw-out {
+      border-color: var(--border);
+      color: var(--text-faint);
+    }
+    .art-actions {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      flex: 0 0 auto;
+    }
+    .act-btn {
+      width: 32px; height: 32px;
+      border: 0;
+      background: transparent;
+      color: var(--text-muted);
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.12s ease, color 0.12s ease;
+    }
+    .act-btn:active { background: var(--row-press); }
+    .act-btn--on { color: var(--accent); }
+
+    /* ---------- Floating Action Button ---------- */
+    .fab {
+      position: fixed;
+      right: 16px;
+      bottom: calc(72px + env(safe-area-inset-bottom) + 16px);
+      z-index: 35;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      border: 0;
+      background: var(--accent);
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(255, 80, 0, 0.35),
+                  0 1px 0 rgba(255, 255, 255, 0.25) inset;
+      transition: transform 0.12s ease, background 0.15s ease;
+    }
+    .fab:active {
+      transform: scale(0.94);
+      background: var(--accent-hover);
+    }
+
+    /* ---------- Bottom tab bar (sticky liquid glass) ---------- */
+    .tabbar {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      z-index: 40;
+      background: var(--glass-bg);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border-top: 1px solid var(--glass-border);
+      box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.05);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .tabbar-inner {
+      max-width: 428px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      height: 64px;
+    }
+    .tab {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      background: transparent;
+      border: 0;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      min-height: 44px;
+    }
+    .tab--active { color: var(--accent); }
+    .tab--active::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 28px;
+      height: 2px;
+      background: var(--accent);
+      border-radius: 0 0 2px 2px;
+    }
+    .tab svg { width: 22px; height: 22px; }
+
+    /* ---------- Theme toggle icon swap ---------- */
+    .icon-sun  { display: none; }
+    .icon-moon { display: inline-block; }
+    [data-theme="dark"] .icon-sun  { display: inline-block; }
+    [data-theme="dark"] .icon-moon { display: none; }
+  </style>
+</head>
+<body>
+  <div class="phone" id="phone">
+
+    <!-- Pull to refresh -->
+    <div class="pull-refresh" aria-hidden="true">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      <span>Pull to refresh</span>
+    </div>
+
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="wordmark">SECTORDATA<span class="dot">.</span></div>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="themeBtn" aria-label="Toggle theme">
+          <svg class="icon-moon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+          <svg class="icon-sun"  width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path></svg>
+        </button>
+        <div class="avatar" aria-label="Eduardo Mendes">EM</div>
+      </div>
+    </header>
+
+    <!-- Title block -->
+    <section class="title-block">
+      <h1 class="title-h1">News Hunter</h1>
+      <div class="live-row">
+        <span class="live-dot" aria-hidden="true"></span>
+        <span class="live-label">Live</span>
+        <span aria-hidden="true">·</span>
+        <span>14 new in the last hour</span>
+      </div>
+    </section>
+
+    <!-- Search (sticky) -->
+    <div class="search">
+      <div class="search-input-wrap">
+        <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+        <input class="search-input" type="search" placeholder="Search articles or keywords..." aria-label="Search articles or keywords" />
+        <button class="search-clear" aria-label="Clear search">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Filter pills (sticky, snap scroll) -->
+    <nav class="filters" aria-label="Topic filters">
+      <button class="pill pill--active">All</button>
+      <button class="pill">Petrobras</button>
+      <button class="pill">Refining</button>
+      <button class="pill">Distribution</button>
+      <button class="pill">Imports</button>
+      <button class="pill">Subsidy</button>
+      <button class="pill">ANP</button>
+      <button class="pill">Regulation</button>
+    </nav>
+
+    <!-- My Keywords -->
+    <section class="keywords-section" aria-label="My keywords">
+      <div class="keywords-head">
+        <div class="keywords-title">My Keywords</div>
+        <button class="keywords-add" id="addKwBtn" aria-label="Add keyword">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"></path></svg>
+          Add
+        </button>
+      </div>
+      <div class="keywords-row">
+        <span class="kw">#petrobras</span>
+        <span class="kw">#diesel</span>
+        <span class="kw">#refino</span>
+        <span class="kw">#vibra</span>
+        <span class="kw kw--more">+12 more</span>
+      </div>
+    </section>
+
+    <!-- Article feed -->
+    <main class="feed" id="feed">
+      <!-- Articles rendered by JS so favicons + pills stay consistent -->
+    </main>
+
+    <!-- Floating action button -->
+    <button class="fab" aria-label="Add keyword" id="fab">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"></path></svg>
+    </button>
+
+    <!-- Bottom tab bar -->
+    <nav class="tabbar" aria-label="Primary">
+      <div class="tabbar-inner">
+        <button class="tab tab--active" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v4H4z"></path><path d="M4 12h16"></path><path d="M4 16h10"></path><path d="M4 20h10"></path></svg>
+          <span>Feed</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+          <span>Search</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
+          <span>Saved</span>
+        </button>
+        <button class="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 0 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 0 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path></svg>
+          <span>Settings</span>
+        </button>
+      </div>
+    </nav>
+  </div>
+
+  <script>
+    /* ============================================================
+       Mock data + rendering
+       ============================================================ */
+
+    /* Favicon palette — deterministic colored circles with first letter
+       of domain (we don't ship real favicons in a static mockup). */
+    const FAV_COLORS = {
+      "valor.com.br":         "#1a73e8",
+      "epbr.com.br":          "#0b8f5a",
+      "brasilenergia.com.br": "#b45309",
+      "anp.gov.br":           "#1f2937",
+      "reuters.com":          "#cf2e2e",
+      "infomoney.com.br":     "#5b21b6",
+    };
+    function favLetter(domain) {
+      // strip "www." then take first letter, uppercase
+      return domain.replace(/^www\./, "").charAt(0).toUpperCase();
+    }
+
+    const ARTICLES = [
+      {
+        domain: "valor.com.br",
+        time:   "12m ago",
+        title:  "Petrobras anuncia redução no preço do diesel em 5% a partir de segunda-feira",
+        snippet:"Estatal informou em fato relevante que o reajuste reflete a queda nas cotações internacionais e busca alinhar o preço ao mercado externo. Diesel S10 e S500 serão impactados nas refinarias.",
+        pills:  ["petrobras", "diesel"],
+        dimmed: false,
+      },
+      {
+        domain: "epbr.com.br",
+        time:   "47m ago",
+        title:  "PRIO conclui aquisição de campo de Albacora Leste por US$ 2.3 bi",
+        snippet:"Operação fecha um dos maiores M&A do setor de E&P brasileiro nos últimos cinco anos. PRIO assume operação imediata após aprovação final dos órgãos reguladores.",
+        pills:  ["prio", "m&a", "campos"],
+        dimmed: false,
+      },
+      {
+        domain: "brasilenergia.com.br",
+        time:   "1h ago",
+        title:  "Refinaria Mataripe anuncia parada programada para manutenção",
+        snippet:"Acelen confirmou que a parada terá duração de 28 dias e impactará a oferta de gasolina e diesel no Nordeste. Estoques foram reforçados em terminais da região.",
+        pills:  ["refino", "mataripe"],
+        dimmed: false,
+      },
+      {
+        domain: "anp.gov.br",
+        time:   "2h ago",
+        title:  "ANP publica resolução sobre teor de enxofre em diesel marítimo",
+        snippet:"Nova regra reduz o limite de enxofre para 0.5% em massa nas operações de cabotagem e bunker e entra em vigor no segundo semestre de 2026.",
+        pills:  ["regulação", "anp", "diesel"],
+        dimmed: false,
+      },
+      {
+        domain: "valor.com.br",
+        time:   "3h ago",
+        title:  "Vibra Energia eleva guidance de Ebitda para 2026 após 1T forte",
+        snippet:"Companhia revisou expectativa para R$ 8 bi a R$ 8.5 bi após resultado do primeiro trimestre acima do consenso. Margem de combustíveis surpreendeu positivamente.",
+        pills:  ["vibra", "resultados"],
+        dimmed: false,
+      },
+      {
+        domain: "reuters.com",
+        time:   "4h ago",
+        title:  "Brent recua 1.2% após OPEP+ sinalizar manutenção de cotas",
+        snippet:"Cartel reafirmou compromisso com o nível atual de produção em reunião técnica realizada nesta manhã. Mercado havia precificado possível ampliação de oferta.",
+        pills:  ["brent", "opep"],
+        dimmed: false,
+      },
+      {
+        domain: "epbr.com.br",
+        time:   "6h ago",
+        title:  "Subsídio ao diesel será reajustado pelo CDE com nova fórmula",
+        snippet:"MME publica nota técnica detalhando o novo método de cálculo do subsídio que será aplicado a partir do próximo período tarifário. Distribuidoras avaliam impacto.",
+        pills:  ["subsídio", "cde", "diesel"],
+        dimmed: false,
+      },
+      {
+        domain: "infomoney.com.br",
+        time:   "Yesterday",
+        title:  "Eletrobras conclui leilão para 5 hidrelétricas no Sudeste",
+        snippet:"Companhia arrematou ativos por R$ 4.2 bi em leilão da ANEEL, ampliando portfólio de geração na região com forte demanda comercial e industrial.",
+        pills:  ["eletrobras"],
+        dimmed: true, // no matched keyword from user
+      },
+    ];
+
+    /* ---------- Render feed ---------- */
+    function renderFeed() {
+      const feed = document.getElementById("feed");
+      feed.innerHTML = "";
+      ARTICLES.forEach((a, idx) => {
+        const color = FAV_COLORS[a.domain] || "#6b6b73";
+        const letter = favLetter(a.domain);
+        const pillsHtml = a.pills.map(p => `<span class="kw-out">#${p}</span>`).join("");
+        const el = document.createElement("article");
+        el.className = "article" + (a.dimmed ? " art--dimmed" : "");
+        el.innerHTML = `
+          <div class="art-head">
+            <span class="favicon" style="background:${color}" aria-hidden="true">${letter}</span>
+            <span class="art-source">${a.domain}</span>
+            <span class="art-sep" aria-hidden="true">·</span>
+            <span class="art-time">${a.time}</span>
+          </div>
+          <h2 class="art-title">${a.title}</h2>
+          <p class="art-snippet">${a.snippet}</p>
+          <div class="art-foot">
+            <div class="art-pills">${pillsHtml}</div>
+            <div class="art-actions">
+              <button class="act-btn" aria-label="Save article">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>
+              </button>
+              <button class="act-btn" aria-label="Share article">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><path d="M8.6 13.5 15.4 17.5"></path><path d="M15.4 6.5 8.6 10.5"></path></svg>
+              </button>
+            </div>
+          </div>
+        `;
+        feed.appendChild(el);
+      });
+    }
+
+    /* ---------- Theme toggle ---------- */
+    function applyTheme(next) {
+      const root = document.documentElement;
+      if (next === "dark") root.setAttribute("data-theme", "dark");
+      else root.removeAttribute("data-theme");
+      document.querySelector('meta[name="theme-color"]').setAttribute("content", next === "dark" ? "#030814" : "#ffffff");
+    }
+    document.getElementById("themeBtn").addEventListener("click", () => {
+      const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+      applyTheme(isDark ? "light" : "dark");
+    });
+
+    /* ---------- Boot ---------- */
+    renderFeed();
+  </script>
+</body>
+</html>
