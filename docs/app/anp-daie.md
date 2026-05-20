@@ -8,10 +8,47 @@ Dashboard ANP DAIE — Dados Abertos de Importações e Exportações de Derivad
 
 ```
 src/app/(dashboard)/anp-daie/
-  page.tsx
+├── page.tsx                 ← viewport router (useIsMobile)
+├── useAnpDaieData.ts        ← shared hook — RPCs, filter state, rankings, types
+├── desktop/View.tsx         ← desktop UX (sidebar + dual chart)
+└── mobile/View.tsx          ← mobile UX (chart-heavy archetype)
 ```
 
 RPC wrappers: seção "ANP Dados Abertos IE" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (linhas ~1092–1159).
+
+## Dual-view structure
+
+Both views consume `useAnpDaieData`, the single brain. The hook owns:
+- 2 RPC calls (`get_anp_daie_filtros`, `get_anp_daie_serie` with `useDebouncedFetch` 400ms)
+- Filter state (`yearRangeIdx`, `selectedProdutos` with min-1 guard)
+- Defensive operation detection (`includes("import")` / `includes("export")` — pt-BR alphabetic order pitfall)
+- Top-product rankings (`topImports`, `topExports`) by total volume in mil m³ over the selected period
+- Shared product palette (`PRODUTO_COLORS` + `PALETTE` fallback) — exposed so both views render the same color per product
+- Export-ready rows (period-filtered by RPC + product-filtered client-side)
+
+The hook contract follows the canonical dual-view shape. New analyses (KPIs, derivations) land in the hook first; both views pick them up.
+
+### Desktop view (`desktop/View.tsx`)
+
+Verbatim port of the previous monolithic `page.tsx`: sidebar with `MultiSelectFilter` (products) + `PeriodSlider` + two stacked `ChartSection`s (Importação over Exportação, multi-line, one trace per selected product). Header: `DashboardHeader` with `ExportPanel` rightSlot (Tier 1, Excel + CSV).
+
+### Mobile view (`mobile/View.tsx`)
+
+Chart-heavy archetype (`mockups/market-share-mobile.html`):
+- `MobileTopBar` (sticky, liquid glass)
+- `MobileTabBar` (variant=container): switches between Imports and Exports
+- Sticky filter chip row: period chip + product count chip + "Filters" button
+- Title block (h1 + sub + period badge)
+- `MobileChart` — multi-line for the active operation, **capped to top-6 products by total volume** so the legend stays legible on 375px screens
+- Top Products section — `MobileDataCard` ranked list with brand-orange leader pill, % progress bar in product color, total volume on the right
+- `ExportFAB` (label="Export") — opens a `FilterDrawer`-as-export-sheet for Tier 1 Excel/CSV download
+- `FilterDrawer` for filters — `PeriodSlider` + `CheckList` (products, with min-1 guard at drawer level)
+
+Min-1 product guard is enforced both at hook level (`toggleProduto`) and at drawer level (CheckList `onChange` rejects empty arrays). The active operation tab drives both the chart and the ranking; switching tabs swaps both atomically.
+
+### Binding sync rule
+
+Changes to one view (new filter, chart, KPI, copy) must land in the other in the same commit, or the commit must declare `[desktop-only]` / `[mobile-only]` with explicit reason. See [`CLAUDE.md` § Dual-view policy](../../CLAUDE.md).
 
 ## Produto
 
@@ -74,10 +111,21 @@ Comportamento do scraper:
 
 ## Componentes consumidos
 
-- `PlotlyChart` — 2 charts de linha múltipla.
-- `rc-slider` — slider de período (anos).
-- `NavBar`.
+**Shared hook**:
+- `useAnpDaieData` (`src/app/(dashboard)/anp-daie/useAnpDaieData.ts`) — single brain consumed by both views. Exposes `PRODUTO_COLORS`, `PALETTE`, `capitalize()`, `colorForProduto()` for view-local chart builders.
+
+**Desktop (`desktop/View.tsx`)**:
+- `NavBar`, `BrandLogo`, `PlotlyChart` — 2 charts de linha múltipla (Importação + Exportação).
+- `DashboardHeader`, `MultiSelectFilter`, `PeriodSlider`, `ChartSection`, `BarrelLoading`, `ExportPanel`.
 - `useModuleVisibilityGuard("anp-daie")` — guard de role.
+
+**Mobile (`mobile/View.tsx`)**:
+- `MobileTopBar`, `MobileTabBar` (Imports / Exports), `MobileChart`, `MobileDataCard`, `ExportFAB`, `FilterDrawer` from `src/components/dashboard/mobile/`.
+- `PeriodSlider`, `CheckList`, `BarrelLoading` — shared.
+- `useModuleVisibilityGuard("anp-daie")` — guard de role.
+
+**Page router (`page.tsx`)**:
+- `useIsMobile` — single source of breakpoint truth (≤768px → mobile).
 
 ## Dependências cross-dept
 
