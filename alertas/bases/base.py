@@ -213,15 +213,22 @@ class BaseMonitor(ABC):
             print(f"  >> ERRO ao baixar: {e}")
             arquivos = []
 
-        self.salvar_estado(novo_estado)
-        self.registrar_historico(mensagem, novo_estado, arquivos)
-
+        # Send email FIRST. If it fails, state stays unchanged so next run retries.
         sys.path.insert(0, str(_ALERTAS_DIR))
         from notificador import enviar_alerta
-        enviar_alerta(
-            self.nome,
-            mensagem,
-            link=self.url,
-            arquivo=", ".join(Path(a).name for a in arquivos) if arquivos else "",
-        )
+        try:
+            enviar_alerta(
+                self.nome,
+                mensagem,
+                link=self.url,
+                arquivo=", ".join(Path(a).name for a in arquivos) if arquivos else "",
+            )
+        except Exception as e:
+            print(f"  >> ERRO ao enviar alerta: {e}")
+            print(f"  >> Estado NÃO atualizado — próxima rodada tentará de novo")
+            return False
+
+        # Only commit state + historico after successful email delivery.
+        self.salvar_estado(novo_estado)
+        self.registrar_historico(mensagem, novo_estado, arquivos)
         return True

@@ -94,6 +94,13 @@ def _get_service():
                 print(f"  [auth] Refresh token revogado ({e}). Iniciando fluxo OAuth interativo...")
                 creds = None
         if not refreshed:
+            if os.environ.get("GITHUB_ACTIONS") == "true" or not os.environ.get("DISPLAY"):
+                raise RuntimeError(
+                    "Gmail OAuth token expired/revoked and cannot be refreshed in a "
+                    "headless environment. Regenerate alertas/token.json locally "
+                    "(python alertas/auth_gmail.py) and update the GMAIL_TOKEN_JSON "
+                    "secret at https://github.com/IBBAOG/SectorData/settings/secrets/actions"
+                )
             flow = InstalledAppFlow.from_client_secrets_file(str(_CREDENTIALS), SCOPES)
             creds = flow.run_local_server(port=0)
         _TOKEN.write_text(creds.to_json())

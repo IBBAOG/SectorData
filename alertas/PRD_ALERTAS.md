@@ -562,3 +562,34 @@ export SUPABASE_URL=https://xxx.supabase.co
 export SUPABASE_SERVICE_KEY=eyJ...
 python alertas/monitor.py --base anp_ppi
 ```
+
+---
+
+### Gmail token revogado deixava estado avancar sem email (incidente 2026-05-19)
+
+**Sintoma**: usuário recebeu apenas 1 de 2 alertas esperados para `anp_painel_combustiveis`.
+Na run 01:01 UTC o monitor detectou "Power BI avancou para 2026-04", salvou
+`powerbi_periodo: "2026-04"` no Supabase, mas o `enviar_alerta` falhou com
+`invalid_grant: Token has been expired or revoked` → `webbrowser.Error`. Runs
+seguintes viram `pbi_mudou == False` e nunca alertaram.
+
+**Causa**: ordem em `bases/base.py:run()` salvava estado ANTES de enviar email.
+Qualquer falha de email (token revogado, network, etc.) "consumia" a novidade
+silenciosamente. Refresh tokens OAuth do Gmail podem ser revogados pelo
+Google sem aviso prévio (mudança de senha, TTL, etc.).
+
+**Fix (2026-05-20)**:
+- `bases/base.py`: reordenado — `enviar_alerta` agora roda PRIMEIRO. Estado só
+  é gravado após email sair com sucesso. Falha de email retorna `False` sem
+  atualizar `alertas_estado`, então a próxima run retenta (entrega at-least-once).
+- `notificador.py`: em ambiente CI/headless, `_get_service()` levanta
+  `RuntimeError` descritivo quando o refresh falha, em vez do confuso
+  `webbrowser.Error`.
+
+**Como regenerar GMAIL_TOKEN_JSON quando isso acontece de novo**:
+1. `cd alertas && python auth_gmail.py` (abre browser local, autentica conta Gmail)
+2. `Get-Content alertas\token.json | Set-Clipboard`
+3. Colar em https://github.com/IBBAOG/SectorData/settings/secrets/actions → GMAIL_TOKEN_JSON
+4. Disparar `gh workflow run alertas_monitor.yml --ref main` pra confirmar
+
+**Invariante novo**: `alertas_estado` é a verdade do "já vi esse período". Nunca avance esse estado sem ter enviado o email correspondente. Trata-se de um exactly-once-ish: emails podem ser repetidos em circunstâncias raras (email envia, mas update Supabase falha), mas nunca perdidos.
