@@ -8,10 +8,53 @@ ANP CDP — Depletion dashboard (Oil & Gas). Owner: [`worker_dash-anp-cdp-deplet
 
 ```
 src/app/(dashboard)/anp-cdp-depletion/
-  page.tsx
+├── page.tsx                       ← viewport router (useIsMobile → desktop or mobile)
+├── useAnpCdpDepletionData.ts      ← single shared hook (RPCs, filters, derivations)
+├── desktop/
+│   └── View.tsx                   ← desktop layout (sidebar + chart + table)
+└── mobile/
+    └── View.tsx                   ← mobile layout (tabs + chips + chart + card list)
 ```
 
 RPC wrappers: `rpcGetAnpCdpDepletionCampos`, `rpcGetAnpCdpDepletionScatter`, `rpcGetAnpCdpDepletionFieldAggregate` in [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (section "ANP CDP — Depletion").
+
+## Dual-view structure
+
+This dashboard ships as a **dual-view module** (see `CLAUDE.md` § "Dual-view policy" and [`docs/app/dual-view-pattern.md`](dual-view-pattern.md)). `page.tsx` is a five-line viewport router; both Views consume the same `useAnpCdpDepletionData` hook.
+
+### `useAnpCdpDepletionData.ts` (the brain)
+
+Owns all the analysis state and derivations that previously lived inline in the old `page.tsx`:
+
+- **Filter state** — `selectedCampos`, `viewMode`, `xMode`, `lineStyle`, `recentMonths`, `priorMonths` (with mode-aware setters: per-well = single-select, field-avg = multi up to `MAX_FIELDS_IN_FIELD_MODE = 20`).
+- **Debounced RPC fetches** — `rpcGetAnpCdpDepletionScatter` (per-well, with `.limit(500000)`) and `rpcGetAnpCdpDepletionFieldAggregate` (jsonb, no `.limit()`), each gated to its own view via `useDebouncedFetch` (400ms).
+- **Empty-state guard** — clears cached `wellPoints` / `fieldPoints` when `selectedCampos.length === 0` so the empty state renders cleanly.
+- **Derivations** — `rollingDepletion` (the recent vs prior window math), `tableModel` (one row per item with sorted NP series), `periodHelper` (absolute-month resolution of Recent / Prior windows with clipping detection), `uniqueWellCount`, `fieldColor`.
+- **Formatters** — `fmtNp` (kbpd with 2 decimals), `fmtDelta` (INVERSE color of BSW — green for rising NP, red for falling), `computeRowMetrics` (last / avgRecent / avgPrior / depletion% / YoY%).
+- **Constants** — `VIEW_OPTIONS`, `X_MODE_OPTIONS`, `LINE_STYLE_OPTIONS`, `MAX_FIELDS_IN_FIELD_MODE`, `ymSort`, `plotlyMode`.
+
+### `desktop/View.tsx` (sidebar layout)
+
+Migrated verbatim from the original `page.tsx`. Composes shared desktop components (`DashboardHeader`, `SegmentedToggle`, `SearchableMultiSelect`, `ChartSection`, `BarrelLoading`) and the chart builders `buildPerWellChart` / `buildFieldAverageChart` (which use `scattergl` for per-well and `scatter` for field-avg). The chart spans `col-xxl-10 col-md-9`; sidebar is `col-xxl-2 col-md-3`.
+
+### `mobile/View.tsx` (touch layout)
+
+Single-chart archetype adapted from `mockups/anp-cdp-mobile.html`. Composition (top → bottom):
+
+1. `MobileTopBar` — title "Depletion" + filter-trigger chip (count of selected fields).
+2. View `MobileTabBar` (container variant) — Per well / Field avg.
+3. X-axis `MobileTabBar` (underline variant) — Calendar / % VOIP.
+4. Active-chip row — colored chips of selected campos, or instructional empty-state copy.
+5. Chart card with `MobileChart` — same scatter traces but rendered as SVG `scatter` (not `scattergl`) because mobile selections are smaller and tooltips render cleaner.
+6. Period-comparison card — touch-sized Recent / Prior `number` inputs with helper labels + clipping warning.
+7. `MobileDataCard` rows (one per item) for "Depletion comparison" — title is item name + colored swatch; subtitle compacts the three NP averages (Last / Recent / Prior); right slot stacks Depletion % (bold) over YoY %.
+8. `FilterDrawer` — `SearchableMultiSelect` for campos + Plot style `SegmentedToggle`. Draft state with Apply/Clear buttons.
+
+No `ExportFAB` — by product design (consistent with `/anp-cdp-bsw`).
+
+### Binding sync rule
+
+Any meaningful change to the analyses (new filter, chart, KPI, copy) must land in BOTH `desktop/View.tsx` and `mobile/View.tsx` in the same commit, OR the commit must declare `[desktop-only]` / `[mobile-only]` with an explicit reason. Pure visual tweaks that don't change content can be View-specific without a tag.
 
 ## Product
 
