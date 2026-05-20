@@ -112,7 +112,7 @@ function buildMobileAreaChart(params: {
       stackgroup: "volume",
       fillcolor: colors[player] ? colors[player] + "33" : undefined,
       x: dates,
-      y: dates.map((d) => datePlayerMap.get(d)?.get(p => p === player ? player : "")?.get(player) ?? 0),
+      y: dates.map((d) => datePlayerMap.get(d)?.get(player) ?? 0),
       name: player,
       line: { width: 1.5, color: colors[player] ?? "#888" },
       hovertemplate: "%{fullData.name}: %{y:,.1f} thou. m³<extra></extra>",
