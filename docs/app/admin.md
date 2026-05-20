@@ -15,7 +15,11 @@ src/app/(dashboard)/
     useHomeData.ts                  Shared hook — visibility filter, search, collapsed sections
     desktop/View.tsx                Desktop view (grid of image cards, hover reveal)
     mobile/View.tsx                 Mobile view (category sections, gradient thumbs, search)
-  profile/page.tsx                  Perfil do user (nome, email, role badge)
+  profile/
+    page.tsx                        Client viewport router (useIsMobile → desktop or mobile)
+    useProfileData.ts               Shared hook — profile, email, inline name-edit state, save
+    desktop/View.tsx                Desktop view (profile card, info rows, inline edit)
+    mobile/View.tsx                 Mobile view (hero avatar, info rows, sticky save footer)
   admin-panel/page.tsx              Gestão de roles + visibilidade de módulos
 ```
 
@@ -100,9 +104,43 @@ admin-panel/
 - Per-section search filter is mobile-only (desktop has no search; the sidebar's narrow nav makes it unnecessary).
 - The original Portuguese string `"Remover"` in the recipients list was corrected to `"Remove"` in BOTH views (English-only policy).
 
-### Wave 5 — `/profile` (parallel)
+### Wave 5 — `/profile` (completed 2026-05-20)
 
-`/profile` dual-view refactor is in flight on a parallel worktree (Wave 5).
+`/profile` is now a full dual-view module. File layout:
+
+```
+profile/
+├── page.tsx              Client viewport router — useIsMobile → DesktopView | MobileView
+├── useProfileData.ts     Brain hook — profile mirror, email resolution, name-edit FSM, save handler
+├── desktop/View.tsx      Desktop: profile card with inline name edit + Security section (verbatim move)
+├── mobile/View.tsx       Mobile: hero avatar + Account/Security sections + sticky save footer
+└── mfa/page.tsx          (Unchanged) MFA enrollment screen, owned by Supabase/security path
+```
+
+**Shared hook (`useProfileData`)** owns:
+- `profile` (mirrored from `UserProfileContext`), `loading`, `isAdmin`
+- `email` (resolved from `supabase.auth.getSession()` since context does not expose it)
+- Inline name-edit FSM: `editing`, `editName`, `saving`, `saveError`, `canSave` plus `startEdit / cancelEdit / setEditName / saveName`
+- Derived helpers used by both Views: `displayName`, `initials`, `memberSince`
+
+Both Views call `saveName()` and `refreshProfile()` is invoked inside the hook on success — NavBar avatar updates without manual plumbing.
+
+**Desktop view** is a verbatim move of the previous `page.tsx`. Same layout (`profile-card`, `role-badge--*`, `profile-info-row`, `profile-name-edit-*` classes), same Security panel, same inline pencil edit. Only difference: all `useState` / `useEffect` / RPC plumbing now lives in the hook.
+
+**Mobile view** is a single-screen edit page (no `MobileBottomTabBar` — users return to home via the top-left back button or the system back gesture). Structure:
+- `MobileTopBar` with custom `leftSlot` = back button + "Profile" title
+- Hero card: 96 px avatar bubble, display name, role pill
+- "Account" `SectionCard`: 4 rows (Email, Name with pencil/inline form, Role, Member since), each row uses a local `InfoRow` (44 px+ touch targets, matching mobile rhythm)
+- "Security" `SectionCard`: single tap row navigating to `/profile/mfa` (chevron right + shield icon)
+- Sticky save footer (`position: fixed` bottom): only rendered while `editing === true`. Cancel + Save buttons, glass background. Page body adds bottom padding equal to footer height so the last row is never hidden.
+
+**Mobile design choices vs. desktop**:
+- Inline edit uses a full-width input (`font-size: 16px` to prevent iOS focus auto-zoom) and a sticky two-button footer instead of an inline submit/cancel pair. Saves are easier to commit one-handed.
+- Avatar moves from 72 px (desktop `.profile-avatar-circle`) to 96 px in the hero. Visual hierarchy: the avatar is the screen's centrepiece, not buried inside a card.
+- Security section is presented as a tap row (mobile metaphor) instead of a button-anchor (desktop metaphor).
+- The "My Account" badge from the desktop page header is dropped — the topbar title already labels the screen.
+
+No `[mobile-only]` tag needed for this commit: the mobile view is a fresh redesign of the same data the desktop view exposes, and the hook is the single source of truth for both.
 
 ## Páginas — descrição rápida
 
