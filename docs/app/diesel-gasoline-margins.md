@@ -6,10 +6,67 @@ Dashboard de Margens Diesel/Gasolina. Owner: [`worker_dash-margins`](../../.clau
 
 ```
 src/app/(dashboard)/diesel-gasoline-margins/
-  page.tsx
+  page.tsx                           ← viewport router (useIsMobile)
+  useDieselGasolineMarginsData.ts    ← single brain hook
+  desktop/View.tsx                   ← desktop UX (sidebar + charts)
+  mobile/View.tsx                    ← mobile UX (MobileTopBar + stacked chart + cards)
 ```
 
 RPC wrappers: seção "d_g_margins" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts).
+
+## Dual-view structure
+
+Dashboard follows the canonical dual-view pattern from `docs/app/dual-view-pattern.md` (Phase 2 / Wave 2).
+
+### Hook — `useDieselGasolineMarginsData.ts`
+
+Single source of truth for both Views. Exports:
+
+| Export | Type | Purpose |
+|---|---|---|
+| `allRows` | `DgMarginsRow[]` | Full unfiltered data (needed by VariationsTable for YoY/QTD) |
+| `filteredRows` | `DgMarginsRow[]` | Rows matching current week-range |
+| `weeks` | `string[]` | Ordered week strings from `get_dg_margins_filters` |
+| `weekRange` | `[number, number]` | Index pair into `weeks` |
+| `setWeekRange` | setter | Updates week-range filter |
+| `visibleWeeks` | `string[]` | `weeks.slice(weekRange[0], weekRange[1]+1)` |
+| `latestVisibleWeek` | `string \| null` | Last element of visibleWeeks |
+| `loading / error` | — | Fetch state |
+| `excelLoading / setExcelLoading` | — | Excel export busy state (shared) |
+
+Also exports week helpers (`parseWeek`, `weekToDateRange`, `weekLastDay`, `weekLastDayShort`, `compLabel`) and constants (`STACK_COLORS`, `ANNOT_COLORS`, `MARGIN_LINE_COLORS`, `STACK_COMPONENTS`, `TABLE_KEYS`) so Views share the same logic and palette.
+
+### Desktop View — `desktop/View.tsx`
+
+Verbatim migration of the previous `page.tsx` body. Layout:
+- Sidebar with `WeekSlider` + `WeekPeriodBadge`
+- Distribution & Resale Margin comparison line chart (both fuels)
+- Weekly variations tables (WoW, −4 Weeks, QTD, YoY) — Diesel B + Gasoline C side-by-side
+- Stacked area charts (Diesel B + Gasoline C price composition)
+- `ExportPanel` (Tier 1 — Excel + CSV direct download)
+
+### Mobile View — `mobile/View.tsx`
+
+Chart-heavy archetype (matches `mockups/market-share-mobile.html`). Layout:
+- `MobileTopBar` with title + `FilterChip` (period label → opens drawer)
+- `FuelToggle` segmented control (Diesel B / Gasoline C)
+- Latest week badge
+- `MobileChart` stacked area (selected fuel only — full-width, height 260)
+- `MobileDataCard` breakdown list (one card per margin component, value + % of total)
+- `ExportFAB` with expand-on-tap menu (Excel + CSV options) — Tier 1 direct
+
+Filter drawer (`FilterDrawer` + `DrawerWeekSlider`):
+- Shows week-range slider with year marks
+- Draft-then-apply pattern (changes only committed on "Apply")
+
+### Divergences
+
+| Aspect | Desktop | Mobile |
+|---|---|---|
+| Fuel selection | Both fuels shown simultaneously | One fuel at a time via FuelToggle |
+| Variations table | Full WoW/−4W/QTD/YoY table | [mobile-only] omitted — too wide for phone; breakdown cards replace it |
+| Export trigger | `ExportPanel` inline in header | `ExportFAB` + expand menu |
+| Period label | `WeekPeriodBadge` in sidebar | `FilterChip` in top bar → `FilterDrawer` |
 
 ## Produto
 
