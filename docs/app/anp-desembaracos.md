@@ -8,10 +8,79 @@ Dashboard ANP Desembaraços — Desembaraços Aduaneiros de Importação de Petr
 
 ```
 src/app/(dashboard)/anp-desembaracos/
-  page.tsx
+├── page.tsx                       ← viewport router (useIsMobile)
+├── useAnpDesembaracosData.ts      ← single shared brain (RPCs, filters, rankings)
+├── desktop/View.tsx               ← desktop UX (sidebar + dual-chart)
+└── mobile/View.tsx                ← mobile UX (chart hero + Top Countries list)
 ```
 
 RPC wrappers: seção "ANP Desembaraços" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (linhas ~1161–1255).
+
+## Dual-view structure (2026-05-20)
+
+Dashboard é **dual-view** — desktop (`≥769px`) e mobile (`≤768px`) compartilham `useAnpDesembaracosData.ts` como única fonte de verdade. Mobile é "mesma análise, roupagem adaptada": chart hero multi-linha (até 5 NCMs top-N) seguido de ranking de países origem em cards verticais.
+
+### Hook (`useAnpDesembaracosData.ts`)
+
+Contrato:
+
+```ts
+interface UseAnpDesembaracosData {
+  // raw data + meta
+  filtros, serieRows, topRows, allYears, yMin, yMax, hasYears, hasData;
+  // loading flags
+  loading, serieLoading, topLoading;
+  // filter state (min-1 guard on selectedNcms)
+  filters: { yearRangeIdx, selectedNcms, topNcm };
+  setFilters, toggleNcm, resetNcms, setTopNcm;
+  // helpers
+  ncmCodigos, ncmNomeMap, topNcmNome, resolveNcmNome, colorForNcm;
+  // derived rankings (already in kt)
+  topNcms: TopNcmEntry[];        // [{ncm_codigo, ncm_nome, totalKt}]
+  topCountries: TopCountryEntry[];// [{pais_origem, totalKt}]
+}
+```
+
+Responsabilidades:
+
+- Chama as 3 RPCs (`get_anp_desembaracos_filtros`, `_serie`, `_top_paises`).
+- Mantém `filters` (período via `yearRangeIdx`, NCMs selecionados, NCM do ranking).
+- Debounce 400ms em ambos os refetches reativos (série e top países).
+- Converte `quantidade_kg → kt` (via `kgToMilTon`) **uma única vez** nas derivadas (`topNcms`, `topCountries`).
+- Default no mount: últimos 10 anos + top 5 NCMs por volume na janela.
+
+### Desktop view (`desktop/View.tsx`)
+
+UX original preservada — sidebar fixa com `MultiSelectFilter` (NCMs), `PeriodSlider`, e `<select>` para Top Countries NCM. Charts:
+
+1. **Imported Volumes by NCM — National Total (kt / month)** — multi-line, 1 trace por NCM selecionado, palette rotativa.
+2. **Top Origin Countries — `<NCM>` (kt)** — barras horizontais, cor única `#1E88E5`.
+
+Export Tier 1 via `<ExportPanel>` (Excel formatado + CSV raw).
+
+### Mobile view (`mobile/View.tsx`)
+
+Arquetípo: `mockups/market-share-mobile.html` (chart + ranking + filter sheet).
+
+Componentes compostos:
+
+| Slot | Componente | Conteúdo |
+|---|---|---|
+| Top | `MobileTopBar` | Título "Customs Clearances" |
+| Título | div inline | "ANP — Customs Clearances" + subtítulo kt |
+| Filtros sticky | div inline | Chip de período + chip "N/total NCMs" + botão Filters |
+| Chart hero | `MobileChart` | Multi-linha mensal, cap em top-5 NCMs (`MOBILE_CHART_MAX_NCMS`) |
+| Tab bar | `MobileTabBar` | 1 tab por NCM top-N → escolhe NCM para ranking de países |
+| Ranking | `MobileDataCard` × N | Top countries (cor `#1E88E5`, leader badge cheio, demais com opacity 0.55) |
+| FAB | `ExportFAB` | Abre sheet de export Tier 1 |
+| Drawer filtros | `FilterDrawer` + `PeriodSlider` + `CheckList` + `<select>` | Período, NCMs (min-1), NCM ranking |
+| Drawer export | `FilterDrawer` | Botão Excel (apply) + botão CSV (no body) |
+
+Cap em 5 NCMs no chart é para manter legibilidade em 375px. Selecionados a mais aparecem só nos rankings.
+
+### Binding sync rule
+
+Toda mudança em desktop (novo filtro, chart, KPI, copy) **exige** equivalente em mobile no mesmo commit, OU commit declara `[desktop-only]` / `[mobile-only]` com justificativa. Adicionar nova métrica/série → adicionar antes ao hook; views só consomem.
 
 ## Produto
 
