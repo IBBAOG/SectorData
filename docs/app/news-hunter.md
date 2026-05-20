@@ -246,6 +246,26 @@ Doc detalhado: [`docs/etl-pipelines/news-hunter-architecture.md`](../etl-pipelin
    - Filtros adicionais (keyword, domínio) rodam no cliente.
    - Gestão de keywords via UI.
 
+### Cadastro de fontes novas (cross-repo)
+
+Fontes vivem **hardcoded** em `IBBAOG/news-hunter-scanner` (Python). O Supabase **não** tem tabela `news_hunter_sources`. Para cadastrar uma fonte nova:
+
+1. Faça WebFetch da URL alvo e descubra o formato (RSS clássico, sitemap Google News, sitemap WordPress padrão, ou só HTML).
+2. Edite no repo `news-hunter-scanner`:
+   - `news_hunter/sources.py` — adicione a chave de domínio em `RSS_FEEDS` (RSS/sitemap Google News), `STANDARD_SITEMAPS` (sitemap WordPress padrão), ou `HOMEPAGE_SCRAPERS` (sem feed, scraping de listagem). Se a URL não casa com nenhum dos `SITEMAP_URL_MARKERS` mas é um sitemap, adicione um marker.
+   - `news_hunter/_clipinator_shim.py` — adicione `SOURCE_NAMES[<dominio>] = "<nome legivel>"`.
+3. Abra PR. Após merge, a próxima execução do cron (~5 min) já passa a varrer a fonte.
+
+Observação: o dashboard **não precisa de mudança** quando uma nova fonte é cadastrada — `/news-hunter` agrupa por `source_name` dinamicamente.
+
+### Fontes cadastradas explicitamente por este dashboard
+
+| Data | Fonte | Dominio | Mecanismo | PR/commit |
+|---|---|---|---|---|
+| 2026-05-20 | ANS (Agência Nacional de Saúde Suplementar) | `www.gov.br` (path `/ans/pt-br/assuntos/noticias`) | Google News sitemap em `/sitemap.xml` (mesmo formato Valor/OGlobo/Estadão) | [PR #1](https://github.com/IBBAOG/news-hunter-scanner/pull/1) |
+
+> Pegadinha conhecida: a chave `www.gov.br` em `RSS_FEEDS` é multi-tenant (cobre /ans, /anp, /mme, /bcb, etc.). Hoje só a ANS está registrada. Se uma futura fonte gov.br/<outro-órgão> for adicionada, o mapping `www.gov.br → "ANS"` em `SOURCE_NAMES` vira ambíguo e `source_name_for()` precisará virar path-aware.
+
 ## RPCs
 
 | RPC | Função |

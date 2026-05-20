@@ -55,6 +55,9 @@ __pycache__/
 # claude
 .claude/
 
+# clones de repos externos (ex: IBBAOG/news-hunter-scanner para cross-repo PRs)
+.clone/
+
 # local outputs and runtime artifacts
 output/
 venv/

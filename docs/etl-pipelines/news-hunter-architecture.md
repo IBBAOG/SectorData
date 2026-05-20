@@ -163,6 +163,44 @@ Scanner (GitHub Actions secrets em IBBAOG/news-hunter-scanner):
 
 
 ================================================================================
+6.5. CADASTRO DE FONTES (HARDCODED NO REPO DO SCANNER)
+================================================================================
+
+Fontes do scanner NAO vivem no Supabase. Vivem hardcoded no repo
+IBBAOG/news-hunter-scanner em dois arquivos:
+
+  news_hunter/sources.py
+    RSS_FEEDS[dominio] = [urls]     -- RSS classico ou sitemap Google News
+    STANDARD_SITEMAPS[dominio]      -- sitemap WordPress padrao (urlset, sem news:)
+    HOMEPAGE_SCRAPERS[dominio]      -- sem feed, scraping de pagina de listagem
+    SITEMAP_URL_MARKERS             -- substrings que classificam URL como sitemap
+                                       (vs. RSS feedparser); add aqui se a URL
+                                       do sitemap nao casa com markers existentes
+
+  news_hunter/_clipinator_shim.py
+    SOURCE_NAMES[dominio]           -- nome legivel exibido no dashboard
+
+Passos para adicionar uma fonte nova:
+  1. WebFetch da URL alvo. Descobrir: SSR vs JS? Tem RSS / sitemap Google News
+     (news:news) / sitemap padrao / so HTML?
+  2. PR no repo news-hunter-scanner editando os dois arquivos acima.
+  3. Apos merge, proxima execucao do cron (~5 min) ja varre a fonte.
+  4. Verificar em Supabase: SELECT * FROM news_articles WHERE domain = '...'
+     ORDER BY found_at DESC LIMIT 5.
+
+Pegadinhas conhecidas:
+- Para fontes hospedadas em portais gov.br (/<orgao>/pt-br/assuntos/noticias),
+  o sitemap /sitemap.xml costuma ser urlset com xmlns:news (formato Google
+  News) — entra no _fetch_sitemap, NAO no feedparser.
+- A chave RSS_FEEDS["www.gov.br"] e multi-tenant: cobre /ans, /anp, /mme,
+  etc. Hoje so a ANS esta registrada. Se uma segunda fonte gov.br for
+  cadastrada, source_name_for() precisara virar path-aware.
+
+Historico de cadastros via dashboard:
+  2026-05-20  ANS  (PR #1: github.com/IBBAOG/news-hunter-scanner/pull/1)
+
+
+================================================================================
 7. O QUE NAO FAZER
 ================================================================================
 
