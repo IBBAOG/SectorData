@@ -8,10 +8,54 @@ Dashboard ANP Painel Importações — Importações de Distribuidores de Combus
 
 ```
 src/app/(dashboard)/anp-painel-importacoes/
-  page.tsx
+├── page.tsx                       # viewport router (useIsMobile)
+├── useAnpPainelImpData.ts         # the brain — RPCs, filters, derivations
+├── desktop/View.tsx               # desktop UX (verbatim migration from old page.tsx)
+└── mobile/View.tsx                # mobile UX (mobile-first redesign)
 ```
 
 RPC wrappers: seção "ANP Painel Importações" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (linhas ~1257–1351).
+
+## Dual-view structure (Wave 4 — 2026-05-20)
+
+This dashboard is refactored into the canonical dual-view layout. Both Views consume the shared hook `useAnpPainelImpData` — they never call Supabase / `rpc.ts` directly.
+
+### `useAnpPainelImpData.ts` — single brain
+
+- Owns the 3 RPC calls (`get_anp_painel_imp_filtros` + `_serie` + `_top_dist`).
+- Owns filter state: `yearRangeIdx`, `selectedProdutos`, `topProduto`, `selectedUfs`, `selectedDistribuidores`.
+- Initial mount: fetches filtros + serie for the last 10 years; defaults `selectedProdutos = all`, `topProduto = product with largest volume in window`.
+- Reactive (debounced 400ms): serie refetch on period or UF change; top distributors refetch on `topProduto` or period change.
+- Derives `topDistributors` (m³ → mil m³, sorted desc, optional client-side distributor filter — RPC has no `p_distribuidores`).
+- Derives `filteredSerieRows` (client-side product filter for the series chart, no refetch).
+- Exposes `exportRows` (= `filteredSerieRows`).
+- Min-1 product guard enforced in `toggleProduto`.
+
+### `desktop/View.tsx`
+
+- Verbatim migration from the old monolithic `page.tsx`: sidebar with Product checkboxes + Period slider + Top Distributors product `<select>`, header with Tier 1 ExportPanel, then 2 charts (multi-line series + horizontal bar top-15).
+- Uses only `selectedProdutos`, `yearRangeIdx`, `topProduto` from the hook — leaves `selectedUfs` / `selectedDistribuidores` at default (empty = no filter), so behaviour is unchanged vs. the old page.
+- Charts built locally via `buildSerieChart` / `buildTopDistChart` from the hook's raw rows + `m3ToMilM3`.
+
+### `mobile/View.tsx`
+
+- Mobile-first redesign composing shared mobile components:
+  - `MobileTopBar` — sticky top with title.
+  - `MobileTabBar` (container variant) — **one tab per product**; selecting a tab swaps `topProduto`, which drives both the chart and the Top Distributors ranking.
+  - Sticky chip row — period chip + UF count chip + distributor count chip + Filters button.
+  - `MobileChart` — single-trace monthly series for the active product (color = product's slot in the brand palette).
+  - Top Distributors section — `MobileDataCard` list, leader gets brand orange `01` badge, others get a slate badge; subtitle row holds a `#1E88E5` progress bar normalised to the leader; right slot shows volume in `mil m³`.
+  - `FilterDrawer` — Period slider + UFs `CheckList` + Distributors `CheckList`. Selecting "all" collapses to empty array (no filter) to keep payloads minimal.
+  - `ExportFAB` opens a Tier 1 export sheet (Excel + CSV via the same `downloadGenericExcel` / `downloadCsv` helpers as desktop).
+
+### Divergences (mobile vs desktop) — sync-rule justification
+
+The brief explicitly authorises these mobile-only behaviours; they are documented here so future audits don't flag them as drift:
+
+1. **Single-product chart on mobile.** Desktop draws one trace per selected product (spaghetti is acceptable on a 12-column grid). Mobile shows ONE product at a time (driven by the same `topProduto` field used for the ranking), so the chart stays legible on 375px screens and the line series + ranking share a single mental model.
+2. **UF + distributor multi-selects on mobile only.** Desktop only exposes Product + Period. The mobile drawer adds States and Distributors (RPC contract supports `p_ufs`; distributor is a client-side filter on the ranking). Default values are empty arrays so desktop is unaffected. Adding these on desktop is a future enhancement and would be a `worker_dash-anp-painel-importacoes` follow-up.
+
+Any future change to filters, charts, KPIs, copy or export must land in both Views in the same commit per CLAUDE.md § "Dual-view (web + mobile) policy", or carry an explicit `[desktop-only]` / `[mobile-only]` tag with justification.
 
 ## Produto
 
@@ -88,10 +132,20 @@ Comportamento do scraper `03_painel_imp_sync.py`:
 
 ## Componentes consumidos
 
+### Desktop (`desktop/View.tsx`)
+- `NavBar`, `BrandLogo`.
+- `DashboardHeader`, `MultiSelectFilter`, `PeriodSlider`, `ChartSection`, `ExportPanel`, `BarrelLoading`.
 - `PlotlyChart` — 2 charts (linha múltipla + barras horizontais).
-- `rc-slider` — slider de período (anos).
-- `NavBar`.
-- `useModuleVisibilityGuard("anp-painel-importacoes")` — guard de role.
+
+### Mobile (`mobile/View.tsx`)
+- `MobileTopBar`, `MobileTabBar`, `MobileChart`, `MobileDataCard`, `FilterDrawer`, `ExportFAB` (all from `src/components/dashboard/mobile`).
+- `CheckList` para UF e Distribuidor multi-select dentro do `FilterDrawer`.
+- `PeriodSlider` (shared) e `BarrelLoading` reaproveitados.
+
+### Shared
+- `useModuleVisibilityGuard("anp-painel-importacoes")` — guard de role (chamado em cada View).
+- `useIsMobile` — detector de viewport em `page.tsx`.
+- `useAnpPainelImpData` — hook único de dados.
 
 ## Dependências cross-dept
 
