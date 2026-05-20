@@ -8,10 +8,57 @@ Dashboard ANP CDP — Produção por Poço (Oil & Gas). Owner: [`worker_dash-anp
 
 ```
 src/app/(dashboard)/anp-cdp/
-  page.tsx
+├── page.tsx               ← viewport router (useIsMobile)
+├── useAnpCdpData.ts       ← ÚNICO cérebro: RPCs, filtros, derivações, types
+├── desktop/View.tsx       ← UI desktop (porta direta do legado)
+└── mobile/View.tsx        ← UI mobile (hierarchical drill-down archetype)
 ```
 
 RPC wrappers: seção "ANP CDP" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (linhas ~1532–1652).
+
+## Dual-view structure (added 2026-05-20)
+
+A partir de 2026-05-20, o dashboard é **dual-view**: uma view desktop (PC, ≥769 px) e uma view mobile (≤768 px). Ambas consomem o mesmo hook compartilhado `useAnpCdpData.ts` — fonte única de verdade para RPCs, filtros, métrica selecionada, série temporal, KPIs (total/avg/peak/latest), navegador hierárquico e contrato do modal de export.
+
+### Hook compartilhado — `useAnpCdpData.ts`
+
+Exports principais consumidos pelas duas views:
+
+- **State buckets (9 filtros + ano range + métrica):** `selectedBacoes/Locais/Estados/Operadores/Instalacoes/Tipos/Campos/Pocos`, `yearRange`, `metric` — cada um com seu setter estável.
+- **Source data:** `filtros` (do `get_anp_cdp_filtros`), `allPocos` (one-shot do `get_anp_cdp_pocos_json`), `serieData` (do `get_anp_cdp_poco_serie`, com debounce 400 ms).
+- **Derived:** `visiblePocos`/`pocoOptions` (cascata client-side), `serieXY`/`serieCustomdata` (já escalados pra unidade de display do metric), `kpis` (total/average/peak/peakLabel/latest/latestLabel/wellsLatest/fieldsLatest).
+- **Drill-down (mobile-first, também disponível ao desktop):** `drill`/`setDrill`/`resetDrill`/`drillChildren`/`drillSegments`. Modelo: `country → basin → local → field → well`. Cada nível filtra `allPocos` em memória e propaga pra `selectedBacoes/Locais/Campos/Pocos`, disparando a refetch da série.
+- **Export contract Tier 2:** `exportFilters`/`exportRange`/`exportGranularity`/`countFetcher`/`doExportExcel`/`doExportCsv`/`rawOverExcel`/`rawOverAbs`/`openExportFromCurrentFilters` — limita raw em 200k (warning Excel) / 500k (block absoluto); paths aggregated usam estimativas hardcoded (não precisam round-trip).
+
+### Desktop view — `desktop/View.tsx`
+
+Sidebar fixa (metric + 9 filtros + período) → DashboardHeader + ChartSection com PlotlyChart (340 px, scatter+area, anotação no último ponto com `wells_count · records_count · fields_count`). Modal de export Tier 2 (`<ExportModal>` + warning > 200k linhas + 7 granularidades). Comportamento idêntico ao legado pré-refactor — apenas extraído pro hook.
+
+### Mobile view — `mobile/View.tsx`
+
+Archetype hierarchical drill-down (mockup `mockups/anp-cdp-mobile.html`):
+
+- `MobileTopBar` (sticky liquid glass)
+- `StickyBreadcrumb` — chain de até 5 níveis: `All Brazil › <basin> › <local> › <field> › <well>` (tap pra subir, × pra resetar)
+- Page head (título + subtítulo + period badge)
+- `MobileTabBar` (container variant) — 3 produtos: Petroleum / Gas / Water (colapsa as 9 métricas do desktop em 3 famílias com default por família)
+- Hero `MobileChart` (área spline 220 px com anotação de peak em paper-coords pra não colidir com a curva)
+- Mini-stat row 3-col (Total / Average / Peak — todos em `fmtCompactNumber` na unidade de display do metric)
+- Sticky filter chip row (botão "Filters" + chips removíveis pros filtros ativos não-representados no breadcrumb)
+- Drill-down list — top 80 children por contagem de poços, cada um em `<MobileDataCard>` com sparkline sintético derivado deterministicamente do wellCount + tap pra drill abaixo
+- Up-one-level FAB (à esquerda, visível quando `drill.level !== "country"`) + `<ExportFAB>` (à direita, abre BottomSheet de export)
+- `MobileBottomTabBar` — Production / Map / Compare / Profile (3 últimos são placeholders `[mobile-only]` com mensagem direcionando ao desktop)
+- `<FilterDrawer>` (BottomSheet) com 5 grupos: Metric (9 opções), Environment, Basin, Operator, Facility type, Period
+- Export BottomSheet (90 vh) — espelha o ExportModal desktop com header de tamanho live, warnings idênticos, 7 granularidades + período + 4 filtros multi-select
+
+### Binding sync rule
+
+Qualquer mudança em `desktop/View.tsx` exige mudança equivalente em `mobile/View.tsx` no MESMO commit (vide [CLAUDE.md § Dual-view policy](../../CLAUDE.md)). Especificamente nesse dashboard:
+
+- Nova métrica em `METRICS` (no hook) → automática nas duas views (desktop sidebar + mobile FilterDrawer)
+- Novo filtro → adicionar ao hook + sidebar desktop + FilterDrawer mobile (+ opcionalmente: chip ativo)
+- Mudança no contrato de export → atualizar `doExportExcel`/`doExportCsv` no hook + UI nos dois modais
+- Mudança visual pura no chart desktop sem alteração de dado → permitido como `[desktop-only]` com justificativa
 
 ## Produto
 
