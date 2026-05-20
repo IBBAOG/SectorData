@@ -51,9 +51,22 @@ RLS: SELECT para authenticated; INSERT/UPDATE somente via service_role.
 Tabela public.news_hunter_keywords:
     user_id    uuid (FK auth.users, on delete cascade)
     keyword    text
+    match_type text NOT NULL DEFAULT 'substring'
+               CHECK (match_type IN ('substring','exact'))   -- added 2026-05-20
     created_at timestamptz
     PK (user_id, keyword)
 RLS: cada user le/insere/deleta apenas as proprias linhas.
+
+match_type semantics (added 2026-05-20, migration 20260520000001):
+  substring (default): case-insensitive substring (legacy behaviour).
+                       e.g. "ANS" matches "trANSporte".
+  exact              : case-insensitive whole-word, regex \b{kw}\b.
+                       e.g. "ANS" matches "ANS divulga relatorio" but NOT
+                       "trANSporte".
+Cross-repo: requires news-hunter-scanner PR #2 to be merged for the scanner
+to honor the column. Before PR #2 the scanner still uses \b for everything
+(its legacy behaviour). After PR #2 the scanner default flips to substring;
+only keywords with match_type='exact' get \b-bounded.
 
 RPC public.seed_my_news_hunter_keywords():
     Insere a lista default (27 termos) para o user autenticado.

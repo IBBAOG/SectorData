@@ -188,6 +188,26 @@
 .chip:hover {
   border-color: var(--nh-accent);
 }
+
+/* Exact-match chip — solid orange border + tinted background +
+   small "EXACT" pill so users can spot whole-word keywords at a glance. */
+.chipExact {
+  border-color: var(--nh-accent);
+  background: var(--nh-panel-tint);
+}
+.chipBadge {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--nh-accent);
+  color: #ffffff;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  line-height: 1;
+}
 .chipLabel {
   line-height: 1.2;
 }
@@ -208,7 +228,58 @@
 .addForm {
   display: flex;
   gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
 }
+
+/* Inline "Exact match" toggle sitting between the input and the + button. */
+.exactToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--nh-muted-strong);
+  user-select: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--nh-radius-sm);
+  border: 1px solid transparent;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.exactToggle:hover {
+  border-color: var(--nh-border);
+  color: var(--nh-text);
+}
+.exactToggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--nh-accent);
+  cursor: pointer;
+  margin: 0;
+}
+.exactToggle:has(input:checked) {
+  background: var(--nh-panel-tint);
+  border-color: var(--nh-accent);
+  color: var(--nh-accent);
+}
+
+.helpText {
+  font-size: 11.5px;
+  color: var(--nh-muted);
+  margin: 6px 0 0;
+  text-transform: none;
+  line-height: 1.45;
+}
+.helpText code {
+  background: var(--nh-panel-tint);
+  border: 1px solid var(--nh-border);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 11px;
+}
+.helpText strong { color: var(--nh-accent); }
+.helpText em { color: var(--nh-text); font-style: normal; }
+.helpText em strong { color: var(--nh-accent); }
 .addInput {
   flex: 1;
   min-width: 220px;

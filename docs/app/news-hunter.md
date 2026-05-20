@@ -282,9 +282,30 @@ Observação: o dashboard **não precisa de mudança** quando uma nova fonte é 
 
 ### `news_hunter_keywords`
 - PK: `(user_id, keyword)`
-- Colunas: `created_at`
-- **RLS:** cada user gerencia só as próprias.
-- Scanner lê **UNION dedupada de TODOS os users** (cross-user implícito por design — keywords não são private).
+- Columns: `created_at`, `match_type` (added 2026-05-20)
+- **RLS:** each user manages only their own rows.
+- Scanner reads **deduplicated UNION across ALL users** (cross-user by design — keywords aren't private).
+
+#### `match_type` (added 2026-05-20)
+
+`text NOT NULL DEFAULT 'substring' CHECK (match_type IN ('substring','exact'))`.
+
+| Value | Meaning |
+|---|---|
+| `substring` (default) | Case-insensitive substring match. `ANS` will hit `trANSporte`. |
+| `exact` | Case-insensitive whole-word match (`\b{kw}\b`). `ANS` will hit "ANS divulga relatorio" but NOT `trANSporte`. |
+
+Hard cases:
+- **Multi-token** (`saude suplementar` exact): `\b` falls at the outer edges; the internal space is a literal. Matches "Agencia Nacional de Saude Suplementar".
+- **Hyphenated** (`pre-sal` exact): the hyphen is literal. Matches `pre-sal` in text, NOT `pre sal`.
+- **Accents**: keyword and text are both NFKD-normalized + lowercased before matching, so `saúde` and `saude` are interchangeable on both sides.
+
+UI semantics (`/news-hunter`):
+- Add-keyword form has an **Exact match** toggle. Default off (= `substring`). Toggle resets to off after each add to prevent slip-ups.
+- Existing chips show an `EXACT` badge + tinted background when `match_type = 'exact'`.
+- Both desktop and mobile expose the toggle + badge (binding sync rule).
+
+**Cross-repo coordination**: `IBBAOG/news-hunter-scanner` PR https://github.com/IBBAOG/news-hunter-scanner/pull/2 teaches the scanner to honor the column. Until merged, the scanner still defaults to its previous behaviour (`\b`-bounded for all keywords); once merged, the scanner defaults to substring for all keywords without the `exact` flag.
 
 ## Polling padrão
 

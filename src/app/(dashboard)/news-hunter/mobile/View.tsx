@@ -38,7 +38,11 @@ import {
   domainInitial,
   type MobileTab,
 } from "../useNewsHunterData";
-import type { NewsArticle } from "@/context/NewsHunterContext";
+import type {
+  KeywordEntry,
+  KeywordMatchType,
+  NewsArticle,
+} from "@/context/NewsHunterContext";
 
 // ── Icons (inline SVG) ───────────────────────────────────────────────────────
 
@@ -218,19 +222,19 @@ function FilterPills({
   );
 }
 
-/** Compact keyword chip list */
+/** Compact keyword chip list. Exact-match keywords get a small "EXACT" pill. */
 function KeywordsSection({
-  keywords,
+  entries,
   onAddPress,
   onRemove,
 }: {
-  keywords: string[];
+  entries: KeywordEntry[];
   onAddPress: () => void;
   onRemove: (kw: string) => Promise<void>;
 }): React.ReactElement {
   // Show max 5 + "+N more" indicator
-  const visible = keywords.slice(0, 5);
-  const extra = keywords.length - visible.length;
+  const visible = entries.slice(0, 5);
+  const extra = entries.length - visible.length;
 
   return (
     <section style={{ padding: "16px 16px 12px", background: "var(--mobile-bg)" }} aria-label="My keywords">
@@ -264,30 +268,58 @@ function KeywordsSection({
         </button>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-        {visible.map((kw) => (
-          <button
-            key={kw}
-            type="button"
-            onClick={() => void onRemove(kw)}
-            title={`Remove #${kw}`}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              height: 26,
-              padding: "0 10px",
-              borderRadius: 999,
-              background: "rgba(255,80,0,0.10)",
-              color: "var(--mobile-accent)",
-              fontSize: 12,
-              fontWeight: 600,
-              border: 0,
-              cursor: "pointer",
-              fontFamily: "inherit",
-            }}
-          >
-            #{kw}
-          </button>
-        ))}
+        {visible.map((entry) => {
+          const isExact = entry.match_type === "exact";
+          return (
+            <button
+              key={entry.keyword}
+              type="button"
+              onClick={() => void onRemove(entry.keyword)}
+              title={
+                isExact
+                  ? `Remove #${entry.keyword} (exact match)`
+                  : `Remove #${entry.keyword}`
+              }
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                height: 26,
+                padding: "0 10px",
+                borderRadius: 999,
+                background: "rgba(255,80,0,0.10)",
+                color: "var(--mobile-accent)",
+                fontSize: 12,
+                fontWeight: 600,
+                border: isExact ? "1px solid var(--mobile-accent)" : 0,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              <span>#{entry.keyword}</span>
+              {isExact && (
+                <span
+                  aria-label="Exact match"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    height: 14,
+                    padding: "0 4px",
+                    borderRadius: 3,
+                    background: "var(--mobile-accent)",
+                    color: "#fff",
+                    fontSize: 8.5,
+                    fontWeight: 700,
+                    letterSpacing: "0.05em",
+                    lineHeight: 1,
+                  }}
+                >
+                  EXACT
+                </span>
+              )}
+            </button>
+          );
+        })}
         {extra > 0 && (
           <button
             type="button"
@@ -310,7 +342,7 @@ function KeywordsSection({
             +{extra} more
           </button>
         )}
-        {keywords.length === 0 && (
+        {entries.length === 0 && (
           <span style={{ fontSize: 12, color: "var(--mobile-text-faint)", fontStyle: "italic" }}>
             No keywords — all headlines shown.
           </span>
@@ -472,17 +504,84 @@ function ArticleCard({
   );
 }
 
+/** Small inline "EXACT" pill used inside list rows. */
+function ExactBadge(): React.ReactElement {
+  return (
+    <span
+      aria-label="Exact match"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        height: 16,
+        padding: "0 5px",
+        borderRadius: 3,
+        background: "var(--mobile-accent)",
+        color: "#fff",
+        fontSize: 9,
+        fontWeight: 700,
+        letterSpacing: "0.05em",
+        lineHeight: 1,
+        marginLeft: 6,
+      }}
+    >
+      EXACT
+    </span>
+  );
+}
+
+/** "Exact match" toggle (checkbox + label). Shared between Settings tab and
+ *  the BottomSheet keyword editor. */
+function ExactMatchToggle({
+  value,
+  onChange,
+}: {
+  value: KeywordMatchType;
+  onChange: (v: KeywordMatchType) => void;
+}): React.ReactElement {
+  const checked = value === "exact";
+  return (
+    <label
+      title="Match only when the term appears as a standalone word (case-insensitive)."
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        fontSize: 12,
+        fontWeight: 600,
+        color: checked ? "var(--mobile-accent)" : "var(--mobile-text-muted)",
+        cursor: "pointer",
+        userSelect: "none",
+        padding: "4px 8px",
+        borderRadius: 8,
+        border: checked
+          ? "1px solid var(--mobile-accent)"
+          : "1px solid var(--mobile-border)",
+        background: checked ? "rgba(255,80,0,0.08)" : "transparent",
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked ? "exact" : "substring")}
+        style={{ width: 14, height: 14, accentColor: "var(--mobile-accent)", margin: 0, cursor: "pointer" }}
+      />
+      Exact match
+    </label>
+  );
+}
+
 /** Settings tab — keyword management full list */
 function SettingsTab({
-  keywords,
+  entries,
   addKeyword,
   removeKeyword,
 }: {
-  keywords: string[];
-  addKeyword: (raw: string) => Promise<void>;
+  entries: KeywordEntry[];
+  addKeyword: (raw: string, matchType?: KeywordMatchType) => Promise<void>;
   removeKeyword: (kw: string) => Promise<void>;
 }): React.ReactElement {
   const [draft, setDraft] = useState("");
+  const [draftType, setDraftType] = useState<KeywordMatchType>("substring");
   return (
     <div style={{ padding: "20px 16px" }}>
       <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 16px", color: "var(--mobile-text)" }}>
@@ -492,8 +591,13 @@ function SettingsTab({
         Keywords control which articles the scanner fetches. Changes take effect on the next scanner run (~5 min).
       </p>
       <form
-        onSubmit={(e) => { e.preventDefault(); void addKeyword(draft); setDraft(""); }}
-        style={{ display: "flex", gap: 8, marginBottom: 16 }}
+        onSubmit={(e) => {
+          e.preventDefault();
+          void addKeyword(draft, draftType);
+          setDraft("");
+          setDraftType("substring");
+        }}
+        style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}
       >
         <input
           type="text"
@@ -501,7 +605,7 @@ function SettingsTab({
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Add keyword…"
           style={{
-            flex: 1,
+            flex: "1 1 160px",
             height: 40,
             borderRadius: 10,
             border: "1px solid var(--mobile-border)",
@@ -513,6 +617,7 @@ function SettingsTab({
             outline: "none",
           }}
         />
+        <ExactMatchToggle value={draftType} onChange={setDraftType} />
         <button
           type="submit"
           style={{
@@ -531,41 +636,50 @@ function SettingsTab({
           Add
         </button>
       </form>
+      <p style={{ fontSize: 11.5, color: "var(--mobile-text-faint)", margin: "0 0 16px", lineHeight: 1.45 }}>
+        Default keywords match anywhere. Turn on <strong style={{ color: "var(--mobile-accent)" }}>Exact match</strong> so the term only hits as a standalone word.
+      </p>
       <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-        {keywords.map((kw) => (
-          <li
-            key={kw}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "10px 0",
-              borderBottom: "1px solid var(--mobile-divider)",
-              fontSize: 14,
-              color: "var(--mobile-text)",
-            }}
-          >
-            <span>#{kw}</span>
-            <button
-              type="button"
-              onClick={() => void removeKeyword(kw)}
-              aria-label={`Remove keyword ${kw}`}
+        {entries.map((entry) => {
+          const isExact = entry.match_type === "exact";
+          return (
+            <li
+              key={entry.keyword}
               style={{
-                border: 0,
-                background: "transparent",
-                color: "var(--mobile-text-muted)",
-                fontSize: 20,
-                cursor: "pointer",
-                lineHeight: 1,
-                padding: "0 4px",
-                fontFamily: "inherit",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "10px 0",
+                borderBottom: "1px solid var(--mobile-divider)",
+                fontSize: 14,
+                color: "var(--mobile-text)",
               }}
             >
-              ×
-            </button>
-          </li>
-        ))}
-        {keywords.length === 0 && (
+              <span style={{ display: "inline-flex", alignItems: "center" }}>
+                #{entry.keyword}
+                {isExact && <ExactBadge />}
+              </span>
+              <button
+                type="button"
+                onClick={() => void removeKeyword(entry.keyword)}
+                aria-label={`Remove keyword ${entry.keyword}`}
+                style={{
+                  border: 0,
+                  background: "transparent",
+                  color: "var(--mobile-text-muted)",
+                  fontSize: 20,
+                  cursor: "pointer",
+                  lineHeight: 1,
+                  padding: "0 4px",
+                  fontFamily: "inherit",
+                }}
+              >
+                ×
+              </button>
+            </li>
+          );
+        })}
+        {entries.length === 0 && (
           <li style={{ color: "var(--mobile-text-faint)", fontStyle: "italic", fontSize: 13 }}>
             No keywords yet.
           </li>
@@ -580,22 +694,24 @@ function SettingsTab({
 function KeywordSheet({
   open,
   onClose,
-  keywords,
+  entries,
   addKeyword,
   removeKeyword,
 }: {
   open: boolean;
   onClose: () => void;
-  keywords: string[];
-  addKeyword: (raw: string) => Promise<void>;
+  entries: KeywordEntry[];
+  addKeyword: (raw: string, matchType?: KeywordMatchType) => Promise<void>;
   removeKeyword: (kw: string) => Promise<void>;
 }): React.ReactElement {
   const [draft, setDraft] = useState("");
+  const [draftType, setDraftType] = useState<KeywordMatchType>("substring");
 
   const handleAdd = useCallback(async () => {
-    await addKeyword(draft);
+    await addKeyword(draft, draftType);
     setDraft("");
-  }, [draft, addKeyword]);
+    setDraftType("substring");
+  }, [draft, draftType, addKeyword]);
 
   return (
     <BottomSheet
@@ -606,7 +722,7 @@ function KeywordSheet({
       footer={
         <form
           onSubmit={(e) => { e.preventDefault(); void handleAdd(); }}
-          style={{ display: "flex", gap: 8 }}
+          style={{ display: "flex", flexWrap: "wrap", gap: 8 }}
         >
           <input
             type="text"
@@ -614,7 +730,7 @@ function KeywordSheet({
             onChange={(e) => setDraft(e.target.value)}
             placeholder="Add keyword…"
             style={{
-              flex: 1,
+              flex: "1 1 160px",
               height: 40,
               borderRadius: 10,
               border: "1px solid var(--mobile-border)",
@@ -626,6 +742,7 @@ function KeywordSheet({
               outline: "none",
             }}
           />
+          <ExactMatchToggle value={draftType} onChange={setDraftType} />
           <button
             type="submit"
             style={{
@@ -647,40 +764,46 @@ function KeywordSheet({
       }
     >
       <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-        {keywords.map((kw) => (
-          <li
-            key={kw}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "10px 0",
-              borderBottom: "1px solid var(--mobile-divider)",
-              fontSize: 15,
-              color: "var(--mobile-text)",
-            }}
-          >
-            <span>#{kw}</span>
-            <button
-              type="button"
-              onClick={() => void removeKeyword(kw)}
-              aria-label={`Remove keyword ${kw}`}
+        {entries.map((entry) => {
+          const isExact = entry.match_type === "exact";
+          return (
+            <li
+              key={entry.keyword}
               style={{
-                border: 0,
-                background: "transparent",
-                color: "var(--mobile-text-muted)",
-                fontSize: 20,
-                lineHeight: 1,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                padding: "0 4px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "10px 0",
+                borderBottom: "1px solid var(--mobile-divider)",
+                fontSize: 15,
+                color: "var(--mobile-text)",
               }}
             >
-              ×
-            </button>
-          </li>
-        ))}
-        {keywords.length === 0 && (
+              <span style={{ display: "inline-flex", alignItems: "center" }}>
+                #{entry.keyword}
+                {isExact && <ExactBadge />}
+              </span>
+              <button
+                type="button"
+                onClick={() => void removeKeyword(entry.keyword)}
+                aria-label={`Remove keyword ${entry.keyword}`}
+                style={{
+                  border: 0,
+                  background: "transparent",
+                  color: "var(--mobile-text-muted)",
+                  fontSize: 20,
+                  lineHeight: 1,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  padding: "0 4px",
+                }}
+              >
+                ×
+              </button>
+            </li>
+          );
+        })}
+        {entries.length === 0 && (
           <li style={{ color: "var(--mobile-text-faint)", fontStyle: "italic", fontSize: 13 }}>
             No keywords yet. Add one above.
           </li>
@@ -699,6 +822,7 @@ export default function MobileView(): React.ReactElement {
     savedArticles,
     justArrivedUrls,
     keywords,
+    keywordEntries,
     loading,
     error,
     visible,
@@ -787,7 +911,7 @@ export default function MobileView(): React.ReactElement {
         {/* Settings tab — full-page keyword management */}
         {mobileTab === "settings" && (
           <SettingsTab
-            keywords={keywords}
+            entries={keywordEntries}
             addKeyword={addKeyword}
             removeKeyword={removeKeyword}
           />
@@ -889,7 +1013,7 @@ export default function MobileView(): React.ReactElement {
                   onSelect={setTopicFilter}
                 />
                 <KeywordsSection
-                  keywords={keywords}
+                  entries={keywordEntries}
                   onAddPress={() => setKwSheetOpen(true)}
                   onRemove={removeKeyword}
                 />
@@ -978,7 +1102,7 @@ export default function MobileView(): React.ReactElement {
       <KeywordSheet
         open={kwSheetOpen}
         onClose={() => setKwSheetOpen(false)}
-        keywords={keywords}
+        entries={keywordEntries}
         addKeyword={addKeyword}
         removeKeyword={removeKeyword}
       />

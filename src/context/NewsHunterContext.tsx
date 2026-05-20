@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -21,11 +22,30 @@ export type NewsArticle = {
   matched_keywords: string[];
 };
 
+/**
+ * How a keyword should match article text.
+ *   'substring' — case-insensitive substring (default; legacy behaviour).
+ *   'exact'     — case-insensitive whole-word, regex `\b{keyword}\b`.
+ *
+ * Stored in `news_hunter_keywords.match_type` (text enum). The scanner reads
+ * the column to route matching; the frontend uses it for local filtering.
+ */
+export type KeywordMatchType = "substring" | "exact";
+
+export type KeywordEntry = {
+  keyword: string;
+  match_type: KeywordMatchType;
+};
+
 interface NewsHunterContextValue {
   articles: NewsArticle[];
   justArrivedUrls: Set<string>;
+  /** Plain string list — used by legacy consumers and topic pills. */
   keywords: string[];
+  /** Full entries with match_type — preferred for filtering / UI badges. */
+  keywordEntries: KeywordEntry[];
   setKeywords: React.Dispatch<React.SetStateAction<string[]>>;
+  setKeywordEntries: React.Dispatch<React.SetStateAction<KeywordEntry[]>>;
   loading: boolean;
   error: string | null;
 }
@@ -83,41 +103,66 @@ export function NewsHunterProvider({
 }) {
   const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [justArrivedUrls, setJustArrivedUrls] = useState<Set<string>>(new Set());
-  const [keywords, setKeywords] = useState<string[]>([]);
+  const [keywordEntries, setKeywordEntries] = useState<KeywordEntry[]>([]);
   const [keywordsLoaded, setKeywordsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Derived string-only list — kept for legacy consumers (topic pills, etc.).
+  const keywords = useMemo(() => keywordEntries.map((e) => e.keyword), [keywordEntries]);
+
+  // Adapter so callers using the old setKeywords(string[]) signature still work
+  // (treats every keyword as 'substring' — caller should switch to setKeywordEntries
+  // when it needs match_type-aware updates).
+  const setKeywords: React.Dispatch<React.SetStateAction<string[]>> = useCallback((updater) => {
+    setKeywordEntries((prev) => {
+      const prevList = prev.map((e) => e.keyword);
+      const nextList = typeof updater === "function" ? updater(prevList) : updater;
+      const prevByKw = new Map(prev.map((e) => [e.keyword, e]));
+      return nextList.map((kw) => prevByKw.get(kw) ?? { keyword: kw, match_type: "substring" as const });
+    });
+  }, []);
 
   const lastFoundAtRef = useRef<string | null>(null);
   const seenUrlsRef = useRef<Set<string>>(new Set());
   const flashTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
-  // Load per-user keyword list; seed defaults on first visit.
+  // Load per-user keyword list; seed defaults on first visit. Always selects
+  // `match_type` alongside `keyword` so the filter logic and UI badges can
+  // distinguish substring vs exact (whole-word) matching.
   useEffect(() => {
     if (!supabase) return;
     let cancelled = false;
+    const fallbackEntries: KeywordEntry[] = FALLBACK_KEYWORDS.map((k) => ({
+      keyword: k,
+      match_type: "substring",
+    }));
     void (async () => {
       const { data, error: err } = await supabase
         .from("news_hunter_keywords")
-        .select("keyword")
+        .select("keyword, match_type")
         .order("keyword");
       if (cancelled) return;
       if (err) {
-        setKeywords(FALLBACK_KEYWORDS);
+        setKeywordEntries(fallbackEntries);
         setKeywordsLoaded(true);
         return;
       }
+      const toEntry = (r: { keyword: string; match_type?: string | null }): KeywordEntry => ({
+        keyword: r.keyword,
+        match_type: r.match_type === "exact" ? "exact" : "substring",
+      });
       if ((data ?? []).length === 0) {
         await supabase.rpc("seed_my_news_hunter_keywords");
         const seeded = await supabase
           .from("news_hunter_keywords")
-          .select("keyword")
+          .select("keyword, match_type")
           .order("keyword");
         if (cancelled) return;
-        const rows = (seeded.data ?? []) as { keyword: string }[];
-        setKeywords(rows.length > 0 ? rows.map((r) => r.keyword) : FALLBACK_KEYWORDS);
+        const rows = (seeded.data ?? []) as { keyword: string; match_type?: string | null }[];
+        setKeywordEntries(rows.length > 0 ? rows.map(toEntry) : fallbackEntries);
       } else {
-        setKeywords((data as { keyword: string }[]).map((r) => r.keyword));
+        setKeywordEntries((data as { keyword: string; match_type?: string | null }[]).map(toEntry));
       }
       setKeywordsLoaded(true);
     })();
@@ -275,7 +320,16 @@ export function NewsHunterProvider({
 
   return (
     <NewsHunterCtx.Provider
-      value={{ articles, justArrivedUrls, keywords, setKeywords, loading, error }}
+      value={{
+        articles,
+        justArrivedUrls,
+        keywords,
+        keywordEntries,
+        setKeywords,
+        setKeywordEntries,
+        loading,
+        error,
+      }}
     >
       {children}
     </NewsHunterCtx.Provider>

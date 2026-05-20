@@ -25,7 +25,11 @@ import {
 import { getSupabaseClient } from "@/lib/supabaseClient";
 import { useModuleVisibilityGuard } from "@/hooks/useModuleVisibilityGuard";
 import { useNewsHunter } from "@/context/NewsHunterContext";
-import type { NewsArticle } from "@/context/NewsHunterContext";
+import type {
+  KeywordEntry,
+  KeywordMatchType,
+  NewsArticle,
+} from "@/context/NewsHunterContext";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -70,6 +74,37 @@ export function stripAccents(s: string): string {
   return s.normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
 
+/**
+ * Returns true if a keyword (with its match_type) hits the text.
+ *   - substring: case-insensitive, accent-stripped `.includes()` (legacy)
+ *   - exact:     case-insensitive, accent-stripped regex `\b{kw}\b`
+ *
+ * The keyword and text are normalized identically (lowercased + accent-stripped)
+ * so "saúde" and "Saude" both match "Agência Nacional de Saúde Suplementar".
+ *
+ * Multi-token keywords ("saúde suplementar"): `\b` falls between word characters
+ * and non-word characters, so the regex spans the internal space normally.
+ * Hyphens in keywords ("pré-sal") are word-character boundaries on both sides;
+ * `\b` will match at the keyword edges — but a text containing "pré sal" (no
+ * hyphen) will NOT match the keyword "pré-sal" under 'exact', because the
+ * normalized escaped pattern still contains the literal `-`. That's the
+ * intended semantics: 'exact' means "exactly this token".
+ */
+export function keywordHits(text: string, kw: string, mode: KeywordMatchType): boolean {
+  const haystack = stripAccents(text.toLowerCase());
+  const needle = stripAccents(kw.toLowerCase()).trim();
+  if (!needle) return false;
+  if (mode === "substring") return haystack.includes(needle);
+  // Word boundary on both sides. RegExp.escape doesn't exist in older runtimes,
+  // so escape inline.
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  try {
+    return new RegExp(`\\b${escaped}\\b`, "i").test(haystack);
+  } catch {
+    return haystack.includes(needle);
+  }
+}
+
 /** Deterministic hex color for a domain initial circle. */
 export function domainColor(domain: string): string {
   const PALETTE = [
@@ -103,7 +138,10 @@ export interface UseNewsHunterDataReturn {
   // Data from context (polling + watermark live here)
   articles: NewsArticle[];
   justArrivedUrls: Set<string>;
+  /** Plain string list — kept for legacy consumers and topic pills. */
   keywords: string[];
+  /** Full entries with match_type — preferred for filter logic + UI badges. */
+  keywordEntries: KeywordEntry[];
   loading: boolean;
   error: string | null;
 
@@ -114,7 +152,11 @@ export interface UseNewsHunterDataReturn {
   // Keyword CRUD
   newKeyword: string;
   setNewKeyword: (v: string) => void;
-  addKeyword: (raw: string) => Promise<void>;
+  /** Match type chosen for the next keyword to be added (form state). */
+  newKeywordMatchType: KeywordMatchType;
+  setNewKeywordMatchType: (v: KeywordMatchType) => void;
+  /** Adds a keyword with the given match_type (defaults to 'substring'). */
+  addKeyword: (raw: string, matchType?: KeywordMatchType) => Promise<void>;
   removeKeyword: (kw: string) => Promise<void>;
 
   // Search
@@ -152,12 +194,20 @@ export interface UseNewsHunterDataReturn {
 export function useNewsHunterData(): UseNewsHunterDataReturn {
   const { visible, loading: visLoading } = useModuleVisibilityGuard("news-hunter");
   const supabase = useMemo(() => getSupabaseClient(), []);
-  const { articles, justArrivedUrls, keywords, setKeywords, loading, error } =
-    useNewsHunter();
+  const {
+    articles,
+    justArrivedUrls,
+    keywords,
+    keywordEntries,
+    setKeywordEntries,
+    loading,
+    error,
+  } = useNewsHunter();
 
   // ── Local state ─────────────────────────────────────────────────────────
 
   const [newKeyword, setNewKeyword] = useState<string>("");
+  const [newKeywordMatchType, setNewKeywordMatchType] = useState<KeywordMatchType>("substring");
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [topicFilter, setTopicFilter] = useState<string>("All");
   const [theme, setTheme] = useState<"light" | "dark">("light");
@@ -212,22 +262,29 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
   }, []);
 
   const addKeyword = useCallback(
-    async (raw: string) => {
+    async (raw: string, matchType: KeywordMatchType = "substring") => {
       const kw = raw.trim();
       if (!kw || !supabase) return;
-      const already = keywords.some((k) => k.toLowerCase() === kw.toLowerCase());
+      const already = keywordEntries.some(
+        (e) => e.keyword.toLowerCase() === kw.toLowerCase(),
+      );
       setNewKeyword("");
+      // Reset the toggle back to the safe default after each add so users don't
+      // accidentally create several 'exact' keywords in a row.
+      setNewKeywordMatchType("substring");
       if (already) return;
       const { error: insertErr } = await supabase
         .from("news_hunter_keywords")
-        .insert({ keyword: kw });
+        .insert({ keyword: kw, match_type: matchType });
       if (!insertErr) {
-        setKeywords((prev) =>
-          prev.some((k) => k.toLowerCase() === kw.toLowerCase()) ? prev : [...prev, kw],
+        setKeywordEntries((prev) =>
+          prev.some((e) => e.keyword.toLowerCase() === kw.toLowerCase())
+            ? prev
+            : [...prev, { keyword: kw, match_type: matchType }],
         );
       }
     },
-    [supabase, keywords, setKeywords],
+    [supabase, keywordEntries, setKeywordEntries],
   );
 
   const removeKeyword = useCallback(
@@ -237,9 +294,9 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
         .from("news_hunter_keywords")
         .delete()
         .eq("keyword", kw);
-      if (!delErr) setKeywords((prev) => prev.filter((k) => k !== kw));
+      if (!delErr) setKeywordEntries((prev) => prev.filter((e) => e.keyword !== kw));
     },
-    [supabase, setKeywords],
+    [supabase, setKeywordEntries],
   );
 
   // ── Derived ──────────────────────────────────────────────────────────────
@@ -247,19 +304,20 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
   const filteredArticles = useMemo(() => {
     let result = articles;
 
-    // Keyword filter (desktop behavior preserved)
-    if (keywords.length > 0) {
-      const terms = keywords
-        .map((k) => stripAccents(k.toLowerCase()).trim())
-        .filter(Boolean);
-      if (terms.length > 0) {
-        result = result.filter((a) => {
-          const hay = stripAccents(
-            `${a.title} ${a.source_name} ${a.snippet} ${a.matched_keywords.join(" ")}`.toLowerCase(),
-          );
-          return terms.some((t) => hay.includes(t));
-        });
-      }
+    // Keyword filter — honors each entry's match_type.
+    //   'substring' → case-insensitive substring (legacy behaviour).
+    //   'exact'     → case-insensitive whole-word, `\b{kw}\b`.
+    //
+    // Note: scanner-side matched_keywords already reflect whatever match_type
+    // the scanner applied at scan time, so once the scanner PR lands an
+    // article only carries the user's exact-keyword hit when it actually
+    // word-bounded matched. Client-side re-check stays defensive (cheap and
+    // catches articles persisted by older scanner runs).
+    if (keywordEntries.length > 0) {
+      result = result.filter((a) => {
+        const hay = `${a.title} ${a.source_name} ${a.snippet} ${a.matched_keywords.join(" ")}`;
+        return keywordEntries.some((e) => keywordHits(hay, e.keyword, e.match_type));
+      });
     }
 
     // Search filter
@@ -272,18 +330,21 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
     }
 
     // Topic pill filter (mobile — "All" = no filter)
+    // Topic pills are derived from the user's own keyword labels, so we
+    // honor the keyword's match_type when filtering.
     if (topicFilter !== "All") {
-      const t = stripAccents(topicFilter.toLowerCase());
+      const entry = keywordEntries.find(
+        (e) => e.keyword.toLowerCase() === topicFilter.toLowerCase(),
+      );
+      const mode = entry?.match_type ?? "substring";
       result = result.filter((a) => {
-        const hay = stripAccents(
-          `${a.title} ${a.source_name} ${a.matched_keywords.join(" ")}`.toLowerCase(),
-        );
-        return hay.includes(t);
+        const hay = `${a.title} ${a.source_name} ${a.matched_keywords.join(" ")}`;
+        return keywordHits(hay, topicFilter, mode);
       });
     }
 
     return result;
-  }, [articles, keywords, searchTerm, topicFilter]);
+  }, [articles, keywordEntries, searchTerm, topicFilter]);
 
   const savedArticles = useMemo(
     () => articles.filter((a) => bookmarkedUrls.has(a.url)),
@@ -299,12 +360,15 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
     articles,
     justArrivedUrls,
     keywords,
+    keywordEntries,
     loading,
     error,
     visible,
     visLoading,
     newKeyword,
     setNewKeyword,
+    newKeywordMatchType,
+    setNewKeywordMatchType,
     addKeyword,
     removeKeyword,
     searchTerm,

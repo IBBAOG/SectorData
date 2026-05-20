@@ -31,13 +31,15 @@ export default function DesktopView(): React.ReactElement {
     filteredArticles,
     articles,
     justArrivedUrls,
-    keywords,
+    keywordEntries,
     loading,
     error,
     visible,
     visLoading,
     newKeyword,
     setNewKeyword,
+    newKeywordMatchType,
+    setNewKeywordMatchType,
     addKeyword,
     removeKeyword,
     searchTerm,
@@ -179,20 +181,36 @@ export default function DesktopView(): React.ReactElement {
           </div>
           <div className={styles.panelBody}>
             <ul className={styles.chips}>
-              {keywords.map((kw) => (
-                <li key={kw} className={styles.chip}>
-                  <span className={styles.chipLabel}>{kw}</span>
-                  <button
-                    type="button"
-                    className={styles.chipRemove}
-                    onClick={() => removeKeyword(kw)}
-                    aria-label={`remove ${kw}`}
+              {keywordEntries.map((entry) => {
+                const isExact = entry.match_type === "exact";
+                return (
+                  <li
+                    key={entry.keyword}
+                    className={`${styles.chip} ${isExact ? styles.chipExact : ""}`}
+                    title={
+                      isExact
+                        ? "Exact match — only whole-word, case-insensitive."
+                        : "Substring match — case-insensitive."
+                    }
                   >
-                    ×
-                  </button>
-                </li>
-              ))}
-              {keywords.length === 0 && (
+                    <span className={styles.chipLabel}>{entry.keyword}</span>
+                    {isExact && (
+                      <span className={styles.chipBadge} aria-label="Exact match">
+                        EXACT
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      className={styles.chipRemove}
+                      onClick={() => removeKeyword(entry.keyword)}
+                      aria-label={`remove ${entry.keyword}`}
+                    >
+                      ×
+                    </button>
+                  </li>
+                );
+              })}
+              {keywordEntries.length === 0 && (
                 <li className={styles.emptyKw}>
                   No active filter — all headlines are displayed.
                 </li>
@@ -200,7 +218,10 @@ export default function DesktopView(): React.ReactElement {
             </ul>
             <form
               className={styles.addForm}
-              onSubmit={(e) => { e.preventDefault(); void addKeyword(newKeyword); }}
+              onSubmit={(e) => {
+                e.preventDefault();
+                void addKeyword(newKeyword, newKeywordMatchType);
+              }}
             >
               <input
                 type="text"
@@ -209,8 +230,26 @@ export default function DesktopView(): React.ReactElement {
                 value={newKeyword}
                 onChange={(e) => setNewKeyword(e.target.value)}
               />
+              <label
+                className={styles.exactToggle}
+                title="Match only when the term appears as a standalone word (case-insensitive)."
+              >
+                <input
+                  type="checkbox"
+                  checked={newKeywordMatchType === "exact"}
+                  onChange={(e) =>
+                    setNewKeywordMatchType(e.target.checked ? "exact" : "substring")
+                  }
+                />
+                <span>Exact match</span>
+              </label>
               <button type="submit" className={styles.addBtn} aria-label="add">+</button>
             </form>
+            <p className={styles.helpText}>
+              Default keywords match anywhere in the text. Turn on{" "}
+              <strong>Exact match</strong> to match only as a standalone word
+              (e.g. <code>ANS</code> exact won&apos;t hit <em>tr<strong>ANS</strong>porte</em>).
+            </p>
           </div>
         </section>
 
