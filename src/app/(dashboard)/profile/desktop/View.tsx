@@ -1,0 +1,237 @@
+"use client";
+
+// Desktop view for /profile.
+// Verbatim move of the original page.tsx (pre-dual-view refactor), with all
+// state plumbing replaced by reads from the shared useProfileData hook.
+
+import NavBar from "../../../../components/NavBar";
+import { useProfileData } from "../useProfileData";
+
+const ORANGE = "#FF5000";
+const BG = "#f5f5f5";
+
+function PencilIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ display: "block" }}
+    >
+      <path
+        d="M9.5 1.5L12.5 4.5L4.5 12.5H1.5V9.5L9.5 1.5Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export default function DesktopView() {
+  const {
+    profile,
+    email,
+    loading,
+    isAdmin,
+    displayName,
+    initials,
+    memberSince,
+    editing,
+    editName,
+    saving,
+    saveError,
+    startEdit,
+    cancelEdit,
+    setEditName,
+    canSave,
+    saveName,
+  } = useProfileData();
+
+  async function handleSaveName(e: React.FormEvent) {
+    e.preventDefault();
+    await saveName();
+  }
+
+  return (
+    <main style={{ background: BG, minHeight: "100vh", fontFamily: "Arial, sans-serif" }}>
+      <NavBar />
+
+      <section style={{ maxWidth: 960, margin: "0 auto", padding: "64px 24px" }}>
+
+        {/* Page header */}
+        <div style={{ marginBottom: 40 }}>
+          <div
+            style={{
+              display: "inline-block",
+              background: "rgba(232,93,32,0.10)",
+              color: ORANGE,
+              borderRadius: 20,
+              padding: "3px 12px",
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.06em",
+              textTransform: "uppercase",
+              marginBottom: 14,
+            }}
+          >
+            My Account
+          </div>
+          <h1 style={{ fontSize: "1.75rem", fontWeight: 700, color: "#111", margin: 0 }}>
+            Profile
+          </h1>
+        </div>
+
+        {/* Profile card */}
+        <div className="profile-card">
+
+          {/* Avatar circle */}
+          <div className="profile-avatar-circle">{initials}</div>
+
+          {/* Name */}
+          <h2
+            style={{
+              textAlign: "center",
+              fontSize: "1.25rem",
+              fontWeight: 700,
+              color: "#1a1a1a",
+              margin: "0 0 8px",
+            }}
+          >
+            {loading ? "Loading…" : displayName}
+          </h2>
+
+          {/* Role badge */}
+          <div style={{ textAlign: "center", marginBottom: 28 }}>
+            <span className={`role-badge role-badge--${isAdmin ? "admin" : "client"}`}>
+              {loading ? "—" : (profile?.role ?? "Client")}
+            </span>
+          </div>
+
+          {/* Info rows */}
+          <div className="profile-info-row">
+            <span className="profile-info-label">Email</span>
+            <span className="profile-info-value" style={{ color: loading ? "#bbb" : undefined }}>
+              {loading ? "Loading…" : (email ?? "—")}
+            </span>
+          </div>
+
+          {/* Name row — always shown, with inline edit */}
+          <div className="profile-info-row">
+            <span className="profile-info-label">Name</span>
+            {editing ? (
+              <form className="profile-name-edit-form" onSubmit={handleSaveName}>
+                <input
+                  className="profile-name-edit-input"
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  disabled={saving}
+                  autoFocus
+                  maxLength={80}
+                  placeholder="Your full name"
+                />
+                {saveError && (
+                  <span className="profile-name-edit-error">Error saving. Try again.</span>
+                )}
+                <div className="profile-name-edit-actions">
+                  <button
+                    type="submit"
+                    className="profile-name-edit-btn profile-name-edit-btn--save"
+                    disabled={!canSave}
+                  >
+                    {saving ? "…" : "Save"}
+                  </button>
+                  <button
+                    type="button"
+                    className="profile-name-edit-btn profile-name-edit-btn--cancel"
+                    onClick={cancelEdit}
+                    disabled={saving}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span className="profile-info-value">
+                  {loading ? "—" : (profile?.full_name ?? "—")}
+                </span>
+                {!loading && (
+                  <button
+                    className="profile-name-edit-icon-btn"
+                    onClick={startEdit}
+                    aria-label="Edit name"
+                    title="Edit name"
+                  >
+                    <PencilIcon />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="profile-info-row">
+            <span className="profile-info-label">Role</span>
+            <span className="profile-info-value">
+              {loading ? "—" : (profile?.role ?? "Client")}
+            </span>
+          </div>
+
+          <div className="profile-info-row">
+            <span className="profile-info-label">Member since</span>
+            <span className="profile-info-value">
+              {loading ? "—" : memberSince}
+            </span>
+          </div>
+        </div>
+
+        {/* Security section — link to MFA enrollment page */}
+        <div
+          style={{
+            marginTop: 28,
+            background: "white",
+            borderRadius: 8,
+            padding: 24,
+            boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+          }}
+        >
+          <h2
+            style={{
+              fontSize: 16,
+              fontWeight: 700,
+              color: "#1a1a1a",
+              margin: "0 0 8px",
+            }}
+          >
+            Security
+          </h2>
+          <p style={{ fontSize: 13, color: "#666", margin: "0 0 16px" }}>
+            {isAdmin
+              ? "Admin accounts must keep two-factor authentication enabled."
+              : "Add two-factor authentication for extra protection (optional)."}
+          </p>
+          <a
+            href="/profile/mfa"
+            style={{
+              display: "inline-block",
+              background: ORANGE,
+              color: "white",
+              padding: "8px 16px",
+              borderRadius: 4,
+              fontSize: 14,
+              fontWeight: 600,
+              textDecoration: "none",
+            }}
+          >
+            Manage two-factor authentication
+          </a>
+        </div>
+
+      </section>
+    </main>
+  );
+}
