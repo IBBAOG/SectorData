@@ -94,9 +94,62 @@ O mesmo workflow encadeia também `02_precos_produtores_sync.py` e `glp_sync.py`
 
 ## Export
 
-Tier 1 — download direto via `<ExportPanel>` (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
+Tier 1 — download direto via `<ExportPanel>` (desktop) ou `ExportFAB` + action sheet (mobile).
 
 - Excel: `downloadGenericExcel<T>` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
 - CSV: `downloadCsv<T>` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
-- Filename pattern: `AnpPpi_DD-MM-YY.<xlsx|csv>`.
-- Dados exportados: linhas correspondentes à média nacional (`allSerie` — saída de `get_anp_ppi_media_serie` aplicada com produtos selecionados e período client-side).
+- Filename pattern: `ANP-PPI.<xlsx|csv>`.
+- Dados exportados: `allSerie` completo (saída de `get_anp_ppi_media_serie`), todos os produtos e período completo.
+
+## Dual-view structure
+
+Implementado em 2026-05-20 seguindo [`docs/app/dual-view-pattern.md`](dual-view-pattern.md).
+
+```
+src/app/(dashboard)/anp-ppi/
+├── page.tsx                ← viewport router (useIsMobile)
+├── useAnpPpiData.ts        ← single brain: RPCs, filter state, derived values
+├── desktop/
+│   └── View.tsx            ← desktop layout (sidebar + 2 charts + ExportPanel)
+└── mobile/
+    └── View.tsx            ← mobile layout (MobileTopBar + MobileTabBar + 2 MobileCharts + MobileDataCard list + ExportFAB)
+```
+
+### Hook contract (`useAnpPpiData`)
+
+```ts
+{
+  allSerie: AnpPpiSerieRow[];      // one-shot mount fetch
+  locaisRows: AnpPpiLocaisRow[];   // debounced 400ms on detailProduto/period
+  allYears: number[];
+  loading: boolean;
+  locaisLoading: boolean;
+  error: Error | null;
+  excelLoading: boolean;
+  setExcelLoading: (v: boolean) => void;
+  filters: {
+    selectedProdutos: string[];    // always ≥ 1 (invariant enforced by toggleProduto)
+    yearRange: [number, number];   // indices into allYears
+    detailProduto: string;         // drives locais chart + mobile tab
+  };
+  setFilters: (next: Partial<AnpPpiFilters>) => void;
+  toggleProduto: (p: string) => void; // min-1 guard included
+  yMin: number | null;
+  yMax: number | null;
+  hasYears: boolean;
+}
+```
+
+### Mobile layout specifics
+
+- `MobileTopBar` with filter icon opening `FilterDrawer`.
+- `MobileTabBar` (container variant) with one tab per product — switching a tab drives `detailProduto`, which updates both charts simultaneously.
+- National-average chart: active product in brand orange (`#FF5000`), other products rendered as dimmed grey context lines.
+- Per-location chart: full color palette, one line per port city.
+- `MobileDataCard` list: latest price (most recent `data_fim`) per location for the active product.
+- `ExportFAB` → inline action sheet with Excel + CSV options.
+- `FilterDrawer` contains only the period slider; product selection is the tab bar.
+
+### Binding sync rule
+
+Any meaningful change to `desktop/View.tsx` must land in `mobile/View.tsx` in the same commit (and vice versa), or the commit message must declare `[desktop-only]` / `[mobile-only]` with an explicit reason.
