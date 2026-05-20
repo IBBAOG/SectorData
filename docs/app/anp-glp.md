@@ -100,5 +100,52 @@ Tier 1 — download direto via `<ExportPanel>` (ver [`docs/app/PRD.md`](PRD.md) 
 
 - Excel: `downloadGenericExcel<T>` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
 - CSV: `downloadCsv<T>` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
-- Filename pattern: `AnpGlp_DD-MM-YY.<xlsx|csv>`.
+- Filename pattern: `ANP-GLP.<xlsx|csv>`.
 - Dados exportados: linhas atualmente em estado da página (saída de `get_anp_glp_serie` aplicada com filtros de período + categorias selecionadas).
+
+## Dual-view structure
+
+Refatorado em 2026-05-20 para o padrão dual-view (docs/app/dual-view-pattern.md).
+
+```
+src/app/(dashboard)/anp-glp/
+├── page.tsx            — viewport router (useIsMobile → desktop or mobile)
+├── useAnpGlpData.ts    — THE BRAIN: RPCs, filter state, debounce, derivations
+├── desktop/
+│   └── View.tsx        — sidebar layout, line chart + horizontal bar
+└── mobile/
+    └── View.tsx        — MobileTopBar + category MobileTabBar + stacked area chart
+                          + MobileDataCard top-dist list + ExportFAB + FilterDrawer
+```
+
+### Hook contract (`useAnpGlpData`)
+
+```ts
+{
+  serieRows: AnpGlpSerieRow[];
+  allYears: number[];
+  yMin: number | null;
+  yMax: number | null;
+  topDist: TopDistEntry[];          // Top 15 for filters.topDistCat, already in kt
+  loading: boolean;                 // initial barrel
+  serieLoading: boolean;            // debounced refetch indicator
+  filters: AnpGlpFilters;           // yearRangeIdx, selectedCats, topDistCat
+  setFilters: (next: Partial<AnpGlpFilters>) => void;
+  toggleCat: (c: string) => void;   // min-1 guard included
+  exportRows: AnpGlpSerieRow[];
+}
+```
+
+### Mobile-specific analyses
+
+| Analysis | Desktop | Mobile |
+|---|---|---|
+| Monthly sales trend (all categories) | Multi-line chart | Stacked area (active tab only) |
+| Top 15 distributors | Horizontal bar chart | MobileDataCard ranked list with inline bar |
+| Category selector | Sidebar MultiSelectFilter (multi) | MobileTabBar (single active tab) |
+| Period filter | Sidebar PeriodSlider | FilterDrawer |
+| Export | ExportPanel (sidebar-header) | ExportFAB → ExportSheet (Excel + CSV) |
+
+### Binding sync rule
+
+Any change to one View (new filter, chart, KPI, copy) must land in the other View in the same commit, or the commit message must declare `[desktop-only]` / `[mobile-only]` with an explicit reason.
