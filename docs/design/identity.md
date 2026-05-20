@@ -285,3 +285,112 @@ A marca da plataforma é **Oil & Gas Data House** (gota preta sobre quadrado lar
 1. Adicione na seção apropriada acima.
 2. Use a CSS var ou hex direto no `globals.css` (atualmente o projeto não usa CSS vars — todos os hex são inline; mantenha consistente, mas pode ser convertido para `:root { --primary: #ff5000; }` num refactor futuro).
 3. **Não invente cor sem justificar** — passe pelo CTO se for nova variante.
+
+## Mobile design system (Fase 1 — 2026-05)
+
+Sistema visual paralelo para a view mobile (`mobile/View.tsx` em cada dashboard). **Não substitui** a identidade desktop — adiciona uma camada de tokens `--mobile-*` ativada quando `[data-viewport="mobile"]` (set pelo PWA shell) ou via `@media (max-width: 768px)` (first paint).
+
+**Fonte da verdade visual:** os 6 mockups em [`mockups/`](../../mockups/) (`stocks-mobile.html`, `home-mobile.html`, `news-hunter-mobile.html`, `market-share-mobile.html`, `navios-diesel-mobile.html`, `anp-cdp-mobile.html`) aprovados em 2026-05-20.
+
+### Tokens (em `globals.css`)
+
+Bloco demarcado por `/* ===== Mobile design system (Fase 1 — 2026-05) ===== */`. Light + dark variants. Apenas o subset relevante — para a lista completa abra `globals.css`.
+
+| Categoria | Tokens |
+|---|---|
+| Brand | `--mobile-accent` `#ff5000`, `--mobile-accent-hover` `#d4561a`, `--mobile-accent-soft` `rgba(255,80,0,0.10)`, `--mobile-accent-glow` `rgba(255,80,0,0.30)` |
+| Backgrounds | `--mobile-bg` `#f5f5f7` (light) / `#030814` (dark), `--mobile-surface` `#ffffff` / `#070d1c`, `--mobile-surface-elevated` `#fafafc` / `#0a1124` |
+| Text | `--mobile-text` `#1a1a1a` / `#e6edf3`, `--mobile-text-muted` `#6b6b73` / `#8b949e`, `--mobile-text-faint` `#9a9aa3` / `#5e6772` |
+| Borders | `--mobile-border` `#e6e6ec` / `#131a2e`, `--mobile-divider` `#f0f0f5` / `#161d33`, `--mobile-row-press` `rgba(0,0,0,0.04)` / `rgba(255,255,255,0.04)` |
+| Semantic | `--mobile-up` `#16a34a` / `#3fb950`, `--mobile-down` `#dc2626` / `#f85149` |
+| Status (navios) | `--mobile-status-{unloading\|anchored\|enroute\|completed}` + `-bg` variants |
+| Glass | `--mobile-glass-bg`, `--mobile-glass-border`, `--mobile-glass-blur` `blur(20px) saturate(180%)`, `--mobile-glass-shadow` |
+| Safe area | `--mobile-safe-top` `env(safe-area-inset-top)`, `--mobile-safe-bottom`, `--mobile-safe-left`, `--mobile-safe-right` |
+| Heights | `--mobile-topbar-h` `56px`, `--mobile-tabbar-h` `64px` |
+| Radii | `--mobile-radius-sm` `8px`, `-md` `12px`, `-lg` `14px`, `-xl` `20px`, `-full` `999px` |
+| Shadows | `--mobile-shadow-soft`, `--mobile-shadow-strong`, `--mobile-shadow-fab` |
+| Sheet | `--mobile-sheet-bg`, `--mobile-sheet-handle`, `--mobile-scrim` |
+
+### Componentes (em `src/components/dashboard/mobile/`)
+
+Os 8 componentes compartilhados consumidos por todo `mobile/View.tsx`. Barrel em [`src/components/dashboard/mobile/index.ts`](../../src/components/dashboard/mobile/index.ts).
+
+| Componente | Função | Mockup de referência |
+|---|---|---|
+| `MobileTopBar` + `MobileBottomTabBar` (named exports de `MobileNavBar`) | Chrome sticky superior (56px liquid glass) + inferior (64px tabs com safe-area-inset-bottom). | `stocks-mobile.html` `.topbar` / `.tabbar` |
+| `BottomSheet` | Primitivo slide-up com scrim, handle tap-to-close, body scroll, footer sticky opcional. `height: auto \| 70vh \| 90vh`. | `market-share-mobile.html` `.sheet` |
+| `FilterDrawer` | Sheet especializado p/ filtros: header com Reset · Title · Close ×, footer sticky com Reset/Apply. | `market-share-mobile.html` (open state) |
+| `MobileChart` | Plotly wrapper mobile: sem modebar, `scrollZoom:false`, `fixedrange:true`, hover `closest`, margins enxutas. Mesmo padrão dynamic-import + tooltip rounded do `PlotlyChart.tsx` desktop. | `stocks-mobile.html` chart, `market-share-mobile.html` hero |
+| `MobileDataCard` | Row atômica (~88-96px): leftIcon · title+subtitle · rightSlot + sparkline inline SVG + status pill opcional + variants `default \| compact \| expanded`. | `stocks-mobile.html` `.card`, `home-mobile.html` `.module-card`, `navios-diesel-mobile.html` `.vessel` |
+| `StickyBreadcrumb` | Breadcrumb horizontal-scroll com pills, separador `›`, reset `✕` opcional. Sticky por default. | `anp-cdp-mobile.html` `.breadcrumb` |
+| `ExportFAB` | Floating action button bottom-right, brand orange, glow. Ancora ao 428px column edge (`right: max(16px, calc((100vw - 428px) / 2 + 16px))`). | `market-share-mobile.html` `.fab` |
+| `MobileTabBar` | Segmented control no topo da página (não confundir com bottom nav). Variants `container` (pill cluster com bg laranja) e `underline` (mínimo, só underline). | `navios-diesel-mobile.html` `.seg`, `anp-cdp-mobile.html` `.product-tab` |
+
+### Uso rápido
+
+```tsx
+import {
+  MobileTopBar, MobileBottomTabBar,
+  BottomSheet, FilterDrawer,
+  MobileChart, MobileDataCard,
+  StickyBreadcrumb, ExportFAB, MobileTabBar,
+} from "@/components/dashboard/mobile";
+
+export default function View({ data }: Props) {
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [tab, setTab] = useState("active");
+
+  return (
+    <>
+      <MobileTopBar
+        title="Diesel Vessels"
+        showThemeToggle
+        showAvatar
+        avatarInitials="EM"
+      />
+      <MobileTabBar
+        tabs={[
+          { key: "active", label: "Active" },
+          { key: "recent", label: "Recent" },
+          { key: "expected", label: "Expected" },
+        ]}
+        activeKey={tab}
+        onChange={setTab}
+      />
+      {data.map((row) => (
+        <MobileDataCard
+          key={row.id}
+          title={row.name}
+          subtitle={`${row.origin} → ${row.destination}`}
+          status={{ label: row.status, tone: "unloading" }}
+          onClick={() => openDetail(row.id)}
+        />
+      ))}
+      <ExportFAB onClick={() => downloadCsv(data)} />
+      <FilterDrawer
+        open={filtersOpen}
+        onClose={() => setFiltersOpen(false)}
+        onReset={resetFilters}
+        onApply={() => setFiltersOpen(false)}
+      >
+        {/* filter sections */}
+      </FilterDrawer>
+      <MobileBottomTabBar tabs={navTabs} />
+    </>
+  );
+}
+```
+
+### Preview / Storybook
+
+Página developer-only em [`/mobile-preview`](../../src/app/(dashboard)/mobile-preview/page.tsx) (gated por `useRoleGuard("Admin")`, sem entry no NavBar). Renderiza cada um dos 8 componentes com dados de exemplo — `worker_dash-*` consultam essa rota antes de compor o `mobile/View.tsx` do dashboard deles.
+
+### Princípios não-negociáveis
+
+1. **Não invente token novo** sem entrar nesta tabela. Se faltar variante, abra PR no `worker_designer`.
+2. **Não duplique CSS** — use as variáveis. Hex hard-coded `#ff5000` é OK apenas em locais que já existiam antes da Fase 1.
+3. **Tipografia única**: Arial, Helvetica, sans-serif. Nunca mude.
+4. **`safe-area-inset-*`** é obrigatório em qualquer surface fixed top/bottom — iOS notch / Android nav vão comer pixels sem isso.
+5. **PlotlyChart desktop ↔ MobileChart**: mesmo dynamic-import pattern, mesma estratégia de tooltip rounded. Não use `react-plotly.js` direto em nenhum componente novo.
+6. **428px** é o max-width do phone shell. Componentes que se expandem além disso (BottomSheet, BottomTabBar) já trazem `maxWidth: 428` no default — só override se houver razão clara.
+7. **Stocks (`/stocks`) mantém tema próprio** (`stocks-dark` / `stocks-light`) — o mobile system **não** o substitui. Se o `worker_dash-stocks` for fazer mobile, faz adaptado ao tema Bloomberg, não ao mobile padrão.

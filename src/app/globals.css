@@ -2210,3 +2210,251 @@ a {
   .nd-span-full,
   .nd-disclaimer { grid-column: span 1; }
 }
+
+/* ===== Mobile design system (Fase 1 — 2026-05) =====
+   Tokens powering the mobile view shipped with the dual-view rollout.
+   Sourced from mockups/{stocks,home,news-hunter,market-share,navios-diesel,anp-cdp}-mobile.html
+   and approved by Eduardo on 2026-05-20.
+
+   Scoping strategy:
+     • `:root[data-viewport="mobile"]` — explicit override (set by useIsMobile / PWA shell).
+     • `@media (max-width: 768px)` — automatic fallback for first paint.
+   Both reach the same variables; the attribute wins when both apply.
+
+   The mobile system is intentionally additive — it does NOT redefine the
+   desktop tokens (#ff5000 stays brand orange). It only introduces new
+   --mobile-* variables consumed by src/components/dashboard/mobile/*.
+*/
+:root[data-viewport="mobile"],
+:root[data-viewport="mobile"][data-theme="light"] {
+  /* Brand */
+  --mobile-accent:        #ff5000;
+  --mobile-accent-hover:  #d4561a;
+  --mobile-accent-soft:   rgba(255, 80, 0, 0.10);
+  --mobile-accent-fill:   rgba(255, 80, 0, 0.08);
+  --mobile-accent-glow:   rgba(255, 80, 0, 0.30);
+
+  /* Neutrals — light theme */
+  --mobile-bg:            #f5f5f7;
+  --mobile-surface:       #ffffff;
+  --mobile-surface-elevated: #fafafc;
+  --mobile-text:          #1a1a1a;
+  --mobile-text-muted:    #6b6b73;
+  --mobile-text-faint:    #9a9aa3;
+  --mobile-border:        #e6e6ec;
+  --mobile-divider:       #f0f0f5;
+  --mobile-row-press:     rgba(0, 0, 0, 0.04);
+
+  /* Semantic (up/down) — from docs/design/identity.md */
+  --mobile-up:            #16a34a;
+  --mobile-up-soft:       rgba(22, 163, 74, 0.10);
+  --mobile-down:          #dc2626;
+  --mobile-down-soft:     rgba(220, 38, 38, 0.10);
+
+  /* Status palette (navios-diesel + reusable) */
+  --mobile-status-unloading:    #16a34a;
+  --mobile-status-unloading-bg: rgba(22, 163, 74, 0.10);
+  --mobile-status-anchored:     #2563eb;
+  --mobile-status-anchored-bg:  rgba(37, 99, 235, 0.10);
+  --mobile-status-enroute:      #ff5000;
+  --mobile-status-enroute-bg:   rgba(255, 80, 0, 0.10);
+  --mobile-status-completed:    #6b6b73;
+  --mobile-status-completed-bg: rgba(107, 107, 115, 0.10);
+
+  /* Liquid glass — sticky top/bottom bars */
+  --mobile-glass-bg:      rgba(255, 255, 255, 0.72);
+  --mobile-glass-border:  rgba(0, 0, 0, 0.06);
+  --mobile-glass-blur:    blur(20px) saturate(180%);
+  --mobile-glass-shadow:  0 1px 0 rgba(255, 255, 255, 0.6) inset,
+                          0 -1px 0 rgba(0, 0, 0, 0.04) inset,
+                          0 4px 16px rgba(0, 0, 0, 0.06);
+
+  /* Plotly tunables */
+  --mobile-chart-gridline: rgba(0, 0, 0, 0.04);
+
+  /* Safe-area insets (iOS notch / Android nav) */
+  --mobile-safe-top:    env(safe-area-inset-top);
+  --mobile-safe-bottom: env(safe-area-inset-bottom);
+  --mobile-safe-left:   env(safe-area-inset-left);
+  --mobile-safe-right:  env(safe-area-inset-right);
+
+  /* Heights */
+  --mobile-topbar-h: 56px;
+  --mobile-tabbar-h: 64px;
+
+  /* Radii scale */
+  --mobile-radius-sm:   8px;
+  --mobile-radius-md:   12px;
+  --mobile-radius-lg:   14px;
+  --mobile-radius-xl:   20px;
+  --mobile-radius-full: 999px;
+
+  /* Shadows */
+  --mobile-shadow-soft:   0 1px 4px rgba(0, 0, 0, 0.05),
+                          0 1px 2px rgba(0, 0, 0, 0.03);
+  --mobile-shadow-strong: 0 8px 32px rgba(0, 0, 0, 0.18),
+                          0 2px 8px rgba(0, 0, 0, 0.07);
+  --mobile-shadow-fab:    0 6px 20px rgba(255, 80, 0, 0.45),
+                          0 1px 0 rgba(255, 255, 255, 0.30) inset;
+
+  /* Sheet (bottom drawer) */
+  --mobile-sheet-bg:      #ffffff;
+  --mobile-sheet-handle:  #d1d1d8;
+  --mobile-scrim:         rgba(0, 0, 0, 0.36);
+}
+
+/* Dark theme overrides (matches Stocks-dark palette + identity.md) */
+:root[data-viewport="mobile"][data-theme="dark"] {
+  --mobile-bg:            #030814;
+  --mobile-surface:       #070d1c;
+  --mobile-surface-elevated: #0a1124;
+  --mobile-text:          #e6edf3;
+  --mobile-text-muted:    #8b949e;
+  --mobile-text-faint:    #5e6772;
+  --mobile-border:        #131a2e;
+  --mobile-divider:       #161d33;
+  --mobile-row-press:     rgba(255, 255, 255, 0.04);
+
+  --mobile-up:            #3fb950;
+  --mobile-up-soft:       rgba(63, 185, 80, 0.12);
+  --mobile-down:          #f85149;
+  --mobile-down-soft:     rgba(248, 81, 73, 0.12);
+
+  --mobile-status-unloading:    #3fb950;
+  --mobile-status-unloading-bg: rgba(63, 185, 80, 0.14);
+  --mobile-status-anchored:     #58a6ff;
+  --mobile-status-anchored-bg:  rgba(88, 166, 255, 0.14);
+  --mobile-status-enroute:      #ff5000;
+  --mobile-status-enroute-bg:   rgba(255, 80, 0, 0.16);
+  --mobile-status-completed:    #8b949e;
+  --mobile-status-completed-bg: rgba(139, 148, 158, 0.14);
+
+  --mobile-glass-bg:      rgba(7, 13, 28, 0.72);
+  --mobile-glass-border:  rgba(255, 255, 255, 0.06);
+  --mobile-glass-shadow:  0 1px 0 rgba(255, 255, 255, 0.05) inset,
+                          0 -1px 0 rgba(0, 0, 0, 0.4) inset,
+                          0 4px 16px rgba(0, 0, 0, 0.4);
+
+  --mobile-chart-gridline: rgba(255, 255, 255, 0.05);
+
+  --mobile-shadow-soft:   0 1px 4px rgba(0, 0, 0, 0.35),
+                          0 1px 2px rgba(0, 0, 0, 0.20);
+  --mobile-shadow-strong: 0 8px 32px rgba(0, 0, 0, 0.50),
+                          0 2px 8px rgba(0, 0, 0, 0.30);
+
+  --mobile-sheet-bg:      #0a1124;
+  --mobile-sheet-handle:  #2a3144;
+  --mobile-scrim:         rgba(0, 0, 0, 0.60);
+}
+
+/* Media-query fallback so SSR/first paint already sees the tokens
+   even before useIsMobile sets data-viewport. We replicate the light
+   variant only — dark mode kicks in once data-theme="dark" is set. */
+@media (max-width: 768px) {
+  :root:not([data-viewport]) {
+    --mobile-accent:        #ff5000;
+    --mobile-accent-hover:  #d4561a;
+    --mobile-accent-soft:   rgba(255, 80, 0, 0.10);
+    --mobile-accent-fill:   rgba(255, 80, 0, 0.08);
+    --mobile-accent-glow:   rgba(255, 80, 0, 0.30);
+
+    --mobile-bg:            #f5f5f7;
+    --mobile-surface:       #ffffff;
+    --mobile-surface-elevated: #fafafc;
+    --mobile-text:          #1a1a1a;
+    --mobile-text-muted:    #6b6b73;
+    --mobile-text-faint:    #9a9aa3;
+    --mobile-border:        #e6e6ec;
+    --mobile-divider:       #f0f0f5;
+    --mobile-row-press:     rgba(0, 0, 0, 0.04);
+
+    --mobile-up:            #16a34a;
+    --mobile-up-soft:       rgba(22, 163, 74, 0.10);
+    --mobile-down:          #dc2626;
+    --mobile-down-soft:     rgba(220, 38, 38, 0.10);
+
+    --mobile-status-unloading:    #16a34a;
+    --mobile-status-unloading-bg: rgba(22, 163, 74, 0.10);
+    --mobile-status-anchored:     #2563eb;
+    --mobile-status-anchored-bg:  rgba(37, 99, 235, 0.10);
+    --mobile-status-enroute:      #ff5000;
+    --mobile-status-enroute-bg:   rgba(255, 80, 0, 0.10);
+    --mobile-status-completed:    #6b6b73;
+    --mobile-status-completed-bg: rgba(107, 107, 115, 0.10);
+
+    --mobile-glass-bg:      rgba(255, 255, 255, 0.72);
+    --mobile-glass-border:  rgba(0, 0, 0, 0.06);
+    --mobile-glass-blur:    blur(20px) saturate(180%);
+    --mobile-glass-shadow:  0 1px 0 rgba(255, 255, 255, 0.6) inset,
+                            0 -1px 0 rgba(0, 0, 0, 0.04) inset,
+                            0 4px 16px rgba(0, 0, 0, 0.06);
+
+    --mobile-chart-gridline: rgba(0, 0, 0, 0.04);
+
+    --mobile-safe-top:    env(safe-area-inset-top);
+    --mobile-safe-bottom: env(safe-area-inset-bottom);
+    --mobile-safe-left:   env(safe-area-inset-left);
+    --mobile-safe-right:  env(safe-area-inset-right);
+
+    --mobile-topbar-h: 56px;
+    --mobile-tabbar-h: 64px;
+
+    --mobile-radius-sm:   8px;
+    --mobile-radius-md:   12px;
+    --mobile-radius-lg:   14px;
+    --mobile-radius-xl:   20px;
+    --mobile-radius-full: 999px;
+
+    --mobile-shadow-soft:   0 1px 4px rgba(0, 0, 0, 0.05),
+                            0 1px 2px rgba(0, 0, 0, 0.03);
+    --mobile-shadow-strong: 0 8px 32px rgba(0, 0, 0, 0.18),
+                            0 2px 8px rgba(0, 0, 0, 0.07);
+    --mobile-shadow-fab:    0 6px 20px rgba(255, 80, 0, 0.45),
+                            0 1px 0 rgba(255, 255, 255, 0.30) inset;
+
+    --mobile-sheet-bg:      #ffffff;
+    --mobile-sheet-handle:  #d1d1d8;
+    --mobile-scrim:         rgba(0, 0, 0, 0.36);
+  }
+
+  :root[data-theme="dark"]:not([data-viewport]) {
+    --mobile-bg:            #030814;
+    --mobile-surface:       #070d1c;
+    --mobile-surface-elevated: #0a1124;
+    --mobile-text:          #e6edf3;
+    --mobile-text-muted:    #8b949e;
+    --mobile-text-faint:    #5e6772;
+    --mobile-border:        #131a2e;
+    --mobile-divider:       #161d33;
+    --mobile-row-press:     rgba(255, 255, 255, 0.04);
+
+    --mobile-up:            #3fb950;
+    --mobile-up-soft:       rgba(63, 185, 80, 0.12);
+    --mobile-down:          #f85149;
+    --mobile-down-soft:     rgba(248, 81, 73, 0.12);
+
+    --mobile-status-unloading:    #3fb950;
+    --mobile-status-unloading-bg: rgba(63, 185, 80, 0.14);
+    --mobile-status-anchored:     #58a6ff;
+    --mobile-status-anchored-bg:  rgba(88, 166, 255, 0.14);
+    --mobile-status-completed:    #8b949e;
+    --mobile-status-completed-bg: rgba(139, 148, 158, 0.14);
+
+    --mobile-glass-bg:      rgba(7, 13, 28, 0.72);
+    --mobile-glass-border:  rgba(255, 255, 255, 0.06);
+    --mobile-glass-shadow:  0 1px 0 rgba(255, 255, 255, 0.05) inset,
+                            0 -1px 0 rgba(0, 0, 0, 0.4) inset,
+                            0 4px 16px rgba(0, 0, 0, 0.4);
+
+    --mobile-chart-gridline: rgba(255, 255, 255, 0.05);
+
+    --mobile-sheet-bg:      #0a1124;
+    --mobile-sheet-handle:  #2a3144;
+    --mobile-scrim:         rgba(0, 0, 0, 0.60);
+  }
+}
+
+/* Tap-highlight defaults for mobile-rendered surfaces */
+:root[data-viewport="mobile"] * {
+  -webkit-tap-highlight-color: transparent;
+}
