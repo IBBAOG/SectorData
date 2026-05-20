@@ -675,3 +675,24 @@ Tier 2 — `<ExportPanel mode="modal">` abre `<ExportModal>` com filtros + calcu
 **Permanent guard (in flight):** `force_upload=true` will imply `--purge` automatically going forward, preventing this class of silent duplication.
 
 **Key rule:** `force_upload=true` without `--purge` is unsafe for any month that has already been loaded. Always pair with `--purge` on re-runs.
+
+### 2026-05-20 — Apr/2026 offshore endpoint collapse (~4 050 → ~194 kbpd)
+
+**Symptom:** `Total Selected Production — Petroleum (kbpd)` chart in `desktop/View.tsx` dropped from ~4 050 kbpd (Mar/2026 baseline) to ~194 kbpd at the Apr/2026 endpoint. All historical data (2017–2026/03) unaffected.
+
+**Root cause:** ANP changed APEX CSV export format for Apr/2026 — values ≥ 1 000 are now emitted as US format with quoted thousands separators (e.g. `"5,029.1718"`). The `_parse_csv` tuple chain in `scripts/pipelines/anp/cdp/02_upload.py` had no `thousands=','` variant, so `pd.to_numeric` coerced 504 of 1 038 offshore rows to `NaN` — exactly the high-producing PreSal and PosSal wells with daily output ≥ 1 000 bbl/day. Terra (values < 1 000) was unaffected.
+
+**Impact at DB level (snapshot pre-fix):**
+- PosSal Apr/2026: 540 rows, **210 NULL** in `petroleo_bbl_dia`, 78.0 kbpd (vs ~707 kbpd expected from Mar/2026)
+- PreSal Apr/2026: 498 rows, **293 NULL**, 37.9 kbpd (vs ~3 458 kbpd expected)
+- Terra Apr/2026: 5 808 rows, 1 NULL, 78.2 kbpd (intact)
+
+**Cross-check that confirmed root cause:** `anp_cdp_diaria_poco` (Power BI, fully independent source) reported 4 185.9 kbpd for Apr/2026 — proving the ANP did publish full data, the loss was at the parse step locally.
+
+**Fix:** prepend two US-with-thousands tuples to the `_parse_csv` chain (`cp1252` + `utf-8-sig`, both with `thousands=','`). Strictly more permissive — Jan-Mar/2026 sanity-check confirmed no regression on legacy data. Commit + workflow re-run executed by `worker_etl-pipelines`.
+
+**Expected post-fix:** Apr/2026 ~4 150 kbpd offshore, consistent with Power BI 4 186 kbpd within < 1% tolerance.
+
+**Verified result (workflow run `26193260228`, commit `2068b61a`):** Apr/2026 = 4 337.4 kbpd total (0 NULLs, 540 PosSal + 498 PreSal + 5 808 Terra), 3.6 % above Power BI cross-source — within normal monthly-vs-daily-average variance. Mar/2026 baseline unchanged (4 244.9 kbpd, 0 NULLs).
+
+**Detection gap:** existing `_warn_partial_offshore()` validator checks row counts but NOT for `NULL`/zero in `petroleo_bbl_dia`. Future safeguard: post-upload assertion that NULL fraction in offshore rows stays below ~5 % per month.
