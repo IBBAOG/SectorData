@@ -8,12 +8,61 @@ Dashboard ANP CDP Diária — Produção Diária por Campo / Instalação / Poç
 
 ```
 src/app/(dashboard)/anp-cdp-diaria/
-  page.tsx
+├── page.tsx                  ← viewport router (useIsMobile)
+├── useAnpCdpDiariaData.ts    ← single brain hook (RPCs, filters, ranking, export)
+├── desktop/View.tsx          ← desktop UX (sidebar + multi-column grid + table)
+└── mobile/View.tsx           ← mobile UX (product tabs + chart card + ranking cards)
 ```
 
 RPC wrappers: seções "ANP CDP Diária" + "ANP CDP Diária — Installation level" + "ANP CDP Diária — Well level" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts).
 
 Heurística de tamanho de export: chaves `anp_cdp_diaria` (field), `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco` em [`src/lib/exportSizeHeuristics.ts`](../../src/lib/exportSizeHeuristics.ts).
+
+## Dual-view structure (Phase 2 — 2026-05-20)
+
+Both Views consume the shared hook `useAnpCdpDiariaData`. Views are pure presentation; they never call Supabase or derive metrics on their own.
+
+### Hook surface (single source of truth)
+
+`useAnpCdpDiariaData()` returns:
+- All 3 RPCs already wired (`rpcGetAnpCdpDiariaSerie` + Installation + Well wrappers)
+- Filter state for every dimension (campos, bacias, instalacoes, pocos, dateRange)
+- Granularity toggle (`granularity` + `setGranularity`) — desktop-only knob, mobile pins to `"field"` via effect
+- Product toggle (`product` + `setProduct`) — `"oil" | "gas"`, drives mobile chart/ranking
+- Derived: `petroleoChart`, `gasChart` (full multi-trace, kbpd / Mm³/d), `defaultPetroleoDims`, `defaultGasDims`, `ranking` (DimensionAggregate[] sorted by avg of current product)
+- `tableRows` (top 500 most recent records)
+- Export modal state + handlers (`handleExportExcel`, `handleExportCsv`, `estimateExportRows`)
+- Visibility guard already applied (`useModuleVisibilityGuard("anp-cdp-diaria")`)
+
+### Desktop view (`desktop/View.tsx`)
+
+Verbatim move of the previous `page.tsx` body, now reading from the hook. Layout:
+- Sidebar: granularity toggle (Field / Installation / Well), Filters section (Basin · Field · Installation · Well · Period — visibility per level)
+- Main: `DashboardHeader` + 2 line charts (Oil kbpd, Gas Mm³/day) + "Production by Level" table (sticky thead, max 500 rows)
+- `ExportModal` Tier 2
+
+### Mobile view (`mobile/View.tsx`)
+
+Mobile-first redesign — pinned to Field-level (the granularity toggle is desktop UX; mobile is a focused tool). Layout:
+- `MobileTopBar` — wordmark only
+- Page heading + period badge
+- `MobileTabBar` (Oil / Gas) — product switch, drives chart + ranking metric
+- Filter chip row — sticky, opens `FilterDrawer`. Chips for Basins / Fields with × clear actions.
+- Chart card: `MobileChart` line chart (Top 5 fields by current product avg, leader in brand orange #FF5000, followers in palette), title row "Top N fields · unit" + serie loading indicator + 3-up mini-stats (Leader / Avg per field / Field count)
+- Ranking section: `MobileDataCard` per field (top 25), rank pill (#1 leader in brand orange), basin badge, average + 14-point sparkline + latest production / latest date right-slot
+- `ExportFAB` (brand orange, label "Export") → `ExportModal` (Tier 2, identical to desktop)
+- `FilterDrawer`: Basin multi-select + Period slider + Field chip cloud (touch-friendly, max-height 240px scroll). Reset clears all selections + restores full date range.
+
+### Binding sync
+
+Any new filter / chart / KPI / copy here must land in BOTH Views in the same commit, or the commit must declare `[desktop-only]` / `[mobile-only]` (see `CLAUDE.md` § Dual-view policy). Aspects intentionally desktop-only:
+- Granularity toggle (Field / Installation / Well) — mobile pins to Field per UX brief
+- The recent-records table (500 rows of HTML table — wrong shape for phone)
+- Two-chart layout (Oil + Gas stacked) — mobile uses one chart at a time driven by product tab
+
+Mobile-only:
+- Production ranking card list (desktop already has the dense table; mobile gets a touch-friendly ranking instead)
+- Mini-stats card (Leader / Avg / Count) — desktop conveys this through the charts
 
 ## Produto
 
