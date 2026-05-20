@@ -14,8 +14,10 @@ Source page (auto-discovered):
   https://www.gov.br/anp/pt-br/assuntos/precos-e-defesa-da-concorrencia/
   subvencao-a-comercializacao-de-oleo-diesel-rodoviario-<YEAR>
 
-PDF URL pattern (actual, 2026):
-  /arquivos/subvencao-2026/<nome>-periodo-subvencao.pdf
+PDF URL pattern (2026 onwards — two naming conventions coexist):
+  Legacy (primeiro–quinto):  /arquivos/subvencao-2026/<ordinal>-periodo-subvencao.pdf
+  New    (sexto+):           /arquivos/subvencao-2026/<ordinal>-periodo-diesel.pdf
+  GLP variants (skip):       *-periodo-glp.pdf, pr-p*-glp.pdf
 
 Each PDF table has columns:
   DIA (d) | Norte | Nordeste | Centro-Oeste | Sudeste | Sul | DIA (d-2)
@@ -72,11 +74,20 @@ _TABLE = "anp_subsidy_diesel_reference"
 _PRICE_MIN = 2.0
 _PRICE_MAX = 12.0
 
-# Regex: filenames that contain period reference price tables.
-# Matches: "primeiro-periodo-subvencao.pdf", "segundo-periodo-subvencao.pdf", etc.
-# The ordinal part matches up to about 20 periods (future-proof).
+# Regex: filenames that contain diesel period reference price tables.
+#
+# ANP uses two naming conventions (coexist on the 2026 page):
+#   Legacy (primeiro–quinto):  <ordinal>-periodo-subvencao.pdf
+#   New    (sexto+):           <ordinal>-periodo-diesel.pdf
+#
+# Explicitly excluded (GLP / cooking-gas variants — different subsidy programme):
+#   <ordinal>-periodo-glp.pdf
+#   pr-p<N>-glp.pdf
+#
+# The alternation (subvencao|diesel) keeps both diesel conventions while
+# rejecting glp without requiring a separate blocklist.
 _PERIODO_PDF_RE = re.compile(
-    r"^[\w]+-periodo-subvencao\.pdf$",
+    r"^[\w]+-periodo-(subvencao|diesel)\.pdf$",
     re.IGNORECASE,
 )
 
@@ -254,8 +265,33 @@ def _discover_period_pdfs(
 # Date extraction from anchor text
 # ---------------------------------------------------------------------------
 
-# Anchor text pattern: "Preços de referência válidos para o ... (1º a 15 de maio de 2026)"
-# or "... (7 a 19 de abril de 2026)"
+# Anchor text patterns for period date ranges.
+#
+# ANP uses two formats in accordion headings:
+#
+#   Older (year after each date):
+#     "... (1º a 15 de maio de 2026)"
+#     "... (7 a 19 de abril de 2026)"
+#   New (year only after end date — sexto onwards):
+#     "... (16 de maio a 31 de maio de 2026)"
+#     "... (de 16 de maio a 31 de maio de 2026)"
+#
+# _ANCHOR_RANGE_NEW_RE: "N de mês a N de mês de YYYY"  (sexto+, year at end only)
+#   Group 1: start day; Group 2: start month; Group 3: year
+# _ANCHOR_RANGE_OLD_RE: "N a N de mês de YYYY"  (older periods, no "de" before start month)
+#   Group 1: start day; Group 2: shared month; Group 3: year
+# _ANCHOR_DATE_RE: final fallback — "N de mês de YYYY" (year per date, or only one date present)
+#
+_ANCHOR_RANGE_NEW_RE = re.compile(
+    r"(\d+)[ºo°]?\s+de\s+(\w+)\s+a\s+\d+[ºo°]?\s+de\s+\w+\s+de\s+(\d{4})",
+    re.IGNORECASE,
+)
+_ANCHOR_RANGE_OLD_RE = re.compile(
+    r"(\d+)[ºo°]?\s+a\s+\d+[ºo°]?\s+de\s+(\w+)\s+de\s+(\d{4})",
+    re.IGNORECASE,
+)
+# Keep old name as alias so nothing else breaks if it were referenced
+_ANCHOR_RANGE_RE = _ANCHOR_RANGE_NEW_RE
 _ANCHOR_DATE_RE = re.compile(
     r"(\d+)[ºo°]?\s+(?:de\s+)?(\w+)\s+(?:de\s+)?(\d{4})",
     re.IGNORECASE,
@@ -278,15 +314,20 @@ def _strip_accents(s: str) -> str:
 
 def _extract_period_start_from_anchor(text: str) -> date | None:
     """
-    Extract the START date of the period from anchor text like:
-      "... (1º a 15 de maio de 2026)"
-      "... (7 a 19 de abril de 2026)"
-    Returns the first date found (start of period).
+    Extract the START date of the period from anchor text.
+
+    Handles four formats (all observed in ANP accordion headings):
+      1. dd/mm/yyyy literal        — "... 07/04/2026 a ..."
+      2. New range (year at end):  "... (16 de maio a 31 de maio de 2026) ..."
+         → _ANCHOR_RANGE_NEW_RE: start day + month before "a", year from end date
+      3. Old range (shared month): "... (1º a 15 de maio de 2026) ..."
+         → _ANCHOR_RANGE_OLD_RE: start day before "a", shared month + year at end
+      4. Single date fallback:     "... (15 de maio de 2026) ..."
+         → _ANCHOR_DATE_RE: first "N de mês de YYYY" found
     """
-    # Normalize accents
     normalized = _strip_accents(text.lower())
 
-    # Try dd/mm/yyyy first
+    # 1 — dd/mm/yyyy
     m = _DATE_SLASH_RE.search(normalized)
     if m:
         d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
@@ -295,7 +336,31 @@ def _extract_period_start_from_anchor(text: str) -> date | None:
         except ValueError:
             pass
 
-    # Try "N de mês de YYYY" or "Nº de mês YYYY"
+    # 2a — New range "N de mês a N de mês de YYYY" (sexto+ naming; year at end only)
+    #       Group 1: start day; Group 2: start month; Group 3: year
+    m = _ANCHOR_RANGE_NEW_RE.search(normalized)
+    if m:
+        day_str, month_str, year_str = m.group(1), m.group(2), m.group(3)
+        month_num = _MONTH_PT.get(month_str)
+        if month_num is not None:
+            try:
+                return date(int(year_str), month_num, int(day_str))
+            except ValueError:
+                pass
+
+    # 2b — Old range "N a N de mês de YYYY" (first through quinto; shared month, year at end)
+    #       Group 1: start day; Group 2: shared month; Group 3: year
+    m = _ANCHOR_RANGE_OLD_RE.search(normalized)
+    if m:
+        day_str, month_str, year_str = m.group(1), m.group(2), m.group(3)
+        month_num = _MONTH_PT.get(month_str)
+        if month_num is not None:
+            try:
+                return date(int(year_str), month_num, int(day_str))
+            except ValueError:
+                pass
+
+    # 3 — Final fallback: first "N de mês de YYYY" found
     for m in _ANCHOR_DATE_RE.finditer(normalized):
         day_str, month_str, year_str = m.group(1), m.group(2), m.group(3)
         month_num = _MONTH_PT.get(month_str)
