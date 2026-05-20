@@ -6,7 +6,10 @@ Dashboard de Price Bands (paridade de preços). Owner: [`worker_dash-price-bands
 
 ```
 src/app/(dashboard)/price-bands/
-  page.tsx
+  page.tsx                 ← viewport router (useIsMobile → desktop/mobile)
+  usePriceBandsData.ts     ← single brain: RPC, filters, derived charts, current values
+  desktop/View.tsx         ← sidebar layout, side-by-side charts (≥769px)
+  mobile/View.tsx          ← MobileTopBar + MobileTabBar + chip strip + charts (≤768px)
 ```
 
 RPC wrappers: seção "price_bands" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts).
@@ -68,8 +71,43 @@ Run locally. **Data owner:** `worker_dados-locais`.
 | Subgerente APP | Schema (legado em `sql/`, idealmente migrar) |
 | Designer | Cores das séries (paridade vs Petrobras) |
 
+## Dual-view structure (added 2026-05-20)
+
+### Hook contract (`usePriceBandsData`)
+
+Returns: `{ rows, loading, error, filters, setFilters, datas, xMin, xMax, gasolineRows, dieselRows, gasolineChart, dieselChart, gasolineYtd, dieselYtd, ytdYears, ytdYear, setYtdYear, currentValues, exportExcel, exportCsv, excelLoading, csvLoading, resetFilters }`.
+
+Key derivations done in the hook (never in Views):
+- `buildPriceBandsChart` — price bands multi-trace with end-of-line annotations + deconfliction
+- `buildYtdChart` — cumulative YTD average + dotted year-end projection
+- `buildCurrentValues` — Petrobras vs. IPP/EPP percentage badges per product
+- `SUBSIDY_CUTOFF = "2026-03-12"` — subsidy lines visible only from this date
+
+### Mobile specifics
+
+- **Product switch**: `MobileTabBar` (Diesel | Gasolina). Diesel is the default.
+- **Date chips**: 3 M / 6 M / 1 Y / 2 Y / All shortcut strip. Syncs with `filters.sliderRange`.
+- **FilterDrawer**: `PeriodSlider` + subsidy-line toggle (Diesel only). Toggle hides `bba_import_parity_w_subsidy` from chart.
+- **MobileChart**: single product at a time. Legend below chart.
+- **MobileDataCard rows**: latest value per band with % vs reference.
+- **YTD section**: same chart pattern, year pills (current / -1 / -2).
+- **ExportFAB**: tapping opens an inline mini-menu (Excel | CSV).
+
+### Series colors (shared via `usePriceBandsData`)
+
+| Constant | Color | Used for |
+|---|---|---|
+| `COLOR_IMPORT` | `#E8611A` orange | Import Parity |
+| `COLOR_EXPORT` | `#1a1a1a` black | Export Parity |
+| `COLOR_PETRO`  | `#4ECDC4` teal  | Petrobras Price |
+
+### Binding sync rule
+
+Any filter, chart, or KPI change in one View must land in the other in the **same commit**, or the commit must declare `[desktop-only]` / `[mobile-only]` with explicit justification.
+
 ## Anti-padrões
 
 - Editar `data/price_bands.xlsx` direto.
 - Hard-codar `product` em inglês na UI — traduza pra "Gasolina" / "Diesel".
 - Misturar séries com unidades diferentes sem tooltip claro.
+- Chamar Supabase diretamente de `desktop/View.tsx` ou `mobile/View.tsx` — toda lógica de dados fica em `usePriceBandsData.ts`.
