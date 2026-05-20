@@ -1,0 +1,1037 @@
+"use client";
+
+// ─── Desktop view — /navios-diesel ──────────────────────────────────────────
+//
+// Identical layout to the pre-dual-view page.tsx. All data now comes from
+// useNaviosDieselData(); local AIS state remains here because the AIS layer
+// is desktop-only (map tab not rendered on mobile) — tagged [desktop-only].
+//
+// Binding sync rule: any new filter, chart or KPI added here must also land
+// in mobile/View.tsx in the same commit, or the commit message must declare
+// [desktop-only] with an explicit reason. See CLAUDE.md § Dual-view policy.
+
+import { useEffect, useMemo, useState } from "react";
+import type { Layout, PlotData } from "plotly.js";
+
+import NavBar from "../../../../components/NavBar";
+import BrandLogo from "../../../../components/BrandLogo";
+import LineUpTabs from "../../../../components/LineUpTabs";
+import { useModuleVisibilityGuard } from "../../../../hooks/useModuleVisibilityGuard";
+import PlotlyChart from "../../../../components/PlotlyChart";
+import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
+import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
+import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
+import ExportPanel from "../../../../components/dashboard/ExportPanel";
+import { getSupabaseClient } from "../../../../lib/supabaseClient";
+import { downloadGenericExcel } from "../../../../lib/exportExcel";
+import { downloadCsv } from "../../../../lib/exportCsv";
+import {
+  rpcGetAisPositionsLatest,
+  rpcGetAisPositionsAllRecent,
+  rpcGetAisArrivalsOpen,
+  rpcGetPortPolygons,
+  type NavioDieselRow,
+  type AisPositionRow,
+  type PortArrivalRow,
+  type PortPolygonRow,
+} from "../../../../lib/rpc";
+import {
+  useNaviosDieselData,
+  STATUS_LABELS,
+} from "../useNaviosDieselData";
+
+const ORANGE = "#FF5000";
+const ORANGE_HOVER = "#FFE8D9";
+
+const PORT_COORDS: Record<string, { lat: number; lon: number }> = {
+  "Porto de Santos":        { lat: -23.9543, lon: -46.3073 },
+  "Porto de Itaqui":        { lat: -2.5657,  lon: -44.3484 },
+  "Porto de Paranaguá":     { lat: -25.5163, lon: -48.5228 },
+  "Porto de Suape":         { lat: -8.3943,  lon: -34.9630 },
+  "Porto de São Sebastião": { lat: -23.8170, lon: -45.4170 },
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  Atracado:          "#d4edda",
+  Esperado:          "#fff3cd",
+  "Ao Largo":        "#d1ecf1",
+  Fundeado:          "#d1ecf1",
+  Despachado:        "#e2e3e5",
+  "Iniciada Descarga": "#c3e6cb",
+};
+
+const MONTH_NAMES = [
+  "January","February","March","April","May","June",
+  "July","August","September","October","November","December",
+];
+const DOW = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+
+function calCells(year: number, month: number): (number | null)[] {
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  return cells;
+}
+
+function fmtTs(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleString("en-US", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
+function fmtDate(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" });
+}
+
+function fmtTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+}
+
+function hoursAgo(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const h = Math.floor(ms / 3_600_000);
+  if (h < 1) return "< 1 h ago";
+  return `${h} h ago`;
+}
+
+const TITLE_STYLE: React.CSSProperties = {
+  fontFamily: "Arial",
+  fontSize: 14,
+  fontWeight: 700,
+  color: ORANGE,
+  marginBottom: 4,
+};
+
+export default function DesktopView(): React.ReactElement {
+  const { visible, loading: visLoading } = useModuleVisibilityGuard("navios-diesel");
+  const supabase = getSupabaseClient();
+
+  const {
+    coletas,
+    coletasByDay,
+    daysWithData,
+    selectedDay,
+    setSelectedDay,
+    selectedColeta,
+    setSelectedColeta,
+    navios,
+    naviosDisplay,
+    newVesselSet,
+    errorPorts,
+    resumoByPorto,
+    volumeMensal,
+    naviosDescarregados,
+    portMonthlySummary,
+    loading,
+  } = useNaviosDieselData();
+
+  // Calendar navigation state (local to desktop — mobile uses a simpler date picker)
+  const [calMonth, setCalMonth] = useState<number>(new Date().getMonth());
+  const [calYear, setCalYear] = useState<number>(new Date().getFullYear());
+  const [hoveredDay, setHoveredDay] = useState<string | null>(null);
+  const [hoveredColeta, setHoveredColeta] = useState<string | null>(null);
+  const [hoveredNavBtn, setHoveredNavBtn] = useState<"prev" | "next" | null>(null);
+  const [mapHeight, setMapHeight] = useState(500);
+
+  // AIS live-tracking layer [desktop-only] — not rendered on mobile
+  const [showAis, setShowAis] = useState(false);
+  const [aisPositions, setAisPositions] = useState<AisPositionRow[]>([]);
+  const [aisAllRecent, setAisAllRecent] = useState<AisPositionRow[]>([]);
+  const [portPolygons, setPortPolygons] = useState<PortPolygonRow[]>([]);
+  const [arrivalsOpen, setArrivalsOpen] = useState<PortArrivalRow[]>([]);
+
+  // Export state
+  const [excelLoading, setExcelLoading] = useState(false);
+
+  // When hook updates selected day → sync the calendar month/year display
+  useEffect(() => {
+    if (!selectedDay) return;
+    const [yr, mo] = selectedDay.split("-").map(Number);
+    setCalYear(yr);
+    setCalMonth(mo - 1);
+  }, [selectedDay]);
+
+  const timesForDay = useMemo(
+    () => coletasByDay.get(selectedDay) ?? [],
+    [coletasByDay, selectedDay],
+  );
+
+  // Map height responsive
+  useEffect(() => {
+    const update = () => setMapHeight(window.innerWidth >= 1920 ? 500 : 380);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  // AIS data fetch [desktop-only]
+  useEffect(() => {
+    if (!supabase) return;
+    if (!showAis) {
+      setAisPositions([]);
+      setAisAllRecent([]);
+      setArrivalsOpen([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const [polys, positions, allRecent, arrivals] = await Promise.all([
+        rpcGetPortPolygons(supabase),
+        selectedColeta ? rpcGetAisPositionsLatest(supabase, selectedColeta) : Promise.resolve([]),
+        rpcGetAisPositionsAllRecent(supabase, 24),
+        rpcGetAisArrivalsOpen(supabase),
+      ]);
+      if (cancelled) return;
+      console.log(
+        "[ais] polygons:", polys.length,
+        "monitored positions:", positions.length,
+        "all recent:", allRecent.length,
+        "open arrivals:", arrivals.length,
+      );
+      setPortPolygons(polys);
+      setAisPositions(positions);
+      setAisAllRecent(allRecent);
+      setArrivalsOpen(arrivals);
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, showAis, selectedColeta]);
+
+  // Build map traces
+  const mapChart = useMemo(() => {
+    if (resumoByPorto.size === 0) {
+      return {
+        data: [] as PlotData[],
+        layout: {
+          paper_bgcolor: "white", plot_bgcolor: "white",
+          xaxis: { visible: false }, yaxis: { visible: false },
+          annotations: [{ text: "No data", xref: "paper" as const, yref: "paper" as const,
+            showarrow: false, font: { size: 13, family: "Arial", color: "#888" } }],
+          height: 280, margin: { t: 10, b: 10, l: 10, r: 10 },
+        } as Partial<Layout>,
+      };
+    }
+
+    const lats: number[] = [];
+    const lons: number[] = [];
+    const texts: string[] = [];
+    const sizes: number[] = [];
+    const colors: string[] = [];
+
+    for (const [porto, c] of Object.entries(PORT_COORDS)) {
+      const p = resumoByPorto.get(porto);
+      lats.push(c.lat);
+      lons.push(c.lon);
+      if (p) {
+        texts.push(
+          `<b>${porto}</b><br>` +
+          `${p.total_navios} vessels<br>` +
+          `${p.total_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³`,
+        );
+        sizes.push(Math.max(14, Math.sqrt(p.total_navios) * 16));
+        colors.push(ORANGE);
+      } else {
+        texts.push(`<b>${porto}</b><br>0 vessels<br>0 m³`);
+        sizes.push(9);
+        colors.push("#cccccc");
+      }
+    }
+
+    const data: PlotData[] = [];
+    if (!showAis) {
+      data.push({
+        type: "scattergeo",
+        lat: lats,
+        lon: lons,
+        text: texts,
+        hoverinfo: "text",
+        showlegend: false,
+        marker: {
+          size: sizes,
+          color: colors,
+          opacity: 0.85,
+          line: { color: "#000512", width: 1.5 },
+        },
+      } as unknown as PlotData);
+    }
+
+    if (showAis) {
+      const normName = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const navioByKey = new Map<string, NavioDieselRow>();
+      for (const n of navios) {
+        if (n.status === "ERRO_COLETA") continue;
+        navioByKey.set(`name:${normName(n.navio)}`, n);
+        if (n.imo) navioByKey.set(`imo:${n.imo}`, n);
+        if (n.mmsi) navioByKey.set(`mmsi:${n.mmsi}`, n);
+      }
+      const lookupNavio = (p: AisPositionRow): NavioDieselRow | undefined =>
+        (p.imo && navioByKey.get(`imo:${p.imo}`)) ||
+        (p.mmsi && navioByKey.get(`mmsi:${p.mmsi}`)) ||
+        navioByKey.get(`name:${normName(p.navio)}`) ||
+        undefined;
+
+      const centroidLats: number[] = [];
+      const centroidLons: number[] = [];
+      const centroidText: string[] = [];
+      for (const p of portPolygons) {
+        const ring = p.polygon?.coordinates?.[0];
+        if (!ring || ring.length < 3) continue;
+        const polyLons = ring.map(([lon]) => lon);
+        const polyLats = ring.map(([, lat]) => lat);
+        const cLat = polyLats.reduce((a, b) => a + b, 0) / polyLats.length;
+        const cLon = polyLons.reduce((a, b) => a + b, 0) / polyLons.length;
+        centroidLats.push(cLat);
+        centroidLons.push(cLon);
+        centroidText.push(`<b>${p.name}</b><br>Monitored polygon`);
+      }
+      if (centroidLats.length) {
+        data.push({
+          type: "scattergeo",
+          mode: "markers",
+          lat: centroidLats,
+          lon: centroidLons,
+          text: centroidText,
+          hoverinfo: "text",
+          marker: {
+            size: 14,
+            symbol: "diamond-open",
+            color: ORANGE,
+            line: { color: ORANGE, width: 2 },
+          },
+          showlegend: false,
+        } as unknown as PlotData);
+      }
+
+      const seenKey = new Set<string>();
+      type Entry = { pos: AisPositionRow; nd: NavioDieselRow };
+      const entries: Entry[] = [];
+      const collect = (v: AisPositionRow) => {
+        if (v.lat == null || v.lon == null) return;
+        const nd = lookupNavio(v);
+        if (!nd) return;
+        const k = `${v.imo ?? ""}|${v.mmsi ?? ""}|${nd.navio}`;
+        if (seenKey.has(k)) return;
+        seenKey.add(k);
+        entries.push({ pos: v, nd });
+      };
+      for (const v of aisPositions) collect(v);
+      for (const v of aisAllRecent) collect(v);
+
+      const tableNames = navios.filter(n => n.status !== "ERRO_COLETA").map(n => n.navio);
+      const aisNames = Array.from(new Set([
+        ...aisPositions.map(p => p.navio),
+        ...aisAllRecent.map(p => p.navio),
+      ]));
+      console.log("[ais-match] table vessels:", tableNames);
+      console.log("[ais-match] AIS vessels seen:", aisNames);
+      console.log("[ais-match] matched entries:", entries.length);
+
+      const inLats: number[] = [], inLons: number[] = [], inText: string[] = [];
+      const outLats: number[] = [], outLons: number[] = [], outText: string[] = [];
+      for (const { pos: v, nd } of entries) {
+        if (v.lat == null || v.lon == null) continue;
+        const hover =
+          `<b>${nd.navio}</b><br>` +
+          `Port: ${nd.porto.replace("Porto de ", "")}<br>` +
+          (nd.quantidade_convertida != null
+            ? `Volume: ${nd.quantidade_convertida.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³<br>`
+            : "") +
+          (nd.status ? `Status: ${STATUS_LABELS[nd.status] ?? nd.status}<br>` : "") +
+          (v.imo ? `IMO ${v.imo}<br>` : "") +
+          (v.sog != null ? `${v.sog.toFixed(1)} kn<br>` : "") +
+          (v.nav_status ? `${v.nav_status}<br>` : "") +
+          (v.inside_port ? `Inside: ${v.inside_port}` : "");
+        if (v.inside_port) {
+          inLats.push(v.lat); inLons.push(v.lon); inText.push(hover);
+        } else {
+          outLats.push(v.lat); outLons.push(v.lon); outText.push(hover);
+        }
+      }
+      if (outLats.length) {
+        data.push({
+          type: "scattergeo", mode: "markers",
+          lat: outLats, lon: outLons, text: outText, hoverinfo: "text",
+          marker: { size: 10, color: "#2196f3", opacity: 0.95, line: { color: "#0b4a84", width: 1 } },
+          showlegend: false,
+        } as unknown as PlotData);
+      }
+      if (inLats.length) {
+        data.push({
+          type: "scattergeo", mode: "markers",
+          lat: inLats, lon: inLons, text: inText, hoverinfo: "text",
+          marker: { size: 13, color: "#2eb85c", opacity: 0.98, line: { color: "#0f4d25", width: 1.2 } },
+          showlegend: false,
+        } as unknown as PlotData);
+      }
+    }
+
+    const layout: Partial<Layout> = {
+      geo: {
+        scope: "south america",
+        resolution: 110,
+        lonaxis: { range: [-65, -30] },
+        lataxis: { range: [-35, 10] },
+        showland: true,
+        landcolor: "#f5f5f5",
+        showocean: true,
+        oceancolor: "#e8f4fd",
+        showcountries: true,
+        countrycolor: "#ccc",
+        showcoastlines: true,
+        coastlinecolor: "#aaa",
+      } as Layout["geo"],
+      paper_bgcolor: "white",
+      margin: { t: 0, b: 0, l: 0, r: 0 },
+      height: 280,
+      hoverlabel: {
+        bgcolor: "rgba(255,255,255,0.95)",
+        bordercolor: "rgba(180,180,180,0.5)",
+        font: { family: "Arial", color: "#1a1a1a", size: 12 },
+      },
+    };
+
+    return { data, layout };
+  }, [resumoByPorto, showAis, portPolygons, aisPositions, aisAllRecent, navios]);
+
+  // Build monthly stacked bar chart
+  const monthlyChart = useMemo(() => {
+    if (volumeMensal.length === 0) {
+      return {
+        data: [] as PlotData[],
+        layout: {
+          paper_bgcolor: "white", plot_bgcolor: "white",
+          xaxis: { visible: false }, yaxis: { visible: false },
+          annotations: [{ text: "No data", xref: "paper" as const, yref: "paper" as const,
+            showarrow: false, font: { size: 13, family: "Arial", color: "#888" } }],
+          height: 220, margin: { t: 30, b: 36, l: 110, r: 0 },
+        } as Partial<Layout>,
+      };
+    }
+
+    const labels = volumeMensal.map((r) => {
+      const [yr, mo] = r.month.split("-");
+      return new Date(Number(yr), Number(mo) - 1, 1)
+        .toLocaleDateString("en-US", { month: "short", year: "numeric" });
+    });
+
+    const INDETERMINATE_COLOR = "#73C6A1";
+    const maxTotal = Math.max(...volumeMensal.map(
+      (r) => r.discharged_volume + r.pending_volume + r.indeterminate_volume,
+    ));
+
+    const data: PlotData[] = [
+      {
+        type: "bar",
+        name: "Discharged",
+        x: labels,
+        y: volumeMensal.map((r) => r.discharged_volume),
+        text: volumeMensal.map((r) =>
+          r.discharged_volume > 0
+            ? r.discharged_volume.toLocaleString("en-US", { maximumFractionDigits: 0 })
+            : "",
+        ),
+        textposition: "inside",
+        textfont: { family: "Arial", size: 10, color: "#ffffff" },
+        marker: { color: "#000000", opacity: 0.85 },
+        hovertemplate: "%{x}<br>Discharged: %{y:,.0f} m³<extra></extra>",
+      } as unknown as PlotData,
+      {
+        type: "bar",
+        name: "Pending Discharge",
+        x: labels,
+        y: volumeMensal.map((r) => r.pending_volume),
+        text: volumeMensal.map((r) =>
+          r.pending_volume > 0
+            ? r.pending_volume.toLocaleString("en-US", { maximumFractionDigits: 0 })
+            : "",
+        ),
+        textposition: "inside",
+        textfont: { family: "Arial", size: 10, color: "#ffffff" },
+        marker: { color: ORANGE, opacity: 0.85 },
+        hovertemplate: "%{x}<br>Pending: %{y:,.0f} m³<extra></extra>",
+      } as unknown as PlotData,
+      {
+        type: "bar",
+        name: "Indeterminate Status",
+        x: labels,
+        y: volumeMensal.map((r) => r.indeterminate_volume),
+        text: volumeMensal.map((r) =>
+          r.indeterminate_volume > 0
+            ? r.indeterminate_volume.toLocaleString("en-US", { maximumFractionDigits: 0 })
+            : "",
+        ),
+        textposition: "inside",
+        textfont: { family: "Arial", size: 10, color: "#ffffff" },
+        marker: { color: INDETERMINATE_COLOR, opacity: 0.85 },
+        hovertemplate: "%{x}<br>Indeterminate Status: %{y:,.0f} m³<extra></extra>",
+      } as unknown as PlotData,
+    ];
+
+    const totalAnnotations = volumeMensal.map((r, i) => ({
+      x: labels[i],
+      y: r.discharged_volume + r.pending_volume + r.indeterminate_volume,
+      text: (r.discharged_volume + r.pending_volume + r.indeterminate_volume)
+        .toLocaleString("en-US", { maximumFractionDigits: 0 }),
+      showarrow: false,
+      yanchor: "bottom" as const,
+      yshift: 4,
+      font: { family: "Arial", size: 10, color: "#1a1a1a" },
+    }));
+
+    const layout: Partial<Layout> = {
+      barmode: "stack",
+      paper_bgcolor: "white",
+      plot_bgcolor: "white",
+      margin: { t: 54, b: 36, l: 110, r: 0 },
+      height: 220,
+      bargap: 0,
+      yaxis: { visible: false, range: [0, maxTotal * 1.25] },
+      xaxis: {
+        tickfont: { family: "Arial", size: 11 },
+        range: [-0.5, volumeMensal.length - 0.5],
+      },
+      annotations: totalAnnotations,
+      legend: {
+        orientation: "h",
+        x: -0.3,
+        y: 1.02,
+        xanchor: "left",
+        yanchor: "bottom",
+        traceorder: "normal",
+        font: { family: "Arial", size: 11 },
+      },
+      hoverlabel: {
+        bgcolor: "rgba(255,255,255,0.95)",
+        bordercolor: "rgba(180,180,180,0.5)",
+        font: { family: "Arial", color: "#1a1a1a", size: 12 },
+      },
+    };
+
+    return { data, layout };
+  }, [volumeMensal]);
+
+  if (visLoading || !visible) return <></>;
+
+  return (
+    <div>
+      <NavBar />
+
+      <div className="container-fluid g-0">
+        <div className="row g-0">
+          {/* ── Sidebar ── */}
+          <div className="col-xxl-2 col-md-3 p-0">
+            <div id="sidebar">
+              <div style={{ textAlign: "center" }}>
+                <BrandLogo variant="sidebar" />
+              </div>
+
+              <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
+
+              <div className="sidebar-section-label">Snapshot</div>
+
+              {/* Inline Calendar */}
+              <div className="sidebar-filter-section">
+                <div className="sidebar-filter-label">Date</div>
+                <div style={{ fontFamily: "Arial", userSelect: "none" }}>
+                  {/* Month/Year navigation */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                    <button
+                      type="button"
+                      className="btn-hover-transition"
+                      onClick={() => { if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1); } else setCalMonth(m => m - 1); }}
+                      onMouseEnter={() => setHoveredNavBtn("prev")}
+                      onMouseLeave={() => setHoveredNavBtn(null)}
+                      style={{ background: hoveredNavBtn === "prev" ? ORANGE_HOVER : "none", border: "none", borderRadius: 4, cursor: "pointer", color: ORANGE, fontSize: 16, lineHeight: 1, padding: "0 4px" }}
+                    >‹</button>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "#1a1a1a" }}>
+                      {MONTH_NAMES[calMonth]} {calYear}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn-hover-transition"
+                      onClick={() => { if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1); } else setCalMonth(m => m + 1); }}
+                      onMouseEnter={() => setHoveredNavBtn("next")}
+                      onMouseLeave={() => setHoveredNavBtn(null)}
+                      style={{ background: hoveredNavBtn === "next" ? ORANGE_HOVER : "none", border: "none", borderRadius: 4, cursor: "pointer", color: ORANGE, fontSize: 16, lineHeight: 1, padding: "0 4px" }}
+                    >›</button>
+                  </div>
+                  {/* Day-of-week headers */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", textAlign: "center", marginBottom: 2 }}>
+                    {DOW.map(d => (
+                      <div key={d} style={{ fontSize: 9, color: "#aaa", fontWeight: 700, padding: "2px 0" }}>{d}</div>
+                    ))}
+                  </div>
+                  {/* Day cells */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", textAlign: "center" }}>
+                    {calCells(calYear, calMonth).map((d, i) => {
+                      if (!d) return <div key={i} />;
+                      const dayStr = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+                      const hasData = daysWithData.has(dayStr);
+                      const isSelected = selectedDay === dayStr;
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          className="btn-hover-transition"
+                          disabled={!hasData}
+                          onClick={() => { if (!hasData) return; setSelectedDay(dayStr); }}
+                          onMouseEnter={() => { if (hasData) setHoveredDay(dayStr); }}
+                          onMouseLeave={() => setHoveredDay(null)}
+                          style={{
+                            padding: "4px 0",
+                            margin: "1px",
+                            borderRadius: 4,
+                            border: "none",
+                            backgroundColor: isSelected ? ORANGE : hasData && hoveredDay === dayStr ? ORANGE_HOVER : "transparent",
+                            color: isSelected ? "#fff" : hasData ? "#1a1a1a" : "#ddd",
+                            fontFamily: "Arial",
+                            fontSize: 10,
+                            fontWeight: hasData ? 600 : 400,
+                            cursor: hasData ? "pointer" : "default",
+                          }}
+                        >
+                          {d}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Time filter */}
+              {timesForDay.length > 0 && (
+                <div className="sidebar-filter-section">
+                  <div className="sidebar-filter-label">Collection Time</div>
+                  <div style={{ maxHeight: 160, overflowY: "auto" }}>
+                    {timesForDay.map((ts) => (
+                      <button
+                        key={ts}
+                        type="button"
+                        className="btn-hover-transition"
+                        onClick={() => setSelectedColeta(ts)}
+                        onMouseEnter={() => setHoveredColeta(ts)}
+                        onMouseLeave={() => setHoveredColeta(null)}
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          textAlign: "left",
+                          padding: "5px 10px",
+                          marginBottom: 3,
+                          borderRadius: 6,
+                          border: selectedColeta === ts ? `2px solid ${ORANGE}` : "1px solid #ddd",
+                          backgroundColor: selectedColeta === ts ? "#fff5f0" : hoveredColeta === ts ? ORANGE_HOVER : "#fff",
+                          fontFamily: "Arial",
+                          fontSize: 11,
+                          fontWeight: selectedColeta === ts ? 700 : 400,
+                          color: "#1a1a1a",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {fmtTime(ts)} BRT
+                        <span style={{ display: "block", fontSize: 9, color: "#888" }}>
+                          {hoursAgo(ts)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Main Content ── */}
+          <div className="col-xxl-10 col-md-9">
+            <div id="page-content">
+              <DashboardHeader
+                title="Diesel Imports Line-Up"
+                sub="Expected diesel vessel arrivals at Brazilian ports"
+                lang="en"
+                hideDivider
+                extraBadge={
+                  selectedColeta && (
+                    <span style={{ marginLeft: 12, fontSize: 11, color: "#888" }}>
+                      Last update: {fmtTs(selectedColeta)} BRT ({hoursAgo(selectedColeta)})
+                    </span>
+                  )
+                }
+                rightSlot={
+                  <ExportPanel
+                    actions={[
+                      {
+                        kind: "excel",
+                        label: "formatted data .xl",
+                        busy: excelLoading,
+                        loadingLabel: "Generating Excel...",
+                        disabled: loading || naviosDisplay.length === 0 || excelLoading,
+                        onClick: async () => {
+                          setExcelLoading(true);
+                          try {
+                            await downloadGenericExcel<NavioDieselRow>({
+                              rows: naviosDisplay,
+                              filename: "Navios-Diesel-Lineup",
+                              title: "Diesel Imports Line-Up — Expected / Pending Discharge",
+                              sheetName: "Line-Up",
+                              columns: [
+                                { key: "porto",                 header: "Port", width: 22 },
+                                { key: "status",                header: "Status", width: 14 },
+                                { key: "navio",                 header: "Vessel", width: 26 },
+                                { key: "produto",               header: "Product", width: 18 },
+                                { key: "quantidade_convertida", header: "Volume (m³)", format: "#,##0" },
+                                { key: "eta",                   header: "ETA" },
+                                { key: "inicio_descarga",       header: "Unload Start" },
+                                { key: "fim_descarga",          header: "Unload End" },
+                                { key: "origem",                header: "Origin", width: 18 },
+                                { key: "imo",                   header: "IMO" },
+                                { key: "mmsi",                  header: "MMSI" },
+                                { key: "flag",                  header: "Flag" },
+                              ],
+                            });
+                          } catch (e) {
+                            console.error("Excel export failed", e);
+                          } finally {
+                            setExcelLoading(false);
+                          }
+                        },
+                      },
+                      {
+                        kind: "csv",
+                        label: "all data .csv",
+                        disabled: loading || naviosDisplay.length === 0,
+                        onClick: () => {
+                          downloadCsv({
+                            rows: naviosDisplay as unknown as Record<string, unknown>[],
+                            filename: "Navios-Diesel-Lineup",
+                          });
+                        },
+                      },
+                    ]}
+                  />
+                }
+              />
+              <div className="mb-2">
+                <LineUpTabs active="line-up" />
+              </div>
+
+              <hr style={{ borderTop: "2px solid #e0e0e0", marginBottom: 12 }} />
+
+              {loading ? (
+                <BarrelLoading alt="Loading..." />
+              ) : (
+                <>
+                  <div className="nd-main-grid">
+                    {/* Row 1 — Col 1: Map */}
+                    <div className="chart-container">
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div style={TITLE_STYLE}>Distribution by Port</div>
+                        <SegmentedToggle
+                          variant="compact"
+                          style={{ marginBottom: 4 }}
+                          options={[
+                            { value: false, label: "AIS Off" },
+                            { value: true,  label: "AIS On"  },
+                          ]}
+                          value={showAis}
+                          onChange={setShowAis}
+                        />
+                      </div>
+                      <hr className="section-hr" />
+                      <PlotlyChart
+                        data={mapChart.data}
+                        layout={{ ...mapChart.layout, height: mapHeight }}
+                        config={{ displayModeBar: false }}
+                        style={{ width: "100%", height: mapHeight }}
+                      />
+                      {showAis && (() => {
+                        const normName = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
+                        const active = navios.filter(n => n.status !== "ERRO_COLETA" && n.status !== "Despachado");
+                        const tableSize = active.length;
+                        const resolved = active.filter(n => n.imo || n.mmsi).length;
+                        const unresolvedNames = active.filter(n => !n.imo && !n.mmsi).map(n => n.navio);
+                        const aisIds = new Set<string>();
+                        for (const p of [...aisPositions, ...aisAllRecent]) {
+                          if (p.imo) aisIds.add(`imo:${p.imo}`);
+                          if (p.mmsi) aisIds.add(`mmsi:${p.mmsi}`);
+                          if (p.navio) aisIds.add(`name:${normName(p.navio)}`);
+                        }
+                        const withAis = active.filter(n =>
+                          (n.imo && aisIds.has(`imo:${n.imo}`)) ||
+                          (n.mmsi && aisIds.has(`mmsi:${n.mmsi}`)) ||
+                          aisIds.has(`name:${normName(n.navio)}`)
+                        ).length;
+                        const color = (n: number) => n > 0 ? "#2eb85c" : "#d33";
+                        return (
+                          <div style={{ marginTop: 8, fontSize: 10, color: "#555", lineHeight: 1.4, backgroundColor: "#f8f8f8", padding: "6px 8px", borderRadius: 4 }}>
+                            <div>Table vessels: <b>{tableSize}</b></div>
+                            <div>IMO resolved: <b style={{ color: color(resolved) }}>{resolved} / {tableSize}</b></div>
+                            <div>With AIS position: <b style={{ color: color(withAis) }}>{withAis} / {tableSize}</b></div>
+                            <div>Inside polygons: <b>{arrivalsOpen.length}</b></div>
+                            {unresolvedNames.length > 0 && (
+                              <div style={{ marginTop: 4, paddingTop: 4, borderTop: "1px dashed #ccc", color: "#777" }}>
+                                <div style={{ fontWeight: 700, marginBottom: 2 }}>Pending IMO lookup:</div>
+                                {unresolvedNames.map(n => (
+                                  <div key={n} style={{ fontSize: 9, lineHeight: 1.3 }}>• {n}</div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Row 1 — Col 2: Bar chart + Monthly Summary */}
+                    <div className="chart-container">
+                      <div style={TITLE_STYLE}>Monthly Diesel Volume (m³)</div>
+                      <hr className="section-hr" />
+                      <PlotlyChart
+                        data={monthlyChart.data}
+                        layout={{ ...monthlyChart.layout, height: 240 }}
+                        config={{ displayModeBar: false }}
+                        style={{ width: "100%", height: 240 }}
+                      />
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ ...TITLE_STYLE, marginBottom: 6 }}>Monthly Summary by Port</div>
+                        <hr className="section-hr" />
+                        <div style={{ overflowX: "auto" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 12, tableLayout: "fixed" }}>
+                            <thead>
+                              <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
+                                <th style={{ width: 110, padding: "6px 10px", fontSize: 11, fontWeight: 700, textAlign: "left" }}>Port</th>
+                                {portMonthlySummary.months.map(m => (
+                                  <th key={m} style={{ padding: "6px 4px", fontSize: 11, fontWeight: 700, textAlign: "center", whiteSpace: "nowrap" }}>
+                                    {portMonthlySummary.monthLabels[m]}
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {portMonthlySummary.ports.map((porto, i) => (
+                                <tr
+                                  key={porto}
+                                  style={{ borderBottom: i === portMonthlySummary.ports.length - 1 ? "2px solid #d0d0d0" : "1px solid #eee" }}
+                                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
+                                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }}
+                                >
+                                  <td style={{ width: 110, padding: "4px 10px", fontWeight: 600, whiteSpace: "nowrap" }}>
+                                    {porto.replace("Porto de ", "")}
+                                  </td>
+                                  {portMonthlySummary.months.map(m => {
+                                    const cell = portMonthlySummary.portMap.get(porto)?.get(m);
+                                    return (
+                                      <td key={m} style={{ padding: "4px 10px", textAlign: "center" }}>
+                                        {cell ? (
+                                          <>
+                                            <div style={{ fontWeight: 700 }}>{cell.vessels} vessel{cell.vessels !== 1 ? "s" : ""}</div>
+                                            <div style={{ fontSize: 11, color: "#666" }}>
+                                              {cell.volume.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³
+                                            </div>
+                                          </>
+                                        ) : (
+                                          <span style={{ color: "#ccc" }}>—</span>
+                                        )}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Row 1 — Col 3: Vessel Details */}
+                    <div className="chart-container nd-span-full">
+                      <div style={{ marginBottom: 8 }}>
+                        <div style={TITLE_STYLE}>Expected Vessels / Pending Discharge</div>
+                        <hr className="section-hr" />
+                      </div>
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 12 }}>
+                          <thead>
+                            <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
+                              {["Port", "Status", "Vessel", "Volume (m³)", "Date", "Unload Start", "Unload End"].map((h) => (
+                                <th key={h} style={{ padding: "6px 10px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {naviosDisplay.map((r, i) => (
+                              <tr
+                                key={r.id}
+                                style={{ borderBottom: i === naviosDisplay.length - 1 ? "2px solid #d0d0d0" : "1px solid #eee" }}
+                                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
+                                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }}
+                              >
+                                <td style={{ padding: "4px 10px", fontWeight: 600 }}>{r.porto.replace("Porto de ", "")}</td>
+                                <td style={{ padding: "4px 10px" }}>
+                                  <span style={{
+                                    display: "inline-block",
+                                    padding: "2px 8px",
+                                    borderRadius: 4,
+                                    fontSize: 10,
+                                    fontWeight: 600,
+                                    backgroundColor: STATUS_COLORS[r.status] ?? "#f0f0f0",
+                                  }}>
+                                    {STATUS_LABELS[r.status] ?? r.status}
+                                  </span>
+                                </td>
+                                <td style={{ padding: "4px 10px" }}>
+                                  {r.navio}
+                                  {newVesselSet.has(`${r.navio}__${r.porto}`) && (
+                                    <span style={{
+                                      marginLeft: 7,
+                                      display: "inline-block",
+                                      padding: "2px 8px",
+                                      borderRadius: 4,
+                                      fontSize: 10,
+                                      fontWeight: 600,
+                                      backgroundColor: ORANGE,
+                                      color: "#fff",
+                                      verticalAlign: "middle",
+                                    }}>New!</span>
+                                  )}
+                                </td>
+                                <td style={{ padding: "4px 10px", textAlign: "right" }}>
+                                  {r.quantidade_convertida?.toLocaleString("en-US", { maximumFractionDigits: 0 }) ?? "—"}
+                                </td>
+                                <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.eta)}</td>
+                                <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.inicio_descarga)}</td>
+                                <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{fmtDate(r.fim_descarga)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {errorPorts.length > 0 && (
+                        <div style={{ marginTop: 8, fontFamily: "Arial", fontSize: 10, color: "#999" }}>
+                          {errorPorts.map(p => p.replace("Porto de ", "")).join(", ")}
+                          {": data not available in this collection."}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Row 2 — Col 1–2: Disclaimer */}
+                    <div className="nd-disclaimer" style={{ backgroundColor: "#fffbf5", border: "1px solid #ffe0b2", borderRadius: 8, padding: "16px 20px", fontFamily: "Arial", fontSize: 12, color: "#555" }}>
+                      <div style={{ fontWeight: 700, marginBottom: 8, color: "#1a1a1a", fontSize: 13 }}>
+                        Data Limitations & Disclaimer
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: 18 }}>
+                        <li>Data is collected at 6-hour intervals and may not reflect real-time conditions or recent changes in vessel schedules.</li>
+                        <li>Ports monitored: Santos, Itaqui, Paranaguá, Suape, and São Sebastião. Ports with no vessels in the selected snapshot are shown in gray on the map.</li>
+                        <li>A vessel is considered delivered when the port marks it as "Despachado" or when it disappears from the line-up. Both are estimates and may be subject to error.</li>
+                      </ul>
+                    </div>
+
+                    {/* Row 2 — Col 3: Delivered Vessels */}
+                    <div className="chart-container nd-span-full">
+                      <div style={{ ...TITLE_STYLE, marginBottom: 4 }}>Delivered Vessels / Discharged</div>
+                      <hr className="section-hr" />
+                      <div style={{ overflowX: "auto", maxHeight: 280, overflowY: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 12 }}>
+                          <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
+                            <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
+                              {["Port", "Vessel", "Last Seen (BRT)", "Est. Discharge Month", "Volume (m³)"].map(h => (
+                                <th key={h} style={{ padding: "6px 10px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", textAlign: h === "Volume (m³)" ? "right" : "left" }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {naviosDescarregados.length === 0 ? (
+                              <tr>
+                                <td colSpan={5} style={{ padding: "12px 10px", textAlign: "center", color: "#aaa", fontFamily: "Arial", fontSize: 11 }}>
+                                  No delivered vessels found for this snapshot.
+                                </td>
+                              </tr>
+                            ) : naviosDescarregados.map((r, i) => {
+                              const [yr, mo] = r.discharge_month.split("-");
+                              const monthLabel = new Date(Number(yr), Number(mo) - 1, 1)
+                                .toLocaleDateString("en-US", { month: "short", year: "numeric" });
+                              return (
+                                <tr
+                                  key={`${r.navio}-${r.porto}`}
+                                  style={{ borderBottom: i === naviosDescarregados.length - 1 ? "2px solid #d0d0d0" : "1px solid #eee" }}
+                                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
+                                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }}
+                                >
+                                  <td style={{ padding: "4px 10px", fontWeight: 600, whiteSpace: "nowrap" }}>{r.porto.replace("Porto de ", "")}</td>
+                                  <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{r.navio}</td>
+                                  <td style={{ padding: "4px 10px", whiteSpace: "nowrap", color: "#555" }}>{r.last_seen}</td>
+                                  <td style={{ padding: "4px 10px", whiteSpace: "nowrap", color: "#555" }}>{monthLabel}</td>
+                                  <td style={{ padding: "4px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                                    {r.last_volume.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* AIS — Vessels currently inside a monitored port polygon [desktop-only] */}
+                  {showAis && (
+                    <div className="chart-container" style={{ marginBottom: 24 }}>
+                      <div style={{ ...TITLE_STYLE, marginBottom: 4 }}>
+                        Vessels Currently in Port Area (Live AIS)
+                      </div>
+                      <hr className="section-hr" />
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 12 }}>
+                          <thead>
+                            <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
+                              {["Vessel", "IMO", "MMSI", "Port", "Entered At", "Duration"].map(h => (
+                                <th key={h} style={{ padding: "6px 10px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", textAlign: "left" }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {arrivalsOpen.length === 0 ? (
+                              <tr>
+                                <td colSpan={6} style={{ padding: "12px 10px", textAlign: "center", color: "#aaa", fontFamily: "Arial", fontSize: 11 }}>
+                                  No vessels currently inside port polygons.
+                                </td>
+                              </tr>
+                            ) : arrivalsOpen.map((r, i) => {
+                              function hoursAgoLocal(iso: string): string {
+                                const ms = Date.now() - new Date(iso).getTime();
+                                const h = Math.floor(ms / 3_600_000);
+                                if (h < 1) return "< 1 h ago";
+                                return `${h} h ago`;
+                              }
+                              return (
+                                <tr
+                                  key={`${r.imo ?? r.mmsi}-${r.port_slug}`}
+                                  style={{ borderBottom: i === arrivalsOpen.length - 1 ? "2px solid #d0d0d0" : "1px solid #eee" }}
+                                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
+                                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }}
+                                >
+                                  <td style={{ padding: "4px 10px", fontWeight: 600, whiteSpace: "nowrap" }}>{r.vessel_name ?? "—"}</td>
+                                  <td style={{ padding: "4px 10px", whiteSpace: "nowrap", color: "#555" }}>{r.imo ?? "—"}</td>
+                                  <td style={{ padding: "4px 10px", whiteSpace: "nowrap", color: "#555" }}>{r.mmsi ?? "—"}</td>
+                                  <td style={{ padding: "4px 10px", whiteSpace: "nowrap" }}>{r.port_name ?? r.port_slug}</td>
+                                  <td style={{ padding: "4px 10px", whiteSpace: "nowrap", color: "#555" }}>{fmtTs(r.entered_at)}</td>
+                                  <td style={{ padding: "4px 10px", whiteSpace: "nowrap", color: "#555" }}>{hoursAgoLocal(r.entered_at)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
