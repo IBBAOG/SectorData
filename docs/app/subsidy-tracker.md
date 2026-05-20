@@ -130,9 +130,13 @@ Direct download (no modal — dataset is small, one row per date).
 ## Files & ownership
 
 ```
-src/app/(dashboard)/subsidy-tracker/page.tsx       ← this dashboard
-src/lib/rpc.ts                                     ← "MODULE: Subsidy Tracker" section
-docs/app/subsidy-tracker.md                        ← this PRD
+src/app/(dashboard)/subsidy-tracker/
+├── page.tsx                       ← viewport router (useIsMobile)
+├── useSubsidyTrackerData.ts       ← single brain (RPC, filters, chart, exports)
+├── desktop/View.tsx               ← desktop UX (single Plotly chart, full annotations)
+└── mobile/View.tsx                ← mobile UX (chart + cards + tap-to-show regions)
+src/lib/rpc.ts                     ← "MODULE: Subsidy Tracker" section
+docs/app/subsidy-tracker.md        ← this PRD
 ```
 
 Not owned here:
@@ -140,7 +144,71 @@ Not owned here:
 - `NavBar.tsx`, `HomeClient.tsx`, admin-panel reference-tables editor for `anp_subsidy_history` → `worker_dash-admin`.
 - Tables/RPCs/RLS for `anp_subsidy_*` → `worker_supabase`.
 - `scripts/pipelines/anp/subsidy_diesel_sync.py` and `.github/workflows/etl_anp_subsidy_diesel.yml` → `worker_etl-pipelines`.
-- Shared components in `src/components/dashboard/` → `worker_subgerente-app` / `worker_designer`.
+- Shared components in `src/components/dashboard/` and `src/components/dashboard/mobile/` → `worker_subgerente-app` / `worker_designer`.
+
+## Dual-view structure
+
+`/subsidy-tracker` ships as a **dual-view module** (Phase 2 / Wave 3). Both Views consume `useSubsidyTrackerData` exclusively — neither calls Supabase directly nor derives chart data on its own.
+
+### Shared hook contract (`useSubsidyTrackerData.ts`)
+
+```ts
+{
+  rows: SubsidyTrackerRow[];
+  loading: boolean;
+  error: Error | null;
+  refetch: () => void;
+  filters: { sliderRange: [number, number]; traces: TraceVisibility };
+  setFilters: (next: Partial<Filters>) => void;
+  resetFilters: () => void;
+  datas: string[];                      // unique sorted dates >= MIN_DATE
+  xMin: string | null;
+  xMax: string | null;
+  chart: { data: PlotData[]; layout: Partial<Layout> };
+  currentValues: SubsidyTrackerCurrent[];     // 1 row per series (latest non-null)
+  activeSubsidy: number | null;               // Reference − Commercialization
+  exportExcel: () => Promise<void>;
+  exportCsv: () => void;
+  excelLoading: boolean;
+  csvLoading: boolean;
+}
+```
+
+Exports also include `SERIES`, `REGION_ORDER`, `COLOR_*` constants and `formatRegions` / `fmtDateLabel` helpers, so both Views can decorate cards / legends without duplicating logic.
+
+### Desktop View
+
+Single-section layout (NavBar + DashboardHeader + ExportPanel + Plotly chart). Verbatim port of the original page.tsx — no analyses dropped:
+
+- 4-trace line chart (IPP / ANP Reference / ANP Commercialization / Petrobras).
+- ANP Reference hover lists the 5 regional values from `customdata`.
+- End-of-line value annotations with min-gap pushdown to avoid label collisions.
+- X range extended +30 days past last data point for label clearance.
+
+### Mobile View
+
+Archetype: **chart-heavy single-product** (mockup neighbour: market-share-mobile / price-bands-mobile). Same analyses as desktop, redesigned for touch:
+
+- `MobileTopBar` with filter trigger.
+- Subtitle + date-chip strip (30 D / 90 D / 6 M / 1 Y / All).
+- `MobileChart` with all 4 traces and a compact 2-column color-key legend.
+- "Active subsidy" badge derived from `activeSubsidy` (Reference − Commercialization).
+- `MobileDataCard` per trace under "Latest values" with hidden-state indicator.
+- Tap-to-show **regional breakdown card** that mirrors the desktop hover tooltip (`[mobile-only]` divergence — touch devices have no hover).
+- `FilterDrawer` with period slider + per-trace visibility toggles.
+- `ExportFAB` with Excel / CSV mini-menu (Tier 1).
+
+### Sync rule
+
+Per `CLAUDE.md` § Dual-view policy: any new filter, chart, KPI or copy added to one View must land in the other in the **same commit**, OR the commit message must declare `[desktop-only]` / `[mobile-only]` with explicit justification.
+
+Current `[mobile-only]` divergences:
+
+| Concept | Desktop | Mobile | Reason |
+|---|---|---|---|
+| ANP Reference regional breakdown | Plotly hover tooltip via `customdata` | Tap-to-expand `MobileDataCard` list under the chart | Touch devices have no hover; collapsible card preserves the same data |
+| End-of-line value annotations | Stacked at chart's right edge with min-gap pushdown | Dropped; replaced by `MobileDataCard` "Latest values" section below | Annotations overflow narrow viewports |
+| Per-trace visibility | Plotly legend click | Toggle switches inside `FilterDrawer` | Mobile legend is non-interactive (`showlegend: false`) |
 
 ## Gotchas
 
