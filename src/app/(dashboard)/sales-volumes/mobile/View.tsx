@@ -6,13 +6,20 @@
 //
 // Layout:
 //   MobileTopBar (sticky, liquid glass)
-//   Filter chip row (sticky, horizontal scroll)
+//   Filter chip row (sticky, horizontal scroll) — also primary filter trigger
 //   Title block
-//   Product tab bar (Diesel B / Gasoline C / Ethanol / Otto-Cycle)
-//   MobileChart — stacked area of volumes for the selected product
-//   Ranking section — MobileDataCard rows sorted by total volume
+//   Product tab bar     (Diesel B / Gasoline / Ethanol / Otto-Cycle)
+//   Segment tab bar     (Total / Retail / B2B / TRR — TRR only for Diesel B)
+//   MobileChart         — stacked area of volumes for the active product+segment
+//   Ranking tab         — MobileDataCard rows sorted by latest-month volume
+//   Trends tab          — MobileDataCard rows with MoM/QTD/YoY/YTD deltas
+//                         (restored 2026-05-21 — mobile parity sweep)
 //   ExportFAB (floating)
 //   FilterDrawer (BottomSheet with PeriodSlider + region/competitors)
+//
+// Parity sweep (2026-05-21): segment selector and Trends tab restore the two
+// analyses previously declared [desktop-only] in Wave 1. Mobile is now the
+// same brain as desktop, only in adapted clothing.
 
 import { useMemo, useState } from "react";
 import { useModuleVisibilityGuard } from "../../../../hooks/useModuleVisibilityGuard";
@@ -43,6 +50,7 @@ import {
   ALL_PLAYERS_BIG3,
   computeTopPlayers,
   type SvMode,
+  type SvSegment,
 } from "../useSalesVolumesData";
 import type { MsSerieRow } from "../../../../lib/rpc";
 
@@ -66,71 +74,23 @@ function productTabToProduto(tab: ProductTab): string {
   }
 }
 
-/** Build a stacked area chart for a single product (all segments combined). */
-function buildMobileAreaChart(params: {
-  serieRows: MsSerieRow[];
-  produto: string;
-  players: string[];
-  big3: boolean;
-  groupBy: "classificacao" | "agente_regulado";
-  colors: Record<string, string>;
-}): PlotData[] {
-  const { serieRows, produto, players, big3, groupBy, colors } = params;
-
-  let rows = serieRows.filter((r) => r.nome_produto === produto);
-  if (rows.length === 0) return [];
-
-  // Aggregate by (date, player-key)
-  const groupMap = new Map<string, number>();
-  for (const r of rows) {
-    let cls =
-      groupBy === "agente_regulado"
-        ? (r.agente_regulado ?? r.classificacao)
-        : r.classificacao;
-    if (big3 && groupBy !== "agente_regulado")
-      cls = (BIG3_MEMBERS as readonly string[]).includes(cls) ? "Big-3" : cls;
-    const key = `${String(r.date)}|${cls}`;
-    groupMap.set(key, (groupMap.get(key) ?? 0) + Number(r.quantidade ?? 0));
-  }
-
-  // Pivot to date → player → volume
-  const datePlayerMap = new Map<string, Map<string, number>>();
-  for (const [key, vol] of groupMap.entries()) {
-    const [date, cls] = key.split("|");
-    if (!players.includes(cls)) continue;
-    if (!datePlayerMap.has(date)) datePlayerMap.set(date, new Map());
-    datePlayerMap.get(date)!.set(cls, vol);
-  }
-
-  const dates = Array.from(datePlayerMap.keys()).sort();
-
-  return players
-    .filter((p) => dates.some((d) => (datePlayerMap.get(d)?.get(p) ?? 0) > 0))
-    .map((player) => ({
-      type: "scatter",
-      mode: "lines",
-      stackgroup: "volume",
-      fillcolor: colors[player] ? colors[player] + "33" : undefined,
-      x: dates,
-      y: dates.map((d) => datePlayerMap.get(d)?.get(player) ?? 0),
-      name: player,
-      line: { width: 1.5, color: colors[player] ?? "#888" },
-      hovertemplate: "%{fullData.name}: %{y:,.1f} thou. m³<extra></extra>",
-    } as unknown as PlotData));
-}
-
-/** Simplified non-stacked version that maps correctly. */
+/** Stacked-area series for a single product, optionally filtered to a segment.
+ *  When `segmentFilter` is null (Total), all segments are summed per (date,
+ *  player). Mirrors the desktop chart but presented as a single stacked area
+ *  rather than a per-player line. */
 function buildMobileSeries(params: {
   serieRows: MsSerieRow[];
   produto: string;
+  segmentFilter: string | null;
   players: string[];
   big3: boolean;
   groupBy: "classificacao" | "agente_regulado";
   colors: Record<string, string>;
 }): PlotData[] {
-  const { serieRows, produto, players, big3, groupBy, colors } = params;
+  const { serieRows, produto, segmentFilter, players, big3, groupBy, colors } = params;
 
-  const rows = serieRows.filter((r) => r.nome_produto === produto);
+  let rows = serieRows.filter((r) => r.nome_produto === produto);
+  if (segmentFilter) rows = rows.filter((r) => r.segmento === segmentFilter);
   if (rows.length === 0) return [];
 
   const groupMap = new Map<string, number>();
@@ -209,6 +169,62 @@ function FilterIcon(): React.ReactElement {
   );
 }
 
+function TrendsIcon(): React.ReactElement {
+  // Up-right arrow with comparison ticks — visually distinct from Chart icon.
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+      <polyline points="17 6 23 6 23 12" />
+    </svg>
+  );
+}
+
+// ─── Delta cell for the Trends tab (mobile equivalent of desktop's
+//     ComparisonTable cell) — single integer cell with sign + colored bg.
+function DeltaCell({ label, value }: { label: string; value: number | null }): React.ReactElement {
+  const fmt = value === null ? "—" : (value > 0 ? "+" : "") + value.toFixed(1);
+  const bg =
+    value === null
+      ? "transparent"
+      : value > 0
+      ? "#C6E8D9"
+      : value < 0
+      ? "#FFDDCC"
+      : "transparent";
+  const fg = value === null ? "var(--mobile-text-muted, #bbb)" : "var(--mobile-text, #1a1a1a)";
+  return (
+    <div
+      style={{
+        background: bg,
+        borderRadius: 8,
+        padding: "6px 4px",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        textAlign: "center",
+        minHeight: 44,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 10,
+          fontWeight: 700,
+          color: "var(--mobile-text-muted, #6b6b73)",
+          letterSpacing: "0.04em",
+          textTransform: "uppercase",
+          lineHeight: 1,
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700, color: fg, lineHeight: 1.1 }}>
+        {fmt}
+      </div>
+    </div>
+  );
+}
+
 // ─── Mobile View ──────────────────────────────────────────────────────────────
 
 export default function MobileView(): React.ReactElement {
@@ -224,6 +240,7 @@ export default function MobileView(): React.ReactElement {
     competidoresSelected, setCompetidoresSelected,
     regioesSelected, setRegioesSelected,
     ufsSelected, setUfsSelected,
+    selectedSegment, setSelectedSegment, segmentFilter,
     applyFilters, clearFilters,
     exportOpen, openExportModal, closeExportModal,
     exportRange, setExportRange,
@@ -232,13 +249,14 @@ export default function MobileView(): React.ReactElement {
     exportMercados, setExportMercados,
     exportFilters, fetchExportCount,
     excelLoading, csvLoading, onExportExcel, onExportCsv,
+    buildComparisonRows,
   } = sv;
 
   // ── Local UI state ───────────────────────────────────────────────────────
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [productTab, setProductTab] = useState<ProductTab>("diesel");
-  /** "chart" or "ranking" — bottom tab */
-  const [bottomTab, setBottomTab] = useState<"chart" | "ranking">("chart");
+  /** "chart" / "ranking" / "trends" — bottom tab */
+  const [bottomTab, setBottomTab] = useState<"chart" | "ranking" | "trends">("chart");
 
   // ── Players list for filter drawer competitor selection ──────────────────
   const othersPlayersMobile = useMemo(() => {
@@ -252,20 +270,46 @@ export default function MobileView(): React.ReactElement {
     mode === "Others" ? othersPlayersMobile :
     ALL_PLAYERS_IND;
 
-  // ── Chart data for selected product ──────────────────────────────────────
+  // ── Chart data for selected product + segment ────────────────────────────
   const activeProduct = productTabToProduto(productTab);
   const activeRows = productTab === "otto" ? ottoCycleRows : serieRows;
 
+  // TRR only exists for Diesel B in our source data. When the user switches
+  // products, gracefully fall back to "Total" so the chart stays populated.
+  const effectiveSegment: SvSegment =
+    selectedSegment === "TRR" && productTab !== "diesel" ? "Total" : selectedSegment;
+  const effectiveSegmentFilter: string | null =
+    effectiveSegment === "Total" ? null : effectiveSegment;
+
   const chartTraces = useMemo(() =>
-    buildMobileSeries({ serieRows: activeRows, produto: activeProduct, players, big3, groupBy, colors: chartColors }),
-    [activeRows, activeProduct, players, big3, groupBy, chartColors],
+    buildMobileSeries({ serieRows: activeRows, produto: activeProduct, segmentFilter: effectiveSegmentFilter, players, big3, groupBy, colors: chartColors }),
+    [activeRows, activeProduct, effectiveSegmentFilter, players, big3, groupBy, chartColors],
   );
 
-  // ── Ranking for selected product (latest date, all segments combined) ────
+  // ── Ranking for selected product+segment (latest date) ───────────────────
   const rankingData = useMemo(() => {
     if (!latestDate) return [];
-    return computeTopPlayers(activeRows, activeProduct, null, latestDate, big3, groupBy);
-  }, [activeRows, activeProduct, latestDate, big3, groupBy]);
+    return computeTopPlayers(activeRows, activeProduct, effectiveSegmentFilter, latestDate, big3, groupBy);
+  }, [activeRows, activeProduct, effectiveSegmentFilter, latestDate, big3, groupBy]);
+
+  // ── Comparison rows for Trends tab (MoM / QTD / YoY / YTD) ───────────────
+  // Uses the hook-exported buildComparisonRows so desktop ComparisonTable and
+  // mobile Trends tab share the exact same analysis.
+  const comparisonRows = useMemo(
+    () => buildComparisonRows(activeRows, activeProduct, effectiveSegmentFilter),
+    [buildComparisonRows, activeRows, activeProduct, effectiveSegmentFilter],
+  );
+
+  // Available segment tabs depend on the active product (TRR only for Diesel B).
+  const segmentTabs: Array<{ key: SvSegment; label: string }> = useMemo(() => {
+    const base: Array<{ key: SvSegment; label: string }> = [
+      { key: "Total",  label: "Total"  },
+      { key: "Retail", label: "Retail" },
+      { key: "B2B",    label: "B2B"    },
+    ];
+    if (productTab === "diesel") base.push({ key: "TRR", label: "TRR" });
+    return base;
+  }, [productTab]);
 
   // ── Active filter chip labels ─────────────────────────────────────────────
   const activeChips = useMemo(() => {
@@ -286,8 +330,9 @@ export default function MobileView(): React.ReactElement {
     if (ufsSelected.length) chips.push({ id: "uf", label: ufsSelected.join(", ") });
     if (competidoresSelected.length) chips.push({ id: "comp", label: `${competidoresSelected.length} competitors` });
     if (mode !== "Individual") chips.push({ id: "mode", label: `Mode: ${mode}` });
+    if (effectiveSegment !== "Total") chips.push({ id: "segment", label: `Segment: ${effectiveSegment}` });
     return chips;
-  }, [sliderRange, datas, regioesSelected, ufsSelected, competidoresSelected, mode]);
+  }, [sliderRange, datas, regioesSelected, ufsSelected, competidoresSelected, mode, effectiveSegment]);
 
   const fmtMonthLabel = (d: string) => {
     try {
@@ -444,7 +489,7 @@ export default function MobileView(): React.ReactElement {
       </div>
 
       {/* ── Product tab bar ──────────────────────────────────────────────────── */}
-      <div style={{ padding: "0 16px 12px" }}>
+      <div style={{ padding: "0 16px 10px" }}>
         <MobileTabBar
           tabs={PRODUCT_TABS.map((t) => ({ key: t.key, label: t.label }))}
           activeKey={productTab}
@@ -454,7 +499,19 @@ export default function MobileView(): React.ReactElement {
         />
       </div>
 
-      {/* ── Main content: chart or ranking ───────────────────────────────────── */}
+      {/* ── Segment tab bar (Total / Retail / B2B / TRR) ─────────────────────── */}
+      {/* Restored 2026-05-21 (mobile parity sweep). TRR only appears for Diesel B. */}
+      <div style={{ padding: "0 16px 12px" }}>
+        <MobileTabBar
+          tabs={segmentTabs.map((t) => ({ key: t.key, label: t.label }))}
+          activeKey={effectiveSegment}
+          onChange={(k) => setSelectedSegment(k as SvSegment)}
+          variant="container"
+          ariaLabel="Segment selection"
+        />
+      </div>
+
+      {/* ── Main content: chart / ranking / trends ───────────────────────────── */}
       {seriesLoading ? (
         <div style={{ padding: "32px 16px", display: "flex", justifyContent: "center" }}>
           <BarrelLoading />
@@ -472,7 +529,7 @@ export default function MobileView(): React.ReactElement {
           >
             <div style={{ padding: "14px 14px 6px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: "var(--mobile-text, #1a1a1a)" }}>
-                {productTabToProduto(productTab)} — All Segments
+                {productTabToProduto(productTab)} — {effectiveSegment === "Total" ? "All Segments" : effectiveSegment}
               </div>
               <div style={{ fontSize: 11, color: "var(--mobile-text-muted, #6b6b73)" }}>thousand m³</div>
             </div>
@@ -489,11 +546,11 @@ export default function MobileView(): React.ReactElement {
             />
           </div>
         </div>
-      ) : (
+      ) : bottomTab === "ranking" ? (
         /* Ranking section */
         <div style={{ padding: "0 16px 16px" }}>
           <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 700, color: "var(--mobile-text-muted, #6b6b73)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
-            {productTabToProduto(productTab)} — Volume Ranking
+            {productTabToProduto(productTab)} · {effectiveSegment === "Total" ? "All Segments" : effectiveSegment} — Volume Ranking
             {latestDate && ` · ${(() => {
               try {
                 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -524,7 +581,9 @@ export default function MobileView(): React.ReactElement {
                         : r.classificacao;
                     if (big3 && groupBy !== "agente_regulado")
                       cls = (BIG3_MEMBERS as readonly string[]).includes(cls) ? "Big-3" : cls;
-                    return cls === item.player && r.nome_produto === activeProduct;
+                    if (cls !== item.player || r.nome_produto !== activeProduct) return false;
+                    if (effectiveSegmentFilter && r.segmento !== effectiveSegmentFilter) return false;
+                    return true;
                   });
                   const byDate = new Map<string, number>();
                   for (const r of playerRows) {
@@ -583,19 +642,86 @@ export default function MobileView(): React.ReactElement {
             )}
           </div>
         </div>
+      ) : (
+        /* Trends section — MoM / QTD / YoY / YTD deltas per player */
+        <div style={{ padding: "0 16px 16px" }}>
+          <div style={{ marginBottom: 10, fontSize: 13, fontWeight: 700, color: "var(--mobile-text-muted, #6b6b73)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+            {productTabToProduto(productTab)} · {effectiveSegment === "Total" ? "All Segments" : effectiveSegment} — Volume Var. (thousand m³)
+          </div>
+          <div
+            style={{
+              background: "var(--mobile-surface, #ffffff)",
+              border: "1px solid var(--mobile-border-soft, #f0f0f5)",
+              borderRadius: 16,
+              overflow: "hidden",
+            }}
+          >
+            {comparisonRows.length === 0 ? (
+              <div style={{ padding: 24, textAlign: "center", color: "var(--mobile-text-muted, #6b6b73)", fontSize: 13 }}>
+                No data for the selected filters.
+              </div>
+            ) : (
+              comparisonRows.map((row) => {
+                const color = chartColors[row.player] ?? "#888";
+                return (
+                  <div
+                    key={row.player}
+                    style={{
+                      padding: "12px 16px",
+                      borderBottom: "1px solid var(--mobile-divider, #f0f0f5)",
+                      background: "var(--mobile-surface, #ffffff)",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                      fontFamily: "Arial, Helvetica, sans-serif",
+                    }}
+                  >
+                    {/* Player name row */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: "50%",
+                          background: color,
+                          flexShrink: 0,
+                        }}
+                      />
+                      <span style={{ fontSize: 15, fontWeight: 700, color: "var(--mobile-text, #1a1a1a)" }}>
+                        {row.player}
+                      </span>
+                    </div>
+
+                    {/* Delta grid: MoM / QTD / YoY / YTD */}
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(4, 1fr)",
+                        gap: 6,
+                      }}
+                    >
+                      <DeltaCell label="MoM" value={row.mom} />
+                      <DeltaCell label="QTD" value={row.q3m} />
+                      <DeltaCell label="YoY" value={row.yoy} />
+                      <DeltaCell label="YTD" value={row.ytd} />
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
       )}
 
-      {/* ── Bottom tab bar (Chart / Ranking) ─────────────────────────────────── */}
+      {/* ── Bottom tab bar (Chart / Ranking / Trends) ────────────────────────── */}
       <MobileBottomTabBar
         tabs={[
           { key: "chart",   label: "Chart",   icon: <ChartIcon />,   active: bottomTab === "chart" },
           { key: "ranking", label: "Ranking", icon: <RankingIcon />, active: bottomTab === "ranking" },
-          { key: "filters", label: "Filters", icon: <FilterIcon />,  active: false },
+          { key: "trends",  label: "Trends",  icon: <TrendsIcon />,  active: bottomTab === "trends" },
         ]}
-        onChange={(k) => {
-          if (k === "filters") { setFilterDrawerOpen(true); return; }
-          setBottomTab(k as "chart" | "ranking");
-        }}
+        onChange={(k) => setBottomTab(k as "chart" | "ranking" | "trends")}
       />
 
       {/* ── Export FAB ───────────────────────────────────────────────────────── */}

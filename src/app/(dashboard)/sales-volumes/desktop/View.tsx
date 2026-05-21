@@ -28,7 +28,9 @@ import {
   COLORS_IND,
   ALL_PLAYERS_IND,
   ALL_PLAYERS_BIG3,
+  buildSvComparisonData,
   type SvMode,
+  type SvCompRow,
 } from "../useSalesVolumesData";
 import type { MsSerieRow } from "../../../../lib/rpc";
 
@@ -187,61 +189,7 @@ function buildSalesVolumeLine(params: {
   };
 }
 
-function shiftMonth(dateStr: string, n: number): string {
-  const y = parseInt(dateStr.slice(0, 4), 10);
-  const m = parseInt(dateStr.slice(5, 7), 10) - 1 + n;
-  const ny = y + Math.floor(m / 12);
-  const nm = ((m % 12) + 12) % 12;
-  return `${ny}-${String(nm + 1).padStart(2, "0")}-01`;
-}
-
-function getSvAtDate(
-  rows: MsSerieRow[], produto: string, segmento: string | null,
-  date: string, big3: boolean,
-  groupBy: "classificacao" | "agente_regulado" = "classificacao",
-): Map<string, number> {
-  let filtered = rows.filter((r) => r.nome_produto === produto && r.date === date);
-  if (segmento) filtered = filtered.filter((r) => r.segmento === segmento);
-  const grp = new Map<string, number>();
-  for (const r of filtered) {
-    let cls =
-      groupBy === "agente_regulado"
-        ? (r.agente_regulado ?? r.classificacao)
-        : r.classificacao;
-    if (big3 && groupBy !== "agente_regulado")
-      cls = (BIG3_MEMBERS as readonly string[]).includes(cls) ? "Big-3" : cls;
-    grp.set(cls, (grp.get(cls) ?? 0) + Number(r.quantidade ?? 0));
-  }
-  return grp;
-}
-
-type CompRow = { player: string; mom: number | null; q3m: number | null; yoy: number | null; ytd: number | null };
-
-function buildSvComparisonData(
-  rows: MsSerieRow[], produto: string, segmento: string | null,
-  players: string[], big3: boolean, latestDate: string,
-  groupBy: "classificacao" | "agente_regulado" = "classificacao",
-): CompRow[] {
-  const prevYearDec = `${parseInt(latestDate.slice(0, 4), 10) - 1}-12-01`;
-  const volNow = getSvAtDate(rows, produto, segmento, latestDate, big3, groupBy);
-  const volMoM = getSvAtDate(rows, produto, segmento, shiftMonth(latestDate, -1), big3, groupBy);
-  const vol3M  = getSvAtDate(rows, produto, segmento, shiftMonth(latestDate, -3), big3, groupBy);
-  const volYoY = getSvAtDate(rows, produto, segmento, shiftMonth(latestDate, -12), big3, groupBy);
-  const volYtd = getSvAtDate(rows, produto, segmento, prevYearDec, big3, groupBy);
-  const delta = (a: Map<string, number>, b: Map<string, number>, p: string): number | null => {
-    const va = a.get(p); const vb = b.get(p);
-    return va !== undefined && vb !== undefined ? va - vb : null;
-  };
-  return players.map((player) => ({
-    player,
-    mom: delta(volNow, volMoM, player),
-    q3m: delta(volNow, vol3M, player),
-    yoy: delta(volNow, volYoY, player),
-    ytd: delta(volNow, volYtd, player),
-  }));
-}
-
-function ComparisonTable({ rows, colors }: { rows: CompRow[]; colors: Record<string, string> }) {
+function ComparisonTable({ rows, colors }: { rows: SvCompRow[]; colors: Record<string, string> }) {
   void colors; // accepted for API symmetry with Market Share
   const fmt = (v: number | null) => v === null ? "—" : (v > 0 ? "+" : "") + v.toFixed(1);
   const cellStyle = (v: number | null) => ({
