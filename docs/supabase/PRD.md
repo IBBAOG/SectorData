@@ -107,6 +107,16 @@ Todas com RLS habilitada, policy `acesso autenticado` FOR SELECT TO authenticate
 | `anp_cdp_diaria_instalacao` | (data, instalacao) | campo (NOT NULL), petroleo_bbl_dia, gas_mm3_dia. Sem coluna bacia — entidade Power BI `v_instalacoes_final` não expõe bacia. ~16.3k rows (93 instalações; range 2025-11-09 → presente). Populada em modo **append-only** (`ON CONFLICT DO NOTHING`) — linhas existentes nunca sobrescritas. | `20260508120001_anp_cdp_diaria_levels.sql` | `scripts/extractors/anp_cdp_powerbi.py --level instalacao` |
 | `anp_cdp_diaria_poco` | (data, poco) | campo (nullable), bacia (nullable), instalacao (nullable; adicionada em `20260508130001`), petroleo_bbl_dia, gas_mm3_dia. ~180.7k rows (1.219 poços; range 2025-11-09 → presente). Populada em modo **append-only** (`ON CONFLICT DO NOTHING`) — linhas existentes nunca sobrescritas. **Nota:** atribuição poço↔campo é 1:1 (último mapeamento contratual). Para análise N:N (poços compartilhados entre múltiplos campos), use `anp_cdp_producao` (mensal × poço × campo, PK composta suporta N:N nativamente). Ver limitação documentada em [`docs/app/anp-cdp-diaria.md`](../app/anp-cdp-diaria.md). | `20260508120001_anp_cdp_diaria_levels.sql` + `20260508130001` (add instalacao) | `scripts/extractors/anp_cdp_powerbi.py --level poco` |
 
+### Trigger: cross-local guard em `anp_cdp_producao`
+
+**Causa**: incidente Apr/2026 — mesmo poço republicado pela ANP com `local` diferente (PosSal + PreSal + Terra) produziu 3× linhas. PK natural inclui `local`, então `ON CONFLICT` não disparou e o dashboard somou as 3 cópias (12.853 → 4.337 kbpd após cleanup; 2.076 linhas movidas para `_quarantine_anp_cdp_apr2026`).
+
+**Defesa de banco**: `trg_anp_cdp_guard_cross_local` (BEFORE INSERT) chama `fn_anp_cdp_guard_cross_local()`. Se já existe row com mesma `(ano, mes, poco, campo, bacia)` mas `local` diferente, levanta `unique_violation` (ERRCODE 23505) com mensagem instrutiva. UPDATE não é guardado — `ON CONFLICT DO UPDATE` na PK completa continua funcionando normalmente.
+
+**Reclassificação legítima** (raro — ANP move poço PosSal → PreSal): exige `DELETE WHERE (ano, mes, poco, campo, bacia)` ANTES do `INSERT`, ou `--purge` no modo manual. Trigger falha alto se o caller esquecer.
+
+**Migration**: `20260521130000_anp_cdp_cross_local_guard.sql`. Lookup é O(log n) via prefix do PK `(ano, mes, poco, campo, bacia, local)` — sem índice novo. Defesas Fase A (`20260521120000_fix_anp_cdp_apr2026_triplication.sql`, quarentena) e Fase B1 (pipeline Python, ver `docs/etl-pipelines/PRD.md`).
+
 ### Materialized views
 
 | MV | Função de refresh | Índices |
