@@ -28,8 +28,6 @@ import ExportModal from "../../../../components/dashboard/ExportModal";
 import MultiSelectFilter from "../../../../components/dashboard/MultiSelectFilter";
 import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 import { PALETTE } from "../../../../lib/plotlyDefaults";
-import { getMdicComexExportCount } from "../../../../lib/rpc";
-import { getSupabaseClient } from "../../../../lib/supabaseClient";
 
 import {
   useMdicComexData,
@@ -38,12 +36,10 @@ import {
   METRIC_CONFIG,
   METRIC_OPTIONS,
   MDIC_GRANULARITY_OPTIONS,
-  MDIC_AGG_ESTIMATE,
   INDIVIDUAL_WARN_THRESHOLD,
   formatPct,
   type Metric,
   type ViewMode,
-  type MdicComexGranularity,
 } from "../useMdicComexData";
 
 import type { MdicComexAggregatedRow } from "../../../../lib/rpc";
@@ -129,13 +125,13 @@ export default function MobileView(): React.ReactElement {
     exportNcms, setExportNcms,
     exportRange, setExportRange,
     exportGranularity, setExportGranularity,
-    exportRawCount, setExportRawCount,
+    exportRawCount,
     exportFilters,
     rawOverExcel, rawOverAbs,
     openExportModal, handleExportExcel, handleExportCsv,
+    fetchExportCount,
   } = useMdicComexData();
 
-  const supabase = getSupabaseClient();
   const [filterOpen, setFilterOpen] = useState(false);
 
   // Active flow tab — "import" | "export"
@@ -641,16 +637,7 @@ export default function MobileView(): React.ReactElement {
         title="Export — MDIC Comex"
         datasetKey="mdic_comex"
         currentFilters={{ ...exportFilters, _g: exportGranularity }}
-        countFetcher={async () => {
-          if (!supabase) return 0;
-          if (exportGranularity !== "raw") {
-            setExportRawCount(null);
-            return MDIC_AGG_ESTIMATE[exportGranularity as Exclude<MdicComexGranularity, "raw">];
-          }
-          const c = await getMdicComexExportCount(supabase, exportFilters);
-          setExportRawCount(c);
-          return c;
-        }}
+        countFetcher={fetchExportCount}
         excelBusy={excelLoading}
         csvBusy={csvLoading}
         loadingLabel={excelLoading ? "Generating Excel..." : "Downloading CSV..."}

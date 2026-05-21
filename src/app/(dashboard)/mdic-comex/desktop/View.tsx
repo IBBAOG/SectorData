@@ -16,8 +16,6 @@ import ExportModal from "../../../../components/dashboard/ExportModal";
 import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
 import SearchableMultiSelect from "../../../../components/SearchableMultiSelect";
 import { COMMON_LAYOUT, AXIS_LINE, emptyPlot, PALETTE } from "../../../../lib/plotlyDefaults";
-import { getMdicComexExportCount } from "../../../../lib/rpc";
-import { getSupabaseClient } from "../../../../lib/supabaseClient";
 
 import {
   useMdicComexData,
@@ -28,14 +26,9 @@ import {
   VIEW_MODE_OPTIONS,
   INDIVIDUAL_WARN_THRESHOLD,
   MDIC_GRANULARITY_OPTIONS,
-  MDIC_AGG_ESTIMATE,
-  MDIC_GROUPBY_MAP,
-  RAW_EXCEL_MAX_ROWS,
-  RAW_ABS_MAX_ROWS,
   formatPct,
   type Metric,
   type ViewMode,
-  type MdicComexGranularity,
 } from "../useMdicComexData";
 
 import type { MdicComexAggregatedRow } from "../../../../lib/rpc";
@@ -155,13 +148,12 @@ export default function DesktopView(): React.ReactElement {
     exportNcms, setExportNcms,
     exportRange, setExportRange,
     exportGranularity, setExportGranularity,
-    exportRawCount, setExportRawCount,
+    exportRawCount,
     exportFilters,
     rawOverExcel, rawOverAbs,
     openExportModal, handleExportExcel, handleExportCsv,
+    fetchExportCount,
   } = useMdicComexData();
-
-  const supabase = getSupabaseClient();
 
   const cfg = METRIC_CONFIG[metric];
 
@@ -473,16 +465,7 @@ export default function DesktopView(): React.ReactElement {
         title="Export — MDIC Comex"
         datasetKey="mdic_comex"
         currentFilters={{ ...exportFilters, _g: exportGranularity }}
-        countFetcher={async () => {
-          if (!supabase) return 0;
-          if (exportGranularity !== "raw") {
-            setExportRawCount(null);
-            return MDIC_AGG_ESTIMATE[exportGranularity as Exclude<MdicComexGranularity, "raw">];
-          }
-          const c = await getMdicComexExportCount(supabase, exportFilters);
-          setExportRawCount(c);
-          return c;
-        }}
+        countFetcher={fetchExportCount}
         excelBusy={excelLoading}
         csvBusy={csvLoading}
         loadingLabel={excelLoading ? "Generating Excel..." : "Downloading CSV..."}
