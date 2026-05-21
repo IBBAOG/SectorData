@@ -21,16 +21,44 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Executar monitoramento
+        id: scrape
         run: python scripts/pipelines/navios/01_lineup_scrape.py
+        env:
+          # Optional residential proxy / scraping gateway for ports behind WAF
+          # (e.g. Porto de Itaqui blocks Azure/AWS IPs). Supported formats:
+          #   - Standard HTTP proxy:  http://user:pass@host:port
+          #   - Gateway URL ending in =:  http://api.scraperapi.com?api_key=K&url=
+          # If unset, the script falls back to direct requests → Selenium only.
+          SCRAPER_PROXY_URL: ${{ secrets.SCRAPER_PROXY_URL }}
+
+      - name: Upload debug artifacts (HTML dumps from failed scrapes)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: itaqui-debug-html-${{ github.run_id }}
+          path: scripts/pipelines/navios/output/debug/
+          if-no-files-found: ignore
+          retention-days: 14
 
       - uses: actions/setup-node@v4
+        if: success() || steps.scrape.conclusion == 'failure'
         with:
           node-version: '22'
 
+      # Always attempt to import — even if the watchdog failed for one port,
+      # the other ports' data is in the CSV and should be persisted to Supabase.
+      # The job will still fail overall (set in final step).
       - name: Importar dados para Supabase
+        if: success() || steps.scrape.conclusion == 'failure'
         run: |
           npm install @supabase/supabase-js
           node scripts/pipelines/navios/02_diesel_import.mjs
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      - name: Propagar falha do watchdog
+        if: steps.scrape.conclusion == 'failure'
+        run: |
+          echo "::error::Scraper retornou exit != 0 — pelo menos um porto monitorado falhou. Veja artifact 'itaqui-debug-html-${{ github.run_id }}' para HTML dumps."
+          exit 1
