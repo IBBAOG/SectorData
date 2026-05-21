@@ -18,9 +18,6 @@ import {
   MODE_OPTIONS,
   type CompRow,
 } from "../useMarketShareData";
-import { downloadMarketShareExcel } from "../../../../lib/exportExcel";
-import { downloadCsv } from "../../../../lib/exportCsv";
-import { fetchVendasFiltered, getMsExportCount } from "../../../../lib/rpc";
 
 // ─── ComparisonTable ──────────────────────────────────────────────────────────
 
@@ -147,14 +144,11 @@ export default function DesktopView(): React.ReactElement {
     exportMercados,
     setExportMercados,
     exportFilters,
+    fetchExportCount,
     excelLoading,
-    setExcelLoading,
     csvLoading,
-    setCsvLoading,
-    serieRows,
-    players,
-    big3,
-    supabase,
+    onExportExcel,
+    onExportCsv,
   } = useMarketShareData();
 
   if (!opcoes) return <></>;
@@ -530,37 +524,12 @@ export default function DesktopView(): React.ReactElement {
         title="Export — Market Share"
         datasetKey="vendas"
         currentFilters={exportFilters}
-        countFetcher={async () => {
-          if (!supabase) return 0;
-          return getMsExportCount(supabase, exportFilters);
-        }}
+        countFetcher={fetchExportCount}
         excelBusy={excelLoading}
         csvBusy={csvLoading}
         loadingLabel={excelLoading ? "Generating Excel..." : "Downloading CSV..."}
-        onExportExcel={async () => {
-          setExcelLoading(true);
-          try {
-            await downloadMarketShareExcel(serieRows, players, big3);
-            closeExportModal();
-          } catch (e) {
-            console.error("Excel export failed", e);
-          } finally {
-            setExcelLoading(false);
-          }
-        }}
-        onExportCsv={async () => {
-          if (!supabase) return;
-          setCsvLoading(true);
-          try {
-            const rows = await fetchVendasFiltered(supabase, exportFilters);
-            downloadCsv({ rows, filename: "market_share_vendas" });
-            closeExportModal();
-          } catch (e) {
-            console.error("CSV export failed", e);
-          } finally {
-            setCsvLoading(false);
-          }
-        }}
+        onExportExcel={onExportExcel}
+        onExportCsv={onExportCsv}
         filters={
           <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: "Arial" }}>
             <div>
