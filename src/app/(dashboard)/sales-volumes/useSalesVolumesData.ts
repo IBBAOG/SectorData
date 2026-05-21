@@ -68,6 +68,25 @@ export function dynColor(i: number): string {
 export type SvMode = "Individual" | "Big-3" | "Others";
 export const SV_MODE_OPTIONS: SvMode[] = ["Individual", "Big-3", "Others"];
 
+/** Segment filter applied to a product (used by mobile segment selector and
+ *  desktop's per-segment chart grid). "Total" means all segments combined. */
+export type SvSegment = "Total" | "Retail" | "B2B" | "TRR";
+export const SV_SEGMENT_OPTIONS: SvSegment[] = ["Total", "Retail", "B2B", "TRR"];
+
+/** Comparison row shared between desktop ComparisonTable and mobile Trends tab.
+ *  Values are absolute deltas in thousand m³ (not percentages). */
+export interface SvCompRow {
+  player: string;
+  /** Month-over-Month delta (latest − prior month). */
+  mom: number | null;
+  /** Quarter-to-date delta (latest − 3 months ago). */
+  q3m: number | null;
+  /** Year-over-Year delta (latest − 12 months ago). */
+  yoy: number | null;
+  /** Year-to-Date delta (latest − December of previous year). */
+  ytd: number | null;
+}
+
 export interface SalesVolumesFilters {
   /** ISO date string (YYYY-MM-DD) or null */
   dataInicio: string | null;
@@ -128,6 +147,15 @@ export interface UseSalesVolumesData {
   ufsSelected: string[];
   setUfsSelected: (v: string[]) => void;
 
+  // ── Segment selector (consumed by mobile segment tab bar) ───────────────────
+  /** Active segment (Total / Retail / B2B / TRR). Default "Total". */
+  selectedSegment: SvSegment;
+  setSelectedSegment: (s: SvSegment) => void;
+  /** Helper exposed for callers that need segment-aware filtering on a row set.
+   *  Returns null when segment === "Total" (no filter), else the segment string
+   *  to filter on (matches `MsSerieRow.segmento`). */
+  segmentFilter: string | null;
+
   // ── Applied filters (after "Apply" is clicked) ───────────────────────────────
   appliedFilters: Partial<SalesVolumesFilters>;
 
@@ -157,6 +185,15 @@ export interface UseSalesVolumesData {
 
   // ── Toast ────────────────────────────────────────────────────────────────────
   showToast: boolean;
+
+  // ── Comparison rows (shared between desktop ComparisonTable & mobile Trends)
+  /** Builds MoM/QTD/YoY/YTD delta rows for the given product/segment using the
+   *  hook's currently applied state (players, big3, latestDate, groupBy). */
+  buildComparisonRows: (
+    rowsOverride: MsSerieRow[] | undefined,
+    produto: string,
+    segmento: string | null,
+  ) => SvCompRow[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -176,6 +213,75 @@ export function makeOttoCycleRows(rows: MsSerieRow[]): MsSerieRow[] {
     }
   }
   return result;
+}
+
+/** Shift an ISO date `YYYY-MM-01` by n months (handles year wrap). */
+export function shiftMonth(dateStr: string, n: number): string {
+  const y = parseInt(dateStr.slice(0, 4), 10);
+  const m = parseInt(dateStr.slice(5, 7), 10) - 1 + n;
+  const ny = y + Math.floor(m / 12);
+  const nm = ((m % 12) + 12) % 12;
+  return `${ny}-${String(nm + 1).padStart(2, "0")}-01`;
+}
+
+/** Returns a Map<classificacao, volume> for the given product/segment/date,
+ *  honouring the Big-3 grouping and the active groupBy. Used by both the
+ *  desktop ComparisonTable and the mobile Trends tab. */
+export function getSvAtDate(
+  rows: MsSerieRow[],
+  produto: string,
+  segmento: string | null,
+  date: string,
+  big3: boolean,
+  groupBy: "classificacao" | "agente_regulado" = "classificacao",
+): Map<string, number> {
+  let filtered = rows.filter(
+    (r) => r.nome_produto === produto && r.date === date,
+  );
+  if (segmento) filtered = filtered.filter((r) => r.segmento === segmento);
+  const grp = new Map<string, number>();
+  for (const r of filtered) {
+    let cls =
+      groupBy === "agente_regulado"
+        ? (r.agente_regulado ?? r.classificacao)
+        : r.classificacao;
+    if (big3 && groupBy !== "agente_regulado")
+      cls = (BIG3_MEMBERS as readonly string[]).includes(cls) ? "Big-3" : cls;
+    grp.set(cls, (grp.get(cls) ?? 0) + Number(r.quantidade ?? 0));
+  }
+  return grp;
+}
+
+/** Build comparison delta rows (MoM / QTD / YoY / YTD) for a given product +
+ *  segment. Pure function — used by both desktop ComparisonTable and mobile
+ *  Trends tab so the analysis is identical. */
+export function buildSvComparisonData(
+  rows: MsSerieRow[],
+  produto: string,
+  segmento: string | null,
+  players: string[],
+  big3: boolean,
+  latestDate: string,
+  groupBy: "classificacao" | "agente_regulado" = "classificacao",
+): SvCompRow[] {
+  const prevYearDec = `${parseInt(latestDate.slice(0, 4), 10) - 1}-12-01`;
+  const volNow = getSvAtDate(rows, produto, segmento, latestDate, big3, groupBy);
+  const volMoM = getSvAtDate(rows, produto, segmento, shiftMonth(latestDate, -1), big3, groupBy);
+  const vol3M  = getSvAtDate(rows, produto, segmento, shiftMonth(latestDate, -3), big3, groupBy);
+  const volYoY = getSvAtDate(rows, produto, segmento, shiftMonth(latestDate, -12), big3, groupBy);
+  const volYtd = getSvAtDate(rows, produto, segmento, prevYearDec, big3, groupBy);
+  const delta = (a: Map<string, number>, b: Map<string, number>, p: string): number | null => {
+    const va = a.get(p);
+    const vb = b.get(p);
+    return va !== undefined && vb !== undefined ? va - vb : null;
+  };
+  return players.map((player) => ({
+    player,
+    mom: delta(volNow, volMoM, player),
+    q3m: delta(volNow, vol3M, player),
+    yoy: delta(volNow, volYoY, player),
+    ytd: delta(volNow, volYtd, player),
+  }));
 }
 
 /** Returns a Map<player, totalVolume> for the given product/segment using the
@@ -224,6 +330,12 @@ export function useSalesVolumesData(): UseSalesVolumesData {
   const [regioesSelected, setRegioesSelected] = useState<string[]>([]);
   const [ufsSelected, setUfsSelected] = useState<string[]>([]);
   const [sliderRange, setSliderRange] = useState<[number, number]>([0, 0]);
+
+  // ── Segment selector (used by mobile View; defaults to Total which
+  //    matches the desktop "all segments combined" behaviour) ───────────────
+  const [selectedSegment, setSelectedSegment] = useState<SvSegment>("Total");
+  const segmentFilter: string | null =
+    selectedSegment === "Total" ? null : selectedSegment;
 
   // ── Applied filters (what the data hooks actually use) ─────────────────────
   const [appliedFilters, setAppliedFilters] = useState<Partial<SalesVolumesFilters>>({});
@@ -459,6 +571,29 @@ export function useSalesVolumesData(): UseSalesVolumesData {
     }
   }, [supabase, exportFilters]);
 
+  // ── Comparison rows builder (used by desktop ComparisonTable & mobile
+  //    Trends tab so both render the exact same analysis) ───────────────────
+  const buildComparisonRows = useCallback(
+    (
+      rowsOverride: MsSerieRow[] | undefined,
+      produto: string,
+      segmento: string | null,
+    ): SvCompRow[] => {
+      if (!latestDate) return [];
+      const sourceRows = rowsOverride ?? serieRows;
+      return buildSvComparisonData(
+        sourceRows,
+        produto,
+        segmento,
+        players,
+        big3,
+        latestDate,
+        groupBy,
+      );
+    },
+    [serieRows, players, big3, latestDate, groupBy],
+  );
+
   return {
     serieRows,
     opcoes,
@@ -485,6 +620,9 @@ export function useSalesVolumesData(): UseSalesVolumesData {
     setRegioesSelected,
     ufsSelected,
     setUfsSelected,
+    selectedSegment,
+    setSelectedSegment,
+    segmentFilter,
     appliedFilters,
     applyFilters,
     clearFilters,
@@ -506,5 +644,6 @@ export function useSalesVolumesData(): UseSalesVolumesData {
     onExportExcel,
     onExportCsv,
     showToast,
+    buildComparisonRows,
   };
 }

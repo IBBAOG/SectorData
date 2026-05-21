@@ -143,29 +143,57 @@ src/app/(dashboard)/sales-volumes/
 | Component | Role in this view |
 |---|---|
 | `MobileTopBar` | Sticky top bar with SectorData brand title |
-| `MobileBottomTabBar` | Bottom navigation: Chart / Ranking / Filters |
+| `MobileBottomTabBar` | Bottom navigation: **Chart / Ranking / Trends** (3 tabs since 2026-05-21) |
 | `FilterDrawer` | BottomSheet with Period, View Mode, Competitors, Region/State |
 | `MobileChart` | Plotly wrapper tuned for mobile (compact margins, touch-friendly) |
 | `MobileDataCard` | Ranking row: rank badge + player name + volume + 12-month sparkline |
 | `ExportFAB` | Floating action button that opens the ExportModal |
-| `MobileTabBar` | Product tab bar (Diesel B / Gasoline / Ethanol / Otto-Cycle), `variant="container"` |
+| `MobileTabBar` | Used twice — Product bar (Diesel B / Gasoline / Ethanol / Otto-Cycle) and **Segment bar** (Total / Retail / B2B / TRR), both `variant="container"` |
 
 Desktop uses `NavBar`, `BrandLogo`, `DashboardHeader`, `ExportPanel`, `ExportModal`, `PeriodSlider`, `SegmentedToggle`, `BarrelLoading`, `CheckList`, `SearchableMultiSelect`, `RegionStateFilter` from the desktop shared-component set.
 
-### Desktop-only / mobile-only divergences
+### Mobile View structure (post parity sweep, 2026-05-21)
+
+The mobile View renders, top-to-bottom:
+
+1. `MobileTopBar` — sticky brand bar (SectorData wordmark)
+2. **Filter chip row** — sticky, horizontal scroll; "Filters" trigger chip + active filter pills (period, region, competitors, mode, segment)
+3. Title block + Latest-month badge
+4. **Product tab bar** — Diesel B / Gasoline / Ethanol / Otto-Cycle
+5. **Segment tab bar** — Total / Retail / B2B / TRR (TRR appears only when Diesel B is active)
+6. Tab content — switches on bottom tab state:
+   - **Chart** → stacked-area `MobileChart` of the active product+segment
+   - **Ranking** → `MobileDataCard` rows sorted by latest-month volume, with sparkline
+   - **Trends** → per-player rows with `DeltaCell` grid (MoM / QTD / YoY / YTD), colour-coded green for positive, peach for negative
+7. `ExportFAB` floating
+8. `MobileBottomTabBar` — Chart / Ranking / Trends
+
+The Filter Drawer is triggered exclusively from the filter chip in the chip row; the bottom tab bar no longer houses a Filters tab.
+
+### Desktop ↔ Mobile divergences (after parity sweep)
+
+The two analyses previously declared `[desktop-only]` in Wave 1 — **segment breakdown** and **`ComparisonTable`** — were restored on mobile on 2026-05-21 via the segment selector and the Trends tab respectively. Mobile is now the same analytical brain as desktop, presented in adapted clothing.
 
 | Feature | Desktop | Mobile | Tag |
 |---|---|---|---|
 | Sidebar filter panel (persistent) | Yes — col-md-3 sidebar | No — `FilterDrawer` (BottomSheet on demand) | `[desktop-only]` layout |
-| Segment breakdown (Retail / B2B / TRR / Total) | All 13 charts rendered simultaneously | Single product tab; segments collapsed to "All Segments" stacked area | `[desktop-only]` segment detail |
-| `ComparisonTable` (MoM / QTD / YoY / YTD) | Below each chart | Not rendered | `[desktop-only]` comparison table |
+| Segment breakdown (Retail / B2B / TRR / Total) | All 13 charts rendered simultaneously in a multi-column grid | Single product+segment chart at a time, with `MobileTabBar` selector to swap segments | restored 2026-05-21 (mobile parity sweep) — analysis preserved, presentation adapted |
+| `ComparisonTable` (MoM / QTD / YoY / YTD) | Below each chart, table format | `Trends` bottom tab — per-player rows with 4-cell `DeltaCell` grid (same values, same colouring) | restored 2026-05-21 (mobile parity sweep) — uses shared `buildComparisonRows` from the hook |
 | Volume Ranking cards | Not rendered | `Ranking` bottom tab — `MobileDataCard` rows with sparklines | `[mobile-only]` ranking tab |
-| "Chart / Ranking" bottom tab bar | Not rendered | `MobileBottomTabBar` | `[mobile-only]` |
-| Filter chip row (active filter pills) | Not rendered | Sticky chip row above title block | `[mobile-only]` |
+| 3-tab bottom bar (Chart / Ranking / Trends) | Not rendered | `MobileBottomTabBar` | `[mobile-only]` |
+| Filter chip row (active filter pills + Filters trigger) | Not rendered | Sticky chip row above title block | `[mobile-only]` |
 | "Filters applied!" toast | Yes (`showToast`) | No (drawer closes itself; no toast) | `[desktop-only]` |
 | Export Panel in header | `ExportPanel` in `rightSlot` of `DashboardHeader` | `ExportFAB` floating button | layout difference |
 
-**Rationale for segment collapse on mobile:** rendering 13 simultaneous Plotly charts on mobile (as desktop does) is both a performance and UX problem. The mobile view trades segment granularity for a cleaner stacked-area summary per product. The data is unchanged — users who need segment breakdown should use desktop.
+**Hook contract additions (parity sweep):**
+
+| Field | Type | Purpose |
+|---|---|---|
+| `selectedSegment` / `setSelectedSegment` | `SvSegment` state | Drives the mobile segment tab bar (default `"Total"`). Desktop renders all segments at once, so it ignores this field. |
+| `segmentFilter` | `string \| null` | Convenience — `null` when segment is `"Total"`, else the segment string for row filtering. |
+| `buildComparisonRows(rowsOverride, produto, segmento)` | `(...) => SvCompRow[]` | Builds MoM/QTD/YoY/YTD delta rows. Pure function — desktop ComparisonTable calls `buildSvComparisonData` directly; mobile Trends tab calls this. |
+| `SvSegment`, `SV_SEGMENT_OPTIONS`, `SvCompRow` | types | Exported for both Views. |
+| `buildSvComparisonData`, `getSvAtDate`, `shiftMonth` | helper exports | Shared by both Views — previously duplicated in desktop. |
 
 ## Export
 
