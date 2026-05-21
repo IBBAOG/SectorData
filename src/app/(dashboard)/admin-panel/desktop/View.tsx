@@ -94,6 +94,12 @@ export default function DesktopView(): React.ReactElement | null {
     homeToggleError,
     handleHomeToggle,
 
+    localPublicVis,
+    savingPublic,
+    savedPublicSlug,
+    publicToggleError,
+    handlePublicToggle,
+
     localPreviews,
     uploadingSlug,
     savedPreviewSlug,
@@ -356,32 +362,97 @@ export default function DesktopView(): React.ReactElement | null {
           {activeSection === "permissions" && (
             <div className="settings-card">
               <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>Module Visibility</h2>
-              <p style={{ fontSize: 13, color: "#888", margin: "0 0 20px" }}>
-                Toggle which modules are visible to <strong>Client</strong> users.
-                Admins always have access to all modules regardless of these settings.
+              <p style={{ fontSize: 13, color: "#888", margin: "0 0 8px" }}>
+                Two independent access tiers per module:
               </p>
+              <ul style={{ fontSize: 12, color: "#666", margin: "0 0 16px", paddingLeft: 18, lineHeight: 1.6 }}>
+                <li><strong>Public</strong> — visible to anonymous (logged-out) visitors. Enabling Public automatically enables Clients (a logged-in user must not lose access on sign-in).</li>
+                <li><strong>Clients</strong> — visible to Client tier users once logged in. Admins always have access regardless of these settings.</li>
+              </ul>
+
+              {/* Column headers */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  padding: "8px 0",
+                  borderBottom: "1px solid #f0f0f0",
+                  marginBottom: 4,
+                }}
+              >
+                <div style={{ flex: 1, paddingRight: 24, fontSize: 11, fontWeight: 700, color: "#888", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                  Module
+                </div>
+                <div style={{ width: 100, textAlign: "center", fontSize: 11, fontWeight: 700, color: "#888", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                  Public
+                </div>
+                <div style={{ width: 100, textAlign: "center", fontSize: 11, fontWeight: 700, color: "#888", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                  Clients
+                </div>
+              </div>
+
               {MODULE_LABELS.map(({ slug, label, description }) => {
-                const isVisible = localVis[slug] ?? true;
-                const isSaving = saving === slug;
-                const justSaved = savedSlug === slug;
+                const isClientVisible = localVis[slug] ?? true;
+                const isPublicVisible = localPublicVis[slug] ?? true;
+                const isSavingClient = saving === slug;
+                const justSavedClient = savedSlug === slug;
+                const isSavingPublic = savingPublic === slug;
+                const justSavedPublic = savedPublicSlug === slug;
+                const publicError = publicToggleError?.slug === slug ? publicToggleError.message : null;
+                // When Public is ON, Clients must also be ON (DB invariant).
+                // The Clients toggle is forced-on and disabled in this case.
+                const clientsForcedOn = isPublicVisible;
                 return (
-                  <div key={slug} className="settings-module-row">
+                  <div key={slug} className="settings-module-row" style={{ alignItems: "center" }}>
                     <div style={{ flex: 1, paddingRight: 24 }}>
                       <div className="settings-module-label">{label}</div>
                       <div style={{ fontSize: 12, color: "#999", marginTop: 2 }}>{description}</div>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                      {justSaved && <span className="settings-saved-tick" aria-live="polite">✓ Saved</span>}
+
+                    {/* Public toggle */}
+                    <div style={{ width: 100, display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }}>
+                      {justSavedPublic && <span className="settings-saved-tick" aria-live="polite">✓</span>}
+                      {publicError && (
+                        <span style={{ fontSize: 11, color: "#c0392b" }} title={publicError}>Error</span>
+                      )}
                       <div className="form-check form-switch" style={{ margin: 0 }}>
                         <input
                           className="form-check-input"
                           type="checkbox"
                           role="switch"
+                          id={`toggle-public-${slug}`}
+                          aria-label={`Public access to ${label}`}
+                          checked={isPublicVisible}
+                          disabled={isSavingPublic}
+                          onChange={(e) => handlePublicToggle(slug, e.target.checked)}
+                          style={{ width: "2.5em", height: "1.25em", cursor: isSavingPublic ? "wait" : "pointer", opacity: isSavingPublic ? 0.6 : 1 }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Clients toggle */}
+                    <div style={{ width: 100, display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }}>
+                      {justSavedClient && <span className="settings-saved-tick" aria-live="polite">✓</span>}
+                      <div
+                        className="form-check form-switch"
+                        style={{ margin: 0 }}
+                        title={clientsForcedOn ? "Clients access is locked on while Public is enabled" : undefined}
+                      >
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          role="switch"
                           id={`toggle-${slug}`}
-                          checked={isVisible}
-                          disabled={isSaving}
+                          aria-label={`Client access to ${label}`}
+                          checked={isClientVisible}
+                          disabled={isSavingClient || clientsForcedOn}
                           onChange={(e) => handleToggle(slug, e.target.checked)}
-                          style={{ width: "2.5em", height: "1.25em", cursor: isSaving ? "wait" : "pointer" }}
+                          style={{
+                            width: "2.5em",
+                            height: "1.25em",
+                            cursor: isSavingClient || clientsForcedOn ? "not-allowed" : "pointer",
+                            opacity: clientsForcedOn ? 0.5 : 1,
+                          }}
                         />
                       </div>
                     </div>

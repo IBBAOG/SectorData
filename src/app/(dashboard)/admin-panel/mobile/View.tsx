@@ -74,6 +74,12 @@ export default function MobileView(): React.ReactElement | null {
     homeToggleError,
     handleHomeToggle,
 
+    localPublicVis,
+    savingPublic,
+    savedPublicSlug,
+    publicToggleError,
+    handlePublicToggle,
+
     localPreviews,
     uploadingSlug,
     savedPreviewSlug,
@@ -448,8 +454,9 @@ export default function MobileView(): React.ReactElement | null {
       {activeSection === "permissions" && (
         <section>
           <div style={{ padding: "0 16px 12px", fontSize: 12, color: "var(--mobile-text-muted)", lineHeight: 1.5 }}>
-            Toggle which modules are visible to <strong>Client</strong> users.
-            Admins always have access regardless of these settings.
+            Two access tiers per module: <strong>Public</strong> (anonymous visitors)
+            and <strong>Clients</strong> (logged-in users). Enabling Public also enables
+            Clients automatically. Admins always have access.
           </div>
           {filteredModules.length === 0 ? (
             <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
@@ -457,54 +464,114 @@ export default function MobileView(): React.ReactElement | null {
             </div>
           ) : (
             filteredModules.map(({ slug, label, description }) => {
-              const isVisible = localVis[slug] ?? true;
-              const isSaving = saving === slug;
-              const justSaved = savedSlug === slug;
+              const isClientVisible = localVis[slug] ?? true;
+              const isPublicVisible = localPublicVis[slug] ?? true;
+              const isSavingClient = saving === slug;
+              const justSavedClient = savedSlug === slug;
+              const isSavingPublic = savingPublic === slug;
+              const justSavedPublic = savedPublicSlug === slug;
+              const publicError = publicToggleError?.slug === slug ? publicToggleError.message : null;
+              const clientsForcedOn = isPublicVisible;
+
               return (
-                <MobileDataCard
+                <article
                   key={slug}
-                  variant="expanded"
-                  title={label}
-                  subtitle={description}
-                  rightSlot={
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-                      {justSaved && (
+                  style={{
+                    background: "var(--mobile-surface)",
+                    borderBottom: "1px solid var(--mobile-divider)",
+                    padding: "14px 16px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                  }}
+                >
+                  {/* Title + description */}
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--mobile-text)", lineHeight: 1.2 }}>
+                      {label}
+                    </div>
+                    <div style={{ marginTop: 2, fontSize: 12, color: "var(--mobile-text-muted)", lineHeight: 1.4 }}>
+                      {description}
+                    </div>
+                  </div>
+
+                  {/* Public row */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                    <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "var(--mobile-text)" }}>Public</span>
+                      <span style={{ fontSize: 11, color: "var(--mobile-text-faint)" }}>Anonymous visitors</span>
+                    </div>
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                      {justSavedPublic && (
                         <span
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            color: "#38a169",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 4,
-                          }}
+                          style={{ fontSize: 10, fontWeight: 700, color: "#38a169", display: "inline-flex", alignItems: "center", gap: 4 }}
                           aria-live="polite"
                         >
-                          <CheckIcon size={14} strokeWidth={2.5} /> Saved
+                          <CheckIcon size={14} strokeWidth={2.5} />
                         </span>
                       )}
-                      <label
-                        className="form-check form-switch"
-                        style={{ margin: 0, paddingLeft: 0, display: "inline-block" }}
-                      >
+                      {publicError && (
+                        <span style={{ fontSize: 11, color: "#c0392b" }} title={publicError}>Failed</span>
+                      )}
+                      <label className="form-check form-switch" style={{ margin: 0, paddingLeft: 0, display: "inline-block" }}>
                         <input
                           className="form-check-input"
                           type="checkbox"
                           role="switch"
-                          checked={isVisible}
-                          disabled={isSaving}
-                          onChange={(e) => handleToggle(slug, e.target.checked)}
+                          aria-label={`Public access to ${label}`}
+                          checked={isPublicVisible}
+                          disabled={isSavingPublic}
+                          onChange={(e) => handlePublicToggle(slug, e.target.checked)}
                           style={{
                             width: "2.6em",
                             height: "1.4em",
-                            cursor: isSaving ? "wait" : "pointer",
+                            cursor: isSavingPublic ? "wait" : "pointer",
+                            opacity: isSavingPublic ? 0.6 : 1,
                             margin: 0,
                           }}
                         />
                       </label>
                     </div>
-                  }
-                />
+                  </div>
+
+                  {/* Clients row */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                    <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "var(--mobile-text)" }}>Clients</span>
+                      <span style={{ fontSize: 11, color: "var(--mobile-text-faint)" }}>
+                        {clientsForcedOn ? "Locked on (Public is enabled)" : "Logged-in Client tier"}
+                      </span>
+                    </div>
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                      {justSavedClient && (
+                        <span
+                          style={{ fontSize: 10, fontWeight: 700, color: "#38a169", display: "inline-flex", alignItems: "center", gap: 4 }}
+                          aria-live="polite"
+                        >
+                          <CheckIcon size={14} strokeWidth={2.5} />
+                        </span>
+                      )}
+                      <label className="form-check form-switch" style={{ margin: 0, paddingLeft: 0, display: "inline-block" }}>
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          role="switch"
+                          aria-label={`Client access to ${label}`}
+                          checked={isClientVisible}
+                          disabled={isSavingClient || clientsForcedOn}
+                          onChange={(e) => handleToggle(slug, e.target.checked)}
+                          style={{
+                            width: "2.6em",
+                            height: "1.4em",
+                            cursor: isSavingClient || clientsForcedOn ? "not-allowed" : "pointer",
+                            opacity: clientsForcedOn ? 0.5 : 1,
+                            margin: 0,
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </article>
               );
             })
           )}

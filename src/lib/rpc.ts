@@ -2670,9 +2670,30 @@ export type AnalyticsKpis = {
   mau: number;
   total_users: number;
   active_users_period: number;
+  // Phase A anonymous-access additions (migration 20260522000001):
+  //   • unique_visitors_period      — distinct visitor_id rows with no user_id
+  //   • unique_authenticated_period — distinct user_id rows with role <> 'Admin'
+  // Both default to 0 if the migration has not been deployed yet, so the
+  // analytics page can render gracefully against stage envs without the new
+  // RPC fields.
+  unique_visitors_period: number;
+  unique_authenticated_period: number;
   exports_period: number;
   page_views_period: number;
   logins_period: number;
+};
+
+// Returned by get_analytics_anon_summary(period_days).
+// Drives the "Anonymous Activity" section in /admin-analytics.
+export type AnalyticsAnonSummaryRoute = {
+  route: string;
+  page_views: number;
+};
+
+export type AnalyticsAnonSummary = {
+  unique_visitors: number;
+  total_page_views: number;
+  top_routes: AnalyticsAnonSummaryRoute[];
 };
 
 export type AnalyticsByDashboardRow = {
@@ -2728,12 +2749,50 @@ export async function rpcGetAnalyticsKpis(
       mau: Number(d.mau ?? 0),
       total_users: Number(d.total_users ?? 0),
       active_users_period: Number(d.active_users_period ?? 0),
+      unique_visitors_period: Number(d.unique_visitors_period ?? 0),
+      unique_authenticated_period: Number(d.unique_authenticated_period ?? 0),
       exports_period: Number(d.exports_period ?? 0),
       page_views_period: Number(d.page_views_period ?? 0),
       logins_period: Number(d.logins_period ?? 0),
     };
   } catch (e) {
     console.warn("get_analytics_kpis failed", e);
+    return null;
+  }
+}
+
+// get_analytics_anon_summary(p_period_days) — anonymous-only telemetry.
+// Used by the "Anonymous Activity" section in /admin-analytics. Admin-only
+// (RAISE EXCEPTION on non-Admin callers); returns a single row whose
+// `top_routes` field is the top 20 routes by anonymous page_view count.
+export async function rpcGetAnalyticsAnonSummary(
+  supabase: SupabaseClient,
+  periodDays = 30,
+): Promise<AnalyticsAnonSummary | null> {
+  try {
+    const { data, error } = await supabase.rpc("get_analytics_anon_summary", {
+      p_period_days: periodDays,
+    });
+    if (error) throw error;
+    // RPC returns a single-row result set: supabase-js delivers it as either an
+    // array (one row) or a bare object depending on PostgREST shape. Normalize.
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) {
+      return { unique_visitors: 0, total_page_views: 0, top_routes: [] };
+    }
+    const r = row as Partial<AnalyticsAnonSummary>;
+    return {
+      unique_visitors: Number(r.unique_visitors ?? 0),
+      total_page_views: Number(r.total_page_views ?? 0),
+      top_routes: Array.isArray(r.top_routes)
+        ? r.top_routes.map((t) => ({
+            route: String(t.route ?? ""),
+            page_views: Number(t.page_views ?? 0),
+          }))
+        : [],
+    };
+  } catch (e) {
+    console.warn("get_analytics_anon_summary failed", e);
     return null;
   }
 }

@@ -16,11 +16,21 @@ export interface UserProfile {
 
 // ─── ModuleConfig ─────────────────────────────────────────────────────────────
 // Mirrors the `module_visibility` Supabase table row exactly.
+//
+// Three independent visibility axes:
+//   - is_visible_for_clients  → Client tier access (Admin always sees)
+//   - is_visible_on_home      → Home gallery card (applies to ALL roles incl. Admin)
+//   - is_visible_for_public   → Anonymous (logged-out) tier access. Schema-level
+//                                invariant: public=true ⇒ clients=true.
+//
+// `updated_at` is optional because the SECURITY DEFINER RPC `get_module_visibility`
+// only returns the visibility flags + module_slug (no audit columns).
 export interface ModuleConfig {
   module_slug: string;
   is_visible_for_clients: boolean;
   is_visible_on_home: boolean;
-  updated_at: string;       // ISO 8601 timestamptz string
+  is_visible_for_public?: boolean;
+  updated_at?: string;       // ISO 8601 timestamptz — present on direct table reads, omitted by get_module_visibility()
 }
 
 // ─── UserWithRole ─────────────────────────────────────────────────────────────

@@ -36,11 +36,13 @@ import {
   rpcGetAnalyticsByUser,
   rpcGetAnalyticsUserTimeline,
   rpcGetAnalyticsHeatmap,
+  rpcGetAnalyticsAnonSummary,
   type AnalyticsKpis,
   type AnalyticsByDashboardRow,
   type AnalyticsByUserRow,
   type AnalyticsTimelineEvent,
   type AnalyticsHeatmapCell,
+  type AnalyticsAnonSummary,
 } from "@/lib/rpc";
 
 const ORANGE = "#ff5000";
@@ -109,6 +111,10 @@ export default function AdminAnalyticsPage() {
   const [heatmap, setHeatmap] = useState<AnalyticsHeatmapCell[]>([]);
   const [heatmapLoading, setHeatmapLoading] = useState(true);
 
+  // Anonymous-visitor summary (Phase A migration 20260522000001).
+  const [anonSummary, setAnonSummary] = useState<AnalyticsAnonSummary | null>(null);
+  const [anonLoading, setAnonLoading] = useState(true);
+
   // Search box for the by-user table (debounced).
   const [searchInput, setSearchInput] = useState("");
   const debouncedSearch = useDebounce(searchInput, 350);
@@ -161,6 +167,14 @@ export default function AdminAnalyticsPage() {
     setHeatmapLoading(false);
   }, [supabase, periodDays]);
 
+  const loadAnonSummary = useCallback(async () => {
+    if (!supabase) return;
+    setAnonLoading(true);
+    const data = await rpcGetAnalyticsAnonSummary(supabase, periodDays);
+    setAnonSummary(data);
+    setAnonLoading(false);
+  }, [supabase, periodDays]);
+
   // Reset expanded user when period changes — its timeline is now stale.
   useEffect(() => {
     setExpandedUserId(null);
@@ -172,6 +186,7 @@ export default function AdminAnalyticsPage() {
   useEffect(() => { if (allowed) loadByDashboard(); }, [allowed, loadByDashboard]);
   useEffect(() => { if (allowed) loadByUser(); }, [allowed, loadByUser]);
   useEffect(() => { if (allowed) loadHeatmap(); }, [allowed, loadHeatmap]);
+  useEffect(() => { if (allowed) loadAnonSummary(); }, [allowed, loadAnonSummary]);
 
   // ── Timeline: fire when expandedUserId changes ────────────────────────────
   useEffect(() => {
@@ -333,6 +348,21 @@ export default function AdminAnalyticsPage() {
                   big
                 />
               </div>
+              {/* Phase A 3-tier breakdown: visitors vs authenticated users */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 12 }}>
+                <KpiCard
+                  label="Unique visitors (anon)"
+                  value={kpis.unique_visitors_period}
+                  hint="Logged-out, by visitor cookie"
+                  big
+                />
+                <KpiCard
+                  label="Authenticated users"
+                  value={kpis.unique_authenticated_period}
+                  hint="Logged-in, excluding Admins"
+                  big
+                />
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
                 <KpiCard label="Page views" value={kpis.page_views_period} />
                 <KpiCard label="Exports" value={kpis.exports_period} />
@@ -340,6 +370,77 @@ export default function AdminAnalyticsPage() {
               </div>
             </>
           )}
+        </section>
+
+        {/* ── Anonymous Activity ─────────────────────────────────────────── */}
+        <section style={{ marginBottom: 32 }}>
+          <SectionTitle text="Anonymous activity" />
+          <div className="settings-card" style={{ padding: 0, overflow: "hidden" }}>
+            {anonLoading ? (
+              <div style={{ padding: 32 }}><BarrelLoading /></div>
+            ) : !anonSummary ? (
+              <EmptyMessage text="No anonymous activity data available." padded />
+            ) : (
+              <>
+                {/* Summary KPIs */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                    gap: 12,
+                    padding: 16,
+                    borderBottom: "1px solid #eee",
+                    background: "#fafafa",
+                  }}
+                >
+                  <KpiCard
+                    label="Unique visitors"
+                    value={anonSummary.unique_visitors}
+                    hint="Distinct visitor cookies"
+                  />
+                  <KpiCard
+                    label="Anonymous page views"
+                    value={anonSummary.total_page_views}
+                    hint="From logged-out sessions"
+                  />
+                </div>
+                {/* Top routes */}
+                {anonSummary.top_routes.length === 0 ? (
+                  <EmptyMessage text="No anonymous page views in the selected period." padded />
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                      <thead style={{ background: "#fff", borderBottom: "1px solid #eee" }}>
+                        <tr>
+                          <Th label="#" />
+                          <Th label="Route" align="left" />
+                          <Th label="Page views" />
+                          <Th label="Share" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {anonSummary.top_routes.slice(0, 10).map((row, idx) => {
+                          const share = anonSummary.total_page_views > 0
+                            ? (row.page_views / anonSummary.total_page_views) * 100
+                            : 0;
+                          return (
+                            <tr key={row.route} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                              <td style={{ ...tdNum, color: "#888", width: 56 }}>{idx + 1}</td>
+                              <td style={{ padding: "10px 16px", fontFamily: "monospace", color: "#1a1a1a", fontSize: 12 }}>
+                                {row.route}
+                              </td>
+                              <td style={tdNum}>{formatNumber(row.page_views)}</td>
+                              <td style={tdNum}>{share.toFixed(1)}%</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </section>
 
         {/* ── Section 3: By dashboard ─────────────────────────────────────── */}

@@ -29,10 +29,11 @@ Painel interno de telemetria: quem usa o quê, quando, com qual frequência. Cob
 | # | Seção | UI |
 |---|---|---|
 | 1 | Filtro de período (topo) | Toggle pílula `7 dias` / `30 dias` / `90 dias` + dropdown de janelas longas (`180 dias` / `365 dias` / `730 dias` / `1825 dias`). Default 30. As pílulas e o dropdown controlam um único estado `periodDays int`. Ao selecionar uma opção do dropdown a pílula fica inativa (nenhuma ativa); ao clicar numa pílula o dropdown volta ao placeholder. |
-| 2 | KPIs | 4 cards grandes (DAU, WAU, MAU, Active no período) + 3 cards pequenos (Page views, Exports, Logins do período). |
-| 3 | Engajamento por dashboard | Tabela sortable. Default DESC por `page_views`. Colunas: Rota, Page views, Usuários únicos, Exports, Bytes baixados (`formatBytes`). |
-| 4 | Engajamento por usuário | Search debounced + tabela. Colunas: Nome, Role badge, Último login, Page views, Exports, Top 3 dashboards (badges). Click em row → expande timeline (até 50 linhas + "mostrar mais"). |
-| 5 | Heatmap horário | Plotly heatmap 7×24 (Dom..Sáb × 0..23h). Colorscale custom: `#fff5ee` → `#ffb088` → `#ff5000`. |
+| 2 | KPIs | Linha 1: 4 cards grandes (DAU, WAU, MAU, Active no período). Linha 2 (Phase A): 2 cards grandes — **Unique visitors (anon)** + **Authenticated users**. Linha 3: 3 cards pequenos (Page views, Exports, Logins do período). |
+| 3 | Anonymous activity | Banner cards (Unique visitors, Anonymous page views) + tabela Top-10 das rotas mais acessadas anônimas com `Page views` + `Share %`. Dados de `get_analytics_anon_summary`. |
+| 4 | Engajamento por dashboard | Tabela sortable. Default DESC por `page_views`. Colunas: Rota, Page views, Usuários únicos, Exports, Bytes baixados (`formatBytes`). |
+| 5 | Engajamento por usuário | Search debounced + tabela. Colunas: Nome, Role badge, Último login, Page views, Exports, Top 3 dashboards (badges). Click em row → expande timeline (até 50 linhas + "mostrar mais"). |
+| 6 | Heatmap horário | Plotly heatmap 7×24 (Dom..Sáb × 0..23h). Colorscale custom: `#fff5ee` → `#ffb088` → `#ff5000`. |
 
 ## 4. RPCs consumidas
 
@@ -40,32 +41,36 @@ Todas SECURITY DEFINER, com check de role server-side. Wrappers em [`src/lib/rpc
 
 | RPC SQL | Wrapper JS | Retorno |
 |---|---|---|
-| `get_analytics_kpis(period_days int)` | `rpcGetAnalyticsKpis` | jsonb com `dau, wau, mau, total_users, active_users_period, exports_period, page_views_period, logins_period` |
-| `get_analytics_by_dashboard(period_days int)` | `rpcGetAnalyticsByDashboard` | `{ route, page_views, unique_users, exports, bytes_total }[]` |
-| `get_analytics_by_user(period_days int, p_search text)` | `rpcGetAnalyticsByUser` | `{ user_id, full_name, role, last_login, page_views, exports, top_routes }[]` |
-| `get_analytics_user_timeline(target_user_id uuid, period_days int)` | `rpcGetAnalyticsUserTimeline` | `{ event_type, route, payload, created_at }[]` (até 500) |
-| `get_analytics_heatmap(period_days int)` | `rpcGetAnalyticsHeatmap` | `{ dow 0..6, hour 0..23, event_count }[]` |
+| `get_analytics_kpis(period_days int)` | `rpcGetAnalyticsKpis` | jsonb com `dau, wau, mau, total_users, active_users_period, unique_visitors_period, unique_authenticated_period, exports_period, page_views_period, logins_period` *(últimos 2 visitor/authenticated adicionados em Phase A 2026-05-21)* |
+| `get_analytics_by_dashboard(period_days int)` | `rpcGetAnalyticsByDashboard` | `{ route, page_views, unique_users, exports, bytes_total }[]` — `unique_users` agora conta `COALESCE(user_id::text, visitor_id)` |
+| `get_analytics_by_user(period_days int, p_search text)` | `rpcGetAnalyticsByUser` | `{ user_id, full_name, role, last_login, page_views, exports, top_routes }[]` — só authed (visitors não têm profile) |
+| `get_analytics_user_timeline(target_user_id uuid, period_days int)` | `rpcGetAnalyticsUserTimeline` | `{ event_type, route, payload, created_at }[]` (até 500) — só authed |
+| `get_analytics_heatmap(period_days int)` | `rpcGetAnalyticsHeatmap` | `{ dow 0..6, hour 0..23, event_count }[]` — inclui anon events |
+| `get_analytics_anon_summary(p_period_days int)` | `rpcGetAnalyticsAnonSummary` | `{ unique_visitors, total_page_views, top_routes[{route, page_views}] }` (Phase A; powers Anonymous Activity section) |
 
-RPC de escrita (write-side): `track_event(p_event_type text, p_route text, p_payload jsonb)` — chamada apenas via `src/lib/tracking.ts`. Fire-and-forget; nunca trava UI.
+RPC de escrita (write-side): `track_event(p_event_type text, p_route text, p_payload jsonb, p_visitor_id text)` — chamada via `src/lib/tracking.ts`. Phase A added the `p_visitor_id` parameter so anon visitors can be attributed via cookie. Fire-and-forget; nunca trava UI.
 
 ## 5. Tabela `app_events` (referência — owner é `worker_supabase`)
 
-Colunas esperadas:
+Colunas esperadas (post Phase A migration `20260522000001_anonymous_access.sql`):
 
 ```
 id            uuid pk
-user_id       uuid references auth.users (preenchido pela RPC via auth.uid())
+user_id       uuid nullable, references auth.users      -- nullable since 2026-05-21
+visitor_id    text nullable                              -- added 2026-05-21 for anon attribution
 event_type    text  ('login' | 'page_view' | 'export')
 route         text  null
 payload       jsonb default '{}'
 created_at    timestamptz default now()
 ```
 
-Indexes esperados: `(created_at desc)`, `(user_id, created_at desc)`, `(event_type, created_at desc)`, `(route, created_at desc)`.
+CHECK: `(user_id IS NOT NULL OR visitor_id IS NOT NULL)` — guarantees every event is attributable to some actor.
+
+Indexes esperados: `(created_at desc)`, `(user_id, created_at desc)`, `(event_type, created_at desc)`, `(route, created_at desc)`, partial `(visitor_id, created_at desc) WHERE visitor_id IS NOT NULL`.
 
 RLS:
-- INSERT: bloqueado para anon/authenticated (somente RPC `track_event` SECURITY DEFINER escreve).
-- SELECT: bloqueado para Clients. Apenas RPCs `get_analytics_*` (também SECURITY DEFINER, com check de role) leem.
+- INSERT: bloqueado para anon/authenticated direto (somente RPC `track_event` SECURITY DEFINER escreve — exposta a anon E authenticated via GRANT EXECUTE).
+- SELECT: bloqueado para Clients/anon. Apenas RPCs `get_analytics_*` (também SECURITY DEFINER, com check de role Admin) leem.
 
 ## 6. Dependências cross-dept
 
