@@ -25,6 +25,7 @@ import {
   type DashCard,
 } from "../useStocksData";
 import NavBar from "../../../../components/NavBar";
+import AnonCTA from "../../../../components/AnonCTA";
 import { useModuleVisibilityGuard } from "../../../../hooks/useModuleVisibilityGuard";
 import { useStockHistory } from "../../../../hooks/useStockHistory";
 import { useStockQuote } from "../../../../hooks/useStockQuote";
@@ -1196,6 +1197,7 @@ export default function DesktopView(): React.ReactElement {
     portfolios,
     activePortfolio,
     portfolioLoading,
+    readOnly,
     createPortfolio,
     updatePortfolio,
     deletePortfolio,
@@ -1363,7 +1365,10 @@ export default function DesktopView(): React.ReactElement {
                   {activePortfolio?.name ?? "Stock Dashboard"}
                 </span>
               )}
-              {activePortfolio && (
+              {/* Portfolio CRUD controls — hidden for anonymous visitors
+                  (readOnly). Anon viewers can still browse the public default
+                  portfolio but cannot create / edit / delete. */}
+              {!readOnly && activePortfolio && (
                 <button
                   className="sd-btn"
                   style={{ padding: "4px 8px" }}
@@ -1373,13 +1378,15 @@ export default function DesktopView(): React.ReactElement {
                   <GearIcon />
                 </button>
               )}
-              <button
-                className="sd-btn"
-                style={{ padding: "4px 10px", fontSize: 12 }}
-                onClick={openCreate}
-              >
-                + New
-              </button>
+              {!readOnly && (
+                <button
+                  className="sd-btn"
+                  style={{ padding: "4px 10px", fontSize: 12 }}
+                  onClick={openCreate}
+                >
+                  + New
+                </button>
+              )}
 
               {/* Add card menu */}
               <div ref={addMenuRef} style={{ position: "relative" }}>
@@ -1508,8 +1515,20 @@ export default function DesktopView(): React.ReactElement {
             </div>
           </div>
 
-          {/* Empty state */}
-          {!activePortfolio && !portfolioLoading && (
+          {/* Sign-in invitation for anonymous viewers — sits between the
+              top bar and the dashboard grid so it's visible without
+              obstructing the live data. */}
+          {readOnly && (
+            <AnonCTA
+              message="Sign in to create and manage your own portfolios."
+              ctaText="Sign in"
+              ctaHref="/login"
+            />
+          )}
+
+          {/* Empty state — only shown to authenticated users with no
+              portfolios. Anon viewers always see the public default. */}
+          {!activePortfolio && !portfolioLoading && !readOnly && (
             <div className="sd-card" style={{ textAlign: "center", padding: 40 }}>
               <p
                 className="sd-muted"

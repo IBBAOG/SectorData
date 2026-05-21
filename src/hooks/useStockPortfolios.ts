@@ -9,17 +9,69 @@ function flattenGroups(groups: PortfolioGroup[]): string[] {
   return groups.flatMap((g) => g.tickers);
 }
 
+/**
+ * Loads the current user's portfolios from `stock_portfolios`.
+ *
+ * Three tiers (resolved via `useUserProfile().role`):
+ *
+ *   - Admin / Client (authenticated)
+ *       Query `WHERE user_id = auth.uid()` via PostgREST.
+ *       Full CRUD (create / update / delete / setActive).
+ *
+ *   - Anon (visitor, no session)
+ *       Query `WHERE is_public = TRUE` — returns the seeded public
+ *       "Brazilian Oil & Gas (default)" portfolio (and any others
+ *       an admin later marks public). All mutating callbacks become
+ *       no-ops, and `readOnly` is `true` so the UI can hide CRUD
+ *       controls.
+ *
+ * The `is_public` column and the anon SELECT policy come from
+ * migration `20260522000001_anonymous_access.sql` (Phase A).
+ */
 export function useStockPortfolios() {
   const supabase = getSupabaseClient();
-  const { profile } = useUserProfile();
+  // `role` is supplied by the Phase B `UserProfileContext` rewrite. It
+  // resolves to "Admin" | "Client" | "Anon". Until that frontend infra is
+  // merged, TypeScript may not know about the field — that's expected.
+  const { profile, role } = useUserProfile();
   const userId = profile?.id;
+  const isAnon = role === "Anon";
+  const readOnly = isAnon;
 
   const [portfolios, setPortfolios] = useState<StockPortfolio[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    if (!supabase || !userId) return;
+    if (!supabase) return;
     setIsLoading(true);
+
+    if (isAnon) {
+      // Anon path — fetch all public portfolios. RLS policy
+      // "anon and authed read public portfolios" allows this.
+      const { data, error } = await supabase
+        .from("stock_portfolios")
+        .select("*")
+        .eq("is_public", true)
+        .order("created_at", { ascending: true });
+
+      if (!error && data) {
+        setPortfolios(
+          data.map((row: StockPortfolio) => ({
+            ...row,
+            groups: Array.isArray(row.groups) ? row.groups : [],
+          })),
+        );
+      }
+      setIsLoading(false);
+      return;
+    }
+
+    if (!userId) {
+      // Authenticated user object not loaded yet — wait for next refresh.
+      setIsLoading(false);
+      return;
+    }
+
     const { data, error } = await supabase
       .from("stock_portfolios")
       .select("*")
@@ -35,17 +87,18 @@ export function useStockPortfolios() {
       );
     }
     setIsLoading(false);
-  }, [supabase, userId]);
+  }, [supabase, userId, isAnon]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  const activePortfolio = portfolios.find((p) => p.is_active) ?? portfolios[0] ?? null;
+  const activePortfolio =
+    portfolios.find((p) => p.is_active) ?? portfolios[0] ?? null;
 
   const createPortfolio = useCallback(
     async (name: string, groups: PortfolioGroup[]) => {
-      if (!supabase || !userId) return;
+      if (readOnly || !supabase || !userId) return;
       await supabase.from("stock_portfolios").insert({
         user_id: userId,
         name,
@@ -55,12 +108,12 @@ export function useStockPortfolios() {
       });
       await refresh();
     },
-    [supabase, userId, portfolios.length, refresh],
+    [readOnly, supabase, userId, portfolios.length, refresh],
   );
 
   const updatePortfolio = useCallback(
     async (id: string, updates: { name?: string; groups?: PortfolioGroup[] }) => {
-      if (!supabase) return;
+      if (readOnly || !supabase) return;
       const payload: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
       };
@@ -75,21 +128,21 @@ export function useStockPortfolios() {
         .eq("id", id);
       await refresh();
     },
-    [supabase, refresh],
+    [readOnly, supabase, refresh],
   );
 
   const deletePortfolio = useCallback(
     async (id: string) => {
-      if (!supabase) return;
+      if (readOnly || !supabase) return;
       await supabase.from("stock_portfolios").delete().eq("id", id);
       await refresh();
     },
-    [supabase, refresh],
+    [readOnly, supabase, refresh],
   );
 
   const setActivePortfolio = useCallback(
     async (id: string) => {
-      if (!supabase || !userId) return;
+      if (readOnly || !supabase || !userId) return;
       await supabase
         .from("stock_portfolios")
         .update({ is_active: false })
@@ -100,13 +153,14 @@ export function useStockPortfolios() {
         .eq("id", id);
       await refresh();
     },
-    [supabase, userId, refresh],
+    [readOnly, supabase, userId, refresh],
   );
 
   return {
     portfolios,
     activePortfolio,
     isLoading,
+    readOnly,
     createPortfolio,
     updatePortfolio,
     deletePortfolio,
