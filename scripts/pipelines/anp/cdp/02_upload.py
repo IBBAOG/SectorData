@@ -353,6 +353,237 @@ def _validate_row_count(sb, ano: int, mes: int) -> None:
             print(f"  [validate] {local} {ano}/{mes:02d}: could not count ({e})")
 
 
+# ── Defense-in-depth post-upload checks (Phase B1, 2026-05-21) ─────────────────
+# Three guards added after the Apr/2026 triplication incident (rows triplicated
+# across PosSal/PreSal/Terra → 12.853 kbpd vs ~4.337 kbpd corrected, 3rd occurrence
+# of the same bug). The Fase A SQL quarantine moved 2,076 rows to
+# `_quarantine_anp_cdp_apr2026`. These checks prevent the next occurrence by:
+#   1) Detecting cross-local duplication for any (poco, campo, bacia) in a period
+#   2) Spike-flagging months where production is >1.8x trailing 3-month average
+#   3) Refusing to upload when M/S/T frames overlap >5% (ANP returns same CSV bug)
+# All three RAISE on failure to abort the pipeline and surface in GHA logs.
+
+
+def _check_cross_local_duplicates(sb, ano: int, mes: int) -> None:
+    """Fail-loud if same (poco, campo, bacia) has rows with >1 local in (ano, mes).
+
+    Pulls every row for the period and aggregates client-side because PostgREST
+    cannot express GROUP BY ... HAVING COUNT(DISTINCT) > 1.  This is bounded:
+    a single (ano, mes) has at most ~7k rows (Apr/2026 reached ~6,413 after the
+    triplication; healthy months sit around 2,100-2,400).
+    """
+    rows_seen: list[dict] = []
+    PAGE = 1000
+    offset = 0
+    while True:
+        try:
+            r = (
+                sb.table("anp_cdp_producao")
+                .select("poco,campo,bacia,local")
+                .eq("ano", ano)
+                .eq("mes", mes)
+                .range(offset, offset + PAGE - 1)
+                .execute()
+            )
+        except Exception as e:
+            print(f"  [cross-local-check] {ano}/{mes:02d}: could not query ({e}); skipping")
+            return
+        data = r.data or []
+        rows_seen.extend(data)
+        if len(data) < PAGE:
+            break
+        offset += PAGE
+        if offset > 50_000:
+            # safety cap; healthy month should never reach this
+            print(f"  [cross-local-check] {ano}/{mes:02d}: aborting scan at {offset} rows (suspicious)")
+            break
+
+    # Group by (poco, campo, bacia) -> set of distinct local values
+    triplet_to_locals: dict[tuple, set] = {}
+    for row in rows_seen:
+        key = (row.get("poco"), row.get("campo"), row.get("bacia"))
+        loc = row.get("local")
+        if loc:
+            triplet_to_locals.setdefault(key, set()).add(loc)
+
+    offenders = [
+        (key, locs) for key, locs in triplet_to_locals.items() if len(locs) > 1
+    ]
+    if offenders:
+        sample = "; ".join(
+            f"{k[0]}@{k[1]}/{k[2]} ({len(locs)} locais: {sorted(locs)})"
+            for k, locs in offenders[:5]
+        )
+        raise RuntimeError(
+            f"CROSS-LOCAL DUPLICATE DETECTED em ano={ano} mes={mes}: "
+            f"{len(offenders)} wells (sample: {sample}). "
+            f"Pipeline aborted to prevent dashboard KPI inflation. "
+            f"Investigate _AMBIENTE_TO_LOCAL mapping or ANP response duplication."
+        )
+    print(f"  [cross-local-check] {ano}/{mes:02d}: OK (no triplet in >1 local)")
+
+
+def _warn_spike_upward(sb, ano: int, mes: int) -> None:
+    """Fail if monthly petroleum SUM is >1.8x the 3-month trailing average.
+
+    The trailing window is the 3 months immediately preceding (ano, mes).
+    Skips silently if fewer than 2 trailing months have data (e.g. first months
+    in DB) to avoid false alarms on backfill.
+
+    Threshold tiers:
+      ratio > 1.8  → RAISE (likely duplication)
+      ratio > 1.4  → print WARN (verify visually but continue)
+      ratio ≤ 1.4  → silent (normal seasonal variation)
+    """
+    # Build the trailing 3 months preceding (ano, mes)
+    trailing_months: list[tuple[int, int]] = []
+    a, m = ano, mes
+    for _ in range(3):
+        m -= 1
+        if m < 1:
+            m = 12
+            a -= 1
+        trailing_months.append((a, m))
+
+    def _sum_petroleo(year: int, month: int) -> float | None:
+        """Return SUM(petroleo_bbl_dia) for the given period, or None if no rows."""
+        total = 0.0
+        any_data = False
+        offset = 0
+        PAGE = 1000
+        while True:
+            try:
+                r = (
+                    sb.table("anp_cdp_producao")
+                    .select("petroleo_bbl_dia")
+                    .eq("ano", year)
+                    .eq("mes", month)
+                    .range(offset, offset + PAGE - 1)
+                    .execute()
+                )
+            except Exception:
+                return None
+            data = r.data or []
+            if not data:
+                break
+            any_data = True
+            for row in data:
+                v = row.get("petroleo_bbl_dia")
+                if v is not None:
+                    try:
+                        total += float(v)
+                    except (TypeError, ValueError):
+                        pass
+            if len(data) < PAGE:
+                break
+            offset += PAGE
+            if offset > 50_000:
+                break
+        return total if any_data else None
+
+    trailing_totals: list[float] = []
+    for ty, tm in trailing_months:
+        s = _sum_petroleo(ty, tm)
+        if s is not None and s > 0:
+            trailing_totals.append(s)
+
+    if len(trailing_totals) < 2:
+        # not enough history — skip silently (e.g. first months of DB, backfill)
+        return
+
+    avg_trailing = sum(trailing_totals) / len(trailing_totals)
+    curr = _sum_petroleo(ano, mes)
+    if not curr or avg_trailing <= 0:
+        return
+
+    ratio = curr / avg_trailing
+    if ratio > 1.8:
+        raise RuntimeError(
+            f"SPIKE UPWARD ANOMALY em ano={ano} mes={mes}: "
+            f"production {curr:,.0f} bbl/dia is {ratio:.2f}x the trailing "
+            f"{len(trailing_totals)}-month avg ({avg_trailing:,.0f}). "
+            f"Possible upload duplication. Investigate before proceeding."
+        )
+    elif ratio > 1.4:
+        print(
+            f"  [WARN] {ano}/{mes:02d}: production is {ratio:.2f}x trailing "
+            f"{len(trailing_totals)}mo avg — verify visually"
+        )
+    else:
+        print(
+            f"  [spike-check] {ano}/{mes:02d}: production ratio {ratio:.2f}x "
+            f"trailing avg — OK"
+        )
+
+
+def _validate_ambiente_consistency(
+    frames_by_ambiente: dict[tuple[int, int, str], pd.DataFrame],
+) -> None:
+    """Detect if M, S, T 'frames' share >5% of (poco, campo, bacia) tuples.
+
+    The ANP CDP APEX portal occasionally returns the SAME CSV for clicks against
+    different ambiente filters (M/S/T) — confirmed root cause of the Apr/2026
+    triplication.  The legitimate overlap is between M (PosSal, all offshore)
+    and S (PreSal, subset) — that case is handled by `_deduplicate_m_vs_s`.
+    The illegitimate overlap is between T (onshore) and either M or S, or any
+    pair where overlap exceeds the "subset" expectation by being near-total.
+
+    Behaviour:
+      - M ∩ S overlap is expected (S ⊂ M for offshore wells).  Suppressed.
+      - T overlapping >5% with M or S → fatal (onshore wells cannot be offshore).
+      - M ∩ S overlap that exceeds 95% in BOTH directions → fatal (M=S, ANP bug).
+    """
+    by_amb: dict[str, set[tuple]] = {}
+    for (_ano, _mes, amb), df in frames_by_ambiente.items():
+        if df is None or df.empty or "poco" not in df.columns:
+            continue
+        keys = set(
+            zip(df["poco"].astype(str), df["campo"].astype(str), df["bacia"].astype(str))
+        )
+        # multiple periods of same ambiente accumulate (rare, but safe)
+        by_amb.setdefault(amb, set()).update(keys)
+
+    ambientes = list(by_amb.keys())
+    PCT_THRESHOLD = 0.05  # 5%
+
+    for i in range(len(ambientes)):
+        for j in range(i + 1, len(ambientes)):
+            a, b = ambientes[i], ambientes[j]
+            ka, kb = by_amb[a], by_amb[b]
+            if not ka or not kb:
+                continue
+            overlap = len(ka & kb)
+            smaller = min(len(ka), len(kb))
+            pct = overlap / smaller if smaller > 0 else 0.0
+
+            # M ∩ S is a known legitimate subset relationship (S ⊂ M).
+            # Suppress unless it looks like total equality (>=95% from both sides).
+            if {a, b} == {"M", "S"}:
+                pct_from_a = overlap / len(ka) if ka else 0
+                pct_from_b = overlap / len(kb) if kb else 0
+                if pct_from_a > 0.95 and pct_from_b > 0.95:
+                    raise RuntimeError(
+                        f"AMBIENTE OVERLAP ANOMALY: M and S frames are essentially "
+                        f"identical ({overlap}/{len(ka)} from M, {overlap}/{len(kb)} "
+                        f"from S). ANP may be returning the same CSV for both "
+                        f"ambiente clicks. Inspect raw CSVs before re-uploading."
+                    )
+                continue
+
+            # Any other pair (M↔T, S↔T) should have ~0% overlap.
+            if pct > PCT_THRESHOLD:
+                raise RuntimeError(
+                    f"AMBIENTE OVERLAP ANOMALY: {a} and {b} share "
+                    f"{overlap}/{smaller} wells ({pct:.1%}). "
+                    f"ANP may be returning the same CSV for different ambiente "
+                    f"clicks. Inspect raw CSVs before re-uploading."
+                )
+    print(
+        f"  [ambiente-overlap] OK ({len(ambientes)} ambientes: "
+        f"{sorted(ambientes)})"
+    )
+
+
 def _from_parquet(sb, path: str, ano_inicio: int = 0, allow_non_apex: bool = False) -> None:
     print(f"Reading parquet: {path}")
     df = pd.read_parquet(path)
@@ -617,6 +848,11 @@ def _from_csv_dir(sb, csv_dir: str, incremental: bool = True, purge: bool = Fals
         print("No new CSV data to upload.")
         return
 
+    # Pre-upload guard: refuse if ANP returned the same CSV for different ambiente
+    # clicks (cross-ambiente overlap > 5%).  This was the root cause of the
+    # Apr/2026 triplication incident — see _validate_ambiente_consistency docstring.
+    _validate_ambiente_consistency(frames_by_period)
+
     # Resolve M/S overlap: wells in both M and S files are PreSal — keep them
     # only in the S frame (local=PreSal).  Remove them from M to avoid double-counting.
     frames = _deduplicate_m_vs_s(frames_by_period)
@@ -661,6 +897,16 @@ def _from_csv_dir(sb, csv_dir: str, incremental: bool = True, purge: bool = Fals
     # Validation: report offshore row counts for each uploaded period
     for ano_p, mes_p in sorted(periods_to_purge):
         _validate_row_count(sb, ano_p, mes_p)
+
+    # Post-upload defense-in-depth (Phase B1):
+    #   _check_cross_local_duplicates RAISES if any (poco, campo, bacia) is now
+    #     spread across more than one local in the just-uploaded period.
+    #   _warn_spike_upward RAISES if the monthly petroleum sum jumped >1.8x the
+    #     trailing 3-month average — telltale of upload duplication.
+    # Both run AFTER upsert so they audit the final DB state, not the staging frame.
+    for ano_p, mes_p in sorted(periods_to_purge):
+        _check_cross_local_duplicates(sb, ano_p, mes_p)
+        _warn_spike_upward(sb, ano_p, mes_p)
 
     # periods_to_purge collects all (ano, mes) pairs from successfully parsed CSVs
     # regardless of the --purge flag, so it's always available for the coverage check.
