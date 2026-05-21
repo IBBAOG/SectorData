@@ -15,6 +15,7 @@
 import { useCallback, useMemo, useState } from "react";
 import NavBar from "@/components/NavBar";
 import { useUserProfile } from "@/context/UserProfileContext";
+import AnonCTA from "@/components/AnonCTA";
 
 import SelectionSidebar from "../_components/SelectionSidebar";
 import ClippingModal from "../_components/ClippingModal";
@@ -34,6 +35,7 @@ export default function DesktopView(): React.ReactElement {
     keywordEntries,
     loading,
     error,
+    readOnly,
     visible,
     visLoading,
     newKeyword,
@@ -175,9 +177,21 @@ export default function DesktopView(): React.ReactElement {
           </div>
         </div>
 
+        {readOnly && (
+          <div className={styles.anonCtaWrap}>
+            <AnonCTA
+              message="Sign in to personalize your keywords and create your own news feed."
+              ctaText="Sign in"
+              ctaHref="/login"
+            />
+          </div>
+        )}
+
         <section className={styles.panel}>
           <div className={styles.panelHeader}>
-            <h3 className={styles.panelTitle}>Keywords</h3>
+            <h3 className={styles.panelTitle}>
+              {readOnly ? "Default keywords" : "Keywords"}
+            </h3>
           </div>
           <div className={styles.panelBody}>
             <ul className={styles.chips}>
@@ -199,14 +213,16 @@ export default function DesktopView(): React.ReactElement {
                         EXACT
                       </span>
                     )}
-                    <button
-                      type="button"
-                      className={styles.chipRemove}
-                      onClick={() => removeKeyword(entry.keyword)}
-                      aria-label={`remove ${entry.keyword}`}
-                    >
-                      ×
-                    </button>
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        className={styles.chipRemove}
+                        onClick={() => removeKeyword(entry.keyword)}
+                        aria-label={`remove ${entry.keyword}`}
+                      >
+                        ×
+                      </button>
+                    )}
                   </li>
                 );
               })}
@@ -216,40 +232,50 @@ export default function DesktopView(): React.ReactElement {
                 </li>
               )}
             </ul>
-            <form
-              className={styles.addForm}
-              onSubmit={(e) => {
-                e.preventDefault();
-                void addKeyword(newKeyword, newKeywordMatchType);
-              }}
-            >
-              <input
-                type="text"
-                className={styles.addInput}
-                placeholder="+ add keyword"
-                value={newKeyword}
-                onChange={(e) => setNewKeyword(e.target.value)}
-              />
-              <label
-                className={styles.exactToggle}
-                title="Match only when the term appears as a standalone word (case-insensitive)."
-              >
-                <input
-                  type="checkbox"
-                  checked={newKeywordMatchType === "exact"}
-                  onChange={(e) =>
-                    setNewKeywordMatchType(e.target.checked ? "exact" : "substring")
-                  }
-                />
-                <span>Exact match</span>
-              </label>
-              <button type="submit" className={styles.addBtn} aria-label="add">+</button>
-            </form>
-            <p className={styles.helpText}>
-              Default keywords match anywhere in the text. Turn on{" "}
-              <strong>Exact match</strong> to match only as a standalone word
-              (e.g. <code>ANS</code> exact won&apos;t hit <em>tr<strong>ANS</strong>porte</em>).
-            </p>
+            {!readOnly && (
+              <>
+                <form
+                  className={styles.addForm}
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void addKeyword(newKeyword, newKeywordMatchType);
+                  }}
+                >
+                  <input
+                    type="text"
+                    className={styles.addInput}
+                    placeholder="+ add keyword"
+                    value={newKeyword}
+                    onChange={(e) => setNewKeyword(e.target.value)}
+                  />
+                  <label
+                    className={styles.exactToggle}
+                    title="Match only when the term appears as a standalone word (case-insensitive)."
+                  >
+                    <input
+                      type="checkbox"
+                      checked={newKeywordMatchType === "exact"}
+                      onChange={(e) =>
+                        setNewKeywordMatchType(e.target.checked ? "exact" : "substring")
+                      }
+                    />
+                    <span>Exact match</span>
+                  </label>
+                  <button type="submit" className={styles.addBtn} aria-label="add">+</button>
+                </form>
+                <p className={styles.helpText}>
+                  Default keywords match anywhere in the text. Turn on{" "}
+                  <strong>Exact match</strong> to match only as a standalone word
+                  (e.g. <code>ANS</code> exact won&apos;t hit <em>tr<strong>ANS</strong>porte</em>).
+                </p>
+              </>
+            )}
+            {readOnly && (
+              <p className={styles.helpText}>
+                These default keywords drive the public feed below. Sign in to
+                add or remove your own.
+              </p>
+            )}
           </div>
         </section>
 

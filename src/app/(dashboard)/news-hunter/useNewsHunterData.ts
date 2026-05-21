@@ -145,6 +145,14 @@ export interface UseNewsHunterDataReturn {
   loading: boolean;
   error: string | null;
 
+  /**
+   * True for anonymous visitors (no Supabase session). The Views use this to
+   * hide keyword add/remove controls and to render the `AnonCTA` banner.
+   * Mutations (`addKeyword`, `removeKeyword`) are no-ops while `readOnly` is
+   * true, even if a caller bypasses the UI.
+   */
+  readOnly: boolean;
+
   // Visibility guard
   visible: boolean;
   visLoading: boolean;
@@ -202,6 +210,7 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
     setKeywordEntries,
     loading,
     error,
+    readOnly,
   } = useNewsHunter();
 
   // ── Local state ─────────────────────────────────────────────────────────
@@ -263,6 +272,10 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
 
   const addKeyword = useCallback(
     async (raw: string, matchType: KeywordMatchType = "substring") => {
+      // Defense in depth: the UI hides Add controls for anon visitors, but if
+      // a caller bypasses the UI the mutation must still no-op (the INSERT
+      // would fail at RLS anyway, but we surface a cleaner contract).
+      if (readOnly) return;
       const kw = raw.trim();
       if (!kw || !supabase) return;
       const already = keywordEntries.some(
@@ -284,11 +297,13 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
         );
       }
     },
-    [supabase, keywordEntries, setKeywordEntries],
+    [supabase, keywordEntries, setKeywordEntries, readOnly],
   );
 
   const removeKeyword = useCallback(
     async (kw: string) => {
+      // Defense in depth: see comment on addKeyword.
+      if (readOnly) return;
       if (!supabase) return;
       const { error: delErr } = await supabase
         .from("news_hunter_keywords")
@@ -296,7 +311,7 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
         .eq("keyword", kw);
       if (!delErr) setKeywordEntries((prev) => prev.filter((e) => e.keyword !== kw));
     },
-    [supabase, setKeywordEntries],
+    [supabase, setKeywordEntries, readOnly],
   );
 
   // ── Derived ──────────────────────────────────────────────────────────────
@@ -363,6 +378,7 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
     keywordEntries,
     loading,
     error,
+    readOnly,
     visible,
     visLoading,
     newKeyword,

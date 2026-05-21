@@ -114,6 +114,20 @@
   font-size: 12px;
 }
 
+/* Anonymous-visitor CTA banner ──────────────────────────────────────
+   Wraps the shared <AnonCTA> component (src/components/AnonCTA.tsx) so
+   it lines up with the keyword panel and headline grid below — same
+   horizontal padding as `.panel` / `.searchBar` / `.headlinesSection`. */
+.anonCtaWrap {
+  margin: 12px 40px 0;
+}
+@media (max-width: 1024px) {
+  .anonCtaWrap { margin: 10px 24px 0; }
+}
+@media (max-width: 768px) {
+  .anonCtaWrap { margin: 10px 16px 0; }
+}
+
 /* Keyword panel ───────────────────────────────────────────────────── */
 .panel {
   background: var(--nh-panel-tint);

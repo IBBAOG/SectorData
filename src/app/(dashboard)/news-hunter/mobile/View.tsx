@@ -36,6 +36,7 @@ import {
   CloseIcon,
 } from "@/components/dashboard/mobile";
 import { useUserProfile } from "@/context/UserProfileContext";
+import AnonCTA from "@/components/AnonCTA";
 import {
   useNewsHunterData,
   humanizeAge,
@@ -209,73 +210,58 @@ function KeywordsSection({
   entries,
   onAddPress,
   onRemove,
+  readOnly,
 }: {
   entries: KeywordEntry[];
   onAddPress: () => void;
   onRemove: (kw: string) => Promise<void>;
+  /**
+   * When true, the section hides Add controls and renders chips as static
+   * labels (no tap-to-remove). Used for anonymous visitors who see the
+   * curated default keyword set.
+   */
+  readOnly?: boolean;
 }): React.ReactElement {
   // Show max 5 + "+N more" indicator
   const visible = entries.slice(0, 5);
   const extra = entries.length - visible.length;
 
   return (
-    <section style={{ padding: "16px 16px 12px", background: "var(--mobile-bg)" }} aria-label="My keywords">
+    <section style={{ padding: "16px 16px 12px", background: "var(--mobile-bg)" }} aria-label={readOnly ? "Default keywords" : "My keywords"}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: "var(--mobile-text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
-          My Keywords
+          {readOnly ? "Default Keywords" : "My Keywords"}
         </span>
-        <button
-          type="button"
-          onClick={onAddPress}
-          style={{
-            background: "transparent",
-            border: 0,
-            color: "var(--mobile-accent)",
-            fontFamily: "inherit",
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: "pointer",
-            padding: "4px 8px",
-            borderRadius: 8,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 3,
-          }}
-          aria-label="Add keyword"
-        >
-          <PlusIcon size={14} strokeWidth={2.4} />
-          Add
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={onAddPress}
+            style={{
+              background: "transparent",
+              border: 0,
+              color: "var(--mobile-accent)",
+              fontFamily: "inherit",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+              padding: "4px 8px",
+              borderRadius: 8,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 3,
+            }}
+            aria-label="Add keyword"
+          >
+            <PlusIcon size={14} strokeWidth={2.4} />
+            Add
+          </button>
+        )}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
         {visible.map((entry) => {
           const isExact = entry.match_type === "exact";
-          return (
-            <button
-              key={entry.keyword}
-              type="button"
-              onClick={() => void onRemove(entry.keyword)}
-              title={
-                isExact
-                  ? `Remove #${entry.keyword} (exact match)`
-                  : `Remove #${entry.keyword}`
-              }
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                height: 26,
-                padding: "0 10px",
-                borderRadius: 999,
-                background: "rgba(255,80,0,0.10)",
-                color: "var(--mobile-accent)",
-                fontSize: 12,
-                fontWeight: 600,
-                border: isExact ? "1px solid var(--mobile-accent)" : 0,
-                cursor: "pointer",
-                fontFamily: "inherit",
-              }}
-            >
+          const chipContent = (
+            <>
               <span>#{entry.keyword}</span>
               {isExact && (
                 <span
@@ -297,10 +283,47 @@ function KeywordsSection({
                   EXACT
                 </span>
               )}
+            </>
+          );
+          const chipStyle: React.CSSProperties = {
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            height: 26,
+            padding: "0 10px",
+            borderRadius: 999,
+            background: "rgba(255,80,0,0.10)",
+            color: "var(--mobile-accent)",
+            fontSize: 12,
+            fontWeight: 600,
+            border: isExact ? "1px solid var(--mobile-accent)" : 0,
+            fontFamily: "inherit",
+          };
+          if (readOnly) {
+            // Static chip — no click handler, no remove affordance.
+            return (
+              <span key={entry.keyword} style={chipStyle}>
+                {chipContent}
+              </span>
+            );
+          }
+          return (
+            <button
+              key={entry.keyword}
+              type="button"
+              onClick={() => void onRemove(entry.keyword)}
+              title={
+                isExact
+                  ? `Remove #${entry.keyword} (exact match)`
+                  : `Remove #${entry.keyword}`
+              }
+              style={{ ...chipStyle, cursor: "pointer" }}
+            >
+              {chipContent}
             </button>
           );
         })}
-        {extra > 0 && (
+        {extra > 0 && !readOnly && (
           <button
             type="button"
             onClick={onAddPress}
@@ -321,6 +344,25 @@ function KeywordsSection({
           >
             +{extra} more
           </button>
+        )}
+        {extra > 0 && readOnly && (
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              height: 26,
+              padding: "0 10px",
+              borderRadius: 999,
+              background: "transparent",
+              color: "var(--mobile-text-muted)",
+              fontSize: 12,
+              fontWeight: 600,
+              border: "1px dashed var(--mobile-border)",
+              fontFamily: "inherit",
+            }}
+          >
+            +{extra} more
+          </span>
         )}
         {entries.length === 0 && (
           <span style={{ fontSize: 12, color: "var(--mobile-text-faint)", fontStyle: "italic" }}>
@@ -555,13 +597,67 @@ function SettingsTab({
   entries,
   addKeyword,
   removeKeyword,
+  readOnly,
 }: {
   entries: KeywordEntry[];
   addKeyword: (raw: string, matchType?: KeywordMatchType) => Promise<void>;
   removeKeyword: (kw: string) => Promise<void>;
+  /**
+   * When true, the form is hidden and an AnonCTA banner replaces it.
+   * The keyword list still renders so visitors can see what the default
+   * feed is filtered against.
+   */
+  readOnly?: boolean;
 }): React.ReactElement {
   const [draft, setDraft] = useState("");
   const [draftType, setDraftType] = useState<KeywordMatchType>("substring");
+
+  if (readOnly) {
+    return (
+      <div style={{ padding: "20px 16px" }}>
+        <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 16px", color: "var(--mobile-text)" }}>
+          Settings
+        </h2>
+        <AnonCTA
+          message="Sign in to personalize your keywords and create your own news feed."
+          ctaText="Sign in"
+          ctaHref="/login"
+        />
+        <p style={{ fontSize: 13, color: "var(--mobile-text-muted)", margin: "16px 0 8px" }}>
+          The public feed is filtered by these default keywords:
+        </p>
+        <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+          {entries.map((entry) => {
+            const isExact = entry.match_type === "exact";
+            return (
+              <li
+                key={entry.keyword}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  padding: "10px 0",
+                  borderBottom: "1px solid var(--mobile-divider)",
+                  fontSize: 14,
+                  color: "var(--mobile-text)",
+                }}
+              >
+                <span style={{ display: "inline-flex", alignItems: "center" }}>
+                  #{entry.keyword}
+                  {isExact && <ExactBadge />}
+                </span>
+              </li>
+            );
+          })}
+          {entries.length === 0 && (
+            <li style={{ color: "var(--mobile-text-faint)", fontStyle: "italic", fontSize: 13 }}>
+              No default keywords configured.
+            </li>
+          )}
+        </ul>
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: "20px 16px" }}>
       <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 16px", color: "var(--mobile-text)" }}>
@@ -805,6 +901,7 @@ export default function MobileView(): React.ReactElement {
     keywordEntries,
     loading,
     error,
+    readOnly,
     visible,
     visLoading,
     newKeyword: _newKeyword,
@@ -894,6 +991,7 @@ export default function MobileView(): React.ReactElement {
             entries={keywordEntries}
             addKeyword={addKeyword}
             removeKeyword={removeKeyword}
+            readOnly={readOnly}
           />
         )}
 
@@ -987,10 +1085,20 @@ export default function MobileView(): React.ReactElement {
                   active={topicFilter}
                   onSelect={setTopicFilter}
                 />
+                {readOnly && (
+                  <div style={{ padding: "0 16px" }}>
+                    <AnonCTA
+                      message="Sign in to personalize your keywords and create your own news feed."
+                      ctaText="Sign in"
+                      ctaHref="/login"
+                    />
+                  </div>
+                )}
                 <KeywordsSection
                   entries={keywordEntries}
                   onAddPress={() => setKwSheetOpen(true)}
                   onRemove={removeKeyword}
+                  readOnly={readOnly}
                 />
               </>
             )}
@@ -1038,8 +1146,10 @@ export default function MobileView(): React.ReactElement {
         )}
       </div>
 
-      {/* FAB — add keyword (feed + settings tabs) */}
-      {(mobileTab === "feed" || mobileTab === "settings") && (
+      {/* FAB — add keyword (feed + settings tabs).
+          Hidden for anon visitors: they can't mutate keywords, so a +
+          floating button would mislead them. */}
+      {!readOnly && (mobileTab === "feed" || mobileTab === "settings") && (
         <button
           type="button"
           onClick={() => setKwSheetOpen(true)}
@@ -1073,14 +1183,16 @@ export default function MobileView(): React.ReactElement {
         onChange={(key) => setMobileTab(key as MobileTab)}
       />
 
-      {/* Keyword editor sheet */}
-      <KeywordSheet
-        open={kwSheetOpen}
-        onClose={() => setKwSheetOpen(false)}
-        entries={keywordEntries}
-        addKeyword={addKeyword}
-        removeKeyword={removeKeyword}
-      />
+      {/* Keyword editor sheet — never mounted for anon visitors. */}
+      {!readOnly && (
+        <KeywordSheet
+          open={kwSheetOpen}
+          onClose={() => setKwSheetOpen(false)}
+          entries={keywordEntries}
+          addKeyword={addKeyword}
+          removeKeyword={removeKeyword}
+        />
+      )}
 
       {/* Status label announced to screen readers */}
       <p aria-live="polite" aria-atomic="true" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0,0,0,0)" }}>

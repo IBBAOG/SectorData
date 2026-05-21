@@ -337,6 +337,65 @@ Classes adicionadas para a feature de clipping:
 - `.checkbox` — checkbox de seleção por artigo
 - `.selected` — fundo tintado em artigos selecionados
 
+## Anonymous-visitor mode (added 2026-05-21)
+
+`/news-hunter` supports three viewer tiers — Admin, Client and Anon — sharing the same UI
+shell with progressively richer affordances. Anon visitors get a read-only experience:
+
+| Behavior | Anon | Client | Admin |
+|---|---|---|---|
+| See the headline feed (filtered by keywords) | Yes | Yes | Yes |
+| Search and topic-pill filters | Yes | Yes | Yes |
+| Bookmarks (localStorage only) | Yes | Yes | Yes |
+| Add / remove keywords | No | Yes | Yes |
+| Clipping / Selection Mode | No | No | Yes |
+
+### Data path (single source of truth)
+
+- **Anon**: `NewsHunterContext` calls `rpcGetDefaultNewsKeywords()` →
+  `get_default_news_keywords()` RPC →
+  `news_hunter_default_keywords` table (curated set, ~27 keywords) →
+  fallback to hardcoded `FALLBACK_KEYWORDS` if the RPC fails. The
+  `seed_my_news_hunter_keywords()` RPC is skipped entirely (it requires
+  `auth.uid`).
+- **Authenticated**: unchanged — selects from `news_hunter_keywords`
+  filtered by RLS to the current user, seeding via
+  `seed_my_news_hunter_keywords()` on first visit.
+
+Article polling (`news_articles`) is identical for both — the table now has
+an anon `SELECT` policy (migration `20260522000001_anonymous_access.sql`
+section 10).
+
+### Read-only contract
+
+`NewsHunterContext` exposes `readOnly: boolean` (set during keyword
+bootstrap from the result of `supabase.auth.getSession()`). The
+`useNewsHunterData` hook re-exports `readOnly`; both Views consume it:
+
+- **Desktop (`desktop/View.tsx`)** — renders `<AnonCTA>` above the
+  keyword panel, swaps the "Keywords" heading for "Default keywords",
+  hides the add form and the `×` button on each chip, and replaces the
+  help text with a one-line sign-in nudge.
+- **Mobile (`mobile/View.tsx`)** — renders `<AnonCTA>` above the
+  `KeywordsSection` on the Feed tab and (full-bleed) on the Settings
+  tab. Hides the FAB, the Add button inside `KeywordsSection`, and
+  un-mounts the `KeywordSheet` entirely. Chips become static `<span>`s
+  with no tap-to-remove affordance. The Settings tab replaces its form
+  with the AnonCTA banner + a read-only list of the default keywords.
+
+`addKeyword` and `removeKeyword` are defensive no-ops when `readOnly` is
+true (the RLS policies on `news_hunter_keywords` would deny the writes
+anyway, but the early return keeps the contract clean and avoids
+surfacing a 401-shaped error to the UI).
+
+### Why `readOnly` lives in the context, not just the view
+
+The keyword loader and the mutation guards both need the same anon
+signal. Centralizing it in `NewsHunterContext` (set once during
+bootstrap) means both Views never branch on session state directly, and
+TypeScript propagates the field through `useNewsHunterData` to both
+Views by construction.
+
 ## Mudanças que cruzam fronteira (cuidado especial)
 
 ### Schema de `news_articles`
