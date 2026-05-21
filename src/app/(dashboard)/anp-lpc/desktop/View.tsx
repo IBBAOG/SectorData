@@ -26,14 +26,10 @@ import ExportPanel from "../../../../components/dashboard/ExportPanel";
 import ExportModal from "../../../../components/dashboard/ExportModal";
 import { useModuleVisibilityGuard } from "../../../../hooks/useModuleVisibilityGuard";
 import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../../lib/plotlyDefaults";
-import {
-  rpcGetAnpLpcSerie,
-  getAnpLpcExportCount,
-  type AnpLpcNacionalRow,
-  type AnpLpcSerieRow,
+import type {
+  AnpLpcNacionalRow,
+  AnpLpcSerieRow,
 } from "../../../../lib/rpc";
-import { downloadAnpLpcExcel } from "../../../../lib/exportExcel";
-import { downloadCsv } from "../../../../lib/exportCsv";
 
 import {
   useAnpLpcData,
@@ -294,56 +290,12 @@ export default function DesktopView(): React.ReactElement {
         title="Export — ANP LPC"
         datasetKey="anp_lpc"
         currentFilters={lpc.exportFilters}
-        countFetcher={async () => {
-          if (!lpc.supabase) return 0;
-          return getAnpLpcExportCount(lpc.supabase, lpc.exportFilters);
-        }}
+        countFetcher={lpc.fetchExportCount}
         excelBusy={lpc.excelLoading}
         csvBusy={lpc.csvLoading}
         loadingLabel={lpc.excelLoading ? "Generating Excel..." : "Downloading CSV..."}
-        onExportExcel={async () => {
-          if (!lpc.supabase) return;
-          lpc.setExcelLoading(true);
-          try {
-            const rows = await rpcGetAnpLpcSerie(lpc.supabase, {
-              produtos:   lpc.exportFilters.produtos,
-              estados:    lpc.exportFilters.estados,
-              dataInicio: lpc.exportFilters.dataInicio,
-              dataFim:    lpc.exportFilters.dataFim,
-            });
-            await downloadAnpLpcExcel(rows);
-            lpc.closeExportModal();
-          } catch (e) {
-            console.error("ANP LPC Excel export failed", e);
-          } finally {
-            lpc.setExcelLoading(false);
-          }
-        }}
-        onExportCsv={async () => {
-          if (!lpc.supabase) return;
-          lpc.setCsvLoading(true);
-          try {
-            const rows = await rpcGetAnpLpcSerie(lpc.supabase, {
-              produtos:   lpc.exportFilters.produtos,
-              estados:    lpc.exportFilters.estados,
-              dataInicio: lpc.exportFilters.dataInicio,
-              dataFim:    lpc.exportFilters.dataFim,
-            });
-            const now = new Date();
-            const dd = String(now.getDate()).padStart(2, "0");
-            const mm = String(now.getMonth() + 1).padStart(2, "0");
-            const yy = String(now.getFullYear()).slice(-2);
-            downloadCsv({
-              rows: rows as unknown as Record<string, unknown>[],
-              filename: `anp_lpc_${dd}-${mm}-${yy}`,
-            });
-            lpc.closeExportModal();
-          } catch (e) {
-            console.error("ANP LPC CSV export failed", e);
-          } finally {
-            lpc.setCsvLoading(false);
-          }
-        }}
+        onExportExcel={lpc.onExportExcel}
+        onExportCsv={lpc.onExportCsv}
         filters={
           <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: "Arial" }}>
             <div>
