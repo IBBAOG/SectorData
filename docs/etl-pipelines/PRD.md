@@ -196,8 +196,19 @@ M/S/T em runs separados, contornando o dedup.
 para post-mortem. Não deletadas; ficam disponíveis para reconstrução caso necessário.
 
 **Acompanhar:** se o pipeline falhar com qualquer das mensagens
-`CROSS-LOCAL DUPLICATE DETECTED`, `SPIKE UPWARD ANOMALY`, ou `AMBIENTE OVERLAP ANOMALY`,
-**não force re-run** sem investigar — provavelmente é nova variante do mesmo bug.
+`CROSS-LOCAL DUPLICATE DETECTED`, `SPIKE UPWARD ANOMALY`, `AMBIENTE OVERLAP ANOMALY`,
+ou `safety cap exceeded`, **não force re-run** sem investigar — provavelmente é
+nova variante do mesmo bug.
+
+**Hardening Phase B2 (2026-05-21):**
+
+- `_check_cross_local_duplicates` agora RAISE em vez de `break` ao bater a safety
+  cap de 50k rows: silent truncation poderia mascarar a própria quadruplicação
+  que a função detecta (GROUP BY rodando sobre sample parcial).
+- `etl_anp_cdp.yml` ganhou bloco `concurrency: { group: anp-cdp,
+  cancel-in-progress: false }` para evitar runs simultâneos. Cron-job.org dispara
+  a cada ~2h; um run Selenium lento (CAPTCHA retry) pode sobrepor o próximo
+  dispatch e causar `unique_violation` no commit, deixando o mês parcial.
 
 ### Debug de falha ANP CDP
 
