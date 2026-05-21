@@ -282,7 +282,7 @@ Comportamentos não-óbvios já encontrados — leia antes de mergulhar:
 | 6 | Workers em worktree não commitam por default — files ficam uncommitted | Sempre incluir Regra D no prompt |
 | 7 | CRLF warnings em commits são esperados em Windows sem `.gitattributes` configurado | Já configurado em 2026-05-06 (commit ?) |
 | 8 | RPC `auth.uid()` direto em policy faz Postgres re-avaliar por row (perf bug) | Wrap em `(select auth.uid())` — vide Hardening A |
-| 9 | MCP tools (`apply_migration`, `execute_sql`, etc.) só ficam disponíveis em **sessão NOVA** após editar `tools:` no frontmatter de `.claude/agents/worker_*.md` — não propaga mid-session | Em incidentes urgentes, fix do workflow + push é o caminho; workflow auto-aplica via `supabase_deploy.yml` |
+| 9 | MCP tools E **contratação de worker novo** só ficam disponíveis em **sessão NOVA** após editar/criar `.claude/agents/worker_*.md` — frontmatter changes e arquivos novos não propagam mid-session (caso real 2026-05-20: contratei `worker_dash-anp-precos-distribuicao` e o harness reportou "Agent type not found" no Agent dispatch mesmo após `Write` bem-sucedido). | Em incidentes urgentes, fix do workflow + push é o caminho; workflow auto-aplica via `supabase_deploy.yml`. Pra workers novos: contrate primeiro (salva o .md), avise CTO da sessão atual que ficará bloqueado até reload, e use o worker mais próximo se a tarefa não puder esperar (aceitando a violação cross-domínio com justificativa explícita). |
 | 10 | `supabase db execute --file` foi removido da CLI; comando atual é `supabase db query --file` | Ver `docs/supabase/PRD.md` seção "Pegadinhas do supabase_deploy.yml e CLI" |
 
 ---
