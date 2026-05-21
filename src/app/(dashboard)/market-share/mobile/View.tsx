@@ -52,9 +52,6 @@ import {
   type ProductKey,
   type SegmentKey,
 } from "../useMarketShareData";
-import { downloadMarketShareExcel } from "../../../../lib/exportExcel";
-import { downloadCsv } from "../../../../lib/exportCsv";
-import { fetchVendasFiltered, getMsExportCount } from "../../../../lib/rpc";
 import type { PlotData } from "plotly.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -1469,37 +1466,12 @@ export default function MobileView(): React.ReactElement {
         title="Export — Market Share"
         datasetKey="vendas"
         currentFilters={ms.exportFilters}
-        countFetcher={async () => {
-          if (!ms.supabase) return 0;
-          return getMsExportCount(ms.supabase, ms.exportFilters);
-        }}
+        countFetcher={ms.fetchExportCount}
         excelBusy={ms.excelLoading}
         csvBusy={ms.csvLoading}
         loadingLabel={ms.excelLoading ? "Generating Excel..." : "Downloading CSV..."}
-        onExportExcel={async () => {
-          ms.setExcelLoading(true);
-          try {
-            await downloadMarketShareExcel(ms.serieRows, ms.players, ms.big3);
-            ms.closeExportModal();
-          } catch (e) {
-            console.error("Excel export failed", e);
-          } finally {
-            ms.setExcelLoading(false);
-          }
-        }}
-        onExportCsv={async () => {
-          if (!ms.supabase) return;
-          ms.setCsvLoading(true);
-          try {
-            const rows = await fetchVendasFiltered(ms.supabase, ms.exportFilters);
-            downloadCsv({ rows, filename: "market_share_vendas" });
-            ms.closeExportModal();
-          } catch (e) {
-            console.error("CSV export failed", e);
-          } finally {
-            ms.setCsvLoading(false);
-          }
-        }}
+        onExportExcel={ms.onExportExcel}
+        onExportCsv={ms.onExportCsv}
         filters={
           <div style={{ fontFamily: "Arial, Helvetica, sans-serif", fontSize: 13, color: "var(--mobile-text-muted)" }}>
             Period and region filters from main view apply to this export.

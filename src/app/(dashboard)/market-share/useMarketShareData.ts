@@ -34,11 +34,14 @@ import {
   rpcGetMsSerieOthers,
   rpcGetOthersPlayers,
   getMsExportCount,
+  fetchVendasFiltered,
   type MsSerieRow,
   type MsExportCountFilters,
 } from "@/lib/rpc";
 import { resolverDatas } from "@/lib/filterUtils";
 import { useExportSize } from "@/hooks/useExportSize";
+import { downloadMarketShareExcel } from "@/lib/exportExcel";
+import { downloadCsv } from "@/lib/exportCsv";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -289,13 +292,15 @@ export interface UseMarketShareData {
   setExportMercados: (m: string[]) => void;
   exportFilters: MsExportCountFilters;
   exportSizeEstimate: ReturnType<typeof useExportSize>;
+  /** Fetches the count for the ExportModal size calculator. Encapsulates the
+   *  Supabase client so views never touch it directly. */
+  fetchExportCount: () => Promise<number>;
   excelLoading: boolean;
-  setExcelLoading: (v: boolean) => void;
   csvLoading: boolean;
-  setCsvLoading: (v: boolean) => void;
-
-  // Supabase client (needed by export handlers in views)
-  supabase: ReturnType<typeof getSupabaseClient>;
+  /** Excel export handler — generates the formatted spreadsheet and closes the modal. */
+  onExportExcel: () => Promise<void>;
+  /** CSV export handler — fetches raw `vendas` rows for `exportFilters` and downloads them. */
+  onExportCsv: () => Promise<void>;
 }
 
 // ─── Pure helpers ─────────────────────────────────────────────────────────────
@@ -860,6 +865,12 @@ export function useMarketShareData(): UseMarketShareData {
     };
   }, [exportRange, exportRegioes, exportUfs, exportMercados, datas]);
 
+  // Encapsulates the Supabase client behind a closure so views never touch it.
+  const fetchExportCount = useCallback(async (): Promise<number> => {
+    if (!supabase) return 0;
+    return getMsExportCount(supabase, exportFilters);
+  }, [supabase, exportFilters]);
+
   // Export size estimate (live, debounced 300ms)
   const exportSizeEstimate = useExportSize(
     exportFilters,
@@ -888,6 +899,33 @@ export function useMarketShareData(): UseMarketShareData {
 
   const xMin = appliedFilters?.data_inicio ?? null;
   const xMax = appliedFilters?.data_fim ?? null;
+
+  // ── Export handlers (own the Supabase client so views stay client-agnostic) ─
+  const onExportExcel = useCallback(async () => {
+    setExcelLoading(true);
+    try {
+      await downloadMarketShareExcel(serieRows, players, big3);
+      setExportOpen(false);
+    } catch (e) {
+      console.error("Excel export failed", e);
+    } finally {
+      setExcelLoading(false);
+    }
+  }, [serieRows, players, big3]);
+
+  const onExportCsv = useCallback(async () => {
+    if (!supabase) return;
+    setCsvLoading(true);
+    try {
+      const rows = await fetchVendasFiltered(supabase, exportFilters);
+      downloadCsv({ rows, filename: "market_share_vendas" });
+      setExportOpen(false);
+    } catch (e) {
+      console.error("CSV export failed", e);
+    } finally {
+      setCsvLoading(false);
+    }
+  }, [supabase, exportFilters]);
 
   const latestDate = useMemo(() => {
     if (appliedFilters.data_fim) return appliedFilters.data_fim;
@@ -1064,10 +1102,10 @@ export function useMarketShareData(): UseMarketShareData {
     setExportMercados,
     exportFilters,
     exportSizeEstimate,
+    fetchExportCount,
     excelLoading,
-    setExcelLoading,
     csvLoading,
-    setCsvLoading,
-    supabase,
+    onExportExcel,
+    onExportCsv,
   };
 }
