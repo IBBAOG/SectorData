@@ -234,7 +234,7 @@ export default function MobileView(): React.ReactElement {
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
   // Per-product label translation
-  const productLabel = filters.product === "Gasoline" ? "Gasolina" : "Diesel";
+  const productLabel = filters.product === "Gasoline" ? "Gasoline" : "Diesel";
 
   // Date chip active key
   const activeMonths = useMemo(
@@ -320,7 +320,7 @@ export default function MobileView(): React.ReactElement {
         <MobileTabBar
           tabs={[
             { key: "Diesel",   label: "Diesel"   },
-            { key: "Gasoline", label: "Gasolina" },
+            { key: "Gasoline", label: "Gasoline" },
           ]}
           activeKey={filters.product}
           onChange={(k) => setFilters({ product: k as PriceBandsProduct })}
