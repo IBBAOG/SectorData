@@ -170,7 +170,13 @@ function Chevron() {
 export default function NavBar() {
   const router = useRouter();
   const supabase = getSupabaseClient();
-  const { profile, moduleVisibility, loading: profileLoading } = useUserProfile();
+  const {
+    profile,
+    role,
+    moduleVisibility,
+    publicVisibility,
+    loading: profileLoading,
+  } = useUserProfile();
 
   const [signingOut, setSigningOut] = useState(false);
   const [openModule, setOpenModule] = useState<string | null>(null);
@@ -191,7 +197,8 @@ export default function NavBar() {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, [openUserMenu]);
 
-  // Fetch session email once for the dropdown header
+  // Fetch session email once for the dropdown header. Anon visitors have no
+  // session so the call resolves to null silently.
   useEffect(() => {
     if (!supabase) return;
     supabase.auth.getSession().then(({ data }) => {
@@ -211,7 +218,8 @@ export default function NavBar() {
     }
   }
 
-  const isAdmin = profile?.role === "Admin";
+  const isAdmin = role === "Admin";
+  const isAnon = role === "Anon";
   const firstName = profile?.full_name?.trim().split(/\s+/)[0] ?? null;
 
   return (
@@ -237,11 +245,15 @@ export default function NavBar() {
             if (!isModule(entry)) {
               // Admin-only links are hidden for non-Admins (and during profile load)
               if (entry.adminOnly && !isAdmin) return null;
-              // Hide visibility-controlled links from Client users when toggled off
-              if (!profileLoading && profile?.role !== "Admin") {
+              // Hide visibility-controlled links per tier:
+              //   - Admin sees everything
+              //   - Client checks moduleVisibility (is_visible_for_clients)
+              //   - Anon checks publicVisibility (is_visible_for_public)
+              if (!profileLoading && !isAdmin) {
                 const rawSlug = entry.href.replace(/^\//, "");
                 const slug = SLUG_MAP[rawSlug] ?? rawSlug;
-                if (!(moduleVisibility[slug] ?? true)) return null;
+                const visMap = isAnon ? publicVisibility : moduleVisibility;
+                if (!(visMap[slug] ?? true)) return null;
               }
               return (
                 <Link key={entry.href} href={entry.href} className="nav-link">
@@ -253,12 +265,14 @@ export default function NavBar() {
             /* ── Module (dropdown or disabled placeholder) ── */
             const mod = entry;
 
-            // Visibility filter helper — applied to flat items and to each group's items
+            // Visibility filter helper — applied to flat items and to each group's items.
+            // Tier-aware: Admins see all; Anon checks publicVisibility; Client checks moduleVisibility.
             const isVisibleItem = (item: NavItem) => {
-              if (profileLoading || profile?.role === "Admin") return true;
+              if (profileLoading || isAdmin) return true;
               const rawSlug = item.href.replace(/^\//, "");
               const slug = SLUG_MAP[rawSlug] ?? rawSlug;
-              return moduleVisibility[slug] ?? true;
+              const visMap = isAnon ? publicVisibility : moduleVisibility;
+              return visMap[slug] ?? true;
             };
 
             // Mega-menu path: filter inside each group (or each subGroup), hide empty groups
@@ -355,67 +369,90 @@ export default function NavBar() {
           })}
         </div>
 
-        {/* ── Right side: avatar circle + user dropdown ──────────────────── */}
+        {/* ── Right side: Sign in CTA (anon) or user dropdown (logged-in) ── */}
         <div
           ref={menuRef}
           style={{ position: "relative", display: "flex", alignItems: "center" }}
         >
-          <button
-            className="nav-user-greeting-btn"
-            onClick={() => setOpenUserMenu((v) => !v)}
-            aria-label="Open user menu"
-            aria-expanded={openUserMenu}
-            disabled={!supabase}
-          >
-            Hello,&nbsp;<strong>{firstName ?? "User"}</strong>
-          </button>
-
-          {openUserMenu && (
-            <div className="nav-user-dropdown">
-              {/* Header — name/email + role badge */}
-              <div className="nav-user-dropdown-header">
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  <span>{profile?.full_name ?? userEmail ?? "User"}</span>
-                  <span className={`role-badge role-badge--${isAdmin ? "admin" : "client"}`}>
-                    {profile?.role ?? "Client"}
-                  </span>
-                </div>
-                {profile?.full_name && userEmail && (
-                  <div className="nav-user-dropdown-header-email">{userEmail}</div>
-                )}
-              </div>
-
-              <hr />
-
-              <Link
-                href="/profile"
-                className="nav-user-dropdown-item"
-                onClick={() => setOpenUserMenu(false)}
-              >
-                My Profile
-              </Link>
-
-              {/* Admin Panel — only visible to Admins */}
-              {isAdmin && (
-                <Link
-                  href="/admin-panel"
-                  className="nav-user-dropdown-item"
-                  onClick={() => setOpenUserMenu(false)}
-                >
-                  Admin Panel
-                </Link>
-              )}
-
-              <hr />
-
+          {isAnon ? (
+            <Link
+              href="/login"
+              className="nav-signin-cta"
+              style={{
+                display: "inline-block",
+                padding: "8px 20px",
+                background: "#ff5000",
+                color: "#fff",
+                fontWeight: 600,
+                fontSize: 14,
+                borderRadius: 6,
+                textDecoration: "none",
+                letterSpacing: "0.02em",
+                transition: "background 0.15s ease, transform 0.15s ease",
+              }}
+            >
+              Sign in
+            </Link>
+          ) : (
+            <>
               <button
-                className="nav-user-dropdown-item nav-user-dropdown-signout"
-                onClick={onLogout}
-                disabled={signingOut || !supabase}
+                className="nav-user-greeting-btn"
+                onClick={() => setOpenUserMenu((v) => !v)}
+                aria-label="Open user menu"
+                aria-expanded={openUserMenu}
+                disabled={!supabase}
               >
-                {signingOut ? "Signing out…" : "Sign out"}
+                Hello,&nbsp;<strong>{firstName ?? "User"}</strong>
               </button>
-            </div>
+
+              {openUserMenu && (
+                <div className="nav-user-dropdown">
+                  {/* Header — name/email + role badge */}
+                  <div className="nav-user-dropdown-header">
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <span>{profile?.full_name ?? userEmail ?? "User"}</span>
+                      <span className={`role-badge role-badge--${isAdmin ? "admin" : "client"}`}>
+                        {profile?.role ?? "Client"}
+                      </span>
+                    </div>
+                    {profile?.full_name && userEmail && (
+                      <div className="nav-user-dropdown-header-email">{userEmail}</div>
+                    )}
+                  </div>
+
+                  <hr />
+
+                  <Link
+                    href="/profile"
+                    className="nav-user-dropdown-item"
+                    onClick={() => setOpenUserMenu(false)}
+                  >
+                    My Profile
+                  </Link>
+
+                  {/* Admin Panel — only visible to Admins */}
+                  {isAdmin && (
+                    <Link
+                      href="/admin-panel"
+                      className="nav-user-dropdown-item"
+                      onClick={() => setOpenUserMenu(false)}
+                    >
+                      Admin Panel
+                    </Link>
+                  )}
+
+                  <hr />
+
+                  <button
+                    className="nav-user-dropdown-item nav-user-dropdown-signout"
+                    onClick={onLogout}
+                    disabled={signingOut || !supabase}
+                  >
+                    {signingOut ? "Signing out…" : "Sign out"}
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

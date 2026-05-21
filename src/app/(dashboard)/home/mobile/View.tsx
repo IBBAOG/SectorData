@@ -15,6 +15,7 @@
 // Components used from src/components/dashboard/mobile/:
 //   MobileTopBar, MobileBottomTabBar
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   MobileTopBar,
@@ -146,7 +147,7 @@ const HOME_TABS: MobileBottomTab[] = [
 
 export default function MobileView(): React.ReactElement {
   const router = useRouter();
-  const { profile } = useUserProfile();
+  const { profile, role } = useUserProfile();
   const {
     cardsByCategory,
     search,
@@ -155,13 +156,17 @@ export default function MobileView(): React.ReactElement {
     toggleCollapsed,
   } = useHomeData();
 
+  const isAnon = role === "Anon";
   const initials = getInitials(profile?.full_name);
-  const firstName = getFirstName(profile?.full_name);
+  const firstName = isAnon ? "Guest" : getFirstName(profile?.full_name);
 
   // Bottom tab navigation — "Discover" and "Saved" are placeholders;
-  // "Profile" navigates to /profile.
+  // "Profile" navigates to /profile. For anon visitors, the profile page
+  // redirects to /login, so the tap effectively becomes "Sign in".
   function handleTabChange(key: string) {
-    if (key === "profile") router.push("/profile");
+    if (key === "profile") {
+      router.push(isAnon ? "/login" : "/profile");
+    }
     // Home = stay; Discover/Saved = future features
   }
 
@@ -179,6 +184,8 @@ export default function MobileView(): React.ReactElement {
       }}
     >
       {/* ---- Top bar -------------------------------------------------------- */}
+      {/* For anon visitors the right slot becomes a "Sign in" pill instead of
+          the avatar bubble — there is no profile to identify. */}
       <MobileTopBar
         leftSlot={
           <div
@@ -194,9 +201,31 @@ export default function MobileView(): React.ReactElement {
           </div>
         }
         showThemeToggle={false}
-        showAvatar
+        showAvatar={!isAnon}
         avatarInitials={initials}
         avatarLabel={profile?.full_name ?? "User"}
+        rightSlot={
+          isAnon ? (
+            <Link
+              href="/login"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "6px 14px",
+                background: "var(--mobile-accent)",
+                color: "#fff",
+                fontWeight: 600,
+                fontSize: 13,
+                borderRadius: 999,
+                textDecoration: "none",
+                letterSpacing: "0.02em",
+                minHeight: 32,
+              }}
+            >
+              Sign in
+            </Link>
+          ) : undefined
+        }
       />
 
       {/* ---- Greeting ------------------------------------------------------- */}
