@@ -290,6 +290,9 @@ export interface UseMdicComexData {
   handleExportExcel: () => Promise<void>;
   handleExportCsv: () => Promise<void>;
   setExportRawCount: (v: number | null) => void;
+  /** Fetches the raw-row count for the ExportModal size calculator.
+   *  Encapsulates the Supabase client so Views never call it directly. */
+  fetchExportCount: () => Promise<number>;
 }
 
 // ── Hook ───────────────────────────────────────────────────────────────────────
@@ -491,6 +494,17 @@ export function useMdicComexData(): UseMdicComexData {
     }
   }, [supabase, rawOverAbs, rawOverExcel, exportGranularity, exportFilters]);
 
+  const fetchExportCount = useCallback(async (): Promise<number> => {
+    if (!supabase) return 0;
+    if (exportGranularity !== "raw") {
+      setExportRawCount(null);
+      return MDIC_AGG_ESTIMATE[exportGranularity as Exclude<MdicComexGranularity, "raw">];
+    }
+    const c = await getMdicComexExportCount(supabase, exportFilters);
+    setExportRawCount(c);
+    return c;
+  }, [supabase, exportGranularity, exportFilters]);
+
   const handleExportCsv = useCallback(async () => {
     if (!supabase || rawOverAbs) return;
     setCsvLoading(true);
@@ -572,5 +586,6 @@ export function useMdicComexData(): UseMdicComexData {
     openExportModal,
     handleExportExcel,
     handleExportCsv,
+    fetchExportCount,
   };
 }
