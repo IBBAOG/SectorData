@@ -173,7 +173,7 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | `mdic_comex` | id | ano, mes, tipo (IMP/EXP), ncm, descricao_ncm, pais, uf, produto_combustivel, quantidade_kg, valor_fob_usd |
 | `anp_ppi` | id | data_referencia, produto, local, preco_ppi, unidade |
 | `anp_precos_produtores` | id | data_referencia, produto, regiao, preco, unidade |
-| `anp_glp` | id | data_referencia, estado, preco_produtor, preco_distribuidor, preco_revendedor, unidade |
+| `anp_glp` | (ano, mes, distribuidora, categoria) | ano, mes, distribuidora, categoria (`P13` / `Outros - GLP` / `Outros - Especiais` / `Outros (total)`), vendas_kg |
 | `anp_daie` | id | data_referencia, produto, pais_origem, quantidade_m3, quantidade_ton |
 | `anp_desembaracos` | id | data_referencia, produto, pais_origem, quantidade_m3, quantidade_ton |
 | `anp_painel_imp_dist` | id | data_referencia, distribuidora, produto, quantidade_m3 |
