@@ -29,6 +29,11 @@ import {
   MobileBottomTabBar,
   MobileDataCard,
   BottomSheet,
+  ChevronUpIcon,
+  TrendingUpIcon,
+  UserIcon,
+  SearchIcon,
+  CloseIcon,
 } from "../../../../components/dashboard/mobile";
 import MobileTabBar from "../../../../components/dashboard/mobile/MobileTabBar";
 import {
@@ -246,19 +251,7 @@ function TickerDetail({
           borderRadius: 10,
         }}
       >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <polyline points="18 15 12 9 6 15" />
-        </svg>
+        <ChevronUpIcon size={14} strokeWidth={2.5} />
         Collapse
       </button>
     </section>
@@ -973,36 +966,8 @@ const TAB_ICONS: Record<MobileTab | "profile", React.ReactNode> = {
       <circle cx="12" cy="12" r="3" />
     </svg>
   ),
-  compare: (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      width="22"
-      height="22"
-    >
-      <path d="M3 17l6-6 4 4 8-8" />
-      <polyline points="14 7 21 7 21 14" />
-    </svg>
-  ),
-  profile: (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      width="22"
-      height="22"
-    >
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 21a8 8 0 0 1 16 0" />
-    </svg>
-  ),
+  compare: <TrendingUpIcon size={22} />,
+  profile: <UserIcon size={22} />,
 };
 
 /* ── Mobile View ─────────────────────────────────────────────────────────── */
@@ -1082,7 +1047,8 @@ export default function MobileView(): React.ReactElement {
         }}
       >
         <div style={{ position: "relative", height: 36 }}>
-          <svg
+          <SearchIcon
+            size={18}
             style={{
               position: "absolute",
               left: 10,
@@ -1091,19 +1057,7 @@ export default function MobileView(): React.ReactElement {
               color: "var(--mobile-text-faint)",
               pointerEvents: "none",
             }}
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-          </svg>
+          />
           <input
             ref={searchRef}
             type="search"
@@ -1145,20 +1099,7 @@ export default function MobileView(): React.ReactElement {
                 cursor: "pointer",
               }}
             >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M18 6 6 18" />
-                <path d="m6 6 12 12" />
-              </svg>
+              <CloseIcon size={12} strokeWidth={2.5} />
             </button>
           )}
         </div>

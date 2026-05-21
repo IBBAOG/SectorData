@@ -29,6 +29,8 @@ import {
   MobileChart,
   MobileDataCard,
   ExportFAB,
+  FunnelIcon,
+  ChevronDownIcon,
 } from "@/components/dashboard/mobile";
 import BarrelLoading from "@/components/dashboard/BarrelLoading";
 import PeriodSlider from "@/components/dashboard/PeriodSlider";
@@ -321,19 +323,7 @@ export default function MobileView(): React.ReactElement {
               borderRadius: 12,
             }}
           >
-            <svg
-              width="22"
-              height="22"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-            </svg>
+            <FunnelIcon size={22} />
           </button>
         }
       />
@@ -588,23 +578,13 @@ export default function MobileView(): React.ReactElement {
                   }}
                 >
                   <span>ANP Reference — regional breakdown</span>
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
+                  <ChevronDownIcon
+                    size={16}
                     style={{
                       transition: "transform 0.15s ease",
                       transform: showRegional ? "rotate(180deg)" : "rotate(0deg)",
                     }}
-                  >
-                    <polyline points="6 9 12 15 18 9" />
-                  </svg>
+                  />
                 </button>
               </div>
               {showRegional && (

@@ -14,6 +14,7 @@
 import type { ReactNode } from "react";
 
 import BottomSheet from "./BottomSheet";
+import { CloseIcon } from "./icons";
 
 export interface FilterDrawerProps {
   open: boolean;
@@ -121,19 +122,7 @@ export default function FilterDrawer(
             cursor: "pointer",
           }}
         >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M18 6 6 18" />
-            <path d="m6 6 12 12" />
-          </svg>
+          <CloseIcon size={16} strokeWidth={2.5} />
         </button>
       </div>
 

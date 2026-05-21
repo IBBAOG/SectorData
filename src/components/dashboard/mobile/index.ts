@@ -48,3 +48,9 @@ export type { ExportFABProps, ExportFABIcon } from "./ExportFAB";
 
 export { default as MobileTabBar } from "./MobileTabBar";
 export type { MobileTabBarProps, MobileTabBarTab } from "./MobileTabBar";
+
+// Canonical inline-SVG icon set (P2 audit cleanup, 2026-05-21).
+// Re-exported wholesale so consumers can write
+//   import { FilterIcon, CloseIcon } from "@/components/dashboard/mobile";
+// alongside the layout components above.
+export * from "./icons";

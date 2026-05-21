@@ -29,6 +29,11 @@ import {
   type MobileBottomTab,
   BottomSheet,
   MobileDataCard,
+  SearchIcon,
+  BookmarkIcon,
+  PlusIcon,
+  ShareIcon,
+  CloseIcon,
 } from "@/components/dashboard/mobile";
 import { useUserProfile } from "@/context/UserProfileContext";
 import {
@@ -44,7 +49,12 @@ import type {
   NewsArticle,
 } from "@/context/NewsHunterContext";
 
-// ── Icons (inline SVG) ───────────────────────────────────────────────────────
+// ── Icons ────────────────────────────────────────────────────────────────────
+//
+// IconFeed and IconSettings are domain-specific glyphs (feed widget / gear)
+// not in the canonical design-system icon set; they stay inline below.
+// IconSearch / IconBookmark / IconPlus / IconShare delegate to the canonical
+// icons so visual drift is impossible.
 
 function IconFeed(): React.ReactElement {
   return (
@@ -57,22 +67,11 @@ function IconFeed(): React.ReactElement {
   );
 }
 
-function IconSearch(): React.ReactElement {
-  return (
-    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="11" cy="11" r="7" />
-      <path d="m20 20-3.5-3.5" />
-    </svg>
-  );
-}
+const IconSearch = () => <SearchIcon size={22} />;
 
-function IconBookmark({ filled }: { filled?: boolean }): React.ReactElement {
-  return (
-    <svg viewBox="0 0 24 24" width="22" height="22" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-    </svg>
-  );
-}
+const IconBookmark = ({ filled }: { filled?: boolean }) => (
+  <BookmarkIcon size={22} fill={filled ? "currentColor" : "none"} />
+);
 
 function IconSettings(): React.ReactElement {
   return (
@@ -83,25 +82,8 @@ function IconSettings(): React.ReactElement {
   );
 }
 
-function IconPlus(): React.ReactElement {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
-
-function IconShare(): React.ReactElement {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="18" cy="5" r="3" />
-      <circle cx="6" cy="12" r="3" />
-      <circle cx="18" cy="19" r="3" />
-      <path d="M8.6 13.5 15.4 17.5" />
-      <path d="M15.4 6.5 8.6 10.5" />
-    </svg>
-  );
-}
+const IconPlus = () => <PlusIcon size={24} strokeWidth={2.4} />;
+const IconShare = () => <ShareIcon size={18} />;
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 
@@ -261,9 +243,7 @@ function KeywordsSection({
           }}
           aria-label="Add keyword"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
+          <PlusIcon size={14} strokeWidth={2.4} />
           Add
         </button>
       </div>
@@ -948,13 +928,10 @@ export default function MobileView(): React.ReactElement {
               }}
             >
               <div style={{ position: "relative", height: 36 }}>
-                <svg
+                <SearchIcon
+                  size={18}
                   style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--mobile-text-faint)", pointerEvents: "none" }}
-                  width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
-                </svg>
+                />
                 <input
                   type="search"
                   value={searchTerm}
@@ -996,9 +973,7 @@ export default function MobileView(): React.ReactElement {
                       color: "var(--mobile-text-muted)",
                     }}
                   >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M18 6 6 18" /><path d="m6 6 12 12" />
-                    </svg>
+                    <CloseIcon size={12} strokeWidth={2.5} />
                   </button>
                 )}
               </div>

@@ -32,6 +32,8 @@ import {
   BottomSheet,
   MobileDataCard,
   ExportFAB,
+  UserIcon,
+  PlusIcon,
 } from "../../../../components/dashboard/mobile";
 import { downloadCsv } from "../../../../lib/exportCsv";
 import { downloadGenericExcel } from "../../../../lib/exportExcel";
@@ -79,24 +81,14 @@ function MapIcon(): React.ReactElement {
   );
 }
 
-function ProfileIcon(): React.ReactElement {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 21a8 8 0 0 1 16 0" />
-    </svg>
-  );
-}
-
-function FilterIcon(): React.ReactElement {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
+// ProfileIcon / FilterIcon — sourced from canonical mobile design-system
+// icon set (UserIcon / PlusIcon). The "FilterIcon" label was a misnomer here:
+// the inline path rendered a plus sign, not a funnel; PlusIcon preserves the
+// visual exactly.
+const ProfileIcon = UserIcon;
+const FilterIcon = (p: { size?: number; strokeWidth?: number }) => (
+  <PlusIcon size={p.size ?? 14} strokeWidth={p.strokeWidth ?? 2.5} />
+);
 
 function ArrowRightIcon(): React.ReactElement {
   return (
@@ -527,7 +519,7 @@ export default function MobileView(): React.ReactElement {
     { key: "vessels", label: "Vessels", icon: <VesselsIcon />, active: activeTab === "vessels" },
     { key: "ports",   label: "Ports",   icon: <PortsIcon />,   active: activeTab === "ports" },
     { key: "map",     label: "Map",     icon: <MapIcon />,     active: activeTab === "map" },
-    { key: "profile", label: "Profile", icon: <ProfileIcon />, active: activeTab === "profile" },
+    { key: "profile", label: "Profile", icon: <ProfileIcon size={22} />, active: activeTab === "profile" },
   ];
 
   // ── Export handler ────────────────────────────────────────────────────────────

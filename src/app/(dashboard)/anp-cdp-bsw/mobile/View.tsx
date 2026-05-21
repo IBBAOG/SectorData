@@ -34,6 +34,8 @@ import {
   MobileTabBar,
   FilterDrawer,
   MobileChart,
+  FilterIcon,
+  CloseIcon,
 } from "../../../../components/dashboard/mobile";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 
@@ -193,11 +195,7 @@ export default function MobileView(): React.ReactElement | null {
             gap: 6,
           }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <line x1="4" y1="6" x2="20" y2="6" />
-            <line x1="7" y1="12" x2="17" y2="12" />
-            <line x1="10" y1="18" x2="14" y2="18" />
-          </svg>
+          <FilterIcon size={14} strokeWidth={2.4} />
           Filters
           {activeFilterCount > 0 && (
             <span
@@ -281,10 +279,7 @@ export default function MobileView(): React.ReactElement | null {
                 borderRadius: "50%",
               }}
             >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M18 6 6 18" />
-                <path d="m6 6 12 12" />
-              </svg>
+              <CloseIcon size={11} strokeWidth={2.5} />
             </button>
           </span>
         ))}

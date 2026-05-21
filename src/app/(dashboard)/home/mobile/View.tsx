@@ -20,6 +20,9 @@ import {
   MobileTopBar,
   MobileBottomTabBar,
   type MobileBottomTab,
+  ChevronRightIcon,
+  ChevronDownIcon,
+  SearchIcon,
 } from "@/components/dashboard/mobile";
 import { useHomeData, type HomeCategory } from "../useHomeData";
 import { useUserProfile } from "../../../../context/UserProfileContext";
@@ -43,63 +46,6 @@ function getInitials(fullName: string | null | undefined): string {
 function getFirstName(fullName: string | null | undefined): string {
   if (!fullName) return "there";
   return fullName.trim().split(/\s+/)[0];
-}
-
-// ---- Icons ------------------------------------------------------------------
-
-function ChevronRightIcon(): React.ReactElement {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <polyline points="9 18 15 12 9 6" />
-    </svg>
-  );
-}
-
-function ChevronDownIcon(): React.ReactElement {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <polyline points="6 9 12 15 18 9" />
-    </svg>
-  );
-}
-
-function SearchIcon(): React.ReactElement {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="11" cy="11" r="7" />
-      <path d="m20 20-3.5-3.5" />
-    </svg>
-  );
 }
 
 // ---- Category gradient thumbnails ------------------------------------------
@@ -305,7 +251,7 @@ export default function MobileView(): React.ReactElement {
               pointerEvents: "none",
             }}
           >
-            <SearchIcon />
+            <SearchIcon size={18} />
           </span>
           <input
             type="search"
@@ -431,7 +377,7 @@ export default function MobileView(): React.ReactElement {
                     transform: isCollapsed ? "rotate(-90deg)" : "none",
                   }}
                 >
-                  <ChevronDownIcon />
+                  <ChevronDownIcon size={14} strokeWidth={2.5} />
                 </span>
 
                 {/* Label */}
@@ -555,7 +501,7 @@ export default function MobileView(): React.ReactElement {
                           flexShrink: 0,
                         }}
                       >
-                        <ChevronRightIcon />
+                        <ChevronRightIcon size={18} />
                       </div>
                     </article>
                   ))}
