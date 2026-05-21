@@ -11,6 +11,7 @@ Uso:
 
 Credenciais: SUPABASE_URL + SUPABASE_SERVICE_KEY (env ou .env)
 """
+import io
 import math
 import os
 import re
@@ -90,7 +91,8 @@ def _parse_unidade(produto: str) -> tuple[str, str]:
 
 
 def _parse_xls(content: bytes, sheet: str) -> list[dict]:
-    raw = pd.read_excel(content, sheet_name=sheet, header=None)
+    # pandas 3.0+ no longer accepts raw `bytes` to read_excel; wrap in BytesIO.
+    raw = pd.read_excel(io.BytesIO(content), sheet_name=sheet, header=None)
     rows = []
     for i in range(9, len(raw)):
         produto_raw = raw.iat[i, 0]

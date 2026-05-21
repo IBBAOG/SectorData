@@ -56,12 +56,25 @@ def _get_creds():
 
 
 def _find_xlsx_url() -> str | None:
+    """Find LPG sales-by-container XLSX on ANP page.
+
+    ANP renamed the file in May/2026 from `relatorio_vendas_por_recipiente*.xlsx`
+    (underscores, long name) to `relatorio-vendas-recipiente.xlsx` (hyphens). The
+    matcher below accepts both spellings via normalisation of separators so we
+    survive future renames in either direction.
+    """
     r = requests.get(_PAGE_URL, headers=_HEADERS, timeout=30)
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "lxml")
     for a in soup.find_all("a", href=True):
         href = a["href"]
-        if "relatorio_vendas_por_recipiente" in href.lower() and href.lower().endswith(".xlsx"):
+        if not href.lower().endswith(".xlsx"):
+            continue
+        # Normalise: lowercase + collapse separators so 'relatorio-vendas-recipiente'
+        # and 'relatorio_vendas_por_recipiente' both match the same canonical form.
+        canonical = href.lower().replace("-", "_")
+        filename = canonical.rsplit("/", 1)[-1]
+        if filename.startswith("relatorio_vendas") and "recipiente" in filename:
             return href if href.startswith("http") else "https://www.gov.br" + href
     return None
 
