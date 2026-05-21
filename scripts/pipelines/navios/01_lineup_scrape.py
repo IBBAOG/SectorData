@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 import time
 import warnings
 from datetime import datetime, timezone, timedelta
@@ -10,6 +11,30 @@ import requests
 from bs4 import BeautifulSoup
 
 warnings.filterwarnings("ignore", message="Unverified HTTPS request")
+
+# ---------------------------------------------------------------------------
+# Debug / artifact dump directory (used by GHA artifact upload)
+# ---------------------------------------------------------------------------
+
+_DEBUG_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "output", "debug"
+)
+
+
+def _dump_debug_html(name: str, html: str) -> str | None:
+    """Save HTML payload for post-mortem inspection. Returns path or None."""
+    if not html:
+        return None
+    try:
+        os.makedirs(_DEBUG_DIR, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        path = os.path.join(_DEBUG_DIR, f"{name}_{ts}.html")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(html)
+        return path
+    except Exception as e:
+        print(f"    [debug] failed to dump {name}: {e}")
+        return None
 
 # ---------------------------------------------------------------------------
 # URLs / constantes
@@ -205,7 +230,14 @@ _HEADERS = {
         "q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
     ),
     "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Accept-Encoding": "gzip, deflate, br",
+    # NOTE: We deliberately do NOT advertise `br` (Brotli) here because the
+    # `requests` library does not decompress Brotli unless the `brotli` package
+    # is installed AND urllib3 was built with Brotli support. Porto de Itaqui
+    # started returning `Content-Encoding: br` around 2026-05-11, which silently
+    # broke the scraper (gibberish bytes → BeautifulSoup parsed as junk text →
+    # zero tables, zero rows, exit 0). Keeping the header at gzip+deflate forces
+    # the server to fall back to gzip which requests/urllib3 handle natively.
+    "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive",
     "Upgrade-Insecure-Requests": "1",
     "Sec-Fetch-Dest": "document",
@@ -235,14 +267,24 @@ def _get(url: str, retries: int = 3, timeout: int = 60) -> str:
             time.sleep(5 * attempt)
 
 
-def _fetch_with_selenium(url: str) -> str:
+def _fetch_with_selenium(
+    url: str,
+    wait_for_selector: str | None = "table",
+    wait_timeout: int = 25,
+) -> str:
     """Busca URL com Chrome headless via Selenium.
     Usado como fallback quando requests é bloqueado (403) por WAF/firewall de IP.
     O fingerprint TLS do Chrome real é diferente do requests e passa pela maioria
     dos bloqueios baseados em JA3/User-Agent que afetam datacenters.
+
+    Aguarda explicitamente até `wait_for_selector` aparecer no DOM (ou timeout),
+    porque sites SPA renderizam tabelas via JS após o pageload inicial.
     """
     from selenium import webdriver
     from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
 
     options = Options()
     options.add_argument("--headless=new")
@@ -251,13 +293,65 @@ def _fetch_with_selenium(url: str) -> str:
     options.add_argument("--disable-gpu")
     options.add_argument(f"--user-agent={_HEADERS['User-Agent']}")
     options.add_argument("--lang=pt-BR")
+    # Anti-bot hardening: hide navigator.webdriver and reduce headless fingerprint
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
 
     driver = webdriver.Chrome(options=options)
     try:
+        driver.execute_cdp_cmd(
+            "Page.addScriptToEvaluateOnNewDocument",
+            {
+                "source": (
+                    "Object.defineProperty(navigator, 'webdriver', "
+                    "{get: () => undefined});"
+                )
+            },
+        )
         driver.get(url)
+        if wait_for_selector:
+            try:
+                WebDriverWait(driver, wait_timeout).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, wait_for_selector))
+                )
+            except Exception:
+                # Wait expired — return the page anyway so the caller can dump it
+                # and inspect why the selector never appeared.
+                pass
+        # Extra settle time for late-rendered rows
+        time.sleep(1.5)
         return driver.page_source
     finally:
         driver.quit()
+
+
+def _fetch_via_proxy(url: str, proxy_url: str, timeout: int = 60) -> str:
+    """Busca URL através de um serviço de proxy HTTP (ex: ScraperAPI, Bright Data,
+    ZenRows). O env var `SCRAPER_PROXY_URL` pode conter:
+      - URL completa de gateway (ex: ScraperAPI: "http://api.scraperapi.com?api_key=K&render=true&url=")
+        → o `url` alvo é APPENDED (URL-encoded) ao final
+      - URL de proxy padrão (ex: "http://user:pass@host:port")
+        → usada como proxy HTTP/HTTPS comum
+    A heurística: se a URL contém `=` no final (gateway-style), append; senão usa
+    como proxy regular.
+    """
+    from urllib.parse import quote_plus
+
+    if proxy_url.rstrip().endswith("="):
+        # Gateway-style: append target URL
+        target = proxy_url + quote_plus(url)
+        resp = requests.get(target, headers=_HEADERS, timeout=timeout, verify=False)
+        resp.raise_for_status()
+        return resp.content.decode("utf-8", errors="replace")
+    else:
+        # Standard HTTP/HTTPS proxy
+        proxies = {"http": proxy_url, "https": proxy_url}
+        resp = requests.get(
+            url, headers=_HEADERS, timeout=timeout, verify=False, proxies=proxies
+        )
+        resp.raise_for_status()
+        return resp.content.decode("utf-8", errors="replace")
 
 
 def _col(df: pd.DataFrame, keyword: str, required: bool = True) -> str | None:
@@ -360,9 +454,48 @@ def buscar_santos_atracados() -> pd.DataFrame:
 # Porto de Itaqui – Atracados / Fundeados / Esperados
 # ---------------------------------------------------------------------------
 
+def _itaqui_html_looks_valid(html: str) -> bool:
+    """Heurística para distinguir HTML real (com tabelas de lineup) de um payload
+    de WAF / challenge / SPA shell que ainda não renderizou os dados.
+
+    Critérios POSITIVOS (precisa de pelo menos um):
+      - presença de `<table` E ao menos uma das palavras de status
+        ("atracado", "fundeado", "esperado")
+      - presença de "Qtd.Carga" / "Qtd Carga" / "Carga" + "Berço"
+
+    Critérios NEGATIVOS (sinal de bloqueio):
+      - "Just a moment", "Cloudflare", "Access Denied", "captcha" → WAF
+      - < 5000 bytes → quase certo que é shell vazio
+    """
+    if not html or len(html) < 5000:
+        return False
+    low = html.lower()
+    bad_markers = ("just a moment", "access denied", "captcha", "cf-chl")
+    if any(m in low for m in bad_markers):
+        return False
+    has_table = "<table" in low
+    has_status = any(s in low for s in ("atracado", "fundeado", "esperado"))
+    has_cargo = ("qtd" in low and "carga" in low) or "berço" in low or "berco" in low
+    return has_table and (has_status or has_cargo)
+
+
 def buscar_itaqui() -> pd.DataFrame:
-    # Tentativa 1: requests com Session (rápido, sem overhead de browser)
+    """Scraper de Porto de Itaqui. Tenta em ordem:
+      1. requests com Session (warm-up + cookies)
+      2. Proxy residencial (se SCRAPER_PROXY_URL setado)
+      3. Selenium Chrome headless com waits explícitos
+
+    Em cada etapa, valida via _itaqui_html_looks_valid se o HTML retornado tem
+    sinais de conteúdo real. Se nenhuma etapa retorna HTML válido, dumpa o último
+    payload em output/debug/itaqui_*.html e levanta RuntimeError.
+    """
+    proxy_url = os.environ.get("SCRAPER_PROXY_URL", "").strip()
     html: str | None = None
+    last_failure_reason = "unknown"
+
+    # ---------------------------------------------------------------------
+    # Etapa 1: requests com Session (warm-up + cookies)
+    # ---------------------------------------------------------------------
     try:
         base = "https://www.portodoitaqui.com.br"
         session = requests.Session()
@@ -371,17 +504,84 @@ def buscar_itaqui() -> pd.DataFrame:
         session.headers["Referer"] = base + "/"
         session.headers["Sec-Fetch-Site"] = "same-origin"
         resp = session.get(URL_ITAQUI, verify=False, timeout=60)
-        resp.raise_for_status()
-        html = resp.content.decode("utf-8", errors="replace")
-    except requests.exceptions.HTTPError as e:
-        if e.response is not None and e.response.status_code == 403:
-            # 403 = bloqueio de IP por WAF (comum em GitHub Actions / datacenters).
-            # Fallback: Chrome headless tem fingerprint TLS diferente e frequentemente
-            # contorna esse tipo de bloqueio sem precisar de proxy.
-            print("    [Itaqui] requests bloqueado (403) — tentando Chrome headless...")
-            html = _fetch_with_selenium(URL_ITAQUI)
+        if resp.status_code == 403:
+            last_failure_reason = "requests: HTTP 403 (WAF block)"
+            print("    [Itaqui] requests bloqueado (403)")
         else:
-            raise
+            resp.raise_for_status()
+            candidate = resp.content.decode("utf-8", errors="replace")
+            if _itaqui_html_looks_valid(candidate):
+                html = candidate
+                print(f"    [Itaqui] etapa requests: HTML válido ({len(candidate):,} bytes)")
+            else:
+                last_failure_reason = (
+                    f"requests: HTTP {resp.status_code} mas HTML sem markers válidos "
+                    f"({len(candidate):,} bytes)"
+                )
+                print(f"    [Itaqui] {last_failure_reason}")
+                # Save the suspicious payload for inspection
+                dump = _dump_debug_html("itaqui_step1_requests_invalid", candidate)
+                if dump:
+                    print(f"    [Itaqui] dump: {dump}")
+    except requests.exceptions.RequestException as e:
+        last_failure_reason = f"requests: {type(e).__name__}: {e}"
+        print(f"    [Itaqui] {last_failure_reason}")
+
+    # ---------------------------------------------------------------------
+    # Etapa 2: Proxy residencial (se configurado via SCRAPER_PROXY_URL)
+    # ---------------------------------------------------------------------
+    if html is None and proxy_url:
+        try:
+            print("    [Itaqui] tentando via SCRAPER_PROXY_URL...")
+            candidate = _fetch_via_proxy(URL_ITAQUI, proxy_url, timeout=120)
+            if _itaqui_html_looks_valid(candidate):
+                html = candidate
+                print(f"    [Itaqui] etapa proxy: HTML válido ({len(candidate):,} bytes)")
+            else:
+                last_failure_reason = (
+                    f"proxy: HTML sem markers válidos ({len(candidate):,} bytes)"
+                )
+                print(f"    [Itaqui] {last_failure_reason}")
+                dump = _dump_debug_html("itaqui_step2_proxy_invalid", candidate)
+                if dump:
+                    print(f"    [Itaqui] dump: {dump}")
+        except Exception as e:
+            last_failure_reason = f"proxy: {type(e).__name__}: {e}"
+            print(f"    [Itaqui] {last_failure_reason}")
+    elif html is None and not proxy_url:
+        print("    [Itaqui] SCRAPER_PROXY_URL não setado — pulando etapa proxy")
+
+    # ---------------------------------------------------------------------
+    # Etapa 3: Selenium Chrome headless (fingerprint TLS de browser real)
+    # ---------------------------------------------------------------------
+    if html is None:
+        try:
+            print("    [Itaqui] tentando Chrome headless (Selenium)...")
+            candidate = _fetch_with_selenium(URL_ITAQUI, wait_for_selector="table")
+            if _itaqui_html_looks_valid(candidate):
+                html = candidate
+                print(f"    [Itaqui] etapa selenium: HTML válido ({len(candidate):,} bytes)")
+            else:
+                last_failure_reason = (
+                    f"selenium: HTML sem markers válidos ({len(candidate):,} bytes)"
+                )
+                print(f"    [Itaqui] {last_failure_reason}")
+                dump = _dump_debug_html("itaqui_step3_selenium_invalid", candidate)
+                if dump:
+                    print(f"    [Itaqui] dump: {dump}")
+        except Exception as e:
+            last_failure_reason = f"selenium: {type(e).__name__}: {e}"
+            print(f"    [Itaqui] {last_failure_reason}")
+
+    # ---------------------------------------------------------------------
+    # Se nenhuma etapa funcionou, fail loud
+    # ---------------------------------------------------------------------
+    if html is None:
+        raise RuntimeError(
+            f"buscar_itaqui: todas as etapas falharam. Último motivo: "
+            f"{last_failure_reason}. Verifique artifacts em output/debug/ e "
+            f"considere configurar SCRAPER_PROXY_URL (ex: ScraperAPI key)."
+        )
 
     # Use BeautifulSoup to extract tables with all cells as strings.
     # pd.read_html auto-converts "20.000" (BR thousands) → float 20.0, losing
@@ -410,8 +610,18 @@ def buscar_itaqui() -> pd.DataFrame:
         padded = [r[:ncols] + [""] * max(0, ncols - len(r)) for r in rows]
         raw_tables.append(pd.DataFrame(padded, columns=headers))
 
+    # If we got valid HTML but zero parseable tables, that's a structural break
+    # (page schema changed). Dump for inspection and raise.
+    if not raw_tables:
+        dump = _dump_debug_html("itaqui_html_no_tables", html)
+        raise RuntimeError(
+            f"buscar_itaqui: HTML válido mas nenhuma <table> parseável encontrada. "
+            f"Schema da página pode ter mudado. Dump: {dump}"
+        )
+
     mapeamento = {0: "Atracado", 1: "Fundeado", 2: "Esperado"}
     partes = []
+    total_diesel_rows = 0
 
     for i, status in mapeamento.items():
         if i >= len(raw_tables):
@@ -425,6 +635,7 @@ def buscar_itaqui() -> pd.DataFrame:
         f = df.loc[mask].copy()
         if f.empty:
             continue
+        total_diesel_rows += len(f)
 
         col_navio = _col(df, "Navio")
         f = f.rename(columns={col_navio: "Navio", col_carga: "Carga"})
@@ -450,6 +661,10 @@ def buscar_itaqui() -> pd.DataFrame:
 
         partes.append(_normalizar(f, porto="Porto de Itaqui", status=status))
 
+    print(
+        f"    [Itaqui] tabelas parseadas: {len(raw_tables)}, "
+        f"linhas diesel encontradas: {total_diesel_rows}"
+    )
     return pd.concat(partes, ignore_index=True, sort=False) if partes else pd.DataFrame()
 
 
@@ -852,6 +1067,18 @@ if __name__ == "__main__":
         "Porto de Suape":               "Porto de Suape",
     }
 
+    # Watchdog: portos que DEVEM ser cobertos por pelo menos uma fonte que rode
+    # sem erro. Se algum desses não tiver nenhuma fonte bem-sucedida, o job
+    # encerra com exit != 0 e mensagem explícita.
+    # (Empty-but-no-error é OK — porto pode legitimamente não ter diesel hoje.)
+    EXPECTED_PORTS = {
+        "Porto de Santos",
+        "Porto de Itaqui",
+        "Porto de Paranaguá",
+        "Porto de São Sebastião",
+        "Porto de Suape",
+    }
+
     fontes = [
         ("Porto de Santos – Esperados",  buscar_santos_esperados),
         ("Porto de Santos – Atracados",  buscar_santos_atracados),
@@ -863,25 +1090,33 @@ if __name__ == "__main__":
 
     tabelas = []
     portos_com_erro: set[str] = set()
+    # Track which canonical portos had at least one source that did NOT raise.
+    # An empty DataFrame here is fine — it means "scraper ran but no diesel ships".
+    portos_com_fonte_ok: set[str] = set()
+    erros_detalhados: list[tuple[str, str]] = []
+
     for nome, fn in fontes:
         print(f"Buscando {nome}...")
+        porto_canon = _FONTE_PORTO[nome]
         try:
             t = fn()
-            print(f"  {len(t)} registro(s).")
+            print(f"  Porto {porto_canon} ({nome}): {len(t)} registro(s).")
             tabelas.append(t)
+            portos_com_fonte_ok.add(porto_canon)
         except Exception as e:
-            print(f"  ERRO: {e}")
+            err_msg = f"{type(e).__name__}: {e}"
+            print(f"  ERRO em {nome}: {err_msg}")
             tabelas.append(pd.DataFrame())
-            portos_com_erro.add(_FONTE_PORTO[nome])
+            portos_com_erro.add(porto_canon)
+            erros_detalhados.append((nome, err_msg))
 
     resultado = consolidar(*tabelas)
 
-    # Adicionar linhas sentinela para portos sem nenhum dado coletado
-    portos_no_resultado = set(resultado["Porto"].unique()) if not resultado.empty else set()
-    portos_sem_dados = portos_com_erro - portos_no_resultado
-    if portos_sem_dados:
+    # Adicionar linhas sentinela para portos sem nenhuma fonte bem-sucedida
+    portos_sem_fonte_ok = portos_com_erro - portos_com_fonte_ok
+    if portos_sem_fonte_ok:
         sentinelas = []
-        for porto in sorted(portos_sem_dados):
+        for porto in sorted(portos_sem_fonte_ok):
             row = {col: pd.NA for col in COLS_PADRAO}
             row["Porto"]  = porto
             row["Status"] = "ERRO_COLETA"
@@ -908,4 +1143,34 @@ if __name__ == "__main__":
     print(f"\n{'='*110}")
     print(f"TABELA CONSOLIDADA – {len(resultado)} navios | quantidades em m³")
     print(f"{'='*110}\n")
-    print(resultado[cols_exibir].to_string(index=False))
+    if cols_exibir:
+        print(resultado[cols_exibir].to_string(index=False))
+    else:
+        print("(nenhum dado disponível para exibição)")
+
+    # ---------------------------------------------------------------------
+    # WATCHDOG (Requisito B): fail loud se algum porto monitorado não teve
+    # nenhuma fonte rodar sem erro.
+    # ---------------------------------------------------------------------
+    portos_faltando = EXPECTED_PORTS - portos_com_fonte_ok
+    if portos_faltando:
+        print(f"\n{'!'*110}")
+        print(f"WATCHDOG: {len(portos_faltando)} porto(s) monitorado(s) sem nenhuma "
+              f"fonte bem-sucedida: {sorted(portos_faltando)}")
+        if erros_detalhados:
+            print("\nErros detalhados:")
+            for nome, err in erros_detalhados:
+                print(f"  - {nome}: {err}")
+        print(f"{'!'*110}\n")
+        sys.exit(2)
+
+    # Soft warning: se algum porto teve erro mas existe outra fonte bem-sucedida
+    # cobrindo ele (ex: Santos – Esperados falhou mas Santos – Atracados ok),
+    # apenas avisa (não falha).
+    if portos_com_erro:
+        cobertos = portos_com_erro & portos_com_fonte_ok
+        if cobertos:
+            print(
+                f"\n[AVISO] Erros parciais em {len(cobertos)} porto(s), mas todos "
+                f"têm fonte alternativa OK: {sorted(cobertos)}"
+            )

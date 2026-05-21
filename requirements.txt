@@ -1,4 +1,5 @@
 requests
+brotli            # decompress `Content-Encoding: br` responses (some ports use it)
 pandas
 lxml
 beautifulsoup4
