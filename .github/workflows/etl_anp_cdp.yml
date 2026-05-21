@@ -14,6 +14,15 @@
 # ============================================================
 name: Extração ANP - Produção por Poço
 
+# Prevent concurrent runs. cron-job.org dispatches every ~2h; a slow Selenium run
+# (CAPTCHA retry, network latency) can otherwise overlap the next dispatch and
+# race against the BEFORE INSERT trigger, causing unique_violation that leaves
+# the month partially loaded. cancel-in-progress=false because we never want to
+# kill a long-running upload mid-flight — let it finish and queue the next run.
+concurrency:
+  group: anp-cdp
+  cancel-in-progress: false
+
 on:
   schedule:
     - cron: '0 8 5 * *'  # 5th of each month, 08:00 UTC (05:00 BRT)

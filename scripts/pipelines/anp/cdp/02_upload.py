@@ -394,9 +394,14 @@ def _check_cross_local_duplicates(sb, ano: int, mes: int) -> None:
             break
         offset += PAGE
         if offset > 50_000:
-            # safety cap; healthy month should never reach this
-            print(f"  [cross-local-check] {ano}/{mes:02d}: aborting scan at {offset} rows (suspicious)")
-            break
+            # safety cap; healthy month should never reach this.
+            # Fail loud: silent truncation could mask the very bug this check
+            # exists to detect — a quadruplication producing >50k rows would
+            # be partially scanned and GROUP BY could report "OK" on a sample.
+            raise RuntimeError(
+                f"safety cap exceeded ({offset} rows) for ano={ano} mes={mes} "
+                f"— halt to inspect manually; possible amplification bug"
+            )
 
     # Group by (poco, campo, bacia) -> set of distinct local values
     triplet_to_locals: dict[tuple, set] = {}
