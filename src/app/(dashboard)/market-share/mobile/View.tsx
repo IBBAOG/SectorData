@@ -6,7 +6,8 @@
 //   MobileTopBar  (sticky, liquid glass)
 //   Title block   (h1 + subtitle + period badge)
 //   Filter chip row  (sticky, horizontal scroll — active chips + "+ Filters" button)
-//   Hero chart card  (MobileChart — stacked area, 12-month, top 5)
+//   Product + segment MobileTabBars (container variant)  — navigates the 13 charts
+//   Hero chart card  (MobileChart — stacked area for the SELECTED product/segment)
 //   2-column legend below chart
 //   Top Distributors ranking  (MobileDataCard rows with rank badge + progress bar + delta)
 //   "View all" CTA
@@ -15,11 +16,14 @@
 //   FilterDrawer  (bottom sheet — Product / Period / Region / UF / Segment + Reset/Apply)
 //
 // Analyses preserved from desktop:
-//   - All 13 charts (Diesel B, Gasoline C, Hydrous Ethanol, Otto-Cycle × Retail/B2B/TRR/Total)
-//     → overview tab shows hero Diesel B Total; Compare tab will surface the rest (stub for now)
-//   - Comparison table (MoM/QTD/YoY/YTD) → shown in Compare tab (stub)
-//   - Export (Tier 2, ExportModal) → FAB triggers same modal as desktop
-//   - All 4 filter dimensions (period, region, UF, mode/competitors)
+//   - All 13 charts (Diesel B Retail/B2B/TRR/Total, Gasoline C Retail/B2B/Total,
+//     Hydrous Ethanol Retail/B2B/Total, Otto-Cycle Retail/B2B/Total)
+//     → Overview tab: product + segment selector lets the user navigate
+//        through all 13 chart variants, one at a time. Default: Diesel B / Total.
+//   - Comparison table (MoM/QTD/YoY/YTD) → Compare tab: pick up to 3 players,
+//     see side-by-side MoM/QTD/YoY/YTD cards for the selected chart variant.
+//   - Export (Tier 2, ExportModal) → FAB triggers same modal as desktop.
+//   - All 4 filter dimensions (period, region, UF, mode/competitors).
 
 import { useState, useMemo } from "react";
 import { useModuleVisibilityGuard } from "../../../../hooks/useModuleVisibilityGuard";
@@ -29,6 +33,7 @@ import {
   FilterDrawer,
   MobileChart,
   ExportFAB,
+  MobileTabBar,
 } from "../../../../components/dashboard/mobile";
 import ExportModal from "../../../../components/dashboard/ExportModal";
 import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
@@ -39,7 +44,13 @@ import {
   MOBILE_PALETTE,
   ALL_PLAYERS_IND,
   ALL_PLAYERS_BIG3,
+  PRODUCT_KEYS,
+  PRODUCT_LABEL,
+  SEGMENTS_BY_PRODUCT,
   type TopPlayerRow,
+  type CompRow,
+  type ProductKey,
+  type SegmentKey,
 } from "../useMarketShareData";
 import { downloadMarketShareExcel } from "../../../../lib/exportExcel";
 import { downloadCsv } from "../../../../lib/exportCsv";
@@ -92,9 +103,6 @@ const TABS = [
     ),
   },
 ] as const;
-
-// Products available in the filter drawer
-const PRODUCTS = ["Diesel B", "Gasolina C", "Etanol Hidratado", "Otto-Cycle"];
 
 // ─── PlayerCard ───────────────────────────────────────────────────────────────
 
@@ -286,6 +294,10 @@ function OverviewTab({
   latestDate,
   chartColors,
   onViewAll,
+  selectedProduct,
+  selectedSegment,
+  onSelectProduct,
+  onSelectSegment,
 }: {
   loading: boolean;
   heroTraces: PlotData[];
@@ -293,7 +305,18 @@ function OverviewTab({
   latestDate: string | null;
   chartColors: Record<string, string>;
   onViewAll: () => void;
+  selectedProduct: ProductKey;
+  selectedSegment: SegmentKey;
+  onSelectProduct: (p: ProductKey) => void;
+  onSelectSegment: (s: SegmentKey) => void;
 }) {
+  const productTabs = PRODUCT_KEYS.map((p) => ({
+    key: p,
+    label: PRODUCT_LABEL[p],
+  }));
+  const segmentOptions = SEGMENTS_BY_PRODUCT[selectedProduct];
+  const segmentTabs = segmentOptions.map((s) => ({ key: s, label: s }));
+
   if (loading) {
     return (
       <div style={{ padding: "24px 16px" }}>
@@ -318,8 +341,32 @@ function OverviewTab({
     isLeader: p.isLeader,
   }));
 
+  const chartHeading = `${PRODUCT_LABEL[selectedProduct]} — ${selectedSegment}`;
+
   return (
     <div style={{ paddingBottom: 16 }}>
+      {/* Product selector (4 products) */}
+      <div style={{ padding: "12px 0 8px" }}>
+        <MobileTabBar
+          tabs={productTabs}
+          activeKey={selectedProduct}
+          onChange={(k) => onSelectProduct(k as ProductKey)}
+          variant="container"
+          ariaLabel="Product"
+        />
+      </div>
+
+      {/* Segment selector (Total / Retail / B2B / TRR — TRR only for Diesel B) */}
+      <div style={{ padding: "0 0 4px" }}>
+        <MobileTabBar
+          tabs={segmentTabs}
+          activeKey={selectedSegment}
+          onChange={(k) => onSelectSegment(k as SegmentKey)}
+          variant="underline"
+          ariaLabel="Segment"
+        />
+      </div>
+
       {/* Hero chart card */}
       <div style={{ padding: "16px 16px 0" }}>
         <div
@@ -347,7 +394,7 @@ function OverviewTab({
                 fontFamily: "Arial, Helvetica, sans-serif",
               }}
             >
-              Share over time
+              {chartHeading}
             </div>
             <div
               style={{
@@ -523,23 +570,302 @@ function OverviewTab({
   );
 }
 
-// ─── Compare tab (stub) ───────────────────────────────────────────────────────
+// ─── Compare tab (full implementation) ────────────────────────────────────────
+//
+// Mobile equivalent of desktop's ComparisonTable. The user picks up to 3
+// players from the chart's player set, and we surface MoM / QTD / YoY / YTD
+// side-by-side as cards. Reuses the hook's `activeCompRows` so the analysis
+// matches whatever (product, segment) is currently selected on the Overview
+// tab — keeping a single source of truth across both tabs.
 
-function CompareTab({ loading }: { loading: boolean }) {
-  if (loading) return <div style={{ padding: "24px 16px" }}><BarrelLoading bare /></div>;
+function CompareMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: number | null;
+}) {
+  const fmt = (v: number | null) =>
+    v === null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}`;
+  const bg =
+    value === null
+      ? "transparent"
+      : value > 0
+        ? "rgba(34, 197, 94, 0.12)"
+        : value < 0
+          ? "rgba(239, 68, 68, 0.12)"
+          : "transparent";
+  const color =
+    value === null
+      ? "var(--mobile-text-faint)"
+      : value > 0
+        ? "var(--mobile-up)"
+        : value < 0
+          ? "var(--mobile-down)"
+          : "var(--mobile-text-muted)";
   return (
     <div
       style={{
-        padding: "24px 16px",
-        textAlign: "center",
-        color: "var(--mobile-text-muted)",
-        fontSize: 14,
+        background: bg,
+        borderRadius: 8,
+        padding: "8px 6px",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 2,
+        minWidth: 0,
+      }}
+    >
+      <span
+        style={{
+          fontSize: 9,
+          fontWeight: 700,
+          letterSpacing: "0.06em",
+          textTransform: "uppercase",
+          color: "var(--mobile-text-muted)",
+          fontFamily: "Arial, Helvetica, sans-serif",
+        }}
+      >
+        {label}
+      </span>
+      <span
+        style={{
+          fontSize: 13,
+          fontWeight: 700,
+          fontVariantNumeric: "tabular-nums",
+          color,
+          fontFamily: "Arial, Helvetica, sans-serif",
+        }}
+      >
+        {fmt(value)}
+      </span>
+    </div>
+  );
+}
+
+function CompareRowCard({
+  row,
+  color,
+}: {
+  row: CompRow;
+  color: string;
+}) {
+  return (
+    <div
+      style={{
+        padding: "12px 14px",
+        borderBottom: "1px solid var(--mobile-divider)",
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      Detailed comparisons (MoM / QTD / YoY) — coming soon.
-      <br />
-      Use the desktop view for the full comparison table.
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          marginBottom: 8,
+        }}
+      >
+        <span
+          aria-hidden="true"
+          style={{
+            width: 10,
+            height: 10,
+            borderRadius: 2,
+            background: color,
+            flexShrink: 0,
+          }}
+        />
+        <span
+          style={{
+            fontSize: 14,
+            fontWeight: 700,
+            color: "var(--mobile-text)",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {row.player}
+        </span>
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gap: 6,
+        }}
+      >
+        <CompareMetric label="MoM" value={row.mom} />
+        <CompareMetric label="QTD" value={row.q3m} />
+        <CompareMetric label="YoY" value={row.yoy} />
+        <CompareMetric label="YTD" value={row.ytd} />
+      </div>
+    </div>
+  );
+}
+
+function CompareTab({
+  loading,
+  compRows,
+  compareSet,
+  toggleCompareMember,
+  selectedProduct,
+  selectedSegment,
+  chartColors,
+}: {
+  loading: boolean;
+  compRows: CompRow[];
+  compareSet: string[];
+  toggleCompareMember: (player: string) => void;
+  selectedProduct: ProductKey;
+  selectedSegment: SegmentKey;
+  chartColors: Record<string, string>;
+}) {
+  if (loading) {
+    return (
+      <div style={{ padding: "24px 16px" }}>
+        <BarrelLoading bare />
+      </div>
+    );
+  }
+
+  // Pool of players available in the current chart context.
+  const availablePlayers = compRows.map((r) => r.player);
+  const visibleRows = compRows.filter((r) => compareSet.includes(r.player));
+
+  const headerLabel = `${PRODUCT_LABEL[selectedProduct]} — ${selectedSegment}`;
+
+  return (
+    <div style={{ paddingBottom: 16 }}>
+      {/* Context banner */}
+      <div style={{ padding: "12px 16px 0" }}>
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: "var(--mobile-text-muted)",
+            fontFamily: "Arial, Helvetica, sans-serif",
+            marginBottom: 4,
+          }}
+        >
+          Compare market-share variation
+        </div>
+        <div
+          style={{
+            fontSize: 15,
+            fontWeight: 700,
+            color: "var(--mobile-text)",
+            fontFamily: "Arial, Helvetica, sans-serif",
+          }}
+        >
+          {headerLabel}
+        </div>
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--mobile-text-muted)",
+            marginTop: 2,
+            fontFamily: "Arial, Helvetica, sans-serif",
+          }}
+        >
+          Percentage-point delta vs MoM, QTD, YoY, YTD. Pick up to 3 distributors.
+        </div>
+      </div>
+
+      {/* Player picker pills */}
+      <div style={{ padding: "14px 16px 0" }}>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 6,
+          }}
+        >
+          {availablePlayers.length === 0 ? (
+            <div
+              style={{
+                fontSize: 13,
+                color: "var(--mobile-text-muted)",
+                fontFamily: "Arial, Helvetica, sans-serif",
+              }}
+            >
+              No players available for this chart.
+            </div>
+          ) : (
+            availablePlayers.map((p) => {
+              const on = compareSet.includes(p);
+              const disabled = !on && compareSet.length >= 3;
+              return (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => toggleCompareMember(p)}
+                  disabled={disabled}
+                  style={{
+                    minHeight: 32,
+                    padding: "0 12px",
+                    borderRadius: 999,
+                    border: `1px solid ${on ? "var(--mobile-accent)" : "var(--mobile-border)"}`,
+                    background: on ? "var(--mobile-accent)" : "var(--mobile-surface)",
+                    color: on ? "#fff" : "var(--mobile-text)",
+                    opacity: disabled ? 0.4 : 1,
+                    fontFamily: "Arial, Helvetica, sans-serif",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: disabled ? "not-allowed" : "pointer",
+                    boxShadow: on ? "0 2px 6px rgba(255,80,0,0.25)" : "none",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  {p}
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* Comparison cards */}
+      <div style={{ padding: "16px 16px 0" }}>
+        {visibleRows.length === 0 ? (
+          <div
+            style={{
+              padding: 18,
+              textAlign: "center",
+              color: "var(--mobile-text-muted)",
+              fontSize: 13,
+              fontFamily: "Arial, Helvetica, sans-serif",
+              border: "1px dashed var(--mobile-border)",
+              borderRadius: 12,
+            }}
+          >
+            Select up to 3 distributors above to compare their share variation.
+          </div>
+        ) : (
+          <div
+            style={{
+              background: "var(--mobile-surface)",
+              border: "1px solid var(--mobile-divider)",
+              borderRadius: 16,
+              overflow: "hidden",
+            }}
+          >
+            {visibleRows.map((row, idx) => (
+              <CompareRowCard
+                key={row.player}
+                row={row}
+                color={
+                  chartColors[row.player] ??
+                  MOBILE_PALETTE[idx % MOBILE_PALETTE.length]
+                }
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -721,19 +1047,22 @@ export default function MobileView(): React.ReactElement {
   const [activeTab, setActiveTab] = useState<MobileTab>("overview");
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // Drawer-local filter state (committed to hook on Apply)
-  const [drawerProduct, setDrawerProduct] = useState<string>("Diesel B");
+  // Drawer-local filter state (committed to hook on Apply). `drawerProduct`
+  // mirrors `ms.selectedProduct` — the picker UI inside the drawer is a
+  // legacy shortcut; the canonical selector now lives in OverviewTab.
+  const [drawerProduct, setDrawerProduct] = useState<ProductKey>("Diesel B");
   const [drawerRegioes, setDrawerRegioes] = useState<string[]>([]);
   const [drawerMode, setDrawerMode] = useState<string>("Individual");
   const [drawerUfs, setDrawerUfs] = useState<string[]>([]);
 
-  // Active chip state (reflects last apply)
-  const [chipProduct, setChipProduct] = useState<string>("Diesel B");
+  // Active chip state (reflects last apply) for region/UF only.
+  // The product chip mirrors `ms.selectedProduct` so the chart selector
+  // and the chip stay in sync.
   const [chipRegioes, setChipRegioes] = useState<string[]>([]);
   const [chipUfs, setChipUfs] = useState<string[]>([]);
 
   const openDrawer = () => {
-    setDrawerProduct(chipProduct);
+    setDrawerProduct(ms.selectedProduct);
     setDrawerRegioes([...chipRegioes]);
     setDrawerMode(ms.mode);
     setDrawerUfs([...chipUfs]);
@@ -741,7 +1070,7 @@ export default function MobileView(): React.ReactElement {
   };
 
   const handleDrawerApply = () => {
-    setChipProduct(drawerProduct);
+    ms.setSelectedProduct(drawerProduct);
     setChipRegioes([...drawerRegioes]);
     setChipUfs([...drawerUfs]);
     ms.setMode(drawerMode as typeof ms.mode);
@@ -758,22 +1087,33 @@ export default function MobileView(): React.ReactElement {
     setDrawerUfs([]);
   };
 
-  // Hero chart traces (stacked area, Diesel B Total → or selected product, 12M)
+  // Hero chart traces — reflects the currently selected (product, segment)
+  // from the OverviewTab MobileTabBar selectors.
   const heroTraces = useMemo<PlotData[]>(() => {
     if (ms.seriesLoading || ms.serieRows.length === 0) return [];
     const productRows =
-      chipProduct === "Otto-Cycle" ? ms.ottoCycleRows : ms.serieRows;
-    const players =
-      ms.big3 ? ALL_PLAYERS_BIG3 : ALL_PLAYERS_IND;
+      ms.selectedProduct === "Otto-Cycle" ? ms.ottoCycleRows : ms.serieRows;
+    const players = ms.big3 ? ALL_PLAYERS_BIG3 : ALL_PLAYERS_IND;
+    // SegmentKey "Total" maps to no segment filter (whole product).
+    const segmentArg: string | null =
+      ms.selectedSegment === "Total" ? null : ms.selectedSegment;
     return buildMobileStackedArea({
       serieRows: productRows,
-      produto: chipProduct,
-      segmento: null,
+      produto: ms.selectedProduct,
+      segmento: segmentArg,
       players,
       nMonths: 12,
       colorsOverride: ms.chartColors,
     });
-  }, [ms.seriesLoading, ms.serieRows, ms.ottoCycleRows, chipProduct, ms.big3, ms.chartColors]);
+  }, [
+    ms.seriesLoading,
+    ms.serieRows,
+    ms.ottoCycleRows,
+    ms.selectedProduct,
+    ms.selectedSegment,
+    ms.big3,
+    ms.chartColors,
+  ]);
 
   const tabItems = TABS.map((t) => ({
     key: t.key,
@@ -900,12 +1240,12 @@ export default function MobileView(): React.ReactElement {
 
       {/* Filter chip row */}
       <ActiveChips
-        product={chipProduct}
+        product={PRODUCT_LABEL[ms.selectedProduct]}
         regioes={chipRegioes}
         ufs={chipUfs}
         latestDate={ms.latestDate}
         onOpenFilters={openDrawer}
-        onRemoveProduct={() => { setChipProduct("Diesel B"); }}
+        onRemoveProduct={() => { ms.setSelectedProduct("Diesel B"); }}
         onRemoveRegiao={(r) => {
           const next = chipRegioes.filter((x) => x !== r);
           setChipRegioes(next);
@@ -925,14 +1265,26 @@ export default function MobileView(): React.ReactElement {
         <OverviewTab
           loading={ms.seriesLoading}
           heroTraces={heroTraces}
-          topPlayers={ms.topPlayers}
+          topPlayers={ms.topPlayersForSelected}
           latestDate={ms.latestDate}
           chartColors={ms.chartColors}
           onViewAll={openDrawer}
+          selectedProduct={ms.selectedProduct}
+          selectedSegment={ms.selectedSegment}
+          onSelectProduct={ms.setSelectedProduct}
+          onSelectSegment={ms.setSelectedSegment}
         />
       )}
       {activeTab === "compare" && (
-        <CompareTab loading={ms.seriesLoading} />
+        <CompareTab
+          loading={ms.seriesLoading}
+          compRows={ms.activeCompRows}
+          compareSet={ms.compareSet}
+          toggleCompareMember={ms.toggleCompareMember}
+          selectedProduct={ms.selectedProduct}
+          selectedSegment={ms.selectedSegment}
+          chartColors={ms.chartColors}
+        />
       )}
 
       {/* Export FAB */}
@@ -975,9 +1327,13 @@ export default function MobileView(): React.ReactElement {
             Product
           </div>
           <CheckPills
-            options={PRODUCTS}
-            value={drawerProduct}
-            onChange={(v) => setDrawerProduct(v as string)}
+            options={PRODUCT_KEYS.map((p) => PRODUCT_LABEL[p])}
+            value={PRODUCT_LABEL[drawerProduct]}
+            onChange={(v) => {
+              const label = v as string;
+              const found = PRODUCT_KEYS.find((p) => PRODUCT_LABEL[p] === label);
+              if (found) setDrawerProduct(found);
+            }}
             radio
           />
         </div>

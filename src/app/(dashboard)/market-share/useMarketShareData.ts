@@ -141,6 +141,54 @@ export interface MarketShareCharts {
   ottoTotal: ChartResult;
 }
 
+export type ChartKey = keyof MarketShareCharts;
+
+export type ProductKey = "Diesel B" | "Gasolina C" | "Etanol Hidratado" | "Otto-Cycle";
+export type SegmentKey = "Total" | "Retail" | "B2B" | "TRR";
+
+/** Maps (product, segment) → chart key. TRR only exists for Diesel B. */
+export const CHART_KEY_MATRIX: Record<ProductKey, Partial<Record<SegmentKey, ChartKey>>> = {
+  "Diesel B": {
+    Total: "dieselTotal",
+    Retail: "dieselRetail",
+    B2B: "dieselB2B",
+    TRR: "dieselTrR",
+  },
+  "Gasolina C": {
+    Total: "gasTotal",
+    Retail: "gasRetail",
+    B2B: "gasB2B",
+  },
+  "Etanol Hidratado": {
+    Total: "ethTotal",
+    Retail: "ethRetail",
+    B2B: "ethB2B",
+  },
+  "Otto-Cycle": {
+    Total: "ottoTotal",
+    Retail: "ottoRetail",
+    B2B: "ottoB2B",
+  },
+};
+
+/** Segments available per product (drives the segment selector UI). */
+export const SEGMENTS_BY_PRODUCT: Record<ProductKey, SegmentKey[]> = {
+  "Diesel B": ["Total", "Retail", "B2B", "TRR"],
+  "Gasolina C": ["Total", "Retail", "B2B"],
+  "Etanol Hidratado": ["Total", "Retail", "B2B"],
+  "Otto-Cycle": ["Total", "Retail", "B2B"],
+};
+
+export const PRODUCT_KEYS: ProductKey[] = ["Diesel B", "Gasolina C", "Etanol Hidratado", "Otto-Cycle"];
+
+/** English display label for a product (used in mobile selectors). */
+export const PRODUCT_LABEL: Record<ProductKey, string> = {
+  "Diesel B": "Diesel B",
+  "Gasolina C": "Gasoline C",
+  "Etanol Hidratado": "Hydrous Ethanol",
+  "Otto-Cycle": "Otto-Cycle",
+};
+
 export interface MarketShareCompData {
   dieselRetail: CompRow[];
   dieselB2B: CompRow[];
@@ -207,6 +255,25 @@ export interface UseMarketShareData {
   compData: MarketShareCompData | null;
   /** Top-N players ranked by latest share for the mobile overview card */
   topPlayers: TopPlayerRow[];
+
+  // Mobile chart selector — navigates through the 13 product × segment charts
+  selectedProduct: ProductKey;
+  setSelectedProduct: (p: ProductKey) => void;
+  selectedSegment: SegmentKey;
+  setSelectedSegment: (s: SegmentKey) => void;
+  /** Resolved chart key from (product, segment). Falls back to product Total when segment unavailable. */
+  selectedChartKey: ChartKey;
+  /** The currently selected chart (one of the 13). */
+  activeChart: ChartResult | null;
+  /** Comparison rows for the selected chart (used by mobile Compare tab). */
+  activeCompRows: CompRow[];
+  /** Top players ranked for the SELECTED product (mobile overview reflects the picker). */
+  topPlayersForSelected: TopPlayerRow[];
+
+  // Mobile Compare tab — which players to surface side-by-side
+  compareSet: string[];
+  setCompareSet: (players: string[]) => void;
+  toggleCompareMember: (player: string) => void;
 
   // Export
   exportOpen: boolean;
@@ -636,6 +703,13 @@ export function useMarketShareData(): UseMarketShareData {
   // --- Others players ---
   const [cachedOthersPlayers, setCachedOthersPlayers] = useState<string[]>([]);
 
+  // --- Mobile chart selector state ---
+  const [selectedProduct, setSelectedProduct] = useState<ProductKey>("Diesel B");
+  const [selectedSegment, setSelectedSegment] = useState<SegmentKey>("Total");
+
+  // --- Mobile Compare set state (players chosen for side-by-side compare) ---
+  const [compareSet, setCompareSet] = useState<string[]>([]);
+
   // --- Export state ---
   const [exportOpen, setExportOpen] = useState(false);
   const [exportRange, setExportRange] = useState<[number, number]>([0, 0]);
@@ -878,6 +952,54 @@ export function useMarketShareData(): UseMarketShareData {
     return buildTopPlayers(serieRows, "Diesel B", latestDate, big3, groupBy, chartColors, 5);
   }, [serieRows, latestDate, big3, groupBy, chartColors]);
 
+  // ─── Mobile chart selector derivations ─────────────────────────────────────
+  // Auto-correct: if the user picked a segment that doesn't exist for the
+  // current product (e.g. TRR + Gasolina C), fall back to Total.
+  const resolvedSegment: SegmentKey = useMemo(() => {
+    const allowed = SEGMENTS_BY_PRODUCT[selectedProduct];
+    return allowed.includes(selectedSegment) ? selectedSegment : "Total";
+  }, [selectedProduct, selectedSegment]);
+
+  const selectedChartKey: ChartKey = useMemo(() => {
+    const key = CHART_KEY_MATRIX[selectedProduct][resolvedSegment];
+    // Guaranteed to resolve — every product has Total.
+    return key ?? "dieselTotal";
+  }, [selectedProduct, resolvedSegment]);
+
+  const activeChart: ChartResult | null = useMemo(() => {
+    if (!charts) return null;
+    return charts[selectedChartKey];
+  }, [charts, selectedChartKey]);
+
+  const activeCompRows: CompRow[] = useMemo(() => {
+    if (!compData) return [];
+    return compData[selectedChartKey];
+  }, [compData, selectedChartKey]);
+
+  // Top players for the currently selected product (mobile overview cards).
+  const topPlayersForSelected = useMemo<TopPlayerRow[]>(() => {
+    if (!latestDate || serieRows.length === 0) return [];
+    const sourceRows = selectedProduct === "Otto-Cycle" ? ottoCycleRows : serieRows;
+    return buildTopPlayers(sourceRows, selectedProduct, latestDate, big3, groupBy, chartColors, 5);
+  }, [serieRows, ottoCycleRows, selectedProduct, latestDate, big3, groupBy, chartColors]);
+
+  // ─── Mobile Compare toggle ────────────────────────────────────────────────
+  const toggleCompareMember = useCallback((player: string) => {
+    setCompareSet((prev) => {
+      if (prev.includes(player)) return prev.filter((p) => p !== player);
+      // Cap compare set at 3 for readability on mobile.
+      if (prev.length >= 3) return prev;
+      return [...prev, player];
+    });
+  }, []);
+
+  // Seed compareSet with the top-3 players on first load (once data arrives).
+  useEffect(() => {
+    if (compareSet.length > 0) return;
+    if (topPlayers.length === 0) return;
+    setCompareSet(topPlayers.slice(0, 3).map((p) => p.player));
+  }, [topPlayers, compareSet.length]);
+
   const regioesAll = (opcoes?.regioes ?? []) as string[];
   const ufsAll     = (opcoes?.ufs     ?? []) as string[];
   const mercadosAll = (opcoes?.mercados ?? []) as string[];
@@ -918,6 +1040,17 @@ export function useMarketShareData(): UseMarketShareData {
     charts,
     compData,
     topPlayers,
+    selectedProduct,
+    setSelectedProduct,
+    selectedSegment: resolvedSegment,
+    setSelectedSegment,
+    selectedChartKey,
+    activeChart,
+    activeCompRows,
+    topPlayersForSelected,
+    compareSet,
+    setCompareSet,
+    toggleCompareMember,
     exportOpen,
     openExportModal,
     closeExportModal,

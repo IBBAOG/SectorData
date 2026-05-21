@@ -20,9 +20,9 @@ src/app/(dashboard)/market-share/
 
 | Analysis | Desktop | Mobile |
 |---|---|---|
-| 13 product×segment charts (Diesel B Retail/B2B/TRR/Total, Gasoline C Retail/B2B/Total, Ethanol Retail/B2B/Total, Otto-Cycle Retail/B2B/Total) | Full | Overview tab: hero Diesel B Total (12M stacked area); Compare tab: stub (full table planned) |
-| Comparison table (MoM/QTD/YoY/YTD p.p. delta) | Yes | Compare tab stub |
-| Top players ranking with MoM delta | Implicit via chart | MobileDataCard rows |
+| 13 product×segment charts (Diesel B Retail/B2B/TRR/Total, Gasoline C Retail/B2B/Total, Ethanol Retail/B2B/Total, Otto-Cycle Retail/B2B/Total) | Full (all 13 rendered as a 2-column grid) | Overview tab — product `MobileTabBar` (container, 4 products) + segment `MobileTabBar` (underline, Total/Retail/B2B/TRR; TRR only for Diesel B) navigates the same 13 chart variants, one at a time |
+| Comparison table (MoM/QTD/YoY/YTD p.p. delta) | Yes (inline table under each chart) | Compare tab — pick up to 3 distributors; shows side-by-side MoM/QTD/YoY/YTD cards for the SAME `(product, segment)` selected on Overview |
+| Top players ranking with MoM delta | Implicit via chart | MobileDataCard rows; the top-5 list reflects the currently selected product |
 | Export (Tier 2 ExportModal) | Yes | Yes (via ExportFAB) |
 | Period / Region / UF / Mode / Competitors filters | Yes (sidebar) | Yes (FilterDrawer bottom sheet) |
 
@@ -34,7 +34,24 @@ src/app/(dashboard)/market-share/
 - Filter state + setters: `mode`, `sliderRange`, `regioesSelected`, `ufsSelected`, `competidoresSelected`
 - `applyFilters()`, `clearFilters()`
 - Derived: `charts` (all 13), `compData`, `topPlayers`, `chartColors`, `players`, `big3`, `latestDate`
+- Mobile chart-selector state (additive, used by `mobile/View.tsx` only):
+  - `selectedProduct: ProductKey` + `setSelectedProduct(p)`
+  - `selectedSegment: SegmentKey` + `setSelectedSegment(s)` (auto-falls-back to `Total` when the segment doesn't exist for the chosen product, e.g. TRR + Gasolina C)
+  - `selectedChartKey: ChartKey` — derived index into `charts` / `compData`
+  - `activeChart: ChartResult | null` — the selected chart variant
+  - `activeCompRows: CompRow[]` — comparison rows for the selected variant (fuels mobile Compare tab)
+  - `topPlayersForSelected: TopPlayerRow[]` — top-5 ranking for the SELECTED product (so the mobile overview reflects the picker)
+- Mobile Compare-set state (additive):
+  - `compareSet: string[]` — players currently picked for side-by-side (capped at 3)
+  - `setCompareSet(players)` / `toggleCompareMember(player)`
+  - On first load with non-empty data, `compareSet` is seeded with the top-3 players from `topPlayers`
 - Export state + handlers: `exportOpen`, `openExportModal`, `closeExportModal`, `exportFilters`, `exportSizeEstimate`
+
+Constants also exported from the hook file (consumed by `mobile/View.tsx`):
+- `PRODUCT_KEYS: ProductKey[]` — `["Diesel B", "Gasolina C", "Etanol Hidratado", "Otto-Cycle"]`
+- `PRODUCT_LABEL: Record<ProductKey, string>` — English display labels (`"Gasolina C" → "Gasoline C"`, `"Etanol Hidratado" → "Hydrous Ethanol"`)
+- `SEGMENTS_BY_PRODUCT: Record<ProductKey, SegmentKey[]>` — drives the segment selector (TRR only for Diesel B)
+- `CHART_KEY_MATRIX: Record<ProductKey, Partial<Record<SegmentKey, ChartKey>>>` — `(product, segment) → key in MarketShareCharts`
 
 Pure helpers also exported from the hook file:
 - `buildMarketShareLine` — builds a single Plotly line chart
