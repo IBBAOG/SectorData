@@ -42,6 +42,8 @@ import {
   type AnpLpcFiltros,
   type AnpLpcExportCountFilters,
 } from "@/lib/rpc";
+import { downloadAnpLpcExcel } from "@/lib/exportExcel";
+import { downloadCsv } from "@/lib/exportCsv";
 
 // ─── Constants (exported so both Views share the same palette / map) ─────────
 
@@ -147,13 +149,16 @@ export interface UseAnpLpcData {
   exportFilters: AnpLpcExportCountFilters;
   exportSizeEstimate: ReturnType<typeof useExportSize>;
   excelLoading: boolean;
-  setExcelLoading: (v: boolean) => void;
   csvLoading: boolean;
-  setCsvLoading: (v: boolean) => void;
 
-  // Supabase client (export handlers in the Views need it for the count fetch
-  // + serie pagination at download time)
-  supabase: ReturnType<typeof getSupabaseClient>;
+  // Export callbacks — fully encapsulate the Supabase client so neither View
+  // imports getSupabaseClient or calls rpc.ts wrappers directly.
+  /** Fetches the row count for the ExportModal size calculator (RPC call). */
+  fetchExportCount: () => Promise<number>;
+  /** Downloads the filtered series as an Excel file (RPC call + workbook). */
+  onExportExcel: () => Promise<void>;
+  /** Downloads the filtered series as a CSV file (RPC call + RFC4180). */
+  onExportCsv: () => Promise<void>;
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -353,6 +358,57 @@ export function useAnpLpcData(): UseAnpLpcData {
     "anp_lpc",
   );
 
+  // ── Export callbacks (encapsulate supabase + RPC + download helpers) ───────
+  const fetchExportCount = useCallback(async (): Promise<number> => {
+    if (!supabase) return 0;
+    return getAnpLpcExportCount(supabase, exportFilters);
+  }, [supabase, exportFilters]);
+
+  const onExportExcel = useCallback(async (): Promise<void> => {
+    if (!supabase) return;
+    setExcelLoading(true);
+    try {
+      const rows = await rpcGetAnpLpcSerie(supabase, {
+        produtos:   exportFilters.produtos,
+        estados:    exportFilters.estados,
+        dataInicio: exportFilters.dataInicio,
+        dataFim:    exportFilters.dataFim,
+      });
+      await downloadAnpLpcExcel(rows);
+      setExportOpen(false);
+    } catch (e) {
+      console.error("ANP LPC Excel export failed", e);
+    } finally {
+      setExcelLoading(false);
+    }
+  }, [supabase, exportFilters]);
+
+  const onExportCsv = useCallback(async (): Promise<void> => {
+    if (!supabase) return;
+    setCsvLoading(true);
+    try {
+      const rows = await rpcGetAnpLpcSerie(supabase, {
+        produtos:   exportFilters.produtos,
+        estados:    exportFilters.estados,
+        dataInicio: exportFilters.dataInicio,
+        dataFim:    exportFilters.dataFim,
+      });
+      const now = new Date();
+      const dd = String(now.getDate()).padStart(2, "0");
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const yy = String(now.getFullYear()).slice(-2);
+      downloadCsv({
+        rows: rows as unknown as Record<string, unknown>[],
+        filename: `anp_lpc_${dd}-${mm}-${yy}`,
+      });
+      setExportOpen(false);
+    } catch (e) {
+      console.error("ANP LPC CSV export failed", e);
+    } finally {
+      setCsvLoading(false);
+    }
+  }, [supabase, exportFilters]);
+
   return {
     filtros,
     nacionalRows,
@@ -391,10 +447,10 @@ export function useAnpLpcData(): UseAnpLpcData {
     exportFilters,
     exportSizeEstimate,
     excelLoading,
-    setExcelLoading,
     csvLoading,
-    setCsvLoading,
 
-    supabase,
+    fetchExportCount,
+    onExportExcel,
+    onExportCsv,
   };
 }
