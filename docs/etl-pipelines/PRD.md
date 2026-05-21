@@ -169,6 +169,36 @@ output/
 
 ## Tarefas comuns
 
+### Incidente Apr/2026 — triplicação cross-local (Phase B1)
+
+Em 2026-05-21 detectou-se a 3ª ocorrência do mesmo bug em `anp_cdp_producao`: produção
+Apr/2026 inflada para 12.853 kbpd (vs ~4.337 kbpd correto). Causa raiz: o ANP CDP
+APEX portal por vezes retorna o MESMO CSV para cliques contra filtros M/S/T diferentes
+(observado quando a sessão APEX expira silenciosamente — vide `feedback_apex_silent_expiry`).
+O script `02_upload.py` confiava no nome do arquivo (`_M`, `_S`, `_T`) para atribuir
+`local` ∈ {PosSal, PreSal, Terra}, resultando em 3 cópias do mesmo poço com locais
+diferentes — triplicando os KPIs em qualquer agregação por `SUM(petroleo_bbl_dia)`.
+
+A função pré-existente `_deduplicate_m_vs_s` só removia overlap M↔S quando ambos os
+frames chegavam no MESMO run; runs incrementais a cada ~2h (cron-job.org) carregavam
+M/S/T em runs separados, contornando o dedup.
+
+**Defesas adicionadas em `02_upload.py` (Phase B1):**
+
+1. `_validate_ambiente_consistency(frames_by_period)` — RAISE pré-upload se T overlap
+   com M/S > 5% (T deveria ser disjoint), ou se M ≈ S em ambas direções (ANP devolveu CSV idêntico).
+2. `_check_cross_local_duplicates(sb, ano, mes)` — RAISE pós-upload se algum
+   `(poco, campo, bacia)` tiver rows em >1 local no período recém-tocado.
+3. `_warn_spike_upward(sb, ano, mes)` — RAISE pós-upload se soma mensal > 1.8x a média
+   trimestral móvel (irmão simétrico de `_warn_partial_offshore`).
+
+**Quarentena (Phase A — DML):** 2.076 rows movidas para `_quarantine_anp_cdp_apr2026`
+para post-mortem. Não deletadas; ficam disponíveis para reconstrução caso necessário.
+
+**Acompanhar:** se o pipeline falhar com qualquer das mensagens
+`CROSS-LOCAL DUPLICATE DETECTED`, `SPIKE UPWARD ANOMALY`, ou `AMBIENTE OVERLAP ANOMALY`,
+**não force re-run** sem investigar — provavelmente é nova variante do mesmo bug.
+
 ### Debug de falha ANP CDP
 
 O workflow `etl_anp_cdp.yml` usa `01_extract_powerbi.py` (Power BI public API, sem CAPTCHA, sem Selenium).
