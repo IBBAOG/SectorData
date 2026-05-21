@@ -35,6 +35,8 @@ import {
   MobileDataCard,
   ExportFAB,
   MobileTabBar,
+  CloseIcon,
+  PlusIcon,
 } from "../../../../components/dashboard/mobile";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
@@ -218,22 +220,7 @@ function ActiveChips({
   onOpenFilters: () => void;
   onRemoveRegiao: (r: string) => void;
 }) {
-  const X = (
-    <svg
-      width="10"
-      height="10"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M18 6 6 18" />
-      <path d="m6 6 12 12" />
-    </svg>
-  );
+  const X = <CloseIcon size={10} strokeWidth={2.5} />;
 
   return (
     <nav
@@ -338,20 +325,7 @@ function ActiveChips({
           fontFamily: "Arial, Helvetica, sans-serif",
         }}
       >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <line x1="12" y1="5" x2="12" y2="19" />
-          <line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
+        <PlusIcon size={14} strokeWidth={2.5} />
         Filters
       </button>
     </nav>

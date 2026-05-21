@@ -47,6 +47,14 @@ import {
   FilterDrawer,
   BottomSheet,
   ExportFAB,
+  FilterIcon,
+  CloseIcon,
+  ArrowLeftIcon as ArrowUpIcon,
+  BarChartIcon as ChartIcon,
+  MapPinIcon as MapIcon,
+  TrendingUpIcon as CompareIcon,
+  UserIcon as ProfileIcon,
+  CheckIcon,
 } from "../../../../components/dashboard/mobile";
 
 import {
@@ -60,80 +68,10 @@ import {
   type DrillLevel,
 } from "../useAnpCdpData";
 
-// ─── Inline icons (keep this view self-contained, no extra deps) ─────────────
-
-function FilterIcon(): React.ReactElement {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <line x1="4" y1="6" x2="20" y2="6" />
-      <line x1="7" y1="12" x2="17" y2="12" />
-      <line x1="10" y1="18" x2="14" y2="18" />
-    </svg>
-  );
-}
-
-function CloseIcon({ size = 12 }: { size?: number }): React.ReactElement {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M18 6 6 18" />
-      <path d="m6 6 12 12" />
-    </svg>
-  );
-}
-
-function ArrowUpIcon(): React.ReactElement {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <line x1="19" y1="12" x2="5" y2="12" />
-      <polyline points="12 19 5 12 12 5" />
-    </svg>
-  );
-}
-
-function ChartIcon(): React.ReactElement {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 3v18h18" />
-      <rect x="6" y="13" width="3" height="6" />
-      <rect x="11" y="9" width="3" height="10" />
-      <rect x="16" y="5" width="3" height="14" />
-    </svg>
-  );
-}
-
-function MapIcon(): React.ReactElement {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z" />
-      <circle cx="12" cy="10" r="3" />
-    </svg>
-  );
-}
-
-function CompareIcon(): React.ReactElement {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 17l6-6 4 4 8-8" />
-      <polyline points="14 7 21 7 21 14" />
-    </svg>
-  );
-}
-
-function ProfileIcon(): React.ReactElement {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 21a8 8 0 0 1 16 0" />
-    </svg>
-  );
-}
+// Note: icon glyphs are sourced from @/components/dashboard/mobile (canonical
+// design-system icon set). Aliased usages below preserve previous names where
+// the local label was domain-specific (ArrowUpIcon was visually a left arrow,
+// ChartIcon/MapIcon/CompareIcon/ProfileIcon were nav-bar labels).
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -638,7 +576,7 @@ export default function MobileView(): React.ReactElement | null {
                 gap: 6,
               }}
             >
-              <FilterIcon />
+              <FilterIcon size={14} strokeWidth={2.4} />
               Filters
             </button>
             {filterChips.map((c) => (
@@ -672,7 +610,7 @@ export default function MobileView(): React.ReactElement | null {
                     cursor: "pointer", borderRadius: "50%",
                   }}
                 >
-                  <CloseIcon />
+                  <CloseIcon size={12} strokeWidth={2.5} />
                 </button>
               </span>
             ))}
@@ -834,7 +772,7 @@ export default function MobileView(): React.ReactElement | null {
             boxShadow: "0 4px 14px rgba(0,0,0,0.12)",
           }}
         >
-          <ArrowUpIcon />
+          <ArrowUpIcon size={22} strokeWidth={2.2} />
         </button>
       )}
 
@@ -851,10 +789,10 @@ export default function MobileView(): React.ReactElement | null {
       {/* Bottom tab bar */}
       <MobileBottomTabBar
         tabs={[
-          { key: "production", label: "Production", icon: <ChartIcon />,   active: activeBottomTab === "production" },
-          { key: "map",        label: "Map",        icon: <MapIcon />,     active: activeBottomTab === "map" },
-          { key: "compare",    label: "Compare",    icon: <CompareIcon />, active: activeBottomTab === "compare" },
-          { key: "profile",    label: "Profile",    icon: <ProfileIcon />, active: activeBottomTab === "profile" },
+          { key: "production", label: "Production", icon: <ChartIcon size={22} />,   active: activeBottomTab === "production" },
+          { key: "map",        label: "Map",        icon: <MapIcon size={22} />,     active: activeBottomTab === "map" },
+          { key: "compare",    label: "Compare",    icon: <CompareIcon size={22} />, active: activeBottomTab === "compare" },
+          { key: "profile",    label: "Profile",    icon: <ProfileIcon size={22} />, active: activeBottomTab === "profile" },
         ] as MobileBottomTab[]}
         onChange={(k) => setActiveBottomTab(k as "production" | "map" | "compare" | "profile")}
       />
@@ -1298,11 +1236,7 @@ function CheckRow({
         color: "#fff",
       }}>
         {checked && (
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"
-            aria-hidden="true">
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
+          <CheckIcon size={12} strokeWidth={3} />
         )}
       </span>
       <span style={{

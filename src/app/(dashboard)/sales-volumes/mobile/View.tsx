@@ -31,6 +31,8 @@ import {
   MobileDataCard,
   ExportFAB,
   MobileTabBar,
+  ActivityIcon,
+  ListIcon,
 } from "../../../../components/dashboard/mobile";
 import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 import CheckList from "../../../../components/CheckList";
@@ -138,26 +140,8 @@ function buildMobileSeries(params: {
 
 // ─── Bottom tab icons ─────────────────────────────────────────────────────────
 
-function ChartIcon(): React.ReactElement {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-    </svg>
-  );
-}
-
-function RankingIcon(): React.ReactElement {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <line x1="8" y1="6" x2="21" y2="6" />
-      <line x1="8" y1="12" x2="21" y2="12" />
-      <line x1="8" y1="18" x2="21" y2="18" />
-      <line x1="3" y1="6" x2="3.01" y2="6" />
-      <line x1="3" y1="12" x2="3.01" y2="12" />
-      <line x1="3" y1="18" x2="3.01" y2="18" />
-    </svg>
-  );
-}
+const ChartIcon = () => <ActivityIcon size={22} />;
+const RankingIcon = () => <ListIcon size={22} />;
 
 function FilterIcon(): React.ReactElement {
   return (

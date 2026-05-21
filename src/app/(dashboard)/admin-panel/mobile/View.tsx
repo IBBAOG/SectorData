@@ -29,6 +29,9 @@ import {
   MobileTopBar,
   BottomSheet,
   MobileDataCard,
+  SearchIcon,
+  ChevronDownIcon,
+  CheckIcon,
 } from "@/components/dashboard/mobile";
 import { getInitials } from "../../../../lib/avatarUtils";
 
@@ -40,33 +43,6 @@ import {
 } from "../useAdminPanelData";
 
 const ORANGE = "#FF5000";
-
-// ── Icons ─────────────────────────────────────────────────────────────────────
-
-function SearchIcon(): React.ReactElement {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="11" cy="11" r="7" />
-      <path d="m20 20-3.5-3.5" />
-    </svg>
-  );
-}
-
-function ChevronDownIcon(): React.ReactElement {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polyline points="6 9 12 15 18 9" />
-    </svg>
-  );
-}
-
-function CheckIcon(): React.ReactElement {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <polyline points="20 6 9 17 4 12" />
-    </svg>
-  );
-}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -317,7 +293,7 @@ export default function MobileView(): React.ReactElement | null {
                 pointerEvents: "none",
               }}
             >
-              <SearchIcon />
+              <SearchIcon size={18} />
             </span>
             <input
               type="search"
@@ -433,7 +409,7 @@ export default function MobileView(): React.ReactElement | null {
                             }}
                             aria-live="polite"
                           >
-                            <CheckIcon /> Saved
+                            <CheckIcon size={14} strokeWidth={2.5} /> Saved
                           </span>
                         )}
                         <span
@@ -454,7 +430,7 @@ export default function MobileView(): React.ReactElement | null {
                           }}
                         >
                           {role}
-                          <ChevronDownIcon />
+                          <ChevronDownIcon size={14} strokeWidth={2.5} />
                         </span>
                       </>
                     }
@@ -504,7 +480,7 @@ export default function MobileView(): React.ReactElement | null {
                           }}
                           aria-live="polite"
                         >
-                          <CheckIcon /> Saved
+                          <CheckIcon size={14} strokeWidth={2.5} /> Saved
                         </span>
                       )}
                       <label
@@ -659,7 +635,7 @@ export default function MobileView(): React.ReactElement | null {
                           }}
                           aria-live="polite"
                         >
-                          <CheckIcon />
+                          <CheckIcon size={14} strokeWidth={2.5} />
                         </span>
                       )}
                       {homeError && (
@@ -946,7 +922,7 @@ export default function MobileView(): React.ReactElement | null {
                     }}
                   >
                     <span>{opt}</span>
-                    {selected && <CheckIcon />}
+                    {selected && <CheckIcon size={14} strokeWidth={2.5} />}
                   </button>
                 );
               })}
