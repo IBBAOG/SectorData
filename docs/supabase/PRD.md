@@ -52,31 +52,82 @@ supabase/
 | `vessel_registry`, `vessel_positions`, `port_arrivals`, `import_candidates` | dash-navios-diesel | ETL (`ais_*.py`, `vessel_*.py`) |
 | `d_g_margins` | dash-margins | Dados Locais (manual via `scripts/manual/dg_margins_upload.py`) |
 | `price_bands` | dash-price-bands | Dados Locais (manual via `upload_price_bands.py`) |
-| `stock_portfolios` | dash-stocks | App (CRUD direto via PostgREST) |
-| `news_articles`, `news_hunter_keywords` | dash-news-hunter | scanner externo + user via UI |
-| `profiles`, `module_visibility` | dash-admin | App (RPC) |
-| `app_events` | dash-admin (`/admin-analytics`) | RPC `track_event()` (SECURITY DEFINER) |
+| `stock_portfolios` | dash-stocks | App (CRUD direto via PostgREST). Desde `20260522000001`: coluna `is_public` + nullable `user_id` + seed do portfolio público `00000000-...-001` "Brazilian Oil & Gas (default)" |
+| `news_articles`, `news_hunter_keywords` | dash-news-hunter | scanner externo + user via UI. Desde `20260522000001`: `news_articles` ganhou policy SELECT TO anon |
+| `news_hunter_default_keywords` | dash-news-hunter | Tabela nova `20260522000001` — 27 keywords default lidas por `get_default_news_keywords()` (anon-safe). Single source of truth (substitui lista hardcoded em `seed_my_news_hunter_keywords()`) |
+| `profiles`, `module_visibility` | dash-admin | App (RPC). Desde `20260522000001`: `module_visibility.is_visible_for_public` + trigger self-healing |
+| `app_events` | dash-admin (`/admin-analytics`) | RPC `track_event()` (SECURITY DEFINER). Desde `20260522000001`: dual-actor (`user_id` OR `visitor_id`) |
 
-### App Analytics (adicionada 2026-05-07)
+### App Analytics (adicionada 2026-05-07, expandida 2026-05-22)
 
-Migration: `20260507000011_add_app_events.sql`.
+Migrations: `20260507000011_add_app_events.sql` (criação), `20260522000001_anonymous_access.sql` (dual-actor user_id OR visitor_id).
 
 RLS: INSERT bloqueado diretamente (sem policy de INSERT — escritas apenas via `track_event()` SECURITY DEFINER). SELECT restrito a `profiles.role = 'Admin'` via policy `"app_events admin read"` com `(select auth.uid())` (Hardening A).
 
-Índices: `idx_app_events_user_created (user_id, created_at DESC)`, `idx_app_events_type_created (event_type, created_at DESC)`, `idx_app_events_route_created (route, created_at DESC) WHERE route IS NOT NULL`.
+Schema dual-actor (a partir de `20260522000001`):
+- `user_id UUID` — agora **nullable** (antes NOT NULL). Sessão autenticada preenche aqui.
+- `visitor_id TEXT` — coluna **nova**. Sessão anônima preenche aqui (UUID v4 do cookie `sd_visitor_id`).
+- CHECK constraint `app_events_actor_chk`: `user_id IS NOT NULL OR visitor_id IS NOT NULL` — sempre temos algum ator.
+
+Índices: `idx_app_events_user_created (user_id, created_at DESC)`, `idx_app_events_type_created (event_type, created_at DESC)`, `idx_app_events_route_created (route, created_at DESC) WHERE route IS NOT NULL`, `idx_app_events_visitor_created (visitor_id, created_at DESC) WHERE visitor_id IS NOT NULL` (novo — partial index para queries anon).
 
 RPCs (todas `SECURITY DEFINER`, `SET search_path = public, auth`; analytics RPCs guardam caller Admin via RAISE EXCEPTION e excluem Admins dos agregados):
 
 | Função | Assinatura | Notas |
 |---|---|---|
-| `track_event` | `(p_event_type text, p_route text DEFAULT NULL, p_payload jsonb DEFAULT '{}') RETURNS void` | Qualquer autenticado; no-op silencioso se `auth.uid()` IS NULL; valida event_type |
-| `get_analytics_kpis` | `(period_days int DEFAULT 30) RETURNS jsonb` | Retorna `{dau, wau, mau, total_users, active_users_period, exports_period, page_views_period, logins_period}` |
-| `get_analytics_by_dashboard` | `(period_days int DEFAULT 30) RETURNS TABLE(route text, page_views bigint, unique_users bigint, exports bigint, bytes_total bigint)` | `bytes_total` = soma de `payload->>'bytes'` em eventos export |
-| `get_analytics_by_user` | `(period_days int DEFAULT 30, p_search text DEFAULT '') RETURNS TABLE(user_id uuid, full_name text, role text, last_login timestamptz, page_views bigint, exports bigint, top_routes jsonb)` | `last_login` = MAX created_at WHERE event_type='login' (NULL se nunca rastreado, SEM fallback para `auth.users.last_sign_in_at`); `top_routes` = array JSON de ate 3 `{route, views}`; ILIKE em full_name se p_search nao-vazio; ordenado DESC por page_views |
-| `get_analytics_user_timeline` | `(target_user_id uuid, period_days int DEFAULT 30) RETURNS TABLE(event_type text, route text, payload jsonb, created_at timestamptz)` | Drill-down de 1 usuario; LIMIT 500; ORDER BY created_at DESC |
-| `get_analytics_heatmap` | `(period_days int DEFAULT 30) RETURNS TABLE(dow int, hour int, event_count bigint)` | Apenas page_view; DOW 0=domingo (EXTRACT(DOW)); timezone America/Sao_Paulo |
+| `track_event` | `(p_event_type text, p_route text DEFAULT NULL, p_payload jsonb DEFAULT '{}', p_visitor_id text DEFAULT NULL) RETURNS void` | 4 args desde `20260522000001`. Se `auth.uid()` presente: INSERT com `user_id=uid, visitor_id=NULL`. Senão se `p_visitor_id` presente: INSERT com `user_id=NULL, visitor_id=p_visitor_id`. Senão: no-op silencioso. `GRANT EXECUTE TO anon, authenticated` (antes só authenticated) |
+| `get_analytics_kpis` | `(period_days int DEFAULT 30) RETURNS jsonb` | Retorna `{dau, wau, mau, total_users, active_users_period, unique_visitors_period, unique_authenticated_period, exports_period, page_views_period, logins_period}`. DAU/WAU/MAU usam `COUNT(DISTINCT COALESCE(user_id::text, visitor_id))` (anônimos contam). |
+| `get_analytics_by_dashboard` | `(period_days int DEFAULT 30) RETURNS TABLE(route text, page_views bigint, unique_users bigint, exports bigint, bytes_total bigint)` | `unique_users` agora conta atores únicos (autenticados + visitantes anônimos). `bytes_total` = soma de `payload->>'bytes'` em eventos export |
+| `get_analytics_by_user` | `(period_days int DEFAULT 30, p_search text DEFAULT '') RETURNS TABLE(user_id uuid, full_name text, role text, last_login timestamptz, page_views bigint, exports bigint, top_routes jsonb)` | Apenas autenticados — visitantes não têm `profile` row. `last_login` = MAX created_at WHERE event_type='login'; `top_routes` = array JSON de até 3 `{route, views}`; ILIKE em full_name se p_search não-vazio; ordenado DESC por page_views |
+| `get_analytics_user_timeline` | `(target_user_id uuid, period_days int DEFAULT 30) RETURNS TABLE(event_type text, route text, payload jsonb, created_at timestamptz)` | Drill-down de 1 usuário; LIMIT 500; ORDER BY created_at DESC |
+| `get_analytics_heatmap` | `(period_days int DEFAULT 30) RETURNS TABLE(dow int, hour int, event_count bigint)` | Apenas page_view; DOW 0=domingo (EXTRACT(DOW)); timezone America/Sao_Paulo. Inclui linhas anon. |
+| `get_analytics_anon_summary` | `(p_period_days int DEFAULT 30) RETURNS TABLE(unique_visitors bigint, total_page_views bigint, top_routes jsonb)` | Nova em `20260522000001`. KPI dedicado para seção "Anonymous Activity" em `/admin-analytics`. `top_routes` = `[{route, page_views}, ...]` LIMIT 20. Admin-only. |
 
 Sem entrada em `module_visibility` — `/admin-analytics` protegido por `useRoleGuard`. Sem retencao automatica (LGPD pendente — nao criar pg_cron sem aprovacao do CTO).
+
+### Anonymous Access (adicionada 2026-05-22)
+
+Migration: `20260522000001_anonymous_access.sql`. Torna o login opcional, introduzindo 3-tier visibility (Anon / Client / Admin).
+
+**Mudanças de schema:**
+
+| Objeto | Mudança |
+|---|---|
+| `module_visibility.is_visible_for_public` | Coluna nova `BOOLEAN NOT NULL DEFAULT TRUE`. CHECK constraint `module_visibility_public_implies_clients_chk` impede `public=true AND clients=false`. BEFORE INSERT/UPDATE trigger `trg_module_visibility_public_implies_clients` coerce `clients=true` quando `public=true` (self-healing). |
+| `app_events.user_id` | DROP NOT NULL (agora nullable). |
+| `app_events.visitor_id` | Coluna nova `TEXT`. |
+| `app_events` actor CHECK | `user_id IS NOT NULL OR visitor_id IS NOT NULL`. |
+| `stock_portfolios.is_public` | Coluna nova `BOOLEAN NOT NULL DEFAULT FALSE`. |
+| `stock_portfolios.user_id` | DROP NOT NULL (para portfolios públicos system-owned). |
+| `stock_portfolios` policy | Nova permissive policy `"anon and authed read public portfolios"` FOR SELECT TO anon, authenticated USING `is_public=TRUE`. Policy original do dono (FOR ALL via `auth.uid() = user_id`) preservada — RLS OR-combina permissive policies. |
+| `news_hunter_default_keywords` | Tabela nova `(keyword TEXT PK, created_at timestamptz)`. RLS ON. Policy SELECT TO anon, authenticated USING TRUE. Seed das 27 keywords previamente hardcoded em `seed_my_news_hunter_keywords()`. |
+| `news_articles` | Nova policy `"anon read news_articles"` FOR SELECT TO anon. |
+
+**RPCs novas/alteradas:**
+
+| RPC | Mudança |
+|---|---|
+| `get_module_visibility()` | Recriada com 4 colunas (`module_slug, is_visible_for_clients, is_visible_on_home, is_visible_for_public`). `GRANT EXECUTE TO anon, authenticated` (antes só authenticated). |
+| `set_module_public_visibility(p_slug, p_is_visible)` | Nova. Admin-only via `require_admin_mfa()`. Audit trail em `app_events` (event_type `admin.set_module_public_visibility`). |
+| `track_event` | Nova assinatura de 4 args (ver tabela App Analytics). Old 3-arg signature **DROPADA** — PostgREST resolve overload por nome de argumento; manter ambas causaria shadowing. Frontend foi atualizado no mesmo deploy. |
+| `get_default_news_keywords()` | Nova. Retorna `TEXT[]` das keywords default. `GRANT EXECUTE TO anon, authenticated`. |
+| `seed_my_news_hunter_keywords()` | Refatorada — agora lê de `news_hunter_default_keywords` em vez de lista hardcoded. Single source of truth para defaults. |
+| 5 RPCs analytics | Trocam `COUNT(DISTINCT user_id)` por `COUNT(DISTINCT COALESCE(user_id::text, visitor_id))` (ver App Analytics). |
+| `get_analytics_anon_summary(p_period_days)` | Nova (ver App Analytics). |
+
+**Seed:** 1 portfolio público `'00000000-0000-0000-0000-000000000001'` — "Brazilian Oil & Gas (default)" com `PETR4.SA, VBBR3.SA, BRAV3.SA, UGPA3.SA, RECV3.SA, PRIO3.SA`. UUID determinístico (idempotente). 27 keywords seed em `news_hunter_default_keywords` (`petróleo`, `Petrobras`, `Vibra`, `Brava`, `Ultrapar`, etc.).
+
+**Verificação anon-safety:** rodar `SET role anon; SELECT * FROM stock_portfolios;` — deve retornar apenas rows com `is_public=TRUE`. `get_advisors` deve continuar clean.
+
+### Pegadinhas — anonymous access
+
+**Dual-actor `app_events`:** sempre filtre por `(user_id IS NOT NULL OR visitor_id IS NOT NULL)` é redundante (CHECK garante), mas ao escrever queries cross-tier use `COALESCE(user_id::text, visitor_id)` em DISTINCT. LEFT JOIN em `profiles` para preservar anon rows (`p.role IS NULL OR p.role <> 'Admin'`). RPCs como `get_analytics_by_user` são intencionalmente authed-only — visitantes não têm UUID nem profile.
+
+**`track_event` 3-arg dropado:** a migration faz `DROP FUNCTION IF EXISTS public.track_event(text, text, jsonb)` antes do CREATE OR REPLACE da nova assinatura de 4 args. Frontend (`src/lib/tracking.ts`) foi atualizado no mesmo deploy. Se algum caller stale tentar a antiga, PostgREST retorna 404 — comportamento desejado, força refresh.
+
+**Cookie namespacing `sd_*` vs `sb-*`:** Supabase Auth reserva o prefixo `sb-` (`sb-access-token`, `sb-refresh-token`, etc). Cookies próprios do app devem usar prefixo distinto. Usamos `sd_*` (SectorData). O cookie de visitor anônimo é `sd_visitor_id` (HttpOnly, Secure, SameSite=Lax, Max-Age 31536000s = 1 ano), emitido por `src/proxy.ts`. **Nunca** crie cookies `sb-*` próprios — risco de colisão com a chain de auth do Supabase ou misread por SSR.
+
+**Self-healing trigger em `module_visibility`:** se um caller (frontend OU service-role direto) escreve `public=true AND clients=false`, o BEFORE trigger silenciosamente faz `clients=true` antes do INSERT/UPDATE. O CHECK constraint sobrevive como defesa em profundidade caso o trigger seja contornado (improvável, mas defensivo). UI do Admin Panel deve refletir esse comportamento — togglar Public=ON com Clients=OFF deve also toggle Clients=ON automaticamente.
 
 ### Sessions / Auth state
 
@@ -137,8 +188,8 @@ Todas com RLS habilitada, policy `acesso autenticado` FOR SELECT TO authenticate
 | Navios | `get_nd_*` | dash-navios-diesel |
 | D&G Margins | `get_dg_*` | dash-margins |
 | Price Bands | `get_price_bands_*` | dash-price-bands |
-| Profile / Admin | `get_my_*`, `set_*`, `upsert_my_*` | dash-admin |
-| News Hunter | `seed_my_news_hunter_keywords` | dash-news-hunter |
+| Profile / Admin | `get_my_*`, `set_*`, `upsert_my_*`, `set_module_public_visibility` | dash-admin |
+| News Hunter | `seed_my_news_hunter_keywords`, `get_default_news_keywords` | dash-news-hunter |
 | Generic / metrics | `get_metricas`, `classificar_agentes` | base |
 | MDIC Comex | `get_mdic_comex_filtros`, `get_mdic_comex_serie`, `get_mdic_comex_top_paises` | dash-mdic-comex |
 | ANP PPI | `get_anp_ppi_filtros`, `get_anp_ppi_media_serie`, `get_anp_ppi_locais_serie` | dash-anp-ppi |

@@ -21,11 +21,11 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 
 - **No API routes for Supabase data** — all backend logic in PostgreSQL RPC functions, called directly from browser via supabase-js anon key.
 - **Yahoo Finance proxied** through `/api/stocks/*` to avoid CORS.
-- **Auth guard** in `(dashboard)/layout.tsx` — redirects to `/login` if no session.
-- **Role-based visibility** — Two independent axes in `module_visibility`, loaded via `UserProfileContext`: `is_visible_for_clients` (Client access to module — Admin always sees) and `is_visible_on_home` (Home card gallery visibility for **all** users including Admin).
+- **Tiered auth (login is optional)** — `(dashboard)/layout.tsx` does **not** force `/login`. Anonymous visitors browse modules flagged `is_visible_for_public`; Clients (logged in) browse modules flagged `is_visible_for_clients`; Admins browse everything but must clear MFA (AAL2). Visitor cookie issued by `src/proxy.ts` (Next.js 16 middleware → proxy rename).
+- **Role-based visibility (3 axes)** — `module_visibility` carries three independent booleans, loaded via `UserProfileContext`: `is_visible_for_public` (Anon access — default true), `is_visible_for_clients` (Client access — Admin always sees) and `is_visible_on_home` (Home card gallery visibility for **all** users including Admin). Invariant: `is_visible_for_public=true` implies `is_visible_for_clients=true` (CHECK + self-healing trigger).
 - **Materialized views** `mv_ms_serie` / `mv_ms_serie_fast` for Market Share / Sales Volumes performance.
 - **GitHub Actions** as ETL — scrape → CSV/parquet → Supabase upsert.
-- **All tables have RLS enabled** — frontend cannot bypass; only service-role pipelines write to ingestion tables.
+- **All tables have RLS enabled** — frontend cannot bypass; only service-role pipelines write to ingestion tables. Anonymous reads use `anon` role; permissive policies open public surface area (`module_visibility`, `news_articles`, public `stock_portfolios`, `news_hunter_default_keywords`).
 
 ## Modules
 
@@ -165,10 +165,11 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | `vessel_registry`, `vessel_positions`, `port_arrivals`, `import_candidates` | — | AIS / port-call tracking |
 | `d_g_margins` | id | fuel_type, week, base_fuel, biofuel_component, federal_tax, state_tax, distribution_and_resale_margin, total |
 | `price_bands` | id | date, product, bba_import_parity, bba_import_parity_w_subsidy, bba_export_parity, petrobras_price |
-| `stock_portfolios` | uuid | user_id, name, tickers text[], groups jsonb, is_active |
-| `module_visibility` | module_slug | is_visible_for_clients, is_visible_on_home (default true) |
-| `news_articles` | url | domain, source_name, title, snippet, published_at, found_at, matched_keywords text[] |
+| `stock_portfolios` | uuid | user_id (nullable for system-owned public rows), name, tickers text[], groups jsonb, is_active, **is_public** (default false; anon SELECT policy opens public portfolios) |
+| `module_visibility` | module_slug | is_visible_for_clients, is_visible_on_home (default true), **is_visible_for_public** (default true; CHECK + BEFORE trigger enforce `public=true ⇒ clients=true`) |
+| `news_articles` | url | domain, source_name, title, snippet, published_at, found_at, matched_keywords text[] (anon SELECT policy added in `20260522000001`) |
 | `news_hunter_keywords` | (user_id, keyword) | created_at — per-user, RLS scoped |
+| `news_hunter_default_keywords` | keyword | created_at — 27 seed terms (`petróleo`, `Petrobras`, `Vibra`, etc.); single source of truth read by anon and authed users via `get_default_news_keywords()` |
 | `profiles` | id (FK auth.users) | role (Admin/Client), full_name, avatar_url |
 | `mdic_comex` | id | ano, mes, tipo (IMP/EXP), ncm, descricao_ncm, pais, uf, produto_combustivel, quantidade_kg, valor_fob_usd |
 | `anp_ppi` | id | data_referencia, produto, local, preco_ppi, unidade |
@@ -252,13 +253,35 @@ Extracted from the 10 Fase 3 dashboards to prevent visual drift. All live in [`s
 
 ## Auth & Roles
 
-- Guard: `(dashboard)/layout.tsx` → `supabase.auth.getSession()` → redirect `/login`
-- **Admin**: all modules + `/admin-panel` (role/visibility management)
-- **Client**: modules allowed by Admin only; enforced via `useModuleVisibilityGuard(slug)`
-- Role stored in `profiles`, loaded via `UserProfileContext`; `useRoleGuard` protects Admin pages
-- **Module visibility axes** (both in `module_visibility`, loaded once by `UserProfileContext`):
-  - `is_visible_for_clients` — whether a Client can access the module (Admin always can). Managed via Admin Panel → Permissions tab. RPC: `set_module_visibility`.
-  - `is_visible_on_home` — whether the module card appears in the `/home` gallery for **all** users (including Admin). Default `true`. Managed via Admin Panel → Card Images tab (Show on Home toggle). RPC: `set_module_home_visibility`.
+Three tiers share the same routing infra; the auth guard in `(dashboard)/layout.tsx` no longer forces `/login` — it only checks MFA (AAL2) for Admins who already have a session.
+
+| Tier | Auth state | Visibility | MFA |
+|------|-----------|-----------|-----|
+| **Anon** | No `supabase.auth` session | Modules with `is_visible_for_public=true` | N/A |
+| **Client** | Authenticated, `profiles.role='Client'` | Modules with `is_visible_for_clients=true` | Opt-in (optional) |
+| **Admin** | Authenticated, `profiles.role='Admin'` | All modules + `/admin-panel`, `/admin-analytics` | **Required** (AAL2 enforced; enrollment via `/profile/mfa`) |
+
+- Role derived in `UserProfileContext`: `profile?.role==='Admin' ? 'Admin' : profile ? 'Client' : 'Anon'`. Consumers branch on `role` instead of `profile?.role`.
+- `useModuleVisibilityGuard(slug)` is 3-tier: Admin always passes; Anon checks `publicVisibility[slug]`; Client checks `moduleVisibility[slug]`. Missing keys default to `true` (safe degradation). Redirect target: `/home`.
+- `useRoleGuard("Admin")` continues to protect Admin-only pages (`/admin-panel`, `/admin-analytics`); Admins without an enrolled MFA factor are redirected to `/profile/mfa`.
+- `/profile` redirects Anon → `/login` (per-user only, no public fallback).
+
+### Module visibility — three independent axes
+
+All in `module_visibility`, loaded once by `UserProfileContext` from RPC `get_module_visibility()` (granted to `anon` + `authenticated`):
+
+| Axis | Meaning | Managed via | RPC |
+|------|---------|-------------|-----|
+| `is_visible_for_public` | Whether an anonymous visitor can open the module. Default `true`. **Invariant:** `public=true` implies `clients=true` (CHECK + BEFORE trigger coerce automatically). | Admin Panel → Permissions tab (column "Public") | `set_module_public_visibility` |
+| `is_visible_for_clients` | Whether a logged-in Client can open the module (Admin always can). | Admin Panel → Permissions tab (column "Clients") | `set_module_visibility` |
+| `is_visible_on_home` | Whether the module card appears in the `/home` gallery for **all** users (including Admin). Default `true`. | Admin Panel → Card Images tab (Show on Home toggle) | `set_module_home_visibility` |
+
+### Anonymous visitor analytics
+
+- `src/proxy.ts` (Next.js 16 — formerly `middleware.ts`) issues an HttpOnly cookie `sd_visitor_id` (UUID v4, SameSite=Lax, Secure, Max-Age 1 year). Bots (UA matches `/bot|crawler|spider|crawling|slurp/i`) get no cookie.
+- `GET /api/visitor-id` exposes the cookie to the browser (HttpOnly hides it from `document.cookie`).
+- `track_event(event_type, route, payload, visitor_id)` accepts a 4th parameter for anonymous attribution. `app_events.user_id` is now nullable; `app_events.visitor_id` carries the anon UUID. CHECK `(user_id OR visitor_id)` ensures every row has an actor.
+- Cookie namespace: always `sd_*` (SectorData). The `sb-*` prefix is reserved by Supabase Auth (`sb-access-token`, `sb-refresh-token`) — never collide.
 
 ## Adding a New Dashboard (developer quick-start)
 

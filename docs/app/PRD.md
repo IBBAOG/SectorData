@@ -14,12 +14,16 @@ src/app/
   globals.css                       Estilos globais (co-mantido com Designer)
   login/                            Tela de login + auth
   api/stocks/                       Yahoo Finance proxy (mas dash-stocks consome)
+  api/visitor-id/                   GET handler — expõe cookie HttpOnly sd_visitor_id ao client-side
   (dashboard)/
-    layout.tsx                      Auth guard → /login
+    layout.tsx                      Tiered auth guard — login opcional; MFA gate Admin-only
     template-module/                Template para criar módulos novos (não é módulo)
 
+src/proxy.ts                        Visitor cookie middleware (Next.js 16 — renomeado de middleware.ts)
+
 src/components/                     Componentes COMPARTILHADOS
-  NavBar.tsx                        Config NAV_ENTRIES, dropdown de avatar
+  NavBar.tsx                        Config NAV_ENTRIES, dropdown de avatar, Sign in CTA para Anon
+  AnonCTA.tsx                       Banner "Sign in to ..." reutilizável para branches read-only
   PlotlyChart.tsx                   Wrapper react-plotly.js
   PeriodSlider.tsx                  rc-slider para range de datas
   CheckList.tsx                     Multi-select com Select All / Clear
@@ -28,11 +32,11 @@ src/components/                     Componentes COMPARTILHADOS
   (Componentes scoped por dashboard NÃO ficam aqui — ficam com o dash-*)
 
 src/context/
-  UserProfileContext.tsx            Profile + moduleVisibility
+  UserProfileContext.tsx            Profile + moduleVisibility + publicVisibility + visitorId + derived role tier
 
 src/hooks/                          Hooks COMPARTILHADOS
   useAutoRefresh.ts
-  useModuleVisibilityGuard.ts
+  useModuleVisibilityGuard.ts       3-tier guard (Admin / Client / Anon)
   useRoleGuard.ts
   useDebounce.ts
   (useStockQuote/History/Portfolios.ts são scoped — pertencem a dash-stocks)
@@ -40,7 +44,8 @@ src/hooks/                          Hooks COMPARTILHADOS
 src/lib/                            Helpers compartilhados (JS — chamando o que o dept supabase expõe)
   supabaseClient.ts                 Setup do cliente JS (anon key)
   rpc.ts                            Agregador de wrappers JS (cada seção pertence a um dash-*)
-  profileRpc.ts                     Wrappers JS de perfil (compartilhado com dash-admin)
+  profileRpc.ts                     Wrappers JS de perfil (compartilhado com dash-admin); inclui rpcSetModulePublicVisibility
+  tracking.ts                       trackEvent — lê visitorId do context, propaga para track_event RPC
   filterUtils.ts                    REGIAO_UF_MAP, helpers de data
   exportExcel.ts                    Export ExcelJS — downloadGenericExcel<T> (Tier 1) + wrappers específicos
   exportCsv.ts                      downloadCsv<T> único RFC4180 (substitui inline duplicado)
@@ -156,6 +161,43 @@ Esses componentes ficam no domínio do `worker_designer` e são montados pelos `
 ### Fase 2 — refactor por dashboard (não executar agora)
 
 Cada `worker_dash-*` é responsável por refatorar o seu próprio dashboard para o pattern dual-view. Receita em [`dual-view-pattern.md` § 8](dual-view-pattern.md#8-migration-recipe-existing-dashboard--dual-view). Ordem sugerida: priorizar primeiro os 6 dashboards com mockup mobile aprovado (`home`, `market-share`, `navios-diesel`, `news-hunter`, `stocks`, `anp-cdp`).
+
+## Anonymous access — login opcional, 3-tier visibility (2026-05-22)
+
+A partir da migration `20260522000001_anonymous_access.sql`, o app aceita visitantes anônimos. Três tiers compartilham a mesma infra do APP:
+
+| Tier | Auth state | Visibilidade controlada por |
+|---|---|---|
+| **Anon** | Sem `supabase.auth.session()` | `module_visibility.is_visible_for_public` |
+| **Client** | `profiles.role='Client'` | `module_visibility.is_visible_for_clients` |
+| **Admin** | `profiles.role='Admin'` + AAL2 (MFA) | sempre visível |
+
+**Infra compartilhada construída para suportar anon:**
+
+| Arquivo | Função |
+|---|---|
+| [`src/proxy.ts`](../../src/proxy.ts) | Next.js 16 renomeou `middleware.ts` → `proxy.ts`. Emite cookie HttpOnly `sd_visitor_id` (UUID v4, SameSite=Lax, Secure, Max-Age 1 ano) para visitantes não-bot. Echo no header `x-sd-visitor-id` para SSR ler sem re-parse. Matcher exclui `/api`, `/_next`, `/favicon`, `/icon`, `/.well-known`. UA regex `/bot\|crawler\|spider\|crawling\|slurp/i` não recebe cookie. |
+| [`src/app/api/visitor-id/route.ts`](../../src/app/api/visitor-id/route.ts) | GET handler retornando `{ visitorId }` do cookie HttpOnly — única forma do client-side ler o valor (HttpOnly = `document.cookie` invisível). |
+| [`src/components/AnonCTA.tsx`](../../src/components/AnonCTA.tsx) | Banner compartilhado "Sign in to ..." com props `message`, `ctaText`, link para `/login`. Consumido por `/stocks` (read-only public portfolio), `/news-hunter` (default keywords) e qualquer dashboard futuro com branch anon. **Owned pelo `worker_subgerente-app`** — `worker_dash-*` apenas consomem. |
+| [`src/context/UserProfileContext.tsx`](../../src/context/UserProfileContext.tsx) | Aceita `profile=null` (anon). Campos novos: `role: 'Admin' \| 'Client' \| 'Anon'` (derivado), `publicVisibility: Record<string, boolean>` (do RPC atualizado), `visitorId: string \| null` (lido via `/api/visitor-id` no mount). |
+| [`src/hooks/useModuleVisibilityGuard.ts`](../../src/hooks/useModuleVisibilityGuard.ts) | 3 branches: Admin → sempre `visible=true`; Anon → checa `publicVisibility[slug]`; Client → checa `moduleVisibility[slug]`. Default `true` em chave ausente (safe degradation). Redirect target: `/home`. |
+| [`src/app/(dashboard)/layout.tsx`](../../src/app/(dashboard)/layout.tsx) | Auth guard reescrito: **sem redirect mandatório** para Anon. MFA gate (`getAuthenticatorAssuranceLevel()`) só roda quando há `session` E `profile.role='Admin'`. Page-view tracking passa `visitorId` quando Anon. |
+| [`src/components/NavBar.tsx`](../../src/components/NavBar.tsx) | Items filtrados por role: Anon → só `is_visible_for_public`; Client → só `is_visible_for_clients`; Admin → tudo. Canto superior direito: `<Link href="/login">Sign in</Link>` quando Anon; avatar/dropdown quando logado. "My Profile" / "Admin Panel" só renderizam para logados. |
+| [`src/lib/tracking.ts`](../../src/lib/tracking.ts) | `trackEvent` lê `visitorId` do context e passa como 4o arg do RPC `track_event`. Fire-and-forget — falha silenciosa se ambos `auth.uid()` e `visitorId` são NULL (acontece em SSR/bot — não quebra UX). |
+| [`src/app/(dashboard)/profile/page.tsx`](../../src/app/(dashboard)/profile/page.tsx) | `useEffect` — se `role==='Anon'` → `router.replace('/login')`. Profile é per-user only; visitantes não têm onde editar. |
+
+**Componente compartilhado para CTA de upgrade** — `AnonCTA.tsx` é a única forma de mostrar "Sign in to ..." dentro de um dashboard. Não duplique inline.
+
+**Regra G (CLAUDE.md) — coordenação de paralelismo:** `worker_subgerente-app` cria `AnonCTA.tsx` na Fase B; `worker_dash-stocks` e `worker_dash-news-hunter` NÃO criam o arquivo na Fase C — apenas importam como dependência futura.
+
+**Cookie namespacing:** sempre `sd_*` para cookies do app. `sb-*` é reservado pelo Supabase Auth — colidir confunde a chain de SSR auth. Ver `docs/supabase/PRD.md` § "Pegadinhas — anonymous access".
+
+**3-tier guard checklist para dashboard novo:**
+
+1. `useModuleVisibilityGuard("<slug>")` já cobre os 3 tiers automaticamente — não precisa de branches por role no dash.
+2. Se o dashboard tem branch anon-leve (ex: portfolio default público, keywords default), o hook expõe `readOnly: boolean` e a View renderiza `<AnonCTA />` em vez de UI de CRUD.
+3. `/profile` redirect anon → `/login` é o padrão para qualquer dashboard per-user (sem fallback público).
+4. Page-view tracking via `trackEvent` continua transparente — `tracking.ts` resolve visitor_id automaticamente.
 
 ## NÃO está mais no escopo (foi pro dept `worker_supabase`)
 
