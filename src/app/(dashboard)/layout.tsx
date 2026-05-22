@@ -31,6 +31,9 @@ export default function DashboardLayout({
   const supabase = getSupabaseClient();
   const [checking, setChecking] = useState(true);
 
+  // Initial session check — anonymous visitors are allowed through (no
+  // redirect to /login). The MFA gate runs only for authenticated Admins
+  // and is moved into a separate effect after the profile loads.
   useEffect(() => {
     if (!supabase) {
       setChecking(false);
@@ -39,72 +42,33 @@ export default function DashboardLayout({
     let cancelled = false;
     supabase.auth.getSession().then(async ({ data }) => {
       if (cancelled) return;
-      if (!data.session) {
-        router.replace("/login");
-        return;
-      }
 
-      // MFA assurance check: if the user has a verified factor but has not
-      // satisfied the AAL2 challenge yet (nextLevel = aal2, currentLevel =
-      // aal1), send them back to /login so the second-factor challenge form
-      // can be presented before we render protected UI.
-      try {
-        if (cancelled) return;
-        const { data: aalData } =
-          await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-        if (cancelled) return;
-        const currentLevel = aalData?.currentLevel;
-        const nextLevel = aalData?.nextLevel;
-        if (nextLevel === "aal2" && currentLevel !== "aal2") {
-          router.replace("/login");
-          return;
+      // Login event tracking — fires once per browser session, gated by
+      // sessionStorage and only when an actual session exists.
+      if (data.session) {
+        try {
+          const sessionId = data.session.access_token?.slice(0, 24) ?? "anon";
+          const storageKey = `analytics_login_logged_${sessionId}`;
+          if (
+            typeof window !== "undefined" &&
+            !window.sessionStorage.getItem(storageKey)
+          ) {
+            window.sessionStorage.setItem(storageKey, "1");
+            // No visitor_id needed for logged-in events — the RPC uses auth.uid.
+            trackEvent("login");
+          }
+        } catch {
+          // sessionStorage unavailable (private mode, etc.) — fail silent.
         }
-      } catch {
-        // If the MFA call fails (network etc.), prefer hard fail-closed —
-        // sending the user back to the login screen surfaces the issue.
-        if (cancelled) return;
-        router.replace("/login");
-        return;
       }
 
-      if (cancelled) return;
-
-      // Fire 'login' event once per browser session, keyed by Supabase
-      // session access token so a refresh in the same tab does not retrigger.
-      try {
-        const sessionId = data.session.access_token?.slice(0, 24) ?? "anon";
-        const storageKey = `analytics_login_logged_${sessionId}`;
-        if (
-          typeof window !== "undefined" &&
-          !window.sessionStorage.getItem(storageKey)
-        ) {
-          window.sessionStorage.setItem(storageKey, "1");
-          trackEvent("login");
-        }
-      } catch {
-        // sessionStorage unavailable (private mode, etc.) — fail silent.
-      }
-      if (cancelled) return;
       setChecking(false);
     });
+
     return () => {
       cancelled = true;
     };
-  }, [router, supabase]);
-
-  // Page-view tracking: fires on every pathname change once auth is settled.
-  useEffect(() => {
-    if (checking || !pathname) return;
-    if (TRACKING_EXCLUDED_ROUTES.has(pathname)) return;
-    trackEvent("page_view", pathname);
-  }, [pathname, checking]);
-
-  // Per-route browser tab title.
-  useEffect(() => {
-    if (!pathname) return;
-    const label = ROUTE_TITLES[pathname];
-    document.title = label ? `${label} | O&G Data` : "O&G Data";
-  }, [pathname]);
+  }, [supabase]);
 
   if (!supabase) {
     return (
@@ -124,6 +88,7 @@ export default function DashboardLayout({
   return (
     <UserProfileProvider supabase={supabase}>
       <NewsHunterProvider supabase={supabase}>
+        <AuthSideEffects pathname={pathname} router={router} />
         <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
           <FirstLoginGate />
           <div style={{ flex: 1 }}>{children}</div>
@@ -135,9 +100,70 @@ export default function DashboardLayout({
   );
 }
 
+/* ── Auth-side effects (MFA gate, page-view tracking, document.title) ──────
+   Lives inside the provider so it has access to `role`, `loading` and
+   `visitorId` from UserProfileContext. The MFA challenge is enforced only
+   for Admins; Client and Anon visitors pass through. */
+function AuthSideEffects({
+  pathname,
+  router,
+}: {
+  pathname: string | null;
+  router: ReturnType<typeof useRouter>;
+}) {
+  const supabase = getSupabaseClient();
+  const { role, loading, visitorId } = useUserProfile();
+
+  // Admin MFA gate — runs only after the profile resolves and the user is
+  // identified as Admin. AAL2 challenge must be satisfied; otherwise we
+  // bounce back to /login where the challenge form lives.
+  useEffect(() => {
+    if (loading || !supabase) return;
+    if (role !== "Admin") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: aalData } =
+          await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        if (cancelled) return;
+        const currentLevel = aalData?.currentLevel;
+        const nextLevel = aalData?.nextLevel;
+        if (nextLevel === "aal2" && currentLevel !== "aal2") {
+          router.replace("/login");
+        }
+      } catch {
+        // Fail-closed: if the MFA introspection errors out, route to /login.
+        router.replace("/login");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, role, router, supabase]);
+
+  // Page-view tracking: fires on every pathname change once auth has settled.
+  // Anonymous visitors are attributed via visitorId; logged-in users via
+  // auth.uid server-side. Excluded routes are skipped entirely.
+  useEffect(() => {
+    if (loading || !pathname) return;
+    if (TRACKING_EXCLUDED_ROUTES.has(pathname)) return;
+    trackEvent("page_view", pathname, {}, visitorId);
+  }, [pathname, loading, visitorId]);
+
+  // Per-route browser tab title.
+  useEffect(() => {
+    if (!pathname) return;
+    const label = ROUTE_TITLES[pathname];
+    document.title = label ? `${label} | O&G Data` : "O&G Data";
+  }, [pathname]);
+
+  return null;
+}
+
 /* ── First-login modal ───────────────────────────────────────────────────────
    Shown once when the authenticated user has no display name set yet.
    Disappears automatically after a successful save (profile.full_name is set).
+   Anonymous visitors (`profile === null`) never see this modal.
    ─────────────────────────────────────────────────────────────────────────── */
 function FirstLoginGate() {
   const { profile, loading, refreshProfile } = useUserProfile();
@@ -146,8 +172,8 @@ function FirstLoginGate() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Don't render while loading or when name is already set
-  if (loading || profile?.full_name) return null;
+  // Don't render while loading, when no profile (anon), or when name is set.
+  if (loading || !profile || profile.full_name) return null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

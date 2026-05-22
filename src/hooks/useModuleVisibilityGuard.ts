@@ -6,12 +6,19 @@ import { useRouter } from "next/navigation";
 import { useUserProfile } from "../context/UserProfileContext";
 
 /**
- * Guards a module page against Client users when the module has been hidden
- * by an Admin. Admins always pass through regardless of visibility settings.
+ * Guards a module page against the three user tiers.
  *
- * Defaults to visible=true while loading to prevent a redirect flicker on
- * initial page load (the redirect fires only after the profile/visibility
- * fetch resolves and the module is confirmed hidden).
+ *   - Admin   → always visible
+ *   - Client  → checks `moduleVisibility[slug]`  (is_visible_for_clients)
+ *   - Anon    → checks `publicVisibility[slug]`  (is_visible_for_public)
+ *
+ * Defaults to `visible=true` while loading to prevent a redirect flicker on
+ * initial page load; the redirect fires only after the profile/visibility
+ * fetch resolves and the module is confirmed hidden for the current tier.
+ *
+ * Missing visibility-map keys default to `true` (safe degradation): a freshly
+ * deployed module without a `module_visibility` row stays accessible until
+ * an Admin explicitly toggles it off.
  *
  * Usage:
  *   const { visible, loading } = useModuleVisibilityGuard("market-share");
@@ -24,13 +31,21 @@ export function useModuleVisibilityGuard(slug: string): {
   visible: boolean;
   loading: boolean;
 } {
-  const { profile, moduleVisibility, loading } = useUserProfile();
+  const { role, moduleVisibility, publicVisibility, loading } = useUserProfile();
   const router = useRouter();
 
-  // Admins always have access; Clients check the visibility map.
   // While loading, treat as visible to avoid premature redirect.
-  const isAdmin = !loading && profile?.role === "Admin";
-  const visible = loading || isAdmin || (moduleVisibility[slug] ?? true);
+  let visible: boolean;
+  if (loading) {
+    visible = true;
+  } else if (role === "Admin") {
+    visible = true;
+  } else if (role === "Anon") {
+    visible = publicVisibility[slug] ?? true;
+  } else {
+    // Client
+    visible = moduleVisibility[slug] ?? true;
+  }
 
   useEffect(() => {
     if (!loading && !visible) {

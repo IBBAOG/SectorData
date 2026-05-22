@@ -240,21 +240,30 @@ export default function HomeClient({ initialPreviews }: HomeClientProps) {
   const router = useRouter();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
-  const { profile, moduleVisibility, homeVisibility, loading: profileLoading } = useUserProfile();
+  const {
+    role,
+    moduleVisibility,
+    publicVisibility,
+    homeVisibility,
+    loading: profileLoading,
+  } = useUserProfile();
 
   // initialPreviews arrive from the server — no client-side fetch needed.
   const cardPreviews = initialPreviews;
 
+  // Three-tier filtering:
+  //   - homeVisibility applies to EVERYONE (the "Show on Home" admin toggle)
+  //   - Admin sees every card past the home filter
+  //   - Client filters by moduleVisibility[slug] (is_visible_for_clients)
+  //   - Anon filters by publicVisibility[slug] (is_visible_for_public)
   const visibleCards = profileLoading
     ? CARDS
     : CARDS.filter((card) => {
-        // homeVisibility applies to ALL users (Admin + Client).
-        // Default true when key is missing (safe degradation).
         if (!(homeVisibility[card.slug] ?? true)) return false;
-
-        // moduleVisibility (is_visible_for_clients) only restricts Client users.
-        if (profile?.role === "Admin") return true;
-        return moduleVisibility[hrefToSlug(card.href)] ?? true;
+        if (role === "Admin") return true;
+        const slug = hrefToSlug(card.href);
+        if (role === "Anon") return publicVisibility[slug] ?? true;
+        return moduleVisibility[slug] ?? true;
       });
 
   return (

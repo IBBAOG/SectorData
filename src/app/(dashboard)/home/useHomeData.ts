@@ -324,7 +324,13 @@ const CARDS_WITH_CATEGORY: HomeCardDef[] = CARDS.map((c) => ({
 // ---- Hook -------------------------------------------------------------------
 
 export function useHomeData(): UseHomeData {
-  const { profile, moduleVisibility, homeVisibility, loading } = useUserProfile();
+  const {
+    role,
+    moduleVisibility,
+    publicVisibility,
+    homeVisibility,
+    loading,
+  } = useUserProfile();
 
   const [search, setSearchState] = useState("");
   const [collapsed, setCollapsed] = useState<HomeSectionState>({
@@ -342,17 +348,21 @@ export function useHomeData(): UseHomeData {
     setCollapsed((prev) => ({ ...prev, [cat]: !prev[cat] }));
   }, []);
 
-  // Apply visibility filters (same logic as original HomeClient)
+  // Apply visibility filters across the three tiers:
+  //   - homeVisibility (is_visible_on_home) applies to EVERYONE.
+  //   - Admin sees every card past that filter.
+  //   - Client filters by moduleVisibility (is_visible_for_clients).
+  //   - Anon filters by publicVisibility (is_visible_for_public).
   const visibilityFiltered = useMemo<HomeCardDef[]>(() => {
     const base = CARDS_WITH_CATEGORY.filter((card) => {
-      // homeVisibility applies to ALL users (Admin + Client).
       if (!(homeVisibility[card.slug] ?? true)) return false;
-      // moduleVisibility (is_visible_for_clients) only restricts Client users.
-      if (profile?.role === "Admin") return true;
-      return moduleVisibility[hrefToSlug(card.href)] ?? true;
+      if (role === "Admin") return true;
+      const slug = hrefToSlug(card.href);
+      if (role === "Anon") return publicVisibility[slug] ?? true;
+      return moduleVisibility[slug] ?? true;
     });
     return base;
-  }, [profile, moduleVisibility, homeVisibility]);
+  }, [role, moduleVisibility, publicVisibility, homeVisibility]);
 
   // Apply search query filter (title + description, case-insensitive)
   const visibleCards = useMemo<HomeCardDef[]>(() => {
@@ -376,19 +386,26 @@ export function useHomeData(): UseHomeData {
     for (const card of visibleCards) {
       map[card.category].push(card);
     }
-    // Admin entries (profile + admin-panel) are static, always appended.
-    // They are not in module_visibility so we include them directly.
-    const q = search.trim().toLowerCase();
-    const filteredAdmin = q
-      ? ADMIN_CARDS.filter(
-          (c) =>
-            c.title.toLowerCase().includes(q) ||
-            c.description.toLowerCase().includes(q),
-        )
-      : ADMIN_CARDS;
-    map.admin.push(...filteredAdmin);
+    // Admin/Profile static entries: only meaningful for logged-in users. Anon
+    // visitors have no profile to view and no admin panel to manage, and the
+    // page guards already redirect them to /login — so suppress the cards
+    // entirely to avoid a dead-end tap.
+    if (role !== "Anon") {
+      const q = search.trim().toLowerCase();
+      const baseAdmin = role === "Admin"
+        ? ADMIN_CARDS                                          // both Profile + Admin Panel
+        : ADMIN_CARDS.filter((c) => c.slug !== "admin-panel"); // Client: Profile only
+      const filteredAdmin = q
+        ? baseAdmin.filter(
+            (c) =>
+              c.title.toLowerCase().includes(q) ||
+              c.description.toLowerCase().includes(q),
+          )
+        : baseAdmin;
+      map.admin.push(...filteredAdmin);
+    }
     return map;
-  }, [visibleCards, search]);
+  }, [visibleCards, search, role]);
 
   return {
     visibleCards,
