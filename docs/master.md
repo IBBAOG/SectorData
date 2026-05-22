@@ -138,30 +138,47 @@ São os pontos onde um departamento depende de outro. Mudanças nestes contratos
 | Dados Locais | Escreve via supabase-py (service key) — popula `d_g_margins`, `price_bands` |
 | Alertas | Lê via supabase-py — verifica mudanças em fontes monitoradas |
 
-**Tabela de eventos de uso (`app_events`):** criada pela feature Admin Analytics. Ingestão exclusivamente via RPC `track_event(event_type, route, payload)` — o SQL captura `auth.uid()` internamente; INSERT direto do frontend é bloqueado por RLS. SELECT restrito a Admin via RLS. Admins são excluídos dos agregados pelo filtro `role <> 'Admin'` dentro das RPCs read.
+**Tabela de eventos de uso (`app_events`):** criada pela feature Admin Analytics. Ingestão exclusivamente via RPC `track_event(event_type, route, payload, visitor_id)` — o SQL captura `auth.uid()` internamente; INSERT direto do frontend é bloqueado por RLS. SELECT restrito a Admin via RLS. Admins são excluídos dos agregados pelo filtro `role <> 'Admin'` dentro das RPCs read. **Dual-actor:** desde `20260522000001`, `app_events.user_id` é nullable; nova coluna `visitor_id TEXT` cobre visitantes anônimos. CHECK `(user_id IS NOT NULL OR visitor_id IS NOT NULL)` garante atribuição. Analytics RPCs usam `COUNT(DISTINCT COALESCE(user_id::text, visitor_id))` para contar atores únicos atravessando ambos os tiers.
 
 | RPC de ingestion | Chamado por |
 |---|---|
-| `track_event(event_type, route, payload)` | `(dashboard)/layout.tsx` (login, page_view) + `ExportPanel` / `ExportModal` (export) |
+| `track_event(p_event_type, p_route, p_payload, p_visitor_id)` | `(dashboard)/layout.tsx` (login, page_view) + `ExportPanel` / `ExportModal` (export). 4o param `p_visitor_id` é opcional (NULL para usuários autenticados); `GRANT EXECUTE TO anon, authenticated` |
 
 | RPC Admin read-only | Retorna |
 |---|---|
-| `get_analytics_kpis(period)` | DAU/WAU/MAU, total users, active users, exports, page views, logins |
+| `get_analytics_kpis(period)` | DAU/WAU/MAU, total users, active users, exports, page views, logins + `unique_visitors_period` (anônimos) + `unique_authenticated_period` |
 | `get_analytics_by_dashboard(period)` | Engajamento agregado por rota |
-| `get_analytics_by_user(period)` | Engajamento por usuário |
+| `get_analytics_by_user(period)` | Engajamento por usuário (autenticado; visitantes não aparecem aqui por design) |
 | `get_analytics_user_timeline(user_id, period)` | Timeline de eventos de um usuário específico |
-| `get_analytics_heatmap(period)` | Matriz dia-da-semana × hora |
+| `get_analytics_heatmap(period)` | Matriz dia-da-semana × hora (inclui anônimos) |
+| `get_analytics_anon_summary(p_period_days)` | `(unique_visitors, total_page_views, top_routes JSONB)` — usado pela seção "Anonymous Activity" em `/admin-analytics` |
 
 **Contrato `module_visibility` (APP ↔ Supabase):**
 
 | RPC | Assinatura | Consumidor |
 |---|---|---|
-| `get_module_visibility` | `() → (module_slug, is_visible_for_clients, is_visible_on_home)` | `UserProfileContext` — carregado no login |
-| `set_module_visibility` | `(p_slug, p_is_visible)` | Admin Panel → aba Permissions |
+| `get_module_visibility` | `() → (module_slug, is_visible_for_clients, is_visible_on_home, is_visible_for_public)` | `UserProfileContext` — carregado no mount, callable por `anon` + `authenticated` |
+| `set_module_visibility` | `(p_slug, p_is_visible)` | Admin Panel → aba Permissions (coluna "Clients") |
 | `set_module_home_visibility` | `(p_slug, p_is_visible)` | Admin Panel → aba Card Images (Show on Home toggle) |
+| `set_module_public_visibility` | `(p_slug, p_is_visible)` | Admin Panel → aba Permissions (coluna "Public"). Admin-only via `require_admin_mfa()` |
 
 `is_visible_for_clients`: controla acesso do role Client ao módulo. Admin sempre acessa.
 `is_visible_on_home`: controla exibição do card na galeria `/home` para TODOS os usuários (inclusive Admin). Default `true`.
+`is_visible_for_public`: controla acesso anônimo (sem sessão) ao módulo. Default `true`. **Invariante:** `is_visible_for_public=true` implica `is_visible_for_clients=true` (CHECK + BEFORE trigger `trg_module_visibility_public_implies_clients` coerce automaticamente).
+
+### 3-tier visibility (Anon / Client / Admin) — adicionado 2026-05-22
+
+A partir da migration `20260522000001_anonymous_access.sql`, o login é **opcional**. Três tiers de acesso ao dashboard:
+
+| Tier | Como entra | Visibilidade controlada por |
+|---|---|---|
+| **Anon** | Sem sessão (visitante anônimo) | `module_visibility.is_visible_for_public` |
+| **Client** | Logado, `profiles.role='Client'` | `module_visibility.is_visible_for_clients` |
+| **Admin** | Logado, `profiles.role='Admin'`, AAL2 (MFA) | sempre visível, sem checagem |
+
+O auth guard em `src/app/(dashboard)/layout.tsx` **não força redirect para `/login`** para Anons — apenas o MFA gate continua ativo para Admins logados sem AAL2. Visitantes anônimos recebem um cookie HttpOnly `sd_visitor_id` (UUID v4, SameSite=Lax, Secure, Max-Age 1 ano) emitido por `src/proxy.ts` (Next.js 16 renomeou `middleware.ts` → `proxy.ts`), usado pelo `track_event` para atribuição de analytics sem PII. Bots (UA `bot|crawler|spider|crawling|slurp`) não recebem cookie.
+
+Componente compartilhado para CTA de upgrade: `src/components/AnonCTA.tsx` (banner "Sign in to ..." consumido por `/stocks`, `/news-hunter` e qualquer dashboard que exponha branch read-only para anon).
 
 **Contrato clipping (`/news-hunter` → Next.js API):**
 
