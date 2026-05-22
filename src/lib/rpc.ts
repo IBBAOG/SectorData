@@ -2876,3 +2876,30 @@ export async function rpcGetSubsidyTrackerDiesel(
 
   return allRows;
 }
+
+// ─── MODULE: News Hunter (/src/app/(dashboard)/news-hunter/page.tsx) ─────────
+
+/**
+ * Fetches the curated default keyword set used to populate `/news-hunter` for
+ * anonymous visitors and as the first-login seed for authenticated users.
+ *
+ * Backed by RPC `get_default_news_keywords()` (SECURITY DEFINER, granted to
+ * `anon` and `authenticated`) which reads from `news_hunter_default_keywords` —
+ * the single source of truth for the default set. See migration
+ * 20260522000001_anonymous_access.sql sections 9 + 10.
+ *
+ * Returns `[]` on any error so callers can fall through to their own fallback
+ * (e.g. the hardcoded `FALLBACK_KEYWORDS` list in `NewsHunterContext`).
+ */
+export async function rpcGetDefaultNewsKeywords(
+  supabase: SupabaseClient,
+): Promise<string[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_default_news_keywords");
+    if (error) throw error;
+    return (data ?? []) as string[];
+  } catch (e) {
+    console.error("get_default_news_keywords failed", e);
+    return [];
+  }
+}

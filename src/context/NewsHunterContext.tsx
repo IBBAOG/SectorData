@@ -11,6 +11,8 @@ import {
 } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { rpcGetDefaultNewsKeywords } from "../lib/rpc";
+
 export type NewsArticle = {
   url: string;
   domain: string;
@@ -48,6 +50,13 @@ interface NewsHunterContextValue {
   setKeywordEntries: React.Dispatch<React.SetStateAction<KeywordEntry[]>>;
   loading: boolean;
   error: string | null;
+  /**
+   * True when the current viewer has no Supabase session. In this mode the
+   * keyword set is loaded from the curated default list (RPC
+   * `get_default_news_keywords`) rather than the per-user table, and keyword
+   * mutations should be a no-op (the UI hides Add/Remove controls).
+   */
+  readOnly: boolean;
 }
 
 const POLL_INTERVAL_MS = 60_000;
@@ -107,6 +116,11 @@ export function NewsHunterProvider({
   const [keywordsLoaded, setKeywordsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // True when there is no Supabase session — the dashboard is rendered for an
+  // anonymous visitor. Determined once during keyword bootstrap and stable for
+  // the lifetime of the provider (anon → signed-in transitions force a full
+  // page reload anyway via the login route).
+  const [readOnly, setReadOnly] = useState(false);
 
   // Derived string-only list — kept for legacy consumers (topic pills, etc.).
   const keywords = useMemo(() => keywordEntries.map((e) => e.keyword), [keywordEntries]);
@@ -127,9 +141,19 @@ export function NewsHunterProvider({
   const seenUrlsRef = useRef<Set<string>>(new Set());
   const flashTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
-  // Load per-user keyword list; seed defaults on first visit. Always selects
-  // `match_type` alongside `keyword` so the filter logic and UI badges can
-  // distinguish substring vs exact (whole-word) matching.
+  // Load the keyword list. Two paths:
+  //
+  //   - Authenticated  → select rows from `news_hunter_keywords` filtered by
+  //                      auth.uid() (RLS). Seed defaults on the first visit
+  //                      via `seed_my_news_hunter_keywords()`.
+  //   - Anonymous      → call `get_default_news_keywords()` (anon-grantable
+  //                      SECURITY DEFINER RPC) which returns the curated
+  //                      default list. Skip the per-user table and the seed
+  //                      RPC entirely — both require auth.uid.
+  //
+  // Always selects `match_type` alongside `keyword` so the filter logic and
+  // UI badges can distinguish substring vs exact (whole-word) matching. Anon
+  // defaults are always `substring`.
   useEffect(() => {
     if (!supabase) return;
     let cancelled = false;
@@ -138,6 +162,28 @@ export function NewsHunterProvider({
       match_type: "substring",
     }));
     void (async () => {
+      // Detect anon vs authenticated before any query — the per-user table
+      // returns 0 rows for anon (RLS), which is indistinguishable from a
+      // brand-new authed user. Branching on session up front keeps the two
+      // paths cleanly separated.
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (cancelled) return;
+      const isAnon = !sessionData.session;
+      setReadOnly(isAnon);
+
+      if (isAnon) {
+        // Anon path: defaults from RPC; fall back to hardcoded list on failure.
+        const defaults = await rpcGetDefaultNewsKeywords(supabase);
+        if (cancelled) return;
+        const entries: KeywordEntry[] = (
+          defaults.length > 0 ? defaults : FALLBACK_KEYWORDS
+        ).map((k) => ({ keyword: k, match_type: "substring" as const }));
+        setKeywordEntries(entries);
+        setKeywordsLoaded(true);
+        return;
+      }
+
+      // Authenticated path (unchanged).
       const { data, error: err } = await supabase
         .from("news_hunter_keywords")
         .select("keyword, match_type")
@@ -329,6 +375,7 @@ export function NewsHunterProvider({
         setKeywordEntries,
         loading,
         error,
+        readOnly,
       }}
     >
       {children}
