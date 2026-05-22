@@ -33,7 +33,13 @@ export function useStockPortfolios() {
   // `role` is supplied by the Phase B `UserProfileContext` rewrite. It
   // resolves to "Admin" | "Client" | "Anon". Until that frontend infra is
   // merged, TypeScript may not know about the field — that's expected.
-  const { profile, role } = useUserProfile();
+  //
+  // `loading` is also pulled here so we can gate the initial fetch on the
+  // profile/session resolving. Without this gate, the hook would fire the
+  // anon `is_public` query during the brief window where `role` defaults to
+  // "Anon", then fire the authed query once the session resolves — wasting
+  // an RPC and flashing the public portfolio at authenticated users.
+  const { profile, role, loading } = useUserProfile();
   const userId = profile?.id;
   const isAnon = role === "Anon";
   const readOnly = isAnon;
@@ -43,6 +49,11 @@ export function useStockPortfolios() {
 
   const refresh = useCallback(async () => {
     if (!supabase) return;
+    // Wait until the session/profile resolves before deciding which branch
+    // (anon `is_public` vs authed `user_id = auth.uid()`) to query. Keeps
+    // `isLoading` true during the gap so the UI shows the spinner rather
+    // than a momentary "empty" or wrong-tier state.
+    if (loading) return;
     setIsLoading(true);
 
     if (isAnon) {
@@ -87,7 +98,7 @@ export function useStockPortfolios() {
       );
     }
     setIsLoading(false);
-  }, [supabase, userId, isAnon]);
+  }, [supabase, userId, isAnon, loading]);
 
   useEffect(() => {
     refresh();

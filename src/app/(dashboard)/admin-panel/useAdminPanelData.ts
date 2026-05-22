@@ -23,7 +23,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useRoleGuard } from "../../../hooks/useRoleGuard";
 import { useUserProfile } from "../../../context/UserProfileContext";
 import {
-  rpcGetModuleVisibility,
   rpcSetModuleVisibility,
   rpcSetModuleHomeVisibility,
   rpcSetModulePublicVisibility,
@@ -201,7 +200,13 @@ function formatDateBR(dateStr: string): string {
 
 export function useAdminPanelData(): UseAdminPanelData {
   const { allowed, loading: roleLoading } = useRoleGuard("Admin");
-  const { moduleVisibility, homeVisibility, refreshVisibility, profile: myProfile } = useUserProfile();
+  const {
+    moduleVisibility,
+    homeVisibility,
+    publicVisibility,
+    refreshVisibility,
+    profile: myProfile,
+  } = useUserProfile();
   const supabase = getSupabaseClient();
 
   // ── Section state ──────────────────────────────────────────────────────────
@@ -298,32 +303,20 @@ export function useAdminPanelData(): UseAdminPanelData {
   );
 
   // ── Public Visibility (Anonymous access) ───────────────────────────────────
-  // Source of truth lives in `module_visibility.is_visible_for_public` (added
-  // by migration 20260522000001). UserProfileContext does not yet expose this
-  // map, so the hook fetches it directly via rpcGetModuleVisibility on mount
-  // and after each mutation. Phase B will eventually surface publicVisibility
-  // through context — when that lands, this local fetch can be removed in
-  // favor of the context map.
+  // Source of truth is `publicVisibility` on UserProfileContext (Phase B), which
+  // is loaded once per page alongside moduleVisibility/homeVisibility from a
+  // single rpcGetModuleVisibility call. We mirror it locally only to support
+  // optimistic updates — same pattern as `localVis` and `localHomeVis` above.
+  // After a mutation, `refreshVisibility()` re-fetches the shared map; the
+  // useEffect below re-seeds the local mirror from the refreshed context value.
   const [localPublicVis, setLocalPublicVis] = useState<Record<string, boolean>>({});
   const [savingPublic, setSavingPublic] = useState<string | null>(null);
   const [savedPublicSlug, setSavedPublicSlug] = useState<string | null>(null);
   const [publicToggleError, setPublicToggleError] = useState<{ slug: string; message: string } | null>(null);
 
-  const refreshPublicVis = useCallback(async () => {
-    if (!supabase) return;
-    const rows = await rpcGetModuleVisibility(supabase);
-    const publicMap: Record<string, boolean> = {};
-    for (const row of rows) {
-      // Default to true if the column is missing (e.g. migration not yet
-      // deployed on this env) — matches the DB DEFAULT TRUE.
-      publicMap[row.module_slug] = row.is_visible_for_public ?? true;
-    }
-    setLocalPublicVis(publicMap);
-  }, [supabase]);
-
   useEffect(() => {
-    if (allowed) refreshPublicVis();
-  }, [allowed, refreshPublicVis]);
+    setLocalPublicVis({ ...publicVisibility });
+  }, [publicVisibility]);
 
   const handlePublicToggle = useCallback(
     async (slug: string, newValue: boolean) => {
@@ -360,14 +353,17 @@ export function useAdminPanelData(): UseAdminPanelData {
         if (newValue && !prevClient) {
           await rpcSetModuleVisibility(supabase, slug, true);
         }
+        // Single refresh repopulates moduleVisibility, homeVisibility AND
+        // publicVisibility in the context (one rpcGetModuleVisibility call
+        // hydrates all three maps). The useEffect above syncs localPublicVis
+        // from the updated context value.
         await refreshVisibility();
-        await refreshPublicVis();
         setSavedPublicSlug(slug);
         setTimeout(() => setSavedPublicSlug((s) => (s === slug ? null : s)), 1500);
       }
       setSavingPublic(null);
     },
-    [supabase, savingPublic, localPublicVis, localVis, refreshVisibility, refreshPublicVis],
+    [supabase, savingPublic, localPublicVis, localVis, refreshVisibility],
   );
 
   // ── Members ────────────────────────────────────────────────────────────────
