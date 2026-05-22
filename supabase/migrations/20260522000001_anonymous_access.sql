@@ -5,8 +5,9 @@
 -- (Anon < Client < Admin).
 --
 -- Summary:
---   1. module_visibility: + is_visible_for_public column (default TRUE),
---      CHECK + trigger enforcing invariant "public ⇒ clients".
+--   1. module_visibility: + is_visible_for_public column (default FALSE —
+--      closed; admin opt-in per-module), CHECK + trigger enforcing invariant
+--      "public ⇒ clients".
 --   2. get_module_visibility(): recreated with 4 columns; GRANT TO anon too.
 --   3. set_module_public_visibility(): new admin-only, MFA-gated RPC mirroring
 --      set_module_visibility / set_module_home_visibility.
@@ -37,9 +38,16 @@
 -- ══════════════════════════════════════════════════════════════════════════════
 -- 1. module_visibility: + is_visible_for_public
 -- ══════════════════════════════════════════════════════════════════════════════
+--
+-- DEFAULT FALSE — closed by default; admin opens per-module via the
+-- /admin-panel Permissions tab once a dashboard is verified anon-safe. The
+-- closed default also keeps the CHECK invariant (public ⇒ clients) trivially
+-- satisfied on existing rows where is_visible_for_clients may be FALSE.
+-- The follow-up migration 20260522000002 seeds the two adapted dashboards
+-- (/stocks and /news-hunter) to TRUE.
 
 ALTER TABLE public.module_visibility
-  ADD COLUMN IF NOT EXISTS is_visible_for_public BOOLEAN NOT NULL DEFAULT TRUE;
+  ADD COLUMN IF NOT EXISTS is_visible_for_public BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Invariant: public ⇒ clients. A module visible to anonymous visitors must
 -- also be visible to logged-in Clients (otherwise the anon would lose access
