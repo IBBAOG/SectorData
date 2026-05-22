@@ -157,3 +157,33 @@ export async function rpcSetModuleHomeVisibility(
     return null;
   }
 }
+
+/**
+ * Toggles one module's visibility for anonymous (logged-out) visitors.
+ *
+ * DB-level invariant: `is_visible_for_public = true` implies
+ * `is_visible_for_clients = true` — the trigger coerces clients=TRUE on the
+ * server when this flag flips on. The UI should mirror that constraint by
+ * also flipping the Clients toggle in the same handler, so the user does not
+ * see a stale state until the next refresh.
+ *
+ * Only succeeds if the caller has role='Admin' (enforced server-side via
+ * `require_admin_mfa`). Returns the updated row, or null on error.
+ */
+export async function rpcSetModulePublicVisibility(
+  supabase: SupabaseClient,
+  slug: string,
+  isVisible: boolean,
+): Promise<ModuleConfig | null> {
+  try {
+    const { data, error } = await supabase.rpc("set_module_public_visibility", {
+      p_slug: slug,
+      p_is_visible: isVisible,
+    });
+    if (error) throw error;
+    return (data as ModuleConfig) ?? null;
+  } catch (e) {
+    console.error("[profileRpc] set_module_public_visibility error:", e);
+    return null;
+  }
+}

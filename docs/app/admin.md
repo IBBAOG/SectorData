@@ -142,6 +142,34 @@ Both Views call `saveName()` and `refreshProfile()` is invoked inside the hook o
 
 No `[mobile-only]` tag needed for this commit: the mobile view is a fresh redesign of the same data the desktop view exposes, and the hook is the single source of truth for both.
 
+### Wave — Anonymous access (3-tier visibility) (added 2026-05-21)
+
+The login-required gate is being relaxed in favour of a 3-tier visibility model. Per-module access is split into three independent flags in `module_visibility`:
+
+| Flag | Tier | UI surface |
+|---|---|---|
+| `is_visible_for_public` | Anon (logged-out visitors) | Permissions tab — new toggle |
+| `is_visible_for_clients` | Client (logged-in non-Admin) | Permissions tab — existing toggle |
+| `is_visible_on_home` | All roles (controls Home gallery card) | Card Images tab — existing toggle |
+
+**Invariant (Public ⇒ Clients):** a module visible to anonymous visitors must also be visible to Clients (otherwise a user would lose access on sign-in). The database enforces this in two places:
+1. A `CHECK` constraint (`module_visibility_public_implies_clients_chk`) rejects pathological inserts.
+2. A `BEFORE INSERT/UPDATE` trigger coerces `is_visible_for_clients = TRUE` whenever `is_visible_for_public = TRUE`, so the constraint never fires in normal flow.
+
+**UI parity with the trigger.** `handlePublicToggle` in `useAdminPanelData.ts` mirrors the coercion: when Public is turned ON while Clients is OFF, it flips the local Clients state to ON optimistically, calls `set_module_public_visibility`, then explicitly calls `set_module_visibility(slug, true)` so the global `UserProfileContext.moduleVisibility` map (consumed by NavBar / `useModuleVisibilityGuard`) refreshes within the same session. Without that second call, the trigger would have updated the DB but the React tree would still see the old `is_visible_for_clients=false`. The Clients toggle is rendered visually locked ON (disabled, 0.5 opacity) while Public is ON.
+
+**Permissions tab layout (both views).**
+- Desktop: 3-column grid — *Module* | *Public* | *Clients*, with a header row showing column labels and an explanatory paragraph above ("Public = anonymous visitors. Clients = logged-in tier. Enabling Public also enables Clients.").
+- Mobile: each module renders as a single card with a title + description block, then two stacked rows ("Public — Anonymous visitors" / "Clients — Logged-in Client tier"), each with its own switch. When Public is ON, the Clients row's sub-label changes to "Locked on (Public is enabled)" and the switch is disabled.
+
+**New RPC wrappers** (in `src/lib/profileRpc.ts`):
+- `rpcSetModulePublicVisibility(supabase, slug, isVisible)` — calls `set_module_public_visibility(p_slug, p_is_visible)` (Admin-only via `require_admin_mfa()` server-side).
+- `rpcGetModuleVisibility` already returns the new `is_visible_for_public` column from the rebuilt `get_module_visibility()` RPC. `ModuleConfig.is_visible_for_public` is an optional field on the type so older envs without the migration still typecheck.
+
+**Hook-side fetching.** `useAdminPanelData` calls `rpcGetModuleVisibility` directly on mount to populate `localPublicVis`, independently of `UserProfileContext`. This keeps the admin-panel change isolated from Phase B's wider context expansion; once Phase B's `publicVisibility` map lands in context, the local fetch can be replaced with a context read.
+
+**Dual-view sync.** Both views in the same commit. No `[desktop-only]` / `[mobile-only]` tag — both views received the new Public toggle, the constraint visual ("locked on"), and the updated descriptive paragraph.
+
 ## Páginas — descrição rápida
 
 ### `/home`
@@ -155,7 +183,10 @@ Perfil do usuário logado. Edição inline do nome (`profile-name-edit-icon-btn`
 ### `/admin-panel`
 Protegida por `useRoleGuard("Admin")`. Funcionalidades (5 seções na sidebar):
 - **Members** — listar todos os users com role; promover/demover Admin ↔ Client.
-- **Permissions** — toggle `is_visible_for_clients` por módulo; afeta só Clients. Admin sempre vê tudo.
+- **Permissions** — 3-tier visibility per module:
+  - `is_visible_for_public` toggle — affects anonymous (logged-out) visitors.
+  - `is_visible_for_clients` toggle — affects logged-in Client tier users. Forced ON whenever Public is ON (DB invariant + UI lock).
+  - Admin always has access regardless of these flags.
 - **Card Images** — upload de imagem por módulo (home page cards) + toggle **"Show on Home"** (`is_visible_on_home`): liga/desliga a exibição do card na galeria `/home` para TODOS os usuários (incluindo Admin). Default `true`. Controles independentes: pode ter `is_visible_on_home=false` (card some do Home pra todos) e `is_visible_for_clients=true` (não afeta, já sumiu). Ou `is_visible_on_home=true` + `is_visible_for_clients=false` (Admin vê no Home, Client não vê).
 - **Alert Emails** — gerenciar destinatários de alertas automáticos.
 - **Data Input** — editar linhas de tabelas de referência diretamente via PostgREST (ver seção abaixo).
@@ -166,9 +197,10 @@ Protegida por `useRoleGuard("Admin")`. Funcionalidades (5 seções na sidebar):
 |---|---|---|
 | `get_my_profile` | leitura | profile |
 | `upsert_my_profile` | escrita | profile (edição de nome) |
-| `get_module_visibility` | leitura | admin-panel + UserProfileContext — retorna `(module_slug, is_visible_for_clients, is_visible_on_home)` |
-| `set_module_visibility` | escrita | admin-panel → aba Permissions |
+| `get_module_visibility` | leitura | admin-panel + UserProfileContext — retorna `(module_slug, is_visible_for_clients, is_visible_on_home, is_visible_for_public)` (Phase A) |
+| `set_module_visibility` | escrita | admin-panel → aba Permissions (Clients toggle) |
 | `set_module_home_visibility` | escrita | admin-panel → aba Card Images (Show on Home toggle) |
+| `set_module_public_visibility` | escrita | admin-panel → aba Permissions (Public toggle); Admin-only, MFA-gated |
 | `get_all_users_with_roles` | leitura | admin-panel |
 | `set_user_role` | escrita | admin-panel |
 | `seed_my_news_hunter_keywords` | escrita | first-login (chamada por dash-admin para popular keywords default no novo user) |
@@ -182,10 +214,12 @@ Protegida por `useRoleGuard("Admin")`. Funcionalidades (5 seções na sidebar):
 
 ### `module_visibility`
 - PK: `module_slug`
-- Colunas: `is_visible_for_clients BOOLEAN`, `is_visible_on_home BOOLEAN NOT NULL DEFAULT true`
-- RLS: read pra authenticated, write pra Admin via RPC.
-- `is_visible_for_clients`: controls Client visibility only (Admin always sees). Managed via Permissions tab.
-- `is_visible_on_home`: controls Home gallery visibility for ALL users including Admin. Managed via Card Images tab "Show on Home" toggle. Default `true` (backward-compatible).
+- Colunas: `is_visible_for_clients BOOLEAN`, `is_visible_on_home BOOLEAN NOT NULL DEFAULT true`, `is_visible_for_public BOOLEAN NOT NULL DEFAULT true` (added 2026-05-21 via migration `20260522000001_anonymous_access.sql`)
+- RLS: read for anon + authenticated (Phase A opened anon SELECT), write only via Admin RPC.
+- `is_visible_for_public`: controls anonymous (logged-out) visitor access. Managed via Permissions tab "Public" toggle. RPC: `set_module_public_visibility` (Admin-only, MFA-gated).
+- `is_visible_for_clients`: controls Client tier visibility only (Admin always sees). Managed via Permissions tab "Clients" toggle. RPC: `set_module_visibility`.
+- `is_visible_on_home`: controls Home gallery visibility for ALL users including Admin. Managed via Card Images tab "Show on Home" toggle. Default `true` (backward-compatible). RPC: `set_module_home_visibility`.
+- **Invariant:** `is_visible_for_public = true` ⇒ `is_visible_for_clients = true`. Enforced by both a `CHECK` constraint (`module_visibility_public_implies_clients_chk`) and a `BEFORE INSERT/UPDATE` trigger that coerces clients=TRUE when public flips ON.
 
 > **Tech debt**: ambas criadas via [`sql/create_profiles_and_visibility.sql`](../../sql/create_profiles_and_visibility.sql) aplicado direto no Dashboard, **não em migration versionada**.
 
@@ -229,10 +263,11 @@ Workflow disparado pelo Subgerente APP quando ele cria um dashboard novo:
 
 1. **Inserir em `module_visibility`:**
    ```sql
-   INSERT INTO module_visibility (module_slug, is_visible_for_clients)
-   VALUES ('<slug>', true)
+   INSERT INTO module_visibility (module_slug, is_visible_for_clients, is_visible_on_home, is_visible_for_public)
+   VALUES ('<slug>', true, true, true)
    ON CONFLICT (module_slug) DO NOTHING;
    ```
+   *(default `is_visible_for_public = true` since 2026-05-21 — new modules are visible to anon by default; flip to `false` here if the module should be Client-or-Admin only at launch.)*
 
 2. **Garantir toggle no `/admin-panel`** — a UI de admin-panel idealmente faz auto-discovery via query a `module_visibility`. Se não, adicionar explicitamente.
 

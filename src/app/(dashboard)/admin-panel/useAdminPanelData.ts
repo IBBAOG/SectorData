@@ -23,8 +23,10 @@ import { useCallback, useEffect, useState } from "react";
 import { useRoleGuard } from "../../../hooks/useRoleGuard";
 import { useUserProfile } from "../../../context/UserProfileContext";
 import {
+  rpcGetModuleVisibility,
   rpcSetModuleVisibility,
   rpcSetModuleHomeVisibility,
+  rpcSetModulePublicVisibility,
   rpcGetAllUsersWithRoles,
   rpcSetUserRole,
 } from "../../../lib/profileRpc";
@@ -133,6 +135,16 @@ export interface UseAdminPanelData {
   savedHomeSlug: string | null;
   homeToggleError: { slug: string; message: string } | null;
   handleHomeToggle: (slug: string, newValue: boolean) => Promise<void>;
+
+  // Public visibility (anonymous-visitor access toggle).
+  // DB-level invariant: public=true ⇒ clients=true. The handler enforces the
+  // same coercion client-side so the Clients toggle visually flips on as soon
+  // as Public is enabled, without waiting for the round-trip refresh.
+  localPublicVis: Record<string, boolean>;
+  savingPublic: string | null;
+  savedPublicSlug: string | null;
+  publicToggleError: { slug: string; message: string } | null;
+  handlePublicToggle: (slug: string, newValue: boolean) => Promise<void>;
 
   // Card previews
   localPreviews: Record<string, string>;
@@ -285,6 +297,79 @@ export function useAdminPanelData(): UseAdminPanelData {
     [supabase, savingHome, localHomeVis, refreshVisibility],
   );
 
+  // ── Public Visibility (Anonymous access) ───────────────────────────────────
+  // Source of truth lives in `module_visibility.is_visible_for_public` (added
+  // by migration 20260522000001). UserProfileContext does not yet expose this
+  // map, so the hook fetches it directly via rpcGetModuleVisibility on mount
+  // and after each mutation. Phase B will eventually surface publicVisibility
+  // through context — when that lands, this local fetch can be removed in
+  // favor of the context map.
+  const [localPublicVis, setLocalPublicVis] = useState<Record<string, boolean>>({});
+  const [savingPublic, setSavingPublic] = useState<string | null>(null);
+  const [savedPublicSlug, setSavedPublicSlug] = useState<string | null>(null);
+  const [publicToggleError, setPublicToggleError] = useState<{ slug: string; message: string } | null>(null);
+
+  const refreshPublicVis = useCallback(async () => {
+    if (!supabase) return;
+    const rows = await rpcGetModuleVisibility(supabase);
+    const publicMap: Record<string, boolean> = {};
+    for (const row of rows) {
+      // Default to true if the column is missing (e.g. migration not yet
+      // deployed on this env) — matches the DB DEFAULT TRUE.
+      publicMap[row.module_slug] = row.is_visible_for_public ?? true;
+    }
+    setLocalPublicVis(publicMap);
+  }, [supabase]);
+
+  useEffect(() => {
+    if (allowed) refreshPublicVis();
+  }, [allowed, refreshPublicVis]);
+
+  const handlePublicToggle = useCallback(
+    async (slug: string, newValue: boolean) => {
+      if (!supabase || savingPublic) return;
+      const prevPublic = localPublicVis[slug] ?? true;
+      const prevClient = localVis[slug] ?? true;
+
+      // Optimistic update — also flip Clients on when Public is turned on,
+      // because the DB trigger enforces the invariant (public=true ⇒
+      // clients=true). Reflecting this in the UI before the round-trip avoids
+      // a confusing "Public on, Clients off" intermediate state.
+      setLocalPublicVis((prev) => ({ ...prev, [slug]: newValue }));
+      if (newValue && !prevClient) {
+        setLocalVis((prev) => ({ ...prev, [slug]: true }));
+      }
+      setSavingPublic(slug);
+      setPublicToggleError(null);
+
+      const result = await rpcSetModulePublicVisibility(supabase, slug, newValue);
+      if (!result) {
+        // Rollback both toggles on error.
+        setLocalPublicVis((prev) => ({ ...prev, [slug]: prevPublic }));
+        if (newValue && !prevClient) {
+          setLocalVis((prev) => ({ ...prev, [slug]: prevClient }));
+        }
+        setPublicToggleError({ slug, message: "Failed to save. Please try again." });
+        setTimeout(() => setPublicToggleError((e) => (e?.slug === slug ? null : e)), 4000);
+      } else {
+        // If Public was turned on while Clients was off, the DB trigger has
+        // already coerced is_visible_for_clients=TRUE — sync it explicitly so
+        // the global UserProfileContext map (used by NavBar / guards) updates
+        // too. Without this call, NavBar would only see the change after the
+        // user reloads the page.
+        if (newValue && !prevClient) {
+          await rpcSetModuleVisibility(supabase, slug, true);
+        }
+        await refreshVisibility();
+        await refreshPublicVis();
+        setSavedPublicSlug(slug);
+        setTimeout(() => setSavedPublicSlug((s) => (s === slug ? null : s)), 1500);
+      }
+      setSavingPublic(null);
+    },
+    [supabase, savingPublic, localPublicVis, localVis, refreshVisibility, refreshPublicVis],
+  );
+
   // ── Members ────────────────────────────────────────────────────────────────
   const [users, setUsers] = useState<UserWithRole[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
@@ -426,6 +511,12 @@ export function useAdminPanelData(): UseAdminPanelData {
     savedHomeSlug,
     homeToggleError,
     handleHomeToggle,
+
+    localPublicVis,
+    savingPublic,
+    savedPublicSlug,
+    publicToggleError,
+    handlePublicToggle,
 
     localPreviews,
     uploadingSlug,
