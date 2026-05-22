@@ -36,6 +36,7 @@ import {
   CloseIcon,
 } from "../../../../components/dashboard/mobile";
 import MobileTabBar from "../../../../components/dashboard/mobile/MobileTabBar";
+import AnonCTA from "../../../../components/AnonCTA";
 import {
   useStocksData,
   CHART_RANGES,
@@ -976,7 +977,8 @@ export default function MobileView(): React.ReactElement {
   const { visible, loading: guardLoading } =
     useModuleVisibilityGuard("stocks");
   const { profile } = useUserProfile();
-  const { mobileTab, setMobileTab, isDark, toggleTheme } = useStocksData();
+  const { mobileTab, setMobileTab, isDark, toggleTheme, readOnly } =
+    useStocksData();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [editorOpen, setEditorOpen] = useState(false);
@@ -992,8 +994,13 @@ export default function MobileView(): React.ReactElement {
 
   if (guardLoading || !visible) return <></>;
 
-  const BOTTOM_TAB_KEYS = ["portfolios", "watch", "compare", "profile"] as const;
-  type BottomTabKey = (typeof BOTTOM_TAB_KEYS)[number];
+  // Anonymous viewers don't get the "Profile" tab — they have nothing to
+  // edit. Tapping a sign-in CTA at the top of the screen sends them to /login.
+  const BOTTOM_TAB_KEYS = (
+    readOnly
+      ? (["portfolios", "watch", "compare"] as const)
+      : (["portfolios", "watch", "compare", "profile"] as const)
+  ) satisfies readonly (MobileTab | "profile")[];
   const bottomTabs = BOTTOM_TAB_KEYS.map((key) => ({
     key,
     label:
@@ -1105,6 +1112,19 @@ export default function MobileView(): React.ReactElement {
         </div>
       </div>
 
+      {/* Sign-in invitation for anonymous viewers — between the search bar
+          and the tab content. AnonCTA is self-styled and adapts to both
+          themes via its own color tokens. */}
+      {readOnly && (
+        <div style={{ padding: "8px 16px 0" }}>
+          <AnonCTA
+            message="Sign in to create and manage your own portfolios."
+            ctaText="Sign in"
+            ctaHref="/login"
+          />
+        </div>
+      )}
+
       {/* Tab content */}
       <main>
         {mobileTab === "portfolios" && (
@@ -1121,18 +1141,23 @@ export default function MobileView(): React.ReactElement {
         tabs={bottomTabs}
         onChange={(key) => {
           if (key === "profile") {
-            setEditorOpen(true);
+            // Defensive: even if "profile" is in the tab list, anon viewers
+            // never open the editor — they hit the AnonCTA above instead.
+            if (!readOnly) setEditorOpen(true);
             return;
           }
           setMobileTab(key as MobileTab);
         }}
       />
 
-      {/* Portfolio editor sheet */}
-      <PortfolioEditorSheet
-        open={editorOpen}
-        onClose={() => setEditorOpen(false)}
-      />
+      {/* Portfolio editor sheet — never rendered for anon viewers since
+          they can't mutate portfolios. */}
+      {!readOnly && (
+        <PortfolioEditorSheet
+          open={editorOpen}
+          onClose={() => setEditorOpen(false)}
+        />
+      )}
     </div>
   );
 }

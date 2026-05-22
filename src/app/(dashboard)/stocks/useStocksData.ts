@@ -139,6 +139,13 @@ export interface UseStocksData {
   portfolios: StockPortfolio[];
   activePortfolio: StockPortfolio | null;
   portfolioLoading: boolean;
+  /**
+   * True when the current viewer cannot mutate portfolios — currently only
+   * anonymous visitors. Views should hide CRUD controls (New / Edit /
+   * Delete portfolio) when this is true. The mutation callbacks below will
+   * no-op in that case as a defense in depth.
+   */
+  readOnly: boolean;
   createPortfolio: (name: string, groups: PortfolioGroup[]) => Promise<void>;
   updatePortfolio: (
     id: string,
@@ -216,6 +223,7 @@ export function useStocksData(): UseStocksData {
     portfolios,
     activePortfolio,
     isLoading: portfolioLoading,
+    readOnly,
     createPortfolio,
     updatePortfolio,
     deletePortfolio,
@@ -415,6 +423,7 @@ export function useStocksData(): UseStocksData {
     portfolios,
     activePortfolio,
     portfolioLoading,
+    readOnly,
     createPortfolio,
     updatePortfolio,
     deletePortfolio,

@@ -21,9 +21,10 @@ Returns:
 | Field | Type | Description |
 |---|---|---|
 | `theme / isDark / toggleTheme` | — | Dark/light preference, persisted to localStorage |
-| `portfolios / activePortfolio` | `StockPortfolio[]` | All user portfolios; active is the one marked `is_active` |
+| `portfolios / activePortfolio` | `StockPortfolio[]` | Portfolios visible to the current viewer (own rows for Admin/Client; public rows for Anon); active is the one marked `is_active` |
 | `portfolioLoading` | boolean | Supabase loading state |
-| `createPortfolio / updatePortfolio / deletePortfolio / setActivePortfolio` | functions | PostgREST CRUD |
+| `readOnly` | boolean | True for anonymous viewers — both Views hide CRUD controls when set; mutation callbacks no-op as defense in depth |
+| `createPortfolio / updatePortfolio / deletePortfolio / setActivePortfolio` | functions | PostgREST CRUD (no-op when `readOnly`) |
 | `quotes / quoteMap / quotesLoading / refetchQuotes` | — | Live quotes for all portfolio tickers + CHART_SHORTCUTS |
 | `isMarketOpen` | boolean | B3 market status (useAutoRefresh) |
 | `periodReturns` | `Map<symbol, PeriodReturn>` | YTD / MTD ref prices |
@@ -98,10 +99,30 @@ src/app/api/stocks/                 Yahoo Finance proxy (Next.js API)
 
 `stock_portfolios`:
 - PK: `uuid`
-- Colunas: `user_id, name, tickers text[], groups jsonb, is_active`
-- **Acesso**: PostgREST direto via supabase-js (não via RPC). RLS garante user_id scope.
+- Colunas: `user_id` (nullable), `name`, `tickers text[]`, `groups jsonb`, `is_active`, `is_public` (default `FALSE`)
+- **Acesso**: PostgREST direto via supabase-js (não via RPC).
+  - Owner CRUD policy scopes `WHERE auth.uid() = user_id`.
+  - Permissive RLS policy `anon and authed read public portfolios` permite SELECT por anon e authenticated quando `is_public = TRUE`.
+- **Seed público**: row UUID `00000000-0000-0000-0000-000000000001` "Brazilian Oil & Gas (default)" com tickers `PETR4.SA, VBBR3.SA, BRAV3.SA, UGPA3.SA, RECV3.SA, PRIO3.SA`. Visível para todos os visitantes anônimos.
 
-Migrations: `20260401000000_stock_portfolios.sql`, `20260401000001_stock_portfolio_groups.sql`.
+Migrations: `20260401000000_stock_portfolios.sql`, `20260401000001_stock_portfolio_groups.sql`, `20260522000001_anonymous_access.sql` (seção 8).
+
+## Anonymous viewer mode (added 2026-05-21)
+
+`/stocks` aceita 3 tiers de visitantes:
+
+| Role | Source | Portfolios visíveis | CRUD |
+|---|---|---|---|
+| Admin / Client | `useUserProfile().role === 'Admin' \| 'Client'` | `WHERE user_id = auth.uid()` | Full (New / Edit / Delete) |
+| Anon | `useUserProfile().role === 'Anon'` | `WHERE is_public = TRUE` (default = Brazilian Oil & Gas) | Hidden — `readOnly` flag |
+
+Componentes/padrões:
+
+- `useStockPortfolios` lê `role` do `UserProfileContext` (Phase B) e roteia o query path. Retorna `readOnly: true` quando anon.
+- `useStocksData` repassa `readOnly` no return type — ambas views consomem.
+- `desktop/View.tsx` esconde botões "New", gear (Edit) e o empty-state "Create your first portfolio" quando `readOnly`. Renderiza `<AnonCTA />` acima do grid.
+- `mobile/View.tsx` remove a aba "Profile" do `MobileBottomTabBar`, fecha o `PortfolioEditorSheet`, e renderiza `<AnonCTA />` entre a search bar e o tab content.
+- `AnonCTA` (em `src/components/AnonCTA.tsx`, owned by Phase B) é um banner com brand-orange invitation pro `/login`.
 
 ## Yahoo Finance Proxy (importante)
 
@@ -193,3 +214,5 @@ Identidade flat, uppercase, no-radius — **propositalmente diferente do resto d
 - Adicionar border-radius no Market Watch.
 - Mexer em RPCs do Supabase pra portfolios — eles são PostgREST direto.
 - Tabela nova sem RLS por `user_id`.
+- Renderizar controles de CRUD de portfolios quando `readOnly === true` (anon). Sempre cheque `readOnly` antes.
+- Permitir que mutações (`createPortfolio`/`updatePortfolio`/`deletePortfolio`/`setActivePortfolio`) sejam chamadas em anon. O hook já no-ops, mas a UI não deve nem oferecer a possibilidade.
