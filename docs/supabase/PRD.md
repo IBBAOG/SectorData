@@ -145,7 +145,6 @@ Todas com RLS habilitada, policy `acesso autenticado` FOR SELECT TO authenticate
 | Tabela | PK | Colunas-chave | Migration | Pipeline |
 |---|---|---|---|---|
 | `mdic_comex` | (ano, mes, flow, ncm_codigo, pais) | volume_kg, valor_fob_usd. **Continua viva** após retirada de `/mdic-comex` (2026-05-25) — agora alimenta `/imports-exports` Panel C ("Import Price") via `get_imports_exports_fob_price_serie`. | `20260504000012_mdic_comex.sql` | `pipelines/mdic_comex_sync.py` |
-| `anp_ppi` | (data_fim, produto, local) | preco, variacao_pct, unidade | `20260504000002_anp_precos.sql` | `pipelines/anp/precos/01_ppi_sync.py` |
 | `anp_precos_produtores` | (data_inicio, produto, regiao) | preco, unidade | `20260504000002_anp_precos.sql` | `pipelines/anp/precos/02_precos_produtores_sync.py` |
 | `anp_glp` | (ano, mes, distribuidora, categoria) | vendas_kg | `20260504000002_anp_precos.sql` | `pipelines/anp/glp_sync.py` |
 | `anp_daie` | (ano, mes, produto, operacao) | volume_m3, valor_usd | `20260504000003_anp_fase3.sql` | `pipelines/anp/fase3/01_daie_sync.py` |
@@ -235,7 +234,6 @@ Todas as 5 RPCs: `STABLE`, `SECURITY INVOKER`, `SET search_path = public`, `GRAN
 | News Hunter | `seed_my_news_hunter_keywords`, `get_default_news_keywords` | dash-news-hunter |
 | Generic / metrics | `get_metricas`, `classificar_agentes` | base |
 | MDIC Comex | ~~`get_mdic_comex_filtros`, `get_mdic_comex_serie`, `get_mdic_comex_top_paises`, `get_mdic_comex_aggregated`, `get_mdic_comex_export_count`~~ — **DROPPED 2026-05-25** com a retirada de `/mdic-comex`. A tabela `mdic_comex` continua viva, alimentada pelo `etl_mdic_comex.yml`, e é consumida pelo `/imports-exports` Panel C via `get_imports_exports_fob_price_serie`. | ~~dash-mdic-comex~~ (sub-PRD arquivado em `docs/app/_deprecated/mdic-comex.md`) |
-| ANP PPI | `get_anp_ppi_filtros`, `get_anp_ppi_media_serie`, `get_anp_ppi_locais_serie` | dash-anp-ppi |
 | ANP Preços Produtores | `get_anp_precos_produtores_filtros`, `get_anp_precos_produtores_serie` | dash-anp-precos-produtores |
 | ANP GLP | `get_anp_glp_filtros`, `get_anp_glp_serie` | dash-anp-glp |
 | Imports & Exports | `get_imports_exports_filtros`, `get_imports_exports_paises_stacked`, `get_imports_exports_importers_stacked`, `get_imports_exports_yoy_table`, `get_imports_exports_exports_serie` — consolidam DAIE + Desembaraços (sem `anp_painel_imp_dist`, que foi dropada). Migration: `20260525000010_imports_exports_enrichment.sql`. RPCs antigas `get_anp_daie_*`, `get_anp_desembaracos_*`, `get_anp_painel_imp_*` (8 funções) foram DROPPED na mesma migration. | dash-imports-exports |
