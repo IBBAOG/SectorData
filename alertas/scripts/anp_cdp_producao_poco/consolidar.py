@@ -8,9 +8,8 @@ e gera o Parquet:
 
 Schema longo (1 linha por poço × ambiente × mês):
     ano, mes, ambiente, estado, bacia, nome_poco_anp, nome_poco_operador,
-    campo, operador, num_contrato, oleo_bbl_dia, condensado_bbl_dia,
-    petroleo_bbl_dia, gas_natural_assoc_mm3_dia, gas_natural_n_assoc_mm3_dia,
-    gas_natural_total_mm3_dia, gas_royalties, agua_bbl_dia,
+    campo, operador, num_contrato, oleo_bbl_dia,
+    petroleo_bbl_dia, gas_natural_total_mm3_dia, agua_bbl_dia,
     instalacao_destino, tipo_instalacao, tempo_prod_hs_mes
 
 Cobertura:
@@ -79,12 +78,8 @@ _COLS = [
     "num_contrato",                 # 6
     "periodo",                      # 7  (YYYY/MM)
     "oleo_bbl_dia",                 # 8
-    "condensado_bbl_dia",           # 9
     "petroleo_bbl_dia",             # 10
-    "gas_natural_assoc_mm3_dia",    # 11 (sub: "Associado")
-    "gas_natural_n_assoc_mm3_dia",  # 12 (sub: "Não Associado")
     "gas_natural_total_mm3_dia",    # 13 (sub: "Gás Total")
-    "gas_royalties",                # 14
     "agua_bbl_dia",                 # 15
     "instalacao_destino",           # 16
     "tipo_instalacao",              # 17
@@ -202,7 +197,7 @@ def _ler_csv(raw: bytes, ambiente: str) -> pd.DataFrame | None:
 
     # Numeric cols (vírgula decimal)
     num_cols = [c for c in novo_df.columns if any(k in c for k in (
-        "oleo", "petroleo", "condensado", "gas", "agua", "tempo", "royalt"))]
+        "oleo", "petroleo", "gas", "agua", "tempo"))]
     for c in num_cols:
         novo_df[c] = (novo_df[c].astype(str)
                               .str.replace(".", "", regex=False)
@@ -247,12 +242,8 @@ def _ler_csv_avulso(path: Path, ano: int, mes: int, ambiente: str) -> pd.DataFra
         "Número do Contrato":           "num_contrato",
         "Período":                      "periodo",
         "Óleo (bbl/dia)":               "oleo_bbl_dia",
-        "Condensado (bbl/dia)":         "condensado_bbl_dia",
         "Petróleo (bbl/dia)":           "petroleo_bbl_dia",
-        "Gás Natural (Mm³/dia) Assoc":     "gas_natural_assoc_mm3_dia",
-        "Gás Natural (Mm³/dia) N Assoc":   "gas_natural_n_assoc_mm3_dia",
         "Gás Natural (Mm³/dia) Total":     "gas_natural_total_mm3_dia",
-        "Volume Gás Royalties (m³/mês)":   "gas_royalties",
         "Água (bbl/dia)":               "agua_bbl_dia",
         "Instalação Destino":           "instalacao_destino",
         "Tipo Instalação":              "tipo_instalacao",
@@ -271,7 +262,7 @@ def _ler_csv_avulso(path: Path, ano: int, mes: int, ambiente: str) -> pd.DataFra
 
     # Numeric: formato BR (1.234,56) se sep=';'; US (1234.56) se sep=','
     num_cols = [c for c in df.columns if any(k in c for k in (
-        "oleo", "petroleo", "condensado", "gas", "agua", "tempo", "royalt"))]
+        "oleo", "petroleo", "gas", "agua", "tempo"))]
     for c in num_cols:
         if sep == ";":
             ser = (df[c].astype(str)

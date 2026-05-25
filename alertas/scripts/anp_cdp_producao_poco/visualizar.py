@@ -112,13 +112,10 @@ app.layout = html.Div([
             dcc.Dropdown(
                 id="dd-metrica",
                 options=[
-                    {"label": "Petróleo (bbl/dia)",       "value": "petroleo_bbl_dia"},
-                    {"label": "Óleo (bbl/dia)",           "value": "oleo_bbl_dia"},
-                    {"label": "Condensado (bbl/dia)",     "value": "condensado_bbl_dia"},
+                    {"label": "Petróleo (bbl/dia)",          "value": "petroleo_bbl_dia"},
+                    {"label": "Óleo (bbl/dia)",              "value": "oleo_bbl_dia"},
                     {"label": "Gás Natural Total (Mm³/dia)", "value": "gas_natural_total_mm3_dia"},
-                    {"label": "Gás Associado (Mm³/dia)",     "value": "gas_natural_assoc_mm3_dia"},
-                    {"label": "Gás Não Associado (Mm³/dia)", "value": "gas_natural_n_assoc_mm3_dia"},
-                    {"label": "Água (bbl/dia)",           "value": "agua_bbl_dia"},
+                    {"label": "Água (bbl/dia)",              "value": "agua_bbl_dia"},
                 ],
                 value="petroleo_bbl_dia", clearable=False,
             ),
@@ -233,13 +230,10 @@ def atualizar(locals, bacia, estado, operador, campo, metrica, quebra, anos):
             ))
 
     metricas_label = {
-        "petroleo_bbl_dia":            "Petróleo (bbl/dia)",
-        "oleo_bbl_dia":                "Óleo (bbl/dia)",
-        "condensado_bbl_dia":          "Condensado (bbl/dia)",
-        "gas_natural_total_mm3_dia":   "Gás Natural Total (Mm³/dia)",
-        "gas_natural_assoc_mm3_dia":   "Gás Associado (Mm³/dia)",
-        "gas_natural_n_assoc_mm3_dia": "Gás Não Associado (Mm³/dia)",
-        "agua_bbl_dia":                "Água (bbl/dia)",
+        "petroleo_bbl_dia":          "Petróleo (bbl/dia)",
+        "oleo_bbl_dia":              "Óleo (bbl/dia)",
+        "gas_natural_total_mm3_dia": "Gás Natural Total (Mm³/dia)",
+        "agua_bbl_dia":              "Água (bbl/dia)",
     }
     titulo = metricas_label.get(metrica, metrica)
     if bacia != "__ALL__":     titulo += f" — Bacia {bacia}"

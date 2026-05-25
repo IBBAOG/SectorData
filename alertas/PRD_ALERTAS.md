@@ -337,11 +337,7 @@ python scripts/anp_cdp_upload.py --from-csv-dir output/anp/
 | `num_contrato` | text | Número do contrato ANP |
 | `petroleo_bbl_dia` | float4 | Produção total de petróleo |
 | `oleo_bbl_dia` | float4 | Produção de óleo cru |
-| `condensado_bbl_dia` | float4 | Produção de condensado |
 | `gas_total_mm3_dia` | float4 | Gás natural total |
-| `gas_natural_assoc_mm3_dia` | float4 | Gás associado |
-| `gas_natural_n_assoc_mm3_dia` | float4 | Gás não-associado |
-| `gas_royalties` | float4 | Gás para royalties |
 | `agua_bbl_dia` | float4 | Água produzida |
 | `instalacao_destino` | text | Nome da instalação destino (48% preenchido) |
 | `tipo_instalacao` | text | Tipo da instalação (48% preenchido) |
