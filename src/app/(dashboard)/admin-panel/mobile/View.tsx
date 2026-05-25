@@ -109,6 +109,29 @@ export default function MobileView(): React.ReactElement | null {
     handleToggleRecipient,
     handleRemoveRecipient,
 
+    alertsStats,
+    alertsStatsLoading,
+    alertsSubscribers,
+    alertsSubscribersLoading,
+    alertsSubscriberSourceFilter,
+    setAlertsSubscriberSourceFilter,
+    alertsSources,
+    alertsSourcesLoading,
+    alertsEmailLog,
+    alertsEmailLogLoading,
+    alertsEmailLogStatusFilter,
+    setAlertsEmailLogStatusFilter,
+    alertsOutbox,
+    alertsOutboxLoading,
+    requeueingOutboxId,
+    sendingTestSlug,
+    togglingSourceSlug,
+    unsubscribingId,
+    handleAlertsForceUnsubscribe,
+    handleAlertsRequeueOutbox,
+    handleAlertsSendTestEvent,
+    handleAlertsToggleSource,
+
     defaultKeywords,
     defaultKeywordsLoading,
     defaultKeywordsError,
@@ -168,6 +191,7 @@ export default function MobileView(): React.ReactElement | null {
     "permissions": "Search modules",
     "card-images": "Search modules",
     "alert-recipients": "Search recipients",
+    "alerts-product": "Search subscribers or sources",
     "default-news": "Search keywords",
     "data-input": "",
   };
@@ -919,6 +943,348 @@ export default function MobileView(): React.ReactElement | null {
               );
             })
           )}
+        </section>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {/* ALERTS PRODUCT                                                      */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {activeSection === "alerts-product" && (
+        <section>
+
+          {/* A — Stats */}
+          <div style={{ padding: "0 16px 16px" }}>
+            <div style={{ fontSize: 12, color: "var(--mobile-text-muted)", lineHeight: 1.5, marginBottom: 12 }}>
+              Overview of the opt-in subscriber base across all alert sources.
+            </div>
+            {alertsStatsLoading ? (
+              <div style={{ padding: "16px 0", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
+                Loading stats…
+              </div>
+            ) : !alertsStats ? (
+              <div style={{ fontSize: 13, color: "var(--mobile-text-muted)" }}>No stats available.</div>
+            ) : (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {[
+                  { label: "Total", value: alertsStats.totals.subscribers_total },
+                  { label: "Active", value: alertsStats.totals.subscribers_active },
+                  {
+                    label: "Unconfirmed",
+                    value: alertsStats.totals.subscribers_total - alertsStats.totals.subscribers_confirmed,
+                  },
+                  {
+                    label: "Bounce (7d)",
+                    value: `${alertsStats.bounce_rate_7d_pct.toFixed(2)}%`,
+                  },
+                ].map(({ label, value }) => (
+                  <div
+                    key={label}
+                    style={{
+                      padding: "12px 14px",
+                      borderRadius: 10,
+                      background: "var(--mobile-surface)",
+                      border: "1px solid var(--mobile-border)",
+                    }}
+                  >
+                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--mobile-text-faint)" }}>
+                      {label}
+                    </div>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: "var(--mobile-text)", marginTop: 4 }}>
+                      {value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* B — Subscribers */}
+          <div style={{ padding: "0 16px 8px" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--mobile-text)", marginBottom: 8 }}>
+              Subscribers
+            </div>
+            {/* Source filter */}
+            <select
+              value={alertsSubscriberSourceFilter}
+              onChange={(e) => setAlertsSubscriberSourceFilter(e.target.value)}
+              style={{
+                fontSize: 13, padding: "8px 12px", borderRadius: 8, marginBottom: 8,
+                border: "1px solid var(--mobile-border)", background: "var(--mobile-surface)",
+                color: "var(--mobile-text)", fontFamily: "inherit", outline: "none", width: "100%",
+              }}
+            >
+              <option value="">All sources</option>
+              {alertsSources.map((s) => (
+                <option key={s.source_slug} value={s.source_slug}>
+                  {s.display_name || s.source_slug}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {alertsSubscribersLoading ? (
+            <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
+              Loading subscribers…
+            </div>
+          ) : alertsSubscribers.length === 0 ? (
+            <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
+              No subscribers yet. The first opt-in will appear here.
+            </div>
+          ) : (
+            alertsSubscribers
+              .filter((s) => {
+                const q = search.trim().toLowerCase();
+                if (q && !s.email.toLowerCase().includes(q) && !s.source_slug.toLowerCase().includes(q)) return false;
+                if (alertsSubscriberSourceFilter && s.source_slug !== alertsSubscriberSourceFilter) return false;
+                return true;
+              })
+              .map((sub) => {
+                const isUnsubscribing = unsubscribingId === sub.id;
+                return (
+                  <MobileDataCard
+                    key={sub.id}
+                    variant="default"
+                    title={sub.email}
+                    subtitle={`${sub.source_slug} · ${formatDateBR(sub.created_at)}`}
+                    status={
+                      sub.is_active
+                        ? sub.is_confirmed
+                          ? { label: "Active", tone: "completed" }
+                          : { label: "Unconfirmed", tone: "unloading" }
+                        : { label: "Inactive", tone: "neutral" }
+                    }
+                    rightSlot={
+                      <button
+                        type="button"
+                        onClick={() => handleAlertsForceUnsubscribe(sub.id)}
+                        disabled={isUnsubscribing || !sub.is_active}
+                        style={{
+                          minHeight: 32,
+                          padding: "0 10px",
+                          borderRadius: 8,
+                          border: "1px solid rgba(229,62,62,0.4)",
+                          background: "var(--mobile-surface)",
+                          color: sub.is_active ? "#e53e3e" : "var(--mobile-text-faint)",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: isUnsubscribing || !sub.is_active ? "not-allowed" : "pointer",
+                          opacity: isUnsubscribing ? 0.6 : 1,
+                          fontFamily: "inherit",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {isUnsubscribing ? "…" : "Force unsub"}
+                      </button>
+                    }
+                  />
+                );
+              })
+          )}
+
+          {/* C — Sources */}
+          <div style={{ padding: "16px 16px 8px" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--mobile-text)", marginBottom: 4 }}>
+              Sources
+            </div>
+            <div style={{ fontSize: 12, color: "var(--mobile-text-muted)", marginBottom: 8, lineHeight: 1.4 }}>
+              Toggle sources active/inactive. Send a test event for QA.
+            </div>
+          </div>
+
+          {alertsSourcesLoading ? (
+            <div style={{ padding: "16px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
+              Loading sources…
+            </div>
+          ) : alertsSources.length === 0 ? (
+            <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
+              No sources registered.
+            </div>
+          ) : (
+            alertsSources.map((src) => {
+              const isToggling = togglingSourceSlug === src.source_slug;
+              const isSending = sendingTestSlug === src.source_slug;
+              return (
+                <article
+                  key={src.source_slug}
+                  style={{
+                    background: "var(--mobile-surface)",
+                    borderBottom: "1px solid var(--mobile-divider)",
+                    padding: "14px 16px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "var(--mobile-text)" }}>
+                      {src.display_name || src.source_slug}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--mobile-text-faint)", fontFamily: "monospace" }}>
+                      {src.source_slug} · {src.category}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                    {/* Active toggle */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <label className="form-check form-switch" style={{ margin: 0, paddingLeft: 0, display: "inline-block" }}>
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          role="switch"
+                          aria-label={`Toggle source ${src.source_slug}`}
+                          checked={src.is_active}
+                          disabled={isToggling}
+                          onChange={(e) => handleAlertsToggleSource(src.source_slug, e.target.checked)}
+                          style={{ width: "2.6em", height: "1.4em", cursor: isToggling ? "wait" : "pointer", opacity: isToggling ? 0.6 : 1, margin: 0 }}
+                        />
+                      </label>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: "var(--mobile-text-muted)" }}>
+                        {src.is_active ? "Active" : "Off"}
+                      </span>
+                    </div>
+                    {/* Test button */}
+                    <button
+                      type="button"
+                      onClick={() => handleAlertsSendTestEvent(src.source_slug)}
+                      disabled={!!sendingTestSlug}
+                      style={{
+                        minHeight: 36,
+                        padding: "0 12px",
+                        borderRadius: 8,
+                        border: `1px solid ${ORANGE}`,
+                        background: "var(--mobile-surface)",
+                        color: ORANGE,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: isSending ? "wait" : "pointer",
+                        opacity: isSending || (!!sendingTestSlug && !isSending) ? 0.6 : 1,
+                        fontFamily: "inherit",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {isSending ? "Sending…" : "Send test"}
+                    </button>
+                  </div>
+                </article>
+              );
+            })
+          )}
+
+          {/* D — Email log */}
+          <div style={{ padding: "16px 16px 8px" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--mobile-text)", marginBottom: 4 }}>
+              Email Log
+            </div>
+            <select
+              value={alertsEmailLogStatusFilter}
+              onChange={(e) => setAlertsEmailLogStatusFilter(e.target.value)}
+              style={{
+                fontSize: 13, padding: "8px 12px", borderRadius: 8, marginTop: 4,
+                border: "1px solid var(--mobile-border)", background: "var(--mobile-surface)",
+                color: "var(--mobile-text)", fontFamily: "inherit", outline: "none", width: "100%",
+              }}
+            >
+              <option value="">All statuses</option>
+              <option value="sent">Sent</option>
+              <option value="delivered">Delivered</option>
+              <option value="opened">Opened</option>
+              <option value="clicked">Clicked</option>
+              <option value="bounced">Bounced</option>
+              <option value="complained">Complained</option>
+              <option value="failed">Failed</option>
+            </select>
+          </div>
+
+          {alertsEmailLogLoading ? (
+            <div style={{ padding: "16px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
+              Loading email log…
+            </div>
+          ) : alertsEmailLog.length === 0 ? (
+            <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
+              No email log entries yet.
+            </div>
+          ) : (
+            alertsEmailLog
+              .filter((e) => !alertsEmailLogStatusFilter || e.status === alertsEmailLogStatusFilter)
+              .slice(0, 50)
+              .map((entry) => {
+                const statusTone: Record<string, "completed" | "unloading" | "neutral"> = {
+                  sent: "neutral",        // pending — amber/yellow semantics
+                  delivered: "completed", // green — confirmed delivery
+                  opened: "completed",
+                  clicked: "completed",
+                  bounced: "unloading",   // red — problem
+                  complained: "unloading",
+                  failed: "unloading",
+                };
+                return (
+                  <MobileDataCard
+                    key={entry.id}
+                    variant="default"
+                    title={entry.email}
+                    subtitle={entry.subject ?? "—"}
+                    status={{ label: entry.status, tone: statusTone[entry.status] ?? "neutral" }}
+                  />
+                );
+              })
+          )}
+
+          {/* E — Outbox repair */}
+          <div style={{ padding: "16px 16px 8px" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--mobile-text)", marginBottom: 4 }}>
+              Outbox Repair
+            </div>
+            <div style={{ fontSize: 12, color: "var(--mobile-text-muted)", lineHeight: 1.4 }}>
+              Failed outbox entries. Requeue to retry delivery.
+            </div>
+          </div>
+
+          {alertsOutboxLoading ? (
+            <div style={{ padding: "16px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
+              Loading outbox…
+            </div>
+          ) : alertsOutbox.length === 0 ? (
+            <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
+              No failed outbox entries. Everything is healthy.
+            </div>
+          ) : (
+            alertsOutbox.map((row) => {
+              const isRequeuing = requeueingOutboxId === row.id;
+              return (
+                <MobileDataCard
+                  key={row.id}
+                  variant="default"
+                  title={row.subscriber?.email ?? "—"}
+                  subtitle={`${row.event?.source_slug ?? "—"} · ${row.send_attempts} attempts`}
+                  status={{ label: "Failed", tone: "unloading" }}
+                  rightSlot={
+                    <button
+                      type="button"
+                      onClick={() => handleAlertsRequeueOutbox(row.id)}
+                      disabled={!!requeueingOutboxId}
+                      style={{
+                        minHeight: 32,
+                        padding: "0 10px",
+                        borderRadius: 8,
+                        border: `1px solid ${ORANGE}`,
+                        background: "var(--mobile-surface)",
+                        color: ORANGE,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: isRequeuing ? "wait" : "pointer",
+                        opacity: isRequeuing || (!!requeueingOutboxId && !isRequeuing) ? 0.6 : 1,
+                        fontFamily: "inherit",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {isRequeuing ? "…" : "Requeue"}
+                    </button>
+                  }
+                />
+              );
+            })
+          )}
+
         </section>
       )}
 
