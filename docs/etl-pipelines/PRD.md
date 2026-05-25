@@ -225,6 +225,42 @@ nova variante do mesmo bug.
   a cada ~2h; um run Selenium lento (CAPTCHA retry) pode sobrepor o próximo
   dispatch e causar `unique_violation` no commit, deixando o mês parcial.
 
+**Hardening Phase B3 (2026-05-25) — `02_upload._upsert` self-heal:**
+
+Entre 2026-05-23 e 2026-05-25, 57 de 60 runs de `etl_anp_cdp.yml` falharam.
+Causa imediata: o trigger DB `trg_anp_cdp_guard_cross_local` (migration
+`20260521130000_anp_cdp_cross_local_guard.sql`) corretamente bloqueava cada
+INSERT cross-local — mas, como o batch upsert do PostgREST é atômico, **uma
+única row republicada (PosSal ↔ PreSal) abortava o batch inteiro de ~200 rows
+e a pipeline saía com erro**, deixando o mês parcial e re-quebrando a cada
+~2h. ANP republica wells normalmente quando reclassifica o ambiente do campo,
+então o trigger estava certo — o `_upsert` é que precisava tratar essa exceção
+como esperada.
+
+Fix em `_upsert`:
+
+1. `_parse_cross_local_conflict(e)` extrai `(ano, mes, poco, campo, bacia, local_antigo, local_novo)` da
+   mensagem do trigger (regex sobre `e.message` do `postgrest.APIError`, com fallback para `str(e)`).
+2. `_delete_stale_local(sb, conflict)` faz DELETE explícito da row antiga (não DELETE+INSERT no mesmo
+   batch — o trigger ainda atuaria).
+3. O batch é re-tentado. O trigger só reporta o primeiro conflito por INSERT,
+   então conflitos múltiplos no mesmo batch são resolvidos um a um (loop até
+   `_MAX_CROSS_LOCAL_HEALS_PER_BATCH = 10`).
+4. **Não consome attempts de retry transitório**: heals contam separadamente;
+   o backoff exponencial pra timeout/network continua 3-strike.
+5. Cada heal emite log INFO: `[self-heal] Resolved cross-local republish: ano=X
+   mes=Y poco=Z campo=W bacia=B (was: local=L1 -> now: local=L2). Deleted N old row(s). Retrying batch.`
+
+A intenção é: o trigger é a fonte de verdade do invariante (1 well = 1 local
+por período); quando ANP republica legitimamente, o pipeline absorve a mudança
+e continua. Quando o conflito é sintoma de um bug real (cross-local triplication
+real), o `_check_cross_local_duplicates` pós-upload + `_warn_spike_upward`
+continuam raise-on-failure.
+
+Cleanup de backlog após o fix: `worker_supabase` aplicou migration paralela
+(`supabase/migrations/20260525000020_*.sql`) limpando rows órfãs acumuladas
+durante o outage.
+
 ### Debug de falha ANP CDP
 
 O workflow `etl_anp_cdp.yml` usa `01_extract_powerbi.py` (Power BI public API, sem CAPTCHA, sem Selenium).

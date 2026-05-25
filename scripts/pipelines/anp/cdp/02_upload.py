@@ -208,13 +208,113 @@ def _prepare(df: pd.DataFrame, allow_non_apex: bool = False) -> pd.DataFrame:
     return df
 
 
+# ── Cross-local self-heal (incident 2026-05-23) ───────────────────────────────
+# The DB trigger `trg_anp_cdp_guard_cross_local` (migration 20260521130000)
+# RAISEs when an INSERT would create a second row for the same
+# (ano, mes, poco, campo, bacia) under a different `local`. Format:
+#   "Cross-local duplicate blocked: (ano=<n>, mes=<n>, poco=<s>, campo=<s>,
+#    bacia=<s>) already exists with local=<l1>. New insert would add local=<l2>."
+#
+# When this happens during normal ETL, it means the ANP republished a well's
+# classification (e.g. PosSal -> PreSal). The new local is authoritative.
+# The fix is to DELETE the stale row (old local) and retry the batch.
+#
+# Without this self-heal, a single republished well aborts the whole batch
+# of ~200 rows and ALL 60 GHA runs since 2026-05-23 failed.
+_CROSS_LOCAL_RE = re.compile(
+    r"Cross-local duplicate blocked: \(ano=(?P<ano>\d+), mes=(?P<mes>\d+), "
+    r"poco=(?P<poco>[^,]+), campo=(?P<campo>[^,]+), bacia=(?P<bacia>[^)]+)\) "
+    r"already exists with local=(?P<old>[A-Za-z]+)\. "
+    r"New insert would add local=(?P<new>[A-Za-z]+)\.",
+)
+
+
+def _extract_error_message(e: Exception) -> str:
+    """Return the human-readable message from a postgrest APIError or generic Exception.
+
+    `postgrest.exceptions.APIError` exposes `.message` (the Postgres RAISE text).
+    Older clients may only expose it via `str(e)` which serialises the dict.
+    """
+    msg = getattr(e, "message", None)
+    if isinstance(msg, str) and msg:
+        return msg
+    return str(e)
+
+
+def _parse_cross_local_conflict(e: Exception) -> dict | None:
+    """Detect & parse a 'Cross-local duplicate blocked' error.
+
+    Returns a dict {ano, mes, poco, campo, bacia, old, new} on match, else None.
+    The trigger only reports the FIRST conflict per failed INSERT statement,
+    so callers must retry the batch — additional conflicts (if any) will
+    surface one at a time on each retry.
+    """
+    text = _extract_error_message(e)
+    if "Cross-local duplicate blocked" not in text:
+        return None
+    m = _CROSS_LOCAL_RE.search(text)
+    if not m:
+        # Marker found but format unexpected — surface to ops without self-heal.
+        print(f"  [self-heal] Marker found but regex failed to parse: {text!r}")
+        return None
+    return {
+        "ano": int(m.group("ano")),
+        "mes": int(m.group("mes")),
+        "poco": m.group("poco").strip(),
+        "campo": m.group("campo").strip(),
+        "bacia": m.group("bacia").strip(),
+        "old": m.group("old").strip(),
+        "new": m.group("new").strip(),
+    }
+
+
+def _delete_stale_local(sb, conflict: dict) -> int:
+    """DELETE the stale row whose (ano, mes, poco, campo, bacia) matches but local=old.
+
+    Returns the number of rows deleted (expected: 1; 0 means a concurrent run
+    already removed it; >1 is a data anomaly worth flagging).
+    """
+    r = (
+        sb.table("anp_cdp_producao")
+        .delete()
+        .eq("ano", conflict["ano"])
+        .eq("mes", conflict["mes"])
+        .eq("poco", conflict["poco"])
+        .eq("campo", conflict["campo"])
+        .eq("bacia", conflict["bacia"])
+        .eq("local", conflict["old"])
+        .execute()
+    )
+    n = len(r.data or [])
+    if n > 1:
+        print(
+            f"  [self-heal][WARN] Deleted {n} stale rows for "
+            f"(ano={conflict['ano']}, mes={conflict['mes']}, poco={conflict['poco']}, "
+            f"campo={conflict['campo']}, bacia={conflict['bacia']}, local={conflict['old']}) "
+            f"— expected 1. Possible data anomaly upstream."
+        )
+    return n
+
+
+# Maximum number of distinct cross-local conflicts we self-heal per batch
+# before giving up. Each successful heal triggers a re-attempt; without
+# bound a malformed batch could loop forever consuming a row at a time.
+# Empirically the ANP republishes <5 wells per period, so 10 is generous.
+_MAX_CROSS_LOCAL_HEALS_PER_BATCH = 10
+
+
 def _upsert(sb, rows: list[dict]) -> None:
     total = len(rows)
     ok = 0
     for i in range(0, total, BATCH):
         batch = rows[i : i + BATCH]
         ano_label = batch[0]["ano"]
-        for attempt in range(3):
+        heals_done = 0
+        # `attempt` counts transient-error retries only. Cross-local heals do
+        # NOT consume an attempt — they extend the retry budget because the
+        # batch hasn't truly "failed", only one row needed reclassification.
+        attempt = 0
+        while True:
             try:
                 sb.table("anp_cdp_producao").upsert(
                     batch, on_conflict="ano,mes,poco,campo,bacia,local"
@@ -222,10 +322,37 @@ def _upsert(sb, rows: list[dict]) -> None:
                 ok += len(batch)
                 break
             except Exception as e:
-                if attempt == 2:
+                # Cross-local republish: ANP changed a well's classification.
+                # Delete the stale row (old local) and retry the same batch.
+                conflict = _parse_cross_local_conflict(e)
+                if conflict is not None:
+                    if heals_done >= _MAX_CROSS_LOCAL_HEALS_PER_BATCH:
+                        print(
+                            f"  [self-heal][ABORT] Batch {i}-{i+len(batch)} (ano~{ano_label}) "
+                            f"hit {heals_done} cross-local heals without converging — "
+                            f"escalating last error: {e}"
+                        )
+                        raise
+                    deleted = _delete_stale_local(sb, conflict)
+                    print(
+                        f"  [self-heal] Resolved cross-local republish: "
+                        f"ano={conflict['ano']} mes={conflict['mes']} "
+                        f"poco={conflict['poco']} campo={conflict['campo']} "
+                        f"bacia={conflict['bacia']} "
+                        f"(was: local={conflict['old']} -> now: local={conflict['new']}). "
+                        f"Deleted {deleted} old row(s). Retrying batch."
+                    )
+                    heals_done += 1
+                    # Loop again WITHOUT incrementing `attempt` (this isn't a transient failure).
+                    continue
+
+                # Transient error path (network, timeout, etc.) — exponential backoff.
+                if attempt >= 2:
                     print(f"  ERRO batch {i}-{i+len(batch)} (ano~{ano_label}): {e}")
                     raise
                 time.sleep(2 ** attempt)
+                attempt += 1
+                continue
         print(f"  {ok}/{total} rows upserted (ano ~{ano_label})…", end="\r")
     print(f"\n  Done: {ok} rows upserted.")
 
