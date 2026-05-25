@@ -23,26 +23,27 @@ export default function AnonCTA({
   ctaText = "Sign in",
   ctaHref = "/login",
 }: AnonCTAProps): React.ReactElement {
+  // Visual tokens (background tint, border, text color) are owned by the
+  // `.anon-cta-banner` rules in globals.css so the banner can react to the
+  // host module's theme — most notably the Market Watch (`.stocks-dark`)
+  // near-black surface, where the previous hard-coded `#1a1a1a` text was
+  // effectively invisible. Layout / sizing stays inline.
   return (
     <div
       role="region"
       aria-label="Sign-in invitation"
+      className="anon-cta-banner"
       style={{
         display: "flex",
         alignItems: "center",
         gap: 14,
         padding: "12px 16px",
         margin: "12px 0",
-        borderRadius: 8,
-        background: "rgba(255, 80, 0, 0.08)",
-        border: "1px solid rgba(255, 80, 0, 0.25)",
-        fontFamily: "Arial, Helvetica, sans-serif",
-        fontSize: 14,
-        color: "#1a1a1a",
       }}
     >
       <span
         aria-hidden="true"
+        className="anon-cta-banner__icon"
         style={{
           display: "inline-flex",
           alignItems: "center",
@@ -71,9 +72,12 @@ export default function AnonCTA({
           <path d="M12 16h.01" />
         </svg>
       </span>
-      <span style={{ flex: 1, lineHeight: 1.4 }}>{message}</span>
+      <span className="anon-cta-banner__text" style={{ flex: 1, lineHeight: 1.4 }}>
+        {message}
+      </span>
       <Link
         href={ctaHref}
+        className="anon-cta-banner__cta"
         style={{
           display: "inline-block",
           padding: "6px 14px",
