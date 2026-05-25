@@ -80,6 +80,9 @@ _DATA_START_IDX = 6
 
 # Column positions in the XLSX (0-indexed after reading the SIGEP sheet).
 # Validated against 2017 dumps 2026-05-14.
+# Note: indices 9, 11, 12, 14 (condensado, gas_assoc, gas_n_assoc, gas_royalties)
+# are no longer referenced — their target columns were dropped from anp_cdp_producao.
+# The XLSX still contains those positions; we simply skip them when writing the CSV.
 _COL = {
     "estado":          0,
     "bacia":           1,
@@ -90,12 +93,8 @@ _COL = {
     "num_contrato":    6,
     "periodo":         7,   # YYYY/MM in dump; kept as YYYY/MM in CSV (required by 02_upload.py)
     "oleo":            8,   # Óleo (bbl/dia)
-    "condensado":      9,   # Condensado (bbl/dia)
     "petroleo":        10,  # Petróleo (bbl/dia)
-    "gas_assoc":       11,  # Gás Natural Associado (Mm³/dia)
-    "gas_n_assoc":     12,  # Gás Natural Não Associado (Mm³/dia)
     "gas_total":       13,  # Gás Natural Total (Mm³/dia)
-    "gas_royalties":   14,  # Volume Gás Royalties (Mm³/dia)
     "agua":            15,  # Água (bbl/dia)
     "instalacao":      16,  # Instalação Destino
     "tipo_instalacao": 17,  # Tipo Instalação
@@ -105,6 +104,8 @@ _COL = {
 # CSV column headers — must match what _parse_csv() in 02_upload.py recognises.
 # The parser uses fuzzy matching (substring checks), so these names were chosen
 # to satisfy all the detection conditions in _parse_csv() for each field.
+# Note: Condensado, Gás Assoc, Gás N. Assoc and Volume Gás Royalties columns were
+# removed because their target columns were dropped from anp_cdp_producao.
 _CSV_HEADERS = [
     "Estado",
     "Bacia",
@@ -115,12 +116,8 @@ _CSV_HEADERS = [
     "Número do Contrato",
     "Período",                  # detected by: "perodo"/"período"/"periodo" in cl; value is YYYY/MM
     "Óleo (bbl/dia)",           # detected by: "leo (bbl" in cl
-    "Condensado (bbl/dia)",     # detected by: "condensado" in cl
     "Petróleo (bbl/dia)",       # detected by: "petroleo"/"petróleo" in cl + "bbl" in cl
-    "Gás Natural Associado (Mm³/dia)",      # detected by: "assoc" in cl and "mm"
-    "Gás Natural Não Associado (Mm³/dia)", # detected by: "n_assoc"/"n-assoc" in cl
     "Gás Natural Total (Mm³/dia)",          # detected by: "total" in cl and "mm"
-    "Volume Gás Royalties (Mm³/dia)",       # detected by: "royalt" in cl
     "Água (bbl/dia)",           # detected by: "gua (bbl" in cl
     "Instalação Destino",       # detected by: "destino" in cl
     "Tipo Instalação",          # detected by: "tipo" in cl and "instal" in cl
@@ -256,12 +253,8 @@ def _rows_to_csv_bytes(xlsx_rows: list[tuple]) -> bytes:
             _fmt_text(row[_COL["num_contrato"]]),
             _fmt_periodo(row[_COL["periodo"]]),
             _fmt_num(row[_COL["oleo"]]),
-            _fmt_num(row[_COL["condensado"]]),
             _fmt_num(row[_COL["petroleo"]]),
-            _fmt_num(row[_COL["gas_assoc"]]),
-            _fmt_num(row[_COL["gas_n_assoc"]]),
             _fmt_num(row[_COL["gas_total"]]),
-            _fmt_num(row[_COL["gas_royalties"]]),
             _fmt_num(row[_COL["agua"]]),
             _fmt_text(row[_COL["instalacao"]]),
             _fmt_text(row[_COL["tipo_instalacao"]]),

@@ -75,15 +75,15 @@ _RENAME = {
     "gas_natural_total_mm3_dia": "gas_total_mm3_dia",
 }
 
-# All production numeric columns — stored as-is from the CSV (no transformation)
+# All production numeric columns — stored as-is from the CSV (no transformation).
+# Note: condensado_bbl_dia, gas_natural_assoc_mm3_dia, gas_natural_n_assoc_mm3_dia,
+# and gas_royalties were dropped from anp_cdp_producao (DB DROP COLUMN). The pipeline
+# no longer writes them. Historic parquet files retain these columns in-place per the
+# project's parquet-in-place rule.
 _NUM_COLS = [
     "petroleo_bbl_dia",
     "oleo_bbl_dia",
-    "condensado_bbl_dia",
     "gas_total_mm3_dia",
-    "gas_natural_assoc_mm3_dia",
-    "gas_natural_n_assoc_mm3_dia",
-    "gas_royalties",
     "agua_bbl_dia",
     "tempo_prod_hs_mes",
 ]
@@ -817,16 +817,8 @@ def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
             col_map["petroleo"] = c
         elif "leo (bbl" in cl and "petr" not in cl:
             col_map["oleo"] = c
-        elif "condensado" in cl:
-            col_map["condensado"] = c
-        elif "assoc" in cl and "mm" in cl and "n_" not in cl and "n-" not in cl:
-            col_map["gas_assoc"] = c
-        elif ("n_assoc" in cl or "n-assoc" in cl) and "mm" in cl:
-            col_map["gas_n_assoc"] = c
         elif "total" in cl and "mm" in cl:
             col_map["gas_total"] = c
-        elif "royalt" in cl:
-            col_map["gas_royalties"] = c
         elif "gua (bbl" in cl or "água" in cl:
             col_map["agua"] = c
         elif "tempo" in cl and "prod" in cl:
@@ -862,11 +854,7 @@ def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
         "periodo":                     df[col_map["periodo"]].astype(str).str.strip(),
         "petroleo_bbl_dia":            _num("petroleo"),
         "oleo_bbl_dia":                _num("oleo"),
-        "condensado_bbl_dia":          _num("condensado"),
         "gas_total_mm3_dia":           _num("gas_total"),
-        "gas_natural_assoc_mm3_dia":   _num("gas_assoc"),
-        "gas_natural_n_assoc_mm3_dia": _num("gas_n_assoc"),
-        "gas_royalties":               _num("gas_royalties"),
         "agua_bbl_dia":                _num("agua"),
         "tempo_prod_hs_mes":           _num("tempo_prod"),
         "local":                       local,
