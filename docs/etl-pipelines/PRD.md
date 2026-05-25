@@ -23,8 +23,8 @@ scripts/pipelines/                  # rodam via GitHub Actions (todos os ETL)
       02_upload.py                  CSVs → Supabase
     fase3/                          chain (workflow etl_anp_fase3.yml)
       01_daie_sync.py               Dados Abertos IE
-      02_desembaracos_sync.py       Desembaraços
-      03_painel_imp_sync.py         Painel Combustíveis
+      02_desembaracos_sync.py       Desembaraços (preserves importador/cnpj/uf_cnpj since 2026-05-25)
+      # 03_painel_imp_sync.py — REMOVED by Imports & Exports reform (2026-05-25)
     precos/                         chain (workflow etl_anp_precos.yml — junto com glp_sync)
       01_ppi_sync.py                PPI
       02_precos_produtores_sync.py  Preços Produtores
@@ -65,7 +65,7 @@ scripts/utils/                      # one-shots (não-ETL)
 | `etl_ais_candidates.yml` | Cada 4h | `pipelines/ais/candidates_discover.py` | `import_candidates` |
 | `etl_ais_positions.yml` | Cada 6h+15min | `pipelines/ais/positions_sync.py` | `vessel_registry`, `vessel_positions`, `port_arrivals` |
 | `etl_anp_vendas.yml` | Trigger externo (cron-job.org via `workflow_dispatch`) | `pipelines/anp/vendas_watch.py --force` | (vendas combustíveis ANP) |
-| `etl_anp_fase3.yml` | Mensal — 1º dia, 13:00 UTC | `pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` → `03_painel_imp_sync.py` | `anp_daie` (6.912 rows), `anp_desembaracos` (6.204), `anp_painel_imp_dist` (1.444) |
+| `etl_anp_fase3.yml` | Mensal — 1º dia, 13:00 UTC | `pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` | `anp_daie` (6.912 rows), `anp_desembaracos` (enriched with `importador`/`cnpj`/`uf_cnpj`; PK extended to `(ano,mes,ncm_codigo,pais_origem,cnpj)` since 2026-05-25). `03_painel_imp_sync.py` + `anp_painel_imp_dist` removed by Imports & Exports reform. |
 | `etl_anp_lpc.yml` | Semanal — quarta, 14:30 UTC (`30 14 * * 3`) | `pipelines/anp/lpc_sync.py` | `anp_lpc` (160.243 rows — histórico 2004–2026 após backfill) |
 | `etl_anp_precos.yml` | Semanal — segunda, 12:00 UTC (`0 12 * * 1`) | `pipelines/anp/glp_sync.py` + `precos/01_ppi_sync.py` → `02_precos_produtores_sync.py` | `anp_glp` (3.106), `anp_ppi` (18.131), `anp_precos_produtores` (54.738 — histórico 2002–2026 após backfill) |
 | `etl_anp_cdp.yml` | Cron interno mensal (5º), 08:00 UTC (`0 8 5 * *`) como fallback + trigger externo via cron-job.org (`workflow_dispatch`) a cada ~2h — pipeline desenhado para rodar incrementalmente com alta frequência | `pipelines/anp/cdp/01_extract_powerbi.py` (Power BI, no CAPTCHA) → `02_upload.py` | `output/anp/` + `anp_cdp_producao` (2.045.515+ rows). Power BI poco-level data aggregated daily→monthly; local derived from DB lookup + basin heuristic. Replaces Selenium/CAPTCHA (01_extract.py) which had an undocumented APEX row cap (~197 offshore wells vs ~937 in Power BI for 04/2026). **Inputs `workflow_dispatch`**: `force_upload=true` passes `--no-incremental` AND implies `--purge` automatically — never re-upload over an already-loaded period without it (prevents the PK-overlap duplicate-`local` bug, Apr/2026). |
@@ -115,6 +115,21 @@ objetivos são distintos:
 **Status**: redundância documentada, refactor não planejado. Unificação futura implicaria
 fazer alertas/ consumir diretamente do Supabase em vez dos parquets — avaliação de escopo
 necessária antes de iniciar.
+
+### Imports & Exports reform — 2026-05-25
+
+Three dashboards (`/anp-daie`, `/anp-desembaracos`, `/anp-painel-importacoes`) were consolidated into a single `/imports-exports`. ETL changes owned by this department:
+
+- **`02_desembaracos_sync.py`** — line 171 used to drop `Importador`, `CNPJ`, and `UF do CNPJ*` from the raw XLSX before aggregating. These are now preserved:
+  - `_COLS_RENAME` maps `"UF DO CNPJ*"` → `uf_cnpj` (was `uf`).
+  - `_ler_arquivo` strips whitespace, replaces `'nan'`/`'None'`/`''` with `None`, and normalises CNPJ to digits-only.
+  - `_aggregate` groups by `(ano, mes, ncm_codigo, ncm_nome, pais_origem, importador, cnpj, uf_cnpj)`.
+  - Missing CNPJ in pre-2020 XLSXs is coalesced to the sentinel `__legacy__` so the composite PK resolves uniquely.
+  - `on_conflict` is now `ano,mes,ncm_codigo,pais_origem,cnpj` (matches the new Supabase PK extended by Worktree A).
+- **`03_painel_imp_sync.py`** — deleted. The `anp_painel_imp_dist` table is dropped by Worktree A.
+- **`etl_anp_fase3.yml`** — Painel Imp step removed. Workflow is now 2 steps (DAIE + Desembaraços).
+
+Backfill (rerunning the modified ETL over historical XLSXs) is triggered by `workflow_dispatch` on `etl_anp_fase3.yml` after the reform merges to `main`.
 
 ### Fixes aplicados na Fase 3 (já em main)
 

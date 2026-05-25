@@ -1,4 +1,4 @@
-name: ANP Fase 3 — Sync (DAIE + Desembaraços + Painel Importações)
+name: ANP Fase 3 — Sync (DAIE + Desembaraços)
 
 on:
   schedule:
@@ -27,12 +27,6 @@ jobs:
 
       - name: Sync ANP Desembaraços → Supabase
         run: python scripts/pipelines/anp/fase3/02_desembaracos_sync.py
-        env:
-          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-
-      - name: Sync ANP Painel Importações Distribuidores → Supabase
-        run: python scripts/pipelines/anp/fase3/03_painel_imp_sync.py
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
