@@ -129,11 +129,21 @@ def _listar_anos_disponiveis() -> dict[int, str]:
 
 
 def _already_has_history(sb) -> bool:
+    """True if anp_desembaracos has any REAL (non-legacy) rows for past years.
+
+    Legacy rows (cnpj='__legacy__') from before the 2026-05-25 Imports & Exports
+    reform don't count — they exist for historical totals but lack the
+    importador/cnpj/uf_cnpj enrichment that the reform requires. Treating them as
+    'history' would short-circuit the next run into current-year-only mode and
+    permanently strand historical years with the sentinel value, silently
+    undoing the backfill that's supposed to replace them.
+    """
     try:
         res = (
             sb.table("anp_desembaracos")
             .select("ano", count="exact")
             .lt("ano", _ANO_ATUAL)
+            .neq("cnpj", _LEGACY_CNPJ)
             .limit(1)
             .execute()
         )
