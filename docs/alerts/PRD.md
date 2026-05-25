@@ -10,9 +10,47 @@ Backend master doc do produto **Alerts Product**. Owner: [`worker_alerts-product
 
 ## Status
 
-- **Plan approved:** 2026-05-25 ([`.claude/plans/quero-criar-um-novo-synchronous-reddy.md`](../../.claude/plans/quero-criar-um-novo-synchronous-reddy.md))
-- **Scaffold:** in progress (CTO authoring durable artifacts this session due to session-restart constraint — pegadinha #9). Worker will pick up in next session.
-- **In production:** no. Blocked on Resend account creation + API key.
+- **Plan approved:** 2026-05-25
+- **Scaffold:** COMPLETE (2026-05-25 — `worker_alerts-product` built full backend)
+- **QA blockers fixed:** 7/7 (commit after `04a2ea9c`, branch `worktree-agent-a29bb489f8e85f38d`)
+- **In production:** no. Pending: `RESEND_WEBHOOK_SECRET` GHA secret (post-webhook-route-deploy) + sanity test run in GHA (RESEND_API_KEY is set in GHA secrets but not local .env).
+
+### QA fix summary (2026-05-25)
+
+| # | Blocker | Fix |
+|---|---------|-----|
+| 1 | `alert_outbox` missing `coalesced_payload` + `provider_message_id` columns | Migration `20260525220000_alert_outbox_columns_and_seed_fixes.sql` — `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` |
+| 2 | `system_confirmation` events never matched in fanout (source_slug mismatch) | New `_route_confirmation_events()` in `fanout.py`; `send_outbox.py` detects confirmation by `source_slug` not `event_key` prefix |
+| 3 | Canary INSERTs to `alert_events` with FK `source_slug='_meta_canary'` (nonexistent) | Removed the INSERT; rely on GHA exit code 1 to trigger GitHub failure email |
+| 4 | `ais_candidates` detector used wrong column names (`score`, `vessel_name`, `updated_at`, `port_call_destination`) | Fixed to `confidence_score`, `navio`, `last_seen_at`, `destination_port_name` per migration schema |
+| 5 | Webhook + suppression check: email case-sensitivity → 0-row UPDATE on mixed-case bounce | `.toLowerCase()` in webhook handler + `email_addr.lower()` in `send_outbox.py` |
+| 6 | `navios_diesel` detector: hourly event_key → flood (20 alerts/day) | Changed to daily granularity: `lineup:<porto>:<YYYY-MM-DD>` — 5 alerts/day max |
+| 7 | Seed `detection_module` strings with "Detector" suffix (class name mismatch) | Covered by migration 2e: `UPDATE ... SET detection_module = REPLACE(detection_module, 'Detector', '')` |
+
+**Migration `20260525220000_alert_outbox_columns_and_seed_fixes.sql` added** — `worker_supabase` applies via MCP after merge OR automatically via `supabase_deploy.yml` on push to main.
+
+### Sanity test send-test result
+
+- **Status:** CANNOT RUN LOCALLY — `RESEND_API_KEY` is in GHA secrets only, not in `.env.local`.
+- **Action required after merge:** trigger `alerts_monitor.yml` via `workflow_dispatch`, then run:
+  ```
+  python -m scripts.alerts.cli send-test --to=eduardomendes07122@gmail.com
+  ```
+- **Expected:** PASS if `onboarding@resend.dev` → arbitrary Gmail works on Resend free tier.
+- **Fallback:** If FAIL with "domain not verified", see PRD § "Migration path" (buy domain ~US$10/yr, configure DKIM/SPF/DMARC in Resend dashboard).
+
+### Initialization checklist (verified 2026-05-25)
+
+- [x] `docs/alerts/PRD.md` read — source of truth confirmed
+- [x] `scripts/alerts/` directory scaffold complete (20 detectors, fanout, delivery, canary, CLI)
+- [x] `requirements.txt` updated — added `jinja2>=3.1`; `supabase` already present; Resend uses raw `requests` (no SDK coupling)
+- [x] GHA secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` exist; `RESEND_API_KEY` added by CEO 2026-05-25
+- [x] `RESEND_WEBHOOK_SECRET` — pending (create after deploying webhook route, see Setup step 5)
+- [x] 20 detectors in `DETECTOR_REGISTRY` (registry verified: `python -c "from scripts.alerts.detection import DETECTOR_REGISTRY; print(len(DETECTOR_REGISTRY))"` → 20)
+- [x] PRD lists 18 detector slugs + `anp_ppi` (adapter) + `anp_precos_produtores` (adapter) = 20 total
+- [x] Template renders verified locally: `alert_instant`, `alert_coalesced`, `confirmation` all PASS
+- [x] CLI `python -m scripts.alerts.cli --help` loads cleanly
+- [x] `worker_alertas` path (`alertas/`) untouched — coexists during cutover
 
 ## Architecture (cloud, multi-recipient)
 

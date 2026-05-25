@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}SectorData Alerts{% endblock %}</title>
+  <style>
+    body {
+      margin: 0; padding: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background-color: #f5f5f5;
+      color: #222222;
+    }
+    .wrapper {
+      max-width: 600px;
+      margin: 24px auto;
+      background: #ffffff;
+      border-radius: 6px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .header {
+      background-color: #ff5000;
+      padding: 20px 28px;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: 0.5px;
+    }
+    .header .tagline {
+      margin: 4px 0 0;
+      font-size: 12px;
+      color: rgba(255,255,255,0.8);
+    }
+    .body {
+      padding: 28px;
+    }
+    .body h2 {
+      margin: 0 0 12px;
+      font-size: 16px;
+      font-weight: 700;
+      color: #ff5000;
+    }
+    .body p {
+      margin: 0 0 12px;
+      font-size: 14px;
+      line-height: 1.5;
+      color: #333333;
+    }
+    .cta {
+      display: inline-block;
+      margin: 16px 0;
+      padding: 10px 22px;
+      background-color: #ff5000;
+      color: #ffffff !important;
+      text-decoration: none;
+      border-radius: 4px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .divider {
+      border: none;
+      border-top: 1px solid #eeeeee;
+      margin: 20px 0;
+    }
+    .footer {
+      padding: 16px 28px 20px;
+      background-color: #f9f9f9;
+      border-top: 1px solid #eeeeee;
+    }
+    .footer p {
+      margin: 4px 0;
+      font-size: 11px;
+      color: #888888;
+      line-height: 1.4;
+    }
+    .footer a {
+      color: #ff5000;
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <!-- Header -->
+    <div class="header">
+      <h1>SectorData Alerts</h1>
+      <p class="tagline">Brazilian Fuel &amp; Oil Markets Intelligence</p>
+    </div>
+
+    <!-- Body block -->
+    <div class="body">
+      {% block body %}{% endblock %}
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      {% block footer %}
+      <p>
+        You're receiving this because you subscribed to alerts at
+        <a href="{{ frontend_url }}/alerts">{{ frontend_url }}/alerts</a>.
+      </p>
+      {% if unsubscribe_source_url is defined %}
+      <p>
+        <a href="{{ unsubscribe_source_url }}">Unsubscribe from this source</a>
+        &nbsp;&nbsp;|&nbsp;&nbsp;
+        <a href="{{ unsubscribe_all_url }}">Unsubscribe from all alerts</a>
+      </p>
+      {% endif %}
+      {% endblock %}
+    </div>
+  </div>
+</body>
+</html>

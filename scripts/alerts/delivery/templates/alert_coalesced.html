@@ -1,0 +1,40 @@
+{% extends "_layout.html" %}
+
+{% block title %}{{ source.display_name }} — {{ event_count }} Updates Available{% endblock %}
+
+{% block body %}
+<h2>{{ source.display_name }}</h2>
+<p>
+  <strong>{{ event_count }} new updates</strong> are available for
+  <strong>{{ source.display_name }}</strong> since the last alert.
+</p>
+
+<table style="width:100%; border-collapse:collapse; font-size:13px; margin: 16px 0;">
+  <thead>
+    <tr style="background:#f5f5f5;">
+      <th style="text-align:left; padding:6px 8px; border-bottom:2px solid #eeeeee;">Event</th>
+      <th style="text-align:left; padding:6px 8px; border-bottom:2px solid #eeeeee;">Detected (UTC)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for evt in events %}
+    <tr style="border-bottom:1px solid #eeeeee;">
+      <td style="padding:6px 8px;">
+        {% set p = evt.payload %}
+        {% if p.message %}{{ p.message }}{% else %}{{ evt.event_key }}{% endif %}
+      </td>
+      <td style="padding:6px 8px; color:#666; white-space:nowrap;">
+        {{ evt.detected_at[:19] if evt.detected_at else "—" }}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% set first_payload = events[0].payload if events else {} %}
+{% if first_payload.frontend_route %}
+<a class="cta" href="{{ frontend_url }}{{ first_payload.frontend_route }}">View all data</a>
+{% else %}
+<a class="cta" href="{{ frontend_url }}/alerts">View data</a>
+{% endif %}
+{% endblock %}

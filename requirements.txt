@@ -19,3 +19,8 @@ pdfplumber
 # pdf2image and pytesseract are NOT listed here — they are opt-in for the
 # --enable-ocr-fallback flag in subsidy_diesel_sync.py and require a system
 # Tesseract binary. Install them manually if needed: pip install pdf2image pytesseract
+
+# ── Alerts Product (scripts/alerts/) ──────────────────────────────────────────
+jinja2>=3.1          # email template rendering
+# resend SDK not used — we call the Resend REST API directly via `requests`
+# (avoids SDK version coupling; requests is already listed above)
