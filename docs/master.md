@@ -39,11 +39,9 @@ CEO (Eduardo)
      │   ├─ dash-anp-cdp                  (/anp-cdp — Oil & Gas)
      │   ├─ dash-anp-cdp-bsw             (/anp-cdp-bsw — Oil & Gas)
      │   ├─ dash-anp-cdp-depletion       (/anp-cdp-depletion — Oil & Gas)
-     │   ├─ dash-anp-precos-produtores    (/anp-precos-produtores — Fuel Distribution)
      │   ├─ dash-anp-glp                  (/anp-glp — Fuel Distribution)
-     │   ├─ dash-anp-lpc                  (/anp-lpc — Fuel Distribution)
+     │   ├─ dash-anp-prices               (/anp-prices — Fuel Distribution; consolida /anp-precos-produtores + /anp-precos-distribuicao + /anp-lpc em 2026-05-26)
      │   ├─ dash-imports-exports          (/imports-exports — Fuel Distribution; substitui /anp-daie + /anp-desembaracos + /anp-painel-importacoes; absorveu /mdic-comex via Panel C "Import Price" em 2026-05-25)
-     │   ├─ dash-anp-precos-distribuicao  (/anp-precos-distribuicao — Fuel Distribution)
      │   ├─ dash-anp-cdp-diaria          (/anp-cdp-diaria — Oil & Gas)
      │   ├─ dash-subsidy-tracker          (/subsidy-tracker — Fuel Distribution, dados proprietários)
      │   ├─ dash-admin-analytics          (/admin-analytics — Admin-only, sem module_visibility)
@@ -98,11 +96,9 @@ Cada um possui um módulo (ou bundle, no caso de admin). Cada um auto-documenta 
 | [`worker_dash-anp-cdp`](../.claude/agents/worker_dash-anp-cdp.md) | `/anp-cdp` | [`docs/app/anp-cdp.md`](app/anp-cdp.md) |
 | [`worker_dash-anp-cdp-bsw`](../.claude/agents/worker_dash-anp-cdp-bsw.md) | `/anp-cdp-bsw` (Oil & Gas) | [`docs/app/anp-cdp-bsw.md`](app/anp-cdp-bsw.md) |
 | [`worker_dash-anp-cdp-depletion`](../.claude/agents/worker_dash-anp-cdp-depletion.md) | `/anp-cdp-depletion` (Oil & Gas) | [`docs/app/anp-cdp-depletion.md`](app/anp-cdp-depletion.md) |
-| [`worker_dash-anp-precos-produtores`](../.claude/agents/worker_dash-anp-precos-produtores.md) | `/anp-precos-produtores` | [`docs/app/anp-precos-produtores.md`](app/anp-precos-produtores.md) |
 | [`worker_dash-anp-glp`](../.claude/agents/worker_dash-anp-glp.md) | `/anp-glp` | [`docs/app/anp-glp.md`](app/anp-glp.md) |
-| [`worker_dash-anp-lpc`](../.claude/agents/worker_dash-anp-lpc.md) | `/anp-lpc` | [`docs/app/anp-lpc.md`](app/anp-lpc.md) |
+| [`worker_dash-anp-prices`](../.claude/agents/worker_dash-anp-prices.md) | `/anp-prices` (substitui `/anp-precos-produtores` + `/anp-precos-distribuicao` + `/anp-lpc` retirados em 2026-05-26; UNION ALL server-side das 3 tabelas com normalização de produto/unidade/região, fallback Diesel S10→S500, GLP normalizado para R$/13kg) | [`docs/app/anp-prices.md`](app/anp-prices.md) |
 | [`worker_dash-imports-exports`](../.claude/agents/worker_dash-imports-exports.md) | `/imports-exports` (substitui `/anp-daie` + `/anp-desembaracos` + `/anp-painel-importacoes`; consolida importações por país e por importador a partir da `anp_desembaracos` enriquecida + exportações via `anp_daie`) | [`docs/app/imports-exports.md`](app/imports-exports.md) |
-| [`worker_dash-anp-precos-distribuicao`](../.claude/agents/worker_dash-anp-precos-distribuicao.md) | `/anp-precos-distribuicao` | [`docs/app/anp-precos-distribuicao.md`](app/anp-precos-distribuicao.md) |
 | [`worker_dash-anp-cdp-diaria`](../.claude/agents/worker_dash-anp-cdp-diaria.md) | `/anp-cdp-diaria` | [`docs/app/anp-cdp-diaria.md`](app/anp-cdp-diaria.md) |
 | [`worker_dash-subsidy-tracker`](../.claude/agents/worker_dash-subsidy-tracker.md) | `/subsidy-tracker` (Fuel Distribution — dados proprietários) | [`docs/app/subsidy-tracker.md`](app/subsidy-tracker.md) |
 | [`worker_dash-admin-analytics`](../.claude/agents/worker_dash-admin-analytics.md) | `/admin-analytics` (Admin-only — sem `module_visibility`; backed por `app_events`) | [`docs/app/admin-analytics.md`](app/admin-analytics.md) |
@@ -439,8 +435,12 @@ Workflow controlado pelo **Subgerente APP** (não pelo Gerente Geral). Ver detal
 ## Estado atual (snapshot)
 
 - 4 departamentos + 3 papéis transversais.
-- 18 dashboards ativos (8 originais + 4 da Fase 3 remanescentes: `/anp-cdp`, `/anp-precos-produtores`, `/anp-glp`, `/anp-lpc` + 5 novos: `/imports-exports` (consolida `/anp-daie` + `/anp-desembaracos` + `/anp-painel-importacoes`, retirados em 2026-05-25; absorveu `/mdic-comex` via Panel C "Import Price" no mesmo dia — `mdic_comex` table e workflow ETL permanecem ativos alimentando Panel C), `/anp-precos-distribuicao`, `/anp-cdp-diaria`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/subsidy-tracker` + `/admin-analytics` (Admin-only, sem `module_visibility`)).
+- 16 dashboards ativos (8 originais + 2 da Fase 3 remanescentes: `/anp-cdp`, `/anp-glp` + 6 novos: `/anp-prices` (consolida `/anp-precos-produtores` + `/anp-precos-distribuicao` + `/anp-lpc` retirados em 2026-05-26), `/imports-exports` (consolida `/anp-daie` + `/anp-desembaracos` + `/anp-painel-importacoes` retirados em 2026-05-25; absorveu `/mdic-comex` via Panel C "Import Price" no mesmo dia — `mdic_comex` table e workflow ETL permanecem ativos alimentando Panel C), `/anp-cdp-diaria`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/subsidy-tracker` + `/admin-analytics` (Admin-only, sem `module_visibility`)).
 - Documentação inicial criada em **2026-05-05**.
+
+### Reforma ANP Prices (2026-05-26)
+
+`/anp-prices` substitui os 3 dashboards retirados `/anp-precos-produtores`, `/anp-precos-distribuicao`, `/anp-lpc`. Backend: UNION ALL server-side das 3 tabelas (`anp_precos_produtores`, `anp_precos_distribuicao`, `anp_lpc`) via `get_anp_prices_serie`, com normalização de produto/unidade/região, fallback Diesel S10→S500 e GLP normalizado para R$/13kg. 3 RPCs novas (`get_anp_prices_filtros`, `get_anp_prices_serie`, `get_anp_prices_export_count`); 10 RPCs legadas dropadas. Tabelas-fonte e pipelines ETL intactos (`etl_anp_precos.yml`, `etl_anp_lpc.yml`, `etl_anp_precos_distribuicao.yml`). Sub-PRDs antigos arquivados em `docs/app/_deprecated/`. Migrations: `supabase/migrations/20260526000000_anp_prices_consolidation.sql` + `20260526000001_anp_prices_uf_fix.sql`. Owner: `worker_dash-anp-prices`.
 
 ### Limpeza inicial (2026-05-05)
 

@@ -44,7 +44,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/profile` | `get_my_profile`, `upsert_my_profile` | — |
 | `/admin-panel` | `get_module_visibility`, `set_module_visibility`, `set_module_home_visibility`, `set_module_public_visibility`, `get_all_users_with_roles`, `set_user_role`, `admin_list_default_news_keywords`, `admin_add_default_news_keyword`, `admin_remove_default_news_keyword` | — |
 
-### Statistics (Fase 3 onwards — 11 dashboards)
+### Statistics (Fase 3 onwards — 9 dashboards)
 
 | Route | Category | RPC functions | Export |
 |-------|----------|---------------|--------|
@@ -52,12 +52,12 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/anp-cdp-bsw` | Oil & Gas | `get_anp_cdp_bsw_scatter`, `get_anp_cdp_bsw_field_aggregate` (X axis: `pct_voip`), `get_anp_cdp_bsw_campos` | No |
 | `/anp-cdp-depletion` | Oil & Gas | `get_anp_cdp_depletion_campos`, `get_anp_cdp_depletion_scatter`, `get_anp_cdp_depletion_field_aggregate` | No |
 | `/anp-cdp-diaria` | Oil & Gas | `get_anp_cdp_diaria_filtros`, `get_anp_cdp_diaria_serie` | Yes |
-| `/anp-precos-produtores` | Fuel Distribution | `get_anp_precos_produtores_serie`, `get_anp_precos_produtores_filtros` | Yes |
 | `/anp-glp` | Fuel Distribution | `get_anp_glp_serie`, `get_anp_glp_filtros` | Yes |
-| `/anp-lpc` | Fuel Distribution | `get_anp_lpc_nacional`, `get_anp_lpc_serie`, `get_anp_lpc_filtros` | Yes |
+| `/anp-prices` | Fuel Distribution | `get_anp_prices_filtros`, `get_anp_prices_serie`, `get_anp_prices_export_count` | Yes |
 | `/imports-exports` | Fuel Distribution | `get_imports_exports_filtros`, `get_imports_exports_paises_stacked`, `get_imports_exports_importers_stacked`, `get_imports_exports_yoy_table`, `get_imports_exports_exports_paises_stacked`, `get_imports_exports_exports_yoy_table`, `get_imports_exports_fob_price_serie` | Yes |
-| `/anp-precos-distribuicao` | Fuel Distribution | `get_anp_precos_distribuicao_serie`, `get_anp_precos_distribuicao_top_distribuidoras`, `get_anp_precos_distribuicao_filtros` | Yes |
 | `/subsidy-tracker` | Fuel Distribution (Proprietary) | `get_subsidy_tracker_diesel` | Yes |
+
+> **ANP Prices consolidation (2026-05-26):** `/anp-prices` replaces the 3 retired dashboards `/anp-precos-produtores`, `/anp-precos-distribuicao`, `/anp-lpc`. Backed by the 3 source tables (`anp_precos_produtores`, `anp_precos_distribuicao`, `anp_lpc`) joined server-side via `get_anp_prices_serie` (UNION ALL with product/unit/region normalization, Diesel S10→S500 fallback, GLP normalized to R$/13kg). 10 legacy RPCs dropped. ETL pipelines untouched. Archived sub-PRDs live under `docs/app/_deprecated/`. Migration: `supabase/migrations/20260526000000_anp_prices_consolidation.sql` + `20260526000001_anp_prices_uf_fix.sql`.
 
 > **Imports & Exports reform (2026-05-25):** `/imports-exports` replaces the 3 retired dashboards `/anp-daie`, `/anp-desembaracos`, `/anp-painel-importacoes`. Backed by `anp_desembaracos` (enriched with `importador`/`cnpj`/`uf_cnpj`, PK extended with `cnpj`) and `anp_daie`. The dropped table `anp_painel_imp_dist` and its 8 obsolete RPCs are removed. Auxiliary lookup tables seeded by the reform: `imports_product_map`, `importer_group_map` (intentionally empty at seed time — populated post-backfill), `ncm_densidade_kg_m3`. Migration: `supabase/migrations/20260525000010_imports_exports_enrichment.sql`. Archived sub-PRDs live under `docs/app/_deprecated/`.
 
@@ -89,11 +89,11 @@ dashboard_projeto/
 │   │   ├── news-hunter.md
 │   │   ├── admin.md               # bundle: home + profile + admin-panel
 │   │   ├── anp-cdp.md anp-cdp-bsw.md anp-cdp-depletion.md anp-cdp-diaria.md
-│   │   ├── anp-precos-produtores.md anp-glp.md
-│   │   ├── anp-lpc.md
+│   │   ├── anp-glp.md
+│   │   ├── anp-prices.md          # consolidates /anp-precos-produtores + /anp-precos-distribuicao + /anp-lpc (2026-05-26)
 │   │   ├── imports-exports.md     # consolidates the 3 retired anp-* import/export dashboards + /mdic-comex (Panel C, 2026-05-25)
-│   │   ├── anp-precos-distribuicao.md subsidy-tracker.md admin-analytics.md
-│   │   ├── _deprecated/           # archived sub-PRDs: anp-daie, anp-desembaracos, anp-painel-importacoes, mdic-comex
+│   │   ├── subsidy-tracker.md admin-analytics.md
+│   │   ├── _deprecated/           # archived sub-PRDs: anp-daie, anp-desembaracos, anp-painel-importacoes, mdic-comex, anp-precos-produtores, anp-precos-distribuicao, anp-lpc
 │   │   └── news-hunter-architecture.md  # cross-repo handoff doc
 │   ├── design/
 │   │   ├── identity.md            # tokens (#ff5000, Arial, liquid glass)
@@ -130,10 +130,10 @@ dashboard_projeto/
 │   │       ├── diesel-gasoline-margins/ price-bands/ stocks/
 │   │       ├── news-hunter/       # page.tsx + page.module.css
 │   │       ├── anp-cdp/ anp-cdp-bsw/ anp-cdp-depletion/ anp-cdp-diaria/
-│   │       ├── anp-precos-produtores/ anp-glp/
-│   │       ├── anp-lpc/
+│   │       ├── anp-glp/
+│   │       ├── anp-prices/        # consolidates /anp-precos-produtores + /anp-precos-distribuicao + /anp-lpc (2026-05-26)
 │   │       ├── imports-exports/   # consolidates the 3 retired anp-* import/export routes + Panel C absorbs /mdic-comex (2026-05-25)
-│   │       ├── anp-precos-distribuicao/ subsidy-tracker/ admin-analytics/
+│   │       ├── subsidy-tracker/ admin-analytics/
 │   │       ├── profile/ admin-panel/ template-module/
 │   ├── components/
 │   │   ├── NavBar.tsx PlotlyChart.tsx PeriodSlider.tsx CheckList.tsx
