@@ -114,7 +114,8 @@ export interface UseImportsExportsData {
   // Derived helpers
   periodBadge: string;    // e.g. "2015 – 2024"
   yoyEndAno: number;
-  yoyEndMes: number;
+  yoyEndMes: number;         // derived from actual paisesData (countries panel)
+  yoyImportersEndMes: number; // derived from actual importersData (importers panel)
 
   // Visibility guard
   visible: boolean;
@@ -208,9 +209,29 @@ export function useImportsExportsData(): UseImportsExportsData {
     JSON.stringify(filters.exportsProductsVisible),
   ]);
 
-  // ── Derived: YoY end date = period[1] with last month = December ──────────
+  // ── Derived: YoY end date = period[1], last month derived from actual data ─
+  // Prevents partial-year bias: if anoFim is current year and only months 1–5
+  // exist, hardcoding 12 makes the RPC compare 5 partial vs 12 full months.
+  // Falls back to 12 when no rows for anoFim (RPC returns null prev_12m → "n/a").
   const yoyEndAno = stableFilters.period[1];
-  const yoyEndMes = 12; // assume full year; actual data cap is whatever the DB has
+
+  const yoyEndMes = useMemo(() => {
+    const anoFim = stableFilters.period[1];
+    const rowsForYear = paisesData.filter(
+      (r) => r.ano === anoFim && r.total_kg > 0,
+    );
+    if (!rowsForYear.length) return 12;
+    return Math.max(...rowsForYear.map((r) => r.mes));
+  }, [paisesData, stableFilters.period[1]]);
+
+  const yoyImportersEndMes = useMemo(() => {
+    const anoFim = stableFilters.period[1];
+    const rowsForYear = importersData.filter(
+      (r) => r.ano === anoFim && r.total_mil_m3 > 0,
+    );
+    if (!rowsForYear.length) return yoyEndMes;
+    return Math.max(...rowsForYear.map((r) => r.mes));
+  }, [importersData, stableFilters.period[1], yoyEndMes]);
 
   // ── 2. Imports tab — Panel A (paises stacked) ───────────────────────────────
   const importsAFetchIdRef = useRef(0);
@@ -316,7 +337,7 @@ export function useImportsExportsData(): UseImportsExportsData {
           "importers",
           stableFilters.unifiedProduct,
           yoyEndAno,
-          yoyEndMes,
+          yoyImportersEndMes,
           TOP_N,
         );
         if (myId === yoyIFetchIdRef.current) setYoyImportersData(rows);
@@ -328,7 +349,7 @@ export function useImportsExportsData(): UseImportsExportsData {
     }, 400);
     return () => { if (yoyITimerRef.current) clearTimeout(yoyITimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.period[1], yoyEndAno, yoyEndMes]);
+  }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.period[1], yoyEndAno, yoyImportersEndMes]);
 
   // ── 6. Exports tab — multi-line series ─────────────────────────────────────
   const exportsFetchIdRef = useRef(0);
@@ -379,6 +400,7 @@ export function useImportsExportsData(): UseImportsExportsData {
     periodBadge,
     yoyEndAno,
     yoyEndMes,
+    yoyImportersEndMes,
     visible,
     visibilityLoading,
   };
