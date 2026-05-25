@@ -224,31 +224,6 @@ def historico_anp_glp(slug, nome, url) -> list[dict]:
     return rows
 
 
-def historico_sindicom(slug, nome, url) -> list[dict]:
-    """Lê o xlsx do SINDICOM e extrai todos os meses (granularidade mensal)."""
-    import pandas as pd
-    rows = []
-    pasta = _DADOS_DIR / slug
-    for arq in sorted(pasta.glob("*.xlsx")):
-        ts = _mtime_iso(arq)
-        try:
-            df = pd.read_excel(arq, dtype=str)
-            col_ano = _achar_col(df, "ANO")
-            col_mes = _achar_col(df, "MES")
-            if col_ano and col_mes:
-                periodos = _extrair_periodos_df(df, col_ano, col_mes)
-                for p in periodos:
-                    rows.append(_entrada(_periodo_ts(p), slug, nome, url,
-                                         p, arq.name))
-                if periodos:
-                    continue
-        except Exception:
-            pass
-        rows.append(_entrada(ts, slug, nome, url,
-                             _periodo_do_arquivo(arq.name), arq.name))
-    return rows
-
-
 def historico_anp_lpc(slug, nome, url) -> list[dict]:
     """
     ANP LPC: combina ponta (xlsx semanais) + histórico (Dados Abertos
@@ -545,7 +520,6 @@ def historico_generico(slug, nome, url) -> list[dict]:
 _HANDLERS = {
     "anp_dados_abertos_ie":   historico_anp_dados_abertos_ie,
     "anp_glp":                historico_anp_glp,
-    "sindicom":               historico_sindicom,
     "anp_lpc_ultimas":        historico_anp_lpc,
     "anp_precos_produtores":  historico_anp_precos_produtores,
     "anp_desembaracos":       historico_anp_desembaracos,
