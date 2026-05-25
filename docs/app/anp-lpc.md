@@ -70,7 +70,7 @@ Visualização do **Levantamento de Preços de Combustíveis (LPC)** publicado s
 
 Header: `ANP LPC — Levantamento de Preços de Combustíveis` + sub `Preço médio semanal nos postos por produto e UF (média ponderada por número de postos pesquisados)` + badge de período quando dados existem.
 
-Diferença vs `/anp-precos-produtores`: aqui é o **preço final ao consumidor** nos postos (revenda), não o preço de produtores/importadores. Diferença vs `/anp-ppi`: paridade de importação é teórica; LPC é preço efetivamente cobrado.
+Diferença vs `/anp-precos-produtores`: aqui é o **preço final ao consumidor** nos postos (revenda), não o preço de produtores/importadores.
 
 ## RPCs
 

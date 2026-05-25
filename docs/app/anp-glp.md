@@ -23,7 +23,7 @@ Visualização das **vendas mensais de GLP** por distribuidora e por categoria d
 
 Header: `ANP — Vendas de GLP por Recipiente` + sub `Vendas mensais de GLP por distribuidora e categoria de recipiente (P13, Outros - GLP, Outros - Especiais)` + badge de período quando dados existem.
 
-Diferença vs `/anp-ppi` e `/anp-precos-produtores`: aqui o foco é **volume vendido** (kg) por recipiente, não preço. P13 (Botijão 13 kg) é o produto âncora do GLP residencial brasileiro.
+Diferença vs `/anp-precos-produtores`: aqui o foco é **volume vendido** (kg) por recipiente, não preço. P13 (Botijão 13 kg) é o produto âncora do GLP residencial brasileiro.
 
 ## RPCs
 
@@ -44,7 +44,7 @@ Diferença vs `/anp-ppi` e `/anp-precos-produtores`: aqui o foco é **volume ven
 
 ### Migration relevante
 
-- `20260504000002_anp_precos.sql` — schema + RLS + RPCs + INSERT em `module_visibility` (compartilhada com `/anp-ppi` e `/anp-precos-produtores`).
+- `20260504000002_anp_precos.sql` — schema + RLS + RPCs + INSERT em `module_visibility` (compartilhada com `/anp-precos-produtores`).
 
 ## Pipeline de origem
 

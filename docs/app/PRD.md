@@ -89,7 +89,7 @@ package.json, eslint.config.mjs     Configs do projeto
 
 | Tier | Critério | UX | Quando usar |
 |---|---|---|---|
-| **Tier 1** | Dataset < ~50k linhas | Botões diretos no `ExportPanel` | `/navios-diesel`, `/anp-glp`, `/imports-exports`, `/anp-precos-produtores`, `/sindicom`, `/anp-ppi`, `/anp-precos-distribuicao`, `/diesel-gasoline-margins`, `/price-bands` |
+| **Tier 1** | Dataset < ~50k linhas | Botões diretos no `ExportPanel` | `/navios-diesel`, `/anp-glp`, `/imports-exports`, `/anp-precos-produtores`, `/sindicom`, `/anp-precos-distribuicao`, `/diesel-gasoline-margins`, `/price-bands` |
 | **Tier 2** | Dataset >= ~50k linhas | `ExportPanel mode="modal"` + ExportModal | `/market-share`, `/sales-volumes`, `/anp-cdp`, `/anp-lpc` |
 
 ### Como ajustar `AVG_BYTES_PER_ROW` para dataset novo
@@ -224,7 +224,6 @@ Para qualquer mudança em código de um dashboard específico, delegue ao agente
 | `/news-hunter` | `worker_dash-news-hunter` | [news-hunter.md](news-hunter.md) |
 | `/home`, `/profile`, `/admin-panel` | `worker_dash-admin` | [admin.md](admin.md) |
 | `/anp-cdp` | `worker_dash-anp-cdp` | [anp-cdp.md](anp-cdp.md) |
-| `/anp-ppi` | `worker_dash-anp-ppi` | [anp-ppi.md](anp-ppi.md) |
 | `/anp-precos-produtores` | `worker_dash-anp-precos-produtores` | [anp-precos-produtores.md](anp-precos-produtores.md) |
 | `/anp-glp` | `worker_dash-anp-glp` | [anp-glp.md](anp-glp.md) |
 | `/anp-lpc` | `worker_dash-anp-lpc` | [anp-lpc.md](anp-lpc.md) |
@@ -238,7 +237,6 @@ Para qualquer mudança em código de um dashboard específico, delegue ao agente
 | Slug | Categoria NavBar | Tabela alvo (linhas) |
 |---|---|---|
 | `anp-cdp` | Oil & Gas | `anp_cdp_producao` (~1.8M) |
-| `anp-ppi` | Fuel Distribution | `anp_ppi` (~18k) |
 | `anp-precos-produtores` | Fuel Distribution | `anp_precos_produtores` (~38k) |
 | `anp-glp` | Fuel Distribution | `anp_glp` (~3k) |
 | `anp-lpc` | Fuel Distribution | `anp_lpc` (~30k) |
@@ -368,7 +366,7 @@ return (
 | 1 (alta prioridade) | `sales-volumes`, `market-share`, `navios-diesel` | Mais usuários ativos. Bugs silenciosos são caros aqui. |
 | 2 (média) | `diesel-gasoline-margins`, `price-bands`, `stocks` | Fluxo Market Watch — usuários executivos. |
 | 3 (baixa) | `news-hunter`, `home`/`profile`/`admin-panel` | Fluxos administrativos / passivos. |
-| 4 (Fase 3) | `anp-cdp`, `anp-ppi`, `anp-precos-produtores`, `anp-glp`, `anp-lpc`, `sindicom`, `imports-exports` | Dashboards mais novos — já têm padrões consolidados; aplicar incrementalmente. `imports-exports` substitui o trio `anp-daie` + `anp-desembaracos` + `anp-painel-importacoes` retirado em 2026-05-25 e absorveu `/mdic-comex` no mesmo dia via Panel C. |
+| 4 (Fase 3) | `anp-cdp`, `anp-precos-produtores`, `anp-glp`, `anp-lpc`, `sindicom`, `imports-exports` | Dashboards mais novos — já têm padrões consolidados; aplicar incrementalmente. `imports-exports` substitui o trio `anp-daie` + `anp-desembaracos` + `anp-painel-importacoes` retirado em 2026-05-25 e absorveu `/mdic-comex` no mesmo dia via Panel C. |
 
 **Regras de migração:**
 
