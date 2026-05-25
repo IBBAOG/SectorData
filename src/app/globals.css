@@ -19,6 +19,11 @@ body {
   padding: 20px 16px;
   overflow-y: auto;
   overflow-x: hidden;
+  /* Reserve scrollbar gutter so sidebars with content overflow (e.g. anp-cdp-depletion)
+     keep the same usable inner width as sidebars without overflow (e.g. anp-cdp-bsw).
+     Without this, the scrollbar steals ~15px from one sidebar but not the other,
+     producing visibly different toggle widths between sibling dashboards. */
+  scrollbar-gutter: stable;
   /* Liquid glass background */
   background: linear-gradient(
     180deg,
