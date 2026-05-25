@@ -2277,7 +2277,7 @@ export async function rpcGetDefaultNewsKeywords(
 // Unit contract (never drift label from divisor):
 //   Panel A (countries): RPC returns total_kg → UI divides by 1e6 → "kt"
 //   Panel B (importers): RPC returns total_mil_m3 (server-side conversion) → "mil m³"
-//   Exports: RPC returns volume_m3 → UI divides by 1e3 → "mil m³" | valor_usd → "USD"
+//   Exports stacked: server returns value already in mil m³ (metric=volume) or raw USD (metric=usd) → UI never divides
 
 export type IEFiltrosResult = {
   ano_min: number;
@@ -2306,12 +2306,18 @@ export type IEYoyTableRow = {
   yoy_pct: number | null;
 };
 
-export type IEExportsSerieRow = {
+export type IEExportsPaisesStackedRow = {
   ano: number;
   mes: number;
-  produto: string;
-  volume_m3: number;
-  valor_usd: number;
+  pais: string;
+  value: number;
+};
+
+export type IEExportsYoyRow = {
+  entity: string;
+  last_12m: number;
+  prev_12m: number;
+  yoy_pct: number | null;
 };
 
 export type IEFobPriceRow = {
@@ -2491,35 +2497,77 @@ export async function rpcGetImportsExportsFobPriceSerie(
 }
 
 /**
- * Exports time series from anp_daie (operacao = 'EXPORTAÇÃO').
- * Always fetch all 3 products; UI filters visibility with exportsProductsVisible.
- * volume_m3 / 1e3 = mil m³. valor_usd is raw USD.
+ * Stacked area data for the Exports tab — by destination country.
+ * Source: mdic_comex (migration 20260525000110_imports_exports_exports_by_country.sql).
+ * When metric='volume', server returns value in mil m³ (kg / density / 1000) — DO NOT divide client-side.
+ * When metric='usd', server returns raw FOB USD.
  */
-export async function rpcGetImportsExportsExportsSerie(
+export async function rpcGetImportsExportsExportsPaisesStacked(
   supabase: SupabaseClient,
-  unifiedProducts: string[],
+  unifiedProduct: string,
   anoInicio: number,
   anoFim: number,
-): Promise<IEExportsSerieRow[]> {
+  metric: "volume" | "usd" = "volume",
+  topN = 10,
+): Promise<IEExportsPaisesStackedRow[]> {
   try {
     const { data, error } = await supabase.rpc(
-      "get_imports_exports_exports_serie",
+      "get_imports_exports_exports_paises_stacked",
       {
-        p_unified_products: unifiedProducts,
+        p_unified_product: unifiedProduct,
         p_ano_inicio: anoInicio,
         p_ano_fim: anoFim,
+        p_metric: metric,
+        p_top_n: topN,
       },
     );
     if (error) throw error;
-    return ((data ?? []) as IEExportsSerieRow[]).map((r) => ({
+    return ((data ?? []) as IEExportsPaisesStackedRow[]).map((r) => ({
       ano: Number(r.ano),
       mes: Number(r.mes),
-      produto: String(r.produto),
-      volume_m3: Number(r.volume_m3 ?? 0),
-      valor_usd: Number(r.valor_usd ?? 0),
+      pais: String(r.pais),
+      value: Number(r.value ?? 0),
     }));
   } catch (e) {
-    console.error("get_imports_exports_exports_serie failed", e);
+    console.error("get_imports_exports_exports_paises_stacked failed", e);
+    return [];
+  }
+}
+
+/**
+ * YoY table for the Exports tab — last 12m vs prior 12m by destination country.
+ * Source: mdic_comex (migration 20260525000110).
+ * last_12m / prev_12m in mil m³ (metric=volume) or USD (metric=usd).
+ * yoy_pct is null when prev_12m = 0.
+ */
+export async function rpcGetImportsExportsExportsYoyTable(
+  supabase: SupabaseClient,
+  unifiedProduct: string,
+  anoFim: number,
+  mesFim: number,
+  metric: "volume" | "usd" = "volume",
+  topN = 10,
+): Promise<IEExportsYoyRow[]> {
+  try {
+    const { data, error } = await supabase.rpc(
+      "get_imports_exports_exports_yoy_table",
+      {
+        p_unified_product: unifiedProduct,
+        p_ano_fim: anoFim,
+        p_mes_fim: mesFim,
+        p_metric: metric,
+        p_top_n: topN,
+      },
+    );
+    if (error) throw error;
+    return ((data ?? []) as IEExportsYoyRow[]).map((r) => ({
+      entity: String(r.entity),
+      last_12m: Number(r.last_12m ?? 0),
+      prev_12m: Number(r.prev_12m ?? 0),
+      yoy_pct: r.yoy_pct != null ? Number(r.yoy_pct) : null,
+    }));
+  } catch (e) {
+    console.error("get_imports_exports_exports_yoy_table failed", e);
     return [];
   }
 }

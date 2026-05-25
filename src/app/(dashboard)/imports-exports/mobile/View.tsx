@@ -17,8 +17,8 @@
 // Units — CRITICAL: never drift label from divisor.
 //   Panel A: total_kg / 1e6 = kt. Label "kt".
 //   Panel B: total_mil_m3 already from RPC. Label "mil m³".
-//   Exports volume: volume_m3 / 1e3. Label "mil m³".
-//   Exports USD: valor_usd raw. Label "USD".
+//   Exports (metric=volume): server returns mil m³ — DO NOT divide. Label "mil m³".
+//   Exports (metric=usd): server returns raw USD. Label "USD".
 
 import dynamic from "next/dynamic";
 import type { Layout, PlotData } from "plotly.js";
@@ -273,6 +273,12 @@ function SectionHeading({ title, loading }: { title: string; loading?: boolean }
   );
 }
 
+// Month labels for YoY section heading (0-indexed)
+const MONTH_LABELS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
 // ─── Products ──────────────────────────────────────────────────────────────────
 
 const PRODUCTS: UnifiedProduct[] = ["Diesel", "Gasoline", "Crude Oil"];
@@ -293,8 +299,12 @@ export default function MobileView(): React.ReactElement {
     yoyPaisesLoading,
     yoyImportersData,
     yoyImportersLoading,
-    exportsData,
-    exportsLoading,
+    exportsPaisesData,
+    exportsPaisesLoading,
+    yoyExportsData,
+    yoyExportsLoading,
+    yoyEndAno,
+    yoyExportsEndMes,
     priceData,
     priceLoading,
     periodBadge,
@@ -332,55 +342,23 @@ export default function MobileView(): React.ReactElement {
     return buildStackedTraces(rows, "mil m³");
   }, [importersData]);
 
-  const exportsTraces = useMemo(() => {
-    const rows = exportsData.filter((r) => r.produto === filters.unifiedProduct);
-    if (!rows.length) return [];
-    const sorted = [...rows].sort((a, b) =>
-      a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes,
-    );
-    const xs = sorted.map(
-      (r) => `${r.ano}-${String(r.mes).padStart(2, "0")}`,
-    );
-    const ys =
-      filters.exportsYAxis === "volume"
-        ? sorted.map((r) => r.volume_m3 / 1e3)
-        : sorted.map((r) => r.valor_usd);
-    const unit = filters.exportsYAxis === "volume" ? "mil m³" : "USD";
-    return [{
-      type: "scatter" as const,
-      mode: "lines" as const,
-      name: filters.unifiedProduct,
-      x: xs,
-      y: ys,
-      line: { color: "#ff5000", width: 2 },
-      hovertemplate: `%{x}<br>${filters.unifiedProduct}: %{y:,.1f} ${unit}<extra></extra>`,
-    }] as unknown as PlotData[];
-  }, [exportsData, filters.unifiedProduct, filters.exportsYAxis]);
+  // Exports — stacked area by destination country (value already in correct unit from RPC)
+  const exportsUnit = filters.exportsYAxis === "volume" ? "mil m³" : "USD";
 
-  const exportsLayout: Partial<Layout> = {
-    ...COMMON_LAYOUT,
-    height: 280,
-    margin: { t: 8, b: 52, l: 60, r: 8 },
-    xaxis: {
-      ...AXIS_LINE,
-      tickangle: -60,
-      tickfont: { family: "Arial", size: 8 },
-    },
-    yaxis: {
-      ...AXIS_LINE,
-      title: {
-        text: filters.exportsYAxis === "volume" ? "mil m³" : "USD",
-        font: { family: "Arial", size: 10 },
-      },
-      tickformat: ",.1f",
-    },
-    legend: {
-      orientation: "h" as const,
-      x: 0,
-      y: -0.28,
-      font: { family: "Arial", size: 9 },
-    },
-  };
+  const exportsPaisesTraces = useMemo(() => {
+    const rows = exportsPaisesData.map((r) => ({
+      ano: r.ano,
+      mes: r.mes,
+      name: r.pais,
+      value: r.value, // server already in mil m³ or USD — never divide client-side
+    }));
+    return buildStackedTraces(rows, exportsUnit);
+  }, [exportsPaisesData, exportsUnit]);
+
+  const exportsPaisesLayout: Partial<Layout> = useMemo(
+    () => mobileAreaLayout(exportsUnit),
+    [exportsUnit],
+  );
 
   // Panel C — price metric
   const priceUnitLabel: Record<PriceMetric, string> = {
@@ -810,24 +788,38 @@ export default function MobileView(): React.ReactElement {
             ))}
           </div>
 
-          <SectionHeading title="Exports — Fuel Trade" loading={exportsLoading} />
+          <SectionHeading title="Exports — By Destination Country" loading={exportsPaisesLoading} />
           <div style={{ padding: "0 16px 8px" }}>
-            {exportsTraces.length > 0 ? (
+            {exportsPaisesTraces.length > 0 ? (
               <Plot
-                data={exportsTraces}
-                layout={exportsLayout}
+                data={exportsPaisesTraces}
+                layout={exportsPaisesLayout}
                 config={{ responsive: true, displayModeBar: false }}
                 style={{ width: "100%" }}
               />
-            ) : !exportsLoading ? (
+            ) : !exportsPaisesLoading ? (
               <div style={{ color: "#aaa", fontSize: 12, padding: 16 }}>
                 No export data for the selected period.
               </div>
             ) : null}
           </div>
 
-          <div style={{ padding: "0 16px", fontSize: 10, color: "#aaa", fontStyle: "italic" }}>
-            Source: ANP DAIE — no country or importer breakdown available.
+          {yoyExportsData.length > 0 && (
+            <>
+              <div style={{ padding: "4px 16px 4px", fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                Last 12 months — By Country (ending {MONTH_LABELS[(yoyExportsEndMes ?? 12) - 1]} {yoyEndAno})
+              </div>
+              <YoYCardList
+                rows={yoyExportsData}
+                loading={yoyExportsLoading}
+                volumeLabel={exportsUnit}
+              />
+            </>
+          )}
+
+          <div style={{ padding: "8px 16px 0", fontSize: 10, color: "#aaa", fontStyle: "italic" }}>
+            Source: MDIC Comex — monthly customs-declared exports by destination country
+            (NCM 27090010 / 27101259 / 27101921; kg→m³ via ANP standard densities).
           </div>
         </div>
       )}

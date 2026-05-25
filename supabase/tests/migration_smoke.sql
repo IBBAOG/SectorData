@@ -386,8 +386,12 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_imports_exports_yoy_table'; END IF;
 
   PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_imports_exports_exports_serie';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_imports_exports_exports_serie'; END IF;
+    WHERE n.nspname = 'public' AND p.proname = 'get_imports_exports_exports_paises_stacked';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_imports_exports_exports_paises_stacked'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_imports_exports_exports_yoy_table';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_imports_exports_exports_yoy_table'; END IF;
 
   PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public' AND p.proname = 'get_imports_exports_fob_price_serie';

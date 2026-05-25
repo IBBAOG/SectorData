@@ -1,0 +1,12 @@
+-- No-op migration: keeps `supabase db push` in sync with the production
+-- `schema_migrations` ledger, where this entry was registered when re-applying
+-- the corrected (ambiguity-free) definitions of:
+--   - public.get_imports_exports_exports_paises_stacked(text,int,int,text,int)
+--   - public.get_imports_exports_exports_yoy_table(text,int,int,text,int)
+--
+-- The canonical (CREATE OR REPLACE) SQL lives in
+-- `20260525000110_imports_exports_exports_by_country.sql`, which was edited
+-- in-place to embed the ambiguity fix before this no-op was authored.
+-- Therefore re-running that file (idempotent) already produces the corrected
+-- definitions on a fresh database — no work is needed here.
+SELECT 1;

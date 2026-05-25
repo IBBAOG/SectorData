@@ -1,0 +1,11 @@
+-- No-op migration: keeps `supabase db push` in sync with the production
+-- `schema_migrations` ledger, where this entry was registered when re-applying
+-- `public.get_imports_exports_exports_paises_stacked` with explicit `::int`
+-- casts on `mc.ano` / `mc.mes` (the underlying columns are `smallint`, which
+-- doesn't match the `RETURNS TABLE (ano int, mes int, ...)` signature).
+--
+-- The canonical SQL lives in
+-- `20260525000110_imports_exports_exports_by_country.sql`, which was edited
+-- in-place to embed the casts. A fresh `supabase db reset` re-runs that file
+-- and produces the corrected definition — no additional work is needed here.
+SELECT 1;

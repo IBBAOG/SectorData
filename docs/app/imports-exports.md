@@ -89,13 +89,26 @@ Returns `(entity text, last_12m numeric, prev_12m numeric, yoy_pct numeric)`.
 - `yoy_pct` is `NULL` when `prev_12m = 0` (no prior-year data). UI renders "n/a" in neutral color.
 - `yoy_pct` color: green for positive, red for negative, neutral for null.
 
-### `get_imports_exports_exports_serie(p_unified_products text[], p_ano_inicio, p_ano_fim)`
+### `get_imports_exports_exports_paises_stacked(p_unified_product, p_ano_inicio, p_ano_fim, p_metric DEFAULT 'volume', p_top_n DEFAULT 10)`
 
-Returns `(ano int, mes int, produto text, volume_m3 numeric, valor_usd numeric)`.
+Returns `(ano int, mes int, pais text, value numeric)`.
 
-- Filters `anp_daie.operacao = 'EXPORTAÇÃO'` (uppercase with diacritic — exact DB value).
-- UI requests a single-element array `[unifiedProduct]` — the active product from the global pill toggle.
-- Volume toggle: `volume_m3 / 1e3 = mil m³`. Value toggle: `valor_usd` raw. **Labels must match divisor.**
+- Source: `mdic_comex` (flow='export'). Migration `20260525000110_imports_exports_exports_by_country.sql`.
+- `p_metric='volume'`: `value` is already in **mil m³** (server-side `kg / densidade_kg_m3 / 1000`). **Never divide client-side.**
+- `p_metric='usd'`: `value` is raw FOB USD.
+- Server ranks destination countries by total value over the period. Non-top-N rows collapsed into `pais='Others'`.
+- Replaced the dropped `get_imports_exports_exports_serie` (migration 20260525000110).
+
+### `get_imports_exports_exports_yoy_table(p_unified_product, p_ano_fim, p_mes_fim, p_metric DEFAULT 'volume', p_top_n DEFAULT 10)`
+
+Returns `(entity text, last_12m numeric, prev_12m numeric, yoy_pct numeric)`.
+
+- Rolling 12m window ending at `(p_ano_fim, p_mes_fim)`. UI passes `period[1]` as `p_ano_fim` and the max month observed in `exportsPaisesData` for that year (fallback 12) as `p_mes_fim`.
+- `last_12m` / `prev_12m` in mil m³ (`metric=volume`) or USD (`metric=usd`).
+- `yoy_pct` is `NULL` when `prev_12m = 0`. UI renders "n/a" in neutral color.
+- `yoy_pct` color: green for positive, red for negative, neutral for null.
+
+> **Dropped RPC:** `get_imports_exports_exports_serie(p_unified_products text[], p_ano_inicio, p_ano_fim)` was removed in migration `20260525000110`. Any reference to it in frontend will fail at runtime. The new RPCs cover Exports end-to-end.
 
 ---
 
@@ -129,8 +142,11 @@ Returns `(ano int, mes int, produto text, volume_m3 numeric, valor_usd numeric)`
 │              │                                                             │
 │              │ Exports tab:                                                │
 │              │   SegmentedToggle: Volume (mil m³) / Value (USD)           │
-│              │   ChartSection "Exports — Fuel Trade"                      │
-│              │     Plotly single-line — 1 trace for active product        │
+│              │   ChartSection "Exports — By Destination Country"          │
+│              │     Plotly stacked area — x: YYYY-MM, stack: countries     │
+│              │     Top-10 + Others. Unit: mil m³ (metric=volume) or USD   │
+│              │   YoY table (entity | last 12m | prior 12m | YoY%)         │
+│              │   Source note: MDIC Comex                                  │
 └──────────────┴────────────────────────────────────────────────────────────┘
 ```
 
@@ -151,7 +167,7 @@ Returns `(ano int, mes int, produto text, volume_m3 numeric, valor_usd numeric)`
 - Charts rendered at 280px height (Panels A/B) or 240px (Panel C) via Plotly (no `MobileChart` wrapper needed — Plotly itself is responsive).
 - YoY rows rendered as `MobileDataCard` list (title = entity, subtitle = prior 12m, rightSlot = last 12m + YoY% in color).
 - Panel C metric toggle: horizontal-scroll pill row (USD/bbl · USD/m³ · USD/ton). Single trace for active product.
-- Exports tab: Volume/USD toggle only (no per-product multi-select). Single trace for active product.
+- Exports tab: Volume/USD toggle (pill row). Stacked area chart at 280px height. YoY rows via `YoYCardList` (same MobileDataCard pattern as Imports panels). Source note below chart.
 - `ExportFAB` triggers Excel export.
 - Sticky filter button at top of scroll area opens `FilterDrawer`.
 
@@ -185,7 +201,7 @@ Filename pattern: `Imports-Exports_DD-MM-YY.xlsx` / `.zip`.
 
 6. **CNPJ is stable, razão social is not** — `importer_group_map` keys on CNPJ. When a new subsidiary CNPJ appears, `worker_supabase` adds a row. No code change needed.
 
-7. **Exports tab has no country/importer dimension** — source is `anp_daie` which doesn't carry those fields. A note is shown in the UI.
+7. **Exports tab uses MDIC Comex, not ANP DAIE** — `get_imports_exports_exports_paises_stacked` and `get_imports_exports_exports_yoy_table` source from `mdic_comex` (migration 20260525000110). The old single-line `anp_daie` chart and its RPC (`get_imports_exports_exports_serie`) were dropped. Importer-level breakdown for exports is not available (MDIC does not carry importer identity).
 
 ---
 

@@ -17,8 +17,8 @@
 // Units — CRITICAL: never drift label from divisor.
 //   Panel A: total_kg / 1e6 = kt. Label "kt".
 //   Panel B: total_mil_m3 already from RPC. Label "mil m³".
-//   Exports volume: volume_m3 / 1e3. Label "mil m³".
-//   Exports USD: valor_usd raw. Label "USD".
+//   Exports (metric=volume): server returns mil m³ — DO NOT divide. Label "mil m³".
+//   Exports (metric=usd): server returns raw USD. Label "USD".
 
 import dynamic from "next/dynamic";
 import type { Layout, PlotData } from "plotly.js";
@@ -313,6 +313,12 @@ function ProductPillToggle({
   );
 }
 
+// Month labels for YoY table title (0-indexed)
+const MONTH_LABELS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
 // ─── Shared chart layout ───────────────────────────────────────────────────────
 
 function areaLayout(yLabel: string, height = 340): Partial<Layout> {
@@ -356,8 +362,12 @@ export default function DesktopView(): React.ReactElement {
     yoyPaisesLoading,
     yoyImportersData,
     yoyImportersLoading,
-    exportsData,
-    exportsLoading,
+    exportsPaisesData,
+    exportsPaisesLoading,
+    yoyExportsData,
+    yoyExportsLoading,
+    yoyEndAno,
+    yoyExportsEndMes,
     priceData,
     priceLoading,
     visible,
@@ -410,31 +420,17 @@ export default function DesktopView(): React.ReactElement {
     return buildStackedTraces(rows, "mil m³");
   }, [importersData]);
 
-  // Exports — single line for the active product
-  const exportsTraces = useMemo(() => {
-    const rows = exportsData.filter((r) => r.produto === filters.unifiedProduct);
-    if (!rows.length) return [];
-    const sorted = [...rows].sort((a, b) =>
-      a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes,
-    );
-    const xs = sorted.map(
-      (r) => `${r.ano}-${String(r.mes).padStart(2, "0")}`,
-    );
-    const ys =
-      filters.exportsYAxis === "volume"
-        ? sorted.map((r) => r.volume_m3 / 1e3)
-        : sorted.map((r) => r.valor_usd);
-    const unit = filters.exportsYAxis === "volume" ? "mil m³" : "USD";
-    return [{
-      type: "scatter" as const,
-      mode: "lines" as const,
-      name: filters.unifiedProduct,
-      x: xs,
-      y: ys,
-      line: { color: "#ff5000", width: 2 },
-      hovertemplate: `%{x}<br>${filters.unifiedProduct}: %{y:,.1f} ${unit}<extra></extra>`,
-    }] as unknown as PlotData[];
-  }, [exportsData, filters.unifiedProduct, filters.exportsYAxis]);
+  // Exports — stacked area by destination country (value already in correct unit from RPC)
+  const exportsUnit = filters.exportsYAxis === "volume" ? "mil m³" : "USD";
+  const exportsPaisesTraces = useMemo(() => {
+    const rows = exportsPaisesData.map((r) => ({
+      ano: r.ano,
+      mes: r.mes,
+      name: r.pais,
+      value: r.value, // server already in mil m³ or USD — never divide client-side
+    }));
+    return buildStackedTraces(rows, exportsUnit);
+  }, [exportsPaisesData, exportsUnit]);
 
   // Panel C — price metric helpers
   const priceUnitLabel: Record<PriceMetric, string> = {
@@ -475,30 +471,10 @@ export default function DesktopView(): React.ReactElement {
     [priceUnit],
   );
 
-  const exportsYLabel =
-    filters.exportsYAxis === "volume" ? "Volume (mil m³)" : "Value (USD)";
-
-  const exportsLayout: Partial<Layout> = {
-    ...COMMON_LAYOUT,
-    height: 360,
-    margin: { t: 12, b: 60, l: 72, r: 12 },
-    xaxis: {
-      ...AXIS_LINE,
-      tickangle: -45,
-      tickfont: { family: "Arial", size: 10 },
-    },
-    yaxis: {
-      ...AXIS_LINE,
-      title: { text: exportsYLabel, font: { family: "Arial", size: 11 } },
-      tickformat: ",.1f",
-    },
-    legend: {
-      orientation: "h" as const,
-      x: 0,
-      y: -0.22,
-      font: { family: "Arial", size: 10 },
-    },
-  };
+  const exportsPaisesLayout: Partial<Layout> = useMemo(
+    () => areaLayout(exportsUnit, 420),
+    [exportsUnit],
+  );
 
   // Guard — after all hooks
   if (visibilityLoading) return <BarrelLoading />;
@@ -813,23 +789,30 @@ export default function DesktopView(): React.ReactElement {
                   </div>
 
                   <ChartSection
-                    title="Exports — Fuel Trade"
-                    loading={exportsLoading}
-                    height={360}
+                    title="Exports — By Destination Country"
+                    loading={exportsPaisesLoading}
+                    height={420}
                   >
-                    {exportsTraces.length > 0 ? (
+                    {exportsPaisesTraces.length > 0 ? (
                       <Plot
-                        data={exportsTraces}
-                        layout={exportsLayout}
+                        data={exportsPaisesTraces}
+                        layout={exportsPaisesLayout}
                         config={{ responsive: true, displayModeBar: false }}
                         style={{ width: "100%" }}
                       />
-                    ) : !exportsLoading ? (
+                    ) : !exportsPaisesLoading ? (
                       <div style={{ padding: 24, color: "#aaa", fontSize: 13 }}>
                         No export data for the selected period.
                       </div>
                     ) : null}
                   </ChartSection>
+
+                  <YoYTable
+                    rows={yoyExportsData}
+                    loading={yoyExportsLoading}
+                    volumeLabel={exportsUnit}
+                    title={`By Destination Country (ending ${MONTH_LABELS[(yoyExportsEndMes ?? 12) - 1]} ${yoyEndAno})`}
+                  />
 
                   <div
                     style={{
@@ -839,7 +822,8 @@ export default function DesktopView(): React.ReactElement {
                       fontStyle: "italic",
                     }}
                   >
-                    Source: ANP DAIE — Exports tab has no country or importer breakdown.
+                    Source: MDIC Comex — monthly customs-declared exports by destination country
+                    (NCM 27090010 / 27101259 / 27101921; kg→m³ via ANP standard densities).
                   </div>
                 </div>
               )}

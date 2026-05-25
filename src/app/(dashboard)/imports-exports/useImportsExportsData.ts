@@ -9,8 +9,9 @@
 // Tab: 'imports' | 'exports'
 // Imports tab: Panel A (countries stacked, kt) + Panel B (importers stacked, mil m³)
 //   + YoY tables for each panel.
-//   + Panel C (import price from mdic_comex — FOB/bbl | FOB/m³ | FOB/ton, 3-line series).
-// Exports tab: single-line series for the active unifiedProduct (volume_m3 or valor_usd).
+//   + Panel C (import price from mdic_comex — FOB/bbl | FOB/m³ | FOB/ton, single-line series).
+// Exports tab: stacked area by destination country (top-10 + Others) + YoY table.
+//   Source: mdic_comex (migration 20260525000110). RPC get_imports_exports_exports_serie DROPPED.
 //
 // Debounce: 400ms on all reactive fetches (useDebouncedFetch).
 // Top-N: 10 (server-side aggregation, Others bucket returned from RPC).
@@ -18,7 +19,8 @@
 //   Panel A → quantidade_kg / 1e6 = kt. Label "kt".
 //   Panel B → total_mil_m3 from RPC (server converts kg→m³ via density). Label "mil m³".
 //   Panel C → fob_per_bbl (USD/bbl) | fob_per_m3 (USD/m³) | fob_per_ton (USD/ton). Sourced from mdic_comex.
-//   Exports → volume_m3 / 1e3 = mil m³. Toggle to valor_usd (label "USD").
+//   Exports (metric=volume) → server returns mil m³ directly — DO NOT divide client-side. Label "mil m³".
+//   Exports (metric=usd)    → server returns raw USD. Label "USD".
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getSupabaseClient } from "@/lib/supabaseClient";
@@ -28,8 +30,13 @@ import {
   rpcGetImportsExportsPaisesStacked,
   rpcGetImportsExportsImportersStacked,
   rpcGetImportsExportsYoyTable,
-  rpcGetImportsExportsExportsSerie,
+  rpcGetImportsExportsExportsPaisesStacked,
+  rpcGetImportsExportsExportsYoyTable,
   rpcGetImportsExportsFobPriceSerie,
+} from "@/lib/rpc";
+import type {
+  IEExportsPaisesStackedRow,
+  IEExportsYoyRow,
 } from "@/lib/rpc";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -82,14 +89,9 @@ export interface YoyTableRow {
   yoy_pct: number | null;
 }
 
-// Exports series row — volume_m3 raw, UI divides by 1e3 for mil m³
-export interface ExportsSerieRow {
-  ano: number;
-  mes: number;
-  produto: string;
-  volume_m3: number;
-  valor_usd: number;
-}
+// Exports stacked row — value already in mil m³ (metric=volume) or USD (metric=usd) from RPC
+export type { IEExportsPaisesStackedRow as ExportsPaisesStackedRow } from "@/lib/rpc";
+export type { IEExportsYoyRow as ExportsYoyRow } from "@/lib/rpc";
 
 export interface FiltrosResult {
   ano_min: number;
@@ -120,9 +122,11 @@ export interface UseImportsExportsData {
   yoyImportersData: YoyTableRow[];
   yoyImportersLoading: boolean;
 
-  // Exports tab
-  exportsData: ExportsSerieRow[];
-  exportsLoading: boolean;
+  // Exports tab — stacked area by destination country + YoY table
+  exportsPaisesData: IEExportsPaisesStackedRow[];
+  exportsPaisesLoading: boolean;
+  yoyExportsData: IEExportsYoyRow[];
+  yoyExportsLoading: boolean;
 
   // Imports tab — Panel C (import price from mdic_comex)
   priceData: PricePoint[];
@@ -131,8 +135,9 @@ export interface UseImportsExportsData {
   // Derived helpers
   periodBadge: string;    // e.g. "2015 – 2024"
   yoyEndAno: number;
-  yoyEndMes: number;         // derived from actual paisesData (countries panel)
+  yoyEndMes: number;          // derived from actual paisesData (countries panel)
   yoyImportersEndMes: number; // derived from actual importersData (importers panel)
+  yoyExportsEndMes: number;   // derived from actual exportsPaisesData
 
   // Visibility guard
   visible: boolean;
@@ -180,9 +185,11 @@ export function useImportsExportsData(): UseImportsExportsData {
   const [yoyImportersData, setYoyImportersData] = useState<YoyTableRow[]>([]);
   const [yoyImportersLoading, setYoyImportersLoading] = useState(false);
 
-  // Exports
-  const [exportsData, setExportsData] = useState<ExportsSerieRow[]>([]);
-  const [exportsLoading, setExportsLoading] = useState(false);
+  // Exports tab — stacked by country + YoY
+  const [exportsPaisesData, setExportsPaisesData] = useState<IEExportsPaisesStackedRow[]>([]);
+  const [exportsPaisesLoading, setExportsPaisesLoading] = useState(false);
+  const [yoyExportsData, setYoyExportsData] = useState<IEExportsYoyRow[]>([]);
+  const [yoyExportsLoading, setYoyExportsLoading] = useState(false);
 
   // Panel C — import price (mdic_comex)
   const [priceData, setPriceData] = useState<PricePoint[]>([]);
@@ -251,6 +258,15 @@ export function useImportsExportsData(): UseImportsExportsData {
     if (!rowsForYear.length) return yoyEndMes;
     return Math.max(...rowsForYear.map((r) => r.mes));
   }, [importersData, stableFilters.period[1], yoyEndMes]);
+
+  const yoyExportsEndMes = useMemo(() => {
+    const anoFim = stableFilters.period[1];
+    const rowsForYear = exportsPaisesData.filter(
+      (r) => r.ano === anoFim && r.value > 0,
+    );
+    if (!rowsForYear.length) return 12;
+    return Math.max(...rowsForYear.map((r) => r.mes));
+  }, [exportsPaisesData, stableFilters.period[1]]);
 
   // ── 2. Imports tab — Panel A (paises stacked) ───────────────────────────────
   const importsAFetchIdRef = useRef(0);
@@ -370,33 +386,65 @@ export function useImportsExportsData(): UseImportsExportsData {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.period[1], yoyEndAno, yoyImportersEndMes]);
 
-  // ── 6. Exports tab — multi-line series ─────────────────────────────────────
-  const exportsFetchIdRef = useRef(0);
-  const exportsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ── 6a. Exports tab — stacked by destination country ───────────────────────
+  const exportsPaisesFetchIdRef = useRef(0);
+  const exportsPaisesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!supabase || stableFilters.tab !== "exports") return;
-    if (exportsTimerRef.current) clearTimeout(exportsTimerRef.current);
-    const myId = ++exportsFetchIdRef.current;
-    exportsTimerRef.current = setTimeout(async () => {
-      setExportsLoading(true);
+    if (exportsPaisesTimerRef.current) clearTimeout(exportsPaisesTimerRef.current);
+    const myId = ++exportsPaisesFetchIdRef.current;
+    exportsPaisesTimerRef.current = setTimeout(async () => {
+      setExportsPaisesLoading(true);
       try {
-        const rows = await rpcGetImportsExportsExportsSerie(
+        const rows = await rpcGetImportsExportsExportsPaisesStacked(
           supabase,
-          [stableFilters.unifiedProduct], // single active product
+          stableFilters.unifiedProduct,
           stableFilters.period[0],
           stableFilters.period[1],
+          stableFilters.exportsYAxis,
+          10,
         );
-        if (myId === exportsFetchIdRef.current) setExportsData(rows);
+        if (myId === exportsPaisesFetchIdRef.current) setExportsPaisesData(rows);
       } catch (err) {
-        console.error("get_imports_exports_exports_serie:", err);
+        console.error("get_imports_exports_exports_paises_stacked:", err);
       } finally {
-        if (myId === exportsFetchIdRef.current) setExportsLoading(false);
+        if (myId === exportsPaisesFetchIdRef.current) setExportsPaisesLoading(false);
       }
     }, 400);
-    return () => { if (exportsTimerRef.current) clearTimeout(exportsTimerRef.current); };
+    return () => { if (exportsPaisesTimerRef.current) clearTimeout(exportsPaisesTimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.period[0], stableFilters.period[1]]);
+  }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.period[0], stableFilters.period[1], stableFilters.exportsYAxis]);
+
+  // ── 6b. Exports tab — YoY table by destination country ─────────────────────
+  const yoyExportsFetchIdRef = useRef(0);
+  const yoyExportsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!supabase || stableFilters.tab !== "exports") return;
+    if (yoyExportsTimerRef.current) clearTimeout(yoyExportsTimerRef.current);
+    const myId = ++yoyExportsFetchIdRef.current;
+    yoyExportsTimerRef.current = setTimeout(async () => {
+      setYoyExportsLoading(true);
+      try {
+        const rows = await rpcGetImportsExportsExportsYoyTable(
+          supabase,
+          stableFilters.unifiedProduct,
+          yoyEndAno,
+          yoyExportsEndMes,
+          stableFilters.exportsYAxis,
+          10,
+        );
+        if (myId === yoyExportsFetchIdRef.current) setYoyExportsData(rows);
+      } catch (err) {
+        console.error("get_imports_exports_exports_yoy_table:", err);
+      } finally {
+        if (myId === yoyExportsFetchIdRef.current) setYoyExportsLoading(false);
+      }
+    }, 400);
+    return () => { if (yoyExportsTimerRef.current) clearTimeout(yoyExportsTimerRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.period[1], stableFilters.exportsYAxis, yoyEndAno, yoyExportsEndMes]);
 
   // ── 7. Panel C — import price (mdic_comex, single active product) ────────────
   const priceFetchIdRef = useRef(0);
@@ -450,14 +498,17 @@ export function useImportsExportsData(): UseImportsExportsData {
     yoyPaisesLoading,
     yoyImportersData,
     yoyImportersLoading,
-    exportsData,
-    exportsLoading,
+    exportsPaisesData,
+    exportsPaisesLoading,
+    yoyExportsData,
+    yoyExportsLoading,
     priceData,
     priceLoading,
     periodBadge,
     yoyEndAno,
     yoyEndMes,
     yoyImportersEndMes,
+    yoyExportsEndMes,
     visible,
     visibilityLoading,
   };

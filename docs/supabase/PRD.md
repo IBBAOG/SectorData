@@ -172,7 +172,7 @@ Migration única: `20260525000010_imports_exports_enrichment.sql`. Consolida 3 d
 | `ncm_densidade_kg_m3` | Tabela nova. Mapeia `ncm_codigo text PRIMARY KEY` → `densidade_kg_m3 numeric NOT NULL` + `produto_label text NOT NULL`. Seed: 3 rows (`27101921`→840 Diesel, `27101931`→740 Gasoline, `27090010`→850 Crude Oil). Usada server-side para conversão kg → m³. RLS habilitada, policy SELECT TO anon, authenticated USING (true). |
 | `module_visibility` | DELETE dos 3 slugs retirados (`anp-daie`, `anp-desembaracos`, `anp-painel-importacoes`) + INSERT do novo `imports-exports` (default `is_visible_for_public=true`, `is_visible_for_clients=true`, `is_visible_on_home=true`). |
 
-**RPCs novas (5):**
+**RPCs novas (6):**
 
 | RPC | Assinatura | Notas |
 |---|---|---|
@@ -180,9 +180,10 @@ Migration única: `20260525000010_imports_exports_enrichment.sql`. Consolida 3 d
 | `get_imports_exports_paises_stacked(p_unified_product, p_ano_inicio, p_ano_fim, p_top_n DEFAULT 10)` | `RETURNS TABLE(ano int, mes int, pais_origem text, total_kg numeric)` | Top-N por `total_kg` no window inteiro; resto colapsa em `pais_origem='Others'`. Frontend converte `total_kg / 1e6 = kt`. |
 | `get_imports_exports_importers_stacked(p_unified_product, p_ano_inicio, p_ano_fim, p_top_n DEFAULT 10)` | `RETURNS TABLE(ano int, mes int, unified_importer text, total_mil_m3 numeric)` | JOIN com `ncm_densidade_kg_m3` (conversão kg→m³ server-side) e LEFT JOIN com `importer_group_map`. Fallback de razão social via `regexp_replace` de sufixos (LTDA, S.A., EIRELI, ME) quando não há mapping. Filtra `cnpj <> '__legacy__'`. Retorna `total_mil_m3` (já dividido por 1000). |
 | `get_imports_exports_yoy_table(p_scope, p_unified_product, p_ano_fim, p_mes_fim, p_top_n DEFAULT 10)` | `RETURNS TABLE(entity text, last_12m numeric, prev_12m numeric, yoy_pct numeric)` | LANGUAGE plpgsql STABLE. `p_scope IN ('paises','importers')` (raise exception em outros valores). Janela rolling 12m terminando em `(p_ano_fim, p_mes_fim)`. `yoy_pct = NULL` quando `prev_12m=0`. Usa `#variable_conflict use_column`. |
-| `get_imports_exports_exports_serie(p_unified_products text[], p_ano_inicio, p_ano_fim)` | `RETURNS TABLE(ano int, mes int, produto text, volume_m3 numeric, valor_usd numeric)` | Filtra `anp_daie.operacao = 'EXPORTAÇÃO'` (uppercase + diacrítico — valor exato no DB). JOIN com `imports_product_map` source='daie'. |
+| `get_imports_exports_exports_paises_stacked(p_unified_product, p_ano_inicio, p_ano_fim, p_metric DEFAULT 'volume', p_top_n DEFAULT 10)` | `RETURNS TABLE(ano int, mes int, pais text, value numeric)` | LANGUAGE plpgsql STABLE SECURITY DEFINER. Stacked monthly series por país de destino (top-N + `'Others'`), de `mdic_comex` filtrando `flow='export'`. `p_metric IN ('volume','usd')` (raise exception em outros). Para `volume`, conversão kg → mil m³ server-side via JOIN com `ncm_densidade_kg_m3` (`volume_kg / densidade_kg_m3 / 1000`). JOIN com `imports_product_map source='mdic'`. |
+| `get_imports_exports_exports_yoy_table(p_unified_product, p_ano_fim, p_mes_fim, p_metric DEFAULT 'volume', p_top_n DEFAULT 10)` | `RETURNS TABLE(entity text, last_12m numeric, prev_12m numeric, yoy_pct numeric)` | LANGUAGE plpgsql STABLE SECURITY DEFINER. Janela rolling 12m terminando em `(p_ano_fim, p_mes_fim)` vs 12m anteriores. Top-N + `'Others'` por país de destino. `yoy_pct = NULL` quando `prev_12m=0`. Mesma fonte de dados (`mdic_comex flow='export'` + densidade) e mesmas regras de `p_metric` que a função stacked. |
 
-Todas as 5 RPCs: `STABLE`, `SECURITY INVOKER`, `SET search_path = public`, `GRANT EXECUTE TO anon, authenticated`.
+Todas as 6 RPCs: `SET search_path = public`, `GRANT EXECUTE TO anon, authenticated`. As 4 RPCs originais (`filtros`, `paises_stacked`, `importers_stacked`, `yoy_table`) são `STABLE SECURITY INVOKER`; as 2 RPCs de Exports (`exports_paises_stacked`, `exports_yoy_table`) são `STABLE SECURITY DEFINER` (escopo MDIC, sem RLS user-aware necessário).
 
 **RPCs DROPADAS (8):**
 
@@ -198,7 +199,7 @@ Todas as 5 RPCs: `STABLE`, `SECURITY INVOKER`, `SET search_path = public`, `GRAN
 
 **`importer_group_map` vazia por design:** seed time intencionalmente sem rows. Worker `worker_supabase` populará via DML migration follow-up depois que Worktree B backfill expor CNPJs reais (T11 do plano CTO). Enquanto vazia, RPCs fazem fallback para `regexp_replace` removendo sufixos comuns de razão social.
 
-**`anp_daie.operacao` value-sensitivity:** o valor exato no DB é `'EXPORTAÇÃO'` (uppercase + diacrítico). Plano de reforma escrevia "Exportação" mas o stored value é uppercase — RPC `get_imports_exports_exports_serie` filtra pelo valor exato. Nunca assumir lowercase ou sem acento.
+**Exports vêm de `mdic_comex`, não de `anp_daie`:** migration `20260525000110_imports_exports_exports_by_country.sql` retirou `get_imports_exports_exports_serie` e introduziu `get_imports_exports_exports_paises_stacked` + `get_imports_exports_exports_yoy_table`, ambas lendo de `mdic_comex` com filtro `flow='export'` + JOIN em `imports_product_map source='mdic'`. A tabela `anp_daie` permanece viva (alimenta os panels de Importação via `get_imports_exports_paises_stacked`/`importers_stacked`/`yoy_table` por `imports_product_map source='daie'`), mas Exports não a consultam mais. Conversão kg→mil m³ é server-side via `ncm_densidade_kg_m3`.
 
 ### Trigger: cross-local guard em `anp_cdp_producao`
 
@@ -236,7 +237,7 @@ Todas as 5 RPCs: `STABLE`, `SECURITY INVOKER`, `SET search_path = public`, `GRAN
 | MDIC Comex | ~~`get_mdic_comex_filtros`, `get_mdic_comex_serie`, `get_mdic_comex_top_paises`, `get_mdic_comex_aggregated`, `get_mdic_comex_export_count`~~ — **DROPPED 2026-05-25** com a retirada de `/mdic-comex`. A tabela `mdic_comex` continua viva, alimentada pelo `etl_mdic_comex.yml`, e é consumida pelo `/imports-exports` Panel C via `get_imports_exports_fob_price_serie`. | ~~dash-mdic-comex~~ (sub-PRD arquivado em `docs/app/_deprecated/mdic-comex.md`) |
 | ANP Preços Produtores | `get_anp_precos_produtores_filtros`, `get_anp_precos_produtores_serie` | dash-anp-precos-produtores |
 | ANP GLP | `get_anp_glp_filtros`, `get_anp_glp_serie` | dash-anp-glp |
-| Imports & Exports | `get_imports_exports_filtros`, `get_imports_exports_paises_stacked`, `get_imports_exports_importers_stacked`, `get_imports_exports_yoy_table`, `get_imports_exports_exports_serie` — consolidam DAIE + Desembaraços (sem `anp_painel_imp_dist`, que foi dropada). Migration: `20260525000010_imports_exports_enrichment.sql`. RPCs antigas `get_anp_daie_*`, `get_anp_desembaracos_*`, `get_anp_painel_imp_*` (8 funções) foram DROPPED na mesma migration. | dash-imports-exports |
+| Imports & Exports | `get_imports_exports_filtros`, `get_imports_exports_paises_stacked`, `get_imports_exports_importers_stacked`, `get_imports_exports_yoy_table`, `get_imports_exports_exports_paises_stacked`, `get_imports_exports_exports_yoy_table`, `get_imports_exports_fob_price_serie` — consolidam DAIE + Desembaraços + MDIC Comex (sem `anp_painel_imp_dist`, que foi dropada). Migrations: `20260525000010_imports_exports_enrichment.sql` (panels A/B/C) + `20260525000110_imports_exports_exports_by_country.sql` (Exports tab: drop de `get_imports_exports_exports_serie`, intro de stacked + YoY a partir de `mdic_comex flow='export'`). RPCs antigas `get_anp_daie_*`, `get_anp_desembaracos_*`, `get_anp_painel_imp_*` (8 funções) foram DROPPED em `20260525000010`. | dash-imports-exports |
 | ANP LPC | `get_anp_lpc_filtros`, `get_anp_lpc_serie`, `get_anp_lpc_nacional` | dash-anp-lpc |
 | ANP CDP | `get_anp_cdp_filtros`, `get_anp_cdp_serie`, `get_anp_cdp_pocos_json` | dash-anp-cdp |
 | ANP Preços Distribuição | `get_anp_precos_distribuicao_filtros`, `get_anp_precos_distribuicao_serie`, `get_anp_precos_distribuicao_top_distribuidoras` | dash-anp-precos-distribuicao |
