@@ -134,14 +134,6 @@ BEGIN
   -- ─── PHASE 3 TABLES ───────────────────────────────────────────────────────
 
   PERFORM 1 FROM information_schema.tables
-    WHERE table_schema = 'public' AND table_name = 'anp_ppi';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing table: anp_ppi'; END IF;
-
-  PERFORM 1 FROM pg_tables
-    WHERE schemaname = 'public' AND tablename = 'anp_ppi' AND rowsecurity = TRUE;
-  IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: anp_ppi'; END IF;
-
-  PERFORM 1 FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name = 'anp_precos_produtores';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing table: anp_precos_produtores'; END IF;
 
@@ -351,20 +343,6 @@ BEGIN
   -- Note: the 5 get_mdic_comex_* RPCs were dropped in the /mdic-comex deprecation
   -- (2026-05-25). The mdic_comex table remains (asserted above, lines ~192-211) and
   -- is consumed by /imports-exports Panel C via get_imports_exports_fob_price_serie.
-
-  -- ─── ANP PPI RPCs ─────────────────────────────────────────────────────────
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_anp_ppi_filtros';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_ppi_filtros'; END IF;
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_anp_ppi_media_serie';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_ppi_media_serie'; END IF;
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_anp_ppi_locais_serie';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_ppi_locais_serie'; END IF;
 
   -- ─── ANP PRECOS PRODUTORES RPCs ───────────────────────────────────────────
 
@@ -718,6 +696,6 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'app_events CHECK constraint does not allow admin.* event types'; END IF;
 
   RAISE NOTICE 'migration_smoke: all % checks passed.',
-    '34 tables + 1 view + 3 materialized views + 83 functions + 26 RLS checks';
+    '33 tables + 1 view + 3 materialized views + 80 functions + 25 RLS checks';
 
 END $smoke$;
