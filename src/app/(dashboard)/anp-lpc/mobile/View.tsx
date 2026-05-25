@@ -1,7 +1,7 @@
 "use client";
 
 // Mobile view for /anp-lpc — chart-heavy archetype (closest reference:
-// market-share-mobile.html / anp-daie + sindicom mobile views).
+// market-share-mobile.html / anp-daie mobile views).
 //
 // Layout (top → bottom):
 //   MobileTopBar          (sticky liquid glass)

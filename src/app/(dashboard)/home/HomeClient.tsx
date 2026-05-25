@@ -165,15 +165,6 @@ const CARDS: CardDef[] = [
     href: "/anp-lpc",
     disabled: false,
   },
-  {
-    slug: "sindicom",
-    preview: null,
-    title: "SINDICOM",
-    description: "Fuel distribution data from the SINDICOM industry association",
-    badge: "Available",
-    href: "/sindicom",
-    disabled: false,
-  },
   // Statistics — Oil & Gas
   {
     slug: "anp-cdp",

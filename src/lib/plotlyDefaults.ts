@@ -10,7 +10,7 @@ import type { Layout, PlotData } from "plotly.js";
 
 export const BRAND_ORANGE = "#ff5000";
 
-// 16-color palette used by sindicom, anp-painel-importacoes, etc.
+// 16-color palette used by multi-series dashboards (anp-precos-distribuicao, imports-exports, etc.)
 export const PALETTE = [
   "#1E88E5", "#FF5000", "#43A047", "#FB8C00", "#8E24AA",
   "#00ACC1", "#D81B60", "#6D4C41", "#F4511E", "#039BE5",

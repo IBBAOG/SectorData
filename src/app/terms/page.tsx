@@ -38,7 +38,7 @@ export default function TermsPage() {
         <p>
           SectorData is an internal analytics platform provided by Itaú BBA O&amp;G (&quot;IBBA
           O&amp;G&quot;) for monitoring the Brazilian fuel distribution and oil &amp; gas sectors.
-          It aggregates data from public sources (ANP, MDIC, SINDICOM) and proprietary analyses
+          It aggregates data from public sources (ANP and MDIC) and proprietary analyses
           to deliver dashboards, time-series charts, and data exports to authorized users.
         </p>
       </section>
@@ -68,7 +68,7 @@ export default function TermsPage() {
       <section className="mb-4">
         <h2 style={{ fontSize: 20, fontWeight: 600 }}>5. Intellectual Property</h2>
         <p>
-          Raw data sourced from ANP, MDIC, SINDICOM, and other public agencies remains subject to
+          Raw data sourced from ANP, MDIC, and other public agencies remains subject to
           their respective terms. Derived analytics, dashboards, visualizations, and proprietary
           calculations produced by the Service are the exclusive intellectual property of IBBA
           O&amp;G. No license to reproduce or distribute such derived content is granted implicitly

@@ -237,15 +237,6 @@ const CARDS: Omit<HomeCardDef, "category">[] = [
     href: "/anp-lpc",
     disabled: false,
   },
-  {
-    slug: "sindicom",
-    preview: null,
-    title: "SINDICOM",
-    description: "Fuel distribution data from the SINDICOM industry association",
-    badge: "Available",
-    href: "/sindicom",
-    disabled: false,
-  },
 ];
 
 /** Assign a category to each slug. */
@@ -269,7 +260,6 @@ const SLUG_CATEGORY: Record<string, HomeCategory> = {
   "anp-glp": "fuel",
   "imports-exports": "fuel",
   "anp-lpc": "fuel",
-  sindicom: "fuel",
 };
 
 /** Static admin entries shown on mobile home (not in module_visibility). */
