@@ -410,43 +410,34 @@ BEGIN
     WHERE n.nspname = 'public' AND p.proname = 'get_anp_glp_serie';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_glp_serie'; END IF;
 
-  -- ─── ANP DAIE RPCs ────────────────────────────────────────────────────────
+  -- ─── IMPORTS & EXPORTS RPCs (20260525000010 — reform) ────────────────────
+  -- Replaces the 8 retired RPCs (get_anp_daie_*, get_anp_desembaracos_*,
+  -- get_anp_painel_imp_*). The consolidated /imports-exports dashboard backs
+  -- onto anp_desembaracos (enriched) + anp_daie via these 6 RPCs.
 
   PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_anp_daie_filtros';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_daie_filtros'; END IF;
+    WHERE n.nspname = 'public' AND p.proname = 'get_imports_exports_filtros';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_imports_exports_filtros'; END IF;
 
   PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_anp_daie_serie';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_daie_serie'; END IF;
-
-  -- ─── ANP DESEMBARACOS RPCs ────────────────────────────────────────────────
+    WHERE n.nspname = 'public' AND p.proname = 'get_imports_exports_paises_stacked';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_imports_exports_paises_stacked'; END IF;
 
   PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_anp_desembaracos_filtros';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_desembaracos_filtros'; END IF;
+    WHERE n.nspname = 'public' AND p.proname = 'get_imports_exports_importers_stacked';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_imports_exports_importers_stacked'; END IF;
 
   PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_anp_desembaracos_serie';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_desembaracos_serie'; END IF;
+    WHERE n.nspname = 'public' AND p.proname = 'get_imports_exports_yoy_table';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_imports_exports_yoy_table'; END IF;
 
   PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_anp_desembaracos_top_paises';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_desembaracos_top_paises'; END IF;
-
-  -- ─── ANP PAINEL IMPORTACOES RPCs ──────────────────────────────────────────
+    WHERE n.nspname = 'public' AND p.proname = 'get_imports_exports_exports_serie';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_imports_exports_exports_serie'; END IF;
 
   PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_anp_painel_imp_filtros';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_painel_imp_filtros'; END IF;
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_anp_painel_imp_serie';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_painel_imp_serie'; END IF;
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_anp_painel_imp_top_dist';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_painel_imp_top_dist'; END IF;
+    WHERE n.nspname = 'public' AND p.proname = 'get_imports_exports_fob_price_serie';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_imports_exports_fob_price_serie'; END IF;
 
   -- ─── ANP LPC RPCs ─────────────────────────────────────────────────────────
 
