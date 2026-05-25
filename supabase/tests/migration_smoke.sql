@@ -344,15 +344,23 @@ BEGIN
   -- (2026-05-25). The mdic_comex table remains (asserted above, lines ~192-211) and
   -- is consumed by /imports-exports Panel C via get_imports_exports_fob_price_serie.
 
-  -- ─── ANP PRECOS PRODUTORES RPCs ───────────────────────────────────────────
+  -- ─── ANP PRICES CONSOLIDATED RPCs (20260526000000) ───────────────────────
+  -- 10 legacy RPCs (get_anp_precos_produtores_*, get_anp_precos_distribuicao_*,
+  -- get_anp_lpc_*) were dropped and replaced by 3 unified RPCs that UNION ALL
+  -- the 3 source tables (anp_precos_produtores, anp_precos_distribuicao, anp_lpc).
+  -- Source tables and ETL pipelines remain — only the API surface changed.
 
   PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_anp_precos_produtores_filtros';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_precos_produtores_filtros'; END IF;
+    WHERE n.nspname = 'public' AND p.proname = 'get_anp_prices_filtros';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_prices_filtros'; END IF;
 
   PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_anp_precos_produtores_serie';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_precos_produtores_serie'; END IF;
+    WHERE n.nspname = 'public' AND p.proname = 'get_anp_prices_serie';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_prices_serie'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_anp_prices_export_count';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_prices_export_count'; END IF;
 
   -- ─── ANP GLP RPCs ─────────────────────────────────────────────────────────
 
@@ -398,18 +406,10 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_imports_exports_fob_price_serie'; END IF;
 
   -- ─── ANP LPC RPCs ─────────────────────────────────────────────────────────
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_anp_lpc_filtros';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_lpc_filtros'; END IF;
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_anp_lpc_serie';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_lpc_serie'; END IF;
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_anp_lpc_nacional';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_lpc_nacional'; END IF;
+  -- get_anp_lpc_filtros / get_anp_lpc_serie / get_anp_lpc_nacional were DROPPED
+  -- in the anp-prices consolidation (20260526000000). LPC data still feeds the
+  -- consolidated get_anp_prices_* RPCs (covered above). anp_lpc table still
+  -- exists and is asserted earlier in this script.
 
   -- ─── ANP CDP RPCs ─────────────────────────────────────────────────────────
 
@@ -477,9 +477,8 @@ BEGIN
     WHERE n.nspname = 'public' AND p.proname = 'get_anp_cdp_export_count';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_cdp_export_count'; END IF;
 
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_anp_lpc_export_count';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_lpc_export_count'; END IF;
+  -- Note: get_anp_lpc_export_count was dropped in the anp-prices consolidation
+  -- (20260526000000) — replaced by get_anp_prices_export_count (asserted above).
 
   -- ─── EXPORT AGGREGATED RPCs (20260507000004) ─────────────────────────────
 
@@ -490,6 +489,10 @@ BEGIN
   -- Note: get_mdic_comex_aggregated was dropped in the /mdic-comex deprecation (2026-05-25).
 
   -- ─── ANP PRECOS DISTRIBUICAO (20260507000005) ─────────────────────────────
+  -- Table + RLS still asserted (ETL keeps writing here). The 3 RPCs
+  -- (get_anp_precos_distribuicao_filtros / _serie / _export_count) were DROPPED
+  -- in the anp-prices consolidation (20260526000000) and folded into the
+  -- consolidated get_anp_prices_* RPCs (asserted above).
 
   PERFORM 1 FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name = 'anp_precos_distribuicao';
@@ -498,18 +501,6 @@ BEGIN
   PERFORM 1 FROM pg_tables
     WHERE schemaname = 'public' AND tablename = 'anp_precos_distribuicao' AND rowsecurity = TRUE;
   IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: anp_precos_distribuicao'; END IF;
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_anp_precos_distribuicao_filtros';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_precos_distribuicao_filtros'; END IF;
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_anp_precos_distribuicao_serie';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_precos_distribuicao_serie'; END IF;
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_anp_precos_distribuicao_export_count';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_precos_distribuicao_export_count'; END IF;
 
   -- ─── APP EVENTS (20260507000011) ─────────────────────────────────────────
 
@@ -700,6 +691,6 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'app_events CHECK constraint does not allow admin.* event types'; END IF;
 
   RAISE NOTICE 'migration_smoke: all % checks passed.',
-    '33 tables + 1 view + 3 materialized views + 80 functions + 25 RLS checks';
+    '33 tables + 1 view + 3 materialized views + 77 functions + 25 RLS checks';
 
 END $smoke$;
