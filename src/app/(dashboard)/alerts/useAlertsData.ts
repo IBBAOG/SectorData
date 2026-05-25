@@ -323,7 +323,11 @@ export function useAlertsData(): AlertsData {
 
   // Keep the ref in sync so submit() can call refreshSubscriptions without
   // creating a circular dependency in the useCallback deps array.
-  refreshSubscriptionsRef.current = refreshSubscriptions;
+  // Assigned in useEffect (post-commit) to satisfy react-hooks/refs; submit()
+  // is always called from event handlers (post-commit), so the ref is current.
+  useEffect(() => {
+    refreshSubscriptionsRef.current = refreshSubscriptions;
+  }, [refreshSubscriptions]);
 
   useEffect(() => {
     if (isAuthenticated) refreshSubscriptions();
