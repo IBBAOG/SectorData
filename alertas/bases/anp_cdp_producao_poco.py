@@ -348,6 +348,18 @@ class AnpCdpProducaoPoco(BaseMonitor):
         novidades = []
         novo_estado = dict(self._estado_atual)
         ultimo_periodo = self._estado_atual.get("ultimo_periodo")
+
+        # FIX 1: period-transition baseline override.
+        # Semantics (commit 0d3f44b8): "each time ANP publishes production data for field
+        # X in THIS target month, generate 1 email".  On period transition the previous
+        # month's fields are irrelevant -- the baseline must be empty so that EVERY field
+        # appearing in the new month is treated as new on the first run.
+        #
+        # We use a local override dict (baseline_referencia_override) that, when set, takes
+        # precedence over any persisted baseline in _estado_atual.  An empty dict {}
+        # means "nothing seen yet in this period" -- all extracted fields will be novos.
+        baseline_referencia_override: dict | None = None  # None = no override active
+
         if ultimo_periodo != periodo:
             print(f"[{self.slug}]   Periodo mudou ({ultimo_periodo!r} -> {periodo!r}); resetando baseline de campos.")
             for amb in ("M", "S", "T"):
@@ -357,40 +369,76 @@ class AnpCdpProducaoPoco(BaseMonitor):
             # becomes the new consolidated baseline.
             novo_estado["baseline_consolidada"] = False
             novo_estado["ultima_baseline_consolidada"] = {}
+            # Force detection baseline to empty: every field in the new period is "new".
+            baseline_referencia_override = {}
 
         # Determine which baseline to use for detection:
+        # - On period transition: baseline_referencia_override={} (set above) takes precedence.
         # - If the last persisted state was a partial run (baseline_consolidada=False),
         #   use ultima_baseline_consolidada (the last fully-consolidated snapshot).
-        # - If baseline_consolidada=True (or absent for legacy rows), use the current state.
-        estado_consolidado_anterior = self._estado_atual.get("baseline_consolidada", True)
-        if not estado_consolidado_anterior:
-            # Last run was partial -- use the preserved consolidated baseline for detection.
-            baseline_referencia = self._estado_atual.get("ultima_baseline_consolidada", {})
-            if baseline_referencia:
-                print(
-                    f"[{self.slug}]   Ultimo estado era parcial (baseline_consolidada=False); "
-                    f"usando ultima_baseline_consolidada para deteccao."
-                )
-            else:
-                # No consolidated baseline yet (first run ever) -- treat current as baseline.
-                baseline_referencia = self._estado_atual
+        # - FIX 3: default changed from True to False -- legacy/DR states without
+        #   baseline_consolidada are treated as "partial" (safe degradation: uses
+        #   campos_* from state as-is, same behaviour as pre-fix code, only consolidates
+        #   after a full run of the new period).
+        # - If baseline_consolidada=True, use the current state directly.
+        if baseline_referencia_override is not None:
+            # Period transition: use the empty override (all fields are new).
+            baseline_referencia = baseline_referencia_override
+            print(
+                f"[{self.slug}]   Periodo novo ({periodo}); baseline_referencia={{}}"
+                f" -- todos os campos do novo mes serao reportados."
+            )
         else:
-            baseline_referencia = self._estado_atual
+            estado_consolidado_anterior = self._estado_atual.get("baseline_consolidada", False)  # FIX 3
+            if not estado_consolidado_anterior:
+                # Last run was partial (or legacy/DR state) -- use the preserved consolidated
+                # baseline for detection to avoid false positives from partial snapshots.
+                baseline_referencia = self._estado_atual.get("ultima_baseline_consolidada", {})
+                if baseline_referencia:
+                    print(
+                        f"[{self.slug}]   Ultimo estado era parcial (baseline_consolidada=False); "
+                        f"usando ultima_baseline_consolidada para deteccao."
+                    )
+                else:
+                    # No consolidated baseline yet (first run ever or DR) -- treat current as
+                    # baseline. This is identical to pre-fix behaviour and degrades gracefully.
+                    baseline_referencia = self._estado_atual
+            else:
+                baseline_referencia = self._estado_atual
+
+        # FIX 2: track only ambientes that returned a non-empty field set.
+        # A CSV that downloads successfully but yields 0 valid campo values (e.g. ANP
+        # publishes an incomplete month, or _extrair_campos silently swallows an exception
+        # at line 238) must NOT count as "processed" for consolidation purposes.
+        # Treating an empty set as "processed" would write campos_t=[] into the consolidated
+        # snapshot, causing all T fields to appear new on the next run -- the same false-
+        # positive avalanche that baseline_consolidada was designed to prevent.
+        # Strategy (option a from the audit): keep `if atuais:` guard on state update,
+        # AND exclude the ambiente from ambientes_no_csvs when atuais is empty so that
+        # todos_processados remains False and the snapshot is not poisoned.
+        ambientes_com_campos: set[str] = set()  # ambientes with at least 1 valid campo
 
         for ambiente, csv_path in csvs.items():
             baseline_key = f"campos_{ambiente.lower()}"  # campos_m, campos_s, campos_t
             baseline = set(baseline_referencia.get(baseline_key, []))
             atuais   = self._extrair_campos(csv_path)
-            novos    = sorted(atuais - baseline)
+            if not atuais:
+                # CSV downloaded but yielded no valid campo values -- treat as not-processed.
+                print(
+                    f"[{self.slug}]   [{ambiente}] CSV baixado mas 0 campos extraidos -- "
+                    f"excluindo de ambientes_com_campos para nao poluir snapshot consolidado."
+                )
+                continue  # do NOT update novo_estado[baseline_key] and do NOT add to set
+            novos = sorted(atuais - baseline)
             if novos:
                 novidades.append((ambiente, novos))
-            # Always update the candidate state for successfully downloaded ambientes.
-            # This prevents stale baselines even when 0 new fields are found.
-            if atuais:
-                novo_estado[baseline_key] = sorted(atuais)
+            # Update candidate state only when we have real campo data.
+            novo_estado[baseline_key] = sorted(atuais)
+            ambientes_com_campos.add(ambiente)
 
-        # Determine if this run processed ALL 3 ambientes successfully.
-        ambientes_no_csvs = set(csvs.keys())
+        # Determine if this run processed ALL 3 ambientes with non-empty campo sets.
+        # Empty-CSV ambientes are intentionally excluded (see FIX 2 above).
+        ambientes_no_csvs = ambientes_com_campos
         todos_processados = ambientes_no_csvs == {"M", "S", "T"}
 
         if todos_processados:

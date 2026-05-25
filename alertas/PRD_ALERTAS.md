@@ -280,7 +280,7 @@ A base passou de "heavy" (Selenium + ddddocr) para "leve" (Supabase session + re
 
 **Invariante**: a detecção de novos campos usa `ultima_baseline_consolidada` quando `baseline_consolidada=false`. Um run parcial atualiza `campos_*` para os ambientes que baixou, mas nunca sobrescreve `ultima_baseline_consolidada` — esta só é atualizada quando todos os 3 ambientes retornam CSVs com sucesso.
 
-**Transição de período** (`ultimo_periodo` muda): ambos os campos são resetados (`baseline_consolidada=false`, `ultima_baseline_consolidada={}`), e o primeiro run completo do novo período se torna a nova baseline consolidada.
+**Transição de período** (`ultimo_periodo` muda): ambos os campos são resetados (`baseline_consolidada=false`, `ultima_baseline_consolidada={}`), e a baseline de detecção é forçada para `{}` (vazia) via override local — ou seja, **todos os campos do novo mês que aparecerem no primeiro run geram alerta**, independentemente do que existia no mês anterior. O primeiro run completo (M+S+T com campos não-vazios) do novo período se torna a nova baseline consolidada para runs subsequentes do mesmo período.
 
 **Tabela Supabase necessária**: `alertas_session(base TEXT PK, session JSONB, captured_at TIMESTAMPTZ, expires_at TIMESTAMPTZ, last_used_at TIMESTAMPTZ, metadata JSONB)` — criada pela Frente A (migration da `worker_supabase`).
 
@@ -293,6 +293,12 @@ A base passou de "heavy" (Selenium + ddddocr) para "leve" (Supabase session + re
 | `WORKFLOW_DISPATCH_PAT` | `actions:write` (fine-grained) ou `workflow` (classic) no repo `IBBAOG/SectorData` | Disparar `etl_anp_cdp.yml` automaticamente quando a sessão expira |
 
 O capture Selenium pesado (ddddocr + Chrome) continua exclusivo do `etl_anp_cdp.yml` que roda 1×/mês. O monitor de alertas apenas **consume** a sessão resultante via requests.
+
+#### Limitações conhecidas
+
+| # | Limitação | Impacto | Mitigação atual |
+|---|-----------|---------|-----------------|
+| 1 | **Race condition em upsert de estado sem CAS**: se dois processos do monitor rodarem simultaneamente (improvável dado espaçamento do cron-job.org), o segundo `salvar_estado()` pode sobrescrever o estado gravado pelo primeiro sem detectar o conflito. | Baixo — dois runs simultâneos são anômalos; o cron tem espaçamento de horas. | Documentado. Não implementado lock/CAS. Revisitar se o cron for alterado para intervalos menores que 30 min. |
 
 - **Consolidação manual** (`consolidar.py`):
   - 2005–2020: ZIPs anuais disponíveis em `gov.br/anp`
