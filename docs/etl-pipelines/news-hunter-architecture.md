@@ -57,7 +57,18 @@ Tabela public.news_hunter_keywords:
     PK (user_id, keyword)
 RLS: cada user le/insere/deleta apenas as proprias linhas.
 
-match_type semantics (added 2026-05-20, migration 20260520000001):
+Tabela public.news_hunter_default_keywords:
+    keyword    text PK
+    match_type text NOT NULL DEFAULT 'substring'
+               CHECK (match_type IN ('substring','exact'))   -- added 2026-05-25
+    created_at timestamptz
+RLS: read-only para anon + authenticated. Writes exclusivamente via
+SECURITY DEFINER RPCs admin (sem policies INSERT/DELETE). Schema agora
+simetrico com news_hunter_keywords (per-user) — ambas as tabelas carregam
+match_type.
+
+match_type semantics (added 2026-05-20 para per-user, migration
+20260520000001; added 2026-05-25 para default, migration 20260525250000):
   substring (default): case-insensitive substring (legacy behaviour).
                        e.g. "ANS" matches "trANSporte".
   exact              : case-insensitive whole-word, regex \b{kw}\b.
@@ -73,11 +84,65 @@ RPC public.seed_my_news_hunter_keywords():
     Idempotente (ON CONFLICT DO NOTHING). Chamada pelo front no primeiro
     visit quando a lista do user volta vazia.
 
+RPC public.get_default_news_keywords():
+    RETURNS text[]. Inalterada (retrocompat) — consumida por
+    NewsHunterContext.tsx. Granted anon + authenticated.
+
+RPC public.get_default_news_keywords_with_flags():   -- added 2026-05-25
+    RETURNS TABLE(keyword text, match_type text).
+    Exposta para o scanner repo (IBBAOG/news-hunter-scanner) consumir
+    match_type per-keyword da lista default. Granted anon +
+    authenticated. LANGUAGE sql STABLE SECURITY DEFINER.
+
+  >>>  TODO no scanner repo (IBBAOG/news-hunter-scanner):
+       Hoje o scanner consome a UNION de public.news_hunter_keywords
+       (per-user, ja com match_type desde 2026-05-20) com fallback para
+       DEFAULT_KEYWORDS local quando a tabela esta vazia / Supabase
+       indisponivel. A lista default ANTES era hardcoded no SQL via
+       seed_my_news_hunter_keywords, agora vive em
+       news_hunter_default_keywords (single source of truth) e ja tem
+       match_type.
+
+       Acao requerida no scanner: substituir (ou complementar) a leitura
+       de public.get_default_news_keywords (text[]) por
+       public.get_default_news_keywords_with_flags (keyword + match_type),
+       e aplicar:
+         match_type='exact'    -> regex \b<keyword>\b case-insensitive
+         match_type='substring'-> substring case-insensitive (legacy)
+       Mesma logica que ja eh aplicada em news_hunter_keywords per-user
+       (PR #2 do scanner). Default fallback in-memory pode permanecer
+       como contingencia quando o Supabase estiver indisponivel.
+
+RPCs admin (Admin Panel -> "Default News Keywords"):
+    public.admin_list_default_news_keywords()
+        RETURNS TABLE(keyword text, match_type text, created_at timestamptz).
+        3 colunas (era 2 antes de 2026-05-25). Admin-only.
+    public.admin_add_default_news_keyword(p_keyword text,
+                                          p_match_type text DEFAULT 'substring')
+        2 params (era 1 antes de 2026-05-25). Default 'substring' preserva
+        chamadas pre-2026-05-25. Audit em app_events
+        (event_type='admin.add_default_news_keyword', payload inclui
+        match_type).
+    public.admin_set_default_news_keyword_match_type(p_keyword text,
+                                                     p_match_type text)
+        Nova em 2026-05-25. UPDATE idempotente. Audit
+        event_type='admin.set_default_news_keyword_match_type'.
+    public.admin_remove_default_news_keyword(p_keyword text)
+        Inalterada (signature mantida). Audit
+        event_type='admin.remove_default_news_keyword'.
+
 Visibilidade: INSERT em module_visibility ('news-hunter', true).
 
 Migrations:
     supabase/migrations/20260424000008_news_hunter.sql
     supabase/migrations/20260424000009_news_hunter_keywords.sql
+    supabase/migrations/20260520000001_news_hunter_keywords_match_type.sql
+    supabase/migrations/20260522000001_anonymous_access.sql
+        (cria news_hunter_default_keywords + get_default_news_keywords)
+    supabase/migrations/20260525230000_admin_default_news_keywords_rpcs.sql
+        (cria 3 RPCs admin originais)
+    supabase/migrations/20260525250000_default_news_keywords_match_type.sql
+        (adiciona match_type + 2 RPCs novas + 2 RPCs alteradas)
 
 
 ================================================================================

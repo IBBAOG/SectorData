@@ -231,8 +231,8 @@ Todas as 6 RPCs: `SET search_path = public`, `GRANT EXECUTE TO anon, authenticat
 | Navios | `get_nd_*` | dash-navios-diesel |
 | D&G Margins | `get_dg_*` | dash-margins |
 | Price Bands | `get_price_bands_*` | dash-price-bands |
-| Profile / Admin | `get_my_*`, `set_*`, `upsert_my_*`, `set_module_public_visibility`, `admin_list_default_news_keywords`, `admin_add_default_news_keyword`, `admin_remove_default_news_keyword` | dash-admin |
-| News Hunter | `seed_my_news_hunter_keywords`, `get_default_news_keywords` (read-only do anon/authed; writes admin via `admin_*_default_news_keyword` listados em Profile/Admin) | dash-news-hunter |
+| Profile / Admin | `get_my_*`, `set_*`, `upsert_my_*`, `set_module_public_visibility`, `admin_list_default_news_keywords`, `admin_add_default_news_keyword`, `admin_set_default_news_keyword_match_type`, `admin_remove_default_news_keyword` | dash-admin |
+| News Hunter | `seed_my_news_hunter_keywords`, `get_default_news_keywords` (retrocompat — retorna `text[]`), `get_default_news_keywords_with_flags` (retorna `keyword, match_type` — consumido pelo scanner repo). Writes admin via `admin_*_default_news_keyword*` listados em Profile/Admin | dash-news-hunter |
 | Generic / metrics | `get_metricas`, `classificar_agentes` | base |
 | MDIC Comex | ~~`get_mdic_comex_filtros`, `get_mdic_comex_serie`, `get_mdic_comex_top_paises`, `get_mdic_comex_aggregated`, `get_mdic_comex_export_count`~~ — **DROPPED 2026-05-25** com a retirada de `/mdic-comex`. A tabela `mdic_comex` continua viva, alimentada pelo `etl_mdic_comex.yml`, e é consumida pelo `/imports-exports` Panel C via `get_imports_exports_fob_price_serie`. | ~~dash-mdic-comex~~ (sub-PRD arquivado em `docs/app/_deprecated/mdic-comex.md`) |
 | ANP Preços Produtores | `get_anp_precos_produtores_filtros`, `get_anp_precos_produtores_serie` | dash-anp-precos-produtores |
@@ -474,21 +474,45 @@ Convenções:
 - `cookies_netscape` armazena o arquivo Netscape HTTP Cookie completo (tabs literais preservados).
 - Seed de cookies (dados sensíveis) aplicado via `execute_sql` — **nunca commitado em arquivo**.
 
-### Admin RPCs — Default News Keywords (adicionada 2026-05-25)
+### Admin RPCs — Default News Keywords (adicionada 2026-05-25, expandida 2026-05-25 com `match_type`)
 
-Migration: `20260525230000_admin_default_news_keywords_rpcs.sql`.
+Migrations: `20260525230000_admin_default_news_keywords_rpcs.sql` (CRUD inicial) + `20260525250000_default_news_keywords_match_type.sql` (coluna `match_type` + 2 RPCs novas + 2 RPCs alteradas).
 
-Cria 3 RPCs `SECURITY DEFINER` para CRUD admin sobre `public.news_hunter_default_keywords`. A tabela permanece com RLS read-only (`SELECT` aberto para `anon` + `authenticated` via policy `20260522000001`); writes ocorrem **exclusivamente** via estas RPCs — não há policies INSERT/DELETE em `news_hunter_default_keywords`. Padrão segue o usado em `set_module_visibility` / `set_module_public_visibility`.
+Cria RPCs `SECURITY DEFINER` para CRUD admin sobre `public.news_hunter_default_keywords`. A tabela permanece com RLS read-only (`SELECT` aberto para `anon` + `authenticated` via policy `20260522000001`); writes ocorrem **exclusivamente** via estas RPCs — não há policies INSERT/DELETE em `news_hunter_default_keywords`. Padrão segue o usado em `set_module_visibility` / `set_module_public_visibility`.
+
+**Schema da tabela** (após `20260525250000`): `(keyword text PK, match_type text NOT NULL DEFAULT 'substring' CHECK IN ('substring','exact'), created_at timestamptz)`. Schema simétrico com `news_hunter_keywords` (per-user, que tem `match_type` desde `20260520000001`).
 
 | RPC | Assinatura | Notas |
 |---|---|---|
-| `admin_list_default_news_keywords` | `() RETURNS TABLE(keyword text, created_at timestamptz)` | LANGUAGE plpgsql STABLE. Ordenado por `keyword ASC`. |
-| `admin_add_default_news_keyword` | `(p_keyword text) RETURNS void` | `trim()` + reject empty (`ERRCODE 22023`). Idempotente (`INSERT ... ON CONFLICT (keyword) DO NOTHING`). Audit em `app_events` com `event_type='admin.add_default_news_keyword'`, `route='/admin-panel'`, `payload={keyword}`. |
-| `admin_remove_default_news_keyword` | `(p_keyword text) RETURNS void` | `trim()` + reject empty (`ERRCODE 22023`). Idempotente (`DELETE WHERE keyword = ...` — no-op se ausente). Audit em `app_events` com `event_type='admin.remove_default_news_keyword'`, `route='/admin-panel'`, `payload={keyword}`. |
+| `admin_list_default_news_keywords` | `() RETURNS TABLE(keyword text, match_type text, created_at timestamptz)` | LANGUAGE plpgsql STABLE. Ordenado por `keyword ASC`. **3 colunas** desde `20260525250000` (era 2). |
+| `admin_add_default_news_keyword` | `(p_keyword text, p_match_type text DEFAULT 'substring') RETURNS void` | `trim()` + reject empty (`ERRCODE 22023`). Valida `match_type IN ('substring','exact')` (`ERRCODE 22023` se inválido). Idempotente (`INSERT ... ON CONFLICT (keyword) DO NOTHING`). Audit em `app_events` com `event_type='admin.add_default_news_keyword'`, `route='/admin-panel'`, `payload={keyword, match_type}`. **2 params** desde `20260525250000` (era 1, default 'substring' preserva chamadas antigas). |
+| `admin_set_default_news_keyword_match_type` | `(p_keyword text, p_match_type text) RETURNS void` | **Nova em `20260525250000`**. UPDATE idempotente — no-op se `keyword` não existe (DELETE sem RAISE). Valida `match_type` contra CHECK. Audit em `app_events` com `event_type='admin.set_default_news_keyword_match_type'`, `route='/admin-panel'`, `payload={keyword, match_type}`. |
+| `admin_remove_default_news_keyword` | `(p_keyword text) RETURNS void` | `trim()` + reject empty (`ERRCODE 22023`). Idempotente (`DELETE WHERE keyword = ...` — no-op se ausente). Audit em `app_events` com `event_type='admin.remove_default_news_keyword'`, `route='/admin-panel'`, `payload={keyword}`. Recriada em `20260525250000` (DROP+CREATE) para idempotência/ownership; signature inalterada. |
 
-Todas: inline admin gate via `public.is_admin()` (RAISE EXCEPTION 'admin only') + `public.require_admin_mfa()`. `SET search_path = public`. `REVOKE ALL FROM PUBLIC` + `GRANT EXECUTE TO authenticated`. Audit é INSERT direto em `app_events` (não via `track_event()`, que valida `event_type` contra `{login,page_view,export}` apenas — o CHECK constraint da tabela permite `admin.%` adicionalmente).
+Todas as admin RPCs: inline admin gate via `public.is_admin()` (RAISE EXCEPTION 'admin only') + `public.require_admin_mfa()`. `SET search_path = public`. `REVOKE ALL FROM PUBLIC` + `REVOKE EXECUTE FROM anon` + `GRANT EXECUTE TO authenticated` (ver "Pegadinha: REVOKE FROM PUBLIC não exclui anon" abaixo). Audit é INSERT direto em `app_events` (não via `track_event()`, que valida `event_type` contra `{login,page_view,export}` apenas — o CHECK constraint da tabela permite `admin.%` adicionalmente).
 
-Consumido pelo `/admin-panel` → seção "Default News Keywords" (sidebar `default-news`). Wrappers JS: `rpcAdminListDefaultNewsKeywords`, `rpcAdminAddDefaultNewsKeyword`, `rpcAdminRemoveDefaultNewsKeyword` em `src/lib/rpc.ts`.
+**RPC anon-accessible companion** (mesma migration `20260525250000`):
+
+| RPC | Assinatura | Notas |
+|---|---|---|
+| `get_default_news_keywords` | `() RETURNS TEXT[]` | **Inalterada** — retrocompat preservada. Consumida por `NewsHunterContext.tsx`. `GRANT EXECUTE TO anon, authenticated`. |
+| `get_default_news_keywords_with_flags` | `() RETURNS TABLE(keyword text, match_type text)` | **Nova em `20260525250000`**. Para uso do scanner repo (`IBBAOG/news-hunter-scanner`) e qualquer consumidor futuro que precise de matching per-keyword. LANGUAGE sql STABLE SECURITY DEFINER. `GRANT EXECUTE TO anon, authenticated`. |
+
+Consumido pelo `/admin-panel` → seção "Default News Keywords" (sidebar `default-news`). Wrappers JS: `rpcAdminListDefaultNewsKeywords`, `rpcAdminAddDefaultNewsKeyword(supabase, keyword, matchType='substring')`, `rpcAdminSetDefaultNewsKeywordMatchType(supabase, keyword, matchType)`, `rpcAdminRemoveDefaultNewsKeyword` em `src/lib/rpc.ts`. Type: `DefaultNewsKeyword = { keyword: string; match_type: 'substring' | 'exact'; created_at: string }`.
+
+#### Pegadinha: `REVOKE FROM PUBLIC` não exclui `anon` neste projeto Supabase
+
+Descoberta em 2026-05-25 ao auditar as 4 admin RPCs criadas em `20260525230000`: o ACL default do Supabase (`pg_default_acl` sobre o role do owner) injeta `EXECUTE` para `anon` automaticamente quando uma função nova é criada. `REVOKE ALL ... FROM PUBLIC` revoga o privilégio default sobre `PUBLIC` (pseudo-role), mas **não** revoga o grant default específico para `anon`. Resultado: as 4 admin RPCs ficaram com `anon` podendo chamar (e quebrando no `is_admin()` check internamente — defesa em profundidade funcionou, mas a superfície de ataque ficou maior que o necessário por 1 dia).
+
+**Best practice obrigatória** para qualquer função admin daqui em diante:
+
+```sql
+REVOKE ALL ON FUNCTION public.<func>(<args>) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.<func>(<args>) FROM anon;   -- ← explícito, OBRIGATÓRIO
+GRANT EXECUTE ON FUNCTION public.<func>(<args>) TO authenticated;
+```
+
+A migration `20260525250000_default_news_keywords_match_type.sql` aplica esse padrão nas 4 RPCs admin (`admin_list_*`, `admin_add_*`, `admin_set_*_match_type`, `admin_remove_*`). Auditoria periódica via `has_function_privilege('anon', p.oid, 'EXECUTE')` em RPCs admin é desejável — qualquer linha onde a função `admin_*` retorna `true` é gap.
 
 ## Contratos com outros departamentos
 

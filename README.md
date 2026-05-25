@@ -42,7 +42,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/stocks` | `stock_portfolios` (direct PostgREST) + Yahoo Finance proxy | No |
 | `/news-hunter` | `seed_my_news_hunter_keywords` | No |
 | `/profile` | `get_my_profile`, `upsert_my_profile` | — |
-| `/admin-panel` | `get_module_visibility`, `set_module_visibility`, `set_module_home_visibility`, `set_module_public_visibility`, `get_all_users_with_roles`, `set_user_role`, `admin_list_default_news_keywords`, `admin_add_default_news_keyword`, `admin_remove_default_news_keyword` | — |
+| `/admin-panel` | `get_module_visibility`, `set_module_visibility`, `set_module_home_visibility`, `set_module_public_visibility`, `get_all_users_with_roles`, `set_user_role`, `admin_list_default_news_keywords`, `admin_add_default_news_keyword`, `admin_set_default_news_keyword_match_type`, `admin_remove_default_news_keyword` | — |
 
 ### Statistics (Fase 3 onwards — 9 dashboards)
 
@@ -173,7 +173,7 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | `module_visibility` | module_slug | is_visible_for_clients, is_visible_on_home (default true), **is_visible_for_public** (default true; CHECK + BEFORE trigger enforce `public=true ⇒ clients=true`) |
 | `news_articles` | url | domain, source_name, title, snippet, published_at, found_at, matched_keywords text[] (anon SELECT policy added in `20260522000001`) |
 | `news_hunter_keywords` | (user_id, keyword) | created_at — per-user, RLS scoped |
-| `news_hunter_default_keywords` | keyword | created_at — 27 seed terms (`petróleo`, `Petrobras`, `Vibra`, etc.); single source of truth read by anon and authed users via `get_default_news_keywords()` |
+| `news_hunter_default_keywords` | keyword | match_type (`substring` default \| `exact`, added 2026-05-25), created_at — 27 seed terms (`petróleo`, `Petrobras`, `Vibra`, etc.); single source of truth. Read by anon and authed users via `get_default_news_keywords()` (returns `text[]`, retrocompat) and `get_default_news_keywords_with_flags()` (returns `(keyword, match_type)`, consumed by scanner repo). Schema mirrors per-user `news_hunter_keywords`. |
 | `profiles` | id (FK auth.users) | role (Admin/Client), full_name, avatar_url |
 | `mdic_comex` | id | ano, mes, tipo (IMP/EXP), ncm, descricao_ncm, pais, uf, produto_combustivel, quantidade_kg, valor_fob_usd. Consumed by `/imports-exports` Panel C ("Import Price") via `get_imports_exports_fob_price_serie` — the standalone `/mdic-comex` dashboard was retired 2026-05-25. |
 | `anp_precos_produtores` | id | data_referencia, produto, regiao, preco, unidade |

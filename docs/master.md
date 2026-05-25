@@ -163,11 +163,15 @@ São os pontos onde um departamento depende de outro. Mudanças nestes contratos
 
 Tabela compartilhada entre dash-news-hunter (read pelo seed automático em `seed_my_news_hunter_keywords()` e por `get_default_news_keywords()` para anônimos) e dash-admin (write via Admin Panel). RLS é read-only para `anon` + `authenticated`; toda escrita atravessa SECURITY DEFINER (sem policies INSERT/DELETE).
 
+Schema: `(keyword text PK, match_type text NOT NULL DEFAULT 'substring' CHECK IN ('substring','exact'), created_at timestamptz)`. Coluna `match_type` adicionada em `20260525250000` — schema simétrico com `news_hunter_keywords` (per-user, que tem essa coluna desde `20260520000001`). Semantics: `substring` (case-insensitive substring, default/legacy) | `exact` (case-insensitive whole-word, regex `\b{keyword}\b`).
+
 | RPC | Assinatura | Consumidor |
 |---|---|---|
-| `get_default_news_keywords` | `() → TEXT[]` | `/news-hunter` (anon-safe seed) — callable por `anon` + `authenticated` |
-| `admin_list_default_news_keywords` | `() → TABLE(keyword text, created_at timestamptz)` | Admin Panel → seção "Default News Keywords". Admin-only via `is_admin()` + `require_admin_mfa()` |
-| `admin_add_default_news_keyword` | `(p_keyword text) → void` | Admin Panel — idempotente (`ON CONFLICT DO NOTHING`), trim + reject empty, audit em `app_events` (event_type `admin.add_default_news_keyword`) |
+| `get_default_news_keywords` | `() → TEXT[]` | `/news-hunter` (anon-safe seed) — callable por `anon` + `authenticated`. **Inalterada** por retrocompat (consumida por `NewsHunterContext.tsx`) |
+| `get_default_news_keywords_with_flags` | `() → TABLE(keyword text, match_type text)` | Scanner repo (`IBBAOG/news-hunter-scanner`) + futuros consumidores que precisam de matching per-keyword. Callable por `anon` + `authenticated` |
+| `admin_list_default_news_keywords` | `() → TABLE(keyword text, match_type text, created_at timestamptz)` | Admin Panel → seção "Default News Keywords". Admin-only via `is_admin()` + `require_admin_mfa()`. **3 colunas** (era 2 antes de `20260525250000`) |
+| `admin_add_default_news_keyword` | `(p_keyword text, p_match_type text DEFAULT 'substring') → void` | Admin Panel — idempotente (`ON CONFLICT DO NOTHING`), trim + reject empty, valida CHECK `match_type IN ('substring','exact')`, audit em `app_events` (event_type `admin.add_default_news_keyword`, payload inclui `match_type`). **2 params** (era 1 antes de `20260525250000`) |
+| `admin_set_default_news_keyword_match_type` | `(p_keyword text, p_match_type text) → void` | Admin Panel — UPDATE idempotente, audit em `app_events` (event_type `admin.set_default_news_keyword_match_type`). **Nova** em `20260525250000` |
 | `admin_remove_default_news_keyword` | `(p_keyword text) → void` | Admin Panel — idempotente, audit em `app_events` (event_type `admin.remove_default_news_keyword`) |
 
 ### 3-tier visibility (Anon / Client / Admin) — adicionado 2026-05-22
