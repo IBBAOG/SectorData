@@ -182,7 +182,7 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | `importer_group_map` | cnpj | unified_importer, razao_social_seed. **Intentionally empty at seed time** — populated by follow-up DML migration after ETL backfill exposes real CNPJs (T11) |
 | `ncm_densidade_kg_m3` | ncm_codigo | densidade_kg_m3 (840 / 740 / 850 for diesel / gasoline / crude oil), produto_label. Used server-side for kg → m³ conversion in `/imports-exports` |
 | `anp_lpc` | id | data_referencia, municipio, estado, produto, preco_medio, preco_minimo, preco_maximo, numero_postos |
-| `anp_cdp_producao` | (ano, mes, poco, campo, bacia, local) | ano, mes, poco, campo, bacia, local (PosSal/PreSal/Terra), petroleo_bbl_dia, gas_total_mm3_dia, agua_bbl_dia, operador |
+| `anp_cdp_producao` | (ano, mes, poco, campo, bacia, local) | ano, mes, poco, campo, bacia, local (PosSal/PreSal/Terra), petroleo_bbl_dia, oleo_bbl_dia, gas_total_mm3_dia, agua_bbl_dia, tempo_prod_hs_mes, operador |
 | `anp_precos_distribuicao` | id | data_referencia, distribuidora, produto, uf, preco_distribuicao, unidade |
 | `anp_voip` | (ano_publicacao, campo) | bacia, estado, voip_bbl, vgip_m3, petroleo_acumulado_bbl, gas_acumulado_m3, fracao_recuperada, situacao |
 | `anp_cdp_diaria` | (data, campo, bacia) | petroleo_bbl_dia, gas_mm3_dia; Field level; histórico desde 2025-11-09 |
