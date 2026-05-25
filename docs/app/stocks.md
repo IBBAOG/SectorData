@@ -103,9 +103,9 @@ src/app/api/stocks/                 Yahoo Finance proxy (Next.js API)
 - **Acesso**: PostgREST direto via supabase-js (não via RPC).
   - Owner CRUD policy scopes `WHERE auth.uid() = user_id`.
   - Permissive RLS policy `anon and authed read public portfolios` permite SELECT por anon e authenticated quando `is_public = TRUE`.
-- **Seed público**: row UUID `00000000-0000-0000-0000-000000000001` "Brazilian Oil & Gas (default)" com tickers `PETR4.SA, VBBR3.SA, BRAV3.SA, UGPA3.SA, RECV3.SA, PRIO3.SA`. Visível para todos os visitantes anônimos.
+- **Public seed**: snapshot of every portfolio owned by `ibbaogproject@gmail.com` (all rows, not only `is_active`), cloned into `stock_portfolios` with `user_id = NULL` and `is_public = TRUE`. Visible to every anonymous visitor. Tickers/groups/names are dynamic — they reflect whatever `ibbaogproject@gmail.com` had at the time the snapshot migration was applied. **No automatic re-sync**; to refresh the public set the admin re-runs the seed migration manually. This replaced the previous hardcoded "Brazilian Oil & Gas (default)" portfolio with 6 tickers (`PETR4.SA, VBBR3.SA, BRAV3.SA, UGPA3.SA, RECV3.SA, PRIO3.SA`), which is no longer used.
 
-Migrations: `20260401000000_stock_portfolios.sql`, `20260401000001_stock_portfolio_groups.sql`, `20260522000001_anonymous_access.sql` (seção 8).
+Migrations: `20260401000000_stock_portfolios.sql`, `20260401000001_stock_portfolio_groups.sql`, `20260522000001_anonymous_access.sql` (section 8 — RLS + nullable `user_id` + `is_public` column), `20260525000001_stocks_seed_from_ibbaogproject.sql` (current public seed — snapshot of `ibbaogproject@gmail.com` portfolios; rerun manually to refresh).
 
 ## Anonymous viewer mode (added 2026-05-21)
 
@@ -114,7 +114,7 @@ Migrations: `20260401000000_stock_portfolios.sql`, `20260401000001_stock_portfol
 | Role | Source | Portfolios visíveis | CRUD |
 |---|---|---|---|
 | Admin / Client | `useUserProfile().role === 'Admin' \| 'Client'` | `WHERE user_id = auth.uid()` | Full (New / Edit / Delete) |
-| Anon | `useUserProfile().role === 'Anon'` | `WHERE is_public = TRUE` (default = Brazilian Oil & Gas) | Hidden — `readOnly` flag |
+| Anon | `useUserProfile().role === 'Anon'` | `WHERE is_public = TRUE` (snapshot of `ibbaogproject@gmail.com` portfolios — see "Public seed" above) | Hidden — `readOnly` flag |
 
 Componentes/padrões:
 
@@ -122,7 +122,7 @@ Componentes/padrões:
 - `useStocksData` repassa `readOnly` no return type — ambas views consomem.
 - `desktop/View.tsx` esconde botões "New", gear (Edit) e o empty-state "Create your first portfolio" quando `readOnly`. Renderiza `<AnonCTA />` acima do grid.
 - `mobile/View.tsx` remove a aba "Profile" do `MobileBottomTabBar`, fecha o `PortfolioEditorSheet`, e renderiza `<AnonCTA />` entre a search bar e o tab content.
-- `AnonCTA` (em `src/components/AnonCTA.tsx`, owned by Phase B) é um banner com brand-orange invitation pro `/login`.
+- `AnonCTA` (em `src/components/AnonCTA.tsx`, owned by Phase B) é um banner com brand-orange invitation pro `/login`. Copy unchanged by the public-seed refactor: still reads "Sign in to create and manage your own portfolios."
 
 ## Yahoo Finance Proxy (importante)
 
