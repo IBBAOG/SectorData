@@ -25,8 +25,6 @@ export type ExportSizeEstimate = {
 export const AVG_BYTES_PER_ROW: Record<string, { xlsx: number; csv: number }> = {
   // Fuel sales (vendas) — used by /market-share, /sales-volumes
   vendas: { xlsx: 220, csv: 110 },
-  // MDIC ComEx — wider rows (ncm, descricao_ncm, pais, uf, ...)
-  mdic_comex: { xlsx: 280, csv: 140 },
   // ANP CDP producao — narrower (numeric heavy)
   anp_cdp_producao: { xlsx: 200, csv: 100 },
   // ANP CDP Diária — daily by campo×bacia (5 cols: data, campo, bacia, petroleo, gas)
