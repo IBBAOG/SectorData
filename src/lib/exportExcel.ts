@@ -8,8 +8,6 @@ import type {
   AnpCdpRawRow,
   AnpCdpAggregatedRow,
   AnpCdpGroupBy,
-  AnpLpcSerieRow,
-  AnpPdistSerieRow,
 } from "./rpc";
 
 const BIG3_MEMBERS = ["Vibra", "Ipiranga", "Raizen"];
@@ -1284,44 +1282,6 @@ export async function downloadAnpCdpRawExcel(rows: AnpCdpRawRow[]): Promise<void
       { key: "gas_total_mm3_dia",            header: "Total Gas (Mm³/day)",     width: 20, format: "#,##0.00" },
       { key: "agua_bbl_dia",                 header: "Water (bbl/day)",         width: 16, format: "#,##0.00" },
       { key: "tempo_prod_hs_mes",            header: "Production Time (hrs/month)", width: 22, format: "#,##0.00" },
-    ],
-  });
-}
-
-// ── ANP Distribution Prices export ───────────────────────────────────────────
-
-export async function downloadAnpPdistExcel(rows: AnpPdistSerieRow[]): Promise<void> {
-  await downloadGenericExcel<AnpPdistSerieRow>({
-    rows,
-    sheetName: "ANP Distrib. Prices",
-    title: "ANP — Fuel Distribution Prices",
-    filename: "ANP Distribution Prices",
-    columns: [
-      { key: "data_referencia", header: "Reference Date",  width: 16 },
-      { key: "local",           header: "Location",        width: 26, align: "left" },
-      { key: "preco_medio",     header: "Avg. Price",      width: 14, format: "0.0000" },
-      { key: "preco_minimo",    header: "Min. Price",      width: 14, format: "0.0000" },
-      { key: "preco_maximo",    header: "Max. Price",      width: 14, format: "0.0000" },
-      { key: "unidade",         header: "Unit",            width: 10 },
-    ],
-  });
-}
-
-// ── ANP LPC export ───────────────────────────────────────────────────────────
-
-export async function downloadAnpLpcExcel(rows: AnpLpcSerieRow[]): Promise<void> {
-  await downloadGenericExcel<AnpLpcSerieRow>({
-    rows,
-    sheetName: "ANP LPC",
-    title: "ANP LPC — Fuel Price Survey",
-    filename: "ANP LPC",
-    columns: [
-      { key: "data_fim",           header: "End Date",          width: 12 },
-      { key: "produto",            header: "Product",           width: 22, align: "left" },
-      { key: "estado",             header: "State",             width: 8 },
-      { key: "preco_medio_venda",  header: "Avg. Sale Price",   width: 18, format: "0.000" },
-      { key: "preco_medio_compra", header: "Avg. Purchase Price", width: 20, format: "0.000" },
-      { key: "n_postos",           header: "Stations",          width: 12, format: "#,##0" },
     ],
   });
 }

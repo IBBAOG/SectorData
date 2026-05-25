@@ -797,48 +797,83 @@ export async function rpcGetPriceBandsData(
   return allRows;
 }
 
-// ─── MODULE: ANP Preços Produtores (/src/app/(dashboard)/anp-precos-produtores/page.tsx) ─
+// ─── MODULE: ANP Prices (/src/app/(dashboard)/anp-prices/) ─────────────────
+//
+// Consolidates 3 retired dashboards (/anp-precos-produtores,
+// /anp-precos-distribuicao, /anp-lpc) into a single supply-chain price
+// surveyor. Backend RPCs unify the 3 source tables with product/unit/region
+// normalization and a Diesel S10→S500 fallback.
 
-export type AnpPprodutoresRow = {
-  data_inicio: string;
-  data_fim: string;
-  produto: string;
-  unidade: string | null;
-  regiao: string;
-  preco: number | null;
-};
-
-export type AnpPprodutoresFiltros = {
-  produtos: string[];
-  regioes: string[];
-  data_min: string | null;
+export type AnpPricesFiltros = {
+  produtos: string[];        // ['Gasoline','Diesel','Ethanol','Biodiesel','LPG']
+  granularidades: string[];  // ['brasil','regiao','uf','municipio']
+  regioes: string[];         // title-case with hyphen ('Centro-Oeste')
+  ufs: string[];             // 2-letter codes ('SP', 'RJ')
+  municipios: string[];      // UPPERCASE ASCII names
+  data_min: string | null;   // ISO 'YYYY-MM-DD'
   data_max: string | null;
 };
 
-export async function rpcGetAnpPprodutoresSerie(
+export type AnpPricesSerieRow = {
+  data: string;                                            // ISO 'YYYY-MM-DD'
+  fonte: 'producer' | 'distribution' | 'retail';
+  local: string;
+  preco: number | null;
+  unidade: string;                                         // 'R$/litro' | 'R$/13kg'
+};
+
+export async function rpcGetAnpPricesFiltros(
   supabase: SupabaseClient,
-  params?: {
-    produto?: string | null;
-    regioes?: string[] | null;
+): Promise<AnpPricesFiltros> {
+  try {
+    const { data, error } = await supabase.rpc("get_anp_prices_filtros", {});
+    if (error) throw error;
+    const d = (data ?? {}) as Partial<AnpPricesFiltros>;
+    return {
+      produtos:       d.produtos       ?? [],
+      granularidades: d.granularidades ?? [],
+      regioes:        d.regioes        ?? [],
+      ufs:            d.ufs            ?? [],
+      municipios:     d.municipios     ?? [],
+      data_min:       d.data_min       ?? null,
+      data_max:       d.data_max       ?? null,
+    };
+  } catch (e) {
+    console.error("get_anp_prices_filtros failed", e);
+    return {
+      produtos: [], granularidades: [], regioes: [], ufs: [], municipios: [],
+      data_min: null, data_max: null,
+    };
+  }
+}
+
+export async function rpcGetAnpPricesSerie(
+  supabase: SupabaseClient,
+  params: {
+    produto: string;
+    granularidade?: string;
+    locais?: string[] | null;
     dataInicio?: string | null;
     dataFim?: string | null;
   },
-): Promise<AnpPprodutoresRow[]> {
+): Promise<AnpPricesSerieRow[]> {
+  if (!params.produto) return [];
   const PAGE = 1000;
   let offset = 0;
-  const allRows: AnpPprodutoresRow[] = [];
+  const allRows: AnpPricesSerieRow[] = [];
   const rpcParams = {
-    p_produto:     params?.produto     ?? null,
-    p_regioes:     params?.regioes     ?? null,
-    p_data_inicio: params?.dataInicio  ?? null,
-    p_data_fim:    params?.dataFim     ?? null,
+    p_produto:       params.produto,
+    p_granularidade: params.granularidade ?? "brasil",
+    p_locais:        toListOrNull(params.locais),
+    p_data_inicio:   params.dataInicio ?? null,
+    p_data_fim:      params.dataFim    ?? null,
   };
   while (true) {
     const { data, error } = await supabase
-      .rpc("get_anp_precos_produtores_serie", rpcParams)
+      .rpc("get_anp_prices_serie", rpcParams)
       .range(offset, offset + PAGE - 1);
-    if (error) { console.error("get_anp_precos_produtores_serie failed", error); break; }
-    const rows = (data ?? []) as AnpPprodutoresRow[];
+    if (error) { console.error("get_anp_prices_serie failed", error); break; }
+    const rows = (data ?? []) as AnpPricesSerieRow[];
     if (!rows.length) break;
     allRows.push(...rows);
     if (rows.length < PAGE) break;
@@ -847,23 +882,30 @@ export async function rpcGetAnpPprodutoresSerie(
   return allRows;
 }
 
-export async function rpcGetAnpPprodutoresFiltros(
+export type AnpPricesExportCountFilters = {
+  produtos?: string[] | null;
+  granularidades?: string[] | null;
+  locais?: string[] | null;
+  dataInicio?: string | null;
+  dataFim?: string | null;
+};
+
+export async function getAnpPricesExportCount(
   supabase: SupabaseClient,
-): Promise<AnpPprodutoresFiltros> {
-  try {
-    const { data, error } = await supabase.rpc("get_anp_precos_produtores_filtros", {});
-    if (error) throw error;
-    const d = (data ?? {}) as Partial<AnpPprodutoresFiltros>;
-    return {
-      produtos:  d.produtos  ?? [],
-      regioes:   d.regioes   ?? [],
-      data_min:  d.data_min  ?? null,
-      data_max:  d.data_max  ?? null,
-    };
-  } catch (e) {
-    console.error("get_anp_precos_produtores_filtros failed", e);
-    return { produtos: [], regioes: [], data_min: null, data_max: null };
+  filters: AnpPricesExportCountFilters,
+): Promise<number> {
+  const { data, error } = await supabase.rpc("get_anp_prices_export_count", {
+    p_produtos:       toListOrNull(filters.produtos),
+    p_granularidades: toListOrNull(filters.granularidades),
+    p_locais:         toListOrNull(filters.locais),
+    p_data_inicio:    filters.dataInicio ?? null,
+    p_data_fim:       filters.dataFim    ?? null,
+  });
+  if (error) {
+    console.error("get_anp_prices_export_count failed", error);
+    throw error;
   }
+  return Number(data ?? 0);
 }
 
 // ─── MODULE: ANP GLP (/src/app/(dashboard)/anp-glp/page.tsx) ─────────────────
@@ -932,216 +974,6 @@ export async function rpcGetAnpGlpFiltros(
     console.error("get_anp_glp_filtros failed", e);
     return { distribuidoras: [], categorias: [], ano_min: null, ano_max: null };
   }
-}
-
-// ─── MODULE: ANP LPC (/src/app/(dashboard)/anp-lpc/page.tsx) ─────────────────
-
-export type AnpLpcNacionalRow = {
-  data_fim: string;          // "YYYY-MM-DD" (week end date)
-  produto: string;
-  preco_medio_venda: number | null;
-  total_postos: number | null;
-};
-
-export type AnpLpcSerieRow = {
-  data_fim: string;
-  produto: string;
-  estado: string;
-  preco_medio_venda: number | null;
-  preco_medio_compra: number | null;
-  n_postos: number | null;
-};
-
-export type AnpLpcFiltros = {
-  produtos: string[];
-  estados: string[];
-  data_min: string | null;
-  data_max: string | null;
-};
-
-export async function rpcGetAnpLpcNacional(
-  supabase: SupabaseClient,
-  params?: {
-    produtos?: string[] | null;
-    dataInicio?: string | null;
-    dataFim?: string | null;
-  },
-): Promise<AnpLpcNacionalRow[]> {
-  const PAGE = 1000;
-  let offset = 0;
-  const allRows: AnpLpcNacionalRow[] = [];
-  const rpcParams = {
-    p_produtos:    params?.produtos   ?? null,
-    p_data_inicio: params?.dataInicio ?? null,
-    p_data_fim:    params?.dataFim    ?? null,
-  };
-  while (true) {
-    const { data, error } = await supabase
-      .rpc("get_anp_lpc_nacional", rpcParams)
-      .range(offset, offset + PAGE - 1);
-    if (error) { console.error("get_anp_lpc_nacional failed", error); break; }
-    const rows = (data ?? []) as AnpLpcNacionalRow[];
-    if (!rows.length) break;
-    allRows.push(...rows);
-    if (rows.length < PAGE) break;
-    offset += PAGE;
-  }
-  return allRows;
-}
-
-export async function rpcGetAnpLpcSerie(
-  supabase: SupabaseClient,
-  params?: {
-    produtos?: string[] | null;
-    estados?: string[] | null;
-    dataInicio?: string | null;
-    dataFim?: string | null;
-  },
-): Promise<AnpLpcSerieRow[]> {
-  const PAGE = 1000;
-  let offset = 0;
-  const allRows: AnpLpcSerieRow[] = [];
-  const rpcParams = {
-    p_produtos:    params?.produtos   ?? null,
-    p_estados:     params?.estados    ?? null,
-    p_data_inicio: params?.dataInicio ?? null,
-    p_data_fim:    params?.dataFim    ?? null,
-  };
-  while (true) {
-    const { data, error } = await supabase
-      .rpc("get_anp_lpc_serie", rpcParams)
-      .range(offset, offset + PAGE - 1);
-    if (error) { console.error("get_anp_lpc_serie failed", error); break; }
-    const rows = (data ?? []) as AnpLpcSerieRow[];
-    if (!rows.length) break;
-    allRows.push(...rows);
-    if (rows.length < PAGE) break;
-    offset += PAGE;
-  }
-  return allRows;
-}
-
-export async function rpcGetAnpLpcFiltros(
-  supabase: SupabaseClient,
-): Promise<AnpLpcFiltros> {
-  try {
-    const { data, error } = await supabase.rpc("get_anp_lpc_filtros", {});
-    if (error) throw error;
-    const d = (data ?? {}) as Partial<AnpLpcFiltros>;
-    return {
-      produtos:  d.produtos  ?? [],
-      estados:   d.estados   ?? [],
-      data_min:  d.data_min  ?? null,
-      data_max:  d.data_max  ?? null,
-    };
-  } catch (e) {
-    console.error("get_anp_lpc_filtros failed", e);
-    return { produtos: [], estados: [], data_min: null, data_max: null };
-  }
-}
-
-// ─── MODULE: ANP Preços Distribuição (/src/app/(dashboard)/anp-precos-distribuicao/page.tsx) ─
-
-export type AnpPdistSerieRow = {
-  data_referencia: string;     // "YYYY-MM-DD"
-  local: string;               // "Brasil" | UF | nome do município
-  preco_medio: number | null;
-  preco_minimo: number | null;
-  preco_maximo: number | null;
-  unidade: string | null;
-};
-
-export type AnpPdistFiltros = {
-  produtos: string[];
-  granularidades: string[];    // 'brasil' | 'uf' | 'municipio' | 'regiao'
-  ufs: string[];
-  municipios: string[];
-  regioes: string[];           // 'NORTE' | 'NORDESTE' | 'CENTRO OESTE' | 'SUDESTE' | 'SUL'
-  data_min: string | null;
-  data_max: string | null;
-};
-
-export async function rpcGetAnpPdistFiltros(
-  supabase: SupabaseClient,
-): Promise<AnpPdistFiltros> {
-  try {
-    const { data, error } = await supabase.rpc("get_anp_precos_distribuicao_filtros", {});
-    if (error) throw error;
-    const d = (data ?? {}) as Partial<AnpPdistFiltros>;
-    return {
-      produtos:        d.produtos        ?? [],
-      granularidades:  d.granularidades  ?? [],
-      ufs:             d.ufs             ?? [],
-      municipios:      d.municipios      ?? [],
-      regioes:         d.regioes         ?? [],
-      data_min:        d.data_min        ?? null,
-      data_max:        d.data_max        ?? null,
-    };
-  } catch (e) {
-    console.error("get_anp_precos_distribuicao_filtros failed", e);
-    return { produtos: [], granularidades: [], ufs: [], municipios: [], regioes: [], data_min: null, data_max: null };
-  }
-}
-
-export async function rpcGetAnpPdistSerie(
-  supabase: SupabaseClient,
-  params: {
-    produto: string;
-    granularidade: string;
-    locais?: string[] | null;
-    dataInicio?: string | null;
-    dataFim?: string | null;
-  },
-): Promise<AnpPdistSerieRow[]> {
-  if (!params.produto || !params.granularidade) return [];
-  const PAGE = 1000;
-  let offset = 0;
-  const allRows: AnpPdistSerieRow[] = [];
-  const rpcParams = {
-    p_produto:       params.produto,
-    p_granularidade: params.granularidade,
-    p_locais:        toListOrNull(params.locais),
-    p_data_inicio:   params.dataInicio ?? null,
-    p_data_fim:      params.dataFim    ?? null,
-  };
-  while (true) {
-    const { data, error } = await supabase
-      .rpc("get_anp_precos_distribuicao_serie", rpcParams)
-      .range(offset, offset + PAGE - 1);
-    if (error) { console.error("get_anp_precos_distribuicao_serie failed", error); break; }
-    const rows = (data ?? []) as AnpPdistSerieRow[];
-    if (!rows.length) break;
-    allRows.push(...rows);
-    if (rows.length < PAGE) break;
-    offset += PAGE;
-  }
-  return allRows;
-}
-
-export type AnpPdistExportCountFilters = {
-  produtos?: string[] | null;
-  granularidades?: string[] | null;
-  locais?: string[] | null;
-  dataInicio?: string | null;
-  dataFim?: string | null;
-};
-
-export async function getAnpPdistExportCount(
-  supabase: SupabaseClient,
-  filters: AnpPdistExportCountFilters,
-): Promise<number> {
-  const { data, error } = await supabase.rpc("get_anp_precos_distribuicao_export_count", {
-    p_produtos:        toListOrNull(filters.produtos),
-    p_granularidades:  toListOrNull(filters.granularidades),
-    p_locais:          toListOrNull(filters.locais),
-    p_data_inicio:     filters.dataInicio ?? null,
-    p_data_fim:        filters.dataFim    ?? null,
-  });
-  if (error) {
-    console.error("get_anp_precos_distribuicao_export_count failed", error);
-    throw error;
-  }
-  return Number(data ?? 0);
 }
 
 // ─── MODULE: ANP CDP (/src/app/(dashboard)/anp-cdp/page.tsx) ─────────────────
@@ -1928,30 +1760,6 @@ export async function rpcGetAnpCdpAggregated(
   }
 
   return allRows;
-}
-
-export type AnpLpcExportCountFilters = {
-  produtos?: string[] | null;
-  estados?: string[] | null;
-  dataInicio?: string | null;
-  dataFim?: string | null;
-};
-
-export async function getAnpLpcExportCount(
-  supabase: SupabaseClient,
-  filters: AnpLpcExportCountFilters,
-): Promise<number> {
-  const { data, error } = await supabase.rpc("get_anp_lpc_export_count", {
-    p_produtos:    toListOrNull(filters.produtos),
-    p_estados:     toListOrNull(filters.estados),
-    p_data_inicio: filters.dataInicio ?? null,
-    p_data_fim:    filters.dataFim    ?? null,
-  });
-  if (error) {
-    console.error("get_anp_lpc_export_count failed", error);
-    throw error;
-  }
-  return Number(data ?? 0);
 }
 
 // ─── MODULE: Admin Analytics (/admin-analytics) ──────────────────────────────

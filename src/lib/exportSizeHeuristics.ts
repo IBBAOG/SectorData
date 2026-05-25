@@ -33,10 +33,9 @@ export const AVG_BYTES_PER_ROW: Record<string, { xlsx: number; csv: number }> = 
   anp_cdp_diaria_instalacao: { xlsx: 200, csv: 100 },
   // ANP CDP Diária por poço — deepest level (6 cols: data, campo, bacia, poco, petroleo, gas)
   anp_cdp_diaria_poco: { xlsx: 220, csv: 110 },
-  // ANP LPC — city + state + product + 4 numeric cols
-  anp_lpc: { xlsx: 240, csv: 120 },
-  // ANP Distribution Prices — local (state/city) + product + 3 numeric cols + unit
-  "anp-precos-distribuicao": { xlsx: 240, csv: 120 },
+  // ANP Prices (consolidated supply-chain survey) — 5 cols:
+  // data + fonte + local + preco + unidade. Producer/Distribution/Retail merged.
+  anp_prices: { xlsx: 200, csv: 100 },
   // Vessel positions — compact (mmsi, lat, lon, timestamp)
   vessel_positions: { xlsx: 180, csv: 90 },
   // Fallback — used whenever no specific entry exists
