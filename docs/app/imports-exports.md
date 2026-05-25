@@ -112,6 +112,12 @@ Returns `(entity text, last_12m numeric, prev_12m numeric, yoy_pct numeric)`.
 
 ---
 
+## Exports tab — ranking divergence note
+
+The stacked-area chart ("Exports — By Destination Country") ranks destination countries by **total value over the full selected period** `[p_ano_inicio, p_ano_fim]`, while the YoY table ranks countries by **last-12m only**. A country that was historically dominant but has dropped off recently can therefore appear in the chart's top-10 but be absent from the YoY table's top-10 (and vice versa). This is intentional — each artifact ranks by its own dominant axis. Both panels share the same `metric` filter (volume or USD).
+
+---
+
 ## Layout — Desktop
 
 ```

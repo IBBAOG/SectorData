@@ -423,6 +423,43 @@ export default function MobileView(): React.ReactElement {
         wsB.addRow([r.ano, r.mes, r.unified_importer, +r.total_mil_m3.toFixed(3)]);
       }
 
+      // Exports — unit header depends on current toggle
+      const exportsVolLabel =
+        filters.exportsYAxis === "volume" ? "Volume (mil m3)" : "Value (USD)";
+
+      const wsC = wb.addWorksheet("Exports by Country");
+      wsC.addRow(["Year", "Month", "Country", exportsVolLabel]);
+      for (const r of exportsPaisesData) {
+        wsC.addRow([r.ano, r.mes, r.pais, +r.value.toFixed(3)]);
+      }
+
+      const wsD = wb.addWorksheet("Exports YoY");
+      wsD.addRow([
+        "Entity",
+        `Last 12m (${exportsVolLabel})`,
+        `Prior 12m (${exportsVolLabel})`,
+        "YoY %",
+      ]);
+      for (const r of yoyExportsData) {
+        wsD.addRow([
+          r.entity,
+          +r.last_12m.toFixed(3),
+          +r.prev_12m.toFixed(3),
+          r.yoy_pct != null ? +r.yoy_pct.toFixed(2) : "",
+        ]);
+      }
+
+      // Apply bold header row + thin borders to all worksheets
+      for (const ws of [wsA, wsB, wsC, wsD]) {
+        const headerRow = ws.getRow(1);
+        headerRow.font = { bold: true };
+        headerRow.eachCell((cell) => {
+          cell.border = {
+            bottom: { style: "thin", color: { argb: "FFD0D0D0" } },
+          };
+        });
+      }
+
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -471,6 +508,27 @@ export default function MobileView(): React.ReactElement {
 
       zip.file("imports_by_country.csv", csvA);
       zip.file("imports_by_importer.csv", csvB);
+
+      // Exports CSVs — unit column header depends on current toggle
+      const exportsColLabel =
+        filters.exportsYAxis === "volume" ? "volume_mil_m3" : "value_usd";
+
+      const csvC = toCsv(
+        ["year", "month", "country", exportsColLabel],
+        exportsPaisesData.map((r) => [r.ano, r.mes, r.pais, +r.value.toFixed(3)]),
+      );
+      const csvD = toCsv(
+        ["entity", `last_12m_${exportsColLabel}`, `prior_12m_${exportsColLabel}`, "yoy_pct"],
+        yoyExportsData.map((r) => [
+          r.entity,
+          +r.last_12m.toFixed(3),
+          +r.prev_12m.toFixed(3),
+          r.yoy_pct != null ? +r.yoy_pct.toFixed(2) : "",
+        ]),
+      );
+
+      zip.file("exports_by_country.csv", csvC);
+      zip.file("exports_yoy.csv", csvD);
 
       const today = new Date();
       const dd = String(today.getDate()).padStart(2, "0");
@@ -949,7 +1007,7 @@ export default function MobileView(): React.ReactElement {
               Excel (.xlsx)
               <br />
               <span style={{ fontSize: 11, fontWeight: 400, color: "#888" }}>
-                2 sheets — Countries &amp; Importers
+                4 sheets — Imports &amp; Exports
               </span>
             </span>
           </button>
@@ -984,7 +1042,7 @@ export default function MobileView(): React.ReactElement {
               CSV (.zip)
               <span style={{ fontSize: 11, fontWeight: 400, color: "#888" }}>
                 <br />
-                2 files — imports_by_country &amp; imports_by_importer
+                4 files — imports + exports
               </span>
             </span>
           </button>
