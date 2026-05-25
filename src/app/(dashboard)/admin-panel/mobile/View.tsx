@@ -1425,13 +1425,40 @@ export default function MobileView(): React.ReactElement | null {
           ) : (
             filteredKeywords.map((kw) => {
               const isExact = kw.match_type === "exact";
-              const isTogglingThis = togglingMatchType === kw.keyword;
+              const isTogglingThis = togglingMatchType.has(kw.keyword);
               return (
-                <MobileDataCard
+                // Inline article instead of MobileDataCard so the match-type
+                // toggle row sits below the title outside any subtitle clamp.
+                <article
                   key={kw.keyword}
-                  variant="default"
-                  title={
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  style={{
+                    background: "var(--mobile-surface)",
+                    borderBottom: "1px solid var(--mobile-divider)",
+                    padding: "12px 16px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                    cursor: "pointer",
+                  }}
+                  onClick={() => setConfirmRemoveKeyword(kw.keyword)}
+                >
+                  {/* Row 1: keyword title + EXACT badge + Remove button */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                    <span
+                      style={{
+                        fontSize: 15,
+                        fontWeight: 600,
+                        color: "var(--mobile-text)",
+                        lineHeight: 1.2,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        minWidth: 0,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
                       {kw.keyword}
                       {isExact && (
                         <span style={{
@@ -1444,59 +1471,6 @@ export default function MobileView(): React.ReactElement | null {
                         </span>
                       )}
                     </span>
-                  }
-                  subtitle={
-                    <span style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
-                      <span style={{ fontSize: 11, color: "var(--mobile-text-faint)" }}>
-                        Added {formatDateBR(kw.created_at)}
-                      </span>
-                      {/* Match type toggle row */}
-                      <label
-                        title="When enabled, only whole-word matches trigger an alert. Useful for short/generic terms like 'Vibra'."
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 6,
-                          cursor: !!togglingMatchType ? "not-allowed" : "pointer",
-                          userSelect: "none",
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div
-                          className="form-check form-switch"
-                          style={{ margin: 0, paddingLeft: 0, display: "inline-block" }}
-                        >
-                          <input
-                            className="form-check-input"
-                            type="checkbox"
-                            role="switch"
-                            checked={isExact}
-                            disabled={!!togglingMatchType}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              handleToggleMatchType(kw.keyword, kw.match_type);
-                            }}
-                            aria-label={`Exact match for keyword ${kw.keyword}`}
-                            style={{
-                              width: "2.2em", height: "1.2em",
-                              cursor: isTogglingThis ? "wait" : !!togglingMatchType ? "not-allowed" : "pointer",
-                              opacity: isTogglingThis ? 0.5 : 1,
-                              margin: 0,
-                            }}
-                          />
-                        </div>
-                        <span style={{
-                          fontSize: 11,
-                          fontWeight: 600,
-                          color: isExact ? ORANGE : "var(--mobile-text-faint)",
-                        }}>
-                          {isTogglingThis ? "Toggling…" : "Exact match (whole word)"}
-                        </span>
-                      </label>
-                    </span>
-                  }
-                  onClick={() => setConfirmRemoveKeyword(kw.keyword)}
-                  rightSlot={
                     <button
                       type="button"
                       onClick={(e) => {
@@ -1505,6 +1479,7 @@ export default function MobileView(): React.ReactElement | null {
                       }}
                       disabled={!!removingKeyword}
                       style={{
+                        flexShrink: 0,
                         minHeight: 32,
                         padding: "0 10px",
                         borderRadius: 8,
@@ -1521,8 +1496,57 @@ export default function MobileView(): React.ReactElement | null {
                     >
                       Remove
                     </button>
-                  }
-                />
+                  </div>
+
+                  {/* Row 2: added date */}
+                  <span style={{ fontSize: 11, color: "var(--mobile-text-faint)" }}>
+                    Added {formatDateBR(kw.created_at)}
+                  </span>
+
+                  {/* Row 3: match-type toggle — lives outside any line-clamp wrapper */}
+                  <label
+                    title="When enabled, only whole-word matches trigger an alert. Useful for short/generic terms like 'Vibra'."
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      cursor: isTogglingThis ? "wait" : "pointer",
+                      userSelect: "none",
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div
+                      className="form-check form-switch"
+                      style={{ margin: 0, paddingLeft: 0, display: "inline-block" }}
+                    >
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        role="switch"
+                        checked={isExact}
+                        disabled={isTogglingThis}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          handleToggleMatchType(kw.keyword, kw.match_type);
+                        }}
+                        aria-label={`Exact match for keyword ${kw.keyword}`}
+                        style={{
+                          width: "2.2em", height: "1.2em",
+                          cursor: isTogglingThis ? "wait" : "pointer",
+                          opacity: isTogglingThis ? 0.5 : 1,
+                          margin: 0,
+                        }}
+                      />
+                    </div>
+                    <span style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: isExact ? ORANGE : "var(--mobile-text-faint)",
+                    }}>
+                      {isTogglingThis ? "Toggling…" : "Exact match (whole word)"}
+                    </span>
+                  </label>
+                </article>
               );
             })
           )}

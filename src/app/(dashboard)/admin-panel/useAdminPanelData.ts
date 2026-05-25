@@ -249,7 +249,7 @@ export interface UseAdminPanelData {
   removingKeyword: string | null;
   confirmRemoveKeyword: string | null;
   setConfirmRemoveKeyword: (kw: string | null) => void;
-  togglingMatchType: string | null;
+  togglingMatchType: Set<string>;
   handleAddKeyword: () => Promise<void>;
   handleRemoveKeyword: (keyword: string) => Promise<void>;
   handleToggleMatchType: (keyword: string, currentMatchType: "substring" | "exact") => Promise<void>;
@@ -688,7 +688,7 @@ export function useAdminPanelData(): UseAdminPanelData {
   const [addKeywordSuccess, setAddKeywordSuccess] = useState(false);
   const [removingKeyword, setRemovingKeyword] = useState<string | null>(null);
   const [confirmRemoveKeyword, setConfirmRemoveKeyword] = useState<string | null>(null);
-  const [togglingMatchType, setTogglingMatchType] = useState<string | null>(null);
+  const [togglingMatchType, setTogglingMatchType] = useState<Set<string>>(new Set());
 
   const loadDefaultKeywords = useCallback(async () => {
     if (!supabase) return;
@@ -755,9 +755,9 @@ export function useAdminPanelData(): UseAdminPanelData {
 
   const handleToggleMatchType = useCallback(
     async (keyword: string, currentMatchType: "substring" | "exact") => {
-      if (!supabase || togglingMatchType) return;
+      if (!supabase || togglingMatchType.has(keyword)) return;
       const newType = currentMatchType === "exact" ? "substring" : "exact";
-      setTogglingMatchType(keyword);
+      setTogglingMatchType((prev) => new Set(prev).add(keyword));
       const ok = await rpcAdminSetDefaultNewsKeywordMatchType(supabase, keyword, newType);
       if (ok) {
         setDefaultKeywords((prev) =>
@@ -767,7 +767,11 @@ export function useAdminPanelData(): UseAdminPanelData {
         setDefaultKeywordsError("Could not update match type. Please try again.");
         setTimeout(() => setDefaultKeywordsError(null), 4000);
       }
-      setTogglingMatchType(null);
+      setTogglingMatchType((prev) => {
+        const next = new Set(prev);
+        next.delete(keyword);
+        return next;
+      });
     },
     [supabase, togglingMatchType],
   );

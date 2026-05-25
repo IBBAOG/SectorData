@@ -1248,7 +1248,7 @@ export default function DesktopView(): React.ReactElement | null {
                     const isConfirming = confirmRemoveKeyword === kw.keyword;
                     const isRemoving = removingKeyword === kw.keyword;
                     const isExact = kw.match_type === "exact";
-                    const isTogglingThis = togglingMatchType === kw.keyword;
+                    const isTogglingThis = togglingMatchType.has(kw.keyword);
                     return (
                       <span
                         key={kw.keyword}
@@ -1278,7 +1278,7 @@ export default function DesktopView(): React.ReactElement | null {
                           /* Toggle match type button */
                           <button
                             onClick={() => handleToggleMatchType(kw.keyword, kw.match_type)}
-                            disabled={!!togglingMatchType}
+                            disabled={isTogglingThis}
                             title={
                               isExact
                                 ? "Switch to substring matching"
@@ -1288,7 +1288,7 @@ export default function DesktopView(): React.ReactElement | null {
                               background: "none", border: "1px dashed",
                               borderColor: isExact ? ORANGE : "#ccc",
                               borderRadius: 4,
-                              cursor: isTogglingThis ? "wait" : !!togglingMatchType ? "not-allowed" : "pointer",
+                              cursor: isTogglingThis ? "wait" : "pointer",
                               color: isExact ? ORANGE : "#999",
                               lineHeight: 1, padding: "1px 4px",
                               fontFamily: "Arial, sans-serif", fontSize: 10, fontWeight: 700,
