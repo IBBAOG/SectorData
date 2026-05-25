@@ -1011,7 +1011,15 @@ function CompareCardContent({
    */
   readOnly?: boolean;
 }) {
-  const seriesData = useMultiHistory(card.tickers, "max");
+  // Use the card's configured range instead of hard-coding "max".
+  // Hard-coding "max" exposes us to unadjusted historical prices from Yahoo
+  // (e.g. UGPA3.SA returns a 2006 close of 6,068,052 due to pre-split
+  // pricing), which causes the percent-change baseline to normalize to
+  // -100% and produces a flat line at the chart bottom. Defaulting to "1y"
+  // when the field is absent preserves anonymous viewer behaviour after
+  // the bug fix.
+  const effectiveRange = (card.range || "1y") as TimeRange;
+  const seriesData = useMultiHistory(card.tickers, effectiveRange);
   const isLoading =
     seriesData.some((s) => s.data.length === 0) && card.tickers.length > 0;
 

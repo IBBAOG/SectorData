@@ -497,6 +497,18 @@ function CompareTab() {
 
       // Base-100 normalisation
       const basePrice = hist.data[0].close;
+      if (!basePrice || !isFinite(basePrice)) return null;
+      // Guard against Yahoo Finance unadjusted history returning an
+      // implausible base price (e.g. UGPA3.SA at long ranges returns a
+      // 2006 close of 6,068,052 due to pre-split data). The resulting
+      // baseline would normalize the current price to ~-100%. Mirror the
+      // ComparisonChart desktop guard so mobile never plots a fake
+      // flat-line near -100%.
+      const lastClose = hist.data[hist.data.length - 1].close;
+      if (lastClose > 0 && isFinite(lastClose)) {
+        const ratio = basePrice / lastClose;
+        if (ratio > 100 || ratio < 0.01) return null;
+      }
       const normalized = hist.data.map((d) => ({
         x: new Date(d.date * 1000),
         y: ((d.close - basePrice) / basePrice) * 100,
