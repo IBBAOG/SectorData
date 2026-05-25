@@ -63,6 +63,12 @@ const QUICK_SEARCH_CHIPS = [
   "Petróleo",
   "Gasolina",
   "Diesel",
+  "PetroReconcavo",
+  "Braskem",
+  "Brava",
+  "Raízen",
+  "Compass",
+  "OceanPact",
 ] as const;
 
 // ── Icons ────────────────────────────────────────────────────────────────────
