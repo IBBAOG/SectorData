@@ -379,6 +379,16 @@ As políticas de escrita para `price_bands` e `d_g_margins` são criadas pela mi
 `supabase/migrations/20260512000000_data_input_admin_policies.sql` (worker_supabase, branch paralela).
 Sem a migration, writes retornam 403 — a UI renderiza mas não persiste.
 
+## Changelog — post-reform cleanup (2026-05-25)
+
+After the Imports & Exports reform (`24dd2aa1`), three stale references to the retired dashboards were removed from `/home`:
+
+| File | Change |
+|---|---|
+| `mobile/View.tsx` | Removed dead slug icons `anp-daie`, `anp-desembaracos`, `anp-painel-importacoes`; added `imports-exports` icon (globe + bidirectional arrows) |
+| `useHomeData.ts` | Removed stale `SLUG_CATEGORY` entries for the 3 retired slugs; added `imports-exports: "fuel"` |
+| `useHomeData.ts` + `HomeClient.tsx` | Softened `imports-exports` card description — now reads "ANP fuel imports and exports — origins, customs clearances, and (after backfill) importers" |
+
 ## Known bugs fixed
 
 ### `null value in column "date"` on draft save (2026-05-12)
