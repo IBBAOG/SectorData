@@ -2571,3 +2571,77 @@ export async function rpcGetImportsExportsExportsYoyTable(
     return [];
   }
 }
+
+// ─── MODULE: Admin — Default News Keywords ────────────────────────────────────
+//
+// Admin-only RPCs for managing the `news_hunter_default_keywords` table.
+// These keywords are used by anonymous visitors of the News Hunter dashboard
+// (served via the public `get_default_news_keywords()` RPC) and as the seed
+// for new authenticated users via `seed_my_news_hunter_keywords`.
+//
+// All three RPCs are SECURITY DEFINER and check `require_admin_mfa()` — only
+// Admins with a verified MFA factor can mutate the default set.
+
+export type DefaultNewsKeyword = {
+  keyword: string;
+  created_at: string;
+};
+
+/**
+ * Lists all default News Hunter keywords, ordered by creation date descending.
+ * Admin-only (MFA-gated via require_admin_mfa() server-side).
+ */
+export async function rpcAdminListDefaultNewsKeywords(
+  supabase: SupabaseClient,
+): Promise<DefaultNewsKeyword[]> {
+  try {
+    const { data, error } = await supabase.rpc("admin_list_default_news_keywords");
+    if (error) throw error;
+    return (data ?? []) as DefaultNewsKeyword[];
+  } catch (e) {
+    console.error("admin_list_default_news_keywords failed", e);
+    return [];
+  }
+}
+
+/**
+ * Adds a new keyword to the default News Hunter keyword set.
+ * Idempotent — silently no-ops if the keyword already exists.
+ * Admin-only (MFA-gated via require_admin_mfa() server-side).
+ */
+export async function rpcAdminAddDefaultNewsKeyword(
+  supabase: SupabaseClient,
+  keyword: string,
+): Promise<boolean> {
+  try {
+    const { error } = await supabase.rpc("admin_add_default_news_keyword", {
+      p_keyword: keyword,
+    });
+    if (error) throw error;
+    return true;
+  } catch (e) {
+    console.error("admin_add_default_news_keyword failed", e);
+    return false;
+  }
+}
+
+/**
+ * Removes a keyword from the default News Hunter keyword set.
+ * Silently no-ops if the keyword does not exist.
+ * Admin-only (MFA-gated via require_admin_mfa() server-side).
+ */
+export async function rpcAdminRemoveDefaultNewsKeyword(
+  supabase: SupabaseClient,
+  keyword: string,
+): Promise<boolean> {
+  try {
+    const { error } = await supabase.rpc("admin_remove_default_news_keyword", {
+      p_keyword: keyword,
+    });
+    if (error) throw error;
+    return true;
+  } catch (e) {
+    console.error("admin_remove_default_news_keyword failed", e);
+    return false;
+  }
+}

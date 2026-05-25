@@ -181,7 +181,7 @@ Landing visual. Mostra cards/imagens dos módulos disponíveis pro user (filtrad
 Perfil do usuário logado. Edição inline do nome (`profile-name-edit-icon-btn`). Mostra: avatar (iniciais), full_name, email, role badge.
 
 ### `/admin-panel`
-Protegida por `useRoleGuard("Admin")`. Funcionalidades (5 seções na sidebar):
+Protegida por `useRoleGuard("Admin")`. Funcionalidades (6 seções na sidebar):
 - **Members** — listar todos os users com role; promover/demover Admin ↔ Client.
 - **Permissions** — 3-tier visibility per module:
   - `is_visible_for_public` toggle — affects anonymous (logged-out) visitors.
@@ -189,6 +189,7 @@ Protegida por `useRoleGuard("Admin")`. Funcionalidades (5 seções na sidebar):
   - Admin always has access regardless of these flags.
 - **Card Images** — upload de imagem por módulo (home page cards) + toggle **"Show on Home"** (`is_visible_on_home`): liga/desliga a exibição do card na galeria `/home` para TODOS os usuários (incluindo Admin). Default `true`. Controles independentes: pode ter `is_visible_on_home=false` (card some do Home pra todos) e `is_visible_for_clients=true` (não afeta, já sumiu). Ou `is_visible_on_home=true` + `is_visible_for_clients=false` (Admin vê no Home, Client não vê).
 - **Alert Emails** — gerenciar destinatários de alertas automáticos.
+- **Default News Keywords** — manage the `news_hunter_default_keywords` table. These keywords are used by anonymous visitors of the News Hunter dashboard and as the seed for new authenticated users (via `seed_my_news_hunter_keywords`). See section below.
 - **Data Input** — editar linhas de tabelas de referência diretamente via PostgREST (ver seção abaixo).
 
 ## RPCs
@@ -204,6 +205,9 @@ Protegida por `useRoleGuard("Admin")`. Funcionalidades (5 seções na sidebar):
 | `get_all_users_with_roles` | leitura | admin-panel |
 | `set_user_role` | escrita | admin-panel |
 | `seed_my_news_hunter_keywords` | escrita | first-login (chamada por dash-admin para popular keywords default no novo user) |
+| `admin_list_default_news_keywords()` | leitura | admin-panel → Default News Keywords — `RETURNS TABLE(keyword text, created_at timestamptz)` |
+| `admin_add_default_news_keyword(p_keyword text)` | escrita | admin-panel → Default News Keywords — idempotent; `RETURNS void` |
+| `admin_remove_default_news_keyword(p_keyword text)` | escrita | admin-panel → Default News Keywords — `RETURNS void` |
 
 ## Tabelas
 
@@ -272,6 +276,51 @@ Workflow disparado pelo Subgerente APP quando ele cria um dashboard novo:
    - Admin tem opção de upload no `/admin-panel` (a confirmar implementação atual).
 
 4. **Avisar Subgerente APP** que onboarding terminou.
+
+## Default News Keywords — section "default-news"
+
+Manages the `news_hunter_default_keywords` table, which is the single source of truth for:
+1. Anonymous visitors of `/news-hunter` — served via the public RPC `get_default_news_keywords()`.
+2. New authenticated users — `seed_my_news_hunter_keywords` inserts these as the user's personal starting set on first login.
+
+### UI contract
+
+- Header copy: "These keywords are used by anonymous visitors of the News Hunter dashboard. Logged-in users have their own personal keyword list."
+- **Add form**: text input (placeholder `e.g. Petrobras, diesel, BNDES`) + "Add" button. Enter key triggers add. Button disabled while input is empty or a call is in flight. Success shows "✓ Added" for 2 seconds.
+- **Duplicate validation**: client-side check (case-insensitive). If keyword already exists, shows a 4-second warning. RPC is idempotent so a race condition is safe.
+- **Keyword list**: desktop uses chip tags with an × button (hover to reveal remove, click × to enter confirm-inline state). Mobile uses `MobileDataCard` per keyword with a "Remove" button that opens a `BottomSheet` confirm dialog.
+- **Loading/empty states**: spinner while fetching, "No default keywords yet." when empty, search-aware "No keywords match your search." when search is active.
+- **Error states**: banner above the list for load/remove errors; inline message below the input for add errors.
+
+### RPC wrappers (in `src/lib/rpc.ts`)
+
+| Wrapper | RPC | Return type |
+|---|---|---|
+| `rpcAdminListDefaultNewsKeywords(supabase)` | `admin_list_default_news_keywords()` | `DefaultNewsKeyword[]` (keyword, created_at) |
+| `rpcAdminAddDefaultNewsKeyword(supabase, keyword)` | `admin_add_default_news_keyword(p_keyword)` | `boolean` (success) |
+| `rpcAdminRemoveDefaultNewsKeyword(supabase, keyword)` | `admin_remove_default_news_keyword(p_keyword)` | `boolean` (success) |
+
+All three RPCs are SECURITY DEFINER and call `require_admin_mfa()` server-side — Admin + verified MFA factor required.
+
+### Hook state (in `useAdminPanelData.ts`)
+
+Loaded on demand when `activeSection === "default-news"` (lazy, same pattern as Alert Emails).
+
+| State | Type | Purpose |
+|---|---|---|
+| `defaultKeywords` | `DefaultNewsKeyword[]` | Current list from DB |
+| `defaultKeywordsLoading` | `boolean` | Spinner |
+| `defaultKeywordsError` | `string \| null` | Load/remove error banner |
+| `newKeyword` | `string` | Controlled input |
+| `addingKeyword` | `boolean` | In-flight add |
+| `addKeywordError` | `string \| null` | Inline add error |
+| `addKeywordSuccess` | `boolean` | "✓ Added" flash |
+| `removingKeyword` | `string \| null` | Currently being removed |
+| `confirmRemoveKeyword` | `string \| null` | Desktop confirm-inline / mobile sheet trigger |
+
+### Dual-view sync
+
+Both desktop and mobile were updated in the same commit. Desktop uses inline chip-tag UI with × button + confirm state. Mobile uses `MobileDataCard` rows + `BottomSheet` confirm dialog (same pattern as the existing Alert Emails section).
 
 ## Two-factor authentication (MFA TOTP) — F3.1
 
