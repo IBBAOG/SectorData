@@ -77,7 +77,6 @@ export const MODULE_LABELS: ModuleLabel[] = [
   { slug: "price-bands",             label: "Price Bands",                  description: "Price band distribution and competitive positioning by fuel type" },
   { slug: "subsidy-tracker",         label: "Subsidy Tracker",              description: "ANP diesel subsidy tracking vs IPP and Petrobras" },
   // Statistics
-  { slug: "mdic-comex",              label: "MDIC Comex",                   description: "Brazilian trade balance and import/export volumes by product and origin" },
   { slug: "anp-ppi",                 label: "ANP PPI",                      description: "ANP import price parity reference benchmarks for fuel pricing" },
   { slug: "anp-precos-produtores",   label: "ANP Producer Prices",          description: "Producer prices for fuels tracked by ANP" },
   { slug: "anp-precos-distribuicao", label: "ANP Distribution Prices",      description: "Distribution prices for fuels tracked by ANP" },
