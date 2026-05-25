@@ -2,17 +2,24 @@
 """
 anp_desembaracos_sync.py
 ========================
-Baixa os XLSXs anuais de Desembaraços da ANP, agrega por
-(ano, mes, ncm_codigo, pais_origem) e upserta em anp_desembaracos.
+Downloads the ANP yearly Desembaraços XLSXs, aggregates by
+(ano, mes, ncm_codigo, pais_origem, importador, cnpj, uf_cnpj) and upserts
+into anp_desembaracos.
 
-Estratégia:
-  - Primeiro run (BD vazio): baixa TODOS os anos disponíveis na página.
-  - Runs subsequentes: apenas o ano corrente (dados são incrementais/mensais).
+Strategy:
+  - First run (empty DB): downloads ALL years available on the page.
+  - Subsequent runs: only the current year (data is incremental/monthly).
 
-Uso:
-    python scripts/anp_desembaracos_sync.py
+Reform note (2026-05-25 — Imports & Exports): the importer columns
+(`importador`, `cnpj`, `uf_cnpj`) are now preserved. Previously they were
+discarded at the end of `_ler_arquivo`. The Supabase PK was extended to
+include `cnpj`. Pre-2020 XLSXs that lack the CNPJ column collapse under the
+`__legacy__` sentinel so the composite key resolves uniquely.
 
-Credenciais: SUPABASE_URL + SUPABASE_SERVICE_KEY (env ou .env)
+Usage:
+    python scripts/pipelines/anp/fase3/02_desembaracos_sync.py
+
+Credentials: SUPABASE_URL + SUPABASE_SERVICE_KEY (env or .env)
 """
 import math
 import os
@@ -43,13 +50,18 @@ _COLS_RENAME = {
     "Mês de desembaraço":              "mes",
     "Importador":                      "importador",
     "CNPJ":                            "cnpj",
-    "UF DO CNPJ*":                     "uf",
+    "UF DO CNPJ*":                     "uf_cnpj",
     "NCM":                             "ncm",
     "Descrição NCM":                   "descricao_ncm",
     "UA Despacho":                     "ua_despacho",
     "Pais de origem":                  "pais_origem",
     "Quantidade de produto em quilos": "quantidade_kg",
 }
+
+# Sentinel used when CNPJ is missing in older XLSXs (pre-2020).
+# The Supabase PK is (ano, mes, ncm_codigo, pais_origem, cnpj); cnpj cannot be
+# NULL inside a composite PK, so legacy rows collapse under this single sentinel.
+_LEGACY_CNPJ = "__legacy__"
 
 _NCMS_COMBUSTIVEIS = {
     22071010, 22072011,
@@ -168,20 +180,48 @@ def _ler_arquivo(content: bytes, ano: int) -> pd.DataFrame:
     if "descricao_ncm" in df.columns:
         df["descricao_ncm"] = df["descricao_ncm"].astype(str).str.strip()
         df.loc[df["descricao_ncm"] == "nan", "descricao_ncm"] = None
-    return df[["ano", "mes", "ncm", "descricao_ncm", "pais_origem", "quantidade_kg"]]
+    # Importer fields: preserved by the Imports & Exports reform (2026-05-25).
+    # Older XLSXs (pre-2020) lack these columns — ensure they exist so downstream
+    # aggregation does not KeyError; missing cnpj is later replaced by _LEGACY_CNPJ.
+    for col in ("importador", "cnpj", "uf_cnpj"):
+        if col not in df.columns:
+            df[col] = None
+        else:
+            df[col] = df[col].astype(str).str.strip()
+            df.loc[df[col].isin(["nan", "None", ""]), col] = None
+    # Normalize CNPJ: strip non-digit characters so equal CNPJs grouped consistently
+    # regardless of source formatting ("12.345.678/0001-90" vs "12345678000190").
+    df["cnpj"] = df["cnpj"].astype("string").str.replace(r"\D", "", regex=True)
+    df.loc[df["cnpj"].isin(["", "nan", "None"]) | df["cnpj"].isna(), "cnpj"] = None
+    return df[[
+        "ano", "mes", "ncm", "descricao_ncm", "pais_origem", "quantidade_kg",
+        "importador", "cnpj", "uf_cnpj",
+    ]]
 
 
 def _aggregate(df: pd.DataFrame) -> list[dict]:
     df = df.dropna(subset=["ano", "mes", "ncm", "pais_origem"])
     df["ncm_codigo"] = df["ncm"].astype(int).astype(str)
     df["ncm_nome"]   = df["ncm_codigo"].map(_NCM_NOMES).fillna(df.get("descricao_ncm", ""))
+    # Coalesce missing CNPJ to legacy sentinel so groupby keys are non-null and
+    # the upsert PK (ano, mes, ncm_codigo, pais_origem, cnpj) resolves uniquely
+    # for pre-2020 rows where the CNPJ column did not exist.
+    df["cnpj"] = df["cnpj"].fillna(_LEGACY_CNPJ)
+    df["importador"] = df["importador"].fillna("")
+    df["uf_cnpj"] = df["uf_cnpj"].fillna("")
+    group_keys = [
+        "ano", "mes", "ncm_codigo", "ncm_nome", "pais_origem",
+        "importador", "cnpj", "uf_cnpj",
+    ]
     agg = (
-        df.groupby(["ano", "mes", "ncm_codigo", "ncm_nome", "pais_origem"])["quantidade_kg"]
+        df.groupby(group_keys)["quantidade_kg"]
         .sum()
         .reset_index()
     )
     records = []
     for _, row in agg.iterrows():
+        importador = str(row["importador"]) if row["importador"] else None
+        uf_cnpj    = str(row["uf_cnpj"]) if row["uf_cnpj"] else None
         records.append({
             "ano":           int(row["ano"]),
             "mes":           int(row["mes"]),
@@ -189,6 +229,9 @@ def _aggregate(df: pd.DataFrame) -> list[dict]:
             "ncm_nome":      str(row["ncm_nome"]) if row["ncm_nome"] else None,
             "pais_origem":   str(row["pais_origem"]),
             "quantidade_kg": float(row["quantidade_kg"]) if pd.notna(row["quantidade_kg"]) else None,
+            "importador":    importador,
+            "cnpj":          str(row["cnpj"]),
+            "uf_cnpj":       uf_cnpj,
         })
     return records
 
@@ -199,7 +242,7 @@ def _upsert(sb, records: list[dict]) -> int:
     for i in range(0, len(records), _BATCH):
         batch = records[i : i + _BATCH]
         sb.table("anp_desembaracos").upsert(
-            batch, on_conflict="ano,mes,ncm_codigo,pais_origem"
+            batch, on_conflict="ano,mes,ncm_codigo,pais_origem,cnpj"
         ).execute()
         total += len(batch)
         print(f"  [{i // _BATCH + 1}/{n_batches}] {total:,}/{len(records):,}")
