@@ -2588,20 +2588,15 @@ export type DefaultNewsKeyword = {
 };
 
 /**
- * Lists all default News Hunter keywords, ordered by creation date descending.
+ * Lists all default News Hunter keywords, ordered alphabetically (ASC).
  * Admin-only (MFA-gated via require_admin_mfa() server-side).
  */
 export async function rpcAdminListDefaultNewsKeywords(
   supabase: SupabaseClient,
 ): Promise<DefaultNewsKeyword[]> {
-  try {
-    const { data, error } = await supabase.rpc("admin_list_default_news_keywords");
-    if (error) throw error;
-    return (data ?? []) as DefaultNewsKeyword[];
-  } catch (e) {
-    console.error("admin_list_default_news_keywords failed", e);
-    return [];
-  }
+  const { data, error } = await supabase.rpc("admin_list_default_news_keywords");
+  if (error) throw error;
+  return (data ?? []) as DefaultNewsKeyword[];
 }
 
 /**

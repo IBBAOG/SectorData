@@ -523,14 +523,14 @@ export function useAdminPanelData(): UseAdminPanelData {
     if (!supabase) return;
     setDefaultKeywordsLoading(true);
     setDefaultKeywordsError(null);
-    const data = await rpcAdminListDefaultNewsKeywords(supabase);
-    if (data.length === 0) {
-      // Distinguish empty list from error by checking if supabase is available.
-      // rpcAdminListDefaultNewsKeywords returns [] on both empty table and error.
-      // We optimistically treat [] as success; if the RPC itself throws, the
-      // function already console.errors — no extra UI error needed for empty.
+    try {
+      const data = await rpcAdminListDefaultNewsKeywords(supabase);
+      setDefaultKeywords(data);
+    } catch {
+      setDefaultKeywordsError(
+        "Could not load default News Hunter keywords. Try refreshing the page.",
+      );
     }
-    setDefaultKeywords(data);
     setDefaultKeywordsLoading(false);
   }, [supabase]);
 
