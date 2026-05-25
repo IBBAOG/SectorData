@@ -62,7 +62,7 @@ export default function DesktopView({
             const isHovered = hoveredIndex === i && !card.disabled;
 
             return (
-              <div key={card.slug} className="col-12 col-xl-6">
+              <div key={card.slug} className="col-6">
                 <div
                   onClick={() => {
                     if (!card.disabled && card.href) router.push(card.href);
