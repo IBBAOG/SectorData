@@ -112,15 +112,6 @@ const CARDS: CardDef[] = [
     disabled: false,
   },
   {
-    slug: "anp-ppi",
-    preview: null,
-    title: "ANP PPI",
-    description: "ANP import price parity reference benchmarks for fuel pricing",
-    badge: "Available",
-    href: "/anp-ppi",
-    disabled: false,
-  },
-  {
     slug: "anp-precos-produtores",
     preview: null,
     title: "ANP Producer Prices",

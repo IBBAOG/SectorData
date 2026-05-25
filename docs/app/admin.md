@@ -237,7 +237,6 @@ Lista completa dos slugs atualmente registrados na tabela `module_visibility` (t
 | `diesel-gasoline-margins` | Fuel Distribution | Diesel and Gasoline Margins |
 | `price-bands` | Fuel Distribution | Price Bands |
 | `mdic-comex` | Estatísticas / Fuel Distribution | MDIC Comex |
-| `anp-ppi` | Estatísticas / Fuel Distribution | ANP PPI |
 | `anp-precos-produtores` | Estatísticas / Fuel Distribution | ANP Preços Produtores |
 | `anp-precos-distribuicao` | Estatísticas / Fuel Distribution | ANP Preços Distribuição |
 | `anp-glp` | Estatísticas / Fuel Distribution | ANP GLP |
