@@ -152,6 +152,18 @@ Constants and helpers exposed by the hook:
 - `ANON_DEFAULT_CARDS` — full 5-card sequence above (not exported).
 - `anonDefaultLayout()` — 12-col responsive layout with breakpoints `lg` / `md` / `sm`.
 
+### Compare Assets — date alignment + bad-baseline guard (added 2026-05-25)
+
+Two related bugs were fixed:
+
+1. **`CompareCardContent` no longer hard-codes `useMultiHistory(tickers, "max")`** — it now passes the card's configured `range` (defaulting to `"1y"`). Hard-coding `max` exposed the chart to **unadjusted historical prices from Yahoo Finance**: `UGPA3.SA` returns a 2006 close of `6,068,052` (pre-split data), making the percent-change baseline normalize the current price to `-99.9995% ≈ -100%` and producing a flat line at the chart bottom.
+
+2. **`ComparisonChart` now builds a unified, sorted, deduplicated date axis from the UNION of all active series**, instead of picking the longest single series as the axis and plotting every other series with positional indices. The old behaviour shuffled X labels whenever two tickers had different histories (e.g. `UGPA3` since 2006 vs `VBBR3` since 2018 rendered as `MAY 30 → SEP 23 → JAN 30 → JUN 06 → SEP 24 → JAN 24 → MAY 21`). Per-series values are now looked up by date, gaps lift the pen (no fake interpolation).
+
+3. **Implausible-base-price guard**: when `basePrice / lastClose > 100` or `< 0.01`, the series is skipped (no fake `-100%` flat line) and the legend marks it as `TICKER (no data)`. Mirrored in both `desktop/ComparisonChart.tsx` and `mobile/View.tsx` (`CompareTab.chartTraces`) so neither viewport regresses.
+
+4. **Empty-active overlay**: when every series is skipped or empty, `ComparisonChart` renders an inline "No comparable price data in the selected range." overlay instead of a blank canvas.
+
 ## Yahoo Finance Proxy (importante)
 
 Routes em `src/app/api/stocks/*` servem como **proxy CORS** para Yahoo Finance.

@@ -46,12 +46,40 @@ export default function ComparisonChart({series,height,mode,baseDate,endDate,dar
     const st=baseDate?toUnix(baseDate):0,en=endDate?toUnix(endDate):Infinity;
     if(baseDate||endDate){f=f.filter(d=>d.date>=st&&d.date<=en);}
     if(!f.length)return{ticker:s.ticker,color:s.color??COLORS[i%COLORS.length],values:[]};
-    const bv=f[0].close; if(!bv)return{ticker:s.ticker,color:s.color??COLORS[i%COLORS.length],values:[]};
+    const bv=f[0].close;
+    if(!bv||!isFinite(bv))return{ticker:s.ticker,color:s.color??COLORS[i%COLORS.length],values:[]};
+    // Guard against Yahoo Finance unadjusted history returning an
+    // implausible base price (e.g. UGPA3.SA at range=max returns a 2006
+    // close of 6,068,052 due to pre-split data). The resulting baseline
+    // would normalize the current price to ~-100% and render as a flat
+    // line at the chart bottom. Detect via base/last ratio and skip.
+    const lastClose=f[f.length-1].close;
+    if(lastClose>0&&isFinite(lastClose)){
+      const ratio=bv/lastClose;
+      if(ratio>100||ratio<0.01)return{ticker:s.ticker,color:s.color??COLORS[i%COLORS.length],values:[]};
+    }
     return{ticker:s.ticker,color:s.color??COLORS[i%COLORS.length],values:f.map(d=>({date:d.date,value:mode==="percent"?((d.close-bv)/bv)*100:(d.close/bv)*100}))};
   });
   const active=normalized.filter(s=>s.values.length>0);
-  let allDates:number[]=[]; for(const s of active)if(s.values.length>allDates.length)allDates=s.values.map(v=>v.date);
+  const skipped=normalized.filter(s=>s.values.length===0&&series.some(o=>o.ticker===s.ticker&&o.data.length>0)).map(s=>s.ticker);
+  // Build a unified, sorted, deduplicated date axis from the UNION of all
+  // active series. Previously we picked the longest single series as the
+  // axis and drew every other series with positional indices, which
+  // shuffled the X labels whenever two tickers had different histories
+  // (e.g. UGPA3 since 2006 vs VBBR3 since 2018 → labels rendered in the
+  // order MAY 30 → SEP 23 → JAN 30 instead of chronologically).
+  const dateSet=new Set<number>(); for(const s of active)for(const v of s.values)dateSet.add(v.date);
+  const allDates:number[]=Array.from(dateSet).sort((a,b)=>a-b);
   const totalLen=allDates.length;
+  // Map each ticker's values to a sparse lookup keyed by the unified date
+  // index — points without a sample on a given date are left undefined and
+  // the line walks past them (no fake interpolation).
+  const dateIndexById=new Map<number,number>(); for(let i=0;i<allDates.length;i++)dateIndexById.set(allDates[i],i);
+  const seriesByIndex:(number|undefined)[][]=active.map(s=>{
+    const arr=new Array<number|undefined>(totalLen);
+    for(const v of s.values){const idx=dateIndexById.get(v.date);if(idx!==undefined)arr[idx]=v.value;}
+    return arr;
+  });
 
   useEffect(()=>{setViewRange(null);},[series,mode,baseDate,endDate]);
 
@@ -77,7 +105,8 @@ export default function ComparisonChart({series,height,mode,baseDate,endDate,dar
     const viewDates=allDates.slice(vs,ve+1);
 
     let minV=Infinity,maxV=-Infinity;
-    for(const s of active){for(let i=vs;i<=ve&&i<s.values.length;i++){const v=s.values[i]?.value;if(v!==undefined){if(v<minV)minV=v;if(v>maxV)maxV=v;}}}
+    for(const arr of seriesByIndex){for(let i=vs;i<=ve;i++){const v=arr[i];if(v!==undefined&&isFinite(v)){if(v<minV)minV=v;if(v>maxV)maxV=v;}}}
+    if(!isFinite(minV)||!isFinite(maxV))return;
     const vr=maxV-minV||1,vp=vr*0.1;minV-=vp;maxV+=vp;
     const toX=(i:number)=>PAD.left+(i/(vLen-1||1))*pw;
     const toY=(val:number)=>PAD.top+(1-(val-minV)/(maxV-minV))*ph;
@@ -92,14 +121,35 @@ export default function ComparisonChart({series,height,mode,baseDate,endDate,dar
     // Zero line
     if(mode==="percent"&&minV<0&&maxV>0){ctx.strokeStyle=t.border;ctx.lineWidth=1;ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(PAD.left,Math.round(toY(0))+0.5);ctx.lineTo(w-PAD.right,Math.round(toY(0))+0.5);ctx.stroke();ctx.setLineDash([]);}
 
-    // Lines
-    for(const s of active){ctx.beginPath();ctx.strokeStyle=s.color;ctx.lineWidth=2;for(let vi=0;vi<vLen;vi++){const gi=vs+vi;if(gi>=s.values.length)break;const x=toX(vi),y=toY(s.values[gi].value);vi===0?ctx.moveTo(x,y):ctx.lineTo(x,y);}ctx.stroke();}
+    // Lines — iterate through the unified time axis, lifting the pen when
+    // a series has no sample at a given date (no fake interpolation).
+    for(let si=0;si<active.length;si++){
+      const s=active[si],arr=seriesByIndex[si];
+      ctx.beginPath();ctx.strokeStyle=s.color;ctx.lineWidth=2;
+      let drawing=false;
+      for(let vi=0;vi<vLen;vi++){
+        const gi=vs+vi,val=arr[gi];
+        if(val===undefined){drawing=false;continue;}
+        const x=toX(vi),y=toY(val);
+        if(!drawing){ctx.moveTo(x,y);drawing=true;}else{ctx.lineTo(x,y);}
+      }
+      ctx.stroke();
+    }
 
-    // Current value labels — stacked to avoid overlap
+    // Current value labels — stacked to avoid overlap.
+    // Use the last defined value within the visible window (skip undefined
+    // gaps at the tail) so the badge always reflects a real datapoint.
     const suffix=mode==="percent"?"%":"";
     const LH=20;
     ctx.font=FONT_BOLD;
-    const lblData=active.map(s=>{const li=Math.min(ve,s.values.length-1);if(li<0)return null;const lv=s.values[li].value,ly=toY(lv),lt=lv.toFixed(1)+suffix,lw=ctx.measureText(lt).width+12;return{s,ly,lt,lw};}).filter((x):x is NonNullable<typeof x>=>x!==null);
+    const lblData=active.map((s,si)=>{
+      const arr=seriesByIndex[si];
+      let li=-1,lv=NaN;
+      for(let i=ve;i>=vs;i--){const v=arr[i];if(v!==undefined&&isFinite(v)){li=i;lv=v;break;}}
+      if(li<0)return null;
+      const ly=toY(lv),lt=lv.toFixed(1)+suffix,lw=ctx.measureText(lt).width+12;
+      return{s,ly,lt,lw};
+    }).filter((x):x is NonNullable<typeof x>=>x!==null);
     const adjYs=resolveOverlaps(lblData.map(l=>l.ly),LH,PAD.top,h-PAD.bottom);
     for(let i=0;i<lblData.length;i++){const{s,ly,lt,lw}=lblData[i];const ay=adjYs[i];ctx.setLineDash([2,2]);ctx.strokeStyle=s.color;ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(PAD.left,ly);ctx.lineTo(w-PAD.right,ly);ctx.stroke();if(Math.abs(ay-ly)>1){ctx.setLineDash([]);ctx.beginPath();ctx.moveTo(w-PAD.right,ly);ctx.lineTo(w-PAD.right,ay);ctx.stroke();}ctx.setLineDash([]);ctx.fillStyle=s.color;ctx.fillRect(w-PAD.right,ay-LH/2,lw,LH);ctx.fillStyle="#fff";ctx.textAlign="left";ctx.textBaseline="middle";ctx.fillText(lt,w-PAD.right+6,ay);}
 
@@ -118,9 +168,16 @@ export default function ComparisonChart({series,height,mode,baseDate,endDate,dar
       ctx.setLineDash([4,3]);ctx.strokeStyle=t.crosshair;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(sx,PAD.top);ctx.lineTo(sx,h-PAD.bottom);ctx.stroke();ctx.setLineDash([]);
       const dtTxt=fmtDate(sDate),dtw2=ctx.measureText(dtTxt).width+8;ctx.fillStyle=t.tooltip;ctx.fillRect(sx-dtw2/2,h-PAD.bottom,dtw2,18);ctx.fillStyle=t.tooltipText;ctx.font=FONT_SM;ctx.textAlign="center";ctx.textBaseline="top";ctx.fillText(dtTxt,sx,h-PAD.bottom+4);
       ctx.textAlign="left";ctx.textBaseline="top";let ty=PAD.top+2;
-      for(const s of active){const gi=vs+di;if(gi>=s.values.length)continue;const sv=s.values[gi];ctx.fillStyle=s.color;ctx.fillRect(PAD.left+4,ty+1,8,8);ctx.fillStyle=t.text;ctx.font=FONT_SM;ctx.fillText(`${s.ticker}: ${sv.value.toFixed(2)}${suffix}`,PAD.left+16,ty);ty+=14;}
+      for(let si=0;si<active.length;si++){
+        const s=active[si],val=seriesByIndex[si][vs+di];
+        if(val===undefined||!isFinite(val))continue;
+        ctx.fillStyle=s.color;ctx.fillRect(PAD.left+4,ty+1,8,8);
+        ctx.fillStyle=t.text;ctx.font=FONT_SM;
+        ctx.fillText(`${s.ticker}: ${val.toFixed(2)}${suffix}`,PAD.left+16,ty);
+        ty+=14;
+      }
     }
-  },[normalized,active,allDates,totalLen,mode,dark,t,getView]);
+  },[active,seriesByIndex,allDates,totalLen,mode,dark,t,getView]);
 
   useEffect(()=>{draw();},[draw]);
   useEffect(()=>{const w=wrapRef.current;if(!w)return;const ro=new ResizeObserver(()=>{cancelAnimationFrame(rafRef.current);rafRef.current=requestAnimationFrame(draw);});ro.observe(w);return()=>ro.disconnect();},[draw]);
@@ -157,19 +214,29 @@ export default function ComparisonChart({series,height,mode,baseDate,endDate,dar
   },[getView,totalLen]);
 
   const mutedColor=dark?"#8b949e":"#888";
+  const warnColor=dark?"#ffb04a":"#b86b00";
+  const skippedSet=new Set(skipped);
   return(
     <div style={{display:"flex",flexDirection:"column",height:height??"100%",minHeight:60}}>
       <div ref={wrapRef} style={{flex:1,minHeight:0,position:"relative"}}>
         <canvas ref={canvasRef} style={{position:"absolute",top:0,left:0,cursor:"crosshair"}}
           onMouseMove={onMove} onMouseLeave={onLeave} onMouseDown={onDown} onMouseUp={onUp} />
+        {!active.length&&series.length>0&&(
+          <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none",fontSize:11,color:mutedColor,textAlign:"center",padding:8}}>
+            No comparable price data in the selected range.
+          </div>
+        )}
       </div>
       <div style={{display:"flex",gap:12,padding:"4px 0",flexWrap:"wrap",flexShrink:0}}>
-        {series.map((s,i)=>(
-          <span key={s.ticker} style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:mutedColor}}>
-            <span style={{width:10,height:10,borderRadius:2,backgroundColor:s.color??COLORS[i%COLORS.length],display:"inline-block"}} />
-            {s.ticker}
-          </span>
-        ))}
+        {series.map((s,i)=>{
+          const isSkipped=skippedSet.has(s.ticker);
+          return(
+            <span key={s.ticker} title={isSkipped?`${s.ticker}: no comparable data in the selected range`:undefined} style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:isSkipped?warnColor:mutedColor,opacity:isSkipped?0.85:1}}>
+              <span style={{width:10,height:10,borderRadius:2,backgroundColor:s.color??COLORS[i%COLORS.length],display:"inline-block",opacity:isSkipped?0.4:1}} />
+              {s.ticker}{isSkipped?" (no data)":""}
+            </span>
+          );
+        })}
       </div>
     </div>
   );
