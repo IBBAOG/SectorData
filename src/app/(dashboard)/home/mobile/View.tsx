@@ -668,22 +668,11 @@ function CategoryIcon({
         <path d="M10 11h4" /><path d="M10 15h4" />
       </svg>
     ),
-    "anp-daie": (
+    "imports-exports": (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="26" height="26">
-        <path d="M3 12h7" /><path d="M6 9l-3 3 3 3" />
-        <path d="M21 12h-7" /><path d="M18 9l3 3-3 3" />
-      </svg>
-    ),
-    "anp-desembaracos": (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="26" height="26">
-        <rect x="5" y="4" width="14" height="17" rx="2" />
-        <path d="M9 4h6v3H9z" /><path d="M9 12h6" /><path d="M9 16h4" />
-      </svg>
-    ),
-    "anp-painel-importacoes": (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="26" height="26">
-        <rect x="3" y="4" width="18" height="16" rx="2" />
-        <path d="M3 9h18" /><path d="M9 4v16" />
+        <circle cx="12" cy="12" r="8" />
+        <path d="M2 12h3" /><path d="M19 12h3" />
+        <path d="M7 7l-3 5 3 5" /><path d="M17 7l3 5-3 5" />
       </svg>
     ),
     "anp-lpc": (

@@ -151,7 +151,7 @@ const CARDS: CardDef[] = [
     slug: "imports-exports",
     preview: null,
     title: "Imports & Exports",
-    description: "Consolidated ANP imports/exports view: open data, customs clearances, and importer-level panel",
+    description: "ANP fuel imports and exports — origins, customs clearances, and (after backfill) importers",
     badge: "Available",
     href: "/imports-exports",
     disabled: false,
