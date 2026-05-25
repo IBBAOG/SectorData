@@ -1151,11 +1151,7 @@ export type AnpCdpSeriePonto = {
   mes: number;
   petroleo_bbl_dia: number;
   oleo_bbl_dia: number;
-  condensado_bbl_dia: number;
   gas_total_mm3_dia: number;
-  gas_natural_assoc_mm3_dia: number;
-  gas_natural_n_assoc_mm3_dia: number;
-  gas_royalties: number;
   agua_bbl_dia: number;
   tempo_prod_hs_mes: number;
   /** Number of distinct wells reported for this month (COUNT DISTINCT poco). */
@@ -1758,10 +1754,8 @@ export async function getAnpCdpExportCount(
  *   - 20260504000007 (v3) — added poco, campo
  *   - 20260504000008 (v4) — added instalacao_destino, agua_bbl_dia
  *   - 20260504000009 (v5) — added estado, nome_poco_operador, operador,
- *                           num_contrato, oleo_bbl_dia, condensado_bbl_dia,
- *                           gas_natural_assoc_mm3_dia,
- *                           gas_natural_n_assoc_mm3_dia, gas_royalties,
- *                           tipo_instalacao, tempo_prod_hs_mes
+ *                           num_contrato, oleo_bbl_dia, tipo_instalacao,
+ *                           tempo_prod_hs_mes
  */
 export type AnpCdpRawRow = {
   ano: number;
@@ -1778,11 +1772,7 @@ export type AnpCdpRawRow = {
   tipo_instalacao: string | null;
   petroleo_bbl_dia: number | null;
   oleo_bbl_dia: number | null;
-  condensado_bbl_dia: number | null;
   gas_total_mm3_dia: number | null;
-  gas_natural_assoc_mm3_dia: number | null;
-  gas_natural_n_assoc_mm3_dia: number | null;
-  gas_royalties: number | null;
   agua_bbl_dia: number | null;
   tempo_prod_hs_mes: number | null;
 };
@@ -1817,7 +1807,7 @@ export async function fetchAnpCdpRawFiltered(
     let q = supabase
       .from("anp_cdp_producao")
       .select(
-        "ano,mes,poco,campo,bacia,local,estado,operador,nome_poco_operador,num_contrato,instalacao_destino,tipo_instalacao,petroleo_bbl_dia,oleo_bbl_dia,condensado_bbl_dia,gas_total_mm3_dia,gas_natural_assoc_mm3_dia,gas_natural_n_assoc_mm3_dia,gas_royalties,agua_bbl_dia,tempo_prod_hs_mes",
+        "ano,mes,poco,campo,bacia,local,estado,operador,nome_poco_operador,num_contrato,instalacao_destino,tipo_instalacao,petroleo_bbl_dia,oleo_bbl_dia,gas_total_mm3_dia,agua_bbl_dia,tempo_prod_hs_mes",
       );
 
     if (pocos)            q = q.in("poco", pocos);
@@ -1889,11 +1879,7 @@ export type AnpCdpAggregatedRow = {
   tipo_instalacao: string | null;
   petroleo_bbl_dia: number;
   oleo_bbl_dia: number;
-  condensado_bbl_dia: number;
   gas_total_mm3_dia: number;
-  gas_natural_assoc_mm3_dia: number;
-  gas_natural_n_assoc_mm3_dia: number;
-  gas_royalties: number;
   agua_bbl_dia: number;
   tempo_prod_hs_mes: number;
 };

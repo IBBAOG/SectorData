@@ -12,8 +12,8 @@
  *    mount; later filter changes are answered purely client-side.
  *  - Owns all 9 filter buckets (bacoes, locais, estados, operadores,
  *    instalacoes, tipos_instalacao, campos, pocos, year range).
- *  - Owns chart metric selection (9 options — petroleum, oil, condensate,
- *    gas total, assoc/non-assoc gas, royalties, water, production time).
+ *  - Owns chart metric selection (5 options — petroleum, oil, total gas,
+ *    water, production time).
  *  - Debounces the serie refetch by 400 ms when any filter changes
  *    (rajada-de-slider proof) via useDebouncedFetch.
  *  - Exposes a "hierarchical navigator" model used by the mobile drill-down:
@@ -83,7 +83,6 @@ export type {
 export const KBPD_METRIC_KEYS: ReadonlySet<string> = new Set<string>([
   "petroleo_bbl_dia",
   "oleo_bbl_dia",
-  "condensado_bbl_dia",
   "agua_bbl_dia",
 ]);
 
@@ -99,11 +98,7 @@ export interface AnpCdpMetric {
 export const METRICS: readonly AnpCdpMetric[] = [
   { key: "petroleo_bbl_dia",            label: "Petroleum (kbpd)",          shortUnit: "kbpd",     family: "petroleum" },
   { key: "oleo_bbl_dia",                label: "Oil (kbpd)",                shortUnit: "kbpd",     family: "petroleum" },
-  { key: "condensado_bbl_dia",          label: "Condensate (kbpd)",         shortUnit: "kbpd",     family: "petroleum" },
   { key: "gas_total_mm3_dia",           label: "Total Gas (Mm³/day)",       shortUnit: "Mm³/day",  family: "gas" },
-  { key: "gas_natural_assoc_mm3_dia",   label: "Assoc. Gas (Mm³/day)",      shortUnit: "Mm³/day",  family: "gas" },
-  { key: "gas_natural_n_assoc_mm3_dia", label: "Non-Assoc. Gas (Mm³/day)",  shortUnit: "Mm³/day",  family: "gas" },
-  { key: "gas_royalties",               label: "Gas Royalties (Mm³/day)",   shortUnit: "Mm³/day",  family: "gas" },
   { key: "agua_bbl_dia",                label: "Water (kbpd)",              shortUnit: "kbpd",     family: "water" },
   { key: "tempo_prod_hs_mes",           label: "Production Time (hrs/month)", shortUnit: "hrs/mo",  family: "time" },
 ] as const;
@@ -111,8 +106,8 @@ export const METRICS: readonly AnpCdpMetric[] = [
 // Default metric per product family — used by mobile's product tab bar.
 export const METRIC_FOR_FAMILY: Record<"petroleum" | "gas" | "water", AnpCdpMetric> = {
   petroleum: METRICS[0],
-  gas:       METRICS[3],
-  water:     METRICS[7],
+  gas:       METRICS[2],
+  water:     METRICS[3],
 };
 
 export const LOCAL_LABELS: Record<string, string> = {
@@ -731,9 +726,8 @@ export function useAnpCdpData(): UseAnpCdpData {
         const groupBy = ANP_CDP_GROUPBY_MAP[exportGranularity];
         const rows = await rpcGetAnpCdpAggregated(supabase, exportFilters, groupBy);
         const metricKeys = [
-          "petroleo_bbl_dia", "oleo_bbl_dia", "condensado_bbl_dia",
-          "gas_total_mm3_dia", "gas_natural_assoc_mm3_dia",
-          "gas_natural_n_assoc_mm3_dia", "gas_royalties",
+          "petroleo_bbl_dia", "oleo_bbl_dia",
+          "gas_total_mm3_dia",
           "agua_bbl_dia", "tempo_prod_hs_mes",
         ] as const;
         const wantedCols = [...groupBy, ...metricKeys] as readonly string[];

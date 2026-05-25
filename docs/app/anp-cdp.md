@@ -41,14 +41,14 @@ Archetype hierarchical drill-down (mockup `mockups/anp-cdp-mobile.html`):
 - `MobileTopBar` (sticky liquid glass)
 - `StickyBreadcrumb` — chain de até 5 níveis: `All Brazil › <basin> › <local> › <field> › <well>` (tap pra subir, × pra resetar)
 - Page head (título + subtítulo + period badge)
-- `MobileTabBar` (container variant) — 3 produtos: Petroleum / Gas / Water (colapsa as 9 métricas do desktop em 3 famílias com default por família)
+- `MobileTabBar` (container variant) — 3 produtos: Petroleum / Gas / Water (colapsa as 5 métricas do desktop em 3 famílias com default por família)
 - Hero `MobileChart` (área spline 220 px com anotação de peak em paper-coords pra não colidir com a curva)
 - Mini-stat row 3-col (Total / Average / Peak — todos em `fmtCompactNumber` na unidade de display do metric)
 - Sticky filter chip row (botão "Filters" + chips removíveis pros filtros ativos não-representados no breadcrumb)
 - Drill-down list — top 80 children por contagem de poços, cada um em `<MobileDataCard>` com sparkline sintético derivado deterministicamente do wellCount + tap pra drill abaixo
 - Up-one-level FAB (à esquerda, visível quando `drill.level !== "country"`) + `<ExportFAB>` (à direita, abre BottomSheet de export)
 - `MobileBottomTabBar` — Production / Map / Compare / Profile (3 últimos são placeholders `[mobile-only]` com mensagem direcionando ao desktop)
-- `<FilterDrawer>` (BottomSheet) com 5 grupos: Metric (9 opções), Environment, Basin, Operator, Facility type, Period
+- `<FilterDrawer>` (BottomSheet) com 5 grupos: Metric (5 opções), Environment, Basin, Operator, Facility type, Period
 - Export BottomSheet (90 vh) — espelha o ExportModal desktop com header de tamanho live, warnings idênticos, 7 granularidades + período + 4 filtros multi-select
 
 ### Binding sync rule
@@ -64,7 +64,7 @@ Qualquer mudança em `desktop/View.tsx` exige mudança equivalente em `mobile/Vi
 
 Visualização da **produção mensal por poço** declarada na CDP (Comunicação de Dados de Produção) da ANP. Permite ao usuário:
 
-- Selecionar uma das 9 **métricas** (Petróleo kbpd, Óleo, Condensado, Gás Total, Gás Assoc., Gás N-Assoc., Gás Royalties, Água, Tempo de Produção).
+- Selecionar uma das 5 **métricas** (Petróleo kbpd, Óleo, Gás Total, Água, Tempo de Produção).
 - Filtrar por **Ambiente** (Pré-Sal, Pós-Sal Mar, Terra), **Bacia**, **Estado**, **Operador**, **Instalação Destino**, **Tipo Instalação**, **Campo** e **Poço** (multi-select com search).
 - Restringir o **período** via range slider (default: últimos 10 anos).
 - Ver série temporal agregada da seleção em chart de área (Plotly, laranja `#FF5000`).
@@ -89,7 +89,7 @@ Header dinâmico: "ANP CDP — Produção por Poço · {métrica} · {ano iníci
 
 ### Colunas de `anp_cdp_producao`
 
-`ano, mes, poco, campo, bacia, local, petroleo_bbl_dia, gas_total_mm3_dia, instalacao_destino, agua_bbl_dia, estado, nome_poco_operador, operador, num_contrato, oleo_bbl_dia, condensado_bbl_dia, gas_natural_assoc_mm3_dia, gas_natural_n_assoc_mm3_dia, gas_royalties, tipo_instalacao, tempo_prod_hs_mes`.
+`ano, mes, poco, campo, bacia, local, petroleo_bbl_dia, gas_total_mm3_dia, instalacao_destino, agua_bbl_dia, estado, nome_poco_operador, operador, num_contrato, oleo_bbl_dia, tipo_instalacao, tempo_prod_hs_mes`.
 
 ### Colunas de `mv_anp_cdp_pocos`
 
@@ -220,7 +220,7 @@ Two guardrails prevent this confusion from recurring:
 
 ## Display units (kbpd vs raw bbl/day)
 
-Liquid-flow metrics (`petroleo_bbl_dia`, `oleo_bbl_dia`, `condensado_bbl_dia`, `agua_bbl_dia`) are stored in **bbl/day** server-side but displayed in **kbpd** (thousand barrels per day) on the chart and in the metric labels. The conversion (`/1000`) is applied at render time via `bblDiaToKbpd()` from [`src/lib/units.ts`](../../src/lib/units.ts); the RPC `get_anp_cdp_poco_serie` is unchanged and continues to return raw bbl/day. Excel/CSV exports also keep raw bbl/day for data fidelity (column headers explicitly say `bbl/day`). Gas metrics keep their native `Mm³/day`.
+Liquid-flow metrics (`petroleo_bbl_dia`, `oleo_bbl_dia`, `agua_bbl_dia`) are stored in **bbl/day** server-side but displayed in **kbpd** (thousand barrels per day) on the chart and in the metric labels. The conversion (`/1000`) is applied at render time via `bblDiaToKbpd()` from [`src/lib/units.ts`](../../src/lib/units.ts); the RPC `get_anp_cdp_poco_serie` is unchanged and continues to return raw bbl/day. Excel/CSV exports also keep raw bbl/day for data fidelity (column headers explicitly say `bbl/day`). Gas metrics keep their native `Mm³/day`.
 
 ## Partial-month data — preservation contract
 
