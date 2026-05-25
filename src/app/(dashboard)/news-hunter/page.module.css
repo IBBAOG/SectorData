@@ -528,11 +528,47 @@
   border-radius: 4px;
 }
 
+/* Quick-search chips ─────────────────────────────────────────────── */
+.quickChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 0 40px 4px;
+}
+.quickChip {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--nh-border);
+  background: var(--nh-panel);
+  color: var(--nh-muted-strong);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.quickChip:hover,
+.quickChip:focus-visible {
+  border-color: var(--nh-accent);
+  color: var(--nh-accent);
+  background: var(--nh-panel-tint);
+  outline: none;
+}
+.quickChip:active {
+  background: rgba(255, 80, 0, 0.12);
+}
+
 /* Responsive ──────────────────────────────────────────────────────── */
 @media (max-width: 1024px) {
   .topRow { padding: 16px 24px 8px; }
   .panel { margin: 10px 24px; }
   .searchBar { margin: 8px 24px; }
+  .quickChips { margin: 0 24px 4px; }
   .headlinesSection { margin: 10px 24px 30px; }
 }
 
@@ -540,6 +576,7 @@
   .topRow { padding: 16px 16px 8px; }
   .panel { margin: 10px 16px; padding: 12px 14px; }
   .searchBar { margin: 8px 16px; }
+  .quickChips { margin: 0 16px 4px; }
   .headlinesSection { margin: 10px 16px 30px; }
   .headline { flex-wrap: wrap; }
   .hlink { flex-wrap: wrap; }

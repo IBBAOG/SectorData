@@ -7,8 +7,10 @@
 //   MobileTopBar (sticky glass)
 //   Title block + live status row (pulsing dot)
 //   Sticky search bar
+//   Quick-search chips (horizontal scroll, all users)
 //   Horizontal filter pills (snap-scroll, topic-based from user keywords)
-//   My Keywords section (compact chip row + Add button)
+//   My Keywords section (compact chip row + Add button) — authenticated only
+//   Anon login nudge — replaces keyword section for anonymous visitors
 //   Article feed (MobileDataCard with favicon circle, headline, snippet, kw pills)
 //   FAB (+) to add keyword
 //   MobileBottomTabBar (Feed / Search / Saved / Settings)
@@ -37,7 +39,6 @@ import {
   CloseIcon,
 } from "@/components/dashboard/mobile";
 import { useUserProfile } from "@/context/UserProfileContext";
-import AnonCTA from "@/components/AnonCTA";
 import {
   useNewsHunterData,
   humanizeAge,
@@ -50,6 +51,19 @@ import type {
   KeywordMatchType,
   NewsArticle,
 } from "@/context/NewsHunterContext";
+
+// ── Quick-search chip constants ──────────────────────────────────────────────
+// Same ordered list as desktop — clicking fills the search input with the term.
+const QUICK_SEARCH_CHIPS = [
+  "Petrobras",
+  "PRIO",
+  "Vibra",
+  "Ultrapar",
+  "Cosan",
+  "Petróleo",
+  "Gasolina",
+  "Diesel",
+] as const;
 
 // ── Icons ────────────────────────────────────────────────────────────────────
 //
@@ -217,46 +231,65 @@ function KeywordsSection({
   onAddPress: () => void;
   onRemove: (kw: string) => Promise<void>;
   /**
-   * When true, the section hides Add controls and renders chips as static
-   * labels (no tap-to-remove). Used for anonymous visitors who see the
-   * curated default keyword set.
+   * When true, the section is replaced by a compact "Log in to customize" nudge.
+   * Anonymous visitors should not see the keyword list at all — keyword
+   * personalization is a login incentive.
    */
   readOnly?: boolean;
 }): React.ReactElement {
+  // Anonymous visitors: replace keyword section with a compact login nudge.
+  if (readOnly) {
+    return (
+      <section style={{ padding: "12px 16px", background: "var(--mobile-bg)" }} aria-label="Keyword personalization">
+        <p style={{ margin: 0, fontSize: 13, color: "var(--mobile-text-muted)", lineHeight: 1.5 }}>
+          Log in to customize the news keywords tracked for you.{" "}
+          <a
+            href="/login"
+            style={{
+              color: "var(--mobile-accent)",
+              fontWeight: 600,
+              textDecoration: "none",
+            }}
+          >
+            Log in
+          </a>
+        </p>
+      </section>
+    );
+  }
+
   // Show max 5 + "+N more" indicator
   const visible = entries.slice(0, 5);
   const extra = entries.length - visible.length;
 
   return (
-    <section style={{ padding: "16px 16px 12px", background: "var(--mobile-bg)" }} aria-label={readOnly ? "Default keywords" : "My keywords"}>
+    <section style={{ padding: "16px 16px 12px", background: "var(--mobile-bg)" }} aria-label="My keywords">
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: "var(--mobile-text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
-          {readOnly ? "Default Keywords" : "My Keywords"}
+          My Keywords
         </span>
-        {!readOnly && (
-          <button
-            type="button"
-            onClick={onAddPress}
-            style={{
-              background: "transparent",
-              border: 0,
-              color: "var(--mobile-accent)",
-              fontFamily: "inherit",
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: "pointer",
-              padding: "4px 8px",
-              borderRadius: 8,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 3,
-            }}
-            aria-label="Add keyword"
-          >
-            <PlusIcon size={14} strokeWidth={2.4} />
-            Add
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={onAddPress}
+          style={{
+            background: "transparent",
+            border: 0,
+            color: "var(--mobile-accent)",
+            fontFamily: "inherit",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+            padding: "4px 8px",
+            borderRadius: 8,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 3,
+          }}
+          aria-label="Add keyword"
+        >
+          <PlusIcon size={14} strokeWidth={2.4} />
+          Add
+        </button>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
         {visible.map((entry) => {
@@ -300,14 +333,6 @@ function KeywordsSection({
             border: isExact ? "1px solid var(--mobile-accent)" : 0,
             fontFamily: "inherit",
           };
-          if (readOnly) {
-            // Static chip — no click handler, no remove affordance.
-            return (
-              <span key={entry.keyword} style={chipStyle}>
-                {chipContent}
-              </span>
-            );
-          }
           return (
             <button
               key={entry.keyword}
@@ -324,7 +349,7 @@ function KeywordsSection({
             </button>
           );
         })}
-        {extra > 0 && !readOnly && (
+        {extra > 0 && (
           <button
             type="button"
             onClick={onAddPress}
@@ -345,25 +370,6 @@ function KeywordsSection({
           >
             +{extra} more
           </button>
-        )}
-        {extra > 0 && readOnly && (
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              height: 26,
-              padding: "0 10px",
-              borderRadius: 999,
-              background: "transparent",
-              color: "var(--mobile-text-muted)",
-              fontSize: 12,
-              fontWeight: 600,
-              border: "1px dashed var(--mobile-border)",
-              fontFamily: "inherit",
-            }}
-          >
-            +{extra} more
-          </span>
         )}
         {entries.length === 0 && (
           <span style={{ fontSize: 12, color: "var(--mobile-text-faint)", fontStyle: "italic" }}>
@@ -685,9 +691,8 @@ function SettingsTab({
   addKeyword: (raw: string, matchType?: KeywordMatchType) => Promise<void>;
   removeKeyword: (kw: string) => Promise<void>;
   /**
-   * When true, the form is hidden and an AnonCTA banner replaces it.
-   * The keyword list still renders so visitors can see what the default
-   * feed is filtered against.
+   * When true, the form is hidden and a "Log in to customize" nudge replaces it.
+   * The keyword list is also hidden — keyword personalization is a login incentive.
    */
   readOnly?: boolean;
 }): React.ReactElement {
@@ -700,42 +705,19 @@ function SettingsTab({
         <h2 style={{ fontSize: 18, fontWeight: 700, margin: "0 0 16px", color: "var(--mobile-text)" }}>
           Settings
         </h2>
-        <AnonCTA
-          message="Sign in to personalize your keywords and create your own news feed."
-          ctaText="Sign in"
-          ctaHref="/login"
-        />
-        <p style={{ fontSize: 13, color: "var(--mobile-text-muted)", margin: "16px 0 8px" }}>
-          The public feed is filtered by these default keywords:
+        <p style={{ margin: 0, fontSize: 14, color: "var(--mobile-text-muted)", lineHeight: 1.5 }}>
+          Log in to customize the news keywords tracked for you.{" "}
+          <a
+            href="/login"
+            style={{
+              color: "var(--mobile-accent)",
+              fontWeight: 600,
+              textDecoration: "none",
+            }}
+          >
+            Log in
+          </a>
         </p>
-        <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-          {entries.map((entry) => {
-            const isExact = entry.match_type === "exact";
-            return (
-              <li
-                key={entry.keyword}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  padding: "10px 0",
-                  borderBottom: "1px solid var(--mobile-divider)",
-                  fontSize: 14,
-                  color: "var(--mobile-text)",
-                }}
-              >
-                <span style={{ display: "inline-flex", alignItems: "center" }}>
-                  #{entry.keyword}
-                  {isExact && <ExactBadge />}
-                </span>
-              </li>
-            );
-          })}
-          {entries.length === 0 && (
-            <li style={{ color: "var(--mobile-text-faint)", fontStyle: "italic", fontSize: 13 }}>
-              No default keywords configured.
-            </li>
-          )}
-        </ul>
       </div>
     );
   }
@@ -1157,6 +1139,57 @@ export default function MobileView(): React.ReactElement {
                   </button>
                 )}
               </div>
+
+              {/* Quick-search chips — horizontal scroll, all users, all non-settings tabs */}
+              <div
+                role="group"
+                aria-label="Quick search shortcuts"
+                style={{
+                  display: "flex",
+                  flexWrap: "nowrap",
+                  overflowX: "auto",
+                  gap: 6,
+                  paddingTop: 8,
+                  scrollbarWidth: "none",
+                  WebkitOverflowScrolling: "touch",
+                }}
+              >
+                {QUICK_SEARCH_CHIPS.map((term) => (
+                  <button
+                    key={term}
+                    type="button"
+                    onClick={() => setSearchTerm(term)}
+                    aria-label={`Quick search: ${term}`}
+                    style={{
+                      flexShrink: 0,
+                      height: 26,
+                      padding: "0 10px",
+                      borderRadius: 999,
+                      border: "1px solid var(--mobile-border)",
+                      background: "var(--mobile-surface)",
+                      color: "var(--mobile-text-muted)",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      whiteSpace: "nowrap",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      transition: "background 0.15s ease, border-color 0.15s ease, color 0.15s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      const el = e.currentTarget;
+                      el.style.borderColor = "var(--mobile-accent)";
+                      el.style.color = "var(--mobile-accent)";
+                    }}
+                    onMouseLeave={(e) => {
+                      const el = e.currentTarget;
+                      el.style.borderColor = "var(--mobile-border)";
+                      el.style.color = "var(--mobile-text-muted)";
+                    }}
+                  >
+                    {term}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Topic pills — feed tab only */}
@@ -1167,15 +1200,6 @@ export default function MobileView(): React.ReactElement {
                   active={topicFilter}
                   onSelect={setTopicFilter}
                 />
-                {readOnly && (
-                  <div style={{ padding: "0 16px" }}>
-                    <AnonCTA
-                      message="Sign in to personalize your keywords and create your own news feed."
-                      ctaText="Sign in"
-                      ctaHref="/login"
-                    />
-                  </div>
-                )}
                 <KeywordsSection
                   entries={keywordEntries}
                   onAddPress={() => setKwSheetOpen(true)}

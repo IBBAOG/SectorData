@@ -418,6 +418,11 @@ Views by construction.
 - `buildHtml`/`buildEml` no servidor — eles rodam no cliente, mantendo o servidor pequeno.
 - Adicionar domínios ao scraper sem adicionar ao `EXTRACTORS` — o SSRF guard usa `EXTRACTORS` como allowlist.
 
+## Anonymous UX (2026-05-25)
+
+- Anonymous visitors see the article feed and the quick-search chips but not the keyword list/editor — a "Log in to customize" CTA replaces it, framing keyword personalization as a login incentive.
+- Quick-search chips above the search input fill the input with one of 8 preset terms (Petrobras, PRIO, Vibra, Ultrapar, Cosan, Petróleo, Gasolina, Diesel) so common queries are one click away.
+
 ## List virtualization (2026-05-25)
 
 The article list is virtualized via `react-window` v2 (only ~15–20 visible cards in DOM at any time) so broad filters returning thousands of articles render in constant time. The article row/card component is wrapped in `React.memo` to enable node recycling without re-rendering unchanged rows.

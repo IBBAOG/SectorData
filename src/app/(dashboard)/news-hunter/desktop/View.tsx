@@ -16,18 +16,29 @@ import { memo, useCallback, useMemo, useState } from "react";
 import { List as VirtualList, type RowComponentProps } from "react-window";
 import NavBar from "@/components/NavBar";
 import { useUserProfile } from "@/context/UserProfileContext";
-import AnonCTA from "@/components/AnonCTA";
-
 import SelectionSidebar from "../_components/SelectionSidebar";
 import ClippingModal from "../_components/ClippingModal";
 import { useClippingSelection } from "../_hooks/useClippingSelection";
 import type { ScrapeResult, ArticleSnapshot } from "@/lib/clipping/types";
-
 import { useNewsHunterData, formatTimeLocal, humanizeAge } from "../useNewsHunterData";
 import type { NewsArticle } from "@/context/NewsHunterContext";
 import { getSupabaseClient } from "@/lib/supabaseClient";
-
 import styles from "../page.module.css";
+
+// ── Quick-search chip constants ──────────────────────────────────────────────
+// Ordered list of preset search terms shown above the search input.
+// Clicking a chip fills the search input with the term (idempotent: clicking
+// the same chip twice keeps the current term — no toggle/clear behaviour).
+const QUICK_SEARCH_CHIPS = [
+  "Petrobras",
+  "PRIO",
+  "Vibra",
+  "Ultrapar",
+  "Cosan",
+  "Petróleo",
+  "Gasolina",
+  "Diesel",
+] as const;
 
 // ── Virtualized list constants ───────────────────────────────────────────────
 // Desktop rows are single-line (white-space:nowrap + text-overflow:ellipsis),
@@ -297,43 +308,45 @@ export default function DesktopView(): React.ReactElement {
           </div>
         </div>
 
-        {readOnly && (
+        {/* Keyword panel — hidden for anonymous visitors; replaced by a compact
+            login nudge. Authenticated users see the full editor. */}
+        {readOnly ? (
           <div className={styles.anonCtaWrap}>
-            <AnonCTA
-              message="Sign in to personalize your keywords and create your own news feed."
-              ctaText="Sign in"
-              ctaHref="/login"
-            />
+            <p style={{ margin: 0, fontSize: 13, color: "var(--nh-muted)" }}>
+              Log in to customize the news keywords tracked for you.{" "}
+              <a
+                href="/login"
+                style={{ color: "var(--nh-accent)", fontWeight: 600, textDecoration: "none" }}
+              >
+                Log in
+              </a>
+            </p>
           </div>
-        )}
-
-        <section className={styles.panel}>
-          <div className={styles.panelHeader}>
-            <h3 className={styles.panelTitle}>
-              {readOnly ? "Default keywords" : "Keywords"}
-            </h3>
-          </div>
-          <div className={styles.panelBody}>
-            <ul className={styles.chips}>
-              {keywordEntries.map((entry) => {
-                const isExact = entry.match_type === "exact";
-                return (
-                  <li
-                    key={entry.keyword}
-                    className={`${styles.chip} ${isExact ? styles.chipExact : ""}`}
-                    title={
-                      isExact
-                        ? "Exact match — only whole-word, case-insensitive."
-                        : "Substring match — case-insensitive."
-                    }
-                  >
-                    <span className={styles.chipLabel}>{entry.keyword}</span>
-                    {isExact && (
-                      <span className={styles.chipBadge} aria-label="Exact match">
-                        EXACT
-                      </span>
-                    )}
-                    {!readOnly && (
+        ) : (
+          <section className={styles.panel}>
+            <div className={styles.panelHeader}>
+              <h3 className={styles.panelTitle}>Keywords</h3>
+            </div>
+            <div className={styles.panelBody}>
+              <ul className={styles.chips}>
+                {keywordEntries.map((entry) => {
+                  const isExact = entry.match_type === "exact";
+                  return (
+                    <li
+                      key={entry.keyword}
+                      className={`${styles.chip} ${isExact ? styles.chipExact : ""}`}
+                      title={
+                        isExact
+                          ? "Exact match — only whole-word, case-insensitive."
+                          : "Substring match — case-insensitive."
+                      }
+                    >
+                      <span className={styles.chipLabel}>{entry.keyword}</span>
+                      {isExact && (
+                        <span className={styles.chipBadge} aria-label="Exact match">
+                          EXACT
+                        </span>
+                      )}
                       <button
                         type="button"
                         className={styles.chipRemove}
@@ -342,62 +355,68 @@ export default function DesktopView(): React.ReactElement {
                       >
                         ×
                       </button>
-                    )}
+                    </li>
+                  );
+                })}
+                {keywordEntries.length === 0 && (
+                  <li className={styles.emptyKw}>
+                    No active filter — all headlines are displayed.
                   </li>
-                );
-              })}
-              {keywordEntries.length === 0 && (
-                <li className={styles.emptyKw}>
-                  No active filter — all headlines are displayed.
-                </li>
-              )}
-            </ul>
-            {!readOnly && (
-              <>
-                <form
-                  className={styles.addForm}
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    void addKeyword(newKeyword, newKeywordMatchType);
-                  }}
+                )}
+              </ul>
+              <form
+                className={styles.addForm}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void addKeyword(newKeyword, newKeywordMatchType);
+                }}
+              >
+                <input
+                  type="text"
+                  className={styles.addInput}
+                  placeholder="+ add keyword"
+                  value={newKeyword}
+                  onChange={(e) => setNewKeyword(e.target.value)}
+                />
+                <label
+                  className={styles.exactToggle}
+                  title="Match only when the term appears as a standalone word (case-insensitive)."
                 >
                   <input
-                    type="text"
-                    className={styles.addInput}
-                    placeholder="+ add keyword"
-                    value={newKeyword}
-                    onChange={(e) => setNewKeyword(e.target.value)}
+                    type="checkbox"
+                    checked={newKeywordMatchType === "exact"}
+                    onChange={(e) =>
+                      setNewKeywordMatchType(e.target.checked ? "exact" : "substring")
+                    }
                   />
-                  <label
-                    className={styles.exactToggle}
-                    title="Match only when the term appears as a standalone word (case-insensitive)."
-                  >
-                    <input
-                      type="checkbox"
-                      checked={newKeywordMatchType === "exact"}
-                      onChange={(e) =>
-                        setNewKeywordMatchType(e.target.checked ? "exact" : "substring")
-                      }
-                    />
-                    <span>Exact match</span>
-                  </label>
-                  <button type="submit" className={styles.addBtn} aria-label="add">+</button>
-                </form>
-                <p className={styles.helpText}>
-                  Default keywords match anywhere in the text. Turn on{" "}
-                  <strong>Exact match</strong> to match only as a standalone word
-                  (e.g. <code>ANS</code> exact won&apos;t hit <em>tr<strong>ANS</strong>porte</em>).
-                </p>
-              </>
-            )}
-            {readOnly && (
+                  <span>Exact match</span>
+                </label>
+                <button type="submit" className={styles.addBtn} aria-label="add">+</button>
+              </form>
               <p className={styles.helpText}>
-                These default keywords drive the public feed below. Sign in to
-                add or remove your own.
+                Default keywords match anywhere in the text. Turn on{" "}
+                <strong>Exact match</strong> to match only as a standalone word
+                (e.g. <code>ANS</code> exact won&apos;t hit <em>tr<strong>ANS</strong>porte</em>).
               </p>
-            )}
-          </div>
-        </section>
+            </div>
+          </section>
+        )}
+
+        {/* Quick-search chips — visible for all users (anon + authenticated).
+            Clicking a chip fills the search input with the preset term. */}
+        <div className={styles.quickChips} role="group" aria-label="Quick search shortcuts">
+          {QUICK_SEARCH_CHIPS.map((term) => (
+            <button
+              key={term}
+              type="button"
+              className={styles.quickChip}
+              onClick={() => setSearchTerm(term)}
+              aria-label={`Quick search: ${term}`}
+            >
+              {term}
+            </button>
+          ))}
+        </div>
 
         <div className={styles.searchBar}>
           <div className={styles.searchWrap}>
