@@ -144,7 +144,7 @@ Todas com RLS habilitada, policy `acesso autenticado` FOR SELECT TO authenticate
 
 | Tabela | PK | Colunas-chave | Migration | Pipeline |
 |---|---|---|---|---|
-| `mdic_comex` | (ano, mes, flow, ncm_codigo, pais) | volume_kg, valor_fob_usd | `20260504000012_mdic_comex.sql` | `pipelines/mdic_comex_sync.py` |
+| `mdic_comex` | (ano, mes, flow, ncm_codigo, pais) | volume_kg, valor_fob_usd. **Continua viva** após retirada de `/mdic-comex` (2026-05-25) — agora alimenta `/imports-exports` Panel C ("Import Price") via `get_imports_exports_fob_price_serie`. | `20260504000012_mdic_comex.sql` | `pipelines/mdic_comex_sync.py` |
 | `anp_ppi` | (data_fim, produto, local) | preco, variacao_pct, unidade | `20260504000002_anp_precos.sql` | `pipelines/anp/precos/01_ppi_sync.py` |
 | `anp_precos_produtores` | (data_inicio, produto, regiao) | preco, unidade | `20260504000002_anp_precos.sql` | `pipelines/anp/precos/02_precos_produtores_sync.py` |
 | `anp_glp` | (ano, mes, distribuidora, categoria) | vendas_kg | `20260504000002_anp_precos.sql` | `pipelines/anp/glp_sync.py` |
@@ -235,7 +235,7 @@ Todas as 5 RPCs: `STABLE`, `SECURITY INVOKER`, `SET search_path = public`, `GRAN
 | Profile / Admin | `get_my_*`, `set_*`, `upsert_my_*`, `set_module_public_visibility` | dash-admin |
 | News Hunter | `seed_my_news_hunter_keywords`, `get_default_news_keywords` | dash-news-hunter |
 | Generic / metrics | `get_metricas`, `classificar_agentes` | base |
-| MDIC Comex | `get_mdic_comex_filtros`, `get_mdic_comex_serie`, `get_mdic_comex_top_paises` | dash-mdic-comex |
+| MDIC Comex | ~~`get_mdic_comex_filtros`, `get_mdic_comex_serie`, `get_mdic_comex_top_paises`, `get_mdic_comex_aggregated`, `get_mdic_comex_export_count`~~ — **DROPPED 2026-05-25** com a retirada de `/mdic-comex`. A tabela `mdic_comex` continua viva, alimentada pelo `etl_mdic_comex.yml`, e é consumida pelo `/imports-exports` Panel C via `get_imports_exports_fob_price_serie`. | ~~dash-mdic-comex~~ (sub-PRD arquivado em `docs/app/_deprecated/mdic-comex.md`) |
 | ANP PPI | `get_anp_ppi_filtros`, `get_anp_ppi_media_serie`, `get_anp_ppi_locais_serie` | dash-anp-ppi |
 | ANP Preços Produtores | `get_anp_precos_produtores_filtros`, `get_anp_precos_produtores_serie` | dash-anp-precos-produtores |
 | ANP GLP | `get_anp_glp_filtros`, `get_anp_glp_serie` | dash-anp-glp |
@@ -247,7 +247,7 @@ Todas as 5 RPCs: `STABLE`, `SECURITY INVOKER`, `SET search_path = public`, `GRAN
 | ANP CDP Diária — Field | `get_anp_cdp_diaria_filtros`, `get_anp_cdp_diaria_serie` | dash-anp-cdp-diaria |
 | ANP CDP Diária — Installation | `get_anp_cdp_diaria_instalacao_filtros`, `get_anp_cdp_diaria_instalacao_serie` | dash-anp-cdp-diaria |
 | ANP CDP Diária — Well | `get_anp_cdp_diaria_poco_filtros`, `get_anp_cdp_diaria_poco_serie` | dash-anp-cdp-diaria |
-| Export count (Tier 2) | `get_ms_export_count(p_data_inicio, p_data_fim, p_regioes, p_ufs, p_mercados) → bigint`, `get_mdic_comex_export_count(p_flow, p_ncms, p_ano_inicio, p_ano_fim) → bigint`, `get_anp_cdp_export_count(p_pocos, p_campos, p_bacoes, p_locais, p_estados, p_operadores, p_instalacoes, p_tipos_instalacao, p_ano_inicio, p_ano_fim) → bigint`, `get_anp_lpc_export_count(p_produtos, p_estados, p_data_inicio, p_data_fim) → bigint` | APP (useExportSize) — retornam count filtrado para estimar tamanho do export antes do download. Migration: `20260507000003_export_count_rpcs.sql`. |
+| Export count (Tier 2) | `get_ms_export_count(p_data_inicio, p_data_fim, p_regioes, p_ufs, p_mercados) → bigint`, `get_anp_cdp_export_count(p_pocos, p_campos, p_bacoes, p_locais, p_estados, p_operadores, p_instalacoes, p_tipos_instalacao, p_ano_inicio, p_ano_fim) → bigint`, `get_anp_lpc_export_count(p_produtos, p_estados, p_data_inicio, p_data_fim) → bigint` | APP (useExportSize) — retornam count filtrado para estimar tamanho do export antes do download. Migration: `20260507000003_export_count_rpcs.sql`. (Nota: `get_mdic_comex_export_count` foi DROPPED em 2026-05-25 com a retirada de `/mdic-comex`.) |
 
 ## Migration smoke test
 

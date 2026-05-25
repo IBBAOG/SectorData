@@ -42,10 +42,9 @@ CEO (Eduardo)
      │   ├─ dash-anp-ppi                  (/anp-ppi — Fuel Distribution)
      │   ├─ dash-anp-precos-produtores    (/anp-precos-produtores — Fuel Distribution)
      │   ├─ dash-anp-glp                  (/anp-glp — Fuel Distribution)
-     │   ├─ dash-mdic-comex               (/mdic-comex — Oil & Gas / Fuel Distribution)
      │   ├─ dash-anp-lpc                  (/anp-lpc — Fuel Distribution)
      │   ├─ dash-sindicom                 (/sindicom — Fuel Distribution)
-     │   ├─ dash-imports-exports          (/imports-exports — Fuel Distribution; substitui /anp-daie + /anp-desembaracos + /anp-painel-importacoes)
+     │   ├─ dash-imports-exports          (/imports-exports — Fuel Distribution; substitui /anp-daie + /anp-desembaracos + /anp-painel-importacoes; absorveu /mdic-comex via Panel C "Import Price" em 2026-05-25)
      │   ├─ dash-anp-precos-distribuicao  (/anp-precos-distribuicao — Fuel Distribution)
      │   ├─ dash-anp-cdp-diaria          (/anp-cdp-diaria — Oil & Gas)
      │   ├─ dash-subsidy-tracker          (/subsidy-tracker — Fuel Distribution, dados proprietários)
@@ -98,7 +97,6 @@ Cada um possui um módulo (ou bundle, no caso de admin). Cada um auto-documenta 
 | [`worker_dash-anp-ppi`](../.claude/agents/worker_dash-anp-ppi.md) | `/anp-ppi` | [`docs/app/anp-ppi.md`](app/anp-ppi.md) |
 | [`worker_dash-anp-precos-produtores`](../.claude/agents/worker_dash-anp-precos-produtores.md) | `/anp-precos-produtores` | [`docs/app/anp-precos-produtores.md`](app/anp-precos-produtores.md) |
 | [`worker_dash-anp-glp`](../.claude/agents/worker_dash-anp-glp.md) | `/anp-glp` | [`docs/app/anp-glp.md`](app/anp-glp.md) |
-| [`worker_dash-mdic-comex`](../.claude/agents/worker_dash-mdic-comex.md) | `/mdic-comex` | [`docs/app/mdic-comex.md`](app/mdic-comex.md) |
 | [`worker_dash-anp-lpc`](../.claude/agents/worker_dash-anp-lpc.md) | `/anp-lpc` | [`docs/app/anp-lpc.md`](app/anp-lpc.md) |
 | [`worker_dash-sindicom`](../.claude/agents/worker_dash-sindicom.md) | `/sindicom` | [`docs/app/sindicom.md`](app/sindicom.md) |
 | [`worker_dash-imports-exports`](../.claude/agents/worker_dash-imports-exports.md) | `/imports-exports` (substitui `/anp-daie` + `/anp-desembaracos` + `/anp-painel-importacoes`; consolida importações por país e por importador a partir da `anp_desembaracos` enriquecida + exportações via `anp_daie`) | [`docs/app/imports-exports.md`](app/imports-exports.md) |
@@ -237,7 +235,7 @@ Todos os dashboards com dataset tabular exportam Excel + CSV. Dois tiers conform
 | **Tier 1** | Dataset < 50k linhas (download imediato seguro) | Botões diretos no `ExportPanel` | [`ExportPanel.tsx`](../src/components/dashboard/ExportPanel.tsx) + [`exportExcel.ts`](../src/lib/exportExcel.ts) + [`exportCsv.ts`](../src/lib/exportCsv.ts) |
 | **Tier 2** | Dataset >= 50k linhas (export pode ser pesado) | Modal com filtros ativos + calculadora live de tamanho | `ExportPanel` com `mode="modal"` + [`ExportModal.tsx`](../src/components/dashboard/ExportModal.tsx) + [`useExportSize.ts`](../src/hooks/useExportSize.ts) |
 
-**Dashboards Tier 2:** `/market-share`, `/sales-volumes` (dataset `vendas`), `/mdic-comex`, `/anp-cdp`, `/anp-lpc`.
+**Dashboards Tier 2:** `/market-share`, `/sales-volumes` (dataset `vendas`), `/anp-cdp`, `/anp-lpc`.
 
 **Dashboards Tier 1:** `/diesel-gasoline-margins`, `/price-bands`, `/navios-diesel`, `/anp-glp`, `/imports-exports`, `/anp-precos-produtores`, `/sindicom`, `/anp-ppi`.
 
@@ -427,7 +425,7 @@ Workflow controlado pelo **Subgerente APP** (não pelo Gerente Geral). Ver detal
 ## Estado atual (snapshot)
 
 - 4 departamentos + 3 papéis transversais.
-- 20 dashboards ativos (8 originais + 7 da Fase 3 remanescentes: `/anp-cdp`, `/anp-ppi`, `/anp-precos-produtores`, `/anp-glp`, `/mdic-comex`, `/anp-lpc`, `/sindicom` + 5 novos: `/imports-exports` (consolida `/anp-daie` + `/anp-desembaracos` + `/anp-painel-importacoes`, retirados em 2026-05-25), `/anp-precos-distribuicao`, `/anp-cdp-diaria`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/subsidy-tracker` + `/admin-analytics` (Admin-only, sem `module_visibility`)).
+- 19 dashboards ativos (8 originais + 6 da Fase 3 remanescentes: `/anp-cdp`, `/anp-ppi`, `/anp-precos-produtores`, `/anp-glp`, `/anp-lpc`, `/sindicom` + 5 novos: `/imports-exports` (consolida `/anp-daie` + `/anp-desembaracos` + `/anp-painel-importacoes`, retirados em 2026-05-25; absorveu `/mdic-comex` via Panel C "Import Price" no mesmo dia — `mdic_comex` table e workflow ETL permanecem ativos alimentando Panel C), `/anp-precos-distribuicao`, `/anp-cdp-diaria`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/subsidy-tracker` + `/admin-analytics` (Admin-only, sem `module_visibility`)).
 - Documentação inicial criada em **2026-05-05**.
 
 ### Limpeza inicial (2026-05-05)

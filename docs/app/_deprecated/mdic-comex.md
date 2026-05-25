@@ -1,5 +1,7 @@
 # Sub-PRD — `/mdic-comex`
 
+> **Deprecated 2026-05-25.** Functionality merged into `/imports-exports` Panel C ("Import Price"). See `docs/app/imports-exports.md`. `mdic_comex` table and `etl_mdic_comex.yml` workflow remain active — they feed Panel C via `get_imports_exports_fob_price_serie`.
+
 Dashboard MDIC Comex Stat — Imports and Exports of Fuels (Oil & Gas / Fuel Distribution). Owner: [`worker_dash-mdic-comex`](../../.claude/agents/worker_dash-mdic-comex.md).
 
 > NavBar item.

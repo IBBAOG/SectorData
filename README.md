@@ -44,7 +44,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/profile` | `get_my_profile`, `upsert_my_profile` | — |
 | `/admin-panel` | `get_module_visibility`, `set_module_visibility`, `set_module_home_visibility`, `get_all_users_with_roles`, `set_user_role` | — |
 
-### Statistics (Fase 3 onwards — 13 dashboards)
+### Statistics (Fase 3 onwards — 12 dashboards)
 
 | Route | Category | RPC functions | Export |
 |-------|----------|---------------|--------|
@@ -55,18 +55,19 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/anp-ppi` | Fuel Distribution | `get_anp_ppi_media_serie`, `get_anp_ppi_locais_serie`, `get_anp_ppi_filtros` | Yes |
 | `/anp-precos-produtores` | Fuel Distribution | `get_anp_precos_produtores_serie`, `get_anp_precos_produtores_filtros` | Yes |
 | `/anp-glp` | Fuel Distribution | `get_anp_glp_serie`, `get_anp_glp_filtros` | Yes |
-| `/mdic-comex` | Fuel Distribution | `get_mdic_comex_serie`, `get_mdic_comex_top_paises`, `get_mdic_comex_filtros` | Yes |
 | `/anp-lpc` | Fuel Distribution | `get_anp_lpc_nacional`, `get_anp_lpc_serie`, `get_anp_lpc_filtros` | Yes |
 | `/sindicom` | Fuel Distribution | `get_sindicom_serie`, `get_sindicom_filtros` | Yes |
-| `/imports-exports` | Fuel Distribution | `get_imports_exports_filtros`, `get_imports_exports_paises_stacked`, `get_imports_exports_importers_stacked`, `get_imports_exports_yoy_table`, `get_imports_exports_exports_serie` | Yes |
+| `/imports-exports` | Fuel Distribution | `get_imports_exports_filtros`, `get_imports_exports_paises_stacked`, `get_imports_exports_importers_stacked`, `get_imports_exports_yoy_table`, `get_imports_exports_exports_serie`, `get_imports_exports_fob_price_serie` | Yes |
 | `/anp-precos-distribuicao` | Fuel Distribution | `get_anp_precos_distribuicao_serie`, `get_anp_precos_distribuicao_top_distribuidoras`, `get_anp_precos_distribuicao_filtros` | Yes |
 | `/subsidy-tracker` | Fuel Distribution (Proprietary) | `get_subsidy_tracker_diesel` | Yes |
 
 > **Imports & Exports reform (2026-05-25):** `/imports-exports` replaces the 3 retired dashboards `/anp-daie`, `/anp-desembaracos`, `/anp-painel-importacoes`. Backed by `anp_desembaracos` (enriched with `importador`/`cnpj`/`uf_cnpj`, PK extended with `cnpj`) and `anp_daie`. The dropped table `anp_painel_imp_dist` and its 8 obsolete RPCs are removed. Auxiliary lookup tables seeded by the reform: `imports_product_map`, `importer_group_map` (intentionally empty at seed time — populated post-backfill), `ncm_densidade_kg_m3`. Migration: `supabase/migrations/20260525000010_imports_exports_enrichment.sql`. Archived sub-PRDs live under `docs/app/_deprecated/`.
 
+> **`/mdic-comex` deprecation (2026-05-25):** standalone dashboard retired; its function was absorbed by `/imports-exports` Panel C ("Import Price"). The `mdic_comex` table and the `etl_mdic_comex.yml` workflow remain active — they feed Panel C via `get_imports_exports_fob_price_serie`. The 5 `get_mdic_comex_*` RPCs were dropped. Archived sub-PRD: `docs/app/_deprecated/mdic-comex.md`.
+
 `template-module/` is a starter template, not a deployed module. RPC wrappers: [`src/lib/rpc.ts`](src/lib/rpc.ts) (by module) and [`src/lib/profileRpc.ts`](src/lib/profileRpc.ts).
 
-**Export pattern (Fase B):** all tabular dashboards export both Excel and CSV. Heavy datasets (`/market-share`, `/sales-volumes`, `/mdic-comex`, `/anp-cdp`, `/anp-lpc`) open a modal with active filters and a live size calculator before downloading (Tier 2). Lighter datasets download directly (Tier 1). `/stocks` and `/news-hunter` have no tabular export by design.
+**Export pattern (Fase B):** all tabular dashboards export both Excel and CSV. Heavy datasets (`/market-share`, `/sales-volumes`, `/anp-cdp`, `/anp-lpc`) open a modal with active filters and a live size calculator before downloading (Tier 2). Lighter datasets download directly (Tier 1). `/stocks` and `/news-hunter` have no tabular export by design.
 
 ## Project Structure
 
@@ -89,10 +90,10 @@ dashboard_projeto/
 │   │   ├── admin.md               # bundle: home + profile + admin-panel
 │   │   ├── anp-cdp.md anp-cdp-bsw.md anp-cdp-depletion.md anp-cdp-diaria.md
 │   │   ├── anp-ppi.md anp-precos-produtores.md anp-glp.md
-│   │   ├── mdic-comex.md anp-lpc.md sindicom.md
-│   │   ├── imports-exports.md     # consolidates the 3 retired anp-* import/export dashboards (2026-05-25)
+│   │   ├── anp-lpc.md sindicom.md
+│   │   ├── imports-exports.md     # consolidates the 3 retired anp-* import/export dashboards + /mdic-comex (Panel C, 2026-05-25)
 │   │   ├── anp-precos-distribuicao.md subsidy-tracker.md admin-analytics.md
-│   │   ├── _deprecated/           # archived sub-PRDs: anp-daie, anp-desembaracos, anp-painel-importacoes
+│   │   ├── _deprecated/           # archived sub-PRDs: anp-daie, anp-desembaracos, anp-painel-importacoes, mdic-comex
 │   │   └── news-hunter-architecture.md  # cross-repo handoff doc
 │   ├── design/
 │   │   ├── identity.md            # tokens (#ff5000, Arial, liquid glass)
@@ -131,8 +132,8 @@ dashboard_projeto/
 │   │       ├── news-hunter/       # page.tsx + page.module.css
 │   │       ├── anp-cdp/ anp-cdp-bsw/ anp-cdp-depletion/ anp-cdp-diaria/
 │   │       ├── anp-ppi/ anp-precos-produtores/ anp-glp/
-│   │       ├── mdic-comex/ anp-lpc/ sindicom/
-│   │       ├── imports-exports/   # consolidates the 3 retired anp-* import/export routes (2026-05-25)
+│   │       ├── anp-lpc/ sindicom/
+│   │       ├── imports-exports/   # consolidates the 3 retired anp-* import/export routes + Panel C absorbs /mdic-comex (2026-05-25)
 │   │       ├── anp-precos-distribuicao/ subsidy-tracker/ admin-analytics/
 │   │       ├── profile/ admin-panel/ template-module/
 │   ├── components/
@@ -175,7 +176,7 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | `news_hunter_keywords` | (user_id, keyword) | created_at — per-user, RLS scoped |
 | `news_hunter_default_keywords` | keyword | created_at — 27 seed terms (`petróleo`, `Petrobras`, `Vibra`, etc.); single source of truth read by anon and authed users via `get_default_news_keywords()` |
 | `profiles` | id (FK auth.users) | role (Admin/Client), full_name, avatar_url |
-| `mdic_comex` | id | ano, mes, tipo (IMP/EXP), ncm, descricao_ncm, pais, uf, produto_combustivel, quantidade_kg, valor_fob_usd |
+| `mdic_comex` | id | ano, mes, tipo (IMP/EXP), ncm, descricao_ncm, pais, uf, produto_combustivel, quantidade_kg, valor_fob_usd. Consumed by `/imports-exports` Panel C ("Import Price") via `get_imports_exports_fob_price_serie` — the standalone `/mdic-comex` dashboard was retired 2026-05-25. |
 | `anp_ppi` | id | data_referencia, produto, local, preco_ppi, unidade |
 | `anp_precos_produtores` | id | data_referencia, produto, regiao, preco, unidade |
 | `anp_glp` | (ano, mes, distribuidora, categoria) | ano, mes, distribuidora, categoria (`P13` / `Outros - GLP` / `Outros - Especiais` / `Outros (total)`), vendas_kg |
@@ -213,7 +214,7 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | 8 | `etl_anp_fase3.yml` | Monthly 1st, 13:00 UTC | `pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` (preserves `importador`/`cnpj`/`uf_cnpj` since 2026-05-25) | `anp_daie`, `anp_desembaracos` (enriched). Step `03_painel_imp_sync.py` removed by the Imports & Exports reform (2026-05-25); table `anp_painel_imp_dist` dropped. |
 | 9 | `etl_anp_lpc.yml` | Weekly Wed 14:30 UTC | `pipelines/anp/lpc_sync.py` | `anp_lpc` |
 | 10 | `etl_anp_precos.yml` | Weekly Mon 12:00 UTC | `precos/01_ppi_sync.py` → `02_precos_produtores_sync.py` + `glp_sync.py` | `anp_ppi`, `anp_precos_produtores`, `anp_glp` |
-| 11 | `etl_mdic_comex.yml` | Daily 14:00 UTC | `pipelines/mdic_comex_sync.py` | `mdic_comex` |
+| 11 | `etl_mdic_comex.yml` | Daily 14:00 UTC | `pipelines/mdic_comex_sync.py` | `mdic_comex` (consumed by `/imports-exports` Panel C since 2026-05-25; the standalone `/mdic-comex` dashboard was retired) |
 | 12 | `etl_sindicom.yml` | Monthly 5th, 15:00 UTC | `pipelines/sindicom_sync.py` (Playwright + Chromium) | `sindicom` |
 | 13 | `manual_dg_margins.yml` | Weekly Mon | `manual/dg_margins_upload.py` | `d_g_margins` (manual Excel) |
 | 14 | `supabase_deploy.yml` | On push to main | `supabase db push` | migrations |

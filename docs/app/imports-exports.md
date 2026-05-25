@@ -18,10 +18,11 @@
 | Products | Diesel, Gasoline, Crude Oil (global pill toggle — single-select, brand orange active state, content-sized pills) |
 | Tabs | Imports (default) / Exports |
 
-This dashboard **consolidates** the 3 deprecated dashboards:
+This dashboard **consolidates** the 4 deprecated dashboards:
 - `/anp-daie` (sub-PRD: `docs/app/_deprecated/anp-daie.md`)
 - `/anp-desembaracos` (sub-PRD: `docs/app/_deprecated/anp-desembaracos.md`)
 - `/anp-painel-importacoes` (sub-PRD: `docs/app/_deprecated/anp-painel-importacoes.md`)
+- `/mdic-comex` (sub-PRD: `docs/app/_deprecated/mdic-comex.md`) — absorbed by Panel C ("Import Price") on 2026-05-25
 
 ---
 
@@ -235,7 +236,7 @@ Diesel 832 kg/m³ · Gasoline 745 kg/m³ · Crude Oil 870 kg/m³ — ANP standar
 
 ### See also
 
-- `/mdic-comex` — full MDIC Comex dashboard with country-level FOB prices.
+- `docs/app/_deprecated/mdic-comex.md` — archived sub-PRD of the standalone `/mdic-comex` dashboard (retired 2026-05-25; its function was absorbed by Panel C above).
 - Panel A / Panel B — `anp_desembaracos` based (volume, not price).
 
 ---
