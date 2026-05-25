@@ -177,6 +177,49 @@ Landing visual. Mostra cards/imagens dos módulos disponíveis pro user (filtrad
 
 > **Memória persistente do CEO**: TODO módulo novo precisa de upload de imagem aqui. Sem isso, `/home` fica com placeholder genérico.
 
+#### Data Sources live table (2026-05-26, `[desktop-only]`)
+
+Desktop layout is now a 50/50 split: module cards (left column) + Data Sources live table (right column).
+Mobile view is **unchanged** — still shows cards only. The table is explicitly desktop-only.
+
+**Component tree:**
+```
+src/
+  data/dataSources.ts                 — 23-entry TS catalog (DataSource interface + DATA_SOURCES array)
+  components/home/DataSourcesTable/
+    index.tsx                          — wrapper, groups by category, single-expand accordion
+    DataSourcesTable.module.css        — glass + pulse styles; consumes only existing globals.css tokens
+    SectionHeader.tsx                  — translucent "── ANP PRODUCTION ──" divider
+    SourceRow.tsx                      — collapsed row: Status · Name · Source · Last update · Actions
+    ExpandedRow.tsx                    — expanded panel: description + schedule + next run + action buttons + download
+    StatusDot.tsx                      — colored dot (fresh/stale/overdue); real-time sources get .ds-pulse class
+    LastUpdateCell.tsx                 — "2h ago" / "3 days ago" via relative time helper
+    DashboardPicker.tsx                — dropdown when source feeds ≥2 dashboards; direct Link when only 1
+    useDataSourcesFreshness.ts         — hook: calls get_data_sources_freshness() every 60s, returns Map<key, {lastUpdate, rowCount}>
+```
+
+**RPC:** `get_data_sources_freshness()` — migration `20260526200000_data_sources_freshness.sql`. Returns `(source_key, last_update, row_count)` for all 22 ETL-fed tables. SECURITY DEFINER, accessible to `anon` + `authenticated`. Wrapper: `rpcGetDataSourcesFreshness` in `src/lib/rpc.ts`.
+
+**The 23 entries** (22 Supabase tables + `yahoo_finance` which has no stored table):
+- ANP Production (5): `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco`, `anp_cdp_producao`, `anp_voip`
+- ANP Distribution (7): `vendas`, `anp_precos_produtores`, `anp_glp`, `anp_lpc`, `anp_precos_distribuicao`, `anp_subsidy_diesel_reference`, `anp_subsidy_history`
+- Imports & Exports (3): `mdic_comex`, `anp_daie`, `anp_desembaracos`
+- Vessels (4): `navios_diesel`, `vessel_positions`, `port_arrivals`, `import_candidates`
+- Manual (2): `d_g_margins`, `price_bands`
+- News & Markets (2): `news_articles`, `yahoo_finance`
+
+**Status derivation** (computed client-side from `DataSource.staleAfterHours` / `overdueAfterHours`):
+- `fresh` (green) — `now - last_update < staleAfterHours × 3600 × 1000`
+- `stale` (yellow) — between stale and overdue thresholds
+- `overdue` (red) — `now - last_update ≥ overdueAfterHours × 3600 × 1000`
+- `unknown` — `last_update` is null (yahoo_finance always shows "live" not a timestamp)
+
+**Real-time pulse** (`.ds-pulse` CSS class, defined in globals.css): applied to `vessel_positions`, `port_arrivals`, `import_candidates`, `news_articles`, and `yahoo_finance`.
+
+**Download:** uses `ExportModal` (Tier 2). Visible only to logged-in users. Anonymous users see a disabled "Sign in to download" button. Yahoo Finance has no `supabaseTable` → download button hidden entirely.
+
+**Visibility:** table is visible to all roles (anon, client, admin) — it serves as a product transparency/robustness showcase.
+
 ### `/profile`
 Perfil do usuário logado. Edição inline do nome (`profile-name-edit-icon-btn`). Mostra: avatar (iniciais), full_name, email, role badge.
 
@@ -222,6 +265,7 @@ Protegida por `useRoleGuard("Admin")`. Funcionalidades (7 seções na sidebar):
 | `admin_email_log_recent(p_limit)` | leitura | admin-panel → Alerts → Email Log |
 | `admin_subscriber_stats()` | leitura | admin-panel → Alerts → Subscriber Stats |
 | `admin_toggle_source_active(p_source_slug, p_is_active)` | escrita | admin-panel → Alerts → Sources (toggle is_active) |
+| `get_data_sources_freshness()` | leitura | `/home` Data Sources live table — returns `(source_key, last_update, row_count)` for all ETL-fed tables; SECURITY DEFINER, anon + authenticated; migration `20260526200000` |
 
 ## Tabelas
 

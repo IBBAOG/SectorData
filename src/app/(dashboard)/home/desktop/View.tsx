@@ -1,8 +1,9 @@
 "use client";
 
-// Desktop view for /home.
-// Identical visual to the original HomeClient.tsx — grid of image cards with
-// hover reveal animation. Reads all state from useHomeData (no direct RPC calls).
+// Desktop view for /home. [desktop-only]
+//
+// Layout: 50/50 split grid — left column holds module cards, right column
+// holds the DataSourcesTable live panel. Mobile view is unchanged (cards only).
 //
 // initialPreviews: server-fetched card preview URLs (slug → public URL).
 // Overrides the static card.preview paths when present (same as old HomeClient).
@@ -11,6 +12,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import NavBar from "../../../../components/NavBar";
 import { useHomeData } from "../useHomeData";
+import { useUserProfile } from "../../../../context/UserProfileContext";
+import DataSourcesTable from "../../../../components/home/DataSourcesTable";
 
 const ORANGE = "#E85D20";
 const BG = "#f5f5f5";
@@ -28,6 +31,8 @@ export default function DesktopView({
   // visibleCards already includes all visibility + search filtering.
   // Desktop ignores search (no search bar on desktop home) so search="" default is fine.
   const { visibleCards } = useHomeData();
+  const { role } = useUserProfile();
+  const isLoggedIn = role !== "Anon";
 
   return (
     <main
@@ -40,14 +45,24 @@ export default function DesktopView({
     >
       <NavBar />
 
-      {/* Cards */}
-      <section style={{ margin: 0, padding: "32px 24px 80px" }}>
-        <div className="row g-4">
-          {visibleCards.map((card, i) => {
+      {/* 50/50 split: cards left, Data Sources table right */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 0,
+          alignItems: "start",
+          padding: "32px 24px 80px",
+        }}
+      >
+        {/* ── Left column: module cards ────────────────────────────────── */}
+        <section style={{ paddingRight: 16 }}>
+          <div className="row g-4">
+            {visibleCards.map((card, i) => {
             const isHovered = hoveredIndex === i && !card.disabled;
 
             return (
-              <div key={card.slug} className="col-md-6 col-lg-4">
+              <div key={card.slug} className="col-12 col-xl-6">
                 <div
                   onClick={() => {
                     if (!card.disabled && card.href) router.push(card.href);
@@ -202,8 +217,14 @@ export default function DesktopView({
               </div>
             );
           })}
-        </div>
-      </section>
+          </div>
+        </section>
+
+        {/* ── Right column: Data Sources live table ───────────────────── */}
+        <section style={{ paddingLeft: 16, paddingTop: 2 }}>
+          <DataSourcesTable isLoggedIn={isLoggedIn} />
+        </section>
+      </div>
     </main>
   );
 }
