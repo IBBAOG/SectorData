@@ -2962,3 +2962,214 @@ export async function rpcGetDefaultNewsKeywords(
     return [];
   }
 }
+
+// ============================================================
+// MODULE: Imports & Exports (/imports-exports)
+// ============================================================
+//
+// Consolidates /anp-daie + /anp-desembaracos + /anp-painel-importacoes
+// into a single unified dashboard covering Diesel, Gasoline, Crude Oil.
+//
+// 5 RPCs — all SECURITY INVOKER, STABLE, granted to anon + authenticated.
+// Source: migration 20260525000010_imports_exports_enrichment.sql.
+//
+// Unit contract (never drift label from divisor):
+//   Panel A (countries): RPC returns total_kg → UI divides by 1e6 → "kt"
+//   Panel B (importers): RPC returns total_mil_m3 (server-side conversion) → "mil m³"
+//   Exports: RPC returns volume_m3 → UI divides by 1e3 → "mil m³" | valor_usd → "USD"
+
+export type IEFiltrosResult = {
+  ano_min: number;
+  ano_max: number;
+  produtos: string[];
+};
+
+export type IEPaisesStackedRow = {
+  ano: number;
+  mes: number;
+  pais_origem: string;
+  total_kg: number;
+};
+
+export type IEImportersStackedRow = {
+  ano: number;
+  mes: number;
+  unified_importer: string;
+  total_mil_m3: number;
+};
+
+export type IEYoyTableRow = {
+  entity: string;
+  last_12m: number;
+  prev_12m: number;
+  yoy_pct: number | null;
+};
+
+export type IEExportsSerieRow = {
+  ano: number;
+  mes: number;
+  produto: string;
+  volume_m3: number;
+  valor_usd: number;
+};
+
+/**
+ * Returns the available year range and the 3 unified product names.
+ * Result is stable — call once on mount.
+ */
+export async function rpcGetImportsExportsFiltros(
+  supabase: SupabaseClient,
+): Promise<IEFiltrosResult | null> {
+  try {
+    const { data, error } = await supabase.rpc("get_imports_exports_filtros");
+    if (error) throw error;
+    const rows = (data ?? []) as IEFiltrosResult[];
+    return rows[0] ?? null;
+  } catch (e) {
+    console.error("get_imports_exports_filtros failed", e);
+    return null;
+  }
+}
+
+/**
+ * Stacked bar data for Panel A — imports by origin country.
+ * Server returns top-N countries by total kg; non-top rows are bucketed as
+ * 'Others'. UI divides total_kg by 1e6 to get kilotons.
+ */
+export async function rpcGetImportsExportsPaisesStacked(
+  supabase: SupabaseClient,
+  unifiedProduct: string,
+  anoInicio: number,
+  anoFim: number,
+  topN = 10,
+): Promise<IEPaisesStackedRow[]> {
+  try {
+    const { data, error } = await supabase.rpc(
+      "get_imports_exports_paises_stacked",
+      {
+        p_unified_product: unifiedProduct,
+        p_ano_inicio: anoInicio,
+        p_ano_fim: anoFim,
+        p_top_n: topN,
+      },
+    );
+    if (error) throw error;
+    return ((data ?? []) as IEPaisesStackedRow[]).map((r) => ({
+      ano: Number(r.ano),
+      mes: Number(r.mes),
+      pais_origem: String(r.pais_origem),
+      total_kg: Number(r.total_kg ?? 0),
+    }));
+  } catch (e) {
+    console.error("get_imports_exports_paises_stacked failed", e);
+    return [];
+  }
+}
+
+/**
+ * Stacked bar data for Panel B — imports by importer group.
+ * Quantity is already in mil m³ (server-side JOIN with ncm_densidade_kg_m3).
+ * Returns 0 rows while cnpj='__legacy__' sentinel exists (pre-backfill state).
+ * UI should show an informational empty state, not an error.
+ */
+export async function rpcGetImportsExportsImportersStacked(
+  supabase: SupabaseClient,
+  unifiedProduct: string,
+  anoInicio: number,
+  anoFim: number,
+  topN = 10,
+): Promise<IEImportersStackedRow[]> {
+  try {
+    const { data, error } = await supabase.rpc(
+      "get_imports_exports_importers_stacked",
+      {
+        p_unified_product: unifiedProduct,
+        p_ano_inicio: anoInicio,
+        p_ano_fim: anoFim,
+        p_top_n: topN,
+      },
+    );
+    if (error) throw error;
+    return ((data ?? []) as IEImportersStackedRow[]).map((r) => ({
+      ano: Number(r.ano),
+      mes: Number(r.mes),
+      unified_importer: String(r.unified_importer),
+      total_mil_m3: Number(r.total_mil_m3 ?? 0),
+    }));
+  } catch (e) {
+    console.error("get_imports_exports_importers_stacked failed", e);
+    return [];
+  }
+}
+
+/**
+ * YoY table for the "Last 12 months" section.
+ * p_scope: 'paises' → units kt; 'importers' → units mil m³.
+ * yoy_pct is null when prev_12m = 0 (no prior-year data).
+ * Relative to (p_ano_fim, p_mes_fim) — use the max year in the period + Dec.
+ */
+export async function rpcGetImportsExportsYoyTable(
+  supabase: SupabaseClient,
+  scope: "paises" | "importers",
+  unifiedProduct: string,
+  anoFim: number,
+  mesFim: number,
+  topN = 10,
+): Promise<IEYoyTableRow[]> {
+  try {
+    const { data, error } = await supabase.rpc(
+      "get_imports_exports_yoy_table",
+      {
+        p_scope: scope,
+        p_unified_product: unifiedProduct,
+        p_ano_fim: anoFim,
+        p_mes_fim: mesFim,
+        p_top_n: topN,
+      },
+    );
+    if (error) throw error;
+    return ((data ?? []) as IEYoyTableRow[]).map((r) => ({
+      entity: String(r.entity),
+      last_12m: Number(r.last_12m ?? 0),
+      prev_12m: Number(r.prev_12m ?? 0),
+      yoy_pct: r.yoy_pct != null ? Number(r.yoy_pct) : null,
+    }));
+  } catch (e) {
+    console.error("get_imports_exports_yoy_table failed", e);
+    return [];
+  }
+}
+
+/**
+ * Exports time series from anp_daie (operacao = 'EXPORTAÇÃO').
+ * Always fetch all 3 products; UI filters visibility with exportsProductsVisible.
+ * volume_m3 / 1e3 = mil m³. valor_usd is raw USD.
+ */
+export async function rpcGetImportsExportsExportsSerie(
+  supabase: SupabaseClient,
+  unifiedProducts: string[],
+  anoInicio: number,
+  anoFim: number,
+): Promise<IEExportsSerieRow[]> {
+  try {
+    const { data, error } = await supabase.rpc(
+      "get_imports_exports_exports_serie",
+      {
+        p_unified_products: unifiedProducts,
+        p_ano_inicio: anoInicio,
+        p_ano_fim: anoFim,
+      },
+    );
+    if (error) throw error;
+    return ((data ?? []) as IEExportsSerieRow[]).map((r) => ({
+      ano: Number(r.ano),
+      mes: Number(r.mes),
+      produto: String(r.produto),
+      volume_m3: Number(r.volume_m3 ?? 0),
+      valor_usd: Number(r.valor_usd ?? 0),
+    }));
+  } catch (e) {
+    console.error("get_imports_exports_exports_serie failed", e);
+    return [];
+  }
+}
