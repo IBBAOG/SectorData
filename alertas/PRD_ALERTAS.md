@@ -22,7 +22,8 @@ alertas/
 │   ├── anp_painel_combustiveis.py
 │   ├── anp_glp.py
 │   ├── anp_cdp_producao_poco.py
-│   └── mdic_comex.py
+│   ├── mdic_comex.py
+│   └── etl_workflow_stuck.py
 ├── scripts/                    # Consolidadores por base
 │   ├── anp_lpc_ultimas/consolidar.py + visualizar.py
 │   ├── anp_ppi/consolidar.py + visualizar.py
@@ -63,7 +64,7 @@ python alertas/monitor.py --base anp_ppi
 python alertas/monitor.py --loop --intervalo 30
 ```
 
-Slugs disponíveis: `anp_lpc_ultimas`, `anp_sintese_semanal`, `anp_ppi`, `anp_precos_produtores`, `anp_desembaracos`, `anp_dados_abertos_ie`, `anp_painel_combustiveis`, `anp_glp`, `anp_cdp_producao_poco`, `mdic_comex`, `precos_distribuicao`.
+Slugs disponíveis: `anp_lpc_ultimas`, `anp_sintese_semanal`, `anp_ppi`, `anp_precos_produtores`, `anp_desembaracos`, `anp_dados_abertos_ie`, `anp_painel_combustiveis`, `anp_glp`, `anp_cdp_producao_poco`, `mdic_comex`, `precos_distribuicao`, `etl_workflow_stuck`.
 
 ---
 
@@ -372,6 +373,31 @@ python scripts/anp_cdp_upload.py --from-csv-dir output/anp/
 - **Base leve**: sem Playwright, sem scraping — apenas consulta Supabase. Roda no monitor default a cada 2h.
 - **Requer**: `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` no ambiente. Sem eles, retorna False silenciosamente.
 - **Script standalone**: `alertas/scripts/precos_distribuicao/consolidar.py` — pode ser invocado para teste manual sem passar pelo monitor completo.
+
+---
+
+### 13. ETL Workflows — Consecutive Failures Detector (`etl_workflow_stuck`)
+
+- **Fonte**: GitHub Actions run history via `gh run list` (CLI) ou GitHub REST API (`/repos/.../actions/workflows/.../runs`).
+- **Detecção**: para cada workflow na lista `CRITICAL_WORKFLOWS`, conta runs consecutivas com `conclusion in {failure, timed_out, startup_failure}` no topo do histórico. `cancelled` runs são ignorados (usuário pode cancelar manualmente sem isso indicar falha). Se N≥3 falhas consecutivas → workflow marcado como "stuck".
+- **Debounce de transição**: alerta é enviado apenas na transição de estado:
+  - `ok` → `stuck`: email de alerta com tabela de workflows travados.
+  - `stuck` → `ok`: email de recuperação (fecha o loop mental).
+  - `stuck` → `stuck`: sem re-alerta (só atualiza `consecutive_failures` no estado).
+- **Estado**: `alertas/estado/etl_workflow_stuck.json` — uma chave por workflow:
+  ```json
+  {
+    "etl_anp_cdp.yml": { "status": "stuck", "since": "2026-05-23", "consecutive_failures": 8 },
+    "etl_mdic_comex.yml": { "status": "ok" }
+  }
+  ```
+- **Sem download**: não baixa arquivos. `baixar()` retorna `[]`.
+- **Frequência**: base leve — roda no monitor default (cada 2h ou conforme o cron configurado). Não precisa de cadência separada.
+- **Autenticação GitHub**: tenta `gh` CLI primeiro. Se não disponível, usa `GITHUB_TOKEN` env var via REST API. Se nenhum dos dois estiver disponível, pula o workflow com aviso e continua (não derruba a base).
+- **Workflows monitorados** (12 ao todo — `supabase_deploy.yml` excluído intencionalmente):
+  `etl_anp_cdp`, `etl_anp_cdp_diaria`, `etl_anp_fase3`, `etl_anp_precos`, `etl_anp_lpc`, `etl_anp_vendas`, `etl_anp_voip`, `etl_anp_subsidy_diesel`, `etl_mdic_comex`, `etl_sindicom`, `etl_navios_lineup`, `etl_ais_positions`.
+- **Secret novo recomendado**: `GITHUB_TOKEN` (disponível automaticamente em GitHub Actions via `${{ secrets.GITHUB_TOKEN }}`). Para runs locais, exportar `export GITHUB_TOKEN=ghp_xxx` no shell do monitor.
+- **Caso que motivou a criação** (2026-05-25): `etl_anp_cdp.yml` ficou travado por 3 dias (57/60 runs falhando); usuário percebeu apenas pelo dashboard `/anp-cdp-bsw` sem dados novos.
 
 ---
 

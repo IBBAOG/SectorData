@@ -42,6 +42,7 @@ from bases.anp_glp                  import AnpGlp
 from bases.mdic_comex               import MdicComex
 from bases.anp_cdp_producao_poco    import AnpCdpProducaoPoco
 from bases.precos_distribuicao      import PrecosDistribuicao
+from bases.etl_workflow_stuck       import EtlWorkflowStuck
 
 # Bases que requerem dependências pesadas (Playwright + Chromium).
 # São puladas no run default (a cada 2h) porque o custo é desproporcional e cada
@@ -66,6 +67,7 @@ MONITORES = [
     MdicComex(),
     AnpCdpProducaoPoco(),
     PrecosDistribuicao(),
+    EtlWorkflowStuck(),
 ]
 
 _BY_SLUG = {m.slug: m for m in MONITORES}
