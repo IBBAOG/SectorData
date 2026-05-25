@@ -60,7 +60,9 @@ COMMENT ON COLUMN public.news_hunter_default_keywords.match_type IS
 -- 2. admin_list_default_news_keywords() — return match_type too
 -- =============================================================================
 -- DROP first because the return signature changes (cannot CREATE OR REPLACE
--- across return type changes).
+-- across return type changes). The 0-arg signature is identical between the
+-- 230000 (older return shape) and 260000 (new return shape) variants, so a
+-- single IF EXISTS drop handles fresh-apply and partial-replay symmetrically.
 
 DROP FUNCTION IF EXISTS public.admin_list_default_news_keywords();
 
@@ -95,9 +97,17 @@ GRANT EXECUTE ON FUNCTION public.admin_list_default_news_keywords() TO authentic
 -- =============================================================================
 -- 3. admin_add_default_news_keyword(p_keyword, p_match_type)
 -- =============================================================================
--- DROP first because parameter list changes.
+-- The parameter list changes (1-arg from 230000 → 2-arg here). PostgreSQL
+-- treats these as distinct functions, so we must DROP both possible signatures
+-- before CREATE. Without the second DROP, replaying this migration over a
+-- state where 260000 already ran once (e.g. `supabase db reset` followed by a
+-- new push, or any environment where the 2-arg got introduced out-of-band)
+-- fails with SQLSTATE 42723 (duplicate function). CREATE OR REPLACE alone is
+-- not enough — PG won't let us replace a function with one that has a
+-- different parameter signature, even via OR REPLACE.
 
 DROP FUNCTION IF EXISTS public.admin_add_default_news_keyword(TEXT);
+DROP FUNCTION IF EXISTS public.admin_add_default_news_keyword(TEXT, TEXT);
 
 CREATE FUNCTION public.admin_add_default_news_keyword(
   p_keyword     TEXT,
@@ -206,6 +216,8 @@ GRANT EXECUTE ON FUNCTION public.admin_set_default_news_keyword_match_type(TEXT,
 -- =============================================================================
 -- Re-declared here only because the original migration is in the chain; we
 -- DROP+CREATE for idempotency and explicit ownership. Behaviour identical.
+-- Signature unchanged (1-arg TEXT), so a single IF EXISTS drop is symmetric
+-- across fresh-apply and replay.
 
 DROP FUNCTION IF EXISTS public.admin_remove_default_news_keyword(TEXT);
 
