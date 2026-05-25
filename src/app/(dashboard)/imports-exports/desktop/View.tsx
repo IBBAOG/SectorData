@@ -2,20 +2,17 @@
 
 // Desktop view for /imports-exports (≥769px).
 //
-// Layout:
-//   DashboardHeader  (title + period badge + ExportPanel in rightSlot)
-//   SegmentedToggle  [Imports] [Exports]
-//   ┌─ sidebar (left 220px) ─────────────────────────────────────────┐
-//   │  Product radio: Diesel / Gasoline / Crude Oil                  │
-//   │  PeriodSlider                                                  │
-//   └────────────────────────────────────────────────────────────────┘
-//   Imports tab:
-//     Panel A — By Origin Country (stacked bar, kt)
-//     Panel B — By Importer (stacked bar, mil m³)
-//     YoY table for each panel
-//   Exports tab:
-//     Product multi-select pills + Volume/USD toggle
-//     Multi-line chart
+// Outer shell follows the project canonical pattern:
+//   NavBar → container-fluid g-0 → row g-0
+//     col-xxl-2 col-md-3 (#sidebar with BrandLogo + sidebar-* CSS classes)
+//     col-xxl-10 col-md-9 (#page-content)
+//
+// Data logic lives entirely in useImportsExportsData — this file is
+// presentation only.
+//
+// Binding sync rule (CLAUDE.md § Dual-view policy): any meaningful change
+// here (new filter, chart, KPI, copy) must land in mobile/View.tsx in the
+// SAME commit, or the commit message must declare [desktop-only].
 //
 // Units — CRITICAL: never drift label from divisor.
 //   Panel A: total_kg / 1e6 = kt. Label "kt".
@@ -25,24 +22,25 @@
 
 import dynamic from "next/dynamic";
 import type { Layout, PlotData } from "plotly.js";
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
-import DashboardHeader from "@/components/dashboard/DashboardHeader";
-import ChartSection from "@/components/dashboard/ChartSection";
-import ExportPanel from "@/components/dashboard/ExportPanel";
-import SegmentedToggle from "@/components/dashboard/SegmentedToggle";
-import BarrelLoading from "@/components/dashboard/BarrelLoading";
+import NavBar from "../../../../components/NavBar";
+import BrandLogo from "../../../../components/BrandLogo";
+import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
+import ChartSection from "../../../../components/dashboard/ChartSection";
+import ExportPanel from "../../../../components/dashboard/ExportPanel";
+import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
+import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
+import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 
 import { useImportsExportsData } from "../useImportsExportsData";
 import type {
   UnifiedProduct,
-  PaisesStackedRow,
-  ImportersStackedRow,
   ExportsSerieRow,
   YoyTableRow,
 } from "../useImportsExportsData";
 
-import { COMMON_LAYOUT, AXIS_LINE, PALETTE } from "@/lib/plotlyDefaults";
+import { COMMON_LAYOUT, AXIS_LINE, PALETTE } from "../../../../lib/plotlyDefaults";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
@@ -60,13 +58,9 @@ function colourForEntity(entities: string[], entity: string): string {
 
 type StackedRow = { ano: number; mes: number; name: string; value: number };
 
-function buildStackedTraces(
-  rows: StackedRow[],
-  unit: string,
-): PlotData[] {
+function buildStackedTraces(rows: StackedRow[], unit: string): PlotData[] {
   if (!rows.length) return [];
 
-  // Collect unique x-axis labels (YYYY-MM) and unique entity names
   const xSet = new Set<string>();
   const entitySet = new Set<string>();
   for (const r of rows) {
@@ -74,13 +68,11 @@ function buildStackedTraces(
     entitySet.add(r.name);
   }
   const xs = Array.from(xSet).sort();
-  // Put "Others" last
   const entities = [
     ...Array.from(entitySet).filter((e) => e !== "Others").sort(),
     ...(entitySet.has("Others") ? ["Others"] : []),
   ];
 
-  // Build a lookup: entity → month → value
   const lookup = new Map<string, Map<string, number>>();
   for (const r of rows) {
     const key = `${r.ano}-${String(r.mes).padStart(2, "0")}`;
@@ -168,39 +160,17 @@ function YoYTable({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr
-              key={row.entity}
-              style={{ borderBottom: "1px solid #f0f0f0" }}
-            >
+            <tr key={row.entity} style={{ borderBottom: "1px solid #f0f0f0" }}>
               <td style={{ padding: "4px 8px", fontFamily: "Arial" }}>
                 {row.entity}
               </td>
-              <td
-                style={{
-                  padding: "4px 8px",
-                  textAlign: "right",
-                  fontFamily: "Arial",
-                }}
-              >
+              <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: "Arial" }}>
                 {row.last_12m.toLocaleString("en-US", { maximumFractionDigits: 1 })}
               </td>
-              <td
-                style={{
-                  padding: "4px 8px",
-                  textAlign: "right",
-                  fontFamily: "Arial",
-                  color: "#777",
-                }}
-              >
+              <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: "Arial", color: "#777" }}>
                 {row.prev_12m.toLocaleString("en-US", { maximumFractionDigits: 1 })}
               </td>
-              <td
-                style={{
-                  padding: "4px 8px",
-                  textAlign: "right",
-                  fontFamily: "Arial",
-                }}
-              >
+              <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: "Arial" }}>
                 <YoYCell value={row.yoy_pct} />
               </td>
             </tr>
@@ -236,114 +206,9 @@ function ImporterEmptyState() {
   );
 }
 
-// ─── Product radio ─────────────────────────────────────────────────────────────
+// ─── Products ──────────────────────────────────────────────────────────────────
 
 const PRODUCTS: UnifiedProduct[] = ["Diesel", "Gasoline", "Crude Oil"];
-
-function ProductRadio({
-  value,
-  onChange,
-}: {
-  value: UnifiedProduct;
-  onChange: (v: UnifiedProduct) => void;
-}) {
-  return (
-    <div style={{ fontFamily: "Arial" }}>
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 700,
-          color: "#555",
-          textTransform: "uppercase",
-          letterSpacing: "0.5px",
-          marginBottom: 8,
-        }}
-      >
-        Product
-      </div>
-      {PRODUCTS.map((p) => (
-        <label
-          key={p}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            marginBottom: 6,
-            cursor: "pointer",
-            fontSize: 13,
-            color: value === p ? "#ff5000" : "#333",
-            fontWeight: value === p ? 700 : 400,
-          }}
-        >
-          <input
-            type="radio"
-            name="ie-product"
-            value={p}
-            checked={value === p}
-            onChange={() => onChange(p)}
-            style={{ accentColor: "#ff5000" }}
-          />
-          {p}
-        </label>
-      ))}
-    </div>
-  );
-}
-
-// ─── Period slider ─────────────────────────────────────────────────────────────
-
-function PeriodSliderSimple({
-  min,
-  max,
-  value,
-  onChange,
-}: {
-  min: number;
-  max: number;
-  value: [number, number];
-  onChange: (v: [number, number]) => void;
-}) {
-  // Simple range — using two range inputs stacked. The shared PeriodSlider
-  // component (rc-slider) is also available but this inline version keeps
-  // the sidebar self-contained without prop-drilling the full years array.
-  return (
-    <div style={{ fontFamily: "Arial" }}>
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 700,
-          color: "#555",
-          textTransform: "uppercase",
-          letterSpacing: "0.5px",
-          marginBottom: 8,
-        }}
-      >
-        Period
-      </div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <select
-          value={value[0]}
-          onChange={(e) => onChange([Number(e.target.value), Math.max(Number(e.target.value), value[1])])}
-          style={{ fontSize: 12, padding: "2px 4px", borderRadius: 4, border: "1px solid #ccc" }}
-        >
-          {Array.from({ length: max - min + 1 }, (_, i) => min + i).map((y) => (
-            <option key={y} value={y}>{y}</option>
-          ))}
-        </select>
-        <span style={{ fontSize: 12, color: "#888" }}>–</span>
-        <select
-          value={value[1]}
-          onChange={(e) => onChange([Math.min(value[0], Number(e.target.value)), Number(e.target.value)])}
-          style={{ fontSize: 12, padding: "2px 4px", borderRadius: 4, border: "1px solid #ccc" }}
-        >
-          {Array.from({ length: max - min + 1 }, (_, i) => min + i).map((y) => (
-            <option key={y} value={y}>{y}</option>
-          ))}
-        </select>
-      </div>
-    </div>
-  );
-}
 
 // ─── Shared chart layout ───────────────────────────────────────────────────────
 
@@ -390,13 +255,30 @@ export default function DesktopView(): React.ReactElement {
     yoyImportersLoading,
     exportsData,
     exportsLoading,
-    periodBadge,
     visible,
     visibilityLoading,
   } = useImportsExportsData();
 
   const [excelBusy, setExcelBusy] = useState(false);
   const [csvBusy, setCsvBusy] = useState(false);
+
+  // ── Derived: year array for PeriodSlider ────────────────────────────────────
+  const anoMin = filtros?.ano_min ?? 2010;
+  const anoMax = filtros?.ano_max ?? new Date().getFullYear();
+  const allYears = useMemo(
+    () => Array.from({ length: anoMax - anoMin + 1 }, (_, i) => anoMin + i),
+    [anoMin, anoMax],
+  );
+
+  // Convert period [yearValue, yearValue] → [index, index] for PeriodSlider
+  const sliderValue: [number, number] = useMemo(() => {
+    const startIdx = allYears.indexOf(filters.period[0]);
+    const endIdx = allYears.indexOf(filters.period[1]);
+    return [
+      startIdx >= 0 ? startIdx : 0,
+      endIdx >= 0 ? endIdx : allYears.length - 1,
+    ];
+  }, [allYears, filters.period]);
 
   // ── Derived: stacked traces ─────────────────────────────────────────────────
   // All useMemo calls MUST be before any conditional early returns (Rules of Hooks).
@@ -499,14 +381,12 @@ export default function DesktopView(): React.ReactElement {
 
       const wb = new ExcelJS.Workbook();
 
-      // Sheet 1: Panel A — countries (kt)
       const wsA = wb.addWorksheet("Imports by Country (kt)");
       wsA.addRow(["Year", "Month", "Country", "Volume (kt)"]);
       for (const r of paisesData) {
         wsA.addRow([r.ano, r.mes, r.pais_origem, +(r.total_kg / 1e6).toFixed(3)]);
       }
 
-      // Sheet 2: Panel B — importers (mil m³)
       const wsB = wb.addWorksheet("Imports by Importer (mil m3)");
       wsB.addRow(["Year", "Month", "Importer", "Volume (mil m3)"]);
       for (const r of importersData) {
@@ -579,243 +459,265 @@ export default function DesktopView(): React.ReactElement {
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
-  const anoMin = filtros?.ano_min ?? 2010;
-  const anoMax = filtros?.ano_max ?? new Date().getFullYear();
-
   return (
-    <div style={{ fontFamily: "Arial, sans-serif", padding: "16px 24px" }}>
-      <DashboardHeader
-        title="Imports & Exports"
-        sub="Brazilian fuel trade flows — by origin country and importer group"
-        period={[filters.period[0], filters.period[1]]}
-        lang="en"
-        rightSlot={
-          <ExportPanel
-            actions={[
-              {
-                kind: "excel",
-                label: "Excel",
-                onClick: handleExcelExport,
-                busy: excelBusy,
-                disabled: excelBusy || csvBusy,
-                loadingLabel: "Building workbook…",
-              },
-              {
-                kind: "csv",
-                label: "CSV (zip)",
-                onClick: handleCsvExport,
-                busy: csvBusy,
-                disabled: excelBusy || csvBusy,
-              },
-            ]}
-          />
-        }
-      />
+    <div>
+      <NavBar />
+      <div className="container-fluid g-0">
+        <div className="row g-0">
 
-      {/* Tab selector */}
-      <div style={{ marginBottom: 16, maxWidth: 300 }}>
-        <SegmentedToggle
-          options={[
-            { value: "imports" as const, label: "Imports" },
-            { value: "exports" as const, label: "Exports" },
-          ]}
-          value={filters.tab}
-          onChange={(v) => setFilters({ tab: v })}
-          variant="compact"
-        />
-      </div>
+          {/* ── Sidebar ── */}
+          <div className="col-xxl-2 col-md-3 p-0">
+            <div id="sidebar">
+              <div style={{ textAlign: "center" }}>
+                <BrandLogo variant="sidebar" />
+              </div>
+              <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
+              <div className="sidebar-section-label">Filters</div>
 
-      {/* Body: sidebar + content */}
-      <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
-        {/* Sidebar */}
-        <div
-          style={{
-            minWidth: 200,
-            maxWidth: 220,
-            flexShrink: 0,
-            padding: "16px",
-            border: "1px solid #e6e6ec",
-            borderRadius: 12,
-            background: "#fafafa",
-            display: "flex",
-            flexDirection: "column",
-            gap: 20,
-          }}
-        >
-          {/* Product radio — hidden in exports tab (all 3 products visible) */}
-          {filters.tab === "imports" && (
-            <ProductRadio
-              value={filters.unifiedProduct}
-              onChange={(p) => setFilters({ unifiedProduct: p })}
-            />
-          )}
-
-          {/* Period */}
-          {filtrosLoading ? (
-            <div style={{ fontSize: 12, color: "#aaa" }}>Loading period…</div>
-          ) : (
-            <PeriodSliderSimple
-              min={anoMin}
-              max={anoMax}
-              value={filters.period}
-              onChange={(v) => setFilters({ period: v })}
-            />
-          )}
-        </div>
-
-        {/* Main content area */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {/* ── IMPORTS TAB ── */}
-          {filters.tab === "imports" && (
-            <div>
-              {/* Panel A */}
-              <ChartSection
-                title="By Origin Country"
-                loading={paisesLoading}
-                height={340}
-              >
-                {paisesTraces.length > 0 ? (
-                  <Plot
-                    data={paisesTraces}
-                    layout={barLayout("kt")}
-                    config={{ responsive: true, displayModeBar: false }}
-                    style={{ width: "100%" }}
-                  />
-                ) : !paisesLoading ? (
-                  <div style={{ padding: 24, color: "#aaa", fontSize: 13 }}>
-                    No data for the selected period and product.
-                  </div>
-                ) : null}
-              </ChartSection>
-
-              <YoYTable
-                rows={yoyPaisesData}
-                loading={yoyPaisesLoading}
-                volumeLabel="kt"
-                title="By Origin Country"
-              />
-
-              <div style={{ height: 24 }} />
-
-              {/* Panel B */}
-              <ChartSection
-                title="By Importer (Brazil)"
-                loading={importersLoading}
-                height={340}
-              >
-                {importersData.length > 0 ? (
-                  <Plot
-                    data={importersTraces}
-                    layout={barLayout("mil m³")}
-                    config={{ responsive: true, displayModeBar: false }}
-                    style={{ width: "100%" }}
-                  />
-                ) : !importersLoading ? (
-                  <ImporterEmptyState />
-                ) : null}
-              </ChartSection>
-
-              {importersData.length > 0 && (
-                <YoYTable
-                  rows={yoyImportersData}
-                  loading={yoyImportersLoading}
-                  volumeLabel="mil m³"
-                  title="By Importer"
-                />
-              )}
-            </div>
-          )}
-
-          {/* ── EXPORTS TAB ── */}
-          {filters.tab === "exports" && (
-            <div>
-              {/* Controls row */}
-              <div
-                style={{
-                  display: "flex",
-                  gap: 16,
-                  alignItems: "center",
-                  marginBottom: 12,
-                  flexWrap: "wrap",
-                }}
-              >
-                {/* Product visibility pills */}
-                <div style={{ display: "flex", gap: 8 }}>
-                  {PRODUCTS.map((p, i) => {
-                    const active = filters.exportsProductsVisible.includes(p);
-                    return (
-                      <button
-                        key={p}
-                        type="button"
-                        onClick={() => {
-                          const next = active
-                            ? filters.exportsProductsVisible.filter((x) => x !== p)
-                            : [...filters.exportsProductsVisible, p];
-                          if (next.length > 0) setFilters({ exportsProductsVisible: next });
-                        }}
-                        style={{
-                          padding: "4px 14px",
-                          borderRadius: 999,
-                          border: `2px solid ${PALETTE[i % PALETTE.length]}`,
-                          background: active ? PALETTE[i % PALETTE.length] : "transparent",
-                          color: active ? "#fff" : PALETTE[i % PALETTE.length],
-                          fontFamily: "Arial",
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: "pointer",
-                        }}
+              {/* Product — only relevant for the imports tab */}
+              {filters.tab === "imports" && (
+                <div className="sidebar-filter-section">
+                  <div className="sidebar-filter-label">Product</div>
+                  {PRODUCTS.map((p) => (
+                    <div key={p} className="form-check" style={{ marginBottom: 4 }}>
+                      <input
+                        className="form-check-input"
+                        type="radio"
+                        id={`ie-prod-${p}`}
+                        name="ie-product"
+                        checked={filters.unifiedProduct === p}
+                        onChange={() => setFilters({ unifiedProduct: p })}
+                      />
+                      <label
+                        className="form-check-label"
+                        htmlFor={`ie-prod-${p}`}
+                        style={{ fontFamily: "Arial", fontSize: 11, cursor: "pointer" }}
                       >
                         {p}
-                      </button>
-                    );
-                  })}
+                      </label>
+                    </div>
+                  ))}
                 </div>
+              )}
 
-                {/* Volume / USD toggle */}
-                <div style={{ maxWidth: 200 }}>
-                  <SegmentedToggle
-                    options={[
-                      { value: "volume" as const, label: "Volume (mil m³)" },
-                      { value: "usd" as const, label: "Value (USD)" },
-                    ]}
-                    value={filters.exportsYAxis}
-                    onChange={(v) => setFilters({ exportsYAxis: v })}
-                    variant="compact"
-                  />
-                </div>
-              </div>
-
-              <ChartSection
-                title="Exports — Fuel Trade"
-                loading={exportsLoading}
-                height={360}
-              >
-                {exportsTraces.length > 0 ? (
-                  <Plot
-                    data={exportsTraces}
-                    layout={exportsLayout}
-                    config={{ responsive: true, displayModeBar: false }}
-                    style={{ width: "100%" }}
-                  />
-                ) : !exportsLoading ? (
-                  <div style={{ padding: 24, color: "#aaa", fontSize: 13 }}>
-                    No export data for the selected period.
+              {/* Period */}
+              <div className="sidebar-filter-section">
+                <div className="sidebar-filter-label">Period</div>
+                {filtrosLoading ? (
+                  <div style={{ fontSize: 11, color: "#aaa", fontFamily: "Arial" }}>
+                    Loading…
                   </div>
+                ) : allYears.length > 0 ? (
+                  <PeriodSlider
+                    years={allYears}
+                    value={sliderValue}
+                    onChange={(v) =>
+                      setFilters({ period: [allYears[v[0]], allYears[v[1]]] })
+                    }
+                  />
                 ) : null}
-              </ChartSection>
-
-              <div
-                style={{
-                  marginTop: 12,
-                  fontSize: 11,
-                  color: "#aaa",
-                  fontStyle: "italic",
-                }}
-              >
-                Source: ANP DAIE — Exports tab has no country or importer breakdown.
               </div>
             </div>
-          )}
+          </div>
+
+          {/* ── Main content ── */}
+          <div className="col-xxl-10 col-md-9">
+            <div id="page-content">
+              <DashboardHeader
+                title="Imports & Exports"
+                sub="Brazilian fuel trade flows — by origin country and importer group"
+                period={[filters.period[0], filters.period[1]]}
+                lang="en"
+                rightSlot={
+                  <ExportPanel
+                    actions={[
+                      {
+                        kind: "excel",
+                        label: "Excel",
+                        onClick: handleExcelExport,
+                        busy: excelBusy,
+                        disabled: excelBusy || csvBusy,
+                        loadingLabel: "Building workbook…",
+                      },
+                      {
+                        kind: "csv",
+                        label: "CSV (zip)",
+                        onClick: handleCsvExport,
+                        busy: csvBusy,
+                        disabled: excelBusy || csvBusy,
+                      },
+                    ]}
+                  />
+                }
+              />
+
+              {/* Imports / Exports tab selector */}
+              <div style={{ marginBottom: 16, maxWidth: 300 }}>
+                <SegmentedToggle
+                  options={[
+                    { value: "imports" as const, label: "Imports" },
+                    { value: "exports" as const, label: "Exports" },
+                  ]}
+                  value={filters.tab}
+                  onChange={(v) => setFilters({ tab: v })}
+                  variant="compact"
+                />
+              </div>
+
+              {/* ── IMPORTS TAB ── */}
+              {filters.tab === "imports" && (
+                <div>
+                  {/* Panel A */}
+                  <ChartSection
+                    title="By Origin Country"
+                    loading={paisesLoading}
+                    height={340}
+                  >
+                    {paisesTraces.length > 0 ? (
+                      <Plot
+                        data={paisesTraces}
+                        layout={barLayout("kt")}
+                        config={{ responsive: true, displayModeBar: false }}
+                        style={{ width: "100%" }}
+                      />
+                    ) : !paisesLoading ? (
+                      <div style={{ padding: 24, color: "#aaa", fontSize: 13 }}>
+                        No data for the selected period and product.
+                      </div>
+                    ) : null}
+                  </ChartSection>
+
+                  <YoYTable
+                    rows={yoyPaisesData}
+                    loading={yoyPaisesLoading}
+                    volumeLabel="kt"
+                    title="By Origin Country"
+                  />
+
+                  <div style={{ height: 24 }} />
+
+                  {/* Panel B */}
+                  <ChartSection
+                    title="By Importer (Brazil)"
+                    loading={importersLoading}
+                    height={340}
+                  >
+                    {importersData.length > 0 ? (
+                      <Plot
+                        data={importersTraces}
+                        layout={barLayout("mil m³")}
+                        config={{ responsive: true, displayModeBar: false }}
+                        style={{ width: "100%" }}
+                      />
+                    ) : !importersLoading ? (
+                      <ImporterEmptyState />
+                    ) : null}
+                  </ChartSection>
+
+                  {importersData.length > 0 && (
+                    <YoYTable
+                      rows={yoyImportersData}
+                      loading={yoyImportersLoading}
+                      volumeLabel="mil m³"
+                      title="By Importer"
+                    />
+                  )}
+                </div>
+              )}
+
+              {/* ── EXPORTS TAB ── */}
+              {filters.tab === "exports" && (
+                <div>
+                  {/* Controls row */}
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 16,
+                      alignItems: "center",
+                      marginBottom: 12,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    {/* Product visibility pills */}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {PRODUCTS.map((p, i) => {
+                        const active = filters.exportsProductsVisible.includes(p);
+                        return (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => {
+                              const next = active
+                                ? filters.exportsProductsVisible.filter((x) => x !== p)
+                                : [...filters.exportsProductsVisible, p];
+                              if (next.length > 0) setFilters({ exportsProductsVisible: next });
+                            }}
+                            style={{
+                              padding: "4px 14px",
+                              borderRadius: 999,
+                              border: `2px solid ${PALETTE[i % PALETTE.length]}`,
+                              background: active ? PALETTE[i % PALETTE.length] : "transparent",
+                              color: active ? "#fff" : PALETTE[i % PALETTE.length],
+                              fontFamily: "Arial",
+                              fontSize: 12,
+                              fontWeight: 600,
+                              cursor: "pointer",
+                            }}
+                          >
+                            {p}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Volume / USD toggle */}
+                    <div style={{ maxWidth: 200 }}>
+                      <SegmentedToggle
+                        options={[
+                          { value: "volume" as const, label: "Volume (mil m³)" },
+                          { value: "usd" as const, label: "Value (USD)" },
+                        ]}
+                        value={filters.exportsYAxis}
+                        onChange={(v) => setFilters({ exportsYAxis: v })}
+                        variant="compact"
+                      />
+                    </div>
+                  </div>
+
+                  <ChartSection
+                    title="Exports — Fuel Trade"
+                    loading={exportsLoading}
+                    height={360}
+                  >
+                    {exportsTraces.length > 0 ? (
+                      <Plot
+                        data={exportsTraces}
+                        layout={exportsLayout}
+                        config={{ responsive: true, displayModeBar: false }}
+                        style={{ width: "100%" }}
+                      />
+                    ) : !exportsLoading ? (
+                      <div style={{ padding: 24, color: "#aaa", fontSize: 13 }}>
+                        No export data for the selected period.
+                      </div>
+                    ) : null}
+                  </ChartSection>
+
+                  <div
+                    style={{
+                      marginTop: 12,
+                      fontSize: 11,
+                      color: "#aaa",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    Source: ANP DAIE — Exports tab has no country or importer breakdown.
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
         </div>
       </div>
     </div>

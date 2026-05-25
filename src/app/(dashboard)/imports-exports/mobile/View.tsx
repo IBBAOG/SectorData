@@ -3,26 +3,37 @@
 // Mobile view for /imports-exports (≤768px).
 //
 // Same analysis as desktop/View.tsx — same hook, same data, adapted shell:
-//   - MobileTabBar for Imports / Exports switching
-//   - FilterDrawer triggered by a sticky filter button (product + period)
-//   - Panels stack vertically
-//   - Charts via MobileChart
-//   - YoY rows via MobileDataCard
-//   - ExportFAB for export trigger
+//   MobileTopBar (sticky liquid glass) — canonical project top bar
+//   MobileTabBar for Imports / Exports switching
+//   FilterDrawer triggered by a sticky filter button (product + period)
+//   Panels stack vertically
+//   Charts via Plot (react-plotly.js with mobile-tuned layout)
+//   YoY rows via MobileDataCard
+//   ExportFAB for export trigger
 //
 // Binding sync rule: any meaningful change to data/filters here must land
 // in desktop/View.tsx in the same commit (CLAUDE.md § Dual-view policy).
+//
+// Units — CRITICAL: never drift label from divisor.
+//   Panel A: total_kg / 1e6 = kt. Label "kt".
+//   Panel B: total_mil_m3 already from RPC. Label "mil m³".
+//   Exports volume: volume_m3 / 1e3. Label "mil m³".
+//   Exports USD: valor_usd raw. Label "USD".
 
 import dynamic from "next/dynamic";
 import type { Layout, PlotData } from "plotly.js";
 import { useMemo, useState } from "react";
 
-import MobileTabBar from "@/components/dashboard/mobile/MobileTabBar";
-import FilterDrawer from "@/components/dashboard/mobile/FilterDrawer";
-import MobileDataCard from "@/components/dashboard/mobile/MobileDataCard";
-import ExportFAB from "@/components/dashboard/mobile/ExportFAB";
-import BottomSheet from "@/components/dashboard/mobile/BottomSheet";
-import BarrelLoading from "@/components/dashboard/BarrelLoading";
+import {
+  MobileTopBar,
+  FilterDrawer,
+  MobileDataCard,
+  ExportFAB,
+  BottomSheet,
+  MobileTabBar,
+  FilterIcon,
+} from "../../../../components/dashboard/mobile";
+import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 
 import { useImportsExportsData } from "../useImportsExportsData";
 import type {
@@ -31,7 +42,7 @@ import type {
   YoyTableRow,
 } from "../useImportsExportsData";
 
-import { COMMON_LAYOUT, AXIS_LINE, PALETTE } from "@/lib/plotlyDefaults";
+import { COMMON_LAYOUT, AXIS_LINE, PALETTE } from "../../../../lib/plotlyDefaults";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
@@ -193,13 +204,7 @@ function ImporterEmptyStateMobile() {
 
 // ─── Section heading ───────────────────────────────────────────────────────────
 
-function SectionHeading({
-  title,
-  loading,
-}: {
-  title: string;
-  loading?: boolean;
-}) {
+function SectionHeading({ title, loading }: { title: string; loading?: boolean }) {
   return (
     <div
       style={{
@@ -328,8 +333,7 @@ export default function MobileView(): React.ReactElement {
     yaxis: {
       ...AXIS_LINE,
       title: {
-        text:
-          filters.exportsYAxis === "volume" ? "mil m³" : "USD",
+        text: filters.exportsYAxis === "volume" ? "mil m³" : "USD",
         font: { family: "Arial", size: 10 },
       },
       tickformat: ",.1f",
@@ -439,35 +443,50 @@ export default function MobileView(): React.ReactElement {
   return (
     <div
       style={{
-        fontFamily: "Arial, Helvetica, sans-serif",
-        background: "var(--mobile-bg, #f5f5f7)",
+        maxWidth: 428,
+        margin: "0 auto",
         minHeight: "100dvh",
-        paddingBottom: 96,
+        background: "var(--mobile-bg, #f5f5f7)",
+        paddingBottom: "calc(88px + var(--mobile-safe-bottom, 0px))",
+        position: "relative",
+        fontFamily: "Arial, Helvetica, sans-serif",
+        color: "var(--mobile-text, #1a1a1a)",
+        overflowX: "hidden",
       }}
     >
-      {/* Header */}
+      {/* Canonical project top bar — same pattern as all other mobile views */}
+      <MobileTopBar
+        title={
+          <span style={{ fontWeight: 700, fontSize: 17, letterSpacing: "0.04em" }}>
+            SECTORDATA<span style={{ color: "var(--mobile-accent, #ff5000)" }}>.</span>
+          </span>
+        }
+        showAvatar
+        avatarInitials="SD"
+        avatarLabel="SectorData"
+      />
+
+      {/* Page sub-header: title + period badge + product badge */}
       <div
         style={{
-          padding: "16px 16px 12px",
-          background: "#fff",
-          borderBottom: "1px solid #e6e6ec",
+          padding: "14px 16px 10px",
+          background: "var(--mobile-surface, #fff)",
+          borderBottom: "1px solid var(--mobile-divider, #e6e6ec)",
         }}
       >
-        <div style={{ fontSize: 18, fontWeight: 700, color: "#1a1a1a" }}>
+        <div style={{ fontSize: 20, fontWeight: 700, color: "var(--mobile-text, #1a1a1a)", lineHeight: 1.2 }}>
           Imports & Exports
         </div>
-        <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
-          Period: {periodBadge}
+        <div style={{ fontSize: 11, color: "var(--mobile-text-muted, #888)", marginTop: 4 }}>
+          {periodBadge}
           {filters.tab === "imports" && (
-            <span style={{ marginLeft: 10 }}>
-              · Product: {filters.unifiedProduct}
-            </span>
+            <span style={{ marginLeft: 8 }}>· {filters.unifiedProduct}</span>
           )}
         </div>
       </div>
 
-      {/* Tab bar */}
-      <div style={{ background: "#fff", paddingTop: 8, paddingBottom: 4 }}>
+      {/* Tab bar — Imports / Exports */}
+      <div style={{ background: "var(--mobile-surface, #fff)", paddingTop: 8, paddingBottom: 4 }}>
         <MobileTabBar
           tabs={[
             { key: "imports", label: "Imports" },
@@ -480,16 +499,17 @@ export default function MobileView(): React.ReactElement {
         />
       </div>
 
-      {/* Filter button (sticky) */}
+      {/* Sticky filter trigger row */}
       <div
         style={{
           position: "sticky",
-          top: 0,
-          zIndex: 20,
-          background: "rgba(245,245,247,0.95)",
-          backdropFilter: "blur(8px)",
+          top: 56, // MobileTopBar height
+          zIndex: 22,
+          background: "var(--mobile-glass-bg, rgba(245,245,247,0.92))",
+          WebkitBackdropFilter: "var(--mobile-glass-blur, blur(8px))",
+          backdropFilter: "var(--mobile-glass-blur, blur(8px))",
+          borderBottom: "1px solid var(--mobile-glass-border, rgba(0,0,0,0.06))",
           padding: "8px 16px",
-          borderBottom: "1px solid #e6e6ec",
           display: "flex",
           justifyContent: "flex-end",
         }}
@@ -500,23 +520,19 @@ export default function MobileView(): React.ReactElement {
           style={{
             padding: "6px 14px",
             borderRadius: 999,
-            border: "1px solid #d0d0d0",
-            background: "#fff",
-            fontFamily: "Arial",
+            border: "1px solid var(--mobile-divider, #d0d0d0)",
+            background: "var(--mobile-surface, #fff)",
+            fontFamily: "Arial, Helvetica, sans-serif",
             fontSize: 12,
             fontWeight: 600,
-            color: "#333",
+            color: "var(--mobile-text, #333)",
             cursor: "pointer",
-            display: "flex",
+            display: "inline-flex",
             alignItems: "center",
             gap: 6,
           }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-            <line x1="4" y1="6" x2="20" y2="6" />
-            <line x1="8" y1="12" x2="16" y2="12" />
-            <line x1="12" y1="18" x2="12" y2="18" strokeLinecap="round" />
-          </svg>
+          <FilterIcon size={14} strokeWidth={2.2} />
           Filters
         </button>
       </div>
@@ -711,9 +727,7 @@ export default function MobileView(): React.ReactElement {
                   name="ie-product-mobile"
                   value={p}
                   checked={filters.unifiedProduct === p}
-                  onChange={() => {
-                    setFilters({ unifiedProduct: p });
-                  }}
+                  onChange={() => setFilters({ unifiedProduct: p })}
                   style={{ accentColor: "#ff5000", width: 18, height: 18 }}
                 />
                 {p}
