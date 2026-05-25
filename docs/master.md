@@ -222,7 +222,7 @@ ETL pode ler para análise; somente Alertas escreve.
 
 Cada workflow novo precisa: secrets registrados no GitHub, schedule cron, e linha no `docs/etl-pipelines/PRD.md`.
 
-Workflows ativos para as tabelas novas: `etl_mdic_comex.yml`, `etl_anp_precos.yml` (PPI + preços produtores + GLP), `etl_anp_fase3.yml` (DAIE + desembaraços enriquecidos com `importador`/`cnpj`/`uf_cnpj`; o antigo step `painel-importacoes` foi removido em 2026-05-25 junto com a tabela `anp_painel_imp_dist` na reforma `/imports-exports`), `etl_anp_lpc.yml`, `etl_sindicom.yml`, `etl_anp_cdp.yml` (CDP), `etl_anp_precos_distribuicao.yml` (preços de distribuição), `etl_anp_cdp_diaria.yml` (produção diária 3 níveis — campo/instalação/poço — 3×/dia, CLI `--level all --upload`), `etl_anp_voip.yml` (VOIP por campo — anual, 1º de maio, source BAR/ANP), `etl_anp_subsidy_diesel.yml` (referência de preços subsídio diesel — diário 11:30 UTC, script `pipelines/anp/subsidy_diesel_sync.py`, target `anp_subsidy_diesel_reference`). Ver `docs/etl-pipelines/PRD.md` para schedules e scripts.
+Workflows ativos para as tabelas novas: `etl_mdic_comex.yml`, `etl_anp_precos.yml` (PPI + preços produtores + GLP), `etl_anp_fase3.yml` (2 steps: DAIE + desembaraços enriquecidos com `importador`/`cnpj`/`uf_cnpj`; o antigo step `03_painel_imp_sync.py` foi deletado em 2026-05-25 junto com a tabela `anp_painel_imp_dist` na reforma `/imports-exports` — migration `20260525000010_imports_exports_enrichment.sql`), `etl_anp_lpc.yml`, `etl_sindicom.yml`, `etl_anp_cdp.yml` (CDP), `etl_anp_precos_distribuicao.yml` (preços de distribuição), `etl_anp_cdp_diaria.yml` (produção diária 3 níveis — campo/instalação/poço — 3×/dia, CLI `--level all --upload`), `etl_anp_voip.yml` (VOIP por campo — anual, 1º de maio, source BAR/ANP), `etl_anp_subsidy_diesel.yml` (referência de preços subsídio diesel — diário 11:30 UTC, script `pipelines/anp/subsidy_diesel_sync.py`, target `anp_subsidy_diesel_reference`). Ver `docs/etl-pipelines/PRD.md` para schedules e scripts.
 
 ---
 
@@ -427,7 +427,7 @@ Workflow controlado pelo **Subgerente APP** (não pelo Gerente Geral). Ver detal
 ## Estado atual (snapshot)
 
 - 4 departamentos + 3 papéis transversais.
-- 22 dashboards ativos (8 originais + 9 adicionados na Fase 3 — 3 trio Imp/Exp consolidados em `/imports-exports` em 2026-05-25 + 1 Admin Analytics + 1 ANP CDP Diária + 1 ANP CDP BSW + 1 ANP CDP Depletion + 1 Subsidy Tracker + `/imports-exports`).
+- 20 dashboards ativos (8 originais + 7 da Fase 3 remanescentes: `/anp-cdp`, `/anp-ppi`, `/anp-precos-produtores`, `/anp-glp`, `/mdic-comex`, `/anp-lpc`, `/sindicom` + 5 novos: `/imports-exports` (consolida `/anp-daie` + `/anp-desembaracos` + `/anp-painel-importacoes`, retirados em 2026-05-25), `/anp-precos-distribuicao`, `/anp-cdp-diaria`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/subsidy-tracker` + `/admin-analytics` (Admin-only, sem `module_visibility`)).
 - Documentação inicial criada em **2026-05-05**.
 
 ### Limpeza inicial (2026-05-05)

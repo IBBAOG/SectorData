@@ -61,7 +61,7 @@ Tabela: `<table_name>` (~N linhas, populada por `<pipeline_script>`).
 | Top 15 países | bar (h) | `get_<module>_top_paises` | ... |
 | ... | | | |
 
-**Coerência unidade↔label**: documente o divisor matemático e o label do eixo. Caso real: `/anp-daie` tinha `volume_m3 / 1e6` com label "mil m³" — bug 1000×. Padrão correto: `kg → mil ton` é `/1e6`; `m³ → mil m³` é `/1e3`. Use helpers de `src/lib/units.ts` quando disponível.
+**Coerência unidade↔label**: documente o divisor matemático e o label do eixo. Caso real histórico: o antigo `/anp-daie` (substituído por `/imports-exports` em 2026-05-25) tinha `volume_m3 / 1e6` com label "mil m³" — bug 1000×. Padrão correto: `kg → mil ton` é `/1e6`; `m³ → mil m³` é `/1e3`. Use helpers de `src/lib/units.ts` quando disponível.
 
 ## Padrões consolidados aplicados
 

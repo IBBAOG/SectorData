@@ -44,25 +44,25 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/profile` | `get_my_profile`, `upsert_my_profile` | — |
 | `/admin-panel` | `get_module_visibility`, `set_module_visibility`, `set_module_home_visibility`, `get_all_users_with_roles`, `set_user_role` | — |
 
-### Estatísticas (Fase 3 — 12 novos dashboards)
+### Statistics (Fase 3 onwards — 13 dashboards)
 
-| Route | Categoria | RPC functions | Export |
-|-------|-----------|---------------|--------|
+| Route | Category | RPC functions | Export |
+|-------|----------|---------------|--------|
 | `/anp-cdp` | Oil & Gas | `get_anp_cdp_poco_serie`, `get_anp_cdp_pocos_json`, `get_anp_cdp_filtros` | Yes |
 | `/anp-cdp-bsw` | Oil & Gas | `get_anp_cdp_bsw_scatter`, `get_anp_cdp_bsw_field_aggregate` (X axis: `pct_voip`), `get_anp_cdp_bsw_campos` | No |
 | `/anp-cdp-depletion` | Oil & Gas | `get_anp_cdp_depletion_campos`, `get_anp_cdp_depletion_scatter`, `get_anp_cdp_depletion_field_aggregate` | No |
+| `/anp-cdp-diaria` | Oil & Gas | `get_anp_cdp_diaria_filtros`, `get_anp_cdp_diaria_serie` | Yes |
 | `/anp-ppi` | Fuel Distribution | `get_anp_ppi_media_serie`, `get_anp_ppi_locais_serie`, `get_anp_ppi_filtros` | Yes |
 | `/anp-precos-produtores` | Fuel Distribution | `get_anp_precos_produtores_serie`, `get_anp_precos_produtores_filtros` | Yes |
 | `/anp-glp` | Fuel Distribution | `get_anp_glp_serie`, `get_anp_glp_filtros` | Yes |
 | `/mdic-comex` | Fuel Distribution | `get_mdic_comex_serie`, `get_mdic_comex_top_paises`, `get_mdic_comex_filtros` | Yes |
 | `/anp-lpc` | Fuel Distribution | `get_anp_lpc_nacional`, `get_anp_lpc_serie`, `get_anp_lpc_filtros` | Yes |
 | `/sindicom` | Fuel Distribution | `get_sindicom_serie`, `get_sindicom_filtros` | Yes |
-| `/anp-daie` | Fuel Distribution | `get_anp_daie_serie`, `get_anp_daie_filtros` | Yes |
-| `/anp-desembaracos` | Fuel Distribution | `get_anp_desembaracos_serie`, `get_anp_desembaracos_top_paises`, `get_anp_desembaracos_filtros` | Yes |
-| `/anp-painel-importacoes` | Fuel Distribution | `get_anp_painel_imp_serie`, `get_anp_painel_imp_top_dist`, `get_anp_painel_imp_filtros` | Yes |
+| `/imports-exports` | Fuel Distribution | `get_imports_exports_filtros`, `get_imports_exports_paises_stacked`, `get_imports_exports_importers_stacked`, `get_imports_exports_yoy_table`, `get_imports_exports_exports_serie` | Yes |
 | `/anp-precos-distribuicao` | Fuel Distribution | `get_anp_precos_distribuicao_serie`, `get_anp_precos_distribuicao_top_distribuidoras`, `get_anp_precos_distribuicao_filtros` | Yes |
-| `/anp-cdp-diaria` | Oil & Gas | `get_anp_cdp_diaria_filtros`, `get_anp_cdp_diaria_serie` | Yes |
 | `/subsidy-tracker` | Fuel Distribution (Proprietary) | `get_subsidy_tracker_diesel` | Yes |
+
+> **Imports & Exports reform (2026-05-25):** `/imports-exports` replaces the 3 retired dashboards `/anp-daie`, `/anp-desembaracos`, `/anp-painel-importacoes`. Backed by `anp_desembaracos` (enriched with `importador`/`cnpj`/`uf_cnpj`, PK extended with `cnpj`) and `anp_daie`. The dropped table `anp_painel_imp_dist` and its 8 obsolete RPCs are removed. Auxiliary lookup tables seeded by the reform: `imports_product_map`, `importer_group_map` (intentionally empty at seed time — populated post-backfill), `ncm_densidade_kg_m3`. Migration: `supabase/migrations/20260525000010_imports_exports_enrichment.sql`. Archived sub-PRDs live under `docs/app/_deprecated/`.
 
 `template-module/` is a starter template, not a deployed module. RPC wrappers: [`src/lib/rpc.ts`](src/lib/rpc.ts) (by module) and [`src/lib/profileRpc.ts`](src/lib/profileRpc.ts).
 
@@ -87,9 +87,12 @@ dashboard_projeto/
 │   │   ├── stocks.md
 │   │   ├── news-hunter.md
 │   │   ├── admin.md               # bundle: home + profile + admin-panel
-│   │   ├── anp-cdp.md anp-ppi.md anp-precos-produtores.md anp-glp.md
-│   │   ├── mdic-comex.md anp-lpc.md sindicom.md anp-daie.md
-│   │   ├── anp-desembaracos.md anp-painel-importacoes.md
+│   │   ├── anp-cdp.md anp-cdp-bsw.md anp-cdp-depletion.md anp-cdp-diaria.md
+│   │   ├── anp-ppi.md anp-precos-produtores.md anp-glp.md
+│   │   ├── mdic-comex.md anp-lpc.md sindicom.md
+│   │   ├── imports-exports.md     # consolidates the 3 retired anp-* import/export dashboards (2026-05-25)
+│   │   ├── anp-precos-distribuicao.md subsidy-tracker.md admin-analytics.md
+│   │   ├── _deprecated/           # archived sub-PRDs: anp-daie, anp-desembaracos, anp-painel-importacoes
 │   │   └── news-hunter-architecture.md  # cross-repo handoff doc
 │   ├── design/
 │   │   ├── identity.md            # tokens (#ff5000, Arial, liquid glass)
@@ -126,10 +129,11 @@ dashboard_projeto/
 │   │       ├── home/ market-share/ sales-volumes/ navios-diesel/
 │   │       ├── diesel-gasoline-margins/ price-bands/ stocks/
 │   │       ├── news-hunter/       # page.tsx + page.module.css
-│   │       ├── anp-cdp/ anp-ppi/ anp-precos-produtores/ anp-glp/
-│   │       ├── mdic-comex/ anp-lpc/ sindicom/ anp-daie/
-│   │       ├── anp-desembaracos/ anp-painel-importacoes/
-│   │       ├── subsidy-tracker/
+│   │       ├── anp-cdp/ anp-cdp-bsw/ anp-cdp-depletion/ anp-cdp-diaria/
+│   │       ├── anp-ppi/ anp-precos-produtores/ anp-glp/
+│   │       ├── mdic-comex/ anp-lpc/ sindicom/
+│   │       ├── imports-exports/   # consolidates the 3 retired anp-* import/export routes (2026-05-25)
+│   │       ├── anp-precos-distribuicao/ subsidy-tracker/ admin-analytics/
 │   │       ├── profile/ admin-panel/ template-module/
 │   ├── components/
 │   │   ├── NavBar.tsx PlotlyChart.tsx PeriodSlider.tsx CheckList.tsx
@@ -175,9 +179,11 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | `anp_ppi` | id | data_referencia, produto, local, preco_ppi, unidade |
 | `anp_precos_produtores` | id | data_referencia, produto, regiao, preco, unidade |
 | `anp_glp` | (ano, mes, distribuidora, categoria) | ano, mes, distribuidora, categoria (`P13` / `Outros - GLP` / `Outros - Especiais` / `Outros (total)`), vendas_kg |
-| `anp_daie` | id | data_referencia, produto, pais_origem, quantidade_m3, quantidade_ton |
-| `anp_desembaracos` | id | data_referencia, produto, pais_origem, quantidade_m3, quantidade_ton |
-| `anp_painel_imp_dist` | id | data_referencia, distribuidora, produto, quantidade_m3 |
+| `anp_daie` | (ano, mes, produto, operacao) | ano, mes, produto, operacao (`EXPORTAÇÃO` / `IMPORTAÇÃO` — exact uppercase + diacritic), volume_m3, valor_usd |
+| `anp_desembaracos` | (ano, mes, ncm_codigo, pais_origem, **cnpj**) | ano, mes, ncm_codigo, pais_origem, quantidade_kg, **importador**, **cnpj**, **uf_cnpj** (3 columns + cnpj added to PK in `20260525000010`, Imports & Exports reform). Pre-reform rows carry sentinel `cnpj='__legacy__'` until ETL backfill rewrites with real CNPJs. |
+| `imports_product_map` | (source, source_key) | unified_product (`Diesel`/`Gasoline`/`Crude Oil`), source (`daie`/`desembaracos`), source_key (DAIE produto string OR NCM code). Aux table for `/imports-exports` |
+| `importer_group_map` | cnpj | unified_importer, razao_social_seed. **Intentionally empty at seed time** — populated by follow-up DML migration after ETL backfill exposes real CNPJs (T11) |
+| `ncm_densidade_kg_m3` | ncm_codigo | densidade_kg_m3 (840 / 740 / 850 for diesel / gasoline / crude oil), produto_label. Used server-side for kg → m³ conversion in `/imports-exports` |
 | `anp_lpc` | id | data_referencia, municipio, estado, produto, preco_medio, preco_minimo, preco_maximo, numero_postos |
 | `sindicom` | id | data_referencia, produto, regiao, volume_m3 |
 | `anp_cdp_producao` | (ano, mes, poco, campo, bacia, local) | ano, mes, poco, campo, bacia, local (PosSal/PreSal/Terra), petroleo_bbl_dia, gas_total_mm3_dia, agua_bbl_dia, operador |
@@ -204,7 +210,7 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | 5 | `etl_ais_candidates.yml` | Every 4h | `pipelines/ais/candidates_discover.py` (AIS global scan, score 0–100) | `import_candidates` |
 | 6 | `etl_anp_cdp.yml` | Internal cron `0 8 5 * *` (monthly fallback) + external cron-job.org `workflow_dispatch` every ~2h (incremental ANP wells) | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` (Selenium + ddddocr CAPTCHA) | `anp_cdp_producao` |
 | 7 | `etl_anp_vendas.yml` | External trigger (cron-job.org → workflow_dispatch) | `pipelines/anp/vendas_watch.py --force` | `vendas` (ANP fuel sales) |
-| 8 | `etl_anp_fase3.yml` | Monthly 1st, 13:00 UTC | `pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` → `03_painel_imp_sync.py` | `anp_daie`, `anp_desembaracos`, `anp_painel_imp_dist` |
+| 8 | `etl_anp_fase3.yml` | Monthly 1st, 13:00 UTC | `pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` (preserves `importador`/`cnpj`/`uf_cnpj` since 2026-05-25) | `anp_daie`, `anp_desembaracos` (enriched). Step `03_painel_imp_sync.py` removed by the Imports & Exports reform (2026-05-25); table `anp_painel_imp_dist` dropped. |
 | 9 | `etl_anp_lpc.yml` | Weekly Wed 14:30 UTC | `pipelines/anp/lpc_sync.py` | `anp_lpc` |
 | 10 | `etl_anp_precos.yml` | Weekly Mon 12:00 UTC | `precos/01_ppi_sync.py` → `02_precos_produtores_sync.py` + `glp_sync.py` | `anp_ppi`, `anp_precos_produtores`, `anp_glp` |
 | 11 | `etl_mdic_comex.yml` | Daily 14:00 UTC | `pipelines/mdic_comex_sync.py` | `mdic_comex` |

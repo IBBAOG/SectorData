@@ -154,7 +154,7 @@ Schema columns relevant to this dashboard: `poco, campo, ano, mes, petroleo_bbl_
 - [`BarrelLoading`](../../src/components/dashboard/BarrelLoading.tsx) — initial filter-list spinner.
 - [`useModuleVisibilityGuard("anp-cdp-bsw")`](../../src/hooks/useModuleVisibilityGuard.ts) — role/visibility guard.
 - [`useDebouncedFetch`](../../src/hooks/useDebouncedFetch.ts) — 400ms debounce on field-selection / view-mode changes (one hook per view).
-- [`PALETTE`](../../src/lib/plotlyDefaults.ts) — shared 16-color palette (consistent with `/sindicom`, `/anp-painel-importacoes`).
+- [`PALETTE`](../../src/lib/plotlyDefaults.ts) — shared 16-color palette (consistent with `/sindicom`, `/imports-exports`).
 
 Sidebar visual classes (`#sidebar`, `.sidebar-section-label`, `.sidebar-filter-section`, `.sidebar-filter-label`) come from `src/app/globals.css` — same identity as `/anp-cdp`.
 

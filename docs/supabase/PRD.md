@@ -57,6 +57,7 @@ supabase/
 | `news_hunter_default_keywords` | dash-news-hunter | Tabela nova `20260522000001` — 27 keywords default lidas por `get_default_news_keywords()` (anon-safe). Single source of truth (substitui lista hardcoded em `seed_my_news_hunter_keywords()`) |
 | `profiles`, `module_visibility` | dash-admin | App (RPC). Desde `20260522000001`: `module_visibility.is_visible_for_public` + trigger self-healing |
 | `app_events` | dash-admin (`/admin-analytics`) | RPC `track_event()` (SECURITY DEFINER). Desde `20260522000001`: dual-actor (`user_id` OR `visitor_id`) |
+| `imports_product_map`, `importer_group_map`, `ncm_densidade_kg_m3` | dash-imports-exports | Service role (DML em migration). Aux tables criadas em `20260525000010_imports_exports_enrichment.sql`. `importer_group_map` intencionalmente vazia ao seed time — populada por DML follow-up após Worktree B ETL backfill (T11 CTO). |
 
 ### App Analytics (adicionada 2026-05-07, expandida 2026-05-22)
 
@@ -148,8 +149,8 @@ Todas com RLS habilitada, policy `acesso autenticado` FOR SELECT TO authenticate
 | `anp_precos_produtores` | (data_inicio, produto, regiao) | preco, unidade | `20260504000002_anp_precos.sql` | `pipelines/anp/precos/02_precos_produtores_sync.py` |
 | `anp_glp` | (ano, mes, distribuidora, categoria) | vendas_kg | `20260504000002_anp_precos.sql` | `pipelines/anp/glp_sync.py` |
 | `anp_daie` | (ano, mes, produto, operacao) | volume_m3, valor_usd | `20260504000003_anp_fase3.sql` | `pipelines/anp/fase3/01_daie_sync.py` |
-| `anp_desembaracos` | (ano, mes, ncm_codigo, pais_origem) | quantidade_kg | `20260504000003_anp_fase3.sql` | `pipelines/anp/fase3/02_desembaracos_sync.py` |
-| `anp_painel_imp_dist` | (ano, mes, distribuidor, uf, nome_produto) | volume_m3 | `20260504000003_anp_fase3.sql` | `pipelines/anp/fase3/03_painel_imp_sync.py` |
+| `anp_desembaracos` | (ano, mes, ncm_codigo, pais_origem, cnpj) | quantidade_kg, **importador**, **cnpj**, **uf_cnpj** — enriquecida em `20260525000010` (Imports & Exports reform). PK estendida com `cnpj`. Rows pré-backfill carregam sentinela `cnpj='__legacy__'` até Worktree B ETL backfill rodar. | `20260504000003_anp_fase3.sql` + `20260525000010_imports_exports_enrichment.sql` | `pipelines/anp/fase3/02_desembaracos_sync.py` |
+| ~~`anp_painel_imp_dist`~~ | — | **DROPADA** em `20260525000010_imports_exports_enrichment.sql` (CASCADE) — substituída pela `anp_desembaracos` enriquecida na reforma Imports & Exports | — | — |
 | `anp_lpc` | (data_fim, produto, estado) | preco_medio_venda, preco_medio_compra, n_postos | `20260504000004_lpc_sindicom.sql` | `pipelines/anp/lpc_sync.py` |
 | `sindicom` | (ano, mes, empresa, nome_produto, segmento, uf) | volume | `20260504000004_lpc_sindicom.sql` | `pipelines/sindicom_sync.py` |
 | `anp_cdp_producao` | (ano, mes, poco, campo, bacia, local) | petroleo_bbl_dia, gas_total_mm3_dia, oleo_bbl_dia, condensado_bbl_dia, agua_bbl_dia, operador, local (PosSal/PreSal/Terra), instalacao_destino, tipo_instalacao, tempo_prod_hs_mes | `20260504000005_anp_cdp.sql` (v1) → `_v7` (schema final) → `20260504000013` (RLS authenticated) | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` (~1.8M rows) |
@@ -157,6 +158,49 @@ Todas com RLS habilitada, policy `acesso autenticado` FOR SELECT TO authenticate
 | `anp_cdp_diaria` | (data, campo, bacia) | petroleo_bbl_dia, gas_mm3_dia; histórico desde 2025-11-09 (limitação da fonte Power BI). Populada por `scripts/extractors/anp_cdp_powerbi.py` 3×/dia em modo **append-only** (`ON CONFLICT DO NOTHING`). Linhas existentes nunca são sobrescritas — snapshot histórico imutável a partir de 2025-11-09. | `20260508000001_anp_cdp_diaria.sql` | `scripts/extractors/anp_cdp_powerbi.py` (workflow `etl_anp_cdp_diaria.yml`, 3×/dia) |
 | `anp_cdp_diaria_instalacao` | (data, instalacao) | campo (NOT NULL), petroleo_bbl_dia, gas_mm3_dia. Sem coluna bacia — entidade Power BI `v_instalacoes_final` não expõe bacia. ~16.3k rows (93 instalações; range 2025-11-09 → presente). Populada em modo **append-only** (`ON CONFLICT DO NOTHING`) — linhas existentes nunca sobrescritas. | `20260508120001_anp_cdp_diaria_levels.sql` | `scripts/extractors/anp_cdp_powerbi.py --level instalacao` |
 | `anp_cdp_diaria_poco` | (data, poco) | campo (nullable), bacia (nullable), instalacao (nullable; adicionada em `20260508130001`), petroleo_bbl_dia, gas_mm3_dia. ~180.7k rows (1.219 poços; range 2025-11-09 → presente). Populada em modo **append-only** (`ON CONFLICT DO NOTHING`) — linhas existentes nunca sobrescritas. **Nota:** atribuição poço↔campo é 1:1 (último mapeamento contratual). Para análise N:N (poços compartilhados entre múltiplos campos), use `anp_cdp_producao` (mensal × poço × campo, PK composta suporta N:N nativamente). Ver limitação documentada em [`docs/app/anp-cdp-diaria.md`](../app/anp-cdp-diaria.md). | `20260508120001_anp_cdp_diaria_levels.sql` + `20260508130001` (add instalacao) | `scripts/extractors/anp_cdp_powerbi.py --level poco` |
+
+### Imports & Exports reform (adicionada 2026-05-25)
+
+Migration única: `20260525000010_imports_exports_enrichment.sql`. Consolida 3 dashboards retirados (`/anp-daie`, `/anp-desembaracos`, `/anp-painel-importacoes`) em um único `/imports-exports`.
+
+**Mudanças de schema:**
+
+| Objeto | Mudança |
+|---|---|
+| `anp_desembaracos` | Adicionadas colunas `importador text`, `cnpj text NOT NULL`, `uf_cnpj text`. PK substituída de `(ano, mes, ncm_codigo, pais_origem)` para `(ano, mes, ncm_codigo, pais_origem, cnpj)`. Índices novos: `idx_anp_desembaracos_cnpj`, `idx_anp_desembaracos_importador`. Rows pré-existentes (~6.204) carregam sentinela `cnpj='__legacy__'` até Worktree B ETL backfill substituir por CNPJs reais via `DELETE + INSERT`. |
+| `anp_painel_imp_dist` | **DROPADA** com `CASCADE` (removeu também as 3 RPCs `get_anp_painel_imp_*`). |
+| `imports_product_map` | Tabela nova. Mapeia identificadores de fonte (DAIE `produto` strings + Desembaraços `ncm_codigo`) → unified product (`Diesel` / `Gasoline` / `Crude Oil`). PK `(source, source_key)` com CHECK `source IN ('daie','desembaracos')`. Seed: 6 rows (3 produtos × 2 fontes). RLS habilitada, policy SELECT TO anon, authenticated USING (true). |
+| `importer_group_map` | Tabela nova. Mapeia `cnpj text PRIMARY KEY` → `unified_importer text NOT NULL`, com auditing `razao_social_seed text`. **Intencionalmente vazia no seed time** — populada por DML migration follow-up depois que Worktree B backfill descobre os CNPJs reais (T11 do plano). RPCs caem em fallback de razão social limpada via regex enquanto map estiver vazio. RLS habilitada, policy SELECT TO anon, authenticated USING (true). |
+| `ncm_densidade_kg_m3` | Tabela nova. Mapeia `ncm_codigo text PRIMARY KEY` → `densidade_kg_m3 numeric NOT NULL` + `produto_label text NOT NULL`. Seed: 3 rows (`27101921`→840 Diesel, `27101931`→740 Gasoline, `27090010`→850 Crude Oil). Usada server-side para conversão kg → m³. RLS habilitada, policy SELECT TO anon, authenticated USING (true). |
+| `module_visibility` | DELETE dos 3 slugs retirados (`anp-daie`, `anp-desembaracos`, `anp-painel-importacoes`) + INSERT do novo `imports-exports` (default `is_visible_for_public=true`, `is_visible_for_clients=true`, `is_visible_on_home=true`). |
+
+**RPCs novas (5):**
+
+| RPC | Assinatura | Notas |
+|---|---|---|
+| `get_imports_exports_filtros()` | `() RETURNS TABLE(ano_min int, ano_max int, produtos text[])` | LANGUAGE sql STABLE SECURITY INVOKER. `produtos` é sempre `['Diesel','Gasoline','Crude Oil']`. `ano_min/max` deriva de `LEAST/GREATEST` sobre `MIN/MAX(ano)` em `anp_desembaracos` ∪ `anp_daie`. |
+| `get_imports_exports_paises_stacked(p_unified_product, p_ano_inicio, p_ano_fim, p_top_n DEFAULT 10)` | `RETURNS TABLE(ano int, mes int, pais_origem text, total_kg numeric)` | Top-N por `total_kg` no window inteiro; resto colapsa em `pais_origem='Others'`. Frontend converte `total_kg / 1e6 = kt`. |
+| `get_imports_exports_importers_stacked(p_unified_product, p_ano_inicio, p_ano_fim, p_top_n DEFAULT 10)` | `RETURNS TABLE(ano int, mes int, unified_importer text, total_mil_m3 numeric)` | JOIN com `ncm_densidade_kg_m3` (conversão kg→m³ server-side) e LEFT JOIN com `importer_group_map`. Fallback de razão social via `regexp_replace` de sufixos (LTDA, S.A., EIRELI, ME) quando não há mapping. Filtra `cnpj <> '__legacy__'`. Retorna `total_mil_m3` (já dividido por 1000). |
+| `get_imports_exports_yoy_table(p_scope, p_unified_product, p_ano_fim, p_mes_fim, p_top_n DEFAULT 10)` | `RETURNS TABLE(entity text, last_12m numeric, prev_12m numeric, yoy_pct numeric)` | LANGUAGE plpgsql STABLE. `p_scope IN ('paises','importers')` (raise exception em outros valores). Janela rolling 12m terminando em `(p_ano_fim, p_mes_fim)`. `yoy_pct = NULL` quando `prev_12m=0`. Usa `#variable_conflict use_column`. |
+| `get_imports_exports_exports_serie(p_unified_products text[], p_ano_inicio, p_ano_fim)` | `RETURNS TABLE(ano int, mes int, produto text, volume_m3 numeric, valor_usd numeric)` | Filtra `anp_daie.operacao = 'EXPORTAÇÃO'` (uppercase + diacrítico — valor exato no DB). JOIN com `imports_product_map` source='daie'. |
+
+Todas as 5 RPCs: `STABLE`, `SECURITY INVOKER`, `SET search_path = public`, `GRANT EXECUTE TO anon, authenticated`.
+
+**RPCs DROPADAS (8):**
+
+`get_anp_daie_filtros`, `get_anp_daie_serie`, `get_anp_desembaracos_filtros`, `get_anp_desembaracos_serie`, `get_anp_desembaracos_top_paises`, `get_anp_painel_imp_filtros`, `get_anp_painel_imp_serie`, `get_anp_painel_imp_top_dist` — todas via `DROP FUNCTION ... CASCADE`. As 3 `get_anp_painel_imp_*` já cairiam pelo `DROP TABLE ... CASCADE` em `anp_painel_imp_dist`; explicitadas por idempotência.
+
+**ETL companion (Worktree B):**
+
+`scripts/pipelines/anp/fase3/02_desembaracos_sync.py` foi refatorado para preservar `Importador` + `CNPJ` + `UF do CNPJ` do XLSX bruto da ANP (antes esses campos eram descartados na linha 171 da versão pré-reforma). `scripts/pipelines/anp/fase3/03_painel_imp_sync.py` foi **deletado**. Workflow `etl_anp_fase3.yml` agora tem 2 steps (era 3). Backfill rodado via `workflow_dispatch` após merge na main. Ver `docs/etl-pipelines/PRD.md` § "Imports & Exports reform (2026-05-25)" para detalhes.
+
+### Pegadinhas — Imports & Exports
+
+**Sentinela `__legacy__`:** rows em `anp_desembaracos.cnpj` carregam `'__legacy__'` enquanto Worktree B ETL backfill não roda. Todas as RPCs que dependem de CNPJ (`get_imports_exports_importers_stacked`, `get_imports_exports_yoy_table p_scope='importers'`) filtram `cnpj <> '__legacy__'` — retornam 0 rows até backfill. Frontend trata isso como informational empty state, não erro.
+
+**`importer_group_map` vazia por design:** seed time intencionalmente sem rows. Worker `worker_supabase` populará via DML migration follow-up depois que Worktree B backfill expor CNPJs reais (T11 do plano CTO). Enquanto vazia, RPCs fazem fallback para `regexp_replace` removendo sufixos comuns de razão social.
+
+**`anp_daie.operacao` value-sensitivity:** o valor exato no DB é `'EXPORTAÇÃO'` (uppercase + diacrítico). Plano de reforma escrevia "Exportação" mas o stored value é uppercase — RPC `get_imports_exports_exports_serie` filtra pelo valor exato. Nunca assumir lowercase ou sem acento.
 
 ### Trigger: cross-local guard em `anp_cdp_producao`
 
@@ -195,9 +239,7 @@ Todas com RLS habilitada, policy `acesso autenticado` FOR SELECT TO authenticate
 | ANP PPI | `get_anp_ppi_filtros`, `get_anp_ppi_media_serie`, `get_anp_ppi_locais_serie` | dash-anp-ppi |
 | ANP Preços Produtores | `get_anp_precos_produtores_filtros`, `get_anp_precos_produtores_serie` | dash-anp-precos-produtores |
 | ANP GLP | `get_anp_glp_filtros`, `get_anp_glp_serie` | dash-anp-glp |
-| ANP DAIE | `get_anp_daie_filtros`, `get_anp_daie_serie` | dash-anp-daie |
-| ANP Desembaraços | `get_anp_desembaracos_filtros`, `get_anp_desembaracos_serie`, `get_anp_desembaracos_top_paises` | dash-anp-desembaracos |
-| ANP Painel Imp. | `get_anp_painel_imp_filtros`, `get_anp_painel_imp_serie`, `get_anp_painel_imp_top_dist` | dash-anp-painel-importacoes |
+| Imports & Exports | `get_imports_exports_filtros`, `get_imports_exports_paises_stacked`, `get_imports_exports_importers_stacked`, `get_imports_exports_yoy_table`, `get_imports_exports_exports_serie` — consolidam DAIE + Desembaraços (sem `anp_painel_imp_dist`, que foi dropada). Migration: `20260525000010_imports_exports_enrichment.sql`. RPCs antigas `get_anp_daie_*`, `get_anp_desembaracos_*`, `get_anp_painel_imp_*` (8 funções) foram DROPPED na mesma migration. | dash-imports-exports |
 | ANP LPC | `get_anp_lpc_filtros`, `get_anp_lpc_serie`, `get_anp_lpc_nacional` | dash-anp-lpc |
 | SINDICOM | `get_sindicom_filtros`, `get_sindicom_serie` | dash-sindicom |
 | ANP CDP | `get_anp_cdp_filtros`, `get_anp_cdp_serie`, `get_anp_cdp_pocos_json` | dash-anp-cdp |
