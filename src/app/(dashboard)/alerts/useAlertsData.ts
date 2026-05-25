@@ -259,15 +259,29 @@ export function useAlertsData(): AlertsData {
 
     const result = await rpcSubscribeToAlerts(supabase, email, slugs);
 
-    // Backend returns { ok, error?, requires_confirmation?, subscribed, confirmation_sent }.
-    // 'suppressed', 'already_subscribed', 'rate_limited' are never returned — no branches.
-    if (result.error) {
-      setSubscribeState({ kind: "error", message: result.error });
+    // Server-side rate limit (max 10 signups/IP/hour).
+    if (result.rate_limited) {
+      setSubscribeState({
+        kind: "error",
+        message: "Too many signup attempts from this network. Please try again in an hour.",
+      });
       return;
     }
 
-    // Insta-activated: logged-in user + email matches auth.email — no confirmation needed.
-    if (!result.requires_confirmation && result.subscribed > 0) {
+    // Map backend error codes to friendly UI messages.
+    const ERROR_MESSAGES: Record<string, string> = {
+      invalid_email: "Please enter a valid email address.",
+      no_sources_selected: "Select at least one source to subscribe to.",
+    };
+    if (result.error) {
+      const friendly = ERROR_MESSAGES[result.error] ?? result.error;
+      setSubscribeState({ kind: "error", message: friendly });
+      return;
+    }
+
+    // Insta-activated: authenticated user + email matches auth.users.email → no opt-in needed.
+    // Backend signals this via confirmation_sent=false.
+    if (!result.confirmation_sent && result.subscribed > 0) {
       setSubscribeState({ kind: "activated", count: result.subscribed });
       // Refresh my subscriptions panel via ref (avoids forward-reference)
       if (isAuthenticated && refreshSubscriptionsRef.current) {
@@ -276,7 +290,7 @@ export function useAlertsData(): AlertsData {
       return;
     }
 
-    // Anon (or email override) path — double opt-in required.
+    // confirmation_sent=true → anon (or email override) path — double opt-in required.
     setSubscribeState({ kind: "needs_confirmation" });
   }, [email, selectedSlugs, supabase, isAuthenticated]);
 

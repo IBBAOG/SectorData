@@ -47,14 +47,13 @@ export interface RecentAlertItem {
 // ─── RPC return shapes ───────────────────────────────────────────────────────
 
 export interface SubscribeResult {
-  // Backend: { ok: bool, error?: string, subscriber_ids?: UUID[], requires_confirmation?: bool }
-  // 'subscribed' is derived count; 'confirmation_sent' maps to requires_confirmation.
-  // 'suppressed', 'already_subscribed', 'rate_limited' are NOT returned by the backend
-  // and are kept here only as dead-code guard types — the UI branches were removed.
-  ok?: boolean;
+  // Backend contract: { subscribed: int, confirmation_sent: bool, rate_limited: bool, error?: string }
+  // confirmation_sent=false  → insta-activated (authenticated user, email matches auth.users.email)
+  // confirmation_sent=true   → double opt-in required (anon or email override)
+  // rate_limited=true        → server blocked the request (max 10 signups/IP/hour)
   subscribed: number;
   confirmation_sent: boolean;
-  requires_confirmation?: boolean;
+  rate_limited: boolean;
   error?: string;
 }
 

@@ -2558,10 +2558,10 @@ export async function rpcSubscribeToAlerts(
       p_source_slugs: sourceSlugs,
     });
     if (error) throw error;
-    return (data as SubscribeResult) ?? { subscribed: 0, confirmation_sent: false };
+    return (data as SubscribeResult) ?? { subscribed: 0, confirmation_sent: false, rate_limited: false };
   } catch (e) {
     console.error("subscribe_to_alerts failed", e);
-    return { subscribed: 0, confirmation_sent: false, error: extractErrorMessage(e) };
+    return { subscribed: 0, confirmation_sent: false, rate_limited: false, error: extractErrorMessage(e) };
   }
 }
 
