@@ -21,6 +21,7 @@ import MobileTabBar from "@/components/dashboard/mobile/MobileTabBar";
 import FilterDrawer from "@/components/dashboard/mobile/FilterDrawer";
 import MobileDataCard from "@/components/dashboard/mobile/MobileDataCard";
 import ExportFAB from "@/components/dashboard/mobile/ExportFAB";
+import BottomSheet from "@/components/dashboard/mobile/BottomSheet";
 import BarrelLoading from "@/components/dashboard/BarrelLoading";
 
 import { useImportsExportsData } from "../useImportsExportsData";
@@ -250,6 +251,7 @@ export default function MobileView(): React.ReactElement {
   } = useImportsExportsData();
 
   const [filterOpen, setFilterOpen] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
 
   const anoMin = filtros?.ano_min ?? 2010;
@@ -344,8 +346,9 @@ export default function MobileView(): React.ReactElement {
   if (visibilityLoading) return <BarrelLoading bare />;
   if (!visible) return <></>;
 
-  // ── Export handler ─────────────────────────────────────────────────────────
-  async function handleExport() {
+  // ── Export handlers ────────────────────────────────────────────────────────
+
+  async function handleExportExcel() {
     setExportBusy(true);
     try {
       const { default: ExcelJS } = await import("exceljs");
@@ -375,6 +378,53 @@ export default function MobileView(): React.ReactElement {
       const mm = String(today.getMonth() + 1).padStart(2, "0");
       const yy = String(today.getFullYear()).slice(-2);
       a.download = `Imports-Exports_${dd}-${mm}-${yy}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExportBusy(false);
+    }
+  }
+
+  async function handleExportCsv() {
+    setExportBusy(true);
+    try {
+      const JSZip = (await import("jszip")).default;
+
+      function toCsv(header: string[], rows: (string | number)[][]): string {
+        const esc = (v: string | number) =>
+          `"${String(v).replaceAll('"', '""')}"`;
+        return [
+          header.map(esc).join(","),
+          ...rows.map((r) => r.map(esc).join(",")),
+        ].join("\n");
+      }
+
+      const zip = new JSZip();
+
+      const csvA = toCsv(
+        ["year", "month", "country", "volume_kt"],
+        paisesData.map((r) => [r.ano, r.mes, r.pais_origem, +(r.total_kg / 1e6).toFixed(3)]),
+      );
+      const csvB = toCsv(
+        ["year", "month", "importer", "volume_mil_m3"],
+        importersData.map((r) => [r.ano, r.mes, r.unified_importer, +r.total_mil_m3.toFixed(3)]),
+      );
+
+      zip.file("imports_by_country.csv", csvA);
+      zip.file("imports_by_importer.csv", csvB);
+
+      const today = new Date();
+      const dd = String(today.getDate()).padStart(2, "0");
+      const mm = String(today.getMonth() + 1).padStart(2, "0");
+      const yy = String(today.getFullYear()).slice(-2);
+
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Imports-Exports_${dd}-${mm}-${yy}.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -735,13 +785,94 @@ export default function MobileView(): React.ReactElement {
         </div>
       </FilterDrawer>
 
-      {/* Export FAB */}
+      {/* Export FAB — opens format picker */}
       <ExportFAB
         label="Export"
-        onClick={() => void handleExport()}
+        onClick={() => setExportMenuOpen(true)}
         disabled={exportBusy}
-        ariaLabel="Export data as Excel"
+        ariaLabel="Export data"
       />
+
+      {/* Export format picker */}
+      <BottomSheet
+        open={exportMenuOpen}
+        onClose={() => setExportMenuOpen(false)}
+        title="Export"
+        ariaLabel="Choose export format"
+        height="auto"
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <button
+            type="button"
+            disabled={exportBusy}
+            onClick={() => {
+              setExportMenuOpen(false);
+              void handleExportExcel();
+            }}
+            style={{
+              width: "100%",
+              padding: "14px 16px",
+              borderRadius: 12,
+              border: "1px solid #e0e0e0",
+              background: "#fff",
+              fontFamily: "Arial",
+              fontSize: 15,
+              fontWeight: 600,
+              color: "#1a1a1a",
+              cursor: exportBusy ? "not-allowed" : "pointer",
+              textAlign: "left",
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              opacity: exportBusy ? 0.5 : 1,
+            }}
+          >
+            <span style={{ fontSize: 22 }}>📊</span>
+            <span>
+              Excel (.xlsx)
+              <br />
+              <span style={{ fontSize: 11, fontWeight: 400, color: "#888" }}>
+                2 sheets — Countries &amp; Importers
+              </span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            disabled={exportBusy}
+            onClick={() => {
+              setExportMenuOpen(false);
+              void handleExportCsv();
+            }}
+            style={{
+              width: "100%",
+              padding: "14px 16px",
+              borderRadius: 12,
+              border: "1px solid #e0e0e0",
+              background: "#fff",
+              fontFamily: "Arial",
+              fontSize: 15,
+              fontWeight: 600,
+              color: "#1a1a1a",
+              cursor: exportBusy ? "not-allowed" : "pointer",
+              textAlign: "left",
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              opacity: exportBusy ? 0.5 : 1,
+            }}
+          >
+            <span style={{ fontSize: 22 }}>📄</span>
+            <span>
+              CSV (.zip)
+              <span style={{ fontSize: 11, fontWeight: 400, color: "#888" }}>
+                <br />
+                2 files — imports_by_country &amp; imports_by_importer
+              </span>
+            </span>
+          </button>
+        </div>
+      </BottomSheet>
     </div>
   );
 }
