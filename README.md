@@ -42,7 +42,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/stocks` | `stock_portfolios` (direct PostgREST) + Yahoo Finance proxy | No |
 | `/news-hunter` | `seed_my_news_hunter_keywords` | No |
 | `/profile` | `get_my_profile`, `upsert_my_profile` | — |
-| `/admin-panel` | `get_module_visibility`, `set_module_visibility`, `set_module_home_visibility`, `get_all_users_with_roles`, `set_user_role` | — |
+| `/admin-panel` | `get_module_visibility`, `set_module_visibility`, `set_module_home_visibility`, `set_module_public_visibility`, `get_all_users_with_roles`, `set_user_role`, `admin_list_default_news_keywords`, `admin_add_default_news_keyword`, `admin_remove_default_news_keyword` | — |
 
 ### Statistics (Fase 3 onwards — 11 dashboards)
 

@@ -163,6 +163,17 @@ São os pontos onde um departamento depende de outro. Mudanças nestes contratos
 `is_visible_on_home`: controla exibição do card na galeria `/home` para TODOS os usuários (inclusive Admin). Default `true`.
 `is_visible_for_public`: controla acesso anônimo (sem sessão) ao módulo. Default `true`. **Invariante:** `is_visible_for_public=true` implica `is_visible_for_clients=true` (CHECK + BEFORE trigger `trg_module_visibility_public_implies_clients` coerce automaticamente).
 
+**Contrato `news_hunter_default_keywords` (APP ↔ Supabase):**
+
+Tabela compartilhada entre dash-news-hunter (read pelo seed automático em `seed_my_news_hunter_keywords()` e por `get_default_news_keywords()` para anônimos) e dash-admin (write via Admin Panel). RLS é read-only para `anon` + `authenticated`; toda escrita atravessa SECURITY DEFINER (sem policies INSERT/DELETE).
+
+| RPC | Assinatura | Consumidor |
+|---|---|---|
+| `get_default_news_keywords` | `() → TEXT[]` | `/news-hunter` (anon-safe seed) — callable por `anon` + `authenticated` |
+| `admin_list_default_news_keywords` | `() → TABLE(keyword text, created_at timestamptz)` | Admin Panel → seção "Default News Keywords". Admin-only via `is_admin()` + `require_admin_mfa()` |
+| `admin_add_default_news_keyword` | `(p_keyword text) → void` | Admin Panel — idempotente (`ON CONFLICT DO NOTHING`), trim + reject empty, audit em `app_events` (event_type `admin.add_default_news_keyword`) |
+| `admin_remove_default_news_keyword` | `(p_keyword text) → void` | Admin Panel — idempotente, audit em `app_events` (event_type `admin.remove_default_news_keyword`) |
+
 ### 3-tier visibility (Anon / Client / Admin) — adicionado 2026-05-22
 
 A partir da migration `20260522000001_anonymous_access.sql`, o login é **opcional**. Três tiers de acesso ao dashboard:

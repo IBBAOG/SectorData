@@ -54,7 +54,7 @@ supabase/
 | `price_bands` | dash-price-bands | Dados Locais (manual via `upload_price_bands.py`) |
 | `stock_portfolios` | dash-stocks | App (CRUD direto via PostgREST). Desde `20260522000001`: coluna `is_public` + nullable `user_id` + seed do portfolio público `00000000-...-001` "Brazilian Oil & Gas (default)" |
 | `news_articles`, `news_hunter_keywords` | dash-news-hunter | scanner externo + user via UI. Desde `20260522000001`: `news_articles` ganhou policy SELECT TO anon |
-| `news_hunter_default_keywords` | dash-news-hunter | Tabela nova `20260522000001` — 27 keywords default lidas por `get_default_news_keywords()` (anon-safe). Single source of truth (substitui lista hardcoded em `seed_my_news_hunter_keywords()`) |
+| `news_hunter_default_keywords` | dash-news-hunter (read) + dash-admin (write via SECURITY DEFINER RPCs) | Tabela nova `20260522000001` — 27 keywords default lidas por `get_default_news_keywords()` (anon-safe). Single source of truth (substitui lista hardcoded em `seed_my_news_hunter_keywords()`). RLS é read-only para anon/authed; writes exclusivamente via `admin_add_default_news_keyword` / `admin_remove_default_news_keyword` (`20260525230000`) — sem policies INSERT/DELETE. |
 | `profiles`, `module_visibility` | dash-admin | App (RPC). Desde `20260522000001`: `module_visibility.is_visible_for_public` + trigger self-healing |
 | `app_events` | dash-admin (`/admin-analytics`) | RPC `track_event()` (SECURITY DEFINER). Desde `20260522000001`: dual-actor (`user_id` OR `visitor_id`) |
 | `imports_product_map`, `importer_group_map`, `ncm_densidade_kg_m3` | dash-imports-exports | Service role (DML em migration). Aux tables criadas em `20260525000010_imports_exports_enrichment.sql`. `importer_group_map` intencionalmente vazia ao seed time — populada por DML follow-up após Worktree B ETL backfill (T11 CTO). |
@@ -231,8 +231,8 @@ Todas as 6 RPCs: `SET search_path = public`, `GRANT EXECUTE TO anon, authenticat
 | Navios | `get_nd_*` | dash-navios-diesel |
 | D&G Margins | `get_dg_*` | dash-margins |
 | Price Bands | `get_price_bands_*` | dash-price-bands |
-| Profile / Admin | `get_my_*`, `set_*`, `upsert_my_*`, `set_module_public_visibility` | dash-admin |
-| News Hunter | `seed_my_news_hunter_keywords`, `get_default_news_keywords` | dash-news-hunter |
+| Profile / Admin | `get_my_*`, `set_*`, `upsert_my_*`, `set_module_public_visibility`, `admin_list_default_news_keywords`, `admin_add_default_news_keyword`, `admin_remove_default_news_keyword` | dash-admin |
+| News Hunter | `seed_my_news_hunter_keywords`, `get_default_news_keywords` (read-only do anon/authed; writes admin via `admin_*_default_news_keyword` listados em Profile/Admin) | dash-news-hunter |
 | Generic / metrics | `get_metricas`, `classificar_agentes` | base |
 | MDIC Comex | ~~`get_mdic_comex_filtros`, `get_mdic_comex_serie`, `get_mdic_comex_top_paises`, `get_mdic_comex_aggregated`, `get_mdic_comex_export_count`~~ — **DROPPED 2026-05-25** com a retirada de `/mdic-comex`. A tabela `mdic_comex` continua viva, alimentada pelo `etl_mdic_comex.yml`, e é consumida pelo `/imports-exports` Panel C via `get_imports_exports_fob_price_serie`. | ~~dash-mdic-comex~~ (sub-PRD arquivado em `docs/app/_deprecated/mdic-comex.md`) |
 | ANP Preços Produtores | `get_anp_precos_produtores_filtros`, `get_anp_precos_produtores_serie` | dash-anp-precos-produtores |
@@ -473,6 +473,22 @@ Convenções:
 - `domain` é canonical sem prefixo `www.` (PK). A aplicação faz strip de `www.` antes de consultar.
 - `cookies_netscape` armazena o arquivo Netscape HTTP Cookie completo (tabs literais preservados).
 - Seed de cookies (dados sensíveis) aplicado via `execute_sql` — **nunca commitado em arquivo**.
+
+### Admin RPCs — Default News Keywords (adicionada 2026-05-25)
+
+Migration: `20260525230000_admin_default_news_keywords_rpcs.sql`.
+
+Cria 3 RPCs `SECURITY DEFINER` para CRUD admin sobre `public.news_hunter_default_keywords`. A tabela permanece com RLS read-only (`SELECT` aberto para `anon` + `authenticated` via policy `20260522000001`); writes ocorrem **exclusivamente** via estas RPCs — não há policies INSERT/DELETE em `news_hunter_default_keywords`. Padrão segue o usado em `set_module_visibility` / `set_module_public_visibility`.
+
+| RPC | Assinatura | Notas |
+|---|---|---|
+| `admin_list_default_news_keywords` | `() RETURNS TABLE(keyword text, created_at timestamptz)` | LANGUAGE plpgsql STABLE. Ordenado por `keyword ASC`. |
+| `admin_add_default_news_keyword` | `(p_keyword text) RETURNS void` | `trim()` + reject empty (`ERRCODE 22023`). Idempotente (`INSERT ... ON CONFLICT (keyword) DO NOTHING`). Audit em `app_events` com `event_type='admin.add_default_news_keyword'`, `route='/admin-panel'`, `payload={keyword}`. |
+| `admin_remove_default_news_keyword` | `(p_keyword text) RETURNS void` | `trim()` + reject empty (`ERRCODE 22023`). Idempotente (`DELETE WHERE keyword = ...` — no-op se ausente). Audit em `app_events` com `event_type='admin.remove_default_news_keyword'`, `route='/admin-panel'`, `payload={keyword}`. |
+
+Todas: inline admin gate via `public.is_admin()` (RAISE EXCEPTION 'admin only') + `public.require_admin_mfa()`. `SET search_path = public`. `REVOKE ALL FROM PUBLIC` + `GRANT EXECUTE TO authenticated`. Audit é INSERT direto em `app_events` (não via `track_event()`, que valida `event_type` contra `{login,page_view,export}` apenas — o CHECK constraint da tabela permite `admin.%` adicionalmente).
+
+Consumido pelo `/admin-panel` → seção "Default News Keywords" (sidebar `default-news`). Wrappers JS: `rpcAdminListDefaultNewsKeywords`, `rpcAdminAddDefaultNewsKeyword`, `rpcAdminRemoveDefaultNewsKeyword` em `src/lib/rpc.ts`.
 
 ## Contratos com outros departamentos
 
