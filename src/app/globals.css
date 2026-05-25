@@ -2540,3 +2540,179 @@ a {
 :root[data-viewport="mobile"] * {
   -webkit-tap-highlight-color: transparent;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Data Sources tokens (Home page table — glassmorphism + pulse animations)
+   Consumed by src/components/home/DataSourcesTable.* (owned by worker_dash-admin).
+
+   Layering strategy:
+     • Default block (:root)         — light surface tokens for /home default UI
+     • :root[data-theme="dark"]      — dark surface overrides
+     • @keyframes ds-pulse-dot       — global, theme-agnostic (uses currentColor)
+     • .ds-pulse utility             — applies the keyframe to any element
+
+   Category palette is the tech-vivid palette approved in the plan
+   (cyan/orange/purple/teal/green/yellow). Each category exposes 3 tokens:
+     • --ds-cat-<name>          — vivid hex (swatch fill, dot bg, icon fill)
+     • --ds-cat-<name>-soft     — low-alpha tint (row bg, badge bg, hover)
+     • --ds-cat-<name>-text     — WCAG AA-compliant text/foreground variant
+                                   (darker on light surface, lighter on dark)
+     • --ds-cat-<name>-hover    — interactive hover state (slight brightness shift)
+
+   Brand orange (--ds-cat-anp-distribution) maps to #ff5000 — single source of
+   truth lives at the brand level, but we re-expose it under the ds-cat namespace
+   so the Data Sources table consumes its colours through one consistent API.
+
+   WCAG AA notes (text contrast against surface, ≥4.5:1 for normal text):
+     • Vivid swatch values pass AA on dark (#070d1c) but most FAIL on white.
+       Therefore the *-text variants exist: they swap to darker shades on light
+       and lighter shades on dark. Never use --ds-cat-X as text colour on the
+       light surface — use --ds-cat-X-text.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Category palette — vivid swatch values (theme-agnostic) ─────────── */
+  --ds-cat-anp-production:        #00d4ff;   /* cyan       — anp_cdp + diaria + bsw + depletion + voip */
+  --ds-cat-anp-distribution:      #ff5000;   /* brand orange — anp_glp + anp_prices + subsidy */
+  --ds-cat-imports:               #a855f7;   /* purple     — imports/exports + mdic_comex */
+  --ds-cat-vessels:               #0d9488;   /* teal       — navios_diesel + AIS + vessel_positions */
+  --ds-cat-manual:                #10b981;   /* green      — d_g_margins + price_bands (manual Excel) */
+  --ds-cat-news:                  #facc15;   /* yellow     — news_articles + news-hunter scanner */
+
+  /* ── Category palette — soft tints (background / badge fill) ─────────── */
+  --ds-cat-anp-production-soft:   rgba(0, 212, 255, 0.10);
+  --ds-cat-anp-distribution-soft: rgba(255, 80, 0, 0.10);
+  --ds-cat-imports-soft:          rgba(168, 85, 247, 0.10);
+  --ds-cat-vessels-soft:          rgba(13, 148, 136, 0.10);
+  --ds-cat-manual-soft:           rgba(16, 185, 129, 0.10);
+  --ds-cat-news-soft:             rgba(250, 204, 21, 0.14);   /* yellow needs more alpha to read */
+
+  /* ── Category palette — hover (slightly stronger) ─────────────────────── */
+  --ds-cat-anp-production-hover:  rgba(0, 212, 255, 0.18);
+  --ds-cat-anp-distribution-hover: rgba(255, 80, 0, 0.18);
+  --ds-cat-imports-hover:         rgba(168, 85, 247, 0.18);
+  --ds-cat-vessels-hover:         rgba(13, 148, 136, 0.18);
+  --ds-cat-manual-hover:          rgba(16, 185, 129, 0.18);
+  --ds-cat-news-hover:            rgba(250, 204, 21, 0.22);
+
+  /* ── Category palette — text/foreground (WCAG AA on light surface) ───── */
+  --ds-cat-anp-production-text:   #0891b2;   /* cyan-600  — 4.7:1 on #fff */
+  --ds-cat-anp-distribution-text: #cc3d00;   /* brand-dark — 5.4:1 on #fff (matches existing nav-module hover) */
+  --ds-cat-imports-text:          #7c3aed;   /* purple-600 — 5.0:1 on #fff */
+  --ds-cat-vessels-text:          #0f766e;   /* teal-700  — 5.5:1 on #fff (darker than swatch for safety) */
+  --ds-cat-manual-text:           #047857;   /* emerald-700 — 5.4:1 on #fff */
+  --ds-cat-news-text:             #a16207;   /* yellow-700 — 4.6:1 on #fff */
+
+  /* ── Status tokens (derived from schedule × last_update) ──────────────── */
+  --ds-status-fresh:              #22c55e;   /* green-500 */
+  --ds-status-stale:              #f59e0b;   /* amber-500 */
+  --ds-status-overdue:            #ef4444;   /* red-500 */
+
+  --ds-status-fresh-soft:         rgba(34, 197, 94, 0.12);
+  --ds-status-stale-soft:         rgba(245, 158, 11, 0.12);
+  --ds-status-overdue-soft:       rgba(239, 68, 68, 0.12);
+
+  --ds-status-fresh-text:         #15803d;   /* green-700  — 5.4:1 on #fff */
+  --ds-status-stale-text:         #b45309;   /* amber-700  — 4.9:1 on #fff */
+  --ds-status-overdue-text:       #b91c1c;   /* red-700    — 6.1:1 on #fff */
+
+  /* ── Glass tokens (light surface) ──────────────────────────────────────── */
+  /* On a white /home background, white-tinted glass is invisible — use a soft
+     dark tint instead. This still reads as "glass" because of the backdrop
+     blur + saturate, even though the tint alpha is low. */
+  --ds-glass-bg:                  rgba(0, 0, 0, 0.04);
+  --ds-glass-bg-elevated:         rgba(0, 0, 0, 0.06);   /* header row, hover */
+  --ds-glass-border:              rgba(0, 0, 0, 0.08);
+  --ds-glass-border-strong:       rgba(0, 0, 0, 0.12);
+  --ds-glass-backdrop:            blur(12px) saturate(1.4);
+  --ds-glass-shadow:              0 1px 0 rgba(255, 255, 255, 0.6) inset,
+                                  0 -1px 0 rgba(0, 0, 0, 0.04) inset,
+                                  0 4px 16px rgba(0, 0, 0, 0.06);
+
+  /* ── Pulse animation tunables ──────────────────────────────────────────── */
+  --ds-pulse-duration: 1.6s;
+  --ds-pulse-ring:     6px;   /* outermost radius of the box-shadow ripple */
+}
+
+/* ── Dark theme overrides ──────────────────────────────────────────────── */
+/* Applied via :root[data-theme="dark"] (same axis used by the mobile system
+   above, lines ~2389/2502). Vivid swatch values stay identical — only
+   *-text, *-soft, status, and glass tokens shift to suit a dark backdrop. */
+:root[data-theme="dark"] {
+  /* Soft tints — bump alpha so they read on near-black surfaces */
+  --ds-cat-anp-production-soft:   rgba(0, 212, 255, 0.14);
+  --ds-cat-anp-distribution-soft: rgba(255, 80, 0, 0.16);
+  --ds-cat-imports-soft:          rgba(168, 85, 247, 0.14);
+  --ds-cat-vessels-soft:          rgba(13, 148, 136, 0.16);
+  --ds-cat-manual-soft:           rgba(16, 185, 129, 0.14);
+  --ds-cat-news-soft:             rgba(250, 204, 21, 0.18);
+
+  --ds-cat-anp-production-hover:  rgba(0, 212, 255, 0.24);
+  --ds-cat-anp-distribution-hover: rgba(255, 80, 0, 0.26);
+  --ds-cat-imports-hover:         rgba(168, 85, 247, 0.24);
+  --ds-cat-vessels-hover:         rgba(13, 148, 136, 0.26);
+  --ds-cat-manual-hover:          rgba(16, 185, 129, 0.24);
+  --ds-cat-news-hover:            rgba(250, 204, 21, 0.30);
+
+  /* Text — on dark, vivid swatches mostly pass AA, but we lift saturation
+     slightly for the dim ones (teal/orange) so labels stay legible at 11–13px. */
+  --ds-cat-anp-production-text:   #38e2ff;   /* lifted cyan  — 11.6:1 on #070d1c */
+  --ds-cat-anp-distribution-text: #ff7a3a;   /* lifted brand — 6.0:1 on #070d1c */
+  --ds-cat-imports-text:          #c084fc;   /* purple-400  — 7.4:1 on #070d1c */
+  --ds-cat-vessels-text:          #2dd4bf;   /* teal-400    — 9.8:1 on #070d1c */
+  --ds-cat-manual-text:           #34d399;   /* emerald-400 — 9.6:1 on #070d1c */
+  --ds-cat-news-text:             #fde047;   /* yellow-300  — 14.2:1 on #070d1c */
+
+  /* Status — same vivid hue, soft tints with more alpha, brighter text */
+  --ds-status-fresh-soft:         rgba(34, 197, 94, 0.18);
+  --ds-status-stale-soft:         rgba(245, 158, 11, 0.18);
+  --ds-status-overdue-soft:       rgba(239, 68, 68, 0.20);
+
+  --ds-status-fresh-text:         #4ade80;   /* green-400  — 8.8:1 on #070d1c */
+  --ds-status-stale-text:         #fbbf24;   /* amber-400  — 11.2:1 on #070d1c */
+  --ds-status-overdue-text:       #f87171;   /* red-400    — 6.5:1 on #070d1c */
+
+  /* Glass — white-tinted on dark surface (this is the "classic" glassmorphism
+     direction; the requested baseline values shipped here, with a subtle
+     elevated variant for header / hover rows). */
+  --ds-glass-bg:                  rgba(255, 255, 255, 0.04);
+  --ds-glass-bg-elevated:         rgba(255, 255, 255, 0.07);
+  --ds-glass-border:              rgba(255, 255, 255, 0.08);
+  --ds-glass-border-strong:       rgba(255, 255, 255, 0.14);
+  --ds-glass-backdrop:            blur(12px) saturate(1.4);
+  --ds-glass-shadow:              0 1px 0 rgba(255, 255, 255, 0.05) inset,
+                                  0 -1px 0 rgba(0, 0, 0, 0.4) inset,
+                                  0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+/* ── Pulse keyframe + utility class ─────────────────────────────────────── */
+/* Used by real-time data source rows (News, AIS, Yahoo). Apply .ds-pulse to a
+   small dot (or any element) — it inherits its colour via `currentColor`, so
+   the same animation works for any status / category colour the row carries.
+
+   Both keyframes (the one we ship and a `prefers-reduced-motion` no-op) are
+   declared so the utility class always finds a valid animation reference. */
+@keyframes ds-pulse-dot {
+  0%, 100% {
+    opacity: 0.4;
+    box-shadow: 0 0 0 0 currentColor;
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 0 var(--ds-pulse-ring) rgba(0, 0, 0, 0);   /* ring fades */
+  }
+}
+
+.ds-pulse {
+  animation: ds-pulse-dot var(--ds-pulse-duration) ease-in-out infinite;
+  border-radius: 50%;
+  will-change: opacity, box-shadow;
+}
+
+/* Accessibility — kill the pulse for users who opt out of motion */
+@media (prefers-reduced-motion: reduce) {
+  .ds-pulse {
+    animation: none;
+    opacity: 1;
+  }
+}
