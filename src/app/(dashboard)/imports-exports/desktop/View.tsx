@@ -395,7 +395,8 @@ export default function DesktopView(): React.ReactElement {
     visibilityLoading,
   } = useImportsExportsData();
 
-  const [exportBusy, setExportBusy] = useState(false);
+  const [excelBusy, setExcelBusy] = useState(false);
+  const [csvBusy, setCsvBusy] = useState(false);
 
   // ── Derived: stacked traces ─────────────────────────────────────────────────
   // All useMemo calls MUST be before any conditional early returns (Rules of Hooks).
@@ -492,7 +493,7 @@ export default function DesktopView(): React.ReactElement {
 
   // ── Export handler (Tier 1 — direct download) ───────────────────────────────
   async function handleExcelExport() {
-    setExportBusy(true);
+    setExcelBusy(true);
     try {
       const { default: ExcelJS } = await import("exceljs");
 
@@ -529,12 +530,12 @@ export default function DesktopView(): React.ReactElement {
       a.remove();
       URL.revokeObjectURL(url);
     } finally {
-      setExportBusy(false);
+      setExcelBusy(false);
     }
   }
 
   async function handleCsvExport() {
-    setExportBusy(true);
+    setCsvBusy(true);
     try {
       const JSZip = (await import("jszip")).default;
 
@@ -572,7 +573,7 @@ export default function DesktopView(): React.ReactElement {
       a.remove();
       URL.revokeObjectURL(url);
     } finally {
-      setExportBusy(false);
+      setCsvBusy(false);
     }
   }
 
@@ -595,15 +596,16 @@ export default function DesktopView(): React.ReactElement {
                 kind: "excel",
                 label: "Excel",
                 onClick: handleExcelExport,
-                busy: exportBusy,
+                busy: excelBusy,
+                disabled: excelBusy || csvBusy,
                 loadingLabel: "Building workbook…",
               },
               {
                 kind: "csv",
                 label: "CSV (zip)",
                 onClick: handleCsvExport,
-                busy: exportBusy && !exportBusy,
-                disabled: exportBusy,
+                busy: csvBusy,
+                disabled: excelBusy || csvBusy,
               },
             ]}
           />
