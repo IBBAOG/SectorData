@@ -1,4 +1,4 @@
-name: ANP Preços — Sync (PPI + Produtores + GLP)
+name: ANP Preços — Sync (Produtores + GLP)
 
 on:
   schedule:
@@ -19,16 +19,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # Run all three syncs independently. We never want a failure in one
-      # ANP source to block the others — they share zero data.
-      - name: Sync ANP PPI → Supabase
-        id: ppi
-        if: always()
-        run: python scripts/pipelines/anp/precos/01_ppi_sync.py
-        env:
-          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-
+      # Run both syncs independently — they share zero data.
       - name: Sync ANP Preços Produtores → Supabase
         id: produtores
         if: always()
