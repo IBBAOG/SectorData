@@ -27,15 +27,79 @@ logger = logging.getLogger(__name__)
 DEFAULT_COALESCE_ABOVE = 10
 
 
+def _route_confirmation_events(client) -> int:
+    """
+    Confirmation events have source_slug='system_confirmation' and
+    payload.subscriber_ids listing the specific rows in alert_subscribers
+    that need a confirmation email.
+
+    Route 1 outbox row per (subscriber_id in payload, event_id),
+    regardless of subscriber.source_slug.
+
+    Idempotent via (subscriber_id, event_id) UNIQUE.
+    Returns count of rows inserted (duplicates ignored).
+    """
+    # Load all confirmation events that exist in alert_events
+    pending_resp = (
+        client.table("alert_events")
+        .select("id, payload")
+        .eq("source_slug", "system_confirmation")
+        .execute()
+    )
+    pending = pending_resp.data or []
+    if not pending:
+        return 0
+
+    # Pre-load existing outbox pairs to skip already-routed rows
+    existing_resp = (
+        client.table("alert_outbox")
+        .select("subscriber_id, event_id")
+        .execute()
+    )
+    existing_pairs: set[tuple] = {
+        (r["subscriber_id"], r["event_id"]) for r in (existing_resp.data or [])
+    }
+
+    created = 0
+    for ev in pending:
+        sub_ids = (ev.get("payload") or {}).get("subscriber_ids") or []
+        for sid in sub_ids:
+            if (sid, ev["id"]) in existing_pairs:
+                continue
+            try:
+                client.table("alert_outbox").insert(
+                    {
+                        "subscriber_id": sid,
+                        "event_id": ev["id"],
+                        "status": "queued",
+                    }
+                ).execute()
+                created += 1
+                existing_pairs.add((sid, ev["id"]))
+            except Exception:
+                # ON CONFLICT (subscriber_id, event_id) — already queued, skip
+                pass
+
+    if created:
+        logger.info("fanout(confirmation): routed %d confirmation outbox rows", created)
+    return created
+
+
 def fanout_pending_events() -> dict[str, int]:
     """
     Fan out newly detected events to all active + confirmed subscribers.
 
     Returns dict with keys:
-        created         — outbox rows created (non-coalesced)
-        coalesced_groups — number of coalesced bundles created
+        created              — outbox rows created (non-coalesced)
+        coalesced_groups     — number of coalesced bundles created
+        confirmations_routed — confirmation outbox rows routed
     """
     client = get_client()
+
+    # ------------------------------------------------------------------
+    # 0. Route confirmation events first (special-cased: payload-driven)
+    # ------------------------------------------------------------------
+    confirmations_routed = _route_confirmation_events(client)
 
     # ------------------------------------------------------------------
     # 1. Find all alert_events that do NOT have a corresponding outbox row
@@ -55,7 +119,7 @@ def fanout_pending_events() -> dict[str, int]:
 
     if not subscribers:
         logger.info("fanout: no active confirmed subscribers — nothing to do")
-        return {"created": 0, "coalesced_groups": 0}
+        return {"created": 0, "coalesced_groups": 0, "confirmations_routed": confirmations_routed}
 
     # Build a map: source_slug -> [subscriber_id, ...]
     subs_by_source: dict[str, list[dict]] = defaultdict(list)
@@ -74,7 +138,7 @@ def fanout_pending_events() -> dict[str, int]:
 
     if not all_events:
         logger.info("fanout: no events found for active sources")
-        return {"created": 0, "coalesced_groups": 0}
+        return {"created": 0, "coalesced_groups": 0, "confirmations_routed": confirmations_routed}
 
     # Load existing outbox rows to determine what's already queued/sent
     existing_resp = (
@@ -115,7 +179,7 @@ def fanout_pending_events() -> dict[str, int]:
 
     if not pending_by_sub_source:
         logger.info("fanout: all events already have outbox rows")
-        return {"created": 0, "coalesced_groups": 0}
+        return {"created": 0, "coalesced_groups": 0, "confirmations_routed": confirmations_routed}
 
     # ------------------------------------------------------------------
     # 4. Build outbox INSERT rows (with coalescing)
@@ -171,7 +235,7 @@ def fanout_pending_events() -> dict[str, int]:
                 )
 
     if not rows_to_insert:
-        return {"created": 0, "coalesced_groups": 0}
+        return {"created": 0, "coalesced_groups": 0, "confirmations_routed": confirmations_routed}
 
     # ------------------------------------------------------------------
     # 5. Batch insert (supabase-py has no native ON CONFLICT DO NOTHING,
@@ -196,8 +260,13 @@ def fanout_pending_events() -> dict[str, int]:
             logger.error("fanout: batch insert failed: %s", exc, exc_info=True)
 
     logger.info(
-        "fanout complete: created=%d, coalesced_groups=%d",
+        "fanout complete: created=%d, coalesced_groups=%d, confirmations_routed=%d",
         total_created,
         coalesced_groups,
+        confirmations_routed,
     )
-    return {"created": total_created, "coalesced_groups": coalesced_groups}
+    return {
+        "created": total_created,
+        "coalesced_groups": coalesced_groups,
+        "confirmations_routed": confirmations_routed,
+    }

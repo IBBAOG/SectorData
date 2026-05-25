@@ -2,11 +2,15 @@
 Meta-canary: detects stale sources (no new event in N hours).
 
 For each active source in alert_sources, checks when the last event was detected.
-If no event within `stale_hours`, logs a warning and optionally inserts a
-meta-alert event (source_slug='_meta_canary', event_key='stale:<slug>:<date>').
+If no event within `stale_hours`, logs a WARNING and the function returns a non-empty
+`stale` list. The GHA workflow (alerts_meta_canary.yml) exits with code 1 when any
+source is stale, which causes GitHub to send a failure email to the repo owner
+automatically — no separate DB write needed.
 
-This does NOT send email directly — it inserts into alert_events and lets
-fanout + delivery handle notification if there are subscribers to _meta_canary.
+Design decision (QA fix, 2026-05-25): removed the meta-event INSERT into alert_events
+(which used FK source_slug='_meta_canary' that does not exist in alert_sources, causing
+a silent FK violation swallowed by safe_except). Relying on GHA exit code is simpler
+and more reliable for MVP.
 """
 from __future__ import annotations
 
@@ -62,8 +66,6 @@ def run_canary(stale_hours: int | None = None) -> dict[str, list[str]]:
         if slug not in latest_by_source:
             latest_by_source[slug] = evt["detected_at"]
 
-    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
     for src in sources:
         slug = src["source_slug"]
         latest = latest_by_source.get(slug)
@@ -76,28 +78,9 @@ def run_canary(stale_hours: int | None = None) -> dict[str, list[str]]:
                 latest or "never",
                 threshold_hours,
             )
-            # Insert a meta-alert event so admins can be notified
-            event_key = f"stale:{slug}:{today_str}"
-            try:
-                client.table("alert_events").insert(
-                    {
-                        "source_slug": "_meta_canary",
-                        "event_key": event_key,
-                        "payload": {
-                            "stale_source": slug,
-                            "display_name": src.get("display_name", slug),
-                            "last_event_at": latest,
-                            "stale_hours": threshold_hours,
-                            "message": (
-                                f"Source '{slug}' has been stale for >{threshold_hours}h "
-                                f"(last event: {latest or 'never'})"
-                            ),
-                        },
-                    }
-                ).execute()
-            except Exception as exc:
-                # Likely UNIQUE constraint — already flagged today, suppress
-                logger.debug("canary: meta-event insert skipped for %s: %s", slug, exc)
+            # No DB write here — the GHA workflow exits with code 1 when stale list is
+            # non-empty, which triggers a GitHub failure email to the repo owner.
+            # This avoids a FK violation on the removed '_meta_canary' source_slug.
         else:
             result["healthy"].append(slug)
             logger.debug("canary: source %s is healthy (last event: %s)", slug, latest)

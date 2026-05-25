@@ -17,6 +17,9 @@ from scripts.alerts.supabase_client import get_client
 
 logger = logging.getLogger(__name__)
 
+# TODO(v1.1): auto-detect current year instead of hardcoding 2025 in the URL.
+# When the year rolls over, this URL stops receiving new editions.
+# Fix: try current-year URL first; fall back to previous year if HTTP 404.
 ANP_SINTESE_URL = (
     "https://www.gov.br/anp/pt-br/assuntos/precos-e-defesa-da-concorrencia"
     "/precos/precos-revenda-e-de-distribuicao-combustiveis/sintese-dos-precos"

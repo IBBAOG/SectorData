@@ -101,10 +101,15 @@ const EVENT_TYPE_MAP: Record<string, string> = {
 export async function POST(req: NextRequest) {
   const webhookSecret = process.env.RESEND_WEBHOOK_SECRET;
   if (!webhookSecret) {
-    // Webhook secret not configured — reject to prevent unauthenticated writes
+    // Webhook secret not configured — return 503 (service unavailable) rather than 500.
+    // 503 signals a temporary configuration gap; Resend will retry automatically.
+    // Cache-Control prevents CDN from caching this transient error state.
     return NextResponse.json(
       { error: "Webhook not configured (RESEND_WEBHOOK_SECRET missing)" },
-      { status: 500 },
+      {
+        status: 503,
+        headers: { "Cache-Control": "no-store, max-age=0" },
+      },
     );
   }
 
@@ -144,8 +149,12 @@ export async function POST(req: NextRequest) {
   const supabase = getSupabaseAdmin();
   const statusLabel = EVENT_TYPE_MAP[eventType] ?? eventType;
 
-  // Extract identifiers from data
-  const toEmail = (data.to as string[] | undefined)?.[0] ?? (data.email as string | undefined) ?? "";
+  // Extract identifiers from data.
+  // Normalise to lowercase: subscribers are stored with lower(p_email) via RPC,
+  // but Resend may echo the address in mixed case. Case-insensitive match required.
+  const toEmail = (
+    (data.to as string[] | undefined)?.[0] ?? (data.email as string | undefined) ?? ""
+  ).toLowerCase();
   const messageId = (data.email_id as string | undefined) ?? null;
 
   // -------------------------------------------------------------------------

@@ -108,7 +108,12 @@ def cmd_fanout(args: argparse.Namespace) -> int:
     from scripts.alerts.fanout import fanout_pending_events
 
     result = fanout_pending_events()
-    logger.info("fanout: created=%d, coalesced_groups=%d", result["created"], result["coalesced_groups"])
+    logger.info(
+        "fanout: created=%d, coalesced_groups=%d, confirmations_routed=%d",
+        result["created"],
+        result["coalesced_groups"],
+        result.get("confirmations_routed", 0),
+    )
     return 0
 
 

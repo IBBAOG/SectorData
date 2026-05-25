@@ -76,10 +76,13 @@ def send_pending_outbox(batch_limit: int = 100) -> dict[str, int]:
     )
     events_by_id: dict[str, dict] = {e["id"]: e for e in (events_resp.data or [])}
 
-    # Collect unique source slugs and load sources
+    # Collect unique source slugs (from both subscribers and events — confirmation
+    # events use source_slug='system_confirmation' on the event, not the subscriber)
     source_slugs = list(
         {subs_by_id[r["subscriber_id"]]["source_slug"]
          for r in rows if r["subscriber_id"] in subs_by_id}
+        | {events_by_id[r["event_id"]]["source_slug"]
+           for r in rows if r["event_id"] in events_by_id}
     )
     sources_resp = (
         client.table("alert_sources")
@@ -109,8 +112,13 @@ def send_pending_outbox(batch_limit: int = 100) -> dict[str, int]:
             counts["failed"] += 1
             continue
 
-        email_addr: str = subscriber["email"]
-        source_slug: str = subscriber["source_slug"]
+        # Normalise email to lowercase before suppression check and sending.
+        # Subscribers are stored lower-cased via RPC; Resend echoes as-is in webhooks.
+        email_addr: str = subscriber["email"].lower()
+        # For confirmation events, the event's source_slug is 'system_confirmation';
+        # for all other events, use the event's source_slug (matches subscriber).
+        event_source_slug: str = event.get("source_slug", subscriber["source_slug"])
+        source_slug: str = event_source_slug
         source = sources_by_slug.get(source_slug, {"source_slug": source_slug, "display_name": source_slug})
 
         # Pre-check suppression list
@@ -120,8 +128,11 @@ def send_pending_outbox(batch_limit: int = 100) -> dict[str, int]:
             counts["skipped"] += 1
             continue
 
-        # Determine template type
-        is_confirmation = event["event_key"].startswith("confirmation:")
+        # Determine template type.
+        # Confirmation events come from source_slug='system_confirmation' (synthetic,
+        # created by subscribe_to_alerts RPC). Detect by source_slug, not event_key,
+        # because event source_slug drives routing and is always present.
+        is_confirmation = event.get("source_slug") == "system_confirmation"
         is_coalesced = bool(coalesced_payload_raw)
 
         try:

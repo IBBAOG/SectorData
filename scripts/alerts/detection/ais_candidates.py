@@ -1,9 +1,15 @@
 """
 Detector: ais_candidates — NEW (no legacy alertas/ equivalent)
 Source: AIS import candidates (high-score vessels approaching Brazilian ports).
-State read from: import_candidates table (imo, updated_at or discovered_at).
-event_key pattern: candidate:<imo>:<last_update_hour>
-  last_update_hour = ISO datetime truncated to the hour
+State read from: import_candidates table.
+event_key pattern: candidate:<imo>:<last_seen_hour>
+  last_seen_hour = last_seen_at truncated to the hour (YYYY-MM-DDTHH)
+
+Column mapping (verified against migration 20260424000000_import_candidates.sql):
+  confidence_score  — composite 0-100 score
+  navio             — vessel name
+  last_seen_at      — last AIS update timestamp
+  destination_port_name — human-readable destination
 """
 from __future__ import annotations
 
@@ -24,12 +30,15 @@ class AisCandidates(BaseDetector):
         client = get_client()
         events: list[DetectedEvent] = []
 
-        # Get recent high-score candidates
+        # Get recent high-score candidates.
+        # Column names verified against migration 20260424000000_import_candidates.sql:
+        #   confidence_score (not score), navio (not vessel_name),
+        #   last_seen_at (not updated_at), destination_port_name (correct)
         resp = (
             client.table("import_candidates")
-            .select("imo, score, vessel_name, updated_at, port_call_destination")
-            .gte("score", MIN_SCORE)
-            .order("updated_at", desc=True)
+            .select("imo, confidence_score, navio, last_seen_at, destination_port_name")
+            .gte("confidence_score", MIN_SCORE)
+            .order("last_seen_at", desc=True)
             .limit(50)
             .execute()
         )
@@ -48,8 +57,8 @@ class AisCandidates(BaseDetector):
 
         for row in resp.data:
             imo = str(row.get("imo", ""))
-            updated_at = str(row.get("updated_at", ""))
-            hour_str = updated_at[:13] if updated_at else ""
+            last_seen_at = str(row.get("last_seen_at", ""))
+            hour_str = last_seen_at[:13] if last_seen_at else ""
             if not imo or not hour_str:
                 continue
 
@@ -57,22 +66,24 @@ class AisCandidates(BaseDetector):
             if event_key in existing_keys:
                 continue
 
+            vessel_name = row.get("navio") or imo
+            score = row.get("confidence_score")
             logger.info("ais_candidates: new high-score candidate — %s", event_key)
             events.append(
                 DetectedEvent(
                     event_key=event_key,
                     payload={
                         "imo": imo,
-                        "score": row.get("score"),
-                        "vessel_name": row.get("vessel_name"),
-                        "last_update_hour": hour_str,
-                        "destination": row.get("port_call_destination"),
+                        "confidence_score": score,
+                        "vessel_name": vessel_name,
+                        "last_seen_hour": hour_str,
+                        "destination": row.get("destination_port_name"),
                         "source": "AIS Import Candidates",
                         "table": "import_candidates",
                         "frontend_route": "/navios-diesel",
                         "message": (
-                            f"High-score AIS candidate: {row.get('vessel_name', imo)} "
-                            f"(score {row.get('score')}) detected at {hour_str}"
+                            f"High-score AIS candidate: {vessel_name} "
+                            f"(score {score}) detected at {hour_str}"
                         ),
                     },
                 )

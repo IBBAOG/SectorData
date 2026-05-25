@@ -2,11 +2,14 @@
 Detector: navios_diesel — NEW (no legacy alertas/ equivalent)
 Source: Diesel vessel lineup (navios_diesel table).
 State read from: navios_diesel (collected_at, porto).
-event_key pattern: lineup:<porto>:<collected_at_hour>
-  collected_at_hour = ISO datetime truncated to the hour: YYYY-MM-DDTHH
+event_key pattern: lineup:<porto>:<YYYY-MM-DD>  (daily granularity)
 
-Emits one event per (porto, hour) combination not yet seen in alert_events.
-This captures each new lineup snapshot per port.
+One event per (porto, day) — at most 5 events/day (one per port).
+The UNIQUE constraint on (source_slug, event_key) in alert_events deduplicates
+re-runs within the same day automatically.
+
+v1.1 follow-up: refine to emit only when lineup content actually changes
+(hash of vessel IMO set per port). Daily granularity is acceptable for MVP.
 """
 from __future__ import annotations
 
@@ -54,11 +57,13 @@ class NaviosDiesel(BaseDetector):
         existing_keys = {r["event_key"] for r in (existing_resp.data or [])}
 
         for porto, collected_at in latest_by_porto.items():
-            # Truncate to hour
-            hour_str = collected_at[:13] if collected_at else ""
-            if not hour_str:
+            # Truncate to day (YYYY-MM-DD) — capped at 5 alerts/day (one per port).
+            # UNIQUE(source_slug, event_key) in alert_events deduplicates re-runs.
+            # v1.1: refine to emit only on content change (vessel IMO set hash).
+            day_str = collected_at[:10] if collected_at else ""
+            if not day_str:
                 continue
-            event_key = f"lineup:{porto}:{hour_str}"
+            event_key = f"lineup:{porto}:{day_str}"
             if event_key in existing_keys:
                 continue
 
@@ -68,11 +73,12 @@ class NaviosDiesel(BaseDetector):
                     event_key=event_key,
                     payload={
                         "porto": porto,
-                        "collected_at_hour": hour_str,
+                        "lineup_date": day_str,
+                        "collected_at": collected_at,
                         "source": "Diesel Vessel Lineup",
                         "table": "navios_diesel",
                         "frontend_route": "/navios-diesel",
-                        "message": f"New vessel lineup snapshot for {porto} at {hour_str}",
+                        "message": f"New vessel lineup snapshot for {porto} on {day_str}",
                     },
                 )
             )
