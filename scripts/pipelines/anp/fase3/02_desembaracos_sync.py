@@ -201,8 +201,16 @@ def _ler_arquivo(content: bytes, ano: int) -> pd.DataFrame:
             df.loc[df[col].isin(["nan", "None", ""]), col] = None
     # Normalize CNPJ: strip non-digit characters so equal CNPJs grouped consistently
     # regardless of source formatting ("12.345.678/0001-90" vs "12345678000190").
-    df["cnpj"] = df["cnpj"].astype("string").str.replace(r"\D", "", regex=True)
-    df.loc[df["cnpj"].isin(["", "nan", "None"]) | df["cnpj"].isna(), "cnpj"] = None
+    # Then left-pad to 14 digits with zfill to preserve leading zeros — the post-backfill
+    # audit (2026-05-25) found 13-digit CNPJs in `anp_desembaracos` (e.g. "4958554000238"
+    # instead of "04958554000238") because pandas auto-coerces numeric-looking strings to
+    # int upstream and drops the leading zero. Without zfill, the `importer_group_map`
+    # JOIN misses those rows. zfill is a no-op on empty strings, so the empty/None guard
+    # below still catches genuinely missing CNPJs (which collapse to _LEGACY_CNPJ later).
+    df["cnpj"] = (
+        df["cnpj"].astype("string").str.replace(r"\D", "", regex=True).str.zfill(14)
+    )
+    df.loc[df["cnpj"].isin(["", "nan", "None", "00000000000000"]) | df["cnpj"].isna(), "cnpj"] = None
     return df[[
         "ano", "mes", "ncm", "descricao_ncm", "pais_origem", "quantidade_kg",
         "importador", "cnpj", "uf_cnpj",
