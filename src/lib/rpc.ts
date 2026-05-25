@@ -2705,3 +2705,28 @@ export async function rpcUpdateSubscriptionActive(
     return false;
   }
 }
+
+// ─── MODULE: Home — Data Sources freshness ────────────────────────────────────
+//
+// Single aggregated RPC returning MAX(temporal_col) + count(*) for every
+// ETL-fed table. Used by the /home DataSourcesTable live panel.
+// SECURITY DEFINER — accessible to anon callers.
+// Migration: supabase/migrations/20260526200000_data_sources_freshness.sql
+
+export type DataSourceFreshnessRow = {
+  source_key: string;
+  last_update: string | null;
+  row_count: number;
+};
+
+/**
+ * Returns freshness metadata for every ETL-fed table in the platform.
+ * Callable by anon and authenticated users.
+ */
+export async function rpcGetDataSourcesFreshness(
+  supabase: SupabaseClient,
+): Promise<DataSourceFreshnessRow[]> {
+  const { data, error } = await supabase.rpc("get_data_sources_freshness");
+  if (error) throw error;
+  return (data ?? []) as DataSourceFreshnessRow[];
+}

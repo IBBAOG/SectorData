@@ -1,0 +1,366 @@
+/*
+ * DataSourcesTable.module.css
+ *
+ * All visual tokens consumed here are declared in src/app/globals.css under
+ * the "Data Sources tokens" block (lines ~2544–2719). Do NOT redeclare them.
+ *
+ * Naming:
+ *   .tableRoot       — outermost wrapper (right column of the 50/50 split)
+ *   .tableHeader     — sticky "DATA SOURCES · LIVE ●" bar
+ *   .sectionHeader   — translucent "── ANP PRODUCTION ──" divider
+ *   .sourceRowWrapper — per-row container (collapsed + expanded)
+ *   .sourceRow       — collapsed clickable row
+ *   .expandedRow     — inline expanded panel
+ */
+
+/* ── Outer container ────────────────────────────────────────────────────────── */
+
+.tableRoot {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  background: var(--ds-glass-bg);
+  border: 1px solid var(--ds-glass-border);
+  backdrop-filter: var(--ds-glass-backdrop);
+  -webkit-backdrop-filter: var(--ds-glass-backdrop);
+  box-shadow: var(--ds-glass-shadow);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* ── Table header ───────────────────────────────────────────────────────────── */
+
+.tableHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--ds-glass-bg-elevated);
+  border-bottom: 1px solid var(--ds-glass-border-strong);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #222;
+  font-family: 'Courier New', Courier, monospace;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.headerLiveDot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ds-status-fresh);
+  color: var(--ds-status-fresh); /* for currentColor-based pulse ring */
+  flex-shrink: 0;
+}
+
+/* ── Column header row ──────────────────────────────────────────────────────── */
+
+.colHeaders {
+  display: grid;
+  grid-template-columns: 16px 1fr 72px 80px 60px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(0, 0, 0, 0.38);
+  border-bottom: 1px solid var(--ds-glass-border);
+  background: var(--ds-glass-bg-elevated);
+}
+
+/* ── Section header ──────────────────────────────────────────────────────────── */
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 6px;
+}
+
+.sectionHeaderLine {
+  flex: 1;
+  height: 1px;
+  background: var(--ds-glass-border-strong);
+}
+
+.sectionHeaderLabel {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+}
+
+/* ── Source row (collapsed) ─────────────────────────────────────────────────── */
+
+.sourceRowWrapper {
+  border-bottom: 1px solid var(--ds-glass-border);
+}
+.sourceRowWrapper:last-child {
+  border-bottom: none;
+}
+
+.sourceRow {
+  display: grid;
+  grid-template-columns: 16px 1fr 72px 80px 60px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  user-select: none;
+  background: transparent;
+}
+
+.sourceRow:hover {
+  background: var(--row-cat-hover, rgba(0, 0, 0, 0.04));
+}
+
+.sourceRow:focus-visible {
+  outline: 2px solid var(--row-cat-text, #444);
+  outline-offset: -2px;
+}
+
+/* ── Columns ────────────────────────────────────────────────────────────────── */
+
+.colStatus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.colName {
+  display: flex;
+  align-items: center;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #1a1a1a;
+  overflow: hidden;
+}
+
+.nameLink {
+  color: #1a1a1a;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  transition: color 0.12s ease;
+}
+.nameLink:hover {
+  color: var(--row-cat-text, #444);
+}
+
+.nameStatic {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.colSource {
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.colLastUpdate {
+  display: flex;
+  align-items: center;
+}
+
+.colActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  color: rgba(0, 0, 0, 0.45);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+  text-decoration: none;
+  padding: 0;
+}
+.iconBtn:hover {
+  background: rgba(0, 0, 0, 0.07);
+  color: #222;
+}
+
+.iconBtnDisabled {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  color: rgba(0, 0, 0, 0.2);
+  cursor: default;
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+
+.expandChevron {
+  display: inline-flex;
+  align-items: center;
+  color: rgba(0, 0, 0, 0.3);
+  transition: transform 0.18s ease;
+  flex-shrink: 0;
+}
+
+/* ── Expanded row ────────────────────────────────────────────────────────────── */
+
+.expandedRow {
+  padding: 10px 14px 14px 38px; /* indent past the status dot column */
+  background: var(--row-cat-soft, rgba(0, 0, 0, 0.02));
+  border-top: 1px solid var(--ds-glass-border);
+}
+
+.expandedDesc {
+  font-size: 12px;
+  color: #444;
+  line-height: 1.55;
+  margin: 0 0 10px;
+}
+
+.expandedMeta {
+  display: flex;
+  gap: 8px;
+  font-size: 11.5px;
+  margin-bottom: 4px;
+  align-items: baseline;
+}
+
+.expandedMetaLabel {
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.45);
+  min-width: 76px;
+  flex-shrink: 0;
+}
+
+.expandedMetaValue {
+  color: #333;
+}
+
+.expandedActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+/* Shared action button pill */
+.actionBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 500;
+  border-radius: 4px;
+  cursor: pointer;
+  text-decoration: none;
+  color: var(--row-cat-text, #333);
+  background: var(--row-cat-soft, rgba(0, 0, 0, 0.04));
+  border: 1px solid var(--ds-glass-border);
+  transition: background 0.12s ease, border-color 0.12s ease;
+  white-space: nowrap;
+}
+.actionBtn:hover {
+  background: var(--row-cat-hover, rgba(0, 0, 0, 0.08));
+  border-color: var(--ds-glass-border-strong);
+}
+
+.actionBtnDisabled {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 500;
+  border-radius: 4px;
+  cursor: default;
+  text-decoration: none;
+  color: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  white-space: nowrap;
+}
+
+/* ── Dashboard picker dropdown ──────────────────────────────────────────────── */
+
+.pickerRoot {
+  position: relative;
+  display: inline-flex;
+}
+
+.pickerTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 500;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--row-cat-text, #333);
+  background: var(--row-cat-soft, rgba(0, 0, 0, 0.04));
+  border: 1px solid var(--ds-glass-border);
+  transition: background 0.12s ease;
+}
+.pickerTrigger:hover {
+  background: var(--row-cat-hover, rgba(0, 0, 0, 0.08));
+}
+
+.pickerDropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 100;
+  min-width: 200px;
+  background: #fff;
+  border: 1px solid var(--ds-glass-border-strong);
+  border-radius: 6px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  overflow: hidden;
+}
+
+.pickerItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  color: #222;
+  text-decoration: none;
+  border-radius: 4px;
+  transition: background 0.1s ease;
+}
+.pickerItem:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--row-cat-text, #333);
+}
