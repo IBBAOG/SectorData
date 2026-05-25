@@ -1,0 +1,14 @@
+SectorData Alerts — Confirm your subscription
+==============================================
+
+You requested to receive alerts for {{ source.display_name }} from SectorData.
+
+Click the link below to confirm your email address and activate your subscription:
+
+{{ confirm_url }}
+
+This link expires in 24 hours. If you did not request this, you can safely ignore
+this email — no subscription will be created.
+
+---
+You're receiving this because someone (hopefully you) requested alerts at {{ frontend_url }}/alerts.

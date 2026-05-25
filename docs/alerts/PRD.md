@@ -10,9 +10,32 @@ Backend master doc do produto **Alerts Product**. Owner: [`worker_alerts-product
 
 ## Status
 
-- **Plan approved:** 2026-05-25 ([`.claude/plans/quero-criar-um-novo-synchronous-reddy.md`](../../.claude/plans/quero-criar-um-novo-synchronous-reddy.md))
-- **Scaffold:** in progress (CTO authoring durable artifacts this session due to session-restart constraint — pegadinha #9). Worker will pick up in next session.
-- **In production:** no. Blocked on Resend account creation + API key.
+- **Plan approved:** 2026-05-25
+- **Scaffold:** COMPLETE (2026-05-25 — `worker_alerts-product` built full backend)
+- **In production:** no. Pending: `RESEND_WEBHOOK_SECRET` GHA secret (post-webhook-route-deploy) + sanity test run in GHA (RESEND_API_KEY is set in GHA secrets but not local .env).
+
+### Initialization checklist (verified 2026-05-25)
+
+- [x] `docs/alerts/PRD.md` read — source of truth confirmed
+- [x] `scripts/alerts/` directory scaffold complete (20 detectors, fanout, delivery, canary, CLI)
+- [x] `requirements.txt` updated — added `jinja2>=3.1`; `supabase` already present; Resend uses raw `requests` (no SDK coupling)
+- [x] GHA secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` exist; `RESEND_API_KEY` added by CEO 2026-05-25
+- [x] `RESEND_WEBHOOK_SECRET` — pending (create after deploying webhook route, see Setup step 5)
+- [x] 20 detectors in `DETECTOR_REGISTRY` (registry verified: `python -c "from scripts.alerts.detection import DETECTOR_REGISTRY; print(len(DETECTOR_REGISTRY))"` → 20)
+- [x] PRD lists 18 detector slugs + `anp_ppi` (adapter) + `anp_precos_produtores` (adapter) = 20 total
+- [x] Template renders verified locally: `alert_instant`, `alert_coalesced`, `confirmation` all PASS
+- [x] CLI `python -m scripts.alerts.cli --help` loads cleanly
+- [x] `worker_alertas` path (`alertas/`) untouched — coexists during cutover
+
+### Sanity test send-test result
+
+- **Status:** CANNOT RUN LOCALLY — `RESEND_API_KEY` is in GHA secrets only, not in `.env.local`.
+- **Action required:** After first GHA workflow run, or after adding key to `.env.local`, run:
+  ```
+  python -m scripts.alerts.cli send-test --to=eduardomendes07122@gmail.com
+  ```
+- **Expected:** PASS if `onboarding@resend.dev` → arbitrary Gmail works on Resend free tier.
+- **Fallback:** If FAIL with "domain not verified", see PRD § "Migration path" (buy domain ~US$10/yr, configure DKIM/SPF/DMARC in Resend dashboard).
 
 ## Architecture (cloud, multi-recipient)
 
