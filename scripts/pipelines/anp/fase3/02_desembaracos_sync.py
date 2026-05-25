@@ -63,10 +63,13 @@ _COLS_RENAME = {
 # NULL inside a composite PK, so legacy rows collapse under this single sentinel.
 _LEGACY_CNPJ = "__legacy__"
 
+# 27101259 ("Outras gasolinas, exceto aviação") is the bulk-import gasoline NCM
+# tracked by MDIC Comex. ANP's Desembaraços report historically doesn't include
+# it (different regulatory scope), but kept here defensively in case it appears.
 _NCMS_COMBUSTIVEIS = {
     22071010, 22072011,
     27090010,
-    27101251, 27101911, 27101921, 27101922, 27101931, 27101932, 27101994,
+    27101251, 27101259, 27101911, 27101921, 27101922, 27101931, 27101932, 27101994,
     27111100, 27111300, 27111910, 27112100, 27112910,
     38260000,
 }
@@ -77,6 +80,7 @@ _NCM_NOMES = {
     "22072011": "Etanol Anidro Carburante",
     "27090010": "Petróleo Cru",
     "27101251": "Nafta para Aviação",
+    "27101259": "Outras Gasolinas",
     "27101911": "QAV (Querosene Aviação)",
     "27101921": "Diesel (Gasóleo)",
     "27101922": "Fuel-oil",
