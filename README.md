@@ -33,7 +33,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 
 | Route | RPC functions | Export |
 |-------|---------------|--------|
-| `/home` | — (landing with module cards) | — |
+| `/home` | `get_data_sources_freshness` (desktop only — Data Sources live table) | — |
 | `/sales-volumes` | `get_sv_opcoes_filtros`, `get_ms_serie_fast`, `get_ms_serie_others`, `get_others_players` | Yes |
 | `/market-share` | `get_ms_opcoes_filtros`, `get_ms_serie_fast`, `get_ms_serie_others`, `get_others_players` | Yes |
 | `/navios-diesel` | `get_nd_ultima_coleta`, `get_nd_coletas_distintas`, `get_nd_navios`, `get_nd_resumo_portos` | Yes |
@@ -56,6 +56,8 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/anp-prices` | Fuel Distribution | `get_anp_prices_filtros`, `get_anp_prices_serie`, `get_anp_prices_export_count` | Yes |
 | `/imports-exports` | Fuel Distribution | `get_imports_exports_filtros`, `get_imports_exports_paises_stacked`, `get_imports_exports_importers_stacked`, `get_imports_exports_yoy_table`, `get_imports_exports_exports_paises_stacked`, `get_imports_exports_exports_yoy_table`, `get_imports_exports_fob_price_serie` | Yes |
 | `/subsidy-tracker` | Fuel Distribution (Proprietary) | `get_subsidy_tracker_diesel` | Yes |
+
+> **Home Data Sources live table (2026-05-26, `[desktop-only]`):** `/home` desktop layout splits 50/50 — module cards on the left, live "Data Sources" table on the right. Mobile view is unchanged (cards only). Backed by RPC `get_data_sources_freshness()` (migration `20260526200000_data_sources_freshness.sql`), which returns `(source_key, last_update, row_count)` for 22 ETL-fed tables (ANP production × 5, ANP distribution × 7, imports & exports × 3, vessels × 4, manual × 2, news × 1). `LANGUAGE sql STABLE SECURITY DEFINER` + `search_path = public, pg_temp`, granted to `anon` + `authenticated`. Polled every 60s by `useDataSourcesFreshness`. Source-of-truth curation lives in `src/data/dataSources.ts` (23 entries — 22 tables + Yahoo Finance, which has no Supabase table). UI components: `src/components/home/DataSourcesTable/` (8 files). Visible to all tiers (Anon + Client + Admin) — serves as product transparency/robustness showcase. Download per row gated by session (Anon sees disabled "Sign in to download"). New design tokens added to `src/app/globals.css` (`--ds-cat-*`, `--ds-status-*`, `--ds-glass-*`, `--ds-pulse-*` + keyframe `ds-pulse-dot` + `.ds-pulse` utility class).
 
 > **ANP Prices consolidation (2026-05-26):** `/anp-prices` replaces the 3 retired dashboards `/anp-precos-produtores`, `/anp-precos-distribuicao`, `/anp-lpc`. Backed by the 3 source tables (`anp_precos_produtores`, `anp_precos_distribuicao`, `anp_lpc`) joined server-side via `get_anp_prices_serie` (UNION ALL with product/unit/region normalization, Diesel S10→S500 fallback, GLP normalized to R$/13kg). 10 legacy RPCs dropped. ETL pipelines untouched. Archived sub-PRDs live under `docs/app/_deprecated/`. Migration: `supabase/migrations/20260526000000_anp_prices_consolidation.sql` + `20260526000001_anp_prices_uf_fix.sql`.
 
