@@ -296,7 +296,7 @@ Manages the `news_hunter_default_keywords` table, which is the single source of 
 
 | Wrapper | RPC | Return type |
 |---|---|---|
-| `rpcAdminListDefaultNewsKeywords(supabase)` | `admin_list_default_news_keywords()` | `DefaultNewsKeyword[]` (keyword, created_at) |
+| `rpcAdminListDefaultNewsKeywords(supabase)` | `admin_list_default_news_keywords()` | `DefaultNewsKeyword[]` (keyword, created_at) — **throws on RPC error** (caller must catch) |
 | `rpcAdminAddDefaultNewsKeyword(supabase, keyword)` | `admin_add_default_news_keyword(p_keyword)` | `boolean` (success) |
 | `rpcAdminRemoveDefaultNewsKeyword(supabase, keyword)` | `admin_remove_default_news_keyword(p_keyword)` | `boolean` (success) |
 
