@@ -42,6 +42,17 @@ const GRANULARITY_OPTIONS: { value: Granularity; label: string }[] = [
   { value: "municipio", label: "City" },
 ];
 
+/**
+ * Noun used in the "Select at least one ..." empty state. Mirrors the
+ * granularity toggle copy but in lowercase singular for the sentence frame.
+ */
+const SELECTION_NOUN: Record<Granularity, string> = {
+  brasil:    "location",
+  regiao:    "region",
+  uf:        "state",
+  municipio: "city",
+};
+
 export default function DesktopView(): React.ReactElement | null {
   const {
     visible, visLoading,
@@ -52,6 +63,7 @@ export default function DesktopView(): React.ReactElement | null {
     locais, toggleLocal, setLocais,
     allYears, yearRange, setYearRange, hasYears, periodBadge,
     availableLocais,
+    needsSelection,
     fontesVisiveis, faltandoElos,
     chart, unit,
     exportOpen, setExportOpen,
@@ -78,7 +90,14 @@ export default function DesktopView(): React.ReactElement | null {
         <div className="row g-0">
 
           {/* ── Sidebar ───────────────────────────────────────────────── */}
-          <div className="col-xxl-2 col-md-3 p-0">
+          {/* min-width + overflow-hidden on the Bootstrap column lock the
+              sidebar's horizontal footprint; without this, long state names or
+              a tall MultiSelectFilter list pushed the main chart sideways when
+              a UF was selected. */}
+          <div
+            className="col-xxl-2 col-md-3 p-0"
+            style={{ minWidth: 0, overflow: "hidden" }}
+          >
             <div id="sidebar">
               <div style={{ textAlign: "center" }}>
                 <BrandLogo variant="sidebar" />
@@ -115,8 +134,11 @@ export default function DesktopView(): React.ReactElement | null {
                 />
               </div>
 
-              {/* Locations (only when granularity !== brasil) */}
-              {granularity !== "brasil" && (
+              {/* Locations (only when granularity !== brasil).
+                  Region: 5 fixed items, checkbox list (best UX).
+                  State / City: searchable compact dropdown (27 states or
+                  hundreds of cities — checkbox list is unscrollable). */}
+              {granularity === "regiao" && (
                 <MultiSelectFilter
                   label={GRANULARITY_LABEL[granularity]}
                   items={availableLocais}
@@ -127,6 +149,22 @@ export default function DesktopView(): React.ReactElement | null {
                   idPrefix={`anp-prices-${granularity}`}
                   emptyMeansAll
                 />
+              )}
+
+              {(granularity === "uf" || granularity === "municipio") && (
+                <div className="sidebar-filter-section">
+                  <div className="sidebar-filter-label">
+                    {GRANULARITY_LABEL[granularity]}{" "}
+                    <span style={{ color: "#888", fontWeight: 400 }}>
+                      ({locais.length}/{availableLocais.length})
+                    </span>
+                  </div>
+                  <SearchableMultiSelect
+                    options={availableLocais}
+                    value={locais}
+                    onChange={setLocais}
+                  />
+                </div>
               )}
 
               {/* Period */}
@@ -173,7 +211,7 @@ export default function DesktopView(): React.ReactElement | null {
                   <div className="col-12">
                     <ChartSection
                       title={`${product} prices — ${GRANULARITY_LABEL[granularity]}${unit ? ` (${unit})` : ""}`}
-                      loading={chartLoading}
+                      loading={chartLoading && !needsSelection}
                       height={360}
                     >
                       {/* Trace legend (3 fixed dots) — sits above the chart so
@@ -181,16 +219,22 @@ export default function DesktopView(): React.ReactElement | null {
                           a trace is missing for the current product/granularity. */}
                       <TraceLegend visibleFontes={fontesVisiveis} />
 
-                      <PlotlyChart
-                        data={(chart.data && chart.data.length > 0) ? chart.data : emptyPlot(360).data}
-                        layout={(chart.data && chart.data.length > 0) ? chart.layout : emptyPlot(360).layout}
-                        config={{ responsive: true, displayModeBar: false }}
-                        style={{ width: "100%", height: 360 }}
-                      />
+                      {needsSelection ? (
+                        <NeedsSelectionEmptyState granularity={granularity} />
+                      ) : (
+                        <>
+                          <PlotlyChart
+                            data={(chart.data && chart.data.length > 0) ? chart.data : emptyPlot(360).data}
+                            layout={(chart.data && chart.data.length > 0) ? chart.layout : emptyPlot(360).layout}
+                            config={{ responsive: true, displayModeBar: false }}
+                            style={{ width: "100%", height: 360 }}
+                          />
 
-                      {/* Missing-link banner — discreet, never silent. */}
-                      {faltandoElos.length > 0 && !chartLoading && (
-                        <MissingLinksBanner missing={faltandoElos} />
+                          {/* Missing-link banner — discreet, never silent. */}
+                          {faltandoElos.length > 0 && !chartLoading && (
+                            <MissingLinksBanner missing={faltandoElos} />
+                          )}
+                        </>
                       )}
                     </ChartSection>
                   </div>
@@ -278,6 +322,53 @@ export default function DesktopView(): React.ReactElement | null {
           </div>
         }
       />
+    </div>
+  );
+}
+
+// ─── Inner — Empty state when granularity requires a selection ────────────────
+
+function NeedsSelectionEmptyState({ granularity }: { granularity: Granularity }) {
+  const noun = SELECTION_NOUN[granularity];
+  return (
+    <div
+      role="status"
+      style={{
+        height: 360,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        padding: 32,
+        textAlign: "center",
+        fontFamily: "Arial",
+        color: "#777",
+      }}
+    >
+      <div
+        aria-hidden="true"
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: "50%",
+          border: "1.5px dashed #cccccc",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#bbb",
+          fontSize: 18,
+          fontWeight: 700,
+        }}
+      >
+        +
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "#555" }}>
+        Select at least one {noun} to load the chart.
+      </div>
+      <div style={{ fontSize: 11.5, color: "#999", maxWidth: 320, lineHeight: 1.5 }}>
+        Use the {GRANULARITY_LABEL[granularity]} filter on the left to pick one or more {noun}s.
+      </div>
     </div>
   );
 }

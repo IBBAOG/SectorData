@@ -248,6 +248,10 @@ export interface UseAnpPricesData {
   // Locations available for the active granularity
   availableLocais: string[];
 
+  // True when granularity != 'brasil' AND no location selected yet.
+  // Views render an empty-state message and the hook skips the RPC.
+  needsSelection: boolean;
+
   // Server response
   serieRows: AnpPricesSerieRow[];
 
@@ -381,10 +385,19 @@ export function useAnpPricesData(): UseAnpPricesData {
     return [];
   }, [granularity, filtros.regioes, filtros.ufs, filtros.municipios]);
 
+  // When the user picks a non-Brazil granularity but hasn't picked any locations
+  // yet, skip the RPC entirely (otherwise we'd burn a huge query for all 27
+  // states or hundreds of cities just to be thrown away by the next user click).
+  // Views read this and render a "Select at least one ..." empty state.
+  const needsSelection = granularity !== "brasil" && locais.length === 0;
+
   // ── Reactive serie refetch (debounced 400ms) ───────────────────────────
   const { data: refetched, loading: serieLoading } = useDebouncedFetch<AnpPricesSerieRow[] | null>(
     async () => {
       if (!supabase || loading) return null;
+      // Bail out without hitting the network when the user is still in the
+      // "pick a location" stage of a sub-Brazil granularity.
+      if (needsSelection) return [];
       const yMin = allYears[yearRange[0]];
       const yMax = allYears[yearRange[1]];
       // For sub-Brazil granularities, push selected locations to the server
@@ -402,7 +415,7 @@ export function useAnpPricesData(): UseAnpPricesData {
     },
     [
       supabase, loading,
-      product, granularity, locais,
+      product, granularity, locais, needsSelection,
       yearRange[0], yearRange[1], allYears,
     ],
     { ms: 400, skipInitial: true },
@@ -411,6 +424,12 @@ export function useAnpPricesData(): UseAnpPricesData {
   useEffect(() => {
     if (refetched) setSerieRows(refetched);
   }, [refetched]);
+
+  // Clear stale rows the instant the user crosses into "needsSelection" so the
+  // empty state replaces the previous chart without a flash of stale data.
+  useEffect(() => {
+    if (needsSelection) setSerieRows([]);
+  }, [needsSelection]);
 
   // ── Derivations ─────────────────────────────────────────────────────────
   const fontesVisiveis = useMemo<Fonte[]>(
@@ -590,6 +609,7 @@ export function useAnpPricesData(): UseAnpPricesData {
     periodBadge,
 
     availableLocais,
+    needsSelection,
 
     serieRows,
 

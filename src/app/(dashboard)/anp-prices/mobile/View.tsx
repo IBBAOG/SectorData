@@ -62,6 +62,17 @@ const GRANULARITY_OPTIONS: { value: Granularity; label: string }[] = [
   { value: "municipio", label: "City" },
 ];
 
+/**
+ * Noun used in the "Select at least one ..." empty state. Mirrors the
+ * granularity toggle copy but in lowercase singular for the sentence frame.
+ */
+const SELECTION_NOUN: Record<Granularity, string> = {
+  brasil:    "location",
+  regiao:    "region",
+  uf:        "state",
+  municipio: "city",
+};
+
 const BRAND_ORANGE = "#FF5000";
 
 // ─── Mobile chart builder (3 traces, fixed colours, step for monthly) ─────────
@@ -156,6 +167,7 @@ export default function MobileView(): React.ReactElement | null {
     locais, toggleLocal, setLocais,
     allYears, yearRange, setYearRange, hasYears, periodBadge,
     availableLocais,
+    needsSelection,
     serieRows,
     fontesVisiveis, faltandoElos,
     unit,
@@ -439,7 +451,12 @@ export default function MobileView(): React.ReactElement | null {
             {/* Trace legend — fixed 3 dots, dimmed for missing fontes */}
             <TraceLegend visibleFontes={fontesVisiveis} />
 
-            {chartTraces.length === 0 ? (
+            {needsSelection ? (
+              <NeedsSelectionEmptyState
+                granularity={granularity}
+                onOpenFilters={() => setFilterOpen(true)}
+              />
+            ) : chartTraces.length === 0 ? (
               <div
                 style={{
                   padding: "32px 12px",
@@ -463,13 +480,13 @@ export default function MobileView(): React.ReactElement | null {
             )}
 
             {/* Missing-link banner */}
-            {faltandoElos.length > 0 && !serieLoading && (
+            {!needsSelection && faltandoElos.length > 0 && !serieLoading && (
               <MissingLinksBanner missing={faltandoElos} />
             )}
           </section>
 
-          {/* Per-link summary cards */}
-          {linkSummaries.length > 0 && (
+          {/* Per-link summary cards — hidden until a location is selected */}
+          {!needsSelection && linkSummaries.length > 0 && (
             <>
               <div
                 style={{
@@ -598,7 +615,10 @@ export default function MobileView(): React.ReactElement | null {
           </div>
         )}
 
-        {/* Locations (only when granularity !== brasil) */}
+        {/* Locations (only when granularity !== brasil).
+            Region: 5 fixed chips (touch-friendly, no need to search).
+            State / City: searchable dropdown (27 states or hundreds of cities
+            don't fit as chips). */}
         {granularity !== "brasil" && (
           <div style={{ marginBottom: 16 }}>
             <div
@@ -642,54 +662,65 @@ export default function MobileView(): React.ReactElement | null {
                 </button>
               )}
             </div>
-            <div
-              style={{
-                maxHeight: 240,
-                overflowY: "auto",
-                WebkitOverflowScrolling: "touch",
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 6,
-                padding: 2,
-              }}
-            >
-              {availableLocais.map(l => {
-                const active = locais.includes(l);
-                return (
-                  <button
-                    key={l}
-                    type="button"
-                    onClick={() => toggleLocal(l)}
-                    style={{
-                      minHeight: 30,
-                      padding: "0 10px",
-                      borderRadius: 999,
-                      border: "1px solid",
-                      borderColor: active ? BRAND_ORANGE : "var(--mobile-border, #e0e0e0)",
-                      background: active ? "rgba(255,80,0,0.08)" : "transparent",
-                      color: active ? BRAND_ORANGE : "var(--mobile-text-muted, #6b6b73)",
-                      fontFamily: "inherit",
-                      fontSize: 11,
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {l}
-                  </button>
-                );
-              })}
-            </div>
+
+            {granularity === "regiao" ? (
+              <div
+                style={{
+                  maxHeight: 240,
+                  overflowY: "auto",
+                  WebkitOverflowScrolling: "touch",
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 6,
+                  padding: 2,
+                }}
+              >
+                {availableLocais.map(l => {
+                  const active = locais.includes(l);
+                  return (
+                    <button
+                      key={l}
+                      type="button"
+                      onClick={() => toggleLocal(l)}
+                      style={{
+                        minHeight: 30,
+                        padding: "0 10px",
+                        borderRadius: 999,
+                        border: "1px solid",
+                        borderColor: active ? BRAND_ORANGE : "var(--mobile-border, #e0e0e0)",
+                        background: active ? "rgba(255,80,0,0.08)" : "transparent",
+                        color: active ? BRAND_ORANGE : "var(--mobile-text-muted, #6b6b73)",
+                        fontFamily: "inherit",
+                        fontSize: 11,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {l}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <SearchableMultiSelect
+                options={availableLocais}
+                value={locais}
+                onChange={setLocais}
+              />
+            )}
+
             {locais.length === 0 && (
               <div
                 style={{
                   marginTop: 6,
                   fontSize: 11,
-                  color: "var(--mobile-text-muted, #6b6b73)",
+                  color: BRAND_ORANGE,
+                  fontWeight: 600,
                   lineHeight: 1.4,
                 }}
               >
-                No selection: chart shows all {GRANULARITY_LABEL[granularity].toLowerCase()}s.
+                Select at least one {SELECTION_NOUN[granularity]} to load the chart.
               </div>
             )}
           </div>
@@ -778,6 +809,77 @@ export default function MobileView(): React.ReactElement | null {
 }
 
 // ─── Helpers (mobile-internal) ────────────────────────────────────────────────
+
+function NeedsSelectionEmptyState({
+  granularity,
+  onOpenFilters,
+}: {
+  granularity: Granularity;
+  onOpenFilters: () => void;
+}) {
+  const noun = SELECTION_NOUN[granularity];
+  return (
+    <div
+      role="status"
+      style={{
+        height: 240,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 10,
+        padding: "20px 16px",
+        textAlign: "center",
+      }}
+    >
+      <div
+        aria-hidden="true"
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: "50%",
+          border: "1.5px dashed #cccccc",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#bbb",
+          fontSize: 16,
+          fontWeight: 700,
+        }}
+      >
+        +
+      </div>
+      <div
+        style={{
+          fontSize: 13,
+          fontWeight: 600,
+          color: "var(--mobile-text, #1a1a1a)",
+        }}
+      >
+        Select at least one {noun} to load the chart.
+      </div>
+      <button
+        type="button"
+        onClick={onOpenFilters}
+        style={{
+          minHeight: 32,
+          padding: "0 14px",
+          borderRadius: 999,
+          border: `1px solid ${BRAND_ORANGE}`,
+          background: BRAND_ORANGE,
+          color: "#fff",
+          fontFamily: "inherit",
+          fontSize: 12,
+          fontWeight: 700,
+          letterSpacing: "0.02em",
+          cursor: "pointer",
+        }}
+      >
+        Open filters
+      </button>
+    </div>
+  );
+}
 
 function TraceLegend({ visibleFontes }: { visibleFontes: Fonte[] }) {
   const allFontes: Fonte[] = ["producer", "distribution", "retail"];
