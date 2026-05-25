@@ -71,7 +71,6 @@ const NAV_ENTRIES: NavEntry[] = [
           {
             label: "Prices",
             items: [
-              { href: "/anp-ppi",                label: "PPI" },
               { href: "/anp-precos-produtores",   label: "Producer Prices" },
               { href: "/anp-precos-distribuicao", label: "Distribution Prices" },
               { href: "/anp-lpc",                label: "LPC Prices" },
