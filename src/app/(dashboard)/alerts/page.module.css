@@ -1,0 +1,521 @@
+/* ─── /alerts — scoped styles ────────────────────────────────────────────────
+ * Keep all alerts-specific styles here. DO NOT add to globals.css.
+ * Brand color reference: #ff5000 (BRAND_ORANGE), #1a1a1a (text), #6b6b73 (muted)
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/* ── Category card ─────────────────────────────────────────────────────────── */
+.categoryCard {
+  border: 1px solid #e6e6ec;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  margin-bottom: 12px;
+}
+
+.categoryHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  cursor: pointer;
+  background: #fafafa;
+  border-bottom: 1px solid #e6e6ec;
+  user-select: none;
+}
+
+.categoryHeader:hover {
+  background: #f5f5f7;
+}
+
+.categoryTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a1a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.categoryBadge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #ff5000;
+  background: #fff0eb;
+  border-radius: 10px;
+  padding: 2px 7px;
+}
+
+.categoryActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.selectAllBtn {
+  font-size: 12px;
+  color: #ff5000;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+.selectAllBtn:hover {
+  background: #fff0eb;
+}
+
+.chevron {
+  font-size: 12px;
+  color: #6b6b73;
+  transition: transform 0.18s ease;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+/* ── Source list ───────────────────────────────────────────────────────────── */
+.sourceList {
+  padding: 4px 0;
+}
+
+.sourceRow {
+  display: flex;
+  align-items: flex-start;
+  padding: 10px 16px;
+  border-bottom: 1px solid #f0f0f5;
+  gap: 10px;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.sourceRow:last-child {
+  border-bottom: none;
+}
+
+.sourceRow:hover {
+  background: #fafafa;
+}
+
+.sourceCheckbox {
+  margin-top: 2px;
+  accent-color: #ff5000;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.sourceInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.sourceName {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1a1a;
+  line-height: 1.3;
+}
+
+.sourceFrequency {
+  font-size: 11px;
+  color: #8c8c96;
+  margin-top: 2px;
+}
+
+.sourceDescription {
+  font-size: 11px;
+  color: #8c8c96;
+  margin-top: 2px;
+  font-style: italic;
+}
+
+/* ── Email input ───────────────────────────────────────────────────────────── */
+.emailSection {
+  margin-bottom: 16px;
+}
+
+.emailLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 6px;
+  display: block;
+}
+
+.emailInput {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d1d9;
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: Arial, sans-serif;
+  color: #1a1a1a;
+  background: #fff;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  box-sizing: border-box;
+}
+
+.emailInput:focus {
+  outline: none;
+  border-color: #ff5000;
+  box-shadow: 0 0 0 3px rgba(255, 80, 0, 0.12);
+}
+
+.emailInput.hasError {
+  border-color: #dc2626;
+}
+
+.emailError {
+  font-size: 12px;
+  color: #dc2626;
+  margin-top: 4px;
+}
+
+.emailHint {
+  font-size: 12px;
+  color: #8c8c96;
+  margin-top: 4px;
+}
+
+/* ── Subscribe button ──────────────────────────────────────────────────────── */
+.subscribeBtn {
+  width: 100%;
+  padding: 12px 20px;
+  background: #ff5000;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  font-family: Arial, sans-serif;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.subscribeBtn:hover:not(:disabled) {
+  background: #e64700;
+}
+
+.subscribeBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Status cards ──────────────────────────────────────────────────────────── */
+.statusCard {
+  border-radius: 10px;
+  padding: 20px;
+  margin-top: 16px;
+}
+
+.statusCard.success {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+
+.statusCard.pending {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+}
+
+.statusCard.error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+}
+
+.statusCard.info {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+}
+
+.statusTitle {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin-bottom: 6px;
+}
+
+.statusBody {
+  font-size: 13px;
+  color: #4b5563;
+  line-height: 1.5;
+}
+
+.resendBtn {
+  margin-top: 12px;
+  background: none;
+  border: 1px solid #d1d1d9;
+  border-radius: 6px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: Arial, sans-serif;
+  cursor: pointer;
+  color: #1a1a1a;
+  transition: background 0.15s ease;
+}
+
+.resendBtn:hover:not(:disabled) {
+  background: #f5f5f7;
+}
+
+.resendBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Active subscriptions panel ────────────────────────────────────────────── */
+.subsPanel {
+  background: #fff;
+  border: 1px solid #e6e6ec;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.subsPanelHeader {
+  padding: 14px 16px;
+  border-bottom: 1px solid #e6e6ec;
+  background: #fafafa;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.subsPanelTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.subRow {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid #f0f0f5;
+  gap: 10px;
+}
+
+.subRow:last-child {
+  border-bottom: none;
+}
+
+.subName {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.subFrequency {
+  font-size: 11px;
+  color: #8c8c96;
+}
+
+.toggleBtn {
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: Arial, sans-serif;
+  cursor: pointer;
+  border: 1px solid;
+  transition: background 0.15s ease;
+}
+
+.toggleBtn.active {
+  background: #fff0eb;
+  border-color: #ff5000;
+  color: #ff5000;
+}
+
+.toggleBtn.paused {
+  background: #f5f5f7;
+  border-color: #d1d1d9;
+  color: #6b6b73;
+}
+
+.statusPill {
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 10px;
+  padding: 3px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pillSent { background: #d1fae5; color: #065f46; }
+.pillFailed { background: #fee2e2; color: #991b1b; }
+.pillQueued { background: #fef3c7; color: #92400e; }
+.pillSkipped { background: #f3f4f6; color: #6b7280; }
+
+/* ── Recent alerts feed ────────────────────────────────────────────────────── */
+.feedItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f5;
+}
+
+.feedItem:last-child {
+  border-bottom: none;
+}
+
+.feedDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ff5000;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.feedSource {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.feedMeta {
+  font-size: 11px;
+  color: #8c8c96;
+  margin-top: 2px;
+}
+
+/* ── Toolbar (global select / deselect) ────────────────────────────────────── */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.toolbarBtn {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ff5000;
+  background: none;
+  border: 1px solid #ff5000;
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-family: Arial, sans-serif;
+  transition: background 0.12s ease;
+}
+
+.toolbarBtn:hover {
+  background: #fff0eb;
+}
+
+.toolbarBtnGhost {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b6b73;
+  background: none;
+  border: 1px solid #d1d1d9;
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-family: Arial, sans-serif;
+  transition: background 0.12s ease;
+}
+
+.toolbarBtnGhost:hover {
+  background: #f5f5f7;
+}
+
+.selectionCount {
+  font-size: 12px;
+  color: #6b6b73;
+  margin-left: 4px;
+}
+
+/* ── Desktop two-column layout ──────────────────────────────────────────────── */
+.desktopLayout {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .desktopLayout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Legal footer ───────────────────────────────────────────────────────────── */
+.legalText {
+  font-size: 11px;
+  color: #8c8c96;
+  margin-top: 12px;
+  line-height: 1.5;
+}
+
+/* ── Mobile sticky bar ─────────────────────────────────────────────────────── */
+.stickyBar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border-top: 1px solid #e6e6ec;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── Mobile chip strip ─────────────────────────────────────────────────────── */
+.chipStrip {
+  display: flex;
+  gap: 6px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+
+.chipStrip::-webkit-scrollbar {
+  display: none;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #fff0eb;
+  border: 1px solid #ffd4c2;
+  border-radius: 16px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #ff5000;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.chipClose {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: #ff5000;
+  padding: 0;
+  line-height: 1;
+}
+
+/* ── Empty state ───────────────────────────────────────────────────────────── */
+.emptyState {
+  text-align: center;
+  padding: 32px 16px;
+  color: #8c8c96;
+  font-size: 13px;
+}
