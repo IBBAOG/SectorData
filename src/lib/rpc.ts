@@ -2504,6 +2504,27 @@ import type {
 } from "../types/alerts";
 
 /**
+ * Extracts a human-readable string from a Supabase / PostgrestError / Error / unknown.
+ * Avoids the "[object Object]" bug when an error object lacks a proper toString.
+ * PostgrestError shape: { message, details, hint, code }
+ */
+function extractErrorMessage(e: unknown): string {
+  if (typeof e === "string") return e;
+  if (e instanceof Error) return e.message;
+  if (e && typeof e === "object") {
+    const obj = e as Record<string, unknown>;
+    if (typeof obj.message === "string") return obj.message;
+    if (typeof obj.details === "string") return obj.details;
+    try {
+      return JSON.stringify(obj);
+    } catch {
+      return "Unknown error";
+    }
+  }
+  return String(e);
+}
+
+/**
  * Returns the active alert source catalog (is_active=true only).
  * Callable by anon + authenticated. Strips detection_module (view-level).
  */
@@ -2540,7 +2561,7 @@ export async function rpcSubscribeToAlerts(
     return (data as SubscribeResult) ?? { subscribed: 0, confirmation_sent: false };
   } catch (e) {
     console.error("subscribe_to_alerts failed", e);
-    return { subscribed: 0, confirmation_sent: false, error: String(e) };
+    return { subscribed: 0, confirmation_sent: false, error: extractErrorMessage(e) };
   }
 }
 
@@ -2560,7 +2581,7 @@ export async function rpcConfirmSubscription(
     return (data as ConfirmResult) ?? { success: false, subscribed_count: 0 };
   } catch (e) {
     console.error("confirm_subscription failed", e);
-    return { success: false, subscribed_count: 0, error: String(e) };
+    return { success: false, subscribed_count: 0, error: extractErrorMessage(e) };
   }
 }
 
@@ -2582,7 +2603,7 @@ export async function rpcResendConfirmation(
     return (data as ResendConfirmResult) ?? { sent: false };
   } catch (e) {
     console.error("resend_confirmation failed", e);
-    return { sent: false, error: String(e) };
+    return { sent: false, error: extractErrorMessage(e) };
   }
 }
 
@@ -2602,7 +2623,7 @@ export async function rpcUnsubscribe(
     return (data as UnsubscribeResult) ?? { success: false };
   } catch (e) {
     console.error("unsubscribe failed", e);
-    return { success: false, error: String(e) };
+    return { success: false, error: extractErrorMessage(e) };
   }
 }
 
@@ -2622,7 +2643,7 @@ export async function rpcUnsubscribeAll(
     return (data as UnsubscribeAllResult) ?? { success: false, count: 0 };
   } catch (e) {
     console.error("unsubscribe_all failed", e);
-    return { success: false, count: 0, error: String(e) };
+    return { success: false, count: 0, error: extractErrorMessage(e) };
   }
 }
 
