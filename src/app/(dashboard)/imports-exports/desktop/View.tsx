@@ -36,7 +36,6 @@ import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 import { useImportsExportsData } from "../useImportsExportsData";
 import type {
   UnifiedProduct,
-  ExportsSerieRow,
   YoyTableRow,
   PriceMetric,
   PricePoint,
@@ -262,6 +261,58 @@ function ImporterEmptyState() {
 
 const PRODUCTS: UnifiedProduct[] = ["Diesel", "Gasoline", "Crude Oil"];
 
+// Product pill toggle — content-sized pills with brand-orange active state.
+// Uses simple buttons (not SegmentedToggle) so each pill sizes to its label.
+function ProductPillToggle({
+  value,
+  onChange,
+}: {
+  value: UnifiedProduct;
+  onChange: (v: UnifiedProduct) => void;
+}) {
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        gap: 6,
+        background: "#f0f0f0",
+        borderRadius: 999,
+        padding: "3px 4px",
+      }}
+    >
+      {PRODUCTS.map((p) => {
+        const active = p === value;
+        return (
+          <button
+            key={p}
+            type="button"
+            onClick={() => onChange(p)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "4px 14px",
+              borderRadius: 999,
+              border: "none",
+              background: active ? "#ff5000" : "transparent",
+              color: active ? "#fff" : "#555",
+              fontFamily: "Arial",
+              fontSize: 12,
+              fontWeight: active ? 700 : 500,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+              transition: "background 0.18s, color 0.18s",
+              userSelect: "none",
+            }}
+          >
+            {p}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Shared chart layout ───────────────────────────────────────────────────────
 
 function areaLayout(yLabel: string, height = 340): Partial<Layout> {
@@ -359,44 +410,31 @@ export default function DesktopView(): React.ReactElement {
     return buildStackedTraces(rows, "mil m³");
   }, [importersData]);
 
-  // Exports — multi-line
+  // Exports — single line for the active product
   const exportsTraces = useMemo(() => {
-    const visibleProducts = new Set(filters.exportsProductsVisible);
-    const byProduct = new Map<string, ExportsSerieRow[]>();
-    for (const r of exportsData) {
-      if (!visibleProducts.has(r.produto as UnifiedProduct)) continue;
-      if (!byProduct.has(r.produto)) byProduct.set(r.produto, []);
-      byProduct.get(r.produto)!.push(r);
-    }
-
-    const traces: PlotData[] = [];
-    let idx = 0;
-    for (const [product, rows] of byProduct.entries()) {
-      const sorted = [...rows].sort((a, b) =>
-        a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes,
-      );
-      const xs = sorted.map(
-        (r) => `${r.ano}-${String(r.mes).padStart(2, "0")}`,
-      );
-      const ys =
-        filters.exportsYAxis === "volume"
-          ? sorted.map((r) => r.volume_m3 / 1e3)
-          : sorted.map((r) => r.valor_usd);
-
-      const unit = filters.exportsYAxis === "volume" ? "mil m³" : "USD";
-      traces.push({
-        type: "scatter" as const,
-        mode: "lines" as const,
-        name: product,
-        x: xs,
-        y: ys,
-        line: { color: PALETTE[idx % PALETTE.length], width: 2 },
-        hovertemplate: `%{x}<br>${product}: %{y:,.1f} ${unit}<extra></extra>`,
-      } as unknown as PlotData);
-      idx++;
-    }
-    return traces;
-  }, [exportsData, filters.exportsProductsVisible, filters.exportsYAxis]);
+    const rows = exportsData.filter((r) => r.produto === filters.unifiedProduct);
+    if (!rows.length) return [];
+    const sorted = [...rows].sort((a, b) =>
+      a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes,
+    );
+    const xs = sorted.map(
+      (r) => `${r.ano}-${String(r.mes).padStart(2, "0")}`,
+    );
+    const ys =
+      filters.exportsYAxis === "volume"
+        ? sorted.map((r) => r.volume_m3 / 1e3)
+        : sorted.map((r) => r.valor_usd);
+    const unit = filters.exportsYAxis === "volume" ? "mil m³" : "USD";
+    return [{
+      type: "scatter" as const,
+      mode: "lines" as const,
+      name: filters.unifiedProduct,
+      x: xs,
+      y: ys,
+      line: { color: "#ff5000", width: 2 },
+      hovertemplate: `%{x}<br>${filters.unifiedProduct}: %{y:,.1f} ${unit}<extra></extra>`,
+    }] as unknown as PlotData[];
+  }, [exportsData, filters.unifiedProduct, filters.exportsYAxis]);
 
   // Panel C — price metric helpers
   const priceUnitLabel: Record<PriceMetric, string> = {
@@ -567,32 +605,6 @@ export default function DesktopView(): React.ReactElement {
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
               <div className="sidebar-section-label">Filters</div>
 
-              {/* Product — only relevant for the imports tab */}
-              {filters.tab === "imports" && (
-                <div className="sidebar-filter-section">
-                  <div className="sidebar-filter-label">Product</div>
-                  {PRODUCTS.map((p) => (
-                    <div key={p} className="form-check" style={{ marginBottom: 4 }}>
-                      <input
-                        className="form-check-input"
-                        type="radio"
-                        id={`ie-prod-${p}`}
-                        name="ie-product"
-                        checked={filters.unifiedProduct === p}
-                        onChange={() => setFilters({ unifiedProduct: p })}
-                      />
-                      <label
-                        className="form-check-label"
-                        htmlFor={`ie-prod-${p}`}
-                        style={{ fontFamily: "Arial", fontSize: 11, cursor: "pointer" }}
-                      >
-                        {p}
-                      </label>
-                    </div>
-                  ))}
-                </div>
-              )}
-
               {/* Period */}
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Period</div>
@@ -644,17 +656,31 @@ export default function DesktopView(): React.ReactElement {
                 }
               />
 
-              {/* Imports / Exports tab selector */}
-              <div style={{ marginBottom: 16, maxWidth: 300 }}>
-                <SegmentedToggle
-                  options={[
-                    { value: "imports" as const, label: "Imports" },
-                    { value: "exports" as const, label: "Exports" },
-                  ]}
-                  value={filters.tab}
-                  onChange={(v) => setFilters({ tab: v })}
-                  variant="compact"
+              {/* Control row: Product pill toggle + Imports/Exports tab selector */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 16,
+                  marginBottom: 16,
+                  flexWrap: "wrap",
+                }}
+              >
+                <ProductPillToggle
+                  value={filters.unifiedProduct}
+                  onChange={(v) => setFilters({ unifiedProduct: v })}
                 />
+                <div style={{ maxWidth: 200 }}>
+                  <SegmentedToggle
+                    options={[
+                      { value: "imports" as const, label: "Imports" },
+                      { value: "exports" as const, label: "Exports" },
+                    ]}
+                    value={filters.tab}
+                    onChange={(v) => setFilters({ tab: v })}
+                    variant="compact"
+                  />
+                </div>
               </div>
 
               {/* ── IMPORTS TAB ── */}
@@ -773,60 +799,17 @@ export default function DesktopView(): React.ReactElement {
               {/* ── EXPORTS TAB ── */}
               {filters.tab === "exports" && (
                 <div>
-                  {/* Controls row */}
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 16,
-                      alignItems: "center",
-                      marginBottom: 12,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    {/* Product visibility pills */}
-                    <div style={{ display: "flex", gap: 8 }}>
-                      {PRODUCTS.map((p, i) => {
-                        const active = filters.exportsProductsVisible.includes(p);
-                        return (
-                          <button
-                            key={p}
-                            type="button"
-                            onClick={() => {
-                              const next = active
-                                ? filters.exportsProductsVisible.filter((x) => x !== p)
-                                : [...filters.exportsProductsVisible, p];
-                              if (next.length > 0) setFilters({ exportsProductsVisible: next });
-                            }}
-                            style={{
-                              padding: "4px 14px",
-                              borderRadius: 999,
-                              border: `2px solid ${PALETTE[i % PALETTE.length]}`,
-                              background: active ? PALETTE[i % PALETTE.length] : "transparent",
-                              color: active ? "#fff" : PALETTE[i % PALETTE.length],
-                              fontFamily: "Arial",
-                              fontSize: 12,
-                              fontWeight: 600,
-                              cursor: "pointer",
-                            }}
-                          >
-                            {p}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* Volume / USD toggle */}
-                    <div style={{ maxWidth: 200 }}>
-                      <SegmentedToggle
-                        options={[
-                          { value: "volume" as const, label: "Volume (mil m³)" },
-                          { value: "usd" as const, label: "Value (USD)" },
-                        ]}
-                        value={filters.exportsYAxis}
-                        onChange={(v) => setFilters({ exportsYAxis: v })}
-                        variant="compact"
-                      />
-                    </div>
+                  {/* Volume / USD toggle */}
+                  <div style={{ marginBottom: 12, maxWidth: 220 }}>
+                    <SegmentedToggle
+                      options={[
+                        { value: "volume" as const, label: "Volume (mil m³)" },
+                        { value: "usd" as const, label: "Value (USD)" },
+                      ]}
+                      value={filters.exportsYAxis}
+                      onChange={(v) => setFilters({ exportsYAxis: v })}
+                      variant="compact"
+                    />
                   </div>
 
                   <ChartSection

@@ -10,7 +10,7 @@
 // Imports tab: Panel A (countries stacked, kt) + Panel B (importers stacked, mil m³)
 //   + YoY tables for each panel.
 //   + Panel C (import price from mdic_comex — FOB/bbl | FOB/m³ | FOB/ton, 3-line series).
-// Exports tab: multi-line series (volume_m3 or valor_usd) for selected products.
+// Exports tab: single-line series for the active unifiedProduct (volume_m3 or valor_usd).
 //
 // Debounce: 400ms on all reactive fetches (useDebouncedFetch).
 // Top-N: 10 (server-side aggregation, Others bucket returned from RPC).
@@ -55,7 +55,6 @@ export interface ImportsExportsFilters {
   period: [number, number];            // [anoInicio, anoFim]
   tab: ImportsExportsTab;
   exportsYAxis: ExportsYAxis;
-  exportsProductsVisible: UnifiedProduct[]; // which products show in exports chart
   priceMetric: PriceMetric;           // Panel C metric toggle
 }
 
@@ -152,7 +151,6 @@ const DEFAULT_FILTERS: ImportsExportsFilters = {
   period: DEFAULT_PERIOD,
   tab: "imports",
   exportsYAxis: "volume",
-  exportsProductsVisible: [...ALL_PRODUCTS],
   priceMetric: "fob_per_bbl",
 };
 
@@ -228,9 +226,6 @@ export function useImportsExportsData(): UseImportsExportsData {
     filters.tab,
     filters.exportsYAxis,
     filters.priceMetric,
-    // exportsProductsVisible as JSON key so shallow equality works
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    JSON.stringify(filters.exportsProductsVisible),
   ]);
 
   // ── Derived: YoY end date = period[1], last month derived from actual data ─
@@ -388,7 +383,7 @@ export function useImportsExportsData(): UseImportsExportsData {
       try {
         const rows = await rpcGetImportsExportsExportsSerie(
           supabase,
-          ALL_PRODUCTS,          // always fetch all 3; UI filters visibility
+          [stableFilters.unifiedProduct], // single active product
           stableFilters.period[0],
           stableFilters.period[1],
         );
@@ -401,9 +396,9 @@ export function useImportsExportsData(): UseImportsExportsData {
     }, 400);
     return () => { if (exportsTimerRef.current) clearTimeout(exportsTimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stableFilters.tab, stableFilters.period[0], stableFilters.period[1]]);
+  }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.period[0], stableFilters.period[1]]);
 
-  // ── 7. Panel C — import price (mdic_comex, all 3 products in parallel) ──────
+  // ── 7. Panel C — import price (mdic_comex, single active product) ────────────
   const priceFetchIdRef = useRef(0);
   const priceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -414,48 +409,20 @@ export function useImportsExportsData(): UseImportsExportsData {
     priceTimerRef.current = setTimeout(async () => {
       setPriceLoading(true);
       try {
-        const [diesel, gasoline, crude] = await Promise.all([
-          rpcGetImportsExportsFobPriceSerie(
-            supabase,
-            "Diesel",
-            stableFilters.period[0],
-            stableFilters.period[1],
-          ),
-          rpcGetImportsExportsFobPriceSerie(
-            supabase,
-            "Gasoline",
-            stableFilters.period[0],
-            stableFilters.period[1],
-          ),
-          rpcGetImportsExportsFobPriceSerie(
-            supabase,
-            "Crude Oil",
-            stableFilters.period[0],
-            stableFilters.period[1],
-          ),
-        ]);
+        const rows = await rpcGetImportsExportsFobPriceSerie(
+          supabase,
+          stableFilters.unifiedProduct,
+          stableFilters.period[0],
+          stableFilters.period[1],
+        );
         if (myId !== priceFetchIdRef.current) return;
         const metric = stableFilters.priceMetric;
-        const points: PricePoint[] = [
-          ...diesel.map((r) => ({
-            ano: r.ano,
-            mes: r.mes,
-            product: "Diesel" as UnifiedProduct,
-            value: r[metric],
-          })),
-          ...gasoline.map((r) => ({
-            ano: r.ano,
-            mes: r.mes,
-            product: "Gasoline" as UnifiedProduct,
-            value: r[metric],
-          })),
-          ...crude.map((r) => ({
-            ano: r.ano,
-            mes: r.mes,
-            product: "Crude Oil" as UnifiedProduct,
-            value: r[metric],
-          })),
-        ];
+        const points: PricePoint[] = rows.map((r) => ({
+          ano: r.ano,
+          mes: r.mes,
+          product: stableFilters.unifiedProduct,
+          value: r[metric],
+        }));
         setPriceData(points);
       } catch (err) {
         console.error("get_imports_exports_fob_price_serie:", err);
@@ -465,7 +432,7 @@ export function useImportsExportsData(): UseImportsExportsData {
     }, 400);
     return () => { if (priceTimerRef.current) clearTimeout(priceTimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stableFilters.tab, stableFilters.period[0], stableFilters.period[1], stableFilters.priceMetric]);
+  }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.period[0], stableFilters.period[1], stableFilters.priceMetric]);
 
   // ── Derived: period badge ───────────────────────────────────────────────────
   const periodBadge = `${stableFilters.period[0]} – ${stableFilters.period[1]}`;

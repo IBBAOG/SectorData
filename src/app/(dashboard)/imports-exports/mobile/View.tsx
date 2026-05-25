@@ -38,7 +38,6 @@ import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 import { useImportsExportsData } from "../useImportsExportsData";
 import type {
   UnifiedProduct,
-  ExportsSerieRow,
   YoyTableRow,
   PriceMetric,
   PricePoint,
@@ -334,40 +333,29 @@ export default function MobileView(): React.ReactElement {
   }, [importersData]);
 
   const exportsTraces = useMemo(() => {
-    const visibleProducts = new Set(filters.exportsProductsVisible);
-    const byProduct = new Map<string, ExportsSerieRow[]>();
-    for (const r of exportsData) {
-      if (!visibleProducts.has(r.produto as UnifiedProduct)) continue;
-      if (!byProduct.has(r.produto)) byProduct.set(r.produto, []);
-      byProduct.get(r.produto)!.push(r);
-    }
-    const traces: PlotData[] = [];
-    let idx = 0;
-    for (const [product, rows] of byProduct.entries()) {
-      const sorted = [...rows].sort((a, b) =>
-        a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes,
-      );
-      const xs = sorted.map(
-        (r) => `${r.ano}-${String(r.mes).padStart(2, "0")}`,
-      );
-      const ys =
-        filters.exportsYAxis === "volume"
-          ? sorted.map((r) => r.volume_m3 / 1e3)
-          : sorted.map((r) => r.valor_usd);
-      const unit = filters.exportsYAxis === "volume" ? "mil m³" : "USD";
-      traces.push({
-        type: "scatter" as const,
-        mode: "lines" as const,
-        name: product,
-        x: xs,
-        y: ys,
-        line: { color: PALETTE[idx % PALETTE.length], width: 2 },
-        hovertemplate: `%{x}<br>${product}: %{y:,.1f} ${unit}<extra></extra>`,
-      } as unknown as PlotData);
-      idx++;
-    }
-    return traces;
-  }, [exportsData, filters.exportsProductsVisible, filters.exportsYAxis]);
+    const rows = exportsData.filter((r) => r.produto === filters.unifiedProduct);
+    if (!rows.length) return [];
+    const sorted = [...rows].sort((a, b) =>
+      a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes,
+    );
+    const xs = sorted.map(
+      (r) => `${r.ano}-${String(r.mes).padStart(2, "0")}`,
+    );
+    const ys =
+      filters.exportsYAxis === "volume"
+        ? sorted.map((r) => r.volume_m3 / 1e3)
+        : sorted.map((r) => r.valor_usd);
+    const unit = filters.exportsYAxis === "volume" ? "mil m³" : "USD";
+    return [{
+      type: "scatter" as const,
+      mode: "lines" as const,
+      name: filters.unifiedProduct,
+      x: xs,
+      y: ys,
+      line: { color: "#ff5000", width: 2 },
+      hovertemplate: `%{x}<br>${filters.unifiedProduct}: %{y:,.1f} ${unit}<extra></extra>`,
+    }] as unknown as PlotData[];
+  }, [exportsData, filters.unifiedProduct, filters.exportsYAxis]);
 
   const exportsLayout: Partial<Layout> = {
     ...COMMON_LAYOUT,
@@ -566,9 +554,6 @@ export default function MobileView(): React.ReactElement {
         </div>
         <div style={{ fontSize: 11, color: "var(--mobile-text-muted, #888)", marginTop: 4 }}>
           {periodBadge}
-          {filters.tab === "imports" && (
-            <span style={{ marginLeft: 8 }}>· {filters.unifiedProduct}</span>
-          )}
         </div>
       </div>
 
@@ -584,6 +569,49 @@ export default function MobileView(): React.ReactElement {
           variant="container"
           ariaLabel="Dashboard tabs"
         />
+      </div>
+
+      {/* Product pill row — horizontal scroll, single-select, brand orange */}
+      <div
+        style={{
+          padding: "8px 16px",
+          background: "var(--mobile-surface, #fff)",
+          borderBottom: "1px solid var(--mobile-divider, #e6e6ec)",
+          display: "flex",
+          gap: 8,
+          overflowX: "auto",
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
+        {PRODUCTS.map((p) => {
+          const active = p === filters.unifiedProduct;
+          return (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setFilters({ unifiedProduct: p })}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "5px 16px",
+                borderRadius: 999,
+                border: "none",
+                background: active ? "#ff5000" : "#f0f0f0",
+                color: active ? "#fff" : "#555",
+                fontFamily: "Arial",
+                fontSize: 13,
+                fontWeight: active ? 700 : 500,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+                minHeight: 34,
+              }}
+            >
+              {p}
+            </button>
+          );
+        })}
       </div>
 
       {/* Sticky filter trigger row */}
@@ -757,39 +785,6 @@ export default function MobileView(): React.ReactElement {
       {/* ── EXPORTS TAB ── */}
       {filters.tab === "exports" && (
         <div style={{ paddingTop: 12 }}>
-          {/* Product pills */}
-          <div style={{ padding: "0 16px 8px", display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {PRODUCTS.map((p, i) => {
-              const active = filters.exportsProductsVisible.includes(p);
-              return (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => {
-                    const next = active
-                      ? filters.exportsProductsVisible.filter((x) => x !== p)
-                      : [...filters.exportsProductsVisible, p];
-                    if (next.length > 0) setFilters({ exportsProductsVisible: next });
-                  }}
-                  style={{
-                    padding: "4px 12px",
-                    borderRadius: 999,
-                    border: `2px solid ${PALETTE[i % PALETTE.length]}`,
-                    background: active ? PALETTE[i % PALETTE.length] : "transparent",
-                    color: active ? "#fff" : PALETTE[i % PALETTE.length],
-                    fontFamily: "Arial",
-                    fontSize: 11,
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    minHeight: 32,
-                  }}
-                >
-                  {p}
-                </button>
-              );
-            })}
-          </div>
-
           {/* Volume / USD toggle */}
           <div style={{ padding: "0 16px 12px", display: "flex", gap: 8 }}>
             {(["volume", "usd"] as const).map((opt) => (
@@ -852,42 +847,6 @@ export default function MobileView(): React.ReactElement {
         applyLabel="Apply"
         resetLabel="Reset"
       >
-        {/* Product — only in imports tab */}
-        {filters.tab === "imports" && (
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#555", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.4px" }}>
-              Product
-            </div>
-            {PRODUCTS.map((p) => (
-              <label
-                key={p}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "10px 0",
-                  borderBottom: "1px solid #f0f0f0",
-                  cursor: "pointer",
-                  fontSize: 14,
-                  fontFamily: "Arial",
-                  color: filters.unifiedProduct === p ? "#ff5000" : "#1a1a1a",
-                  fontWeight: filters.unifiedProduct === p ? 700 : 400,
-                }}
-              >
-                <input
-                  type="radio"
-                  name="ie-product-mobile"
-                  value={p}
-                  checked={filters.unifiedProduct === p}
-                  onChange={() => setFilters({ unifiedProduct: p })}
-                  style={{ accentColor: "#ff5000", width: 18, height: 18 }}
-                />
-                {p}
-              </label>
-            ))}
-          </div>
-        )}
-
         {/* Period */}
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: "#555", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.4px" }}>

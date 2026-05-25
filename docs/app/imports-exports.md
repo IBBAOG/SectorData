@@ -15,7 +15,7 @@
 | Page title | Imports & Exports |
 | Subtitle | Brazilian fuel trade flows — by origin country and importer group |
 | Period badge | Year range derived from slider (`YYYY – YYYY`) |
-| Products | Diesel, Gasoline, Crude Oil (single-select radio, server-side filter) |
+| Products | Diesel, Gasoline, Crude Oil (global pill toggle — single-select, brand orange active state, content-sized pills) |
 | Tabs | Imports (default) / Exports |
 
 This dashboard **consolidates** the 3 deprecated dashboards:
@@ -93,7 +93,7 @@ Returns `(entity text, last_12m numeric, prev_12m numeric, yoy_pct numeric)`.
 Returns `(ano int, mes int, produto text, volume_m3 numeric, valor_usd numeric)`.
 
 - Filters `anp_daie.operacao = 'EXPORTAÇÃO'` (uppercase with diacritic — exact DB value).
-- UI always requests all 3 products; visibility filtering is client-side via `exportsProductsVisible`.
+- UI requests a single-element array `[unifiedProduct]` — the active product from the global pill toggle.
 - Volume toggle: `volume_m3 / 1e3 = mil m³`. Value toggle: `valor_usd` raw. **Labels must match divisor.**
 
 ---
@@ -106,42 +106,51 @@ Returns `(ano int, mes int, produto text, volume_m3 numeric, valor_usd numeric)`
 │  Sub: "Brazilian fuel trade flows — by origin country and importer group" │
 │  Period badge (yyyy – yyyy)                       ExportPanel (rightSlot)  │
 ├───────────────────────────────────────────────────────────────────────────┤
-│  SegmentedToggle: [Imports] [Exports]                                     │
+│  [Diesel | Gasoline | Crude Oil]   [Imports | Exports]                    │
+│  ↑ global single-select pill toggle (content-sized, brand orange active)  │
 ├──────────────┬────────────────────────────────────────────────────────────┤
 │  Sidebar     │ Imports tab:                                                │
 │  (220px)     │   ChartSection "By Origin Country"                         │
 │              │     Plotly stacked bar — x: YYYY-MM, stack: countries      │
-│  Product     │     Unit: kt (total_kg / 1e6)                              │
-│  radio       │   YoY table (entity | last 12m kt | prior 12m kt | YoY%)  │
+│  Period      │     Unit: kt (total_kg / 1e6)                              │
+│  select      │   YoY table (entity | last 12m kt | prior 12m kt | YoY%)  │
 │              │                                                             │
-│  Period      │   ChartSection "By Importer (Brazil)"                      │
-│  select      │     Plotly stacked bar — x: YYYY-MM, stack: importers      │
+│              │   ChartSection "By Importer (Brazil)"                      │
+│              │     Plotly stacked bar — x: YYYY-MM, stack: importers      │
 │              │     Unit: mil m³ (pre-converted by RPC)                    │
 │              │   YoY table (entity | last 12m mil m³ | prior | YoY%)      │
 │              │   Empty state if 0 rows (pre-backfill sentinel)             │
 │              │                                                             │
 │              │   ChartSection "Import Price (USD/bbl | USD/m3 | USD/ton)" │
 │              │     SegmentedToggle metric (compact, above chart)          │
-│              │     Plotly multi-line — 3 traces (Diesel/Gasoline/Crude)   │
-│              │     Source: mdic_comex. Colors: orange/amber/near-black    │
+│              │     Plotly single-line — 1 trace (active product only)     │
+│              │     Source: mdic_comex. Color: matches active product       │
 │              │                                                             │
 │              │ Exports tab:                                                │
-│              │   Product visibility pills [Diesel] [Gasoline] [Crude Oil] │
 │              │   SegmentedToggle: Volume (mil m³) / Value (USD)           │
 │              │   ChartSection "Exports — Fuel Trade"                      │
-│              │     Plotly multi-line — 1 trace per product                │
+│              │     Plotly single-line — 1 trace for active product        │
 └──────────────┴────────────────────────────────────────────────────────────┘
 ```
+
+**Global product selector** (pill toggle, not SegmentedToggle component):
+- Implemented as a custom `ProductPillToggle` component (inline in `desktop/View.tsx`) to allow content-sized pills (each pill shrinks to fit its label — no equal-width forced).
+- Active state: `background: #ff5000` (brand orange), `color: #fff`.
+- Inactive: `background: transparent`, `color: #555`.
+- All pills use `display: inline-flex; align-items: center; justify-content: center` for vertical + horizontal centering.
+- "Crude Oil" (longest label) renders at natural width without overflow.
 
 ---
 
 ## Mobile Adaptation
 
 - `MobileTabBar` for Imports / Exports.
-- Sidebar collapses into `FilterDrawer` (product radio + period selects).
+- **Product pill row** (horizontal scroll): single-select product toggle, sits between the sub-header and the sticky filter button. Same semantics as desktop global product toggle.
+- Sidebar collapses into `FilterDrawer` (period selects only — product radio removed, replaced by the pill row).
 - Charts rendered at 280px height (Panels A/B) or 240px (Panel C) via Plotly (no `MobileChart` wrapper needed — Plotly itself is responsive).
 - YoY rows rendered as `MobileDataCard` list (title = entity, subtitle = prior 12m, rightSlot = last 12m + YoY% in color).
-- Panel C metric toggle: horizontal-scroll pill row (same pattern as exports tab).
+- Panel C metric toggle: horizontal-scroll pill row (USD/bbl · USD/m³ · USD/ton). Single trace for active product.
+- Exports tab: Volume/USD toggle only (no per-product multi-select). Single trace for active product.
 - `ExportFAB` triggers Excel export.
 - Sticky filter button at top of scroll area opens `FilterDrawer`.
 
@@ -210,7 +219,9 @@ Returns one row per (ano, mes). NULL on the three derived `fob_per_*` columns wh
 
 ### Chart
 
-Multi-line (NOT stacked), one trace per unified product. Colors: Diesel = `#ff5000`, Gasoline = `#FFB04F`, Crude Oil = `#1a1a1a`. Hovertemplate shows 2 decimal places. Height 320px (desktop) / 240px (mobile). `hovermode: 'x unified'`.
+Single-line (NOT stacked), one trace for the **active product** (governed by the global product pill toggle). The active product color is `#ff5000` (brand orange) — all products use the same color since only one is shown at a time. Hovertemplate shows 2 decimal places. Height 320px (desktop) / 240px (mobile). `hovermode: 'x unified'`.
+
+Hook fetches a single RPC call (`get_imports_exports_fob_price_serie` for `stableFilters.unifiedProduct`) rather than 3 parallel calls. Switching products triggers a new fetch.
 
 ### Cross-source reconciliation
 
