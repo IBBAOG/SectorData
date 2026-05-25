@@ -346,32 +346,55 @@ gh run list --workflow=supabase_deploy.yml --limit 5
 
 Se houver fail recente sem fix, escalar para `worker_supabase`. Falhas silenciosas já causaram migration não-aplicada por dias em prod (incidente Export 2026-05-07).
 
-### d) `DROP FUNCTION` + `CREATE FUNCTION` apaga grants — sempre re-`GRANT`
+### d) `DROP FUNCTION` + `CREATE FUNCTION` apaga grants **E** atributos (SECURITY DEFINER, etc.)
 
-`CREATE OR REPLACE FUNCTION` **preserva** grants existentes — não precisa reaplicar.
+`CREATE OR REPLACE FUNCTION` **preserva** grants existentes e atributos (SECURITY DEFINER, search_path, volatility) da função anterior — não precisa reaplicar.
 
-`DROP FUNCTION ... [CASCADE]` seguido de `CREATE FUNCTION` **NÃO** preserva. A função renasce com grants vazios (apenas o owner consegue executar). Frontend usa role `anon` (e/ou `authenticated`); chamadas via PostgREST passam a falhar com PostgreSQL erro **42501 `permission denied for function ...`**.
+`DROP FUNCTION ... [CASCADE]` seguido de `CREATE FUNCTION` **NÃO** preserva nada. A função renasce do zero com:
+- **Grants vazios** (apenas o owner consegue executar). Frontend usa role `anon` (e/ou `authenticated`); chamadas via PostgREST passam a falhar com PostgreSQL erro **42501 `permission denied for function ...`**.
+- **SECURITY INVOKER por default** (não SECURITY DEFINER). Funções que liam tabelas com RLS authenticated-only passam a retornar `[]` silenciosamente para anon (RLS bloqueia mas não há erro — só zero rows).
+- **`search_path` desset** (vulnerável a search-path hijack quando combinado com SECURITY DEFINER).
 
-Sintoma típico:
+Sintoma típico (grants):
 - Função existe (`\df` mostra ela, `service_role` consegue chamar).
 - Frontend retorna 42501 para anon/authenticated.
 - Migration recente tem `DROP FUNCTION` no log.
 
-Regra: **sempre que a migration drop-and-recreate uma RPC pública**, anexe `GRANT EXECUTE ON FUNCTION ... TO anon, authenticated;` no final, mesmo que pareça redundante.
+Sintoma típico (SECURITY DEFINER perdido):
+- Função existe e tem grant EXECUTE para anon.
+- Frontend não dá erro, retorna `[]` ou zero count.
+- Dashboard fica em loading state forever / charts vazios / dropdowns de filtro funcionam mas data charts não.
+- Validação via `SET LOCAL ROLE anon` + chamar a função reproduz o `[]`.
+
+Regra: **sempre que a migration drop-and-recreate uma RPC pública**, anexe AO FINAL:
+1. `GRANT EXECUTE ON FUNCTION ... TO anon, authenticated;`
+2. `ALTER FUNCTION ... SECURITY DEFINER;` (se a RPC lê de tabela com RLS authed-only)
+3. `ALTER FUNCTION ... SET search_path = public, pg_temp;`
 
 Audit periódico (manual ou em CI):
 
 ```sql
+-- Grants ausentes para anon
 SELECT n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' AS func
 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
 WHERE n.nspname = 'public' AND p.prokind = 'f'
   AND p.proname LIKE 'get\_%'
   AND NOT has_function_privilege('anon', p.oid, 'EXECUTE');
+
+-- SECURITY DEFINER ausente em RPCs públicas (que tipicamente leem RLS-protected tables)
+SELECT n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' AS func,
+       p.prosecdef AS security_definer
+FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = 'public' AND p.prokind = 'f'
+  AND p.proname LIKE 'get\_%'
+  AND p.prosecdef = false;
 ```
 
-Empty set é o resultado desejado. Qualquer linha = grant faltando.
+Empty set é o resultado desejado em ambos. Qualquer linha = atributo faltando.
 
-**Incidente registrado**: 2026-05-25 — 6 RPCs `get_anp_cdp_bsw_*` (3) + `get_anp_cdp_depletion_*` (3) ficaram sem grant `anon` após DROP/CREATE em onda anterior. Smoke test do `/anp-cdp-bsw` retornou 42501 para todas. Fixed por `20260525210050_grant_execute_anon_rpcs.sql` (grant-only).
+**Incidente 1 registrado**: 2026-05-25 — 6 RPCs `get_anp_cdp_bsw_*` (3) + `get_anp_cdp_depletion_*` (3) ficaram sem grant `anon` após DROP/CREATE em onda anterior. Smoke test do `/anp-cdp-bsw` retornou 42501 para todas. Fixed por `20260525210050_grant_execute_anon_rpcs.sql` (grant-only).
+
+**Incidente 2 registrado**: 2026-05-25 (mesmo dia) — após corrigir os grants, smoke test ainda reportou `/anp-cdp-bsw` e `/anp-cdp-depletion` vazios para anon. Audit via `pg_proc.prosecdef` revelou que os MESMOS 4 RPCs de data (BSW `field_aggregate` + `scatter`, Depletion `field_aggregate` + `scatter`) perderam SECURITY DEFINER no DROP+CREATE — não tinha erro porque o grant foi restaurado, mas o caller anon batia em RLS de `anp_cdp_producao` e `anp_voip` (ambas authed-only) e retornava `[]` silenciosamente. Fixed por `20260526100000_restore_security_definer_cdp_rpcs.sql` (ALTER FUNCTION ... SECURITY DEFINER + SET search_path em 13 RPCs: 7 quebradas + 6 funcionando-por-sorte convertidas defensivamente). Validação anon: `bsw_field_aggregate(MARLIM)` 0 → 256 rows; `bsw_scatter(MARLIM,RONCADOR)` 0 → 21.583; `depletion_field_aggregate(MARLIM)` 0 → 135; `depletion_scatter(MARLIM)` 0 → 4.821; `ms_export_count(...)` 0 → 93.514. Pegadinha #18 (CLAUDE.md) documenta o sintoma.
 
 ## Workflow `supabase_deploy.yml`
 
