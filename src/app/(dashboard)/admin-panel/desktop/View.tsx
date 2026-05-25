@@ -262,13 +262,10 @@ export default function DesktopView(): React.ReactElement | null {
                   <span style={{ flexShrink: 0, opacity: isActive ? 1 : 0.6 }}>
                     {SECTION_ICONS[section.id]}
                   </span>
-                  {/* Label + description */}
+                  {/* Label */}
                   <span>
                     <div style={{ fontSize: 13, fontWeight: isActive ? 700 : 500, lineHeight: 1.3 }}>
                       {section.label}
-                    </div>
-                    <div style={{ fontSize: 10, opacity: 0.55, marginTop: 1 }}>
-                      {section.description}
                     </div>
                   </span>
                   {/* Active indicator */}
@@ -312,9 +309,6 @@ export default function DesktopView(): React.ReactElement | null {
               <span>
                 <div style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.3 }}>
                   Analytics dashboard
-                </div>
-                <div style={{ fontSize: 10, opacity: 0.55, marginTop: 1 }}>
-                  Open analytics view
                 </div>
               </span>
               <span style={{ marginLeft: "auto", opacity: 0.4, flexShrink: 0 }}>
