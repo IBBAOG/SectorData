@@ -56,7 +56,7 @@ function colourForEntity(entities: string[], entity: string): string {
   return PALETTE[idx % PALETTE.length] ?? OTHERS_COLOR;
 }
 
-// ─── Stacked bar builder (same logic as desktop) ───────────────────────────────
+// ─── Stacked area builder (same logic as desktop) ─────────────────────────────
 
 type StackedRow = { ano: number; mes: number; name: string; value: number };
 
@@ -79,20 +79,26 @@ function buildStackedTraces(rows: StackedRow[], unit: string): PlotData[] {
     if (!lookup.has(r.name)) lookup.set(r.name, new Map());
     lookup.get(r.name)!.set(key, r.value);
   }
-  return entities.map((entity) => ({
-    type: "bar" as const,
-    name: entity,
-    x: xs,
-    y: xs.map((x) => lookup.get(entity)?.get(x) ?? 0),
-    marker: { color: colourForEntity(entities, entity) },
-    hovertemplate: `%{x}<br>${entity}: %{y:,.1f} ${unit}<extra></extra>`,
-  })) as unknown as PlotData[];
+  return entities.map((entity) => {
+    const color = colourForEntity(entities, entity);
+    return {
+      type: "scatter" as const,
+      mode: "lines" as const,
+      stackgroup: "one",
+      name: entity,
+      x: xs,
+      y: xs.map((x) => lookup.get(entity)?.get(x) ?? 0),
+      line: { width: 0.5, color },
+      fillcolor: color,
+      hovertemplate: `%{x}<br>${entity}: %{y:,.1f} ${unit}<extra></extra>`,
+    };
+  }) as unknown as PlotData[];
 }
 
-function mobileBarLayout(yLabel: string): Partial<Layout> {
+function mobileAreaLayout(yLabel: string): Partial<Layout> {
   return {
     ...COMMON_LAYOUT,
-    barmode: "stack" as const,
+    hovermode: "x unified" as const,
     height: 280,
     margin: { t: 8, b: 52, l: 52, r: 8 },
     xaxis: {
@@ -546,7 +552,7 @@ export default function MobileView(): React.ReactElement {
             {paisesTraces.length > 0 ? (
               <Plot
                 data={paisesTraces}
-                layout={mobileBarLayout("kt")}
+                layout={mobileAreaLayout("kt")}
                 config={{ responsive: true, displayModeBar: false }}
                 style={{ width: "100%" }}
               />
@@ -578,7 +584,7 @@ export default function MobileView(): React.ReactElement {
             {importersData.length > 0 ? (
               <Plot
                 data={importersTraces}
-                layout={mobileBarLayout("mil m³")}
+                layout={mobileAreaLayout("mil m³")}
                 config={{ responsive: true, displayModeBar: false }}
                 style={{ width: "100%" }}
               />

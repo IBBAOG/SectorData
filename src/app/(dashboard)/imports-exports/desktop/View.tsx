@@ -54,7 +54,7 @@ function colourForEntity(entities: string[], entity: string): string {
   return PALETTE[idx % PALETTE.length] ?? OTHERS_COLOR;
 }
 
-// ─── Stacked bar builder ───────────────────────────────────────────────────────
+// ─── Stacked area builder ──────────────────────────────────────────────────────
 
 type StackedRow = { ano: number; mes: number; name: string; value: number };
 
@@ -80,14 +80,20 @@ function buildStackedTraces(rows: StackedRow[], unit: string): PlotData[] {
     lookup.get(r.name)!.set(key, r.value);
   }
 
-  return entities.map((entity) => ({
-    type: "bar" as const,
-    name: entity,
-    x: xs,
-    y: xs.map((x) => lookup.get(entity)?.get(x) ?? 0),
-    marker: { color: colourForEntity(entities, entity) },
-    hovertemplate: `%{x}<br>${entity}: %{y:,.1f} ${unit}<extra></extra>`,
-  })) as unknown as PlotData[];
+  return entities.map((entity) => {
+    const color = colourForEntity(entities, entity);
+    return {
+      type: "scatter" as const,
+      mode: "lines" as const,
+      stackgroup: "one",
+      name: entity,
+      x: xs,
+      y: xs.map((x) => lookup.get(entity)?.get(x) ?? 0),
+      line: { width: 0.5, color },
+      fillcolor: color,
+      hovertemplate: `%{x}<br>${entity}: %{y:,.1f} ${unit}<extra></extra>`,
+    };
+  }) as unknown as PlotData[];
 }
 
 // ─── YoY table ─────────────────────────────────────────────────────────────────
@@ -212,10 +218,10 @@ const PRODUCTS: UnifiedProduct[] = ["Diesel", "Gasoline", "Crude Oil"];
 
 // ─── Shared chart layout ───────────────────────────────────────────────────────
 
-function barLayout(yLabel: string, height = 340): Partial<Layout> {
+function areaLayout(yLabel: string, height = 340): Partial<Layout> {
   return {
     ...COMMON_LAYOUT,
-    barmode: "stack" as const,
+    hovermode: "x unified" as const,
     height,
     margin: { t: 12, b: 60, l: 60, r: 12 },
     xaxis: {
@@ -576,7 +582,7 @@ export default function DesktopView(): React.ReactElement {
                     {paisesTraces.length > 0 ? (
                       <Plot
                         data={paisesTraces}
-                        layout={barLayout("kt")}
+                        layout={areaLayout("kt")}
                         config={{ responsive: true, displayModeBar: false }}
                         style={{ width: "100%" }}
                       />
@@ -605,7 +611,7 @@ export default function DesktopView(): React.ReactElement {
                     {importersData.length > 0 ? (
                       <Plot
                         data={importersTraces}
-                        layout={barLayout("mil m³")}
+                        layout={areaLayout("mil m³")}
                         config={{ responsive: true, displayModeBar: false }}
                         style={{ width: "100%" }}
                       />
