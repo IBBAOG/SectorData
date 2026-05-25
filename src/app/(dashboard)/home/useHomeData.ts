@@ -219,6 +219,16 @@ const CARDS: Omit<HomeCardDef, "category">[] = [
     href: "/anp-lpc",
     disabled: false,
   },
+  // Tools
+  {
+    slug: "alerts",
+    preview: null,
+    title: "Alerts",
+    description: "Email notifications when new data is published",
+    badge: "Available",
+    href: "/alerts",
+    disabled: false,
+  },
 ];
 
 /** Assign a category to each slug. */
@@ -240,6 +250,7 @@ const SLUG_CATEGORY: Record<string, HomeCategory> = {
   "anp-glp": "fuel",
   "imports-exports": "fuel",
   "anp-lpc": "fuel",
+  alerts: "markets",
 };
 
 /** Static admin entries shown on mobile home (not in module_visibility). */

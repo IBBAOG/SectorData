@@ -23,7 +23,7 @@ src/app/(dashboard)/
   admin-panel/page.tsx              Gestão de roles + visibilidade de módulos
 ```
 
-RPC wrappers: [`src/lib/profileRpc.ts`](../../src/lib/profileRpc.ts) (perfil) + seção em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (admin).
+RPC wrappers: [`src/lib/profileRpc.ts`](../../src/lib/profileRpc.ts) (perfil) + seção em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (admin) + [`src/lib/alertsAdminRpc.ts`](../../src/lib/alertsAdminRpc.ts) (Alerts product admin — 7 wrappers + 2 PostgREST helpers).
 
 ## Dual-view structure
 
@@ -181,14 +181,20 @@ Landing visual. Mostra cards/imagens dos módulos disponíveis pro user (filtrad
 Perfil do usuário logado. Edição inline do nome (`profile-name-edit-icon-btn`). Mostra: avatar (iniciais), full_name, email, role badge.
 
 ### `/admin-panel`
-Protegida por `useRoleGuard("Admin")`. Funcionalidades (6 seções na sidebar):
+Protegida por `useRoleGuard("Admin")`. Funcionalidades (7 seções na sidebar):
 - **Members** — listar todos os users com role; promover/demover Admin ↔ Client.
 - **Permissions** — 3-tier visibility per module:
   - `is_visible_for_public` toggle — affects anonymous (logged-out) visitors.
   - `is_visible_for_clients` toggle — affects logged-in Client tier users. Forced ON whenever Public is ON (DB invariant + UI lock).
   - Admin always has access regardless of these flags.
 - **Card Images** — upload de imagem por módulo (home page cards) + toggle **"Show on Home"** (`is_visible_on_home`): liga/desliga a exibição do card na galeria `/home` para TODOS os usuários (incluindo Admin). Default `true`. Controles independentes: pode ter `is_visible_on_home=false` (card some do Home pra todos) e `is_visible_for_clients=true` (não afeta, já sumiu). Ou `is_visible_on_home=true` + `is_visible_for_clients=false` (Admin vê no Home, Client não vê).
-- **Alert Emails** — gerenciar destinatários de alertas automáticos.
+- **Alert Emails** — gerenciar destinatários de alertas automáticos (legado local).
+- **Alerts** — Alerts Product management (cloud, multi-recipient). 5 sub-sections:
+  - **Subscriber Stats** — total/active/unconfirmed counts, bounce/complaint rates (7d), per-source active count.
+  - **Subscribers** — full subscriber table with source filter and Force Unsubscribe action.
+  - **Sources** — toggle `is_active` per source; Send Test Event button for QA.
+  - **Email Log** — recent delivery events (sent/bounced/complained/failed) with status filter.
+  - **Outbox Repair** — failed outbox rows with Requeue button (resets status → queued, attempts → 0).
 - **Default News Keywords** — manage the `news_hunter_default_keywords` table. These keywords are used by anonymous visitors of the News Hunter dashboard and as the seed for new authenticated users (via `seed_my_news_hunter_keywords`). See section below.
 - **Data Input** — editar linhas de tabelas de referência diretamente via PostgREST (ver seção abaixo).
 
@@ -208,6 +214,13 @@ Protegida por `useRoleGuard("Admin")`. Funcionalidades (6 seções na sidebar):
 | `admin_list_default_news_keywords()` | leitura | admin-panel → Default News Keywords — `RETURNS TABLE(keyword text, created_at timestamptz)` |
 | `admin_add_default_news_keyword(p_keyword text)` | escrita | admin-panel → Default News Keywords — idempotent; `RETURNS void` |
 | `admin_remove_default_news_keyword(p_keyword text)` | escrita | admin-panel → Default News Keywords — `RETURNS void` |
+| `admin_list_subscribers(p_source_slug, p_limit)` | leitura | admin-panel → Alerts → Subscribers |
+| `admin_force_unsubscribe(p_subscriber_id)` | escrita | admin-panel → Alerts → Subscribers (Force Unsubscribe) |
+| `admin_requeue_outbox(p_outbox_id)` | escrita | admin-panel → Alerts → Outbox Repair (Requeue) |
+| `admin_send_test_event(p_source_slug)` | escrita | admin-panel → Alerts → Sources (Send Test Event) |
+| `admin_email_log_recent(p_limit)` | leitura | admin-panel → Alerts → Email Log |
+| `admin_subscriber_stats()` | leitura | admin-panel → Alerts → Subscriber Stats |
+| `admin_toggle_source_active(p_source_slug, p_is_active)` | escrita | admin-panel → Alerts → Sources (toggle is_active) |
 
 ## Tabelas
 
@@ -251,6 +264,7 @@ Lista completa dos slugs atualmente registrados na tabela `module_visibility` (t
 | `anp-cdp-depletion` | Estatísticas / Oil & Gas | ANP CDP — Depletion |
 | `stocks` | Other | Market Watch |
 | `news-hunter` | Other | News Hunter |
+| `alerts` | Tools | Alerts |
 
 > Os toggles no `/admin-panel` (seção Permissions) e os slots de imagem (seção Card Images) são gerados automaticamente a partir de `MODULE_LABELS` em `admin-panel/page.tsx`. Os cards na `/home` são definidos em `HomeClient.tsx` (array `CARDS`).
 
@@ -276,6 +290,39 @@ Workflow disparado pelo Subgerente APP quando ele cria um dashboard novo:
    - Admin tem opção de upload no `/admin-panel` (a confirmar implementação atual).
 
 4. **Avisar Subgerente APP** que onboarding terminou.
+
+## Alerts Product — section "alerts-product" (added 2026-05-25)
+
+This section manages the cloud multi-recipient Alerts Product (`worker_alerts-product` domain). It is entirely separate from the legacy Alert Emails section (`alert_recipients` table) which manages local one-off notifications.
+
+### Sub-sections
+
+| ID | Panel | RPC / source |
+|---|---|---|
+| A | Subscriber Stats | `admin_subscriber_stats()` |
+| B | Subscribers table | `admin_list_subscribers(p_source_slug?, p_limit)` + `admin_force_unsubscribe(id)` |
+| C | Sources management | `alert_sources` (PostgREST) + `admin_toggle_source_active` + `admin_send_test_event` |
+| D | Email Log | `admin_email_log_recent(p_limit)` |
+| E | Outbox Repair | `alert_outbox` (PostgREST filtered by `status='failed'`) + `admin_requeue_outbox(id)` |
+
+### RPC wrappers
+
+All 7 RPCs + 2 PostgREST helpers are in `src/lib/alertsAdminRpc.ts`. This file is intentionally separate from `rpc.ts` (which `worker_dash-alerts` edits for user-facing wrappers) to avoid merge conflicts (Regra G).
+
+### Module visibility
+
+`alerts` was registered in `module_visibility` via migration `20260525230000_alerts_module_visibility.sql`:
+- `is_visible_for_public = TRUE` — anonymous opt-in is the product's core value
+- `is_visible_for_clients = TRUE`
+- `is_visible_on_home = TRUE`
+
+### Hook state
+
+Loaded lazily when `activeSection === "alerts-product"`. All state lives in `useAdminPanelData`. No additional hooks needed.
+
+### Dual-view sync
+
+Both `desktop/View.tsx` and `mobile/View.tsx` received the Alerts section in the same commit. Mobile uses `MobileDataCard` rows for B/D/E. Desktop uses grid tables. Both use the same 5 sub-section structure.
 
 ## Default News Keywords — section "default-news"
 

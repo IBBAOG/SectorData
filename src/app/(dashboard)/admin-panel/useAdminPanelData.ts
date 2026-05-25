@@ -42,6 +42,31 @@ import { getSupabaseClient } from "../../../lib/supabaseClient";
 import { getCardPreviews, uploadCardPreview } from "../../../lib/cardPreviewRpc";
 import type { UserWithRole, UserProfile } from "../../../types/profile";
 import { EDITABLE_TABLES } from "@/lib/dataInput/registry";
+import {
+  rpcAdminListSubscribers,
+  rpcAdminForceUnsubscribe,
+  rpcAdminRequeueOutbox,
+  rpcAdminSendTestEvent,
+  rpcAdminEmailLogRecent,
+  rpcAdminSubscriberStats,
+  rpcAdminToggleSourceActive,
+  fetchAlertSources,
+  fetchFailedOutboxRows,
+  type AlertSubscriber,
+  type AlertSubscriberStats,
+  type AlertSource,
+  type AlertEmailLogEntry,
+  type AlertOutboxRow,
+} from "../../../lib/alertsAdminRpc";
+
+// Re-export Alerts types so both Views can import from a single location
+export type {
+  AlertSubscriber,
+  AlertSubscriberStats,
+  AlertSource,
+  AlertEmailLogEntry,
+  AlertOutboxRow,
+};
 
 // ── Section metadata ──────────────────────────────────────────────────────────
 
@@ -50,6 +75,7 @@ export type SectionId =
   | "permissions"
   | "card-images"
   | "alert-recipients"
+  | "alerts-product"
   | "default-news"
   | "data-input";
 
@@ -64,7 +90,8 @@ export const SECTIONS: SectionMeta[] = [
   { id: "members",          label: "Members",               shortLabel: "Members",     description: "User roles & access" },
   { id: "permissions",      label: "Permissions",           shortLabel: "Access",      description: "Module visibility" },
   { id: "card-images",      label: "Card Images",           shortLabel: "Cards",       description: "Home page previews" },
-  { id: "alert-recipients", label: "Alert Emails",          shortLabel: "Alerts",      description: "Notification recipients" },
+  { id: "alert-recipients", label: "Alert Emails",          shortLabel: "Alert Emails", description: "Notification recipients" },
+  { id: "alerts-product",   label: "Alerts",                shortLabel: "Alerts",      description: "Alerts product management" },
   { id: "default-news",     label: "Default News Keywords", shortLabel: "News Defaults", description: "Keywords used by anonymous News Hunter visitors" },
   { id: "data-input",       label: "Data Input",            shortLabel: "Tables",      description: "Edit reference tables" },
 ];
@@ -100,6 +127,8 @@ export const MODULE_LABELS: ModuleLabel[] = [
   // Other
   { slug: "stocks",                  label: "Market Watch",                 description: "Real-time stock quotes, historical charts, and market overview" },
   { slug: "news-hunter",             label: "News Hunter",                  description: "Live oil & gas news feed with incremental polling across ~60 sources" },
+  // Tools
+  { slug: "alerts",                  label: "Alerts",                       description: "Email notifications for new data publications — opt-in subscriber list" },
 ];
 
 // ── Alert recipient row shape ──────────────────────────────────────────────────
@@ -182,6 +211,30 @@ export interface UseAdminPanelData {
   handleAddRecipient: () => Promise<void>;
   handleToggleRecipient: (id: string, currentActive: boolean) => Promise<void>;
   handleRemoveRecipient: (id: string) => Promise<void>;
+
+  // Alerts product management (alerts-product section)
+  alertsStats: AlertSubscriberStats | null;
+  alertsStatsLoading: boolean;
+  alertsSubscribers: AlertSubscriber[];
+  alertsSubscribersLoading: boolean;
+  alertsSubscriberSourceFilter: string;
+  setAlertsSubscriberSourceFilter: (v: string) => void;
+  alertsSources: AlertSource[];
+  alertsSourcesLoading: boolean;
+  alertsEmailLog: AlertEmailLogEntry[];
+  alertsEmailLogLoading: boolean;
+  alertsEmailLogStatusFilter: string;
+  setAlertsEmailLogStatusFilter: (v: string) => void;
+  alertsOutbox: AlertOutboxRow[];
+  alertsOutboxLoading: boolean;
+  requeueingOutboxId: string | null;
+  sendingTestSlug: string | null;
+  togglingSourceSlug: string | null;
+  unsubscribingId: string | null;
+  handleAlertsForceUnsubscribe: (id: string) => Promise<void>;
+  handleAlertsRequeueOutbox: (id: string) => Promise<void>;
+  handleAlertsSendTestEvent: (sourceSlug: string) => Promise<void>;
+  handleAlertsToggleSource: (sourceSlug: string, isActive: boolean) => Promise<void>;
 
   // Default News Keywords
   defaultKeywords: DefaultNewsKeyword[];
@@ -508,6 +561,119 @@ export function useAdminPanelData(): UseAdminPanelData {
     [supabase, removingId, loadRecipients],
   );
 
+  // ── Alerts Product Management ──────────────────────────────────────────────
+  const [alertsStats, setAlertsStats] = useState<AlertSubscriberStats | null>(null);
+  const [alertsStatsLoading, setAlertsStatsLoading] = useState(false);
+  const [alertsSubscribers, setAlertsSubscribers] = useState<AlertSubscriber[]>([]);
+  const [alertsSubscribersLoading, setAlertsSubscribersLoading] = useState(false);
+  const [alertsSubscriberSourceFilter, setAlertsSubscriberSourceFilter] = useState("");
+  const [alertsSources, setAlertsSources] = useState<AlertSource[]>([]);
+  const [alertsSourcesLoading, setAlertsSourcesLoading] = useState(false);
+  const [alertsEmailLog, setAlertsEmailLog] = useState<AlertEmailLogEntry[]>([]);
+  const [alertsEmailLogLoading, setAlertsEmailLogLoading] = useState(false);
+  const [alertsEmailLogStatusFilter, setAlertsEmailLogStatusFilter] = useState("");
+  const [alertsOutbox, setAlertsOutbox] = useState<AlertOutboxRow[]>([]);
+  const [alertsOutboxLoading, setAlertsOutboxLoading] = useState(false);
+  const [requeueingOutboxId, setRequeuingOutboxId] = useState<string | null>(null);
+  const [sendingTestSlug, setSendingTestSlug] = useState<string | null>(null);
+  const [togglingSourceSlug, setTogglingSourceSlug] = useState<string | null>(null);
+  const [unsubscribingId, setUnsubscribingId] = useState<string | null>(null);
+
+  const loadAlertsData = useCallback(async () => {
+    if (!supabase) return;
+    // Load all 5 sub-sections in parallel
+    setAlertsStatsLoading(true);
+    setAlertsSubscribersLoading(true);
+    setAlertsSourcesLoading(true);
+    setAlertsEmailLogLoading(true);
+    setAlertsOutboxLoading(true);
+    const [stats, subs, sources, log, outbox] = await Promise.all([
+      rpcAdminSubscriberStats(),
+      rpcAdminListSubscribers(),
+      fetchAlertSources(),
+      rpcAdminEmailLogRecent(200),
+      fetchFailedOutboxRows(),
+    ]);
+    setAlertsStats(stats);
+    setAlertsStatsLoading(false);
+    setAlertsSubscribers(subs);
+    setAlertsSubscribersLoading(false);
+    setAlertsSources(sources);
+    setAlertsSourcesLoading(false);
+    setAlertsEmailLog(log);
+    setAlertsEmailLogLoading(false);
+    setAlertsOutbox(outbox);
+    setAlertsOutboxLoading(false);
+  }, [supabase]);
+
+  useEffect(() => {
+    if (allowed && activeSection === "alerts-product") loadAlertsData();
+  }, [allowed, activeSection, loadAlertsData]);
+
+  const handleAlertsForceUnsubscribe = useCallback(
+    async (id: string) => {
+      if (unsubscribingId) return;
+      setUnsubscribingId(id);
+      await rpcAdminForceUnsubscribe(id);
+      setUnsubscribingId(null);
+      // Refresh subscribers and stats
+      const [subs, stats] = await Promise.all([
+        rpcAdminListSubscribers(alertsSubscriberSourceFilter || undefined),
+        rpcAdminSubscriberStats(),
+      ]);
+      setAlertsSubscribers(subs);
+      setAlertsStats(stats);
+    },
+    [unsubscribingId, alertsSubscriberSourceFilter],
+  );
+
+  const handleAlertsRequeueOutbox = useCallback(
+    async (id: string) => {
+      if (requeueingOutboxId) return;
+      setRequeuingOutboxId(id);
+      await rpcAdminRequeueOutbox(id);
+      setRequeuingOutboxId(null);
+      // Refresh outbox list
+      const outbox = await fetchFailedOutboxRows();
+      setAlertsOutbox(outbox);
+    },
+    [requeueingOutboxId],
+  );
+
+  const handleAlertsSendTestEvent = useCallback(
+    async (sourceSlug: string) => {
+      if (sendingTestSlug) return;
+      setSendingTestSlug(sourceSlug);
+      await rpcAdminSendTestEvent(sourceSlug);
+      setSendingTestSlug(null);
+    },
+    [sendingTestSlug],
+  );
+
+  const handleAlertsToggleSource = useCallback(
+    async (sourceSlug: string, isActive: boolean) => {
+      if (togglingSourceSlug) return;
+      setTogglingSourceSlug(sourceSlug);
+      // Optimistic update
+      setAlertsSources((prev) =>
+        prev.map((s) =>
+          s.source_slug === sourceSlug ? { ...s, is_active: isActive } : s,
+        ),
+      );
+      const ok = await rpcAdminToggleSourceActive(sourceSlug, isActive);
+      if (!ok) {
+        // Rollback on failure
+        setAlertsSources((prev) =>
+          prev.map((s) =>
+            s.source_slug === sourceSlug ? { ...s, is_active: !isActive } : s,
+          ),
+        );
+      }
+      setTogglingSourceSlug(null);
+    },
+    [togglingSourceSlug],
+  );
+
   // ── Default News Keywords ──────────────────────────────────────────────────
   const [defaultKeywords, setDefaultKeywords] = useState<DefaultNewsKeyword[]>([]);
   const [defaultKeywordsLoading, setDefaultKeywordsLoading] = useState(false);
@@ -636,6 +802,29 @@ export function useAdminPanelData(): UseAdminPanelData {
     handleAddRecipient,
     handleToggleRecipient,
     handleRemoveRecipient,
+
+    alertsStats,
+    alertsStatsLoading,
+    alertsSubscribers,
+    alertsSubscribersLoading,
+    alertsSubscriberSourceFilter,
+    setAlertsSubscriberSourceFilter,
+    alertsSources,
+    alertsSourcesLoading,
+    alertsEmailLog,
+    alertsEmailLogLoading,
+    alertsEmailLogStatusFilter,
+    setAlertsEmailLogStatusFilter,
+    alertsOutbox,
+    alertsOutboxLoading,
+    requeueingOutboxId,
+    sendingTestSlug,
+    togglingSourceSlug,
+    unsubscribingId,
+    handleAlertsForceUnsubscribe,
+    handleAlertsRequeueOutbox,
+    handleAlertsSendTestEvent,
+    handleAlertsToggleSource,
 
     defaultKeywords,
     defaultKeywordsLoading,
