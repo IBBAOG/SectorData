@@ -241,9 +241,7 @@ Lista completa dos slugs atualmente registrados na tabela `module_visibility` (t
 | `anp-precos-produtores` | Estatísticas / Fuel Distribution | ANP Preços Produtores |
 | `anp-precos-distribuicao` | Estatísticas / Fuel Distribution | ANP Preços Distribuição |
 | `anp-glp` | Estatísticas / Fuel Distribution | ANP GLP |
-| `anp-daie` | Estatísticas / Fuel Distribution | ANP Dados Abertos IE |
-| `anp-desembaracos` | Estatísticas / Fuel Distribution | ANP Desembaraços |
-| `anp-painel-importacoes` | Estatísticas / Fuel Distribution | ANP Painel Importações |
+| `imports-exports` | Estatísticas / Fuel Distribution | Imports & Exports |
 | `anp-lpc` | Estatísticas / Fuel Distribution | ANP LPC Preços |
 | `sindicom` | Estatísticas / Fuel Distribution | SINDICOM |
 | `anp-cdp` | Estatísticas / Oil & Gas | ANP CDP Produção |
