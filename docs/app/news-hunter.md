@@ -417,3 +417,13 @@ Views by construction.
 - Mostrar keywords cross-user (quebra o conceito de RLS).
 - `buildHtml`/`buildEml` no servidor — eles rodam no cliente, mantendo o servidor pequeno.
 - Adicionar domínios ao scraper sem adicionar ao `EXTRACTORS` — o SSRF guard usa `EXTRACTORS` como allowlist.
+
+## Search performance (2026-05-25)
+
+Search input uses `useDeferredValue` so typing stays instant while the filter runs at lower priority. Article haystacks (`title + source_name + snippet + matched_keywords`) are pre-normalized (lowercase + stripAccents) once per `articles` change inside the shared hook, eliminating ~320k `normalize("NFD")` calls per keystroke at current scale (~16k articles × 20 keywords).
+
+Implementation details:
+- `searchDraft` / `deferredSearch` in `useNewsHunterData.ts` — public API still exports `searchTerm`/`setSearchTerm` (Option A alias, no View churn).
+- `normalizedHaystacks` memo: two pre-computed strings per article — `full` (keyword filter + topic pill) and `titleSource` (search filter).
+- `keywordHitsNormalized(normalizedHaystack, kw, mode)` — new variant that skips haystack normalization (only normalizes the keyword needle). `keywordHits()` delegates to it.
+- `filteredArticles` memo uses index-based filtering over `normalizedHaystacks` instead of rebuilding haystacks per predicate.

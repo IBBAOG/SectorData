@@ -17,6 +17,7 @@
 
 import {
   useCallback,
+  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -93,15 +94,25 @@ export function stripAccents(s: string): string {
 export function keywordHits(text: string, kw: string, mode: KeywordMatchType): boolean {
   const haystack = stripAccents(text.toLowerCase());
   const needle = stripAccents(kw.toLowerCase()).trim();
+  return keywordHitsNormalized(haystack, needle, mode);
+}
+
+/**
+ * Variant of keywordHits for pre-normalized haystacks.
+ * The haystack must already be lowercased + accent-stripped.
+ * Only the keyword (needle) is normalized here.
+ */
+export function keywordHitsNormalized(normalizedHaystack: string, kw: string, mode: KeywordMatchType): boolean {
+  const needle = stripAccents(kw.toLowerCase()).trim();
   if (!needle) return false;
-  if (mode === "substring") return haystack.includes(needle);
+  if (mode === "substring") return normalizedHaystack.includes(needle);
   // Word boundary on both sides. RegExp.escape doesn't exist in older runtimes,
   // so escape inline.
   const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   try {
-    return new RegExp(`\\b${escaped}\\b`, "i").test(haystack);
+    return new RegExp(`\\b${escaped}\\b`, "i").test(normalizedHaystack);
   } catch {
-    return haystack.includes(needle);
+    return normalizedHaystack.includes(needle);
   }
 }
 
@@ -217,7 +228,11 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
 
   const [newKeyword, setNewKeyword] = useState<string>("");
   const [newKeywordMatchType, setNewKeywordMatchType] = useState<KeywordMatchType>("substring");
-  const [searchTerm, setSearchTerm] = useState<string>("");
+  // searchDraft: updated on every keystroke (no lag in the input).
+  // deferredSearch: React 19 schedules this update at lower priority,
+  // so heavy filter re-renders don't block the input from feeling instant.
+  const [searchDraft, setSearchDraft] = useState<string>("");
+  const deferredSearch = useDeferredValue(searchDraft);
   const [topicFilter, setTopicFilter] = useState<string>("All");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [ageTick, setAgeTick] = useState(0);
@@ -316,8 +331,23 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
 
   // ── Derived ──────────────────────────────────────────────────────────────
 
+  // Pre-compute normalized haystacks once per articles change.
+  // Previously this work happened per-keystroke × per-article × per-keyword
+  // (≈320k normalize calls/keystroke at current scale).
+  const normalizedHaystacks = useMemo(() => {
+    return articles.map((a) => {
+      const full = `${a.title} ${a.source_name} ${a.snippet} ${a.matched_keywords.join(" ")}`;
+      const titleSource = `${a.title} ${a.source_name}`;
+      return {
+        full: stripAccents(full.toLowerCase()),
+        titleSource: stripAccents(titleSource.toLowerCase()),
+      };
+    });
+  }, [articles]);
+
   const filteredArticles = useMemo(() => {
     let result = articles;
+    let indices = Array.from({ length: articles.length }, (_, i) => i);
 
     // Keyword filter — honors each entry's match_type.
     //   'substring' → case-insensitive substring (legacy behaviour).
@@ -329,19 +359,20 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
     // word-bounded matched. Client-side re-check stays defensive (cheap and
     // catches articles persisted by older scanner runs).
     if (keywordEntries.length > 0) {
-      result = result.filter((a) => {
-        const hay = `${a.title} ${a.source_name} ${a.snippet} ${a.matched_keywords.join(" ")}`;
-        return keywordEntries.some((e) => keywordHits(hay, e.keyword, e.match_type));
-      });
+      indices = indices.filter((idx) =>
+        keywordEntries.some((e) =>
+          keywordHitsNormalized(normalizedHaystacks[idx].full, e.keyword, e.match_type),
+        ),
+      );
     }
 
-    // Search filter
-    const q = stripAccents(searchTerm.toLowerCase().trim());
+    // Search filter — consumes useDeferredValue so heavy re-renders don't
+    // block the input from feeling instant.
+    const q = stripAccents(deferredSearch.toLowerCase().trim());
     if (q) {
-      result = result.filter((a) => {
-        const hay = stripAccents(`${a.title} ${a.source_name}`.toLowerCase());
-        return hay.includes(q);
-      });
+      indices = indices.filter((idx) =>
+        normalizedHaystacks[idx].titleSource.includes(q),
+      );
     }
 
     // Topic pill filter (mobile — "All" = no filter)
@@ -352,14 +383,14 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
         (e) => e.keyword.toLowerCase() === topicFilter.toLowerCase(),
       );
       const mode = entry?.match_type ?? "substring";
-      result = result.filter((a) => {
-        const hay = `${a.title} ${a.source_name} ${a.matched_keywords.join(" ")}`;
-        return keywordHits(hay, topicFilter, mode);
-      });
+      indices = indices.filter((idx) =>
+        keywordHitsNormalized(normalizedHaystacks[idx].full, topicFilter, mode),
+      );
     }
 
+    result = indices.map((idx) => articles[idx]);
     return result;
-  }, [articles, keywordEntries, searchTerm, topicFilter]);
+  }, [articles, normalizedHaystacks, keywordEntries, deferredSearch, topicFilter]);
 
   const savedArticles = useMemo(
     () => articles.filter((a) => bookmarkedUrls.has(a.url)),
@@ -387,8 +418,11 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
     setNewKeywordMatchType,
     addKeyword,
     removeKeyword,
-    searchTerm,
-    setSearchTerm,
+    // Option A: expose draft state under the original public API names so
+    // Views don't need to change. The input updates searchDraft (instant);
+    // filteredArticles consumes deferredSearch (lower-priority).
+    searchTerm: searchDraft,
+    setSearchTerm: setSearchDraft,
     topicFilter,
     setTopicFilter,
     theme,
