@@ -58,7 +58,7 @@ These are approximations. The `ncm_densidade_kg_m3` table allows refinement with
 
 ## RPCs
 
-All 5 RPCs: `LANGUAGE sql / plpgsql`, `STABLE`, `SECURITY INVOKER`, granted to `anon, authenticated`. Source: migration `20260525000010_imports_exports_enrichment.sql`.
+All 6 RPCs: `LANGUAGE sql / plpgsql`, `STABLE`, `SECURITY INVOKER`, granted to `anon, authenticated`. RPCs 1–5: migration `20260525000010_imports_exports_enrichment.sql`. RPC 6 (`get_imports_exports_fob_price_serie`): Part 3 of imports-exports × mdic-comex unification (commit `5a6f7ba6`).
 
 ### `get_imports_exports_filtros()`
 
@@ -120,6 +120,11 @@ Returns `(ano int, mes int, produto text, volume_m3 numeric, valor_usd numeric)`
 │              │   YoY table (entity | last 12m mil m³ | prior | YoY%)      │
 │              │   Empty state if 0 rows (pre-backfill sentinel)             │
 │              │                                                             │
+│              │   ChartSection "Import Price (USD/bbl | USD/m3 | USD/ton)" │
+│              │     SegmentedToggle metric (compact, above chart)          │
+│              │     Plotly multi-line — 3 traces (Diesel/Gasoline/Crude)   │
+│              │     Source: mdic_comex. Colors: orange/amber/near-black    │
+│              │                                                             │
 │              │ Exports tab:                                                │
 │              │   Product visibility pills [Diesel] [Gasoline] [Crude Oil] │
 │              │   SegmentedToggle: Volume (mil m³) / Value (USD)           │
@@ -134,8 +139,9 @@ Returns `(ano int, mes int, produto text, volume_m3 numeric, valor_usd numeric)`
 
 - `MobileTabBar` for Imports / Exports.
 - Sidebar collapses into `FilterDrawer` (product radio + period selects).
-- Charts rendered at 280px height via Plotly (no `MobileChart` wrapper needed — Plotly itself is responsive).
+- Charts rendered at 280px height (Panels A/B) or 240px (Panel C) via Plotly (no `MobileChart` wrapper needed — Plotly itself is responsive).
 - YoY rows rendered as `MobileDataCard` list (title = entity, subtitle = prior 12m, rightSlot = last 12m + YoY% in color).
+- Panel C metric toggle: horizontal-scroll pill row (same pattern as exports tab).
 - `ExportFAB` triggers Excel export.
 - Sticky filter button at top of scroll area opens `FilterDrawer`.
 
@@ -173,8 +179,59 @@ Filename pattern: `Imports-Exports_DD-MM-YY.xlsx` / `.zip`.
 
 ---
 
+## Panel C — Import Price (MDIC-sourced)
+
+Added 2026-05-25 (Part 4 of imports-exports × mdic-comex unification).
+
+### Source
+
+`mdic_comex` (flow='import'), joined server-side with `imports_product_map` (source='mdic') and `ncm_densidade_kg_m3`. RPC: `get_imports_exports_fob_price_serie`.
+
+### RPC signature
+
+```
+get_imports_exports_fob_price_serie(
+  p_unified_product text,
+  p_ano_inicio int,
+  p_ano_fim int
+)
+returns (
+  ano int, mes int,
+  total_volume_kg numeric, total_volume_m3 numeric, total_fob_usd numeric,
+  fob_per_ton numeric, fob_per_m3 numeric, fob_per_bbl numeric
+)
+```
+
+Returns one row per (ano, mes). NULL on the three derived `fob_per_*` columns when volume = 0. Anon grant confirmed (Part 3 of the unification project, commit `5a6f7ba6`).
+
+### Metric toggle
+
+`fob_per_bbl` (USD/bbl) · `fob_per_m3` (USD/m³) · `fob_per_ton` (USD/ton). Default: `fob_per_bbl`.
+
+### Chart
+
+Multi-line (NOT stacked), one trace per unified product. Colors: Diesel = `#ff5000`, Gasoline = `#FFB04F`, Crude Oil = `#1a1a1a`. Hovertemplate shows 2 decimal places. Height 320px (desktop) / 240px (mobile). `hovermode: 'x unified'`.
+
+### Cross-source reconciliation
+
+Panel A (countries) and Panel B (importers) draw from `anp_desembaracos` (importer-level granularity). Panel C draws from `mdic_comex` (FOB-bearing). The two sources agree on volumes for Diesel and Crude Oil within 1–2% on historical months; gap of up to 22% on recent months reflects `anp_desembaracos` ETL latency (monthly XLSX vs MDIC's daily cadence).
+
+For Gasoline, the two sources disagree by design: `anp_desembaracos` tracks NCM 27101931 (Gasolina A, retail), MDIC tracks 27101259 (bulk gasoline, blending stock). **Panel C is the authoritative source for gasoline import prices.**
+
+### Density assumptions (server-side)
+
+Diesel 832 kg/m³ · Gasoline 745 kg/m³ · Crude Oil 870 kg/m³ — ANP standards from `ncm_densidade_kg_m3`. These are the values used in `get_imports_exports_fob_price_serie`; Panel B uses slightly different densities (840/740/850) because it sources from `anp_desembaracos` (a separate table with its own mapping). Refinement is done by updating `ncm_densidade_kg_m3`, no code change required.
+
+### See also
+
+- `/mdic-comex` — full MDIC Comex dashboard with country-level FOB prices.
+- Panel A / Panel B — `anp_desembaracos` based (volume, not price).
+
+---
+
 ## Future Work
 
 - **Tier 2 export upgrade**: if users request full raw `anp_desembaracos` dumps (60k–200k rows), add `get_imports_exports_export_count` RPC + `ExportModal` + `useExportSize` integration.
 - **`importer_group_map` population**: after Worktree B backfill completes and real CNPJs are discovered, `worker_supabase` populates the mapping table via DML migration. Panel B then shows named groups (Vibra, Ipiranga, Raízen, etc.) instead of cleaned-up razão social strings.
 - **PeriodSlider**: replace the sidebar `<select>` dropdowns with the shared `PeriodSlider` (rc-slider) component for a richer UX, once the years array is derived from `filtros.ano_min / ano_max`.
+- **Panel C export**: add a 3rd sheet/CSV to the export containing the FOB price series (product, year, month, fob_per_bbl, fob_per_m3, fob_per_ton).

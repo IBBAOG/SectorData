@@ -38,9 +38,11 @@ import type {
   UnifiedProduct,
   ExportsSerieRow,
   YoyTableRow,
+  PriceMetric,
+  PricePoint,
 } from "../useImportsExportsData";
 
-import { COMMON_LAYOUT, AXIS_LINE, PALETTE } from "../../../../lib/plotlyDefaults";
+import { COMMON_LAYOUT, AXIS_LINE, PALETTE, emptyPlot } from "../../../../lib/plotlyDefaults";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
@@ -187,6 +189,50 @@ function YoYTable({
   );
 }
 
+// ─── Panel C — Import price helpers ────────────────────────────────────────────
+
+// Product colours: Diesel = brand orange, Gasoline = amber, Crude Oil = near-black
+const PRICE_COLORS: Record<UnifiedProduct, string> = {
+  Diesel: "#ff5000",
+  Gasoline: "#FFB04F",
+  "Crude Oil": "#1a1a1a",
+};
+
+function buildPriceTraces(
+  data: PricePoint[],
+  unit: string,
+): PlotData[] {
+  if (!data.length) return [];
+
+  const byProduct = new Map<UnifiedProduct, PricePoint[]>();
+  for (const p of data) {
+    if (!byProduct.has(p.product)) byProduct.set(p.product, []);
+    byProduct.get(p.product)!.push(p);
+  }
+
+  const traces: PlotData[] = [];
+  for (const [product, points] of byProduct.entries()) {
+    const sorted = [...points].sort((a, b) =>
+      a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes,
+    );
+    const xs = sorted.map(
+      (r) => `${r.ano}-${String(r.mes).padStart(2, "0")}`,
+    );
+    const ys = sorted.map((r) => r.value);
+    traces.push({
+      type: "scatter" as const,
+      mode: "lines+markers" as const,
+      name: product,
+      x: xs,
+      y: ys,
+      line: { color: PRICE_COLORS[product], width: 2 },
+      marker: { size: 4, color: PRICE_COLORS[product] },
+      hovertemplate: `%{x}<br>${product}: %{y:,.2f} ${unit}<extra></extra>`,
+    } as unknown as PlotData);
+  }
+  return traces;
+}
+
 // ─── Importer Panel empty state ────────────────────────────────────────────────
 
 function ImporterEmptyState() {
@@ -261,6 +307,8 @@ export default function DesktopView(): React.ReactElement {
     yoyImportersLoading,
     exportsData,
     exportsLoading,
+    priceData,
+    priceLoading,
     visible,
     visibilityLoading,
   } = useImportsExportsData();
@@ -349,6 +397,45 @@ export default function DesktopView(): React.ReactElement {
     }
     return traces;
   }, [exportsData, filters.exportsProductsVisible, filters.exportsYAxis]);
+
+  // Panel C — price metric helpers
+  const priceUnitLabel: Record<PriceMetric, string> = {
+    fob_per_bbl: "USD / bbl",
+    fob_per_m3: "USD / m³",
+    fob_per_ton: "USD / ton",
+  };
+  const priceUnit = priceUnitLabel[filters.priceMetric];
+
+  const priceTraces = useMemo(
+    () => buildPriceTraces(priceData, priceUnit),
+    [priceData, priceUnit],
+  );
+
+  const priceLayout: Partial<Layout> = useMemo(
+    () => ({
+      ...COMMON_LAYOUT,
+      hovermode: "x unified" as const,
+      height: 320,
+      margin: { t: 12, b: 60, l: 72, r: 12 },
+      xaxis: {
+        ...AXIS_LINE,
+        tickangle: -45,
+        tickfont: { family: "Arial", size: 10 },
+      },
+      yaxis: {
+        ...AXIS_LINE,
+        title: { text: priceUnit, font: { family: "Arial", size: 11 } },
+        tickformat: ",.2f",
+      },
+      legend: {
+        orientation: "h" as const,
+        x: 0,
+        y: -0.22,
+        font: { family: "Arial", size: 10 },
+      },
+    }),
+    [priceUnit],
+  );
 
   const exportsYLabel =
     filters.exportsYAxis === "volume" ? "Volume (mil m³)" : "Value (USD)";
@@ -628,6 +715,58 @@ export default function DesktopView(): React.ReactElement {
                       title="By Importer"
                     />
                   )}
+
+                  <div style={{ height: 24 }} />
+
+                  {/* Panel C — Import Price (MDIC-sourced) */}
+                  <ChartSection
+                    title={`Import Price (${priceUnit})`}
+                    loading={priceLoading}
+                    height={320}
+                  >
+                    {/* Metric toggle */}
+                    <div style={{ marginBottom: 10, maxWidth: 360 }}>
+                      <SegmentedToggle
+                        options={[
+                          { value: "fob_per_bbl" as const, label: "USD / bbl" },
+                          { value: "fob_per_m3" as const, label: "USD / m³" },
+                          { value: "fob_per_ton" as const, label: "USD / ton" },
+                        ]}
+                        value={filters.priceMetric}
+                        onChange={(v) =>
+                          setFilters({ priceMetric: v as PriceMetric })
+                        }
+                        variant="compact"
+                      />
+                    </div>
+
+                    {priceTraces.length > 0 ? (
+                      <Plot
+                        data={priceTraces}
+                        layout={priceLayout}
+                        config={{ responsive: true, displayModeBar: false }}
+                        style={{ width: "100%" }}
+                      />
+                    ) : !priceLoading ? (
+                      <Plot
+                        data={emptyPlot().data}
+                        layout={{ ...emptyPlot().layout, height: 320 }}
+                        config={{ responsive: true, displayModeBar: false }}
+                        style={{ width: "100%" }}
+                      />
+                    ) : null}
+                  </ChartSection>
+
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: 11,
+                      color: "#aaa",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    Source: MDIC Comex — FOB unit price derived from total import value ÷ volume. Diesel = 832 kg/m³, Gasoline = 745 kg/m³, Crude Oil = 870 kg/m³.
+                  </div>
                 </div>
               )}
 
