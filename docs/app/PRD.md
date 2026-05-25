@@ -224,11 +224,9 @@ Para qualquer mudança em código de um dashboard específico, delegue ao agente
 | `/news-hunter` | `worker_dash-news-hunter` | [news-hunter.md](news-hunter.md) |
 | `/home`, `/profile`, `/admin-panel` | `worker_dash-admin` | [admin.md](admin.md) |
 | `/anp-cdp` | `worker_dash-anp-cdp` | [anp-cdp.md](anp-cdp.md) |
-| `/anp-precos-produtores` | `worker_dash-anp-precos-produtores` | [anp-precos-produtores.md](anp-precos-produtores.md) |
 | `/anp-glp` | `worker_dash-anp-glp` | [anp-glp.md](anp-glp.md) |
-| `/anp-lpc` | `worker_dash-anp-lpc` | [anp-lpc.md](anp-lpc.md) |
+| `/anp-prices` | `worker_dash-anp-prices` (substitui os 3 retirados em 2026-05-26: `/anp-precos-produtores`, `/anp-precos-distribuicao`, `/anp-lpc`) | [anp-prices.md](anp-prices.md) |
 | `/imports-exports` | `worker_dash-imports-exports` (substitui os 3 retirados em 2026-05-25: `/anp-daie`, `/anp-desembaracos`, `/anp-painel-importacoes`) | [imports-exports.md](imports-exports.md) |
-| `/anp-precos-distribuicao` | `worker_dash-anp-precos-distribuicao` | [anp-precos-distribuicao.md](anp-precos-distribuicao.md) |
 | `/anp-cdp-diaria` | `worker_dash-anp-cdp-diaria` | [anp-cdp-diaria.md](anp-cdp-diaria.md) |
 
 ### Dashboards adicionados na Fase 3 (categoria NavBar / tabela alvo)
@@ -236,11 +234,9 @@ Para qualquer mudança em código de um dashboard específico, delegue ao agente
 | Slug | Categoria NavBar | Tabela alvo (linhas) |
 |---|---|---|
 | `anp-cdp` | Oil & Gas | `anp_cdp_producao` (~1.8M) |
-| `anp-precos-produtores` | Fuel Distribution | `anp_precos_produtores` (~38k) |
 | `anp-glp` | Fuel Distribution | `anp_glp` (~3k) |
-| `anp-lpc` | Fuel Distribution | `anp_lpc` (~30k) |
+| `anp-prices` | Fuel Distribution | `anp_precos_produtores` (~38k) + `anp_precos_distribuicao` (volume a crescer) + `anp_lpc` (~30k). UNION ALL server-side via `get_anp_prices_serie` com normalização de produto/unidade/região, fallback Diesel S10→S500, GLP normalizado para R$/13kg. Migrations: `20260526000000_anp_prices_consolidation.sql` + `20260526000001_anp_prices_uf_fix.sql`. Consolida os 3 retirados em 2026-05-26: `/anp-precos-produtores`, `/anp-precos-distribuicao`, `/anp-lpc`. 10 RPCs legadas dropadas; tabelas-fonte e pipelines ETL intactos. |
 | `imports-exports` | Fuel Distribution | `anp_desembaracos` (enriquecida com `importador`/`cnpj`/`uf_cnpj` em 2026-05-25 — `~6k` + backfill pós-reforma) + `anp_daie` (`~7k`). Aux tables: `imports_product_map`, `importer_group_map` (vazia até T11), `ncm_densidade_kg_m3`. Migration: `20260525000010_imports_exports_enrichment.sql`. Consolida os 3 retirados: `/anp-daie`, `/anp-desembaracos`, `/anp-painel-importacoes` (tabela `anp_painel_imp_dist` DROPPED). |
-| `anp-precos-distribuicao` | Fuel Distribution | `anp_precos_distribuicao` (volume a crescer) |
 | `anp-cdp-diaria` | Oil & Gas | `anp_cdp_diaria` (~16.5k — Field), `anp_cdp_diaria_instalacao` (~16.3k — Installation), `anp_cdp_diaria_poco` (~180.7k — Well). 3 níveis de granularidade via `SegmentedToggle` (Field / Installation / Well). Histórico desde 2025-11-09. |
 
 ## Stack
@@ -364,7 +360,7 @@ return (
 | 1 (alta prioridade) | `sales-volumes`, `market-share`, `navios-diesel` | Mais usuários ativos. Bugs silenciosos são caros aqui. |
 | 2 (média) | `diesel-gasoline-margins`, `price-bands`, `stocks` | Fluxo Market Watch — usuários executivos. |
 | 3 (baixa) | `news-hunter`, `home`/`profile`/`admin-panel` | Fluxos administrativos / passivos. |
-| 4 (Fase 3) | `anp-cdp`, `anp-precos-produtores`, `anp-glp`, `anp-lpc`, `imports-exports` | Dashboards mais novos — já têm padrões consolidados; aplicar incrementalmente. `imports-exports` substitui o trio `anp-daie` + `anp-desembaracos` + `anp-painel-importacoes` retirado em 2026-05-25 e absorveu `/mdic-comex` no mesmo dia via Panel C. |
+| 4 (Fase 3) | `anp-cdp`, `anp-prices`, `anp-glp`, `imports-exports` | Dashboards mais novos — já têm padrões consolidados; aplicar incrementalmente. `anp-prices` substitui o trio `anp-precos-produtores` + `anp-precos-distribuicao` + `anp-lpc` retirado em 2026-05-26 (UNION ALL server-side das 3 tabelas-fonte). `imports-exports` substitui o trio `anp-daie` + `anp-desembaracos` + `anp-painel-importacoes` retirado em 2026-05-25 e absorveu `/mdic-comex` no mesmo dia via Panel C. |
 
 **Regras de migração:**
 
@@ -487,7 +483,7 @@ Clients **não** são bloqueados em nenhum RPC; MFA é apenas defesa adicional o
 
 ## Padrões consolidados na Fase 3 (referência para futuros dashboards)
 
-A Fase 3 entregou 9 dashboards (ANP CDP, PPI, Preços Produtores, GLP, MDIC Comex, ANP LPC, DAIE, Desembaraços, Painel Importações) e cristalizou os seguintes padrões. Use como checklist ao criar dashboard novo. (Nota: o trio DAIE / Desembaraços / Painel Importações foi consolidado em `/imports-exports` em 2026-05-25, e `/mdic-comex` foi absorvido pelo mesmo dashboard via Panel C "Import Price" no mesmo dia — os 4 sub-PRDs antigos foram movidos para `docs/app/_deprecated/`.)
+A Fase 3 entregou 9 dashboards (ANP CDP, PPI, Preços Produtores, GLP, MDIC Comex, ANP LPC, DAIE, Desembaraços, Painel Importações) e cristalizou os seguintes padrões. Use como checklist ao criar dashboard novo. (Nota: o trio DAIE / Desembaraços / Painel Importações foi consolidado em `/imports-exports` em 2026-05-25, e `/mdic-comex` foi absorvido pelo mesmo dashboard via Panel C "Import Price" no mesmo dia. O trio Preços Produtores / Preços Distribuição / LPC foi consolidado em `/anp-prices` em 2026-05-26 — os 7 sub-PRDs antigos foram movidos para `docs/app/_deprecated/`.)
 
 1. **Header** — `page-header-title` + `page-header-sub` + `<hr>` (`border-top: 2px solid #e0e0e0`) + period badge condicional.
 2. **Push de período para server-side** — passar ANO ou DATE pra RPC (`p_ano_inicio/p_ano_fim` ou `p_data_inicio/p_data_fim`); evita filtrar volumes grandes no cliente.
