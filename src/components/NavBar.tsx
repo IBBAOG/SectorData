@@ -94,9 +94,7 @@ const NAV_ENTRIES: NavEntry[] = [
           {
             label: "Imports",
             items: [
-              { href: "/anp-daie",               label: "Imports and Exports" },
-              { href: "/anp-desembaracos",        label: "Customs Clearances" },
-              { href: "/anp-painel-importacoes",  label: "Imports Panel" },
+              { href: "/imports-exports", label: "Imports & Exports" },
             ],
           },
         ],
