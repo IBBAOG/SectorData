@@ -2752,6 +2752,17 @@ export type IEExportsSerieRow = {
   valor_usd: number;
 };
 
+export type IEFobPriceRow = {
+  ano: number;
+  mes: number;
+  total_volume_kg: number;
+  total_volume_m3: number;
+  total_fob_usd: number;
+  fob_per_ton: number | null;
+  fob_per_m3: number | null;
+  fob_per_bbl: number | null;
+};
+
 /**
  * Returns the available year range and the 3 unified product names.
  * Result is stable — call once on mount.
@@ -2875,6 +2886,44 @@ export async function rpcGetImportsExportsYoyTable(
     }));
   } catch (e) {
     console.error("get_imports_exports_yoy_table failed", e);
+    return [];
+  }
+}
+
+/**
+ * FOB import price series sourced from mdic_comex (flow='import').
+ * Fetches one row per (ano, mes) for the given unified product.
+ * fob_per_bbl / fob_per_m3 / fob_per_ton are NULL when volume = 0.
+ * Density JOIN (ncm_densidade_kg_m3) is done server-side.
+ */
+export async function rpcGetImportsExportsFobPriceSerie(
+  supabase: SupabaseClient,
+  unifiedProduct: string,
+  anoInicio: number,
+  anoFim: number,
+): Promise<IEFobPriceRow[]> {
+  try {
+    const { data, error } = await supabase.rpc(
+      "get_imports_exports_fob_price_serie",
+      {
+        p_unified_product: unifiedProduct,
+        p_ano_inicio: anoInicio,
+        p_ano_fim: anoFim,
+      },
+    );
+    if (error) throw error;
+    return ((data ?? []) as IEFobPriceRow[]).map((r) => ({
+      ano: Number(r.ano),
+      mes: Number(r.mes),
+      total_volume_kg: Number(r.total_volume_kg ?? 0),
+      total_volume_m3: Number(r.total_volume_m3 ?? 0),
+      total_fob_usd: Number(r.total_fob_usd ?? 0),
+      fob_per_ton: r.fob_per_ton != null ? Number(r.fob_per_ton) : null,
+      fob_per_m3: r.fob_per_m3 != null ? Number(r.fob_per_m3) : null,
+      fob_per_bbl: r.fob_per_bbl != null ? Number(r.fob_per_bbl) : null,
+    }));
+  } catch (e) {
+    console.error("get_imports_exports_fob_price_serie failed", e);
     return [];
   }
 }

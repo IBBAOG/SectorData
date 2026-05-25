@@ -40,9 +40,11 @@ import type {
   UnifiedProduct,
   ExportsSerieRow,
   YoyTableRow,
+  PriceMetric,
+  PricePoint,
 } from "../useImportsExportsData";
 
-import { COMMON_LAYOUT, AXIS_LINE, PALETTE } from "../../../../lib/plotlyDefaults";
+import { COMMON_LAYOUT, AXIS_LINE, PALETTE, emptyPlot } from "../../../../lib/plotlyDefaults";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
@@ -93,6 +95,44 @@ function buildStackedTraces(rows: StackedRow[], unit: string): PlotData[] {
       hovertemplate: `%{x}<br>${entity}: %{y:,.1f} ${unit}<extra></extra>`,
     };
   }) as unknown as PlotData[];
+}
+
+// ─── Panel C — import price helpers (mobile) ──────────────────────────────────
+
+const PRICE_COLORS: Record<UnifiedProduct, string> = {
+  Diesel: "#ff5000",
+  Gasoline: "#FFB04F",
+  "Crude Oil": "#1a1a1a",
+};
+
+function buildPriceTraces(data: PricePoint[], unit: string): PlotData[] {
+  if (!data.length) return [];
+  const byProduct = new Map<UnifiedProduct, PricePoint[]>();
+  for (const p of data) {
+    if (!byProduct.has(p.product)) byProduct.set(p.product, []);
+    byProduct.get(p.product)!.push(p);
+  }
+  const traces: PlotData[] = [];
+  for (const [product, points] of byProduct.entries()) {
+    const sorted = [...points].sort((a, b) =>
+      a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes,
+    );
+    const xs = sorted.map(
+      (r) => `${r.ano}-${String(r.mes).padStart(2, "0")}`,
+    );
+    const ys = sorted.map((r) => r.value);
+    traces.push({
+      type: "scatter" as const,
+      mode: "lines+markers" as const,
+      name: product,
+      x: xs,
+      y: ys,
+      line: { color: PRICE_COLORS[product], width: 2 },
+      marker: { size: 3, color: PRICE_COLORS[product] },
+      hovertemplate: `%{x}<br>${product}: %{y:,.2f} ${unit}<extra></extra>`,
+    } as unknown as PlotData);
+  }
+  return traces;
 }
 
 function mobileAreaLayout(yLabel: string): Partial<Layout> {
@@ -256,6 +296,8 @@ export default function MobileView(): React.ReactElement {
     yoyImportersLoading,
     exportsData,
     exportsLoading,
+    priceData,
+    priceLoading,
     periodBadge,
     visible,
     visibilityLoading,
@@ -351,6 +393,45 @@ export default function MobileView(): React.ReactElement {
       font: { family: "Arial", size: 9 },
     },
   };
+
+  // Panel C — price metric
+  const priceUnitLabel: Record<PriceMetric, string> = {
+    fob_per_bbl: "USD / bbl",
+    fob_per_m3: "USD / m³",
+    fob_per_ton: "USD / ton",
+  };
+  const priceUnit = priceUnitLabel[filters.priceMetric];
+
+  const priceTraces = useMemo(
+    () => buildPriceTraces(priceData, priceUnit),
+    [priceData, priceUnit],
+  );
+
+  const priceLayout: Partial<Layout> = useMemo(
+    () => ({
+      ...COMMON_LAYOUT,
+      hovermode: "x unified" as const,
+      height: 240,
+      margin: { t: 8, b: 52, l: 56, r: 8 },
+      xaxis: {
+        ...AXIS_LINE,
+        tickangle: -60,
+        tickfont: { family: "Arial", size: 8 },
+      },
+      yaxis: {
+        ...AXIS_LINE,
+        title: { text: priceUnit, font: { family: "Arial", size: 10 } },
+        tickformat: ",.2f",
+      },
+      legend: {
+        orientation: "h" as const,
+        x: 0,
+        y: -0.3,
+        font: { family: "Arial", size: 9 },
+      },
+    }),
+    [priceUnit],
+  );
 
   // Guard — after all hooks
   if (visibilityLoading) return <BarrelLoading bare />;
@@ -605,6 +686,71 @@ export default function MobileView(): React.ReactElement {
               />
             </>
           )}
+
+          <div style={{ height: 16 }} />
+
+          {/* Panel C — Import Price */}
+          <SectionHeading
+            title={`Import Price (${priceUnit})`}
+            loading={priceLoading}
+          />
+
+          {/* Metric pills — horizontal scroll */}
+          <div
+            style={{
+              padding: "0 16px 8px",
+              display: "flex",
+              gap: 8,
+              overflowX: "auto",
+              WebkitOverflowScrolling: "touch",
+            }}
+          >
+            {(["fob_per_bbl", "fob_per_m3", "fob_per_ton"] as PriceMetric[]).map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => setFilters({ priceMetric: opt })}
+                style={{
+                  padding: "4px 14px",
+                  borderRadius: 999,
+                  border: "1px solid #d0d0d0",
+                  background: filters.priceMetric === opt ? "#1a1a1a" : "#fff",
+                  color: filters.priceMetric === opt ? "#fff" : "#333",
+                  fontFamily: "Arial",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  minHeight: 32,
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                }}
+              >
+                {priceUnitLabel[opt]}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ padding: "0 16px 8px" }}>
+            {priceTraces.length > 0 ? (
+              <Plot
+                data={priceTraces}
+                layout={priceLayout}
+                config={{ responsive: true, displayModeBar: false }}
+                style={{ width: "100%" }}
+              />
+            ) : !priceLoading ? (
+              <Plot
+                data={emptyPlot().data}
+                layout={{ ...emptyPlot().layout, height: 240 }}
+                config={{ responsive: true, displayModeBar: false }}
+                style={{ width: "100%" }}
+              />
+            ) : null}
+          </div>
+
+          <div style={{ padding: "0 16px 12px", fontSize: 10, color: "#aaa", fontStyle: "italic" }}>
+            Source: MDIC Comex — FOB unit price from total import value ÷ volume.
+          </div>
         </div>
       )}
 

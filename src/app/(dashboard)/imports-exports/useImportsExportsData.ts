@@ -9,6 +9,7 @@
 // Tab: 'imports' | 'exports'
 // Imports tab: Panel A (countries stacked, kt) + Panel B (importers stacked, mil m³)
 //   + YoY tables for each panel.
+//   + Panel C (import price from mdic_comex — FOB/bbl | FOB/m³ | FOB/ton, 3-line series).
 // Exports tab: multi-line series (volume_m3 or valor_usd) for selected products.
 //
 // Debounce: 400ms on all reactive fetches (useDebouncedFetch).
@@ -16,6 +17,7 @@
 // Units:
 //   Panel A → quantidade_kg / 1e6 = kt. Label "kt".
 //   Panel B → total_mil_m3 from RPC (server converts kg→m³ via density). Label "mil m³".
+//   Panel C → fob_per_bbl (USD/bbl) | fob_per_m3 (USD/m³) | fob_per_ton (USD/ton). Sourced from mdic_comex.
 //   Exports → volume_m3 / 1e3 = mil m³. Toggle to valor_usd (label "USD").
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -27,6 +29,7 @@ import {
   rpcGetImportsExportsImportersStacked,
   rpcGetImportsExportsYoyTable,
   rpcGetImportsExportsExportsSerie,
+  rpcGetImportsExportsFobPriceSerie,
 } from "@/lib/rpc";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -37,12 +40,23 @@ export type ImportsExportsTab = "imports" | "exports";
 
 export type ExportsYAxis = "volume" | "usd";
 
+export type PriceMetric = "fob_per_bbl" | "fob_per_m3" | "fob_per_ton";
+
+// Panel C — one point per (month × product) flattened for the 3-line chart
+export interface PricePoint {
+  ano: number;
+  mes: number;
+  product: UnifiedProduct;
+  value: number | null;
+}
+
 export interface ImportsExportsFilters {
   unifiedProduct: UnifiedProduct;
   period: [number, number];            // [anoInicio, anoFim]
   tab: ImportsExportsTab;
   exportsYAxis: ExportsYAxis;
   exportsProductsVisible: UnifiedProduct[]; // which products show in exports chart
+  priceMetric: PriceMetric;           // Panel C metric toggle
 }
 
 // Panel A row (countries) — raw from RPC, quantity in kg; UI divides by 1e6 for kt
@@ -111,6 +125,10 @@ export interface UseImportsExportsData {
   exportsData: ExportsSerieRow[];
   exportsLoading: boolean;
 
+  // Imports tab — Panel C (import price from mdic_comex)
+  priceData: PricePoint[];
+  priceLoading: boolean;
+
   // Derived helpers
   periodBadge: string;    // e.g. "2015 – 2024"
   yoyEndAno: number;
@@ -135,6 +153,7 @@ const DEFAULT_FILTERS: ImportsExportsFilters = {
   tab: "imports",
   exportsYAxis: "volume",
   exportsProductsVisible: [...ALL_PRODUCTS],
+  priceMetric: "fob_per_bbl",
 };
 
 // ─── Hook ──────────────────────────────────────────────────────────────────────
@@ -166,6 +185,10 @@ export function useImportsExportsData(): UseImportsExportsData {
   // Exports
   const [exportsData, setExportsData] = useState<ExportsSerieRow[]>([]);
   const [exportsLoading, setExportsLoading] = useState(false);
+
+  // Panel C — import price (mdic_comex)
+  const [priceData, setPriceData] = useState<PricePoint[]>([]);
+  const [priceLoading, setPriceLoading] = useState(false);
 
   // Stable setter merging partial filter updates
   const setFilters = useCallback((next: Partial<ImportsExportsFilters>) => {
@@ -204,6 +227,7 @@ export function useImportsExportsData(): UseImportsExportsData {
     filters.period[1],
     filters.tab,
     filters.exportsYAxis,
+    filters.priceMetric,
     // exportsProductsVisible as JSON key so shallow equality works
     // eslint-disable-next-line react-hooks/exhaustive-deps
     JSON.stringify(filters.exportsProductsVisible),
@@ -379,6 +403,70 @@ export function useImportsExportsData(): UseImportsExportsData {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stableFilters.tab, stableFilters.period[0], stableFilters.period[1]]);
 
+  // ── 7. Panel C — import price (mdic_comex, all 3 products in parallel) ──────
+  const priceFetchIdRef = useRef(0);
+  const priceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!supabase || stableFilters.tab !== "imports") return;
+    if (priceTimerRef.current) clearTimeout(priceTimerRef.current);
+    const myId = ++priceFetchIdRef.current;
+    priceTimerRef.current = setTimeout(async () => {
+      setPriceLoading(true);
+      try {
+        const [diesel, gasoline, crude] = await Promise.all([
+          rpcGetImportsExportsFobPriceSerie(
+            supabase,
+            "Diesel",
+            stableFilters.period[0],
+            stableFilters.period[1],
+          ),
+          rpcGetImportsExportsFobPriceSerie(
+            supabase,
+            "Gasoline",
+            stableFilters.period[0],
+            stableFilters.period[1],
+          ),
+          rpcGetImportsExportsFobPriceSerie(
+            supabase,
+            "Crude Oil",
+            stableFilters.period[0],
+            stableFilters.period[1],
+          ),
+        ]);
+        if (myId !== priceFetchIdRef.current) return;
+        const metric = stableFilters.priceMetric;
+        const points: PricePoint[] = [
+          ...diesel.map((r) => ({
+            ano: r.ano,
+            mes: r.mes,
+            product: "Diesel" as UnifiedProduct,
+            value: r[metric],
+          })),
+          ...gasoline.map((r) => ({
+            ano: r.ano,
+            mes: r.mes,
+            product: "Gasoline" as UnifiedProduct,
+            value: r[metric],
+          })),
+          ...crude.map((r) => ({
+            ano: r.ano,
+            mes: r.mes,
+            product: "Crude Oil" as UnifiedProduct,
+            value: r[metric],
+          })),
+        ];
+        setPriceData(points);
+      } catch (err) {
+        console.error("get_imports_exports_fob_price_serie:", err);
+      } finally {
+        if (myId === priceFetchIdRef.current) setPriceLoading(false);
+      }
+    }, 400);
+    return () => { if (priceTimerRef.current) clearTimeout(priceTimerRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stableFilters.tab, stableFilters.period[0], stableFilters.period[1], stableFilters.priceMetric]);
+
   // ── Derived: period badge ───────────────────────────────────────────────────
   const periodBadge = `${stableFilters.period[0]} – ${stableFilters.period[1]}`;
 
@@ -397,6 +485,8 @@ export function useImportsExportsData(): UseImportsExportsData {
     yoyImportersLoading,
     exportsData,
     exportsLoading,
+    priceData,
+    priceLoading,
     periodBadge,
     yoyEndAno,
     yoyEndMes,
