@@ -1,9 +1,14 @@
 -- News Hunter — add `match_type` column to default (seed) keywords list.
 --
--- Migration slot note: originally drafted as 20260525240000, but that slot was
--- already claimed in the cloud by `harden_alerts_trigger_search_path` (applied
--- concurrently by another worker). Renamed to 20260525250000 to avoid the PK
--- collision in supabase_migrations.schema_migrations.
+-- Migration slot note: originally drafted as 20260525240000, then renamed to
+-- 20260525250000 to dodge a clash with `harden_alerts_trigger_search_path`.
+-- After mergeback, slot 250000 was found to also collide with the file
+-- `20260525250000_alerts_module_visibility.sql` produced by a parallel session.
+-- Renamed once more to 20260525260000 (next free slot above 250000) to keep
+-- both migrations coexisting without violating the PK on
+-- supabase_migrations.schema_migrations. The migration body itself was already
+-- applied to the cloud DB under the prior version; this rename only fixes the
+-- filename + schema_migrations.version pairing (Regra E).
 --
 -- Motivation:
 --   Per-user `news_hunter_keywords` already carries `match_type` (substring|exact)
