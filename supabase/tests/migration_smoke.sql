@@ -182,14 +182,6 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: anp_lpc'; END IF;
 
   PERFORM 1 FROM information_schema.tables
-    WHERE table_schema = 'public' AND table_name = 'sindicom';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing table: sindicom'; END IF;
-
-  PERFORM 1 FROM pg_tables
-    WHERE schemaname = 'public' AND tablename = 'sindicom' AND rowsecurity = TRUE;
-  IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: sindicom'; END IF;
-
-  PERFORM 1 FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name = 'anp_cdp_producao';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing table: anp_cdp_producao'; END IF;
 
@@ -452,16 +444,6 @@ BEGIN
   PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public' AND p.proname = 'get_anp_lpc_nacional';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_lpc_nacional'; END IF;
-
-  -- ─── SINDICOM RPCs ────────────────────────────────────────────────────────
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_sindicom_filtros';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_sindicom_filtros'; END IF;
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_sindicom_serie';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_sindicom_serie'; END IF;
 
   -- ─── ANP CDP RPCs ─────────────────────────────────────────────────────────
 
