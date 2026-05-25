@@ -418,6 +418,15 @@ Views by construction.
 - `buildHtml`/`buildEml` no servidor — eles rodam no cliente, mantendo o servidor pequeno.
 - Adicionar domínios ao scraper sem adicionar ao `EXTRACTORS` — o SSRF guard usa `EXTRACTORS` como allowlist.
 
+## List virtualization (2026-05-25)
+
+The article list is virtualized via `react-window` v2 (only ~15–20 visible cards in DOM at any time) so broad filters returning thousands of articles render in constant time. The article row/card component is wrapped in `React.memo` to enable node recycling without re-rendering unchanged rows.
+
+- **Desktop**: `FixedSizeList` (`List` in v2), `rowHeight=33px` (single-line row — `white-space:nowrap` + `text-overflow:ellipsis` enforces uniform height). Container height is `min(count × 33, 600)px`.
+- **Mobile**: `FixedSizeList`, `rowHeight=120px` (expanded `MobileDataCard` with 2-line-clamped snippet + keyword pills). Container height is `min(count × 120, 70dvh)`.
+- Scroll resets to top on filter changes via `key={articles.length}` on the container.
+- Lib: `react-window` v2 (`^2.2.7`) — v2 API uses `rowComponent`/`rowProps`/`rowCount`/`rowHeight`; the v1 `FixedSizeList` API is no longer available.
+
 ## Search performance (2026-05-25)
 
 Search input uses `useDeferredValue` so typing stays instant while the filter runs at lower priority. Article haystacks (`title + source_name + snippet + matched_keywords`) are pre-normalized (lowercase + stripAccents) once per `articles` change inside the shared hook, eliminating ~320k `normalize("NFD")` calls per keystroke at current scale (~16k articles × 20 keywords).

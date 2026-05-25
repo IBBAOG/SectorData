@@ -12,7 +12,8 @@
 //   mobile/View.tsx in the SAME commit, OR the commit message must declare
 //   `[desktop-only]` with an explicit reason.
 
-import { useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
+import { List as VirtualList, type RowComponentProps } from "react-window";
 import NavBar from "@/components/NavBar";
 import { useUserProfile } from "@/context/UserProfileContext";
 import AnonCTA from "@/components/AnonCTA";
@@ -23,9 +24,128 @@ import { useClippingSelection } from "../_hooks/useClippingSelection";
 import type { ScrapeResult, ArticleSnapshot } from "@/lib/clipping/types";
 
 import { useNewsHunterData, formatTimeLocal, humanizeAge } from "../useNewsHunterData";
+import type { NewsArticle } from "@/context/NewsHunterContext";
 import { getSupabaseClient } from "@/lib/supabaseClient";
 
 import styles from "../page.module.css";
+
+// ── Virtualized list constants ───────────────────────────────────────────────
+// Desktop rows are single-line (white-space:nowrap + text-overflow:ellipsis),
+// so height is fixed: padding-top(6) + line-height(14*1.45≈20) + padding-bottom(6)
+// + 1px border = 33px. We cap the list at 600px before it starts scrolling.
+const DESKTOP_ITEM_H = 33;
+const DESKTOP_MAX_LIST_H = 600;
+
+// ── DesktopArticleRow ────────────────────────────────────────────────────────
+// Extracted and memoized so react-window v2 can recycle DOM nodes without
+// re-rendering unchanged rows.
+// react-window v2 passes rowProps directly into the row component alongside
+// the reserved { ariaAttributes, index, style } props.
+
+interface DesktopRowProps {
+  articles: NewsArticle[];
+  justArrivedUrls: Set<string>;
+  isAdmin: boolean;
+  selectionMode: boolean;
+  isSelected: (url: string) => boolean;
+  onToggle: (article: { url: string; title: string; source_name: string; published_at: string }) => void;
+}
+
+function _DesktopArticleRowInner({
+  index,
+  style,
+  articles,
+  justArrivedUrls,
+  isAdmin,
+  selectionMode,
+  isSelected,
+  onToggle,
+}: RowComponentProps<DesktopRowProps>): React.ReactElement {
+  const a = articles[index];
+  const selected = isAdmin && selectionMode && isSelected(a.url);
+  return (
+    <div
+      style={style}
+      className={`${styles.headline} ${
+        justArrivedUrls.has(a.url) ? styles.justArrived : ""
+      } ${selected ? styles.selected : ""}`}
+      data-url={a.url}
+    >
+      {isAdmin && selectionMode && (
+        <input
+          type="checkbox"
+          className={styles.checkbox}
+          checked={selected}
+          onChange={() => onToggle(a)}
+          aria-label={`Select article: ${a.title}`}
+        />
+      )}
+      <span className={styles.htime}>{formatTimeLocal(a.published_at)}</span>
+      <a
+        className={styles.hlink}
+        href={a.url}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <span className={styles.hsrc}>{a.source_name}:</span>
+        <span className={styles.htitle}>{a.title}</span>
+      </a>
+      <time className={styles.hage} dateTime={a.published_at}>
+        {humanizeAge(a.published_at)}
+      </time>
+    </div>
+  );
+}
+// Cast is required because React.memo returns NamedExoticComponent whose
+// return type is ReactNode (superset), but ListProps['rowComponent'] needs
+// the narrower ReactElement | null. The runtime behaviour is identical.
+const DesktopArticleRow = memo(_DesktopArticleRowInner) as unknown as (
+  props: RowComponentProps<DesktopRowProps>,
+) => React.ReactElement | null;
+
+// ── VirtualizedDesktopList ───────────────────────────────────────────────────
+
+function VirtualizedDesktopList({
+  articles,
+  justArrivedUrls,
+  isAdmin,
+  selectionMode,
+  isSelected,
+  onToggle,
+}: {
+  articles: NewsArticle[];
+  justArrivedUrls: Set<string>;
+  isAdmin: boolean;
+  selectionMode: boolean;
+  isSelected: (url: string) => boolean;
+  onToggle: (article: { url: string; title: string; source_name: string; published_at: string }) => void;
+}): React.ReactElement {
+  // react-window v2 List sizes itself to fill its container (ResizeObserver).
+  // We cap the container at DESKTOP_MAX_LIST_H px; for short lists it shrinks
+  // to exactly the content height so there's no trailing whitespace.
+  const listHeight = Math.min(articles.length * DESKTOP_ITEM_H, DESKTOP_MAX_LIST_H);
+  const rowProps: DesktopRowProps = useMemo(
+    () => ({ articles, justArrivedUrls, isAdmin, selectionMode, isSelected, onToggle }),
+    [articles, justArrivedUrls, isAdmin, selectionMode, isSelected, onToggle],
+  );
+  return (
+    // key={articles.length} resets scroll to top on filter changes.
+    // defaultHeight is the SSR hint; the ResizeObserver overrides it on mount.
+    <div
+      key={articles.length}
+      className={styles.headlines}
+      style={{ height: listHeight, width: "100%", overflowY: "auto" }}
+    >
+      <VirtualList<DesktopRowProps>
+        defaultHeight={listHeight}
+        rowCount={articles.length}
+        rowHeight={DESKTOP_ITEM_H}
+        rowProps={rowProps}
+        rowComponent={DesktopArticleRow}
+      />
+    </div>
+  );
+}
 
 export default function DesktopView(): React.ReactElement {
   const {
@@ -343,43 +463,14 @@ export default function DesktopView(): React.ReactElement {
           )}
 
           {filteredArticles.length > 0 && (
-            <ul className={styles.headlines}>
-              {filteredArticles.map((a) => {
-                const selected = isAdmin && selectionMode && isSelected(a.url);
-                return (
-                  <li
-                    key={a.url}
-                    className={`${styles.headline} ${
-                      justArrivedUrls.has(a.url) ? styles.justArrived : ""
-                    } ${selected ? styles.selected : ""}`}
-                    data-url={a.url}
-                  >
-                    {isAdmin && selectionMode && (
-                      <input
-                        type="checkbox"
-                        className={styles.checkbox}
-                        checked={selected}
-                        onChange={() => handleArticleToggle(a)}
-                        aria-label={`Select article: ${a.title}`}
-                      />
-                    )}
-                    <span className={styles.htime}>{formatTimeLocal(a.published_at)}</span>
-                    <a
-                      className={styles.hlink}
-                      href={a.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      <span className={styles.hsrc}>{a.source_name}:</span>
-                      <span className={styles.htitle}>{a.title}</span>
-                    </a>
-                    <time className={styles.hage} dateTime={a.published_at}>
-                      {humanizeAge(a.published_at)}
-                    </time>
-                  </li>
-                );
-              })}
-            </ul>
+            <VirtualizedDesktopList
+              articles={filteredArticles}
+              justArrivedUrls={justArrivedUrls}
+              isAdmin={isAdmin}
+              selectionMode={selectionMode}
+              isSelected={isSelected}
+              onToggle={handleArticleToggle}
+            />
           )}
         </section>
       </div>

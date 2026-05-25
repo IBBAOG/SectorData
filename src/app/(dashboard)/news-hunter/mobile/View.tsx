@@ -22,7 +22,8 @@
 //   desktop/View.tsx in the SAME commit, OR the commit message must declare
 //   `[mobile-only]` with an explicit reason.
 
-import { useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
+import { List as VirtualList, type RowComponentProps } from "react-window";
 import {
   MobileTopBar,
   MobileBottomTabBar,
@@ -374,8 +375,16 @@ function KeywordsSection({
   );
 }
 
+// ── Virtualized list constants ───────────────────────────────────────────────
+// MobileDataCard with variant="expanded" is documented as ~88-96px tall.
+// We add headroom for the optional snippet (2-line clamp) + keyword pills row.
+// 120px covers the full expanded card height at this font scale.
+// The list is capped at 70dvh so it fits the mobile viewport without overflow.
+const MOBILE_ITEM_H = 120;
+const MOBILE_MAX_LIST_H_VH = 0.7; // 70dvh — computed at render time
+
 /** Article card with favicon circle, headline, snippet, keyword pills */
-function ArticleCard({
+const ArticleCard = memo(function ArticleCard({
   article,
   bookmarked,
   justArrived,
@@ -521,6 +530,79 @@ function ArticleCard({
         rightSlot={rightSlot}
         onClick={() => window.open(article.url, "_blank", "noopener,noreferrer")}
         variant="expanded"
+      />
+    </div>
+  );
+});
+
+// ── VirtualizedMobileFeed ────────────────────────────────────────────────────
+// react-window v2 passes rowProps directly into the row component alongside
+// the reserved { ariaAttributes, index, style } props.
+
+interface MobileFeedRowProps {
+  articles: NewsArticle[];
+  bookmarkedUrls: Set<string>;
+  justArrivedUrls: Set<string>;
+  onToggleBookmark: (url: string) => void;
+}
+
+function _MobileFeedRowInner({
+  index,
+  style,
+  articles,
+  bookmarkedUrls,
+  justArrivedUrls,
+  onToggleBookmark,
+}: RowComponentProps<MobileFeedRowProps>): React.ReactElement {
+  const a = articles[index];
+  return (
+    <div style={style}>
+      <ArticleCard
+        article={a}
+        bookmarked={bookmarkedUrls.has(a.url)}
+        justArrived={justArrivedUrls.has(a.url)}
+        onToggleBookmark={onToggleBookmark}
+      />
+    </div>
+  );
+}
+// Cast: React.memo broadens return type to ReactNode; rowComponent needs ReactElement | null.
+const MobileFeedRow = memo(_MobileFeedRowInner) as unknown as (
+  props: RowComponentProps<MobileFeedRowProps>,
+) => React.ReactElement | null;
+
+function VirtualizedMobileFeed({
+  articles,
+  bookmarkedUrls,
+  justArrivedUrls,
+  onToggleBookmark,
+}: {
+  articles: NewsArticle[];
+  bookmarkedUrls: Set<string>;
+  justArrivedUrls: Set<string>;
+  onToggleBookmark: (url: string) => void;
+}): React.ReactElement {
+  // Use window.innerHeight if available (client-only), fall back to 600.
+  const viewportH = typeof window !== "undefined" ? window.innerHeight : 600;
+  const listHeight = Math.min(articles.length * MOBILE_ITEM_H, Math.floor(viewportH * MOBILE_MAX_LIST_H_VH));
+
+  const rowProps: MobileFeedRowProps = useMemo(
+    () => ({ articles, bookmarkedUrls, justArrivedUrls, onToggleBookmark }),
+    [articles, bookmarkedUrls, justArrivedUrls, onToggleBookmark],
+  );
+
+  return (
+    // key={articles.length} resets scroll when filter changes result count.
+    <div
+      key={articles.length}
+      style={{ height: listHeight, width: "100%", overflowY: "auto" }}
+    >
+      <VirtualList<MobileFeedRowProps>
+        defaultHeight={listHeight}
+        rowCount={articles.length}
+        rowHeight={MOBILE_ITEM_H}
+        rowProps={rowProps}
+        rowComponent={MobileFeedRow}
       />
     </div>
   );
@@ -1126,15 +1208,14 @@ export default function MobileView(): React.ReactElement {
                 </div>
               )}
 
-              {feedList.map((a) => (
-                <ArticleCard
-                  key={a.url}
-                  article={a}
-                  bookmarked={bookmarkedUrls.has(a.url)}
-                  justArrived={justArrivedUrls.has(a.url)}
+              {feedList.length > 0 && (
+                <VirtualizedMobileFeed
+                  articles={feedList}
+                  bookmarkedUrls={bookmarkedUrls}
+                  justArrivedUrls={justArrivedUrls}
                   onToggleBookmark={toggleBookmark}
                 />
-              ))}
+              )}
 
               {loading && feedList.length === 0 && (
                 <div style={{ padding: "40px 24px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
