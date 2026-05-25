@@ -962,14 +962,15 @@ export default function MobileView(): React.ReactElement | null {
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                 {[
-                  { label: "Total", value: alertsStats.total },
-                  { label: "Active", value: alertsStats.active },
-                  { label: "Unconfirmed", value: alertsStats.unconfirmed },
+                  { label: "Total", value: alertsStats.totals.subscribers_total },
+                  { label: "Active", value: alertsStats.totals.subscribers_active },
+                  {
+                    label: "Unconfirmed",
+                    value: alertsStats.totals.subscribers_total - alertsStats.totals.subscribers_confirmed,
+                  },
                   {
                     label: "Bounce (7d)",
-                    value: alertsStats.bounce_rate_7d != null
-                      ? `${(alertsStats.bounce_rate_7d * 100).toFixed(2)}%`
-                      : "—",
+                    value: `${alertsStats.bounce_rate_7d_pct.toFixed(2)}%`,
                   },
                 ].map(({ label, value }) => (
                   <div
@@ -1181,6 +1182,9 @@ export default function MobileView(): React.ReactElement | null {
             >
               <option value="">All statuses</option>
               <option value="sent">Sent</option>
+              <option value="delivered">Delivered</option>
+              <option value="opened">Opened</option>
+              <option value="clicked">Clicked</option>
               <option value="bounced">Bounced</option>
               <option value="complained">Complained</option>
               <option value="failed">Failed</option>
@@ -1201,10 +1205,13 @@ export default function MobileView(): React.ReactElement | null {
               .slice(0, 50)
               .map((entry) => {
                 const statusTone: Record<string, "completed" | "unloading" | "neutral"> = {
-                  sent: "completed",
-                  bounced: "unloading",
+                  sent: "neutral",        // pending — amber/yellow semantics
+                  delivered: "completed", // green — confirmed delivery
+                  opened: "completed",
+                  clicked: "completed",
+                  bounced: "unloading",   // red — problem
                   complained: "unloading",
-                  failed: "neutral",
+                  failed: "unloading",
                 };
                 return (
                   <MobileDataCard
@@ -1243,8 +1250,8 @@ export default function MobileView(): React.ReactElement | null {
                 <MobileDataCard
                   key={row.id}
                   variant="default"
-                  title={row.email}
-                  subtitle={`${row.source_slug} · ${row.send_attempts} attempts`}
+                  title={row.subscriber?.email ?? "—"}
+                  subtitle={`${row.event?.source_slug ?? "—"} · ${row.send_attempts} attempts`}
                   status={{ label: "Failed", tone: "unloading" }}
                   rightSlot={
                     <button

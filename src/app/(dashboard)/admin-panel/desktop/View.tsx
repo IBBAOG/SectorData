@@ -763,20 +763,17 @@ export default function DesktopView(): React.ReactElement | null {
                 ) : (
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
                     {[
-                      { label: "Total", value: alertsStats.total },
-                      { label: "Active", value: alertsStats.active },
-                      { label: "Unconfirmed", value: alertsStats.unconfirmed },
+                      { label: "Total", value: alertsStats.totals.subscribers_total },
+                      { label: "Active", value: alertsStats.totals.subscribers_active },
+                      {
+                        label: "Unconfirmed",
+                        value: alertsStats.totals.subscribers_total - alertsStats.totals.subscribers_confirmed,
+                      },
+                      { label: "Sent (7d)", value: alertsStats.sent_7d },
+                      { label: "Bounced (7d)", value: alertsStats.bounced_7d },
                       {
                         label: "Bounce rate (7d)",
-                        value: alertsStats.bounce_rate_7d != null
-                          ? `${(alertsStats.bounce_rate_7d * 100).toFixed(2)}%`
-                          : "—",
-                      },
-                      {
-                        label: "Complaint rate (7d)",
-                        value: alertsStats.complaint_rate_7d != null
-                          ? `${(alertsStats.complaint_rate_7d * 100).toFixed(2)}%`
-                          : "—",
+                        value: `${alertsStats.bounce_rate_7d_pct.toFixed(2)}%`,
                       },
                     ].map(({ label, value }) => (
                       <div
@@ -799,13 +796,13 @@ export default function DesktopView(): React.ReactElement | null {
                     ))}
                   </div>
                 )}
-                {alertsStats && alertsStats.by_source.length > 0 && (
+                {alertsStats && alertsStats.per_source.length > 0 && (
                   <div style={{ marginTop: 16 }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "#888", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                       Active per source
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      {alertsStats.by_source.map(({ source_slug, active_count }) => (
+                      {alertsStats.per_source.map(({ source_slug, subscribers_active }) => (
                         <span
                           key={source_slug}
                           style={{
@@ -817,7 +814,7 @@ export default function DesktopView(): React.ReactElement | null {
                             color: "#1a1a1a",
                           }}
                         >
-                          {source_slug} <strong>{active_count}</strong>
+                          {source_slug} <strong>{subscribers_active}</strong>
                         </span>
                       ))}
                     </div>
@@ -1028,6 +1025,9 @@ export default function DesktopView(): React.ReactElement | null {
                   >
                     <option value="">All statuses</option>
                     <option value="sent">Sent</option>
+                    <option value="delivered">Delivered</option>
+                    <option value="opened">Opened</option>
+                    <option value="clicked">Clicked</option>
                     <option value="bounced">Bounced</option>
                     <option value="complained">Complained</option>
                     <option value="failed">Failed</option>
@@ -1050,9 +1050,12 @@ export default function DesktopView(): React.ReactElement | null {
                       .slice(0, 100)
                       .map((entry) => {
                         const statusColor: Record<string, string> = {
-                          sent: "#38a169",
-                          bounced: "#e53e3e",
-                          complained: "#c05621",
+                          sent: "#c05621",       // yellow-ish — pending delivery
+                          delivered: "#38a169",  // green — confirmed
+                          opened: "#38a169",
+                          clicked: "#38a169",
+                          bounced: "#e53e3e",    // red — problem
+                          complained: "#e53e3e",
                           failed: "#c0392b",
                         };
                         return (
@@ -1120,9 +1123,9 @@ export default function DesktopView(): React.ReactElement | null {
                           style={{ display: "grid", gridTemplateColumns: "1fr 120px 70px 110px 100px", gap: 8, alignItems: "center" }}
                         >
                           <div style={{ fontSize: 13, color: "#1a1a1a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {row.email}
+                            {row.subscriber?.email ?? "—"}
                           </div>
-                          <div style={{ fontSize: 12, color: "#888" }}>{row.source_slug}</div>
+                          <div style={{ fontSize: 12, color: "#888" }}>{row.event?.source_slug ?? "—"}</div>
                           <div style={{ fontSize: 13, fontWeight: 600, color: "#e53e3e" }}>{row.send_attempts}</div>
                           <div style={{ fontSize: 12, color: "#aaa" }}>
                             {row.last_attempt_at ? formatDateBR(row.last_attempt_at) : "—"}

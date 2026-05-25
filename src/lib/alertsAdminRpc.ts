@@ -22,16 +22,29 @@ export interface AlertSubscriber {
   created_at: string;
 }
 
+// Shape mirrors the JSONB returned by admin_subscriber_stats() in
+// 20260525210030_alerts_admin_rpcs.sql:
+//   { totals, per_source, sent_7d, bounced_7d, bounce_rate_7d_pct }
+export interface AlertSubscriberStatsTotals {
+  subscribers_total: number;
+  subscribers_active: number;
+  subscribers_confirmed: number;
+  unique_emails: number;
+}
+
+export interface AlertSubscriberStatsPerSource {
+  source_slug: string;
+  subscribers_total: number;
+  subscribers_active: number;
+  subscribers_confirmed: number;
+}
+
 export interface AlertSubscriberStats {
-  total: number;
-  active: number;
-  unconfirmed: number;
-  bounce_rate_7d: number | null;
-  complaint_rate_7d: number | null;
-  by_source: Array<{
-    source_slug: string;
-    active_count: number;
-  }>;
+  totals: AlertSubscriberStatsTotals;
+  per_source: AlertSubscriberStatsPerSource[];
+  sent_7d: number;
+  bounced_7d: number;
+  bounce_rate_7d_pct: number;
 }
 
 export interface AlertSource {
@@ -41,11 +54,22 @@ export interface AlertSource {
   is_active: boolean;
 }
 
+// Bug 3 fix: widen status union to match all values written by delivery worker
+// and Resend webhook handler (see alert_email_log comment in 20260525210010).
+export type EmailLogStatus =
+  | "sent"
+  | "delivered"
+  | "bounced"
+  | "complained"
+  | "opened"
+  | "clicked"
+  | "failed";
+
 export interface AlertEmailLogEntry {
   id: string;
   email: string;
   subject: string | null;
-  status: "sent" | "bounced" | "complained" | "failed";
+  status: EmailLogStatus;
   provider_message_id: string | null;
   recorded_at: string;
 }
@@ -223,40 +247,78 @@ export async function fetchAlertSources(): Promise<AlertSource[]> {
 
 /**
  * Fetch outbox rows with status='failed' for the Outbox Repair panel.
+ *
+ * Bug 2 fix: alert_outbox has NO subject or source_slug columns. They live in
+ * alert_email_log (subject) and alert_events (source_slug). Use PostgREST
+ * embed to pull both via FK relationships.
  */
-export interface AlertOutboxRow {
+// PostgREST returns related rows as arrays even for FK-to-single relationships.
+// We access element [0] for the singular FK joins.
+export interface AlertOutboxRowRaw {
   id: string;
   subscriber_id: string;
-  email: string;
-  subject: string | null;
-  source_slug: string;
   status: string;
   send_attempts: number;
   last_attempt_at: string | null;
   created_at: string;
+  event: Array<{
+    source_slug: string;
+    event_key: string;
+    payload: Record<string, unknown>;
+  }>;
+  subscriber: Array<{
+    email: string;
+  }>;
 }
 
-export async function fetchFailedOutboxRows(): Promise<AlertOutboxRow[]> {
+// Flattened shape consumed by Views — singular (nullable) instead of array.
+export interface AlertOutboxRow {
+  id: string;
+  subscriber_id: string;
+  status: string;
+  send_attempts: number;
+  last_attempt_at: string | null;
+  created_at: string;
+  event: {
+    source_slug: string;
+    event_key: string;
+    payload: Record<string, unknown>;
+  } | null;
+  subscriber: {
+    email: string;
+  } | null;
+}
+
+export async function fetchFailedOutboxRows(limit = 100): Promise<AlertOutboxRow[]> {
   try {
     const sb = supabase();
     const { data, error } = await sb
       .from("alert_outbox")
-      .select(
-        "id, subscriber_id, email:alert_subscribers(email), subject, source_slug, status, send_attempts, last_attempt_at, created_at",
-      )
+      .select(`
+        id,
+        subscriber_id,
+        status,
+        send_attempts,
+        last_attempt_at,
+        created_at,
+        event:alert_events!event_id(source_slug, event_key, payload),
+        subscriber:alert_subscribers!subscriber_id(email)
+      `)
       .eq("status", "failed")
       .order("last_attempt_at", { ascending: false })
-      .limit(100);
+      .limit(limit);
     if (error) throw error;
-    // Flatten the joined email field
-    return ((data ?? []) as unknown[]).map((row: unknown) => {
-      const r = row as Record<string, unknown>;
-      const sub = r["email"] as { email: string } | null;
-      return {
-        ...(r as Omit<AlertOutboxRow, "email">),
-        email: sub?.email ?? "",
-      };
-    }) as AlertOutboxRow[];
+    // Flatten the PostgREST array-embed into singular nullable objects
+    return ((data ?? []) as AlertOutboxRowRaw[]).map((row) => ({
+      id: row.id,
+      subscriber_id: row.subscriber_id,
+      status: row.status,
+      send_attempts: row.send_attempts,
+      last_attempt_at: row.last_attempt_at,
+      created_at: row.created_at,
+      event: row.event?.[0] ?? null,
+      subscriber: row.subscriber?.[0] ?? null,
+    }));
   } catch (err) {
     console.error("[alertsAdminRpc] fetchFailedOutboxRows error:", err);
     return [];
