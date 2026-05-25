@@ -46,13 +46,18 @@ CEO (Eduardo)
      │   ├─ dash-anp-precos-distribuicao  (/anp-precos-distribuicao — Fuel Distribution)
      │   ├─ dash-anp-cdp-diaria          (/anp-cdp-diaria — Oil & Gas)
      │   ├─ dash-subsidy-tracker          (/subsidy-tracker — Fuel Distribution, dados proprietários)
-     │   └─ dash-admin-analytics          (/admin-analytics — Admin-only, sem module_visibility)
+     │   ├─ dash-admin-analytics          (/admin-analytics — Admin-only, sem module_visibility)
+     │   └─ dash-alerts                   (/alerts — User-Facing Email Subscriptions, anon+client+admin)
      │
      ├─ Supabase / DB    (schema Postgres, migrations, RLS, RPCs SQL,
      │                    materialized views, supabase_deploy workflow)
      ├─ Dados Locais     (Excels manuais + scripts de upload)
      ├─ ETL / Pipelines  (scrapers automáticos + GitHub Actions)
-     ├─ Alertas          (subsistema autocontido em alertas/)
+     ├─ Alertas          (subsistema autocontido em alertas/ — LOCAL-ONLY,
+     │                    single-recipient Eduardo via Gmail API; coexiste com
+     │                    Alerts Product durante cutover)
+     ├─ Alerts Product   (cloud, multi-recipient — scripts/alerts/, detection +
+     │                    fanout + delivery via Resend, consumido por /alerts)
      │
      ├─ Designer         (transversal — identidade visual + boas práticas;
      │                    consultado pelos dash-* antes de mudança visual)
@@ -72,7 +77,8 @@ A partir de 2026-05-20, todo dashboard tem 2 views (`desktop/View.tsx` + `mobile
 | Supabase / DB | [`worker_supabase`](../.claude/agents/worker_supabase.md) | `supabase/migrations/`, `supabase/config.toml`, `sql/` (legado), `supabase_deploy.yml` | [`docs/supabase/PRD.md`](supabase/PRD.md) |
 | Dados Locais | [`worker_dados-locais`](../.claude/agents/worker_dados-locais.md) | `data/`, `scripts/manual/dg_margins_upload.py`, `scripts/manual/price_bands_upload.py` | [`docs/dados-locais/PRD.md`](dados-locais/PRD.md) |
 | ETL / Pipelines | [`worker_etl-pipelines`](../.claude/agents/worker_etl-pipelines.md) | `DADOS/`, `output/`, `scripts/pipelines/` (todos os scrapers), `.github/workflows/` dos scrapers | [`docs/etl-pipelines/PRD.md`](etl-pipelines/PRD.md) |
-| Alertas | [`worker_alertas`](../.claude/agents/worker_alertas.md) | `alertas/` (autocontido) | [`docs/alertas/PRD.md`](alertas/PRD.md) |
+| Alertas (legado, local-only) | [`worker_alertas`](../.claude/agents/worker_alertas.md) | `alertas/` (autocontido, gitignored) | [`docs/alertas/PRD.md`](alertas/PRD.md) |
+| Alerts Product (cloud, multi-recipient) | [`worker_alerts-product`](../.claude/agents/worker_alerts-product.md) | `scripts/alerts/`, `src/app/api/alerts/`, `.github/workflows/alerts_*.yml`, email templates | [`docs/alerts/PRD.md`](alerts/PRD.md) |
 | Security | [`worker_pen-test`](../.claude/agents/worker_pen-test.md) (a contratar) | `docs/security/` — threat model, incident response, secret rotation, pen-test reports | [`docs/security/README.md`](security/README.md) |
 
 ## Sub-agentes do APP (donos de dashboard)
@@ -100,6 +106,7 @@ Cada um possui um módulo (ou bundle, no caso de admin). Cada um auto-documenta 
 | [`worker_dash-anp-cdp-diaria`](../.claude/agents/worker_dash-anp-cdp-diaria.md) | `/anp-cdp-diaria` | [`docs/app/anp-cdp-diaria.md`](app/anp-cdp-diaria.md) |
 | [`worker_dash-subsidy-tracker`](../.claude/agents/worker_dash-subsidy-tracker.md) | `/subsidy-tracker` (Fuel Distribution — dados proprietários) | [`docs/app/subsidy-tracker.md`](app/subsidy-tracker.md) |
 | [`worker_dash-admin-analytics`](../.claude/agents/worker_dash-admin-analytics.md) | `/admin-analytics` (Admin-only — sem `module_visibility`; backed por `app_events`) | [`docs/app/admin-analytics.md`](app/admin-analytics.md) |
+| [`worker_dash-alerts`](../.claude/agents/worker_dash-alerts.md) | `/alerts` (User-Facing Email Subscriptions — anon double opt-in, hybrid per-source granularity, instant cadence, Resend delivery via `worker_alerts-product`) | [`docs/app/alerts.md`](app/alerts.md) |
 
 ## Papéis transversais (não donos de pasta)
 

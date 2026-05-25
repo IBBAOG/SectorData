@@ -88,7 +88,9 @@ Estas operações exigem worker especializado. **Sem exceção, sem "permissão 
 | Editar `supabase/migrations/`, `sql/` | `worker_supabase` |
 | Editar `scripts/pipelines/`, `scripts/extractors/`, `.github/workflows/` | `worker_etl-pipelines` |
 | Editar `scripts/manual/`, `data/` | `worker_dados-locais` |
-| Editar `alertas/` (qualquer arquivo, mesmo `.md`) | `worker_alertas` |
+| Editar `alertas/` (qualquer arquivo, mesmo `.md`) | `worker_alertas` (legado local-only) |
+| Editar `scripts/alerts/`, `src/app/api/alerts/`, `.github/workflows/alerts_*.yml`, templates de email do produto Alerts | `worker_alerts-product` (cloud, multi-recipient) |
+| Editar `src/app/(dashboard)/alerts/` (frontend do módulo Alerts) | `worker_dash-alerts` |
 | Editar `docs/<dept>/PRD.md` (sub-PRD departamental) | Worker do departamento + `worker_documentador` |
 | Editar `docs/app/<dashboard>.md` (sub-PRD de dashboard) | `worker_dash-<slug>` |
 | Auditar diff staged antes de commit (lógica nova/RLS/contratos) | `worker_revisor-qa` |
