@@ -174,14 +174,6 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: anp_desembaracos'; END IF;
 
   PERFORM 1 FROM information_schema.tables
-    WHERE table_schema = 'public' AND table_name = 'anp_painel_imp_dist';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing table: anp_painel_imp_dist'; END IF;
-
-  PERFORM 1 FROM pg_tables
-    WHERE schemaname = 'public' AND tablename = 'anp_painel_imp_dist' AND rowsecurity = TRUE;
-  IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: anp_painel_imp_dist'; END IF;
-
-  PERFORM 1 FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name = 'anp_lpc';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing table: anp_lpc'; END IF;
 
