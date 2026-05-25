@@ -797,105 +797,6 @@ export async function rpcGetPriceBandsData(
   return allRows;
 }
 
-// ─── MODULE: MDIC Comex (/src/app/(dashboard)/mdic-comex/page.tsx) ───────────
-
-export type MdicComexSerieRow = {
-  ano: number;
-  mes: number;
-  flow: string;
-  ncm_codigo: string;
-  ncm_nome: string | null;
-  volume_kg: number | null;
-  valor_fob_usd: number | null;
-  quantidade_estatistica?: number | null;
-  unidade_estatistica?: string | null;
-};
-
-export type MdicComexTopPaisRow = {
-  pais: string;
-  ncm_codigo: string;
-  volume_kg: number | null;
-  valor_fob_usd: number | null;
-  quantidade_estatistica?: number | null;
-  unidade_estatistica?: string | null;
-};
-
-export type MdicComexFiltros = {
-  anos: number[];
-  ncms: { ncm_codigo: string; ncm_nome: string }[];
-  paises: string[];
-};
-
-export async function rpcGetMdicComexSerie(
-  supabase: SupabaseClient,
-  params?: {
-    flow?: string | null;
-    ncms?: string[] | null;
-    anoInicio?: number | null;
-    anoFim?: number | null;
-  },
-): Promise<MdicComexSerieRow[]> {
-  const PAGE = 1000;
-  let offset = 0;
-  const allRows: MdicComexSerieRow[] = [];
-  const rpcParams = {
-    p_flow:       params?.flow      ?? null,
-    p_ncms:       params?.ncms      ?? null,
-    p_ano_inicio: params?.anoInicio ?? null,
-    p_ano_fim:    params?.anoFim    ?? null,
-  };
-  while (true) {
-    const { data, error } = await supabase
-      .rpc("get_mdic_comex_serie", rpcParams)
-      .range(offset, offset + PAGE - 1);
-    if (error) { console.error("get_mdic_comex_serie failed", error); break; }
-    const rows = (data ?? []) as MdicComexSerieRow[];
-    if (!rows.length) break;
-    allRows.push(...rows);
-    if (rows.length < PAGE) break;
-    offset += PAGE;
-  }
-  return allRows;
-}
-
-export async function rpcGetMdicComexTopPaises(
-  supabase: SupabaseClient,
-  flow: string | null,
-  ncmCodigo: string | null,
-  anoInicio: number | null,
-  anoFim: number | null,
-  limit = 15,
-): Promise<MdicComexTopPaisRow[]> {
-  try {
-    const { data, error } = await supabase.rpc("get_mdic_comex_top_paises", {
-      p_flow:        flow,
-      p_ncm_codigo:  ncmCodigo,
-      p_ano_inicio:  anoInicio,
-      p_ano_fim:     anoFim,
-      p_limit:       limit,
-    });
-    if (error) throw error;
-    return (data ?? []) as MdicComexTopPaisRow[];
-  } catch (e) {
-    console.error("get_mdic_comex_top_paises failed", e);
-    return [];
-  }
-}
-
-export async function rpcGetMdicComexFiltros(
-  supabase: SupabaseClient,
-): Promise<MdicComexFiltros> {
-  try {
-    const { data, error } = await supabase.rpc("get_mdic_comex_filtros", {});
-    if (error) throw error;
-    const d = (data ?? {}) as Partial<MdicComexFiltros>;
-    return { anos: d.anos ?? [], ncms: d.ncms ?? [], paises: d.paises ?? [] };
-  } catch (e) {
-    console.error("get_mdic_comex_filtros failed", e);
-    return { anos: [], ncms: [], paises: [] };
-  }
-}
-
 // ─── MODULE: ANP PPI (/src/app/(dashboard)/anp-ppi/page.tsx) ─────────────────
 
 export type AnpPpiSerieRow = {
@@ -1981,30 +1882,6 @@ export async function getMsExportCount(
   return Number(data ?? 0);
 }
 
-export type MdicComexExportCountFilters = {
-  flow?: string | null;
-  ncms?: string[] | null;
-  anoInicio?: number | null;
-  anoFim?: number | null;
-};
-
-export async function getMdicComexExportCount(
-  supabase: SupabaseClient,
-  filters: MdicComexExportCountFilters,
-): Promise<number> {
-  const { data, error } = await supabase.rpc("get_mdic_comex_export_count", {
-    p_flow:       filters.flow      ?? null,
-    p_ncms:       toListOrNull(filters.ncms),
-    p_ano_inicio: filters.anoInicio ?? null,
-    p_ano_fim:    filters.anoFim    ?? null,
-  });
-  if (error) {
-    console.error("get_mdic_comex_export_count failed", error);
-    throw error;
-  }
-  return Number(data ?? 0);
-}
-
 export type AnpCdpExportCountFilters = {
   pocos?: string[] | null;
   campos?: string[] | null;
@@ -2140,13 +2017,12 @@ export async function fetchAnpCdpRawFiltered(
   return allRows;
 }
 
-// ─── Tier 2 aggregated exports — /anp-cdp + /mdic-comex ─────────────────────
+// ─── Tier 2 aggregated exports — /anp-cdp ───────────────────────────────────
 //
-// Both `get_anp_cdp_aggregated` and `get_mdic_comex_aggregated` are dynamic
-// SQL aggregators created in a parallel migration by worker_supabase. The
-// caller passes the same filter shape used for the export count + a
-// `p_group_by text[]` whose values must be a strict subset of the union of
-// dimension columns of the underlying table.
+// `get_anp_cdp_aggregated` is a dynamic SQL aggregator created by
+// worker_supabase. The caller passes the same filter shape used for the
+// export count + a `p_group_by text[]` whose values must be a strict subset
+// of the union of dimension columns of the underlying table.
 //
 // The RPC returns one row per distinct combination of the requested
 // dimensions, with NULLs in all other dimension columns and SUM/AVG of the
@@ -2228,137 +2104,6 @@ export async function rpcGetAnpCdpAggregated(
       throw error;
     }
     const rows = (data ?? []) as AnpCdpAggregatedRow[];
-    if (!rows.length) break;
-    allRows.push(...rows);
-    if (rows.length < PAGE) break;
-    offset += PAGE;
-  }
-
-  return allRows;
-}
-
-// ── MDIC Comex aggregated ────────────────────────────────────────────────────
-//
-// NOTE: the underlying `mdic_comex` table (migration 20260504000012) has
-// columns: ano, mes, flow, ncm_codigo, ncm_nome, pais, volume_kg,
-// valor_fob_usd. There is **no `uf` column** in the table, so the contract's
-// `ufs` filter and `"uf"` group-by are intentionally omitted here.
-
-export type MdicComexAggregatedFilters = MdicComexExportCountFilters & {
-  paises?: string[] | null;
-};
-
-export type MdicComexGroupBy =
-  | "ano"
-  | "mes"
-  | "flow"
-  | "ncm_codigo"
-  | "ncm_nome"
-  | "pais";
-
-export type MdicComexAggregatedRow = {
-  ano: number | null;
-  mes: number | null;
-  flow: string | null;
-  ncm_codigo: string | null;
-  ncm_nome: string | null;
-  pais: string | null;
-  volume_kg: number;
-  valor_fob_usd: number;
-  quantidade_estatistica?: number | null;
-  unidade_estatistica?: string | null;
-};
-
-export async function rpcGetMdicComexAggregated(
-  supabase: SupabaseClient,
-  filters: MdicComexAggregatedFilters,
-  groupBy: MdicComexGroupBy[],
-): Promise<MdicComexAggregatedRow[]> {
-  // Same PostgREST `max-rows` truncation hazard as get_anp_cdp_aggregated.
-  // With ~250 NCMs × 200 países × 12 meses × ano range, full-cardinality
-  // group-bys easily exceed 1000 rows — page identically.
-  const PAGE = 1000;
-  let offset = 0;
-  const allRows: MdicComexAggregatedRow[] = [];
-
-  const args = {
-    p_flow:       filters.flow      ?? null,
-    p_ncms:       toListOrNull(filters.ncms),
-    p_paises:     toListOrNull(filters.paises),
-    p_ano_inicio: filters.anoInicio ?? null,
-    p_ano_fim:    filters.anoFim    ?? null,
-    p_group_by:   groupBy as unknown as string[],
-  };
-
-  while (true) {
-    const { data, error } = await supabase
-      .rpc("get_mdic_comex_aggregated", args)
-      .range(offset, offset + PAGE - 1);
-    if (error) {
-      console.error("get_mdic_comex_aggregated failed", error);
-      throw error;
-    }
-    const rows = (data ?? []) as MdicComexAggregatedRow[];
-    if (!rows.length) break;
-    allRows.push(...rows);
-    if (rows.length < PAGE) break;
-    offset += PAGE;
-  }
-
-  return allRows;
-}
-
-// ── MDIC Comex raw rows (PostgREST) ──────────────────────────────────────────
-//
-// Default export path for /mdic-comex granularity = "raw". Mirrors columns of
-// `mdic_comex` 1:1 (do not invent fields). Same filter shape as
-// `get_mdic_comex_export_count` plus `paises` (since the table has it).
-
-export type MdicComexRawRow = {
-  ano: number;
-  mes: number;
-  flow: string;
-  ncm_codigo: string;
-  ncm_nome: string | null;
-  pais: string;
-  volume_kg: number | null;
-  valor_fob_usd: number | null;
-  quantidade_estatistica?: number | null;
-  unidade_estatistica?: string | null;
-};
-
-export async function fetchMdicComexRawFiltered(
-  supabase: SupabaseClient,
-  filters: MdicComexAggregatedFilters,
-): Promise<MdicComexRawRow[]> {
-  const PAGE = 1000;
-  let offset = 0;
-  const allRows: MdicComexRawRow[] = [];
-
-  const ncms   = toListOrNull(filters.ncms);
-  const paises = toListOrNull(filters.paises);
-
-  while (true) {
-    let q = supabase
-      .from("mdic_comex")
-      .select("ano,mes,flow,ncm_codigo,ncm_nome,pais,volume_kg,valor_fob_usd");
-
-    if (filters.flow)            q = q.eq("flow", filters.flow);
-    if (ncms)                    q = q.in("ncm_codigo", ncms);
-    if (paises)                  q = q.in("pais", paises);
-    if (filters.anoInicio != null) q = q.gte("ano", filters.anoInicio);
-    if (filters.anoFim    != null) q = q.lte("ano", filters.anoFim);
-
-    const { data, error } = await q
-      .order("ano",        { ascending: true })
-      .order("mes",        { ascending: true })
-      .order("flow",       { ascending: true })
-      .order("ncm_codigo", { ascending: true })
-      .order("pais",       { ascending: true })
-      .range(offset, offset + PAGE - 1);
-    if (error) throw error;
-
-    const rows = (data ?? []) as MdicComexRawRow[];
     if (!rows.length) break;
     allRows.push(...rows);
     if (rows.length < PAGE) break;

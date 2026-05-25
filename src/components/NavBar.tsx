@@ -105,12 +105,6 @@ const NAV_ENTRIES: NavEntry[] = [
           { href: "/sindicom", label: "Sales Volumes — Sindicom" },
         ],
       },
-      {
-        heading: "Comex data",
-        items: [
-          { href: "/mdic-comex", label: "MDIC Comex" },
-        ],
-      },
     ],
   },
   { label: "Market Watch", href: "/stocks" },
