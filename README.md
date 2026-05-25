@@ -56,7 +56,6 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/anp-precos-produtores` | Fuel Distribution | `get_anp_precos_produtores_serie`, `get_anp_precos_produtores_filtros` | Yes |
 | `/anp-glp` | Fuel Distribution | `get_anp_glp_serie`, `get_anp_glp_filtros` | Yes |
 | `/anp-lpc` | Fuel Distribution | `get_anp_lpc_nacional`, `get_anp_lpc_serie`, `get_anp_lpc_filtros` | Yes |
-| `/sindicom` | Fuel Distribution | `get_sindicom_serie`, `get_sindicom_filtros` | Yes |
 | `/imports-exports` | Fuel Distribution | `get_imports_exports_filtros`, `get_imports_exports_paises_stacked`, `get_imports_exports_importers_stacked`, `get_imports_exports_yoy_table`, `get_imports_exports_exports_serie`, `get_imports_exports_fob_price_serie` | Yes |
 | `/anp-precos-distribuicao` | Fuel Distribution | `get_anp_precos_distribuicao_serie`, `get_anp_precos_distribuicao_top_distribuidoras`, `get_anp_precos_distribuicao_filtros` | Yes |
 | `/subsidy-tracker` | Fuel Distribution (Proprietary) | `get_subsidy_tracker_diesel` | Yes |
@@ -75,7 +74,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 dashboard_projeto/
 ├── .claude/                       # local-only (gitignored) — agent definitions
 │   └── agents/                    # worker_* agents per department/dashboard
-├── .github/workflows/             # 18 workflows (ETL scrapers + supabase deploy)
+├── .github/workflows/             # 17 workflows (ETL scrapers + supabase deploy)
 ├── docs/                          # internal collaboration docs
 │   ├── master.md                  # PRD mestre — departments, contracts, conventions
 │   ├── app/                       # APP department + per-dashboard sub-PRDs
@@ -90,7 +89,7 @@ dashboard_projeto/
 │   │   ├── admin.md               # bundle: home + profile + admin-panel
 │   │   ├── anp-cdp.md anp-cdp-bsw.md anp-cdp-depletion.md anp-cdp-diaria.md
 │   │   ├── anp-ppi.md anp-precos-produtores.md anp-glp.md
-│   │   ├── anp-lpc.md sindicom.md
+│   │   ├── anp-lpc.md
 │   │   ├── imports-exports.md     # consolidates the 3 retired anp-* import/export dashboards + /mdic-comex (Panel C, 2026-05-25)
 │   │   ├── anp-precos-distribuicao.md subsidy-tracker.md admin-analytics.md
 │   │   ├── _deprecated/           # archived sub-PRDs: anp-daie, anp-desembaracos, anp-painel-importacoes, mdic-comex
@@ -110,8 +109,7 @@ dashboard_projeto/
 │   │   │   ├── fase3/             #   01_daie_sync.py → 02_desembaracos_sync.py → 03_painel_imp_sync.py
 │   │   │   └── precos/            #   01_ppi_sync.py → 02_precos_produtores_sync.py
 │   │   ├── navios/                # 5-stage chain: 01_lineup_scrape → ... → 05_positions_sync
-│   │   ├── mdic_comex_sync.py
-│   │   └── sindicom_sync.py
+│   │   └── mdic_comex_sync.py
 │   ├── manual/                    # human-in-the-loop uploads (Dados Locais)
 │   │   ├── dg_margins_upload.py   # uploads data/d_g_margins.xlsx
 │   │   └── price_bands_upload.py  # uploads data/price_bands.xlsx
@@ -132,7 +130,7 @@ dashboard_projeto/
 │   │       ├── news-hunter/       # page.tsx + page.module.css
 │   │       ├── anp-cdp/ anp-cdp-bsw/ anp-cdp-depletion/ anp-cdp-diaria/
 │   │       ├── anp-ppi/ anp-precos-produtores/ anp-glp/
-│   │       ├── anp-lpc/ sindicom/
+│   │       ├── anp-lpc/
 │   │       ├── imports-exports/   # consolidates the 3 retired anp-* import/export routes + Panel C absorbs /mdic-comex (2026-05-25)
 │   │       ├── anp-precos-distribuicao/ subsidy-tracker/ admin-analytics/
 │   │       ├── profile/ admin-panel/ template-module/
@@ -186,7 +184,6 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | `importer_group_map` | cnpj | unified_importer, razao_social_seed. **Intentionally empty at seed time** — populated by follow-up DML migration after ETL backfill exposes real CNPJs (T11) |
 | `ncm_densidade_kg_m3` | ncm_codigo | densidade_kg_m3 (840 / 740 / 850 for diesel / gasoline / crude oil), produto_label. Used server-side for kg → m³ conversion in `/imports-exports` |
 | `anp_lpc` | id | data_referencia, municipio, estado, produto, preco_medio, preco_minimo, preco_maximo, numero_postos |
-| `sindicom` | id | data_referencia, produto, regiao, volume_m3 |
 | `anp_cdp_producao` | (ano, mes, poco, campo, bacia, local) | ano, mes, poco, campo, bacia, local (PosSal/PreSal/Terra), petroleo_bbl_dia, gas_total_mm3_dia, agua_bbl_dia, operador |
 | `anp_precos_distribuicao` | id | data_referencia, distribuidora, produto, uf, preco_distribuicao, unidade |
 | `anp_voip` | (ano_publicacao, campo) | bacia, estado, voip_bbl, vgip_m3, petroleo_acumulado_bbl, gas_acumulado_m3, fracao_recuperada, situacao |
@@ -200,7 +197,7 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 
 > **Tech debt:** `price_bands`, `profiles`, `module_visibility` were created via DDL in [`sql/`](sql/) applied directly to the Supabase Dashboard rather than versioned migrations (`create_price_bands.sql`, `create_profiles_and_visibility.sql`, `create_user_management.sql`). See [`docs/supabase/PRD.md`](docs/supabase/PRD.md) for conversion plan.
 
-## Data Pipelines (18 workflows + 1 external)
+## Data Pipelines (17 workflows + 1 external)
 
 | # | Workflow | Schedule | Script(s) | Target |
 |---|----------|----------|-----------|--------|
@@ -215,13 +212,12 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | 9 | `etl_anp_lpc.yml` | Weekly Wed 14:30 UTC | `pipelines/anp/lpc_sync.py` | `anp_lpc` |
 | 10 | `etl_anp_precos.yml` | Weekly Mon 12:00 UTC | `precos/01_ppi_sync.py` → `02_precos_produtores_sync.py` + `glp_sync.py` | `anp_ppi`, `anp_precos_produtores`, `anp_glp` |
 | 11 | `etl_mdic_comex.yml` | Daily 14:00 UTC | `pipelines/mdic_comex_sync.py` | `mdic_comex` (consumed by `/imports-exports` Panel C since 2026-05-25; the standalone `/mdic-comex` dashboard was retired) |
-| 12 | `etl_sindicom.yml` | Monthly 5th, 15:00 UTC | `pipelines/sindicom_sync.py` (Playwright + Chromium) | `sindicom` |
-| 13 | `manual_dg_margins.yml` | Weekly Mon | `manual/dg_margins_upload.py` | `d_g_margins` (manual Excel) |
-| 14 | `supabase_deploy.yml` | On push to main | `supabase db push` | migrations |
-| 15 | `etl_anp_precos_distribuicao.yml` | Monthly 5th 14:00 UTC + Weekly Tue 14:30 UTC | `pipelines/anp/precos_distribuicao_sync.py` | `anp_precos_distribuicao` |
-| 16 | `etl_anp_cdp_diaria.yml` | 3×/day `0 10,15,20 * * *` UTC | `scripts/extractors/anp_cdp_powerbi.py --level all --upload` (Power BI public API, no Selenium) | `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco` |
-| 17 | `etl_anp_voip.yml` | Annual `0 12 1 5 *` (May 1st 12:00 UTC) | `pipelines/anp/voip_sync.py` | `anp_voip` |
-| 18 | `etl_anp_subsidy_diesel.yml` | Daily `30 11 * * *` UTC; `workflow_dispatch` with `mode: incremental\|backfill` | `pipelines/anp/subsidy_diesel_sync.py` (`pdfplumber` primary, OCR fallback opt-in) | `anp_subsidy_diesel_reference` |
+| 12 | `manual_dg_margins.yml` | Weekly Mon | `manual/dg_margins_upload.py` | `d_g_margins` (manual Excel) |
+| 13 | `supabase_deploy.yml` | On push to main | `supabase db push` | migrations |
+| 14 | `etl_anp_precos_distribuicao.yml` | Monthly 5th 14:00 UTC + Weekly Tue 14:30 UTC | `pipelines/anp/precos_distribuicao_sync.py` | `anp_precos_distribuicao` |
+| 15 | `etl_anp_cdp_diaria.yml` | 3×/day `0 10,15,20 * * *` UTC | `scripts/extractors/anp_cdp_powerbi.py --level all --upload` (Power BI public API, no Selenium) | `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco` |
+| 16 | `etl_anp_voip.yml` | Annual `0 12 1 5 *` (May 1st 12:00 UTC) | `pipelines/anp/voip_sync.py` | `anp_voip` |
+| 17 | `etl_anp_subsidy_diesel.yml` | Daily `30 11 * * *` UTC; `workflow_dispatch` with `mode: incremental\|backfill` | `pipelines/anp/subsidy_diesel_sync.py` (`pdfplumber` primary, OCR fallback opt-in) | `anp_subsidy_diesel_reference` |
 | ext | News Hunter scanner | Every ~5min via cron-job.org | `news_hunter_service.py --once` (in repo `IBBAOG/news-hunter-scanner`) | `news_articles` |
 
 **News Hunter scanner** lives in a separate repo. Uses `SUPABASE_SERVICE_KEY`. Keywords from UNION of all users' rows in `news_hunter_keywords`. Frontend polls `news_articles` every 60s incrementally (`found_at` watermark).

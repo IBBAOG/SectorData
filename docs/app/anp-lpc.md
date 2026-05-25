@@ -168,4 +168,4 @@ Tier 2 — `<ExportPanel mode="modal">` abre `<ExportModal>` com filtros + calcu
 
 ## Padrão arquitetural: período em DATE vs YEAR
 
-Este é o **primeiro dashboard com tabela cuja chave temporal é DATE (semanal)**, não (ano, mes) como os demais. A solução adotada — **slider de anos no UI, conversão para `${y}-01-01` / `${y}-12-31` ao chamar RPC** — preserva consistência visual com os outros dashboards e evita reaprender UX. Esta abordagem deve ser referência para futuros dashboards com período em DATE (`/sindicom`, `/anp-fase3-daie`, `/anp-fase3-desembaracos`, `/anp-fase3-painel-imp` quando vierem).
+Este é o **primeiro dashboard com tabela cuja chave temporal é DATE (semanal)**, não (ano, mes) como os demais. A solução adotada — **slider de anos no UI, conversão para `${y}-01-01` / `${y}-12-31` ao chamar RPC** — preserva consistência visual com os outros dashboards e evita reaprender UX. Esta abordagem deve ser referência para futuros dashboards com período em DATE.

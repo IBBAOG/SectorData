@@ -89,7 +89,7 @@ package.json, eslint.config.mjs     Configs do projeto
 
 | Tier | Critério | UX | Quando usar |
 |---|---|---|---|
-| **Tier 1** | Dataset < ~50k linhas | Botões diretos no `ExportPanel` | `/navios-diesel`, `/anp-glp`, `/imports-exports`, `/anp-precos-produtores`, `/sindicom`, `/anp-ppi`, `/anp-precos-distribuicao`, `/diesel-gasoline-margins`, `/price-bands` |
+| **Tier 1** | Dataset < ~50k linhas | Botões diretos no `ExportPanel` | `/navios-diesel`, `/anp-glp`, `/imports-exports`, `/anp-precos-produtores`, `/anp-ppi`, `/anp-precos-distribuicao`, `/diesel-gasoline-margins`, `/price-bands` |
 | **Tier 2** | Dataset >= ~50k linhas | `ExportPanel mode="modal"` + ExportModal | `/market-share`, `/sales-volumes`, `/anp-cdp`, `/anp-lpc` |
 
 ### Como ajustar `AVG_BYTES_PER_ROW` para dataset novo
@@ -228,7 +228,6 @@ Para qualquer mudança em código de um dashboard específico, delegue ao agente
 | `/anp-precos-produtores` | `worker_dash-anp-precos-produtores` | [anp-precos-produtores.md](anp-precos-produtores.md) |
 | `/anp-glp` | `worker_dash-anp-glp` | [anp-glp.md](anp-glp.md) |
 | `/anp-lpc` | `worker_dash-anp-lpc` | [anp-lpc.md](anp-lpc.md) |
-| `/sindicom` | `worker_dash-sindicom` | [sindicom.md](sindicom.md) |
 | `/imports-exports` | `worker_dash-imports-exports` (substitui os 3 retirados em 2026-05-25: `/anp-daie`, `/anp-desembaracos`, `/anp-painel-importacoes`) | [imports-exports.md](imports-exports.md) |
 | `/anp-precos-distribuicao` | `worker_dash-anp-precos-distribuicao` | [anp-precos-distribuicao.md](anp-precos-distribuicao.md) |
 | `/anp-cdp-diaria` | `worker_dash-anp-cdp-diaria` | [anp-cdp-diaria.md](anp-cdp-diaria.md) |
@@ -242,7 +241,6 @@ Para qualquer mudança em código de um dashboard específico, delegue ao agente
 | `anp-precos-produtores` | Fuel Distribution | `anp_precos_produtores` (~38k) |
 | `anp-glp` | Fuel Distribution | `anp_glp` (~3k) |
 | `anp-lpc` | Fuel Distribution | `anp_lpc` (~30k) |
-| `sindicom` | Fuel Distribution | `sindicom` (0 — pendente Cloudflare) |
 | `imports-exports` | Fuel Distribution | `anp_desembaracos` (enriquecida com `importador`/`cnpj`/`uf_cnpj` em 2026-05-25 — `~6k` + backfill pós-reforma) + `anp_daie` (`~7k`). Aux tables: `imports_product_map`, `importer_group_map` (vazia até T11), `ncm_densidade_kg_m3`. Migration: `20260525000010_imports_exports_enrichment.sql`. Consolida os 3 retirados: `/anp-daie`, `/anp-desembaracos`, `/anp-painel-importacoes` (tabela `anp_painel_imp_dist` DROPPED). |
 | `anp-precos-distribuicao` | Fuel Distribution | `anp_precos_distribuicao` (volume a crescer) |
 | `anp-cdp-diaria` | Oil & Gas | `anp_cdp_diaria` (~16.5k — Field), `anp_cdp_diaria_instalacao` (~16.3k — Installation), `anp_cdp_diaria_poco` (~180.7k — Well). 3 níveis de granularidade via `SegmentedToggle` (Field / Installation / Well). Histórico desde 2025-11-09. |
@@ -368,7 +366,7 @@ return (
 | 1 (alta prioridade) | `sales-volumes`, `market-share`, `navios-diesel` | Mais usuários ativos. Bugs silenciosos são caros aqui. |
 | 2 (média) | `diesel-gasoline-margins`, `price-bands`, `stocks` | Fluxo Market Watch — usuários executivos. |
 | 3 (baixa) | `news-hunter`, `home`/`profile`/`admin-panel` | Fluxos administrativos / passivos. |
-| 4 (Fase 3) | `anp-cdp`, `anp-ppi`, `anp-precos-produtores`, `anp-glp`, `anp-lpc`, `sindicom`, `imports-exports` | Dashboards mais novos — já têm padrões consolidados; aplicar incrementalmente. `imports-exports` substitui o trio `anp-daie` + `anp-desembaracos` + `anp-painel-importacoes` retirado em 2026-05-25 e absorveu `/mdic-comex` no mesmo dia via Panel C. |
+| 4 (Fase 3) | `anp-cdp`, `anp-ppi`, `anp-precos-produtores`, `anp-glp`, `anp-lpc`, `imports-exports` | Dashboards mais novos — já têm padrões consolidados; aplicar incrementalmente. `imports-exports` substitui o trio `anp-daie` + `anp-desembaracos` + `anp-painel-importacoes` retirado em 2026-05-25 e absorveu `/mdic-comex` no mesmo dia via Panel C. |
 
 **Regras de migração:**
 
@@ -491,7 +489,7 @@ Clients **não** são bloqueados em nenhum RPC; MFA é apenas defesa adicional o
 
 ## Padrões consolidados na Fase 3 (referência para futuros dashboards)
 
-A Fase 3 entregou 10 dashboards (ANP CDP, PPI, Preços Produtores, GLP, MDIC Comex, ANP LPC, SINDICOM, DAIE, Desembaraços, Painel Importações) e cristalizou os seguintes padrões. Use como checklist ao criar dashboard novo. (Nota: o trio DAIE / Desembaraços / Painel Importações foi consolidado em `/imports-exports` em 2026-05-25, e `/mdic-comex` foi absorvido pelo mesmo dashboard via Panel C "Import Price" no mesmo dia — os 4 sub-PRDs antigos foram movidos para `docs/app/_deprecated/`.)
+A Fase 3 entregou 9 dashboards (ANP CDP, PPI, Preços Produtores, GLP, MDIC Comex, ANP LPC, DAIE, Desembaraços, Painel Importações) e cristalizou os seguintes padrões. Use como checklist ao criar dashboard novo. (Nota: o trio DAIE / Desembaraços / Painel Importações foi consolidado em `/imports-exports` em 2026-05-25, e `/mdic-comex` foi absorvido pelo mesmo dashboard via Panel C "Import Price" no mesmo dia — os 4 sub-PRDs antigos foram movidos para `docs/app/_deprecated/`.)
 
 1. **Header** — `page-header-title` + `page-header-sub` + `<hr>` (`border-top: 2px solid #e0e0e0`) + period badge condicional.
 2. **Push de período para server-side** — passar ANO ou DATE pra RPC (`p_ano_inicio/p_ano_fim` ou `p_data_inicio/p_data_fim`); evita filtrar volumes grandes no cliente.

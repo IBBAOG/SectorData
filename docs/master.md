@@ -43,7 +43,6 @@ CEO (Eduardo)
      │   ├─ dash-anp-precos-produtores    (/anp-precos-produtores — Fuel Distribution)
      │   ├─ dash-anp-glp                  (/anp-glp — Fuel Distribution)
      │   ├─ dash-anp-lpc                  (/anp-lpc — Fuel Distribution)
-     │   ├─ dash-sindicom                 (/sindicom — Fuel Distribution)
      │   ├─ dash-imports-exports          (/imports-exports — Fuel Distribution; substitui /anp-daie + /anp-desembaracos + /anp-painel-importacoes; absorveu /mdic-comex via Panel C "Import Price" em 2026-05-25)
      │   ├─ dash-anp-precos-distribuicao  (/anp-precos-distribuicao — Fuel Distribution)
      │   ├─ dash-anp-cdp-diaria          (/anp-cdp-diaria — Oil & Gas)
@@ -98,7 +97,6 @@ Cada um possui um módulo (ou bundle, no caso de admin). Cada um auto-documenta 
 | [`worker_dash-anp-precos-produtores`](../.claude/agents/worker_dash-anp-precos-produtores.md) | `/anp-precos-produtores` | [`docs/app/anp-precos-produtores.md`](app/anp-precos-produtores.md) |
 | [`worker_dash-anp-glp`](../.claude/agents/worker_dash-anp-glp.md) | `/anp-glp` | [`docs/app/anp-glp.md`](app/anp-glp.md) |
 | [`worker_dash-anp-lpc`](../.claude/agents/worker_dash-anp-lpc.md) | `/anp-lpc` | [`docs/app/anp-lpc.md`](app/anp-lpc.md) |
-| [`worker_dash-sindicom`](../.claude/agents/worker_dash-sindicom.md) | `/sindicom` | [`docs/app/sindicom.md`](app/sindicom.md) |
 | [`worker_dash-imports-exports`](../.claude/agents/worker_dash-imports-exports.md) | `/imports-exports` (substitui `/anp-daie` + `/anp-desembaracos` + `/anp-painel-importacoes`; consolida importações por país e por importador a partir da `anp_desembaracos` enriquecida + exportações via `anp_daie`) | [`docs/app/imports-exports.md`](app/imports-exports.md) |
 | [`worker_dash-anp-precos-distribuicao`](../.claude/agents/worker_dash-anp-precos-distribuicao.md) | `/anp-precos-distribuicao` | [`docs/app/anp-precos-distribuicao.md`](app/anp-precos-distribuicao.md) |
 | [`worker_dash-anp-cdp-diaria`](../.claude/agents/worker_dash-anp-cdp-diaria.md) | `/anp-cdp-diaria` | [`docs/app/anp-cdp-diaria.md`](app/anp-cdp-diaria.md) |
@@ -128,7 +126,7 @@ São os pontos onde um departamento depende de outro. Mudanças nestes contratos
 | Quem consome | Como |
 |---|---|
 | APP | Lê via supabase-js (anon key) chamando RPCs. Wrappers em `src/lib/rpc.ts` (este código é do APP, mas as RPCs em si pertencem ao Supabase). Também **escreve** `app_events` via RPC `track_event` (fire-and-forget, auth.uid() capturado no SQL). |
-| ETL | Escreve via supabase-py (service key) — popula `vendas`, `navios_diesel`, `news_articles`, `mdic_comex`, `anp_ppi`, `anp_precos_produtores`, `anp_glp`, `anp_daie`, `anp_desembaracos` (enriquecida com `importador`, `cnpj`, `uf_cnpj`), `anp_lpc`, `sindicom`, `anp_cdp_producao`, `anp_precos_distribuicao`, `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco`, `anp_voip`, `anp_subsidy_diesel_reference`. |
+| ETL | Escreve via supabase-py (service key) — popula `vendas`, `navios_diesel`, `news_articles`, `mdic_comex`, `anp_ppi`, `anp_precos_produtores`, `anp_glp`, `anp_daie`, `anp_desembaracos` (enriquecida com `importador`, `cnpj`, `uf_cnpj`), `anp_lpc`, `anp_cdp_producao`, `anp_precos_distribuicao`, `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco`, `anp_voip`, `anp_subsidy_diesel_reference`. |
 | Dados Locais | Escreve via supabase-py (service key) — popula `d_g_margins`, `price_bands` |
 | Alertas | Lê via supabase-py — verifica mudanças em fontes monitoradas |
 
@@ -220,7 +218,7 @@ ETL pode ler para análise; somente Alertas escreve.
 
 Cada workflow novo precisa: secrets registrados no GitHub, schedule cron, e linha no `docs/etl-pipelines/PRD.md`.
 
-Workflows ativos para as tabelas novas: `etl_mdic_comex.yml`, `etl_anp_precos.yml` (PPI + preços produtores + GLP), `etl_anp_fase3.yml` (2 steps: DAIE + desembaraços enriquecidos com `importador`/`cnpj`/`uf_cnpj`; o antigo step `03_painel_imp_sync.py` foi deletado em 2026-05-25 junto com a tabela `anp_painel_imp_dist` na reforma `/imports-exports` — migration `20260525000010_imports_exports_enrichment.sql`), `etl_anp_lpc.yml`, `etl_sindicom.yml`, `etl_anp_cdp.yml` (CDP), `etl_anp_precos_distribuicao.yml` (preços de distribuição), `etl_anp_cdp_diaria.yml` (produção diária 3 níveis — campo/instalação/poço — 3×/dia, CLI `--level all --upload`), `etl_anp_voip.yml` (VOIP por campo — anual, 1º de maio, source BAR/ANP), `etl_anp_subsidy_diesel.yml` (referência de preços subsídio diesel — diário 11:30 UTC, script `pipelines/anp/subsidy_diesel_sync.py`, target `anp_subsidy_diesel_reference`). Ver `docs/etl-pipelines/PRD.md` para schedules e scripts.
+Workflows ativos para as tabelas novas: `etl_mdic_comex.yml`, `etl_anp_precos.yml` (PPI + preços produtores + GLP), `etl_anp_fase3.yml` (2 steps: DAIE + desembaraços enriquecidos com `importador`/`cnpj`/`uf_cnpj`; o antigo step `03_painel_imp_sync.py` foi deletado em 2026-05-25 junto com a tabela `anp_painel_imp_dist` na reforma `/imports-exports` — migration `20260525000010_imports_exports_enrichment.sql`), `etl_anp_lpc.yml`, `etl_anp_cdp.yml` (CDP), `etl_anp_precos_distribuicao.yml` (preços de distribuição), `etl_anp_cdp_diaria.yml` (produção diária 3 níveis — campo/instalação/poço — 3×/dia, CLI `--level all --upload`), `etl_anp_voip.yml` (VOIP por campo — anual, 1º de maio, source BAR/ANP), `etl_anp_subsidy_diesel.yml` (referência de preços subsídio diesel — diário 11:30 UTC, script `pipelines/anp/subsidy_diesel_sync.py`, target `anp_subsidy_diesel_reference`). Ver `docs/etl-pipelines/PRD.md` para schedules e scripts.
 
 ---
 
@@ -237,7 +235,7 @@ Todos os dashboards com dataset tabular exportam Excel + CSV. Dois tiers conform
 
 **Dashboards Tier 2:** `/market-share`, `/sales-volumes` (dataset `vendas`), `/anp-cdp`, `/anp-lpc`.
 
-**Dashboards Tier 1:** `/diesel-gasoline-margins`, `/price-bands`, `/navios-diesel`, `/anp-glp`, `/imports-exports`, `/anp-precos-produtores`, `/sindicom`, `/anp-ppi`.
+**Dashboards Tier 1:** `/diesel-gasoline-margins`, `/price-bands`, `/navios-diesel`, `/anp-glp`, `/imports-exports`, `/anp-precos-produtores`, `/anp-ppi`.
 
 **Skip (sem dataset tabular):** `/home`, `/profile`, `/admin-panel`, `/admin-analytics`, `/stocks`, `/news-hunter`.
 
@@ -425,7 +423,7 @@ Workflow controlado pelo **Subgerente APP** (não pelo Gerente Geral). Ver detal
 ## Estado atual (snapshot)
 
 - 4 departamentos + 3 papéis transversais.
-- 19 dashboards ativos (8 originais + 6 da Fase 3 remanescentes: `/anp-cdp`, `/anp-ppi`, `/anp-precos-produtores`, `/anp-glp`, `/anp-lpc`, `/sindicom` + 5 novos: `/imports-exports` (consolida `/anp-daie` + `/anp-desembaracos` + `/anp-painel-importacoes`, retirados em 2026-05-25; absorveu `/mdic-comex` via Panel C "Import Price" no mesmo dia — `mdic_comex` table e workflow ETL permanecem ativos alimentando Panel C), `/anp-precos-distribuicao`, `/anp-cdp-diaria`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/subsidy-tracker` + `/admin-analytics` (Admin-only, sem `module_visibility`)).
+- 18 dashboards ativos (8 originais + 5 da Fase 3 remanescentes: `/anp-cdp`, `/anp-ppi`, `/anp-precos-produtores`, `/anp-glp`, `/anp-lpc` + 5 novos: `/imports-exports` (consolida `/anp-daie` + `/anp-desembaracos` + `/anp-painel-importacoes`, retirados em 2026-05-25; absorveu `/mdic-comex` via Panel C "Import Price" no mesmo dia — `mdic_comex` table e workflow ETL permanecem ativos alimentando Panel C), `/anp-precos-distribuicao`, `/anp-cdp-diaria`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/subsidy-tracker` + `/admin-analytics` (Admin-only, sem `module_visibility`)).
 - Documentação inicial criada em **2026-05-05**.
 
 ### Limpeza inicial (2026-05-05)
