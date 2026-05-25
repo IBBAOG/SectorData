@@ -103,15 +103,6 @@ const CARDS: CardDef[] = [
   },
   // Statistics — Fuel Distribution
   {
-    slug: "mdic-comex",
-    preview: null,
-    title: "MDIC Comex",
-    description: "Brazilian trade balance and import/export volumes by product and origin",
-    badge: "Available",
-    href: "/mdic-comex",
-    disabled: false,
-  },
-  {
     slug: "anp-ppi",
     preview: null,
     title: "ANP PPI",

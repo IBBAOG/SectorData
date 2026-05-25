@@ -236,7 +236,6 @@ Lista completa dos slugs atualmente registrados na tabela `module_visibility` (t
 | `navios-diesel` | Fuel Distribution | Diesel Imports Line-Up |
 | `diesel-gasoline-margins` | Fuel Distribution | Diesel and Gasoline Margins |
 | `price-bands` | Fuel Distribution | Price Bands |
-| `mdic-comex` | Estatísticas / Fuel Distribution | MDIC Comex |
 | `anp-ppi` | Estatísticas / Fuel Distribution | ANP PPI |
 | `anp-precos-produtores` | Estatísticas / Fuel Distribution | ANP Preços Produtores |
 | `anp-precos-distribuicao` | Estatísticas / Fuel Distribution | ANP Preços Distribuição |
@@ -388,6 +387,18 @@ After the Imports & Exports reform (`24dd2aa1`), three stale references to the r
 | `mobile/View.tsx` | Removed dead slug icons `anp-daie`, `anp-desembaracos`, `anp-painel-importacoes`; added `imports-exports` icon (globe + bidirectional arrows) |
 | `useHomeData.ts` | Removed stale `SLUG_CATEGORY` entries for the 3 retired slugs; added `imports-exports: "fuel"` |
 | `useHomeData.ts` + `HomeClient.tsx` | Softened `imports-exports` card description — now reads "ANP fuel imports and exports — origins, customs clearances, and (after backfill) importers" |
+
+### `/mdic-comex` deprecation cleanup (2026-05-25)
+
+`/mdic-comex` was retired (route folder deletion and RPC cleanup handled by W2). Admin-bundle references removed:
+
+| File | Change |
+|---|---|
+| `HomeClient.tsx` | Removed `mdic-comex` entry from `CARDS` array |
+| `useHomeData.ts` | Removed `mdic-comex` entry from `CARDS` array and `"mdic-comex": "oilgas"` from `SLUG_CATEGORY` |
+| `mobile/View.tsx` | Removed `mdic-comex` icon from `CategoryIcon` slug map |
+| `useAdminPanelData.ts` | Removed `{ slug: "mdic-comex", … }` row from `MODULE_LABELS` |
+| `docs/app/admin.md` | Removed `mdic-comex` from slug table |
 
 ## Known bugs fixed
 

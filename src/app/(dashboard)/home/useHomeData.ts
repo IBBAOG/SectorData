@@ -119,15 +119,6 @@ const CARDS: Omit<HomeCardDef, "category">[] = [
     href: "/anp-cdp-diaria",
     disabled: false,
   },
-  {
-    slug: "mdic-comex",
-    preview: null,
-    title: "MDIC Comex",
-    description: "Brazilian trade balance and import/export volumes by product and origin",
-    badge: "Available",
-    href: "/mdic-comex",
-    disabled: false,
-  },
   // Fuel Distribution
   {
     slug: "sales",
@@ -256,7 +247,6 @@ const SLUG_CATEGORY: Record<string, HomeCategory> = {
   "anp-cdp-bsw": "oilgas",
   "anp-cdp-depletion": "oilgas",
   "anp-cdp-diaria": "oilgas",
-  "mdic-comex": "oilgas",
   sales: "fuel",
   "market-share": "fuel",
   "navios-diesel": "fuel",
