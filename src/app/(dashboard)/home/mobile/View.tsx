@@ -636,15 +636,10 @@ function CategoryIcon({
         <path d="M12 2v20" /><path d="M5 8l7 4 7-4" /><path d="M5 14l7 4 7-4" />
       </svg>
     ),
-    "anp-precos-produtores": (
+    "anp-prices": (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="26" height="26">
         <path d="M3 21V11l5 3V11l5 3V11l5 3V21" />
-        <path d="M3 21h18" /><path d="M7 17h2" /><path d="M12 17h2" /><path d="M17 17h2" />
-      </svg>
-    ),
-    "anp-precos-distribuicao": (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="26" height="26">
-        <path d="M4 4h13l3 3v13H4z" /><path d="M8 9h8" /><path d="M8 13h8" /><path d="M8 17h5" />
+        <path d="M3 21h18" /><path d="M12 3v4" /><path d="M10 5h4" />
       </svg>
     ),
     "anp-glp": (
@@ -659,12 +654,6 @@ function CategoryIcon({
         <circle cx="12" cy="12" r="8" />
         <path d="M2 12h3" /><path d="M19 12h3" />
         <path d="M7 7l-3 5 3 5" /><path d="M17 7l3 5-3 5" />
-      </svg>
-    ),
-    "anp-lpc": (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="26" height="26">
-        <rect x="4" y="3" width="10" height="18" rx="1" />
-        <path d="M4 12h10" /><path d="M14 8h2l3 3v7a2 2 0 0 1-2 2" /><path d="M19 11v-3" />
       </svg>
     ),
     alerts: (

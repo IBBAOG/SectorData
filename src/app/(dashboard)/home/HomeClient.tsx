@@ -103,21 +103,12 @@ const CARDS: CardDef[] = [
   },
   // Statistics — Fuel Distribution
   {
-    slug: "anp-precos-produtores",
+    slug: "anp-prices",
     preview: null,
-    title: "ANP Producer Prices",
-    description: "Producer prices for fuels tracked by ANP",
+    title: "ANP Prices",
+    description: "Producer, distribution and retail prices for fuels — Brazilian supply chain",
     badge: "Available",
-    href: "/anp-precos-produtores",
-    disabled: false,
-  },
-  {
-    slug: "anp-precos-distribuicao",
-    preview: null,
-    title: "ANP Distribution Prices",
-    description: "Distribution prices for fuels tracked by ANP",
-    badge: "Available",
-    href: "/anp-precos-distribuicao",
+    href: "/anp-prices",
     disabled: false,
   },
   {
@@ -136,15 +127,6 @@ const CARDS: CardDef[] = [
     description: "ANP fuel imports and exports — origins, customs clearances, and (after backfill) importers",
     badge: "Available",
     href: "/imports-exports",
-    disabled: false,
-  },
-  {
-    slug: "anp-lpc",
-    preview: null,
-    title: "ANP LPC Prices",
-    description: "ANP consumer price survey across Brazilian gas stations",
-    badge: "Available",
-    href: "/anp-lpc",
     disabled: false,
   },
   // Statistics — Oil & Gas
