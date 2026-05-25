@@ -26,7 +26,7 @@ Visualização dos **preços médios ponderados semanais** praticados por **prod
 
 Header: `ANP — Preços Médios Ponderados Produtores e Importadores` + sub `Preços semanais médios ponderados praticados por produtores e importadores, por região` + badge de período quando dados existem.
 
-Diferença vs `/anp-ppi`: aqui é o **preço de venda real do produtor** (refino/distribuidor primário) por região. PPI é o **preço de paridade de importação** por local portuário.
+Diferença vs `/anp-precos-distribuicao`: aqui é o **preço de venda real do produtor** (refino/distribuidor primário) por região. Preços de Distribuição é o preço praticado pela **distribuidora** ao revendedor, por UF.
 
 ## RPCs
 
@@ -47,7 +47,7 @@ Diferença vs `/anp-ppi`: aqui é o **preço de venda real do produtor** (refino
 
 ### Migration relevante
 
-- `20260504000002_anp_precos.sql` — schema + RLS + RPCs + INSERT em `module_visibility` (compartilhada com `/anp-ppi` e `/anp-glp`).
+- `20260504000002_anp_precos.sql` — schema + RLS + RPCs + INSERT em `module_visibility` (compartilhada com `/anp-glp`).
 
 ## Pipeline de origem
 
