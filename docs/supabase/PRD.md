@@ -347,6 +347,33 @@ gh run list --workflow=supabase_deploy.yml --limit 5
 
 Se houver fail recente sem fix, escalar para `worker_supabase`. Falhas silenciosas já causaram migration não-aplicada por dias em prod (incidente Export 2026-05-07).
 
+### d) `DROP FUNCTION` + `CREATE FUNCTION` apaga grants — sempre re-`GRANT`
+
+`CREATE OR REPLACE FUNCTION` **preserva** grants existentes — não precisa reaplicar.
+
+`DROP FUNCTION ... [CASCADE]` seguido de `CREATE FUNCTION` **NÃO** preserva. A função renasce com grants vazios (apenas o owner consegue executar). Frontend usa role `anon` (e/ou `authenticated`); chamadas via PostgREST passam a falhar com PostgreSQL erro **42501 `permission denied for function ...`**.
+
+Sintoma típico:
+- Função existe (`\df` mostra ela, `service_role` consegue chamar).
+- Frontend retorna 42501 para anon/authenticated.
+- Migration recente tem `DROP FUNCTION` no log.
+
+Regra: **sempre que a migration drop-and-recreate uma RPC pública**, anexe `GRANT EXECUTE ON FUNCTION ... TO anon, authenticated;` no final, mesmo que pareça redundante.
+
+Audit periódico (manual ou em CI):
+
+```sql
+SELECT n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' AS func
+FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = 'public' AND p.prokind = 'f'
+  AND p.proname LIKE 'get\_%'
+  AND NOT has_function_privilege('anon', p.oid, 'EXECUTE');
+```
+
+Empty set é o resultado desejado. Qualquer linha = grant faltando.
+
+**Incidente registrado**: 2026-05-25 — 6 RPCs `get_anp_cdp_bsw_*` (3) + `get_anp_cdp_depletion_*` (3) ficaram sem grant `anon` após DROP/CREATE em onda anterior. Smoke test do `/anp-cdp-bsw` retornou 42501 para todas. Fixed por `20260525210050_grant_execute_anon_rpcs.sql` (grant-only).
+
 ## Workflow `supabase_deploy.yml`
 
 Deploya migrations em push pra `main`. Use `SUPABASE_PROJECT_REF` e `SUPABASE_ACCESS_TOKEN`.
