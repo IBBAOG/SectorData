@@ -22,8 +22,7 @@ alertas/
 │   ├── anp_painel_combustiveis.py
 │   ├── anp_glp.py
 │   ├── anp_cdp_producao_poco.py
-│   ├── mdic_comex.py
-│   └── sindicom.py
+│   └── mdic_comex.py
 ├── scripts/                    # Consolidadores por base
 │   ├── anp_lpc_ultimas/consolidar.py + visualizar.py
 │   ├── anp_ppi/consolidar.py + visualizar.py
@@ -33,8 +32,7 @@ alertas/
 │   ├── anp_painel_combustiveis/consolidar.py + visualizar.py
 │   ├── anp_glp/consolidar.py + visualizar.py
 │   ├── anp_cdp_producao_poco/consolidar.py + visualizar.py
-│   ├── mdic_comex/consolidar.py + visualizar.py
-│   └── sindicom/consolidar.py + visualizar.py
+│   └── mdic_comex/consolidar.py + visualizar.py
 ├── estado/                     # JSON de estado por base (último período visto)
 │   ├── anp_ppi.json
 │   ├── mdic_comex.json
@@ -65,45 +63,14 @@ python alertas/monitor.py --base anp_ppi
 python alertas/monitor.py --loop --intervalo 30
 ```
 
-Slugs disponíveis: `anp_lpc_ultimas`, `anp_sintese_semanal`, `anp_ppi`, `anp_precos_produtores`, `anp_desembaracos`, `anp_dados_abertos_ie`, `anp_painel_combustiveis`, `anp_glp`, `anp_cdp_producao_poco`, `mdic_comex`, `sindicom`, `precos_distribuicao`.
+Slugs disponíveis: `anp_lpc_ultimas`, `anp_sintese_semanal`, `anp_ppi`, `anp_precos_produtores`, `anp_desembaracos`, `anp_dados_abertos_ie`, `anp_painel_combustiveis`, `anp_glp`, `anp_cdp_producao_poco`, `mdic_comex`, `precos_distribuicao`.
 
 ---
 
 ## Bases heavy (puladas no run default)
 
-Algumas bases requerem dependências pesadas que são incompatíveis com o monitor rodando
-a cada 2 horas no GitHub Actions. Essas bases são declaradas na constante `_HEAVY_BASES`
-em `monitor.py` e são **puladas automaticamente** quando o monitor é chamado sem `--base`.
-
-### Bases atualmente heavy
-
-| Slug | Motivo | Quem detecta novidade |
-|------|--------|-----------------------|
-| `sindicom` | Requer Playwright + Chromium. O site usa proteção anti-bot e o link de download exige JavaScript e cookies de sessão — requests simples retorna 403. | `etl_sindicom.yml` (cron mensal dia 5, 15h UTC) faz o download + upload completo. |
-
-> **Nota (2026-05):** `anp_cdp_producao_poco` foi **removida** de `_HEAVY_BASES`. Ela agora
-> roda a cada 2h como as demais bases leves. Veja detalhes na seção da base abaixo.
-
-### Por que não rodar no monitor a cada 2h
-
-- SINDICOM exige Playwright + Chromium (anti-bot), impossível sem browser real no runner leve.
-- O workflow `etl_sindicom.yml` já é o proprietário correto desse dado — tem Playwright instalado,
-  roda na data certa e faz upload ao Supabase.
-
-### Como rodar manualmente se necessário
-
-```bash
-# Rodar a base heavy diretamente (local, com Playwright instalado):
-python alertas/monitor.py --base sindicom
-
-# Ou via GitHub Actions (forçar workflow ETL dedicado):
-gh workflow run etl_sindicom.yml --ref main
-
-# ANP CDP agora é leve — roda normalmente no monitor default:
-python alertas/monitor.py --base anp_cdp_producao_poco
-# Para forçar nova captura Selenium (mensal):
-gh workflow run etl_anp_cdp.yml --ref main
-```
+Nenhuma base heavy ativa no momento. Todas as 11 bases rodam a cada 2h no monitor default.
+`_HEAVY_BASES` está vazio em `monitor.py`.
 
 ### Como adicionar uma nova base heavy
 
@@ -395,23 +362,7 @@ python scripts/anp_cdp_upload.py --from-csv-dir output/anp/
 
 ---
 
-### 11. SINDICOM — Dados do Setor de Combustíveis (`sindicom`)
-
-- **Fonte**: `sindicom.com.br` — XLSX único com histórico completo desde 2017, atualizado mensalmente
-- **Detecção**: usa **Playwright** (Chrome headless) para carregar a página de downloads. Extrai o texto indicando o período mais recente (padrão `até <Mês> <Ano>`). Compara com `ultimo_periodo` salvo.
-- **Por que Playwright**: o site usa WordPress com proteção anti-bot e o link de download exige JavaScript e cookies de sessão — requests simples retorna 403.
-- **Download**: Playwright navega para a URL de download e captura o arquivo com `expect_download()`. Salva como `tabela_SINDICOM_combustiveis_<YYYYMM>.xlsx`.
-- **Consolidação**: `consolidar.py` lê a sheet `dados_combs` do XLSX, converte o mês de texto (JANEIRO → 1) para numérico, e gera `sindicom_consolidado.parquet`.
-- **Schema Parquet**: `ano, mes, tipo, empresa, segmento, tipo_produto, nome_produto, tipo_produto_web, regiao, uf, volume (m³)`
-- **Empresas associadas**: IPIRANGA, RAIZEN, VIBRA, AIRBP. A entrada `ANP` representa o mercado total (dados ANP incluídos para referência) — deve ser excluída de análises de market share.
-- **Segmentos**: `REVENDEDOR` (postos), `CONSUMIDOR` (direto), `TRR` (transportador-revendedor-retalhista), `MERCADO TOTAL - ANP`.
-- **Nota GNV**: volume de GNV está em Mil m³, não em m³ como os demais produtos (aviso no próprio XLSX).
-- **Cobertura**: 2017-01 → mês mais recente (atualmente 2026-03), 92k linhas.
-- **Dashboard** (`/sindicom`): série mensal por produto + market share top-15 empresas. Filtros: produto, segmento, período. RPCs: `get_sindicom_serie`, `get_sindicom_filtros`.
-
----
-
-### 12. ANP Preços de Distribuição de Combustíveis (`precos_distribuicao`)
+### 11. ANP Preços de Distribuição de Combustíveis (`precos_distribuicao`)
 
 - **Fonte**: tabela Supabase `anp_precos_distribuicao` — populada pelo pipeline ETL (`etl_anp_precos_distribuicao.yml`).
 - **Detecção**: consulta `MAX(data_referencia)` segregado por `periodicidade` (`semanal` e `mensal`). Compara com `ultima_data_semanal` e `ultima_data_mensal` salvos no estado. Dispara se qualquer periodicidade avançou.

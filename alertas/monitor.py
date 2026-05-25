@@ -9,7 +9,7 @@ if hasattr(sys.stderr, "reconfigure"):
 Sistema de Alertas ANP — Monitor Principal
 
 Comportamento default (sem --base):
-    Pula automaticamente as "bases heavy" listadas em _HEAVY_BASES (ex: sindicom),
+    Pula automaticamente as "bases heavy" listadas em _HEAVY_BASES,
     que exigem Playwright + Chromium e são desproporcional para runs a cada 2h.
     Essas bases têm workflows ETL dedicados que cuidam da detecção real.
 
@@ -41,7 +41,6 @@ from bases.anp_painel_combustiveis  import AnpPainelCombustiveis
 from bases.anp_glp                  import AnpGlp
 from bases.mdic_comex               import MdicComex
 from bases.anp_cdp_producao_poco    import AnpCdpProducaoPoco
-from bases.sindicom                 import Sindicom
 from bases.precos_distribuicao      import PrecosDistribuicao
 
 # Bases que requerem dependências pesadas (Playwright + Chromium).
@@ -53,9 +52,7 @@ from bases.precos_distribuicao      import PrecosDistribuicao
 # Ela agora é leve: lê sessão do Supabase (alertas_session) e usa requests puro
 # via _replay.py (Frente B), sem Selenium nem ddddocr. O capture Selenium mensal
 # continua exclusivo do etl_anp_cdp.yml.
-_HEAVY_BASES = {
-    "sindicom",  # Playwright + Chromium — SINDICOM atualiza 1×/mês via etl_sindicom.yml
-}
+_HEAVY_BASES: set[str] = set()  # no heavy bases currently active
 
 MONITORES = [
     AnpLpcUltimas(),
@@ -68,7 +65,6 @@ MONITORES = [
     AnpGlp(),
     MdicComex(),
     AnpCdpProducaoPoco(),
-    Sindicom(),
     PrecosDistribuicao(),
 ]
 
@@ -223,7 +219,7 @@ def rodar(base_filter=None):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Monitor de bases ANP/MDIC/SINDICOM")
+    ap = argparse.ArgumentParser(description="Monitor de bases ANP/MDIC")
     ap.add_argument("--base",      help="Slug da base (ex: anp_ppi)")
     ap.add_argument("--loop",      action="store_true", help="Rodar em loop")
     ap.add_argument("--intervalo", type=int, default=30, metavar="MIN",

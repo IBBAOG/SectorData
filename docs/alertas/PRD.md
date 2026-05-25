@@ -31,8 +31,7 @@ alertas/                            # local-only (gitignored)
 | 8 | `anp_glp` | ANP GLP | MAX(ano, mes) por distribuidora | Sim (`anp_glp`) |
 | 9 | `anp_cdp_producao_poco` | ANP CDP Produção | MAX(ano, mes) | Sim (`anp_cdp_producao`) |
 | 10 | `mdic_comex` | MDIC Comex | MAX(ano, mes) por flow | Sim (`mdic_comex`) |
-| 11 | `sindicom` | SINDICOM | MAX(ano, mes) | Sim (`sindicom`) — base heavy (Playwright) |
-| 12 | `precos_distribuicao` | ANP PDC — Preços de Distribuição | MAX(data_referencia) por periodicidade | Sim (`anp_precos_distribuicao`) |
+| 11 | `precos_distribuicao` | ANP PDC — Preços de Distribuição | MAX(data_referencia) por periodicidade | Sim (`anp_precos_distribuicao`) |
 
 ## Contratos com outros departamentos
 
