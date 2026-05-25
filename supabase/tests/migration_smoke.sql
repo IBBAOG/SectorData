@@ -348,25 +348,9 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_price_bands_data'; END IF;
 
   -- ─── MDIC COMEX RPCs ──────────────────────────────────────────────────────
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_mdic_comex_filtros';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_mdic_comex_filtros'; END IF;
-
-  -- get_mdic_comex_filtros must return paises field (20260512000002)
-  PERFORM 1
-  FROM (SELECT get_mdic_comex_filtros() AS r) t
-  WHERE (t.r)->'paises' IS NOT NULL
-    AND json_array_length((t.r)->'paises') > 0;
-  IF NOT FOUND THEN RAISE EXCEPTION 'get_mdic_comex_filtros: paises field missing or empty'; END IF;
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_mdic_comex_serie';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_mdic_comex_serie'; END IF;
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_mdic_comex_top_paises';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_mdic_comex_top_paises'; END IF;
+  -- Note: the 5 get_mdic_comex_* RPCs were dropped in the /mdic-comex deprecation
+  -- (2026-05-25). The mdic_comex table remains (asserted above, lines ~192-211) and
+  -- is consumed by /imports-exports Panel C via get_imports_exports_fob_price_serie.
 
   -- ─── ANP PPI RPCs ─────────────────────────────────────────────────────────
 
@@ -508,10 +492,6 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_ms_export_count'; END IF;
 
   PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_mdic_comex_export_count';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_mdic_comex_export_count'; END IF;
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public' AND p.proname = 'get_anp_cdp_export_count';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_cdp_export_count'; END IF;
 
@@ -525,9 +505,7 @@ BEGIN
     WHERE n.nspname = 'public' AND p.proname = 'get_anp_cdp_aggregated';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_cdp_aggregated'; END IF;
 
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_mdic_comex_aggregated';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_mdic_comex_aggregated'; END IF;
+  -- Note: get_mdic_comex_aggregated was dropped in the /mdic-comex deprecation (2026-05-25).
 
   -- ─── ANP PRECOS DISTRIBUICAO (20260507000005) ─────────────────────────────
 
@@ -740,6 +718,6 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'app_events CHECK constraint does not allow admin.* event types'; END IF;
 
   RAISE NOTICE 'migration_smoke: all % checks passed.',
-    '34 tables + 1 view + 3 materialized views + 88 functions + 26 RLS checks';
+    '34 tables + 1 view + 3 materialized views + 83 functions + 26 RLS checks';
 
 END $smoke$;
