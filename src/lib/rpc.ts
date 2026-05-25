@@ -2392,11 +2392,13 @@ export async function rpcGetImportsExportsExportsYoyTable(
 
 export type DefaultNewsKeyword = {
   keyword: string;
+  match_type: "substring" | "exact";
   created_at: string;
 };
 
 /**
  * Lists all default News Hunter keywords, ordered alphabetically (ASC).
+ * Returns keyword, match_type, and created_at.
  * Admin-only (MFA-gated via require_admin_mfa() server-side).
  */
 export async function rpcAdminListDefaultNewsKeywords(
@@ -2415,15 +2417,42 @@ export async function rpcAdminListDefaultNewsKeywords(
 export async function rpcAdminAddDefaultNewsKeyword(
   supabase: SupabaseClient,
   keyword: string,
+  matchType: "substring" | "exact" = "substring",
 ): Promise<boolean> {
   try {
     const { error } = await supabase.rpc("admin_add_default_news_keyword", {
       p_keyword: keyword,
+      p_match_type: matchType,
     });
     if (error) throw error;
     return true;
   } catch (e) {
     console.error("admin_add_default_news_keyword failed", e);
+    return false;
+  }
+}
+
+/**
+ * Sets match_type for an existing default News Hunter keyword.
+ * Admin-only (MFA-gated via require_admin_mfa() server-side).
+ */
+export async function rpcAdminSetDefaultNewsKeywordMatchType(
+  supabase: SupabaseClient,
+  keyword: string,
+  matchType: "substring" | "exact",
+): Promise<boolean> {
+  try {
+    const { error } = await supabase.rpc(
+      "admin_set_default_news_keyword_match_type",
+      {
+        p_keyword: keyword,
+        p_match_type: matchType,
+      },
+    );
+    if (error) throw error;
+    return true;
+  } catch (e) {
+    console.error("admin_set_default_news_keyword_match_type failed", e);
     return false;
   }
 }

@@ -114,14 +114,18 @@ export default function MobileView(): React.ReactElement | null {
     defaultKeywordsError,
     newKeyword,
     setNewKeyword,
+    newKeywordMatchType,
+    setNewKeywordMatchType,
     addingKeyword,
     addKeywordError,
     addKeywordSuccess,
     removingKeyword,
     confirmRemoveKeyword,
     setConfirmRemoveKeyword,
+    togglingMatchType,
     handleAddKeyword,
     handleRemoveKeyword,
+    handleToggleMatchType,
 
     isValidEmail,
     formatDateBR,
@@ -982,6 +986,45 @@ export default function MobileView(): React.ReactElement | null {
                 {addingKeyword ? "Adding…" : addKeywordSuccess ? "✓ Added" : "Add"}
               </button>
             </div>
+            {/* Exact match toggle for new keyword */}
+            <label
+              title="When enabled, only whole-word matches trigger an alert. Useful for short/generic terms like 'Vibra'."
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 10,
+                minHeight: 44,
+                padding: "0 14px",
+                borderRadius: 10,
+                border: `1px solid ${newKeywordMatchType === "exact" ? ORANGE : "var(--mobile-border)"}`,
+                background: newKeywordMatchType === "exact" ? "rgba(255,80,0,0.06)" : "var(--mobile-surface)",
+                cursor: "pointer",
+                userSelect: "none",
+              }}
+            >
+              <div
+                className="form-check form-switch"
+                style={{ margin: 0, paddingLeft: 0, display: "inline-block" }}
+              >
+                <input
+                  className="form-check-input"
+                  type="checkbox"
+                  role="switch"
+                  checked={newKeywordMatchType === "exact"}
+                  onChange={(e) => setNewKeywordMatchType(e.target.checked ? "exact" : "substring")}
+                  disabled={addingKeyword}
+                  aria-label="Exact match (whole word)"
+                  style={{ width: "2.6em", height: "1.4em", cursor: "pointer", margin: 0 }}
+                />
+              </div>
+              <span style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: newKeywordMatchType === "exact" ? ORANGE : "var(--mobile-text-muted)",
+              }}>
+                Exact match (whole word)
+              </span>
+            </label>
             {addKeywordError && (
               <div style={{ fontSize: 12, color: "#e53e3e" }}>{addKeywordError}</div>
             )}
@@ -1014,41 +1057,108 @@ export default function MobileView(): React.ReactElement | null {
               {search ? "No keywords match your search." : "No default keywords yet."}
             </div>
           ) : (
-            filteredKeywords.map((kw) => (
-              <MobileDataCard
-                key={kw.keyword}
-                variant="default"
-                title={kw.keyword}
-                subtitle={`Added ${formatDateBR(kw.created_at)}`}
-                onClick={() => setConfirmRemoveKeyword(kw.keyword)}
-                rightSlot={
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setConfirmRemoveKeyword(kw.keyword);
-                    }}
-                    disabled={!!removingKeyword}
-                    style={{
-                      minHeight: 32,
-                      padding: "0 10px",
-                      borderRadius: 8,
-                      border: "1px solid rgba(229,62,62,0.4)",
-                      background: "var(--mobile-surface)",
-                      color: "#e53e3e",
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: removingKeyword ? "wait" : "pointer",
-                      opacity: removingKeyword ? 0.6 : 1,
-                      fontFamily: "inherit",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    Remove
-                  </button>
-                }
-              />
-            ))
+            filteredKeywords.map((kw) => {
+              const isExact = kw.match_type === "exact";
+              const isTogglingThis = togglingMatchType === kw.keyword;
+              return (
+                <MobileDataCard
+                  key={kw.keyword}
+                  variant="default"
+                  title={
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      {kw.keyword}
+                      {isExact && (
+                        <span style={{
+                          fontSize: 9, fontWeight: 700, letterSpacing: "0.06em",
+                          textTransform: "uppercase", padding: "1px 5px",
+                          borderRadius: 6, background: ORANGE, color: "#fff",
+                          flexShrink: 0,
+                        }}>
+                          Exact
+                        </span>
+                      )}
+                    </span>
+                  }
+                  subtitle={
+                    <span style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
+                      <span style={{ fontSize: 11, color: "var(--mobile-text-faint)" }}>
+                        Added {formatDateBR(kw.created_at)}
+                      </span>
+                      {/* Match type toggle row */}
+                      <label
+                        title="When enabled, only whole-word matches trigger an alert. Useful for short/generic terms like 'Vibra'."
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          cursor: !!togglingMatchType ? "not-allowed" : "pointer",
+                          userSelect: "none",
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div
+                          className="form-check form-switch"
+                          style={{ margin: 0, paddingLeft: 0, display: "inline-block" }}
+                        >
+                          <input
+                            className="form-check-input"
+                            type="checkbox"
+                            role="switch"
+                            checked={isExact}
+                            disabled={!!togglingMatchType}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              handleToggleMatchType(kw.keyword, kw.match_type);
+                            }}
+                            aria-label={`Exact match for keyword ${kw.keyword}`}
+                            style={{
+                              width: "2.2em", height: "1.2em",
+                              cursor: isTogglingThis ? "wait" : !!togglingMatchType ? "not-allowed" : "pointer",
+                              opacity: isTogglingThis ? 0.5 : 1,
+                              margin: 0,
+                            }}
+                          />
+                        </div>
+                        <span style={{
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: isExact ? ORANGE : "var(--mobile-text-faint)",
+                        }}>
+                          {isTogglingThis ? "Toggling…" : "Exact match (whole word)"}
+                        </span>
+                      </label>
+                    </span>
+                  }
+                  onClick={() => setConfirmRemoveKeyword(kw.keyword)}
+                  rightSlot={
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConfirmRemoveKeyword(kw.keyword);
+                      }}
+                      disabled={!!removingKeyword}
+                      style={{
+                        minHeight: 32,
+                        padding: "0 10px",
+                        borderRadius: 8,
+                        border: "1px solid rgba(229,62,62,0.4)",
+                        background: "var(--mobile-surface)",
+                        color: "#e53e3e",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        cursor: removingKeyword ? "wait" : "pointer",
+                        opacity: removingKeyword ? 0.6 : 1,
+                        fontFamily: "inherit",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Remove
+                    </button>
+                  }
+                />
+              );
+            })
           )}
         </section>
       )}

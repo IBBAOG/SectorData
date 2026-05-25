@@ -205,8 +205,9 @@ Protegida por `useRoleGuard("Admin")`. Funcionalidades (6 seções na sidebar):
 | `get_all_users_with_roles` | leitura | admin-panel |
 | `set_user_role` | escrita | admin-panel |
 | `seed_my_news_hunter_keywords` | escrita | first-login (chamada por dash-admin para popular keywords default no novo user) |
-| `admin_list_default_news_keywords()` | leitura | admin-panel → Default News Keywords — `RETURNS TABLE(keyword text, created_at timestamptz)` |
-| `admin_add_default_news_keyword(p_keyword text)` | escrita | admin-panel → Default News Keywords — idempotent; `RETURNS void` |
+| `admin_list_default_news_keywords()` | leitura | admin-panel → Default News Keywords — `RETURNS TABLE(keyword text, match_type text, created_at timestamptz)` |
+| `admin_add_default_news_keyword(p_keyword text, p_match_type text DEFAULT 'substring')` | escrita | admin-panel → Default News Keywords — idempotent; `RETURNS void` |
+| `admin_set_default_news_keyword_match_type(p_keyword text, p_match_type text)` | escrita | admin-panel → Default News Keywords — `RETURNS void` |
 | `admin_remove_default_news_keyword(p_keyword text)` | escrita | admin-panel → Default News Keywords — `RETURNS void` |
 
 ## Tabelas
@@ -286,21 +287,28 @@ Manages the `news_hunter_default_keywords` table, which is the single source of 
 ### UI contract
 
 - Header copy: "These keywords are used by anonymous visitors of the News Hunter dashboard. Logged-in users have their own personal keyword list."
-- **Add form**: text input (placeholder `e.g. Petrobras, diesel, BNDES`) + "Add" button. Enter key triggers add. Button disabled while input is empty or a call is in flight. Success shows "✓ Added" for 2 seconds.
+- **Add form**: text input (placeholder `e.g. Petrobras, diesel, BNDES`) + "Exact match (whole word)" checkbox/toggle + "Add" button. Enter key triggers add. Button disabled while input is empty or a call is in flight. Success shows "✓ Added" for 2 seconds. After a successful add, the match type resets to `substring`.
+- **Exact match (whole word) toggle**: available both in the add form (sets `match_type` for the new keyword) and on each existing keyword (toggles between `substring` and `exact` in-place via `admin_set_default_news_keyword_match_type`). Tooltip copy: "When enabled, only whole-word matches trigger an alert. Useful for short/generic terms like 'Vibra'." Disabled while a toggle is in-flight (`togglingMatchType` state).
+- **"Exact" badge**: keywords with `match_type='exact'` show a small orange "EXACT" badge next to the keyword text. Desktop: displayed inside the chip, before the match-type toggle icon. Mobile: inline within the `MobileDataCard` title.
+  - Desktop chip: toggle button uses `=` icon when substring (switch to exact), `≈` when exact (switch to substring), with dashed orange border when exact.
+  - Mobile card: Bootstrap form-switch row below the keyword name; label reads "Exact match (whole word)" in orange when active, muted when inactive.
 - **Duplicate validation**: client-side check (case-insensitive). If keyword already exists, shows a 4-second warning. RPC is idempotent so a race condition is safe.
 - **Keyword list**: desktop uses chip tags with an × button (hover to reveal remove, click × to enter confirm-inline state). Mobile uses `MobileDataCard` per keyword with a "Remove" button that opens a `BottomSheet` confirm dialog.
 - **Loading/empty states**: spinner while fetching, "No default keywords yet." when empty, search-aware "No keywords match your search." when search is active.
 - **Error states**: banner above the list for load/remove errors; inline message below the input for add errors.
 
+> **TODO — scanner repo** (`IBBAOG/news-hunter-scanner`): keywords with `match_type='exact'` should match only as whole-word (regex `\b<keyword>\b`, case-insensitive). Currently the scanner applies the same substring matching to all keywords — updating the scanner to respect `match_type` is **out of scope** for this task and must be done in the separate scanner repo.
+
 ### RPC wrappers (in `src/lib/rpc.ts`)
 
 | Wrapper | RPC | Return type |
 |---|---|---|
-| `rpcAdminListDefaultNewsKeywords(supabase)` | `admin_list_default_news_keywords()` | `DefaultNewsKeyword[]` (keyword, created_at) — **throws on RPC error** (caller must catch) |
-| `rpcAdminAddDefaultNewsKeyword(supabase, keyword)` | `admin_add_default_news_keyword(p_keyword)` | `boolean` (success) |
+| `rpcAdminListDefaultNewsKeywords(supabase)` | `admin_list_default_news_keywords()` | `DefaultNewsKeyword[]` (keyword, match_type, created_at) — **throws on RPC error** (caller must catch) |
+| `rpcAdminAddDefaultNewsKeyword(supabase, keyword, matchType?)` | `admin_add_default_news_keyword(p_keyword, p_match_type)` | `boolean` (success); `matchType` defaults to `'substring'` |
+| `rpcAdminSetDefaultNewsKeywordMatchType(supabase, keyword, matchType)` | `admin_set_default_news_keyword_match_type(p_keyword, p_match_type)` | `boolean` (success) |
 | `rpcAdminRemoveDefaultNewsKeyword(supabase, keyword)` | `admin_remove_default_news_keyword(p_keyword)` | `boolean` (success) |
 
-All three RPCs are SECURITY DEFINER and call `require_admin_mfa()` server-side — Admin + verified MFA factor required.
+All four RPCs are SECURITY DEFINER and call `require_admin_mfa()` server-side — Admin + verified MFA factor required.
 
 ### Hook state (in `useAdminPanelData.ts`)
 
@@ -310,13 +318,15 @@ Loaded on demand when `activeSection === "default-news"` (lazy, same pattern as 
 |---|---|---|
 | `defaultKeywords` | `DefaultNewsKeyword[]` | Current list from DB |
 | `defaultKeywordsLoading` | `boolean` | Spinner |
-| `defaultKeywordsError` | `string \| null` | Load/remove error banner |
+| `defaultKeywordsError` | `string \| null` | Load/remove/toggle-type error banner |
 | `newKeyword` | `string` | Controlled input |
+| `newKeywordMatchType` | `'substring' \| 'exact'` | Match type for the next Add; resets to `'substring'` after success |
 | `addingKeyword` | `boolean` | In-flight add |
 | `addKeywordError` | `string \| null` | Inline add error |
 | `addKeywordSuccess` | `boolean` | "✓ Added" flash |
 | `removingKeyword` | `string \| null` | Currently being removed |
 | `confirmRemoveKeyword` | `string \| null` | Desktop confirm-inline / mobile sheet trigger |
+| `togglingMatchType` | `string \| null` | Keyword whose match_type is currently being toggled; disables all other toggle buttons while non-null |
 
 ### Dual-view sync
 

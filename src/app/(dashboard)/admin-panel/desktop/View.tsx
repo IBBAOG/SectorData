@@ -140,14 +140,18 @@ export default function DesktopView(): React.ReactElement | null {
     defaultKeywordsError,
     newKeyword,
     setNewKeyword,
+    newKeywordMatchType,
+    setNewKeywordMatchType,
     addingKeyword,
     addKeywordError,
     addKeywordSuccess,
     removingKeyword,
     confirmRemoveKeyword,
     setConfirmRemoveKeyword,
+    togglingMatchType,
     handleAddKeyword,
     handleRemoveKeyword,
+    handleToggleMatchType,
 
     isValidEmail,
     formatDateBR,
@@ -754,6 +758,28 @@ export default function DesktopView(): React.ReactElement | null {
                     <div style={{ fontSize: 12, color: "#e53e3e", marginTop: 4 }}>{addKeywordError}</div>
                   )}
                 </div>
+                {/* Exact match toggle for new keyword */}
+                <label
+                  title="When enabled, only whole-word matches trigger an alert. Useful for short/generic terms like 'Vibra'."
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    padding: "8px 12px", borderRadius: 8,
+                    border: `1px solid ${newKeywordMatchType === "exact" ? ORANGE : "#e0e0e0"}`,
+                    background: newKeywordMatchType === "exact" ? "rgba(255,80,0,0.06)" : "#fff",
+                    cursor: "pointer", fontSize: 12, fontFamily: "Arial, sans-serif",
+                    color: newKeywordMatchType === "exact" ? ORANGE : "#666",
+                    whiteSpace: "nowrap", transition: "all 0.15s", userSelect: "none",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={newKeywordMatchType === "exact"}
+                    onChange={(e) => setNewKeywordMatchType(e.target.checked ? "exact" : "substring")}
+                    disabled={addingKeyword}
+                    style={{ accentColor: ORANGE, cursor: "pointer" }}
+                  />
+                  Exact match (whole word)
+                </label>
                 <button
                   onClick={handleAddKeyword}
                   disabled={addingKeyword || !newKeyword.trim()}
@@ -781,6 +807,8 @@ export default function DesktopView(): React.ReactElement | null {
                   {defaultKeywords.map((kw) => {
                     const isConfirming = confirmRemoveKeyword === kw.keyword;
                     const isRemoving = removingKeyword === kw.keyword;
+                    const isExact = kw.match_type === "exact";
+                    const isTogglingThis = togglingMatchType === kw.keyword;
                     return (
                       <span
                         key={kw.keyword}
@@ -788,14 +816,51 @@ export default function DesktopView(): React.ReactElement | null {
                           display: "inline-flex", alignItems: "center", gap: 6,
                           padding: "4px 10px 4px 12px",
                           borderRadius: 20,
-                          background: isConfirming ? "#fff5f5" : "rgba(255,80,0,0.08)",
-                          border: `1px solid ${isConfirming ? "#e53e3e" : "rgba(255,80,0,0.25)"}`,
+                          background: isConfirming ? "#fff5f5" : isExact ? "rgba(255,80,0,0.12)" : "rgba(255,80,0,0.08)",
+                          border: `1px solid ${isConfirming ? "#e53e3e" : isExact ? ORANGE : "rgba(255,80,0,0.25)"}`,
                           fontSize: 13, color: isConfirming ? "#e53e3e" : "#1a1a1a",
                           fontFamily: "Arial, sans-serif",
                           transition: "background 0.15s, border-color 0.15s",
                         }}
                       >
                         {kw.keyword}
+                        {/* "Exact" badge — shown when match_type is exact */}
+                        {!isConfirming && isExact && (
+                          <span style={{
+                            fontSize: 9, fontWeight: 700, letterSpacing: "0.06em",
+                            textTransform: "uppercase", padding: "1px 5px",
+                            borderRadius: 6, background: ORANGE, color: "#fff",
+                          }}>
+                            Exact
+                          </span>
+                        )}
+                        {!isConfirming && (
+                          /* Toggle match type button */
+                          <button
+                            onClick={() => handleToggleMatchType(kw.keyword, kw.match_type)}
+                            disabled={!!togglingMatchType}
+                            title={
+                              isExact
+                                ? "Switch to substring matching"
+                                : "Switch to exact (whole-word) matching. When enabled, only whole-word matches trigger an alert. Useful for short/generic terms like 'Vibra'."
+                            }
+                            style={{
+                              background: "none", border: "1px dashed",
+                              borderColor: isExact ? ORANGE : "#ccc",
+                              borderRadius: 4,
+                              cursor: isTogglingThis ? "wait" : !!togglingMatchType ? "not-allowed" : "pointer",
+                              color: isExact ? ORANGE : "#999",
+                              lineHeight: 1, padding: "1px 4px",
+                              fontFamily: "Arial, sans-serif", fontSize: 10, fontWeight: 700,
+                              display: "flex", alignItems: "center",
+                              opacity: isTogglingThis ? 0.5 : 1,
+                              transition: "opacity 0.15s",
+                            }}
+                            aria-label={`Toggle match type for keyword ${kw.keyword}`}
+                          >
+                            {isTogglingThis ? "…" : isExact ? "≈" : "="}
+                          </button>
+                        )}
                         {isConfirming ? (
                           <>
                             <button

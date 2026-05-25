@@ -35,6 +35,7 @@ import {
 import {
   rpcAdminListDefaultNewsKeywords,
   rpcAdminAddDefaultNewsKeyword,
+  rpcAdminSetDefaultNewsKeywordMatchType,
   rpcAdminRemoveDefaultNewsKeyword,
   type DefaultNewsKeyword,
 } from "../../../lib/rpc";
@@ -189,14 +190,18 @@ export interface UseAdminPanelData {
   defaultKeywordsError: string | null;
   newKeyword: string;
   setNewKeyword: (v: string) => void;
+  newKeywordMatchType: "substring" | "exact";
+  setNewKeywordMatchType: (v: "substring" | "exact") => void;
   addingKeyword: boolean;
   addKeywordError: string | null;
   addKeywordSuccess: boolean;
   removingKeyword: string | null;
   confirmRemoveKeyword: string | null;
   setConfirmRemoveKeyword: (kw: string | null) => void;
+  togglingMatchType: string | null;
   handleAddKeyword: () => Promise<void>;
   handleRemoveKeyword: (keyword: string) => Promise<void>;
+  handleToggleMatchType: (keyword: string, currentMatchType: "substring" | "exact") => Promise<void>;
 
   // Pure helpers (re-exported for both views)
   isValidEmail: (email: string) => boolean;
@@ -513,11 +518,13 @@ export function useAdminPanelData(): UseAdminPanelData {
   const [defaultKeywordsLoading, setDefaultKeywordsLoading] = useState(false);
   const [defaultKeywordsError, setDefaultKeywordsError] = useState<string | null>(null);
   const [newKeyword, setNewKeyword] = useState("");
+  const [newKeywordMatchType, setNewKeywordMatchType] = useState<"substring" | "exact">("substring");
   const [addingKeyword, setAddingKeyword] = useState(false);
   const [addKeywordError, setAddKeywordError] = useState<string | null>(null);
   const [addKeywordSuccess, setAddKeywordSuccess] = useState(false);
   const [removingKeyword, setRemovingKeyword] = useState<string | null>(null);
   const [confirmRemoveKeyword, setConfirmRemoveKeyword] = useState<string | null>(null);
+  const [togglingMatchType, setTogglingMatchType] = useState<string | null>(null);
 
   const loadDefaultKeywords = useCallback(async () => {
     if (!supabase) return;
@@ -551,18 +558,19 @@ export function useAdminPanelData(): UseAdminPanelData {
 
     setAddingKeyword(true);
     setAddKeywordError(null);
-    const ok = await rpcAdminAddDefaultNewsKeyword(supabase, trimmed);
+    const ok = await rpcAdminAddDefaultNewsKeyword(supabase, trimmed, newKeywordMatchType);
     if (!ok) {
       setAddKeywordError("Could not add keyword. Please try again.");
       setTimeout(() => setAddKeywordError(null), 4000);
     } else {
       setNewKeyword("");
+      setNewKeywordMatchType("substring");
       setAddKeywordSuccess(true);
       setTimeout(() => setAddKeywordSuccess(false), 2000);
       await loadDefaultKeywords();
     }
     setAddingKeyword(false);
-  }, [supabase, addingKeyword, newKeyword, defaultKeywords, loadDefaultKeywords]);
+  }, [supabase, addingKeyword, newKeyword, newKeywordMatchType, defaultKeywords, loadDefaultKeywords]);
 
   const handleRemoveKeyword = useCallback(
     async (keyword: string) => {
@@ -579,6 +587,25 @@ export function useAdminPanelData(): UseAdminPanelData {
       setRemovingKeyword(null);
     },
     [supabase, removingKeyword, loadDefaultKeywords],
+  );
+
+  const handleToggleMatchType = useCallback(
+    async (keyword: string, currentMatchType: "substring" | "exact") => {
+      if (!supabase || togglingMatchType) return;
+      const newType = currentMatchType === "exact" ? "substring" : "exact";
+      setTogglingMatchType(keyword);
+      const ok = await rpcAdminSetDefaultNewsKeywordMatchType(supabase, keyword, newType);
+      if (ok) {
+        setDefaultKeywords((prev) =>
+          prev.map((k) => (k.keyword === keyword ? { ...k, match_type: newType } : k)),
+        );
+      } else {
+        setDefaultKeywordsError("Could not update match type. Please try again.");
+        setTimeout(() => setDefaultKeywordsError(null), 4000);
+      }
+      setTogglingMatchType(null);
+    },
+    [supabase, togglingMatchType],
   );
 
   return {
@@ -642,14 +669,18 @@ export function useAdminPanelData(): UseAdminPanelData {
     defaultKeywordsError,
     newKeyword,
     setNewKeyword,
+    newKeywordMatchType,
+    setNewKeywordMatchType,
     addingKeyword,
     addKeywordError,
     addKeywordSuccess,
     removingKeyword,
     confirmRemoveKeyword,
     setConfirmRemoveKeyword,
+    togglingMatchType,
     handleAddKeyword,
     handleRemoveKeyword,
+    handleToggleMatchType,
 
     isValidEmail,
     formatDateBR,
