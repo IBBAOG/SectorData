@@ -1,6 +1,6 @@
 # PRD — Departamento ETL / Pipelines
 
-Pipelines automáticas que coletam dados de fontes externas (ANP, SINDICOM, MDIC, navios, AIS, news) e populam o Supabase. Rodam via GitHub Actions em schedule, ou em repos separados.
+Pipelines automáticas que coletam dados de fontes externas (ANP, MDIC, navios, AIS, news) e populam o Supabase. Rodam via GitHub Actions em schedule, ou em repos separados.
 
 ## Escopo
 
@@ -40,7 +40,6 @@ scripts/pipelines/                  # rodam via GitHub Actions (todos os ETL)
     05_positions_sync.py            VF port-call → vessel_positions, port_arrivals
 
   mdic_comex_sync.py                MDIC Comex
-  sindicom_sync.py                  SINDICOM (Playwright)
   anp/
     precos_distribuicao_sync.py     ANP PDC — Preços de Distribuição → anp_precos_distribuicao
 
@@ -71,7 +70,6 @@ scripts/utils/                      # one-shots (não-ETL)
 | `etl_anp_cdp.yml` | Cron interno mensal (5º), 08:00 UTC (`0 8 5 * *`) como fallback + trigger externo via cron-job.org (`workflow_dispatch`) a cada ~2h — pipeline desenhado para rodar incrementalmente com alta frequência | `pipelines/anp/cdp/01_extract_powerbi.py` (Power BI, no CAPTCHA) → `02_upload.py` | `output/anp/` + `anp_cdp_producao` (2.045.515+ rows). Power BI poco-level data aggregated daily→monthly; local derived from DB lookup + basin heuristic. Replaces Selenium/CAPTCHA (01_extract.py) which had an undocumented APEX row cap (~197 offshore wells vs ~937 in Power BI for 04/2026). **Inputs `workflow_dispatch`**: `force_upload=true` passes `--no-incremental` AND implies `--purge` automatically — never re-upload over an already-loaded period without it (prevents the PK-overlap duplicate-`local` bug, Apr/2026). |
 | `etl_mdic_comex.yml` | Diário, 14:00 UTC (`0 14 * * *`) | `pipelines/mdic_comex_sync.py` | `mdic_comex` (10.029 rows — histórico 1997–2026 após backfill) |
 | `etl_navios_lineup.yml` | Cada 6h | `pipelines/navios/01_lineup_scrape.py` → `02_diesel_import.mjs` | `navios_diesel` |
-| `etl_sindicom.yml` | Mensal — dia 5, 15:00 UTC (`0 15 5 * *`) | `pipelines/sindicom_sync.py` | `sindicom` — BLOQUEADO por Cloudflare em IP residencial; só roda via GitHub Actions runner. Aguardando dispatch manual. |
 | `manual_dg_margins.yml` | Semanal | `manual/dg_margins_upload.py` | `d_g_margins` (este é Dados Locais, não ETL) |
 | `etl_navios_imo_lookup.yml` | Após `etl_navios_lineup` | `pipelines/navios/03_imo_lookup.py` → `04_cabotage_cleanup.py` | `navios_diesel.imo/mmsi` |
 | `etl_navios_positions.yml` | Após `etl_navios_imo_lookup` | `pipelines/navios/05_positions_sync.py` | `vessel_positions`, `port_arrivals` |
@@ -106,7 +104,7 @@ scripts/pipelines/
 
 ### Redundância alertas/ vs ETL pipelines (tech debt rastreado)
 
-Os scripts em `alertas/bases/<base>.py` fazem download das mesmas fontes ANP/SINDICOM/MDIC
+Os scripts em `alertas/bases/<base>.py` fazem download das mesmas fontes ANP/MDIC
 que os pipelines em `scripts/pipelines/`. Há duplicação de lógica de download, mas os
 objetivos são distintos:
 - **ETL pipelines**: populam Supabase (incrementais, via GHA).
@@ -155,7 +153,6 @@ DADOS/
   anp_precos_produtores/
   anp_sintese_semanal/
   mdic_comex/
-  sindicom/
   historico_alertas.csv            (compartilhado com Alertas — append-only)
 ```
 
@@ -264,7 +261,7 @@ Se o run falhar:
 Ordem de diagnóstico:
 
 1. Logs do GitHub Action (run mais recente).
-2. Mudou HTML/API da fonte? (ANP, SINDICOM, MDIC mudam UI sem aviso.)
+2. Mudou HTML/API da fonte? (ANP, MDIC mudam UI sem aviso.)
 3. CAPTCHA falhando? (`ddddocr` falha às vezes — re-rodar costuma resolver; se persistir, investigar.)
 4. Selenium driver desatualizado vs Chromium da Action.
 5. Quota/rate limit (especialmente VesselFinder/MarineTraffic).
