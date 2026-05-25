@@ -47,18 +47,23 @@ export interface RecentAlertItem {
 // ─── RPC return shapes ───────────────────────────────────────────────────────
 
 export interface SubscribeResult {
+  // Backend: { ok: bool, error?: string, subscriber_ids?: UUID[], requires_confirmation?: bool }
+  // 'subscribed' is derived count; 'confirmation_sent' maps to requires_confirmation.
+  // 'suppressed', 'already_subscribed', 'rate_limited' are NOT returned by the backend
+  // and are kept here only as dead-code guard types — the UI branches were removed.
+  ok?: boolean;
   subscribed: number;
   confirmation_sent: boolean;
-  already_subscribed?: boolean;
-  suppressed?: boolean;
-  rate_limited?: boolean;
+  requires_confirmation?: boolean;
   error?: string;
 }
 
 export interface ConfirmResult {
   success: boolean;
   subscribed_count: number;
-  error?: "token_expired" | "token_invalid" | string;
+  // Backend returns 'token_invalid_or_expired' as a single error code for both
+  // invalid and expired tokens. Frontend treats it as expired (allows resend).
+  error?: "token_invalid_or_expired" | string;
 }
 
 export interface ResendConfirmResult {
@@ -83,17 +88,14 @@ export interface UnsubscribeAllResult {
 export type SubscribeFlowState =
   | { kind: "idle" }
   | { kind: "submitting" }
-  | { kind: "confirmation_pending"; email: string }
-  | { kind: "instant_confirmed"; count: number }
-  | { kind: "already_subscribed" }
-  | { kind: "suppressed" }
-  | { kind: "rate_limited" }
+  | { kind: "needs_confirmation" }       // anon flow — requires_confirmation: true
+  | { kind: "activated"; count: number } // logged-in + email matches auth — insta-confirm
   | { kind: "error"; message: string };
 
 export type ConfirmFlowState =
   | { kind: "loading" }
   | { kind: "success"; count: number }
-  | { kind: "expired" }
+  | { kind: "expired"; token: string }  // token kept for potential UX use (e.g. deeplink back)
   | { kind: "invalid" }
   | { kind: "error"; message: string };
 

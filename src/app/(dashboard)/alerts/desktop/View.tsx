@@ -283,12 +283,12 @@ function SubscribeStatusCard({
 }) {
   if (state.kind === "idle" || state.kind === "submitting") return null;
 
-  if (state.kind === "confirmation_pending") {
+  if (state.kind === "needs_confirmation") {
     return (
       <div className={`${styles.statusCard} ${styles.pending}`}>
         <div className={styles.statusTitle}>Check your inbox to confirm</div>
         <div className={styles.statusBody}>
-          We&apos;ve sent a confirmation link to <strong>{state.email}</strong>.<br />
+          We&apos;ve sent a confirmation link to your email address.<br />
           Click the link in the email to activate your subscriptions.
         </div>
         <button
@@ -305,7 +305,7 @@ function SubscribeStatusCard({
     );
   }
 
-  if (state.kind === "instant_confirmed") {
+  if (state.kind === "activated") {
     return (
       <div className={`${styles.statusCard} ${styles.success}`}>
         <div className={styles.statusTitle}>
@@ -313,39 +313,6 @@ function SubscribeStatusCard({
         </div>
         <div className={styles.statusBody}>
           You&apos;ll receive an email whenever new data is published.
-        </div>
-      </div>
-    );
-  }
-
-  if (state.kind === "already_subscribed") {
-    return (
-      <div className={`${styles.statusCard} ${styles.info}`}>
-        <div className={styles.statusTitle}>Already subscribed</div>
-        <div className={styles.statusBody}>
-          You&apos;re already subscribed to these sources. Check your Active Subscriptions panel to manage them.
-        </div>
-      </div>
-    );
-  }
-
-  if (state.kind === "suppressed") {
-    return (
-      <div className={`${styles.statusCard} ${styles.error}`}>
-        <div className={styles.statusTitle}>Email suppressed</div>
-        <div className={styles.statusBody}>
-          This email address has been suppressed due to a previous bounce or complaint. Please contact support.
-        </div>
-      </div>
-    );
-  }
-
-  if (state.kind === "rate_limited") {
-    return (
-      <div className={`${styles.statusCard} ${styles.error}`}>
-        <div className={styles.statusTitle}>Too many requests</div>
-        <div className={styles.statusBody}>
-          Sign-up limit reached. Please try again in one hour.
         </div>
       </div>
     );

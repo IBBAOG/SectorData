@@ -300,11 +300,11 @@ function SubscribeTab() {
       )}
 
       {/* Flow result cards */}
-      {subscribeState.kind === "confirmation_pending" && (
+      {subscribeState.kind === "needs_confirmation" && (
         <div className={`${styles.statusCard} ${styles.pending}`}>
           <div className={styles.statusTitle}>Check your inbox</div>
           <div className={styles.statusBody}>
-            Confirmation link sent to <strong>{subscribeState.email}</strong>.
+            Confirmation link sent to your email address.
           </div>
           <button
             type="button"
@@ -317,7 +317,7 @@ function SubscribeTab() {
         </div>
       )}
 
-      {subscribeState.kind === "instant_confirmed" && (
+      {subscribeState.kind === "activated" && (
         <div className={`${styles.statusCard} ${styles.success}`}>
           <div className={styles.statusTitle}>
             Subscribed! {subscribeState.count} source{subscribeState.count !== 1 ? "s" : ""} activated.
@@ -325,29 +325,6 @@ function SubscribeTab() {
           <div className={styles.statusBody}>
             You&apos;ll receive emails when new data is published.
           </div>
-        </div>
-      )}
-
-      {subscribeState.kind === "already_subscribed" && (
-        <div className={`${styles.statusCard} ${styles.info}`}>
-          <div className={styles.statusTitle}>Already subscribed</div>
-          <div className={styles.statusBody}>
-            You&apos;re already subscribed. Check the Active tab to manage.
-          </div>
-        </div>
-      )}
-
-      {subscribeState.kind === "suppressed" && (
-        <div className={`${styles.statusCard} ${styles.error}`}>
-          <div className={styles.statusTitle}>Email suppressed</div>
-          <div className={styles.statusBody}>This email has been suppressed. Contact support.</div>
-        </div>
-      )}
-
-      {subscribeState.kind === "rate_limited" && (
-        <div className={`${styles.statusCard} ${styles.error}`}>
-          <div className={styles.statusTitle}>Too many requests</div>
-          <div className={styles.statusBody}>Try again in one hour.</div>
         </div>
       )}
 

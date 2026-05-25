@@ -259,26 +259,16 @@ export function useAlertsData(): AlertsData {
 
     const result = await rpcSubscribeToAlerts(supabase, email, slugs);
 
-    if (result.suppressed) {
-      setSubscribeState({ kind: "suppressed" });
-      return;
-    }
-    if (result.rate_limited) {
-      setSubscribeState({ kind: "rate_limited" });
-      return;
-    }
-    if (result.already_subscribed) {
-      setSubscribeState({ kind: "already_subscribed" });
-      return;
-    }
-    if (result.error && !result.subscribed) {
+    // Backend returns { ok, error?, requires_confirmation?, subscribed, confirmation_sent }.
+    // 'suppressed', 'already_subscribed', 'rate_limited' are never returned — no branches.
+    if (result.error) {
       setSubscribeState({ kind: "error", message: result.error });
       return;
     }
 
-    // Insta-confirmed (logged in + email matches auth.email)
-    if (!result.confirmation_sent && result.subscribed > 0) {
-      setSubscribeState({ kind: "instant_confirmed", count: result.subscribed });
+    // Insta-activated: logged-in user + email matches auth.email — no confirmation needed.
+    if (!result.requires_confirmation && result.subscribed > 0) {
+      setSubscribeState({ kind: "activated", count: result.subscribed });
       // Refresh my subscriptions panel via ref (avoids forward-reference)
       if (isAuthenticated && refreshSubscriptionsRef.current) {
         refreshSubscriptionsRef.current();
@@ -286,8 +276,8 @@ export function useAlertsData(): AlertsData {
       return;
     }
 
-    // Double opt-in path
-    setSubscribeState({ kind: "confirmation_pending", email });
+    // Anon (or email override) path — double opt-in required.
+    setSubscribeState({ kind: "needs_confirmation" });
   }, [email, selectedSlugs, supabase, isAuthenticated]);
 
   const resend = useCallback(async () => {

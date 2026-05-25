@@ -13,7 +13,7 @@
 // rendered in a DOM element (input value, hidden field, etc.).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
@@ -33,7 +33,7 @@ export default function AlertConfirmPage(): React.ReactElement {
   const [resendSent, setResendSent] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [resendError, setResendError] = useState<string | null>(null);
-  const cooldownRef = useState<ReturnType<typeof setInterval> | null>(null);
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const supabaseRaw = getSupabaseClient();
 
@@ -53,8 +53,13 @@ export default function AlertConfirmPage(): React.ReactElement {
       if (cancelled) return;
       if (result.success) {
         setState({ kind: "success", count: result.subscribed_count });
-      } else if (result.error === "token_expired") {
-        setState({ kind: "expired" });
+      } else if (result.error === "token_invalid_or_expired") {
+        // Backend returns a single 'token_invalid_or_expired' code for both cases.
+        // We treat it as expired (allow resend) because a malicious user with a totally
+        // random token gets no benefit from "resend" — the resend RPC validates email
+        // ownership before generating a new token. Tradeoff: lost ability to distinguish
+        // "you typo'd" from "expired".
+        setState({ kind: "expired", token });
       } else {
         setState({ kind: "invalid" });
       }
@@ -78,12 +83,16 @@ export default function AlertConfirmPage(): React.ReactElement {
     } else if (result.retry_after_seconds) {
       let remaining = result.retry_after_seconds;
       setResendCooldown(remaining);
-      if (cooldownRef[0]) clearInterval(cooldownRef[0]);
+      if (cooldownRef.current) clearInterval(cooldownRef.current);
       const id = setInterval(() => {
         remaining -= 1;
         setResendCooldown(remaining);
-        if (remaining <= 0) clearInterval(id);
+        if (remaining <= 0) {
+          clearInterval(id);
+          cooldownRef.current = null;
+        }
       }, 1000);
+      cooldownRef.current = id;
     } else {
       setResendError(result.error ?? "Failed to resend. Please try again.");
     }
