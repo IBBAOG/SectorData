@@ -54,8 +54,8 @@ Returns:
 | Search (StockSearch) | Watchlist / Compare cards, Portfolio modal | Inline search bar (top of every tab) |
 | Portfolio CRUD | PortfolioModal | PortfolioEditorSheet (BottomSheet) |
 | B3 market status | Top-bar badge | isMarketOpen available (not shown on mobile per mockup) |
-| Brent futures curve | FuturesCurveChart card | Not surfaced on mobile [desktop-only: chart card type not present on mobile] |
-| News Hunter card | News card | Not surfaced on mobile [desktop-only: card type not present on mobile] |
+| Brent futures curve | FuturesCurveChart card (Brent default card for Anon; addable via +Card for Client/Admin) | Section at the bottom of the Compare tab (shown to all viewers) |
+| News Hunter card | NewsCard (default card for Anon; addable via +Card for Client/Admin) | Section at the bottom of the Compare tab (shown to all viewers; embedded in `.stocks-dark`/`.stocks-light` scope so the card retains its trading-terminal styling inside the otherwise standard mobile tokens) |
 
 ### Mobile components used
 
@@ -123,6 +123,34 @@ Componentes/padrões:
 - `desktop/View.tsx` esconde botões "New", gear (Edit) e o empty-state "Create your first portfolio" quando `readOnly`. Renderiza `<AnonCTA />` acima do grid.
 - `mobile/View.tsx` remove a aba "Profile" do `MobileBottomTabBar`, fecha o `PortfolioEditorSheet`, e renderiza `<AnonCTA />` entre a search bar e o tab content.
 - `AnonCTA` (em `src/components/AnonCTA.tsx`, owned by Phase B) é um banner com brand-orange invitation pro `/login`. Copy unchanged by the public-seed refactor: still reads "Sign in to create and manage your own portfolios."
+
+### Anonymous dashboard composition (added 2026-05-25)
+
+Anon viewers do not have per-user storage, so the desktop dashboard does **not** read or write `stocks-dash-cards-v2` / `stocks-dash-layout-v2` in localStorage. Instead `useStocksData` substitutes a hardcoded 5-card layout (`ANON_DEFAULT_CARDS` + `anonDefaultLayout()`):
+
+| Card | Type | Notes |
+|---|---|---|
+| Portfolio | `portfolio` | Reads the seeded public portfolio (Brazilian Oil & Gas snapshot). |
+| Market overview | `market` | `MarketOverview` component — indices + FX. |
+| News Hunter | `news` | `NewsCard` consuming the curated default keywords (`get_default_news_keywords()`); x close button hidden via `hideRemove` prop. |
+| Brent Futures Curve | `futures` | `FuturesCurveChart` — Yahoo public proxy, no auth. |
+| Compare Assets | `compare` | Hardcoded UGPA3.SA vs VBBR3.SA pair (`ANON_DEFAULT_COMPARE_TICKERS` constant). Mode pills are visible but disabled; ticker chip remove buttons and the StockSearch input are hidden. |
+
+For Anon, all mutating callbacks (`addCard`, `updateCard`, `persistCards`, `handleLayoutChange`) become no-ops; the "+ Card" menu and CRUD controls (gear, "+ New") are hidden in `desktop/View.tsx`; `GridLayout`'s drag/resize are disabled. Refreshing the page always restores the canonical view because nothing about anon state ever touches localStorage. Authenticated users keep the original behaviour: cards/layout restored from localStorage, full CRUD.
+
+The mobile view mirrors the desktop changes in lockstep with the dual-view binding rule:
+
+- `compareTickers` is seeded with `ANON_DEFAULT_COMPARE_TICKERS` on first render for Anon (only when the set is empty — never overrides a manual choice).
+- In `CompareTab`, the StockSearch input and the chip remove buttons are hidden when `readOnly`.
+- Two new sections are appended to the Compare tab (rendered for **all** viewers, not just Anon, to keep mobile / desktop content in sync per the binding rule):
+  - "Brent Futures Curve" — uses `FuturesCurveChart` directly.
+  - "News Hunter" — embeds `NewsCard` inside a `.stocks-dark`/`.stocks-light` scoped wrapper so the card keeps its trading-terminal styling (uppercase 11px, no border-radius) inside the otherwise standard mobile UI. `hideRemove` prop is set so no x button is shown.
+
+Constants and helpers exposed by the hook:
+
+- `ANON_DEFAULT_COMPARE_TICKERS` — `["UGPA3.SA", "VBBR3.SA"]`.
+- `ANON_DEFAULT_CARDS` — full 5-card sequence above (not exported).
+- `anonDefaultLayout()` — 12-col responsive layout with breakpoints `lg` / `md` / `sm`.
 
 ## Yahoo Finance Proxy (importante)
 
@@ -216,3 +244,5 @@ Identidade flat, uppercase, no-radius — **propositalmente diferente do resto d
 - Tabela nova sem RLS por `user_id`.
 - Renderizar controles de CRUD de portfolios quando `readOnly === true` (anon). Sempre cheque `readOnly` antes.
 - Permitir que mutações (`createPortfolio`/`updatePortfolio`/`deletePortfolio`/`setActivePortfolio`) sejam chamadas em anon. O hook já no-ops, mas a UI não deve nem oferecer a possibilidade.
+- Persistir cards/layout de anon em localStorage. A composição é fixa em `ANON_DEFAULT_CARDS` / `anonDefaultLayout()` e deve recomputar a cada render — qualquer tentativa de gravar `stocks-dash-cards-v2` ou `stocks-dash-layout-v2` quando `readOnly === true` é bug.
+- Render o "+ Card" menu, gear (Edit), "+ New" portfolio, ou drag/resize do `GridLayout` em modo anon. Os cinco cards default são imutáveis para visitantes sem sessão.

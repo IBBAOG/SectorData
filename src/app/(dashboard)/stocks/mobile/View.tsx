@@ -37,6 +37,7 @@ import {
 } from "../../../../components/dashboard/mobile";
 import MobileTabBar from "../../../../components/dashboard/mobile/MobileTabBar";
 import AnonCTA from "../../../../components/AnonCTA";
+import { NewsCard } from "../../../../components/stocks/NewsCard";
 import {
   useStocksData,
   CHART_RANGES,
@@ -54,6 +55,10 @@ const MobileChart = dynamic(
 );
 const StockSearch = dynamic(
   () => import("../../../../components/stocks/StockSearch"),
+  { ssr: false },
+);
+const FuturesCurveChart = dynamic(
+  () => import("../../../../components/stocks/FuturesCurveChart"),
   { ssr: false },
 );
 
@@ -470,6 +475,8 @@ function CompareTab() {
     mobileRange,
     setMobileRange,
     quoteMap,
+    readOnly,
+    isDark,
   } = useStocksData();
 
   // Load history for each compare ticker (max 5)
@@ -523,19 +530,23 @@ function CompareTab() {
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      {/* Ticker chip input */}
+      {/* Ticker chip input — search & remove are hidden for anonymous
+          viewers since the compare pair is locked to the seeded default
+          (UGPA3 vs VBBR3). */}
       <div style={{ padding: "0 16px 12px" }}>
-        <StockSearch
-          onSelect={addCompareTicker}
-          placeholder="Add asset to compare..."
-        />
+        {!readOnly && (
+          <StockSearch
+            onSelect={addCompareTicker}
+            placeholder="Add asset to compare..."
+          />
+        )}
         {compareTickers.length > 0 && (
           <div
             style={{
               display: "flex",
               gap: 8,
               flexWrap: "wrap",
-              marginTop: 10,
+              marginTop: readOnly ? 0 : 10,
             }}
           >
             {compareTickers.map((sym, i) => (
@@ -556,26 +567,28 @@ function CompareTab() {
                 }}
               >
                 {sym}
-                <button
-                  onClick={() => removeCompareTicker(sym)}
-                  aria-label={`Remove ${sym}`}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    color: "inherit",
-                    cursor: "pointer",
-                    padding: 0,
-                    fontSize: 16,
-                    lineHeight: 1,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: 20,
-                    height: 20,
-                  }}
-                >
-                  ×
-                </button>
+                {!readOnly && (
+                  <button
+                    onClick={() => removeCompareTicker(sym)}
+                    aria-label={`Remove ${sym}`}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "inherit",
+                      cursor: "pointer",
+                      padding: 0,
+                      fontSize: 16,
+                      lineHeight: 1,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 20,
+                      height: 20,
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
               </span>
             ))}
           </div>
@@ -625,6 +638,75 @@ function CompareTab() {
           }}
         />
       )}
+
+      {/* Brent Futures Curve — mirrors the desktop Brent Futures card.
+          Rendered for all viewers (anon + authed) so mobile content stays
+          in sync with desktop per the dual-view binding rule. The futures
+          curve component manages its own theme via the `dark` prop. */}
+      <section
+        aria-label="Brent futures curve"
+        style={{
+          marginTop: 24,
+          padding: "12px 16px 4px",
+          borderTop: "1px solid var(--mobile-divider)",
+        }}
+      >
+        <h2
+          style={{
+            margin: "0 0 8px",
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: "var(--mobile-text-muted)",
+            fontFamily: "Arial, Helvetica, sans-serif",
+          }}
+        >
+          Brent Futures Curve
+        </h2>
+        <div style={{ height: 260 }}>
+          <FuturesCurveChart dark={isDark} />
+        </div>
+      </section>
+
+      {/* News Hunter — same headlines feed shown in the desktop News card,
+          rendered with the trading-terminal scoped class so the embedded
+          card retains its native styling (uppercase 11px, no border-radius).
+          We wrap it in `.stocks-dark` / `.stocks-light` to isolate the
+          scoped tokens from the surrounding mobile UI. */}
+      <section
+        aria-label="News Hunter"
+        style={{
+          marginTop: 16,
+          padding: "12px 16px 20px",
+          borderTop: "1px solid var(--mobile-divider)",
+        }}
+      >
+        <h2
+          style={{
+            margin: "0 0 8px",
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: "var(--mobile-text-muted)",
+            fontFamily: "Arial, Helvetica, sans-serif",
+          }}
+        >
+          News Hunter
+        </h2>
+        <div
+          className={isDark ? "stocks-dark" : "stocks-light"}
+          style={{ minHeight: 240 }}
+        >
+          <div
+            className="sd-card"
+            style={{ padding: 8, height: 320, overflow: "auto" }}
+          >
+            <NewsCard isDark={isDark} onRemove={() => {}} hideRemove />
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

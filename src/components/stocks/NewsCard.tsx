@@ -49,7 +49,20 @@ function DragIcon() {
   );
 }
 
-export function NewsCard({ isDark, onRemove }: { isDark: boolean; onRemove: () => void }) {
+export function NewsCard({
+  isDark,
+  onRemove,
+  hideRemove = false,
+}: {
+  isDark: boolean;
+  onRemove: () => void;
+  /**
+   * When true, the x close button in the card header is hidden. Used by the
+   * anonymous-viewer path on /stocks where the card cannot be dismissed (the
+   * dashboard layout is fixed and not persisted to localStorage).
+   */
+  hideRemove?: boolean;
+}) {
   const { articles, justArrivedUrls, keywords, loading } = useNewsHunter();
   const [windowHours, setWindowHours] = useState(6);
   const [, setAgeTick] = useState(0);
@@ -129,13 +142,15 @@ export function NewsCard({ isDark, onRemove }: { isDark: boolean; onRemove: () =
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
-          <button
-            className="sd-btn"
-            style={{ padding: "1px 5px", fontSize: 9, lineHeight: 1, opacity: 0.5 }}
-            onClick={onRemove}
-          >
-            x
-          </button>
+          {!hideRemove && (
+            <button
+              className="sd-btn"
+              style={{ padding: "1px 5px", fontSize: 9, lineHeight: 1, opacity: 0.5 }}
+              onClick={onRemove}
+            >
+              x
+            </button>
+          )}
         </div>
       </div>
 
