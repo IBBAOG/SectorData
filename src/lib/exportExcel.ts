@@ -4,10 +4,6 @@ import type {
   MsSerieRow,
   DgMarginsRow,
   PriceBandsRow,
-  MdicComexSerieRow,
-  MdicComexRawRow,
-  MdicComexAggregatedRow,
-  MdicComexGroupBy,
   AnpCdpSeriePonto,
   AnpCdpRawRow,
   AnpCdpAggregatedRow,
@@ -1225,7 +1221,7 @@ export async function downloadSalesVolumesExcel(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tier 2 single-sheet wrappers (mdic-comex, anp-cdp, anp-lpc).
+// Tier 2 single-sheet wrappers (anp-cdp, anp-lpc).
 //
 // Mirror the Tier 1 path exactly: `downloadGenericExcel` with `key:` lookups
 // and **no** `mergeTitleCells`. Earlier these wrappers used `value:` extractors
@@ -1235,26 +1231,6 @@ export async function downloadSalesVolumesExcel(
 // etc.) using the same helper without those features kept working. Aligning
 // the Tier 2 wrappers to the Tier 1 path eliminates the regression vector.
 // ─────────────────────────────────────────────────────────────────────────────
-
-// ── MDIC Comex export ────────────────────────────────────────────────────────
-
-export async function downloadMdicComexExcel(rows: MdicComexSerieRow[]): Promise<void> {
-  await downloadGenericExcel<MdicComexSerieRow>({
-    rows,
-    sheetName: "MDIC Comex",
-    title: "MDIC Comex Stat — Imports and Exports",
-    filename: "MDIC Comex",
-    columns: [
-      { key: "ano",           header: "Year",             width: 8 },
-      { key: "mes",           header: "Month",             width: 6 },
-      { key: "flow",          header: "Flow",            width: 12 },
-      { key: "ncm_codigo",    header: "NCM",             width: 14 },
-      { key: "ncm_nome",      header: "NCM Description", width: 36, align: "left" },
-      { key: "volume_kg",     header: "Volume (kg)",     width: 18, format: "#,##0" },
-      { key: "valor_fob_usd", header: "FOB Value (US$)", width: 20, format: "#,##0.00" },
-    ],
-  });
-}
 
 // ── ANP CDP export ───────────────────────────────────────────────────────────
 
@@ -1359,7 +1335,7 @@ export async function downloadAnpLpcExcel(rows: AnpLpcSerieRow[]): Promise<void>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tier 2 aggregated exports (anp-cdp + mdic-comex)
+// Tier 2 aggregated exports (anp-cdp)
 //
 // The user picks a granularity in the export modal (e.g. "Por campo" → groupBy
 // = ['ano','mes','campo']). Page calls `rpcGet*Aggregated(filters, groupBy)`
@@ -1443,94 +1419,6 @@ export async function downloadAnpCdpAggregatedExcel(
         width:  c.width,
         format: c.format,
       })),
-    ],
-  });
-}
-
-// ── MDIC Comex aggregated dimension dictionary ──────────────────────────────
-
-type MdicComexDimColumn = {
-  header: string;
-  width: number;
-  align?: "left" | "center" | "right";
-};
-
-const MDIC_COMEX_DIM_COLS: Record<MdicComexGroupBy, MdicComexDimColumn> = {
-  ano:        { header: "Year",         width: 8 },
-  mes:        { header: "Month",        width: 6 },
-  flow:       { header: "Flow",         width: 12 },
-  ncm_codigo: { header: "NCM",          width: 14 },
-  ncm_nome:   { header: "NCM Description", width: 36, align: "left" },
-  pais:       { header: "Country",      width: 22, align: "left" },
-};
-
-const MDIC_COMEX_METRIC_COLS: Array<{
-  key: keyof MdicComexAggregatedRow;
-  header: string;
-  width: number;
-  format?: string;
-}> = [
-  { key: "volume_kg",              header: "Volume (kg)",          width: 18, format: "#,##0" },
-  { key: "valor_fob_usd",          header: "FOB Value (US$)",      width: 20, format: "#,##0.00" },
-  { key: "quantidade_estatistica", header: "Statistical qty",      width: 22, format: "#,##0.###" },
-  { key: "unidade_estatistica",    header: "Unit",                 width: 16 },
-];
-
-export async function downloadMdicComexAggregatedExcel(
-  rows: MdicComexAggregatedRow[],
-  groupBy: MdicComexGroupBy[],
-): Promise<void> {
-  const dimCols = groupBy.map((g) => {
-    const meta = MDIC_COMEX_DIM_COLS[g];
-    return {
-      key:    g as keyof MdicComexAggregatedRow,
-      header: meta.header,
-      width:  meta.width,
-      align:  meta.align,
-    } as const;
-  });
-
-  const filenameBase = `MDIC-Comex_${groupBy.join("-")}`;
-
-  await downloadGenericExcel<MdicComexAggregatedRow>({
-    rows,
-    sheetName: "MDIC Comex",
-    title: `MDIC Comex — Aggregated (${groupBy.join(", ")})`,
-    filename: filenameBase,
-    columns: [
-      ...dimCols,
-      ...MDIC_COMEX_METRIC_COLS.map((c) => ({
-        key:    c.key,
-        header: c.header,
-        width:  c.width,
-        format: c.format,
-      })),
-    ],
-  });
-}
-
-// ── MDIC Comex raw export (1 row per ano × mes × flow × ncm × pais) ──────────
-//
-// Default export path for /mdic-comex granularity = "raw". Mirrors columns of
-// `mdic_comex` 1:1.
-
-export async function downloadMdicComexRawExcel(rows: MdicComexRawRow[]): Promise<void> {
-  await downloadGenericExcel<MdicComexRawRow>({
-    rows,
-    sheetName: "MDIC Comex — Raw",
-    title: "MDIC Comex — Imports and Exports (raw)",
-    filename: "MDIC Comex raw",
-    columns: [
-      { key: "ano",                    header: "Year",              width: 8 },
-      { key: "mes",                    header: "Month",             width: 6 },
-      { key: "flow",                   header: "Flow",              width: 12 },
-      { key: "ncm_codigo",             header: "NCM",               width: 14 },
-      { key: "ncm_nome",               header: "NCM Description",   width: 36, align: "left" },
-      { key: "pais",                   header: "Country",           width: 22, align: "left" },
-      { key: "volume_kg",              header: "Volume (kg)",       width: 18, format: "#,##0" },
-      { key: "valor_fob_usd",          header: "FOB Value (US$)",   width: 20, format: "#,##0.00" },
-      { key: "quantidade_estatistica", header: "Statistical qty",   width: 22, format: "#,##0.###" },
-      { key: "unidade_estatistica",    header: "Unit",              width: 16 },
     ],
   });
 }
