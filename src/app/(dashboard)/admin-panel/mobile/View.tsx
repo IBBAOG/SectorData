@@ -109,6 +109,20 @@ export default function MobileView(): React.ReactElement | null {
     handleToggleRecipient,
     handleRemoveRecipient,
 
+    defaultKeywords,
+    defaultKeywordsLoading,
+    defaultKeywordsError,
+    newKeyword,
+    setNewKeyword,
+    addingKeyword,
+    addKeywordError,
+    addKeywordSuccess,
+    removingKeyword,
+    confirmRemoveKeyword,
+    setConfirmRemoveKeyword,
+    handleAddKeyword,
+    handleRemoveKeyword,
+
     isValidEmail,
     formatDateBR,
   } = useAdminPanelData();
@@ -142,6 +156,7 @@ export default function MobileView(): React.ReactElement | null {
     m.description,
   ]);
   const filteredRecipients = filterBySearch(recipients, search, (r) => [r.email]);
+  const filteredKeywords = filterBySearch(defaultKeywords, search, (k) => [k.keyword]);
 
   // Section-specific search placeholder
   const searchPlaceholder: Record<SectionId, string> = {
@@ -149,6 +164,7 @@ export default function MobileView(): React.ReactElement | null {
     "permissions": "Search modules",
     "card-images": "Search modules",
     "alert-recipients": "Search recipients",
+    "default-news": "Search keywords",
     "data-input": "",
   };
 
@@ -903,6 +919,141 @@ export default function MobileView(): React.ReactElement | null {
       )}
 
       {/* ─────────────────────────────────────────────────────────────────── */}
+      {/* DEFAULT NEWS KEYWORDS                                               */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {activeSection === "default-news" && (
+        <section>
+          {/* Description + add form */}
+          <div
+            style={{
+              padding: "0 16px 16px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
+            <div style={{ fontSize: 12, color: "var(--mobile-text-muted)", lineHeight: 1.5 }}>
+              These keywords are used by anonymous visitors of the News Hunter dashboard.
+              Logged-in users have their own personal keyword list.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                type="text"
+                value={newKeyword}
+                onChange={(e) => setNewKeyword(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAddKeyword()}
+                placeholder="e.g. Petrobras, diesel"
+                disabled={addingKeyword}
+                style={{
+                  flex: 1,
+                  minHeight: 44,
+                  padding: "0 14px",
+                  borderRadius: 10,
+                  border: `1px solid ${addKeywordError ? "#e53e3e" : "var(--mobile-border)"}`,
+                  fontSize: 14,
+                  fontFamily: "inherit",
+                  outline: "none",
+                  background: "var(--mobile-surface)",
+                  color: "var(--mobile-text)",
+                  boxSizing: "border-box",
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleAddKeyword}
+                disabled={addingKeyword || !newKeyword.trim()}
+                style={{
+                  minHeight: 44,
+                  padding: "0 18px",
+                  borderRadius: 10,
+                  border: "none",
+                  background:
+                    addingKeyword || !newKeyword.trim() ? "var(--mobile-divider)" : ORANGE,
+                  color:
+                    addingKeyword || !newKeyword.trim() ? "var(--mobile-text-faint)" : "#fff",
+                  fontSize: 14,
+                  fontWeight: 700,
+                  cursor:
+                    addingKeyword || !newKeyword.trim() ? "not-allowed" : "pointer",
+                  whiteSpace: "nowrap",
+                  fontFamily: "inherit",
+                }}
+              >
+                {addingKeyword ? "Adding…" : addKeywordSuccess ? "✓ Added" : "Add"}
+              </button>
+            </div>
+            {addKeywordError && (
+              <div style={{ fontSize: 12, color: "#e53e3e" }}>{addKeywordError}</div>
+            )}
+          </div>
+
+          {/* Error banner */}
+          {defaultKeywordsError && (
+            <div
+              style={{
+                margin: "0 16px 12px",
+                padding: 12,
+                background: "rgba(229,62,62,0.08)",
+                borderRadius: 8,
+                color: "#e53e3e",
+                fontSize: 13,
+                lineHeight: 1.4,
+              }}
+            >
+              {defaultKeywordsError}
+            </div>
+          )}
+
+          {/* Keyword list */}
+          {defaultKeywordsLoading ? (
+            <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
+              Loading keywords…
+            </div>
+          ) : filteredKeywords.length === 0 ? (
+            <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
+              {search ? "No keywords match your search." : "No default keywords yet."}
+            </div>
+          ) : (
+            filteredKeywords.map((kw) => (
+              <MobileDataCard
+                key={kw.keyword}
+                variant="default"
+                title={kw.keyword}
+                subtitle={`Added ${formatDateBR(kw.created_at)}`}
+                onClick={() => setConfirmRemoveKeyword(kw.keyword)}
+                rightSlot={
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmRemoveKeyword(kw.keyword);
+                    }}
+                    disabled={!!removingKeyword}
+                    style={{
+                      minHeight: 32,
+                      padding: "0 10px",
+                      borderRadius: 8,
+                      border: "1px solid rgba(229,62,62,0.4)",
+                      background: "var(--mobile-surface)",
+                      color: "#e53e3e",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: removingKeyword ? "wait" : "pointer",
+                      opacity: removingKeyword ? 0.6 : 1,
+                      fontFamily: "inherit",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Remove
+                  </button>
+                }
+              />
+            ))
+          )}
+        </section>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────────── */}
       {/* DATA INPUT                                                          */}
       {/* ─────────────────────────────────────────────────────────────────── */}
       {activeSection === "data-input" && (
@@ -993,6 +1144,80 @@ export default function MobileView(): React.ReactElement | null {
                   </button>
                 );
               })}
+            </div>
+          );
+        })()}
+      </BottomSheet>
+
+      {/* ── Confirm-remove keyword sheet ──────────────────────────────────── */}
+      <BottomSheet
+        open={confirmRemoveKeyword != null}
+        onClose={() => setConfirmRemoveKeyword(null)}
+        title="Remove keyword"
+        height="auto"
+      >
+        {confirmRemoveKeyword && (() => {
+          const isRemoving = removingKeyword === confirmRemoveKeyword;
+          return (
+            <div style={{ padding: "12px 16px 16px" }}>
+              <div style={{ fontSize: 13, color: "var(--mobile-text-muted)", marginBottom: 4 }}>
+                You are about to remove:
+              </div>
+              <div
+                style={{
+                  fontSize: 15,
+                  fontWeight: 700,
+                  color: "var(--mobile-text)",
+                  marginBottom: 16,
+                  wordBreak: "break-all",
+                }}
+              >
+                {confirmRemoveKeyword}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--mobile-text-muted)", marginBottom: 16, lineHeight: 1.5 }}>
+                This keyword will be removed from the default set. Anonymous News Hunter
+                visitors will no longer see articles matched by this term.
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setConfirmRemoveKeyword(null)}
+                  style={{
+                    flex: 1,
+                    minHeight: 44,
+                    borderRadius: 10,
+                    border: "1px solid var(--mobile-border)",
+                    background: "var(--mobile-surface)",
+                    color: "var(--mobile-text)",
+                    fontFamily: "inherit",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveKeyword(confirmRemoveKeyword)}
+                  disabled={isRemoving}
+                  style={{
+                    flex: 1,
+                    minHeight: 44,
+                    borderRadius: 10,
+                    border: 0,
+                    background: "#e53e3e",
+                    color: "#fff",
+                    fontFamily: "inherit",
+                    fontSize: 14,
+                    fontWeight: 700,
+                    cursor: isRemoving ? "wait" : "pointer",
+                    opacity: isRemoving ? 0.6 : 1,
+                  }}
+                >
+                  {isRemoving ? "Removing…" : "Remove"}
+                </button>
+              </div>
             </div>
           );
         })()}

@@ -62,6 +62,12 @@ const SECTION_ICONS: Record<SectionId, React.ReactNode> = {
       <polyline points="22,6 12,13 2,6" />
     </svg>
   ),
+  "default-news": (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+      <line x1="7" y1="7" x2="7.01" y2="7" />
+    </svg>
+  ),
   "data-input": (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -128,6 +134,20 @@ export default function DesktopView(): React.ReactElement | null {
     handleAddRecipient,
     handleToggleRecipient,
     handleRemoveRecipient,
+
+    defaultKeywords,
+    defaultKeywordsLoading,
+    defaultKeywordsError,
+    newKeyword,
+    setNewKeyword,
+    addingKeyword,
+    addKeywordError,
+    addKeywordSuccess,
+    removingKeyword,
+    confirmRemoveKeyword,
+    setConfirmRemoveKeyword,
+    handleAddKeyword,
+    handleRemoveKeyword,
 
     isValidEmail,
     formatDateBR,
@@ -691,6 +711,126 @@ export default function DesktopView(): React.ReactElement | null {
                     </div>
                   );
                 })
+              )}
+            </div>
+          )}
+
+          {/* ── Default News Keywords ────────────────────────────────────────── */}
+          {activeSection === "default-news" && (
+            <div className="settings-card">
+              <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>
+                Default News Keywords
+              </h2>
+              <p style={{ fontSize: 13, color: "#888", margin: "0 0 20px", lineHeight: 1.55 }}>
+                These keywords are used by anonymous visitors of the News Hunter dashboard.
+                Logged-in users have their own personal keyword list.
+              </p>
+
+              {/* Error banner */}
+              {defaultKeywordsError && (
+                <div style={{ padding: "10px 14px", background: "#fff5f5", borderRadius: 8, color: "#e53e3e", fontSize: 13, marginBottom: 16 }}>
+                  {defaultKeywordsError}
+                </div>
+              )}
+
+              {/* Add form */}
+              <div style={{ display: "flex", gap: 10, marginBottom: 24, alignItems: "flex-start" }}>
+                <div style={{ flex: 1 }}>
+                  <input
+                    type="text"
+                    value={newKeyword}
+                    onChange={(e) => setNewKeyword(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleAddKeyword()}
+                    placeholder="e.g. Petrobras, diesel, BNDES"
+                    disabled={addingKeyword}
+                    style={{
+                      width: "100%", padding: "8px 12px", borderRadius: 8,
+                      border: `1px solid ${addKeywordError ? "#e53e3e" : "#e0e0e0"}`,
+                      fontSize: 13, fontFamily: "Arial, sans-serif", outline: "none",
+                      boxSizing: "border-box",
+                    }}
+                  />
+                  {addKeywordError && (
+                    <div style={{ fontSize: 12, color: "#e53e3e", marginTop: 4 }}>{addKeywordError}</div>
+                  )}
+                </div>
+                <button
+                  onClick={handleAddKeyword}
+                  disabled={addingKeyword || !newKeyword.trim()}
+                  style={{
+                    padding: "8px 18px", borderRadius: 8, border: "none",
+                    background: addingKeyword || !newKeyword.trim() ? "#e0e0e0" : ORANGE,
+                    color: addingKeyword || !newKeyword.trim() ? "#aaa" : "#fff",
+                    fontSize: 13, fontWeight: 600,
+                    cursor: addingKeyword || !newKeyword.trim() ? "not-allowed" : "pointer",
+                    fontFamily: "Arial, sans-serif", whiteSpace: "nowrap",
+                    transition: "background 0.15s",
+                  }}
+                >
+                  {addingKeyword ? "Adding…" : addKeywordSuccess ? "✓ Added" : "Add"}
+                </button>
+              </div>
+
+              {/* Keyword list */}
+              {defaultKeywordsLoading ? (
+                <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>Loading…</div>
+              ) : defaultKeywords.length === 0 ? (
+                <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>No default keywords yet.</div>
+              ) : (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {defaultKeywords.map((kw) => {
+                    const isConfirming = confirmRemoveKeyword === kw.keyword;
+                    const isRemoving = removingKeyword === kw.keyword;
+                    return (
+                      <span
+                        key={kw.keyword}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 6,
+                          padding: "4px 10px 4px 12px",
+                          borderRadius: 20,
+                          background: isConfirming ? "#fff5f5" : "rgba(255,80,0,0.08)",
+                          border: `1px solid ${isConfirming ? "#e53e3e" : "rgba(255,80,0,0.25)"}`,
+                          fontSize: 13, color: isConfirming ? "#e53e3e" : "#1a1a1a",
+                          fontFamily: "Arial, sans-serif",
+                          transition: "background 0.15s, border-color 0.15s",
+                        }}
+                      >
+                        {kw.keyword}
+                        {isConfirming ? (
+                          <>
+                            <button
+                              onClick={() => handleRemoveKeyword(kw.keyword)}
+                              disabled={isRemoving}
+                              style={{ fontSize: 11, fontWeight: 700, marginLeft: 4, padding: "2px 8px", borderRadius: 10, border: "none", background: "#e53e3e", color: "#fff", cursor: isRemoving ? "wait" : "pointer", fontFamily: "Arial, sans-serif" }}
+                            >
+                              {isRemoving ? "…" : "Remove"}
+                            </button>
+                            <button
+                              onClick={() => setConfirmRemoveKeyword(null)}
+                              style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, border: "1px solid #e0e0e0", background: "#fff", color: "#555", cursor: "pointer", fontFamily: "Arial, sans-serif" }}
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmRemoveKeyword(kw.keyword)}
+                            style={{
+                              background: "none", border: "none", cursor: "pointer",
+                              color: "#aaa", lineHeight: 1, padding: 0,
+                              fontFamily: "Arial, sans-serif", fontSize: 14,
+                              display: "flex", alignItems: "center",
+                            }}
+                            aria-label={`Remove keyword ${kw.keyword}`}
+                            title="Remove"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </span>
+                    );
+                  })}
+                </div>
               )}
             </div>
           )}
