@@ -186,6 +186,21 @@ def _prepare(df: pd.DataFrame, allow_non_apex: bool = False) -> pd.DataFrame:
 
     df = df.rename(columns=_RENAME)
 
+    # Drop columns that no longer exist in the DB (parquet-in-place rule keeps them in
+    # historical files; we strip them here so --from-parquet backfill doesn't fail with
+    # "column does not exist" on supabase-py upsert). The CSV path is also safe by
+    # construction (_parse_csv only emits canonical columns), but the drop is idempotent
+    # and centralizes the contract here for both entry points.
+    df = df.drop(
+        columns=[
+            "condensado_bbl_dia",
+            "gas_natural_assoc_mm3_dia",
+            "gas_natural_n_assoc_mm3_dia",
+            "gas_royalties",
+        ],
+        errors="ignore",
+    )
+
     # Ensure all required columns exist; fill missing with defaults
     for col in _NUM_COLS:
         if col not in df.columns:
