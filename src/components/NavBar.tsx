@@ -99,12 +99,6 @@ const NAV_ENTRIES: NavEntry[] = [
           },
         ],
       },
-      {
-        heading: "Comex data",
-        items: [
-          { href: "/mdic-comex", label: "MDIC Comex" },
-        ],
-      },
     ],
   },
   { label: "Market Watch", href: "/stocks" },
