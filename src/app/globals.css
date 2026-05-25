@@ -2184,6 +2184,83 @@ a {
 }
 .stocks-light .sd-modal-glass::before { display: none !important; }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   AnonCTA banner — shared component (src/components/AnonCTA.tsx)
+   Theme-aware contrast tokens. Used by /stocks and /news-hunter to invite
+   anonymous visitors to sign in. Layout stays inline in the TSX; this block
+   owns colors / background / borders so the banner stays legible on every
+   host theme, especially Market Watch's near-black `.stocks-dark` surface
+   where the previous hard-coded near-black text dropped to <1:1 contrast.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Default (used outside the stocks theme — e.g. /news-hunter on the light
+   global background). Slightly stronger background tint + bumped weight than
+   the original so legibility is solid even before any scoped overrides. */
+.anon-cta-banner {
+  background: rgba(255, 80, 0, 0.10);
+  border: 1px solid rgba(255, 80, 0, 0.32);
+  border-radius: 8px;
+  font-family: Arial, Helvetica, sans-serif;
+  color: #1a1a1a;
+}
+.anon-cta-banner__text {
+  font-size: 14px;
+  font-weight: 500;
+  color: inherit;
+}
+
+/* Dark Market Watch — invert text to high-contrast white over a stronger
+   orange tint, brighter border. Bumps weight + lifts text-transform so the
+   sentence stays readable inside the global `.stocks-dark *` uppercase /
+   11px rule (which would otherwise crush a 14px sentence into 11px allcaps
+   noise). Border-radius override is intentional — the `.stocks-dark *`
+   selector forces 0 radius, but the AnonCTA reads as a notice card and
+   benefits from a soft corner; this is consistent with how spinners are
+   exempted from the flatness rule. */
+.stocks-dark .anon-cta-banner,
+.stocks-light .anon-cta-banner {
+  border-radius: 8px !important;
+}
+.stocks-dark .anon-cta-banner {
+  background: rgba(255, 80, 0, 0.16) !important;
+  border: 1px solid rgba(255, 80, 0, 0.45) !important;
+  color: #f0f3f8 !important;
+}
+.stocks-dark .anon-cta-banner__text {
+  color: #f0f3f8 !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
+  letter-spacing: 0.01em !important;
+}
+.stocks-dark .anon-cta-banner__cta {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+}
+
+/* Light Market Watch — keep the original dark text but firm up tint so the
+   banner reads as a distinct notice strip, not a faded ghost. */
+.stocks-light .anon-cta-banner {
+  background: rgba(255, 80, 0, 0.12) !important;
+  border: 1px solid rgba(255, 80, 0, 0.38) !important;
+  color: #1a1a1a !important;
+}
+.stocks-light .anon-cta-banner__text {
+  color: #1a1a1a !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
+  letter-spacing: 0.01em !important;
+}
+.stocks-light .anon-cta-banner__cta {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+}
+
 /* ─── Navios Diesel — responsive main grid ─────────────────────────────────── */
 /* Default (xxl 1400px+): 3-column */
 .nd-main-grid {
