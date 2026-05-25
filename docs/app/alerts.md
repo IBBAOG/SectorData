@@ -7,8 +7,22 @@ Dashboard de User-Facing Email Subscriptions. Owner: [`worker_dash-alerts`](../.
 ## Status
 
 - **PRD aprovado:** 2026-05-25 ([`plans/quero-criar-um-novo-synchronous-reddy.md`](../../../.claude/plans/quero-criar-um-novo-synchronous-reddy.md)).
-- **Scaffold:** pendente. CTO (esta sessão) autorizou-se a iniciar; ver `Initialization checklist` em `worker_dash-alerts.md`.
-- **Em produção:** não. Aguardando Resend API key (CEO precisa criar account) e migrations apply.
+- **Frontend MVP complete** (see commit hash in git log — `alerts(frontend): build /alerts dual-view + confirm + unsubscribe flows`).
+- **Em produção:** não. Aguarding `module_visibility` row (worker_dash-admin) + Resend API key sanity test + `ALERTS_FRONTEND_URL` GHA secret.
+
+### Frontend MVP scope (2026-05-25)
+
+Files created:
+- `src/app/(dashboard)/alerts/page.tsx` — viewport router (useIsMobile)
+- `src/app/(dashboard)/alerts/useAlertsData.ts` — shared hook (all RPC calls, state, types)
+- `src/app/(dashboard)/alerts/desktop/View.tsx` — desktop layout (two-column: catalog + mgmt panel)
+- `src/app/(dashboard)/alerts/mobile/View.tsx` — mobile layout (tabs + BottomSheet catalog + sticky CTA)
+- `src/app/(dashboard)/alerts/confirm/page.tsx` — double opt-in confirmation landing
+- `src/app/(dashboard)/alerts/unsubscribe/page.tsx` — one-click unsubscribe landing
+- `src/app/(dashboard)/alerts/page.module.css` — scoped styles
+- `src/types/alerts.ts` — shared TypeScript types
+- `src/lib/rpc.ts` — 9 alert RPC wrappers added (Alerts RPCs section)
+- `src/components/NavBar.tsx` — "Alerts" top-level entry added (between Market Watch and News Hunter)
 
 ## Dual-view structure
 

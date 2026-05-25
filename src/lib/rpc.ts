@@ -2477,3 +2477,210 @@ export async function rpcAdminRemoveDefaultNewsKeyword(
     return false;
   }
 }
+
+// ─── MODULE: Alerts (/alerts) ─────────────────────────────────────────────────
+//
+// User-facing subscription management. All wrappers here are callable by both
+// anon and authenticated users EXCEPT list_my_subscriptions, list_my_recent_alerts
+// and update_subscription_active which require a valid auth.uid() (RLS-gated).
+//
+// Admin-only RPCs (admin_list_subscribers, admin_force_unsubscribe, etc.) live
+// in src/lib/alertsAdminRpc.ts (owned by worker_dash-admin).
+//
+// Anti-patterns to avoid:
+//   - Never call these in a loop. subscribe_to_alerts takes TEXT[] — 1 call max.
+//   - Never render confirmation_token or unsubscribe_token in the DOM.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import type {
+  AlertSource,
+  MySubscription,
+  RecentAlertItem,
+  SubscribeResult,
+  ConfirmResult,
+  ResendConfirmResult,
+  UnsubscribeResult,
+  UnsubscribeAllResult,
+} from "../types/alerts";
+
+/**
+ * Returns the active alert source catalog (is_active=true only).
+ * Callable by anon + authenticated. Strips detection_module (view-level).
+ */
+export async function rpcListAlertSources(
+  supabase: SupabaseClient,
+): Promise<AlertSource[]> {
+  try {
+    const { data, error } = await supabase.rpc("list_alert_sources");
+    if (error) throw error;
+    return (data as AlertSource[]) ?? [];
+  } catch (e) {
+    console.error("list_alert_sources failed", e);
+    return [];
+  }
+}
+
+/**
+ * Atomic subscription upsert.
+ * - If authenticated AND p_email matches auth.users.email: insta-confirm (is_confirmed=true).
+ * - Otherwise: creates row with is_confirmed=false + triggers confirmation email via outbox.
+ * Rate-limited server-side (10/IP/hour). Always send the full slug array — never loop.
+ */
+export async function rpcSubscribeToAlerts(
+  supabase: SupabaseClient,
+  email: string,
+  sourceSlugs: string[],
+): Promise<SubscribeResult> {
+  try {
+    const { data, error } = await supabase.rpc("subscribe_to_alerts", {
+      p_email: email,
+      p_source_slugs: sourceSlugs,
+    });
+    if (error) throw error;
+    return (data as SubscribeResult) ?? { subscribed: 0, confirmation_sent: false };
+  } catch (e) {
+    console.error("subscribe_to_alerts failed", e);
+    return { subscribed: 0, confirmation_sent: false, error: String(e) };
+  }
+}
+
+/**
+ * Confirms a subscription via the double opt-in token sent by email.
+ * Sets is_confirmed=true, nulls confirmation_token.
+ */
+export async function rpcConfirmSubscription(
+  supabase: SupabaseClient,
+  token: string,
+): Promise<ConfirmResult> {
+  try {
+    const { data, error } = await supabase.rpc("confirm_subscription", {
+      p_token: token,
+    });
+    if (error) throw error;
+    return (data as ConfirmResult) ?? { success: false, subscribed_count: 0 };
+  } catch (e) {
+    console.error("confirm_subscription failed", e);
+    return { success: false, subscribed_count: 0, error: String(e) };
+  }
+}
+
+/**
+ * Re-sends the confirmation email. Rate-limited: max 1×/10min per email.
+ * Returns retry_after_seconds when rate-limited.
+ */
+export async function rpcResendConfirmation(
+  supabase: SupabaseClient,
+  email: string,
+  sourceSlugs: string[],
+): Promise<ResendConfirmResult> {
+  try {
+    const { data, error } = await supabase.rpc("resend_confirmation", {
+      p_email: email,
+      p_source_slugs: sourceSlugs,
+    });
+    if (error) throw error;
+    return (data as ResendConfirmResult) ?? { sent: false };
+  } catch (e) {
+    console.error("resend_confirmation failed", e);
+    return { sent: false, error: String(e) };
+  }
+}
+
+/**
+ * Unsubscribes a single source via the unsubscribe_token from email footer.
+ * Idempotent — repeated calls return success.
+ */
+export async function rpcUnsubscribe(
+  supabase: SupabaseClient,
+  token: string,
+): Promise<UnsubscribeResult> {
+  try {
+    const { data, error } = await supabase.rpc("unsubscribe", {
+      p_token: token,
+    });
+    if (error) throw error;
+    return (data as UnsubscribeResult) ?? { success: false };
+  } catch (e) {
+    console.error("unsubscribe failed", e);
+    return { success: false, error: String(e) };
+  }
+}
+
+/**
+ * Unsubscribes from ALL sources for the email associated with the token.
+ * Used by the "Unsubscribe from all" link in email footer.
+ */
+export async function rpcUnsubscribeAll(
+  supabase: SupabaseClient,
+  token: string,
+): Promise<UnsubscribeAllResult> {
+  try {
+    const { data, error } = await supabase.rpc("unsubscribe_all", {
+      p_token: token,
+    });
+    if (error) throw error;
+    return (data as UnsubscribeAllResult) ?? { success: false, count: 0 };
+  } catch (e) {
+    console.error("unsubscribe_all failed", e);
+    return { success: false, count: 0, error: String(e) };
+  }
+}
+
+/**
+ * Returns the authenticated user's active subscriptions.
+ * RLS-gated: user_id = auth.uid(). Returns [] for anon.
+ */
+export async function rpcListMySubscriptions(
+  supabase: SupabaseClient,
+): Promise<MySubscription[]> {
+  try {
+    const { data, error } = await supabase.rpc("list_my_subscriptions");
+    if (error) throw error;
+    return (data as MySubscription[]) ?? [];
+  } catch (e) {
+    console.error("list_my_subscriptions failed", e);
+    return [];
+  }
+}
+
+/**
+ * Returns the last N alert events delivered to the authenticated user.
+ * RLS-gated. Returns [] for anon.
+ */
+export async function rpcListMyRecentAlerts(
+  supabase: SupabaseClient,
+  limit = 20,
+): Promise<RecentAlertItem[]> {
+  try {
+    const { data, error } = await supabase.rpc("list_my_recent_alerts", {
+      p_limit: limit,
+    });
+    if (error) throw error;
+    return (data as RecentAlertItem[]) ?? [];
+  } catch (e) {
+    console.error("list_my_recent_alerts failed", e);
+    return [];
+  }
+}
+
+/**
+ * Pauses or resumes a single subscription (pause = is_active=false).
+ * RLS-gated: user_id = auth.uid().
+ */
+export async function rpcUpdateSubscriptionActive(
+  supabase: SupabaseClient,
+  sourceSlug: string,
+  isActive: boolean,
+): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.rpc("update_subscription_active", {
+      p_source_slug: sourceSlug,
+      p_is_active: isActive,
+    });
+    if (error) throw error;
+    return (data as boolean) ?? false;
+  } catch (e) {
+    console.error("update_subscription_active failed", e);
+    return false;
+  }
+}
