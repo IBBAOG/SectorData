@@ -636,12 +636,6 @@ function CategoryIcon({
         <path d="M12 2v20" /><path d="M5 8l7 4 7-4" /><path d="M5 14l7 4 7-4" />
       </svg>
     ),
-    "anp-ppi": (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="26" height="26">
-        <path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" />
-        <circle cx="8" cy="8" r="1.5" />
-      </svg>
-    ),
     "anp-precos-produtores": (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="26" height="26">
         <path d="M3 21V11l5 3V11l5 3V11l5 3V21" />

@@ -175,15 +175,6 @@ const CARDS: Omit<HomeCardDef, "category">[] = [
     disabled: false,
   },
   {
-    slug: "anp-ppi",
-    preview: null,
-    title: "ANP PPI",
-    description: "ANP import price parity reference benchmarks for fuel pricing",
-    badge: "Available",
-    href: "/anp-ppi",
-    disabled: false,
-  },
-  {
     slug: "anp-precos-produtores",
     preview: null,
     title: "ANP Producer Prices",
@@ -244,7 +235,6 @@ const SLUG_CATEGORY: Record<string, HomeCategory> = {
   "diesel-gasoline-margins": "fuel",
   "price-bands": "fuel",
   "subsidy-tracker": "fuel",
-  "anp-ppi": "fuel",
   "anp-precos-produtores": "fuel",
   "anp-precos-distribuicao": "fuel",
   "anp-glp": "fuel",
