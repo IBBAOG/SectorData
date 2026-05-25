@@ -15,7 +15,6 @@ alertas/
 │   ├── base.py                 # Classe abstrata BaseMonitor
 │   ├── anp_lpc_ultimas.py
 │   ├── anp_sintese_semanal.py
-│   ├── anp_ppi.py
 │   ├── anp_precos_produtores.py
 │   ├── anp_desembaracos.py
 │   ├── anp_dados_abertos_ie.py
@@ -26,23 +25,21 @@ alertas/
 │   └── etl_workflow_stuck.py
 ├── scripts/                    # Consolidadores por base
 │   ├── anp_lpc_ultimas/consolidar.py + visualizar.py
-│   ├── anp_ppi/consolidar.py + visualizar.py
 │   ├── anp_precos_produtores/consolidar.py + visualizar.py
 │   ├── anp_desembaracos/consolidar.py + visualizar.py
 │   ├── anp_dados_abertos_ie/consolidar.py + visualizar.py
 │   ├── anp_painel_combustiveis/consolidar.py + visualizar.py
 │   ├── anp_glp/consolidar.py + visualizar.py
 │   ├── anp_cdp_producao_poco/consolidar.py + visualizar.py
-│   └── mdic_comex/consolidar.py + visualizar.py
+│   ├── mdic_comex/consolidar.py + visualizar.py
+│   └── sindicom/consolidar.py + visualizar.py
 ├── estado/                     # JSON de estado por base (último período visto)
-│   ├── anp_ppi.json
 │   ├── mdic_comex.json
 │   └── ...
 └── credentials.json / token.json  # Gmail OAuth
 
 DADOS/                          # Dados consolidados (fora de alertas/)
 ├── anp_lpc_ultimas/
-├── anp_ppi/
 ├── ...
 └── historico_alertas.csv       # Log global de todas as atualizações
 ```
@@ -58,20 +55,51 @@ Cada base também grava seu próprio `DADOS/<slug>/historico.csv`.
 python alertas/monitor.py
 
 # Verificar uma base específica
-python alertas/monitor.py --base anp_ppi
+python alertas/monitor.py --base anp_lpc_ultimas
 
 # Loop contínuo (verifica a cada 30 min)
 python alertas/monitor.py --loop --intervalo 30
 ```
 
-Slugs disponíveis: `anp_lpc_ultimas`, `anp_sintese_semanal`, `anp_ppi`, `anp_precos_produtores`, `anp_desembaracos`, `anp_dados_abertos_ie`, `anp_painel_combustiveis`, `anp_glp`, `anp_cdp_producao_poco`, `mdic_comex`, `precos_distribuicao`, `etl_workflow_stuck`.
+Slugs disponíveis: `anp_lpc_ultimas`, `anp_sintese_semanal`, `anp_precos_produtores`, `anp_desembaracos`, `anp_dados_abertos_ie`, `anp_painel_combustiveis`, `anp_glp`, `anp_cdp_producao_poco`, `mdic_comex`, `precos_distribuicao`, `etl_workflow_stuck`.
 
 ---
 
 ## Bases heavy (puladas no run default)
 
-Nenhuma base heavy ativa no momento. Todas as 11 bases rodam a cada 2h no monitor default.
-`_HEAVY_BASES` está vazio em `monitor.py`.
+Algumas bases requerem dependências pesadas que são incompatíveis com o monitor rodando
+a cada 2 horas no GitHub Actions. Essas bases são declaradas na constante `_HEAVY_BASES`
+em `monitor.py` e são **puladas automaticamente** quando o monitor é chamado sem `--base`.
+
+### Bases atualmente heavy
+
+| Slug | Motivo | Quem detecta novidade |
+|------|--------|-----------------------|
+| `sindicom` | Requer Playwright + Chromium. O site usa proteção anti-bot e o link de download exige JavaScript e cookies de sessão — requests simples retorna 403. | `etl_sindicom.yml` (cron mensal dia 5, 15h UTC) faz o download + upload completo. |
+
+> **Nota (2026-05):** `anp_cdp_producao_poco` foi **removida** de `_HEAVY_BASES`. Ela agora
+> roda a cada 2h como as demais bases leves. Veja detalhes na seção da base abaixo.
+
+### Por que não rodar no monitor a cada 2h
+
+- SINDICOM exige Playwright + Chromium (anti-bot), impossível sem browser real no runner leve.
+- O workflow `etl_sindicom.yml` já é o proprietário correto desse dado — tem Playwright instalado,
+  roda na data certa e faz upload ao Supabase.
+
+### Como rodar manualmente se necessário
+
+```bash
+# Rodar a base heavy diretamente (local, com Playwright instalado):
+python alertas/monitor.py --base sindicom
+
+# Ou via GitHub Actions (forçar workflow ETL dedicado):
+gh workflow run etl_sindicom.yml --ref main
+
+# ANP CDP agora é leve — roda normalmente no monitor default:
+python alertas/monitor.py --base anp_cdp_producao_poco
+# Para forçar nova captura Selenium (mensal):
+gh workflow run etl_anp_cdp.yml --ref main
+```
 
 ### Como adicionar uma nova base heavy
 
@@ -148,16 +176,7 @@ Get-NetTCPConnection -LocalPort 8050 | ForEach-Object { Stop-Process -Id $_.Owni
 
 ---
 
-### 3. ANP PPI — Preços de Paridade de Importação (`anp_ppi`)
-
-- **Fonte**: `gov.br/anp` — XLSX único com a série histórica completa de PPI
-- **Detecção**: compara `data_atualizacao` (extraída do texto "Atualizado em DD/MM/AAAA") e `Last-Modified` do HTTP header do arquivo.
-- **Download**: remove o XLSX antigo em disco, baixa o novo (`ppi_<data>.xlsx`), chama `consolidar.py` que gera/atualiza `ppi_consolidado.parquet`.
-- **Schema Parquet**: série histórica de preços de paridade semanais por produto.
-
----
-
-### 4. ANP Preços de Produtores e Importadores (`anp_precos_produtores`)
+### 3. ANP Preços de Produtores e Importadores (`anp_precos_produtores`)
 
 - **Fonte**: `gov.br/anp` — arquivo `precos-medios-ponderados-semanais-2013.xls` (série corrente)
 - **Detecção**: compara `data_atualizacao` + `Last-Modified` do arquivo específico `ponderados-semanais-2013`.
@@ -169,7 +188,7 @@ Get-NetTCPConnection -LocalPort 8050 | ForEach-Object { Stop-Process -Id $_.Owni
 
 ---
 
-### 5. ANP Desembaraços de Importações (`anp_desembaracos`)
+### 4. ANP Desembaraços de Importações (`anp_desembaracos`)
 
 - **Fonte**: `gov.br/anp` — XLSXs anuais de desembaraços (petróleo, gás, derivados, biocombustíveis)
 - **Detecção**: compara `data_atualizacao` + `Last-Modified` do XLSX do ano corrente.
@@ -181,7 +200,7 @@ Get-NetTCPConnection -LocalPort 8050 | ForEach-Object { Stop-Process -Id $_.Owni
 
 ---
 
-### 6. ANP Dados Abertos — Importações/Exportações (`anp_dados_abertos_ie`)
+### 5. ANP Dados Abertos — Importações/Exportações (`anp_dados_abertos_ie`)
 
 - **Fonte**: `gov.br/anp` — dois CSVs: `importacoes-exportacoes-petroleo` e `importacoes-exportacoes-derivados`
 - **Detecção**: verifica `filename` + `Last-Modified` de cada um dos 2 CSVs. Dispara se qualquer um mudar.
@@ -190,7 +209,7 @@ Get-NetTCPConnection -LocalPort 8050 | ForEach-Object { Stop-Process -Id $_.Owni
 
 ---
 
-### 7. ANP Painel — Mercado Brasileiro de Combustíveis Líquidos (`anp_painel_combustiveis`)
+### 6. ANP Painel — Mercado Brasileiro de Combustíveis Líquidos (`anp_painel_combustiveis`)
 
 - **Fonte dupla**:
   1. ZIP estático em `gov.br/anp` — `liquidos.zip` com 6 CSVs (vendas, entregas, importações...)
@@ -206,7 +225,7 @@ Get-NetTCPConnection -LocalPort 8050 | ForEach-Object { Stop-Process -Id $_.Owni
 
 ---
 
-### 8. ANP Dados de Mercado GLP (`anp_glp`)
+### 7. ANP Dados de Mercado GLP (`anp_glp`)
 
 - **Fonte**: `gov.br/anp` — XLSX `relatorio_vendas_por_recipiente_*.xlsx`
 - **Detecção**: compara o nome do arquivo (muda a cada atualização). Fallback: data de atualização da página.
@@ -219,7 +238,7 @@ Get-NetTCPConnection -LocalPort 8050 | ForEach-Object { Stop-Process -Id $_.Owni
 
 ---
 
-### 9. ANP CDP — Produção por Poço (`anp_cdp_producao_poco`)
+### 8. ANP CDP — Produção por Poço (`anp_cdp_producao_poco`)
 
 - **Fonte**: Oracle APEX (`cdp.anp.gov.br`) — sistema interativo com CAPTCHA, sem bulk download para 2024+
 - **Lógica diferente das demais**: o método `run()` é sobrescrito diretamente (não segue `verificar()/baixar()`).
@@ -348,7 +367,7 @@ python scripts/anp_cdp_upload.py --from-csv-dir output/anp/
 
 ---
 
-### 10. MDIC Comex Stat — Petróleo, Gasolina e Diesel (`mdic_comex`)
+### 9. MDIC Comex Stat — Petróleo, Gasolina e Diesel (`mdic_comex`)
 
 - **Fonte**: API REST `api-comexstat.mdic.gov.br/general` — filtrando 3 NCMs:
   - `27090010` — Óleos brutos de petróleo
@@ -360,6 +379,22 @@ python scripts/anp_cdp_upload.py --from-csv-dir output/anp/
 - **Backfill manual**: `python alertas/scripts/mdic_comex/consolidar.py --desde 1997` reconstrói o histórico completo desde 1997.
 - **Schema Parquet**: `ano, mes, flow (import/export), ncm_codigo, ncm_nome, pais, volume_kg, valor_fob_usd`
 - **Particularidade**: o NCM `27090000` (categoria-mãe) não retorna dados — é obrigatório usar o código de 8 dígitos `27090010`.
+
+---
+
+### 10. SINDICOM — Dados do Setor de Combustíveis (`sindicom`)
+
+- **Fonte**: `sindicom.com.br` — XLSX único com histórico completo desde 2017, atualizado mensalmente
+- **Detecção**: usa **Playwright** (Chrome headless) para carregar a página de downloads. Extrai o texto indicando o período mais recente (padrão `até <Mês> <Ano>`). Compara com `ultimo_periodo` salvo.
+- **Por que Playwright**: o site usa WordPress com proteção anti-bot e o link de download exige JavaScript e cookies de sessão — requests simples retorna 403.
+- **Download**: Playwright navega para a URL de download e captura o arquivo com `expect_download()`. Salva como `tabela_SINDICOM_combustiveis_<YYYYMM>.xlsx`.
+- **Consolidação**: `consolidar.py` lê a sheet `dados_combs` do XLSX, converte o mês de texto (JANEIRO → 1) para numérico, e gera `sindicom_consolidado.parquet`.
+- **Schema Parquet**: `ano, mes, tipo, empresa, segmento, tipo_produto, nome_produto, tipo_produto_web, regiao, uf, volume (m³)`
+- **Empresas associadas**: IPIRANGA, RAIZEN, VIBRA, AIRBP. A entrada `ANP` representa o mercado total (dados ANP incluídos para referência) — deve ser excluída de análises de market share.
+- **Segmentos**: `REVENDEDOR` (postos), `CONSUMIDOR` (direto), `TRR` (transportador-revendedor-retalhista), `MERCADO TOTAL - ANP`.
+- **Nota GNV**: volume de GNV está em Mil m³, não em m³ como os demais produtos (aviso no próprio XLSX).
+- **Cobertura**: 2017-01 → mês mais recente (atualmente 2026-03), 92k linhas.
+- **Dashboard** (`/sindicom`): série mensal por produto + market share top-15 empresas. Filtros: produto, segmento, período. RPCs: `get_sindicom_serie`, `get_sindicom_filtros`.
 
 ---
 
@@ -493,7 +528,7 @@ para ver o historico de runs, logs e status de cada base.
 Para acionar manualmente (ex: forcar verificacao de base especifica):
 
 ```bash
-gh workflow run alertas_monitor.yml --ref main -f base=anp_ppi
+gh workflow run alertas_monitor.yml --ref main -f base=anp_lpc_ultimas
 ```
 
 ---
@@ -509,7 +544,7 @@ e lido/gravado em `alertas/estado/<slug>.json` (comportamento anterior).
 python alertas/monitor.py
 
 # Verificar base especifica
-python alertas/monitor.py --base anp_ppi
+python alertas/monitor.py --base anp_lpc_ultimas
 
 # Loop continuo local (verifica a cada 30 min)
 python alertas/monitor.py --loop --intervalo 30
@@ -558,7 +593,7 @@ Para depurar estado no Supabase localmente, exporte as variaveis:
 ```bash
 export SUPABASE_URL=https://xxx.supabase.co
 export SUPABASE_SERVICE_KEY=eyJ...
-python alertas/monitor.py --base anp_ppi
+python alertas/monitor.py --base anp_cdp_producao_poco
 ```
 
 ---

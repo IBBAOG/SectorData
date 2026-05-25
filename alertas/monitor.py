@@ -14,7 +14,7 @@ Comportamento default (sem --base):
     Essas bases têm workflows ETL dedicados que cuidam da detecção real.
 
     python alertas/monitor.py                         # todas as bases (exceto heavy)
-    python alertas/monitor.py --base anp_ppi          # base específica
+    python alertas/monitor.py --base anp_lpc_ultimas  # base específica
     python alertas/monitor.py --base anp_cdp_producao_poco  # roda normalmente (leve)
     python alertas/monitor.py --loop --intervalo 30   # loop a cada 30 min
 
@@ -33,7 +33,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from bases.anp_lpc_ultimas          import AnpLpcUltimas
 from bases.anp_sintese_semanal      import AnpSinteseSemanal
-from bases.anp_ppi                  import AnpPpi
 from bases.anp_precos_produtores    import AnpPrecosProdutores
 from bases.anp_desembaracos         import AnpDesembaracos
 from bases.anp_dados_abertos_ie     import AnpDadosAbertosIE
@@ -58,7 +57,6 @@ _HEAVY_BASES: set[str] = set()  # no heavy bases currently active
 MONITORES = [
     AnpLpcUltimas(),
     AnpSinteseSemanal(),
-    AnpPpi(),
     AnpPrecosProdutores(),
     AnpDesembaracos(),
     AnpDadosAbertosIE(),
@@ -222,7 +220,7 @@ def rodar(base_filter=None):
 
 def main():
     ap = argparse.ArgumentParser(description="Monitor de bases ANP/MDIC")
-    ap.add_argument("--base",      help="Slug da base (ex: anp_ppi)")
+    ap.add_argument("--base",      help="Slug da base (ex: anp_lpc_ultimas)")
     ap.add_argument("--loop",      action="store_true", help="Rodar em loop")
     ap.add_argument("--intervalo", type=int, default=30, metavar="MIN",
                     help="Intervalo em minutos no modo --loop (default: 30)")
