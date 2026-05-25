@@ -31,30 +31,18 @@ BEGIN;
 
 -- -----------------------------------------------------------------------------
 -- Step 1 — Extend the source CHECK constraint to allow 'mdic'.
--- The original CHECK was inline in CREATE TABLE (migration 20260525000010)
--- and Postgres named it `imports_product_map_source_check`. We DROP IF EXISTS
--- and recreate to add the new allowed value. Wrapped in DO block so that if
--- the constraint name ever differs in some environment, we still drop it via
--- a defensive lookup.
+-- The original CHECK was declared inline in CREATE TABLE (migration
+-- 20260525000010), and Postgres named it `imports_product_map_source_check`.
+-- An earlier revision of this file used a defensive DO block that looked up
+-- the constraint via `pg_get_constraintdef(oid) ILIKE '%source%IN%'`. That
+-- pattern does NOT match the stored form, which Postgres rewrites to
+-- `CHECK ((source = ANY (ARRAY['daie'::text, 'desembaracos'::text])))`.
+-- The DO block silently skipped the drop, and the subsequent ADD CONSTRAINT
+-- failed with `42710` (constraint already exists). Direct DROP IF EXISTS by
+-- the known name is both correct and idempotent.
 -- -----------------------------------------------------------------------------
-DO $$
-DECLARE
-  v_constraint_name text;
-BEGIN
-  SELECT conname
-    INTO v_constraint_name
-    FROM pg_constraint
-   WHERE conrelid = 'public.imports_product_map'::regclass
-     AND contype  = 'c'
-     AND pg_get_constraintdef(oid) ILIKE '%source%IN%';
-  IF v_constraint_name IS NOT NULL THEN
-    EXECUTE format(
-      'ALTER TABLE public.imports_product_map DROP CONSTRAINT %I',
-      v_constraint_name
-    );
-  END IF;
-END;
-$$;
+ALTER TABLE public.imports_product_map
+  DROP CONSTRAINT IF EXISTS imports_product_map_source_check;
 
 ALTER TABLE public.imports_product_map
   ADD CONSTRAINT imports_product_map_source_check
