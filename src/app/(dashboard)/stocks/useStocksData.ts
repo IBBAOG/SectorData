@@ -122,6 +122,66 @@ function defaultLayout(): Record<string, LayoutItem[]> {
   };
 }
 
+// ─── Anonymous viewer defaults ────────────────────────────────────────────────
+//
+// Anon visitors have no per-user storage (no auth.uid → no per-user portfolio
+// preferences, no localStorage privacy guarantee across browsers). To give
+// them a representative first-look at Market Watch we hardcode a curated
+// dashboard with five cards in a 12-col / 16-row grid:
+//
+//   - Portfolio (the seeded public portfolio cloned from ibbaogproject)
+//   - Market overview (indices + FX)
+//   - News Hunter (curated default keywords, anon-readable)
+//   - Brent Futures curve (Yahoo public proxy, no auth)
+//   - Compare assets UGPA3 vs VBBR3 (two large fuel distributors)
+//
+// These cards / layout are recomputed on every render — never persisted to
+// localStorage — so refreshing the page always restores the canonical view.
+
+export const ANON_DEFAULT_COMPARE_TICKERS: string[] = ["UGPA3.SA", "VBBR3.SA"];
+
+const ANON_DEFAULT_CARDS: DashCard[] = [
+  { id: "portfolio", type: "portfolio" },
+  { id: "market", type: "market" },
+  { id: "news", type: "news" },
+  { id: "futures", type: "futures" },
+  {
+    id: "anon-compare",
+    type: "compare",
+    tickers: ANON_DEFAULT_COMPARE_TICKERS,
+    mode: "percent",
+    range: "1y",
+    baseDate: "",
+    endDate: "",
+  },
+];
+
+function anonDefaultLayout(): Record<string, LayoutItem[]> {
+  return {
+    lg: [
+      { i: "portfolio", x: 0, y: 0, w: 4, h: 8 },
+      { i: "market", x: 4, y: 0, w: 4, h: 8 },
+      { i: "news", x: 8, y: 0, w: 4, h: 8 },
+      { i: "futures", x: 0, y: 8, w: 6, h: 8 },
+      { i: "anon-compare", x: 6, y: 8, w: 6, h: 8 },
+    ],
+    md: [
+      { i: "portfolio", x: 0, y: 0, w: 4, h: 8 },
+      { i: "market", x: 4, y: 0, w: 4, h: 8 },
+      { i: "news", x: 0, y: 8, w: 8, h: 8 },
+      { i: "futures", x: 0, y: 16, w: 4, h: 8 },
+      { i: "anon-compare", x: 4, y: 16, w: 4, h: 8 },
+    ],
+    sm: [
+      { i: "portfolio", x: 0, y: 0, w: 4, h: 8 },
+      { i: "market", x: 0, y: 8, w: 4, h: 8 },
+      { i: "news", x: 0, y: 16, w: 4, h: 8 },
+      { i: "futures", x: 0, y: 24, w: 4, h: 8 },
+      { i: "anon-compare", x: 0, y: 32, w: 4, h: 8 },
+    ],
+  };
+}
+
 let _cardCounter = 0;
 function nextId() {
   return `card-${Date.now()}-${_cardCounter++}`;
@@ -294,12 +354,22 @@ export function useStocksData(): UseStocksData {
   }, [quotes]);
 
   // --- Cards (desktop, persisted) ---
+  //
+  // Authenticated users: cards/layout are restored from localStorage so each
+  // visit reopens the dashboard exactly how they left it.
+  //
+  // Anonymous users: cards/layout are FORCED to ANON_DEFAULT_CARDS /
+  // anonDefaultLayout on every render. No localStorage read, no persistence
+  // — every anon visitor sees the same curated five-card layout (Portfolio,
+  // Market, News Hunter, Brent Futures, UGPA3 vs VBBR3 comparison). All
+  // mutating callbacks become no-ops in this mode.
   const [cards, setCards] = useState<DashCard[]>(DEFAULT_CARDS);
   const [layouts, setLayouts] = useState<Record<string, LayoutItem[]>>(
     defaultLayout,
   );
 
   useEffect(() => {
+    if (readOnly) return; // Anon — skip localStorage entirely
     try {
       const savedCards = localStorage.getItem(CARDS_KEY);
       const savedLayouts = localStorage.getItem(LAYOUT_KEY);
@@ -322,15 +392,31 @@ export function useStocksData(): UseStocksData {
       localStorage.removeItem(CARDS_KEY);
       localStorage.removeItem(LAYOUT_KEY);
     }
-  }, []);
+  }, [readOnly]);
 
-  const persistCards = useCallback((c: DashCard[]) => {
-    setCards(c);
-    localStorage.setItem(CARDS_KEY, JSON.stringify(c));
-  }, []);
+  // Derived view consumed by both Views — substitutes the anon defaults when
+  // readOnly. We expose these (not the raw state) via the hook return.
+  const effectiveCards = useMemo(
+    () => (readOnly ? ANON_DEFAULT_CARDS : cards),
+    [readOnly, cards],
+  );
+  const effectiveLayouts = useMemo(
+    () => (readOnly ? anonDefaultLayout() : layouts),
+    [readOnly, layouts],
+  );
+
+  const persistCards = useCallback(
+    (c: DashCard[]) => {
+      if (readOnly) return; // Anon — no persistence
+      setCards(c);
+      localStorage.setItem(CARDS_KEY, JSON.stringify(c));
+    },
+    [readOnly],
+  );
 
   const handleLayoutChange = useCallback(
     (_layout: unknown, allLayouts: unknown) => {
+      if (readOnly) return; // Anon — layout is fixed, ignore drag/resize
       const serializable = Object.fromEntries(
         Object.entries(allLayouts as Record<string, unknown>).map(([k, v]) => [
           k,
@@ -340,11 +426,12 @@ export function useStocksData(): UseStocksData {
       setLayouts(serializable);
       localStorage.setItem(LAYOUT_KEY, JSON.stringify(serializable));
     },
-    [],
+    [readOnly],
   );
 
   const updateCard = useCallback(
     (updated: DashCard) => {
+      if (readOnly) return; // Anon — cards are immutable
       if (
         (updated.type === "watchlist" && updated.title === "__REMOVE__") ||
         (updated.type === "chart" && updated.ticker === "__REMOVE__") ||
@@ -355,11 +442,12 @@ export function useStocksData(): UseStocksData {
       }
       persistCards(cards.map((c) => (c.id === updated.id ? updated : c)));
     },
-    [cards, persistCards],
+    [cards, persistCards, readOnly],
   );
 
   const addCard = useCallback(
     (type: "chart" | "watchlist" | "compare" | "futures" | "news") => {
+      if (readOnly) return; // Anon — cards are immutable
       const id = nextId();
       const newCard: DashCard =
         type === "chart"
@@ -393,7 +481,7 @@ export function useStocksData(): UseStocksData {
       setLayouts(updated);
       localStorage.setItem(LAYOUT_KEY, JSON.stringify(updated));
     },
-    [cards, layouts, persistCards],
+    [cards, layouts, persistCards, readOnly],
   );
 
   // --- Mobile-specific state ---
@@ -402,16 +490,37 @@ export function useStocksData(): UseStocksData {
   const [mobileRange, setMobileRange] = useState<TimeRange>("1mo");
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
 
-  const addCompareTicker = useCallback((sym: string) => {
-    setCompareTickers((prev) => {
-      if (prev.includes(sym) || prev.length >= 5) return prev;
-      return [...prev, sym];
-    });
-  }, []);
+  // Seed the mobile compare set for anonymous viewers with the same default
+  // pair shown in the desktop Compare card (UGPA3 vs VBBR3). Authenticated
+  // viewers start with an empty set as before. The effect re-runs whenever
+  // `readOnly` flips (e.g. on anon → sign-in transition) but only seeds on
+  // the anon→ side and only when the set is otherwise empty, so a user who
+  // chose to clear their pair manually keeps that choice.
+  useEffect(() => {
+    if (!readOnly) return;
+    setCompareTickers((prev) =>
+      prev.length === 0 ? [...ANON_DEFAULT_COMPARE_TICKERS] : prev,
+    );
+  }, [readOnly]);
 
-  const removeCompareTicker = useCallback((sym: string) => {
-    setCompareTickers((prev) => prev.filter((t) => t !== sym));
-  }, []);
+  const addCompareTicker = useCallback(
+    (sym: string) => {
+      if (readOnly) return; // Anon — compare set is fixed
+      setCompareTickers((prev) => {
+        if (prev.includes(sym) || prev.length >= 5) return prev;
+        return [...prev, sym];
+      });
+    },
+    [readOnly],
+  );
+
+  const removeCompareTicker = useCallback(
+    (sym: string) => {
+      if (readOnly) return; // Anon — compare set is fixed
+      setCompareTickers((prev) => prev.filter((t) => t !== sym));
+    },
+    [readOnly],
+  );
 
   return {
     // Theme
@@ -442,9 +551,12 @@ export function useStocksData(): UseStocksData {
     // Blink
     blinkMap,
 
-    // Cards (desktop)
-    cards,
-    layouts,
+    // Cards (desktop) — anon viewers always get ANON_DEFAULT_CARDS /
+    // anonDefaultLayout (computed via effectiveCards/effectiveLayouts) so
+    // the dashboard shows a curated public view that survives reloads
+    // without touching localStorage.
+    cards: effectiveCards,
+    layouts: effectiveLayouts,
     addCard,
     updateCard,
     handleLayoutChange,

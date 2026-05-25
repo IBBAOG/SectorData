@@ -998,11 +998,18 @@ function CompareCardContent({
   isDark,
   onUpdate,
   quoteMap,
+  readOnly = false,
 }: {
   card: DashCard & { type: "compare" };
   isDark: boolean;
   onUpdate: (c: DashCard) => void;
   quoteMap: Map<string, StockQuote>;
+  /**
+   * When true (anonymous viewer), hide the StockSearch input, the chip
+   * remove buttons and the card x — the compare set is locked to the
+   * default pair the hook seeded (UGPA3 vs VBBR3).
+   */
+  readOnly?: boolean;
 }) {
   const seriesData = useMultiHistory(card.tickers, "max");
   const isLoading =
@@ -1057,11 +1064,17 @@ function CompareCardContent({
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <CardHeader
         title="Compare Assets"
-        onRemove={() => onUpdate({ ...card, tickers: ["__REMOVE__"] })}
+        onRemove={
+          readOnly
+            ? undefined
+            : () => onUpdate({ ...card, tickers: ["__REMOVE__"] })
+        }
       />
-      <div style={{ marginBottom: 4 }}>
-        <StockSearch onSelect={addTicker} placeholder="Add asset..." />
-      </div>
+      {!readOnly && (
+        <div style={{ marginBottom: 4 }}>
+          <StockSearch onSelect={addTicker} placeholder="Add asset..." />
+        </div>
+      )}
       {card.tickers.length > 0 && (
         <div
           style={{
@@ -1088,20 +1101,22 @@ function CompareCardContent({
               }}
             >
               {t}
-              <button
-                onClick={() => removeTicker(t)}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "inherit",
-                  cursor: "pointer",
-                  padding: 0,
-                  fontSize: 12,
-                  lineHeight: 1,
-                }}
-              >
-                x
-              </button>
+              {!readOnly && (
+                <button
+                  onClick={() => removeTicker(t)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "inherit",
+                    cursor: "pointer",
+                    padding: 0,
+                    fontSize: 12,
+                    lineHeight: 1,
+                  }}
+                >
+                  x
+                </button>
+              )}
             </span>
           ))}
         </div>
@@ -1119,41 +1134,59 @@ function CompareCardContent({
         <div style={{ display: "flex", gap: 2 }}>
           <button
             className={`sd-btn${card.mode === "percent" ? " sd-btn-active" : ""}`}
-            style={{ fontSize: 9, padding: "1px 6px" }}
-            onClick={() => onUpdate({ ...card, mode: "percent" })}
+            style={{
+              fontSize: 9,
+              padding: "1px 6px",
+              opacity: readOnly ? 0.6 : 1,
+              cursor: readOnly ? "default" : "pointer",
+            }}
+            onClick={() =>
+              !readOnly && onUpdate({ ...card, mode: "percent" })
+            }
+            disabled={readOnly}
           >
             Change %
           </button>
           <button
             className={`sd-btn${card.mode === "base100" ? " sd-btn-active" : ""}`}
-            style={{ fontSize: 9, padding: "1px 6px" }}
-            onClick={() => onUpdate({ ...card, mode: "base100" })}
+            style={{
+              fontSize: 9,
+              padding: "1px 6px",
+              opacity: readOnly ? 0.6 : 1,
+              cursor: readOnly ? "default" : "pointer",
+            }}
+            onClick={() =>
+              !readOnly && onUpdate({ ...card, mode: "base100" })
+            }
+            disabled={readOnly}
           >
             Base 100
           </button>
         </div>
-        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-          <label className="sd-muted" style={{ fontSize: 9 }}>
-            From:
-          </label>
-          <input
-            type="date"
-            className="sd-input"
-            style={{ width: 110, fontSize: 10, padding: "2px 4px" }}
-            value={card.baseDate}
-            onChange={(e) => onUpdate({ ...card, baseDate: e.target.value })}
-          />
-          <label className="sd-muted" style={{ fontSize: 9 }}>
-            To:
-          </label>
-          <input
-            type="date"
-            className="sd-input"
-            style={{ width: 110, fontSize: 10, padding: "2px 4px" }}
-            value={card.endDate}
-            onChange={(e) => onUpdate({ ...card, endDate: e.target.value })}
-          />
-        </div>
+        {!readOnly && (
+          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+            <label className="sd-muted" style={{ fontSize: 9 }}>
+              From:
+            </label>
+            <input
+              type="date"
+              className="sd-input"
+              style={{ width: 110, fontSize: 10, padding: "2px 4px" }}
+              value={card.baseDate}
+              onChange={(e) => onUpdate({ ...card, baseDate: e.target.value })}
+            />
+            <label className="sd-muted" style={{ fontSize: 9 }}>
+              To:
+            </label>
+            <input
+              type="date"
+              className="sd-input"
+              style={{ width: 110, fontSize: 10, padding: "2px 4px" }}
+              value={card.endDate}
+              onChange={(e) => onUpdate({ ...card, endDate: e.target.value })}
+            />
+          </div>
+        )}
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>
         {card.tickers.length === 0 ? (
@@ -1388,7 +1421,10 @@ export default function DesktopView(): React.ReactElement {
                 </button>
               )}
 
-              {/* Add card menu */}
+              {/* Add card menu — hidden for anonymous viewers since their
+                  dashboard layout is fixed (cannot persist changes without a
+                  user_id). Logged-in users get the full +Card menu. */}
+              {!readOnly && (
               <div ref={addMenuRef} style={{ position: "relative" }}>
                 <button
                   className="sd-btn"
@@ -1477,6 +1513,7 @@ export default function DesktopView(): React.ReactElement {
                   </div>
                 )}
               </div>
+              )}
 
               {/* B3 market status */}
               <span
@@ -1557,12 +1594,15 @@ export default function DesktopView(): React.ReactElement {
               rowHeight={30}
               onLayoutChange={handleLayoutChange}
               dragConfig={{
-                enabled: true,
+                // Anon viewers cannot persist a custom layout (no user_id),
+                // so drag-to-rearrange is disabled — the canonical default
+                // layout is always shown.
+                enabled: !readOnly,
                 bounded: false,
                 handle: ".sd-drag-handle",
                 threshold: 3,
               }}
-              resizeConfig={{ enabled: true, handles: ["se"] }}
+              resizeConfig={{ enabled: !readOnly, handles: ["se"] }}
               compactor={noCompactorRef.current}
               margin={[0, 0] as const}
               containerPadding={[0, 0] as const}
@@ -1797,6 +1837,7 @@ export default function DesktopView(): React.ReactElement {
                         isDark={isDark}
                         onUpdate={updateCard}
                         quoteMap={quoteMap}
+                        readOnly={readOnly}
                       />
                     )}
 
@@ -1811,11 +1852,15 @@ export default function DesktopView(): React.ReactElement {
                       >
                         <CardHeader
                           title="Brent Futures Curve"
-                          onRemove={() => {
-                            persistCards(
-                              cards.filter((c) => c.id !== card.id),
-                            );
-                          }}
+                          onRemove={
+                            readOnly
+                              ? undefined
+                              : () => {
+                                  persistCards(
+                                    cards.filter((c) => c.id !== card.id),
+                                  );
+                                }
+                          }
                         />
                         <div style={{ flex: 1, minHeight: 0 }}>
                           <FuturesCurveChart dark={isDark} />
@@ -1823,13 +1868,22 @@ export default function DesktopView(): React.ReactElement {
                       </div>
                     )}
 
-                    {/* News Hunter */}
+                    {/* News Hunter — onRemove must be a no-op for anon since
+                        the anon dashboard layout is fixed and not persisted.
+                        NewsCard always renders an x button, so we pass a noop
+                        callback rather than introducing a prop change there. */}
                     {card.type === "news" && (
                       <NewsCard
                         isDark={isDark}
-                        onRemove={() =>
-                          persistCards(cards.filter((c) => c.id !== card.id))
+                        onRemove={
+                          readOnly
+                            ? () => {}
+                            : () =>
+                                persistCards(
+                                  cards.filter((c) => c.id !== card.id),
+                                )
                         }
+                        hideRemove={readOnly}
                       />
                     )}
                   </div>
