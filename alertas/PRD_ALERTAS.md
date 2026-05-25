@@ -267,6 +267,21 @@ A base passou de "heavy" (Selenium + ddddocr) para "leve" (Supabase session + re
 5. **Alerta granular**: 1 email por campo novo (CEO quer granularidade). Cap de 10 — se houver mais, envia 1 digest único.
 6. Salva estado e atualiza `last_used_at` em `alertas_session`.
 
+#### Invariante `baseline_consolidada` (implementado 2026-05-25)
+
+**Problema resolvido**: runs parciais (ex: M+S baixados, T falhou) geravam baseline com `campos_t=[]`. Na run seguinte, quando T aparecia, todos os ~216 campos Terra viravam "novos" — falso positivo massivo.
+
+**Solução**: dois campos no estado do Supabase (`alertas_estado.estado`):
+
+| Campo | Tipo | Significado |
+|-------|------|-------------|
+| `baseline_consolidada` | bool | `true` se o último run processou os 3 ambientes (M+S+T) com sucesso |
+| `ultima_baseline_consolidada` | dict | Snapshot de `{campos_m, campos_s, campos_t}` do último run completo |
+
+**Invariante**: a detecção de novos campos usa `ultima_baseline_consolidada` quando `baseline_consolidada=false`. Um run parcial atualiza `campos_*` para os ambientes que baixou, mas nunca sobrescreve `ultima_baseline_consolidada` — esta só é atualizada quando todos os 3 ambientes retornam CSVs com sucesso.
+
+**Transição de período** (`ultimo_periodo` muda): ambos os campos são resetados (`baseline_consolidada=false`, `ultima_baseline_consolidada={}`), e o primeiro run completo do novo período se torna a nova baseline consolidada.
+
 **Tabela Supabase necessária**: `alertas_session(base TEXT PK, session JSONB, captured_at TIMESTAMPTZ, expires_at TIMESTAMPTZ, last_used_at TIMESTAMPTZ, metadata JSONB)` — criada pela Frente A (migration da `worker_supabase`).
 
 **Módulo externo necessário**: `scripts/pipelines/anp/cdp/_replay.py` com função `replay_download(session_data, periodo, ambiente, output_dir) -> str | Literal["expired","error"]` — criado pela Frente B (`worker_etl-pipelines`).

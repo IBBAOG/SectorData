@@ -334,6 +334,17 @@ class AnpCdpProducaoPoco(BaseMonitor):
         # Semantica: alerta = "dados de producao do mes X para o campo Y foram divulgados".
         # Se mes mudou desde o ultimo run, baseline e resetada -- o que existia em meses
         # anteriores nao importa, queremos saber quando cada campo aparece NESTE mes.
+        #
+        # Invariante baseline_consolidada:
+        #   A baseline de deteccao so e confiavel quando TODOS os 3 ambientes (M, S, T)
+        #   foram processados com sucesso na mesma run. Se so um subconjunto baixou CSVs,
+        #   o estado e salvo como tentativa parcial (baseline_consolidada=False) mas NAO
+        #   e usado como referencia de deteccao -- a proxima run usa a ultima baseline
+        #   consolidada (ultima_baseline_consolidada) para evitar falsos positivos.
+        #
+        # Por que isso importa: se run M+S sucede mas T falha, salvar estado com
+        # campos_t=[] causa que na proxima run todos os campos T parecam "novos"
+        # mesmo que ja existissem no mes anterior -- gerando ~200 alertas duplicados.
         novidades = []
         novo_estado = dict(self._estado_atual)
         ultimo_periodo = self._estado_atual.get("ultimo_periodo")
@@ -341,18 +352,67 @@ class AnpCdpProducaoPoco(BaseMonitor):
             print(f"[{self.slug}]   Periodo mudou ({ultimo_periodo!r} -> {periodo!r}); resetando baseline de campos.")
             for amb in ("M", "S", "T"):
                 novo_estado[f"campos_{amb.lower()}"] = []
+            # When period changes, the previous consolidated baseline is no longer
+            # relevant. Reset both flags so the first complete run of the new period
+            # becomes the new consolidated baseline.
+            novo_estado["baseline_consolidada"] = False
+            novo_estado["ultima_baseline_consolidada"] = {}
+
+        # Determine which baseline to use for detection:
+        # - If the last persisted state was a partial run (baseline_consolidada=False),
+        #   use ultima_baseline_consolidada (the last fully-consolidated snapshot).
+        # - If baseline_consolidada=True (or absent for legacy rows), use the current state.
+        estado_consolidado_anterior = self._estado_atual.get("baseline_consolidada", True)
+        if not estado_consolidado_anterior:
+            # Last run was partial -- use the preserved consolidated baseline for detection.
+            baseline_referencia = self._estado_atual.get("ultima_baseline_consolidada", {})
+            if baseline_referencia:
+                print(
+                    f"[{self.slug}]   Ultimo estado era parcial (baseline_consolidada=False); "
+                    f"usando ultima_baseline_consolidada para deteccao."
+                )
+            else:
+                # No consolidated baseline yet (first run ever) -- treat current as baseline.
+                baseline_referencia = self._estado_atual
+        else:
+            baseline_referencia = self._estado_atual
 
         for ambiente, csv_path in csvs.items():
             baseline_key = f"campos_{ambiente.lower()}"  # campos_m, campos_s, campos_t
-            baseline = set(novo_estado.get(baseline_key, []))
+            baseline = set(baseline_referencia.get(baseline_key, []))
             atuais   = self._extrair_campos(csv_path)
             novos    = sorted(atuais - baseline)
             if novos:
                 novidades.append((ambiente, novos))
-            # Always update baseline for successfully downloaded ambientes.
+            # Always update the candidate state for successfully downloaded ambientes.
             # This prevents stale baselines even when 0 new fields are found.
             if atuais:
                 novo_estado[baseline_key] = sorted(atuais)
+
+        # Determine if this run processed ALL 3 ambientes successfully.
+        ambientes_no_csvs = set(csvs.keys())
+        todos_processados = ambientes_no_csvs == {"M", "S", "T"}
+
+        if todos_processados:
+            # Full run -- mark as consolidated baseline and preserve snapshot.
+            novo_estado["baseline_consolidada"] = True
+            # Keep a copy of the fully-consolidated campos_* as the reference
+            # that partial future runs can fall back to.
+            novo_estado["ultima_baseline_consolidada"] = {
+                f"campos_{amb.lower()}": novo_estado.get(f"campos_{amb.lower()}", [])
+                for amb in ("M", "S", "T")
+            }
+            print(f"[{self.slug}]   Todos os 3 ambientes processados -- estado marcado como baseline_consolidada=True.")
+        else:
+            # Partial run -- persist candidate state but flag it as non-consolidated.
+            # Detection in future runs will continue using ultima_baseline_consolidada.
+            novo_estado["baseline_consolidada"] = False
+            # Do NOT overwrite ultima_baseline_consolidada here -- preserve the last good one.
+            print(
+                f"[{self.slug}]   Apenas {sorted(ambientes_no_csvs)} processados -- "
+                f"estado parcial salvo (baseline_consolidada=False). "
+                f"Proxima run usara ultima_baseline_consolidada para deteccao."
+            )
 
         # Persist estado whenever CSVs were downloaded successfully, even with 0 novelties.
         # This advances ultimo_periodo so the state does not get stuck on the previous month
