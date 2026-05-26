@@ -59,7 +59,7 @@ home/
 
 **Divergence from mockup** — the mockup's `MDIC Comex` card is in the Oil & Gas section. This reflects the module's dual classification (`Estatísticas / Oil & Gas` and `Fuel Distribution`). In code, `mdic-comex` is assigned `oilgas` category (matching mockup) even though it also covers fuel distribution.
 
-### Wave 5 — `/admin-panel` (completed 2026-05-20)
+### Wave 5 — `/admin-panel` (completed 2026-05-20; consolidated 2026-05-26)
 
 `/admin-panel` is now a full dual-view module. File layout:
 
@@ -68,28 +68,26 @@ admin-panel/
 ├── page.tsx               "use client" — useIsMobile → DesktopView | MobileView
 ├── useAdminPanelData.ts   Brain hook — RPCs, all state, all handlers,
 │                           SECTIONS & MODULE_LABELS metadata
-├── desktop/View.tsx       Desktop: sidebar (5 sections) + content panel
-│                           (verbatim port of original page.tsx body)
+├── desktop/View.tsx       Desktop: sidebar (6 sections) + content panel
 └── mobile/View.tsx        Mobile: sticky horizontal pill row for sections +
                             search bar + MobileDataCard rows per item
 ```
 
 **Shared hook (`useAdminPanelData`):**
 - Owns `useRoleGuard("Admin")` invocation (MFA-aware) — both Views early-return `null` if not allowed
-- Owns ALL state: `activeSection`, `localVis`, `localHomeVis`, `users`/`localRoles`, `recipients`, plus all `saving*`/`saved*`/`*Error` flags
-- Owns ALL handlers: `handleToggle`, `handleHomeToggle`, `handleRoleChange`, `handleAddRecipient`, `handleToggleRecipient`, `handleRemoveRecipient`
+- Owns ALL state: `activeSection`, `localVis`, `localHomeVis`, `localPublicVis`, `users`/`localRoles`, `recipients`, plus all `saving*`/`saved*`/`*Error` flags
+- Owns ALL handlers: `handleToggle`, `handleHomeToggle`, `handlePublicToggle`, `handleRoleChange`, `handleAddRecipient`, `handleToggleRecipient`, `handleRemoveRecipient`
 - Owns pure helpers `isValidEmail` and `formatDateBR`
 - Exports `SECTIONS` (id, label, shortLabel, description) and `MODULE_LABELS` (slug, label, description) as static module-level constants so both Views render the same catalog
 
-**Desktop view** — identical to original. Dark left sidebar (220px wide, 5 buttons + Analytics link), white content panel with section header + module-specific cards.
+**Desktop view** — Dark left sidebar (220px wide, 6 buttons + Analytics link), white content panel with section header + module-specific cards.
 
 **Mobile view** — list-based archetype:
 - `MobileTopBar` with "Admin" pill + "Admin Panel" title + avatar (initials)
-- Sticky horizontal scroll of section pills (Members / Access / Cards / Alerts / Tables) — pill row needed because 5 tabs don't fit in `MobileTabBar` container variant
+- Sticky horizontal scroll of section pills (Members / Access / Alert Emails / Alerts / News Defaults / Tables) — pill row needed because 6 tabs don't fit in `MobileTabBar` container variant
 - Per-section search bar (placeholder adapts: "Search by name, email, or role" / "Search modules" / "Search recipients")
 - **Members**: `MobileDataCard` per user with avatar, name+email, role pill. Tapping the row opens a `BottomSheet` with the Admin/Client picker.
-- **Permissions**: `MobileDataCard` (expanded variant) per module with switch on the right.
-- **Home Visibility**: one row per module — label+description on the left, Show-on-Home switch on the right. Upload UI removed 2026-05-26 (images no longer rendered in `/home`).
+- **Permissions**: one article per module with title+description, then three stacked toggle rows — Public / Clients / Home. All three visibility axes are in the same card (consolidated 2026-05-26).
 - **Alert Emails**: Add form (input + button, 44px min-height for touch), then `MobileDataCard` per recipient with status pill + Enable/Disable button. Removing opens a `BottomSheet` with a confirm prompt (replaces the inline "Are you sure?" pattern from desktop, which doesn't fit on a 320px row).
 - **Data Input**: shows a desktop-only notice because `EditableTableEditor` needs a wide layout.
 
@@ -145,9 +143,9 @@ The login-required gate is being relaxed in favour of a 3-tier visibility model.
 
 | Flag | Tier | UI surface |
 |---|---|---|
-| `is_visible_for_public` | Anon (logged-out visitors) | Permissions tab — new toggle |
-| `is_visible_for_clients` | Client (logged-in non-Admin) | Permissions tab — existing toggle |
-| `is_visible_on_home` | All roles (controls Home gallery card) | Home Visibility tab (formerly "Card Images") — existing toggle |
+| `is_visible_for_public` | Anon (logged-out visitors) | Permissions tab — Public column |
+| `is_visible_for_clients` | Client (logged-in non-Admin) | Permissions tab — Clients column |
+| `is_visible_on_home` | All roles (controls Home gallery card) | Permissions tab — Home column (consolidated 2026-05-26; was a separate "Home Visibility" tab) |
 
 **Invariant (Public ⇒ Clients):** a module visible to anonymous visitors must also be visible to Clients (otherwise a user would lose access on sign-in). The database enforces this in two places:
 1. A `CHECK` constraint (`module_visibility_public_implies_clients_chk`) rejects pathological inserts.
@@ -223,13 +221,15 @@ src/
 Perfil do usuário logado. Edição inline do nome (`profile-name-edit-icon-btn`). Mostra: avatar (iniciais), full_name, email, role badge.
 
 ### `/admin-panel`
-Protegida por `useRoleGuard("Admin")`. Funcionalidades (7 seções na sidebar):
+Protegida por `useRoleGuard("Admin")`. Funcionalidades (6 seções na sidebar):
 - **Members** — listar todos os users com role; promover/demover Admin ↔ Client.
-- **Permissions** — 3-tier visibility per module:
-  - `is_visible_for_public` toggle — affects anonymous (logged-out) visitors.
-  - `is_visible_for_clients` toggle — affects logged-in Client tier users. Forced ON whenever Public is ON (DB invariant + UI lock).
+- **Permissions** — three-column visibility per module (consolidated 2026-05-26; previously split across two separate tabs):
+  - `is_visible_for_public` (**Public** column) — affects anonymous (logged-out) visitors.
+  - `is_visible_for_clients` (**Clients** column) — affects logged-in Client tier users. Forced ON whenever Public is ON (DB invariant + UI lock).
+  - `is_visible_on_home` (**Home** column) — controls whether the module card appears in the `/home` gallery for ALL users (including Admin). Default `true`. Independent from access flags: a module can be Home=false (card gone from Home for everyone) while Clients=true (direct URL still works).
   - Admin always has access regardless of these flags.
-- **Home Visibility** (tab ID `card-images`) — toggle **"Show on Home"** (`is_visible_on_home`) per module: controls whether the module card appears in the `/home` gallery for ALL users (including Admin). Default `true`. Independent from access flags: a module can be `is_visible_on_home=false` (card gone from Home for everyone) while `is_visible_for_clients=true` (direct URL still works). Or `is_visible_on_home=true` + `is_visible_for_clients=false` (Admin sees the card, Client cannot access the route). Image upload UI removed in 2026-05-26 (images no longer rendered in `/home` — icon list replaced image cards).
+  - Desktop layout: 4-column grid — Module | Public | Clients | Home.
+  - Mobile layout: one article per module with three stacked toggle rows (Public / Clients / Home).
 - **Alert Emails** — gerenciar destinatários de alertas automáticos (legado local).
 - **Alerts** — Alerts Product management (cloud, multi-recipient). 5 sub-sections:
   - **Subscriber Stats** — total/active/unconfirmed counts, bounce/complaint rates (7d), per-source active count.
@@ -248,7 +248,7 @@ Protegida por `useRoleGuard("Admin")`. Funcionalidades (7 seções na sidebar):
 | `upsert_my_profile` | escrita | profile (edição de nome) |
 | `get_module_visibility` | leitura | admin-panel + UserProfileContext — retorna `(module_slug, is_visible_for_clients, is_visible_on_home, is_visible_for_public)` (Phase A) |
 | `set_module_visibility` | escrita | admin-panel → aba Permissions (Clients toggle) |
-| `set_module_home_visibility` | escrita | admin-panel → aba Card Images (Show on Home toggle) |
+| `set_module_home_visibility` | escrita | admin-panel → aba Permissions (Home column toggle) |
 | `set_module_public_visibility` | escrita | admin-panel → aba Permissions (Public toggle); Admin-only, MFA-gated |
 | `get_all_users_with_roles` | leitura | admin-panel |
 | `set_user_role` | escrita | admin-panel |
@@ -277,9 +277,9 @@ Protegida por `useRoleGuard("Admin")`. Funcionalidades (7 seções na sidebar):
 - PK: `module_slug`
 - Colunas: `is_visible_for_clients BOOLEAN`, `is_visible_on_home BOOLEAN NOT NULL DEFAULT true`, `is_visible_for_public BOOLEAN NOT NULL DEFAULT true` (added 2026-05-21 via migration `20260522000001_anonymous_access.sql`)
 - RLS: read for anon + authenticated (Phase A opened anon SELECT), write only via Admin RPC.
-- `is_visible_for_public`: controls anonymous (logged-out) visitor access. Managed via Permissions tab "Public" toggle. RPC: `set_module_public_visibility` (Admin-only, MFA-gated).
-- `is_visible_for_clients`: controls Client tier visibility only (Admin always sees). Managed via Permissions tab "Clients" toggle. RPC: `set_module_visibility`.
-- `is_visible_on_home`: controls Home gallery visibility for ALL users including Admin. Managed via Home Visibility tab (tab ID `card-images`) "Show on Home" toggle. Default `true` (backward-compatible). RPC: `set_module_home_visibility`.
+- `is_visible_for_public`: controls anonymous (logged-out) visitor access. Managed via Permissions tab "Public" column. RPC: `set_module_public_visibility` (Admin-only, MFA-gated).
+- `is_visible_for_clients`: controls Client tier visibility only (Admin always sees). Managed via Permissions tab "Clients" column. RPC: `set_module_visibility`.
+- `is_visible_on_home`: controls Home gallery visibility for ALL users including Admin. Managed via Permissions tab "Home" column (consolidated 2026-05-26 — previously a separate "Home Visibility" tab). Default `true` (backward-compatible). RPC: `set_module_home_visibility`.
 - **Invariant:** `is_visible_for_public = true` ⇒ `is_visible_for_clients = true`. Enforced by both a `CHECK` constraint (`module_visibility_public_implies_clients_chk`) and a `BEFORE INSERT/UPDATE` trigger that coerces clients=TRUE when public flips ON.
 
 > **Tech debt**: ambas criadas via [`sql/create_profiles_and_visibility.sql`](../../sql/create_profiles_and_visibility.sql) aplicado direto no Dashboard, **não em migration versionada**.
@@ -520,6 +520,25 @@ Arquitetura extensível baseada em registry. Substitui o workflow de editar `dat
 As políticas de escrita para `price_bands` e `d_g_margins` são criadas pela migration
 `supabase/migrations/20260512000000_data_input_admin_policies.sql` (worker_supabase, branch paralela).
 Sem a migration, writes retornam 403 — a UI renderiza mas não persiste.
+
+## Changelog — Consolidate Home toggle into Permissions tab (2026-05-26)
+
+The separate "Home Visibility" tab (section ID `card-images`) was removed. The `is_visible_on_home` toggle is now a third column inside the **Permissions** tab alongside Public and Clients.
+
+**Motivation:** the three visibility axes (`is_visible_for_public`, `is_visible_for_clients`, `is_visible_on_home`) are per-module settings that affect how a module is accessed and surfaced. Splitting one of them into a separate tab was an artificial separation that forced admins to switch tabs to configure a single module.
+
+**Changes:**
+
+| File | Change |
+|---|---|
+| `useAdminPanelData.ts` | `SectionId` union: removed `"card-images"`. `SECTIONS` array: removed the "Home Visibility" entry. Hook comments updated. |
+| `desktop/View.tsx` | `SECTION_ICONS`: removed `"card-images"` entry. Permissions section: added "Home" column header (width 90px) and Home toggle per row, reusing `localHomeVis` / `handleHomeToggle` / `savingHome` / `savedHomeSlug` / `homeToggleError`. Descriptive list updated to three bullet points. Removed the entire `activeSection === "card-images"` block. |
+| `mobile/View.tsx` | `searchPlaceholder` map: removed `"card-images"` key. Permissions section: added third toggle row "Home — Show card in /home gallery" inside each module article. Removed the entire `activeSection === "card-images"` block. File header comment updated. |
+| `docs/app/admin.md` | This entry + all references to `card-images` tab / "Home Visibility" tab updated to reflect Permissions consolidation. |
+
+**No DB/RPC changes** — `set_module_home_visibility` is still the RPC; only the UI surface moved.
+
+---
 
 ## Changelog — Remove Admin section from home cards (2026-05-26)
 

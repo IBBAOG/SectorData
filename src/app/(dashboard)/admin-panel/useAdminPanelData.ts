@@ -9,15 +9,15 @@
 //
 // Sections covered:
 //   • Members           — list all users; promote/demote Admin ↔ Client
-//   • Permissions       — toggle is_visible_for_clients per module
-//   • Home Visibility   — Show-on-Home toggle per module (is_visible_on_home)
+//   • Permissions       — three-column visibility per module:
+//                         Public (anon), Clients (logged-in), Home (gallery card)
 //   • Alert Emails      — manage automatic notification recipients
 //   • Default Keywords  — manage default News Hunter keywords for anonymous visitors
 //   • Data Input        — edit reference tables (desktop-only editor)
 //
 // RPCs touched: get_module_visibility (via UserProfileContext), set_module_visibility,
-// set_module_home_visibility, get_all_users_with_roles, set_user_role,
-// admin_list_default_news_keywords, admin_add_default_news_keyword,
+// set_module_home_visibility, set_module_public_visibility, get_all_users_with_roles,
+// set_user_role, admin_list_default_news_keywords, admin_add_default_news_keyword,
 // admin_remove_default_news_keyword.
 // Plus direct PostgREST on alert_recipients.
 
@@ -73,7 +73,6 @@ export type {
 export type SectionId =
   | "members"
   | "permissions"
-  | "card-images"
   | "alert-recipients"
   | "alerts-product"
   | "default-news"
@@ -87,13 +86,12 @@ export interface SectionMeta {
 }
 
 export const SECTIONS: SectionMeta[] = [
-  { id: "members",          label: "Members",               shortLabel: "Members",     description: "User roles & access" },
-  { id: "permissions",      label: "Permissions",           shortLabel: "Access",      description: "Module visibility" },
-  { id: "card-images",      label: "Home Visibility",       shortLabel: "Cards",       description: "Show/hide modules on the Home gallery" },
+  { id: "members",          label: "Members",               shortLabel: "Members",      description: "User roles & access" },
+  { id: "permissions",      label: "Permissions",           shortLabel: "Access",       description: "Module visibility — Public, Clients, and Home" },
   { id: "alert-recipients", label: "Alert Emails",          shortLabel: "Alert Emails", description: "Notification recipients" },
-  { id: "alerts-product",   label: "Alerts",                shortLabel: "Alerts",      description: "Alerts product management" },
+  { id: "alerts-product",   label: "Alerts",                shortLabel: "Alerts",       description: "Alerts product management" },
   { id: "default-news",     label: "Default News Keywords", shortLabel: "News Defaults", description: "Keywords used by anonymous News Hunter visitors" },
-  { id: "data-input",       label: "Data Input",            shortLabel: "Tables",      description: "Edit reference tables" },
+  { id: "data-input",       label: "Data Input",            shortLabel: "Tables",       description: "Edit reference tables" },
 ];
 
 // ── Module catalog ─────────────────────────────────────────────────────────────

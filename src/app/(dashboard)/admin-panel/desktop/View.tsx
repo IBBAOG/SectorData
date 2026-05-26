@@ -48,13 +48,6 @@ const SECTION_ICONS: Record<SectionId, React.ReactNode> = {
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
     </svg>
   ),
-  "card-images": (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-      <circle cx="8.5" cy="8.5" r="1.5" />
-      <polyline points="21 15 16 10 5 21" />
-    </svg>
-  ),
   "alert-recipients": (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
@@ -403,11 +396,12 @@ export default function DesktopView(): React.ReactElement | null {
             <div className="settings-card">
               <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>Module Visibility</h2>
               <p style={{ fontSize: 13, color: "#888", margin: "0 0 8px" }}>
-                Two independent access tiers per module:
+                Three independent axes per module:
               </p>
               <ul style={{ fontSize: 12, color: "#666", margin: "0 0 16px", paddingLeft: 18, lineHeight: 1.6 }}>
                 <li><strong>Public</strong> — visible to anonymous (logged-out) visitors. Enabling Public automatically enables Clients (a logged-in user must not lose access on sign-in).</li>
                 <li><strong>Clients</strong> — visible to Client tier users once logged in. Admins always have access regardless of these settings.</li>
+                <li><strong>Home</strong> — module card appears in the /home gallery for all users (including Admins). Hiding it here does not block access via direct URL or the nav.</li>
               </ul>
 
               {/* Column headers */}
@@ -423,22 +417,29 @@ export default function DesktopView(): React.ReactElement | null {
                 <div style={{ flex: 1, paddingRight: 24, fontSize: 11, fontWeight: 700, color: "#888", letterSpacing: "0.06em", textTransform: "uppercase" }}>
                   Module
                 </div>
-                <div style={{ width: 100, textAlign: "center", fontSize: 11, fontWeight: 700, color: "#888", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                <div style={{ width: 90, textAlign: "center", fontSize: 11, fontWeight: 700, color: "#888", letterSpacing: "0.06em", textTransform: "uppercase" }}>
                   Public
                 </div>
-                <div style={{ width: 100, textAlign: "center", fontSize: 11, fontWeight: 700, color: "#888", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                <div style={{ width: 90, textAlign: "center", fontSize: 11, fontWeight: 700, color: "#888", letterSpacing: "0.06em", textTransform: "uppercase" }}>
                   Clients
+                </div>
+                <div style={{ width: 90, textAlign: "center", fontSize: 11, fontWeight: 700, color: "#888", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                  Home
                 </div>
               </div>
 
               {MODULE_LABELS.map(({ slug, label, description }) => {
                 const isClientVisible = localVis[slug] ?? true;
                 const isPublicVisible = localPublicVis[slug] ?? true;
+                const isHomeVisible = localHomeVis[slug] ?? true;
                 const isSavingClient = saving === slug;
                 const justSavedClient = savedSlug === slug;
                 const isSavingPublic = savingPublic === slug;
                 const justSavedPublic = savedPublicSlug === slug;
+                const isSavingHome = savingHome === slug;
+                const justSavedHome = savedHomeSlug === slug;
                 const publicError = publicToggleError?.slug === slug ? publicToggleError.message : null;
+                const homeError = homeToggleError?.slug === slug ? homeToggleError.message : null;
                 // When Public is ON, Clients must also be ON (DB invariant).
                 // The Clients toggle is forced-on and disabled in this case.
                 const clientsForcedOn = isPublicVisible;
@@ -450,7 +451,7 @@ export default function DesktopView(): React.ReactElement | null {
                     </div>
 
                     {/* Public toggle */}
-                    <div style={{ width: 100, display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }}>
+                    <div style={{ width: 90, display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }}>
                       {justSavedPublic && <span className="settings-saved-tick" aria-live="polite">✓</span>}
                       {publicError && (
                         <span style={{ fontSize: 11, color: "#c0392b" }} title={publicError}>Error</span>
@@ -471,7 +472,7 @@ export default function DesktopView(): React.ReactElement | null {
                     </div>
 
                     {/* Clients toggle */}
-                    <div style={{ width: 100, display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }}>
+                    <div style={{ width: 90, display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }}>
                       {justSavedClient && <span className="settings-saved-tick" aria-live="polite">✓</span>}
                       <div
                         className="form-check form-switch"
@@ -496,53 +497,9 @@ export default function DesktopView(): React.ReactElement | null {
                         />
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
 
-          {/* ── Home Visibility ──────────────────────────────────────────────── */}
-          {activeSection === "card-images" && (
-            <div className="settings-card">
-              <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>Home Visibility</h2>
-              <p style={{ fontSize: 13, color: "#888", margin: "0 0 20px" }}>
-                Toggle whether each module card appears in the <strong>/home</strong> gallery.
-                When hidden, the card is invisible to <em>all</em> users (including Admins).
-                This is independent of module access — a hidden card can still be reached via direct URL or the nav.
-              </p>
-
-              {/* Column header */}
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  padding: "8px 0",
-                  borderBottom: "1px solid #f0f0f0",
-                  marginBottom: 4,
-                }}
-              >
-                <div style={{ flex: 1, paddingRight: 24, fontSize: 11, fontWeight: 700, color: "#888", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                  Module
-                </div>
-                <div style={{ width: 130, textAlign: "center", fontSize: 11, fontWeight: 700, color: "#888", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                  Show on Home
-                </div>
-              </div>
-
-              {MODULE_LABELS.map(({ slug, label, description }) => {
-                const isHomeVisible = localHomeVis[slug] ?? true;
-                const isSavingHome = savingHome === slug;
-                const justSavedHome = savedHomeSlug === slug;
-                const homeError = homeToggleError?.slug === slug ? homeToggleError.message : null;
-                return (
-                  <div key={slug} className="settings-module-row" style={{ alignItems: "center" }}>
-                    <div style={{ flex: 1, paddingRight: 24 }}>
-                      <div className="settings-module-label">{label}</div>
-                      <div style={{ fontSize: 12, color: "#999", marginTop: 2 }}>{description}</div>
-                    </div>
-                    {/* Show on Home toggle */}
-                    <div style={{ width: 130, display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }}>
+                    {/* Home toggle */}
+                    <div style={{ width: 90, display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }}>
                       {justSavedHome && <span className="settings-saved-tick" aria-live="polite">✓</span>}
                       {homeError && (
                         <span style={{ fontSize: 11, color: "#c0392b" }} title={homeError}>Error</span>

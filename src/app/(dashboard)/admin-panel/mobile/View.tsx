@@ -3,15 +3,15 @@
 // Mobile view — /admin-panel (≤768px).
 //
 // Same analyses as desktop, mobile-first UX. Sections become a horizontally
-// scrollable pill row (5 tabs don't fit in a single-line container). Each
+// scrollable pill row (6 tabs don't fit in a single-line container). Each
 // section renders one MobileDataCard per row:
-//   • Members         — avatar, name+email, role pill on the right (tap to switch)
-//   • Permissions     — module name+description, switch on the right
-//   • Home Visibility — label+description, Show on Home switch on the right
-//   • Alert Emails    — email+date, status pill, inline action buttons in a
-//                       BottomSheet (deactivate / remove)
-//   • Data Input      — desktop-only message (EditableTableEditor is too
-//                       complex for mobile in this wave)
+//   • Members     — avatar, name+email, role pill on the right (tap to switch)
+//   • Permissions — module name+description, then three toggle rows:
+//                   Public / Clients / Home (all three axes in one card)
+//   • Alert Emails — email+date, status pill, inline action buttons in a
+//                    BottomSheet (deactivate / remove)
+//   • Data Input  — desktop-only message (EditableTableEditor is too
+//                   complex for mobile in this wave)
 //
 // All state, RPC calls, and handlers live in `useAdminPanelData`. This file is
 // pure presentation.
@@ -181,7 +181,6 @@ export default function MobileView(): React.ReactElement | null {
   const searchPlaceholder: Record<SectionId, string> = {
     "members": "Search by name, email, or role",
     "permissions": "Search modules",
-    "card-images": "Search modules",
     "alert-recipients": "Search recipients",
     "alerts-product": "Search subscribers or sources",
     "default-news": "Search keywords",
@@ -490,9 +489,10 @@ export default function MobileView(): React.ReactElement | null {
       {activeSection === "permissions" && (
         <section>
           <div style={{ padding: "0 16px 12px", fontSize: 12, color: "var(--mobile-text-muted)", lineHeight: 1.5 }}>
-            Two access tiers per module: <strong>Public</strong> (anonymous visitors)
-            and <strong>Clients</strong> (logged-in users). Enabling Public also enables
-            Clients automatically. Admins always have access.
+            Three axes per module: <strong>Public</strong> (anonymous visitors),{" "}
+            <strong>Clients</strong> (logged-in users), and <strong>Home</strong> (gallery
+            card visibility for all users). Enabling Public also enables Clients
+            automatically. Admins always have access.
           </div>
           {filteredModules.length === 0 ? (
             <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
@@ -502,11 +502,15 @@ export default function MobileView(): React.ReactElement | null {
             filteredModules.map(({ slug, label, description }) => {
               const isClientVisible = localVis[slug] ?? true;
               const isPublicVisible = localPublicVis[slug] ?? true;
+              const isHomeVisible = localHomeVis[slug] ?? true;
               const isSavingClient = saving === slug;
               const justSavedClient = savedSlug === slug;
               const isSavingPublic = savingPublic === slug;
               const justSavedPublic = savedPublicSlug === slug;
+              const isSavingHome = savingHome === slug;
+              const justSavedHome = savedHomeSlug === slug;
               const publicError = publicToggleError?.slug === slug ? publicToggleError.message : null;
+              const homeError = homeToggleError?.slug === slug ? homeToggleError.message : null;
               const clientsForcedOn = isPublicVisible;
 
               return (
@@ -607,111 +611,44 @@ export default function MobileView(): React.ReactElement | null {
                       </label>
                     </div>
                   </div>
-                </article>
-              );
-            })
-          )}
-        </section>
-      )}
 
-      {/* ─────────────────────────────────────────────────────────────────── */}
-      {/* HOME VISIBILITY                                                      */}
-      {/* ─────────────────────────────────────────────────────────────────── */}
-      {activeSection === "card-images" && (
-        <section>
-          <div style={{ padding: "0 16px 12px", fontSize: 12, color: "var(--mobile-text-muted)", lineHeight: 1.5 }}>
-            Toggle <strong>Show on Home</strong> to show or hide each module&apos;s card
-            in the <strong>/home</strong> gallery. When hidden, the card is invisible to{" "}
-            <em>all</em> users (including Admins). Module access is unchanged.
-          </div>
-          {filteredModules.length === 0 ? (
-            <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
-              No modules match your search.
-            </div>
-          ) : (
-            filteredModules.map(({ slug, label, description }) => {
-              const isHomeVisible = localHomeVis[slug] ?? true;
-              const isSavingHome = savingHome === slug;
-              const justSavedHome = savedHomeSlug === slug;
-              const homeError = homeToggleError?.slug === slug ? homeToggleError.message : null;
-              return (
-                <article
-                  key={slug}
-                  style={{
-                    background: "var(--mobile-surface)",
-                    borderBottom: "1px solid var(--mobile-divider)",
-                    padding: "14px 16px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                  }}
-                >
-                  {/* Label + slug */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{
-                        fontSize: 15,
-                        fontWeight: 600,
-                        color: "var(--mobile-text)",
-                        lineHeight: 1.2,
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                      }}
-                    >
-                      {label}
+                  {/* Home row */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                    <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "var(--mobile-text)" }}>Home</span>
+                      <span style={{ fontSize: 11, color: "var(--mobile-text-faint)" }}>Show card in /home gallery</span>
                     </div>
-                    <div style={{ marginTop: 2, fontSize: 11, color: "var(--mobile-text-faint)", lineHeight: 1.4 }}>
-                      {description}
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                      {justSavedHome && (
+                        <span
+                          style={{ fontSize: 10, fontWeight: 700, color: "#38a169", display: "inline-flex", alignItems: "center", gap: 4 }}
+                          aria-live="polite"
+                        >
+                          <CheckIcon size={14} strokeWidth={2.5} />
+                        </span>
+                      )}
+                      {homeError && (
+                        <span style={{ fontSize: 11, color: "#c0392b" }} title={homeError}>Failed</span>
+                      )}
+                      <label className="form-check form-switch" style={{ margin: 0, paddingLeft: 0, display: "inline-block" }}>
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          role="switch"
+                          aria-label={`Show ${label} on Home`}
+                          checked={isHomeVisible}
+                          disabled={isSavingHome}
+                          onChange={(e) => handleHomeToggle(slug, e.target.checked)}
+                          style={{
+                            width: "2.6em",
+                            height: "1.4em",
+                            cursor: isSavingHome ? "wait" : "pointer",
+                            opacity: isSavingHome ? 0.6 : 1,
+                            margin: 0,
+                          }}
+                        />
+                      </label>
                     </div>
-                  </div>
-
-                  {/* Show on Home toggle */}
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                    <label
-                      className="form-check form-switch"
-                      style={{ margin: 0, paddingLeft: 0, display: "inline-block" }}
-                    >
-                      <input
-                        className="form-check-input"
-                        type="checkbox"
-                        role="switch"
-                        aria-label={`Show ${label} on Home`}
-                        checked={isHomeVisible}
-                        disabled={isSavingHome}
-                        onChange={(e) => handleHomeToggle(slug, e.target.checked)}
-                        style={{
-                          width: "2.6em",
-                          height: "1.4em",
-                          cursor: isSavingHome ? "wait" : "pointer",
-                          opacity: isSavingHome ? 0.6 : 1,
-                          margin: 0,
-                        }}
-                      />
-                    </label>
-                    <span style={{ fontSize: 10, color: "var(--mobile-text-faint)", whiteSpace: "nowrap" }}>
-                      Show on Home
-                    </span>
-                    {justSavedHome && (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          color: "#38a169",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 4,
-                        }}
-                        aria-live="polite"
-                      >
-                        <CheckIcon size={14} strokeWidth={2.5} />
-                      </span>
-                    )}
-                    {homeError && (
-                      <span style={{ fontSize: 10, color: "#c0392b" }} title={homeError}>
-                        Failed
-                      </span>
-                    )}
                   </div>
                 </article>
               );
