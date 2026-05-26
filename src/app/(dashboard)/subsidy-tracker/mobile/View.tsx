@@ -554,6 +554,18 @@ function AgentBlock({
   );
 }
 
+// ─── Mirror map: ANP series keys that must move in lockstep ──────────────────
+// When a toggle fires on an importer key, the producer key must follow (and
+// vice-versa) so that both agent charts stay in sync.  IPP and Petrobras are
+// scalar (single key) and are NOT in this map.
+
+const MIRROR_MAP: Partial<Record<SeriesField, SeriesField>> = {
+  anp_reference_importer:        "anp_reference_producer",
+  anp_reference_producer:        "anp_reference_importer",
+  anp_commercialization_importer: "anp_commercialization_producer",
+  anp_commercialization_producer: "anp_commercialization_importer",
+};
+
 // ─── Mobile View ──────────────────────────────────────────────────────────────
 
 export default function MobileView(): React.ReactElement {
@@ -597,8 +609,14 @@ export default function MobileView(): React.ReactElement {
 
   const toggleTrace = useCallback(
     (field: SeriesField) => {
+      const newVal = !filters.traces[field];
+      const mirror = MIRROR_MAP[field];
       setFilters({
-        traces: { ...filters.traces, [field]: !filters.traces[field] },
+        traces: {
+          ...filters.traces,
+          [field]: newVal,
+          ...(mirror != null ? { [mirror]: newVal } : {}),
+        },
       });
     },
     [filters.traces, setFilters],
