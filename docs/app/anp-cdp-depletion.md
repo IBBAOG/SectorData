@@ -1,6 +1,6 @@
 # Sub-PRD — `/anp-cdp-depletion`
 
-ANP CDP — Depletion dashboard (Oil & Gas). Owner: [`worker_dash-anp-cdp-depletion`](../../.claude/agents/worker_dash-anp-cdp-depletion.md).
+Depletion dashboard (Oil & Gas). Owner: [`worker_dash-anp-cdp-depletion`](../../.claude/agents/worker_dash-anp-cdp-depletion.md). Source: ANP CDP (`anp_cdp_producao`).
 
 > Item of the **Oil & Gas** dropdown in the NavBar (alongside `/anp-cdp`, `/anp-cdp-diaria`, and `/anp-cdp-bsw`). One chart, one filter (field), three toggles (View, X axis, Plot style), plus reactive Recent / Prior period inputs that drive both the chart Y axis (rolling depletion %) and the comparison table.
 

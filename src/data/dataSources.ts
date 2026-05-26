@@ -112,8 +112,8 @@ export const DATA_SOURCES: DataSource[] = [
     sourceFrequency: "Monthly",
     dashboards: [
       { slug: "anp-cdp", title: "ANP CDP Production" },
-      { slug: "anp-cdp-bsw", title: "ANP CDP — BSW" },
-      { slug: "anp-cdp-depletion", title: "ANP CDP — Depletion" },
+      { slug: "anp-cdp-bsw", title: "BSW by Well" },
+      { slug: "anp-cdp-depletion", title: "Depletion" },
     ],
     supabaseTable: "anp_cdp_producao",
     isRealtime: false,
@@ -132,8 +132,8 @@ export const DATA_SOURCES: DataSource[] = [
     cronDescription: "Annual on May 1st at 12:00 UTC",
     sourceFrequency: "Annual",
     dashboards: [
-      { slug: "anp-cdp-bsw", title: "ANP CDP — BSW" },
-      { slug: "anp-cdp-depletion", title: "ANP CDP — Depletion" },
+      { slug: "anp-cdp-bsw", title: "BSW by Well" },
+      { slug: "anp-cdp-depletion", title: "Depletion" },
     ],
     supabaseTable: "anp_voip",
     isRealtime: false,

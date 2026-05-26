@@ -305,8 +305,8 @@ Lista completa dos slugs atualmente registrados na tabela `module_visibility` (t
 | `anp-lpc` | Estatísticas / Fuel Distribution | ANP LPC Preços |
 | `anp-cdp` | Estatísticas / Oil & Gas | ANP CDP Produção |
 | `anp-cdp-diaria` | Estatísticas / Oil & Gas | ANP CDP Diária |
-| `anp-cdp-bsw` | Estatísticas / Oil & Gas | ANP CDP — BSW by Well |
-| `anp-cdp-depletion` | Estatísticas / Oil & Gas | ANP CDP — Depletion |
+| `anp-cdp-bsw` | Estatísticas / Oil & Gas | BSW by Well |
+| `anp-cdp-depletion` | Estatísticas / Oil & Gas | Depletion |
 | `stocks` | Other | Market Watch |
 | `news-hunter` | Other | News Hunter |
 | `alerts` | Tools | Alerts |

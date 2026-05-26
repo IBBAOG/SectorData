@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Desktop view — ANP CDP / Depletion.
+ * Desktop view — Depletion.
  *
  * Migrated verbatim from the original page.tsx (pre dual-view refactor).
  * All filter state, RPC fetching, derivations, and formatters live in the
@@ -595,7 +595,7 @@ export default function DesktopView(): React.ReactElement | null {
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
               <DashboardHeader
-                title="ANP CDP — Depletion"
+                title="Depletion"
                 sub="Rolling depletion (recent vs prior windows of uptime-normalized NP) with comparison table"
               />
 

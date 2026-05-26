@@ -184,7 +184,7 @@ export default function DesktopView(): React.ReactElement | null {
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
               <DashboardHeader
-                title="ANP CDP — BSW by Well"
+                title="BSW by Well"
                 sub="Water cut (BSW) vs months since first production, by well"
               />
 

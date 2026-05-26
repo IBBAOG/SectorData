@@ -1,6 +1,6 @@
 # Sub-PRD — `/anp-cdp-bsw`
 
-ANP CDP — BSW by Well dashboard (Oil & Gas). Owner: [`worker_dash-anp-cdp-bsw`](../../.claude/agents/worker_dash-anp-cdp-bsw.md).
+BSW by Well dashboard (Oil & Gas). Owner: [`worker_dash-anp-cdp-bsw`](../../.claude/agents/worker_dash-anp-cdp-bsw.md). Source: ANP CDP (`anp_cdp_producao`) + ANP VOIP (`anp_voip`).
 
 > Item of the **Oil & Gas** dropdown in the NavBar (alongside `/anp-cdp` and `/anp-cdp-diaria`). One chart, one filter (field), one toggle (per-well vs field average).
 >

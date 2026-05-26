@@ -120,7 +120,7 @@ export default function MobileView(): React.ReactElement | null {
       }}
     >
       {/* Sticky top bar */}
-      <MobileTopBar title="ANP BSW by Well" />
+      <MobileTopBar title="BSW by Well" />
 
       {/* Page heading */}
       <section style={{ padding: "16px 16px 8px" }}>

@@ -151,7 +151,7 @@ const CARDS: CardDef[] = [
   {
     slug: "anp-cdp-bsw",
     preview: null,
-    title: "ANP CDP — BSW by Well",
+    title: "BSW by Well",
     description: "Water cut vs months since first production, by well",
     badge: "Available",
     href: "/anp-cdp-bsw",
@@ -160,7 +160,7 @@ const CARDS: CardDef[] = [
   {
     slug: "anp-cdp-depletion",
     preview: null,
-    title: "ANP CDP — Depletion",
+    title: "Depletion",
     description: "Uptime-normalized oil production and decline analysis by field",
     badge: "Available",
     href: "/anp-cdp-depletion",

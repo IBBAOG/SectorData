@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Mobile view — ANP CDP / Depletion.
+ * Mobile view — Depletion.
  *
  * Archetype: single Plotly scatter chart with multi-trace overlay, two
  * orthogonal toggles (View mode × X axis), one multi-select filter (campos),
