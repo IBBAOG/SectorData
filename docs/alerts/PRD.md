@@ -418,7 +418,60 @@ export async function POST(req: Request) {
 
 ## GitHub Actions workflows
 
-### `.github/workflows/alerts_monitor.yml` (NEW)
+### Realtime confirmation dispatch (fast path)
+
+Confirmation emails use a **split-workflow** design to avoid double opt-in latency:
+
+| Workflow | Trigger | Steps | Latency |
+|----------|---------|-------|---------|
+| `alerts_fast_dispatch.yml` | cron `*/10 * * * *` | fanout + deliver only (no detection) | **~5 min average** (max 10 min) |
+| `alerts_monitor.yml` | cron `0 */2 * * *` | detect + fanout + deliver | **~1 h average** (max 2 h) |
+
+**Why split:** detection involves external HTTP scrapes (slow, rate-sensitive). Confirmation events are already written to `alert_events` by the `subscribe_to_alerts` RPC — no scraping needed. A fast 10-min loop that only runs fanout + deliver drops confirmation email latency from up-to-2h to under 10 minutes.
+
+**Trade-off:** ~36 GHA minutes/day for the fast loop (~144 runs × ~15s/run). Within free tier.
+
+**Concurrency:** `alerts-fast-dispatch` group with `cancel-in-progress: false` — new run is SKIPPED (queued) if a prior run is still executing. The UNIQUE constraints on `alert_outbox(subscriber_id, event_id)` and `status='sent'` terminal state ensure no double-send even if two runs were to overlap.
+
+**Future path (if <5 min is required):** Supabase pg_net trigger on `alert_events` INSERT → GitHub `repository_dispatch` → dedicated workflow. Achieves ~3s latency. Adds complexity: pg_net config, GitHub PAT stored in Supabase vault, cross-service auth. Deferred until the current UX proves insufficient.
+
+### `.github/workflows/alerts_fast_dispatch.yml` (NEW — 2026-05-26)
+
+```yaml
+name: Alerts Fast Dispatch (confirmation + queued outbox)
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/10 * * * *'
+concurrency:
+  group: alerts-fast-dispatch
+  cancel-in-progress: false
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12', cache: 'pip' }
+      - run: pip install -r requirements.txt
+      - name: Fanout to outbox (confirmation routing + active subscribers)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python -m scripts.alerts.cli fanout
+      - name: Send via Resend
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ALERTS_FRONTEND_URL: ${{ vars.ALERTS_FRONTEND_URL || 'https://oilandgasdata.vercel.app' }}
+        run: python -m scripts.alerts.cli deliver --batch-limit 50
+```
+
+Note: `--batch-limit 50` (vs 100 in the monitor). Fast dispatch is incremental; smaller batch keeps the 5-minute timeout comfortable.
+
+### `.github/workflows/alerts_monitor.yml` (UPDATED — ALERTS_FRONTEND_URL fix 2026-05-26)
 
 ```yaml
 name: Alerts Monitor (detection + fanout + delivery)
@@ -446,8 +499,11 @@ jobs:
       - name: Send via Resend
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ALERTS_FRONTEND_URL: ${{ vars.ALERTS_FRONTEND_URL || 'https://oilandgasdata.vercel.app' }}
         run: python -m scripts.alerts.cli deliver --batch-limit 100
 ```
+
+**Breaking change from prior drafts:** `ALERTS_FRONTEND_URL` was previously read from `secrets.ALERTS_FRONTEND_URL` with wrong default `https://sectordata-dashboard.vercel.app`. Both files now use `vars.ALERTS_FRONTEND_URL` (GitHub Actions variable, not secret — appropriate for a public URL) with correct default `https://oilandgasdata.vercel.app`. CEO must set `gh variable set ALERTS_FRONTEND_URL --body "https://oilandgasdata.vercel.app" --repo IBBAOG/SectorData` once — after that both workflows pick it up automatically.
 
 ### `.github/workflows/alerts_meta_canary.yml` (NEW)
 
@@ -475,7 +531,7 @@ jobs:
 | `RESEND_WEBHOOK_SECRET` | HMAC secret for webhook signature verification | Pending (post-deploy of webhook route) |
 | `ALERTS_SENDER_EMAIL` | From address — defaults to `onboarding@resend.dev` | Pending; default value works without GHA secret |
 | `ALERTS_REPLY_TO_EMAIL` | Reply-To address — `ibbaogproject@gmail.com` | Pending; can hardcode default in code |
-| `ALERTS_FRONTEND_URL` | Base URL for unsubscribe/confirm links (e.g., `https://sectordata-dashboard.vercel.app`) | Pending; CEO to confirm production URL |
+| `ALERTS_FRONTEND_URL` | GitHub Actions **variable** (not secret) for unsubscribe/confirm links. Production value: `https://oilandgasdata.vercel.app`. Set via: `gh variable set ALERTS_FRONTEND_URL --body "https://oilandgasdata.vercel.app" --repo IBBAOG/SectorData`. Both workflows use `vars.ALERTS_FRONTEND_URL` with this as fallback default. | ⚠️ Variable exists in workflows with correct default; CEO must run gh command to persist it as a repo variable so it's visible in GHA UI |
 
 **Correction note (2026-05-25):** earlier drafts of this PRD specified single-sender verification of `ibbaogproject@gmail.com`. That is a SendGrid feature, NOT Resend. Resend requires full-domain verification (DKIM/SPF/DMARC). Decision was revised to use Resend's default `onboarding@resend.dev` sender with Reply-To pointing at the Gmail account. This eliminates DNS setup entirely.
 

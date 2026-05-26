@@ -41,5 +41,5 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          ALERTS_FRONTEND_URL: ${{ secrets.ALERTS_FRONTEND_URL || 'https://sectordata-dashboard.vercel.app' }}
+          ALERTS_FRONTEND_URL: ${{ vars.ALERTS_FRONTEND_URL || 'https://oilandgasdata.vercel.app' }}
         run: python -m scripts.alerts.cli deliver --batch-limit 100
