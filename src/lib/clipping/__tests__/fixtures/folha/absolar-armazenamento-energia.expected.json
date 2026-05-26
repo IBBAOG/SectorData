@@ -1,0 +1,19 @@
+{
+  "title": null,
+  "minParagraphCount": 4,
+  "maxParagraphCount": 15,
+  "firstParagraphContains": "A Absolar (Associação Brasileira de Energia Solar Fotovoltaica) espera que a regulamentação do armazenamento de energia",
+  "lastParagraphContains": "O segmento espera que a nova regulamentação reduza a carga tributária incidente sobre as baterias",
+  "noNoiseMarkers": [
+    "Leia também",
+    "Compartilhe",
+    "Assine",
+    "Newsletter",
+    "Continua após",
+    "Mais lidas",
+    "Veja também",
+    "Publicidade",
+    "Anúncio"
+  ],
+  "noiseMustNotAppearAnywhere": true
+}

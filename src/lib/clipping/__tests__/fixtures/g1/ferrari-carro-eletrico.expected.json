@@ -1,0 +1,20 @@
+{
+  "title": null,
+  "minParagraphCount": 10,
+  "maxParagraphCount": 40,
+  "firstParagraphContains": "A fabricante de carros esportivos de luxo Ferrari lançou na segunda-feira (25/05) seu primeiro carro",
+  "lastParagraphContains": "as ações da Ferrari caíram mais de 25% no ano passado, refletindo uma queda maior nas marcas de luxo",
+  "noNoiseMarkers": [
+    "Leia também",
+    "Compartilhe",
+    "Assine",
+    "Newsletter",
+    "Continua após",
+    "Mais lidas",
+    "Veja também",
+    "Publicidade",
+    "Anúncio",
+    "De segunda a sábado"
+  ],
+  "noiseMustNotAppearAnywhere": true
+}

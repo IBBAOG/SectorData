@@ -1,0 +1,19 @@
+{
+  "title": null,
+  "minParagraphCount": 5,
+  "maxParagraphCount": 20,
+  "firstParagraphContains": "A BP (antiga British Petroleum), uma das maiores empresas de energia do mundo, destituiu o presidente",
+  "lastParagraphContains": "Com informações da agência de notícias Reuters",
+  "noNoiseMarkers": [
+    "Leia também",
+    "Compartilhe",
+    "Assine",
+    "Newsletter",
+    "Continua após",
+    "Mais lidas",
+    "Veja também",
+    "Publicidade",
+    "De segunda a sábado"
+  ],
+  "noiseMustNotAppearAnywhere": true
+}

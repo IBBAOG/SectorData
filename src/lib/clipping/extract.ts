@@ -106,6 +106,13 @@ const NOISE_CLASS_SUBSTRINGS: string[] = [
   "popular-",
   "also-read",
   "further-reading",
+  // Phase 4 additions (2026-05-26): per-site fixture audit surfaced additional patterns.
+  // media__description — Globo group (G1, Valor, Globo Rural): photo captions rendered as <p>
+  // headlines — Estadão: related-article teaser blocks inside news-body
+  // loading-text — Estadão: AI-generated summary placeholder ("Gerando resumo")
+  "media__description",
+  "headlines",
+  "loading-text",
 ];
 
 type CheerioRoot = ReturnType<typeof cheerio.load>;

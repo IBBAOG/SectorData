@@ -1,0 +1,11 @@
+{
+  "_skip": true,
+  "_reason": "Paywall site — only teaser paragraph accessible without auth. Full content requires login. Fixture kept as reference for future playwright/auth integration.",
+  "title": "Amazônia, a desafiadora fronteira de acesso à energia no país",
+  "minParagraphCount": 1,
+  "maxParagraphCount": 5,
+  "firstParagraphContains": "Revista Brasil Energia",
+  "lastParagraphContains": "Por Nelson Valencio",
+  "noNoiseMarkers": ["Já é assinante", "Nosso conteúdo é exclusivo", "faça seu cadastro"],
+  "noiseMustNotAppearAnywhere": false
+}

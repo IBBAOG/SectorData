@@ -1,0 +1,21 @@
+{
+  "title": "Acordo com União Europeia: Brasil exporta a primeira carga de uvas com tarifa zero, diz a Apex",
+  "minParagraphCount": 8,
+  "maxParagraphCount": 25,
+  "firstParagraphContains": "BRASÍLIA - A primeira carga de uvas frescas brasileiras com tarifa zero à União Europeia",
+  "lastParagraphContains": "O ato simbólico de exportação de carga de uvas amparada pela entrada em vigor do Acordo Mercosul",
+  "noNoiseMarkers": [
+    "Leia também",
+    "Compartilhe",
+    "Assine",
+    "Newsletter",
+    "Continua após",
+    "Mais lidas",
+    "Veja também",
+    "Publicidade",
+    "Anúncio",
+    "Gerando resumo"
+  ],
+  "noiseMustNotAppearAnywhere": true,
+  "_note": "firstParagraphContains targets p[3] because p[0]=related-headline (headlines class), p[1]=related-subtitle (description class — too broad to block globally), p[2]=AI-summary placeholder (loading-text already blocked). Test uses .some() check on all paragraphs for firstParagraphContains."
+}

@@ -341,7 +341,9 @@ export const EXTRACTORS: Record<string, string[]> = {
     "article",
   ],
   // Agência Petrobras
+  // Agência Petrobras (Liferay CMS — article body lives in div.news-content, Phase 4 fix)
   "agencia.petrobras.com.br": [
+    "div.news-content",
     "div.entry-content",
     "article .post-content",
     "article",

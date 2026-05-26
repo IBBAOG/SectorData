@@ -1,0 +1,17 @@
+{
+  "title": null,
+  "minParagraphCount": 10,
+  "maxParagraphCount": 40,
+  "firstParagraphContains": "Um amplo conjunto de empresas globais com forte exposição à América Latina",
+  "lastParagraphContains": "Ao incorporar essas empresas ao radar, investidores podem capturar melhor tanto tendências estruturais",
+  "noNoiseMarkers": [
+    "Leia também",
+    "Compartilhe",
+    "Assine",
+    "Newsletter",
+    "Continua após",
+    "Mais lidas",
+    "Veja também"
+  ],
+  "noiseMustNotAppearAnywhere": true
+}

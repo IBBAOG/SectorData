@@ -1,0 +1,11 @@
+{
+  "_skip": true,
+  "_reason": "Paywall site — only teaser paragraph accessible without auth. Full content requires login. Fixture kept as reference for future playwright/auth integration.",
+  "title": "Reversíveis como alternativa de armazenamento de longa duração",
+  "minParagraphCount": 1,
+  "maxParagraphCount": 5,
+  "firstParagraphContains": "Estudo de várias instituições coordenado pelo Gesel",
+  "lastParagraphContains": "Por Chico Santos",
+  "noNoiseMarkers": ["Já é assinante", "Nosso conteúdo é exclusivo", "faça seu cadastro"],
+  "noiseMustNotAppearAnywhere": false
+}

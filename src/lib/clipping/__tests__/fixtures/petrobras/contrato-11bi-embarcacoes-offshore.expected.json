@@ -1,0 +1,20 @@
+{
+  "title": "Petrobras assina contrato de R$ 11 bilhões para construção e operação de 4 embarcações de apoio offshore",
+  "minParagraphCount": 4,
+  "maxParagraphCount": 15,
+  "firstParagraphContains": "A Petrobras assinou oito contratos no valor de R$ 11 bilhões para construção, afretamento e serviços de quatro embarcações",
+  "lastParagraphContains": "licitação exitosa, em linha com as demandas do plano de negócios da companhia",
+  "noNoiseMarkers": [
+    "Leia também",
+    "Compartilhe",
+    "Assine",
+    "Newsletter",
+    "Continua após",
+    "Mais lidas",
+    "Veja também",
+    "Publicidade",
+    "Anúncio",
+    "Continuar lendo"
+  ],
+  "noiseMustNotAppearAnywhere": true
+}

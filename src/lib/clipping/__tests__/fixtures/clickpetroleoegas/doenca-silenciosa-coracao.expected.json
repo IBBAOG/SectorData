@@ -1,0 +1,18 @@
+{
+  "title": null,
+  "minParagraphCount": 20,
+  "maxParagraphCount": 60,
+  "firstParagraphContains": "A cardiomiopatia hipertrófica voltou ao centro dos debates médicos após ser citada no atestado de óbito",
+  "lastParagraphContains": "A discussão sobre desempenho extremo, uso de substâncias e acompanhamento médico preventivo",
+  "noNoiseMarkers": [
+    "Leia também",
+    "Compartilhe",
+    "Assine",
+    "Newsletter",
+    "Continua após",
+    "Mais lidas",
+    "Veja também",
+    "Anúncio"
+  ],
+  "noiseMustNotAppearAnywhere": true
+}
