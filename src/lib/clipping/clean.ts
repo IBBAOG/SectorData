@@ -91,13 +91,27 @@ const _NOISE_PATTERNS: string[] = [
 
 const _NOISE_REGEX = new RegExp(_NOISE_PATTERNS.join("|"), "i");
 
-export function cleanParagraphs(paragraphs: string[]): string[] {
+/**
+ * Filter and deduplicate paragraphs using noise regex patterns.
+ *
+ * @param paragraphs   Raw paragraph strings from the extractor.
+ * @param debugSink    Optional callback invoked for each discarded paragraph (truncated
+ *                     to 200 chars). Only passed when ?debug=1 is active — zero overhead
+ *                     in production because the function reference is undefined.
+ */
+export function cleanParagraphs(
+  paragraphs: string[],
+  debugSink?: (sample: string) => void,
+): string[] {
   const out: string[] = [];
   for (let p of paragraphs) {
     p = p.replace(/\s+/g, " ").trim();
     p = p.replace(/\s+([.,;:!?])/g, "$1");
     if (!p) continue;
-    if (_NOISE_REGEX.test(p)) continue;
+    if (_NOISE_REGEX.test(p)) {
+      debugSink?.(p.slice(0, 200));
+      continue;
+    }
     out.push(p);
   }
   // Deduplicate consecutive identical paragraphs.

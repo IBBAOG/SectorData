@@ -15,6 +15,35 @@ export interface ClippingItem {
   paragraphs: string[];
 }
 
+/**
+ * Observability payload attached to ScrapeResult when ?debug=1 is passed.
+ * Populated by extract() and propagated through scrape(). Zero overhead in production
+ * (the recorder is never created when debug=false).
+ */
+export interface ScrapeDebug {
+  /** Which CSS selector from sources.ts was chosen, or null if nothing matched. */
+  selectorUsed: string | null;
+  /** Byte length of the innerHTML of the chosen container element. */
+  containerHtmlByteSize: number;
+  /** Number of <p> elements found inside the container before stripNoise ran. */
+  pCountRaw: number;
+  /** Number of <p> elements remaining after stripNoise removed noise nodes. */
+  pCountAfterStripNoise: number;
+  /** Number of paragraphs that survived cleanParagraphs (noise regex + dedup). */
+  pCountAfterClean: number;
+  /**
+   * Up to 3 paragraph texts (truncated to 200 chars each) that were discarded by
+   * either stripNoise (entire container node removed) or cleanParagraphs (regex match).
+   */
+  noiseRemovedSamples: string[];
+  /**
+   * Ordered list of fetcher names that were actually invoked, ending with the one
+   * that produced usable HTML. e.g. ["undici"] for a direct hit, or
+   * ["undici", "curl", "curl_impersonate"] if the first two failed.
+   */
+  viaCascade: string[];
+}
+
 export interface ScrapeResult {
   url: string;
   status: ScrapeStatus;
@@ -31,6 +60,8 @@ export interface ScrapeResult {
   via?: "wayback" | "curl" | "curl_impersonate" | "headless";
   /** @deprecated Use `via === "wayback"` instead. Kept for backwards compat. */
   via_wayback?: boolean;
+  /** Present only when the request includes ?debug=1. */
+  debug?: ScrapeDebug;
 }
 
 /** Snapshot stored in localStorage for selection persistence. */
