@@ -3,7 +3,7 @@
 
 import * as cheerio from "cheerio";
 import type { AnyNode, Element } from "domhandler";
-import { EXTRACTORS } from "./sources";
+import { EXTRACTORS, matchesNoiseAttr, isNoisyContainer } from "./sources";
 import { cleanTitle, cleanParagraphs } from "./clean";
 import type { ScrapeDebug } from "./types";
 
@@ -75,6 +75,37 @@ const NOISE_CLASS_SUBSTRINGS: string[] = [
   "paywall-wrap",
   "subscription",
   "premium-content-wall",
+  // Phase 2 additions (2026-05-26): expand noise-class coverage based on common
+  // patterns found across BR news sites (related articles, ad networks, captions,
+  // taxonomy widgets, structural complementary blocks).
+  "caption",
+  "figcaption",
+  "credit",
+  "gallery",
+  "slideshow",
+  "footnote",
+  "note-",
+  "tag-",
+  "topic-",
+  "category-",
+  "tax-",
+  "widget",
+  "module-related",
+  "aside-",
+  "promo",
+  "sponsored",
+  "outbrain",
+  "taboola",
+  "mgid",
+  "dianomi",
+  "next-article",
+  "previous-article",
+  "more-from",
+  "most-read",
+  "trending",
+  "popular-",
+  "also-read",
+  "further-reading",
 ];
 
 type CheerioRoot = ReturnType<typeof cheerio.load>;
@@ -82,13 +113,17 @@ type CheerioRoot = ReturnType<typeof cheerio.load>;
 function stripNoise($: CheerioRoot, container: cheerio.Cheerio<AnyNode>): void {
   // Remove noise tags.
   container.find("figure, figcaption, aside, script, style, iframe, form, nav").remove();
-  // Remove elements whose class/id contains noise substrings.
+  // Remove elements whose class/id contains noise substrings, or whose data-*/role
+  // attributes match noise patterns (Phase 2: matchesNoiseAttr).
   container.find("*").each((_, el) => {
     const $el = $(el);
     const classes = ($el.attr("class") ?? "").split(/\s+/);
     const id = $el.attr("id") ?? "";
     const combined = [...classes, id].join(" ").toLowerCase();
-    if (NOISE_CLASS_SUBSTRINGS.some((sub) => combined.includes(sub))) {
+    if (
+      NOISE_CLASS_SUBSTRINGS.some((sub) => combined.includes(sub)) ||
+      matchesNoiseAttr(el as Element)
+    ) {
       $el.remove();
     }
   });
@@ -105,6 +140,42 @@ function titleFromMeta($: CheerioRoot): string {
   if (h1) return h1;
   const titleTag = $("title").text().trim();
   return titleTag;
+}
+
+// ---------------------------------------------------------------------------
+// Paragraph-level noise guards (Phase 2, 2026-05-26)
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true if ≥80% of the paragraph's visible text comes from <a> descendants.
+ * Covers <p><a>…</a><br><a>…</a></p>, <p>  <a>…</a></p>, and wrapper variants
+ * that the old children.every(tagName==="a") guard misses.
+ * An empty paragraph is also treated as "mostly links" and dropped.
+ */
+function isMostlyLinks($p: cheerio.Cheerio<AnyNode>, $: cheerio.CheerioAPI): boolean {
+  const total = $p.text().trim().length;
+  if (total === 0) return true; // empty <p> with only links → drop
+  const linkText = $p.find("a").toArray()
+    .map((a) => $(a).text().trim().length)
+    .reduce((sum, n) => sum + n, 0);
+  return linkText / total >= 0.8;
+}
+
+/**
+ * Returns true if the paragraph is dominated by link text — likely a "Leia também" /
+ * navigation block / related-news strip masquerading as a <p>.
+ * Threshold: >60% of text comes from <a> descendants AND ≥2 links in the paragraph.
+ * Complements isMostlyLinks (lower threshold, requires ≥2 links for specificity).
+ */
+function isLinkHeavy($p: cheerio.Cheerio<AnyNode>, $: cheerio.CheerioAPI): boolean {
+  const totalText = $p.text().trim();
+  if (totalText.length < 20) return false; // too short to judge meaningfully
+  const $links = $p.find("a");
+  if ($links.length < 2) return false;
+  const linkTextLength = $links.toArray()
+    .map((a) => $(a).text().trim().length)
+    .reduce((sum, n) => sum + n, 0);
+  return linkTextLength / totalText.length > 0.6;
 }
 
 function paragraphsFrom(
@@ -125,19 +196,21 @@ function paragraphsFrom(
   const paragraphs: string[] = [];
   psAfterStrip.each((_, el) => {
     const $p = $(el);
-    // Skip paragraphs that consist only of anchor tags (navigation noise).
-    const children = $p.children().toArray() as AnyNode[];
-    if (
-      children.length > 0 &&
-      children.every((c) => (c as Element).tagName === "a")
-    ) {
-      const pText = $p.text().trim();
-      const anchorText = children.map((c) => $(c).text().trim()).join(" ");
-      if (pText === anchorText) {
-        rec?.pushNoiseSample(pText);
-        return;
-      }
+
+    // Guard 1: paragraph where ≥80% of text is anchor text (Phase 2 rewrite of the
+    // fragile children.every(tagName==="a") guard — covers <br>, whitespace, wrappers).
+    if (isMostlyLinks($p, $)) {
+      rec?.pushNoiseSample($p.text().trim());
+      return;
     }
+
+    // Guard 2: link-density filter — paragraph dominated by links even when plain
+    // text nodes are present (e.g. "Leia também: X | Y | Z" with inline separators).
+    if (isLinkHeavy($p, $)) {
+      rec?.pushNoiseSample($p.text().trim());
+      return;
+    }
+
     const txt = $p.text().replace(/\s+/g, " ").trim();
     if (txt) paragraphs.push(txt);
   });
@@ -176,16 +249,18 @@ export function extract(
   const title = cleanTitle(titleFromMeta($));
 
   // Determine which selector was chosen and record it.
+  // Phase 2: if the matched container is noisy (too many nav/aside children),
+  // skip it and try the next selector — avoids grabbing sidebar + article together.
   let chosenSelector: string | null = null;
   let container: cheerio.Cheerio<AnyNode> | null = null;
 
   for (const sel of selectors) {
     const el = $(sel).first();
-    if (el.length > 0) {
-      chosenSelector = sel;
-      container = el;
-      break;
-    }
+    if (el.length === 0) continue;
+    if (isNoisyContainer(el)) continue; // skip: grabbed sidebar along with article
+    chosenSelector = sel;
+    container = el;
+    break;
   }
 
   if (!container || container.length === 0) {

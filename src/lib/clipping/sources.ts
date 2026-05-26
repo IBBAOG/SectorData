@@ -96,35 +96,90 @@ export const SOURCE_NAMES: Record<string, string> = {
   "www.visnoinvest.com.br": "Visno Invest",
 };
 
+import type { Element } from "domhandler";
+
+// ---------------------------------------------------------------------------
+// Noise-attribute helper (Phase 2, 2026-05-26)
+// ---------------------------------------------------------------------------
+
+/**
+ * Patterns matched against "data-<name>=<value>" combined strings (lowercased).
+ * Signals that an element is a noise block regardless of its class/id.
+ */
+const NOISE_DATA_ATTR_PATTERNS: RegExp[] = [
+  /related/i,
+  /newsletter/i,
+  /promo/i,
+  /ads?/i,
+  /share/i,
+  /author-(?:bio|widget)/i,
+];
+
+/**
+ * Returns true if the element should be treated as noise based on ARIA role or
+ * data-* attribute values. Used by stripNoise in addition to class/id matching.
+ */
+export function matchesNoiseAttr(el: Element): boolean {
+  const role = (el.attribs?.role ?? "").toLowerCase();
+  if (role === "complementary" || role === "banner" || role === "navigation") {
+    return true;
+  }
+  for (const [name, value] of Object.entries(el.attribs ?? {})) {
+    if (!name.startsWith("data-")) continue;
+    const combined = `${name}=${value}`.toLowerCase();
+    if (NOISE_DATA_ATTR_PATTERNS.some((re) => re.test(combined))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// AUTO_SELECTORS — ordered most-specific → least-specific (Phase 2 reorder).
+// Removed: div.body, div.content (too broad, captures sidebar + nav).
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true when the chosen container looks like it grabbed sidebar content
+ * along with the article body (too many nav/aside descendants).
+ * Used by the AUTO_SELECTORS loop in extract.ts to skip noisy containers.
+ */
+export function isNoisyContainer(container: { find: (sel: string) => { length: number } }): boolean {
+  return container.find("nav, aside").length > 3;
+}
+
 // Generic wide fallback — used for ex_auto domains.
+// Order: itemprop → semantic class patterns → generic element selectors.
+// div.body and div.content intentionally removed (Phase 2): they capture the
+// full page skeleton including sidebar, nav, and widget columns.
 const AUTO_SELECTORS: string[] = [
-  'div[itemprop="articleBody"]',
-  "div.article-content",
-  "div.article-body",
-  "div.article__content",
-  "div.article__body",
-  "div.post-content",
-  "div.post__content",
-  "div.post-body",
-  "div.entry-content",
-  "div.entry__content",
-  "div.single-content",
-  "div.single__content",
+  '[itemprop="articleBody"]',
+  '[itemprop="mainEntityOfPage"]',
+  ".entry-content",
+  ".post-content",
+  ".post-body",
+  ".article-content",
+  ".article-body",
+  ".article__content",
+  ".article__body",
+  ".news-content",
+  ".news-body",
+  ".news__body",
+  ".single-content",
+  ".single__content",
+  ".story-content",
+  ".post-text",
+  ".post__content",
+  ".entry__content",
   "div.content-text",
   "div.news-text",
-  "div.news-content",
-  "div.news__body",
   "div.materia-conteudo",
   "div.conteudo-materia",
   "div.texto-materia",
   "div.texto",
-  "div.content",
-  "div.body",
   "div.main-content",
   "section.article-body",
-  "section.content",
   "main article",
-  "article .content",
   "article",
 ];
 
