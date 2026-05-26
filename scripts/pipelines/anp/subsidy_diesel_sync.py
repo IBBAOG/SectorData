@@ -69,6 +69,28 @@ _HEADERS = {
 }
 _BATCH = 500
 _TABLE = "anp_subsidy_diesel_reference"
+_TABLE_COMM = "anp_subsidy_commercialization"
+
+# Commercialization HTML page URL pattern (per year)
+_COMM_URL_TEMPLATE = (
+    "https://www.gov.br/anp/pt-br/assuntos/precos-e-defesa-da-concorrencia/"
+    "subvencao-a-comercializacao-de-oleo-diesel-rodoviario-{year}"
+)
+
+# HTTP headers for the commercialization HTML scrape.
+# IMPORTANT: do NOT advertise "br" in Accept-Encoding — see CLAUDE.md Pegadinha #12.
+# requests handles gzip/deflate transparently; advertising br without the brotli
+# package installed yields HTTP 200 with binary garbage in resp.text → silent
+# empty parse (BeautifulSoup finds 0 tables → 0 rows → silent outage).
+_COMM_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Encoding": "gzip, deflate",
+    "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.5",
+}
 
 # Price sanity bounds (BRL/liter). Values outside this range are dropped.
 _PRICE_MIN = 2.0
@@ -583,6 +605,485 @@ def _process_pdf(pdf_bytes: bytes, fname: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Commercialization HTML scraper (period-level price, NOT in PDFs)
+# ---------------------------------------------------------------------------
+#
+# Source: https://www.gov.br/anp/pt-br/assuntos/precos-e-defesa-da-concorrencia/
+#         subvencao-a-comercializacao-de-oleo-diesel-rodoviario-<YEAR>
+#
+# Each "período de apuração" on the page is a logical group of 2 or 3 HTML
+# tables (R$/litro, 5 regions: Norte, Nordeste, Centro-Oeste, Sudeste, Sul):
+#
+#   Period 1 (1º-6 abril 2026 — unified subvenção, single 0.32 cap):
+#     - Table A: importadores + produtores petr. importado+nacional terceiros
+#                → map to tipo_agente='importador'
+#     - Table B: produtores petróleo nacional próprio
+#                → map to tipo_agente='produtor'
+#
+#   Periods 2+ (after 2026-04-07 split — 1.20 importer cap + 0.80 produtor cap):
+#     - Table 1: importadores      → tipo_agente='importador'
+#     - Table 2: produtores que refinam petr. importado + nacional de terceiros
+#                → IGNORE (no corresponding cap in our model)
+#     - Table 3: produtores que refinam petróleo nacional próprio
+#                → tipo_agente='produtor'
+#
+# Each table has the shape:
+#   ['(Em R$/litro)', 'Norte', 'Nordeste', 'Centro-Oeste', 'Sudeste', 'Sul']
+#   ['Preço de Referência(em DD/MM/YYYY)', f1, f2, f3, f4, f5]
+#   ['Preço de Comercialização',           c1, c2, c3, c4, c5]
+#
+# We extract the LAST row (Preço de Comercialização) — that's the period price.
+#
+# The period date range is read from the closing paragraph immediately AFTER
+# the table group:
+#   "Esses preços estiveram/estarão vigentes para o período de apuração
+#    de N a N de MES de YYYY, ..."
+#
+# We also handle these date-range variants seen in older periods:
+#   "de 1º a 6 de abril de 2026"  (shared month)
+#   "de 16 a 31 de maio de 2026"  (shared month)
+#   "de N de MES a N de MES de YYYY" (cross-month, year at end only)
+
+
+# Region column header in the comm tables
+_COMM_REGIONS_ORDER = ["NORTE", "NORDESTE", "CENTRO-OESTE", "SUDESTE", "SUL"]
+
+# Cap value matches for agent-type detection in the period header paragraphs.
+# Period 1 (unified, R$ 0,32 single cap) uses explicit "Para importadores..." /
+# "Para produtores que refinem petróleo nacional próprio" cues; later periods
+# rely on table ORDER within the group.
+_COMM_CUE_IMPORTADOR = re.compile(
+    r"para\s+importadores\b",
+    re.IGNORECASE,
+)
+_COMM_CUE_PRODUTOR_PROPRIO = re.compile(
+    r"produtores?\s+que\s+refin(?:em|am)\s+petr[óo]leo\s+nacional\s+pr[óo]prio",
+    re.IGNORECASE,
+)
+_COMM_CUE_PRODUTOR_MIX = re.compile(
+    # "produtores que refinem petróleo importado e petróleo nacional adquirido de terceiros"
+    r"petr[óo]leo\s+importado\s+e\s+petr[óo]leo\s+nacional\s+adquirido",
+    re.IGNORECASE,
+)
+
+# Match the closing paragraph that anchors the period date range.
+_COMM_PERIOD_RANGE_PT = re.compile(
+    r"per[ií]odo\s+de\s+apura[cç][aã]o\s+de\s+(.+?)(?:,|\.|\s+nos\s+termos)",
+    re.IGNORECASE | re.DOTALL,
+)
+
+# Range subpatterns (apply to the inner text captured above).
+# (a) Shared month: "1º a 6 de abril de 2026"  or "16 a 31 de maio de 2026"
+_COMM_RANGE_SHARED_MONTH = re.compile(
+    r"(\d{1,2})[ºo°]?\s+a\s+(\d{1,2})[ºo°]?\s+de\s+([A-Za-zçÇ]+)\s+de\s+(\d{4})",
+    re.IGNORECASE,
+)
+# (b) Cross-month: "N de MES_A a N de MES_B de YYYY"
+_COMM_RANGE_CROSS_MONTH = re.compile(
+    r"(\d{1,2})[ºo°]?\s+de\s+([A-Za-zçÇ]+)\s+a\s+(\d{1,2})[ºo°]?\s+de\s+([A-Za-zçÇ]+)\s+de\s+(\d{4})",
+    re.IGNORECASE,
+)
+
+
+def _parse_period_range(text: str) -> tuple[date, date] | None:
+    """
+    Extract (data_inicio, data_fim) from a "período de apuração de ..." snippet.
+
+    Returns None if text doesn't match a known format.
+    """
+    norm = _strip_accents(text.lower())
+
+    # Try cross-month first (more specific — it has two "de MES" tokens)
+    m = _COMM_RANGE_CROSS_MONTH.search(norm)
+    if m:
+        d1, mes1, d2, mes2, yr = m.group(1), m.group(2), m.group(3), m.group(4), m.group(5)
+        mo1 = _MONTH_PT.get(mes1)
+        mo2 = _MONTH_PT.get(mes2)
+        if mo1 is not None and mo2 is not None:
+            try:
+                return (
+                    date(int(yr), mo1, int(d1)),
+                    date(int(yr), mo2, int(d2)),
+                )
+            except ValueError:
+                return None
+
+    # Shared-month variant
+    m = _COMM_RANGE_SHARED_MONTH.search(norm)
+    if m:
+        d1, d2, mes, yr = m.group(1), m.group(2), m.group(3), m.group(4)
+        mo = _MONTH_PT.get(mes)
+        if mo is not None:
+            try:
+                return (
+                    date(int(yr), mo, int(d1)),
+                    date(int(yr), mo, int(d2)),
+                )
+            except ValueError:
+                return None
+
+    return None
+
+
+def _is_comm_litro_table(table) -> bool:
+    """
+    True iff the table is a Diesel R$/litro table with 5 regional columns.
+
+    Skips the GLP R$/kg tables (only have "Brasil" column).
+    """
+    rows = table.find_all("tr")
+    if len(rows) < 3:
+        return False
+    header_cells = [
+        c.get_text(strip=True) for c in rows[0].find_all(["td", "th"])
+    ]
+    if not header_cells:
+        return False
+    first = header_cells[0].lower()
+    if "litro" not in first:
+        return False  # filter R$/kg (GLP) tables
+    # Need 5 region columns
+    region_cells = [_strip_accents(c.upper()).replace(" ", "") for c in header_cells[1:]]
+    required = {"NORTE", "NORDESTE", "CENTROOESTE", "SUDESTE", "SUL"}
+    return required.issubset(set(c.replace("-", "") for c in region_cells))
+
+
+def _extract_comm_row(table) -> dict | None:
+    """
+    Extract the "Preço de Comercialização" row from a comm table.
+
+    Returns dict {regiao: float} keyed by canonical region name, or None.
+    """
+    rows = table.find_all("tr")
+    if len(rows) < 3:
+        return None
+
+    # Header row defines column → region mapping
+    header_cells = [c.get_text(strip=True) for c in rows[0].find_all(["td", "th"])]
+    col_to_region: dict[int, str] = {}
+    for idx, cell in enumerate(header_cells):
+        if idx == 0:
+            continue  # first col is "(Em R$/litro)"
+        canon = _normalize_col_header(cell)
+        if canon:
+            col_to_region[idx] = canon
+
+    if len(col_to_region) != 5:
+        return None
+
+    # Find the row whose label is "Preço de Comercialização" (last row by convention,
+    # but we match by content to be safe)
+    for r in rows:
+        cells = [c.get_text(strip=True) for c in r.find_all(["td", "th"])]
+        if not cells:
+            continue
+        label = _strip_accents(cells[0].lower())
+        if "comercializacao" in label or "comercializaã" in label:
+            result: dict[str, float] = {}
+            for idx, region in col_to_region.items():
+                if idx >= len(cells):
+                    continue
+                price = _parse_price(cells[idx])
+                if price is None:
+                    return None  # incomplete row
+                result[region] = price
+            return result if len(result) == 5 else None
+
+    return None
+
+
+def _classify_period_group(
+    group_tables: list,
+    cue_paragraphs: list[str],
+) -> dict[int, str]:
+    """
+    Decide which tables in a group map to which tipo_agente.
+
+    Inputs:
+      group_tables: list of BS4 table elements in document order.
+      cue_paragraphs: list of paragraph texts found ANYWHERE inside the group
+                      (between tables) — used to detect explicit cues.
+
+    Returns:
+      dict mapping table_index → tipo_agente ('importador' | 'produtor').
+      Tables not in the dict are intentionally ignored.
+
+    Rules:
+      - If we see explicit "Para importadores" / "Para produtores que refinem
+        petróleo nacional próprio" cues IN ORDER, use them positionally.
+      - Else (no cues — typical for periods 2+ where the page just lists the
+        3 tables back-to-back), fall back to ORDER:
+            len==3 → table 0=importador, table 2=produtor, table 1=ignored
+            len==2 → table 0=importador, table 1=produtor (unified-cap period)
+            len==1 → table 0=produtor (defensive; shouldn't happen for diesel)
+    """
+    n = len(group_tables)
+    if n == 0:
+        return {}
+
+    # Cue-based mapping: each table is preceded (in the cue list) by a marker.
+    # We pair tables to cues by ORDER. If we have exactly one importador cue and
+    # one produtor cue, map them respectively.
+    importador_cue_idx = None
+    produtor_proprio_cue_idx = None
+    for i, p in enumerate(cue_paragraphs):
+        if _COMM_CUE_IMPORTADOR.search(p) and importador_cue_idx is None:
+            importador_cue_idx = i
+        if _COMM_CUE_PRODUTOR_PROPRIO.search(p) and produtor_proprio_cue_idx is None:
+            produtor_proprio_cue_idx = i
+
+    # When cues are present and we have ≤2 tables, the mapping is direct:
+    if importador_cue_idx is not None and produtor_proprio_cue_idx is not None and n == 2:
+        return {0: _AGENT_TYPE_IMPORTADOR, 1: _AGENT_TYPE_PRODUTOR}
+
+    # Default positional rules:
+    if n >= 3:
+        return {0: _AGENT_TYPE_IMPORTADOR, n - 1: _AGENT_TYPE_PRODUTOR}
+    if n == 2:
+        return {0: _AGENT_TYPE_IMPORTADOR, 1: _AGENT_TYPE_PRODUTOR}
+    if n == 1:
+        return {0: _AGENT_TYPE_PRODUTOR}
+    return {}
+
+
+def _walk_periods(soup: BeautifulSoup) -> list[dict]:
+    """
+    Walk the HTML body in document order, grouping comm tables by period.
+
+    A period boundary is the closing paragraph that contains
+    "vigentes para o período de apuração de ...".
+
+    Returns a list of period dicts:
+      [{
+        "tables": [BS4_table_element, ...],
+        "cue_paragraphs": [str, ...],
+        "data_inicio": date, "data_fim": date,
+        "ordinal": int (1-based by document order, ascending — period 1 = first
+                       on the page = newest? No: see below)
+      }, ...]
+
+    NOTE on ordinal: the ANP page lists periods in REVERSE chronological order
+    (newest first). We assign ordinal AFTER seeing all periods, sorted by
+    data_inicio ASC, so ordinal=1 is the chronologically-earliest period.
+    """
+    body = soup.find("body") or soup
+
+    # Linearize all element children to a flat sequence, preserving order
+    linear = []
+    for el in body.descendants:
+        if getattr(el, "name", None) in ("table", "p", "h2", "h3", "h4", "strong"):
+            linear.append(el)
+
+    pending_tables: list = []
+    pending_paragraphs: list[str] = []
+    periods_raw: list[dict] = []
+
+    for el in linear:
+        if el.name == "table":
+            if _is_comm_litro_table(el):
+                pending_tables.append(el)
+            continue
+
+        # Text element
+        txt = el.get_text(" ", strip=True)
+        if not txt:
+            continue
+
+        # Check if this paragraph closes a period
+        closes = "vigentes para o per" in txt.lower() and "apura" in txt.lower()
+
+        if pending_tables:
+            pending_paragraphs.append(txt)
+
+        if closes and pending_tables:
+            # Extract the date range from this paragraph
+            m = _COMM_PERIOD_RANGE_PT.search(txt)
+            if m:
+                rng = _parse_period_range(m.group(1))
+                if rng is not None:
+                    di, df = rng
+                    periods_raw.append({
+                        "tables": pending_tables,
+                        "cue_paragraphs": pending_paragraphs,
+                        "data_inicio": di,
+                        "data_fim": df,
+                    })
+                else:
+                    print(
+                        "[subsidy-diesel][comm] WARN: closing paragraph found but "
+                        f"could not parse date range from: {txt[:200]!r}"
+                    )
+            else:
+                print(
+                    "[subsidy-diesel][comm] WARN: closing paragraph w/o range: "
+                    f"{txt[:200]!r}"
+                )
+            pending_tables = []
+            pending_paragraphs = []
+
+    if pending_tables:
+        print(
+            f"[subsidy-diesel][comm] WARN: {len(pending_tables)} comm tables left "
+            "unmatched at end of document (no closing 'vigentes para o período' paragraph)"
+        )
+
+    # Assign ordinal by data_inicio ascending (chronological order: 1st historical = ordinal 1)
+    periods_raw.sort(key=lambda p: p["data_inicio"])
+    for i, p in enumerate(periods_raw, start=1):
+        p["ordinal"] = i
+
+    return periods_raw
+
+
+def _scrape_commercialization(year: int, sb, *, dry_run: bool = False) -> int:
+    """
+    Scrape the ANP commercialization page for `year`, parse each "período de
+    apuração", and upsert one row per (data_inicio, regiao, tipo_agente) into
+    `anp_subsidy_commercialization`.
+
+    Returns the number of rows upserted. Raises if year page returned ZERO
+    period rows (silent-empty defence — Pegadinha #12).
+
+    Behaviour for 404 (page not yet published for `year`): logs warning,
+    returns 0 without raising. Caller may treat as soft skip.
+    """
+    url = _COMM_URL_TEMPLATE.format(year=year)
+    print(f"\n[subsidy-diesel][comm] GET {url}")
+    try:
+        r = requests.get(url, headers=_COMM_HEADERS, timeout=30)
+    except Exception as e:
+        print(f"[subsidy-diesel][comm] ERROR: HTTP exception for year {year}: {e}")
+        return 0
+
+    if r.status_code == 404:
+        print(f"[subsidy-diesel][comm] Year page {year} returns 404 — skipping.")
+        return 0
+    if r.status_code != 200:
+        print(
+            f"[subsidy-diesel][comm] ERROR: HTTP {r.status_code} for year {year} "
+            f"(len={len(r.text)})"
+        )
+        return 0
+
+    # Sanity: Content-Encoding should be gzip/deflate (we never advertise 'br').
+    enc = (r.headers.get("Content-Encoding") or "").lower()
+    if "br" in enc:
+        # Should never happen given our headers, but log loudly if it does —
+        # Pegadinha #12: silent brotli garbage is the real bug.
+        print(
+            f"[subsidy-diesel][comm] WARN: server returned Content-Encoding={enc!r} "
+            "— we did not advertise 'br'. Verify response decoded correctly."
+        )
+
+    if len(r.text) < 2000:
+        raise RuntimeError(
+            f"[subsidy-diesel][comm] page for year {year} is suspiciously short "
+            f"({len(r.text)} chars). Aborting to avoid silent-empty ingest."
+        )
+
+    soup = BeautifulSoup(r.text, "lxml")
+    periods = _walk_periods(soup)
+    print(f"[subsidy-diesel][comm] {year}: detected {len(periods)} period(s)")
+
+    rows: list[dict] = []
+    for p in periods:
+        di: date = p["data_inicio"]
+        df: date = p["data_fim"]
+        n_tables = len(p["tables"])
+        print(
+            f"[subsidy-diesel][comm]   period ordinal={p['ordinal']} "
+            f"{di.isoformat()}..{df.isoformat()}  tables={n_tables}"
+        )
+
+        agent_map = _classify_period_group(p["tables"], p["cue_paragraphs"])
+        if not agent_map:
+            print(
+                f"[subsidy-diesel][comm]     WARN: no agent mapping for this period "
+                "(skipping)"
+            )
+            continue
+
+        period_rows = 0
+        for tbl_idx, agent in agent_map.items():
+            tbl = p["tables"][tbl_idx]
+            region_prices = _extract_comm_row(tbl)
+            if not region_prices:
+                print(
+                    f"[subsidy-diesel][comm]     WARN: table {tbl_idx} "
+                    f"({agent}) has no parseable 'Preço de Comercialização' row"
+                )
+                continue
+            for regiao, price in region_prices.items():
+                if not (_PRICE_MIN <= price <= _PRICE_MAX):
+                    print(
+                        f"[subsidy-diesel][comm]     WARN: price out of bounds "
+                        f"{price} for {regiao}/{agent} in period {di}..{df}"
+                    )
+                    continue
+                rows.append({
+                    "data_inicio": di.isoformat(),
+                    "data_fim": df.isoformat(),
+                    "regiao": regiao,
+                    "tipo_agente": agent,
+                    "preco_comercializacao": round(price, 4),
+                    "ordinal": p["ordinal"],
+                    "pdf_url": url,
+                })
+                period_rows += 1
+
+        expected = 5 * len(agent_map)  # 5 regions × N agents
+        if period_rows < expected:
+            print(
+                f"[subsidy-diesel][comm]     WARN: period {di}..{df} produced "
+                f"{period_rows} rows (expected {expected})"
+            )
+        else:
+            print(
+                f"[subsidy-diesel][comm]     OK: {period_rows} rows "
+                f"({len(agent_map)} agents × 5 regions)"
+            )
+
+    if not rows:
+        raise RuntimeError(
+            f"[subsidy-diesel][comm] year {year}: produced ZERO rows. "
+            "Page structure likely changed — failing visibly per Pegadinha #12."
+        )
+
+    print(
+        f"[subsidy-diesel][comm] {year}: {len(rows)} total rows ready "
+        f"({len(periods)} periods)"
+    )
+
+    if dry_run or sb is None:
+        print("[subsidy-diesel][comm] DRY RUN — sample rows that would be upserted:")
+        for r_ in rows[:10]:
+            print(f"  {r_}")
+        if len(rows) > 10:
+            print(f"  ... ({len(rows) - 10} more)")
+        return 0
+
+    # Upsert in batches with ON CONFLICT (data_inicio, regiao, tipo_agente) DO UPDATE
+    total = 0
+    n_batches = math.ceil(len(rows) / _BATCH)
+    for i in range(0, len(rows), _BATCH):
+        batch = rows[i : i + _BATCH]
+        sb.table(_TABLE_COMM).upsert(
+            batch,
+            on_conflict="data_inicio,regiao,tipo_agente",
+        ).execute()
+        total += len(batch)
+        print(
+            f"[subsidy-diesel][comm] upsert batch {i // _BATCH + 1}/{n_batches} "
+            f"— {total}/{len(rows)}"
+        )
+
+    print(
+        f"[subsidy-diesel][comm] {year}: DONE — {total} rows upserted to {_TABLE_COMM}"
+    )
+    return total
+
+
+# ---------------------------------------------------------------------------
 # Idempotency probe
 # ---------------------------------------------------------------------------
 
@@ -640,7 +1141,15 @@ def main() -> None:
     parser.add_argument(
         "--backfill",
         action="store_true",
-        help="Process all period PDFs found on the page (default: last 14 days only)",
+        help="Process all period PDFs found on the page (default: last 14 days only). "
+             "Also scrapes commercialization data for additional historical years.",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["incremental", "backfill"],
+        default=None,
+        help="Alias for backfill/default mode (workflow-friendly form). "
+             "'backfill' is equivalent to --backfill.",
     )
     parser.add_argument(
         "--dry-run",
@@ -652,7 +1161,68 @@ def main() -> None:
         action="store_true",
         help="Debug: include ALL PDFs from the year page, not just periodo ones",
     )
+    parser.add_argument(
+        "--skip-commercialization",
+        action="store_true",
+        help="Skip the HTML commercialization scrape (only run the PDF reference flow)",
+    )
+    parser.add_argument(
+        "--commercialization-only",
+        action="store_true",
+        help="Run ONLY the HTML commercialization scrape (skip the PDF reference flow)",
+    )
     args = parser.parse_args()
+
+    # Normalize --mode → --backfill
+    if args.mode == "backfill":
+        args.backfill = True
+
+    if args.skip_commercialization and args.commercialization_only:
+        print(
+            "[subsidy-diesel] ERROR: --skip-commercialization and "
+            "--commercialization-only are mutually exclusive."
+        )
+        sys.exit(2)
+
+    # Initialize Supabase client EARLY — both flows share it.
+    if args.dry_run:
+        print("[subsidy-diesel] DRY RUN — no writes to Supabase")
+        sb = None
+    else:
+        url_sup, svc_key = _get_creds()
+        sb = create_client(url_sup, svc_key)
+
+    # Step 0 — Scrape commercialization HTML (NEW)
+    # Runs BEFORE the PDF flow so that anp_subsidy_commercialization is populated
+    # before any computed-subsidy trigger on anp_subsidy_diesel_reference fires.
+    if not args.skip_commercialization:
+        current_year = date.today().year
+        # Backfill: try previous year too. Incremental: current year only.
+        years_to_scrape: list[int] = [current_year]
+        if args.backfill:
+            years_to_scrape = [current_year - 1, current_year]
+        total_comm = 0
+        for y in years_to_scrape:
+            try:
+                total_comm += _scrape_commercialization(y, sb, dry_run=args.dry_run)
+            except RuntimeError as e:
+                # Silent-empty guard fired — re-raise for visible failure
+                print(f"[subsidy-diesel][comm] FATAL: {e}")
+                # In incremental (current year only), this is a hard error.
+                # In backfill, an empty 2025 page is a soft skip already handled
+                # inside _scrape_commercialization via 404; a runtime error here
+                # means something else broke. Still fail hard.
+                raise
+            except Exception as e:
+                print(
+                    f"[subsidy-diesel][comm] ERROR (year {y}): {e}  — "
+                    "continuing with other years/flows"
+                )
+        print(f"[subsidy-diesel][comm] grand total upserted: {total_comm}")
+
+    if args.commercialization_only:
+        print("[subsidy-diesel] --commercialization-only set; exiting before PDF flow.")
+        return
 
     # Step 1 — Discover year page
     year_page_url = _discover_year_page_url()
@@ -673,14 +1243,9 @@ def main() -> None:
         )
         sys.exit(0)
 
-    # Step 3 — Initialize Supabase client and probe existing rows
-    if args.dry_run:
-        print("[subsidy-diesel] DRY RUN — no writes to Supabase")
-        existing_keys: set[tuple] = set()
-        sb = None
-    else:
-        url_sup, svc_key = _get_creds()
-        sb = create_client(url_sup, svc_key)
+    # Step 3 — Probe existing reference rows for idempotency
+    existing_keys: set[tuple] = set()
+    if not args.dry_run and sb is not None:
         existing_keys = _get_existing_keys(sb)
 
     # Step 4 — Process each PDF
