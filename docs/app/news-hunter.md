@@ -233,7 +233,28 @@ src/lib/clipping/__tests__/
 **Known skip reasons:**
 
 - **brasil-energia**: hard paywall — `div.editorial_` only returns teaser + login wall. Requires cookie-based auth (already partially supported via `clipping_cookies` table) or Playwright. Fixtures kept as reference.
-- **cnn-brasil**: Tailwind CSS arbitrary variant class `[&_.gallery]:mb-4` on the article body `<div>` contains the substring `gallery`, triggering `stripNoise()` to remove the entire content container. Fix: either add CNN Brasil to a custom extractor with a Tailwind-safe selector bypass, or implement an exclusion for Tailwind `[&_...]` arbitrary variants in the noise-class matching logic. Deferred to Phase 3/5.
+- **cnn-brasil**: Tailwind CSS arbitrary variant class `[&_.gallery]:mb-4` on the article body `<div>` contains the substring `gallery`, triggering `stripNoise()` to remove the entire content container. Fix: either add CNN Brasil to a custom extractor with a Tailwind-safe selector bypass, or implement an exclusion for Tailwind `[&_...]` arbitrary variants in the noise-class matching logic. Deferred.
+
+#### Phase 5 — Maintenance playbook + admin diagnose page (2026-05-26)
+
+The final phase of the clipping reform. Goal: Eduardo can add a new site or debug a noisy
+site without agent assistance.
+
+**Files:**
+- `src/lib/clipping/README.md` (new) — maintenance playbook covering:
+  - Full pipeline diagram (fetch cascade → extract → clean → buildEml)
+  - Step-by-step guide for adding new sites (custom selector vs AUTO_SELECTORS, fixture template)
+  - Diagnostic decision tree keyed on `?debug=1` fields
+  - Annotated `NOISE_CLASS_SUBSTRINGS` table (original 28 + Phase 2 + Phase 4 additions)
+  - Feature flag reference (`CLIPPING_USE_READABILITY`)
+  - Test commands, fetch cascade reference, cookie bypass notes, SSRF guard explanation
+- `src/app/(dashboard)/admin-analytics/clipping-diagnose/page.tsx` (new) — Admin-only UI at
+  `/admin-analytics/clipping-diagnose`. Paste a URL, calls `POST /api/clipping/scrape?debug=1`,
+  renders three panels: debug metadata, numbered final paragraphs, noise removed samples.
+  Auth via `useRoleGuard("Admin")`.
+
+**Test result at Phase 5 commit**: 16/18 pass, 2 skipped (unchanged — brasil-energia paywall,
+cnn-brasil Tailwind false-positive).
 
 #### SSRF guard
 
