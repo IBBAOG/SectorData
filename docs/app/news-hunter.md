@@ -624,3 +624,22 @@ Implementation details:
 - `normalizedHaystacks` memo: two pre-computed strings per article — `full` (keyword filter + topic pill) and `titleSource` (search filter).
 - `keywordHitsNormalized(normalizedHaystack, kw, mode)` — new variant that skips haystack normalization (only normalizes the keyword needle). `keywordHits()` delegates to it.
 - `filteredArticles` memo uses index-based filtering over `normalizedHaystacks` instead of rebuilding haystacks per predicate.
+
+## Scanner NFD-strip bug fix (2026-05-26)
+
+**Incident:** ~8 600 articles (~85% of stored articles) were false positives, primarily caused by keyword `'Irã'` being stripped of its diacritic to `'ira'` before matching, making it hit inside `'diretoria'`, `'irmã'`, `'a ira dos fãs'`, etc.
+
+**Root cause (two bugs compounding):**
+
+1. `filter._normalize()` in `IBBAOG/news-hunter-scanner` applied NFD decomposition + diacritic stripping to both keywords and haystack before every regex match. `'Irã'` → `'ira'` → matched `'diretoria'` as a substring.
+2. `store.get_config()` only read `news_hunter_keywords` (per-user) and fell back to hardcoded `DEFAULT_KEYWORDS` (all substring), completely ignoring `news_hunter_default_keywords` and its `match_type` column. The RPC `get_default_news_keywords_with_flags()` (added 2026-05-25) was never consumed by the scanner.
+
+**Fix (PR #3 in `IBBAOG/news-hunter-scanner`):**
+
+- `filter.py`: removed `_normalize()` entirely. `re.IGNORECASE` handles case folding; accents are never stripped. `'Irã'` now only matches text containing `'irã'`/`'Irã'`.
+- `store.py`: `get_config()` now fetches defaults via RPC `get_default_news_keywords_with_flags()` (fallback: direct `SELECT` on `news_hunter_default_keywords`), then merges per-user keywords. Aggregation: `'exact'` wins over `'substring'` when the same keyword appears in both sources.
+- 15 tests pass including 7 new regression cases.
+
+**DB-side cleanup:** ~10k contaminated rows in `news_articles` need DELETE — delegated to `worker_supabase` separately.
+
+**Design invariant preserved:** the DB ships both `'petroleo'` (plain) and `'petróleo'` (accented) as separate entries to cover sources that omit accents. With NFD stripping removed, each variant only matches its exact accent form — this is correct behavior.
