@@ -44,13 +44,14 @@ home/
                          Fuel Distribution / Admin), gradient thumbnails, sticky search
 ```
 
-**Desktop view** — identical to original HomeClient. 3-column Bootstrap grid (`col-md-6 col-lg-4`), hover `translateY(-5px)` + description reveal. Server-fetched previews (`initialPreviews` prop) override static paths.
+**Desktop view** — redesigned 2026-05-26 (icon list). Vertical list of compact rows inside the left 70% column. One card per row: 40×40px rounded icon bubble + module name + optional badge + chevron. Icon glows orange on hover (`#ff5000`, glow shadow), row translates right 4px, left accent bar animates in. Categories (Markets / Oil & Gas / Fuel Distribution / Admin) are separated by a `SectionHeader` with a category-color bar + divider line. `initialPreviews` prop is retained in the signature (backward-compat) but no longer used for rendering — images are replaced by icons.
 
-**Mobile view** — per `mockups/home-mobile.html`. Components used:
-- `MobileTopBar` (wordmark + avatar initials)
+**Mobile view** — redesigned 2026-05-26 (icon list, same analysis as desktop). Components used:
+- `MobileTopBar` (wordmark + avatar initials / Sign-in pill for anon)
 - `MobileBottomTabBar` (Home / Discover / Saved / Profile; Profile tab navigates to `/profile`)
-- Inline sticky section headers (no separate component — matched mockup exactly)
-- Per-slug SVG icons per mockup
+- Inline sticky section headers with category-color dot
+- Per-slug SVG icons from `src/data/moduleIcons.tsx` (centralized registry, shared with desktop)
+- `ModuleRow` component: 44×44 touch target, icon bubble (glow on press), module name, chevron. No more gradient thumbnails.
 
 **Shared hook (`useHomeData`):**
 - Reads `moduleVisibility` + `homeVisibility` + `profile` from `UserProfileContext`
@@ -526,6 +527,24 @@ Arquitetura extensível baseada em registry. Substitui o workflow de editar `dat
 As políticas de escrita para `price_bands` e `d_g_margins` são criadas pela migration
 `supabase/migrations/20260512000000_data_input_admin_policies.sql` (worker_supabase, branch paralela).
 Sem a migration, writes retornam 403 — a UI renderiza mas não persiste.
+
+## Changelog — Home cards redesign: icon list (2026-05-26)
+
+**Both desktop and mobile** views were redesigned in the same commit (`feat(home): replace image cards with icon+name list`).
+
+| Change | Desktop | Mobile |
+|---|---|---|
+| Layout | Vertical list, one card per row, inside the existing 70% left column | Same vertical list, replacing gradient-thumbnail cards |
+| Icon source | `src/data/moduleIcons.tsx` (centralized, 18 slugs) | Same `moduleIcons.tsx` — previously each view had its own inline SVG definitions |
+| Icon size | 20×20 in a 40×40 rounded bubble | 20×20 in a 40×40 rounded bubble |
+| Hover/press state | Orange icon color + glow shadow + translateX(4px) + left accent bar slides in | Pressed: orange icon + accent-left bar via `inset box-shadow` + translateX(3px) on chevron |
+| Category headers | `SectionHeader` with category-color bar + horizontal divider | Section header with category-color dot |
+| Image cards | Removed (large 220px photo cards) | Removed (gradient thumbnail + description rows) |
+| `initialPreviews` prop | Still in signature (backward-compat with `page.tsx` server fetch) but not rendered | N/A (mobile never used server-fetched previews) |
+
+**New file:** `src/data/moduleIcons.tsx` — module-level SVG icon registry. Exports `getModuleIcon(slug, size, strokeWidth)` and individual `Icon*` named components. Covers all 18 slugs currently in `module_visibility` + profile/admin-panel static entries.
+
+**Admin-panel Card Images tab** (upload images per module + Show on Home toggle) is **preserved** — the toggle still controls `is_visible_on_home`. The uploaded images are no longer rendered in `/home` but the upload machinery remains intact. Cleanup of the upload UI in admin-panel is tracked as a follow-up task.
 
 ## Changelog — Data Sources table QA fixes (2026-05-26)
 
