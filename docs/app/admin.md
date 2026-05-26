@@ -195,7 +195,7 @@ src/
 
 **RPC:** `get_data_sources_freshness()` — migration `20260526200000_data_sources_freshness.sql`. Returns `(source_key, last_update, row_count)` for all 22 ETL-fed tables. SECURITY DEFINER, accessible to `anon` + `authenticated`. Wrapper: `rpcGetDataSourcesFreshness` in `src/lib/rpc.ts`.
 
-**Note on catalog vs. RPC key count:** The RPC returns 22 source_keys (one per ETL-fed table). The catalog has 17 entries — 6 "extra" DB source_keys (the 3 CDP Diária sub-tables, `anp_desembaracos`, `port_arrivals`, `import_candidates`, and `anp_subsidy_history`) are deduplicated in the catalog but still tracked by freshness. The hook silently ignores keys with no catalog entry (returns undefined → no render).
+**Note on catalog vs. RPC key count:** The RPC returns 22 source_keys (one per ETL-fed table). The catalog has 17 entries — 6 "extra" DB source_keys (the 3 CDP Diária sub-tables, `anp_desembaracos`, `port_arrivals`, `import_candidates`) are deduplicated in the catalog but still tracked by freshness. The hook silently ignores keys with no catalog entry (returns undefined → no render). *(Note: `anp_subsidy_history` was previously tracked but was dropped by migration `20260527200000_subsidy_reform.sql` — see Changelog "Price Bands form simplification" below. The catalog and RPC were updated to drop that key.)*
 
 **The 17 entries** (post-deduplication; 22 Supabase source_keys still active in RPC):
 - ANP Production (3): `anp_cdp_diaria` (covers all 3 Power BI tables), `anp_cdp_producao`, `anp_voip`
@@ -523,6 +523,34 @@ As políticas de escrita para `price_bands` e `d_g_margins` são criadas pela mi
 `supabase/migrations/20260512000000_data_input_admin_policies.sql` (worker_supabase, branch paralela).
 Sem a migration, writes retornam 403 — a UI renderiza mas não persiste.
 
+## Changelog — Price Bands form simplification + `anp_subsidy_history` cleanup (2026-05-27)
+
+The Data Input → Price Bands form previously exposed 6 columns for Diesel: `Date`, `BBA Import Parity`, `BBA Import Parity w/ Subsidy`, `BBA Export Parity`, `Petrobras Price`, `Petrobras Price w/ Subsidy`. The two `_w_subsidy` columns are now **populated automatically** by SQL triggers (migration `20260527200000_subsidy_reform.sql`) from ANP reference + commercialization data — admins no longer enter them by hand.
+
+**Form is now 4 columns**: `Date`, `BBA Import Parity`, `BBA Export Parity`, `Petrobras Price` (same set for both Diesel and Gasoline partitions).
+
+**Why the two `_w_subsidy` inputs were removed:**
+- DB triggers (`populate_pb_w_subsidy_on_insert` on `price_bands`, plus recompute triggers on `anp_subsidy_diesel_reference`, `anp_subsidy_commercialization`, and `anp_subsidy_caps`) now keep both columns in sync automatically.
+- Manual entry would be overwritten by the next trigger fire — so editing them by hand created a confusing "your input vs trigger value" race.
+
+**Implementation:**
+
+| File | Change |
+|---|---|
+| `src/lib/dataInput/registry.ts` | Dropped the two `_w_subsidy` `ColumnConfig` entries. Added an `infoNote` on the Price Bands table: "Subsidy-adjusted values … are computed automatically from ANP data". |
+| `src/lib/dataInput/types.ts` | Added optional `infoNote?: string` field to `EditableTableConfig`. |
+| `src/lib/dataInput/persistence.ts` | **Critical:** added an allowlist filter (registry columns + conflict columns + `id`) before pushing to PostgREST. Without this, the existing-row upsert path was round-tripping the DB-read `bba_import_parity_w_subsidy` / `petrobras_price_w_subsidy` values back into the table, overwriting the trigger-computed values. The filter applies to both edited-row and draft payloads. |
+| `src/components/dataInput/EditableTableEditor.tsx` | Renders the new `infoNote` as a small orange banner above the partition toggle. |
+| `docs/app/admin.md` | This Changelog entry + updated `anp_subsidy_history` references. |
+
+**Subsidy caps UI — intentionally not added.** The brief allowed an optional new tab for editing `anp_subsidy_caps` (the new table replacing `anp_subsidy_history`, PK `(vigente_desde, tipo_agente)`). Caps are 4 seed rows with very low edit frequency — managed via SQL/migrations is enough. Building a CRUD form for them would also require a new SECURITY DEFINER RPC (`anp_subsidy_caps` write is service-role-only, so the registry's PostgREST upsert path can't reach it). The form is deferred until there's actual demand for runtime edits.
+
+**No mobile change** — Data Input is desktop-only (mobile shows a "Desktop only" placeholder card). Sync rule satisfied: this is a desktop-only enhancement to a desktop-only feature; no `[desktop-only]` tag needed in the commit because mobile has nothing equivalent to update.
+
+**Stale `anp_subsidy_history` reference fixed:** the only remaining src/ reference was a comment in `src/lib/rpc.ts` inside the Subsidy Tracker module section (owned by `worker_dash-subsidy-tracker`). Left untouched here per ownership rules — that worker rewrites the section as part of the same reform.
+
+---
+
 ## Changelog — Permissions toggle UX fixes (2026-05-26)
 
 Two UX fixes applied to the Permissions tab toggles (both desktop and mobile views).
@@ -648,7 +676,7 @@ Follow-up to the `/home` icon-list redesign. Since module cards no longer use up
 
 ### Ad-hoc sources: cronUtc corrected + Next-run line hidden
 
-`anp_subsidy_history` in `src/data/dataSources.ts` was incorrectly set to `cronUtc: "30 11 * * *"` (inherited by copy-paste from `anp_subsidy_diesel_reference`). Fixed to `cronUtc: null` with an updated `cronDescription` ("Ad-hoc — updated when new subsidy decree drops"). `price_bands` was already `null`.
+`anp_subsidy_history` in `src/data/dataSources.ts` was incorrectly set to `cronUtc: "30 11 * * *"` (inherited by copy-paste from `anp_subsidy_diesel_reference`). Fixed to `cronUtc: null` with an updated `cronDescription` ("Ad-hoc — updated when new subsidy decree drops"). `price_bands` was already `null`. *(Historical note: `anp_subsidy_history` was later dropped entirely by the subsidy reform — see Changelog "Price Bands form simplification" below.)*
 
 `ExpandedRow.tsx` already gates the "Next run" row on `src.cronUtc !== null` — no change needed there; the upstream `dataSources.ts` fix was sufficient.
 

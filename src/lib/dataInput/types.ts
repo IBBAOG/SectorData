@@ -39,6 +39,11 @@ export interface EditableTableConfig {
   columns: ColumnConfig[];
   defaultSort?: SortConfig;
   partitionBy?: PartitionConfig;
+  /**
+   * Optional informational banner rendered above the editor for this table.
+   * Use for caveats like "this column is computed automatically".
+   */
+  infoNote?: string;
 }
 
 /** A draft (unsaved insert) uses a negative id to distinguish it from DB rows. */

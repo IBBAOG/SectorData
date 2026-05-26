@@ -80,6 +80,19 @@ export async function saveChanges(
   // ── Build upsert payload ──────────────────────────────────────────────────
   const toUpsert: Record<string, unknown>[] = [];
 
+  // Allowlist of column keys safe to send back to Postgres for this table.
+  // Includes:
+  //   - `id` (so edits target the right row on upsert)
+  //   - every registry column (`config.columns`)
+  //   - every conflict column (in case it isn't already in `columns`)
+  // Everything else — including DB-computed columns like
+  // `bba_import_parity_w_subsidy` and `petrobras_price_w_subsidy` (populated by
+  // SQL triggers from ANP data) — is stripped so we don't round-trip stale
+  // server values back into the table on edit.
+  const allowedKeys = new Set<string>(["id"]);
+  for (const col of config.columns) allowedKeys.add(col.key);
+  for (const col of config.conflictColumns) allowedKeys.add(col);
+
   // Edited existing rows — merge full original row so conflict-key columns
   // (e.g. "product"+"date" for price_bands, "fuel_type"+"week" for d_g_margins)
   // are always present in the payload. Without them PostgREST cannot match the
@@ -93,7 +106,12 @@ export async function saveChanges(
         merged[col.key] = coerceValue(partial[col.key as keyof typeof partial], col.type);
       }
     }
-    toUpsert.push(merged);
+    // Strip columns not declared in the registry (see allowlist comment above).
+    const filtered: Record<string, unknown> = {};
+    for (const key of Object.keys(merged)) {
+      if (allowedKeys.has(key)) filtered[key] = merged[key];
+    }
+    toUpsert.push(filtered);
   }
 
   // New drafts — strip the negative synthetic id so Postgres auto-generates.
@@ -128,7 +146,12 @@ export async function saveChanges(
       }
     }
 
-    toUpsert.push(payload);
+    // Same allowlist as above — drop any stray keys not declared in the registry.
+    const filteredDraft: Record<string, unknown> = {};
+    for (const key of Object.keys(payload)) {
+      if (allowedKeys.has(key)) filteredDraft[key] = payload[key];
+    }
+    toUpsert.push(filteredDraft);
   }
 
   // ── Upsert: split edits (have id) and drafts (no id) into separate calls ──

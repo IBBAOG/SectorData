@@ -244,6 +244,24 @@ export function EditableTableEditor({ config }: EditableTableEditorProps) {
   return (
     <div style={{ fontFamily: "Arial, sans-serif" }}>
 
+      {/* ── Per-table informational banner ───────────────────────────────── */}
+      {config.infoNote && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: "10px 12px",
+            borderRadius: 8,
+            background: "#fff8f1",
+            border: "1px solid #ffd9b3",
+            color: "#7a3d00",
+            fontSize: 12,
+            lineHeight: 1.5,
+          }}
+        >
+          {config.infoNote}
+        </div>
+      )}
+
       {/* ── Partition toggle ─────────────────────────────────────────────── */}
       {config.partitionBy && (
         <div style={{ marginBottom: 16 }}>
