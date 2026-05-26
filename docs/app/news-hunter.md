@@ -147,6 +147,48 @@ Architecture of the debug path:
 
 This is the diagnostic foundation for Phase 2 (global quick-wins) and Phase 4 (per-site fixture tests) of the clipping noise reduction plan (`docs/` — plans folder).
 
+#### Phase 4 — Fixture-based regression tests (2026-05-26)
+
+`src/lib/clipping/__tests__/extract.test.ts` is a vitest suite that runs `extract()` against
+real HTML snapshots captured from the top-10 target sites, asserting paragraph count, first/last
+paragraph anchors, and noise markers that must never appear in the output.
+
+Run: `npm test` (or `npm run test:watch` for interactive mode).
+
+**Test configuration:** `vitest.config.ts` at project root — node environment, resolves `@` alias.
+
+**Fixture structure:**
+
+```
+src/lib/clipping/__tests__/
+  extract.test.ts        Suite — loops over domain dirs, reads .html + .expected.json
+  fixtures/
+    brasil-energia/      SKIP (paywall — content not accessible without auth)
+    clickpetroleoegas/   2 fixtures — PASS
+    cnn-brasil/          SKIP (Tailwind [&_.gallery]:mb-4 false-positive in stripNoise)
+    eixos/               2 fixtures — PASS
+    estadao/             2 fixtures — PASS
+    folha/               2 fixtures — PASS
+    g1/                  2 fixtures — PASS
+    infomoney/           2 fixtures — PASS
+    petrobras/           2 fixtures — PASS
+    valor/               2 fixtures — PASS
+```
+
+**Extractor fixes made in Phase 4** (committed alongside the tests):
+
+| Fix | File | Scope |
+|---|---|---|
+| Added `media__description` to `NOISE_CLASS_SUBSTRINGS` | `extract.ts` | Removes Globo group photo caption paragraphs (G1, Valor) |
+| Added `headlines` to `NOISE_CLASS_SUBSTRINGS` | `extract.ts` | Removes Estadão related-article headline teasers inside news-body |
+| Added `loading-text` to `NOISE_CLASS_SUBSTRINGS` | `extract.ts` | Removes Estadão AI-summary placeholder ("Gerando resumo") |
+| Added `div.news-content` as primary selector for `agencia.petrobras.com.br` | `sources.ts` | Liferay CMS — content lives in `.news-content`, not `.entry-content` |
+
+**Known skip reasons:**
+
+- **brasil-energia**: hard paywall — `div.editorial_` only returns teaser + login wall. Requires cookie-based auth (already partially supported via `clipping_cookies` table) or Playwright. Fixtures kept as reference.
+- **cnn-brasil**: Tailwind CSS arbitrary variant class `[&_.gallery]:mb-4` on the article body `<div>` contains the substring `gallery`, triggering `stripNoise()` to remove the entire content container. Fix: either add CNN Brasil to a custom extractor with a Tailwind-safe selector bypass, or implement an exclusion for Tailwind `[&_...]` arbitrary variants in the noise-class matching logic. Deferred to Phase 3/5.
+
 #### SSRF guard
 
 A rota só processa URLs cujo domínio está no `EXTRACTORS` whitelist (~80 domínios jornalísticos). Domínio desconhecido → `{ status: "unknown_domain" }` sem fazer fetch.
