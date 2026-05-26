@@ -28,6 +28,7 @@ const DOMAIN_HOSTS: Record<string, string> = {
   "cnn-brasil": "www.cnnbrasil.com.br",
   "infomoney": "www.infomoney.com.br",
   "uol-economia": "economia.uol.com.br",
+  "tnonline": "tnonline.uol.com.br",
 };
 
 // Domains whose fixtures are skipped with an explicit TODO.
