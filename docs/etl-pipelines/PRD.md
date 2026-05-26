@@ -73,6 +73,7 @@ scripts/utils/                      # one-shots (não-ETL)
 | `etl_navios_imo_lookup.yml` | Após `etl_navios_lineup` | `pipelines/navios/03_imo_lookup.py` → `04_cabotage_cleanup.py` | `navios_diesel.imo/mmsi` |
 | `etl_navios_positions.yml` | Após `etl_navios_imo_lookup` | `pipelines/navios/05_positions_sync.py` | `vessel_positions`, `port_arrivals` |
 | `etl_anp_precos_distribuicao.yml` | Mensal — dia 5, 14:00 UTC (`0 14 5 * *`) + Semanal — terça, 14:30 UTC (`30 14 * * 2`) | `pipelines/anp/precos_distribuicao_sync.py` | `anp_precos_distribuicao` |
+| `etl_anp_subsidy_diesel.yml` | Diário — `30 11 * * *` UTC (8:30 BRT). `workflow_dispatch` com input `mode: {incremental, backfill}` | `pipelines/anp/subsidy_diesel_sync.py` (PDF flow + HTML scrape stage). CLI: `--mode {incremental,backfill}`, `--skip-commercialization`, `--commercialization-only`, `--all-pdfs`, `--dry-run` | `anp_subsidy_diesel_reference` (preços de referência diários por região; PDF flow legado) + `anp_subsidy_commercialization` (preço de comercialização período × região × tipo_agente; **stage HTML novo desde 2026-05-27** — ver § "Subsidy commercialization HTML scrape"). HTML stage roda antes do PDF para garantir que os triggers AFTER em `reference` encontrem `commercialization` populada (`compute_subsidy_reimbursement` retorna real, não NULL). |
 | `etl_anp_cdp_diaria.yml` | 3×/dia — `0 10,15,20 * * *` UTC (7h/12h/17h BRT) | `scripts/extractors/anp_cdp_powerbi.py --level all --upload` (via `_powerbi_common.py`) | `anp_cdp_diaria` (~16.5k rows; upsert `(data, campo, bacia)`), `anp_cdp_diaria_instalacao` (~16.3k rows; upsert `(data, campo, instalacao)`), `anp_cdp_diaria_poco` (~180.7k rows; upsert `(data, campo, bacia, poco)`). Timeout workflow: 25min. **Semântica de upload — append-only** (desde commit `397a108c`, 2026-05-08): usa `ignore_duplicates=True` (PostgREST `Prefer: resolution=ignore-duplicates` → SQL `ON CONFLICT DO NOTHING`). (data, dim) inédito: INSERT. (data, dim) já existe: SKIP — valor original preservado. Aplica-se às 3 tabelas (campo / instalacao / poco) — todas passam pela mesma `upload_to_supabase()`. Base point: `--start` default = `2025-11-09` (primeira data com dados Power BI). Trade-off: revisões retroativas do Power BI ANP não são refletidas (snapshot histórico tem prioridade sobre fidelidade a revisões — decisão explícita do usuário). **Pegadinha 1 — property names**: property names Power BI são case-sensitive e diferem do display name — ex: nível Poço usa `Campo (Poço)` (property) e não `NOME CAMPO` (display name); retorna 0 linhas se property errada. **Pegadinha 2 — atribuição 1:1 vs N:N**: entity `v_poco_instalacao_sigep_ultimo` (páginas 5/6, níveis Installation e Well) faz atribuição "última" — cada poço linka a apenas 1 campo. Entity `v_campos_detalhe` (página 4, nível Field) faz N:N. Resultado: filtro Campo mostra 94 campos em Field mas apenas 76 em Installation/Well (19 campos Field-only com poços 100% compartilhados com outro campo "principal"). Não é bug do ETL. Documentado em [`docs/app/anp-cdp-diaria.md`](../app/anp-cdp-diaria.md). |
 
 > Workflows confirmados ativos em 2026-05-05. Row counts atualizados após backfill histórico de 2026-05-06. README está desatualizado (não os menciona). Quando atualizar README, incluir.
@@ -112,6 +113,35 @@ objetivos são distintos:
 **Status**: redundância documentada, refactor não planejado. Unificação futura implicaria
 fazer alertas/ consumir diretamente do Supabase em vez dos parquets — avaliação de escopo
 necessária antes de iniciar.
+
+### Subsidy commercialization HTML scrape (2026-05-27)
+
+`scripts/pipelines/anp/subsidy_diesel_sync.py` ganhou um stage HTML novo que roda **antes** do flow PDF de referência. Stage popula `anp_subsidy_commercialization` (tabela criada pela Subsidy Reform — ver `docs/supabase/PRD.md` § "Subsidy Reform").
+
+| Item | Valor |
+|---|---|
+| Função interna | `_scrape_commercialization(year: int, sb, *, dry_run: bool=False) -> int` |
+| URL alvo (template) | `https://www.gov.br/anp/pt-br/assuntos/precos-e-defesa-da-concorrencia/subvencao-a-comercializacao-de-oleo-diesel-rodoviario-<year>` |
+| Parser | BeautifulSoup + lxml. Walk em document order pra agrupar tabelas em "período de apuração"; cada período produz até 2 tabelas (importador, produtor) × 5 regiões = até 10 rows. |
+| Categorias do PDF | 3 (importador / produtor com petróleo nacional próprio / produtor com petróleo importado). **Só armazenamos 2**: `importador` + `produtor` (mapeado da categoria "nacional próprio"). A 3ª categoria — "petróleo importado" — é descartada por decisão de produto. |
+| Upsert | `ON CONFLICT (data_inicio, regiao, tipo_agente) DO UPDATE`. Filtros sanitários: `_PRICE_MIN=2.0`, `_PRICE_MAX=12.0` BRL/L. |
+| Encoding | Header `Accept-Encoding: gzip, deflate` (**não** advertise `br` — Pegadinha #12). Header `User-Agent` Chrome desktop pra evitar tarpit. |
+| Defesa silent-empty | Se a página retornar `< 2000` chars OU 0 períodos detectados após parse, **`raise RuntimeError`** (CLAUDE.md Pegadinha #12). Empty = real bug, não silent skip. |
+| 404 handling | Soft-skip com log + `return 0`. Permite backfill em anos futuros que ainda não têm página publicada. |
+
+**CLI flags novas:**
+
+| Flag | Default | Efeito |
+|---|---|---|
+| `--mode {incremental,backfill}` | `incremental` (alias do flow legado) | `backfill` itera 2025 + ano corrente; `incremental` só ano corrente. |
+| `--skip-commercialization` | `False` | Pula o stage HTML novo. PDF flow normal. |
+| `--commercialization-only` | `False` | Roda só o stage HTML, pula o PDF. Mutuamente exclusivo com `--skip-commercialization`. |
+
+**Wiring:** stage HTML roda **antes** do flow PDF (`anp_subsidy_diesel_reference`) pra garantir que quando os triggers AFTER em `reference` dispararem `recompute_pb_on_reference_change`, a `commercialization` já esteja populada e a fórmula compute_subsidy_reimbursement retorne valor real (não NULL).
+
+**Schedule:** mantém o cron diário `30 11 * * *` UTC do workflow `etl_anp_subsidy_diesel.yml`. Sem aumento de carga — adiciona ~1 GET HTML por execução, ~50 rows/run em regime normal.
+
+**Tolerância:** 50 rows extraídos na 1ª execução real é aceitável (~5 períodos × 10 rows). 0 rows é exception.
 
 ### Imports & Exports reform — 2026-05-25
 

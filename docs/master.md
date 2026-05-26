@@ -125,7 +125,7 @@ São os pontos onde um departamento depende de outro. Mudanças nestes contratos
 | Quem consome | Como |
 |---|---|
 | APP | Lê via supabase-js (anon key) chamando RPCs. Wrappers em `src/lib/rpc.ts` (este código é do APP, mas as RPCs em si pertencem ao Supabase). Também **escreve** `app_events` via RPC `track_event` (fire-and-forget, auth.uid() capturado no SQL). |
-| ETL | Escreve via supabase-py (service key) — popula `vendas`, `navios_diesel`, `news_articles`, `mdic_comex`, `anp_precos_produtores`, `anp_glp`, `anp_daie`, `anp_desembaracos` (enriquecida com `importador`, `cnpj`, `uf_cnpj`), `anp_lpc`, `anp_cdp_producao`, `anp_precos_distribuicao`, `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco`, `anp_voip`, `anp_subsidy_diesel_reference`. |
+| ETL | Escreve via supabase-py (service key) — popula `vendas`, `navios_diesel`, `news_articles`, `mdic_comex`, `anp_precos_produtores`, `anp_glp`, `anp_daie`, `anp_desembaracos` (enriquecida com `importador`, `cnpj`, `uf_cnpj`), `anp_lpc`, `anp_cdp_producao`, `anp_precos_distribuicao`, `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco`, `anp_voip`, `anp_subsidy_diesel_reference`, `anp_subsidy_commercialization` (HTML scrape stage adicionado em 2026-05-27). `anp_subsidy_caps` é mantida manualmente (cardinalidade muito baixa). |
 | Dados Locais | Escreve via supabase-py (service key) — popula `d_g_margins`, `price_bands` |
 | Alertas | Lê via supabase-py — verifica mudanças em fontes monitoradas |
 
@@ -160,6 +160,29 @@ São os pontos onde um departamento depende de outro. Mudanças nestes contratos
 **Contrato `get_data_sources_freshness` (APP ↔ Supabase, adicionado 2026-05-26):**
 
 RPC pública usada pela tabela live "Data Sources" da `/home` (desktop, split 50/50 — mobile mantém só cards). Retorna `(source_key text, last_update timestamptz, row_count bigint)` para 22 tabelas alimentadas por ETL (CDP diária × 3 níveis, CDP mensal, VOIP, vendas, produtores, GLP, LPC, distribuição, subsídio referência + histórico, MDIC, DAIE, desembaraços, navios, vessel_positions, port_arrivals, import_candidates, d_g_margins, price_bands, news_articles). `LANGUAGE sql STABLE SECURITY DEFINER` + `SET search_path = public, pg_temp`. `GRANT EXECUTE TO anon, authenticated`. Visível para Anon + Client + Admin (transparência do produto). Migration: `supabase/migrations/20260526200000_data_sources_freshness.sql`. Source-of-truth de curadoria (descrições, categorias, cron, dashboards consumidores) vive em `src/data/dataSources.ts` (23 entries — 22 + Yahoo Finance, que não tem tabela Supabase). Hook front: `useDataSourcesFreshness` (polling 60s) consumindo wrapper `rpcGetDataSourcesFreshness` em `src/lib/rpc.ts`. Detalhes de UI + lista completa de fontes em [`docs/app/admin.md`](app/admin.md) § "Data Sources live table".
+
+**Contrato Reforma de Subsídio do Diesel (APP ↔ Supabase ↔ ETL, 2026-05-27):**
+
+Migration `supabase/migrations/20260527200000_subsidy_reform.sql` (+ hotfix `20260527300000_data_sources_freshness_subsidy_fix.sql`). Substitui a fórmula errada anterior (que tratava `anp_subsidy_history.subsidio_brl_l` como diferença) pela mecânica real: o subsídio é um **teto** (`cap_brl_l`), e o reembolso por região é `MIN(MAX(ref_diária − comm_período, 0), cap_agente_vigente)`, depois agregado pela média das 5 regiões. Duas trilhas de agente coexistem (`importador` e `produtor`) com caps independentes desde 2026-04-07.
+
+| Objeto | Mudança |
+|---|---|
+| `anp_subsidy_history` | **DROPADA** (`DROP TABLE ... CASCADE`). |
+| `anp_subsidy_caps` | Tabela nova. PK `(vigente_desde, tipo_agente)`. Colunas: `cap_brl_l NUMERIC(10,4)`, `observacao`, `inserted_at`. Seed: 4 rows (2026-03-13 unificado em 0.32 + 2026-04-07 split `importador=1.52`/`produtor=1.12`). Mantida manualmente. |
+| `anp_subsidy_commercialization` | Tabela nova. PK `(data_inicio, regiao, tipo_agente)`. Colunas: `data_fim`, `preco_comercializacao`, `ordinal`, `pdf_url`, `inserted_at`. Populada pelo stage HTML novo de `scripts/pipelines/anp/subsidy_diesel_sync.py`. RLS read-open para anon/authenticated; writes via service-role. |
+| `compute_subsidy_reimbursement(date, tipo_agente)` | RPC interna `LANGUAGE sql STABLE SECURITY DEFINER` + `SET search_path = public, pg_temp`. Retorna AVG das 5 regiões de `MIN(MAX(ref − comm, 0), cap)`, ou NULL se faltar input. Granted to anon + authenticated. |
+| 4 triggers em `price_bands` | (a) `populate_pb_w_subsidy_on_insert` BEFORE INSERT/UPDATE OF (date, product, bba_import_parity, petrobras_price) em `price_bands` para rows de Diesel — preenche `bba_import_parity_w_subsidy` e `petrobras_price_w_subsidy`. (b) `recompute_pb_on_reference_change` AFTER em `anp_subsidy_diesel_reference`. (c) `recompute_pb_on_comm_change` AFTER em `anp_subsidy_commercialization`. (d) `recompute_pb_on_caps_change` AFTER em `anp_subsidy_caps`. Os 3 AFTER refrescam os rows afetados em `price_bands` via self-UPDATE para re-disparar a BEFORE. |
+| `get_subsidy_tracker_diesel()` | **REWRITE** (DROP+CREATE). Nova signature retorna 11 colunas: `date`, `ipp`, `ipp_adjusted`, `petrobras`, `petrobras_adjusted`, `anp_reference_importador`, `anp_reference_produtor`, `anp_commercialization_importador`, `anp_commercialization_produtor`, `regions_importador JSONB`, `regions_produtor JSONB`. Sufixos `_importador`/`_produtor` carregam as duas trilhas. `ipp_adjusted = ipp − reimb_importador`; `petrobras_adjusted = petrobras + reimb_produtor`. SECURITY DEFINER + `search_path = public, pg_temp` + GRANT anon + authenticated. |
+| `get_data_sources_freshness()` | **Hotfix** (`20260527300000_data_sources_freshness_subsidy_fix.sql`). DROP+CREATE — removeu branch de `anp_subsidy_history` (DROPADA na reforma) e adicionou branches `anp_subsidy_caps` e `anp_subsidy_commercialization` (ambos por `MAX(inserted_at)`). Total: **23 sources** (era 22 pré-fix). |
+
+**Quem consome o quê:**
+
+| Dashboard | RPC | Comportamento |
+|---|---|---|
+| `/subsidy-tracker` | `get_subsidy_tracker_diesel` | 4 traces por grid. Grid Importador: IPP, IPP_adjusted (dashed), ANP Reference (importador), ANP Commercialization (importador). Grid Produtor: Petrobras, Petrobras_adjusted (dashed), ANP Reference (produtor), ANP Commercialization (produtor). |
+| `/price-bands` | `get_price_bands_data` | Agora exibe trace `Petrobras Price w/ subsidy` (antes reservado). `BBA - Import Parity w/ subsidy` mantida. Ambas são auto-populadas pelos triggers — não vêm mais do upload Excel. |
+| `/admin-panel` Data Input → Price Bands | (form CRUD) | Form Diesel simplificado: 4 colunas (Date, BBA Import Parity, BBA Export Parity, Petrobras Price). Sem as 2 colunas `_w_subsidy`. |
+| `/home` Data Sources live table | `get_data_sources_freshness` | Catálogo `src/data/dataSources.ts` perdeu entry `anp_subsidy_history`, ganhou `anp_subsidy_caps` + `anp_subsidy_commercialization`. |
 
 **Contrato `news_hunter_default_keywords` (APP ↔ Supabase):**
 
@@ -451,6 +474,10 @@ Workflow controlado pelo **Subgerente APP** (não pelo Gerente Geral). Ver detal
 ### Consolidação Sales Volumes → Market Share (2026-05-26)
 
 `/sales-volumes` foi retirado e suas funcionalidades absorvidas por `/market-share` via um toggle top-level "% Share" ↔ "thousand m³". O URL `/sales-volumes` agora 301-redireciona para `/market-share?unit=volume`. Owner único agora é `worker_dash-market-share`; o `worker_dash-sales-volumes` é aposentado. Sub-PRD antigo arquivado em [`docs/app/_deprecated/sales-volumes.md`](app/_deprecated/sales-volumes.md). Tabelas e RPCs `get_sv_*` / `get_ms_*` preservadas no DB; mudanças de RPC entregues pela Frente 2 (migration dedicada).
+
+### Reforma de Subsídio do Diesel (2026-05-27)
+
+`/subsidy-tracker` e `/price-bands` foram reescritos para refletir a mecânica real de subsídio do diesel. A tabela `anp_subsidy_history` (que tratava subsídio como diferença) foi DROPADA e substituída por duas tabelas novas: `anp_subsidy_caps` (teto do reembolso por `(vigente_desde, tipo_agente)`) e `anp_subsidy_commercialization` (preço de comercialização período × região × `tipo_agente`, populada por scrape HTML). A função `compute_subsidy_reimbursement(date, tipo_agente)` calcula `AVG(MIN(MAX(ref − comm, 0), cap))` sobre as 5 regiões, e 4 triggers em `price_bands` mantêm as colunas `bba_import_parity_w_subsidy` e `petrobras_price_w_subsidy` sempre coerentes com os inputs. RPC `get_subsidy_tracker_diesel()` foi reescrita com 11 colunas (sufixos `_importador`/`_produtor`, inclui `ipp_adjusted` e `petrobras_adjusted`). ETL `scripts/pipelines/anp/subsidy_diesel_sync.py` ganhou stage HTML novo (`_scrape_commercialization`) + CLI flags `--mode {incremental,backfill}`, `--skip-commercialization`, `--commercialization-only`. Upload Excel de `data/price_bands.xlsx` (`scripts/manual/price_bands_upload.py`) parou de enviar as 2 colunas `_w_subsidy` (agora auto-computadas via trigger). RPC `get_data_sources_freshness()` foi atualizada via hotfix (`20260527300000`) — 23 sources (era 22). Migrations: `supabase/migrations/20260527200000_subsidy_reform.sql` + `20260527300000_data_sources_freshness_subsidy_fix.sql`. Detalhes em `docs/supabase/PRD.md` § "Subsidy Reform (2026-05-27)" e `docs/etl-pipelines/PRD.md` § "Subsidy commercialization HTML scrape (2026-05-27)".
 
 ### Reforma ANP Prices (2026-05-26)
 
