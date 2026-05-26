@@ -87,6 +87,14 @@ Lista de **notícias** publicadas que matchearam keywords salvas pelo user. Atua
 
 ### Admin-only: Clipping (port do Clipinator)
 
+Clipping is restricted to `Admin` role. Enforcement is defense-in-depth across three layers:
+
+| Layer | Where | Mechanism |
+|---|---|---|
+| UI — hide affordance | `desktop/View.tsx` | `isAdmin` guard hides Selection Mode button, per-article checkboxes, `SelectionSidebar`, and `ClippingModal`. Clients and Anon users see no clipping affordance. |
+| API — server-side reject | `src/app/api/clipping/scrape/route.ts` | Validates bearer token via `admin.auth.getUser()`, then checks `profiles.role`. Non-Admin → `403 Forbidden — Admin only`. Blocks any direct `curl`/`fetch` caller regardless of UI. |
+| Mobile | `mobile/View.tsx` | Clipping is not implemented on mobile (`[mobile-only-deferred-clipping]`). When it lands, it must also check `isAdmin`. |
+
 Admins têm uma funcionalidade extra de **clipping de notícias**:
 
 1. **Selection Mode toggle** — aparece no top row para Admins. Ativa checkboxes em cada artigo.
