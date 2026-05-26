@@ -144,7 +144,10 @@ def send_pending_outbox(batch_limit: int = 100) -> dict[str, int]:
         try:
             if is_confirmation:
                 html, text = render_confirmation(subscriber=subscriber, source=source)
-                subject = f"[SectorData Alerts] Confirm your subscription — {source.get('display_name', source_slug)}"
+                # Confirmation subject must NOT include the synthetic source display_name
+                # (system_confirmation has display_name "System — Confirmation Emails"
+                # which previously leaked into the subject line).
+                subject = "[SectorData Alerts] Confirm your subscription"
             elif is_coalesced:
                 coalesced_data = json.loads(coalesced_payload_raw) if isinstance(coalesced_payload_raw, str) else coalesced_payload_raw
                 coalesced_events = coalesced_data.get("events", [event])

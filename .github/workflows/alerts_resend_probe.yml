@@ -1,0 +1,23 @@
+name: Alerts Resend Status Probe (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      message_ids:
+        description: "Space-separated Resend message IDs to probe"
+        required: true
+        type: string
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests
+      - name: Query Resend API
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: python scripts/utils/resend_status_check.py ${{ inputs.message_ids }}
