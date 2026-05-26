@@ -2061,8 +2061,14 @@ export async function rpcGetDefaultNewsKeywords(
 // Consolidates /anp-daie + /anp-desembaracos + /anp-painel-importacoes
 // into a single unified dashboard covering Diesel, Gasoline, Crude Oil.
 //
-// 5 RPCs — all SECURITY INVOKER, STABLE, granted to anon + authenticated.
-// Source: migration 20260525000010_imports_exports_enrichment.sql.
+// All RPCs — SECURITY DEFINER, STABLE, granted to anon + authenticated.
+// Sources:
+//   • migration 20260525000010 (base set)
+//   • migration 20260525000110 (exports by destination country)
+//   • migration 20260526300000 (unit price by country)
+//   • migration 20260526800000 (monthly granularity: p_mes_inicio + p_mes_fim
+//     added to all 7 RPCs except the 2 YoY tables, which already accept mesFim).
+//     Single-month views are supported by passing equal start and end bounds.
 //
 // Unit contract (never drift label from divisor):
 //   Panel A (countries): RPC returns total_kg → UI divides by 1e6 → "kt"
@@ -2071,7 +2077,9 @@ export async function rpcGetDefaultNewsKeywords(
 
 export type IEFiltrosResult = {
   ano_min: number;
+  mes_min: number;
   ano_max: number;
+  mes_max: number;
   produtos: string[];
 };
 
@@ -2143,12 +2151,17 @@ export async function rpcGetImportsExportsFiltros(
  * Stacked bar data for Panel A — imports by origin country.
  * Server returns top-N countries by total kg; non-top rows are bucketed as
  * 'Others'. UI divides total_kg by 1e6 to get kilotons.
+ *
+ * Monthly granularity (migration 20260526800000): bounds are inclusive on
+ * both ends — single-month view supported by passing equal start and end.
  */
 export async function rpcGetImportsExportsPaisesStacked(
   supabase: SupabaseClient,
   unifiedProduct: string,
   anoInicio: number,
+  mesInicio: number,
   anoFim: number,
+  mesFim: number,
   topN = 10,
 ): Promise<IEPaisesStackedRow[]> {
   try {
@@ -2157,7 +2170,9 @@ export async function rpcGetImportsExportsPaisesStacked(
       {
         p_unified_product: unifiedProduct,
         p_ano_inicio: anoInicio,
+        p_mes_inicio: mesInicio,
         p_ano_fim: anoFim,
+        p_mes_fim: mesFim,
         p_top_n: topN,
       },
     );
@@ -2184,7 +2199,9 @@ export async function rpcGetImportsExportsImportersStacked(
   supabase: SupabaseClient,
   unifiedProduct: string,
   anoInicio: number,
+  mesInicio: number,
   anoFim: number,
+  mesFim: number,
   topN = 10,
 ): Promise<IEImportersStackedRow[]> {
   try {
@@ -2193,7 +2210,9 @@ export async function rpcGetImportsExportsImportersStacked(
       {
         p_unified_product: unifiedProduct,
         p_ano_inicio: anoInicio,
+        p_mes_inicio: mesInicio,
         p_ano_fim: anoFim,
+        p_mes_fim: mesFim,
         p_top_n: topN,
       },
     );
@@ -2258,7 +2277,9 @@ export async function rpcGetImportsExportsFobPriceSerie(
   supabase: SupabaseClient,
   unifiedProduct: string,
   anoInicio: number,
+  mesInicio: number,
   anoFim: number,
+  mesFim: number,
 ): Promise<IEFobPriceRow[]> {
   try {
     const { data, error } = await supabase.rpc(
@@ -2266,7 +2287,9 @@ export async function rpcGetImportsExportsFobPriceSerie(
       {
         p_unified_product: unifiedProduct,
         p_ano_inicio: anoInicio,
+        p_mes_inicio: mesInicio,
         p_ano_fim: anoFim,
+        p_mes_fim: mesFim,
       },
     );
     if (error) throw error;
@@ -2296,7 +2319,9 @@ export async function rpcGetImportsExportsExportsPaisesStacked(
   supabase: SupabaseClient,
   unifiedProduct: string,
   anoInicio: number,
+  mesInicio: number,
   anoFim: number,
+  mesFim: number,
   metric: "volume" | "usd" = "volume",
   topN = 10,
 ): Promise<IEExportsPaisesStackedRow[]> {
@@ -2306,7 +2331,9 @@ export async function rpcGetImportsExportsExportsPaisesStacked(
       {
         p_unified_product: unifiedProduct,
         p_ano_inicio: anoInicio,
+        p_mes_inicio: mesInicio,
         p_ano_fim: anoFim,
+        p_mes_fim: mesFim,
         p_metric: metric,
         p_top_n: topN,
       },
@@ -2390,7 +2417,9 @@ export async function rpcGetImportsExportsImportsUnitPrice(
   supabase: SupabaseClient,
   unifiedProduct: string,
   anoInicio: number,
+  mesInicio: number,
   anoFim: number,
+  mesFim: number,
   topN = 8,
 ): Promise<IEUnitPriceRow[]> {
   try {
@@ -2399,7 +2428,9 @@ export async function rpcGetImportsExportsImportsUnitPrice(
       {
         p_unified_product: unifiedProduct,
         p_ano_inicio: anoInicio,
+        p_mes_inicio: mesInicio,
         p_ano_fim: anoFim,
+        p_mes_fim: mesFim,
         p_top_n: topN,
       },
     );
@@ -2425,7 +2456,9 @@ export async function rpcGetImportsExportsExportsUnitPrice(
   supabase: SupabaseClient,
   unifiedProduct: string,
   anoInicio: number,
+  mesInicio: number,
   anoFim: number,
+  mesFim: number,
   topN = 8,
 ): Promise<IEUnitPriceRow[]> {
   try {
@@ -2434,7 +2467,9 @@ export async function rpcGetImportsExportsExportsUnitPrice(
       {
         p_unified_product: unifiedProduct,
         p_ano_inicio: anoInicio,
+        p_mes_inicio: mesInicio,
         p_ano_fim: anoFim,
+        p_mes_fim: mesFim,
         p_top_n: topN,
       },
     );

@@ -13,6 +13,14 @@
 // Exports tab: stacked area by destination country (top-10 + Others) + YoY table.
 //   Source: mdic_comex (migration 20260525000110). RPC get_imports_exports_exports_serie DROPPED.
 //
+// Temporal granularity — MONTHLY (migration 20260526800000).
+//   Period is now { start: {ano, mes}, end: {ano, mes} }. RPCs accept the 4-int
+//   bounds (p_ano_inicio, p_mes_inicio, p_ano_fim, p_mes_fim). Single-month view
+//   supported: set start === end.
+//   Default: last 12 months ending at (filtros.ano_max, filtros.mes_max).
+//   Month-array (YYYY-MM-01 strings) is derived client-side from filtros bounds
+//   and powers the PeriodSlider in dates mode.
+//
 // Debounce: 400ms on all reactive fetches (useDebouncedFetch).
 // Top-N: 10 (server-side aggregation, Others bucket returned from RPC).
 // Units:
@@ -52,6 +60,18 @@ export type ExportsYAxis = "volume" | "usd";
 
 export type PriceMetric = "fob_per_bbl" | "fob_per_m3" | "fob_per_ton";
 
+// Single-point month cursor (1-12).
+export interface MonthCursor {
+  ano: number;
+  mes: number;
+}
+
+// Monthly period — start and end are both inclusive. start === end → 1-month view.
+export interface Period {
+  start: MonthCursor;
+  end: MonthCursor;
+}
+
 // Panel C — one point per (month × product) flattened for the 3-line chart
 export interface PricePoint {
   ano: number;
@@ -62,7 +82,7 @@ export interface PricePoint {
 
 export interface ImportsExportsFilters {
   unifiedProduct: UnifiedProduct;
-  period: [number, number];            // [anoInicio, anoFim]
+  period: Period;
   tab: ImportsExportsTab;
   exportsYAxis: ExportsYAxis;
   priceMetric: PriceMetric;           // Panel C metric toggle
@@ -101,7 +121,9 @@ export type { IEUnitPriceRow as UnitPriceRow } from "@/lib/rpc";
 
 export interface FiltrosResult {
   ano_min: number;
+  mes_min: number;
   ano_max: number;
+  mes_max: number;
   produtos: UnifiedProduct[];
 }
 
@@ -147,7 +169,10 @@ export interface UseImportsExportsData {
   exportsUnitPriceLoading: boolean;
 
   // Derived helpers
-  periodBadge: string;    // e.g. "2015 – 2024"
+  /** Month-array (YYYY-MM-01) from ano_min/mes_min to ano_max/mes_max. */
+  monthList: string[];
+  /** Pretty month range, e.g. "Jan 2025 – May 2026"; if start===end → "May 2026". */
+  periodBadge: string;
   yoyEndAno: number;
   yoyEndMes: number;          // derived from actual paisesData (countries panel)
   yoyImportersEndMes: number; // derived from actual importersData (importers panel)
@@ -160,14 +185,91 @@ export interface UseImportsExportsData {
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
-const ALL_PRODUCTS: UnifiedProduct[] = ["Diesel", "Gasoline", "Crude Oil"];
 const TOP_N = 10;
-const CURRENT_YEAR = new Date().getFullYear();
-const DEFAULT_PERIOD: [number, number] = [CURRENT_YEAR - 9, CURRENT_YEAR];
+
+const MONTH_LABELS_SHORT = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+// ─── Helpers (exported for the views) ──────────────────────────────────────────
+
+/**
+ * Build the full month array (YYYY-MM-01) for the slider, from a min (ano,mes)
+ * to a max (ano,mes), inclusive on both ends.
+ */
+export function buildMonthList(
+  anoMin: number,
+  mesMin: number,
+  anoMax: number,
+  mesMax: number,
+): string[] {
+  const out: string[] = [];
+  let y = anoMin;
+  let m = mesMin;
+  while (y < anoMax || (y === anoMax && m <= mesMax)) {
+    out.push(`${y}-${String(m).padStart(2, "0")}-01`);
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+    // Safety net to avoid runaway loop if min > max
+    if (out.length > 1200) break; // 100 years cap
+  }
+  return out;
+}
+
+/**
+ * Convert an (ano, mes) tuple to a Date at midnight UTC of the 1st of that month.
+ * Use UTC to avoid timezone drift when Plotly renders the x-axis as `type:'date'`.
+ */
+export function monthKeyToDate(ano: number, mes: number): Date {
+  return new Date(Date.UTC(ano, mes - 1, 1));
+}
+
+/**
+ * Format an (ano, mes) tuple as "MMM YYYY" (English month abbrev).
+ */
+export function formatMonth(ano: number, mes: number): string {
+  const label = MONTH_LABELS_SHORT[mes - 1] ?? String(mes);
+  return `${label} ${ano}`;
+}
+
+/**
+ * Subtract `n` months from a (ano, mes) cursor. Result is clamped to (1,1)
+ * when going past the year 1.
+ */
+export function addMonths(c: MonthCursor, n: number): MonthCursor {
+  const totalIdx = c.ano * 12 + (c.mes - 1) + n;
+  if (totalIdx < 0) return { ano: 1, mes: 1 };
+  return {
+    ano: Math.floor(totalIdx / 12),
+    mes: (totalIdx % 12) + 1,
+  };
+}
+
+/**
+ * Lexicographic compare of two month cursors: -1, 0, +1.
+ */
+export function cmpMonth(a: MonthCursor, b: MonthCursor): number {
+  if (a.ano !== b.ano) return a.ano - b.ano < 0 ? -1 : 1;
+  if (a.mes !== b.mes) return a.mes - b.mes < 0 ? -1 : 1;
+  return 0;
+}
+
+// ─── Defaults ──────────────────────────────────────────────────────────────────
+
+// Initial placeholder before filtros loads. Replaced on first fetch.
+// Use a recent 12-month window centred on the current year/month so charts have
+// a stable initial layout while data is still loading.
+const NOW = new Date();
+const INITIAL_END: MonthCursor = { ano: NOW.getFullYear(), mes: NOW.getMonth() + 1 };
+const INITIAL_START: MonthCursor = addMonths(INITIAL_END, -11);
 
 const DEFAULT_FILTERS: ImportsExportsFilters = {
   unifiedProduct: "Diesel",
-  period: DEFAULT_PERIOD,
+  period: { start: INITIAL_START, end: INITIAL_END },
   tab: "imports",
   exportsYAxis: "volume",
   priceMetric: "fob_per_bbl",
@@ -181,7 +283,7 @@ export function useImportsExportsData(): UseImportsExportsData {
 
   const [filters, setFiltersState] = useState<ImportsExportsFilters>(DEFAULT_FILTERS);
 
-  // Meta filtros (year bounds + product list)
+  // Meta filtros (year+month bounds + product list)
   const [filtros, setFiltros] = useState<FiltrosResult | null>(null);
   const [filtrosLoading, setFiltrosLoading] = useState(true);
 
@@ -229,17 +331,23 @@ export function useImportsExportsData(): UseImportsExportsData {
     rpcGetImportsExportsFiltros(supabase)
       .then((result) => {
         if (!result) return;
-        setFiltros({
+        const next: FiltrosResult = {
           ano_min: result.ano_min,
+          mes_min: result.mes_min,
           ano_max: result.ano_max,
+          mes_max: result.mes_max,
           produtos: result.produtos as UnifiedProduct[],
-        });
-        // Update default period to last 10 years relative to actual data max
-        const anoMax = result.ano_max;
-        const anoMin = Math.max(result.ano_min, anoMax - 9);
+        };
+        setFiltros(next);
+        // Default period: last 12 months ending at (ano_max, mes_max).
+        const end: MonthCursor = { ano: next.ano_max, mes: next.mes_max };
+        let start = addMonths(end, -11);
+        // Clamp start ≥ (ano_min, mes_min)
+        const lowerBound: MonthCursor = { ano: next.ano_min, mes: next.mes_min };
+        if (cmpMonth(start, lowerBound) < 0) start = lowerBound;
         setFiltersState((prev) => ({
           ...prev,
-          period: [anoMin, anoMax],
+          period: { start, end },
         }));
       })
       .catch((err) => console.error("get_imports_exports_filtros:", err))
@@ -248,47 +356,52 @@ export function useImportsExportsData(): UseImportsExportsData {
   }, []);
 
   // Memoised stable filter snapshot for effect dependencies
+  const periodStartAno = filters.period.start.ano;
+  const periodStartMes = filters.period.start.mes;
+  const periodEndAno = filters.period.end.ano;
+  const periodEndMes = filters.period.end.mes;
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional shallow snapshot
   const stableFilters = useMemo(() => ({ ...filters }), [
     filters.unifiedProduct,
-    filters.period[0],
-    filters.period[1],
+    periodStartAno,
+    periodStartMes,
+    periodEndAno,
+    periodEndMes,
     filters.tab,
     filters.exportsYAxis,
     filters.priceMetric,
   ]);
 
-  // ── Derived: YoY end date = period[1], last month derived from actual data ─
-  // Prevents partial-year bias: if anoFim is current year and only months 1–5
-  // exist, hardcoding 12 makes the RPC compare 5 partial vs 12 full months.
-  // Falls back to 12 when no rows for anoFim (RPC returns null prev_12m → "n/a").
-  const yoyEndAno = stableFilters.period[1];
+  // ── Derived: YoY anchor = period.end ────────────────────────────────────────
+  // The YoY RPCs use the explicit (yoyEndAno, *EndMes) the UI provides — we
+  // still derive the last "real" month from data so that incomplete-year edges
+  // don't bias the calculation. Falls back to period.end.mes when no rows.
+  const yoyEndAno = periodEndAno;
 
   const yoyEndMes = useMemo(() => {
-    const anoFim = stableFilters.period[1];
     const rowsForYear = paisesData.filter(
-      (r) => r.ano === anoFim && r.total_kg > 0,
+      (r) => r.ano === periodEndAno && r.total_kg > 0,
     );
-    if (!rowsForYear.length) return 12;
+    if (!rowsForYear.length) return periodEndMes;
     return Math.max(...rowsForYear.map((r) => r.mes));
-  }, [paisesData, stableFilters.period[1]]);
+  }, [paisesData, periodEndAno, periodEndMes]);
 
   const yoyImportersEndMes = useMemo(() => {
-    const anoFim = stableFilters.period[1];
     const rowsForYear = importersData.filter(
-      (r) => r.ano === anoFim && r.total_mil_m3 > 0,
+      (r) => r.ano === periodEndAno && r.total_mil_m3 > 0,
     );
     if (!rowsForYear.length) return yoyEndMes;
     return Math.max(...rowsForYear.map((r) => r.mes));
-  }, [importersData, stableFilters.period[1], yoyEndMes]);
+  }, [importersData, periodEndAno, yoyEndMes]);
 
   const yoyExportsEndMes = useMemo(() => {
-    const anoFim = stableFilters.period[1];
     const rowsForYear = exportsPaisesData.filter(
-      (r) => r.ano === anoFim && r.value > 0,
+      (r) => r.ano === periodEndAno && r.value > 0,
     );
-    if (!rowsForYear.length) return 12;
+    if (!rowsForYear.length) return periodEndMes;
     return Math.max(...rowsForYear.map((r) => r.mes));
-  }, [exportsPaisesData, stableFilters.period[1]]);
+  }, [exportsPaisesData, periodEndAno, periodEndMes]);
 
   // ── 2. Imports tab — Panel A (paises stacked) ───────────────────────────────
   const importsAFetchIdRef = useRef(0);
@@ -304,8 +417,10 @@ export function useImportsExportsData(): UseImportsExportsData {
         const rows = await rpcGetImportsExportsPaisesStacked(
           supabase,
           stableFilters.unifiedProduct,
-          stableFilters.period[0],
-          stableFilters.period[1],
+          periodStartAno,
+          periodStartMes,
+          periodEndAno,
+          periodEndMes,
           TOP_N,
         );
         if (myId === importsAFetchIdRef.current) setPaisesData(rows);
@@ -317,7 +432,7 @@ export function useImportsExportsData(): UseImportsExportsData {
     }, 400);
     return () => { if (importsATimerRef.current) clearTimeout(importsATimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.period[0], stableFilters.period[1]]);
+  }, [stableFilters.tab, stableFilters.unifiedProduct, periodStartAno, periodStartMes, periodEndAno, periodEndMes]);
 
   // ── 3. Imports tab — Panel B (importers stacked) ────────────────────────────
   const importsBFetchIdRef = useRef(0);
@@ -333,8 +448,10 @@ export function useImportsExportsData(): UseImportsExportsData {
         const rows = await rpcGetImportsExportsImportersStacked(
           supabase,
           stableFilters.unifiedProduct,
-          stableFilters.period[0],
-          stableFilters.period[1],
+          periodStartAno,
+          periodStartMes,
+          periodEndAno,
+          periodEndMes,
           TOP_N,
         );
         if (myId === importsBFetchIdRef.current) setImportersData(rows);
@@ -346,7 +463,7 @@ export function useImportsExportsData(): UseImportsExportsData {
     }, 400);
     return () => { if (importsBTimerRef.current) clearTimeout(importsBTimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.period[0], stableFilters.period[1]]);
+  }, [stableFilters.tab, stableFilters.unifiedProduct, periodStartAno, periodStartMes, periodEndAno, periodEndMes]);
 
   // ── 4. YoY table — paises ───────────────────────────────────────────────────
   const yoyPFetchIdRef = useRef(0);
@@ -376,7 +493,7 @@ export function useImportsExportsData(): UseImportsExportsData {
     }, 400);
     return () => { if (yoyPTimerRef.current) clearTimeout(yoyPTimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.period[1], yoyEndAno, yoyEndMes]);
+  }, [stableFilters.tab, stableFilters.unifiedProduct, yoyEndAno, yoyEndMes]);
 
   // ── 5. YoY table — importers ────────────────────────────────────────────────
   const yoyIFetchIdRef = useRef(0);
@@ -406,7 +523,7 @@ export function useImportsExportsData(): UseImportsExportsData {
     }, 400);
     return () => { if (yoyITimerRef.current) clearTimeout(yoyITimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.period[1], yoyEndAno, yoyImportersEndMes]);
+  }, [stableFilters.tab, stableFilters.unifiedProduct, yoyEndAno, yoyImportersEndMes]);
 
   // ── 6a. Exports tab — stacked by destination country ───────────────────────
   const exportsPaisesFetchIdRef = useRef(0);
@@ -422,8 +539,10 @@ export function useImportsExportsData(): UseImportsExportsData {
         const rows = await rpcGetImportsExportsExportsPaisesStacked(
           supabase,
           stableFilters.unifiedProduct,
-          stableFilters.period[0],
-          stableFilters.period[1],
+          periodStartAno,
+          periodStartMes,
+          periodEndAno,
+          periodEndMes,
           stableFilters.exportsYAxis,
           10,
         );
@@ -436,7 +555,7 @@ export function useImportsExportsData(): UseImportsExportsData {
     }, 400);
     return () => { if (exportsPaisesTimerRef.current) clearTimeout(exportsPaisesTimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.period[0], stableFilters.period[1], stableFilters.exportsYAxis]);
+  }, [stableFilters.tab, stableFilters.unifiedProduct, periodStartAno, periodStartMes, periodEndAno, periodEndMes, stableFilters.exportsYAxis]);
 
   // ── 6b. Exports tab — YoY table by destination country ─────────────────────
   const yoyExportsFetchIdRef = useRef(0);
@@ -466,7 +585,7 @@ export function useImportsExportsData(): UseImportsExportsData {
     }, 400);
     return () => { if (yoyExportsTimerRef.current) clearTimeout(yoyExportsTimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.period[1], stableFilters.exportsYAxis, yoyEndAno, yoyExportsEndMes]);
+  }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.exportsYAxis, yoyEndAno, yoyExportsEndMes]);
 
   // ── 7. Panel C — import price (mdic_comex, single active product) ────────────
   const priceFetchIdRef = useRef(0);
@@ -482,8 +601,10 @@ export function useImportsExportsData(): UseImportsExportsData {
         const rows = await rpcGetImportsExportsFobPriceSerie(
           supabase,
           stableFilters.unifiedProduct,
-          stableFilters.period[0],
-          stableFilters.period[1],
+          periodStartAno,
+          periodStartMes,
+          periodEndAno,
+          periodEndMes,
         );
         if (myId !== priceFetchIdRef.current) return;
         const metric = stableFilters.priceMetric;
@@ -502,7 +623,7 @@ export function useImportsExportsData(): UseImportsExportsData {
     }, 400);
     return () => { if (priceTimerRef.current) clearTimeout(priceTimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.period[0], stableFilters.period[1], stableFilters.priceMetric]);
+  }, [stableFilters.tab, stableFilters.unifiedProduct, periodStartAno, periodStartMes, periodEndAno, periodEndMes, stableFilters.priceMetric]);
 
   // ── 8. Panel D — imports unit price by origin country (mdic_comex) ──────────
   const importsUPFetchIdRef = useRef(0);
@@ -518,8 +639,10 @@ export function useImportsExportsData(): UseImportsExportsData {
         const rows = await rpcGetImportsExportsImportsUnitPrice(
           supabase,
           stableFilters.unifiedProduct,
-          stableFilters.period[0],
-          stableFilters.period[1],
+          periodStartAno,
+          periodStartMes,
+          periodEndAno,
+          periodEndMes,
           8,
         );
         if (myId === importsUPFetchIdRef.current) setImportsUnitPriceData(rows);
@@ -531,7 +654,7 @@ export function useImportsExportsData(): UseImportsExportsData {
     }, 400);
     return () => { if (importsUPTimerRef.current) clearTimeout(importsUPTimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.period[0], stableFilters.period[1]]);
+  }, [stableFilters.tab, stableFilters.unifiedProduct, periodStartAno, periodStartMes, periodEndAno, periodEndMes]);
 
   // ── 9. Exports unit price by destination country (mdic_comex) ───────────────
   const exportsUPFetchIdRef = useRef(0);
@@ -547,8 +670,10 @@ export function useImportsExportsData(): UseImportsExportsData {
         const rows = await rpcGetImportsExportsExportsUnitPrice(
           supabase,
           stableFilters.unifiedProduct,
-          stableFilters.period[0],
-          stableFilters.period[1],
+          periodStartAno,
+          periodStartMes,
+          periodEndAno,
+          periodEndMes,
           8,
         );
         if (myId === exportsUPFetchIdRef.current) setExportsUnitPriceData(rows);
@@ -560,10 +685,20 @@ export function useImportsExportsData(): UseImportsExportsData {
     }, 400);
     return () => { if (exportsUPTimerRef.current) clearTimeout(exportsUPTimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.period[0], stableFilters.period[1]]);
+  }, [stableFilters.tab, stableFilters.unifiedProduct, periodStartAno, periodStartMes, periodEndAno, periodEndMes]);
 
-  // ── Derived: period badge ───────────────────────────────────────────────────
-  const periodBadge = `${stableFilters.period[0]} – ${stableFilters.period[1]}`;
+  // ── Derived: month list + period badge ──────────────────────────────────────
+  const monthList = useMemo(() => {
+    if (!filtros) return [];
+    return buildMonthList(filtros.ano_min, filtros.mes_min, filtros.ano_max, filtros.mes_max);
+  }, [filtros]);
+
+  const periodBadge = useMemo(() => {
+    const startLbl = formatMonth(periodStartAno, periodStartMes);
+    const endLbl = formatMonth(periodEndAno, periodEndMes);
+    if (startLbl === endLbl) return startLbl;
+    return `${startLbl} – ${endLbl}`;
+  }, [periodStartAno, periodStartMes, periodEndAno, periodEndMes]);
 
   return {
     filters,
@@ -588,6 +723,7 @@ export function useImportsExportsData(): UseImportsExportsData {
     importsUnitPriceLoading,
     exportsUnitPriceData,
     exportsUnitPriceLoading,
+    monthList,
     periodBadge,
     yoyEndAno,
     yoyEndMes,

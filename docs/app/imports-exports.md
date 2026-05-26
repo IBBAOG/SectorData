@@ -14,7 +14,7 @@
 |---|---|
 | Page title | Imports & Exports |
 | Subtitle | Brazilian fuel trade flows — by origin country and importer group |
-| Period badge | Year range derived from slider (`YYYY – YYYY`) |
+| Period badge | Month range derived from slider (`MMM YYYY – MMM YYYY`); collapses to `MMM YYYY` when `start === end` (single-month view) |
 | Products | Diesel, Gasoline, Crude Oil (global pill toggle — single-select, brand orange active state, content-sized pills) |
 | Tabs | Imports (default) / Exports |
 
@@ -59,20 +59,34 @@ These are approximations. The `ncm_densidade_kg_m3` table allows refinement with
 
 ## RPCs
 
-All 6 RPCs: `LANGUAGE sql / plpgsql`, `STABLE`, `SECURITY INVOKER`, granted to `anon, authenticated`. RPCs 1–5: migration `20260525000010_imports_exports_enrichment.sql`. RPC 6 (`get_imports_exports_fob_price_serie`): Part 3 of imports-exports × mdic-comex unification (commit `5a6f7ba6`).
+All RPCs: `LANGUAGE sql / plpgsql`, `STABLE`, `SECURITY DEFINER` (Pegadinha #18), `SET search_path = public, pg_temp`, granted to `anon, authenticated`.
+
+Source migrations:
+- `20260525000010_imports_exports_enrichment.sql` — original 4 (Diesel/Gasoline/Crude × DAIE/Desembaracos consolidation).
+- `20260525000110_imports_exports_exports_by_country.sql` — exports stacked by destination + YoY.
+- `20260526300000_imports_exports_unit_price_by_country.sql` — unit price by country (imports + exports).
+- **`20260526800000_imports_exports_monthly_granularity.sql`** — temporal granularity upgrade from year to **month**. Added `(p_mes_inicio, p_mes_fim)` to the 7 RPCs whose bounds are inclusive on both ends; `get_imports_exports_filtros()` now also returns `mes_min` and `mes_max`. The 2 YoY RPCs were unchanged (they already accept `p_mes_fim`). Single-month view supported via `start === end`.
+
+### Temporal filter — monthly granularity
+
+The dashboard period is `{ start: { ano, mes }, end: { ano, mes } }`. The hook (`useImportsExportsData`) builds the month array `monthList: string[]` (e.g. `["1997-02-01", ..., "2026-05-01"]`) from `filtros.ano_min/mes_min → ano_max/mes_max` and feeds it to the shared `PeriodSlider` in `dates` mode. Each chart's `xaxis.type = 'date'` + `tickformat = '%b %Y'` and `dtick` adapts to the range (`M1 ≤ 12mo`, `M3 ≤ 36mo`, `M6 ≤ 96mo`, `M12` otherwise).
+
+Default period: **last 12 months ending at `(filtros.ano_max, filtros.mes_max)`** (clamped to ≥ `(ano_min, mes_min)`).
+
+Period badge: `"Jan 2025 – May 2026"`, collapsing to `"May 2026"` when start == end.
 
 ### `get_imports_exports_filtros()`
 
-Returns `{ ano_min int, ano_max int, produtos text[] }`. Call once on mount; stable over the session. `produtos` is always `['Diesel','Gasoline','Crude Oil']`.
+Returns `{ ano_min int, mes_min int, ano_max int, mes_max int, produtos text[] }`. Call once on mount; stable over the session. `produtos` is always `['Diesel','Gasoline','Crude Oil']`. `mes_min` is the earliest month observed at `ano_min`; `mes_max` is the latest at `ano_max`.
 
-### `get_imports_exports_paises_stacked(p_unified_product, p_ano_inicio, p_ano_fim, p_top_n DEFAULT 10)`
+### `get_imports_exports_paises_stacked(p_unified_product, p_ano_inicio, p_mes_inicio, p_ano_fim, p_mes_fim, p_top_n DEFAULT 10)`
 
 Returns `(ano int, mes int, pais_origem text, total_kg numeric)`.
 
 - Server ranks countries by total kg over the period. Rows outside top-N are collapsed into `pais_origem='Others'`.
 - UI converts: `total_kg / 1e6 = kt`. **Label must be "kt".**
 
-### `get_imports_exports_importers_stacked(p_unified_product, p_ano_inicio, p_ano_fim, p_top_n DEFAULT 10)`
+### `get_imports_exports_importers_stacked(p_unified_product, p_ano_inicio, p_mes_inicio, p_ano_fim, p_mes_fim, p_top_n DEFAULT 10)`
 
 Returns `(ano int, mes int, unified_importer text, total_mil_m3 numeric)`.
 
@@ -89,7 +103,7 @@ Returns `(entity text, last_12m numeric, prev_12m numeric, yoy_pct numeric)`.
 - `yoy_pct` is `NULL` when `prev_12m = 0` (no prior-year data). UI renders "n/a" in neutral color.
 - `yoy_pct` color: green for positive, red for negative, neutral for null.
 
-### `get_imports_exports_exports_paises_stacked(p_unified_product, p_ano_inicio, p_ano_fim, p_metric DEFAULT 'volume', p_top_n DEFAULT 10)`
+### `get_imports_exports_exports_paises_stacked(p_unified_product, p_ano_inicio, p_mes_inicio, p_ano_fim, p_mes_fim, p_metric DEFAULT 'volume', p_top_n DEFAULT 10)`
 
 Returns `(ano int, mes int, pais text, value numeric)`.
 
@@ -110,7 +124,7 @@ Returns `(entity text, last_12m numeric, prev_12m numeric, yoy_pct numeric)`.
 
 > **Dropped RPC:** `get_imports_exports_exports_serie(p_unified_products text[], p_ano_inicio, p_ano_fim)` was removed in migration `20260525000110`. Any reference to it in frontend will fail at runtime. The new RPCs cover Exports end-to-end.
 
-### `get_imports_exports_imports_unit_price(p_unified_product, p_ano_inicio, p_ano_fim, p_top_n DEFAULT 8)`
+### `get_imports_exports_imports_unit_price(p_unified_product, p_ano_inicio, p_mes_inicio, p_ano_fim, p_mes_fim, p_top_n DEFAULT 8)`
 
 Returns `(ano int, mes int, pais text, usd_per_m3 numeric)`.
 
@@ -120,7 +134,7 @@ Returns `(ano int, mes int, pais text, usd_per_m3 numeric)`.
 - SECURITY DEFINER (required — `mdic_comex` has RLS restricted to authenticated; without SECURITY DEFINER, anon callers get empty results).
 - Default top-N = 8. Chart title: "Import Unit Price by Origin Country (USD/m³)".
 
-### `get_imports_exports_exports_unit_price(p_unified_product, p_ano_inicio, p_ano_fim, p_top_n DEFAULT 8)`
+### `get_imports_exports_exports_unit_price(p_unified_product, p_ano_inicio, p_mes_inicio, p_ano_fim, p_mes_fim, p_top_n DEFAULT 8)`
 
 Returns `(ano int, mes int, pais text, usd_per_m3 numeric)`.
 
@@ -268,8 +282,8 @@ Added 2026-05-25 (Part 4 of imports-exports × mdic-comex unification).
 ```
 get_imports_exports_fob_price_serie(
   p_unified_product text,
-  p_ano_inicio int,
-  p_ano_fim int
+  p_ano_inicio int, p_mes_inicio int,
+  p_ano_fim    int, p_mes_fim    int
 )
 returns (
   ano int, mes int,

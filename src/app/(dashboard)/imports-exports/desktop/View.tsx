@@ -50,13 +50,14 @@ import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 
-import { useImportsExportsData } from "../useImportsExportsData";
+import { useImportsExportsData, formatMonth } from "../useImportsExportsData";
 import type {
   UnifiedProduct,
   YoyTableRow,
   PriceMetric,
   PricePoint,
   UnitPriceRow,
+  MonthCursor,
 } from "../useImportsExportsData";
 
 import { COMMON_LAYOUT, AXIS_LINE, PALETTE, emptyPlot } from "../../../../lib/plotlyDefaults";
@@ -90,10 +91,12 @@ const HOVER_THRESHOLD = 0.05;
 function buildStackedTraces(rows: StackedRow[], unit: string): PlotData[] {
   if (!rows.length) return [];
 
+  // xs are ISO date strings "YYYY-MM-01" so that Plotly's xaxis.type='date'
+  // parses them natively. Monthly granularity migration (20260526800000).
   const xSet = new Set<string>();
   const entitySet = new Set<string>();
   for (const r of rows) {
-    xSet.add(`${r.ano}-${String(r.mes).padStart(2, "0")}`);
+    xSet.add(`${r.ano}-${String(r.mes).padStart(2, "0")}-01`);
     entitySet.add(r.name);
   }
   const xs = Array.from(xSet).sort();
@@ -104,7 +107,7 @@ function buildStackedTraces(rows: StackedRow[], unit: string): PlotData[] {
 
   const lookup = new Map<string, Map<string, number>>();
   for (const r of rows) {
-    const key = `${r.ano}-${String(r.mes).padStart(2, "0")}`;
+    const key = `${r.ano}-${String(r.mes).padStart(2, "0")}-01`;
     if (!lookup.has(r.name)) lookup.set(r.name, new Map());
     lookup.get(r.name)!.set(key, r.value);
   }
@@ -251,7 +254,7 @@ function buildPriceTraces(
       a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes,
     );
     const xs = sorted.map(
-      (r) => `${r.ano}-${String(r.mes).padStart(2, "0")}`,
+      (r) => `${r.ano}-${String(r.mes).padStart(2, "0")}-01`,
     );
     const ys = sorted.map((r) => r.value);
     traces.push({
@@ -287,12 +290,13 @@ function buildUnitPriceTraces(
 ): PlotData[] {
   if (!rows.length) return [];
 
-  // Build per-entity time series
+  // Build per-entity time series. xs are ISO date strings (YYYY-MM-01) so
+  // Plotly's xaxis.type='date' parses them natively.
   const byEntity = new Map<string, Map<string, number | null>>();
   const xSet = new Set<string>();
 
   for (const r of rows) {
-    const xKey = `${r.ano}-${String(r.mes).padStart(2, "0")}`;
+    const xKey = `${r.ano}-${String(r.mes).padStart(2, "0")}-01`;
     xSet.add(xKey);
     if (!byEntity.has(r.pais)) byEntity.set(r.pais, new Map());
     byEntity.get(r.pais)!.set(xKey, r.usd_per_m3);
@@ -405,15 +409,20 @@ function ProductPillToggle({
   );
 }
 
-// Month labels for YoY table title (0-indexed)
-const MONTH_LABELS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
 // ─── Shared chart layout ───────────────────────────────────────────────────────
 
-function areaLayout(yLabel: string, height = 340): Partial<Layout> {
+/**
+ * Choose a sensible monthly tick step based on how many months the chart spans.
+ * 1-12 months → M1; 13-36 → M3; 37-96 → M6; >96 → M12.
+ */
+function pickDtick(rangeMonths: number): string {
+  if (rangeMonths <= 12) return "M1";
+  if (rangeMonths <= 36) return "M3";
+  if (rangeMonths <= 96) return "M6";
+  return "M12";
+}
+
+function areaLayout(yLabel: string, rangeMonths = 12, height = 340): Partial<Layout> {
   return {
     ...COMMON_LAYOUT,
     hovermode: "x unified" as const,
@@ -421,6 +430,9 @@ function areaLayout(yLabel: string, height = 340): Partial<Layout> {
     margin: { t: 12, b: 60, l: 60, r: 12 },
     xaxis: {
       ...AXIS_LINE,
+      type: "date" as const,
+      tickformat: "%b %Y",
+      dtick: pickDtick(rangeMonths),
       tickangle: -45,
       tickfont: { family: "Arial", size: 10 },
     },
@@ -444,7 +456,6 @@ export default function DesktopView(): React.ReactElement {
   const {
     filters,
     setFilters,
-    filtros,
     filtrosLoading,
     paisesData,
     paisesLoading,
@@ -466,6 +477,8 @@ export default function DesktopView(): React.ReactElement {
     importsUnitPriceLoading,
     exportsUnitPriceData,
     exportsUnitPriceLoading,
+    monthList,
+    periodBadge,
     visible,
     visibilityLoading,
   } = useImportsExportsData();
@@ -476,23 +489,50 @@ export default function DesktopView(): React.ReactElement {
   // Panel D — imports unit price metric toggle (local state, not global filter)
   const [importsUPMetric, setImportsUPMetric] = useState<ImportsUPMetric>("usd_per_ton");
 
-  // ── Derived: year array for PeriodSlider ────────────────────────────────────
-  const anoMin = filtros?.ano_min ?? 2010;
-  const anoMax = filtros?.ano_max ?? new Date().getFullYear();
-  const allYears = useMemo(
-    () => Array.from({ length: anoMax - anoMin + 1 }, (_, i) => anoMin + i),
-    [anoMin, anoMax],
-  );
+  // ── Derived: month array for PeriodSlider ───────────────────────────────────
+  // monthList comes from the hook (YYYY-MM-01 strings, full range from filtros).
+  // The slider operates on indices; we map (period.start.ano, mes) → index.
 
-  // Convert period [yearValue, yearValue] → [index, index] for PeriodSlider
+  function monthCursorToKey(c: MonthCursor): string {
+    return `${c.ano}-${String(c.mes).padStart(2, "0")}-01`;
+  }
+  function indexFromCursor(c: MonthCursor): number {
+    const key = monthCursorToKey(c);
+    const idx = monthList.indexOf(key);
+    return idx >= 0 ? idx : 0;
+  }
+  function cursorFromIndex(idx: number): MonthCursor {
+    const raw = monthList[Math.max(0, Math.min(idx, monthList.length - 1))];
+    if (!raw) return { ano: new Date().getFullYear(), mes: 1 };
+    const ano = parseInt(raw.slice(0, 4), 10);
+    const mes = parseInt(raw.slice(5, 7), 10);
+    return { ano, mes };
+  }
+
   const sliderValue: [number, number] = useMemo(() => {
-    const startIdx = allYears.indexOf(filters.period[0]);
-    const endIdx = allYears.indexOf(filters.period[1]);
-    return [
-      startIdx >= 0 ? startIdx : 0,
-      endIdx >= 0 ? endIdx : allYears.length - 1,
-    ];
-  }, [allYears, filters.period]);
+    if (!monthList.length) return [0, 0];
+    return [indexFromCursor(filters.period.start), indexFromCursor(filters.period.end)];
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthList, filters.period.start.ano, filters.period.start.mes, filters.period.end.ano, filters.period.end.mes]);
+
+  // Month-label formatter for slider thumbs: "May 2025"
+  const fmtMonth = (d: string): string => {
+    try {
+      const ano = parseInt(d.slice(0, 4), 10);
+      const mes = parseInt(d.slice(5, 7), 10);
+      return formatMonth(ano, mes);
+    } catch {
+      return d;
+    }
+  };
+
+  // Range in months — used to pick xaxis.dtick (M1 / M3 / M6 / M12).
+  const rangeMonths = useMemo(() => {
+    const s = filters.period.start;
+    const e = filters.period.end;
+    return (e.ano - s.ano) * 12 + (e.mes - s.mes) + 1;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- destructured cursors
+  }, [filters.period.start.ano, filters.period.start.mes, filters.period.end.ano, filters.period.end.mes]);
 
   // ── Derived: stacked traces ─────────────────────────────────────────────────
   // All useMemo calls MUST be before any conditional early returns (Rules of Hooks).
@@ -552,6 +592,9 @@ export default function DesktopView(): React.ReactElement {
       margin: { t: 12, b: 60, l: 72, r: 12 },
       xaxis: {
         ...AXIS_LINE,
+        type: "date" as const,
+        tickformat: "%b %Y",
+        dtick: pickDtick(rangeMonths),
         tickangle: -45,
         tickfont: { family: "Arial", size: 10 },
       },
@@ -567,7 +610,7 @@ export default function DesktopView(): React.ReactElement {
         font: { family: "Arial", size: 10 },
       },
     }),
-    [priceUnit],
+    [priceUnit, rangeMonths],
   );
 
   // Imports — unit price by country (Panel D): derive sorted entity list from data
@@ -606,6 +649,9 @@ export default function DesktopView(): React.ReactElement {
       margin: { t: 12, b: 60, l: 72, r: 12 },
       xaxis: {
         ...AXIS_LINE,
+        type: "date" as const,
+        tickformat: "%b %Y",
+        dtick: pickDtick(rangeMonths),
         tickangle: -45,
         tickfont: { family: "Arial", size: 10 },
       },
@@ -621,7 +667,7 @@ export default function DesktopView(): React.ReactElement {
         font: { family: "Arial", size: 10 },
       },
     }),
-    [importsUPUnitLabel],
+    [importsUPUnitLabel, rangeMonths],
   );
 
   // Exports — unit price by destination country
@@ -655,6 +701,9 @@ export default function DesktopView(): React.ReactElement {
       margin: { t: 12, b: 60, l: 72, r: 12 },
       xaxis: {
         ...AXIS_LINE,
+        type: "date" as const,
+        tickformat: "%b %Y",
+        dtick: pickDtick(rangeMonths),
         tickangle: -45,
         tickfont: { family: "Arial", size: 10 },
       },
@@ -670,12 +719,12 @@ export default function DesktopView(): React.ReactElement {
         font: { family: "Arial", size: 10 },
       },
     }),
-    [],
+    [rangeMonths],
   );
 
   const exportsPaisesLayout: Partial<Layout> = useMemo(
-    () => areaLayout(exportsUnit, 420),
-    [exportsUnit],
+    () => areaLayout(exportsUnit, rangeMonths, 420),
+    [exportsUnit, rangeMonths],
   );
 
   // Guard — after all hooks
@@ -746,11 +795,10 @@ export default function DesktopView(): React.ReactElement {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const today = new Date();
-      const dd = String(today.getDate()).padStart(2, "0");
-      const mm = String(today.getMonth() + 1).padStart(2, "0");
-      const yy = String(today.getFullYear()).slice(-2);
-      a.download = `Imports-Exports_${dd}-${mm}-${yy}.xlsx`;
+      const slug = filters.unifiedProduct.toLowerCase().replace(/\s+/g, "-");
+      const startMonth = `${filters.period.start.ano}-${String(filters.period.start.mes).padStart(2, "0")}`;
+      const endMonth = `${filters.period.end.ano}-${String(filters.period.end.mes).padStart(2, "0")}`;
+      a.download = `imports-exports_${slug}_${startMonth}_${endMonth}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -805,16 +853,15 @@ export default function DesktopView(): React.ReactElement {
       zip.file("exports_by_country.csv", csvC);
       zip.file("exports_yoy.csv", csvD);
 
-      const today = new Date();
-      const dd = String(today.getDate()).padStart(2, "0");
-      const mm = String(today.getMonth() + 1).padStart(2, "0");
-      const yy = String(today.getFullYear()).slice(-2);
+      const slug = filters.unifiedProduct.toLowerCase().replace(/\s+/g, "-");
+      const startMonth = `${filters.period.start.ano}-${String(filters.period.start.mes).padStart(2, "0")}`;
+      const endMonth = `${filters.period.end.ano}-${String(filters.period.end.mes).padStart(2, "0")}`;
 
       const blob = await zip.generateAsync({ type: "blob" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Imports-Exports_${dd}-${mm}-${yy}.zip`;
+      a.download = `imports-exports_${slug}_${startMonth}_${endMonth}.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -841,19 +888,26 @@ export default function DesktopView(): React.ReactElement {
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
               <div className="sidebar-section-label">Filters</div>
 
-              {/* Period */}
+              {/* Period — monthly granularity (migration 20260526800000).
+                  Slider operates on month indices into `monthList`. */}
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Period</div>
                 {filtrosLoading ? (
                   <div style={{ fontSize: 11, color: "#aaa", fontFamily: "Arial" }}>
                     Loading…
                   </div>
-                ) : allYears.length > 0 ? (
+                ) : monthList.length > 0 ? (
                   <PeriodSlider
-                    years={allYears}
+                    dates={monthList}
                     value={sliderValue}
+                    fmtLabel={fmtMonth}
                     onChange={(v) =>
-                      setFilters({ period: [allYears[v[0]], allYears[v[1]]] })
+                      setFilters({
+                        period: {
+                          start: cursorFromIndex(v[0]),
+                          end: cursorFromIndex(v[1]),
+                        },
+                      })
                     }
                   />
                 ) : null}
@@ -867,7 +921,14 @@ export default function DesktopView(): React.ReactElement {
               <DashboardHeader
                 title="Imports & Exports"
                 sub="Brazilian fuel trade flows — by origin country and importer group"
-                period={[filters.period[0], filters.period[1]]}
+                /* Monthly badge via extraBadge — collapses to a single label when
+                   start === end (e.g. "May 2026") and renders as "Jan 2025 – May
+                   2026" otherwise. periodBadge is computed by the hook. */
+                extraBadge={
+                  <span style={{ marginLeft: 12, fontSize: 11, color: "#888" }}>
+                    Period: {periodBadge}
+                  </span>
+                }
                 lang="en"
                 rightSlot={
                   <ExportPanel
@@ -931,7 +992,7 @@ export default function DesktopView(): React.ReactElement {
                     {paisesTraces.length > 0 ? (
                       <Plot
                         data={paisesTraces}
-                        layout={areaLayout("kt")}
+                        layout={areaLayout("kt", rangeMonths)}
                         config={{ responsive: true, displayModeBar: false }}
                         style={{ width: "100%" }}
                       />
@@ -960,7 +1021,7 @@ export default function DesktopView(): React.ReactElement {
                     {importersData.length > 0 ? (
                       <Plot
                         data={importersTraces}
-                        layout={areaLayout("mil m³")}
+                        layout={areaLayout("mil m³", rangeMonths)}
                         config={{ responsive: true, displayModeBar: false }}
                         style={{ width: "100%" }}
                       />
@@ -1118,7 +1179,7 @@ export default function DesktopView(): React.ReactElement {
                     rows={yoyExportsData}
                     loading={yoyExportsLoading}
                     volumeLabel={exportsUnit}
-                    title={`By Destination Country (ending ${MONTH_LABELS[(yoyExportsEndMes ?? 12) - 1]} ${yoyEndAno})`}
+                    title={`By Destination Country (ending ${formatMonth(yoyEndAno, yoyExportsEndMes ?? 12)})`}
                   />
 
                   <div

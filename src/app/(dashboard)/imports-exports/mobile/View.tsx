@@ -22,7 +22,7 @@
 
 import dynamic from "next/dynamic";
 import type { Layout, PlotData } from "plotly.js";
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 
 // ─── Unit conversion constants (mirrors desktop/View.tsx) ─────────────────────
 
@@ -48,13 +48,14 @@ import {
 } from "../../../../components/dashboard/mobile";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 
-import { useImportsExportsData } from "../useImportsExportsData";
+import { useImportsExportsData, formatMonth, addMonths, cmpMonth } from "../useImportsExportsData";
 import type {
   UnifiedProduct,
   YoyTableRow,
   PriceMetric,
   PricePoint,
   UnitPriceRow,
+  MonthCursor,
 } from "../useImportsExportsData";
 
 import { COMMON_LAYOUT, AXIS_LINE, PALETTE, emptyPlot } from "../../../../lib/plotlyDefaults";
@@ -85,10 +86,12 @@ const HOVER_THRESHOLD = 0.05;
 
 function buildStackedTraces(rows: StackedRow[], unit: string): PlotData[] {
   if (!rows.length) return [];
+  // xs are ISO date strings "YYYY-MM-01" so Plotly's xaxis.type='date' parses
+  // them natively. Monthly granularity migration (20260526800000).
   const xSet = new Set<string>();
   const entitySet = new Set<string>();
   for (const r of rows) {
-    xSet.add(`${r.ano}-${String(r.mes).padStart(2, "0")}`);
+    xSet.add(`${r.ano}-${String(r.mes).padStart(2, "0")}-01`);
     entitySet.add(r.name);
   }
   const xs = Array.from(xSet).sort();
@@ -98,7 +101,7 @@ function buildStackedTraces(rows: StackedRow[], unit: string): PlotData[] {
   ];
   const lookup = new Map<string, Map<string, number>>();
   for (const r of rows) {
-    const key = `${r.ano}-${String(r.mes).padStart(2, "0")}`;
+    const key = `${r.ano}-${String(r.mes).padStart(2, "0")}-01`;
     if (!lookup.has(r.name)) lookup.set(r.name, new Map());
     lookup.get(r.name)!.set(key, r.value);
   }
@@ -148,7 +151,7 @@ function buildPriceTraces(data: PricePoint[], unit: string): PlotData[] {
       a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes,
     );
     const xs = sorted.map(
-      (r) => `${r.ano}-${String(r.mes).padStart(2, "0")}`,
+      (r) => `${r.ano}-${String(r.mes).padStart(2, "0")}-01`,
     );
     const ys = sorted.map((r) => r.value);
     traces.push({
@@ -178,11 +181,13 @@ function buildUnitPriceTraces(
 ): PlotData[] {
   if (!rows.length) return [];
 
+  // xs are ISO date strings (YYYY-MM-01) so Plotly's xaxis.type='date' parses
+  // them natively. Monthly granularity migration (20260526800000).
   const byEntity = new Map<string, Map<string, number | null>>();
   const xSet = new Set<string>();
 
   for (const r of rows) {
-    const xKey = `${r.ano}-${String(r.mes).padStart(2, "0")}`;
+    const xKey = `${r.ano}-${String(r.mes).padStart(2, "0")}-01`;
     xSet.add(xKey);
     if (!byEntity.has(r.pais)) byEntity.set(r.pais, new Map());
     byEntity.get(r.pais)!.set(xKey, r.usd_per_m3);
@@ -209,7 +214,18 @@ function buildUnitPriceTraces(
   });
 }
 
-function mobileAreaLayout(yLabel: string): Partial<Layout> {
+/**
+ * Mobile-tuned monthly tick step. Smaller screen ⇒ slightly looser than desktop:
+ * 1-6 months → M1; 7-18 → M3; 19-48 → M6; >48 → M12.
+ */
+function pickDtickMobile(rangeMonths: number): string {
+  if (rangeMonths <= 6) return "M1";
+  if (rangeMonths <= 18) return "M3";
+  if (rangeMonths <= 48) return "M6";
+  return "M12";
+}
+
+function mobileAreaLayout(yLabel: string, rangeMonths = 12): Partial<Layout> {
   return {
     ...COMMON_LAYOUT,
     hovermode: "x unified" as const,
@@ -217,6 +233,9 @@ function mobileAreaLayout(yLabel: string): Partial<Layout> {
     margin: { t: 8, b: 52, l: 52, r: 8 },
     xaxis: {
       ...AXIS_LINE,
+      type: "date" as const,
+      tickformat: "%b %Y",
+      dtick: pickDtickMobile(rangeMonths),
       tickangle: -60,
       tickfont: { family: "Arial", size: 8 },
     },
@@ -348,11 +367,21 @@ function SectionHeading({ title, loading }: { title: string; loading?: boolean }
   );
 }
 
-// Month labels for YoY section heading (0-indexed)
+// Month labels (0-indexed) for the period picker drawer.
 const MONTH_LABELS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
+
+const selectStyle: React.CSSProperties = {
+  flex: 1,
+  padding: "8px 10px",
+  borderRadius: 8,
+  border: "1px solid #ccc",
+  fontSize: 14,
+  fontFamily: "Arial",
+  minHeight: 44,
+};
 
 // ─── Products ──────────────────────────────────────────────────────────────────
 
@@ -391,6 +420,14 @@ export default function MobileView(): React.ReactElement {
     visibilityLoading,
   } = useImportsExportsData();
 
+  // Range in months — feeds chart dtick (M1/M3/M6/M12).
+  const rangeMonths = useMemo(() => {
+    const s = filters.period.start;
+    const e = filters.period.end;
+    return (e.ano - s.ano) * 12 + (e.mes - s.mes) + 1;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- destructured cursors
+  }, [filters.period.start.ano, filters.period.start.mes, filters.period.end.ano, filters.period.end.mes]);
+
   const [filterOpen, setFilterOpen] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
@@ -398,8 +435,14 @@ export default function MobileView(): React.ReactElement {
   // Panel D — imports unit price metric toggle (local state, not global filter)
   const [importsUPMetric, setImportsUPMetric] = useState<ImportsUPMetric>("usd_per_ton");
 
+  // Bounds for the month pickers (drawer). Fallbacks let the drawer render
+  // sensibly while filtros is still loading.
   const anoMin = filtros?.ano_min ?? 2010;
+  const mesMin = filtros?.mes_min ?? 1;
   const anoMax = filtros?.ano_max ?? new Date().getFullYear();
+  const mesMax = filtros?.mes_max ?? 12;
+  const lowerBound: MonthCursor = { ano: anoMin, mes: mesMin };
+  const upperBound: MonthCursor = { ano: anoMax, mes: mesMax };
 
   // ── Derived traces ─────────────────────────────────────────────────────────
   // All useMemo calls MUST be before any conditional early returns (Rules of Hooks).
@@ -414,6 +457,8 @@ export default function MobileView(): React.ReactElement {
     return buildStackedTraces(rows, "kt");
   }, [paisesData]);
 
+  const paisesLayout = useMemo(() => mobileAreaLayout("kt", rangeMonths), [rangeMonths]);
+
   const importersTraces = useMemo(() => {
     const rows = importersData.map((r) => ({
       ano: r.ano,
@@ -423,6 +468,8 @@ export default function MobileView(): React.ReactElement {
     }));
     return buildStackedTraces(rows, "mil m³");
   }, [importersData]);
+
+  const importersLayout = useMemo(() => mobileAreaLayout("mil m³", rangeMonths), [rangeMonths]);
 
   // Exports — stacked area by destination country (value already in correct unit from RPC)
   const exportsUnit = filters.exportsYAxis === "volume" ? "mil m³" : "USD";
@@ -438,8 +485,8 @@ export default function MobileView(): React.ReactElement {
   }, [exportsPaisesData, exportsUnit]);
 
   const exportsPaisesLayout: Partial<Layout> = useMemo(
-    () => mobileAreaLayout(exportsUnit),
-    [exportsUnit],
+    () => mobileAreaLayout(exportsUnit, rangeMonths),
+    [exportsUnit, rangeMonths],
   );
 
   // Panel C — price metric
@@ -463,6 +510,9 @@ export default function MobileView(): React.ReactElement {
       margin: { t: 8, b: 52, l: 56, r: 8 },
       xaxis: {
         ...AXIS_LINE,
+        type: "date" as const,
+        tickformat: "%b %Y",
+        dtick: pickDtickMobile(rangeMonths),
         tickangle: -60,
         tickfont: { family: "Arial", size: 8 },
       },
@@ -478,7 +528,7 @@ export default function MobileView(): React.ReactElement {
         font: { family: "Arial", size: 9 },
       },
     }),
-    [priceUnit],
+    [priceUnit, rangeMonths],
   );
 
   // ── Unit price traces (imports + exports) ─────────────────────────────────
@@ -514,6 +564,9 @@ export default function MobileView(): React.ReactElement {
       margin: { t: 8, b: 52, l: 56, r: 8 },
       xaxis: {
         ...AXIS_LINE,
+        type: "date" as const,
+        tickformat: "%b %Y",
+        dtick: pickDtickMobile(rangeMonths),
         tickangle: -60,
         tickfont: { family: "Arial", size: 8 },
       },
@@ -529,7 +582,7 @@ export default function MobileView(): React.ReactElement {
         font: { family: "Arial", size: 9 },
       },
     }),
-    [importsUPUnitLabel],
+    [importsUPUnitLabel, rangeMonths],
   );
 
   // Exports unit price — Crude Oil only, USD/bbl
@@ -562,6 +615,9 @@ export default function MobileView(): React.ReactElement {
       margin: { t: 8, b: 52, l: 56, r: 8 },
       xaxis: {
         ...AXIS_LINE,
+        type: "date" as const,
+        tickformat: "%b %Y",
+        dtick: pickDtickMobile(rangeMonths),
         tickangle: -60,
         tickfont: { family: "Arial", size: 8 },
       },
@@ -577,7 +633,7 @@ export default function MobileView(): React.ReactElement {
         font: { family: "Arial", size: 9 },
       },
     }),
-    [],
+    [rangeMonths],
   );
 
   // Guard — after all hooks
@@ -648,11 +704,10 @@ export default function MobileView(): React.ReactElement {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const today = new Date();
-      const dd = String(today.getDate()).padStart(2, "0");
-      const mm = String(today.getMonth() + 1).padStart(2, "0");
-      const yy = String(today.getFullYear()).slice(-2);
-      a.download = `Imports-Exports_${dd}-${mm}-${yy}.xlsx`;
+      const slug = filters.unifiedProduct.toLowerCase().replace(/\s+/g, "-");
+      const startMonth = `${filters.period.start.ano}-${String(filters.period.start.mes).padStart(2, "0")}`;
+      const endMonth = `${filters.period.end.ano}-${String(filters.period.end.mes).padStart(2, "0")}`;
+      a.download = `imports-exports_${slug}_${startMonth}_${endMonth}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -711,16 +766,15 @@ export default function MobileView(): React.ReactElement {
       zip.file("exports_by_country.csv", csvC);
       zip.file("exports_yoy.csv", csvD);
 
-      const today = new Date();
-      const dd = String(today.getDate()).padStart(2, "0");
-      const mm = String(today.getMonth() + 1).padStart(2, "0");
-      const yy = String(today.getFullYear()).slice(-2);
+      const slug = filters.unifiedProduct.toLowerCase().replace(/\s+/g, "-");
+      const startMonth = `${filters.period.start.ano}-${String(filters.period.start.mes).padStart(2, "0")}`;
+      const endMonth = `${filters.period.end.ano}-${String(filters.period.end.mes).padStart(2, "0")}`;
 
       const blob = await zip.generateAsync({ type: "blob" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Imports-Exports_${dd}-${mm}-${yy}.zip`;
+      a.download = `imports-exports_${slug}_${startMonth}_${endMonth}.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -878,7 +932,7 @@ export default function MobileView(): React.ReactElement {
             {paisesTraces.length > 0 ? (
               <Plot
                 data={paisesTraces}
-                layout={mobileAreaLayout("kt")}
+                layout={paisesLayout}
                 config={{ responsive: true, displayModeBar: false }}
                 style={{ width: "100%" }}
               />
@@ -910,7 +964,7 @@ export default function MobileView(): React.ReactElement {
             {importersData.length > 0 ? (
               <Plot
                 data={importersTraces}
-                layout={mobileAreaLayout("mil m³")}
+                layout={importersLayout}
                 config={{ responsive: true, displayModeBar: false }}
                 style={{ width: "100%" }}
               />
@@ -1106,7 +1160,7 @@ export default function MobileView(): React.ReactElement {
           {yoyExportsData.length > 0 && (
             <>
               <div style={{ padding: "4px 16px 4px", fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                Last 12 months — By Country (ending {MONTH_LABELS[(yoyExportsEndMes ?? 12) - 1]} {yoyEndAno})
+                Last 12 months — By Country (ending {formatMonth(yoyEndAno, yoyExportsEndMes ?? 12)})
               </div>
               <YoYCardList
                 rows={yoyExportsData}
@@ -1156,15 +1210,22 @@ export default function MobileView(): React.ReactElement {
         </div>
       )}
 
-      {/* Filter drawer */}
+      {/* Filter drawer — monthly granularity (migration 20260526800000).
+          Four selects: start (year + month) and end (year + month). Cursors
+          are clamped against filtros bounds; if start > end after a change
+          we swap to keep the period valid. Single-month view supported by
+          setting start === end. */}
       <FilterDrawer
         open={filterOpen}
         onClose={() => setFilterOpen(false)}
         title="Filters"
         onReset={() => {
+          const end: MonthCursor = upperBound;
+          let start = addMonths(end, -11);
+          if (cmpMonth(start, lowerBound) < 0) start = lowerBound;
           setFilters({
             unifiedProduct: "Diesel",
-            period: [anoMax - 9, anoMax],
+            period: { start, end },
           });
         }}
         onApply={() => setFilterOpen(false)}
@@ -1179,56 +1240,70 @@ export default function MobileView(): React.ReactElement {
           {filtrosLoading ? (
             <div style={{ fontSize: 12, color: "#aaa" }}>Loading…</div>
           ) : (
-            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-              <select
-                value={filters.period[0]}
-                onChange={(e) =>
-                  setFilters({
-                    period: [
-                      Number(e.target.value),
-                      Math.max(Number(e.target.value), filters.period[1]),
-                    ],
-                  })
-                }
-                style={{
-                  flex: 1,
-                  padding: "8px 10px",
-                  borderRadius: 8,
-                  border: "1px solid #ccc",
-                  fontSize: 14,
-                  fontFamily: "Arial",
-                  minHeight: 44,
-                }}
-              >
-                {Array.from({ length: anoMax - anoMin + 1 }, (_, i) => anoMin + i).map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
-              <span style={{ color: "#aaa" }}>–</span>
-              <select
-                value={filters.period[1]}
-                onChange={(e) =>
-                  setFilters({
-                    period: [
-                      Math.min(filters.period[0], Number(e.target.value)),
-                      Number(e.target.value),
-                    ],
-                  })
-                }
-                style={{
-                  flex: 1,
-                  padding: "8px 10px",
-                  borderRadius: 8,
-                  border: "1px solid #ccc",
-                  fontSize: 14,
-                  fontFamily: "Arial",
-                  minHeight: 44,
-                }}
-              >
-                {Array.from({ length: anoMax - anoMin + 1 }, (_, i) => anoMin + i).map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 10, color: "#888", marginBottom: 4, fontFamily: "Arial" }}>FROM</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <select
+                    value={filters.period.start.mes}
+                    onChange={(e) => {
+                      const next: MonthCursor = { ano: filters.period.start.ano, mes: Number(e.target.value) };
+                      const clampedEnd = cmpMonth(next, filters.period.end) > 0 ? next : filters.period.end;
+                      setFilters({ period: { start: next, end: clampedEnd } });
+                    }}
+                    style={selectStyle}
+                  >
+                    {MONTH_LABELS.map((m, i) => (
+                      <option key={m} value={i + 1}>{m}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={filters.period.start.ano}
+                    onChange={(e) => {
+                      const next: MonthCursor = { ano: Number(e.target.value), mes: filters.period.start.mes };
+                      const clampedEnd = cmpMonth(next, filters.period.end) > 0 ? next : filters.period.end;
+                      setFilters({ period: { start: next, end: clampedEnd } });
+                    }}
+                    style={selectStyle}
+                  >
+                    {Array.from({ length: anoMax - anoMin + 1 }, (_, i) => anoMin + i).map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 10, color: "#888", marginBottom: 4, fontFamily: "Arial" }}>TO</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <select
+                    value={filters.period.end.mes}
+                    onChange={(e) => {
+                      const next: MonthCursor = { ano: filters.period.end.ano, mes: Number(e.target.value) };
+                      const clampedStart = cmpMonth(next, filters.period.start) < 0 ? next : filters.period.start;
+                      setFilters({ period: { start: clampedStart, end: next } });
+                    }}
+                    style={selectStyle}
+                  >
+                    {MONTH_LABELS.map((m, i) => (
+                      <option key={m} value={i + 1}>{m}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={filters.period.end.ano}
+                    onChange={(e) => {
+                      const next: MonthCursor = { ano: Number(e.target.value), mes: filters.period.end.mes };
+                      const clampedStart = cmpMonth(next, filters.period.start) < 0 ? next : filters.period.start;
+                      setFilters({ period: { start: clampedStart, end: next } });
+                    }}
+                    style={selectStyle}
+                  >
+                    {Array.from({ length: anoMax - anoMin + 1 }, (_, i) => anoMin + i).map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
           )}
         </div>
