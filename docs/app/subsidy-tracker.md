@@ -4,29 +4,50 @@ Owner: `worker_dash-subsidy-tracker`. Reports to `worker_subgerente-app`.
 
 ## Overview
 
-Tracks the impact of the federal diesel road subsidy on Brazilian commercialization prices. The dashboard renders **two** side-by-side (desktop) or stacked (mobile) time-series charts — one per ANP agent type — each comparing four price reference points (in BRL/Liter) for Diesel:
+Tracks the impact of the federal diesel road subsidy on Brazilian commercialization prices. The dashboard renders **two** side-by-side (desktop) or stacked (mobile) time-series charts — one per ANP agent type — each showing **4 traces** comparing reference and effective price levels (BRL/Liter):
 
-1. **IPP** — BBA Import Parity (theoretical landed cost). Black trace. Same in both charts.
-2. **ANP Reference** — daily average of the 5 regional ANP reference prices (NORTE, NORDESTE, CENTRO-OESTE, SUDESTE, SUL) scraped from ANP PDFs. Orange trace.
-3. **ANP Commercialization** — `anp_reference - active_subsidy`. Represents the de-facto price after the federal subsidy is applied. Dark red trace.
-4. **Petrobras** — Petrobras reference price. Teal trace. Same in both charts.
-
-### Agent types
-
-| Chart | Agent | RPC fields |
+| Chart | Agent | Traces (4) |
 |---|---|---|
-| Left (Importer Reference Prices) | `importador` — importers & refiners of imported + domestic oil | `anp_reference_importer`, `anp_commercialization_importer`, `regions_importer` |
-| Right (Producer Reference Prices) | `produtor` — producers refining their own domestic crude | `anp_reference_producer`, `anp_commercialization_producer`, `regions_producer` |
+| Left — Importador Reference Prices | `importador` (importers & refiners of imported crude) | IPP, IPP (adjusted), ANP Reference, ANP Commercialization |
+| Right — Produtor Reference Prices  | `produtor` (refiners of their own domestic crude)     | Petrobras, Petrobras (adjusted), ANP Reference, ANP Commercialization |
 
-The visual gap between **ANP Reference** and **ANP Commercialization** is exactly the federal subsidy vigente at each date — useful to communicate policy impact at a glance.
+**Placement rationale**:
+
+- `IPP_adjusted` shows *only* on the importador grid because it is computed with the importador cap (1.52 BRL/L from 2026-04-07; 0.32 before).
+- `Petrobras_adjusted` shows *only* on the produtor grid because it uses the produtor cap (1.12 BRL/L from 2026-04-07; 0.32 before).
+- ANP Reference and ANP Commercialization appear in BOTH grids — same trace concept, but per-agent values (the regulator publishes distinct prices for each agent type).
+
+## Formula (server-side)
+
+The 2026-05-27 reform replaced the old (incorrect) `Commercialization = Reference − subsidy_brl_l` shortcut with the correct policy formula. The server-side SQL function `compute_subsidy_reimbursement(p_date, p_tipo_agente)` defined in `supabase/migrations/20260527200000_subsidy_reform.sql` is:
+
+```
+reimbursement(date, agent) = AVG over 5 regions of
+  MIN(
+    MAX(reference[region, date, agent] − commercialization[region, period, agent], 0),
+    cap[agent, vigente_at(date)]
+  )
+```
+
+Per-trace consequences:
+
+- `ipp_adjusted        = ipp        − reimbursement(date, 'importador')`
+- `petrobras_adjusted  = petrobras  + reimbursement(date, 'produtor')`
+
+Reference is daily × regional × agent. Commercialization is period-fixed × regional × agent (published per ANP cycle; spans ~2 months at a time). Caps switch on 2026-04-07 from 0.32 unified to 1.52 (importador) / 1.12 (produtor).
+
+The frontend NEVER recomputes the reimbursement. It consumes the already-adjusted values from the RPC.
 
 ## Data sources
 
 | Table | Role | Owner |
 |---|---|---|
-| `price_bands` (Diesel rows) | Provides `ipp` via `bba_import_parity` and `petrobras` via `petrobras_price`. Read-only. | `worker_dados-locais` (manual Excel upload) |
-| `anp_subsidy_diesel_reference` | Daily regional reference prices scraped from ANP PDFs. PK `(data_referencia, regiao, tipo_agente)`. | `worker_etl-pipelines` (`subsidy_diesel_sync.py`) |
-| `anp_subsidy_history` | Federal subsidy timeline. PK `vigente_desde`. Editable via admin-panel reference-tables. | `worker_dash-admin` (UI) / `worker_supabase` (schema) |
+| `price_bands` (Diesel rows) | Raw IPP (`bba_import_parity`) and Petrobras (`petrobras_price`). | `worker_dados-locais` (manual Excel upload) |
+| `anp_subsidy_diesel_reference` | Daily regional reference prices, by `tipo_agente`. PK `(data_referencia, regiao, tipo_agente)`. Scraped from ANP PDFs. | `worker_etl-pipelines` (`subsidy_diesel_sync.py`, PDF stage) |
+| `anp_subsidy_commercialization` | Period-fixed regional commercialization prices, by `tipo_agente`. PK `(data_inicio, regiao, tipo_agente)`. Scraped from the ANP HTML page. | `worker_etl-pipelines` (`subsidy_diesel_sync.py`, HTML stage) |
+| `anp_subsidy_caps` | Cap timeline per `tipo_agente`. PK `(vigente_desde, tipo_agente)`. | `worker_supabase` (seeded by migration `20260527200000`) |
+
+The legacy `anp_subsidy_history` table was **DROPPED** by the 2026-05-27 reform. Any references in this dashboard's older docs are now obsolete.
 
 ## RPC contract (locked)
 
@@ -34,23 +55,26 @@ The visual gap between **ANP Reference** and **ANP Commercialization** is exactl
 public.get_subsidy_tracker_diesel() RETURNS TABLE (
   date                              DATE,
   ipp                               NUMERIC,
-  anp_reference_importer            NUMERIC,
-  anp_commercialization_importer    NUMERIC,
-  anp_reference_producer            NUMERIC,
-  anp_commercialization_producer    NUMERIC,
+  ipp_adjusted                      NUMERIC,
   petrobras                         NUMERIC,
-  regions_importer                  JSONB,  -- { NORTE: x, NORDESTE: y, ... } for importer agent
-  regions_producer                  JSONB   -- { NORTE: x, NORDESTE: y, ... } for producer agent
+  petrobras_adjusted                NUMERIC,
+  anp_reference_importador          NUMERIC,
+  anp_reference_produtor            NUMERIC,
+  anp_commercialization_importador  NUMERIC,
+  anp_commercialization_produtor    NUMERIC,
+  regions_importador                JSONB,   -- { NORTE, NORDESTE, ... } reference (importador)
+  regions_produtor                  JSONB    -- { NORTE, NORDESTE, ... } reference (produtor)
 )
 ```
 
 Behavior:
 
-- FULL OUTER JOIN between `price_bands` (Diesel) and the daily regional averages from `anp_subsidy_diesel_reference` (one CTE per `tipo_agente`), plus a union of all dates across all three sources.
-- `anp_commercialization_<agent> = anp_reference_<agent> - active_subsidy` where `active_subsidy` is looked up via `anp_subsidy_history` (largest `vigente_desde <= date`).
-- `regions_<agent>` is the per-region breakdown for the day, or NULL when no PDF was extracted yet.
+- FULL OUTER JOIN between `price_bands` (Diesel) and the daily regional averages from `anp_subsidy_diesel_reference` (one CTE per `tipo_agente`), plus a union of the period-fixed `anp_subsidy_commercialization` exploded by date.
+- `anp_commercialization_<agent>` is the regional **average** of the period-fixed commercialization price for each date inside the period — NOT a reference-minus-cap derivation.
+- `ipp_adjusted` and `petrobras_adjusted` come from `compute_subsidy_reimbursement(date, agent)` applied per row.
+- `regions_<agent>` is the per-region breakdown of the reference price for the day, or NULL when no PDF was extracted yet.
 - Rows ordered ASC by `date`.
-- SECURITY DEFINER, granted to `authenticated` only (proprietary data — NOT anon).
+- SECURITY DEFINER + `search_path = public, pg_temp`, granted to `authenticated` only (proprietary data — NOT anon).
 
 TypeScript mirror — `src/lib/rpc.ts`:
 
@@ -58,35 +82,57 @@ TypeScript mirror — `src/lib/rpc.ts`:
 export type SubsidyTrackerRow = {
   date: string;
   ipp: number | null;
-  anp_reference_importer: number | null;
-  anp_commercialization_importer: number | null;
-  anp_reference_producer: number | null;
-  anp_commercialization_producer: number | null;
+  ipp_adjusted: number | null;
   petrobras: number | null;
-  regions_importer: Record<string, number> | null;
-  regions_producer: Record<string, number> | null;
+  petrobras_adjusted: number | null;
+  anp_reference_importador: number | null;
+  anp_reference_produtor: number | null;
+  anp_commercialization_importador: number | null;
+  anp_commercialization_produtor: number | null;
+  regions_importador: Record<string, number> | null;
+  regions_produtor: Record<string, number> | null;
 };
 ```
 
-## Subsidy timeline (seed data in `anp_subsidy_history`)
+## Cap timeline (seed in `anp_subsidy_caps`)
 
-| `vigente_desde` | Subsidy (BRL/L) | Notes |
-|---|---|---|
-| 2026-03-13 | 0.32 | Initial subsidy |
-| 2026-04-07 | 1.52 | Added R$ 1.20 — visible as a ~1.20 jump in the Reference–Commercialization gap |
-
-Newer rows replace older ones from their `vigente_desde` onward.
+| `vigente_desde` | `tipo_agente` | `cap_brl_l` | Notes |
+|---|---|---|---|
+| 2026-03-13 | importador | 0.32 | Initial unified cap |
+| 2026-03-13 | produtor   | 0.32 | Initial unified cap |
+| 2026-04-07 | importador | 1.52 | Split: 1.20 + 0.32 (importer leg) |
+| 2026-04-07 | produtor   | 1.12 | Split: 0.80 + 0.32 (domestic producer leg) |
 
 ## Chart spec
 
-Two independent Plotly charts (one per agent), each with 4 line traces (`scatter` + `mode='lines'` + `connectgaps: true`):
+Two independent Plotly charts (one per agent), each with **4 line traces** (`scatter` + `mode='lines'` + `connectgaps: true`):
 
-| Trace | Color | Notes |
-|---|---|---|
-| IPP                   | `#111111` (black)    | Shared between both charts |
-| ANP Reference         | `#F59E0B` (orange)   | `customdata` = `regions_<agent>`; hover lists the 5 regional values when present |
-| ANP Commercialization | `#B91C1C` (dark red) | — |
-| Petrobras             | `#0F766E` (teal)     | Shared between both charts |
+### Importador grid (`SERIES_IMPORTADOR`)
+
+| Trace | Color | Line | Notes |
+|---|---|---|---|
+| IPP                   | `#111111` (black)    | solid  | From `price_bands.bba_import_parity` |
+| IPP (adjusted)        | `#111111` (black)    | dashed | `ipp − reimbursement_importador` |
+| ANP Reference         | `#F59E0B` (orange)   | solid  | `customdata = regions_importador`; hover lists 5 regional values |
+| ANP Commercialization | `#B91C1C` (dark red) | solid  | Scraped period-fixed price, averaged across regions |
+
+### Produtor grid (`SERIES_PRODUTOR`)
+
+| Trace | Color | Line | Notes |
+|---|---|---|---|
+| Petrobras             | `#0F766E` (teal)     | solid  | From `price_bands.petrobras_price` |
+| Petrobras (adjusted)  | `#0F766E` (teal)     | dashed | `petrobras + reimbursement_produtor` |
+| ANP Reference         | `#F59E0B` (orange)   | solid  | `customdata = regions_produtor` |
+| ANP Commercialization | `#B91C1C` (dark red) | solid  | — |
+
+```
+              IMPORTADOR grid                 PRODUTOR grid
+              ───────────────                 ─────────────
+  IPP ━━━━━ (black, solid)        Petrobras  ━━━━━ (teal, solid)
+  IPP ╌╌╌╌╌ (black, dashed)       Petrobras  ╌╌╌╌╌ (teal, dashed)
+  Ref ━━━━━ (orange, solid)       Ref        ━━━━━ (orange, solid)
+  Comm━━━━━ (dark red, solid)     Comm       ━━━━━ (dark red, solid)
+```
 
 **Hover tooltip for ANP Reference** (when `regions_<agent>` is non-null):
 
@@ -99,26 +145,22 @@ ANP Reference: R$ %{y:.2f}/L
 
 When `regions_<agent>` is null on every visible point, the trace falls back to a single-line hover without the breakdown.
 
-**End-of-line annotations** — replicate the pattern in `price-bands/page.tsx`:
-
-- For each trace, find the **last non-null** point.
-- Add a Plotly annotation at that `(x, y)` with `xref='x'`, `yref='y'`, `xanchor='left'`, `xshift: 8`, `text: value.toFixed(2)`, `font.color` matching the trace, `showarrow: false`.
-- To avoid label collision when two annotations end at the same date with close `y` values, offset `yshift` by `±10` per trace index.
+**End-of-line annotations** — for each trace, find the last non-null `(x, y)`, then anchor at `xref='x'`, `yref='y'`, `xanchor='left'`, `xshift: 8`, `text: value.toFixed(2)`, `font.color` matching the trace, `showarrow: false`. With 4 traces per chart and potentially close `y` values, a min-gap pushdown algorithm (`buildChart`) prevents label collision.
 
 **Axes & layout**:
 
-- X axis: dates, `tickformat: "%b-%y"`, tick angle `-90`, x-range extended `+30 days` past the last point to leave room for end-of-line labels.
+- X axis: dates, `tickformat: "%b-%y"`, tick angle `-90`, x-range extended `+30 days` past the last point.
 - Y axis title: `"BRL/Liter"`, `tickformat: ".2f"`.
 - Legend: horizontal, below the chart.
 - Layout: `COMMON_LAYOUT` + `AXIS_LINE` from `src/lib/plotlyDefaults`.
-- Height: 420px (reduced from 480px in original single-chart layout to fit two charts side-by-side).
-- Empty state: `emptyPlot(420, "No data available")` when 0 rows after filter.
+- Height: 420px.
+- Empty state: `emptyPlot(420, "No data available")`.
 
-**Period filter**: `PeriodSlider` (dates mode) — default selection is the **last 90 days** (or full range if shorter). No standalone filter UI on desktop (no filter panel rendered above charts). On mobile, the FilterDrawer governs both charts uniformly.
+**Period filter**: `PeriodSlider` (dates mode) — default `last 90 days` (or full range if shorter). No standalone filter UI on desktop. On mobile, the FilterDrawer governs both charts uniformly.
 
-## WoW table
+## WoW table (desktop)
 
-Each chart is followed by a Bootstrap `table-sm` with 4 rows × 4 columns:
+Each chart is followed by a Bootstrap `table-sm` with **4 rows × 4 columns**. The Importador WoW table shows IPP, IPP (adjusted), ANP Reference, ANP Commercialization. The Produtor table shows Petrobras, Petrobras (adjusted), ANP Reference, ANP Commercialization.
 
 | Column | Content |
 |---|---|
@@ -134,18 +176,18 @@ For each series:
 2. Compute `targetDate = latestDate − 7 calendar days`.
 3. Walk rows descending to find the most recent non-null reading where `date ≤ targetDate` — that is `priorValue` / `priorDate`.
 4. `wowPct = priorValue != null && priorValue !== 0 ? (latestValue − priorValue) / priorValue × 100 : null`.
-5. Render em-dash when `wowPct === null` (prior reading unavailable or zero division).
+5. Render em-dash when `wowPct === null`.
 
 ## Desktop layout
 
 ```
 NavBar
 DashboardHeader + ExportPanel
-┌─────────────────────────────────────────────────────────────────┐
-│  h6: Importer Reference Prices    │  h6: Producer Reference Prices  │
-│  PlotlyChart (chartImporter)      │  PlotlyChart (chartProducer)    │
-│  WowTable (currentValuesImporter) │  WowTable (currentValuesProducer)│
-└─────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│  h6: Importador Reference Prices    │  h6: Produtor Reference Prices │
+│  PlotlyChart (chartImporter, 4 trc) │  PlotlyChart (chartProducer, 4 trc) │
+│  WowTable (currentValuesImporter)   │  WowTable (currentValuesProducer)   │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 Side-by-side (`col-lg-6`) on ≥lg viewports; stacked on <lg.
@@ -153,39 +195,39 @@ Side-by-side (`col-lg-6`) on ≥lg viewports; stacked on <lg.
 ## Mobile layout
 
 Stacked vertically:
+
 1. MobileTopBar + Subtitle + Date chips
-2. AgentDivider ("Importer Reference Prices")
-3. MobileChart (chartImporter) + color-key legend
-4. Active subsidy badge (importer)
-5. Latest values cards with WoW % chips (importer)
-6. Tap-to-show regional breakdown (importer)
-7. AgentDivider ("Producer Reference Prices")
-8. MobileChart (chartProducer) + color-key legend
-9. Active subsidy badge (producer)
-10. Latest values cards with WoW % chips (producer)
-11. Tap-to-show regional breakdown (producer)
-12. FilterDrawer (period slider + trace visibility toggles — governs both charts)
+2. AgentDivider ("Importador Reference Prices")
+3. MobileChart (chartImporter) + color-key legend (4 entries — dashed line glyph for IPP adjusted)
+4. Active subsidy badge (importador)
+5. Latest values cards with WoW % chips (4 rows — importador)
+6. Tap-to-show regional breakdown (importador)
+7. AgentDivider ("Produtor Reference Prices")
+8. MobileChart (chartProducer) + color-key legend (4 entries — dashed line glyph for Petrobras adjusted)
+9. Active subsidy badge (produtor)
+10. Latest values cards with WoW % chips (4 rows — produtor)
+11. Tap-to-show regional breakdown (produtor)
+12. FilterDrawer (period slider + 6 trace visibility toggles)
 13. ExportFAB
 
-The trace visibility toggles in the FilterDrawer use SERIES_IMPORTER labels as display names. Toggling `anp_reference_importer` mirrors to `anp_reference_producer`, and similarly for Commercialization. IPP and Petrobras are shared fields.
+The FilterDrawer exposes **6 unique toggles** (IPP / IPP adjusted / Petrobras / Petrobras adjusted / ANP Reference / ANP Commercialization). The ANP Reference and ANP Commercialization toggles are keyed on the importador field, and `MIRROR_MAP` propagates the same on/off state to the produtor field.
 
 ## NavBar location
 
 - Group: **Fuel Distribution** → **Proprietary data** (alongside Price Bands).
 - Slug: `subsidy-tracker`.
 - NavBar entry maintained by `worker_dash-admin` (this agent does not edit `NavBar.tsx`).
-- Module visibility seeded by the migration that creates `anp_subsidy_*` tables (owned by `worker_supabase`).
 
 ## Export — Tier 1
 
-Direct download (no modal — dataset is small, one row per date).
+Direct download (no modal — dataset is small, one row per date). Now carries the two adjusted columns.
 
 | Action | Helper | Filename | Columns |
 |---|---|---|---|
-| Excel | `downloadGenericExcel` (`src/lib/exportExcel.ts`) | `subsidy_tracker_diesel <DD-MM-YY>.xlsx` | `Date`, `IPP`, `ANP Reference (Importer)`, `ANP Commercialization (Importer)`, `ANP Reference (Producer)`, `ANP Commercialization (Producer)`, `Petrobras` |
-| CSV   | `downloadCsv` (`src/lib/exportCsv.ts`)            | `subsidy_tracker_diesel.csv`               | `date, ipp, anp_reference_importer, anp_commercialization_importer, anp_reference_producer, anp_commercialization_producer, petrobras` |
+| Excel | `downloadGenericExcel` (`src/lib/exportExcel.ts`) | `subsidy_tracker_diesel <DD-MM-YY>.xlsx` | `Date`, `IPP`, `IPP (adjusted)`, `Petrobras`, `Petrobras (adjusted)`, `ANP Reference (Importador)`, `ANP Reference (Produtor)`, `ANP Commercialization (Importador)`, `ANP Commercialization (Produtor)` |
+| CSV   | `downloadCsv` (`src/lib/exportCsv.ts`)            | `subsidy_tracker_diesel.csv`               | `date, ipp, ipp_adjusted, petrobras, petrobras_adjusted, anp_reference_importador, anp_reference_produtor, anp_commercialization_importador, anp_commercialization_produtor` |
 
-`regions_importer` and `regions_producer` are intentionally excluded from export — they are UI affordances only.
+`regions_importador` and `regions_produtor` are intentionally excluded from export — they are UI affordances only.
 
 ## Hook contract (`useSubsidyTrackerData.ts`)
 
@@ -198,15 +240,15 @@ Direct download (no modal — dataset is small, one row per date).
   filters: { sliderRange: [number, number]; traces: TraceVisibility };
   setFilters: (next: Partial<Filters>) => void;
   resetFilters: () => void;
-  datas: string[];                              // unique sorted dates >= MIN_DATE
+  datas: string[];
   xMin: string | null;
   xMax: string | null;
-  chartImporter: { data: PlotData[]; layout: Partial<Layout> };
-  chartProducer: { data: PlotData[]; layout: Partial<Layout> };
-  currentValuesImporter: SubsidyTrackerWowRow[];   // 1 row per series (latest + WoW)
-  currentValuesProducer: SubsidyTrackerWowRow[];   // 1 row per series (latest + WoW)
-  activeSubsidyImporter: number | null;            // Reference − Commercialization (importer)
-  activeSubsidyProducer: number | null;            // Reference − Commercialization (producer)
+  chartImporter: { data: PlotData[]; layout: Partial<Layout> };  // 4 traces
+  chartProducer: { data: PlotData[]; layout: Partial<Layout> };  // 4 traces
+  currentValuesImporter: SubsidyTrackerWowRow[];                  // 4 rows
+  currentValuesProducer: SubsidyTrackerWowRow[];                  // 4 rows
+  activeSubsidyImporter: number | null;
+  activeSubsidyProducer: number | null;
   exportExcel: () => Promise<void>;
   exportCsv: () => void;
   excelLoading: boolean;
@@ -214,16 +256,7 @@ Direct download (no modal — dataset is small, one row per date).
 }
 ```
 
-Exports also include `SERIES_IMPORTER`, `SERIES_PRODUCER`, `SERIES` (alias for `SERIES_IMPORTER`), `REGION_ORDER`, `COLOR_*` constants, and `formatRegions` / `fmtDateLabel` / `buildChart` / `buildCurrentValuesWithWoW` helpers.
-
-### Removed from hook (compared to single-agent v1)
-
-| Old export | Replacement |
-|---|---|
-| `chart` | `chartImporter` + `chartProducer` |
-| `currentValues` | `currentValuesImporter` + `currentValuesProducer` |
-| `activeSubsidy` | `activeSubsidyImporter` + `activeSubsidyProducer` |
-| `SERIES` | `SERIES_IMPORTER` + `SERIES_PRODUCER` (`SERIES` kept as alias for SERIES_IMPORTER) |
+Exports also include `SERIES_IMPORTADOR`, `SERIES_PRODUTOR`, back-compat aliases `SERIES_IMPORTER` / `SERIES_PRODUCER` / `SERIES`, `REGION_ORDER`, `COLOR_*` constants, and `formatRegions` / `fmtDateLabel` / `buildChart` / `buildCurrentValuesWithWoW` helpers.
 
 ## Files & ownership
 
@@ -241,9 +274,9 @@ docs/app/subsidy-tracker.md        ← this PRD
 
 Not owned here:
 
-- `NavBar.tsx`, `HomeClient.tsx`, admin-panel reference-tables editor for `anp_subsidy_history` → `worker_dash-admin`.
-- Tables/RPCs/RLS for `anp_subsidy_*` → `worker_supabase`.
-- `scripts/pipelines/anp/subsidy_diesel_sync.py` and `.github/workflows/etl_anp_subsidy_diesel.yml` → `worker_etl-pipelines`.
+- `NavBar.tsx`, `HomeClient.tsx` → `worker_dash-admin`.
+- Tables / RPC / triggers / `compute_subsidy_reimbursement()` / migration `20260527200000_subsidy_reform.sql` → `worker_supabase`.
+- `scripts/pipelines/anp/subsidy_diesel_sync.py` (PDF + HTML stages) and `.github/workflows/etl_anp_subsidy_diesel.yml` → `worker_etl-pipelines`.
 - Shared components in `src/components/dashboard/` and `src/components/dashboard/mobile/` → `worker_subgerente-app` / `worker_designer`.
 
 ## Dual-view structure
@@ -260,17 +293,18 @@ Current `[mobile-only]` divergences:
 |---|---|---|---|
 | ANP Reference regional breakdown | Plotly hover tooltip via `customdata` | Tap-to-expand `MobileDataCard` list under each chart block | Touch devices have no hover |
 | End-of-line value annotations | Stacked at chart's right edge with min-gap pushdown | Dropped; replaced by `MobileDataCard` "Latest values" section | Annotations overflow narrow viewports |
-| Per-trace visibility | Plotly legend click | Toggle switches inside `FilterDrawer` | Mobile legend is non-interactive (`showlegend: false`) |
+| Per-trace visibility | Plotly legend click | Toggle switches inside `FilterDrawer` (6 unique concepts) | Mobile legend is non-interactive (`showlegend: false`) |
 | WoW data | `WowTable` component below each chart | `WowChip` inline on each `MobileDataCard` | Consistent with mobile card UX pattern |
+| Dashed-line distinction | Plotly `line.dash = "dash"` is visible in chart + legend | Chart uses dashed line, legend uses a small `ColorLine` dashed glyph next to the label | Mobile legend dots cannot encode dash |
 
 ## Gotchas
 
-- **Subsidy step on 2026-04-07** — the gap between Reference and Commercialization jumps from ~0.32 to ~1.52 on that date. This is correct, not a bug. Verify against `anp_subsidy_history`.
-- **Importer vs. Producer price levels** — producer prices are typically lower than importer prices (e.g. 2026-05-26: importer ~5.13, producer ~4.64). Both ANP Commercialization traces will be ~1.52 below their respective References on the same date.
-- **IPP column choice** — use `price_bands.bba_import_parity` (raw parity, no subsidy adjustment) for the IPP trace. Do **not** use `bba_import_parity_w_subsidy` here.
-- **`regions_<agent>` may be NULL** — dates without a PDF extraction yet. The chart handles this by falling back to a simpler hover string. Don't crash on missing keys.
-- **FULL OUTER JOIN** — `price_bands` may have a day that ANP doesn't, and vice versa. The corresponding column is NULL on that date; `connectgaps: true` keeps the line visually continuous.
-- **WoW = null when no 7-day-prior reading** — early dates in the series will have null WoW. Render as em-dash.
-- **Dataset is small** — Tier 1 export (no modal, no size precount). If this changes (e.g. multi-product extension), revisit and switch to Tier 2 with `useExportSize`.
-- **Period default** — last 90 days. If the user expands to the full range, the period slider remembers until Reset is pressed.
-- **TraceVisibility keys** — the hook's `TraceVisibility` uses `Partial<Record<SeriesField, boolean>>` where `SeriesField` covers all 6 numeric field names. The mobile FilterDrawer only toggles the 4 importer-side keys; the `traceVisible()` helper maps producer fields to their corresponding importer toggles.
+- **Cap step on 2026-04-07** — the gap between Reference and Commercialization (and the magnitude of the adjusted-vs-raw spread) jumps on that date. Importador goes 0.32 → 1.52; produtor goes 0.32 → 1.12. Correct, not a bug.
+- **Importador vs. Produtor price levels** — the two reference price levels differ (e.g., produtor lower than importador). Both ANP Commercialization traces also differ between agents because the HTML page publishes per-agent values.
+- **IPP column choice** — use `price_bands.bba_import_parity` (raw parity) for the IPP trace. Do **not** use `bba_import_parity_w_subsidy` here. The adjusted version comes from the RPC's `ipp_adjusted` (server-side, freshly computed each call).
+- **`regions_<agent>` may be NULL** — dates without a PDF extraction yet. The chart handles this by falling back to a simpler hover string.
+- **`anp_commercialization_<agent>` may be NULL** — dates outside any scraped commercialization period. Plotly's `connectgaps: true` keeps the line visually continuous.
+- **WoW = null when no 7-day-prior reading** — early dates in the series will have null WoW.
+- **Dataset is small** — Tier 1 export (no modal, no size precount).
+- **Period default** — last 90 days.
+- **`anp_subsidy_history` is gone** — the migration `20260527200000_subsidy_reform.sql` DROPped it. Any reference-tables editor mention in `/admin-panel` related to that table has been retired; the new `anp_subsidy_caps` and `anp_subsidy_commercialization` tables are managed by ETL + migration seed, not via admin UI.
