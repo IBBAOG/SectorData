@@ -512,6 +512,9 @@ export default function MobileView(): React.ReactElement | null {
               const publicError = publicToggleError?.slug === slug ? publicToggleError.message : null;
               const homeError = homeToggleError?.slug === slug ? homeToggleError.message : null;
               const clientsForcedOn = isPublicVisible;
+              // Home invariant: home=true requires at least one of Public or
+              // Clients to be true. Disable the Home toggle when both are false.
+              const homeDisabled = !isPublicVisible && !isClientVisible;
 
               return (
                 <article
@@ -613,13 +616,18 @@ export default function MobileView(): React.ReactElement | null {
                   </div>
 
                   {/* Home row */}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                  <div
+                    style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}
+                    title={homeDisabled ? "Make the module visible to Public or Clients first" : undefined}
+                  >
                     <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
                       <span style={{ fontSize: 12, fontWeight: 700, color: "var(--mobile-text)" }}>Home</span>
-                      <span style={{ fontSize: 11, color: "var(--mobile-text-faint)" }}>Show card in /home gallery</span>
+                      <span style={{ fontSize: 11, color: homeDisabled ? "var(--mobile-text-faint)" : "var(--mobile-text-faint)" }}>
+                        {homeDisabled ? "Requires Public or Clients to be on" : "Show card in /home gallery"}
+                      </span>
                     </div>
                     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                      {justSavedHome && (
+                      {justSavedHome && !homeDisabled && (
                         <span
                           style={{ fontSize: 10, fontWeight: 700, color: "#38a169", display: "inline-flex", alignItems: "center", gap: 4 }}
                           aria-live="polite"
@@ -636,14 +644,14 @@ export default function MobileView(): React.ReactElement | null {
                           type="checkbox"
                           role="switch"
                           aria-label={`Show ${label} on Home`}
-                          checked={isHomeVisible}
-                          disabled={isSavingHome}
+                          checked={isHomeVisible && !homeDisabled}
+                          disabled={isSavingHome || homeDisabled}
                           onChange={(e) => handleHomeToggle(slug, e.target.checked)}
                           style={{
                             width: "2.6em",
                             height: "1.4em",
-                            cursor: isSavingHome ? "wait" : "pointer",
-                            opacity: isSavingHome ? 0.6 : 1,
+                            cursor: isSavingHome || homeDisabled ? "not-allowed" : "pointer",
+                            opacity: isSavingHome || homeDisabled ? 0.4 : 1,
                             margin: 0,
                           }}
                         />

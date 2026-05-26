@@ -443,6 +443,11 @@ export default function DesktopView(): React.ReactElement | null {
                 // When Public is ON, Clients must also be ON (DB invariant).
                 // The Clients toggle is forced-on and disabled in this case.
                 const clientsForcedOn = isPublicVisible;
+                // Home invariant: home=true requires at least one of Public or
+                // Clients to be true. Disable the Home toggle (and grey it out)
+                // when both are false — the DB trigger would coerce home=false
+                // anyway, so prevent the click entirely.
+                const homeDisabled = !isPublicVisible && !isClientVisible;
                 return (
                   <div key={slug} className="settings-module-row" style={{ alignItems: "center" }}>
                     <div style={{ flex: 1, paddingRight: 24 }}>
@@ -499,7 +504,10 @@ export default function DesktopView(): React.ReactElement | null {
                     </div>
 
                     {/* Home toggle */}
-                    <div style={{ width: 90, display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }}>
+                    <div
+                      style={{ width: 90, display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }}
+                      title={homeDisabled ? "Make the module visible to Public or Clients first" : undefined}
+                    >
                       {justSavedHome && <span className="settings-saved-tick" aria-live="polite">✓</span>}
                       {homeError && (
                         <span style={{ fontSize: 11, color: "#c0392b" }} title={homeError}>Error</span>
@@ -511,10 +519,15 @@ export default function DesktopView(): React.ReactElement | null {
                           role="switch"
                           id={`home-toggle-${slug}`}
                           aria-label={`Show ${label} on Home`}
-                          checked={isHomeVisible}
-                          disabled={isSavingHome}
+                          checked={isHomeVisible && !homeDisabled}
+                          disabled={isSavingHome || homeDisabled}
                           onChange={(e) => handleHomeToggle(slug, e.target.checked)}
-                          style={{ width: "2.5em", height: "1.25em", cursor: isSavingHome ? "wait" : "pointer", opacity: isSavingHome ? 0.6 : 1 }}
+                          style={{
+                            width: "2.5em",
+                            height: "1.25em",
+                            cursor: isSavingHome || homeDisabled ? "not-allowed" : "pointer",
+                            opacity: isSavingHome || homeDisabled ? 0.4 : 1,
+                          }}
                         />
                       </div>
                     </div>

@@ -281,19 +281,60 @@ export function useAdminPanelData(): UseAdminPanelData {
     EDITABLE_TABLES[0]?.slug ?? "",
   );
 
-  // ── Module Visibility (Client access) ──────────────────────────────────────
+  // ── Visibility state (all three axes declared together so handlers below
+  //    can reference any of them without forward-reference issues) ─────────────
+
+  // Client access (is_visible_for_clients)
   const [localVis, setLocalVis] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [savedSlug, setSavedSlug] = useState<string | null>(null);
 
+  // Home gallery card (is_visible_on_home)
+  const [localHomeVis, setLocalHomeVis] = useState<Record<string, boolean>>({});
+  const [savingHome, setSavingHome] = useState<string | null>(null);
+  const [savedHomeSlug, setSavedHomeSlug] = useState<string | null>(null);
+  const [homeToggleError, setHomeToggleError] = useState<{ slug: string; message: string } | null>(null);
+
+  // Anonymous-visitor access (is_visible_for_public)
+  // Source of truth is `publicVisibility` on UserProfileContext (Phase B), which
+  // is loaded once per page alongside moduleVisibility/homeVisibility from a
+  // single rpcGetModuleVisibility call. We mirror it locally only to support
+  // optimistic updates — same pattern as `localVis` and `localHomeVis` above.
+  // After a mutation, `refreshVisibility()` re-fetches the shared map; the
+  // useEffect below re-seeds the local mirror from the refreshed context value.
+  const [localPublicVis, setLocalPublicVis] = useState<Record<string, boolean>>({});
+  const [savingPublic, setSavingPublic] = useState<string | null>(null);
+  const [savedPublicSlug, setSavedPublicSlug] = useState<string | null>(null);
+  const [publicToggleError, setPublicToggleError] = useState<{ slug: string; message: string } | null>(null);
+
+  // Seed all three local mirrors whenever context visibility maps refresh
   useEffect(() => {
     setLocalVis({ ...moduleVisibility });
   }, [moduleVisibility]);
+
+  useEffect(() => {
+    setLocalHomeVis({ ...homeVisibility });
+  }, [homeVisibility]);
+
+  useEffect(() => {
+    setLocalPublicVis({ ...publicVisibility });
+  }, [publicVisibility]);
+
+  // ── Visibility handlers ────────────────────────────────────────────────────
 
   const handleToggle = useCallback(
     async (slug: string, newValue: boolean) => {
       if (!supabase || saving) return;
       setLocalVis((prev) => ({ ...prev, [slug]: newValue }));
+      // Home-invariant coercion: if both Public and Clients become false,
+      // the DB trigger will force is_visible_on_home=false. Mirror that
+      // optimistically so the Home toggle goes grey immediately.
+      if (!newValue) {
+        const isPublic = localPublicVis[slug] ?? true;
+        if (!isPublic) {
+          setLocalHomeVis((prev) => ({ ...prev, [slug]: false }));
+        }
+      }
       setSaving(slug);
       await rpcSetModuleVisibility(supabase, slug, newValue);
       await refreshVisibility();
@@ -301,18 +342,8 @@ export function useAdminPanelData(): UseAdminPanelData {
       setSavedSlug(slug);
       setTimeout(() => setSavedSlug((s) => (s === slug ? null : s)), 1500);
     },
-    [supabase, saving, refreshVisibility],
+    [supabase, saving, localPublicVis, refreshVisibility],
   );
-
-  // ── Home Visibility (Show on Home) ─────────────────────────────────────────
-  const [localHomeVis, setLocalHomeVis] = useState<Record<string, boolean>>({});
-  const [savingHome, setSavingHome] = useState<string | null>(null);
-  const [savedHomeSlug, setSavedHomeSlug] = useState<string | null>(null);
-  const [homeToggleError, setHomeToggleError] = useState<{ slug: string; message: string } | null>(null);
-
-  useEffect(() => {
-    setLocalHomeVis({ ...homeVisibility });
-  }, [homeVisibility]);
 
   const handleHomeToggle = useCallback(
     async (slug: string, newValue: boolean) => {
@@ -338,21 +369,7 @@ export function useAdminPanelData(): UseAdminPanelData {
     [supabase, savingHome, localHomeVis, refreshVisibility],
   );
 
-  // ── Public Visibility (Anonymous access) ───────────────────────────────────
-  // Source of truth is `publicVisibility` on UserProfileContext (Phase B), which
-  // is loaded once per page alongside moduleVisibility/homeVisibility from a
-  // single rpcGetModuleVisibility call. We mirror it locally only to support
-  // optimistic updates — same pattern as `localVis` and `localHomeVis` above.
-  // After a mutation, `refreshVisibility()` re-fetches the shared map; the
-  // useEffect below re-seeds the local mirror from the refreshed context value.
-  const [localPublicVis, setLocalPublicVis] = useState<Record<string, boolean>>({});
-  const [savingPublic, setSavingPublic] = useState<string | null>(null);
-  const [savedPublicSlug, setSavedPublicSlug] = useState<string | null>(null);
-  const [publicToggleError, setPublicToggleError] = useState<{ slug: string; message: string } | null>(null);
-
-  useEffect(() => {
-    setLocalPublicVis({ ...publicVisibility });
-  }, [publicVisibility]);
+  // ── Public Visibility handler ──────────────────────────────────────────────
 
   const handlePublicToggle = useCallback(
     async (slug: string, newValue: boolean) => {
@@ -367,6 +384,12 @@ export function useAdminPanelData(): UseAdminPanelData {
       setLocalPublicVis((prev) => ({ ...prev, [slug]: newValue }));
       if (newValue && !prevClient) {
         setLocalVis((prev) => ({ ...prev, [slug]: true }));
+      }
+      // Home-invariant coercion: if Public goes false and Clients was already
+      // false, both visibility flags become false — the DB trigger will force
+      // is_visible_on_home=false. Mirror that optimistically.
+      if (!newValue && !prevClient) {
+        setLocalHomeVis((prev) => ({ ...prev, [slug]: false }));
       }
       setSavingPublic(slug);
       setPublicToggleError(null);
@@ -399,7 +422,7 @@ export function useAdminPanelData(): UseAdminPanelData {
       }
       setSavingPublic(null);
     },
-    [supabase, savingPublic, localPublicVis, localVis, refreshVisibility],
+    [supabase, savingPublic, localPublicVis, localVis, localHomeVis, refreshVisibility],
   );
 
   // ── Members ────────────────────────────────────────────────────────────────

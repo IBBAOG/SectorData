@@ -280,7 +280,9 @@ Protegida por `useRoleGuard("Admin")`. Funcionalidades (6 seções na sidebar):
 - `is_visible_for_public`: controls anonymous (logged-out) visitor access. Managed via Permissions tab "Public" column. RPC: `set_module_public_visibility` (Admin-only, MFA-gated).
 - `is_visible_for_clients`: controls Client tier visibility only (Admin always sees). Managed via Permissions tab "Clients" column. RPC: `set_module_visibility`.
 - `is_visible_on_home`: controls Home gallery visibility for ALL users including Admin. Managed via Permissions tab "Home" column (consolidated 2026-05-26 — previously a separate "Home Visibility" tab). Default `true` (backward-compatible). RPC: `set_module_home_visibility`.
-- **Invariant:** `is_visible_for_public = true` ⇒ `is_visible_for_clients = true`. Enforced by both a `CHECK` constraint (`module_visibility_public_implies_clients_chk`) and a `BEFORE INSERT/UPDATE` trigger that coerces clients=TRUE when public flips ON.
+- **Invariant (Public ⇒ Clients):** `is_visible_for_public = true` ⇒ `is_visible_for_clients = true`. Enforced by both a `CHECK` constraint (`module_visibility_public_implies_clients_chk`) and a `BEFORE INSERT/UPDATE` trigger that coerces clients=TRUE when public flips ON.
+
+**Invariant (Home requires visibility):** `is_visible_on_home = true` ⇒ `(is_visible_for_public = true OR is_visible_for_clients = true)`. Enforced by migration `20260526900000_module_visibility_home_requires_visible.sql`. When both Public and Clients are false, the trigger coerces Home to false automatically. The UI mirrors this: the Home toggle is **disabled** (greyed out, cursor `not-allowed`, tooltip "Make the module visible to Public or Clients first") when both flags are false. Optimistic coercion in `handleToggle` and `handlePublicToggle` (inside `useAdminPanelData`) flips `localHomeVis[slug] = false` immediately so the UI updates before the round-trip completes; `refreshVisibility()` then reseeds from the DB-authoritative value.
 
 > **Tech debt**: ambas criadas via [`sql/create_profiles_and_visibility.sql`](../../sql/create_profiles_and_visibility.sql) aplicado direto no Dashboard, **não em migration versionada**.
 
@@ -520,6 +522,21 @@ Arquitetura extensível baseada em registry. Substitui o workflow de editar `dat
 As políticas de escrita para `price_bands` e `d_g_margins` são criadas pela migration
 `supabase/migrations/20260512000000_data_input_admin_policies.sql` (worker_supabase, branch paralela).
 Sem a migration, writes retornam 403 — a UI renderiza mas não persiste.
+
+## Changelog — Permissions toggle UX fixes (2026-05-26)
+
+Two UX fixes applied to the Permissions tab toggles (both desktop and mobile views).
+
+**Fix 1 — Remove checkmark animation from switch pill.** Bootstrap 5's `form-check-input[role="switch"]` renders a white checkmark SVG inside the thumb when checked. This is overridden in `src/app/globals.css` with a plain white circle `background-image`, so only the pill color and thumb position change on toggle. No SVG elements, no animated check.
+
+**Fix 2 — Home toggle disabled when both Public and Clients are false.** Mirrors the DB invariant from migration `20260526900000_module_visibility_home_requires_visible.sql`. Implementation:
+- `useAdminPanelData` state declarations for all three visibility axes (`localVis`, `localHomeVis`, `localPublicVis`) are now grouped together before the handlers to avoid forward-reference issues.
+- `handleToggle` (Clients): when toggling Clients to `false` and Public is already `false`, optimistically coerces `localHomeVis[slug] = false`.
+- `handlePublicToggle`: when toggling Public to `false` and Clients was already `false`, optimistically coerces `localHomeVis[slug] = false`. After successful save, `refreshVisibility()` re-seeds from the DB-authoritative value (DB trigger has already zeroed home).
+- Both views compute `homeDisabled = !isPublicVisible && !isClientVisible` per module. When `true`: toggle is `disabled`, opacity `0.4`, cursor `not-allowed`. Tooltip: "Make the module visible to Public or Clients first". The `checked` prop is also forced to `false` when `homeDisabled` to ensure consistent UI state.
+- Mobile: the Home row sub-label changes to "Requires Public or Clients to be on" when disabled.
+
+---
 
 ## Changelog — Consolidate Home toggle into Permissions tab (2026-05-26)
 
