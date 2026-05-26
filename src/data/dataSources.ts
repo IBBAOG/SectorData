@@ -234,7 +234,7 @@ export const DATA_SOURCES: DataSource[] = [
   },
   {
     key: "anp_daie",
-    name: "ANP fuel imports/exports + customs clearances",
+    name: "ANP fuel imports/exports",
     description:
       "Monthly ANP fuel import/export volumes (DAIE) plus enriched customs clearance records with CNPJ and importer identification (Desembaraços). Both feed Imports & Exports.",
     category: "imports",
