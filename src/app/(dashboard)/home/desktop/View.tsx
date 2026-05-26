@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import NavBar from "../../../../components/NavBar";
 import { useHomeData } from "../useHomeData";
 import DataSourcesTable from "../../../../components/home/DataSourcesTable";
+import TeamPanel from "../../../../components/home/TeamPanel";
 import { getModuleIcon } from "../../../../data/moduleIcons";
 
 // ── Design tokens ─────────────────────────────────────────────────────────
@@ -296,8 +297,10 @@ export default function DesktopView(): React.ReactElement {
           })}
         </section>
 
-        {/* ── Right column: Data Sources live table ─────────────────────── */}
+        {/* ── Right column: Team + Data Sources ────────────────────────── */}
         <section style={{ paddingLeft: 16, paddingTop: 2 }}>
+          <TeamPanel />
+          <div style={{ marginBottom: 12 }} />
           <DataSourcesTable />
         </section>
       </div>
