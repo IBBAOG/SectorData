@@ -130,6 +130,42 @@ Migration: `20260522000001_anonymous_access.sql`. Torna o login opcional, introd
 
 **Self-healing trigger em `module_visibility`:** se um caller (frontend OU service-role direto) escreve `public=true AND clients=false`, o BEFORE trigger silenciosamente faz `clients=true` antes do INSERT/UPDATE. O CHECK constraint sobrevive como defesa em profundidade caso o trigger seja contornado (improvável, mas defensivo). UI do Admin Panel deve refletir esse comportamento — togglar Public=ON com Clients=OFF deve also toggle Clients=ON automaticamente.
 
+### Data Sources Freshness (adicionada 2026-05-26)
+
+Migration: `20260526200000_data_sources_freshness.sql`. RPC pública que serve a tabela live "Data Sources" da `/home` (desktop split 50/50; mobile fica só com cards).
+
+| RPC | Assinatura | Notas |
+|---|---|---|
+| `get_data_sources_freshness` | `() RETURNS TABLE(source_key text, last_update timestamptz, row_count bigint)` | LANGUAGE sql STABLE SECURITY DEFINER. `SET search_path = public, pg_temp`. `GRANT EXECUTE TO anon, authenticated`. Polled 60s pelo hook `useDataSourcesFreshness` em `src/components/home/DataSourcesTable/`. SECURITY DEFINER é obrigatório porque a UNION lê tabelas com RLS authed-only (vide CLAUDE.md Pegadinha #18) — sem ele, anon callers receberiam `[]` silenciosamente. |
+
+A query é um UNION ALL de 22 SELECTs (1 por tabela ETL-fed). Cada SELECT carrega um literal `source_key text` que é a chave de match com o catálogo TS `src/data/dataSources.ts`. O catálogo TS tem 23 entries: 22 tabelas + `yahoo_finance` (live realtime, sem tabela Supabase — exibido pela tabela com label "live" em vez de timestamp).
+
+**Tabelas cobertas (22):** `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco`, `anp_cdp_producao`, `anp_voip`, `vendas`, `anp_precos_produtores`, `anp_glp`, `anp_lpc`, `anp_precos_distribuicao`, `anp_subsidy_diesel_reference`, `anp_subsidy_history`, `mdic_comex`, `anp_daie`, `anp_desembaracos`, `navios_diesel`, `vessel_positions`, `port_arrivals`, `import_candidates`, `d_g_margins`, `price_bands`, `news_articles`.
+
+**Convenções de `last_update` por tabela** (descobertas em runtime via `list_tables` durante a integração — referência para futuras tabelas que entrarem na RPC):
+
+| Tabela | Coluna escolhida | Razão |
+|---|---|---|
+| `anp_cdp_diaria` / `_instalacao` / `_poco` | `data` | Coluna day-grain canônica. |
+| `anp_cdp_producao` / `anp_glp` / `mdic_comex` / `anp_daie` / `anp_desembaracos` | `make_date(ano, mes, 1)` | Month-grain — synthesize via `make_date`. `last_update` representa "mês coberto", não "instante do ingest". |
+| `anp_voip` | `make_date(ano_publicacao, 1, 1)` | Anual. |
+| `vendas` | `date` | Day-grain (já normalizado). |
+| `anp_precos_produtores` | `data_fim` | Tabela carrega uma JANELA (`data_inicio..data_fim`), não data única. Usa `data_fim` (borda superior da semana publicada). **Não existe `data_referencia` aqui** (não confundir com `anp_precos_distribuicao`). |
+| `anp_lpc` | `data_fim` | Idem — semana fechada. **Não existe `data_referencia`**. |
+| `anp_precos_distribuicao` / `anp_subsidy_diesel_reference` | `data_referencia` | Day-grain de publicação. |
+| `anp_subsidy_history` | `vigente_desde` | Day-grain de vigência. |
+| `navios_diesel` | `collected_at` | Timestamp de scraping. |
+| `vessel_positions` | `ts` | Timestamp do AIS ping (não `created_at`). |
+| `port_arrivals` | `detected_at` | Timestamp do detector ETL — melhor que `entered_at` (que reflete ETA, não a chegada efetivamente detectada). |
+| `import_candidates` | `last_seen_at` | Última vez que o candidato foi observado pelo AIS scan. |
+| `d_g_margins` | `to_date(week, 'IW/IYYY')` | Coluna `week` é **TEXT** em formato `"W/YYYY"` (ISO week / ISO year). Sem `to_date` retornaria max lexicográfico (`'9/2025' > '10/2026'`). `to_date('IW/IYYY')` devolve a segunda-feira da semana ISO. |
+| `price_bands` | `date` | Day-grain. |
+| `news_articles` | `found_at` | Timestamp do scanner externo. |
+
+**Consumidor:** `src/components/home/DataSourcesTable/` (8 arquivos — `index.tsx`, `SectionHeader.tsx`, `SourceRow.tsx`, `ExpandedRow.tsx`, `StatusDot.tsx`, `LastUpdateCell.tsx`, `DashboardPicker.tsx`, `useDataSourcesFreshness.ts`). Wrapper JS: `rpcGetDataSourcesFreshness` em `src/lib/rpc.ts`. Catálogo curado: `src/data/dataSources.ts`.
+
+**Visibilidade:** acessível para Anon + Client + Admin (`GRANT EXECUTE TO anon, authenticated` cobre ambos). O download nas linhas é gated por sessão (Anon vê botão "Sign in to download" desabilitado). Sub-PRD: [`docs/app/admin.md`](../app/admin.md) § "Data Sources live table".
+
 ### Sessions / Auth state
 
 | Tabela | Dept consumidor | Populada por |
@@ -245,6 +281,7 @@ Todas as 6 RPCs: `SET search_path = public`, `GRANT EXECUTE TO anon, authenticat
 | ANP CDP Diária — Installation | `get_anp_cdp_diaria_instalacao_filtros`, `get_anp_cdp_diaria_instalacao_serie` | dash-anp-cdp-diaria |
 | ANP CDP Diária — Well | `get_anp_cdp_diaria_poco_filtros`, `get_anp_cdp_diaria_poco_serie` | dash-anp-cdp-diaria |
 | Export count (Tier 2) | `get_ms_export_count(p_data_inicio, p_data_fim, p_regioes, p_ufs, p_mercados) → bigint`, `get_anp_cdp_export_count(p_pocos, p_campos, p_bacoes, p_locais, p_estados, p_operadores, p_instalacoes, p_tipos_instalacao, p_ano_inicio, p_ano_fim) → bigint`, `get_anp_lpc_export_count(p_produtos, p_estados, p_data_inicio, p_data_fim) → bigint` | APP (useExportSize) — retornam count filtrado para estimar tamanho do export antes do download. Migration: `20260507000003_export_count_rpcs.sql`. (Nota: `get_mdic_comex_export_count` foi DROPPED em 2026-05-25 com a retirada de `/mdic-comex`.) |
+| Data Sources freshness | `get_data_sources_freshness() → TABLE(source_key text, last_update timestamptz, row_count bigint)` | Consumida pela tabela live "Data Sources" da `/home` (desktop only). UNION ALL sobre 22 tabelas ETL-fed. SECURITY DEFINER + `search_path = public, pg_temp`; `GRANT EXECUTE TO anon, authenticated`. Migration: `20260526200000_data_sources_freshness.sql`. Detalhes em § "Data Sources Freshness". Owner: dash-admin (UI) + worker_supabase (RPC). |
 
 ## Migration smoke test
 

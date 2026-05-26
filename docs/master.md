@@ -159,6 +159,10 @@ São os pontos onde um departamento depende de outro. Mudanças nestes contratos
 `is_visible_on_home`: controla exibição do card na galeria `/home` para TODOS os usuários (inclusive Admin). Default `true`.
 `is_visible_for_public`: controla acesso anônimo (sem sessão) ao módulo. Default `true`. **Invariante:** `is_visible_for_public=true` implica `is_visible_for_clients=true` (CHECK + BEFORE trigger `trg_module_visibility_public_implies_clients` coerce automaticamente).
 
+**Contrato `get_data_sources_freshness` (APP ↔ Supabase, adicionado 2026-05-26):**
+
+RPC pública usada pela tabela live "Data Sources" da `/home` (desktop, split 50/50 — mobile mantém só cards). Retorna `(source_key text, last_update timestamptz, row_count bigint)` para 22 tabelas alimentadas por ETL (CDP diária × 3 níveis, CDP mensal, VOIP, vendas, produtores, GLP, LPC, distribuição, subsídio referência + histórico, MDIC, DAIE, desembaraços, navios, vessel_positions, port_arrivals, import_candidates, d_g_margins, price_bands, news_articles). `LANGUAGE sql STABLE SECURITY DEFINER` + `SET search_path = public, pg_temp`. `GRANT EXECUTE TO anon, authenticated`. Visível para Anon + Client + Admin (transparência do produto). Migration: `supabase/migrations/20260526200000_data_sources_freshness.sql`. Source-of-truth de curadoria (descrições, categorias, cron, dashboards consumidores) vive em `src/data/dataSources.ts` (23 entries — 22 + Yahoo Finance, que não tem tabela Supabase). Hook front: `useDataSourcesFreshness` (polling 60s) consumindo wrapper `rpcGetDataSourcesFreshness` em `src/lib/rpc.ts`. Detalhes de UI + lista completa de fontes em [`docs/app/admin.md`](app/admin.md) § "Data Sources live table".
+
 **Contrato `news_hunter_default_keywords` (APP ↔ Supabase):**
 
 Tabela compartilhada entre dash-news-hunter (read pelo seed automático em `seed_my_news_hunter_keywords()` e por `get_default_news_keywords()` para anônimos) e dash-admin (write via Admin Panel). RLS é read-only para `anon` + `authenticated`; toda escrita atravessa SECURITY DEFINER (sem policies INSERT/DELETE).
@@ -441,6 +445,10 @@ Workflow controlado pelo **Subgerente APP** (não pelo Gerente Geral). Ver detal
 - 4 departamentos + 3 papéis transversais.
 - 16 dashboards ativos (8 originais + 2 da Fase 3 remanescentes: `/anp-cdp`, `/anp-glp` + 6 novos: `/anp-prices` (consolida `/anp-precos-produtores` + `/anp-precos-distribuicao` + `/anp-lpc` retirados em 2026-05-26), `/imports-exports` (consolida `/anp-daie` + `/anp-desembaracos` + `/anp-painel-importacoes` retirados em 2026-05-25; absorveu `/mdic-comex` via Panel C "Import Price" no mesmo dia — `mdic_comex` table e workflow ETL permanecem ativos alimentando Panel C), `/anp-cdp-diaria`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/subsidy-tracker` + `/admin-analytics` (Admin-only, sem `module_visibility`)).
 - Documentação inicial criada em **2026-05-05**.
+
+### Data Sources live table na `/home` (2026-05-26)
+
+`/home` desktop ganhou tabela live "Data Sources" no lado direito (split 50/50; mobile mantém só cards via `[desktop-only]`). Backend: nova RPC `get_data_sources_freshness()` (migration `20260526200000_data_sources_freshness.sql`) retornando `(source_key, last_update, row_count)` para 22 tabelas alimentadas por ETL; SECURITY DEFINER + search_path locked; `GRANT EXECUTE TO anon, authenticated`; polled 60s pelo front. Curadoria das fontes (categoria, cron, descrição, dashboards consumidores) vive em `src/data/dataSources.ts` (23 entries — 22 tabelas + Yahoo Finance). UI components em `src/components/home/DataSourcesTable/` (8 arquivos: `index.tsx`, `SectionHeader`, `SourceRow`, `ExpandedRow`, `StatusDot`, `LastUpdateCell`, `DashboardPicker`, `useDataSourcesFreshness`). Design tokens novos em `src/app/globals.css` (`--ds-cat-*`, `--ds-status-*`, `--ds-glass-*`, `--ds-pulse-*` + keyframe `ds-pulse-dot` + classe `.ds-pulse`). Visível para todos os tiers (Anon + Client + Admin) — transparência do produto. Detalhes em [`docs/app/admin.md`](app/admin.md) § "Data Sources live table".
 
 ### Reforma ANP Prices (2026-05-26)
 
