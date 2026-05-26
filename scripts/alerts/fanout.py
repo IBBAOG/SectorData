@@ -29,17 +29,22 @@ DEFAULT_COALESCE_ABOVE = 10
 
 def _route_confirmation_events(client) -> int:
     """
-    Confirmation events have source_slug='system_confirmation' and
-    payload.subscriber_ids listing the specific rows in alert_subscribers
-    that need a confirmation email.
+    Confirmation events have source_slug='system_confirmation'. Their payload
+    carries {email, token, source_slugs, expires_at} — written by the SQL RPC
+    subscribe_to_alerts / resend_confirmation. There is NO subscriber_ids field
+    in the payload (the RPC never writes it).
 
-    Route 1 outbox row per (subscriber_id in payload, event_id),
-    regardless of subscriber.source_slug.
+    Resolve target subscribers by (email, source_slug) lookup against
+    alert_subscribers, then materialise one outbox row per
+    (subscriber_id, event_id). Idempotent via UNIQUE constraint.
 
-    Idempotent via (subscriber_id, event_id) UNIQUE.
-    Returns count of rows inserted (duplicates ignored).
+    Intentionally does NOT filter is_confirmed=False so that a second sign-up
+    attempt while still unconfirmed re-queues the confirmation email.
+    Only filter is_active=True so deactivated subs don't get re-emailed.
+
+    Returns count of outbox rows created.
     """
-    # Load all confirmation events that exist in alert_events
+    # Load all pending confirmation events
     pending_resp = (
         client.table("alert_events")
         .select("id, payload")
@@ -50,34 +55,50 @@ def _route_confirmation_events(client) -> int:
     if not pending:
         return 0
 
-    # Pre-load existing outbox pairs to skip already-routed rows
-    existing_resp = (
-        client.table("alert_outbox")
-        .select("subscriber_id, event_id")
-        .execute()
-    )
-    existing_pairs: set[tuple] = {
-        (r["subscriber_id"], r["event_id"]) for r in (existing_resp.data or [])
-    }
-
     created = 0
     for ev in pending:
-        sub_ids = (ev.get("payload") or {}).get("subscriber_ids") or []
-        for sid in sub_ids:
-            if (sid, ev["id"]) in existing_pairs:
-                continue
+        payload = ev.get("payload") or {}
+        email = (payload.get("email") or "").lower()
+        source_slugs = payload.get("source_slugs") or []
+        if not email or not source_slugs:
+            logger.warning(
+                "fanout(confirmation): event %s has malformed payload (missing email or source_slugs) — skipping",
+                ev["id"],
+            )
+            continue
+
+        # Resolve subscriber rows: active subs for this email + these source slugs.
+        # Do NOT filter is_confirmed — resend flow targets unconfirmed rows.
+        subs_resp = (
+            client.table("alert_subscribers")
+            .select("id")
+            .eq("email", email)
+            .in_("source_slug", source_slugs)
+            .eq("is_active", True)
+            .execute()
+        )
+        subs = subs_resp.data or []
+        if not subs:
+            logger.warning(
+                "fanout(confirmation): no active subscribers found for email=%s slugs=%s (event %s)",
+                email,
+                source_slugs,
+                ev["id"],
+            )
+            continue
+
+        for sub in subs:
             try:
                 client.table("alert_outbox").insert(
                     {
-                        "subscriber_id": sid,
+                        "subscriber_id": sub["id"],
                         "event_id": ev["id"],
                         "status": "queued",
                     }
                 ).execute()
                 created += 1
-                existing_pairs.add((sid, ev["id"]))
             except Exception:
-                # ON CONFLICT (subscriber_id, event_id) — already queued, skip
+                # ON CONFLICT (subscriber_id, event_id) — already queued. Idempotent.
                 pass
 
     if created:

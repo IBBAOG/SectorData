@@ -27,6 +27,13 @@ Backend master doc do produto **Alerts Product**. Owner: [`worker_alerts-product
 | 6 | `navios_diesel` detector: hourly event_key → flood (20 alerts/day) | Changed to daily granularity: `lineup:<porto>:<YYYY-MM-DD>` — 5 alerts/day max |
 | 7 | Seed `detection_module` strings with "Detector" suffix (class name mismatch) | Covered by migration 2e: `UPDATE ... SET detection_module = REPLACE(detection_module, 'Detector', '')` |
 
+### Production bug fixes (2026-05-26)
+
+| # | Bug | Root cause | Fix |
+|---|-----|-----------|-----|
+| B1 | `fanout: confirmations_routed=0` — confirmation emails never queued | `_route_confirmation_events()` read `payload.subscriber_ids` but `subscribe_to_alerts` RPC writes `{email, token, source_slugs, expires_at}` — no `subscriber_ids` field ever written | Replace payload field read with DB lookup: `SELECT id FROM alert_subscribers WHERE email=payload.email AND source_slug IN payload.source_slugs AND is_active=true`. Does NOT filter `is_confirmed` so re-signup while unconfirmed re-queues correctly. |
+| B2 | `WARNING Resend suppressions fetch failed: 401` in GHA logs | API key created with "Sending" scope only — GET `/suppressions` requires "Full Access" or "Read Suppressions" scope | (1) Promoted 401 response from WARNING to ERROR with explicit remediation instructions. (2) Added `validate_api_key()` (GET `/domains`) called once at startup — returns False + logs ERROR on 401, causing `send_outbox` to `raise SystemExit(1)` so the GHA step fails visibly instead of silently processing 0 sends. (3) Documented scope requirement in PRD Setup steps. CEO action: regenerate key with Full Access scope at https://resend.com/api-keys. |
+
 **Migration `20260525220000_alert_outbox_columns_and_seed_fixes.sql` added** — `worker_supabase` applies via MCP after merge OR automatically via `supabase_deploy.yml` on push to main.
 
 ### Sanity test send-test result
@@ -446,7 +453,7 @@ jobs:
 |--------|---------|--------|
 | `SUPABASE_URL` | Supabase project URL (shared) | Already exists |
 | `SUPABASE_SERVICE_KEY` | Service role key for backend writes | Already exists |
-| `RESEND_API_KEY` | Resend API key — generate at https://resend.com/api-keys | ✅ Done by CEO |
+| `RESEND_API_KEY` | Resend API key — generate at https://resend.com/api-keys with **Full Access** scope (required for suppression list reads; Sending-only scope returns 401 on GET /suppressions) | ✅ Done by CEO — **verify scope is Full Access** |
 | `RESEND_WEBHOOK_SECRET` | HMAC secret for webhook signature verification | Pending (post-deploy of webhook route) |
 | `ALERTS_SENDER_EMAIL` | From address — defaults to `onboarding@resend.dev` | Pending; default value works without GHA secret |
 | `ALERTS_REPLY_TO_EMAIL` | Reply-To address — `ibbaogproject@gmail.com` | Pending; can hardcode default in code |
@@ -457,7 +464,7 @@ jobs:
 ## Setup steps (CEO action items — current status)
 
 1. ✅ **Create Resend account** at https://resend.com (free tier, no credit card needed). — DONE
-2. ✅ **Generate API key:** Resend dashboard → API Keys → Create. Scope: Send + Read Suppressions. — DONE
+2. ✅ **Generate API key:** Resend dashboard → API Keys → Create. Scope: **Full Access** (or at minimum "Send" + "Read Suppressions"). — DONE, but **verify scope**: if GHA log shows "Resend suppressions fetch failed: 401", the key was created with Sending-only scope. Regenerate with Full Access at https://resend.com/api-keys and update GHA secret.
 3. ✅ **Add `RESEND_API_KEY` to GHA secrets** (`IBBAOG/SectorData` repo). — DONE
 4. ⬜ **Confirm production URL** for `ALERTS_FRONTEND_URL` — needed for unsubscribe/confirm links in email body. Default candidate: `https://sectordata-dashboard.vercel.app`.
 5. ⬜ **Set webhook URL** (DEFERRED to post-deploy) — `https://<production-url>/api/alerts/resend-webhook` in Resend dashboard → Webhooks. Generate signing secret → add as `RESEND_WEBHOOK_SECRET`. Without this, bounce/complaint tracking is manual but core sending still works.

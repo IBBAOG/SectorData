@@ -18,7 +18,7 @@ import logging
 from datetime import datetime, timezone
 
 from scripts.alerts.supabase_client import get_client
-from scripts.alerts.delivery.resend_client import send_email, list_suppressions
+from scripts.alerts.delivery.resend_client import send_email, list_suppressions, validate_api_key
 from scripts.alerts.delivery.render import (
     render_alert_instant,
     render_alert_coalesced,
@@ -36,6 +36,12 @@ def send_pending_outbox(batch_limit: int = 100) -> dict[str, int]:
     """
     client = get_client()
     counts = {"sent": 0, "skipped": 0, "failed": 0, "transient": 0}
+
+    # Sanity-check the API key before touching any rows.
+    # On 401/403 this logs ERROR and returns False — we abort with exit code 1
+    # so the GitHub Actions step fails visibly rather than silently sending 0 emails.
+    if not validate_api_key():
+        raise SystemExit(1)
 
     # Load suppression list once per batch (fail-open on error)
     suppressed = list_suppressions()
