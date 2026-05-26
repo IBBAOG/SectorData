@@ -1,10 +1,38 @@
 "use client";
 
-// Admin-only right-rail sidebar showing the ordered selection queue.
-// Displayed only when Selection Mode is active.
+// Admin-only right-rail sidebar showing the ordered clipping queue.
+// Displayed only when Selection Mode is active (isAdmin && selectionMode).
+//
+// Width is injected via inline style from desktop/View.tsx:
+//   clamp(420px, 50vw, 720px)  — ~50% of viewport, min 420px, max 720px.
+//
+// Drag-and-drop reorder via @dnd-kit/sortable. Keyboard support is built-in
+// (Tab to focus handle, Space to lift, Arrow keys to move, Space/Enter to drop).
+// Touch support via PointerSensor (works on mobile if clipping ever lands there).
+
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import {
+  restrictToVerticalAxis,
+  restrictToWindowEdges,
+} from "@dnd-kit/modifiers";
 
 import BarrelLoading from "@/components/dashboard/BarrelLoading";
 import type { ArticleSnapshot } from "@/lib/clipping/types";
+import SortableClippingItem from "./SortableClippingItem";
+import styles from "./SelectionSidebar.module.css";
 
 interface Props {
   selection: ArticleSnapshot[];
@@ -12,8 +40,14 @@ interface Props {
   onClear: () => void;
   onMoveUp: (index: number) => void;
   onMoveDown: (index: number) => void;
+  onReorder: (fromIndex: number, toIndex: number) => void;
   onGenerate: () => void;
   generating: boolean;
+  /** CSS width value for the sidebar — e.g. "clamp(420px, 50vw, 720px)".
+   *  Passed as inline style so the parent controls the responsive formula. */
+  widthCss: string;
+  /** Propagate theme to sidebar (sidebar lives outside .page[data-nh-theme] tree). */
+  theme: "light" | "dark";
 }
 
 export default function SelectionSidebar({
@@ -22,178 +56,93 @@ export default function SelectionSidebar({
   onClear,
   onMoveUp,
   onMoveDown,
+  onReorder,
   onGenerate,
   generating,
+  widthCss,
+  theme,
 }: Props) {
+  // PointerSensor: activationConstraint avoids accidental drags on normal clicks.
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 6, // px — must move 6px before drag starts
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const fromIndex = selection.findIndex((a) => a.url === active.id);
+    const toIndex = selection.findIndex((a) => a.url === over.id);
+    if (fromIndex !== -1 && toIndex !== -1) {
+      onReorder(fromIndex, toIndex);
+    }
+  }
+
+  // IDs for SortableContext — use URL as stable unique key.
+  const itemIds = selection.map((a) => a.url);
+
   return (
     <aside
-      style={{
-        position: "fixed",
-        top: 60,
-        right: 0,
-        width: 280,
-        height: "calc(100vh - 60px)",
-        background: "#fff",
-        borderLeft: "2px solid #ff5000",
-        display: "flex",
-        flexDirection: "column",
-        zIndex: 200,
-        fontFamily: "Arial, sans-serif",
-        fontSize: 13,
-        boxShadow: "-4px 0 16px rgba(0,0,0,0.08)",
-      }}
+      className={styles.sidebar}
+      data-nh-theme={theme}
+      style={{ width: widthCss }}
+      aria-label="Clipping queue"
     >
       {/* Header */}
-      <div
-        style={{
-          padding: "12px 14px 10px",
-          borderBottom: "1px solid #eee",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          background: "#fff3ee",
-        }}
-      >
-        <span style={{ fontWeight: 700, color: "#ff5000", fontSize: 14 }}>
-          Clipping Queue
-        </span>
-        <span style={{ color: "#666", fontSize: 12 }}>
+      <div className={styles.header}>
+        <span className={styles.headerTitle}>Clipping Queue</span>
+        <span className={styles.headerCount}>
           {selection.length} article{selection.length !== 1 ? "s" : ""}
         </span>
       </div>
 
-      {/* List */}
-      <ul
-        style={{
-          flex: "1 1 auto",
-          overflowY: "auto",
-          margin: 0,
-          padding: "8px 0",
-          listStyle: "none",
-        }}
-      >
+      {/* Sortable list */}
+      <ul className={styles.list} aria-label="Selected articles in clipping order">
         {selection.length === 0 && (
-          <li
-            style={{
-              padding: "20px 14px",
-              color: "#999",
-              fontStyle: "italic",
-              fontSize: 12,
-              textAlign: "center",
-            }}
-          >
+          <li className={styles.empty} aria-live="polite">
             No articles selected.
             <br />
-            Click checkboxes in the feed.
+            Click checkboxes in the feed to add them here.
           </li>
         )}
-        {selection.map((article, idx) => (
-          <li
-            key={article.url}
-            style={{
-              padding: "8px 12px",
-              borderBottom: "1px solid #f0f0f0",
-              display: "flex",
-              flexDirection: "column",
-              gap: 4,
-            }}
-          >
-            <div style={{ display: "flex", gap: 4, alignItems: "flex-start" }}>
-              {/* Order badge */}
-              <span
-                style={{
-                  background: "#ff5000",
-                  color: "#fff",
-                  borderRadius: "50%",
-                  width: 18,
-                  height: 18,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 10,
-                  fontWeight: 700,
-                  flexShrink: 0,
-                  marginTop: 1,
-                }}
-              >
-                {idx + 1}
-              </span>
-              <span
-                style={{
-                  flex: 1,
-                  lineHeight: 1.35,
-                  fontSize: 12,
-                  color: "#1a1a1a",
-                  wordBreak: "break-word",
-                }}
-              >
-                <b style={{ color: "#555", fontSize: 11 }}>{article.source_name}</b>{" "}
-                {article.title}
-              </span>
-            </div>
-            {/* Controls */}
-            <div style={{ display: "flex", gap: 4, paddingLeft: 22 }}>
-              <button
-                type="button"
-                onClick={() => onMoveUp(idx)}
-                disabled={idx === 0 || generating}
-                title="Move up"
-                style={arrowBtnStyle}
-              >
-                ↑
-              </button>
-              <button
-                type="button"
-                onClick={() => onMoveDown(idx)}
-                disabled={idx === selection.length - 1 || generating}
-                title="Move down"
-                style={arrowBtnStyle}
-              >
-                ↓
-              </button>
-              <button
-                type="button"
-                onClick={() => onRemove(article.url)}
+
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToVerticalAxis, restrictToWindowEdges]}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
+            {selection.map((article, idx) => (
+              <SortableClippingItem
+                key={article.url}
+                article={article}
+                index={idx}
+                total={selection.length}
+                onRemove={onRemove}
+                onMoveUp={onMoveUp}
+                onMoveDown={onMoveDown}
                 disabled={generating}
-                title="Remove"
-                style={{ ...arrowBtnStyle, color: "#a8232f", marginLeft: "auto" }}
-              >
-                ×
-              </button>
-            </div>
-          </li>
-        ))}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
       </ul>
 
-      {/* Footer actions */}
-      <div
-        style={{
-          padding: "10px 12px",
-          borderTop: "1px solid #eee",
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-        }}
-      >
+      {/* Footer */}
+      <div className={styles.footer}>
         <button
           type="button"
+          className={styles.generateBtn}
           onClick={onGenerate}
           disabled={selection.length === 0 || generating}
-          style={{
-            background: selection.length === 0 ? "#ccc" : "#ff5000",
-            color: "#fff",
-            border: "none",
-            borderRadius: 6,
-            padding: "9px 14px",
-            fontWeight: 700,
-            fontSize: 13,
-            cursor: selection.length === 0 || generating ? "not-allowed" : "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-            fontFamily: "Arial, sans-serif",
-          }}
         >
           {generating ? (
             <>
@@ -206,18 +155,9 @@ export default function SelectionSidebar({
         </button>
         <button
           type="button"
+          className={styles.clearBtn}
           onClick={onClear}
           disabled={selection.length === 0 || generating}
-          style={{
-            background: "transparent",
-            border: "1px solid #ccc",
-            borderRadius: 6,
-            padding: "7px 14px",
-            fontSize: 12,
-            color: "#666",
-            cursor: selection.length === 0 || generating ? "not-allowed" : "pointer",
-            fontFamily: "Arial, sans-serif",
-          }}
         >
           Clear selection
         </button>
@@ -225,15 +165,3 @@ export default function SelectionSidebar({
     </aside>
   );
 }
-
-const arrowBtnStyle: React.CSSProperties = {
-  background: "transparent",
-  border: "1px solid #ddd",
-  borderRadius: 4,
-  padding: "1px 6px",
-  fontSize: 13,
-  cursor: "pointer",
-  color: "#555",
-  lineHeight: 1.4,
-  fontFamily: "Arial, sans-serif",
-};

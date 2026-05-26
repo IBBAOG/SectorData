@@ -194,7 +194,7 @@ export default function DesktopView(): React.ReactElement {
 
   // ── Admin-only: clipping state ───────────────────────────────────────────────
   const [selectionMode, setSelectionMode] = useState(false);
-  const { selection, isSelected, toggle, remove, clear, moveUp, moveDown } =
+  const { selection, isSelected, toggle, remove, clear, moveUp, moveDown, reorder } =
     useClippingSelection();
   const [generating, setGenerating] = useState(false);
   const [clippingResults, setClippingResults] = useState<ScrapeResult[] | null>(null);
@@ -269,7 +269,13 @@ export default function DesktopView(): React.ReactElement {
 
   if (visLoading || !visible) return <></>;
 
-  const sidebarWidth = isAdmin && selectionMode ? 280 : 0;
+  // Sidebar occupies ~50% of viewport when open, clamped between 420–720px.
+  // The CSS clamp() is used for the sidebar's own width.
+  // The page padding-right uses the same clamp so content never disappears behind the panel.
+  const SIDEBAR_WIDTH_CSS = "clamp(420px, 50vw, 720px)";
+  // Numeric fallback for the page paddingRight style property (JS doesn't accept clamp() in
+  // the inline style object, so we use the CSS variable approach via a custom property).
+  const sidebarOpen = isAdmin && selectionMode;
 
   return (
     <>
@@ -277,7 +283,7 @@ export default function DesktopView(): React.ReactElement {
       <div
         className={styles.page}
         data-nh-theme={theme}
-        style={sidebarWidth ? { paddingRight: sidebarWidth } : undefined}
+        style={sidebarOpen ? { paddingRight: SIDEBAR_WIDTH_CSS } : undefined}
       >
         <div className={styles.topRow}>
           <div className={styles.topLabel}>
@@ -500,15 +506,18 @@ export default function DesktopView(): React.ReactElement {
         </section>
       </div>
 
-      {isAdmin && selectionMode && (
+      {sidebarOpen && (
         <SelectionSidebar
           selection={selection}
           onRemove={remove}
           onClear={clear}
           onMoveUp={moveUp}
           onMoveDown={moveDown}
+          onReorder={reorder}
           onGenerate={() => void handleGenerate()}
           generating={generating}
+          widthCss={SIDEBAR_WIDTH_CSS}
+          theme={theme}
         />
       )}
 
