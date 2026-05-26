@@ -36,14 +36,33 @@ Output típico: linhas temporais sobrepostas, por produto.
   - `date DATE NOT NULL`
   - `product TEXT NOT NULL` ∈ {`Gasoline`, `Diesel`}
   - `bba_import_parity NUMERIC(10,4)` — IBBA pra Gasoline, BBA pra Diesel
-  - `bba_import_parity_w_subsidy NUMERIC(10,4)` — só Diesel
+  - `bba_import_parity_w_subsidy NUMERIC(10,4)` — Diesel only; auto-filled by trigger SQL (see below)
   - `bba_export_parity NUMERIC(10,4)`
   - `petrobras_price NUMERIC(10,4)`
-  - `petrobras_price_w_subsidy NUMERIC(10,4)` — reservado, não usado
+  - `petrobras_price_w_subsidy NUMERIC(10,4)` — Diesel only; auto-filled by trigger SQL (see below)
 
 ## Tech debt
 
 `price_bands` foi criada via [`sql/create_price_bands.sql`](../../sql/create_price_bands.sql) aplicado direto no Supabase Dashboard, **não em migration versionada**. Documentado em [PRD.md](PRD.md#tech-debt-sql-fora-das-migrations).
+
+## Auto-filled subsidy columns (migration `20260527200000_subsidy_reform.sql`)
+
+Both `bba_import_parity_w_subsidy` and `petrobras_price_w_subsidy` are **no longer entered manually** — they are auto-calculated server-side by PostgreSQL triggers applied as part of the subsidy reform (migration `20260527200000_subsidy_reform.sql`).
+
+**Calculation logic:**
+- `bba_import_parity_w_subsidy = bba_import_parity − reimbursement_importador`
+- `petrobras_price_w_subsidy   = petrobras_price + reimbursement_produtor`
+- `reimbursement = MIN(MAX(anp_reference_daily − anp_commercialization_period, 0), cap_agente)`
+- Average of 5 regional reimbursements (Norte/Nordeste/Centro-Oeste/Sudeste/Sul).
+- Caps from `anp_subsidy_caps` table; pre-2026-03-13 = no subsidy (NULL).
+
+**Trigger chain:**
+- `recompute_pb_on_reference_change` — fires on `anp_subsidy_diesel_reference` INSERT/UPDATE → updates `price_bands` for that date.
+- `recompute_pb_on_comm_change` — fires on `anp_subsidy_commercialization` INSERT/UPDATE → updates `price_bands` for all dates in `[data_inicio, data_fim]`.
+- `recompute_pb_on_caps_change` — fires on `anp_subsidy_caps` INSERT/UPDATE → updates all Diesel `price_bands` rows ≥ `vigente_desde`.
+- `populate_pb_w_subsidy_on_insert` — fires BEFORE INSERT/UPDATE on `price_bands` (product='Diesel') → populates both `_w_subsidy` columns if data is available.
+
+**User workflow change:** the admin form (Data Input → Price Bands) and the Excel upload script no longer accept `bba_import_parity_w_subsidy` / `petrobras_price_w_subsidy`. Users enter only: Date, Product, Import Parity (IPP), Export Parity (EPP), Petrobras Price. The subsidy adjustment is applied automatically and refreshed daily as ANP reference prices are updated by `etl_anp_subsidy_diesel.yml`.
 
 ## Como o dado chega
 
@@ -97,9 +116,11 @@ Key derivations done in the hook (never in Views):
 
 | Constant | Color | Used for |
 |---|---|---|
-| `COLOR_IMPORT` | `#E8611A` orange | Import Parity |
-| `COLOR_EXPORT` | `#1a1a1a` black | Export Parity |
-| `COLOR_PETRO`  | `#4ECDC4` teal  | Petrobras Price |
+| `COLOR_IMPORT` | `#E8611A` orange | Import Parity (solid) + Import Parity w/ subsidy (dashed) |
+| `COLOR_EXPORT` | `#1a1a1a` black  | Export Parity |
+| `COLOR_PETRO`  | `#4ECDC4` teal   | Petrobras Price (solid) + Petrobras Price w/ subsidy (dashed) |
+
+`DSL_SERIES` (Diesel) renders 5 traces: Import Parity, Import Parity w/ subsidy, Export Parity, Petrobras Price, **Petrobras Price w/ subsidy**. The last two are drawn from March 2026 onwards (SUBSIDY_CUTOFF). Both `_w_subsidy` traces are auto-filled by trigger and will show as gaps (NULL) for dates where `anp_subsidy_commercialization` has no data yet.
 
 ### Binding sync rule
 

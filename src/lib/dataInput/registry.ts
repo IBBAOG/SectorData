@@ -13,6 +13,10 @@ import type { EditableTableConfig } from "./types";
 
 export const EDITABLE_TABLES: EditableTableConfig[] = [
   // ── Price Bands ────────────────────────────────────────────────────────────
+  // Subsidy-adjusted columns (`bba_import_parity_w_subsidy`,
+  // `petrobras_price_w_subsidy`) are NOT exposed in the form: they are
+  // computed automatically by SQL triggers from ANP reference and
+  // commercialization data. See `supabase/migrations/20260527200000_subsidy_reform.sql`.
   {
     slug: "price-bands",
     label: "Price Bands",
@@ -26,6 +30,8 @@ export const EDITABLE_TABLES: EditableTableConfig[] = [
         { value: "Gasoline", label: "Gasoline" },
       ],
     },
+    infoNote:
+      "Subsidy-adjusted values (Import Parity w/ Subsidy, Petrobras Price w/ Subsidy) are computed automatically from ANP data — no manual input needed.",
     columns: [
       {
         key: "date",
@@ -42,16 +48,6 @@ export const EDITABLE_TABLES: EditableTableConfig[] = [
         max: 999999.9999,
       },
       {
-        key: "bba_import_parity_w_subsidy",
-        label: "BBA Import Parity w/ Subsidy",
-        type: "number",
-        step: 0.0001,
-        required: false,
-        max: 999999.9999,
-        visibleWhen: (row) => row["product"] === "Diesel",
-        helpText: "Diesel only",
-      },
-      {
         key: "bba_export_parity",
         label: "BBA Export Parity",
         type: "number",
@@ -66,16 +62,6 @@ export const EDITABLE_TABLES: EditableTableConfig[] = [
         step: 0.0001,
         required: false,
         max: 999999.9999,
-      },
-      {
-        key: "petrobras_price_w_subsidy",
-        label: "Petrobras Price w/ Subsidy",
-        type: "number",
-        step: 0.0001,
-        required: false,
-        max: 999999.9999,
-        visibleWhen: (row) => row["product"] === "Diesel",
-        helpText: "Diesel only",
       },
     ],
   },
