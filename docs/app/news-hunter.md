@@ -273,8 +273,11 @@ Observação: o dashboard **não precisa de mudança** quando uma nova fonte é 
 | Data | Fonte | Dominio | Mecanismo | PR/commit |
 |---|---|---|---|---|
 | 2026-05-20 | ANS (Agência Nacional de Saúde Suplementar) | `www.gov.br` (path `/ans/pt-br/assuntos/noticias`) | Google News sitemap em `/sitemap.xml` (mesmo formato Valor/OGlobo/Estadão) | [PR #1](https://github.com/IBBAOG/news-hunter-scanner/pull/1) |
+| 2026-05-26 | UOL Economia | `economia.uol.com.br` | RSS `https://rss.uol.com.br/feed/economia.xml` (~15 itens/poll). Feed usa ISO-8859-1 sem prólogo XML e pubDate em locale pt-BR — dois bugs de parsing corrigidos no fetcher (ver commit `3be0edb`). | [commit 3be0edb](https://github.com/IBBAOG/news-hunter-scanner/commit/3be0edb) |
 
 > Pegadinha conhecida: a chave `www.gov.br` em `RSS_FEEDS` é multi-tenant (cobre /ans, /anp, /mme, /bcb, etc.). Hoje só a ANS está registrada. Se uma futura fonte gov.br/<outro-órgão> for adicionada, o mapping `www.gov.br → "ANS"` em `SOURCE_NAMES` vira ambíguo e `source_name_for()` precisará virar path-aware.
+
+> Nota sobre `noticias.uol.com.br` (já existia antes): o feed `rss.uol.com.br/feed/noticias.xml` é um agregador que redireciona ~93% dos itens para `www1.folha.uol.com.br` (já coberto por feed dedicado). O domínio `economia.uol.com.br` é o que concentra cobertura própria do UOL relevante para óleo/gás/combustíveis.
 
 ## RPCs
 
