@@ -526,6 +526,25 @@ As políticas de escrita para `price_bands` e `d_g_margins` são criadas pela mi
 `supabase/migrations/20260512000000_data_input_admin_policies.sql` (worker_supabase, branch paralela).
 Sem a migration, writes retornam 403 — a UI renderiza mas não persiste.
 
+## Changelog — Data Sources table QA fixes (2026-05-26)
+
+### Ad-hoc sources: cronUtc corrected + Next-run line hidden
+
+`anp_subsidy_history` in `src/data/dataSources.ts` was incorrectly set to `cronUtc: "30 11 * * *"` (inherited by copy-paste from `anp_subsidy_diesel_reference`). Fixed to `cronUtc: null` with an updated `cronDescription` ("Ad-hoc — updated when new subsidy decree drops"). `price_bands` was already `null`.
+
+`ExpandedRow.tsx` already gates the "Next run" row on `src.cronUtc !== null` — no change needed there; the upstream `dataSources.ts` fix was sufficient.
+
+### Header LIVE dot: worst-row status aggregation
+
+`src/components/home/DataSourcesTable/status.ts` — new shared helper module:
+- `deriveStatus(src, lastUpdate: string | null): SourceStatus` — single function for status derivation.
+- `aggregateStatus(statuses: SourceStatus[]): SourceStatus` — returns the worst status.
+- `statusToTokenVar(status): string` — maps to `--ds-status-*` CSS tokens.
+
+`StatusDot.tsx` now imports `deriveStatus` + `statusToTokenVar` from this shared module (inline logic removed).
+
+`index.tsx` computes `headerColor` via `useMemo` over all `DATA_SOURCES`, deriving + aggregating status for every row — the header dot's `background` and `color` inline styles now reflect the worst row status instead of hardcoded green. Pulse animation class (`ds-pulse`) is unchanged and runs continuously.
+
 ## Changelog — post-reform cleanup (2026-05-25)
 
 After the Imports & Exports reform (`24dd2aa1`), three stale references to the retired dashboards were removed from `/home`:

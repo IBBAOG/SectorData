@@ -5,27 +5,7 @@
 
 import type { DataSource } from "../../../data/dataSources";
 import type { SourceFreshness } from "./useDataSourcesFreshness";
-
-type Status = "fresh" | "stale" | "overdue" | "unknown";
-
-function deriveStatus(
-  src: DataSource,
-  info: SourceFreshness | undefined,
-): Status {
-  if (!info || !info.lastUpdate) return "unknown";
-  const ageMs = Date.now() - info.lastUpdate.getTime();
-  const ageHours = ageMs / 3_600_000;
-  if (ageHours < src.staleAfterHours) return "fresh";
-  if (ageHours < src.overdueAfterHours) return "stale";
-  return "overdue";
-}
-
-const STATUS_COLOR: Record<Status, string> = {
-  fresh: "var(--ds-status-fresh)",
-  stale: "var(--ds-status-stale)",
-  overdue: "var(--ds-status-overdue)",
-  unknown: "rgba(0,0,0,0.25)",
-};
+import { deriveStatus, statusToTokenVar } from "./status";
 
 export default function StatusDot({
   src,
@@ -34,8 +14,10 @@ export default function StatusDot({
   src: DataSource;
   info: SourceFreshness | undefined;
 }): React.ReactElement {
-  const status = deriveStatus(src, info);
-  const color = STATUS_COLOR[status];
+  // Convert Date | null → string | null so the shared helper can consume it
+  const lastUpdateStr = info?.lastUpdate ? info.lastUpdate.toISOString() : null;
+  const status = deriveStatus(src, lastUpdateStr);
+  const color = statusToTokenVar(status);
   const pulse = src.isRealtime && status !== "overdue";
 
   return (
@@ -54,7 +36,3 @@ export default function StatusDot({
     />
   );
 }
-
-// Re-export so callers can use it without knowing the internals
-export { deriveStatus };
-export type { Status };
