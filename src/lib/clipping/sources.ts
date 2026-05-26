@@ -95,6 +95,8 @@ export const SOURCE_NAMES: Record<string, string> = {
   "moneytimes.com.br": "Money Times",
   "visnoinvest.com.br": "Visno Invest",
   "www.visnoinvest.com.br": "Visno Invest",
+  "tnonline.uol.com.br": "TNOnline",
+  "www.tnonline.uol.com.br": "TNOnline",
 };
 
 import type { Element } from "domhandler";
@@ -503,6 +505,21 @@ export const EXTRACTORS: Record<string, string[]> = {
   "moneytimes.com.br": AUTO_SELECTORS,
   "visnoinvest.com.br": AUTO_SELECTORS,
   "www.visnoinvest.com.br": AUTO_SELECTORS,
+  // TNOnline — Tribuna do Norte (Maringá-PR). Mundiware Elite CS CMS.
+  // Article body is <article id="article-body"> inside <section class="article-content">.
+  // ads-feed divs (with "CONTINUA DEPOIS DA PUBLICIDADE") are stripped by stripNoise via role="img"+aria-hidden.
+  "tnonline.uol.com.br": [
+    "article#article-body",
+    "section.article-content article",
+    "section.article-content",
+    "article",
+  ],
+  "www.tnonline.uol.com.br": [
+    "article#article-body",
+    "section.article-content article",
+    "section.article-content",
+    "article",
+  ],
 };
 
 // ---------------------------------------------------------------------------
