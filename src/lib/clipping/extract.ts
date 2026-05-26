@@ -5,6 +5,46 @@ import * as cheerio from "cheerio";
 import type { AnyNode, Element } from "domhandler";
 import { EXTRACTORS } from "./sources";
 import { cleanTitle, cleanParagraphs } from "./clean";
+import type { ScrapeDebug } from "./types";
+
+// ---------------------------------------------------------------------------
+// Debug recorder — zero overhead when debug=false (recorder is never created).
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns a recorder/builder pair for collecting ScrapeDebug counters during
+ * a single extract() call. Only instantiated when debug=true.
+ */
+function createDebugRecorder(): {
+  record: <K extends keyof ScrapeDebug>(key: K, value: ScrapeDebug[K]) => void;
+  pushNoiseSample: (text: string) => void;
+  build: () => ScrapeDebug;
+} {
+  const acc: Partial<ScrapeDebug> = { noiseRemovedSamples: [], viaCascade: [] };
+  return {
+    record<K extends keyof ScrapeDebug>(key: K, value: ScrapeDebug[K]) {
+      (acc as Record<string, unknown>)[key] = value;
+    },
+    pushNoiseSample(text: string) {
+      if ((acc.noiseRemovedSamples!.length) < 3) {
+        acc.noiseRemovedSamples!.push(text.slice(0, 200));
+      }
+    },
+    build(): ScrapeDebug {
+      return {
+        selectorUsed: acc.selectorUsed ?? null,
+        containerHtmlByteSize: acc.containerHtmlByteSize ?? 0,
+        pCountRaw: acc.pCountRaw ?? 0,
+        pCountAfterStripNoise: acc.pCountAfterStripNoise ?? 0,
+        pCountAfterClean: acc.pCountAfterClean ?? 0,
+        noiseRemovedSamples: acc.noiseRemovedSamples ?? [],
+        viaCascade: acc.viaCascade ?? [],
+      };
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 
 const NOISE_CLASS_SUBSTRINGS: string[] = [
   "advertisement",
@@ -67,10 +107,23 @@ function titleFromMeta($: CheerioRoot): string {
   return titleTag;
 }
 
-function paragraphsFrom($: CheerioRoot, container: cheerio.Cheerio<AnyNode>): string[] {
+function paragraphsFrom(
+  $: CheerioRoot,
+  container: cheerio.Cheerio<AnyNode>,
+  rec?: ReturnType<typeof createDebugRecorder>,
+): string[] {
+  // Snapshot raw <p> count before stripNoise mutates the DOM.
+  const rawPs = container.find("p");
+  rec?.record("pCountRaw", rawPs.length);
+
   stripNoise($, container);
+
+  // Count after noise nodes have been removed.
+  const psAfterStrip = container.find("p");
+  rec?.record("pCountAfterStripNoise", psAfterStrip.length);
+
   const paragraphs: string[] = [];
-  container.find("p").each((_, el) => {
+  psAfterStrip.each((_, el) => {
     const $p = $(el);
     // Skip paragraphs that consist only of anchor tags (navigation noise).
     const children = $p.children().toArray() as AnyNode[];
@@ -80,7 +133,10 @@ function paragraphsFrom($: CheerioRoot, container: cheerio.Cheerio<AnyNode>): st
     ) {
       const pText = $p.text().trim();
       const anchorText = children.map((c) => $(c).text().trim()).join(" ");
-      if (pText === anchorText) return;
+      if (pText === anchorText) {
+        rec?.pushNoiseSample(pText);
+        return;
+      }
     }
     const txt = $p.text().replace(/\s+/g, " ").trim();
     if (txt) paragraphs.push(txt);
@@ -96,21 +152,72 @@ function firstMatching($: CheerioRoot, selectors: string[]): cheerio.Cheerio<Any
   return null;
 }
 
-/** Extract title + paragraphs from raw HTML for the given domain. */
-export function extract(html: string, domain: string): { title: string; paragraphs: string[] } {
+/**
+ * Extract title + paragraphs from raw HTML for the given domain.
+ *
+ * @param html    Full HTML string from any fetcher.
+ * @param domain  Hostname key (must exist in EXTRACTORS).
+ * @param debug   When true, attaches a ScrapeDebug object to the return value.
+ *                Defaults to false — no recorder is created, zero overhead.
+ */
+export function extract(
+  html: string,
+  domain: string,
+  debug = false,
+): { title: string; paragraphs: string[]; debug?: ScrapeDebug } {
   const selectors = EXTRACTORS[domain];
   if (!selectors) {
     return { title: "", paragraphs: [] };
   }
 
+  const rec = debug ? createDebugRecorder() : undefined;
+
   const $ = cheerio.load(html);
   const title = cleanTitle(titleFromMeta($));
-  const container = firstMatching($, selectors) ?? $("article").first();
 
-  if (!container || container.length === 0) {
-    return { title, paragraphs: [] };
+  // Determine which selector was chosen and record it.
+  let chosenSelector: string | null = null;
+  let container: cheerio.Cheerio<AnyNode> | null = null;
+
+  for (const sel of selectors) {
+    const el = $(sel).first();
+    if (el.length > 0) {
+      chosenSelector = sel;
+      container = el;
+      break;
+    }
   }
 
-  const paragraphs = cleanParagraphs(paragraphsFrom($, container));
-  return { title, paragraphs };
+  if (!container || container.length === 0) {
+    // Fallback: try <article> (mirrors original firstMatching fallback).
+    const articleEl = $("article").first();
+    if (articleEl.length > 0) {
+      chosenSelector = "<article> (fallback)";
+      container = articleEl;
+    }
+  }
+
+  rec?.record("selectorUsed", chosenSelector);
+
+  if (!container || container.length === 0) {
+    return debug
+      ? { title, paragraphs: [], debug: rec!.build() }
+      : { title, paragraphs: [] };
+  }
+
+  rec?.record("containerHtmlByteSize", (container.html() ?? "").length);
+
+  // Build debug sink: collects discarded paragraph samples from cleanParagraphs.
+  const debugSink = rec
+    ? (sample: string) => rec.pushNoiseSample(sample)
+    : undefined;
+
+  const rawPs = paragraphsFrom($, container, rec);
+  const cleanedPs = cleanParagraphs(rawPs, debugSink);
+
+  rec?.record("pCountAfterClean", cleanedPs.length);
+
+  return debug
+    ? { title, paragraphs: cleanedPs, debug: rec!.build() }
+    : { title, paragraphs: cleanedPs };
 }

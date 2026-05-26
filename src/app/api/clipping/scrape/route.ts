@@ -103,7 +103,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── 5. Scrape concurrently with per-URL timeout ──────────────────────────────
+    // ── 5. Resolve debug flag (?debug=1 — Admin-only gate already enforced above) ──
+    const debugMode = new URL(req.url).searchParams.get("debug") === "1";
+
+    // ── 6. Scrape concurrently with per-URL timeout ──────────────────────────────
     const settled = await Promise.allSettled(
       toProcess.map(async (url): Promise<ScrapeResult> => {
         const controller = new AbortController();
@@ -111,7 +114,7 @@ export async function POST(req: NextRequest) {
         try {
           const domain = canonicalDomain(url);
           const cookieHeader = cookieHeaderByDomain[domain];
-          return await scrape(url, controller.signal, manualBodies[url], cookieHeader);
+          return await scrape(url, controller.signal, manualBodies[url], cookieHeader, debugMode);
         } finally {
           clearTimeout(timer);
         }
