@@ -54,10 +54,12 @@ src/app/(dashboard)/news-hunter/
   desktop/View.tsx          Desktop presentation layer
   mobile/View.tsx           Mobile presentation layer
   _components/
-    SelectionSidebar.tsx            Admin-only: clipping queue panel
+    SelectionSidebar.tsx            Admin-only: clipping queue panel (DnD-enabled, ~50vw wide)
+    SelectionSidebar.module.css     Scoped styles for sidebar + sortable items
+    SortableClippingItem.tsx        Admin-only: individual sortable queue item (@dnd-kit/sortable)
     ClippingModal.tsx               Admin-only: preview + download modal
   _hooks/
-    useClippingSelection.ts         Admin-only: ordered selection state hook
+    useClippingSelection.ts         Admin-only: ordered selection state hook (includes reorder())
 
 src/lib/clipping/
   types.ts          ClippingItem, ScrapeResult, ArticleSnapshot
@@ -338,12 +340,30 @@ Nunca baixe a tabela inteira. Sempre incremental.
 
 ## Estilos
 
-`page.module.css` (CSS Module) — único módulo do app que usa esse padrão. **Não polua `globals.css`**.
+`page.module.css` (CSS Module) — scoped styles for the desktop + mobile shell. **Do not pollute `globals.css`**.
 
-Classes adicionadas para a feature de clipping:
-- `.themeBtnActive` — botão "Exit Selection Mode" com destaque laranja
-- `.checkbox` — checkbox de seleção por artigo
-- `.selected` — fundo tintado em artigos selecionados
+`_components/SelectionSidebar.module.css` — scoped styles for the clipping sidebar and sortable items. Kept separate from `page.module.css` so the `SelectionSidebar` component is self-contained.
+
+Classes added for the clipping feature (in `page.module.css`):
+- `.themeBtnActive` — "Exit Selection Mode" button highlighted orange
+- `.checkbox` — per-article selection checkbox
+- `.selected` — tinted background on selected articles
+
+### Clipping sidebar width (updated 2026-05-26)
+
+The `SelectionSidebar` now occupies **`clamp(420px, 50vw, 720px)`** when open — approximately 50% of the viewport, with a floor of 420px (readable on small monitors) and a ceiling of 720px (no oversized panel on ultra-wide screens). The main content area shifts left via `paddingRight: "clamp(420px, 50vw, 720px)"` on the `.page` wrapper.
+
+### Drag-and-drop reorder (added 2026-05-26)
+
+Articles in the clipping queue can be dragged to reorder. Implementation:
+
+- **Library:** `@dnd-kit/core` + `@dnd-kit/sortable` + `@dnd-kit/modifiers` + `@dnd-kit/utilities`.
+- **Entry point:** `SortableContext` + `DndContext` inside `SelectionSidebar.tsx`. Each item is a `useSortable`-powered `SortableClippingItem.tsx`.
+- **Affordance:** 6-dot drag handle (SVG) on the left of each item; `cursor: grab` on hover.
+- **Keyboard:** Tab to focus handle → Space to lift → Arrow keys to move → Space/Enter to drop (built-in via `KeyboardSensor` + `sortableKeyboardCoordinates`).
+- **Touch/pointer:** `PointerSensor` with `activationConstraint: { distance: 6px }` to avoid accidental drags on taps.
+- **State:** `reorder(fromIndex, toIndex)` action added to `useClippingSelection` hook. Order persists to `localStorage` (`nh_clipping_selection_v1`); resets when Selection Mode is exited (same as before).
+- **No DB persistence:** order is session-UI only — not saved to Supabase.
 
 ## Anonymous-visitor mode (added 2026-05-21)
 

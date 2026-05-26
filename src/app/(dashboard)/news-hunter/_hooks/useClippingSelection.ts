@@ -41,6 +41,8 @@ export interface ClippingSelectionHook {
   moveUp: (index: number) => void;
   /** Move item at index down by one position. */
   moveDown: (index: number) => void;
+  /** Reorder: move item at fromIndex to toIndex (drag-and-drop). */
+  reorder: (fromIndex: number, toIndex: number) => void;
 }
 
 export function useClippingSelection(): ClippingSelectionHook {
@@ -104,5 +106,16 @@ export function useClippingSelection(): ClippingSelectionHook {
     [selection, persist],
   );
 
-  return { selection, isSelected, toggle, remove, clear, moveUp, moveDown };
+  const reorder = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      if (fromIndex === toIndex) return;
+      const next = [...selection];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      persist(next);
+    },
+    [selection, persist],
+  );
+
+  return { selection, isSelected, toggle, remove, clear, moveUp, moveDown, reorder };
 }
