@@ -28,18 +28,14 @@
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  background: var(--ds-glass-bg-elevated);
-  border-bottom: 1px solid var(--ds-glass-border-strong);
+  background: #000;
+  border-bottom: 1px solid #000;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #000;
-  font-family: 'Courier New', Courier, monospace;
-}
-
-:global(:root[data-theme="dark"]) .header {
-  color: #ffffff;
+  color: #fff;
+  font-family: Arial, Helvetica, sans-serif;
 }
 
 /* ── Contact entry (wraps the <a>) ───────────────────────────────────────── */
@@ -96,7 +92,7 @@
 
 .email {
   font-size: 12px;
-  font-family: 'Courier New', Courier, monospace;
+  font-family: Arial, Helvetica, sans-serif;
   color: rgba(0, 0, 0, 0.6);
   overflow: hidden;
   text-overflow: ellipsis;
