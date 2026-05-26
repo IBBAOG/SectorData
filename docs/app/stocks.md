@@ -134,13 +134,15 @@ Anon viewers do not have per-user storage, so the desktop dashboard does **not**
 | Market overview | `market` | `MarketOverview` component — indices + FX. |
 | News Hunter | `news` | `NewsCard` consuming the curated default keywords (`get_default_news_keywords()`); x close button hidden via `hideRemove` prop. |
 | Brent Futures Curve | `futures` | `FuturesCurveChart` — Yahoo public proxy, no auth. |
-| Compare Assets | `compare` | Hardcoded UGPA3.SA vs VBBR3.SA pair (`ANON_DEFAULT_COMPARE_TICKERS` constant). Mode pills are visible but disabled; ticker chip remove buttons and the StockSearch input are hidden. |
+| Compare Assets | `compare` | Hardcoded `PETR4.SA` / `PRIO3.SA` / `BZ=F` (Brent) triple (`ANON_DEFAULT_COMPARE_TICKERS` constant), mode `"percent"` ("Change %"), baseDate `"2026-01-01"` (YTD 2026), range `"1y"`. Mode pills are visible but disabled; ticker chip remove buttons, the StockSearch input, and the From/To date inputs are hidden. |
 
 For Anon, all mutating callbacks (`addCard`, `updateCard`, `persistCards`, `handleLayoutChange`) become no-ops; the "+ Card" menu and CRUD controls (gear, "+ New") are hidden in `desktop/View.tsx`; `GridLayout`'s drag/resize are disabled. Refreshing the page always restores the canonical view because nothing about anon state ever touches localStorage. Authenticated users keep the original behaviour: cards/layout restored from localStorage, full CRUD.
 
 The mobile view mirrors the desktop changes in lockstep with the dual-view binding rule:
 
-- `compareTickers` is seeded with `ANON_DEFAULT_COMPARE_TICKERS` on first render for Anon (only when the set is empty — never overrides a manual choice).
+- `compareTickers` is seeded with `ANON_DEFAULT_COMPARE_TICKERS` on the first `readOnly=true` render for Anon (one-shot per anon → authed → anon cycle; never overrides a manual choice that came after the seed).
+- `mobileRange` is bumped to `"1y"` (anon default) on the same seed so the loaded history covers the YTD 2026 window from `compareBaseDate`. Authenticated viewers keep the legacy `"1mo"` default.
+- `compareBaseDate` (new hook field) is seeded with `"2026-01-01"` for anon. The mobile `CompareTab` filters each history series to `date >= compareBaseDate` before computing the base-100 normalization, so the first plotted point on every series is `0%` on the baseline date — matching the desktop `ComparisonChart` semantics. Empty `compareBaseDate` falls back to the legacy "normalize from first datapoint" behaviour for authed users.
 - In `CompareTab`, the StockSearch input and the chip remove buttons are hidden when `readOnly`.
 - Two new sections are appended to the Compare tab (rendered for **all** viewers, not just Anon, to keep mobile / desktop content in sync per the binding rule):
   - "Brent Futures Curve" — uses `FuturesCurveChart` directly.
@@ -148,9 +150,13 @@ The mobile view mirrors the desktop changes in lockstep with the dual-view bindi
 
 Constants and helpers exposed by the hook:
 
-- `ANON_DEFAULT_COMPARE_TICKERS` — `["UGPA3.SA", "VBBR3.SA"]`.
+- `ANON_DEFAULT_COMPARE_TICKERS` — `["PETR4.SA", "PRIO3.SA", "BZ=F"]` (updated 2026-05-26; was `["UGPA3.SA", "VBBR3.SA"]`). `BZ=F` is the Yahoo Finance front-month Brent crude oil futures symbol.
+- `ANON_DEFAULT_COMPARE_BASE_DATE` — `"2026-01-01"` (YTD 2026).
+- `ANON_DEFAULT_COMPARE_RANGE` — `"1y"`. Chosen so `useStockHistory` always covers the YTD window, regardless of when in the year the page is loaded.
 - `ANON_DEFAULT_CARDS` — full 5-card sequence above (not exported).
 - `anonDefaultLayout()` — 12-col responsive layout with breakpoints `lg` / `md` / `sm`.
+
+These three Compare defaults are anon-only. Client and Admin viewers preserve the legacy defaults (empty tickers, empty baseDate, `range="1y"` when a Compare card is added via "+ Card", `mode="percent"` for new cards). Once an anon viewer is signed in, the `readOnly=false` transition clears the one-shot seeding gate but leaves any in-flight Compare card state intact for the rest of the session.
 
 ### Compare Assets — date alignment + bad-baseline guard (added 2026-05-25)
 
