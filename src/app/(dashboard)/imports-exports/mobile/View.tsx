@@ -62,8 +62,11 @@ function colourForEntity(entities: string[], entity: string): string {
 type StackedRow = { ano: number; mes: number; name: string; value: number };
 
 // Minimum value to show a trace in the unified hover tooltip.
-// Points below this threshold are hidden from hover to avoid polluting the
-// tooltip with near-zero entries. Mirrors desktop/View.tsx — keep in sync.
+// Points with value < HOVER_THRESHOLD are set to null in the y array so that
+// Plotly's unified hover completely skips them (no swatch, no header, no blank
+// row). connectgaps:true + stackgaps:"infer zero" keeps the filled area intact
+// visually — Plotly treats null as zero for stacking but omits it from hover.
+// Mirrors desktop/View.tsx exactly — keep in sync.
 const HOVER_THRESHOLD = 0.05;
 
 function buildStackedTraces(rows: StackedRow[], unit: string): PlotData[] {
@@ -87,24 +90,25 @@ function buildStackedTraces(rows: StackedRow[], unit: string): PlotData[] {
   }
   return entities.map((entity) => {
     const color = colourForEntity(entities, entity);
-    const ys = xs.map((x) => lookup.get(entity)?.get(x) ?? 0);
-    // Per-point hovertemplate array: hide points below threshold from unified
-    // hover by emitting an empty template (Plotly skips blank entries).
-    const hovertemplates = ys.map((v) =>
-      v >= HOVER_THRESHOLD
-        ? `%{x}<br>${entity}: %{y:,.1f} ${unit}<extra></extra>`
-        : `<extra></extra>`,
-    );
+    // Set y=null for points below threshold so Plotly omits them from the
+    // unified hover entirely (no swatch, no blank entry). connectgaps:true +
+    // stackgaps:"infer zero" ensures the filled area has no visual gaps.
+    const ys = xs.map((x) => {
+      const v = lookup.get(entity)?.get(x) ?? 0;
+      return v >= HOVER_THRESHOLD ? v : null;
+    });
     return {
       type: "scatter" as const,
       mode: "lines" as const,
       stackgroup: "one",
+      stackgaps: "infer zero" as const,
+      connectgaps: true,
       name: entity,
       x: xs,
       y: ys,
       line: { width: 0.5, color },
       fillcolor: color,
-      hovertemplate: hovertemplates,
+      hovertemplate: `%{x}<br>${entity}: %{y:,.1f} ${unit}<extra></extra>`,
     };
   }) as unknown as PlotData[];
 }
