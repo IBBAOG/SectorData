@@ -385,7 +385,7 @@ export function useStocksData(): UseStocksData {
   // Anonymous users: cards/layout are FORCED to ANON_DEFAULT_CARDS /
   // anonDefaultLayout on every render. No localStorage read, no persistence
   // — every anon visitor sees the same curated five-card layout (Portfolio,
-  // Market, News Hunter, Brent Futures, UGPA3 vs VBBR3 comparison). All
+  // Market, News Hunter, Brent Futures, PETR4/PRIO3/Brent comparison). All
   // mutating callbacks become no-ops in this mode.
   const [cards, setCards] = useState<DashCard[]>(DEFAULT_CARDS);
   const [layouts, setLayouts] = useState<Record<string, LayoutItem[]>>(
