@@ -8,7 +8,6 @@ const CATEGORY_LABELS: Record<string, string> = {
   "anp-production": "ANP Production",
   "anp-distribution": "ANP Distribution",
   imports: "Imports & Exports",
-  vessels: "Vessels",
   proprietary: "Proprietary Data",
   news: "News & Markets",
 };

@@ -11,7 +11,6 @@ export type DataSourceCategory =
   | "anp-production"
   | "anp-distribution"
   | "imports"
-  | "vessels"
   | "proprietary"
   | "news";
 
@@ -50,12 +49,12 @@ export const DATA_SOURCES: DataSource[] = [
 
   {
     key: "anp_cdp_diaria",
-    name: "Daily production (CDP Diária)",
+    name: "Daily production",
     description:
       "Field-, installation-, and well-level daily oil and gas production from ANP's Power BI public API (3× per day). Three Supabase tables backed by the same ETL: anp_cdp_diaria, anp_cdp_diaria_instalacao, anp_cdp_diaria_poco.",
     category: "anp-production",
     source: "ANP",
-    sourceUrl: "https://app.powerbi.com/view?r=eyJrIjoiMzQ4NTY0MGMtOTI0Yy00ZmMwLWFkMzQtNTlmMDkyYzRlNmYyIiwidCI6IjNhMWYxMDVlLTViYjAtNGZjNC04YmYyLTliMDJjZmI4NTMwYSJ9",
+    sourceUrl: "https://app.powerbi.com/view?r=eyJrIjoiZjQ0NjIzNmYtNzY3Ni00MzZkLWI0MTQtYzk4ZWY0ZGI4ODQ5IiwidCI6IjQ0OTlmNGZmLTI0YTYtNGI0Mi1iN2VmLTEyNGFmY2FkYzkxMyJ9",
     cronUtc: "0 10,15,20 * * *",
     cronDescription: "3× per day at 10:00, 15:00, 20:00 UTC",
     sourceFrequency: "Daily",
@@ -67,7 +66,7 @@ export const DATA_SOURCES: DataSource[] = [
   },
   {
     key: "anp_cdp_producao",
-    name: "Monthly production by well (CDP)",
+    name: "Monthly production by well",
     description:
       "Monthly per-well production from ANP's APEX CDP portal, scraped via Selenium + ddddocr CAPTCHA solver. Covers oil, gas, and water production back to 2000.",
     category: "anp-production",
@@ -88,7 +87,7 @@ export const DATA_SOURCES: DataSource[] = [
   },
   {
     key: "anp_voip",
-    name: "Recoverable reserves (VOIP/VGIP)",
+    name: "Recoverable reserves",
     description:
       "Annual ANP Volume of Oil Initially in Place (VOIP) and Gas Initially in Place (VGIP) data by field and basin. Published once per year in May.",
     category: "anp-production",
@@ -111,7 +110,7 @@ export const DATA_SOURCES: DataSource[] = [
 
   {
     key: "vendas",
-    name: "Monthly fuel sales (ANP)",
+    name: "Monthly fuel sales",
     description:
       "ANP's official monthly fuel sales data by distributor, product, segment, region, and UF. Updated when ANP publishes the prior month's bulletin.",
     category: "anp-distribution",
@@ -164,7 +163,7 @@ export const DATA_SOURCES: DataSource[] = [
   },
   {
     key: "anp_lpc",
-    name: "Retail pump prices (LPC)",
+    name: "Retail pump prices",
     description:
       "Weekly ANP retail-level pump prices (Levantamento de Preços ao Consumidor) by municipality, product, and fuel station count.",
     category: "anp-distribution",
@@ -198,7 +197,7 @@ export const DATA_SOURCES: DataSource[] = [
   },
   {
     key: "anp_subsidy_diesel_reference",
-    name: "Diesel subsidy data (reference prices + rate history)",
+    name: "Diesel subsidy data",
     description:
       "ANP diesel subsidy reference prices (PDRR) by region plus the historical log of subsidy rates (BRL/L) since policy inception.",
     category: "anp-distribution",
@@ -218,7 +217,7 @@ export const DATA_SOURCES: DataSource[] = [
 
   {
     key: "mdic_comex",
-    name: "MDIC Comex Stat (trade flows)",
+    name: "MDIC Comex Stat",
     description:
       "Brazil's foreign trade statistics from MDIC Comex Stat. Filtered to fuel NCMs. Feeds the Imports & Exports FOB price panel (Panel C).",
     category: "imports",
@@ -251,16 +250,16 @@ export const DATA_SOURCES: DataSource[] = [
     overdueAfterHours: 1440,
   },
 
-  // ── VESSELS ─────────────────────────────────────────────────────────────────
+  // ── PROPRIETARY DATA ─────────────────────────────────────────────────────────
 
   {
     key: "navios_diesel",
     name: "Diesel import line-up",
     description:
       "Scheduled diesel import line-ups at Brazilian fuel ports, scraped from Porto de Itaqui and partner port systems every 6 hours via Selenium.",
-    category: "vessels",
-    source: "Porto de Itaqui",
-    sourceUrl: "https://www.itaqui.ma.gov.br/programacao",
+    category: "proprietary",
+    source: "Proprietary",
+    sourceUrl: null,
     cronUtc: "0 */6 * * *",
     cronDescription: "Every 6 hours",
     sourceFrequency: "Real-time",
@@ -275,9 +274,9 @@ export const DATA_SOURCES: DataSource[] = [
     name: "AIS vessel intelligence",
     description:
       "Real-time AIS vessel positions streamed via AISStream WebSocket, plus derived port arrival events (geofence detection) and global import candidate scoring (0–100). Three pipelines, single upstream source.",
-    category: "vessels",
-    source: "AISStream",
-    sourceUrl: "https://aisstream.io/",
+    category: "proprietary",
+    source: "Proprietary",
+    sourceUrl: null,
     cronUtc: null,
     cronDescription: "Multiple pipelines — positions/arrivals every 6h, candidates every 4h",
     sourceFrequency: "Real-time",
@@ -287,9 +286,6 @@ export const DATA_SOURCES: DataSource[] = [
     staleAfterHours: 9,
     overdueAfterHours: 18,
   },
-
-  // ── PROPRIETARY DATA ─────────────────────────────────────────────────────────
-
   {
     key: "d_g_margins",
     name: "Diesel & gasoline margin model",

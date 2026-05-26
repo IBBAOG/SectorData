@@ -1,11 +1,13 @@
 "use client";
 
-// DataSourcesTable — live table showing freshness of all 23 data sources.
+// DataSourcesTable — live table showing freshness of all data sources.
 //
-// Renders 6 category sections with a sticky translucent header and
+// Renders 5 category sections with a sticky translucent header and
 // per-row expand/collapse. Refreshes freshness data every 60 seconds.
 //
 // This component is DESKTOP-ONLY. The mobile view does NOT render it.
+// Note: "vessels" category is no longer rendered — navios_diesel and
+// vessel_positions were moved to "proprietary" (Fix 1, 2026-05-26).
 
 import { useState } from "react";
 import { DATA_SOURCES, type DataSourceCategory } from "../../../data/dataSources";
@@ -14,12 +16,12 @@ import SectionHeader from "./SectionHeader";
 import SourceRow from "./SourceRow";
 import styles from "./DataSourcesTable.module.css";
 
-// Ordered list of categories as they appear in the table
+// Ordered list of categories as they appear in the table.
+// "vessels" is intentionally absent — no entries use it any more.
 const CATEGORY_ORDER: DataSourceCategory[] = [
   "anp-production",
   "anp-distribution",
   "imports",
-  "vessels",
   "proprietary",
   "news",
 ];

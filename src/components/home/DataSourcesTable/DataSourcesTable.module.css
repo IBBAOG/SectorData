@@ -49,6 +49,11 @@
   z-index: 5;
 }
 
+/* Fix 3: title text must be white in dark mode (was #000 fixed — invisible) */
+:global(:root[data-theme="dark"]) .tableHeader {
+  color: #ffffff;
+}
+
 .headerLiveDot {
   display: inline-block;
   width: 7px;
@@ -74,6 +79,11 @@
   color: rgba(0, 0, 0, 0.38);
   border-bottom: 1px solid var(--ds-glass-border);
   background: var(--ds-glass-bg-elevated);
+}
+
+/* Fix 3: column headers must also be white in dark mode */
+:global(:root[data-theme="dark"]) .colHeaders {
+  color: rgba(255, 255, 255, 0.55);
 }
 
 /* ── Section header ──────────────────────────────────────────────────────────── */
