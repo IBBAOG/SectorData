@@ -33,10 +33,13 @@ import {
   rpcGetImportsExportsExportsPaisesStacked,
   rpcGetImportsExportsExportsYoyTable,
   rpcGetImportsExportsFobPriceSerie,
+  rpcGetImportsExportsImportsUnitPrice,
+  rpcGetImportsExportsExportsUnitPrice,
 } from "@/lib/rpc";
 import type {
   IEExportsPaisesStackedRow,
   IEExportsYoyRow,
+  IEUnitPriceRow,
 } from "@/lib/rpc";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -93,6 +96,9 @@ export interface YoyTableRow {
 export type { IEExportsPaisesStackedRow as ExportsPaisesStackedRow } from "@/lib/rpc";
 export type { IEExportsYoyRow as ExportsYoyRow } from "@/lib/rpc";
 
+// Unit price rows (USD/m³ per country per month) — imports + exports
+export type { IEUnitPriceRow as UnitPriceRow } from "@/lib/rpc";
+
 export interface FiltrosResult {
   ano_min: number;
   ano_max: number;
@@ -131,6 +137,14 @@ export interface UseImportsExportsData {
   // Imports tab — Panel C (import price from mdic_comex)
   priceData: PricePoint[];
   priceLoading: boolean;
+
+  // Imports tab — Panel D (unit price by origin country, USD/m³)
+  importsUnitPriceData: IEUnitPriceRow[];
+  importsUnitPriceLoading: boolean;
+
+  // Exports tab — unit price by destination country (USD/m³)
+  exportsUnitPriceData: IEUnitPriceRow[];
+  exportsUnitPriceLoading: boolean;
 
   // Derived helpers
   periodBadge: string;    // e.g. "2015 – 2024"
@@ -194,6 +208,14 @@ export function useImportsExportsData(): UseImportsExportsData {
   // Panel C — import price (mdic_comex)
   const [priceData, setPriceData] = useState<PricePoint[]>([]);
   const [priceLoading, setPriceLoading] = useState(false);
+
+  // Panel D — imports unit price by origin country (USD/m³, mdic_comex)
+  const [importsUnitPriceData, setImportsUnitPriceData] = useState<IEUnitPriceRow[]>([]);
+  const [importsUnitPriceLoading, setImportsUnitPriceLoading] = useState(false);
+
+  // Exports tab — unit price by destination country (USD/m³, mdic_comex)
+  const [exportsUnitPriceData, setExportsUnitPriceData] = useState<IEUnitPriceRow[]>([]);
+  const [exportsUnitPriceLoading, setExportsUnitPriceLoading] = useState(false);
 
   // Stable setter merging partial filter updates
   const setFilters = useCallback((next: Partial<ImportsExportsFilters>) => {
@@ -482,6 +504,64 @@ export function useImportsExportsData(): UseImportsExportsData {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.period[0], stableFilters.period[1], stableFilters.priceMetric]);
 
+  // ── 8. Panel D — imports unit price by origin country (mdic_comex) ──────────
+  const importsUPFetchIdRef = useRef(0);
+  const importsUPTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!supabase || stableFilters.tab !== "imports") return;
+    if (importsUPTimerRef.current) clearTimeout(importsUPTimerRef.current);
+    const myId = ++importsUPFetchIdRef.current;
+    importsUPTimerRef.current = setTimeout(async () => {
+      setImportsUnitPriceLoading(true);
+      try {
+        const rows = await rpcGetImportsExportsImportsUnitPrice(
+          supabase,
+          stableFilters.unifiedProduct,
+          stableFilters.period[0],
+          stableFilters.period[1],
+          8,
+        );
+        if (myId === importsUPFetchIdRef.current) setImportsUnitPriceData(rows);
+      } catch (err) {
+        console.error("get_imports_exports_imports_unit_price:", err);
+      } finally {
+        if (myId === importsUPFetchIdRef.current) setImportsUnitPriceLoading(false);
+      }
+    }, 400);
+    return () => { if (importsUPTimerRef.current) clearTimeout(importsUPTimerRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.period[0], stableFilters.period[1]]);
+
+  // ── 9. Exports unit price by destination country (mdic_comex) ───────────────
+  const exportsUPFetchIdRef = useRef(0);
+  const exportsUPTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!supabase || stableFilters.tab !== "exports") return;
+    if (exportsUPTimerRef.current) clearTimeout(exportsUPTimerRef.current);
+    const myId = ++exportsUPFetchIdRef.current;
+    exportsUPTimerRef.current = setTimeout(async () => {
+      setExportsUnitPriceLoading(true);
+      try {
+        const rows = await rpcGetImportsExportsExportsUnitPrice(
+          supabase,
+          stableFilters.unifiedProduct,
+          stableFilters.period[0],
+          stableFilters.period[1],
+          8,
+        );
+        if (myId === exportsUPFetchIdRef.current) setExportsUnitPriceData(rows);
+      } catch (err) {
+        console.error("get_imports_exports_exports_unit_price:", err);
+      } finally {
+        if (myId === exportsUPFetchIdRef.current) setExportsUnitPriceLoading(false);
+      }
+    }, 400);
+    return () => { if (exportsUPTimerRef.current) clearTimeout(exportsUPTimerRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.period[0], stableFilters.period[1]]);
+
   // ── Derived: period badge ───────────────────────────────────────────────────
   const periodBadge = `${stableFilters.period[0]} – ${stableFilters.period[1]}`;
 
@@ -504,6 +584,10 @@ export function useImportsExportsData(): UseImportsExportsData {
     yoyExportsLoading,
     priceData,
     priceLoading,
+    importsUnitPriceData,
+    importsUnitPriceLoading,
+    exportsUnitPriceData,
+    exportsUnitPriceLoading,
     periodBadge,
     yoyEndAno,
     yoyEndMes,
