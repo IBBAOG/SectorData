@@ -416,9 +416,22 @@ export default function DesktopView(): React.ReactElement {
 
     const labels = volumeMensal.map((r) => {
       const [yr, mo] = r.month.split("-");
-      return new Date(Number(yr), Number(mo) - 1, 1)
+      const base = new Date(Number(yr), Number(mo) - 1, 1)
         .toLocaleDateString("en-US", { month: "short", year: "numeric" });
+      // Mark the live (current) month so the bar reads as live, while
+      // past months are frozen snapshots of the estimate at month-end.
+      return r.is_current ? `${base} (live)` : base;
     });
+
+    // Per-bar styling: closed (frozen) months are flat-filled; the current
+    // (live) month gets a contrasting outline so users can tell at a glance
+    // which bar will still move and which are historical truth.
+    const isLive = volumeMensal.map((r) => Boolean(r.is_current));
+    const dischargedLineColor = isLive.map((live) => (live ? ORANGE : "rgba(0,0,0,0)"));
+    const pendingLineColor    = isLive.map((live) => (live ? "#1a1a1a" : "rgba(0,0,0,0)"));
+    const indetLineColor      = isLive.map((live) => (live ? "#1a1a1a" : "rgba(0,0,0,0)"));
+    const liveLineWidth       = isLive.map((live) => (live ? 1.5 : 0));
+    const hoverSuffix         = volumeMensal.map((r) => (r.is_current ? " · live" : " · frozen"));
 
     const INDETERMINATE_COLOR = "#73C6A1";
     const maxTotal = Math.max(...volumeMensal.map(
@@ -438,8 +451,13 @@ export default function DesktopView(): React.ReactElement {
         ),
         textposition: "inside",
         textfont: { family: "Arial", size: 10, color: "#ffffff" },
-        marker: { color: "#000000", opacity: 0.85 },
-        hovertemplate: "%{x}<br>Discharged: %{y:,.0f} m³<extra></extra>",
+        marker: {
+          color: "#000000",
+          opacity: 0.85,
+          line: { color: dischargedLineColor, width: liveLineWidth },
+        },
+        customdata: hoverSuffix,
+        hovertemplate: "%{x}<br>Discharged: %{y:,.0f} m³%{customdata}<extra></extra>",
       } as unknown as PlotData,
       {
         type: "bar",
@@ -453,8 +471,13 @@ export default function DesktopView(): React.ReactElement {
         ),
         textposition: "inside",
         textfont: { family: "Arial", size: 10, color: "#ffffff" },
-        marker: { color: ORANGE, opacity: 0.85 },
-        hovertemplate: "%{x}<br>Pending: %{y:,.0f} m³<extra></extra>",
+        marker: {
+          color: ORANGE,
+          opacity: 0.85,
+          line: { color: pendingLineColor, width: liveLineWidth },
+        },
+        customdata: hoverSuffix,
+        hovertemplate: "%{x}<br>Pending: %{y:,.0f} m³%{customdata}<extra></extra>",
       } as unknown as PlotData,
       {
         type: "bar",
@@ -468,8 +491,13 @@ export default function DesktopView(): React.ReactElement {
         ),
         textposition: "inside",
         textfont: { family: "Arial", size: 10, color: "#ffffff" },
-        marker: { color: INDETERMINATE_COLOR, opacity: 0.85 },
-        hovertemplate: "%{x}<br>Indeterminate Status: %{y:,.0f} m³<extra></extra>",
+        marker: {
+          color: INDETERMINATE_COLOR,
+          opacity: 0.85,
+          line: { color: indetLineColor, width: liveLineWidth },
+        },
+        customdata: hoverSuffix,
+        hovertemplate: "%{x}<br>Indeterminate Status: %{y:,.0f} m³%{customdata}<extra></extra>",
       } as unknown as PlotData,
     ];
 
@@ -787,6 +815,9 @@ export default function DesktopView(): React.ReactElement {
                     {/* Row 1 — Col 2: Bar chart + Monthly Summary */}
                     <div className="chart-container">
                       <div style={TITLE_STYLE}>Monthly Diesel Volume (m³)</div>
+                      <div style={{ fontFamily: "Arial", fontSize: 11, color: "#666", marginTop: -2, marginBottom: 4 }}>
+                        Past months frozen at last snapshot in the month · current month is live
+                      </div>
                       <hr className="section-hr" />
                       <PlotlyChart
                         data={monthlyChart.data}

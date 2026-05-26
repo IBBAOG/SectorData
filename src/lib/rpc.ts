@@ -398,21 +398,45 @@ export type NdVolumeMensalDescargaRow = {
   discharged_volume: number;
   pending_volume: number;
   indeterminate_volume: number; // último volume de portos com ERRO_COLETA
+  /**
+   * True only for the current calendar month (live estimate).
+   * False for closed months — those bars are frozen against the LAST
+   * snapshot collected within that month and never get recomputed.
+   * Always present when returned by get_nd_volume_mensal_historico;
+   * legacy callers of get_nd_volume_mensal_descarga will see undefined.
+   */
+  is_current?: boolean;
 };
 
 export async function rpcGetNdVolumeMensalDescarga(
   supabase: SupabaseClient,
   collectedAt: string,
 ): Promise<NdVolumeMensalDescargaRow[]> {
+  // Prefer the historico variant: same row shape, but past months are
+  // anchored to the last snapshot inside that month (frozen) and the
+  // current month uses the live snapshot. Baseline: Apr 2026.
+  //
+  // Fall back to the legacy get_nd_volume_mensal_descarga if the
+  // historico function isn't deployed yet (handles the gap between this
+  // commit landing and supabase_deploy.yml applying the new migration).
   try {
-    const { data, error } = await supabase.rpc("get_nd_volume_mensal_descarga", {
+    const { data, error } = await supabase.rpc("get_nd_volume_mensal_historico", {
       p_collected_at: collectedAt,
     });
     if (error) throw error;
     return (data ?? []) as NdVolumeMensalDescargaRow[];
-  } catch (e) {
-    console.error("get_nd_volume_mensal_descarga failed", e);
-    return [];
+  } catch (eHist) {
+    console.warn("get_nd_volume_mensal_historico unavailable, falling back to get_nd_volume_mensal_descarga", eHist);
+    try {
+      const { data, error } = await supabase.rpc("get_nd_volume_mensal_descarga", {
+        p_collected_at: collectedAt,
+      });
+      if (error) throw error;
+      return (data ?? []) as NdVolumeMensalDescargaRow[];
+    } catch (e) {
+      console.error("get_nd_volume_mensal_descarga failed", e);
+      return [];
+    }
   }
 }
 

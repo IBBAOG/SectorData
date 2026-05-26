@@ -43,6 +43,7 @@ import {
   STATUS_LABELS,
   type NavioDieselRow,
   type PortSummary,
+  type NdVolumeMensalDescargaRow,
 } from "../useNaviosDieselData";
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -124,6 +125,167 @@ function hoursAgo(iso: string): string {
 // ─── Status segmented tab type ────────────────────────────────────────────────
 
 type VesselTab = "active" | "recent" | "expected";
+
+// ─── Monthly Estimate Bars (mobile compact chart) ─────────────────────────────
+//
+// Lightweight CSS-only stacked bars. Same data the desktop Plotly chart
+// consumes (volumeMensal), but tuned for narrow screens:
+//   - Horizontal scroller, 48px per bar
+//   - Current month outlined to read as "live"
+//   - Past months frozen (flat fill)
+//
+// This is the mobile counterpart of the desktop "Monthly Diesel Volume (m³)"
+// stacked bar chart — same series, adapted UX.
+
+function MonthlyEstimateBars({
+  rows,
+}: {
+  rows: NdVolumeMensalDescargaRow[];
+}): React.ReactElement {
+  const ORANGE_MOB = "#FF5000";
+  const INDETERMINATE_MOB = "#73C6A1";
+
+  const totals = rows.map(
+    (r) => r.discharged_volume + r.pending_volume + r.indeterminate_volume,
+  );
+  const maxTotal = Math.max(1, ...totals);
+
+  return (
+    <div>
+      {/* Bars */}
+      <div
+        style={{
+          display: "flex",
+          gap: 6,
+          overflowX: "auto",
+          paddingBottom: 8,
+          scrollbarWidth: "none",
+          WebkitOverflowScrolling: "touch",
+        }}
+        aria-label="Monthly diesel volume history"
+      >
+        {rows.map((r, i) => {
+          const total = totals[i];
+          const heightPx = 120;
+          const dischargedH = (r.discharged_volume / maxTotal) * heightPx;
+          const pendingH = (r.pending_volume / maxTotal) * heightPx;
+          const indetH = (r.indeterminate_volume / maxTotal) * heightPx;
+          const isLive = Boolean(r.is_current);
+
+          const [yr, mo] = r.month.split("-");
+          const label = new Date(Number(yr), Number(mo) - 1, 1)
+            .toLocaleDateString("en-US", { month: "short" });
+
+          return (
+            <div
+              key={r.month}
+              style={{
+                flex: "0 0 auto",
+                width: 48,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+              }}
+              title={`${r.month}${isLive ? " (live)" : " (frozen)"} — ${total.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³`}
+            >
+              {/* Total label */}
+              <div
+                style={{
+                  fontSize: 9,
+                  fontWeight: 700,
+                  color: "var(--mobile-text)",
+                  marginBottom: 3,
+                  fontVariantNumeric: "tabular-nums",
+                  lineHeight: 1,
+                }}
+              >
+                {fmtVolume(total)}
+              </div>
+
+              {/* Stack container */}
+              <div
+                style={{
+                  width: 32,
+                  height: heightPx,
+                  display: "flex",
+                  flexDirection: "column-reverse",
+                  borderRadius: 4,
+                  overflow: "hidden",
+                  border: isLive ? `1.5px solid ${ORANGE_MOB}` : "none",
+                  boxSizing: "border-box",
+                  background: "var(--mobile-surface-2, rgba(0,0,0,0.04))",
+                }}
+              >
+                {dischargedH > 0 && (
+                  <div style={{ height: dischargedH, background: "#1a1a1a", opacity: 0.9 }} />
+                )}
+                {pendingH > 0 && (
+                  <div style={{ height: pendingH, background: ORANGE_MOB, opacity: 0.9 }} />
+                )}
+                {indetH > 0 && (
+                  <div style={{ height: indetH, background: INDETERMINATE_MOB, opacity: 0.9 }} />
+                )}
+              </div>
+
+              {/* Month label */}
+              <div
+                style={{
+                  fontSize: 10,
+                  color: isLive ? ORANGE_MOB : "var(--mobile-text-muted)",
+                  fontWeight: isLive ? 700 : 500,
+                  marginTop: 4,
+                  lineHeight: 1,
+                }}
+              >
+                {label}
+              </div>
+              {isLive && (
+                <div
+                  style={{
+                    fontSize: 8,
+                    color: ORANGE_MOB,
+                    fontWeight: 700,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.04em",
+                    lineHeight: 1,
+                    marginTop: 1,
+                  }}
+                >
+                  live
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Legend */}
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 12,
+          marginTop: 4,
+          fontSize: 10,
+          color: "var(--mobile-text-muted)",
+        }}
+      >
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <span style={{ width: 10, height: 10, background: "#1a1a1a", borderRadius: 2, display: "inline-block" }} />
+          Discharged
+        </span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <span style={{ width: 10, height: 10, background: "#FF5000", borderRadius: 2, display: "inline-block" }} />
+          Pending
+        </span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+          <span style={{ width: 10, height: 10, background: "#73C6A1", borderRadius: 2, display: "inline-block" }} />
+          Indeterminate
+        </span>
+      </div>
+    </div>
+  );
+}
 
 // ─── Port summary scroller ────────────────────────────────────────────────────
 
@@ -475,6 +637,7 @@ export default function MobileView(): React.ReactElement {
     loading,
     newVesselSet,
     errorPorts,
+    volumeMensal,
   } = useNaviosDieselData();
 
   // ── Local UI state ────────────────────────────────────────────────────────────
@@ -865,6 +1028,25 @@ export default function MobileView(): React.ReactElement {
       {/* ── Ports tab ── */}
       {activeTab === "ports" && (
         <div style={{ padding: 16 }}>
+          {/* Monthly estimate history — same series as desktop, lightweight CSS bars */}
+          {volumeMensal.length > 0 && (
+            <section style={{
+              marginBottom: 20,
+              padding: "14px 16px",
+              background: "var(--mobile-surface)",
+              border: "1px solid var(--mobile-divider)",
+              borderRadius: 14,
+            }}>
+              <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--mobile-text)", marginBottom: 2 }}>
+                Monthly Diesel Volume
+              </h2>
+              <div style={{ fontSize: 11, color: "var(--mobile-text-muted)", marginBottom: 12 }}>
+                Past months frozen · current is live · m³
+              </div>
+              <MonthlyEstimateBars rows={volumeMensal} />
+            </section>
+          )}
+
           <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--mobile-text)", marginBottom: 12 }}>Port Summary</h2>
           {loading ? (
             <div style={{ color: "var(--mobile-text-muted)", fontSize: 13 }}>Loading…</div>
