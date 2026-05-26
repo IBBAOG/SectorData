@@ -2,10 +2,9 @@
 
 // SourceRow — single collapsed data source row.
 // Clicking anywhere (except action icons) toggles the ExpandedRow.
-// Displays: Status · Name · Source · Last update · Action icons.
+// Displays: Name · Source · Last update · Action icons.
 
 import Link from "next/link";
-import StatusDot from "./StatusDot";
 import LastUpdateCell from "./LastUpdateCell";
 import ExpandedRow from "./ExpandedRow";
 import type { DataSource, DataSourceCategory } from "../../../data/dataSources";
@@ -63,11 +62,6 @@ export default function SourceRow({
           }
         }}
       >
-        {/* Status dot */}
-        <span className={styles.colStatus}>
-          <StatusDot src={src} info={info} />
-        </span>
-
         {/* Name — direct link if single dashboard, static text otherwise */}
         <span className={styles.colName}>
           {src.dashboards.length === 1 ? (

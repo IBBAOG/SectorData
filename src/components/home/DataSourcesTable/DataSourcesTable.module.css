@@ -63,7 +63,7 @@
 
 .colHeaders {
   display: grid;
-  grid-template-columns: 16px 1fr 72px 80px 60px;
+  grid-template-columns: 1fr 72px 80px 60px;
   align-items: center;
   gap: 8px;
   padding: 5px 14px;
@@ -111,7 +111,7 @@
 
 .sourceRow {
   display: grid;
-  grid-template-columns: 16px 1fr 72px 80px 60px;
+  grid-template-columns: 1fr 72px 80px 60px;
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
@@ -131,12 +131,6 @@
 }
 
 /* ── Columns ────────────────────────────────────────────────────────────────── */
-
-.colStatus {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 
 .colName {
   display: flex;
@@ -231,7 +225,7 @@
 /* ── Expanded row ────────────────────────────────────────────────────────────── */
 
 .expandedRow {
-  padding: 10px 14px 14px 38px; /* indent past the status dot column */
+  padding: 10px 14px 14px 14px;
   background: var(--row-cat-soft, rgba(0, 0, 0, 0.02));
   border-top: 1px solid var(--ds-glass-border);
 }
