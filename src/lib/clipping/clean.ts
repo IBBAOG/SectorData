@@ -91,6 +91,37 @@ const _NOISE_PATTERNS: string[] = [
 
 const _NOISE_REGEX = new RegExp(_NOISE_PATTERNS.join("|"), "i");
 
+// ---------------------------------------------------------------------------
+// Inline noise splitter (Phase 2, 2026-05-26)
+// ---------------------------------------------------------------------------
+
+/**
+ * Splits a paragraph on inline noise markers (" | ", " • ", " › ") when the
+ * segments around them look like separate headlines (title-cased, no end
+ * punctuation, short). Returns the "good" segments joined back, or the original
+ * paragraph if fewer than 2 separators are found (single " | " could be valid prose).
+ *
+ * Example input:  "Lula assinou o decreto hoje. Leia também: Câmara aprova MP | Senado vota amanhã | Análise da reforma"
+ * Example output: "Lula assinou o decreto hoje."
+ */
+function splitOnInlineMarkers(p: string): string {
+  const separatorRe = / [|•›] /g;
+  const matches = p.match(separatorRe);
+  if (!matches || matches.length < 2) return p;
+
+  const parts = p.split(separatorRe).map((s) => s.trim());
+  // Drop parts that look like standalone headline links:
+  // title-cased, no terminal punctuation, short (< 80 chars).
+  const kept = parts.filter((part) => {
+    if (part.length < 10) return false;
+    const endsWithPunct = /[.!?]$/.test(part);
+    const isTitleCased = /^[A-ZÁÉÍÓÚÀÂÊÔÃÕÇ]/.test(part);
+    if (isTitleCased && !endsWithPunct && part.length < 80) return false;
+    return true;
+  });
+  return kept.join(" ");
+}
+
 /**
  * Filter and deduplicate paragraphs using noise regex patterns.
  *
@@ -108,6 +139,17 @@ export function cleanParagraphs(
     p = p.replace(/\s+/g, " ").trim();
     p = p.replace(/\s+([.,;:!?])/g, "$1");
     if (!p) continue;
+
+    // Phase 2: split on inline noise markers before full-paragraph regex matching.
+    // This removes "Leia também: X | Y | Z" segments embedded inside otherwise
+    // valid paragraphs, which the full-match regex patterns cannot catch.
+    const split = splitOnInlineMarkers(p);
+    if (split !== p) {
+      debugSink?.(`[inline-split] removed from: ${p.slice(0, 200)}`);
+      p = split;
+      if (!p) continue;
+    }
+
     if (_NOISE_REGEX.test(p)) {
       debugSink?.(p.slice(0, 200));
       continue;
