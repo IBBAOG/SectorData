@@ -1,6 +1,6 @@
 // POST /api/clipping/scrape
 // Admin-only route. Accepts up to 30 URLs, scrapes each one, returns ScrapeResult[].
-// Auth pattern mirrors src/app/api/upload-card-preview/route.ts (lines 29–52).
+// Admin auth — verifies Bearer token via Supabase, then checks profiles.role='Admin'.
 // No curl_cffi TLS impersonation — 403 sites surface as fetch_failed.
 
 import { NextRequest, NextResponse } from "next/server";
@@ -26,7 +26,7 @@ interface ScrapeRequestBody {
 
 export async function POST(req: NextRequest) {
   try {
-    // ── 1. Admin auth (mirror upload-card-preview/route.ts lines 29–52) ────────
+    // ── 1. Admin auth — Bearer token → Supabase getUser → profiles.role='Admin' ─
     const authHeader = req.headers.get("authorization") ?? "";
     const userToken = authHeader.replace(/^Bearer\s+/i, "");
     if (!userToken) {
