@@ -7,10 +7,9 @@
 //
 // This component is DESKTOP-ONLY. The mobile view does NOT render it.
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { DATA_SOURCES, type DataSourceCategory } from "../../../data/dataSources";
 import { useDataSourcesFreshness } from "./useDataSourcesFreshness";
-import { deriveStatus, aggregateStatus, statusToTokenVar } from "./status";
 import SectionHeader from "./SectionHeader";
 import SourceRow from "./SourceRow";
 import styles from "./DataSourcesTable.module.css";
@@ -41,16 +40,6 @@ export default function DataSourcesTable(): React.ReactElement {
     sources: DATA_SOURCES.filter((s) => s.category === cat),
   }));
 
-  // Aggregate worst status across all sources for the header dot
-  const headerColor = useMemo(() => {
-    const statuses = DATA_SOURCES.map((src) => {
-      const info = freshness.get(src.key);
-      const lastUpdateStr = info?.lastUpdate ? info.lastUpdate.toISOString() : null;
-      return deriveStatus(src, lastUpdateStr);
-    });
-    return statusToTokenVar(aggregateStatus(statuses));
-  }, [freshness]);
-
   return (
     <div className={styles.tableRoot} aria-label="Data Sources">
       {/* ── Table header ──────────────────────────────────────────────────── */}
@@ -66,13 +55,12 @@ export default function DataSourcesTable(): React.ReactElement {
         <span
           className={`ds-pulse ${styles.headerLiveDot}`}
           title="Refreshes every 60 seconds"
-          style={{ color: headerColor, background: headerColor }}
+          style={{ color: "var(--ds-status-fresh)", background: "var(--ds-status-fresh)" }}
         />
       </div>
 
       {/* ── Column headers ─────────────────────────────────────────────────── */}
       <div className={styles.colHeaders} aria-hidden="true">
-        <span />
         <span>Name</span>
         <span>Source</span>
         <span>Last update</span>
