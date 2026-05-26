@@ -1,8 +1,12 @@
+// TODO(data-sources): re-add raw-table download once a generic full-table CSV
+// export RPC exists. Tracked separately. (Removed 2026-05-26 because the
+// previous placeholder fired phantom "successful" telemetry.)
+
 "use client";
 
 // ExpandedRow — inline panel shown when a SourceRow is expanded.
-// Displays schedule details, next estimated run, action buttons,
-// and a Download Raw Data button (logged-in users only).
+// Displays schedule details, next estimated run, and action buttons.
+// Buttons: View source, View dashboard (or DashboardPicker), Copy table name.
 
 import { useState } from "react";
 import Link from "next/link";
@@ -10,12 +14,10 @@ import DashboardPicker from "./DashboardPicker";
 import type { DataSource } from "../../../data/dataSources";
 import type { SourceFreshness } from "./useDataSourcesFreshness";
 import styles from "./DataSourcesTable.module.css";
-import ExportModal from "../../dashboard/ExportModal";
 
 interface ExpandedRowProps {
   src: DataSource;
   info: SourceFreshness | undefined;
-  isLoggedIn: boolean;
 }
 
 /**
@@ -50,18 +52,10 @@ function estimateNextRun(
   return `in ${diffMinutes} min`;
 }
 
-// Dummy count fetcher for ExportModal — the table download for the home page is
-// a raw full-table export so we reuse rowCount from freshness data directly.
-async function noopCountFetcher(): Promise<number> {
-  return 0;
-}
-
 export default function ExpandedRow({
   src,
   info,
-  isLoggedIn,
 }: ExpandedRowProps): React.ReactElement {
-  const [exportOpen, setExportOpen] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(false);
 
   const nextRun = estimateNextRun(
@@ -77,12 +71,6 @@ export default function ExpandedRow({
       setCopyFeedback(true);
       setTimeout(() => setCopyFeedback(false), 1500);
     });
-  }
-
-  function handleDownload(e: React.MouseEvent) {
-    e.stopPropagation();
-    if (!isLoggedIn) return;
-    setExportOpen(true);
   }
 
   return (
@@ -222,61 +210,7 @@ export default function ExpandedRow({
           </button>
         )}
 
-        {/* Download raw data */}
-        {src.supabaseTable && (
-          <button
-            type="button"
-            className={
-              isLoggedIn ? styles.actionBtn : styles.actionBtnDisabled
-            }
-            onClick={handleDownload}
-            title={
-              isLoggedIn ? "Download raw table data" : "Sign in to download"
-            }
-            aria-disabled={!isLoggedIn}
-          >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-            {isLoggedIn ? "Download raw data" : "Sign in to download"}
-          </button>
-        )}
       </div>
-
-      {/* ExportModal (Tier 2) — opens for logged-in users */}
-      {src.supabaseTable && isLoggedIn && exportOpen && (
-        <ExportModal
-          open={exportOpen}
-          onClose={() => setExportOpen(false)}
-          title={`Export — ${src.name}`}
-          datasetKey={src.supabaseTable}
-          filters={
-            <p style={{ fontSize: 13, color: "#555", margin: 0 }}>
-              Full table export — no filters available for raw source data.
-            </p>
-          }
-          currentFilters={{}}
-          countFetcher={noopCountFetcher}
-          onExportExcel={() => {
-            /* full-table Excel not implemented for raw source tables */
-          }}
-          onExportCsv={() => {
-            /* full-table CSV not implemented for raw source tables */
-          }}
-        />
-      )}
     </div>
   );
 }
