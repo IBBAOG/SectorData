@@ -3,7 +3,7 @@
 // Segmented (pill) toggle with sliding orange background.
 //
 // Replaces the inline JSX duplicated across:
-//   - sales-volumes / market-share : View Mode (Individual / Big-3 / Others)
+//   - market-share : View Mode (Individual / Big-3 / Others)
 //   - navios-diesel : AIS On / AIS Off
 //   - price-bands : YTD year selector
 //   - anp-cdp-bsw / anp-cdp-depletion : View / X axis / Plot style (sidebar)

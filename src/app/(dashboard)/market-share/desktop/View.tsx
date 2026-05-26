@@ -17,13 +17,23 @@ import {
   useMarketShareData,
   MODE_OPTIONS,
   type CompRow,
+  type UnitMode,
 } from "../useMarketShareData";
+
+const UNIT_OPTIONS: { value: UnitMode; label: string }[] = [
+  { value: "share", label: "% Share" },
+  { value: "volume", label: "thousand m³" },
+];
 
 // ─── ComparisonTable ──────────────────────────────────────────────────────────
 
-function ComparisonTable({ rows }: { rows: CompRow[] }) {
+function ComparisonTable({ rows, unitMode = "share" }: { rows: CompRow[]; unitMode?: UnitMode }) {
   const fmt = (v: number | null) =>
     v === null ? "—" : (v > 0 ? "+" : "") + v.toFixed(1);
+  const headerLabel =
+    unitMode === "share"
+      ? "Market Share Var. (p.p.)"
+      : "Volume Var. (thousand m³)";
   const cellStyle = (v: number | null): React.CSSProperties => ({
     backgroundColor:
       v === null ? "transparent" : v > 0 ? "#C6E8D9" : v < 0 ? "#FFDDCC" : "transparent",
@@ -65,7 +75,7 @@ function ComparisonTable({ rows }: { rows: CompRow[] }) {
       <thead>
         <tr>
           <th style={{ ...thStyle, textAlign: "left", paddingLeft: 8 }}>
-            Market Share Var. (p.p.)
+            {headerLabel}
           </th>
           <th style={thStyle}>MoM</th>
           <th style={thStyle}>QTD</th>
@@ -115,6 +125,8 @@ export default function DesktopView(): React.ReactElement {
     regioesAll,
     ufsAll,
     mercadosAll,
+    unitMode,
+    setUnitMode,
     mode,
     setMode,
     sliderRange,
@@ -269,7 +281,11 @@ export default function DesktopView(): React.ReactElement {
             <div id="page-content">
               <DashboardHeader
                 title="Brazil Fuel Distribution Market Share"
-                sub="Temporal evolution of market share by distributor (%)"
+                sub={
+                  unitMode === "share"
+                    ? "Temporal evolution of market share by distributor (%)"
+                    : "Temporal evolution of sales volume by distributor (thousand m³)"
+                }
                 lang="en"
                 hideDivider
                 rightSlot={
@@ -292,6 +308,40 @@ export default function DesktopView(): React.ReactElement {
                 }
               />
 
+              {/* Unit toggle — top-level switch between % Share and thousand m³.
+                  Sits above the chart grid; aligned right to keep visual
+                  weight low while remaining a deliberate dashboard-wide
+                  control. View Mode (Individual/Big-3/Others) stays in the
+                  sidebar — this toggle is a higher-level axis. */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  alignItems: "center",
+                  gap: 10,
+                  margin: "4px 0 14px",
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: "Arial",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: "#555",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.4px",
+                  }}
+                >
+                  Unit
+                </span>
+                <SegmentedToggle
+                  options={UNIT_OPTIONS}
+                  value={unitMode}
+                  onChange={setUnitMode}
+                  variant="compact"
+                />
+              </div>
+
               {seriesLoading ? (
                 <BarrelLoading />
               ) : (
@@ -312,7 +362,7 @@ export default function DesktopView(): React.ReactElement {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
-                        {compData && <ComparisonTable rows={compData.dieselRetail} />}
+                        {compData && <ComparisonTable rows={compData.dieselRetail} unitMode={unitMode} />}
                       </div>
                     </div>
                     <div className="col-md-6">
@@ -325,7 +375,7 @@ export default function DesktopView(): React.ReactElement {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
-                        {compData && <ComparisonTable rows={compData.dieselB2B} />}
+                        {compData && <ComparisonTable rows={compData.dieselB2B} unitMode={unitMode} />}
                       </div>
                     </div>
                   </div>
@@ -340,7 +390,7 @@ export default function DesktopView(): React.ReactElement {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
-                        {compData && <ComparisonTable rows={compData.dieselTrR} />}
+                        {compData && <ComparisonTable rows={compData.dieselTrR} unitMode={unitMode} />}
                       </div>
                     </div>
                     <div className="col-md-6">
@@ -353,7 +403,7 @@ export default function DesktopView(): React.ReactElement {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
-                        {compData && <ComparisonTable rows={compData.dieselTotal} />}
+                        {compData && <ComparisonTable rows={compData.dieselTotal} unitMode={unitMode} />}
                       </div>
                     </div>
                   </div>
@@ -376,7 +426,7 @@ export default function DesktopView(): React.ReactElement {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
-                        {compData && <ComparisonTable rows={compData.gasRetail} />}
+                        {compData && <ComparisonTable rows={compData.gasRetail} unitMode={unitMode} />}
                       </div>
                     </div>
                     <div className="col-md-6">
@@ -389,7 +439,7 @@ export default function DesktopView(): React.ReactElement {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
-                        {compData && <ComparisonTable rows={compData.gasB2B} />}
+                        {compData && <ComparisonTable rows={compData.gasB2B} unitMode={unitMode} />}
                       </div>
                     </div>
                   </div>
@@ -404,7 +454,7 @@ export default function DesktopView(): React.ReactElement {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
-                        {compData && <ComparisonTable rows={compData.gasTotal} />}
+                        {compData && <ComparisonTable rows={compData.gasTotal} unitMode={unitMode} />}
                       </div>
                     </div>
                   </div>
@@ -427,7 +477,7 @@ export default function DesktopView(): React.ReactElement {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
-                        {compData && <ComparisonTable rows={compData.ethRetail} />}
+                        {compData && <ComparisonTable rows={compData.ethRetail} unitMode={unitMode} />}
                       </div>
                     </div>
                     <div className="col-md-6">
@@ -440,7 +490,7 @@ export default function DesktopView(): React.ReactElement {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
-                        {compData && <ComparisonTable rows={compData.ethB2B} />}
+                        {compData && <ComparisonTable rows={compData.ethB2B} unitMode={unitMode} />}
                       </div>
                     </div>
                   </div>
@@ -455,7 +505,7 @@ export default function DesktopView(): React.ReactElement {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
-                        {compData && <ComparisonTable rows={compData.ethTotal} />}
+                        {compData && <ComparisonTable rows={compData.ethTotal} unitMode={unitMode} />}
                       </div>
                     </div>
                   </div>
@@ -478,7 +528,7 @@ export default function DesktopView(): React.ReactElement {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
-                        {compData && <ComparisonTable rows={compData.ottoRetail} />}
+                        {compData && <ComparisonTable rows={compData.ottoRetail} unitMode={unitMode} />}
                       </div>
                     </div>
                     <div className="col-md-6">
@@ -491,7 +541,7 @@ export default function DesktopView(): React.ReactElement {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
-                        {compData && <ComparisonTable rows={compData.ottoB2B} />}
+                        {compData && <ComparisonTable rows={compData.ottoB2B} unitMode={unitMode} />}
                       </div>
                     </div>
                   </div>
@@ -506,7 +556,7 @@ export default function DesktopView(): React.ReactElement {
                           config={{ displayModeBar: false }}
                           style={{ width: "100%", height: 300 }}
                         />
-                        {compData && <ComparisonTable rows={compData.ottoTotal} />}
+                        {compData && <ComparisonTable rows={compData.ottoTotal} unitMode={unitMode} />}
                       </div>
                     </div>
                   </div>

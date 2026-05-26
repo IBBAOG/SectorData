@@ -34,8 +34,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | Route | RPC functions | Export |
 |-------|---------------|--------|
 | `/home` | `get_data_sources_freshness` (desktop only — Data Sources live table) | — |
-| `/sales-volumes` | `get_sv_opcoes_filtros`, `get_ms_serie_fast`, `get_ms_serie_others`, `get_others_players` | Yes |
-| `/market-share` | `get_ms_opcoes_filtros`, `get_ms_serie_fast`, `get_ms_serie_others`, `get_others_players` | Yes |
+| `/market-share` | Market share % and absolute volumes via top-level toggle (% Share ↔ thousand m³). `get_ms_opcoes_filtros`, `get_ms_serie_fast`, `get_ms_serie_others`, `get_others_players` | Yes |
 | `/navios-diesel` | `get_nd_ultima_coleta`, `get_nd_coletas_distintas`, `get_nd_navios`, `get_nd_resumo_portos` | Yes |
 | `/diesel-gasoline-margins` | `get_dg_margins_data`, `get_dg_margins_filters` | Yes |
 | `/price-bands` | `get_price_bands_data` | Yes |
@@ -57,6 +56,8 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/imports-exports` | Fuel Distribution | `get_imports_exports_filtros`, `get_imports_exports_paises_stacked`, `get_imports_exports_importers_stacked`, `get_imports_exports_yoy_table`, `get_imports_exports_exports_paises_stacked`, `get_imports_exports_exports_yoy_table`, `get_imports_exports_fob_price_serie` | Yes |
 | `/subsidy-tracker` | Fuel Distribution (Proprietary) | `get_subsidy_tracker_diesel` | Yes |
 
+> **Sales Volumes consolidation (2026-05-26):** `/sales-volumes` retired and folded into `/market-share` via a top-level unit toggle (% Share ↔ thousand m³). URL `/sales-volumes` now 301-redirects to `/market-share?unit=volume`. Both modes share `get_ms_serie_fast` / `get_ms_serie_others` / `get_others_players` and `get_ms_opcoes_filtros`; the legacy `get_sv_*` family is preserved in DB for transition. Archived sub-PRD: `docs/app/_deprecated/sales-volumes.md`.
+
 > **Home Data Sources live table (2026-05-26, `[desktop-only]`):** `/home` desktop layout splits 50/50 — module cards on the left, live "Data Sources" table on the right. Mobile view is unchanged (cards only). Backed by RPC `get_data_sources_freshness()` (migration `20260526200000_data_sources_freshness.sql`), which returns `(source_key, last_update, row_count)` for 22 ETL-fed tables (ANP production × 5, ANP distribution × 7, imports & exports × 3, vessels × 4, manual × 2, news × 1). `LANGUAGE sql STABLE SECURITY DEFINER` + `search_path = public, pg_temp`, granted to `anon` + `authenticated`. Polled every 60s by `useDataSourcesFreshness`. Source-of-truth curation lives in `src/data/dataSources.ts` (23 entries — 22 tables + Yahoo Finance, which has no Supabase table). UI components: `src/components/home/DataSourcesTable/` (8 files). Visible to all tiers (Anon + Client + Admin) — serves as product transparency/robustness showcase. Download per row gated by session (Anon sees disabled "Sign in to download"). New design tokens added to `src/app/globals.css` (`--ds-cat-*`, `--ds-status-*`, `--ds-glass-*`, `--ds-pulse-*` + keyframe `ds-pulse-dot` + `.ds-pulse` utility class).
 
 > **ANP Prices consolidation (2026-05-26):** `/anp-prices` replaces the 3 retired dashboards `/anp-precos-produtores`, `/anp-precos-distribuicao`, `/anp-lpc`. Backed by the 3 source tables (`anp_precos_produtores`, `anp_precos_distribuicao`, `anp_lpc`) joined server-side via `get_anp_prices_serie` (UNION ALL with product/unit/region normalization, Diesel S10→S500 fallback, GLP normalized to R$/13kg). 10 legacy RPCs dropped. ETL pipelines untouched. Archived sub-PRDs live under `docs/app/_deprecated/`. Migration: `supabase/migrations/20260526000000_anp_prices_consolidation.sql` + `20260526000001_anp_prices_uf_fix.sql`.
@@ -69,7 +70,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 
 `template-module/` is a starter template, not a deployed module. RPC wrappers: [`src/lib/rpc.ts`](src/lib/rpc.ts) (by module) and [`src/lib/profileRpc.ts`](src/lib/profileRpc.ts).
 
-**Export pattern (Fase B):** all tabular dashboards export both Excel and CSV. Heavy datasets (`/market-share`, `/sales-volumes`, `/anp-cdp`, `/anp-lpc`) open a modal with active filters and a live size calculator before downloading (Tier 2). Lighter datasets download directly (Tier 1). `/stocks` and `/news-hunter` have no tabular export by design.
+**Export pattern (Fase B):** all tabular dashboards export both Excel and CSV. Heavy datasets (`/market-share` — both % Share and absolute volume modes, `/anp-cdp`, `/anp-lpc`) open a modal with active filters and a live size calculator before downloading (Tier 2). Lighter datasets download directly (Tier 1). `/stocks` and `/news-hunter` have no tabular export by design.
 
 ## Project Structure
 
@@ -82,8 +83,7 @@ dashboard_projeto/
 │   ├── master.md                  # PRD mestre — departments, contracts, conventions
 │   ├── app/                       # APP department + per-dashboard sub-PRDs
 │   │   ├── PRD.md                 # Subgerente APP — shared infrastructure
-│   │   ├── sales-volumes.md       # one file per dashboard
-│   │   ├── market-share.md
+│   │   ├── market-share.md        # absorbs /sales-volumes (% Share ↔ thousand m³ toggle, 2026-05-26)
 │   │   ├── navios-diesel.md
 │   │   ├── diesel-gasoline-margins.md
 │   │   ├── price-bands.md
@@ -95,7 +95,7 @@ dashboard_projeto/
 │   │   ├── anp-prices.md          # consolidates /anp-precos-produtores + /anp-precos-distribuicao + /anp-lpc (2026-05-26)
 │   │   ├── imports-exports.md     # consolidates the 3 retired anp-* import/export dashboards + /mdic-comex (Panel C, 2026-05-25)
 │   │   ├── subsidy-tracker.md admin-analytics.md
-│   │   ├── _deprecated/           # archived sub-PRDs: anp-daie, anp-desembaracos, anp-painel-importacoes, mdic-comex, anp-precos-produtores, anp-precos-distribuicao, anp-lpc
+│   │   ├── _deprecated/           # archived sub-PRDs: anp-daie, anp-desembaracos, anp-painel-importacoes, mdic-comex, anp-precos-produtores, anp-precos-distribuicao, anp-lpc, sales-volumes
 │   │   └── news-hunter-architecture.md  # cross-repo handoff doc
 │   ├── design/
 │   │   ├── identity.md            # tokens (#ff5000, Arial, liquid glass)
@@ -128,7 +128,7 @@ dashboard_projeto/
 │   │   ├── api/stocks/            # Yahoo Finance proxy (quote, history, search, futures-curve)
 │   │   └── (dashboard)/
 │   │       ├── layout.tsx         # Session guard → /login
-│   │       ├── home/ market-share/ sales-volumes/ navios-diesel/
+│   │       ├── home/ market-share/ navios-diesel/
 │   │       ├── diesel-gasoline-margins/ price-bands/ stocks/
 │   │       ├── news-hunter/       # page.tsx + page.module.css
 │   │       ├── anp-cdp/ anp-cdp-bsw/ anp-cdp-depletion/ anp-cdp-diaria/

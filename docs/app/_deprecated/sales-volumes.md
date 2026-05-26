@@ -1,4 +1,6 @@
-# Sub-PRD — `/sales-volumes`
+# Sub-PRD — `/sales-volumes` (RETIRED)
+
+> **Retired 2026-05-26** — Folded into [`market-share.md`](../market-share.md) via a top-level unit toggle (% Share ↔ thousand m³). URL `/sales-volumes` now 301-redirects to `/market-share?unit=volume`. This sub-PRD is preserved for historical reference only.
 
 Dashboard de Volumes de Venda. Owner: [`worker_dash-sales-volumes`](../../.claude/agents/worker_dash-sales-volumes.md).
 

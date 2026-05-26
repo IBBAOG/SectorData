@@ -45,6 +45,7 @@ import {
 import ExportModal from "../../../../components/dashboard/ExportModal";
 import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
+import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
 import {
   useMarketShareData,
   buildMobileStackedArea,
@@ -58,8 +59,14 @@ import {
   type CompRow,
   type ProductKey,
   type SegmentKey,
+  type UnitMode,
 } from "../useMarketShareData";
 import type { PlotData } from "plotly.js";
+
+const UNIT_OPTIONS: { value: UnitMode; label: string }[] = [
+  { value: "share", label: "% Share" },
+  { value: "volume", label: "thousand m³" },
+];
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -90,12 +97,17 @@ const TABS = [
 
 // ─── PlayerCard ───────────────────────────────────────────────────────────────
 
-function PlayerCard({ row }: { row: TopPlayerRow }) {
+function PlayerCard({ row, unitMode = "share" }: { row: TopPlayerRow; unitMode?: UnitMode }) {
   const deltaSign = row.deltaMoM !== null ? (row.deltaMoM > 0 ? "+" : "") : "";
   const deltaColor =
     row.deltaMoM === null ? "var(--mobile-text-faint)"
     : row.deltaMoM > 0 ? "var(--mobile-up)"
     : "var(--mobile-down)";
+  // In share mode `row.pct` holds %; in volume mode it holds absolute
+  // thousand-m³. Units in the delta line follow the same axis: pp vs k m³.
+  const valueLabel =
+    unitMode === "share" ? `${row.pct.toFixed(1)}%` : row.pct.toFixed(1);
+  const deltaUnit = unitMode === "share" ? "pp" : "k m³";
 
   return (
     <div
@@ -159,7 +171,7 @@ function PlayerCard({ row }: { row: TopPlayerRow }) {
           textAlign: "right",
         }}
       >
-        {row.pct.toFixed(1)}%
+        {valueLabel}
       </div>
 
       {/* Progress bar */}
@@ -198,7 +210,7 @@ function PlayerCard({ row }: { row: TopPlayerRow }) {
       >
         {row.deltaMoM === null
           ? "—"
-          : `${deltaSign}${row.deltaMoM.toFixed(1)} pp`}
+          : `${deltaSign}${row.deltaMoM.toFixed(1)} ${deltaUnit}`}
       </div>
     </div>
   );
@@ -282,6 +294,7 @@ function OverviewTab({
   selectedSegment,
   onSelectProduct,
   onSelectSegment,
+  unitMode,
 }: {
   loading: boolean;
   heroTraces: PlotData[];
@@ -293,6 +306,7 @@ function OverviewTab({
   selectedSegment: SegmentKey;
   onSelectProduct: (p: ProductKey) => void;
   onSelectSegment: (s: SegmentKey) => void;
+  unitMode: UnitMode;
 }) {
   const productTabs = PRODUCT_KEYS.map((p) => ({
     key: p,
@@ -399,7 +413,13 @@ function OverviewTab({
               data={heroTraces}
               height={320}
               layout={{
-                yaxis: { ticksuffix: "%", range: [0, 100] },
+                // In share mode the stacked area is bounded [0, 100] %; in
+                // volume mode we let Plotly auto-scale (no ticksuffix, no
+                // fixed range).
+                yaxis:
+                  unitMode === "share"
+                    ? { ticksuffix: "%", range: [0, 100] }
+                    : { title: { text: "thousand m³" } },
                 xaxis: { type: "date" as const, tickformat: "%b %y", nticks: 6 },
                 hovermode: "x unified",
               }}
@@ -505,7 +525,7 @@ function OverviewTab({
             }}
           >
             {topPlayers.map((row) => (
-              <PlayerCard key={row.player} row={row} />
+              <PlayerCard key={row.player} row={row} unitMode={unitMode} />
             ))}
           </div>
         ) : (
@@ -695,6 +715,7 @@ function CompareTab({
   selectedProduct,
   selectedSegment,
   chartColors,
+  unitMode,
 }: {
   loading: boolean;
   compRows: CompRow[];
@@ -703,6 +724,7 @@ function CompareTab({
   selectedProduct: ProductKey;
   selectedSegment: SegmentKey;
   chartColors: Record<string, string>;
+  unitMode: UnitMode;
 }) {
   if (loading) {
     return (
@@ -733,7 +755,9 @@ function CompareTab({
             marginBottom: 4,
           }}
         >
-          Compare market-share variation
+          {unitMode === "share"
+            ? "Compare market-share variation"
+            : "Compare volume variation"}
         </div>
         <div
           style={{
@@ -753,7 +777,9 @@ function CompareTab({
             fontFamily: "Arial, Helvetica, sans-serif",
           }}
         >
-          Percentage-point delta vs MoM, QTD, YoY, YTD. Pick up to 3 distributors.
+          {unitMode === "share"
+            ? "Percentage-point delta vs MoM, QTD, YoY, YTD. Pick up to 3 distributors."
+            : "Thousand-m³ delta vs MoM, QTD, YoY, YTD. Pick up to 3 distributors."}
         </div>
       </div>
 
@@ -859,6 +885,8 @@ function ActiveChips({
   regioes,
   ufs,
   latestDate,
+  unitMode,
+  onUnitChange,
   onOpenFilters,
   onRemoveProduct,
   onRemoveRegiao,
@@ -868,6 +896,8 @@ function ActiveChips({
   regioes: string[];
   ufs: string[];
   latestDate: string | null;
+  unitMode: UnitMode;
+  onUnitChange: (u: UnitMode) => void;
   onOpenFilters: () => void;
   onRemoveProduct: () => void;
   onRemoveRegiao: (r: string) => void;
@@ -947,6 +977,26 @@ function ActiveChips({
         scrollbarWidth: "none",
       }}
     >
+      {/* Unit toggle — top-level switch between % Share and thousand m³.
+          Sits at the head of the chip row so it stays visible alongside
+          the other active-filter chips. Stops auto-scroll inheritance via
+          flexShrink: 0 (matches chipStyle). */}
+      <div
+        style={{
+          flexShrink: 0,
+          display: "inline-flex",
+          alignItems: "center",
+        }}
+      >
+        <SegmentedToggle
+          options={UNIT_OPTIONS}
+          value={unitMode}
+          onChange={onUnitChange}
+          variant="compact"
+          fontSize={11}
+        />
+      </div>
+
       {/* Product chip */}
       <div style={chipStyle(onRemoveProduct)}>
         {product}
@@ -1220,6 +1270,8 @@ export default function MobileView(): React.ReactElement {
         regioes={chipRegioes}
         ufs={chipUfs}
         latestDate={ms.latestDate}
+        unitMode={ms.unitMode}
+        onUnitChange={ms.setUnitMode}
         onOpenFilters={openDrawer}
         onRemoveProduct={() => { ms.setSelectedProduct("Diesel B"); }}
         onRemoveRegiao={(r) => {
@@ -1249,6 +1301,7 @@ export default function MobileView(): React.ReactElement {
           selectedSegment={ms.selectedSegment}
           onSelectProduct={ms.setSelectedProduct}
           onSelectSegment={ms.setSelectedSegment}
+          unitMode={ms.unitMode}
         />
       )}
       {activeTab === "compare" && (
@@ -1260,6 +1313,7 @@ export default function MobileView(): React.ReactElement {
           selectedProduct={ms.selectedProduct}
           selectedSegment={ms.selectedSegment}
           chartColors={ms.chartColors}
+          unitMode={ms.unitMode}
         />
       )}
 

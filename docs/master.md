@@ -28,8 +28,7 @@ CEO (Eduardo)
      │  (rota tarefas)                  (escreve docs cross-dept)
      │
      ├─ Subgerente APP   (entry point pra qualquer coisa do produto web)
-     │   ├─ dash-sales-volumes            (/sales-volumes)
-     │   ├─ dash-market-share             (/market-share)
+     │   ├─ dash-market-share             (/market-share — % Share ↔ thousand m³ toggle; absorveu /sales-volumes em 2026-05-26)
      │   ├─ dash-navios-diesel            (/navios-diesel + sub-páginas futuras)
      │   ├─ dash-margins                  (/diesel-gasoline-margins)
      │   ├─ dash-price-bands              (/price-bands)
@@ -85,8 +84,7 @@ Cada um possui um módulo (ou bundle, no caso de admin). Cada um auto-documenta 
 
 | Slug | Cobertura | Sub-PRD |
 |---|---|---|
-| [`worker_dash-sales-volumes`](../.claude/agents/worker_dash-sales-volumes.md) | `/sales-volumes` | [`docs/app/sales-volumes.md`](app/sales-volumes.md) |
-| [`worker_dash-market-share`](../.claude/agents/worker_dash-market-share.md) | `/market-share` | [`docs/app/market-share.md`](app/market-share.md) |
+| [`worker_dash-market-share`](../.claude/agents/worker_dash-market-share.md) | `/market-share` (absorveu `/sales-volumes` em 2026-05-26 — expõe % Share ↔ thousand m³ via toggle top-level; `/sales-volumes` agora 301-redireciona para `/market-share?unit=volume`) | [`docs/app/market-share.md`](app/market-share.md) |
 | [`worker_dash-navios-diesel`](../.claude/agents/worker_dash-navios-diesel.md) | `/navios-diesel` (+ sub-páginas) | [`docs/app/navios-diesel.md`](app/navios-diesel.md) |
 | [`worker_dash-margins`](../.claude/agents/worker_dash-margins.md) | `/diesel-gasoline-margins` | [`docs/app/diesel-gasoline-margins.md`](app/diesel-gasoline-margins.md) |
 | [`worker_dash-price-bands`](../.claude/agents/worker_dash-price-bands.md) | `/price-bands` | [`docs/app/price-bands.md`](app/price-bands.md) |
@@ -253,7 +251,7 @@ Todos os dashboards com dataset tabular exportam Excel + CSV. Dois tiers conform
 | **Tier 1** | Dataset < 50k linhas (download imediato seguro) | Botões diretos no `ExportPanel` | [`ExportPanel.tsx`](../src/components/dashboard/ExportPanel.tsx) + [`exportExcel.ts`](../src/lib/exportExcel.ts) + [`exportCsv.ts`](../src/lib/exportCsv.ts) |
 | **Tier 2** | Dataset >= 50k linhas (export pode ser pesado) | Modal com filtros ativos + calculadora live de tamanho | `ExportPanel` com `mode="modal"` + [`ExportModal.tsx`](../src/components/dashboard/ExportModal.tsx) + [`useExportSize.ts`](../src/hooks/useExportSize.ts) |
 
-**Dashboards Tier 2:** `/market-share`, `/sales-volumes` (dataset `vendas`), `/anp-cdp`, `/anp-lpc`.
+**Dashboards Tier 2:** `/market-share` (dataset `vendas` — serves both % Share and absolute volume modes since 2026-05-26), `/anp-cdp`, `/anp-lpc`.
 
 **Dashboards Tier 1:** `/diesel-gasoline-margins`, `/price-bands`, `/navios-diesel`, `/anp-glp`, `/imports-exports`, `/anp-precos-produtores`.
 
@@ -443,12 +441,16 @@ Workflow controlado pelo **Subgerente APP** (não pelo Gerente Geral). Ver detal
 ## Estado atual (snapshot)
 
 - 4 departamentos + 3 papéis transversais.
-- 16 dashboards ativos (8 originais + 2 da Fase 3 remanescentes: `/anp-cdp`, `/anp-glp` + 6 novos: `/anp-prices` (consolida `/anp-precos-produtores` + `/anp-precos-distribuicao` + `/anp-lpc` retirados em 2026-05-26), `/imports-exports` (consolida `/anp-daie` + `/anp-desembaracos` + `/anp-painel-importacoes` retirados em 2026-05-25; absorveu `/mdic-comex` via Panel C "Import Price" no mesmo dia — `mdic_comex` table e workflow ETL permanecem ativos alimentando Panel C), `/anp-cdp-diaria`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/subsidy-tracker` + `/admin-analytics` (Admin-only, sem `module_visibility`)).
+- 15 dashboards ativos (7 originais — `/sales-volumes` retirado em 2026-05-26 e absorvido por `/market-share` via toggle % Share ↔ thousand m³ — + 2 da Fase 3 remanescentes: `/anp-cdp`, `/anp-glp` + 6 novos: `/anp-prices` (consolida `/anp-precos-produtores` + `/anp-precos-distribuicao` + `/anp-lpc` retirados em 2026-05-26), `/imports-exports` (consolida `/anp-daie` + `/anp-desembaracos` + `/anp-painel-importacoes` retirados em 2026-05-25; absorveu `/mdic-comex` via Panel C "Import Price" no mesmo dia — `mdic_comex` table e workflow ETL permanecem ativos alimentando Panel C), `/anp-cdp-diaria`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/subsidy-tracker` + `/admin-analytics` (Admin-only, sem `module_visibility`)).
 - Documentação inicial criada em **2026-05-05**.
 
 ### Data Sources live table na `/home` (2026-05-26)
 
 `/home` desktop ganhou tabela live "Data Sources" no lado direito (split 50/50; mobile mantém só cards via `[desktop-only]`). Backend: nova RPC `get_data_sources_freshness()` (migration `20260526200000_data_sources_freshness.sql`) retornando `(source_key, last_update, row_count)` para 22 tabelas alimentadas por ETL; SECURITY DEFINER + search_path locked; `GRANT EXECUTE TO anon, authenticated`; polled 60s pelo front. Curadoria das fontes (categoria, cron, descrição, dashboards consumidores) vive em `src/data/dataSources.ts` (23 entries — 22 tabelas + Yahoo Finance). UI components em `src/components/home/DataSourcesTable/` (8 arquivos: `index.tsx`, `SectionHeader`, `SourceRow`, `ExpandedRow`, `StatusDot`, `LastUpdateCell`, `DashboardPicker`, `useDataSourcesFreshness`). Design tokens novos em `src/app/globals.css` (`--ds-cat-*`, `--ds-status-*`, `--ds-glass-*`, `--ds-pulse-*` + keyframe `ds-pulse-dot` + classe `.ds-pulse`). Visível para todos os tiers (Anon + Client + Admin) — transparência do produto. Detalhes em [`docs/app/admin.md`](app/admin.md) § "Data Sources live table".
+
+### Consolidação Sales Volumes → Market Share (2026-05-26)
+
+`/sales-volumes` foi retirado e suas funcionalidades absorvidas por `/market-share` via um toggle top-level "% Share" ↔ "thousand m³". O URL `/sales-volumes` agora 301-redireciona para `/market-share?unit=volume`. Owner único agora é `worker_dash-market-share`; o `worker_dash-sales-volumes` é aposentado. Sub-PRD antigo arquivado em [`docs/app/_deprecated/sales-volumes.md`](app/_deprecated/sales-volumes.md). Tabelas e RPCs `get_sv_*` / `get_ms_*` preservadas no DB; mudanças de RPC entregues pela Frente 2 (migration dedicada).
 
 ### Reforma ANP Prices (2026-05-26)
 
