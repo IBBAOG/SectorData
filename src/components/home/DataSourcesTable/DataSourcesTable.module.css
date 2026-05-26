@@ -53,7 +53,7 @@
 
 .colHeaders {
   display: grid;
-  grid-template-columns: 1fr 80px 75px 44px;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
   align-items: center;
   gap: 8px;
   padding: 5px 14px;
@@ -106,7 +106,7 @@
 
 .sourceRow {
   display: grid;
-  grid-template-columns: 1fr 80px 75px 44px;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
@@ -188,7 +188,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .iconBtn {
