@@ -5,9 +5,10 @@
 -- Fails with RAISE EXCEPTION on the first missing object.
 --
 -- Context: migration 20260402000000_sales_volumes was marked applied in
--- schema_migrations but the 4 get_sv_* functions were never created because
--- mv_ms_serie did not exist at execution time.  The bug sat in prod for months
--- because the frontend swallowed errors with try/catch → [].
+-- schema_migrations but its 4 RPCs were never created because mv_ms_serie did
+-- not exist at execution time.  The bug sat in prod for months because the
+-- frontend swallowed errors with try/catch → [].  (Those RPCs were later
+-- retired in 2026-05-26 when /sales-volumes was folded into /market-share.)
 -- This script is the safety net: if any critical object is absent, CI turns red.
 --
 -- How to add new checks (template):
@@ -217,23 +218,10 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing materialized view: mv_anp_cdp_pocos'; END IF;
 
   -- ─── SALES VOLUMES RPCs ───────────────────────────────────────────────────
-  -- These are the exact functions whose absence caused the original prod bug.
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_sv_opcoes_filtros';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_sv_opcoes_filtros'; END IF;
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_sv_serie_fast';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_sv_serie_fast'; END IF;
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_sv_serie_others';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_sv_serie_others'; END IF;
-
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_sv_others_players';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_sv_others_players'; END IF;
+  -- The 4 legacy sales-volumes RPCs were DROPPED in
+  -- 20260526400000_drop_sv_rpcs.sql as part of the /sales-volumes →
+  -- /market-share consolidation (2026-05-26). Both modes (% Share + thousand
+  -- m³) are now served by get_ms_serie_fast (asserted below).
 
   -- ─── MARKET SHARE RPCs ────────────────────────────────────────────────────
 
