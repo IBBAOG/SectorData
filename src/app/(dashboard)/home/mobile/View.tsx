@@ -11,7 +11,7 @@
 //   MobileTopBar  — sticky glass top bar (wordmark + Sign in / avatar)
 //   Greeting      — "Good morning / afternoon / evening, <name>"
 //   Search input  — sticky below top bar, live-filters module list
-//   4× category sections — Markets / Oil & Gas / Fuel Distribution / Admin
+//   3× category sections — Markets / Oil & Gas / Fuel Distribution
 //     - sticky collapsible section header with chevron + count badge
 //     - compact list: icon circle + module name + chevron
 //   MobileBottomTabBar — fixed bottom nav
@@ -36,24 +36,21 @@ const CATEGORY_ACCENT: Record<HomeCategory, string> = {
   markets: "#ff5000",
   oilgas: "#2563eb",
   fuel: "#059669",
-  admin: "#6b7280",
 };
 
 const CATEGORY_ACCENT_SOFT: Record<HomeCategory, string> = {
   markets: "rgba(255, 80, 0, 0.12)",
   oilgas: "rgba(37, 99, 235, 0.12)",
   fuel: "rgba(5, 150, 105, 0.12)",
-  admin: "rgba(107, 114, 128, 0.12)",
 };
 
 const CATEGORY_LABELS: Record<HomeCategory, string> = {
   markets: "Markets",
   oilgas: "Oil & Gas",
   fuel: "Fuel Distribution",
-  admin: "Admin",
 };
 
-const CATEGORY_ORDER: HomeCategory[] = ["markets", "oilgas", "fuel", "admin"];
+const CATEGORY_ORDER: HomeCategory[] = ["markets", "oilgas", "fuel"];
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 

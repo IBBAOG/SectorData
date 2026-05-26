@@ -15,7 +15,7 @@ import { useUserProfile } from "../../../context/UserProfileContext";
 
 // ---- Types -------------------------------------------------------------------
 
-export type HomeCategory = "markets" | "oilgas" | "fuel" | "admin";
+export type HomeCategory = "markets" | "oilgas" | "fuel";
 
 export interface HomeCardDef {
   slug: string;
@@ -32,7 +32,6 @@ export interface HomeSectionState {
   markets: boolean;
   oilgas: boolean;
   fuel: boolean;
-  admin: boolean;
 }
 
 export interface UseHomeData {
@@ -219,30 +218,6 @@ const SLUG_CATEGORY: Record<string, HomeCategory> = {
   alerts: "markets",
 };
 
-/** Static admin entries shown on mobile home (not in module_visibility). */
-const ADMIN_CARDS: HomeCardDef[] = [
-  {
-    slug: "profile",
-    preview: null,
-    title: "Profile",
-    description: "Account & preferences",
-    badge: "",
-    href: "/profile",
-    disabled: false,
-    category: "admin",
-  },
-  {
-    slug: "admin-panel",
-    preview: null,
-    title: "Admin Panel",
-    description: "Permissions & module visibility",
-    badge: "",
-    href: "/admin-panel",
-    disabled: false,
-    category: "admin",
-  },
-];
-
 const CARDS_WITH_CATEGORY: HomeCardDef[] = CARDS.map((c) => ({
   ...c,
   category: SLUG_CATEGORY[c.slug] ?? "fuel",
@@ -264,7 +239,6 @@ export function useHomeData(): UseHomeData {
     markets: false,
     oilgas: false,
     fuel: false,
-    admin: false,
   });
 
   const setSearch = useCallback((q: string) => {
@@ -302,37 +276,18 @@ export function useHomeData(): UseHomeData {
     );
   }, [visibilityFiltered, search]);
 
-  // Group by category (admin cards appended separately — not in module_visibility)
+  // Group by category
   const cardsByCategory = useMemo<Record<HomeCategory, HomeCardDef[]>>(() => {
     const map: Record<HomeCategory, HomeCardDef[]> = {
       markets: [],
       oilgas: [],
       fuel: [],
-      admin: [],
     };
     for (const card of visibleCards) {
       map[card.category].push(card);
     }
-    // Admin/Profile static entries: only meaningful for logged-in users. Anon
-    // visitors have no profile to view and no admin panel to manage, and the
-    // page guards already redirect them to /login — so suppress the cards
-    // entirely to avoid a dead-end tap.
-    if (role !== "Anon") {
-      const q = search.trim().toLowerCase();
-      const baseAdmin = role === "Admin"
-        ? ADMIN_CARDS                                          // both Profile + Admin Panel
-        : ADMIN_CARDS.filter((c) => c.slug !== "admin-panel"); // Client: Profile only
-      const filteredAdmin = q
-        ? baseAdmin.filter(
-            (c) =>
-              c.title.toLowerCase().includes(q) ||
-              c.description.toLowerCase().includes(q),
-          )
-        : baseAdmin;
-      map.admin.push(...filteredAdmin);
-    }
     return map;
-  }, [visibleCards, search, role]);
+  }, [visibleCards]);
 
   return {
     visibleCards,

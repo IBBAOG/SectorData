@@ -27,7 +27,6 @@ const CATEGORY_ACCENT: Record<string, string> = {
   markets: "#ff5000",
   oilgas: "#2563eb",
   fuel: "#059669",
-  admin: "#6b7280",
 };
 
 // ── Category section labels ────────────────────────────────────────────────
@@ -35,10 +34,9 @@ const CATEGORY_LABELS: Record<string, string> = {
   markets: "Markets",
   oilgas: "Oil & Gas",
   fuel: "Fuel Distribution",
-  admin: "Admin",
 };
 
-const CATEGORY_ORDER = ["markets", "oilgas", "fuel", "admin"] as const;
+const CATEGORY_ORDER = ["markets", "oilgas", "fuel"] as const;
 
 // ── Category section header ────────────────────────────────────────────────
 

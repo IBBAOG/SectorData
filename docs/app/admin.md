@@ -41,7 +41,7 @@ home/
 └── mobile/View.tsx     Mobile: 4 collapsible category sections, icon rows, sticky search
 ```
 
-**Desktop view** — redesigned 2026-05-26 (icon list). Vertical list of compact rows inside the left 70% column. One card per row: 40×40px rounded icon bubble + module name + optional badge + chevron. Icon glows orange on hover (`#ff5000`, glow shadow), row translates right 4px, left accent bar animates in. Categories (Markets / Oil & Gas / Fuel Distribution / Admin) are separated by a `SectionHeader` with a category-color bar + divider line.
+**Desktop view** — redesigned 2026-05-26 (icon list). Vertical list of compact rows inside the left 70% column. One card per row: 40×40px rounded icon bubble + module name + optional badge + chevron. Icon glows orange on hover (`#ff5000`, glow shadow), row translates right 4px, left accent bar animates in. Categories (Markets / Oil & Gas / Fuel Distribution) are separated by a `SectionHeader` with a category-color bar + divider line. The former "Admin" category (Profile + Admin Panel) was removed 2026-05-26 — those tools are accessed via the NavBar.
 
 **Mobile view** — redesigned 2026-05-26 (icon list, same analysis as desktop). Components used:
 - `MobileTopBar` (wordmark + avatar initials / Sign-in pill for anon)
@@ -55,8 +55,7 @@ home/
 - Applies two-axis visibility filter (same logic as original HomeClient)
 - `search` state: live-filters title + description across all cards
 - `collapsed` state: per-category expand/collapse (mobile only; desktop ignores it)
-- `cardsByCategory`: `Record<HomeCategory, HomeCardDef[]>` for mobile category sections
-  - Admin section appends static cards (`/profile`, `/admin-panel`) not in `module_visibility`
+- `cardsByCategory`: `Record<HomeCategory, HomeCardDef[]>` for mobile category sections (Markets / Oil & Gas / Fuel Distribution — Admin section removed 2026-05-26)
 
 **Divergence from mockup** — the mockup's `MDIC Comex` card is in the Oil & Gas section. This reflects the module's dual classification (`Estatísticas / Oil & Gas` and `Fuel Distribution`). In code, `mdic-comex` is assigned `oilgas` category (matching mockup) even though it also covers fuel distribution.
 
@@ -521,6 +520,24 @@ Arquitetura extensível baseada em registry. Substitui o workflow de editar `dat
 As políticas de escrita para `price_bands` e `d_g_margins` são criadas pela migration
 `supabase/migrations/20260512000000_data_input_admin_policies.sql` (worker_supabase, branch paralela).
 Sem a migration, writes retornam 403 — a UI renderiza mas não persiste.
+
+## Changelog — Remove Admin section from home cards (2026-05-26)
+
+The "Admin" category section (Profile + Admin Panel cards) was removed from `/home` — the home is now identical for all roles (Anon / Client / Admin).
+
+Profile and Admin Panel remain accessible via the NavBar (avatar dropdown / admin link). They are tools, not dashboard modules, and do not belong in the module gallery.
+
+**Changes:**
+
+| File | Change |
+|---|---|
+| `useHomeData.ts` | `HomeCategory` type dropped `"admin"` variant; `HomeSectionState` dropped `admin` key; `ADMIN_CARDS` constant removed; `cardsByCategory` memo simplified — no longer appends static admin entries per-role |
+| `desktop/View.tsx` | Removed `admin` from `CATEGORY_ORDER`, `CATEGORY_LABELS`, `CATEGORY_ACCENT` |
+| `mobile/View.tsx` | Removed `admin` from `CATEGORY_ORDER`, `CATEGORY_LABELS`, `CATEGORY_ACCENT`, `CATEGORY_ACCENT_SOFT`; updated file-header comment (4× → 3× sections) |
+
+The slugs `profile` and `admin-panel` remain registered in `src/data/moduleIcons.tsx` (used elsewhere, e.g. NavBar) and are **not** touched.
+
+---
 
 ## Changelog — Drop orphan `card_previews` table + Storage bucket (2026-05-26)
 
