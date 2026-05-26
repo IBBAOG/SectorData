@@ -8,10 +8,15 @@
 // Contract (canonical dual-view shape):
 //   { rows, loading, error, filters, setFilters, ...derived }
 //
+// Dual-agent layout (new as of the 9-column RPC):
+//   - chartImporter / chartProducer — two independent Plotly chart objects
+//   - currentValuesImporter / currentValuesProducer — latest + WoW per series
+//   - activeSubsidyImporter / activeSubsidyProducer — Reference − Commercialization
+//
 // All chart construction (4-trace lines + regional hover + end-of-line
 // annotations) happens here so both Views render an identical analysis. The
-// mobile View pulls a thinner version of the layout via `buildMobileChart`,
-// preserving the same data + traces but with relaxed margins / smaller fonts.
+// mobile View pulls a thinner version of the layout via the mobile-layout
+// override, preserving the same data + traces but with relaxed margins.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Annotations, Layout, PlotData } from "plotly.js";
@@ -38,22 +43,40 @@ export const COLOR_PETRO = "#0F766E"; // teal    — Petrobras
 
 export type SeriesField =
   | "ipp"
-  | "anp_reference"
-  | "anp_commercialization"
+  | "anp_reference_importer"
+  | "anp_commercialization_importer"
+  | "anp_reference_producer"
+  | "anp_commercialization_producer"
   | "petrobras";
 
 export interface SeriesDef {
   label: string;
   field: SeriesField;
   color: string;
+  /** When set, the trace carries regional customdata from this row field. */
+  regionsField?: "regions_importer" | "regions_producer";
 }
 
-export const SERIES: SeriesDef[] = [
-  { label: "IPP",                   field: "ipp",                   color: COLOR_IPP   },
-  { label: "ANP Reference",         field: "anp_reference",         color: COLOR_REF   },
-  { label: "ANP Commercialization", field: "anp_commercialization", color: COLOR_COMM  },
-  { label: "Petrobras",             field: "petrobras",             color: COLOR_PETRO },
+// Importer-agent series (chart 1)
+export const SERIES_IMPORTER: SeriesDef[] = [
+  { label: "IPP",                   field: "ipp",                            color: COLOR_IPP   },
+  { label: "ANP Reference",         field: "anp_reference_importer",         color: COLOR_REF,  regionsField: "regions_importer" },
+  { label: "ANP Commercialization", field: "anp_commercialization_importer", color: COLOR_COMM  },
+  { label: "Petrobras",             field: "petrobras",                      color: COLOR_PETRO },
 ];
+
+// Producer-agent series (chart 2) — same labels, different fields
+export const SERIES_PRODUCER: SeriesDef[] = [
+  { label: "IPP",                   field: "ipp",                            color: COLOR_IPP   },
+  { label: "ANP Reference",         field: "anp_reference_producer",         color: COLOR_REF,  regionsField: "regions_producer" },
+  { label: "ANP Commercialization", field: "anp_commercialization_producer", color: COLOR_COMM  },
+  { label: "Petrobras",             field: "petrobras",                      color: COLOR_PETRO },
+];
+
+// Legacy alias kept for the mobile FilterDrawer trace-visibility toggles.
+// The FilterDrawer only needs labels + colors (not field specifics), so we
+// expose SERIES_IMPORTER as the canonical label reference.
+export const SERIES = SERIES_IMPORTER;
 
 // Hardcoded floor for the chart window — matches the previous page.tsx.
 export const MIN_DATE = "2026-02-01";
@@ -83,8 +106,13 @@ export function formatRegions(
 }
 
 // ─── Filters ─────────────────────────────────────────────────────────────────
+//
+// TraceVisibility keyed by SeriesField — however the mobile FilterDrawer only
+// uses the 4 importer-side fields as toggle keys (IPP, anp_reference_importer,
+// anp_commercialization_importer, petrobras). Producer-side visibility is derived
+// from the corresponding importer key for simplicity.
 
-export type TraceVisibility = Record<SeriesField, boolean>;
+export type TraceVisibility = Partial<Record<SeriesField, boolean>>;
 
 export interface SubsidyTrackerFilters {
   /** Slider range expressed as [startIndex, endIndex] into the `datas` array. */
@@ -93,7 +121,7 @@ export interface SubsidyTrackerFilters {
   traces: TraceVisibility;
 }
 
-// ─── Derived shape ───────────────────────────────────────────────────────────
+// ─── Derived shapes ───────────────────────────────────────────────────────────
 
 export interface SubsidyTrackerCurrent {
   field: SeriesField;
@@ -101,6 +129,23 @@ export interface SubsidyTrackerCurrent {
   color: string;
   value: number | null;
   date: string | null;
+}
+
+/** Extended current-value row including week-on-week change. */
+export interface SubsidyTrackerWowRow extends SubsidyTrackerCurrent {
+  /** Most recent non-null value in the window. */
+  latestValue: number | null;
+  /** Date of the latest non-null reading. */
+  latestDate: string | null;
+  /** Non-null reading whose date ≤ latestDate − 7 calendar days. */
+  priorValue: number | null;
+  /** Date of the prior reading. */
+  priorDate: string | null;
+  /**
+   * Week-on-week % change: (latestValue − priorValue) / priorValue × 100.
+   * Null when either side is missing or priorValue === 0.
+   */
+  wowPct: number | null;
 }
 
 export interface UseSubsidyTrackerData {
@@ -116,12 +161,18 @@ export interface UseSubsidyTrackerData {
   /** xMin / xMax computed from `sliderRange`. */
   xMin: string | null;
   xMax: string | null;
-  /** Pre-built chart for the desktop archetype (full annotations + spike). */
-  chart: { data: PlotData[]; layout: Partial<Layout> };
-  /** Latest non-null value snapshot per series (across the filtered window). */
-  currentValues: SubsidyTrackerCurrent[];
-  /** Single active-subsidy estimate at xMax (ANP Reference − ANP Commerc.). */
-  activeSubsidy: number | null;
+  /** Pre-built chart for the importer-agent view (full annotations + spike). */
+  chartImporter: { data: PlotData[]; layout: Partial<Layout> };
+  /** Pre-built chart for the producer-agent view (full annotations + spike). */
+  chartProducer: { data: PlotData[]; layout: Partial<Layout> };
+  /** Latest non-null value + WoW snapshot per series (importer agent). */
+  currentValuesImporter: SubsidyTrackerWowRow[];
+  /** Latest non-null value + WoW snapshot per series (producer agent). */
+  currentValuesProducer: SubsidyTrackerWowRow[];
+  /** Active subsidy for importer agent (Reference − Commercialization). */
+  activeSubsidyImporter: number | null;
+  /** Active subsidy for producer agent (Reference − Commercialization). */
+  activeSubsidyProducer: number | null;
   /** Export helpers — hooks own the busy state. */
   exportExcel: () => Promise<void>;
   exportCsv: () => void;
@@ -146,9 +197,10 @@ function addDays(dateStr: string, days: number): string {
 
 // ─── Chart builder (desktop archetype) ───────────────────────────────────────
 //
-// Replicates the chart from the original page.tsx verbatim:
+// Builds a single Plotly chart from the given series definitions:
 //   - 4 line traces (`scatter` + `mode='lines'` + `connectgaps: true`)
-//   - ANP Reference trace carries `customdata` with the regional breakdown
+//   - ANP Reference trace (detected via s.regionsField) carries `customdata`
+//     with the regional breakdown for the hover tooltip
 //   - End-of-line annotations stacked at the right edge with min-gap pushdown
 //   - x range extended +30 days past the last point for label clearance
 
@@ -157,6 +209,7 @@ export function buildChart(
   xMin: string | null,
   xMax: string | null,
   traces: TraceVisibility,
+  series: SeriesDef[],
 ): { data: PlotData[]; layout: Partial<Layout> } {
   const filtered = rows
     .filter((r) => r.date >= MIN_DATE)
@@ -169,25 +222,21 @@ export function buildChart(
 
   const dates = filtered.map((r) => r.date);
 
-  // Regional hover for ANP Reference. We pre-build the breakdown string per
-  // point because Plotly's hovertemplate cannot conditionally suppress its own
-  // substitution lines — feeding raw `regions` objects with possible null
-  // entries produces blank/NaN cells.
-  const regionCustomdata = filtered.map((r) =>
-    formatRegions(r.regions ?? null),
-  );
-
-  const referenceHover =
+  const referenceHoverTemplate =
     "<b>%{x}</b><br>" +
     "ANP Reference: R$ %{y:.2f}/L<br><br>" +
     "%{customdata}<extra></extra>";
 
-  const visibleSeries = SERIES.filter((s) => traces[s.field]);
+  const visibleSeries = series.filter((s) => traces[s.field] !== false);
 
   const traceData: PlotData[] = visibleSeries.map((s) => {
     const y = filtered.map((r) => r[s.field] as number | null);
 
-    if (s.field === "anp_reference") {
+    if (s.regionsField) {
+      // ANP Reference trace — attach regional breakdown as customdata
+      const regionCustomdata = filtered.map((r) =>
+        formatRegions((r[s.regionsField!] as Record<string, number> | null) ?? null),
+      );
       return {
         type: "scatter",
         mode: "lines",
@@ -197,7 +246,7 @@ export function buildChart(
         line: { color: s.color, width: 2, shape: "linear" },
         connectgaps: true,
         customdata: regionCustomdata,
-        hovertemplate: referenceHover,
+        hovertemplate: referenceHoverTemplate,
       } as unknown as PlotData;
     }
 
@@ -234,7 +283,7 @@ export function buildChart(
       tips[0].date,
     );
 
-    // Sort by value desc, tie-break by declared SERIES order.
+    // Sort by value desc, tie-break by declared series order.
     const sorted = [...tips].sort(
       (a, b) => b.value - a.value || a.idx - b.idx,
     );
@@ -304,32 +353,63 @@ export function buildChart(
         automargin: true,
       },
       legend: { orientation: "h", y: -0.25, x: 0.5, xanchor: "center" },
-      height: 480,
+      height: 420,
       margin: { t: 20, b: 110, l: 65, r: 90 },
       annotations,
     },
   };
 }
 
-// ─── Current-values snapshot ─────────────────────────────────────────────────
+// ─── WoW snapshot builder ─────────────────────────────────────────────────────
+//
+// For each series: finds the latest non-null reading, then walks backward to
+// find the most recent reading whose date ≤ latestDate − 7 calendar days.
+// Returns wowPct = null when prior reading is unavailable.
 
-function buildCurrentValues(
+export function buildCurrentValuesWithWoW(
   rows: SubsidyTrackerRow[],
   xMin: string | null,
   xMax: string | null,
-): SubsidyTrackerCurrent[] {
+  series: SeriesDef[],
+): SubsidyTrackerWowRow[] {
   const scoped = rows
     .filter((r) => (!xMin || r.date >= xMin) && (!xMax || r.date <= xMax))
-    .sort((a, b) => b.date.localeCompare(a.date));
+    .sort((a, b) => b.date.localeCompare(a.date)); // desc
 
-  return SERIES.map((s) => {
-    const lastRow = scoped.find((r) => r[s.field] != null);
+  return series.map((s) => {
+    // Latest non-null reading
+    const latestRow = scoped.find((r) => r[s.field] != null);
+    const latestValue = (latestRow?.[s.field] as number | null) ?? null;
+    const latestDate = latestRow?.date ?? null;
+
+    // Prior reading: most recent with date ≤ latestDate − 7 days
+    let priorValue: number | null = null;
+    let priorDate: string | null = null;
+    if (latestDate != null) {
+      const targetDate = addDays(latestDate, -7);
+      const priorRow = scoped.find(
+        (r) => r.date <= targetDate && r[s.field] != null,
+      );
+      priorValue = (priorRow?.[s.field] as number | null) ?? null;
+      priorDate = priorRow?.date ?? null;
+    }
+
+    const wowPct =
+      latestValue != null && priorValue != null && priorValue !== 0
+        ? ((latestValue - priorValue) / priorValue) * 100
+        : null;
+
     return {
       field: s.field,
       label: s.label,
       color: s.color,
-      value: (lastRow?.[s.field] as number | null) ?? null,
-      date: lastRow?.date ?? null,
+      value: latestValue,
+      date: latestDate,
+      latestValue,
+      latestDate,
+      priorValue,
+      priorDate,
+      wowPct,
     };
   });
 }
@@ -338,8 +418,10 @@ function buildCurrentValues(
 
 const DEFAULT_TRACE_VISIBILITY: TraceVisibility = {
   ipp: true,
-  anp_reference: true,
-  anp_commercialization: true,
+  anp_reference_importer: true,
+  anp_commercialization_importer: true,
+  anp_reference_producer: true,
+  anp_commercialization_producer: true,
   petrobras: true,
 };
 
@@ -434,24 +516,39 @@ export function useSubsidyTrackerData(): UseSubsidyTrackerData {
     });
   }, [datas]);
 
-  const chart = useMemo(
-    () => buildChart(rows, xMin, xMax, filters.traces),
+  const chartImporter = useMemo(
+    () => buildChart(rows, xMin, xMax, filters.traces, SERIES_IMPORTER),
     [rows, xMin, xMax, filters.traces],
   );
 
-  const currentValues = useMemo(
-    () => buildCurrentValues(rows, xMin, xMax),
+  const chartProducer = useMemo(
+    () => buildChart(rows, xMin, xMax, filters.traces, SERIES_PRODUCER),
+    [rows, xMin, xMax, filters.traces],
+  );
+
+  const currentValuesImporter = useMemo(
+    () => buildCurrentValuesWithWoW(rows, xMin, xMax, SERIES_IMPORTER),
     [rows, xMin, xMax],
   );
 
-  const activeSubsidy = useMemo(() => {
-    const ref = currentValues.find((c) => c.field === "anp_reference")?.value;
-    const comm = currentValues.find(
-      (c) => c.field === "anp_commercialization",
-    )?.value;
+  const currentValuesProducer = useMemo(
+    () => buildCurrentValuesWithWoW(rows, xMin, xMax, SERIES_PRODUCER),
+    [rows, xMin, xMax],
+  );
+
+  const activeSubsidyImporter = useMemo(() => {
+    const ref  = currentValuesImporter.find((c) => c.field === "anp_reference_importer")?.latestValue;
+    const comm = currentValuesImporter.find((c) => c.field === "anp_commercialization_importer")?.latestValue;
     if (ref == null || comm == null) return null;
     return ref - comm;
-  }, [currentValues]);
+  }, [currentValuesImporter]);
+
+  const activeSubsidyProducer = useMemo(() => {
+    const ref  = currentValuesProducer.find((c) => c.field === "anp_reference_producer")?.latestValue;
+    const comm = currentValuesProducer.find((c) => c.field === "anp_commercialization_producer")?.latestValue;
+    if (ref == null || comm == null) return null;
+    return ref - comm;
+  }, [currentValuesProducer]);
 
   const exportExcel = useCallback(async () => {
     setExcelLoading(true);
@@ -459,15 +556,17 @@ export function useSubsidyTrackerData(): UseSubsidyTrackerData {
       await downloadGenericExcel({
         rows: rows as unknown as Record<string, unknown>[],
         filename: "subsidy_tracker_diesel",
-        title: "Subsidy Tracker — Diesel",
+        title: "Subsidy Tracker — Diesel (Importer + Producer)",
         sheetName: "Diesel",
         mergeTitleCells: true,
         columns: [
-          { header: "Date",                  key: "date",                  width: 12, align: "left"   },
-          { header: "IPP",                   key: "ipp",                   width: 12, format: "0.00", align: "center" },
-          { header: "ANP Reference",         key: "anp_reference",         width: 16, format: "0.00", align: "center" },
-          { header: "ANP Commercialization", key: "anp_commercialization", width: 22, format: "0.00", align: "center" },
-          { header: "Petrobras",             key: "petrobras",             width: 12, format: "0.00", align: "center" },
+          { header: "Date",                             key: "date",                             width: 12, align: "left"   },
+          { header: "IPP",                              key: "ipp",                              width: 12, format: "0.00", align: "center" },
+          { header: "ANP Reference (Importer)",         key: "anp_reference_importer",           width: 26, format: "0.00", align: "center" },
+          { header: "ANP Commercialization (Importer)", key: "anp_commercialization_importer",   width: 30, format: "0.00", align: "center" },
+          { header: "ANP Reference (Producer)",         key: "anp_reference_producer",           width: 26, format: "0.00", align: "center" },
+          { header: "ANP Commercialization (Producer)", key: "anp_commercialization_producer",   width: 30, format: "0.00", align: "center" },
+          { header: "Petrobras",                        key: "petrobras",                        width: 12, format: "0.00", align: "center" },
         ],
       });
     } catch (e) {
@@ -484,16 +583,20 @@ export function useSubsidyTrackerData(): UseSubsidyTrackerData {
         rows: rows.map((r) => ({
           date: r.date,
           ipp: r.ipp,
-          anp_reference: r.anp_reference,
-          anp_commercialization: r.anp_commercialization,
+          anp_reference_importer: r.anp_reference_importer,
+          anp_commercialization_importer: r.anp_commercialization_importer,
+          anp_reference_producer: r.anp_reference_producer,
+          anp_commercialization_producer: r.anp_commercialization_producer,
           petrobras: r.petrobras,
         })) as unknown as Record<string, unknown>[],
         filename: "subsidy_tracker_diesel",
         columns: [
           "date",
           "ipp",
-          "anp_reference",
-          "anp_commercialization",
+          "anp_reference_importer",
+          "anp_commercialization_importer",
+          "anp_reference_producer",
+          "anp_commercialization_producer",
           "petrobras",
         ],
       });
@@ -513,9 +616,12 @@ export function useSubsidyTrackerData(): UseSubsidyTrackerData {
     datas,
     xMin,
     xMax,
-    chart,
-    currentValues,
-    activeSubsidy,
+    chartImporter,
+    chartProducer,
+    currentValuesImporter,
+    currentValuesProducer,
+    activeSubsidyImporter,
+    activeSubsidyProducer,
     exportExcel,
     exportCsv,
     excelLoading,

@@ -2,14 +2,16 @@
 
 // ─── Desktop view for /subsidy-tracker ────────────────────────────────────────
 //
-// Verbatim port of the previous single-file page.tsx — the single Plotly chart
-// with 4 line traces (IPP / ANP Reference / ANP Commercialization / Petrobras)
-// in BRL/Liter. The ANP Reference trace exposes the 5 regional breakdown via
-// Plotly `customdata` for a rich hover tooltip.
+// Dual-agent layout: two Plotly charts side-by-side on ≥lg viewports, stacked
+// on <lg. Each chart shows the 4-trace analysis (IPP / ANP Reference /
+// ANP Commercialization / Petrobras) for its respective agent type, followed
+// by a WoW table with the latest reading and week-on-week % change.
+//
+//   Left column  — Importer Reference Prices
+//   Right column — Producer Reference Prices
 //
 // All data, derivations and chart construction live in useSubsidyTrackerData.
-// This View only handles layout, NavBar, header, export panel and the error
-// boundary wiring.
+// This View only handles layout, NavBar, header, export panel, and error wiring.
 //
 // Binding sync rule: any new filter, chart, or KPI added here must also land
 // in mobile/View.tsx in the same commit, or declare [desktop-only] with reason.
@@ -22,6 +24,7 @@ import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 import DataErrorBoundary from "../../../../components/dashboard/DataErrorBoundary";
 import { useModuleVisibilityGuard } from "../../../../hooks/useModuleVisibilityGuard";
 import { useSubsidyTrackerData } from "../useSubsidyTrackerData";
+import WowTable from "./WowTable";
 
 export default function DesktopView(): React.ReactElement {
   const { visible, loading: visLoading } = useModuleVisibilityGuard("subsidy-tracker");
@@ -30,7 +33,10 @@ export default function DesktopView(): React.ReactElement {
     loading: rpcLoading,
     error: rpcError,
     refetch: rpcRefetch,
-    chart,
+    chartImporter,
+    chartProducer,
+    currentValuesImporter,
+    currentValuesProducer,
     exportExcel,
     exportCsv,
     excelLoading,
@@ -38,7 +44,7 @@ export default function DesktopView(): React.ReactElement {
   } = useSubsidyTrackerData();
 
   // First-load spinner is shown while the very first fetch is in flight AND
-  // we have no rows yet. Subsequent refetches keep the existing chart visible.
+  // we have no rows yet. Subsequent refetches keep the existing charts visible.
   const initialLoading = rpcLoading && rows.length === 0 && rpcError == null;
 
   if (visLoading || !visible) return <></>;
@@ -84,12 +90,48 @@ export default function DesktopView(): React.ReactElement {
           {initialLoading ? (
             <BarrelLoading />
           ) : (
-            <div style={{ marginTop: 16 }}>
-              <PlotlyChart
-                data={chart.data}
-                layout={chart.layout}
-                config={{ displayModeBar: false }}
-              />
+            <div className="row g-4" style={{ marginTop: 16 }}>
+              {/* ── Importer Reference Prices ─────────────────────────────── */}
+              <div className="col-12 col-lg-6">
+                <h6
+                  className="mb-2"
+                  style={{
+                    fontWeight: 600,
+                    fontFamily: "Arial, Helvetica, sans-serif",
+                    fontSize: 14,
+                    color: "#333",
+                  }}
+                >
+                  Importer Reference Prices
+                </h6>
+                <PlotlyChart
+                  data={chartImporter.data}
+                  layout={chartImporter.layout}
+                  config={{ displayModeBar: false }}
+                />
+                <WowTable rows={currentValuesImporter} />
+              </div>
+
+              {/* ── Producer Reference Prices ─────────────────────────────── */}
+              <div className="col-12 col-lg-6">
+                <h6
+                  className="mb-2"
+                  style={{
+                    fontWeight: 600,
+                    fontFamily: "Arial, Helvetica, sans-serif",
+                    fontSize: 14,
+                    color: "#333",
+                  }}
+                >
+                  Producer Reference Prices
+                </h6>
+                <PlotlyChart
+                  data={chartProducer.data}
+                  layout={chartProducer.layout}
+                  config={{ displayModeBar: false }}
+                />
+                <WowTable rows={currentValuesProducer} />
+              </div>
             </div>
           )}
         </DataErrorBoundary>

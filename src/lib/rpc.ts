@@ -1991,12 +1991,15 @@ export async function rpcGetAnalyticsHeatmap(
 // hover tooltip; it may be null when no ETL extraction exists for the day.
 
 export type SubsidyTrackerRow = {
-  date: string;                            // YYYY-MM-DD
-  ipp: number | null;                      // BBA import parity, Diesel
-  anp_reference: number | null;            // daily avg across 5 regions
-  anp_commercialization: number | null;    // anp_reference - active_subsidy
-  petrobras: number | null;                // Petrobras price, Diesel
-  regions: Record<string, number> | null;  // { NORTE, NORDESTE, ... }
+  date: string;                                        // YYYY-MM-DD
+  ipp: number | null;                                  // BBA import parity, Diesel
+  anp_reference_importer: number | null;               // daily avg across 5 regions (importer agent)
+  anp_commercialization_importer: number | null;       // anp_reference_importer - active_subsidy
+  anp_reference_producer: number | null;               // daily avg across 5 regions (producer agent)
+  anp_commercialization_producer: number | null;       // anp_reference_producer - active_subsidy
+  petrobras: number | null;                            // Petrobras price, Diesel
+  regions_importer: Record<string, number> | null;     // { NORTE, NORDESTE, ... } for importer
+  regions_producer: Record<string, number> | null;     // { NORTE, NORDESTE, ... } for producer
 };
 
 export async function rpcGetSubsidyTrackerDiesel(

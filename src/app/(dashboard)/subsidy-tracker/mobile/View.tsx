@@ -2,20 +2,33 @@
 
 // ─── Mobile view for /subsidy-tracker ─────────────────────────────────────────
 //
-// Archetype: chart-heavy single-product (closest neighbour: market-share-mobile,
-// price-bands-mobile). The same 4-trace analysis as the desktop, adapted UX:
+// Dual-agent layout: two chart blocks stacked vertically, separated by a
+// divider and section headers ("Importer" / "Producer"). Each block contains:
 //
-//   MobileTopBar           — title + filter trigger button
+//   MobileTopBar           — title + filter trigger button (top of page)
 //   Date chip strip        — 30 D / 90 D / 6 M / 1 Y / All shortcuts
-//   Section: chart         — MobileChart, 4 traces, brand colours
-//   Section: latest values — MobileDataCard per trace + active-subsidy badge
+//   Block 1: Importer Reference Prices
+//     MobileChart          — 4 traces, brand colours
+//     Active subsidy badge — Reference − Commercialization (importer)
+//     Latest values cards  — with WoW % chip per series
+//     Regional breakdown   — tap-to-show importer regions
+//   Divider
+//   Block 2: Producer Reference Prices
+//     MobileChart          — 4 traces, brand colours
+//     Active subsidy badge — Reference − Commercialization (producer)
+//     Latest values cards  — with WoW % chip per series
+//     Regional breakdown   — tap-to-show producer regions
 //   ExportFAB              — Excel + CSV (Tier 1)
 //   FilterDrawer           — period slider + per-trace visibility toggles
+//                            (governs BOTH charts uniformly)
 //
-// [mobile-only] divergence vs. desktop:
+// [mobile-only] divergences vs. desktop:
 //   • Regional ANP Reference breakdown is exposed as a TAP-TO-SHOW card under
 //     the "Latest values" section instead of a hover tooltip — touch
 //     devices have no hover.
+//   • End-of-line value annotations are dropped; replaced by "Latest values"
+//     cards below each chart.
+//   • Per-trace visibility via toggle switches in FilterDrawer (not Plotly legend).
 //
 // Binding sync rule: any new filter / chart / KPI added here must also land in
 // desktop/View.tsx in the same commit, or declare [mobile-only] with reason.
@@ -39,10 +52,11 @@ import {
   useSubsidyTrackerData,
   fmtDateLabel,
   formatRegions,
-  SERIES,
+  SERIES_IMPORTER,
   REGION_ORDER,
   type SeriesField,
   type SubsidyTrackerRow,
+  type SubsidyTrackerWowRow,
 } from "../useSubsidyTrackerData";
 
 // ─── Date-range chip helpers ──────────────────────────────────────────────────
@@ -162,28 +176,93 @@ function SectionLabel({
   );
 }
 
+// ─── Agent block divider ─────────────────────────────────────────────────────
+
+function AgentDivider({ label }: { label: string }): React.ReactElement {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "20px 16px 4px",
+      }}
+    >
+      <div style={{ flex: 1, height: 1, background: "var(--mobile-divider)" }} />
+      <span
+        style={{
+          fontSize: 12,
+          fontWeight: 700,
+          color: "var(--mobile-text-muted)",
+          fontFamily: "Arial",
+          letterSpacing: "0.04em",
+          textTransform: "uppercase",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {label}
+      </span>
+      <div style={{ flex: 1, height: 1, background: "var(--mobile-divider)" }} />
+    </div>
+  );
+}
+
+// ─── WoW chip ────────────────────────────────────────────────────────────────
+
+function WowChip({ pct }: { pct: number | null }): React.ReactElement | null {
+  if (pct == null) return null;
+  const positive = pct > 0;
+  const bg = positive ? "rgba(21,128,61,0.10)" : pct < 0 ? "rgba(185,28,28,0.10)" : "rgba(0,0,0,0.05)";
+  const color = positive ? "#15803d" : pct < 0 ? "#b91c1c" : "#555";
+  const sign = positive ? "+" : "";
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        padding: "2px 7px",
+        borderRadius: 10,
+        background: bg,
+        color,
+        fontSize: 11,
+        fontWeight: 700,
+        fontFamily: "Arial",
+        fontVariantNumeric: "tabular-nums",
+        marginTop: 2,
+      }}
+    >
+      {sign}{pct.toFixed(2)}%
+    </span>
+  );
+}
+
 // ─── Regional breakdown card ─────────────────────────────────────────────────
 // Replaces the desktop hover tooltip ([mobile-only] divergence).
 
 function RegionalBreakdownCard({
   rows,
   xMax,
+  regionsField,
+  label,
 }: {
   rows: SubsidyTrackerRow[];
   xMax: string | null;
+  regionsField: "regions_importer" | "regions_producer";
+  label: string;
 }): React.ReactElement | null {
   const latestWithRegions = useMemo(() => {
     const scoped = xMax ? rows.filter((r) => r.date <= xMax) : rows;
     const sorted = [...scoped].sort((a, b) => b.date.localeCompare(a.date));
-    return sorted.find((r) => r.regions != null) ?? null;
-  }, [rows, xMax]);
+    return sorted.find((r) => r[regionsField] != null) ?? null;
+  }, [rows, xMax, regionsField]);
 
-  if (!latestWithRegions || !latestWithRegions.regions) return null;
+  if (!latestWithRegions) return null;
+  const regionData = latestWithRegions[regionsField] as Record<string, number> | null;
+  if (!regionData) return null;
 
   return (
     <>
       <SectionLabel>
-        Regional breakdown
+        {label} — regional breakdown
         <span style={{ fontWeight: 400, marginLeft: 6, textTransform: "none", letterSpacing: 0 }}>
           · {fmtDateLabel(latestWithRegions.date)}
         </span>
@@ -195,7 +274,7 @@ function RegionalBreakdownCard({
         }}
       >
         {REGION_ORDER.map((region) => {
-          const value = latestWithRegions.regions?.[region];
+          const value = regionData[region];
           return (
             <MobileDataCard
               key={region}
@@ -224,6 +303,257 @@ function RegionalBreakdownCard({
   );
 }
 
+// ─── Agent block (chart + badge + latest values + regional breakdown) ─────────
+
+interface AgentBlockProps {
+  label: string;
+  chartData: ReturnType<typeof useSubsidyTrackerData>["chartImporter"];
+  currentValues: SubsidyTrackerWowRow[];
+  activeSubsidy: number | null;
+  rows: SubsidyTrackerRow[];
+  xMax: string | null;
+  regionsField: "regions_importer" | "regions_producer";
+  traceFilter: (field: SeriesField) => boolean;
+  seriesColorKey: typeof SERIES_IMPORTER;
+}
+
+function AgentBlock({
+  label,
+  chartData,
+  currentValues,
+  activeSubsidy,
+  rows,
+  xMax,
+  regionsField,
+  traceFilter,
+  seriesColorKey,
+}: AgentBlockProps): React.ReactElement {
+  const [showRegional, setShowRegional] = useState(false);
+
+  const hasRegions = useMemo(
+    () => rows.some((r) => r[regionsField] != null),
+    [rows, regionsField],
+  );
+
+  const chartLayout = useMemo<Partial<Layout>>(() => {
+    const base = mobileChartLayout(280);
+    return { ...base, annotations: [] };
+  }, []);
+
+  return (
+    <>
+      {/* ── Chart ─────────────────────────────────────────────────────────── */}
+      <SectionLabel>{label} — subsidy timeline</SectionLabel>
+      <div
+        style={{
+          background: "var(--mobile-surface)",
+          borderTop: "1px solid var(--mobile-divider)",
+          borderBottom: "1px solid var(--mobile-divider)",
+          padding: "0 8px 12px",
+        }}
+      >
+        <MobileChart
+          data={chartData.data}
+          layout={chartLayout}
+          height={280}
+        />
+        {/* Color-key legend (4 traces) */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: "4px 12px",
+            padding: "4px 8px 0",
+          }}
+        >
+          {seriesColorKey.filter((s) => traceFilter(s.field)).map((s) => (
+            <div
+              key={s.field}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 11,
+                color: "var(--mobile-text-muted)",
+                minHeight: 22,
+              }}
+            >
+              <ColorDot color={s.color} />
+              {s.label}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Active subsidy badge ───────────────────────────────────────────── */}
+      {activeSubsidy != null && (
+        <div style={{ padding: "12px 16px 0" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "10px 14px",
+              borderRadius: 12,
+              background: "rgba(255, 80, 0, 0.08)",
+              border: "1px solid rgba(255, 80, 0, 0.3)",
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "var(--mobile-accent)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                }}
+              >
+                Active subsidy
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--mobile-text-muted)",
+                  marginTop: 2,
+                }}
+              >
+                Reference − Commercialization
+              </div>
+            </div>
+            <div
+              style={{
+                fontSize: 22,
+                fontWeight: 700,
+                color: "var(--mobile-accent)",
+                fontFamily: "Arial",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              R$ {activeSubsidy.toFixed(2)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Latest values ─────────────────────────────────────────────────── */}
+      <SectionLabel>
+        Latest values
+        {(() => {
+          const anyDate = currentValues.find((c) => c.date)?.date;
+          return anyDate ? (
+            <span
+              style={{
+                fontWeight: 400,
+                marginLeft: 6,
+                textTransform: "none",
+                letterSpacing: 0,
+              }}
+            >
+              · {fmtDateLabel(anyDate)}
+            </span>
+          ) : null;
+        })()}
+      </SectionLabel>
+
+      <div
+        style={{
+          background: "var(--mobile-surface)",
+          borderTop: "1px solid var(--mobile-divider)",
+        }}
+      >
+        {currentValues.map((cv) => {
+          const hidden = !traceFilter(cv.field);
+          return (
+            <MobileDataCard
+              key={cv.field}
+              variant="compact"
+              leftIcon={<ColorDot color={cv.color} />}
+              title={cv.label}
+              rightSlot={
+                <div style={{ textAlign: "right" }}>
+                  <div
+                    style={{
+                      fontSize: 15,
+                      fontWeight: 700,
+                      color: hidden
+                        ? "var(--mobile-text-faint)"
+                        : "var(--mobile-text)",
+                      fontFamily: "Arial",
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {cv.value != null
+                      ? `R$ ${cv.value.toFixed(2)}`
+                      : "—"}
+                  </div>
+                  <WowChip pct={cv.wowPct} />
+                  {hidden && (
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: "var(--mobile-text-faint)",
+                        fontFamily: "Arial",
+                      }}
+                    >
+                      Hidden
+                    </div>
+                  )}
+                </div>
+              }
+            />
+          );
+        })}
+      </div>
+
+      {/* ── Tap to show regional breakdown (mobile-only divergence) ──────── */}
+      {hasRegions && (
+        <>
+          <div style={{ padding: "12px 16px 0" }}>
+            <button
+              type="button"
+              onClick={() => setShowRegional((v) => !v)}
+              style={{
+                width: "100%",
+                minHeight: 44,
+                padding: "0 16px",
+                borderRadius: 12,
+                border: "1px solid var(--mobile-divider)",
+                background: "var(--mobile-surface)",
+                color: "var(--mobile-text)",
+                fontFamily: "Arial",
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <span>ANP Reference — regional breakdown</span>
+              <ChevronDownIcon
+                size={16}
+                style={{
+                  transition: "transform 0.15s ease",
+                  transform: showRegional ? "rotate(180deg)" : "rotate(0deg)",
+                }}
+              />
+            </button>
+          </div>
+          {showRegional && (
+            <RegionalBreakdownCard
+              rows={rows}
+              xMax={xMax}
+              regionsField={regionsField}
+              label={label}
+            />
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
 // ─── Mobile View ──────────────────────────────────────────────────────────────
 
 export default function MobileView(): React.ReactElement {
@@ -237,9 +567,12 @@ export default function MobileView(): React.ReactElement {
     datas,
     xMin,
     xMax,
-    chart,
-    currentValues,
-    activeSubsidy,
+    chartImporter,
+    chartProducer,
+    currentValuesImporter,
+    currentValuesProducer,
+    activeSubsidyImporter,
+    activeSubsidyProducer,
     exportExcel,
     exportCsv,
     excelLoading,
@@ -248,7 +581,6 @@ export default function MobileView(): React.ReactElement {
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
-  const [showRegional, setShowRegional] = useState(false);
 
   // Active date chip
   const activeDays = useMemo(
@@ -272,23 +604,29 @@ export default function MobileView(): React.ReactElement {
     [filters.traces, setFilters],
   );
 
-  // Chart layout — merge mobile defaults on top of the hook's chart layout,
-  // but drop the desktop end-of-line annotations (they overflow on phones).
-  const chartLayout = useMemo<Partial<Layout>>(() => {
-    const base = mobileChartLayout(300);
-    return {
-      ...base,
-      // Discard the heavy desktop annotations; mobile shows latest values in cards below.
-      annotations: [],
-    };
-  }, []);
-
-  // Sub-PRD requires the regional breakdown to appear on the ANP Reference
-  // trace. On desktop it's a hover tooltip; on mobile we expose it as a
-  // tap-to-show card under the chart ([mobile-only] divergence).
-  const hasRegions = useMemo(
-    () => rows.some((r) => r.regions != null),
-    [rows],
+  // Trace filter helper: maps importer-side visibility to both agent fields.
+  // IPP and Petrobras are shared; ANP Reference/Commercialization are mapped
+  // by toggling the importer key, which mirrors to the producer key.
+  const traceVisible = useCallback(
+    (field: SeriesField): boolean => {
+      // Shared fields
+      if (field === "ipp" || field === "petrobras") {
+        return filters.traces[field] !== false;
+      }
+      // Importer fields
+      if (field === "anp_reference_importer" || field === "anp_commercialization_importer") {
+        return filters.traces[field] !== false;
+      }
+      // Producer fields mirror the corresponding importer toggle
+      if (field === "anp_reference_producer") {
+        return filters.traces["anp_reference_importer"] !== false;
+      }
+      if (field === "anp_commercialization_producer") {
+        return filters.traces["anp_commercialization_importer"] !== false;
+      }
+      return true;
+    },
+    [filters.traces],
   );
 
   if (visLoading || !visible) return <></>;
@@ -390,208 +728,33 @@ export default function MobileView(): React.ReactElement {
         </div>
       ) : (
         <>
-          {/* ── Chart ──────────────────────────────────────────────────────── */}
-          <SectionLabel>Subsidy timeline</SectionLabel>
-          <div
-            style={{
-              background: "var(--mobile-surface)",
-              borderTop: "1px solid var(--mobile-divider)",
-              borderBottom: "1px solid var(--mobile-divider)",
-              padding: "0 8px 12px",
-            }}
-          >
-            <MobileChart
-              data={chart.data}
-              layout={chartLayout}
-              height={300}
-            />
-            {/* Color-key legend (4 traces) */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "4px 12px",
-                padding: "4px 8px 0",
-              }}
-            >
-              {SERIES.filter((s) => filters.traces[s.field]).map((s) => (
-                <div
-                  key={s.field}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    fontSize: 11,
-                    color: "var(--mobile-text-muted)",
-                    minHeight: 22,
-                  }}
-                >
-                  <ColorDot color={s.color} />
-                  {s.label}
-                </div>
-              ))}
-            </div>
-          </div>
+          {/* ── Agent block 1: Importer ───────────────────────────────────── */}
+          <AgentDivider label="Importer Reference Prices" />
+          <AgentBlock
+            label="Importer"
+            chartData={chartImporter}
+            currentValues={currentValuesImporter}
+            activeSubsidy={activeSubsidyImporter}
+            rows={rows}
+            xMax={xMax}
+            regionsField="regions_importer"
+            traceFilter={traceVisible}
+            seriesColorKey={SERIES_IMPORTER}
+          />
 
-          {/* ── Active subsidy badge ───────────────────────────────────────── */}
-          {activeSubsidy != null && (
-            <div style={{ padding: "12px 16px 0" }}>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "10px 14px",
-                  borderRadius: 12,
-                  background: "rgba(255, 80, 0, 0.08)",
-                  border: "1px solid rgba(255, 80, 0, 0.3)",
-                }}
-              >
-                <div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: "var(--mobile-accent)",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.05em",
-                    }}
-                  >
-                    Active subsidy
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "var(--mobile-text-muted)",
-                      marginTop: 2,
-                    }}
-                  >
-                    Reference − Commercialization
-                  </div>
-                </div>
-                <div
-                  style={{
-                    fontSize: 22,
-                    fontWeight: 700,
-                    color: "var(--mobile-accent)",
-                    fontFamily: "Arial",
-                    fontVariantNumeric: "tabular-nums",
-                  }}
-                >
-                  R$ {activeSubsidy.toFixed(2)}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── Latest values ─────────────────────────────────────────────── */}
-          <SectionLabel>
-            Latest values
-            {(() => {
-              const anyDate = currentValues.find((c) => c.date)?.date;
-              return anyDate ? (
-                <span
-                  style={{
-                    fontWeight: 400,
-                    marginLeft: 6,
-                    textTransform: "none",
-                    letterSpacing: 0,
-                  }}
-                >
-                  · {fmtDateLabel(anyDate)}
-                </span>
-              ) : null;
-            })()}
-          </SectionLabel>
-
-          <div
-            style={{
-              background: "var(--mobile-surface)",
-              borderTop: "1px solid var(--mobile-divider)",
-            }}
-          >
-            {currentValues.map((cv) => {
-              const hidden = !filters.traces[cv.field];
-              return (
-                <MobileDataCard
-                  key={cv.field}
-                  variant="compact"
-                  leftIcon={<ColorDot color={cv.color} />}
-                  title={cv.label}
-                  rightSlot={
-                    <div style={{ textAlign: "right" }}>
-                      <div
-                        style={{
-                          fontSize: 15,
-                          fontWeight: 700,
-                          color: hidden
-                            ? "var(--mobile-text-faint)"
-                            : "var(--mobile-text)",
-                          fontFamily: "Arial",
-                          fontVariantNumeric: "tabular-nums",
-                        }}
-                      >
-                        {cv.value != null
-                          ? `R$ ${cv.value.toFixed(2)}`
-                          : "—"}
-                      </div>
-                      {hidden && (
-                        <div
-                          style={{
-                            fontSize: 10,
-                            color: "var(--mobile-text-faint)",
-                            fontFamily: "Arial",
-                          }}
-                        >
-                          Hidden
-                        </div>
-                      )}
-                    </div>
-                  }
-                />
-              );
-            })}
-          </div>
-
-          {/* ── Tap to show regional breakdown (mobile-only divergence) ──── */}
-          {hasRegions && (
-            <>
-              <div style={{ padding: "12px 16px 0" }}>
-                <button
-                  type="button"
-                  onClick={() => setShowRegional((v) => !v)}
-                  style={{
-                    width: "100%",
-                    minHeight: 44,
-                    padding: "0 16px",
-                    borderRadius: 12,
-                    border: "1px solid var(--mobile-divider)",
-                    background: "var(--mobile-surface)",
-                    color: "var(--mobile-text)",
-                    fontFamily: "Arial",
-                    fontSize: 14,
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                  }}
-                >
-                  <span>ANP Reference — regional breakdown</span>
-                  <ChevronDownIcon
-                    size={16}
-                    style={{
-                      transition: "transform 0.15s ease",
-                      transform: showRegional ? "rotate(180deg)" : "rotate(0deg)",
-                    }}
-                  />
-                </button>
-              </div>
-              {showRegional && (
-                <RegionalBreakdownCard rows={rows} xMax={xMax} />
-              )}
-            </>
-          )}
+          {/* ── Agent block 2: Producer ───────────────────────────────────── */}
+          <AgentDivider label="Producer Reference Prices" />
+          <AgentBlock
+            label="Producer"
+            chartData={chartProducer}
+            currentValues={currentValuesProducer}
+            activeSubsidy={activeSubsidyProducer}
+            rows={rows}
+            xMax={xMax}
+            regionsField="regions_producer"
+            traceFilter={traceVisible}
+            seriesColorKey={SERIES_IMPORTER}
+          />
         </>
       )}
 
@@ -641,7 +804,9 @@ export default function MobileView(): React.ReactElement {
           )}
         </div>
 
-        {/* Trace visibility toggles */}
+        {/* Trace visibility toggles — uses importer-side labels as display names.
+            Toggling a key governs the corresponding producer series as well
+            (via traceVisible() mapping above). */}
         <div
           style={{
             paddingTop: 12,
@@ -657,10 +822,10 @@ export default function MobileView(): React.ReactElement {
               fontFamily: "Arial",
             }}
           >
-            Series
+            Series (governs both agent charts)
           </div>
-          {SERIES.map((s) => {
-            const on = filters.traces[s.field];
+          {SERIES_IMPORTER.map((s) => {
+            const on = filters.traces[s.field] !== false;
             return (
               <div
                 key={s.field}
