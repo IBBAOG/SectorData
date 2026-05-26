@@ -241,14 +241,7 @@ function ModuleCard({ slug, title, disabled, href, badge, accent, onNavigate }: 
 
 // ── Main component ─────────────────────────────────────────────────────────
 
-interface DesktopViewProps {
-  initialPreviews: Record<string, string>;
-}
-
-export default function DesktopView({
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  initialPreviews: _initialPreviews,
-}: DesktopViewProps): React.ReactElement {
+export default function DesktopView(): React.ReactElement {
   const router = useRouter();
   const { cardsByCategory } = useHomeData();
 

@@ -97,8 +97,8 @@ export const SECTIONS: SectionMeta[] = [
 ];
 
 // ── Module catalog ─────────────────────────────────────────────────────────────
-// Each slug must match the corresponding CARDS[].slug in HomeClient and have a
-// matching row in the module_visibility DB. Both views render toggles/uploads from this list.
+// Each slug must match the corresponding entry in src/data/moduleIcons.tsx and have a
+// matching row in the module_visibility DB. Both views render toggles from this list.
 
 export interface ModuleLabel {
   slug: string;

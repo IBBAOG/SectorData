@@ -9,9 +9,8 @@ Bundle administrativo. Owner: [`worker_dash-admin`](../../.claude/agents/worker_
 ```
 src/app/(dashboard)/
   home/
-    page.tsx                        Server Component (fetches card_previews, renders HomeRouter)
+    page.tsx                        Server Component (renders HomeRouter)
     HomeRouter.tsx                  Client viewport router (useIsMobile → desktop or mobile)
-    HomeClient.tsx                  Legacy (kept as reference; superseded by desktop/View.tsx)
     useHomeData.ts                  Shared hook — visibility filter, search, collapsed sections
     desktop/View.tsx                Desktop view (grid of image cards, hover reveal)
     mobile/View.tsx                 Mobile view (category sections, gradient thumbs, search)
@@ -35,16 +34,14 @@ This bundle is being migrated to the dual-view pattern (desktop + mobile) in wav
 
 ```
 home/
-├── page.tsx            Server Component — fetches card_previews (service role), renders HomeRouter
+├── page.tsx            Server Component — renders HomeRouter (no server-side data fetch)
 ├── HomeRouter.tsx      "use client" — useIsMobile → DesktopView | MobileView
-├── HomeClient.tsx      Legacy client component (kept, no longer rendered)
 ├── useHomeData.ts      Brain hook — visibility filter, search, section-collapse state
-├── desktop/View.tsx    Desktop: grid of 220px image cards with hover-reveal animation
-└── mobile/View.tsx     Mobile: 4 collapsible category sections (Markets / Oil & Gas /
-                         Fuel Distribution / Admin), gradient thumbnails, sticky search
+├── desktop/View.tsx    Desktop: icon-list rows + DataSourcesTable panel (70/30 split)
+└── mobile/View.tsx     Mobile: 4 collapsible category sections, icon rows, sticky search
 ```
 
-**Desktop view** — redesigned 2026-05-26 (icon list). Vertical list of compact rows inside the left 70% column. One card per row: 40×40px rounded icon bubble + module name + optional badge + chevron. Icon glows orange on hover (`#ff5000`, glow shadow), row translates right 4px, left accent bar animates in. Categories (Markets / Oil & Gas / Fuel Distribution / Admin) are separated by a `SectionHeader` with a category-color bar + divider line. `initialPreviews` prop is retained in the signature (backward-compat) but no longer used for rendering — images are replaced by icons.
+**Desktop view** — redesigned 2026-05-26 (icon list). Vertical list of compact rows inside the left 70% column. One card per row: 40×40px rounded icon bubble + module name + optional badge + chevron. Icon glows orange on hover (`#ff5000`, glow shadow), row translates right 4px, left accent bar animates in. Categories (Markets / Oil & Gas / Fuel Distribution / Admin) are separated by a `SectionHeader` with a category-color bar + divider line.
 
 **Mobile view** — redesigned 2026-05-26 (icon list, same analysis as desktop). Components used:
 - `MobileTopBar` (wordmark + avatar initials / Sign-in pill for anon)
@@ -524,6 +521,30 @@ Arquitetura extensível baseada em registry. Substitui o workflow de editar `dat
 As políticas de escrita para `price_bands` e `d_g_margins` são criadas pela migration
 `supabase/migrations/20260512000000_data_input_admin_policies.sql` (worker_supabase, branch paralela).
 Sem a migration, writes retornam 403 — a UI renderiza mas não persiste.
+
+## Changelog — Delete dead card_previews code paths (2026-05-26)
+
+Deep cleanup following the icon redesign and admin-panel upload removal. All remaining dead code referencing the old uploaded-image system was deleted.
+
+**Files deleted:**
+
+| File | Reason |
+|---|---|
+| `src/app/(dashboard)/home/HomeClient.tsx` | Orphaned — superseded by `HomeRouter` + dual-view; not imported anywhere |
+| `src/lib/cardPreviewRpc.ts` | Orphaned — `getCardPreviews` / `uploadCardPreview` helpers with no callers |
+| `src/app/api/card-previews/route.ts` | API route consumed exclusively by the deleted RPC lib |
+| `src/app/api/upload-card-preview/route.ts` | API route consumed exclusively by the deleted RPC lib |
+
+**Files simplified:**
+
+| File | Change |
+|---|---|
+| `src/app/(dashboard)/home/page.tsx` | Dropped `getCardPreviews()` server-side fetch + `force-dynamic`; now a thin `<HomeRouter />` wrapper |
+| `src/app/(dashboard)/home/HomeRouter.tsx` | Dropped `initialPreviews` prop and `HomeRouterProps` interface |
+| `src/app/(dashboard)/home/desktop/View.tsx` | Dropped `DesktopViewProps` interface and unused `initialPreviews` parameter |
+| `src/app/(dashboard)/admin-panel/useAdminPanelData.ts` | Updated stale comment pointing to `HomeClient` → `src/data/moduleIcons.tsx` |
+
+**Note:** `card_previews` DB table and `card-previews` Storage bucket remain intact (no data deleted). Cleanup of those is a separate `worker_supabase` task.
 
 ## Changelog — Remove orphan image upload from Card Images tab (2026-05-26)
 
