@@ -50,7 +50,7 @@ import ExportPanel from "../../../../components/dashboard/ExportPanel";
 import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 
-import { useImportsExportsData, formatMonth } from "../useImportsExportsData";
+import { useImportsExportsData, formatMonth, cmpMonth } from "../useImportsExportsData";
 import type {
   UnifiedProduct,
   YoyTableRow,
@@ -136,6 +136,125 @@ function buildStackedTraces(rows: StackedRow[], unit: string): PlotData[] {
   }) as unknown as PlotData[];
 }
 
+// ─── Horizontal ranked bar — used when the period collapses to a single month ──
+//
+// Stacked area charts degenerate to a vertical stripe when start === end. In
+// that case we switch to a horizontal bar chart, one bar per entity ranked by
+// value desc — the most informative visual for "who imported X in May 2026".
+// "Others" is rendered last (bottom) in neutral grey.
+
+function buildHorizontalBarTraces(rows: StackedRow[], unit: string): PlotData[] {
+  if (!rows.length) return [];
+  // Aggregate by entity (rows should already be single-month, but defensively
+  // sum just in case the RPC ever returns multiple rows for the same entity).
+  const byEntity = new Map<string, number>();
+  for (const r of rows) {
+    byEntity.set(r.name, (byEntity.get(r.name) ?? 0) + r.value);
+  }
+  const entries = Array.from(byEntity.entries());
+  // Sort descending; "Others" sinks to the bottom regardless of value.
+  entries.sort(([aName, aVal], [bName, bVal]) => {
+    if (aName === "Others") return 1;
+    if (bName === "Others") return -1;
+    return bVal - aVal;
+  });
+  // For horizontal bars, Plotly puts the FIRST y-array entry at the bottom.
+  // We want the biggest value at the top → reverse the entries.
+  const reversed = entries.slice().reverse();
+  const allEntities = entries.map(([n]) => n);
+  const ys = reversed.map(([n]) => n);
+  const xs = reversed.map(([, v]) => v);
+  const colors = reversed.map(([n]) => colourForEntity(allEntities, n));
+  return [{
+    type: "bar" as const,
+    orientation: "h" as const,
+    x: xs,
+    y: ys,
+    marker: { color: colors },
+    hovertemplate: `%{y}: %{x:,.1f} ${unit}<extra></extra>`,
+    showlegend: false,
+  } as unknown as PlotData];
+}
+
+function horizontalBarLayout(
+  xLabel: string,
+  monthLabel: string,
+  height = 340,
+): Partial<Layout> {
+  return {
+    ...COMMON_LAYOUT,
+    hovermode: "closest" as const,
+    height,
+    margin: { t: 32, b: 50, l: 160, r: 24 },
+    title: {
+      text: monthLabel,
+      font: { family: "Arial", size: 12, color: "#555" },
+      x: 0,
+      xanchor: "left" as const,
+      y: 0.98,
+    },
+    xaxis: {
+      ...AXIS_LINE,
+      title: { text: xLabel, font: { family: "Arial", size: 11 } },
+      tickformat: ",.1f",
+      tickfont: { family: "Arial", size: 10 },
+    },
+    yaxis: {
+      ...AXIS_LINE,
+      tickfont: { family: "Arial", size: 11 },
+      automargin: true,
+    },
+    showlegend: false,
+  };
+}
+
+// ─── Multi-line → single-month horizontal bar (unit price panels) ──────────────
+//
+// Like buildHorizontalBarTraces but reads from UnitPriceRow[] and applies the
+// caller-supplied `convertFn` (USD/m³ → USD/ton, ¢/gal, USD/bbl) per value.
+// Lines with no data for the anchor month are silently dropped.
+
+function buildHorizontalBarTracesFromUnitPrice(
+  rows: UnitPriceRow[],
+  entities: string[],
+  unitLabel: string,
+  convertFn: (v: number) => number = (v) => v,
+): PlotData[] {
+  if (!rows.length) return [];
+  // Each row is (ano, mes, pais, usd_per_m3) but the period is single-month, so
+  // there is at most one row per pais. Build a quick lookup, then iterate
+  // entities in their already-ranked order.
+  const byPais = new Map<string, number | null>();
+  for (const r of rows) byPais.set(r.pais, r.usd_per_m3);
+  // Filter entities that actually have a value; convert and rank desc.
+  const converted = entities
+    .map((e) => {
+      const raw = byPais.get(e);
+      return raw != null ? ({ name: e, value: convertFn(raw) } as const) : null;
+    })
+    .filter((x): x is { name: string; value: number } => x != null);
+  if (!converted.length) return [];
+  converted.sort((a, b) => b.value - a.value);
+  // Reverse for horizontal bar (biggest on top).
+  const reversed = converted.slice().reverse();
+  const allEntities = converted.map((c) => c.name);
+  const ys = reversed.map((c) => c.name);
+  const xs = reversed.map((c) => c.value);
+  const colors = reversed.map((c) => {
+    const idx = allEntities.indexOf(c.name);
+    return PALETTE[idx % PALETTE.length] ?? OTHERS_COLOR;
+  });
+  return [{
+    type: "bar" as const,
+    orientation: "h" as const,
+    x: xs,
+    y: ys,
+    marker: { color: colors },
+    hovertemplate: `%{y}: %{x:,.1f} ${unitLabel}<extra></extra>`,
+    showlegend: false,
+  } as unknown as PlotData];
+}
+
 // ─── YoY table ─────────────────────────────────────────────────────────────────
 
 function YoYCell({ value }: { value: number | null }) {
@@ -153,11 +272,19 @@ function YoYTable({
   loading,
   volumeLabel,
   title,
+  anchorAno,
+  anchorMes,
 }: {
   rows: YoyTableRow[];
   loading: boolean;
   volumeLabel: string;
   title: string;
+  /** Anchor month for the YoY comparison. Always period.end (single-month
+   * semantics since migration 20260527000000). `last_12m` / `prev_12m` column
+   * keys are legacy names — semantically they hold the values of (anchorAno,
+   * anchorMes) and (anchorAno-1, anchorMes) respectively. */
+  anchorAno: number;
+  anchorMes: number;
 }) {
   if (loading) {
     return (
@@ -167,6 +294,9 @@ function YoYTable({
     );
   }
   if (!rows.length) return null;
+
+  const currentLbl = formatMonth(anchorAno, anchorMes);
+  const priorLbl = formatMonth(anchorAno - 1, anchorMes);
 
   return (
     <div style={{ marginTop: 12 }}>
@@ -180,12 +310,17 @@ function YoYTable({
           marginBottom: 6,
         }}
       >
-        {title} — Last 12 Months
+        {title} — {currentLbl} vs {priorLbl}
       </div>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
         <thead>
           <tr>
-            {["Entity", `Last 12m (${volumeLabel})`, `Prior 12m (${volumeLabel})`, "YoY %"].map(
+            {[
+              "Entity",
+              `${currentLbl} (${volumeLabel})`,
+              `${priorLbl} (${volumeLabel})`,
+              "YoY %",
+            ].map(
               (h) => (
                 <th
                   key={h}
@@ -239,6 +374,7 @@ const PRICE_COLORS: Record<UnifiedProduct, string> = {
 function buildPriceTraces(
   data: PricePoint[],
   unit: string,
+  isSingleMonth = false,
 ): PlotData[] {
   if (!data.length) return [];
 
@@ -257,6 +393,8 @@ function buildPriceTraces(
       (r) => `${r.ano}-${String(r.mes).padStart(2, "0")}-01`,
     );
     const ys = sorted.map((r) => r.value);
+    // Single-month → big marker only (line is degenerate with 1 point).
+    const markerSize = isSingleMonth ? 14 : 4;
     traces.push({
       type: "scatter" as const,
       mode: "lines+markers" as const,
@@ -264,7 +402,7 @@ function buildPriceTraces(
       x: xs,
       y: ys,
       line: { color: PRICE_COLORS[product], width: 2 },
-      marker: { size: 4, color: PRICE_COLORS[product] },
+      marker: { size: markerSize, color: PRICE_COLORS[product] },
       hovertemplate: `${product}: %{y:,.2f} ${unit}<extra></extra>`,
     } as unknown as PlotData);
   }
@@ -470,8 +608,6 @@ export default function DesktopView(): React.ReactElement {
     exportsPaisesLoading,
     yoyExportsData,
     yoyExportsLoading,
-    yoyEndAno,
-    yoyExportsEndMes,
     priceData,
     priceLoading,
     importsUnitPriceData,
@@ -509,6 +645,17 @@ export default function DesktopView(): React.ReactElement {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- destructured cursors
   }, [filters.period.start.ano, filters.period.start.mes, filters.period.end.ano, filters.period.end.mes]);
 
+  // Single-month flag — when start === end, stacked area degenerates to a
+  // vertical stripe. The view switches to horizontal ranked bars instead.
+  const isSingleMonth = useMemo(
+    () => cmpMonth(filters.period.start, filters.period.end) === 0,
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- destructured cursors
+  [filters.period.start.ano, filters.period.start.mes, filters.period.end.ano, filters.period.end.mes]);
+
+  const singleMonthLabel = useMemo(
+    () => formatMonth(filters.period.end.ano, filters.period.end.mes),
+  [filters.period.end.ano, filters.period.end.mes]);
+
   // ── Derived: stacked traces ─────────────────────────────────────────────────
   // All useMemo calls MUST be before any conditional early returns (Rules of Hooks).
 
@@ -520,8 +667,10 @@ export default function DesktopView(): React.ReactElement {
       name: r.pais_origem,
       value: r.total_kg / 1e6,
     }));
-    return buildStackedTraces(rows, "kt");
-  }, [paisesData]);
+    return isSingleMonth
+      ? buildHorizontalBarTraces(rows, "kt")
+      : buildStackedTraces(rows, "kt");
+  }, [paisesData, isSingleMonth]);
 
   // Panel B — mil m³ (already from RPC)
   const importersTraces = useMemo(() => {
@@ -531,8 +680,10 @@ export default function DesktopView(): React.ReactElement {
       name: r.unified_importer,
       value: r.total_mil_m3,
     }));
-    return buildStackedTraces(rows, "mil m³");
-  }, [importersData]);
+    return isSingleMonth
+      ? buildHorizontalBarTraces(rows, "mil m³")
+      : buildStackedTraces(rows, "mil m³");
+  }, [importersData, isSingleMonth]);
 
   // Exports — stacked area by destination country (value already in correct unit from RPC)
   const exportsUnit = filters.exportsYAxis === "volume" ? "mil m³" : "USD";
@@ -543,8 +694,10 @@ export default function DesktopView(): React.ReactElement {
       name: r.pais,
       value: r.value, // server already in mil m³ or USD — never divide client-side
     }));
-    return buildStackedTraces(rows, exportsUnit);
-  }, [exportsPaisesData, exportsUnit]);
+    return isSingleMonth
+      ? buildHorizontalBarTraces(rows, exportsUnit)
+      : buildStackedTraces(rows, exportsUnit);
+  }, [exportsPaisesData, exportsUnit, isSingleMonth]);
 
   // Panel C — price metric helpers
   const priceUnitLabel: Record<PriceMetric, string> = {
@@ -555,8 +708,8 @@ export default function DesktopView(): React.ReactElement {
   const priceUnit = priceUnitLabel[filters.priceMetric];
 
   const priceTraces = useMemo(
-    () => buildPriceTraces(priceData, priceUnit),
-    [priceData, priceUnit],
+    () => buildPriceTraces(priceData, priceUnit, isSingleMonth),
+    [priceData, priceUnit, isSingleMonth],
   );
 
   const priceLayout: Partial<Layout> = useMemo(
@@ -612,8 +765,21 @@ export default function DesktopView(): React.ReactElement {
   const importsUPUnitLabel = importsUPMetric === "usd_per_ton" ? "USD/ton" : "¢/gal";
 
   const importsUPTraces = useMemo(
-    () => buildUnitPriceTraces(importsUnitPriceData, importsUPEntities, importsUPUnitLabel, importsUPConvertFn),
-    [importsUnitPriceData, importsUPEntities, importsUPUnitLabel, importsUPConvertFn],
+    () =>
+      isSingleMonth
+        ? buildHorizontalBarTracesFromUnitPrice(
+            importsUnitPriceData,
+            importsUPEntities,
+            importsUPUnitLabel,
+            importsUPConvertFn,
+          )
+        : buildUnitPriceTraces(
+            importsUnitPriceData,
+            importsUPEntities,
+            importsUPUnitLabel,
+            importsUPConvertFn,
+          ),
+    [importsUnitPriceData, importsUPEntities, importsUPUnitLabel, importsUPConvertFn, isSingleMonth],
   );
 
   const importsUPLayout: Partial<Layout> = useMemo(
@@ -656,16 +822,23 @@ export default function DesktopView(): React.ReactElement {
 
   // Exports unit price — Crude Oil only, USD/bbl (USD/m³ ÷ 6.2898)
   const exportsUPTraces = useMemo(
-    () =>
-      filters.unifiedProduct === "Crude Oil"
-        ? buildUnitPriceTraces(
+    () => {
+      if (filters.unifiedProduct !== "Crude Oil") return [];
+      return isSingleMonth
+        ? buildHorizontalBarTracesFromUnitPrice(
             exportsUnitPriceData,
             exportsUPEntities,
             "USD/bbl",
             (v) => v / M3_PER_BBL,
           )
-        : [],
-    [exportsUnitPriceData, exportsUPEntities, filters.unifiedProduct],
+        : buildUnitPriceTraces(
+            exportsUnitPriceData,
+            exportsUPEntities,
+            "USD/bbl",
+            (v) => v / M3_PER_BBL,
+          );
+    },
+    [exportsUnitPriceData, exportsUPEntities, filters.unifiedProduct, isSingleMonth],
   );
 
   const exportsUPLayout: Partial<Layout> = useMemo(
@@ -966,7 +1139,11 @@ export default function DesktopView(): React.ReactElement {
                     {paisesTraces.length > 0 ? (
                       <Plot
                         data={paisesTraces}
-                        layout={areaLayout("kt", rangeMonths)}
+                        layout={
+                          isSingleMonth
+                            ? horizontalBarLayout("kt", singleMonthLabel, 340)
+                            : areaLayout("kt", rangeMonths)
+                        }
                         config={{ responsive: true, displayModeBar: false }}
                         style={{ width: "100%" }}
                       />
@@ -982,6 +1159,8 @@ export default function DesktopView(): React.ReactElement {
                     loading={yoyPaisesLoading}
                     volumeLabel="kt"
                     title="By Origin Country"
+                    anchorAno={filters.period.end.ano}
+                    anchorMes={filters.period.end.mes}
                   />
 
                   <div style={{ height: 24 }} />
@@ -995,7 +1174,11 @@ export default function DesktopView(): React.ReactElement {
                     {importersData.length > 0 ? (
                       <Plot
                         data={importersTraces}
-                        layout={areaLayout("mil m³", rangeMonths)}
+                        layout={
+                          isSingleMonth
+                            ? horizontalBarLayout("mil m³", singleMonthLabel, 340)
+                            : areaLayout("mil m³", rangeMonths)
+                        }
                         config={{ responsive: true, displayModeBar: false }}
                         style={{ width: "100%" }}
                       />
@@ -1010,6 +1193,8 @@ export default function DesktopView(): React.ReactElement {
                       loading={yoyImportersLoading}
                       volumeLabel="mil m³"
                       title="By Importer"
+                      anchorAno={filters.period.end.ano}
+                      anchorMes={filters.period.end.mes}
                     />
                   )}
 
@@ -1088,7 +1273,11 @@ export default function DesktopView(): React.ReactElement {
                     {importsUPTraces.length > 0 ? (
                       <Plot
                         data={importsUPTraces}
-                        layout={importsUPLayout}
+                        layout={
+                          isSingleMonth
+                            ? horizontalBarLayout(importsUPUnitLabel, singleMonthLabel, 320)
+                            : importsUPLayout
+                        }
                         config={{ responsive: true, displayModeBar: false }}
                         style={{ width: "100%" }}
                       />
@@ -1138,7 +1327,11 @@ export default function DesktopView(): React.ReactElement {
                     {exportsPaisesTraces.length > 0 ? (
                       <Plot
                         data={exportsPaisesTraces}
-                        layout={exportsPaisesLayout}
+                        layout={
+                          isSingleMonth
+                            ? horizontalBarLayout(exportsUnit, singleMonthLabel, 420)
+                            : exportsPaisesLayout
+                        }
                         config={{ responsive: true, displayModeBar: false }}
                         style={{ width: "100%" }}
                       />
@@ -1153,7 +1346,9 @@ export default function DesktopView(): React.ReactElement {
                     rows={yoyExportsData}
                     loading={yoyExportsLoading}
                     volumeLabel={exportsUnit}
-                    title={`By Destination Country (ending ${formatMonth(yoyEndAno, yoyExportsEndMes ?? 12)})`}
+                    title="By Destination Country"
+                    anchorAno={filters.period.end.ano}
+                    anchorMes={filters.period.end.mes}
                   />
 
                   <div
@@ -1180,7 +1375,11 @@ export default function DesktopView(): React.ReactElement {
                         {exportsUPTraces.length > 0 ? (
                           <Plot
                             data={exportsUPTraces}
-                            layout={exportsUPLayout}
+                            layout={
+                              isSingleMonth
+                                ? horizontalBarLayout("USD / bbl", singleMonthLabel, 320)
+                                : exportsUPLayout
+                            }
                             config={{ responsive: true, displayModeBar: false }}
                             style={{ width: "100%" }}
                           />

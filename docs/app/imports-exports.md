@@ -105,7 +105,8 @@ Returns `(ano int, mes int, unified_importer text, total_mil_m3 numeric)`.
 Returns `(entity text, last_12m numeric, prev_12m numeric, yoy_pct numeric)`.
 
 - `p_scope`: `'paises'` → units kt; `'importers'` → units mil m³.
-- Rolling 12m window ending at `(p_ano_fim, p_mes_fim)`. UI passes `period[1]` as `p_ano_fim` and `12` as `p_mes_fim`.
+- **Single-month semantics (since migration `20260527000000_imports_exports_yoy_single_month.sql`):** `last_12m` holds the value of the single anchor month `(p_ano_fim, p_mes_fim)`; `prev_12m` holds the same month one year earlier `(p_ano_fim - 1, p_mes_fim)`. Column names are kept verbatim to preserve the payload contract with `src/lib/rpc.ts` wrappers — only the semantics shifted. UI labels the columns as `"<Month YYYY>"` / `"<Month YYYY-1>"` based on `period.end`.
+- The UI always passes `period.end.ano` as `p_ano_fim` and `period.end.mes` as `p_mes_fim` — anchor is never data-driven (legacy "max month with non-zero data" logic in the hook was removed). User's explicit `TO` choice is honoured even when the trailing month has incomplete data (renders as `"n/a"`).
 - `yoy_pct` is `NULL` when `prev_12m = 0` (no prior-year data). UI renders "n/a" in neutral color.
 - `yoy_pct` color: green for positive, red for negative, neutral for null.
 
@@ -123,7 +124,7 @@ Returns `(ano int, mes int, pais text, value numeric)`.
 
 Returns `(entity text, last_12m numeric, prev_12m numeric, yoy_pct numeric)`.
 
-- Rolling 12m window ending at `(p_ano_fim, p_mes_fim)`. UI passes `period[1]` as `p_ano_fim` and the max month observed in `exportsPaisesData` for that year (fallback 12) as `p_mes_fim`.
+- **Single-month semantics (since migration `20260527000000`):** identical pattern to the imports YoY RPC above — `last_12m` is the value at `(p_ano_fim, p_mes_fim)`, `prev_12m` at `(p_ano_fim - 1, p_mes_fim)`. Anchor is `period.end`; UI labels the columns as `"<Month YYYY>"` / `"<Month YYYY-1>"`.
 - `last_12m` / `prev_12m` in mil m³ (`metric=volume`) or USD (`metric=usd`).
 - `yoy_pct` is `NULL` when `prev_12m = 0`. UI renders "n/a" in neutral color.
 - `yoy_pct` color: green for positive, red for negative, neutral for null.
@@ -244,6 +245,23 @@ Decision: Tier 1 chosen because payload is aggregated (top-10 + Others), not raw
 Filename pattern: `Imports-Exports_DD-MM-YY.xlsx` / `.zip`.
 
 ---
+
+## Single-month chart variant
+
+When `cmpMonth(period.start, period.end) === 0` (the user collapses `FROM` and `TO` to the same month — either by picking the same value in both selects or by the `MonthRangePicker`'s clamp-and-swap behaviour), the views switch every per-time-period chart from a stacked area / multi-line layout to a **horizontal ranked bar** at the same height:
+
+| Chart | Multi-month layout | Single-month layout |
+|---|---|---|
+| Imports — By Origin Country (Panel A) | Stacked area, x=month | Horizontal bar, one bar per country, ranked desc; "Others" sinks to the bottom in grey |
+| Imports — By Importer (Panel B) | Stacked area, x=month | Horizontal bar, one bar per importer group, ranked desc |
+| Imports — Unit Price by Origin Country (Panel D) | Multi-line (top 8), x=month | Horizontal bar, one bar per origin country, ranked desc by converted unit |
+| Exports — By Destination Country | Stacked area, x=month | Horizontal bar, one bar per destination country, ranked desc |
+| Exports — Unit Price by Destination (Crude Oil) | Multi-line (top 8), x=month | Horizontal bar, one bar per destination, ranked desc by USD/bbl |
+| Imports — Import Price (Panel C, single-line) | Lines+markers, x=month | Same lines+markers but with `marker.size = 14` (desktop) / `12` (mobile) — single point still legible |
+
+The bar chart's `title.text` is the single-month label (e.g. `"Apr 2026"`) rendered as a small grey header above the bars. Hovertemplate format: `"<entity>: <value> <unit>"`. Y-axis tick labels carry the country/importer names (Plotly `automargin: true` to keep them visible). `hovermode` is `"closest"` (not `"x unified"`).
+
+Implementation: each view declares an `isSingleMonth` flag via `cmpMonth(period.start, period.end) === 0` and an `singleMonthLabel = formatMonth(period.end.ano, period.end.mes)`. The trace builders (`buildHorizontalBarTraces`, `buildHorizontalBarTracesFromUnitPrice`) and layout helpers (`horizontalBarLayout`, `mobileHorizontalBarLayout`) live inline in each view — mobile uses tighter margins (`l:110`) and smaller font sizes than desktop (`l:160`).
 
 ## Hover tooltip — zero-suppression
 

@@ -131,6 +131,109 @@ function buildStackedTraces(rows: StackedRow[], unit: string): PlotData[] {
   }) as unknown as PlotData[];
 }
 
+// ─── Horizontal ranked bar — single-month variant (mobile) ────────────────────
+//
+// Same intent as the desktop helper: stacked area collapses to a vertical
+// stripe when start === end, so swap to a horizontal bar chart, one bar per
+// entity ranked by value desc. "Others" sinks to the bottom in grey.
+
+function buildHorizontalBarTraces(rows: StackedRow[], unit: string): PlotData[] {
+  if (!rows.length) return [];
+  const byEntity = new Map<string, number>();
+  for (const r of rows) {
+    byEntity.set(r.name, (byEntity.get(r.name) ?? 0) + r.value);
+  }
+  const entries = Array.from(byEntity.entries());
+  entries.sort(([aName, aVal], [bName, bVal]) => {
+    if (aName === "Others") return 1;
+    if (bName === "Others") return -1;
+    return bVal - aVal;
+  });
+  const reversed = entries.slice().reverse();
+  const allEntities = entries.map(([n]) => n);
+  const ys = reversed.map(([n]) => n);
+  const xs = reversed.map(([, v]) => v);
+  const colors = reversed.map(([n]) => colourForEntity(allEntities, n));
+  return [{
+    type: "bar" as const,
+    orientation: "h" as const,
+    x: xs,
+    y: ys,
+    marker: { color: colors },
+    hovertemplate: `%{y}: %{x:,.1f} ${unit}<extra></extra>`,
+    showlegend: false,
+  } as unknown as PlotData];
+}
+
+function buildHorizontalBarTracesFromUnitPrice(
+  rows: UnitPriceRow[],
+  entities: string[],
+  unitLabel: string,
+  convertFn: (v: number) => number = (v) => v,
+): PlotData[] {
+  if (!rows.length) return [];
+  const byPais = new Map<string, number | null>();
+  for (const r of rows) byPais.set(r.pais, r.usd_per_m3);
+  const converted = entities
+    .map((e) => {
+      const raw = byPais.get(e);
+      return raw != null ? ({ name: e, value: convertFn(raw) } as const) : null;
+    })
+    .filter((x): x is { name: string; value: number } => x != null);
+  if (!converted.length) return [];
+  converted.sort((a, b) => b.value - a.value);
+  const reversed = converted.slice().reverse();
+  const allEntities = converted.map((c) => c.name);
+  const ys = reversed.map((c) => c.name);
+  const xs = reversed.map((c) => c.value);
+  const colors = reversed.map((c) => {
+    const idx = allEntities.indexOf(c.name);
+    return PALETTE[idx % PALETTE.length] ?? OTHERS_COLOR;
+  });
+  return [{
+    type: "bar" as const,
+    orientation: "h" as const,
+    x: xs,
+    y: ys,
+    marker: { color: colors },
+    hovertemplate: `%{y}: %{x:,.1f} ${unitLabel}<extra></extra>`,
+    showlegend: false,
+  } as unknown as PlotData];
+}
+
+function mobileHorizontalBarLayout(
+  xLabel: string,
+  monthLabel: string,
+  height = 280,
+): Partial<Layout> {
+  return {
+    ...COMMON_LAYOUT,
+    hovermode: "closest" as const,
+    height,
+    // Left margin generous so country names fit; right slim.
+    margin: { t: 28, b: 44, l: 110, r: 12 },
+    title: {
+      text: monthLabel,
+      font: { family: "Arial", size: 11, color: "#555" },
+      x: 0,
+      xanchor: "left" as const,
+      y: 0.98,
+    },
+    xaxis: {
+      ...AXIS_LINE,
+      title: { text: xLabel, font: { family: "Arial", size: 10 } },
+      tickformat: ",.1f",
+      tickfont: { family: "Arial", size: 9 },
+    },
+    yaxis: {
+      ...AXIS_LINE,
+      tickfont: { family: "Arial", size: 10 },
+      automargin: true,
+    },
+    showlegend: false,
+  };
+}
+
 // ─── Panel C — import price helpers (mobile) ──────────────────────────────────
 
 const PRICE_COLORS: Record<UnifiedProduct, string> = {
@@ -139,7 +242,11 @@ const PRICE_COLORS: Record<UnifiedProduct, string> = {
   "Crude Oil": "#1a1a1a",
 };
 
-function buildPriceTraces(data: PricePoint[], unit: string): PlotData[] {
+function buildPriceTraces(
+  data: PricePoint[],
+  unit: string,
+  isSingleMonth = false,
+): PlotData[] {
   if (!data.length) return [];
   const byProduct = new Map<UnifiedProduct, PricePoint[]>();
   for (const p of data) {
@@ -155,6 +262,7 @@ function buildPriceTraces(data: PricePoint[], unit: string): PlotData[] {
       (r) => `${r.ano}-${String(r.mes).padStart(2, "0")}-01`,
     );
     const ys = sorted.map((r) => r.value);
+    const markerSize = isSingleMonth ? 12 : 3;
     traces.push({
       type: "scatter" as const,
       mode: "lines+markers" as const,
@@ -162,7 +270,7 @@ function buildPriceTraces(data: PricePoint[], unit: string): PlotData[] {
       x: xs,
       y: ys,
       line: { color: PRICE_COLORS[product], width: 2 },
-      marker: { size: 3, color: PRICE_COLORS[product] },
+      marker: { size: markerSize, color: PRICE_COLORS[product] },
       hovertemplate: `${product}: %{y:,.2f} ${unit}<extra></extra>`,
     } as unknown as PlotData);
   }
@@ -260,10 +368,18 @@ function YoYCardList({
   rows,
   loading,
   volumeLabel,
+  anchorAno,
+  anchorMes,
 }: {
   rows: YoyTableRow[];
   loading: boolean;
   volumeLabel: string;
+  /** Anchor month for the YoY comparison. Always period.end (single-month
+   * semantics since migration 20260527000000). The row fields `last_12m` /
+   * `prev_12m` are legacy names: they actually hold the values at
+   * (anchorAno, anchorMes) and (anchorAno-1, anchorMes). */
+  anchorAno: number;
+  anchorMes: number;
 }) {
   if (loading) {
     return (
@@ -273,6 +389,8 @@ function YoYCardList({
     );
   }
   if (!rows.length) return null;
+
+  const priorLbl = formatMonth(anchorAno - 1, anchorMes);
 
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
@@ -307,7 +425,7 @@ function YoYCardList({
           <MobileDataCard
             key={row.entity}
             title={row.entity}
-            subtitle={`Prior 12m: ${row.prev_12m.toLocaleString("en-US", { maximumFractionDigits: 1 })} ${volumeLabel}`}
+            subtitle={`${priorLbl}: ${row.prev_12m.toLocaleString("en-US", { maximumFractionDigits: 1 })} ${volumeLabel}`}
             rightSlot={rightSlot}
             variant="compact"
           />
@@ -392,8 +510,6 @@ export default function MobileView(): React.ReactElement {
     exportsPaisesLoading,
     yoyExportsData,
     yoyExportsLoading,
-    yoyEndAno,
-    yoyExportsEndMes,
     priceData,
     priceLoading,
     importsUnitPriceData,
@@ -412,6 +528,17 @@ export default function MobileView(): React.ReactElement {
     return (e.ano - s.ano) * 12 + (e.mes - s.mes) + 1;
   // eslint-disable-next-line react-hooks/exhaustive-deps -- destructured cursors
   }, [filters.period.start.ano, filters.period.start.mes, filters.period.end.ano, filters.period.end.mes]);
+
+  // Single-month flag — when start === end, stacked area degenerates. Switch
+  // to a horizontal ranked bar instead (mirrors desktop).
+  const isSingleMonth = useMemo(
+    () => cmpMonth(filters.period.start, filters.period.end) === 0,
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- destructured cursors
+  [filters.period.start.ano, filters.period.start.mes, filters.period.end.ano, filters.period.end.mes]);
+
+  const singleMonthLabel = useMemo(
+    () => formatMonth(filters.period.end.ano, filters.period.end.mes),
+  [filters.period.end.ano, filters.period.end.mes]);
 
   const [filterOpen, setFilterOpen] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
@@ -439,10 +566,18 @@ export default function MobileView(): React.ReactElement {
       name: r.pais_origem,
       value: r.total_kg / 1e6,
     }));
-    return buildStackedTraces(rows, "kt");
-  }, [paisesData]);
+    return isSingleMonth
+      ? buildHorizontalBarTraces(rows, "kt")
+      : buildStackedTraces(rows, "kt");
+  }, [paisesData, isSingleMonth]);
 
-  const paisesLayout = useMemo(() => mobileAreaLayout("kt", rangeMonths), [rangeMonths]);
+  const paisesLayout: Partial<Layout> = useMemo(
+    () =>
+      isSingleMonth
+        ? mobileHorizontalBarLayout("kt", singleMonthLabel, 280)
+        : mobileAreaLayout("kt", rangeMonths),
+    [rangeMonths, isSingleMonth, singleMonthLabel],
+  );
 
   const importersTraces = useMemo(() => {
     const rows = importersData.map((r) => ({
@@ -451,10 +586,18 @@ export default function MobileView(): React.ReactElement {
       name: r.unified_importer,
       value: r.total_mil_m3,
     }));
-    return buildStackedTraces(rows, "mil m³");
-  }, [importersData]);
+    return isSingleMonth
+      ? buildHorizontalBarTraces(rows, "mil m³")
+      : buildStackedTraces(rows, "mil m³");
+  }, [importersData, isSingleMonth]);
 
-  const importersLayout = useMemo(() => mobileAreaLayout("mil m³", rangeMonths), [rangeMonths]);
+  const importersLayout: Partial<Layout> = useMemo(
+    () =>
+      isSingleMonth
+        ? mobileHorizontalBarLayout("mil m³", singleMonthLabel, 280)
+        : mobileAreaLayout("mil m³", rangeMonths),
+    [rangeMonths, isSingleMonth, singleMonthLabel],
+  );
 
   // Exports — stacked area by destination country (value already in correct unit from RPC)
   const exportsUnit = filters.exportsYAxis === "volume" ? "mil m³" : "USD";
@@ -466,12 +609,17 @@ export default function MobileView(): React.ReactElement {
       name: r.pais,
       value: r.value, // server already in mil m³ or USD — never divide client-side
     }));
-    return buildStackedTraces(rows, exportsUnit);
-  }, [exportsPaisesData, exportsUnit]);
+    return isSingleMonth
+      ? buildHorizontalBarTraces(rows, exportsUnit)
+      : buildStackedTraces(rows, exportsUnit);
+  }, [exportsPaisesData, exportsUnit, isSingleMonth]);
 
   const exportsPaisesLayout: Partial<Layout> = useMemo(
-    () => mobileAreaLayout(exportsUnit, rangeMonths),
-    [exportsUnit, rangeMonths],
+    () =>
+      isSingleMonth
+        ? mobileHorizontalBarLayout(exportsUnit, singleMonthLabel, 280)
+        : mobileAreaLayout(exportsUnit, rangeMonths),
+    [exportsUnit, rangeMonths, isSingleMonth, singleMonthLabel],
   );
 
   // Panel C — price metric
@@ -483,8 +631,8 @@ export default function MobileView(): React.ReactElement {
   const priceUnit = priceUnitLabel[filters.priceMetric];
 
   const priceTraces = useMemo(
-    () => buildPriceTraces(priceData, priceUnit),
-    [priceData, priceUnit],
+    () => buildPriceTraces(priceData, priceUnit, isSingleMonth),
+    [priceData, priceUnit, isSingleMonth],
   );
 
   const priceLayout: Partial<Layout> = useMemo(
@@ -537,37 +685,53 @@ export default function MobileView(): React.ReactElement {
   const importsUPUnitLabel = importsUPMetric === "usd_per_ton" ? "USD/ton" : "¢/gal";
 
   const importsUPTraces = useMemo(
-    () => buildUnitPriceTraces(importsUnitPriceData, importsUPEntities, importsUPUnitLabel, importsUPConvertFn),
-    [importsUnitPriceData, importsUPEntities, importsUPUnitLabel, importsUPConvertFn],
+    () =>
+      isSingleMonth
+        ? buildHorizontalBarTracesFromUnitPrice(
+            importsUnitPriceData,
+            importsUPEntities,
+            importsUPUnitLabel,
+            importsUPConvertFn,
+          )
+        : buildUnitPriceTraces(
+            importsUnitPriceData,
+            importsUPEntities,
+            importsUPUnitLabel,
+            importsUPConvertFn,
+          ),
+    [importsUnitPriceData, importsUPEntities, importsUPUnitLabel, importsUPConvertFn, isSingleMonth],
   );
 
   const importsUPMobileLayout: Partial<Layout> = useMemo(
-    () => ({
-      ...COMMON_LAYOUT,
-      hovermode: "x unified" as const,
-      height: 240,
-      margin: { t: 8, b: 52, l: 56, r: 8 },
-      xaxis: {
-        ...AXIS_LINE,
-        type: "date" as const,
-        tickformat: "%b %Y",
-        dtick: pickDtickMobile(rangeMonths),
-        tickangle: -60,
-        tickfont: { family: "Arial", size: 8 },
-      },
-      yaxis: {
-        ...AXIS_LINE,
-        title: { text: importsUPUnitLabel, font: { family: "Arial", size: 10 } },
-        tickformat: ",.1f",
-      },
-      legend: {
-        orientation: "h" as const,
-        x: 0,
-        y: -0.3,
-        font: { family: "Arial", size: 9 },
-      },
-    }),
-    [importsUPUnitLabel, rangeMonths],
+    () =>
+      isSingleMonth
+        ? mobileHorizontalBarLayout(importsUPUnitLabel, singleMonthLabel, 240)
+        : {
+            ...COMMON_LAYOUT,
+            hovermode: "x unified" as const,
+            height: 240,
+            margin: { t: 8, b: 52, l: 56, r: 8 },
+            xaxis: {
+              ...AXIS_LINE,
+              type: "date" as const,
+              tickformat: "%b %Y",
+              dtick: pickDtickMobile(rangeMonths),
+              tickangle: -60,
+              tickfont: { family: "Arial", size: 8 },
+            },
+            yaxis: {
+              ...AXIS_LINE,
+              title: { text: importsUPUnitLabel, font: { family: "Arial", size: 10 } },
+              tickformat: ",.1f",
+            },
+            legend: {
+              orientation: "h" as const,
+              x: 0,
+              y: -0.3,
+              font: { family: "Arial", size: 9 },
+            },
+          },
+    [importsUPUnitLabel, rangeMonths, isSingleMonth, singleMonthLabel],
   );
 
   // Exports unit price — Crude Oil only, USD/bbl
@@ -580,45 +744,55 @@ export default function MobileView(): React.ReactElement {
   }, [exportsUnitPriceData]);
 
   const exportsUPTraces = useMemo(
-    () =>
-      filters.unifiedProduct === "Crude Oil"
-        ? buildUnitPriceTraces(
+    () => {
+      if (filters.unifiedProduct !== "Crude Oil") return [];
+      return isSingleMonth
+        ? buildHorizontalBarTracesFromUnitPrice(
             exportsUnitPriceData,
             exportsUPEntities,
             "USD/bbl",
             (v) => v / M3_PER_BBL,
           )
-        : [],
-    [exportsUnitPriceData, exportsUPEntities, filters.unifiedProduct],
+        : buildUnitPriceTraces(
+            exportsUnitPriceData,
+            exportsUPEntities,
+            "USD/bbl",
+            (v) => v / M3_PER_BBL,
+          );
+    },
+    [exportsUnitPriceData, exportsUPEntities, filters.unifiedProduct, isSingleMonth],
   );
 
   const exportsUPMobileLayout: Partial<Layout> = useMemo(
-    () => ({
-      ...COMMON_LAYOUT,
-      hovermode: "x unified" as const,
-      height: 240,
-      margin: { t: 8, b: 52, l: 56, r: 8 },
-      xaxis: {
-        ...AXIS_LINE,
-        type: "date" as const,
-        tickformat: "%b %Y",
-        dtick: pickDtickMobile(rangeMonths),
-        tickangle: -60,
-        tickfont: { family: "Arial", size: 8 },
-      },
-      yaxis: {
-        ...AXIS_LINE,
-        title: { text: "USD / bbl", font: { family: "Arial", size: 10 } },
-        tickformat: ",.2f",
-      },
-      legend: {
-        orientation: "h" as const,
-        x: 0,
-        y: -0.3,
-        font: { family: "Arial", size: 9 },
-      },
-    }),
-    [rangeMonths],
+    () =>
+      isSingleMonth
+        ? mobileHorizontalBarLayout("USD / bbl", singleMonthLabel, 240)
+        : {
+            ...COMMON_LAYOUT,
+            hovermode: "x unified" as const,
+            height: 240,
+            margin: { t: 8, b: 52, l: 56, r: 8 },
+            xaxis: {
+              ...AXIS_LINE,
+              type: "date" as const,
+              tickformat: "%b %Y",
+              dtick: pickDtickMobile(rangeMonths),
+              tickangle: -60,
+              tickfont: { family: "Arial", size: 8 },
+            },
+            yaxis: {
+              ...AXIS_LINE,
+              title: { text: "USD / bbl", font: { family: "Arial", size: 10 } },
+              tickformat: ",.2f",
+            },
+            legend: {
+              orientation: "h" as const,
+              x: 0,
+              y: -0.3,
+              font: { family: "Arial", size: 9 },
+            },
+          },
+    [rangeMonths, isSingleMonth, singleMonthLabel],
   );
 
   // Guard — after all hooks
@@ -931,12 +1105,14 @@ export default function MobileView(): React.ReactElement {
           {yoyPaisesData.length > 0 && (
             <>
               <div style={{ padding: "4px 16px 4px", fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                Last 12 months — Countries
+                {formatMonth(filters.period.end.ano, filters.period.end.mes)} vs {formatMonth(filters.period.end.ano - 1, filters.period.end.mes)} — Countries
               </div>
               <YoYCardList
                 rows={yoyPaisesData}
                 loading={yoyPaisesLoading}
                 volumeLabel="kt"
+                anchorAno={filters.period.end.ano}
+                anchorMes={filters.period.end.mes}
               />
             </>
           )}
@@ -961,12 +1137,14 @@ export default function MobileView(): React.ReactElement {
           {importersData.length > 0 && yoyImportersData.length > 0 && (
             <>
               <div style={{ padding: "4px 16px 4px", fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                Last 12 months — Importers
+                {formatMonth(filters.period.end.ano, filters.period.end.mes)} vs {formatMonth(filters.period.end.ano - 1, filters.period.end.mes)} — Importers
               </div>
               <YoYCardList
                 rows={yoyImportersData}
                 loading={yoyImportersLoading}
                 volumeLabel="mil m³"
+                anchorAno={filters.period.end.ano}
+                anchorMes={filters.period.end.mes}
               />
             </>
           )}
@@ -1145,12 +1323,14 @@ export default function MobileView(): React.ReactElement {
           {yoyExportsData.length > 0 && (
             <>
               <div style={{ padding: "4px 16px 4px", fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                Last 12 months — By Country (ending {formatMonth(yoyEndAno, yoyExportsEndMes ?? 12)})
+                {formatMonth(filters.period.end.ano, filters.period.end.mes)} vs {formatMonth(filters.period.end.ano - 1, filters.period.end.mes)} — By Country
               </div>
               <YoYCardList
                 rows={yoyExportsData}
                 loading={yoyExportsLoading}
                 volumeLabel={exportsUnit}
+                anchorAno={filters.period.end.ano}
+                anchorMes={filters.period.end.mes}
               />
             </>
           )}
