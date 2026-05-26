@@ -69,11 +69,17 @@ Source migrations:
 
 ### Temporal filter — monthly granularity
 
-The dashboard period is `{ start: { ano, mes }, end: { ano, mes } }`. The hook (`useImportsExportsData`) builds the month array `monthList: string[]` (e.g. `["1997-02-01", ..., "2026-05-01"]`) from `filtros.ano_min/mes_min → ano_max/mes_max` and feeds it to the shared `PeriodSlider` in `dates` mode. Each chart's `xaxis.type = 'date'` + `tickformat = '%b %Y'` and `dtick` adapts to the range (`M1 ≤ 12mo`, `M3 ≤ 36mo`, `M6 ≤ 96mo`, `M12` otherwise).
+The dashboard period is `{ start: { ano, mes }, end: { ano, mes } }`. The period UI is the shared `MonthRangePicker` component (`src/components/dashboard/MonthRangePicker.tsx`) — quick-range chips (`Last 12m`, `Last 24m`, `YTD`, `Last 5y`, `All`) plus four selects (FROM month / FROM year / TO month / TO year). Same component used by both `desktop/View.tsx` (sidebar) and `mobile/View.tsx` (FilterDrawer) for cross-view consistency.
+
+The original plan was to feed `PeriodSlider` in `dates` mode the full `monthList` (~336 entries for a 28-year span). That was scrapped because `rc-slider` becomes unreadable with that many ticks (year labels collide with floating thumb labels). The hook still exposes `monthList` for forward-compat / charts that may need it, but the slider was removed.
+
+Each chart's `xaxis.type = 'date'` + `tickformat = '%b %Y'` and `dtick` adapts to the range (`M1 ≤ 12mo`, `M3 ≤ 36mo`, `M6 ≤ 96mo`, `M12` otherwise).
 
 Default period: **last 12 months ending at `(filtros.ano_max, filtros.mes_max)`** (clamped to ≥ `(ano_min, mes_min)`).
 
 Period badge: `"Jan 2025 – May 2026"`, collapsing to `"May 2026"` when start == end.
+
+`MonthRangePicker` clamps any out-of-bounds entry to the picker's `min`/`max` and auto-corrects ordering — if the user picks a FROM that is later than the current TO, the picker collapses TO to the same month (single-month view); symmetric for TO < FROM.
 
 ### `get_imports_exports_filtros()`
 
@@ -401,5 +407,4 @@ Same traces, same data, mobile-tuned layout (240px height, no markers, tighter m
 
 - **Tier 2 export upgrade**: if users request full raw `anp_desembaracos` dumps (60k–200k rows), add `get_imports_exports_export_count` RPC + `ExportModal` + `useExportSize` integration.
 - **`importer_group_map` population**: after Worktree B backfill completes and real CNPJs are discovered, `worker_supabase` populates the mapping table via DML migration. Panel B then shows named groups (Vibra, Ipiranga, Raízen, etc.) instead of cleaned-up razão social strings.
-- **PeriodSlider**: replace the sidebar `<select>` dropdowns with the shared `PeriodSlider` (rc-slider) component for a richer UX, once the years array is derived from `filtros.ano_min / ano_max`.
 - **Panel C export**: add a 3rd sheet/CSV to the export containing the FOB price series (product, year, month, fob_per_bbl, fob_per_m3, fob_per_ton).

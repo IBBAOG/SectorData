@@ -23,6 +23,7 @@
 import dynamic from "next/dynamic";
 import type { Layout, PlotData } from "plotly.js";
 import { useMemo, useState } from "react";
+import MonthRangePicker from "../../../../components/dashboard/MonthRangePicker";
 
 // ─── Unit conversion constants ─────────────────────────────────────────────────
 
@@ -48,7 +49,6 @@ import ChartSection from "../../../../components/dashboard/ChartSection";
 import ExportPanel from "../../../../components/dashboard/ExportPanel";
 import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
-import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 
 import { useImportsExportsData, formatMonth } from "../useImportsExportsData";
 import type {
@@ -456,6 +456,7 @@ export default function DesktopView(): React.ReactElement {
   const {
     filters,
     setFilters,
+    filtros,
     filtrosLoading,
     paisesData,
     paisesLoading,
@@ -477,7 +478,6 @@ export default function DesktopView(): React.ReactElement {
     importsUnitPriceLoading,
     exportsUnitPriceData,
     exportsUnitPriceLoading,
-    monthList,
     periodBadge,
     visible,
     visibilityLoading,
@@ -489,41 +489,16 @@ export default function DesktopView(): React.ReactElement {
   // Panel D — imports unit price metric toggle (local state, not global filter)
   const [importsUPMetric, setImportsUPMetric] = useState<ImportsUPMetric>("usd_per_ton");
 
-  // ── Derived: month array for PeriodSlider ───────────────────────────────────
-  // monthList comes from the hook (YYYY-MM-01 strings, full range from filtros).
-  // The slider operates on indices; we map (period.start.ano, mes) → index.
+  // ── Period bounds (for MonthRangePicker) ────────────────────────────────────
+  // Picker enforces clamping + ordering against (anoMin/mesMin..anoMax/mesMax).
 
-  function monthCursorToKey(c: MonthCursor): string {
-    return `${c.ano}-${String(c.mes).padStart(2, "0")}-01`;
-  }
-  function indexFromCursor(c: MonthCursor): number {
-    const key = monthCursorToKey(c);
-    const idx = monthList.indexOf(key);
-    return idx >= 0 ? idx : 0;
-  }
-  function cursorFromIndex(idx: number): MonthCursor {
-    const raw = monthList[Math.max(0, Math.min(idx, monthList.length - 1))];
-    if (!raw) return { ano: new Date().getFullYear(), mes: 1 };
-    const ano = parseInt(raw.slice(0, 4), 10);
-    const mes = parseInt(raw.slice(5, 7), 10);
-    return { ano, mes };
-  }
-
-  const sliderValue: [number, number] = useMemo(() => {
-    if (!monthList.length) return [0, 0];
-    return [indexFromCursor(filters.period.start), indexFromCursor(filters.period.end)];
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthList, filters.period.start.ano, filters.period.start.mes, filters.period.end.ano, filters.period.end.mes]);
-
-  // Month-label formatter for slider thumbs: "May 2025"
-  const fmtMonth = (d: string): string => {
-    try {
-      const ano = parseInt(d.slice(0, 4), 10);
-      const mes = parseInt(d.slice(5, 7), 10);
-      return formatMonth(ano, mes);
-    } catch {
-      return d;
-    }
+  const pickerMin: MonthCursor = {
+    ano: filtros?.ano_min ?? new Date().getFullYear() - 10,
+    mes: filtros?.mes_min ?? 1,
+  };
+  const pickerMax: MonthCursor = {
+    ano: filtros?.ano_max ?? new Date().getFullYear(),
+    mes: filtros?.mes_max ?? 12,
   };
 
   // Range in months — used to pick xaxis.dtick (M1 / M3 / M6 / M12).
@@ -889,28 +864,27 @@ export default function DesktopView(): React.ReactElement {
               <div className="sidebar-section-label">Filters</div>
 
               {/* Period — monthly granularity (migration 20260526800000).
-                  Slider operates on month indices into `monthList`. */}
-              <div className="sidebar-filter-section">
+                  Replaced PeriodSlider with MonthRangePicker (4 selects + quick
+                  ranges) — sliders become unreadable at 28 years × 12 = 336
+                  months, and a range needs both start + end thumbs which were
+                  visually overlapping their floating month labels. The picker
+                  also makes the single-month case (start === end) trivial. */}
+              <div className="sidebar-filter-section" data-testid="period-filter">
                 <div className="sidebar-filter-label">Period</div>
-                {filtrosLoading ? (
+                {filtrosLoading && !filtros ? (
                   <div style={{ fontSize: 11, color: "#aaa", fontFamily: "Arial" }}>
                     Loading…
                   </div>
-                ) : monthList.length > 0 ? (
-                  <PeriodSlider
-                    dates={monthList}
-                    value={sliderValue}
-                    fmtLabel={fmtMonth}
-                    onChange={(v) =>
-                      setFilters({
-                        period: {
-                          start: cursorFromIndex(v[0]),
-                          end: cursorFromIndex(v[1]),
-                        },
-                      })
-                    }
+                ) : (
+                  <MonthRangePicker
+                    min={pickerMin}
+                    max={pickerMax}
+                    value={filters.period}
+                    onChange={(next) => setFilters({ period: next })}
+                    layout="sidebar"
+                    showQuickRanges
                   />
-                ) : null}
+                )}
               </div>
             </div>
           </div>

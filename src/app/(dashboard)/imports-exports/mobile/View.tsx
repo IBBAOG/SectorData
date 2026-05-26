@@ -47,6 +47,7 @@ import {
   FilterIcon,
 } from "../../../../components/dashboard/mobile";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
+import MonthRangePicker from "../../../../components/dashboard/MonthRangePicker";
 
 import { useImportsExportsData, formatMonth, addMonths, cmpMonth } from "../useImportsExportsData";
 import type {
@@ -366,22 +367,6 @@ function SectionHeading({ title, loading }: { title: string; loading?: boolean }
     </div>
   );
 }
-
-// Month labels (0-indexed) for the period picker drawer.
-const MONTH_LABELS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
-const selectStyle: React.CSSProperties = {
-  flex: 1,
-  padding: "8px 10px",
-  borderRadius: 8,
-  border: "1px solid #ccc",
-  fontSize: 14,
-  fontFamily: "Arial",
-  minHeight: 44,
-};
 
 // ─── Products ──────────────────────────────────────────────────────────────────
 
@@ -1232,79 +1217,24 @@ export default function MobileView(): React.ReactElement {
         applyLabel="Apply"
         resetLabel="Reset"
       >
-        {/* Period */}
+        {/* Period — shared MonthRangePicker (same component used by desktop sidebar).
+            Quick-range chips (Last 12m, Last 24m, YTD, Last 5y, All) + 4 selects.
+            Clamping + ordering enforced inside the picker. */}
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: "#555", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.4px" }}>
             Period
           </div>
-          {filtrosLoading ? (
+          {filtrosLoading && !filtros ? (
             <div style={{ fontSize: 12, color: "#aaa" }}>Loading…</div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <div>
-                <div style={{ fontSize: 10, color: "#888", marginBottom: 4, fontFamily: "Arial" }}>FROM</div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <select
-                    value={filters.period.start.mes}
-                    onChange={(e) => {
-                      const next: MonthCursor = { ano: filters.period.start.ano, mes: Number(e.target.value) };
-                      const clampedEnd = cmpMonth(next, filters.period.end) > 0 ? next : filters.period.end;
-                      setFilters({ period: { start: next, end: clampedEnd } });
-                    }}
-                    style={selectStyle}
-                  >
-                    {MONTH_LABELS.map((m, i) => (
-                      <option key={m} value={i + 1}>{m}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={filters.period.start.ano}
-                    onChange={(e) => {
-                      const next: MonthCursor = { ano: Number(e.target.value), mes: filters.period.start.mes };
-                      const clampedEnd = cmpMonth(next, filters.period.end) > 0 ? next : filters.period.end;
-                      setFilters({ period: { start: next, end: clampedEnd } });
-                    }}
-                    style={selectStyle}
-                  >
-                    {Array.from({ length: anoMax - anoMin + 1 }, (_, i) => anoMin + i).map((y) => (
-                      <option key={y} value={y}>{y}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <div style={{ fontSize: 10, color: "#888", marginBottom: 4, fontFamily: "Arial" }}>TO</div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <select
-                    value={filters.period.end.mes}
-                    onChange={(e) => {
-                      const next: MonthCursor = { ano: filters.period.end.ano, mes: Number(e.target.value) };
-                      const clampedStart = cmpMonth(next, filters.period.start) < 0 ? next : filters.period.start;
-                      setFilters({ period: { start: clampedStart, end: next } });
-                    }}
-                    style={selectStyle}
-                  >
-                    {MONTH_LABELS.map((m, i) => (
-                      <option key={m} value={i + 1}>{m}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={filters.period.end.ano}
-                    onChange={(e) => {
-                      const next: MonthCursor = { ano: Number(e.target.value), mes: filters.period.end.mes };
-                      const clampedStart = cmpMonth(next, filters.period.start) < 0 ? next : filters.period.start;
-                      setFilters({ period: { start: clampedStart, end: next } });
-                    }}
-                    style={selectStyle}
-                  >
-                    {Array.from({ length: anoMax - anoMin + 1 }, (_, i) => anoMin + i).map((y) => (
-                      <option key={y} value={y}>{y}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
+            <MonthRangePicker
+              min={lowerBound}
+              max={upperBound}
+              value={filters.period}
+              onChange={(next) => setFilters({ period: next })}
+              layout="sidebar"
+              showQuickRanges
+            />
           )}
         </div>
       </FilterDrawer>
