@@ -119,8 +119,8 @@ export const MODULE_LABELS: ModuleLabel[] = [
   { slug: "anp-prices",              label: "ANP Prices",                   description: "Producer, distribution and retail prices for fuels — Brazilian supply chain" },
   { slug: "anp-glp",                 label: "ANP LPG",                      description: "LPG production and distribution data from ANP" },
   { slug: "imports-exports",         label: "Imports & Exports",            description: "Brazil fuel imports and exports — origins, importers, and volumes" },
-  { slug: "anp-cdp",                 label: "ANP CDP Production",           description: "ANP CDP oil and gas production data by well and field" },
-  { slug: "anp-cdp-diaria",          label: "ANP CDP Diária",               description: "Daily oil and gas production by field from ANP Power BI" },
+  { slug: "anp-cdp",                 label: "Production",                   description: "Monthly oil and gas production by well and field (ANP CDP)" },
+  { slug: "anp-cdp-diaria",          label: "Daily Production",             description: "Daily oil and gas production by field from ANP Power BI" },
   { slug: "anp-cdp-bsw",             label: "BSW by Well",                  description: "Water cut vs months since first production, by well" },
   { slug: "anp-cdp-depletion",       label: "Depletion",                    description: "Uptime-normalized oil production and decline analysis by field" },
   // Other

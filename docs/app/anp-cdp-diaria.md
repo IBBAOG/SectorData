@@ -1,6 +1,6 @@
 # Sub-PRD — `/anp-cdp-diaria`
 
-Dashboard ANP CDP Diária — Produção Diária por Campo / Instalação / Poço (Oil & Gas). Owner: [`worker_dash-anp-cdp-diaria`](../../.claude/agents/worker_dash-anp-cdp-diaria.md).
+Dashboard Daily Production — by Field / Installation / Well (Oil & Gas). Owner: [`worker_dash-anp-cdp-diaria`](../../.claude/agents/worker_dash-anp-cdp-diaria.md). Source: ANP Power BI (`anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco`).
 
 > Item do dropdown "Oil & Gas" da NavBar (irmão de `/anp-cdp`). Distinção crítica: `/anp-cdp` é mensal por **poço** (formulário CDP); `/anp-cdp-diaria` é diário e cobre **três níveis de granularidade** (campo, instalação, poço) via Power BI ANP.
 
@@ -85,7 +85,7 @@ Por nível, o usuário pode:
 - Inspecionar a tabela de produção mais recente (até 500 linhas).
 - Exportar Excel/CSV via `ExportPanel` Tier 2 (`ExportModal` com calculadora de tamanho).
 
-Header: título e sub variam por nível ("ANP CDP — Produção Diária por Campo/Instalação/Poço").
+Header: título e sub variam por nível ("Daily Production by Field/Installation/Well").
 
 ### Diferença vs `/anp-cdp`
 

@@ -217,7 +217,7 @@ export default function MobileView(): React.ReactElement | null {
       }}
     >
       {/* Sticky top bar */}
-      <MobileTopBar title="ANP Daily Production" />
+      <MobileTopBar title="Daily Production" />
 
       {/* Page heading */}
       <section style={{ padding: "16px 16px 8px" }}>
@@ -896,7 +896,7 @@ export default function MobileView(): React.ReactElement | null {
       <ExportModal
         open={exportOpen}
         onClose={() => setExportOpen(false)}
-        title="Export — ANP CDP Daily (Field)"
+        title="Export — Daily Production (Field)"
         datasetKey={datasetKey}
         currentFilters={exportFilters}
         countFetcher={estimateExportRows}

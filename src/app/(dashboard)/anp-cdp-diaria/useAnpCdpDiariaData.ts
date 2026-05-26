@@ -652,9 +652,9 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
                                      "anp_cdp_diaria_poco";
 
   const headerTitle =
-    granularity === "field"        ? "ANP CDP — Daily Production by Field" :
-    granularity === "installation" ? "ANP CDP — Daily Production by Installation" :
-                                     "ANP CDP — Daily Production by Well";
+    granularity === "field"        ? "Daily Production by Field" :
+    granularity === "installation" ? "Daily Production by Installation" :
+                                     "Daily Production by Well";
 
   const headerSub =
     granularity === "field"        ? "Petroleum and natural gas by field, refreshed 3×/day (source: ANP Power BI)" :

@@ -82,8 +82,8 @@ const CARDS: Omit<HomeCardDef, "category">[] = [
   {
     slug: "anp-cdp",
     preview: null,
-    title: "ANP CDP Production",
-    description: "ANP CDP oil and gas production data by well and field",
+    title: "Production",
+    description: "Monthly oil and gas production by well and field (ANP CDP)",
     badge: "Available",
     href: "/anp-cdp",
     disabled: false,
@@ -109,7 +109,7 @@ const CARDS: Omit<HomeCardDef, "category">[] = [
   {
     slug: "anp-cdp-diaria",
     preview: null,
-    title: "ANP CDP Diária",
+    title: "Daily Production",
     description: "Daily oil and gas production by field from ANP Power BI",
     badge: "Available",
     href: "/anp-cdp-diaria",

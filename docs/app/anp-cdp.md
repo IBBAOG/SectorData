@@ -1,6 +1,6 @@
 # Sub-PRD — `/anp-cdp`
 
-Dashboard ANP CDP — Produção por Poço (Oil & Gas). Owner: [`worker_dash-anp-cdp`](../../.claude/agents/worker_dash-anp-cdp.md).
+Dashboard Production by Well (Oil & Gas). Owner: [`worker_dash-anp-cdp`](../../.claude/agents/worker_dash-anp-cdp.md). Source: ANP CDP (`anp_cdp_producao`).
 
 > **Único dashboard do dropdown "Oil & Gas" da NavBar.** Demais dashboards estão em "Fuel Distribution".
 
@@ -69,7 +69,7 @@ Visualização da **produção mensal por poço** declarada na CDP (Comunicaçã
 - Restringir o **período** via range slider (default: últimos 10 anos).
 - Ver série temporal agregada da seleção em chart de área (Plotly, laranja `#FF5000`).
 
-Header dinâmico: "ANP CDP — Produção por Poço · {métrica} · {ano início}–{ano fim}".
+Header dinâmico: "Production by Well · {métrica} · {ano início}–{ano fim}".
 
 ## RPCs
 

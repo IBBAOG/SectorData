@@ -59,7 +59,7 @@ export const DATA_SOURCES: DataSource[] = [
     cronUtc: "0 10,15,20 * * *",
     cronDescription: "3× per day at 10:00, 15:00, 20:00 UTC",
     sourceFrequency: "Daily",
-    dashboards: [{ slug: "anp-cdp-diaria", title: "ANP CDP Diária" }],
+    dashboards: [{ slug: "anp-cdp-diaria", title: "Daily Production" }],
     supabaseTable: "anp_cdp_diaria",
     isRealtime: false,
     staleAfterHours: 12,
@@ -77,7 +77,7 @@ export const DATA_SOURCES: DataSource[] = [
     cronDescription: "Monthly on day 5 at 08:00 UTC (+ incremental every ~2h via external cron-job.org)",
     sourceFrequency: "Monthly",
     dashboards: [
-      { slug: "anp-cdp", title: "ANP CDP Production" },
+      { slug: "anp-cdp", title: "Production" },
       { slug: "anp-cdp-bsw", title: "BSW by Well" },
       { slug: "anp-cdp-depletion", title: "Depletion" },
     ],

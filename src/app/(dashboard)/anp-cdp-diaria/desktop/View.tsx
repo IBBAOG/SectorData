@@ -346,7 +346,7 @@ export default function DesktopView(): React.ReactElement | null {
       <ExportModal
         open={exportOpen}
         onClose={() => setExportOpen(false)}
-        title={`Export — ANP CDP Daily (${dimLabel.en})`}
+        title={`Export — Daily Production (${dimLabel.en})`}
         datasetKey={datasetKey}
         currentFilters={exportFilters}
         countFetcher={estimateExportRows}

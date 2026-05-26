@@ -410,7 +410,7 @@ export default function DesktopView(): React.ReactElement | null {
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
               <DashboardHeader
-                title="ANP CDP — Production by Well"
+                title="Production by Well"
                 sub="Monthly production reported to ANP by well, field, and operator"
                 period={allYears.length > 0 ? [yMin, yMax] : null}
                 rightSlot={
@@ -462,7 +462,7 @@ export default function DesktopView(): React.ReactElement | null {
       <ExportModal
         open={exportOpen}
         onClose={() => setExportOpen(false)}
-        title="Export — ANP CDP"
+        title="Export — Production"
         datasetKey="anp_cdp_producao"
         currentFilters={{ ...exportFilters, _g: exportGranularity }}
         countFetcher={countFetcher}
