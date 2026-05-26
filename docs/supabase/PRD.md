@@ -138,11 +138,11 @@ Migration: `20260526200000_data_sources_freshness.sql`. RPC pública que serve a
 
 | RPC | Assinatura | Notas |
 |---|---|---|
-| `get_data_sources_freshness` | `() RETURNS TABLE(source_key text, last_update timestamptz, row_count bigint)` | LANGUAGE sql STABLE SECURITY DEFINER. `SET search_path = public, pg_temp`. `GRANT EXECUTE TO anon, authenticated`. Polled 60s pelo hook `useDataSourcesFreshness` em `src/components/home/DataSourcesTable/`. SECURITY DEFINER é obrigatório porque a UNION lê tabelas com RLS authed-only (vide CLAUDE.md Pegadinha #18) — sem ele, anon callers receberiam `[]` silenciosamente. |
+| `get_data_sources_freshness` | `() RETURNS TABLE(source_key text, last_update timestamptz, row_count bigint)` | LANGUAGE sql STABLE SECURITY DEFINER. `SET search_path = public, pg_temp`. `GRANT EXECUTE TO anon, authenticated`. Polled 60s pelo hook `useDataSourcesFreshness` em `src/components/home/DataSourcesTable/`. SECURITY DEFINER é obrigatório porque a UNION lê tabelas com RLS authed-only (vide CLAUDE.md Pegadinha #18) — sem ele, anon callers receberiam `[]` silenciosamente. **Hotfix `20260527300000`** (Subsidy Reform): DROP+CREATE para remover branch `anp_subsidy_history` (DROPADA) e adicionar branches `anp_subsidy_caps` + `anp_subsidy_commercialization` (ambos `MAX(inserted_at)`). Total atual: 23 sources. |
 
 A query é um UNION ALL de 22 SELECTs (1 por tabela ETL-fed). Cada SELECT carrega um literal `source_key text` que é a chave de match com o catálogo TS `src/data/dataSources.ts`. O catálogo TS tem 23 entries: 22 tabelas + `yahoo_finance` (live realtime, sem tabela Supabase — exibido pela tabela com label "live" em vez de timestamp).
 
-**Tabelas cobertas (22):** `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco`, `anp_cdp_producao`, `anp_voip`, `vendas`, `anp_precos_produtores`, `anp_glp`, `anp_lpc`, `anp_precos_distribuicao`, `anp_subsidy_diesel_reference`, `anp_subsidy_history`, `mdic_comex`, `anp_daie`, `anp_desembaracos`, `navios_diesel`, `vessel_positions`, `port_arrivals`, `import_candidates`, `d_g_margins`, `price_bands`, `news_articles`.
+**Tabelas cobertas (23, após hotfix `20260527300000`):** `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco`, `anp_cdp_producao`, `anp_voip`, `vendas`, `anp_precos_produtores`, `anp_glp`, `anp_lpc`, `anp_precos_distribuicao`, `anp_subsidy_diesel_reference`, `anp_subsidy_caps`, `anp_subsidy_commercialization`, `mdic_comex`, `anp_daie`, `anp_desembaracos`, `navios_diesel`, `vessel_positions`, `port_arrivals`, `import_candidates`, `d_g_margins`, `price_bands`, `news_articles`. (`anp_subsidy_history` foi DROPADA pela Subsidy Reform e a branch removida do UNION — ver § "Subsidy Reform".)
 
 **Convenções de `last_update` por tabela** (descobertas em runtime via `list_tables` durante a integração — referência para futuras tabelas que entrarem na RPC):
 
@@ -155,7 +155,7 @@ A query é um UNION ALL de 22 SELECTs (1 por tabela ETL-fed). Cada SELECT carreg
 | `anp_precos_produtores` | `data_fim` | Tabela carrega uma JANELA (`data_inicio..data_fim`), não data única. Usa `data_fim` (borda superior da semana publicada). **Não existe `data_referencia` aqui** (não confundir com `anp_precos_distribuicao`). |
 | `anp_lpc` | `data_fim` | Idem — semana fechada. **Não existe `data_referencia`**. |
 | `anp_precos_distribuicao` / `anp_subsidy_diesel_reference` | `data_referencia` | Day-grain de publicação. |
-| `anp_subsidy_history` | `vigente_desde` | Day-grain de vigência. |
+| `anp_subsidy_caps` / `anp_subsidy_commercialization` | `MAX(inserted_at)` | Ambas append-only — o sinal de freshness é o ingest time, não a data de vigência. Hotfix `20260527300000` (Subsidy Reform). |
 | `navios_diesel` | `collected_at` | Timestamp de scraping. |
 | `vessel_positions` | `ts` | Timestamp do AIS ping (não `created_at`). |
 | `port_arrivals` | `detected_at` | Timestamp do detector ETL — melhor que `entered_at` (que reflete ETA, não a chegada efetivamente detectada). |
@@ -239,6 +239,81 @@ Todas as 6 RPCs: `SET search_path = public`, `GRANT EXECUTE TO anon, authenticat
 
 **Exports vêm de `mdic_comex`, não de `anp_daie`:** migration `20260525000110_imports_exports_exports_by_country.sql` retirou `get_imports_exports_exports_serie` e introduziu `get_imports_exports_exports_paises_stacked` + `get_imports_exports_exports_yoy_table`, ambas lendo de `mdic_comex` com filtro `flow='export'` + JOIN em `imports_product_map source='mdic'`. A tabela `anp_daie` permanece viva (alimenta os panels de Importação via `get_imports_exports_paises_stacked`/`importers_stacked`/`yoy_table` por `imports_product_map source='daie'`), mas Exports não a consultam mais. Conversão kg→mil m³ é server-side via `ncm_densidade_kg_m3`.
 
+### Subsidy Reform (2026-05-27)
+
+Migrations: `20260527200000_subsidy_reform.sql` (núcleo) + `20260527300000_data_sources_freshness_subsidy_fix.sql` (hotfix do `get_data_sources_freshness`).
+
+A versão anterior do subsídio do diesel tratava `anp_subsidy_history.subsidio_brl_l` como a **diferença** entre preço de referência e preço de comercialização. Isso estava semanticamente errado: o valor é o **teto** (cap) do reembolso. O reembolso real, por região, é
+
+```
+reimb_região = MIN(MAX(ref_diária − comm_período, 0), cap_agente_vigente)
+```
+
+e a métrica usada nos dashboards é a média das 5 regiões. Duas trilhas de agente (`importador`, `produtor`) têm caps independentes desde 2026-04-07.
+
+**Mudanças de schema:**
+
+| Objeto | Mudança |
+|---|---|
+| `anp_subsidy_history` | **DROPADA** (`DROP TABLE ... CASCADE`). |
+| `anp_subsidy_caps` | Tabela nova. PK `(vigente_desde DATE, tipo_agente TEXT CHECK IN ('importador','produtor'))`. Colunas: `cap_brl_l NUMERIC(10,4) NOT NULL CHECK >= 0`, `observacao TEXT`, `inserted_at TIMESTAMPTZ DEFAULT now()`. Seed: 4 rows (`2026-03-13 × 2 = 0.32` unificado + `2026-04-07: produtor=1.12, importador=1.52`). RLS ON, policy `caps_read` SELECT TO anon, authenticated USING (true). Mantida manualmente (cardinalidade muito baixa). |
+| `anp_subsidy_commercialization` | Tabela nova. PK `(data_inicio DATE, regiao TEXT CHECK IN 5 regions, tipo_agente TEXT)`. Colunas: `data_fim DATE` (CHECK `>= data_inicio`), `preco_comercializacao NUMERIC(10,4) NOT NULL CHECK >= 0`, `ordinal INT`, `pdf_url TEXT`, `inserted_at TIMESTAMPTZ`. Índices: `idx_comm_data_fim (data_fim)`, `idx_comm_lookup (regiao, tipo_agente, data_inicio)`. RLS ON, policy `comm_read` SELECT TO anon, authenticated USING (true). Populada pelo stage HTML novo de `scripts/pipelines/anp/subsidy_diesel_sync.py`. |
+
+**Function:**
+
+| Function | Assinatura | Notas |
+|---|---|---|
+| `compute_subsidy_reimbursement` | `(p_date DATE, p_tipo_agente TEXT) RETURNS NUMERIC` | `LANGUAGE sql STABLE SECURITY DEFINER` + `SET search_path = public, pg_temp`. Joins `anp_subsidy_diesel_reference` × `anp_subsidy_commercialization` por `(regiao, tipo_agente)` com `p_date BETWEEN c.data_inicio AND c.data_fim`, aplica `LEAST(GREATEST(ref − comm, 0), cap)` por região (cap é o vigente em `p_date` para o `tipo_agente`), e retorna `AVG(...)`. NULL se faltar dado. `GRANT EXECUTE TO anon, authenticated`. SECURITY DEFINER é obrigatório porque as tabelas têm RLS authed-only no caso da `anp_subsidy_diesel_reference` (Pegadinha #18). |
+
+**Triggers** (todos em SECURITY DEFINER + `search_path = public, pg_temp`):
+
+| Trigger | Tabela alvo | Evento | Função |
+|---|---|---|---|
+| `populate_pb_w_subsidy_on_insert` | `price_bands` | BEFORE INSERT OR UPDATE OF (`date`, `product`, `bba_import_parity`, `petrobras_price`) | `_pb_populate_w_subsidy()` — para rows com `product='Diesel'`, recalcula `bba_import_parity_w_subsidy = bba_import_parity − reimb_importador` e `petrobras_price_w_subsidy = petrobras_price + reimb_produtor`. Cada um NULL se input ou reimb for NULL. |
+| `recompute_pb_on_reference_change` | `anp_subsidy_diesel_reference` | AFTER INSERT/UPDATE/DELETE | `_on_subsidy_reference_change()` — issue um self-UPDATE no `price_bands` para o `data_referencia` afetado, disparando a BEFORE trigger acima. |
+| `recompute_pb_on_comm_change` | `anp_subsidy_commercialization` | AFTER INSERT/UPDATE/DELETE | `_on_subsidy_commercialization_change()` — issue self-UPDATE em `price_bands` para `date BETWEEN data_inicio AND data_fim`. |
+| `recompute_pb_on_caps_change` | `anp_subsidy_caps` | AFTER INSERT/UPDATE/DELETE | `_on_subsidy_caps_change()` — issue self-UPDATE em `price_bands` para `date >= LEAST(OLD.vigente_desde, NEW.vigente_desde)`. |
+
+Helpers internos: `_pb_refresh_w_subsidy_for_dates(DATE[])` e `_pb_refresh_w_subsidy_from_date(DATE)` — fazem `UPDATE price_bands SET date = date WHERE product='Diesel' AND ...` (no-op de coluna que re-dispara a BEFORE trigger).
+
+**RPC rewrite — `get_subsidy_tracker_diesel()`:**
+
+DROP + CREATE (com explicit re-grant + SECURITY DEFINER + search_path, conforme Pegadinha #18). Nova assinatura retorna 11 colunas:
+
+| Coluna | Tipo | Significado |
+|---|---|---|
+| `date` | DATE | Dia |
+| `ipp` | NUMERIC | `price_bands.bba_import_parity` para Diesel |
+| `ipp_adjusted` | NUMERIC | `ipp − reimb_importador`; NULL se input ou reimb NULL |
+| `petrobras` | NUMERIC | `price_bands.petrobras_price` para Diesel |
+| `petrobras_adjusted` | NUMERIC | `petrobras + reimb_produtor`; NULL se input ou reimb NULL |
+| `anp_reference_importador` | NUMERIC | AVG das 5 regiões em `anp_subsidy_diesel_reference` para `tipo_agente='importador'` |
+| `anp_reference_produtor` | NUMERIC | AVG das 5 regiões para `tipo_agente='produtor'` |
+| `anp_commercialization_importador` | NUMERIC | AVG das 5 regiões em `anp_subsidy_commercialization` para `tipo_agente='importador'`, joining por `date BETWEEN data_inicio AND data_fim` |
+| `anp_commercialization_produtor` | NUMERIC | AVG das 5 regiões para `tipo_agente='produtor'` |
+| `regions_importador` | JSONB | `{regiao: preco_referencia}` para tooltip |
+| `regions_produtor` | JSONB | idem |
+
+`LANGUAGE sql STABLE SECURITY DEFINER` + `SET search_path = public, pg_temp` + `GRANT EXECUTE TO anon, authenticated`. Consumida por `useSubsidyTrackerData.ts` (frontend `/subsidy-tracker`).
+
+**Hotfix `20260527300000_data_sources_freshness_subsidy_fix.sql`:**
+
+`get_data_sources_freshness()` foi DROP+CREATE (não dava CREATE OR REPLACE com o body referenciando `anp_subsidy_history` DROPADA). Removida a branch de `anp_subsidy_history`; adicionadas duas branches novas:
+
+```sql
+SELECT 'anp_subsidy_caps'::text, MAX(inserted_at), count(*)::bigint FROM public.anp_subsidy_caps
+UNION ALL
+SELECT 'anp_subsidy_commercialization'::text, MAX(inserted_at), count(*)::bigint FROM public.anp_subsidy_commercialization
+```
+
+Total: 23 sources (era 22). Atributos preservados na recriação: `LANGUAGE sql STABLE SECURITY DEFINER` + `search_path = public, pg_temp` + `GRANT EXECUTE TO anon, authenticated`.
+
+**Pegadinhas — Subsidy Reform:**
+
+- **Não use `CREATE OR REPLACE`** numa migration que altera a estrutura interna de tabelas referenciadas pela função se uma das tabelas referenciadas foi DROPADA — o body sempre é re-parseado. Use `DROP FUNCTION IF EXISTS ... ; CREATE FUNCTION ...`. Foi exatamente o bug que motivou o hotfix do `get_data_sources_freshness` (a reforma DROPOU `anp_subsidy_history` mas a função ainda tinha branch lendo ela).
+- **Triggers AFTER em 3 tabelas distintas (`reference`, `commercialization`, `caps`) fazem self-UPDATE no `price_bands`**, que re-dispara a BEFORE trigger. Esse padrão funciona porque a BEFORE trigger é idempotente (recalcula a partir de inputs vivos), mas significa que um INSERT pesado em `anp_subsidy_diesel_reference` pode tocar muitos rows em `price_bands` em cascata. Acompanhar perf via `pg_stat_user_tables` se a ingestão crescer (atualmente ~1 row/dia × 5 regiões × 2 agentes ≈ 10 rows/dia em `reference`, trivial).
+- **`anp_subsidy_history` está realmente DROPADA.** Qualquer migration nova que referencie esse nome quebra silenciosamente (table not found) — checar com `\dt anp_subsidy_*` antes de qualquer SQL.
+
 ### Trigger: cross-local guard em `anp_cdp_producao`
 
 **Causa**: incidente Apr/2026 — mesmo poço republicado pela ANP com `local` diferente (PosSal + PreSal + Terra) produziu 3× linhas. PK natural inclui `local`, então `ON CONFLICT` não disparou e o dashboard somou as 3 cópias (12.853 → 4.337 kbpd após cleanup; 2.076 linhas movidas para `_quarantine_anp_cdp_apr2026`).
@@ -282,7 +357,8 @@ Todas as 6 RPCs: `SET search_path = public`, `GRANT EXECUTE TO anon, authenticat
 | ANP CDP Diária — Installation | `get_anp_cdp_diaria_instalacao_filtros`, `get_anp_cdp_diaria_instalacao_serie` | dash-anp-cdp-diaria |
 | ANP CDP Diária — Well | `get_anp_cdp_diaria_poco_filtros`, `get_anp_cdp_diaria_poco_serie` | dash-anp-cdp-diaria |
 | Export count (Tier 2) | `get_ms_export_count(p_data_inicio, p_data_fim, p_regioes, p_ufs, p_mercados) → bigint`, `get_anp_cdp_export_count(p_pocos, p_campos, p_bacoes, p_locais, p_estados, p_operadores, p_instalacoes, p_tipos_instalacao, p_ano_inicio, p_ano_fim) → bigint`, `get_anp_lpc_export_count(p_produtos, p_estados, p_data_inicio, p_data_fim) → bigint` | APP (useExportSize) — retornam count filtrado para estimar tamanho do export antes do download. Migration: `20260507000003_export_count_rpcs.sql`. (Nota: `get_mdic_comex_export_count` foi DROPPED em 2026-05-25 com a retirada de `/mdic-comex`.) |
-| Data Sources freshness | `get_data_sources_freshness() → TABLE(source_key text, last_update timestamptz, row_count bigint)` | Consumida pela tabela live "Data Sources" da `/home` (desktop only). UNION ALL sobre 22 tabelas ETL-fed. SECURITY DEFINER + `search_path = public, pg_temp`; `GRANT EXECUTE TO anon, authenticated`. Migration: `20260526200000_data_sources_freshness.sql`. Detalhes em § "Data Sources Freshness". Owner: dash-admin (UI) + worker_supabase (RPC). |
+| Data Sources freshness | `get_data_sources_freshness() → TABLE(source_key text, last_update timestamptz, row_count bigint)` | Consumida pela tabela live "Data Sources" da `/home` (desktop only). UNION ALL sobre 23 tabelas ETL-fed (era 22 — Subsidy Reform `20260527300000` trocou `anp_subsidy_history` por `anp_subsidy_caps` + `anp_subsidy_commercialization`). SECURITY DEFINER + `search_path = public, pg_temp`; `GRANT EXECUTE TO anon, authenticated`. Migrations: `20260526200000_data_sources_freshness.sql` + hotfix `20260527300000_data_sources_freshness_subsidy_fix.sql`. Detalhes em § "Data Sources Freshness". Owner: dash-admin (UI) + worker_supabase (RPC). |
+| Subsidy Tracker | `get_subsidy_tracker_diesel() → TABLE(date, ipp, ipp_adjusted, petrobras, petrobras_adjusted, anp_reference_importador, anp_reference_produtor, anp_commercialization_importador, anp_commercialization_produtor, regions_importador jsonb, regions_produtor jsonb)` + interna `compute_subsidy_reimbursement(date, tipo_agente) → numeric`. RPC rewrite em `20260527200000_subsidy_reform.sql` (era 1 col simples antes; nova signature dual-agent com sufixos PT). SECURITY DEFINER + `search_path = public, pg_temp` + `GRANT EXECUTE TO anon, authenticated`. Detalhes em § "Subsidy Reform". | dash-subsidy-tracker + dash-price-bands (trigger-side: `_pb_populate_w_subsidy` lê via `compute_subsidy_reimbursement` para preencher `price_bands._w_subsidy`) |
 
 ## Migration smoke test
 
