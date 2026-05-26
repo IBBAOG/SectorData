@@ -1,0 +1,21 @@
+{
+  "title": "Mercosul-UE: Argentina e Uruguai esgotam cotas de arroz e ovos e acendem alerta no Brasil",
+  "minParagraphCount": 8,
+  "maxParagraphCount": 25,
+  "firstParagraphContains": "A falta de consenso sobre a divisão interna das cotas agrícolas do acordo comercial entre o Mercosul",
+  "lastParagraphContains": "o desempenho foi impulsionado pela agilidade da nova guia digital da Janela Única de Comércio Exterior",
+  "noNoiseMarkers": [
+    "Leia também",
+    "Compartilhe",
+    "Assine",
+    "Newsletter",
+    "Continua após",
+    "Mais lidas",
+    "Veja também",
+    "Publicidade",
+    "Anúncio",
+    "Gerando resumo"
+  ],
+  "noiseMustNotAppearAnywhere": true,
+  "_note": "firstParagraphContains targets the actual article lead; description-class teaser subtitles still leak as p[0] and p[1] (known issue — description is too generic to block globally)."
+}

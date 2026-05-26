@@ -1,0 +1,19 @@
+{
+  "title": null,
+  "minParagraphCount": 8,
+  "maxParagraphCount": 25,
+  "firstParagraphContains": "O crescimento do mercado spot e a forte expansão das exportações dos Estados Unidos remodelaram",
+  "lastParagraphContains": "Investimentos substanciais em infraestrutura de GNL, diversificação do fornecimento",
+  "noNoiseMarkers": [
+    "Leia também",
+    "Compartilhe",
+    "Assine",
+    "Newsletter",
+    "Continua após",
+    "Mais lidas",
+    "Veja também",
+    "Publicidade",
+    "Anúncio"
+  ],
+  "noiseMustNotAppearAnywhere": true
+}

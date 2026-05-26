@@ -1,0 +1,19 @@
+{
+  "title": null,
+  "minParagraphCount": 15,
+  "maxParagraphCount": 40,
+  "firstParagraphContains": "Durante décadas, investidores procuraram o especialista perfeito. Agora começaram a procurar o algoritmo perfeito",
+  "lastParagraphContains": "Michael Viriato é planejador patrimonial e sócio fundador da Casa do Investidor",
+  "noNoiseMarkers": [
+    "Leia também",
+    "Compartilhe",
+    "Assine",
+    "Newsletter",
+    "Continua após",
+    "Mais lidas",
+    "Veja também",
+    "Publicidade",
+    "Anúncio"
+  ],
+  "noiseMustNotAppearAnywhere": true
+}

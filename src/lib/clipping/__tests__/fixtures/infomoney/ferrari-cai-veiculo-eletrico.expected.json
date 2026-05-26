@@ -1,0 +1,18 @@
+{
+  "title": "Ferrari cai quase 8% após críticas ao seu primeiro veículo elétrico",
+  "minParagraphCount": 15,
+  "maxParagraphCount": 50,
+  "firstParagraphContains": "As ações da Ferrari caíram quase 8% depois que críticos detonaram o visual de seu primeiro veículo totalmente elétrico",
+  "lastParagraphContains": "Essa abordagem busca responder a uma das principais dúvidas em torno de qualquer Ferrari elétrica",
+  "noNoiseMarkers": [
+    "Leia também",
+    "Compartilhe",
+    "Assine",
+    "Newsletter",
+    "Continua após",
+    "Mais lidas",
+    "Veja também",
+    "Anúncio"
+  ],
+  "noiseMustNotAppearAnywhere": true
+}

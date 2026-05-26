@@ -1,0 +1,19 @@
+{
+  "title": null,
+  "minParagraphCount": 7,
+  "maxParagraphCount": 20,
+  "firstParagraphContains": "O etanol de milho vai puxar a expansão do biocombustível no Mato Grosso",
+  "lastParagraphContains": "Paralelamente à produção do biocombustível, a produção de Grãos Secos de Destilaria",
+  "noNoiseMarkers": [
+    "Leia também",
+    "Compartilhe",
+    "Assine",
+    "Newsletter",
+    "Continua após",
+    "Mais lidas",
+    "Veja também",
+    "Publicidade",
+    "Anúncio"
+  ],
+  "noiseMustNotAppearAnywhere": true
+}

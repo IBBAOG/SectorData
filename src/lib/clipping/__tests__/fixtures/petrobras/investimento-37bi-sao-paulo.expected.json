@@ -1,0 +1,20 @@
+{
+  "title": "Em visita de Lula, Petrobras anuncia investimento de R$ 37 bilhões em São Paulo até 2030",
+  "minParagraphCount": 5,
+  "maxParagraphCount": 15,
+  "firstParagraphContains": "O presidente Luiz Inácio Lula da Silva visitou, nesta segunda-feira (18/05), a Refinaria de Paulínia (Replan)",
+  "lastParagraphContains": "Além da Replan, outras refinarias, E&P e logística terão investimentos relevantes",
+  "noNoiseMarkers": [
+    "Leia também",
+    "Compartilhe",
+    "Assine",
+    "Newsletter",
+    "Continua após",
+    "Mais lidas",
+    "Veja também",
+    "Publicidade",
+    "Anúncio",
+    "Continuar lendo"
+  ],
+  "noiseMustNotAppearAnywhere": true
+}

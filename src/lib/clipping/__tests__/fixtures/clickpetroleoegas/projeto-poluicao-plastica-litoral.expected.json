@@ -1,0 +1,18 @@
+{
+  "title": null,
+  "minParagraphCount": 15,
+  "maxParagraphCount": 55,
+  "firstParagraphContains": "A crescente presença de resíduos descartáveis nas praias colocou o Brasil no centro de uma nova estratégia",
+  "lastParagraphContains": "Com informações de MCTI",
+  "noNoiseMarkers": [
+    "Leia também",
+    "Compartilhe",
+    "Assine",
+    "Newsletter",
+    "Continua após",
+    "Mais lidas",
+    "Veja também",
+    "Anúncio"
+  ],
+  "noiseMustNotAppearAnywhere": true
+}
