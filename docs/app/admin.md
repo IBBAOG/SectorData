@@ -195,11 +195,11 @@ src/
 
 **RPC:** `get_data_sources_freshness()` — migration `20260526200000_data_sources_freshness.sql`. Returns `(source_key, last_update, row_count)` for all 22 ETL-fed tables. SECURITY DEFINER, accessible to `anon` + `authenticated`. Wrapper: `rpcGetDataSourcesFreshness` in `src/lib/rpc.ts`.
 
-**Note on catalog vs. RPC key count:** The RPC returns 22 source_keys (one per ETL-fed table). The catalog has 17 entries — 6 "extra" DB source_keys (the 3 CDP Diária sub-tables, `anp_desembaracos`, `port_arrivals`, `import_candidates`, and `anp_subsidy_history`) are deduplicated in the catalog but still tracked by freshness. The hook silently ignores keys with no catalog entry (returns undefined → no render).
+**Note on catalog vs. RPC key count:** The RPC returns source_keys for all ETL-fed tables. The catalog deduplicates some keys (e.g. the 3 CDP Diária sub-tables are represented by one entry, `anp_desembaracos` is covered by the `anp_daie` entry, `port_arrivals` + `import_candidates` by `vessel_positions`). The hook silently ignores keys with no catalog entry (returns undefined → no render).
 
-**The 17 entries** (post-deduplication; 22 Supabase source_keys still active in RPC):
+**The 19 entries** (post-deduplication; as of 2026-05-27 after subsidy reform):
 - ANP Production (3): `anp_cdp_diaria` (covers all 3 Power BI tables), `anp_cdp_producao`, `anp_voip`
-- ANP Distribution (6): `vendas`, `anp_precos_produtores`, `anp_glp`, `anp_lpc`, `anp_precos_distribuicao`, `anp_subsidy_diesel_reference` (covers history too)
+- ANP Distribution (8): `vendas`, `anp_precos_produtores`, `anp_glp`, `anp_lpc`, `anp_precos_distribuicao`, `anp_subsidy_diesel_reference`, `anp_subsidy_caps`, `anp_subsidy_commercialization`
 - Imports & Exports (2): `mdic_comex`, `anp_daie` (covers Desembaraços too)
 - Vessels (2): `navios_diesel`, `vessel_positions` (covers arrivals + candidates)
 - Proprietary Data (2): `d_g_margins`, `price_bands`
@@ -648,7 +648,7 @@ Follow-up to the `/home` icon-list redesign. Since module cards no longer use up
 
 ### Ad-hoc sources: cronUtc corrected + Next-run line hidden
 
-`anp_subsidy_history` in `src/data/dataSources.ts` was incorrectly set to `cronUtc: "30 11 * * *"` (inherited by copy-paste from `anp_subsidy_diesel_reference`). Fixed to `cronUtc: null` with an updated `cronDescription` ("Ad-hoc — updated when new subsidy decree drops"). `price_bands` was already `null`.
+`anp_subsidy_history` was removed from `src/data/dataSources.ts` (table dropped by migration `20260527200000_subsidy_reform.sql`). Replaced by two new entries: `anp_subsidy_caps` (ad-hoc, admin-edited cap rates) and `anp_subsidy_commercialization` (daily scrape, same schedule as `anp_subsidy_diesel_reference`). `price_bands` remains `cronUtc: null` (ad-hoc).
 
 `ExpandedRow.tsx` already gates the "Next run" row on `src.cronUtc !== null` — no change needed there; the upstream `dataSources.ts` fix was sufficient.
 
@@ -740,6 +740,21 @@ Eduardo Mendes    eduardo.mendes@itaubba.com
 - Envelope icon (Bootstrap Icons `bi bi-envelope`) is always in the DOM but `opacity: 0` by default; `opacity: 1` on `.row:hover` via CSS sibling rule.
 - Separator between entries: `border-bottom: 1px solid var(--ds-glass-border)` on `.entry`; last child omits it via `:last-child { border-bottom: none }`.
 - `mobile/View.tsx` is **untouched** — mobile does not show the right column.
+
+---
+
+## Changelog — dataSources catalog: subsidy reform (2026-05-27)
+
+`anp_subsidy_history` entry removed from `src/data/dataSources.ts` — the table was dropped by migration `20260527200000_subsidy_reform.sql`. Replaced by two new entries in the `anp-distribution` category:
+
+| key | name | schedule | staleAfterHours |
+|---|---|---|---|
+| `anp_subsidy_caps` | ANP Subsidy Caps | Ad-hoc (admin-edited) | 720 (30 days) |
+| `anp_subsidy_commercialization` | ANP Subsidy Commercialization Prices | Daily at 11:30 UTC | 36 |
+
+`anp_subsidy_diesel_reference` is **unchanged** — it remains a valid, active entry.
+
+Catalog count moves from 17 → 19 entries. The QA fixes changelog entry (Data Sources table QA) was also updated to reflect the removal.
 
 ---
 
