@@ -110,6 +110,25 @@ Returns `(entity text, last_12m numeric, prev_12m numeric, yoy_pct numeric)`.
 
 > **Dropped RPC:** `get_imports_exports_exports_serie(p_unified_products text[], p_ano_inicio, p_ano_fim)` was removed in migration `20260525000110`. Any reference to it in frontend will fail at runtime. The new RPCs cover Exports end-to-end.
 
+### `get_imports_exports_imports_unit_price(p_unified_product, p_ano_inicio, p_ano_fim, p_top_n DEFAULT 8)`
+
+Returns `(ano int, mes int, pais text, usd_per_m3 numeric)`.
+
+- Source: `mdic_comex` (flow='import'). Migration `20260526300000_imports_exports_unit_price_by_country.sql`.
+- Server ranks origin countries by total import volume in period; returns top-N. NOT collapsed to "Others" — each country is a distinct line.
+- `usd_per_m3` is `NULL` for (pais, month) rows where volume = 0. UI uses `y=null + connectgaps` to skip those months in hover without breaking the line.
+- SECURITY DEFINER (required — `mdic_comex` has RLS restricted to authenticated; without SECURITY DEFINER, anon callers get empty results).
+- Default top-N = 8. Chart title: "Import Unit Price by Origin Country (USD/m³)".
+
+### `get_imports_exports_exports_unit_price(p_unified_product, p_ano_inicio, p_ano_fim, p_top_n DEFAULT 8)`
+
+Returns `(ano int, mes int, pais text, usd_per_m3 numeric)`.
+
+- Source: `mdic_comex` (flow='export'). Same migration as above.
+- Server ranks destination countries by total export volume; returns top-N distinct lines.
+- Same NULL semantics and SECURITY DEFINER requirement as the imports variant.
+- Chart title: "Export Unit Price by Destination Country (USD/m³)".
+
 ---
 
 ## Exports tab — ranking divergence note
@@ -146,6 +165,11 @@ The stacked-area chart ("Exports — By Destination Country") ranks destination 
 │              │     Plotly single-line — 1 trace (active product only)     │
 │              │     Source: mdic_comex. Color: matches active product       │
 │              │                                                             │
+│              │   ChartSection "Import Unit Price by Origin Country (USD/m³)"│
+│              │     Plotly multi-line — 1 trace per country (NOT stacked)  │
+│              │     Top 8 countries by import volume. y=null for gaps.     │
+│              │     Source: mdic_comex. Colors: PALETTE rotation.           │
+│              │                                                             │
 │              │ Exports tab:                                                │
 │              │   SegmentedToggle: Volume (mil m³) / Value (USD)           │
 │              │   ChartSection "Exports — By Destination Country"          │
@@ -153,6 +177,11 @@ The stacked-area chart ("Exports — By Destination Country") ranks destination 
 │              │     Top-10 + Others. Unit: mil m³ (metric=volume) or USD   │
 │              │   YoY table (entity | last 12m | prior 12m | YoY%)         │
 │              │   Source note: MDIC Comex                                  │
+│              │                                                             │
+│              │   ChartSection "Export Unit Price by Destination Country"  │
+│              │     Plotly multi-line — 1 trace per country (NOT stacked)  │
+│              │     Top 8 countries by export volume. y=null for gaps.     │
+│              │     Source: mdic_comex. Colors: PALETTE rotation.           │
 └──────────────┴────────────────────────────────────────────────────────────┘
 ```
 
@@ -272,6 +301,49 @@ Diesel 832 kg/m³ · Gasoline 745 kg/m³ · Crude Oil 870 kg/m³ — ANP standar
 
 - `docs/app/_deprecated/mdic-comex.md` — archived sub-PRD of the standalone `/mdic-comex` dashboard (retired 2026-05-25; its function was absorbed by Panel C above).
 - Panel A / Panel B — `anp_desembaracos` based (volume, not price).
+
+---
+
+## Unit Price Panels — Notes
+
+Added 2026-05-26 (migration `20260526300000`).
+
+### Source
+
+Both unit price RPCs source from `mdic_comex` (same as Panel C and the Exports stacked chart). They are **not** sourced from `anp_desembaracos` because that table has no `valor_usd` column — only `quantidade_kg`.
+
+### Unit
+
+USD/m³ for all three products (Diesel, Gasoline, Crude Oil). This is consistent with the rest of the dashboard which expresses volumes in m³. If USD/bbl is preferred for Crude Oil in the future, add a metric toggle (same pattern as Panel C).
+
+Expected sanity-check ranges (approximate, will vary by period):
+- Diesel imports: ~$600–$1 000 /m³
+- Gasoline imports: ~$600–$900 /m³
+- Crude Oil imports: ~$300–$600 /m³
+- Crude Oil exports: ~$300–$600 /m³
+
+If values appear ~6× too high, density is being applied twice. If ~1 000× off, check whether m³ vs L confusion has entered the RPC.
+
+### "Gulf of Mexico ≈ Estados Unidos" proxy
+
+ANP registers cargo origin as the **country of the loading port**, not the cargo's ultimate geographic source. US Gulf Coast refineries (the primary source of diesel imports into Brazil) ship from the United States. Therefore:
+
+- In `anp_desembaracos` (volume source): `pais_origem = 'Estados Unidos'`
+- In `mdic_comex` (price/value source): `pais = 'Estados Unidos'`
+
+The term "Golfo do México" used in trade journalism maps to `pais = 'Estados Unidos'` in MDIC data. This approximation is documented here; no separate mapping or alias is needed.
+
+### Top-N ranking
+
+The RPC ranks countries by **total import/export volume (m³) over the full selected period**, then returns only those top-N countries. There is no "Others" bucket — the chart always shows exactly the top-N lines (fewer if fewer countries have data). This differs from Panels A/B which collapse non-top-N into "Others".
+
+### SECURITY DEFINER requirement
+
+`mdic_comex` has RLS policies restricted to `authenticated` only. Without `SECURITY DEFINER` on the RPCs, `anon` callers get `[]` with no error (pegadinha #18). Both unit price RPCs are `SECURITY DEFINER + SET search_path = public, pg_catalog`.
+
+### Mobile adaptation
+
+Same traces, same data, mobile-tuned layout (240px height, no markers, tighter margins). `unitPriceMobileLayout` is shared between the two unit price panels on mobile for DRY layout definition.
 
 ---
 

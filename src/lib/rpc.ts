@@ -2380,6 +2380,95 @@ export async function rpcGetImportsExportsExportsYoyTable(
   }
 }
 
+// ─── Imports & Exports — Unit price by country ───────────────────────────────
+
+/**
+ * Row returned by the two unit-price-by-country RPCs.
+ * usd_per_m3 is NULL for (pais, month) combos where volume = 0.
+ * UI should map NULL → null in Plotly y-array (y=null + connectgaps).
+ */
+export type IEUnitPriceRow = {
+  ano: number;
+  mes: number;
+  pais: string;
+  usd_per_m3: number | null;
+};
+
+/**
+ * Monthly USD/m³ by import-origin country.
+ * Source: mdic_comex (flow='import'), top-N countries by volume in period.
+ *
+ * "Gulf of Mexico ≈ United States (proxy)": ANP registers cargo origin as
+ * the country of the loading port; US Gulf Coast cargoes appear as
+ * pais = 'Estados Unidos'. See sub-PRD § "Unit Price panels — gotchas".
+ *
+ * Security: SECURITY DEFINER on the RPC (pegadinha #18 in CLAUDE.md).
+ */
+export async function rpcGetImportsExportsImportsUnitPrice(
+  supabase: SupabaseClient,
+  unifiedProduct: string,
+  anoInicio: number,
+  anoFim: number,
+  topN = 8,
+): Promise<IEUnitPriceRow[]> {
+  try {
+    const { data, error } = await supabase.rpc(
+      "get_imports_exports_imports_unit_price",
+      {
+        p_unified_product: unifiedProduct,
+        p_ano_inicio: anoInicio,
+        p_ano_fim: anoFim,
+        p_top_n: topN,
+      },
+    );
+    if (error) throw error;
+    return ((data ?? []) as IEUnitPriceRow[]).map((r) => ({
+      ano: Number(r.ano),
+      mes: Number(r.mes),
+      pais: String(r.pais),
+      usd_per_m3: r.usd_per_m3 != null ? Number(r.usd_per_m3) : null,
+    }));
+  } catch (e) {
+    console.error("get_imports_exports_imports_unit_price failed", e);
+    return [];
+  }
+}
+
+/**
+ * Monthly USD/m³ by export-destination country.
+ * Source: mdic_comex (flow='export'), top-N countries by volume in period.
+ * Security: SECURITY DEFINER on the RPC (pegadinha #18 in CLAUDE.md).
+ */
+export async function rpcGetImportsExportsExportsUnitPrice(
+  supabase: SupabaseClient,
+  unifiedProduct: string,
+  anoInicio: number,
+  anoFim: number,
+  topN = 8,
+): Promise<IEUnitPriceRow[]> {
+  try {
+    const { data, error } = await supabase.rpc(
+      "get_imports_exports_exports_unit_price",
+      {
+        p_unified_product: unifiedProduct,
+        p_ano_inicio: anoInicio,
+        p_ano_fim: anoFim,
+        p_top_n: topN,
+      },
+    );
+    if (error) throw error;
+    return ((data ?? []) as IEUnitPriceRow[]).map((r) => ({
+      ano: Number(r.ano),
+      mes: Number(r.mes),
+      pais: String(r.pais),
+      usd_per_m3: r.usd_per_m3 != null ? Number(r.usd_per_m3) : null,
+    }));
+  } catch (e) {
+    console.error("get_imports_exports_exports_unit_price failed", e);
+    return [];
+  }
+}
+
 // ─── MODULE: Admin — Default News Keywords ────────────────────────────────────
 //
 // Admin-only RPCs for managing the `news_hunter_default_keywords` table.

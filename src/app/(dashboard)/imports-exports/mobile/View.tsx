@@ -41,6 +41,7 @@ import type {
   YoyTableRow,
   PriceMetric,
   PricePoint,
+  UnitPriceRow,
 } from "../useImportsExportsData";
 
 import { COMMON_LAYOUT, AXIS_LINE, PALETTE, emptyPlot } from "../../../../lib/plotlyDefaults";
@@ -149,6 +150,39 @@ function buildPriceTraces(data: PricePoint[], unit: string): PlotData[] {
     } as unknown as PlotData);
   }
   return traces;
+}
+
+// ─── Unit price by country (multi-line, NOT stacked) — mobile ─────────────────
+
+function buildUnitPriceTraces(rows: UnitPriceRow[], entities: string[]): PlotData[] {
+  if (!rows.length) return [];
+
+  const byEntity = new Map<string, Map<string, number | null>>();
+  const xSet = new Set<string>();
+
+  for (const r of rows) {
+    const xKey = `${r.ano}-${String(r.mes).padStart(2, "0")}`;
+    xSet.add(xKey);
+    if (!byEntity.has(r.pais)) byEntity.set(r.pais, new Map());
+    byEntity.get(r.pais)!.set(xKey, r.usd_per_m3);
+  }
+
+  const xs = Array.from(xSet).sort();
+
+  return entities.map((entity, idx) => {
+    const color = PALETTE[idx % PALETTE.length] ?? OTHERS_COLOR;
+    const ys = xs.map((x) => byEntity.get(entity)?.get(x) ?? null);
+    return {
+      type: "scatter" as const,
+      mode: "lines" as const,
+      name: entity,
+      x: xs,
+      y: ys,
+      connectgaps: true,
+      line: { color, width: 1.5 },
+      hovertemplate: `%{x}<br>${entity}: %{y:,.1f} USD/m³<extra></extra>`,
+    } as unknown as PlotData;
+  });
 }
 
 function mobileAreaLayout(yLabel: string): Partial<Layout> {
@@ -324,6 +358,10 @@ export default function MobileView(): React.ReactElement {
     yoyExportsEndMes,
     priceData,
     priceLoading,
+    importsUnitPriceData,
+    importsUnitPriceLoading,
+    exportsUnitPriceData,
+    exportsUnitPriceLoading,
     periodBadge,
     visible,
     visibilityLoading,
@@ -414,6 +452,59 @@ export default function MobileView(): React.ReactElement {
       },
     }),
     [priceUnit],
+  );
+
+  // ── Unit price traces (imports + exports) ─────────────────────────────────
+  const importsUPEntities = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const r of importsUnitPriceData) {
+      if (r.usd_per_m3 != null) totals.set(r.pais, (totals.get(r.pais) ?? 0) + 1);
+    }
+    return Array.from(totals.keys()).sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0));
+  }, [importsUnitPriceData]);
+
+  const importsUPTraces = useMemo(
+    () => buildUnitPriceTraces(importsUnitPriceData, importsUPEntities),
+    [importsUnitPriceData, importsUPEntities],
+  );
+
+  const unitPriceMobileLayout: Partial<Layout> = useMemo(
+    () => ({
+      ...COMMON_LAYOUT,
+      hovermode: "x unified" as const,
+      height: 240,
+      margin: { t: 8, b: 52, l: 56, r: 8 },
+      xaxis: {
+        ...AXIS_LINE,
+        tickangle: -60,
+        tickfont: { family: "Arial", size: 8 },
+      },
+      yaxis: {
+        ...AXIS_LINE,
+        title: { text: "USD / m³", font: { family: "Arial", size: 10 } },
+        tickformat: ",.1f",
+      },
+      legend: {
+        orientation: "h" as const,
+        x: 0,
+        y: -0.3,
+        font: { family: "Arial", size: 9 },
+      },
+    }),
+    [],
+  );
+
+  const exportsUPEntities = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const r of exportsUnitPriceData) {
+      if (r.usd_per_m3 != null) totals.set(r.pais, (totals.get(r.pais) ?? 0) + 1);
+    }
+    return Array.from(totals.keys()).sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0));
+  }, [exportsUnitPriceData]);
+
+  const exportsUPTraces = useMemo(
+    () => buildUnitPriceTraces(exportsUnitPriceData, exportsUPEntities),
+    [exportsUnitPriceData, exportsUPEntities],
   );
 
   // Guard — after all hooks
@@ -832,6 +923,34 @@ export default function MobileView(): React.ReactElement {
           <div style={{ padding: "0 16px 12px", fontSize: 10, color: "#aaa", fontStyle: "italic" }}>
             Source: MDIC Comex — FOB unit price from total import value ÷ volume.
           </div>
+
+          <div style={{ height: 16 }} />
+
+          {/* Panel D — Import Unit Price by Origin Country */}
+          <SectionHeading
+            title="Import Unit Price by Country (USD/m³)"
+            loading={importsUnitPriceLoading}
+          />
+          <div style={{ padding: "0 16px 8px" }}>
+            {importsUPTraces.length > 0 ? (
+              <Plot
+                data={importsUPTraces}
+                layout={unitPriceMobileLayout}
+                config={{ responsive: true, displayModeBar: false }}
+                style={{ width: "100%" }}
+              />
+            ) : !importsUnitPriceLoading ? (
+              <Plot
+                data={emptyPlot().data}
+                layout={{ ...emptyPlot().layout, height: 240 }}
+                config={{ responsive: true, displayModeBar: false }}
+                style={{ width: "100%" }}
+              />
+            ) : null}
+          </div>
+          <div style={{ padding: "0 16px 12px", fontSize: 10, color: "#aaa", fontStyle: "italic" }}>
+            Source: MDIC Comex — top 8 import origins by volume. "Gulf of Mexico" ≈ Estados Unidos (proxy).
+          </div>
         </div>
       )}
 
@@ -895,6 +1014,34 @@ export default function MobileView(): React.ReactElement {
           <div style={{ padding: "8px 16px 0", fontSize: 10, color: "#aaa", fontStyle: "italic" }}>
             Source: MDIC Comex — monthly customs-declared exports by destination country
             (NCM 27090010 / 27101259 / 27101921; kg→m³ via ANP standard densities).
+          </div>
+
+          <div style={{ height: 16 }} />
+
+          {/* Export Unit Price by Destination Country */}
+          <SectionHeading
+            title="Export Unit Price by Country (USD/m³)"
+            loading={exportsUnitPriceLoading}
+          />
+          <div style={{ padding: "0 16px 8px" }}>
+            {exportsUPTraces.length > 0 ? (
+              <Plot
+                data={exportsUPTraces}
+                layout={unitPriceMobileLayout}
+                config={{ responsive: true, displayModeBar: false }}
+                style={{ width: "100%" }}
+              />
+            ) : !exportsUnitPriceLoading ? (
+              <Plot
+                data={emptyPlot().data}
+                layout={{ ...emptyPlot().layout, height: 240 }}
+                config={{ responsive: true, displayModeBar: false }}
+                style={{ width: "100%" }}
+              />
+            ) : null}
+          </div>
+          <div style={{ padding: "0 16px 12px", fontSize: 10, color: "#aaa", fontStyle: "italic" }}>
+            Source: MDIC Comex — top 8 export destinations by volume.
           </div>
         </div>
       )}

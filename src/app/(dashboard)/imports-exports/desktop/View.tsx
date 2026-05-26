@@ -39,6 +39,7 @@ import type {
   YoyTableRow,
   PriceMetric,
   PricePoint,
+  UnitPriceRow,
 } from "../useImportsExportsData";
 
 import { COMMON_LAYOUT, AXIS_LINE, PALETTE, emptyPlot } from "../../../../lib/plotlyDefaults";
@@ -250,6 +251,46 @@ function buildPriceTraces(
   return traces;
 }
 
+// ─── Unit price by country (multi-line, NOT stacked) ──────────────────────────
+//
+// Each country gets its own line. y=null for months with no data so Plotly
+// skips those months in the unified hover (connectgaps keeps the line intact).
+// Countries are coloured from PALETTE (same rotation as stacked panels).
+// "Gulf of Mexico ≈ Estados Unidos (proxy)" — see sub-PRD.
+
+function buildUnitPriceTraces(rows: UnitPriceRow[], entities: string[]): PlotData[] {
+  if (!rows.length) return [];
+
+  // Build per-entity time series
+  const byEntity = new Map<string, Map<string, number | null>>();
+  const xSet = new Set<string>();
+
+  for (const r of rows) {
+    const xKey = `${r.ano}-${String(r.mes).padStart(2, "0")}`;
+    xSet.add(xKey);
+    if (!byEntity.has(r.pais)) byEntity.set(r.pais, new Map());
+    byEntity.get(r.pais)!.set(xKey, r.usd_per_m3);
+  }
+
+  const xs = Array.from(xSet).sort();
+
+  return entities.map((entity, idx) => {
+    const color = PALETTE[idx % PALETTE.length] ?? OTHERS_COLOR;
+    const ys = xs.map((x) => byEntity.get(entity)?.get(x) ?? null);
+    return {
+      type: "scatter" as const,
+      mode: "lines+markers" as const,
+      name: entity,
+      x: xs,
+      y: ys,
+      connectgaps: true,
+      line: { color, width: 2 },
+      marker: { size: 3, color },
+      hovertemplate: `%{x}<br>${entity}: %{y:,.1f} USD/m³<extra></extra>`,
+    } as unknown as PlotData;
+  });
+}
+
 // ─── Importer Panel empty state ────────────────────────────────────────────────
 
 function ImporterEmptyState() {
@@ -388,6 +429,10 @@ export default function DesktopView(): React.ReactElement {
     yoyExportsEndMes,
     priceData,
     priceLoading,
+    importsUnitPriceData,
+    importsUnitPriceLoading,
+    exportsUnitPriceData,
+    exportsUnitPriceLoading,
     visible,
     visibilityLoading,
   } = useImportsExportsData();
@@ -487,6 +532,87 @@ export default function DesktopView(): React.ReactElement {
       },
     }),
     [priceUnit],
+  );
+
+  // Imports — unit price by country (Panel D): derive sorted entity list from data
+  const importsUPEntities = useMemo(() => {
+    // Rank by total volume of rows (all non-null values sum as proxy for volume rank)
+    const totals = new Map<string, number>();
+    for (const r of importsUnitPriceData) {
+      if (r.usd_per_m3 != null) totals.set(r.pais, (totals.get(r.pais) ?? 0) + 1);
+    }
+    return Array.from(totals.keys()).sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0));
+  }, [importsUnitPriceData]);
+
+  const importsUPTraces = useMemo(
+    () => buildUnitPriceTraces(importsUnitPriceData, importsUPEntities),
+    [importsUnitPriceData, importsUPEntities],
+  );
+
+  const importsUPLayout: Partial<Layout> = useMemo(
+    () => ({
+      ...COMMON_LAYOUT,
+      hovermode: "x unified" as const,
+      height: 320,
+      margin: { t: 12, b: 60, l: 72, r: 12 },
+      xaxis: {
+        ...AXIS_LINE,
+        tickangle: -45,
+        tickfont: { family: "Arial", size: 10 },
+      },
+      yaxis: {
+        ...AXIS_LINE,
+        title: { text: "USD / m³", font: { family: "Arial", size: 11 } },
+        tickformat: ",.1f",
+      },
+      legend: {
+        orientation: "h" as const,
+        x: 0,
+        y: -0.22,
+        font: { family: "Arial", size: 10 },
+      },
+    }),
+    [],
+  );
+
+  // Exports — unit price by destination country
+  const exportsUPEntities = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const r of exportsUnitPriceData) {
+      if (r.usd_per_m3 != null) totals.set(r.pais, (totals.get(r.pais) ?? 0) + 1);
+    }
+    return Array.from(totals.keys()).sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0));
+  }, [exportsUnitPriceData]);
+
+  const exportsUPTraces = useMemo(
+    () => buildUnitPriceTraces(exportsUnitPriceData, exportsUPEntities),
+    [exportsUnitPriceData, exportsUPEntities],
+  );
+
+  const exportsUPLayout: Partial<Layout> = useMemo(
+    () => ({
+      ...COMMON_LAYOUT,
+      hovermode: "x unified" as const,
+      height: 320,
+      margin: { t: 12, b: 60, l: 72, r: 12 },
+      xaxis: {
+        ...AXIS_LINE,
+        tickangle: -45,
+        tickfont: { family: "Arial", size: 10 },
+      },
+      yaxis: {
+        ...AXIS_LINE,
+        title: { text: "USD / m³", font: { family: "Arial", size: 11 } },
+        tickformat: ",.1f",
+      },
+      legend: {
+        orientation: "h" as const,
+        x: 0,
+        y: -0.22,
+        font: { family: "Arial", size: 10 },
+      },
+    }),
+    [],
   );
 
   const exportsPaisesLayout: Partial<Layout> = useMemo(
@@ -845,6 +971,41 @@ export default function DesktopView(): React.ReactElement {
                   >
                     Source: MDIC Comex — FOB unit price derived from total import value ÷ volume. Diesel = 832 kg/m³, Gasoline = 745 kg/m³, Crude Oil = 870 kg/m³.
                   </div>
+
+                  <div style={{ height: 24 }} />
+
+                  {/* Panel D — Unit Price by Origin Country */}
+                  <ChartSection
+                    title="Import Unit Price by Origin Country (USD/m³)"
+                    loading={importsUnitPriceLoading}
+                    height={320}
+                  >
+                    {importsUPTraces.length > 0 ? (
+                      <Plot
+                        data={importsUPTraces}
+                        layout={importsUPLayout}
+                        config={{ responsive: true, displayModeBar: false }}
+                        style={{ width: "100%" }}
+                      />
+                    ) : !importsUnitPriceLoading ? (
+                      <Plot
+                        data={emptyPlot().data}
+                        layout={{ ...emptyPlot().layout, height: 320 }}
+                        config={{ responsive: true, displayModeBar: false }}
+                        style={{ width: "100%" }}
+                      />
+                    ) : null}
+                  </ChartSection>
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: 11,
+                      color: "#aaa",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    Source: MDIC Comex — FOB USD ÷ volume per origin country per month. Top 8 countries by import volume in the selected period. "Gulf of Mexico" ≈ Estados Unidos (proxy: ANP registers US Gulf Coast cargoes as origin = United States).
+                  </div>
                 </div>
               )}
 
@@ -900,6 +1061,41 @@ export default function DesktopView(): React.ReactElement {
                   >
                     Source: MDIC Comex — monthly customs-declared exports by destination country
                     (NCM 27090010 / 27101259 / 27101921; kg→m³ via ANP standard densities).
+                  </div>
+
+                  <div style={{ height: 24 }} />
+
+                  {/* Export unit price by destination country */}
+                  <ChartSection
+                    title="Export Unit Price by Destination Country (USD/m³)"
+                    loading={exportsUnitPriceLoading}
+                    height={320}
+                  >
+                    {exportsUPTraces.length > 0 ? (
+                      <Plot
+                        data={exportsUPTraces}
+                        layout={exportsUPLayout}
+                        config={{ responsive: true, displayModeBar: false }}
+                        style={{ width: "100%" }}
+                      />
+                    ) : !exportsUnitPriceLoading ? (
+                      <Plot
+                        data={emptyPlot().data}
+                        layout={{ ...emptyPlot().layout, height: 320 }}
+                        config={{ responsive: true, displayModeBar: false }}
+                        style={{ width: "100%" }}
+                      />
+                    ) : null}
+                  </ChartSection>
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: 11,
+                      color: "#aaa",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    Source: MDIC Comex — FOB USD ÷ volume per destination country per month. Top 8 countries by export volume in the selected period.
                   </div>
                 </div>
               )}
