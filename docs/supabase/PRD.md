@@ -130,6 +130,8 @@ Migration: `20260522000001_anonymous_access.sql`. Torna o login opcional, introd
 
 **Self-healing trigger em `module_visibility`:** se um caller (frontend OU service-role direto) escreve `public=true AND clients=false`, o BEFORE trigger silenciosamente faz `clients=true` antes do INSERT/UPDATE. O CHECK constraint sobrevive como defesa em profundidade caso o trigger seja contornado (improvável, mas defensivo). UI do Admin Panel deve refletir esse comportamento — togglar Public=ON com Clients=OFF deve also toggle Clients=ON automaticamente.
 
+**Segundo invariante em `module_visibility` (adicionado `20260526900000`):** `home=true ⇒ (public=true OR clients=true)`. Um módulo só aparece no /home se for visível para pelo menos um público. Enforced pelo CHECK constraint `module_visibility_home_requires_visible_chk` (`(NOT home) OR public OR clients`) + BEFORE trigger `trg_module_visibility_home_requires_visible` que coerce `home := false` quando ambos audiences são `false`. Mesmo padrão self-healing do invariante `public ⇒ clients`. Migration auto-healed 1 row pré-existente (`market-share`) que estava com `home=true` mas ambos audiences `false`. UI do Admin Panel: o toggle "Show on Home" deve checar se há pelo menos um audience ativo; se não, refletir `home=false` após save (o trigger silenciosamente faz isso).
+
 ### Data Sources Freshness (adicionada 2026-05-26)
 
 Migration: `20260526200000_data_sources_freshness.sql`. RPC pública que serve a tabela live "Data Sources" da `/home` (desktop split 50/50; mobile fica só com cards).
