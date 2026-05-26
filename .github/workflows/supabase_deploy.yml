@@ -30,6 +30,16 @@ jobs:
         # the filename). supabase db push refuses to run while any remote version
         # lacks a local file. Marking it as reverted removes the blocker.
         # Add new phantom versions here if supabase db push reports them again.
+        #
+        # Note: do NOT revert 20260526200000 here. That slot collides between two
+        # logical migrations (the MCP-auto timestamp for alerts_module_visibility,
+        # now re-registered as 20260525280000, AND the real local file
+        # 20260526200000_data_sources_freshness.sql). The data_sources_freshness
+        # version is now correctly registered as applied (its content was already
+        # superseded in production by 20260527300000_data_sources_freshness_subsidy_fix,
+        # which dropped the obsolete anp_subsidy_history reference). Reverting
+        # would force db push to re-apply the broken local SQL and crash with
+        # "relation public.anp_subsidy_history does not exist".
         run: |
           supabase migration repair 20260504000001 --status reverted || true
         env:
@@ -129,26 +139,33 @@ jobs:
             20260513120000 \
             20260525280000 \
             20260526200000 \
-            20260527100000; do
+            20260527100000 \
+            20260527400000; do
             supabase migration repair "$v" --status applied || true
           done
         # 20260525280000 (alerts_module_visibility): migration body was applied
-        # via MCP apply_migration but the schema_migrations row carried the
-        # MCP-auto timestamp 20260526200000 instead of the filename timestamp.
-        # The phantom row is reverted above; this entry re-registers the
-        # migration under the correct version so db push --include-all skips
-        # the already-applied DDL.
+        # via MCP apply_migration but the schema_migrations row originally
+        # carried the MCP-auto timestamp 20260526200000 instead of the filename
+        # timestamp; later reconciled (commit e6817e08) so the row now lives at
+        # the correct version.
         #
-        # 20260526200000 (data_sources_freshness) and 20260527100000
-        # (nd_volume_mensal_historico): both migrations have real .sql files in
-        # supabase/migrations/ and are applied on the remote DB, but their
-        # schema_migrations.version rows were dropped by earlier "revert phantom"
-        # repairs (now removed). The function originally created by
-        # 20260526200000 referenced anp_subsidy_history (later dropped via
-        # CASCADE by 20260527200000_subsidy_reform) and was recreated without
-        # that reference by 20260527300000_data_sources_freshness_subsidy_fix —
-        # which is already applied. Marking both as applied here lets
-        # db push skip them on every run.
+        # 20260526200000 (data_sources_freshness): the local .sql file references
+        # public.anp_subsidy_history, which was DROPPED by 20260527200000_subsidy_reform.
+        # The RPC in production was already replaced by 20260527300000_data_sources_freshness_subsidy_fix
+        # (anp_subsidy_history branch removed; caps + commercialization branches added).
+        # Marking 20260526200000 as applied here so db push --include-all never
+        # tries to re-execute the broken DDL (which would crash with
+        # "relation public.anp_subsidy_history does not exist").
+        #
+        # 20260527100000 (nd_volume_mensal_historico) and 20260527400000
+        # (nd_volume_mensal_historico_fix_ambiguous): both were applied via MCP
+        # apply_migration in the same session that diagnosed this deploy chain
+        # outage. The original CREATE FUNCTION succeeded but the body raised
+        # 42702 "column reference anchor_month is ambiguous" at first call
+        # (three LEFT JOINs in the `combined` CTE all expose anchor_month).
+        # The 20260527400000 fix re-CREATEs the function with `ma.month AS
+        # month` to remove the ambiguity. Marking both as applied here in case
+        # the schema_migrations rows ever get scrubbed.
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 

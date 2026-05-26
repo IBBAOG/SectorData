@@ -634,17 +634,41 @@ BEGIN
     WHERE schemaname = 'public' AND tablename = 'anp_subsidy_diesel_reference' AND rowsecurity = TRUE;
   IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: anp_subsidy_diesel_reference'; END IF;
 
+  -- anp_subsidy_history was DROPPED by 20260527200000_subsidy_reform and
+  -- replaced by anp_subsidy_caps + anp_subsidy_commercialization. The
+  -- subsidy-tracker dashboard now reads from those two new tables via the
+  -- rewritten get_subsidy_tracker_diesel RPC.
+
   PERFORM 1 FROM information_schema.tables
-    WHERE table_schema = 'public' AND table_name = 'anp_subsidy_history';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing table: anp_subsidy_history'; END IF;
+    WHERE table_schema = 'public' AND table_name = 'anp_subsidy_caps';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing table: anp_subsidy_caps'; END IF;
 
   PERFORM 1 FROM pg_tables
-    WHERE schemaname = 'public' AND tablename = 'anp_subsidy_history' AND rowsecurity = TRUE;
-  IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: anp_subsidy_history'; END IF;
+    WHERE schemaname = 'public' AND tablename = 'anp_subsidy_caps' AND rowsecurity = TRUE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: anp_subsidy_caps'; END IF;
+
+  PERFORM 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'anp_subsidy_commercialization';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing table: anp_subsidy_commercialization'; END IF;
+
+  PERFORM 1 FROM pg_tables
+    WHERE schemaname = 'public' AND tablename = 'anp_subsidy_commercialization' AND rowsecurity = TRUE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: anp_subsidy_commercialization'; END IF;
 
   PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public' AND p.proname = 'get_subsidy_tracker_diesel';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_subsidy_tracker_diesel'; END IF;
+
+  -- Sanity-check the new get_data_sources_freshness RPC introduced in 20260526200000
+  -- (recreated in 20260527300000 post-subsidy-reform). Anon-callable, SECURITY DEFINER.
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_data_sources_freshness';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_data_sources_freshness'; END IF;
+
+  -- get_nd_volume_mensal_historico (20260527100000 + 20260527400000 ambiguity fix)
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_nd_volume_mensal_historico';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_nd_volume_mensal_historico'; END IF;
 
   -- ─── CLIPPING COOKIES (20260513130000) ──────────────────────────────────
 
