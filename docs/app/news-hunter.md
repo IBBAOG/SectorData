@@ -62,10 +62,10 @@ src/app/(dashboard)/news-hunter/
     useClippingSelection.ts         Admin-only: ordered selection state hook (includes reorder())
 
 src/lib/clipping/
-  types.ts          ClippingItem, ScrapeResult, ArticleSnapshot
+  types.ts          ClippingItem, ScrapeResult, ScrapeDebug, ArticleSnapshot
   sources.ts        SOURCE_NAMES + EXTRACTORS (~80 domains, port of clipinator.py)
-  extract.ts        cheerio-based extraction (port of clipinator.py _extract)
-  clean.ts          cleanTitle, cleanParagraphs, looksPaywalled
+  extract.ts        cheerio-based extraction (port of clipinator.py _extract) + createDebugRecorder()
+  clean.ts          cleanTitle, cleanParagraphs (optional debugSink), looksPaywalled
   cookies.ts        parseNetscapeCookies + buildCookieHeader + canonicalDomain
   fetch.ts                fetchHtml (undici) + fetchHtmlViaCurl + fetchHtmlViaImpersonate + fetchFromWayback
   fetchHtmlViaHeadless.ts playwright-core + @sparticuz/chromium headless tier (4th cascade layer)
@@ -119,6 +119,33 @@ Admins têm uma funcionalidade extra de **clipping de notícias**:
   - Eduardo Mendes / eduardo.mendes@itaubba.com
 - Por artigo: 14pt bold `título (fonte)`, parágrafos, `Fonte: <link>`
 - Arquivo salvo como `ibba_oil_gas_news_YYYY-MM-DD.eml`
+
+#### Observability mode — `?debug=1` (Phase 1 of clipping reform, 2026-05-26)
+
+Pass `?debug=1` to `POST /api/clipping/scrape?debug=1` to receive a `ScrapeDebug` object
+in each `ScrapeResult`. Only reachable by Admins (same gate). Zero overhead in production
+— when the flag is absent, no recorder is created anywhere in the pipeline.
+
+`ScrapeDebug` fields:
+
+| Field | Description |
+|---|---|
+| `selectorUsed` | CSS selector from `sources.ts` that matched the article container, or `"<article> (fallback)"` if the configured selectors all missed, or `null` if nothing matched. |
+| `containerHtmlByteSize` | `innerHTML.length` of the chosen container (proxy for article size before extraction). |
+| `pCountRaw` | `<p>` count inside the container before `stripNoise` ran. |
+| `pCountAfterStripNoise` | `<p>` count after noise nodes (nav, aside, figure, noise-class elements) were removed from the DOM. |
+| `pCountAfterClean` | Paragraphs that survived `cleanParagraphs` (noise regex + dedup). |
+| `noiseRemovedSamples` | Up to 3 paragraph texts (truncated to 200 chars) discarded by `stripNoise` (link-only `<p>`) or `cleanParagraphs` (regex match). Use to calibrate which patterns need attention. |
+| `viaCascade` | Ordered list of fetcher names invoked. Ends with the one that produced usable HTML. e.g. `["undici"]` for a direct hit or `["undici","curl","curl_impersonate"]` if the first two failed. |
+
+Architecture of the debug path:
+- `route.ts` reads `?debug=1` → passes `debug=true` to `scrape()`.
+- `scrape.ts` pushes to a `viaCascade: string[]` at each cascade step; passes `debug` to `extract()`.
+- `extract.ts` creates a `DebugRecorder` via `createDebugRecorder()`; passes a `debugSink` callback to `cleanParagraphs()`.
+- `cleanParagraphs()` in `clean.ts` calls `debugSink?.(text.slice(0, 200))` for each discarded paragraph — conditional call, no overhead when sink is undefined.
+- On return, `scrape()` merges `viaCascade` into the recorder's output via `attachCascade()`.
+
+This is the diagnostic foundation for Phase 2 (global quick-wins) and Phase 4 (per-site fixture tests) of the clipping noise reduction plan (`docs/` — plans folder).
 
 #### SSRF guard
 
