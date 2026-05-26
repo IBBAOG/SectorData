@@ -2,7 +2,7 @@
 Upload Price Bands data to Supabase.
 
 Usage:
-    python scripts/upload_price_bands.py [path/to/price_bands.xlsx]
+    python scripts/manual/price_bands_upload.py [path/to/price_bands.xlsx]
 
 Excel path priority:
     1. CLI argument (sys.argv[1])
@@ -15,7 +15,13 @@ Credentials (env vars, fall back to .env file):
 
 Excel structure:
     Sheet "Gasoline": Date | IBBA - Import Parity | IBBA - Export Parity | Petrobras Price
-    Sheet "Diesel":   Date | BBA - Import Parity  | BBA - Import Parity w/ subsidy | BBA - Export Parity | Petrobras Price | Petrobras Price w/ subsidy
+    Sheet "Diesel":   Date | BBA - Import Parity  | BBA - Export Parity  | Petrobras Price
+
+Note: "BBA - Import Parity w/ subsidy" and "Petrobras Price w/ subsidy" are no longer
+uploaded from Excel. They are auto-computed by SQL triggers (migration
+20260527200000_subsidy_reform.sql) based on daily ANP reference prices and
+period-fixed commercialization prices. If these columns still exist in your Excel
+template, they are silently ignored.
 """
 
 import os
@@ -50,7 +56,7 @@ def _get_credentials() -> tuple[str, str]:
         url = url or env.get("SUPABASE_URL", "")
         key = key or env.get("SUPABASE_SERVICE_KEY", "")
     if not url or not key:
-        print("❌ Missing SUPABASE_URL or SUPABASE_SERVICE_KEY (set env vars or .env)")
+        print("ERROR: Missing SUPABASE_URL or SUPABASE_SERVICE_KEY (set env vars or .env)")
         sys.exit(1)
     return url, key
 
@@ -74,7 +80,9 @@ SHEET_PRODUCT_MAP = {
     "Diesel":   "Diesel",
 }
 
-# Maps sheet name → (excel_col → db_col) for non-null columns
+# Columns uploaded to Supabase (same 4-column structure for both sheets).
+# Subsidy-adjusted columns (bba_import_parity_w_subsidy, petrobras_price_w_subsidy)
+# are intentionally excluded — auto-computed by SQL triggers on the server side.
 SHEET_COL_MAP: dict[str, dict[str, str]] = {
     "Gasoline": {
         "IBBA - Import Parity": "bba_import_parity",
@@ -82,13 +90,14 @@ SHEET_COL_MAP: dict[str, dict[str, str]] = {
         "Petrobras Price":      "petrobras_price",
     },
     "Diesel": {
-        "BBA - Import Parity":            "bba_import_parity",
-        "BBA - Import Parity w/ subsidy": "bba_import_parity_w_subsidy",
-        "BBA - Export Parity":            "bba_export_parity",
-        "Petrobras Price":                "petrobras_price",
-        "Petrobras Price w/ subsidy":     "petrobras_price_w_subsidy",
+        "BBA - Import Parity": "bba_import_parity",
+        "BBA - Export Parity": "bba_export_parity",
+        "Petrobras Price":     "petrobras_price",
     },
 }
+
+# Obsolete columns that may still exist in older Excel templates — ignored silently.
+_OBSOLETE_DIESEL_COLS = {"BBA - Import Parity w/ subsidy", "Petrobras Price w/ subsidy"}
 
 
 def _process_sheet(df: pd.DataFrame, product: str, col_map: dict[str, str]) -> list[dict]:
@@ -119,11 +128,17 @@ def _process_sheet(df: pd.DataFrame, product: str, col_map: dict[str, str]) -> l
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    print(
+        "INFO: Subsidy-adjusted columns (bba_import_parity_w_subsidy, "
+        "petrobras_price_w_subsidy) are now auto-computed by SQL triggers. "
+        "Excluding from upload."
+    )
+
     excel_path = _get_excel_path()
-    print(f"📂 Excel file: {excel_path}")
+    print(f"Excel file: {excel_path}")
 
     if not Path(excel_path).exists():
-        print(f"❌ File not found: {excel_path}")
+        print(f"ERROR: File not found: {excel_path}")
         sys.exit(1)
 
     all_records: list[dict] = []
@@ -133,18 +148,34 @@ def main() -> None:
         try:
             df = pd.read_excel(excel_path, sheet_name=sheet_name)
         except Exception as e:
-            print(f"❌ Could not read sheet '{sheet_name}': {e}")
+            print(f"ERROR: Could not read sheet '{sheet_name}': {e}")
             sys.exit(1)
 
+        # Warn if obsolete subsidy columns are still present in the Excel template
+        if sheet_name == "Diesel":
+            found_obsolete = _OBSOLETE_DIESEL_COLS.intersection(df.columns)
+            if found_obsolete:
+                print(
+                    f"  WARNING: Sheet 'Diesel' still contains obsolete columns "
+                    f"{sorted(found_obsolete)} — ignored. "
+                    "You can remove them from your Excel template."
+                )
+
         records = _process_sheet(df, product, col_map)
-        print(f"  📊 Sheet '{sheet_name}' ({product}): {len(records)} rows")
+        print(f"  Sheet '{sheet_name}' ({product}): {len(records)} rows")
         all_records.extend(records)
 
-    print(f"\n📊 Total records to upsert: {len(all_records)}")
+    print(f"\nTotal records to upsert: {len(all_records)}")
 
     if not all_records:
-        print("⚠️  No records found — nothing to upload.")
+        print("WARNING: No records found — nothing to upload.")
         return
+
+    # Dry-run preview (first record keys confirm no _w_subsidy columns)
+    sample_keys = list(all_records[0].keys()) if all_records else []
+    print(f"Upsert keys per record: {sample_keys}")
+    assert "bba_import_parity_w_subsidy" not in sample_keys, "BUG: w_subsidy key leaked into upsert payload"
+    assert "petrobras_price_w_subsidy" not in sample_keys, "BUG: w_subsidy key leaked into upsert payload"
 
     url, key = _get_credentials()
     supabase = create_client(url, key)
@@ -159,12 +190,12 @@ def main() -> None:
             .execute()
         )
         if hasattr(result, "error") and result.error:
-            print(f"❌ Batch {i}–{i + len(batch)} failed: {result.error}")
+            print(f"ERROR: Batch {i}–{i + len(batch)} failed: {result.error}")
             sys.exit(1)
         inserted += len(batch)
-        print(f"  ✅ Upserted {inserted}/{len(all_records)}")
+        print(f"  Upserted {inserted}/{len(all_records)}")
 
-    print(f"\n🎉 Done! {inserted} rows upserted into price_bands.")
+    print(f"\nDone! {inserted} rows upserted into price_bands.")
 
 
 if __name__ == "__main__":
