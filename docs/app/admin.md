@@ -707,6 +707,42 @@ After the Imports & Exports reform (`24dd2aa1`), three stale references to the r
 
 `forgot-password/page.tsx` and `login/page.tsx` were audited and confirmed clean: forgot-password always shows generic success (catch also calls `setSent(true)`), and login uses a single "Incorrect email or password." message regardless of error type.
 
+## Changelog — Team contacts card above DataSources table (2026-05-26) `[desktop-only]`
+
+A glass-styled **Team Panel** was added to the right column of `/home` desktop view, positioned above the DataSourcesTable.
+
+**New files:**
+
+| File | Purpose |
+|---|---|
+| `src/components/home/TeamPanel/index.tsx` | Client component — renders 3 contact entries; each row is an `<a href="mailto:...">` |
+| `src/components/home/TeamPanel/TeamPanel.module.css` | Glass card styles matching DataSourcesTable (same tokens: `--ds-glass-bg`, `--ds-glass-border`, `--ds-glass-backdrop`, `--ds-glass-shadow`); hover lift (translateY -1px), envelope icon reveal (opacity 0 → 1), dark-mode aware text colors |
+
+**Modified file:**
+
+| File | Change |
+|---|---|
+| `src/app/(dashboard)/home/desktop/View.tsx` | Import `TeamPanel`; render `<TeamPanel />` + `<div style={{ marginBottom: 12 }} />` + `<DataSourcesTable />` inside the right-column `<section>` |
+
+**Contacts (hardcoded in component):**
+
+```
+Monique Greco     monique.greco@itaubba.com
+Eric de Mello     eric.mello@itaubba.com
+Eduardo Mendes    eduardo.mendes@itaubba.com
+```
+
+**Design decisions:**
+- "TEAM" header: same `.header` class style as `.tableHeader` in DataSourcesTable — 11px Courier New, 700, 0.1em letter-spacing, uppercase, black light / white dark.
+- Container: reuses the same glass token set (`--ds-glass-*`) as `.tableRoot` — identical padding, border-radius 4px, backdrop blur.
+- No avatars — column is 30% wide; initials or photos would be noisy.
+- Click target is the full `<a>` row, not just the email text.
+- Envelope icon (Bootstrap Icons `bi bi-envelope`) is always in the DOM but `opacity: 0` by default; `opacity: 1` on `.row:hover` via CSS sibling rule.
+- Separator between entries: `border-bottom: 1px solid var(--ds-glass-border)` on `.entry`; last child omits it via `:last-child { border-bottom: none }`.
+- `mobile/View.tsx` is **untouched** — mobile does not show the right column.
+
+---
+
 ## Anti-padrões
 
 - Páginas administrativas sem `useRoleGuard("Admin")`.
