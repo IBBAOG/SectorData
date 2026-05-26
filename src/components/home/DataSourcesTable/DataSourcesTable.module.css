@@ -68,7 +68,7 @@
 
 .colHeaders {
   display: grid;
-  grid-template-columns: 1fr 64px 76px 54px;
+  grid-template-columns: 1fr 96px 76px 48px;
   align-items: center;
   gap: 8px;
   padding: 5px 14px;
@@ -121,7 +121,7 @@
 
 .sourceRow {
   display: grid;
-  grid-template-columns: 1fr 64px 76px 54px;
+  grid-template-columns: 1fr 96px 76px 48px;
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
