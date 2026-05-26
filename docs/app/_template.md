@@ -91,7 +91,7 @@ Tabela: `<table_name>` (~N linhas, populada por `<pipeline_script>`).
    - Filtros populam com options reais (não vazio)
    - Pelo menos 1 chart renderiza com dados (após selecionar 1 filtro)
    - Period slider mostra range correto
-4. **Self-QA estática**: comparado com 2 dashboards maduros (`/anp-cdp` e `/sales-volumes`); padrões consolidados batem.
+4. **Self-QA estática**: comparado com 2 dashboards maduros (`/anp-cdp` e `/market-share`); padrões consolidados batem.
 5. **Sub-PRD (este arquivo)** atualizado se o dashboard ganhou nova RPC/coluna/chart.
 
 ## Dependências cross-departamentais

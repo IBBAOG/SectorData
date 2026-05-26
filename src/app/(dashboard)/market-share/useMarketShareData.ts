@@ -14,10 +14,11 @@
 // Both desktop/View.tsx and mobile/View.tsx consume ONLY this hook.
 // Neither view calls Supabase directly.
 //
-// Shared RPCs with /sales-volumes:
-//   get_ms_serie_fast, get_ms_serie_others, get_others_players
+// RPC ownership: get_ms_serie_fast, get_ms_serie_others, get_others_players,
+// get_ms_opcoes_filtros — owned exclusively by /market-share since the
+// /sales-volumes consolidation (2026-05-26). The retired dashboard now
+// 301-redirects to /market-share?unit=volume.
 //   → Wrappers live in the "Market Share" section of src/lib/rpc.ts.
-//   → Any signature change must be coordinated with worker_dash-sales-volumes.
 
 import {
   useCallback,

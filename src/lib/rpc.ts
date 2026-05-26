@@ -220,8 +220,8 @@ export async function rpcGetMsSerieOthers(supabase: SupabaseClient, filters: Mar
 }
 
 /**
- * Filters accepted by `fetchVendasFiltered` (CSV export of /market-share +
- * /sales-volumes). Mirrors `MsExportCountFilters` 1:1 so the modal estimate
+ * Filters accepted by `fetchVendasFiltered` (CSV export of /market-share).
+ * Mirrors `MsExportCountFilters` 1:1 so the modal estimate
  * and the actual download share the exact same predicate.
  *
  * Column mapping (vendas table):
@@ -240,8 +240,8 @@ export type FetchVendasFilters = {
 
 /**
  * Paginated SELECT * FROM vendas with the same filter predicate used by
- * `get_ms_export_count`. Used by the CSV export path on /market-share and
- * /sales-volumes so the rows downloaded match exactly the size estimate
+ * `get_ms_export_count`. Used by the CSV export path on /market-share
+ * so the rows downloaded match exactly the size estimate
  * shown in the export modal.
  */
 export async function fetchVendasFiltered(
@@ -1501,7 +1501,7 @@ export type MsExportCountFilters = {
   mercados?: string[] | null;
 };
 
-/** Count for /market-share + /sales-volumes (vendas table). */
+/** Count for /market-share (vendas table). */
 export async function getMsExportCount(
   supabase: SupabaseClient,
   filters: MsExportCountFilters,

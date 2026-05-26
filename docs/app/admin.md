@@ -291,12 +291,11 @@ Protegida por `useRoleGuard("Admin")`. Funcionalidades (7 seções na sidebar):
 
 Lista completa dos slugs atualmente registrados na tabela `module_visibility` (todos com `is_visible_for_clients = true` e `is_visible_on_home = true` por padrão):
 
-> **Nota de slug**: `MODULE_LABELS` em `admin-panel/page.tsx` usa `sales` (não `sales-volumes`) para alinhar com `CARDS[].slug` em `HomeClient.tsx` e com a chave real em `module_visibility`. O href `/sales-volumes` é mapeado para slug `sales` via `hrefToSlug()` em `HomeClient.tsx`.
+> **Sales Volumes deprecation (2026-05-26)**: the `sales-volumes` row was removed from `module_visibility` by migration `20260526400000_drop_sv_rpcs.sql` when `/sales-volumes` was folded into `/market-share` (% Share ↔ thousand m³ via top-level unit toggle; `/sales-volumes` 301-redirects to `/market-share?unit=volume`). The legacy `sales` label still present in `MODULE_LABELS` (`useAdminPanelData.ts`) is a residual entry pending cleanup — it has no matching `module_visibility` row, so it renders as a dead toggle in the Permissions tab. Tracked for removal.
 
 | Slug | Categoria | Label na UI |
 |---|---|---|
-| `sales` | Fuel Distribution | Sales Volumes |
-| `market-share` | Fuel Distribution | Market Share |
+| `market-share` | Fuel Distribution | Market Share (absorveu Sales Volumes em 2026-05-26) |
 | `navios-diesel` | Fuel Distribution | Diesel Imports Line-Up |
 | `diesel-gasoline-margins` | Fuel Distribution | Diesel and Gasoline Margins |
 | `price-bands` | Fuel Distribution | Price Bands |

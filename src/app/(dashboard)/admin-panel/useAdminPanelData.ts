@@ -98,8 +98,8 @@ export const SECTIONS: SectionMeta[] = [
 ];
 
 // ── Module catalog ─────────────────────────────────────────────────────────────
-// Slug "sales" matches CARDS[].slug in HomeClient and the module_visibility DB
-// row (href /sales-volumes). Both views render toggles/uploads from this list.
+// Each slug must match the corresponding CARDS[].slug in HomeClient and have a
+// matching row in the module_visibility DB. Both views render toggles/uploads from this list.
 
 export interface ModuleLabel {
   slug: string;

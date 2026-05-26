@@ -81,7 +81,7 @@ package.json, eslint.config.mjs     Configs do projeto
 
 | Wrapper | RPC | Dashboards |
 |---|---|---|
-| `getMsExportCount` | `get_ms_export_count` | `/market-share`, `/sales-volumes` |
+| `getMsExportCount` | `get_ms_export_count` | `/market-share` (also serves the absorbed `/sales-volumes` flow via the unit toggle) |
 | `getAnpCdpExportCount` | `get_anp_cdp_export_count` | `/anp-cdp` |
 | `getAnpLpcExportCount` | `get_anp_lpc_export_count` | `/anp-lpc` |
 
@@ -90,7 +90,7 @@ package.json, eslint.config.mjs     Configs do projeto
 | Tier | Critério | UX | Quando usar |
 |---|---|---|---|
 | **Tier 1** | Dataset < ~50k linhas | Botões diretos no `ExportPanel` | `/navios-diesel`, `/anp-glp`, `/imports-exports`, `/anp-precos-produtores`, `/anp-precos-distribuicao`, `/diesel-gasoline-margins`, `/price-bands` |
-| **Tier 2** | Dataset >= ~50k linhas | `ExportPanel mode="modal"` + ExportModal | `/market-share`, `/sales-volumes`, `/anp-cdp`, `/anp-lpc` |
+| **Tier 2** | Dataset >= ~50k linhas | `ExportPanel mode="modal"` + ExportModal | `/market-share`, `/anp-cdp`, `/anp-lpc` |
 
 ### Como ajustar `AVG_BYTES_PER_ROW` para dataset novo
 
@@ -215,8 +215,7 @@ Para qualquer mudança em código de um dashboard específico, delegue ao agente
 
 | Dashboard | Agente | Sub-PRD |
 |---|---|---|
-| `/sales-volumes` | `worker_dash-sales-volumes` | [sales-volumes.md](sales-volumes.md) |
-| `/market-share` | `worker_dash-market-share` | [market-share.md](market-share.md) |
+| `/market-share` | `worker_dash-market-share` (absorbed `/sales-volumes` on 2026-05-26 via top-level % Share ↔ thousand m³ toggle; `/sales-volumes` 301-redirects to `/market-share?unit=volume`. Archived sub-PRD: [`_deprecated/sales-volumes.md`](_deprecated/sales-volumes.md).) | [market-share.md](market-share.md) |
 | `/navios-diesel` | `worker_dash-navios-diesel` | [navios-diesel.md](navios-diesel.md) |
 | `/diesel-gasoline-margins` | `worker_dash-margins` | [diesel-gasoline-margins.md](diesel-gasoline-margins.md) |
 | `/price-bands` | `worker_dash-price-bands` | [price-bands.md](price-bands.md) |
@@ -266,8 +265,8 @@ Schema completo é responsabilidade compartilhada — cada `dash-*` documenta as
 
 | Tabela | Dono lógico | Populada por |
 |---|---|---|
-| `vendas` | dash-sales-volumes / dash-market-share | ETL (`pipelines/anp/vendas_watch.py`) |
-| `mv_ms_serie`, `mv_ms_serie_fast` | dash-sales-volumes / dash-market-share | Função `classificar_agentes()` |
+| `vendas` | dash-market-share (sole consumer since 2026-05-26 — `/sales-volumes` was folded into `/market-share` via the % Share ↔ thousand m³ toggle) | ETL (`pipelines/anp/vendas_watch.py`) |
+| `mv_ms_serie`, `mv_ms_serie_fast` | dash-market-share (sole consumer since 2026-05-26) | Função `classificar_agentes()` |
 | `navios_diesel` | dash-navios-diesel | ETL (`pipelines/navios/01_lineup_scrape.py` → `02_diesel_import.mjs`) |
 | `vessel_registry`, `vessel_positions`, `port_arrivals`, `import_candidates` | dash-navios-diesel | ETL (`pipelines/ais/*`, `pipelines/navios/03-05`) |
 | `d_g_margins` | dash-margins | Dados Locais (upload manual) |
@@ -303,7 +302,7 @@ Ver `.claude/agents/worker_subgerente-app.md` → seção "Adicionar novo dashbo
 
 ## Definition of Done (mandatório para qualquer dashboard novo ou refatorado)
 
-> **Por que existe esta seção:** dois bugs caros — `/anp-daie` com fator 1000 errado e `/sales-volumes` com RPCs ausentes — passaram batido em prod por meses porque "tsc clean" foi tratado como "pronto". Smoke test visual nunca foi feito. Daqui pra frente, antes de marcar uma tarefa de dashboard como completa, valide os 5 critérios abaixo. Os critérios são exatamente os do template canônico em [`docs/app/_template.md`](_template.md) — esta seção apenas torna obrigatória a aplicação.
+> **Por que existe esta seção:** dois bugs caros — `/anp-daie` com fator 1000 errado e `/sales-volumes` com RPCs ausentes (ambos os dashboards já retirados; postmortem preservado como memória institucional) — passaram batido em prod por meses porque "tsc clean" foi tratado como "pronto". Smoke test visual nunca foi feito. Daqui pra frente, antes de marcar uma tarefa de dashboard como completa, valide os 5 critérios abaixo. Os critérios são exatamente os do template canônico em [`docs/app/_template.md`](_template.md) — esta seção apenas torna obrigatória a aplicação.
 
 1. **`npx tsc --noEmit` clean** — zero erros (warnings de `<img>` pré-existentes podem ser tolerados; warnings novos não).
 2. **`npx eslint src/app/(dashboard)/<slug>` clean** — só warnings pré-existentes.
@@ -312,14 +311,14 @@ Ver `.claude/agents/worker_subgerente-app.md` → seção "Adicionar novo dashbo
    - Filtros populam com options reais (não vazio).
    - Pelo menos 1 chart renderiza com dados (após selecionar 1 filtro).
    - Period slider mostra range correto.
-4. **Self-QA estática**: comparado com 2 dashboards maduros (sugestão: `/anp-cdp` e `/sales-volumes`); padrões consolidados batem (header, debounce, loading, multi-select, etc.).
+4. **Self-QA estática**: comparado com 2 dashboards maduros (sugestão: `/anp-cdp` e `/market-share`); padrões consolidados batem (header, debounce, loading, multi-select, etc.).
 5. **Sub-PRD (`docs/app/<slug>.md`) atualizado** se a tarefa ganhou nova RPC, coluna, chart, filtro ou mudou unidade/divisor.
 
 **Quem aplica:** todo `worker_dash-*` antes de retornar "task completa" ao Subgerente. **Quem audita:** Subgerente APP — pede evidência (screenshot do smoke test, output de `tsc`, link para sub-PRD atualizado) antes de aceitar a entrega. Sem evidência dos 5 itens, a entrega volta pro `dash-*` para completar.
 
 ## Migration: try/catch silencioso → useRpcResult / DataErrorBoundary
 
-> **Por que existe esta seção:** o padrão histórico de cada dashboard é `try { setData(await rpc()); } catch { setData([]); }`. Esse `catch` silencioso fez `/sales-volumes` ficar meses em produção retornando array vazio sem que ninguém percebesse. A infraestrutura nova (preparada na sessão de 2026-05-06) substitui esse padrão por feedback explícito ao usuário.
+> **Por que existe esta seção:** o padrão histórico de cada dashboard é `try { setData(await rpc()); } catch { setData([]); }`. Esse `catch` silencioso fez o ex-`/sales-volumes` (retirado em 2026-05-26) ficar meses em produção retornando array vazio sem que ninguém percebesse. A infraestrutura nova (preparada na sessão de 2026-05-06) substitui esse padrão por feedback explícito ao usuário.
 
 **Infra disponível** (já criada — não é tarefa para os `worker_dash-*` mexerem):
 
@@ -357,7 +356,7 @@ return (
 
 | Onda | Dashboards | Justificativa |
 |---|---|---|
-| 1 (alta prioridade) | `sales-volumes`, `market-share`, `navios-diesel` | Mais usuários ativos. Bugs silenciosos são caros aqui. |
+| 1 (alta prioridade) | `market-share`, `navios-diesel` | Mais usuários ativos. Bugs silenciosos são caros aqui. (`/sales-volumes` foi retirado em 2026-05-26 — absorvido por `/market-share`.) |
 | 2 (média) | `diesel-gasoline-margins`, `price-bands`, `stocks` | Fluxo Market Watch — usuários executivos. |
 | 3 (baixa) | `news-hunter`, `home`/`profile`/`admin-panel` | Fluxos administrativos / passivos. |
 | 4 (Fase 3) | `anp-cdp`, `anp-prices`, `anp-glp`, `imports-exports` | Dashboards mais novos — já têm padrões consolidados; aplicar incrementalmente. `anp-prices` substitui o trio `anp-precos-produtores` + `anp-precos-distribuicao` + `anp-lpc` retirado em 2026-05-26 (UNION ALL server-side das 3 tabelas-fonte). `imports-exports` substitui o trio `anp-daie` + `anp-desembaracos` + `anp-painel-importacoes` retirado em 2026-05-25 e absorveu `/mdic-comex` no mesmo dia via Panel C. |

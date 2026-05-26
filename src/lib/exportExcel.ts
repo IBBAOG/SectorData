@@ -558,7 +558,7 @@ export async function downloadMarketShareExcel(
   const yy = String(now.getFullYear()).slice(-2);
   // Filename follows the active unit mode — preserves the historical
   // "FD Market Share DD-MM-YY.xlsx" for share, and "SalesVolumes_DD-MM-YY.xlsx"
-  // for volume (matches what /sales-volumes used to emit before consolidation).
+  // for volume mode (the volume branch was inherited from the retired /sales-volumes dashboard).
   a.download =
     unitMode === "volume"
       ? `SalesVolumes_${dd}-${mm}-${yy}.xlsx`

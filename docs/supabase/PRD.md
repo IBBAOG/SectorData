@@ -47,7 +47,7 @@ supabase/
 
 | Tabela | Dept consumidor | Populada por |
 |---|---|---|
-| `vendas` | dash-sales-volumes / dash-market-share | ETL (`pipelines/anp/vendas_watch.py`) |
+| `vendas` | dash-market-share (sole consumer since 2026-05-26 — `/sales-volumes` was folded into `/market-share` via the % Share ↔ thousand m³ toggle) | ETL (`pipelines/anp/vendas_watch.py`) |
 | `navios_diesel` | dash-navios-diesel | ETL (`pipelines/navios/01_lineup_scrape.py` → `pipelines/navios/02_diesel_import.mjs`) |
 | `vessel_registry`, `vessel_positions`, `port_arrivals`, `import_candidates` | dash-navios-diesel | ETL (`ais_*.py`, `vessel_*.py`) |
 | `d_g_margins` | dash-margins | Dados Locais (manual via `scripts/manual/dg_margins_upload.py`) |
@@ -262,8 +262,7 @@ Todas as 6 RPCs: `SET search_path = public`, `GRANT EXECUTE TO anon, authenticat
 
 | Domínio | Prefixo / Funções | Dono lógico |
 |---|---|---|
-| Sales Volumes | `get_sv_*`, `get_ms_*` (compartilhado) | dash-sales-volumes / dash-market-share |
-| Market Share | `get_ms_*` | dash-market-share |
+| Market Share (absorveu Sales Volumes em 2026-05-26) | `get_ms_*` (sole family in use). `get_sv_*` legacy RPCs dropped in migration `20260526400000_drop_sv_rpcs.sql`. | dash-market-share |
 | Navios | `get_nd_*` | dash-navios-diesel |
 | D&G Margins | `get_dg_*` | dash-margins |
 | Price Bands | `get_price_bands_*` | dash-price-bands |
