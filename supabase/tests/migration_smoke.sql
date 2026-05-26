@@ -624,7 +624,12 @@ BEGIN
     WHERE n.nspname = 'public' AND p.proname = 'get_anp_cdp_depletion_field_aggregate';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_anp_cdp_depletion_field_aggregate'; END IF;
 
-  -- ─── SUBSIDY TRACKER (20260513000001) ────────────────────────────────────
+  -- ─── SUBSIDY TRACKER (20260513000001 + reform 20260527200000) ─────────────
+  -- Reform 20260527200000 dropped anp_subsidy_history (semantically wrong) and
+  -- introduced anp_subsidy_caps + anp_subsidy_commercialization plus the
+  -- compute_subsidy_reimbursement(date, text) helper. Reimbursement is now
+  -- computed as MIN(MAX(reference - commercialization, 0), cap) per region
+  -- and tipo_agente, not stored as a history of subsidy values.
 
   PERFORM 1 FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name = 'anp_subsidy_diesel_reference';
@@ -655,15 +660,56 @@ BEGIN
     WHERE schemaname = 'public' AND tablename = 'anp_subsidy_commercialization' AND rowsecurity = TRUE;
   IF NOT FOUND THEN RAISE EXCEPTION 'RLS not enabled on: anp_subsidy_commercialization'; END IF;
 
+  -- Guard against regression: anp_subsidy_history must NOT exist (dropped by
+  -- 20260527200000_subsidy_reform.sql).
+  PERFORM 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'anp_subsidy_history';
+  IF FOUND THEN RAISE EXCEPTION 'Reform regression: anp_subsidy_history should have been dropped by 20260527200000'; END IF;
+
+  -- Caps seed: reform inserts 4 rows (2026-03-13 unified 0.32, 2026-04-07 split
+  -- into importador / produtor). Asserts the seed survived.
+  IF (SELECT count(*) FROM public.anp_subsidy_caps) <> 4 THEN
+    RAISE EXCEPTION 'anp_subsidy_caps seed expected 4 rows, got %', (SELECT count(*) FROM public.anp_subsidy_caps);
+  END IF;
+
+  -- Functions: compute_subsidy_reimbursement + get_subsidy_tracker_diesel
+  -- must both be SECURITY DEFINER (prosecdef = true) so anon callers can hit
+  -- them through PostgREST without bumping into RLS on underlying tables
+  -- (Pegadinha #18 in CLAUDE.md).
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'compute_subsidy_reimbursement'
+      AND pg_get_function_identity_arguments(p.oid) = 'p_date date, p_tipo_agente text';
+  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: compute_subsidy_reimbursement(date, text)'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'compute_subsidy_reimbursement'
+      AND pg_get_function_identity_arguments(p.oid) = 'p_date date, p_tipo_agente text'
+      AND p.prosecdef = TRUE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'compute_subsidy_reimbursement(date, text) must be SECURITY DEFINER'; END IF;
+
   PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public' AND p.proname = 'get_subsidy_tracker_diesel';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_subsidy_tracker_diesel'; END IF;
 
-  -- Sanity-check the new get_data_sources_freshness RPC introduced in 20260526200000
-  -- (recreated in 20260527300000 post-subsidy-reform). Anon-callable, SECURITY DEFINER.
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_subsidy_tracker_diesel' AND p.prosecdef = TRUE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'get_subsidy_tracker_diesel must be SECURITY DEFINER'; END IF;
+
+  -- ─── DATA SOURCES FRESHNESS (20260526200000 + 20260527300000 patch) ──────
+  -- get_data_sources_freshness() backs the live "Data Sources" table on /home.
+  -- Anon-callable, must be SECURITY DEFINER to bypass RLS on the 22 ETL-fed
+  -- tables it inspects (anon visitors hit it without an auth token).
+
   PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public' AND p.proname = 'get_data_sources_freshness';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_data_sources_freshness'; END IF;
+
+  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_data_sources_freshness' AND p.prosecdef = TRUE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'get_data_sources_freshness must be SECURITY DEFINER'; END IF;
 
   -- get_nd_volume_mensal_historico (20260527100000 + 20260527400000 ambiguity fix)
   PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -703,6 +749,6 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'app_events CHECK constraint does not allow admin.* event types'; END IF;
 
   RAISE NOTICE 'migration_smoke: all % checks passed.',
-    '33 tables + 1 view + 3 materialized views + 77 functions + 25 RLS checks';
+    '34 tables + 1 view + 3 materialized views + 76 functions + 27 RLS checks (subsidy reform 20260527200000)';
 
 END $smoke$;
