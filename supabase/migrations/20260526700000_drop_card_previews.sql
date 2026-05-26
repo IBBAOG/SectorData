@@ -1,5 +1,4 @@
--- Drop card_previews table + matching Storage bucket — orphaned after /home
--- icon redesign (2026-05-26).
+-- Drop card_previews table — orphaned after /home icon redesign (2026-05-26).
 --
 -- The home page was redesigned to use inline SVG icons instead of uploaded
 -- preview images. Backing image-upload UI and code paths were removed in:
@@ -10,12 +9,11 @@
 -- After audit, no code in src/ references this table or the matching Storage
 -- bucket anymore. CASCADE drops any leftover policies/triggers attached to
 -- the table.
+--
+-- The matching `card-previews` Storage bucket and its objects are purged
+-- separately via the Storage REST API (see
+-- scripts/utils/purge_card_previews_bucket.mjs) because Supabase platform
+-- triggers (protect_objects_delete / protect_buckets_delete) block direct
+-- SQL DELETEs on storage.objects / storage.buckets.
 
--- 1. Drop the public table.
 DROP TABLE IF EXISTS public.card_previews CASCADE;
-
--- 2. Purge any objects still sitting in the matching Storage bucket and then
---    drop the bucket itself. Both are plain rows in the storage schema.
---    DELETE order matters: storage.buckets has a FK from storage.objects.
-DELETE FROM storage.objects WHERE bucket_id = 'card-previews';
-DELETE FROM storage.buckets WHERE id = 'card-previews';
