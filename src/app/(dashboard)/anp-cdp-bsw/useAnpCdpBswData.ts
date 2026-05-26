@@ -173,7 +173,7 @@ function buildPerWellChart(
       yaxis: {
         ...AXIS_LINE,
         title: { text: "BSW (water cut)" },
-        range: [0, 1],
+        rangemode: "tozero",
         tickformat: ",.0%",
       },
       legend: {
@@ -263,7 +263,7 @@ function buildFieldAverageChart(
       yaxis: {
         ...AXIS_LINE,
         title: { text: "BSW (water cut, volume-weighted)" },
-        range: [0, 1],
+        rangemode: "tozero",
         tickformat: ",.0%",
       },
       legend: {

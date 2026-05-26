@@ -451,7 +451,7 @@ export default function MobileView(): React.ReactElement | null {
                     ? { tickformat: ",.0%", nticks: 4 }
                     : { nticks: 5 },
                   yaxis: {
-                    range: [0, 1],
+                    rangemode: "tozero",
                     tickformat: ",.0%",
                     nticks: 4,
                   },
