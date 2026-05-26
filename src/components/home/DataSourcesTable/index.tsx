@@ -20,7 +20,7 @@ const CATEGORY_ORDER: DataSourceCategory[] = [
   "anp-distribution",
   "imports",
   "vessels",
-  "manual",
+  "proprietary",
   "news",
 ];
 

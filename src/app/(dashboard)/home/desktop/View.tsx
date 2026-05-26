@@ -42,11 +42,11 @@ export default function DesktopView({
     >
       <NavBar />
 
-      {/* 50/50 split: cards left, Data Sources table right */}
+      {/* 70/30 split: cards left (~67%), Data Sources table right (~33%) */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
+          gridTemplateColumns: "2fr 1fr",
           gap: 0,
           alignItems: "start",
           padding: "32px 24px 80px",
