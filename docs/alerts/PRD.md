@@ -33,6 +33,24 @@ Backend master doc do produto **Alerts Product**. Owner: [`worker_alerts-product
 |---|-----|-----------|-----|
 | B1 | `fanout: confirmations_routed=0` — confirmation emails never queued | `_route_confirmation_events()` read `payload.subscriber_ids` but `subscribe_to_alerts` RPC writes `{email, token, source_slugs, expires_at}` — no `subscriber_ids` field ever written | Replace payload field read with DB lookup: `SELECT id FROM alert_subscribers WHERE email=payload.email AND source_slug IN payload.source_slugs AND is_active=true`. Does NOT filter `is_confirmed` so re-signup while unconfirmed re-queues correctly. |
 | B2 | `WARNING Resend suppressions fetch failed: 401` in GHA logs | API key created with "Sending" scope only — GET `/suppressions` requires "Full Access" or "Read Suppressions" scope | (1) Promoted 401 response from WARNING to ERROR with explicit remediation instructions. (2) Added `validate_api_key()` (GET `/domains`) called once at startup — returns False + logs ERROR on 401, causing `send_outbox` to `raise SystemExit(1)` so the GHA step fails visibly instead of silently processing 0 sends. (3) Documented scope requirement in PRD Setup steps. CEO action: regenerate key with Full Access scope at https://resend.com/api-keys. |
+| B3 | Confirmation email subject was `[SectorData Alerts] Confirm your subscription — System — Confirmation Emails` | `send_outbox.py` line 147 appended `source.display_name` to confirmation subject unconditionally; `system_confirmation` source has `display_name='System — Confirmation Emails'` | Hardcoded clean subject: `[SectorData Alerts] Confirm your subscription` for `is_confirmation=True` rows. Fix in commit `c5d53fdc`. |
+
+### Delivery diagnostics (2026-05-26) — Resend probe tool
+
+Two confirmation emails were sent (Resend message IDs `b9930e2f-f4f7-42d2-a1fb-c568c2ef9381` and `0b8b2373-1d02-4862-99d1-9b37d9814e39`) but not received. Root cause investigation:
+
+- **Tool added:** `scripts/utils/resend_status_check.py` — queries `GET /emails/<id>` for each message ID; prints `last_event`, `bounce`, `to`, `from`, `subject`.
+- **Workflow added:** `.github/workflows/alerts_resend_probe.yml` — `workflow_dispatch` wrapper. Usage: GH Actions → "Alerts Resend Status Probe" → input message IDs space-separated.
+- **Deliverability notes (confirmed):** Reply-To header correctly wired to `ibbaogproject@gmail.com`. Confirmation emails already omit `List-Unsubscribe` links (correct — subscriber is not yet confirmed). Subject has no emoji or special chars that trigger spam filters (post B3 fix).
+- **Pending:** Run probe after push unblock to determine `last_event` (delivered vs bounced vs sent-pending). If `delivered`, emails are in Gmail spam/Promotions — long-term fix is domain verification (see § Migration path).
+
+**How to run the probe:**
+```bash
+gh workflow run alerts_resend_probe.yml \
+  --repo IBBAOG/SectorData \
+  -f message_ids="b9930e2f-f4f7-42d2-a1fb-c568c2ef9381 0b8b2373-1d02-4862-99d1-9b37d9814e39"
+```
+Then: `gh run list --workflow=alerts_resend_probe.yml --limit=1` → get run ID → `gh run view <RUN_ID> --log`.
 
 **Migration `20260525220000_alert_outbox_columns_and_seed_fixes.sql` added** — `worker_supabase` applies via MCP after merge OR automatically via `supabase_deploy.yml` on push to main.
 
