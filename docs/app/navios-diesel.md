@@ -37,6 +37,8 @@ A coluna `navios_diesel.is_cabotagem` é **generated** por:
 | `get_nd_coletas_distintas` | Lista de timestamps distintos de coleta (para filtro de "snapshot") |
 | `get_nd_navios` | Lista de navios filtrados (porto, produto, status, período) |
 | `get_nd_resumo_portos` | Agregado por porto (totais, contagens) |
+| `get_nd_volume_mensal_descarga` | Série mensal (Discharged / Pending / Indeterminate). Recalculada a cada snapshot — sobrescreve meses passados. Preservada por enquanto como fallback. |
+| `get_nd_volume_mensal_historico` | **Frozen history variant** (2026-05-27). Para meses fechados ancora no LAST snapshot daquele mês — bars não são recomputados retroativamente. Mês corrente usa `p_collected_at` (live). Baseline `2026-04`. Retorna campo extra `is_current` (boolean). Wrapper `rpcGetNdVolumeMensalDescarga` em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) chama esta primeiro e cai pra legacy se ela não existir (transição de deploy). |
 
 ## Tabelas
 
@@ -154,11 +156,25 @@ The hook is the single source of truth for all data. Both Views import from it a
 - AIS layer toggle (AIS On/Off `SegmentedToggle`) — not available on mobile
 - Inline sidebar calendar + collection-time picker
 - Plotly scattergeo map with port circles + AIS vessel markers
-- Monthly stacked bar chart (Discharged / Pending / Indeterminate)
 - Monthly Summary by Port cross-tab table
 - Live AIS port arrivals table
 
 These are tagged `[desktop-only]` in `desktop/View.tsx` per the binding sync rule.
+
+### Monthly Diesel Volume chart (both views — frozen history, 2026-05-27)
+
+Desktop and mobile both render the monthly stacked-bar series sourced from `volumeMensal` (in turn fed by `get_nd_volume_mensal_historico`). Past months are **frozen** at the LAST snapshot of that month — bars don't get recomputed when new snapshots land. The current month is **live** (uses the selected snapshot).
+
+| Slot | Desktop | Mobile |
+|---|---|---|
+| Container | Plotly stacked bar (`Discharged` / `Pending` / `Indeterminate`) in Row 1 Col 2 (right of map) | CSS-only stacked bars in a glass card on the **Ports** tab, above Port Summary |
+| Range | All months from Apr 2026 onward, in one row | Horizontal scroller, 48px per bar, all months from Apr 2026 onward |
+| Live marker | Last bar gets a contrasting outline + `(live)` suffix on the x-tick; hover text reads `· live` vs. `· frozen` | Last bar gets an orange outline + `live` caption under the month label |
+| Subtitle | "Past months frozen at last snapshot in the month · current month is live" (below title, above hr) | "Past months frozen · current is live · m³" (below title) |
+
+Mobile uses CSS bars (not Plotly) for weight and to avoid loading the Plotly bundle on a narrow viewport that already carries the desktop map elsewhere. The data shape is identical, so flipping mobile to Plotly later is a 1-file change.
+
+Anti-regression: if a future change ever re-introduces a single RPC that recomputes the whole series from one snapshot (the legacy `get_nd_volume_mensal_descarga` behavior), the frozen-history guarantee breaks silently — closed months will start moving again. Keep the wrapper in `rpc.ts` pointed at `get_nd_volume_mensal_historico` (with the legacy as fallback only).
 
 ## Export
 
