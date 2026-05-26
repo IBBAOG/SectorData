@@ -30,16 +30,8 @@ jobs:
         # the filename). supabase db push refuses to run while any remote version
         # lacks a local file. Marking it as reverted removes the blocker.
         # Add new phantom versions here if supabase db push reports them again.
-        #
-        # 20260526200000: MCP-auto timestamp created when alerts_module_visibility
-        # was applied via apply_migration (filename is actually 20260525280000 —
-        # see commit e6817e08). The schema_migrations.version row was never
-        # reconciled to match the filename (Regra E was skipped). Reverting here
-        # so db push can re-register the migration under the correct version via
-        # the applied list below.
         run: |
           supabase migration repair 20260504000001 --status reverted || true
-          supabase migration repair 20260526200000 --status reverted || true
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
@@ -135,7 +127,9 @@ jobs:
             20260513000001 \
             20260513000002 \
             20260513120000 \
-            20260525280000; do
+            20260525280000 \
+            20260526200000 \
+            20260527100000; do
             supabase migration repair "$v" --status applied || true
           done
         # 20260525280000 (alerts_module_visibility): migration body was applied
@@ -144,6 +138,17 @@ jobs:
         # The phantom row is reverted above; this entry re-registers the
         # migration under the correct version so db push --include-all skips
         # the already-applied DDL.
+        #
+        # 20260526200000 (data_sources_freshness) and 20260527100000
+        # (nd_volume_mensal_historico): both migrations have real .sql files in
+        # supabase/migrations/ and are applied on the remote DB, but their
+        # schema_migrations.version rows were dropped by earlier "revert phantom"
+        # repairs (now removed). The function originally created by
+        # 20260526200000 referenced anp_subsidy_history (later dropped via
+        # CASCADE by 20260527200000_subsidy_reform) and was recreated without
+        # that reference by 20260527300000_data_sources_freshness_subsidy_fix —
+        # which is already applied. Marking both as applied here lets
+        # db push skip them on every run.
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
