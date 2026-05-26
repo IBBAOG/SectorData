@@ -116,7 +116,7 @@ function buildStackedTraces(rows: StackedRow[], unit: string): PlotData[] {
     // hover by emitting an empty template (Plotly skips blank entries).
     const hovertemplates = ys.map((v) =>
       v >= HOVER_THRESHOLD
-        ? `%{x}<br>${entity}: %{y:,.1f} ${unit}<extra></extra>`
+        ? `${entity}: %{y:,.1f} ${unit}<extra></extra>`
         : `<extra></extra>`,
     );
     return {
@@ -262,7 +262,7 @@ function buildPriceTraces(
       y: ys,
       line: { color: PRICE_COLORS[product], width: 2 },
       marker: { size: 4, color: PRICE_COLORS[product] },
-      hovertemplate: `%{x}<br>${product}: %{y:,.2f} ${unit}<extra></extra>`,
+      hovertemplate: `${product}: %{y:,.2f} ${unit}<extra></extra>`,
     } as unknown as PlotData);
   }
   return traces;
@@ -315,7 +315,7 @@ function buildUnitPriceTraces(
       connectgaps: true,
       line: { color, width: 2 },
       marker: { size: 3, color },
-      hovertemplate: `%{x}<br>${entity}: %{y:,.1f} ${unitLabel}<extra></extra>`,
+      hovertemplate: `${entity}: %{y:,.1f} ${unitLabel}<extra></extra>`,
     } as unknown as PlotData;
   });
 }
