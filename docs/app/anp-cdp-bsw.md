@@ -61,7 +61,7 @@ Plots **BSW (water cut)** versus a depletion / age proxy that depends on the vie
 
 Each selected field is rendered as its own colored trace using the shared 16-color `PALETTE`, in selection order. Colors are stable while a session is open (the chart-trace color matches the chip color in the sidebar).
 
-- **Y axis**: `BSW = agua_bbl_dia / (petroleo_bbl_dia + agua_bbl_dia)` (range 0–1, formatted as percentage on hover).
+- **Y axis**: `BSW = agua_bbl_dia / (petroleo_bbl_dia + agua_bbl_dia)` (auto-scaled, minimum pinned at 0 via `rangemode: "tozero"`, formatted as percentage). The range is **not** fixed at 0–100%: Plotly scales the ceiling to the data, so early-stage or low-water-cut fields (BSW < 10%) use the full vertical resolution instead of being compressed at the bottom.
 - **X axis (Per-well mode)**: months since the first month where `petroleo_bbl_dia > 0` for that well (linear, `rangemode: "tozero"`).
 - **X axis (Field-average mode)**: `pct_voip = cumulative(petroleo_bbl_dia × dias_do_mês) / voip_bbl_atual`, formatted with `tickformat: ",.1%"`. This is a more physical/geological X than raw time and lets fields of very different sizes share a comparable depletion curve. Plotly auto-ranges the axis — most fields stay in `[0, 1]` but a value can occasionally exceed 100% if the published VOIP is conservative; the auto-range absorbs that without clipping.
 - **Single filter**: searchable multi-select of field (`campo`), in a left sidebar. **Fields without a corresponding row in `anp_voip` are hidden from the dropdown** (the field-aggregate RPC inner-joins against `anp_voip` and `get_anp_cdp_bsw_campos` mirrors that filter).
