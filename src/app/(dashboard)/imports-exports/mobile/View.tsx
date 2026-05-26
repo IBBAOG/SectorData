@@ -61,6 +61,11 @@ function colourForEntity(entities: string[], entity: string): string {
 
 type StackedRow = { ano: number; mes: number; name: string; value: number };
 
+// Minimum value to show a trace in the unified hover tooltip.
+// Points below this threshold are hidden from hover to avoid polluting the
+// tooltip with near-zero entries. Mirrors desktop/View.tsx — keep in sync.
+const HOVER_THRESHOLD = 0.05;
+
 function buildStackedTraces(rows: StackedRow[], unit: string): PlotData[] {
   if (!rows.length) return [];
   const xSet = new Set<string>();
@@ -82,16 +87,24 @@ function buildStackedTraces(rows: StackedRow[], unit: string): PlotData[] {
   }
   return entities.map((entity) => {
     const color = colourForEntity(entities, entity);
+    const ys = xs.map((x) => lookup.get(entity)?.get(x) ?? 0);
+    // Per-point hovertemplate array: hide points below threshold from unified
+    // hover by emitting an empty template (Plotly skips blank entries).
+    const hovertemplates = ys.map((v) =>
+      v >= HOVER_THRESHOLD
+        ? `%{x}<br>${entity}: %{y:,.1f} ${unit}<extra></extra>`
+        : `<extra></extra>`,
+    );
     return {
       type: "scatter" as const,
       mode: "lines" as const,
       stackgroup: "one",
       name: entity,
       x: xs,
-      y: xs.map((x) => lookup.get(entity)?.get(x) ?? 0),
+      y: ys,
       line: { width: 0.5, color },
       fillcolor: color,
-      hovertemplate: `%{x}<br>${entity}: %{y:,.1f} ${unit}<extra></extra>`,
+      hovertemplate: hovertemplates,
     };
   }) as unknown as PlotData[];
 }

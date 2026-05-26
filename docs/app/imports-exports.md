@@ -193,6 +193,18 @@ Filename pattern: `Imports-Exports_DD-MM-YY.xlsx` / `.zip`.
 
 ---
 
+## Hover tooltip — zero-suppression
+
+Stacked-area charts (Panel A, Panel B, Exports) use `hovermode: 'x unified'`. By default Plotly shows ALL traces in the unified hover, including those with a value of 0 for that month — this pollutes the tooltip with long lists of "Country X: 0.0 kt".
+
+**Fix (desktop/View.tsx + mobile/View.tsx):** `buildStackedTraces` generates a **per-point `hovertemplate` array** instead of a single string. Points with `value < HOVER_THRESHOLD` (0.05) emit `<extra></extra>` — Plotly treats this as "no entry" and skips the trace from the unified hover for that month. The y-value itself remains 0 (unchanged) so stacking is not affected visually.
+
+`HOVER_THRESHOLD = 0.05` is defined as a module-level constant in both views. For volume panels the unit is mil m³ (50 m³ minimum). For USD panels the value is already in raw USD; at 0.05 this effectively suppresses true zero rows only, since any real USD export will be orders of magnitude larger. If the threshold needs tuning (e.g., suppress sub-1 kt entries), update the constant in both views.
+
+Panel C (single-line Import Price) is unaffected — it uses a scalar `hovertemplate`, not an array, because it has no stacking.
+
+---
+
 ## Known Facts / Gotchas
 
 1. **Sentinel `__legacy__`** — `get_imports_exports_importers_stacked` returns 0 rows while ETL backfill hasn't run. UI shows an informational panel. Same for `get_imports_exports_yoy_table(p_scope='importers')`.
