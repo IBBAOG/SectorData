@@ -109,7 +109,6 @@ export interface ModuleLabel {
 
 export const MODULE_LABELS: ModuleLabel[] = [
   // Fuel Distribution
-  { slug: "sales",                   label: "Sales Dashboard",              description: "Volume analysis by product, segment, agent, region, and period" },
   { slug: "market-share",            label: "Market Share",                 description: "Market share evolution over time broken down by distributor" },
   { slug: "navios-diesel",           label: "Diesel Imports Line-Up",       description: "Scheduled vessel arrivals and diesel import line-up by port" },
   { slug: "diesel-gasoline-margins", label: "Diesel and Gasoline Margins",  description: "Diesel and gasoline margin tracking across regions and time" },
