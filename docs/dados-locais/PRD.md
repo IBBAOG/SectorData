@@ -37,6 +37,23 @@ Schema é dono do APP. Aqui só listamos o contrato esperado.
 
 Sua função: garantir que o passo 5 nunca quebre por mismatch entre Excel e schema da tabela.
 
+## Schema do Excel price_bands.xlsx
+
+Ambas as sheets têm agora **4 colunas de dados** (além de Date):
+
+| Sheet | Colunas |
+|---|---|
+| `Gasoline` | Date, IBBA - Import Parity, IBBA - Export Parity, Petrobras Price |
+| `Diesel` | Date, BBA - Import Parity, BBA - Export Parity, Petrobras Price |
+
+As colunas `BBA - Import Parity w/ subsidy` e `Petrobras Price w/ subsidy` foram **removidas do fluxo de upload** a partir de 2026-05-27. Elas continuam existindo na tabela `price_bands` do Supabase, mas são agora **auto-preenchidas por triggers SQL** (migration `20260527200000_subsidy_reform.sql`) com base em:
+
+- `anp_subsidy_diesel_reference` (preço de referência diário por região)
+- `anp_subsidy_commercialization` (preço de comercialização por período × região × tipo_agente)
+- `anp_subsidy_caps` (teto do reembolso por tipo_agente e data)
+
+O script `price_bands_upload.py` ignora silenciosamente as 2 colunas obsoletas caso ainda estejam presentes no Excel (log de WARNING), sem quebrar. O user pode atualizar o template local removendo essas colunas da sheet Diesel, mas não é obrigatório.
+
 ## Princípios
 
 1. **Excel é fonte da verdade enquanto não estiver no Supabase.** Não delete arquivos `data/*.xlsx` mesmo que pareçam obsoletos — pode haver linhas não upadas.
