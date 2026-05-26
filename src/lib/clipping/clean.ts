@@ -193,8 +193,13 @@ export const PAYWALL_MARKERS: string[] = [
 ];
 
 export function looksPaywalled(paragraphs: string[]): boolean {
-  if (paragraphs.length < 3) return true;
+  // Phase 5 fix: raised thresholds to reduce false-positives on short but genuine articles.
+  // Original thresholds (< 3 paragraphs OR < 400 chars) were flagging CNN Brasil and other
+  // sites where the noise filter legitimately strips sidebar/nav content, leaving a smaller
+  // but valid article body. Root-cause fix for CNN Brasil is in stripNoise (Tailwind token
+  // exclusion), but lower thresholds add a second layer of defense for short articles.
+  if (paragraphs.length < 2) return true;
   const joined = paragraphs.join(" ").toLowerCase();
-  if (joined.length < 400) return true;
+  if (joined.length < 200) return true;
   return PAYWALL_MARKERS.some((marker) => joined.includes(marker));
 }

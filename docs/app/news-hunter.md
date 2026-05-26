@@ -101,7 +101,7 @@ Admins têm uma funcionalidade extra de **clipping de notícias**:
 
 1. **Selection Mode toggle** — aparece no top row para Admins. Ativa checkboxes em cada artigo.
 2. **SelectionSidebar** — painel direito com artigos selecionados em ordem, controles de reordenação (↑/↓), botão "Generate Clipping".
-3. **POST /api/clipping/scrape** — rota Admin-gated (mirror do padrão de auth em `upload-card-preview/route.ts`). Cap de 15 URLs, 12s timeout por URL, `maxDuration = 180` (bumped from 60 to accommodate headless tier worst-case).
+3. **POST /api/clipping/scrape** — rota Admin-gated (mirror do padrão de auth em `upload-card-preview/route.ts`). Cap de 30 URLs (raised from 15 in Phase 5), 30s timeout por URL, `maxDuration = 300` (raised from 180 to accommodate 30-URL batches with headless tier).
 4. **ClippingModal** — modal com:
    - Aba "Preview": iframe renderizando o HTML do clipping (Calibri 11pt, header laranja #FF5000, "Main Headlines" TOC, TEAM_BLOCK com 3 emails).
    - Aba "Status": pills por artigo (ok/paywall/fetch_failed/etc) + textarea manual para sites bloqueados.
@@ -255,6 +255,22 @@ site without agent assistance.
 
 **Test result at Phase 5 commit**: 16/18 pass, 2 skipped (unchanged — brasil-energia paywall,
 cnn-brasil Tailwind false-positive).
+
+#### Phase 5 post-launch fixes (2026-05-26)
+
+Three production issues reported by Eduardo after testing clipping in prod:
+
+1. **UOL Economia not scraping** — `economia.uol.com.br` was not in `EXTRACTORS` (SSRF guard rejected it silently). Fixed: added to `SOURCE_NAMES` + added custom extractor with UOL-specific selectors (`div.content-text`, `div.text-content`, `[itemprop="articleBody"]`, etc.). 1 new fixture added (`uol-economia/petrobras-resultado-trimestral`).
+
+2. **CNN Brasil paywall false-positive** — Root cause: Tailwind arbitrary-variant tokens (`[&_.gallery]:mb-4`) in the article body div class were matching the `"gallery"` noise substring in `stripNoise()`, removing the content container → zero paragraphs → `looksPaywalled()` triggered. Two-layer fix:
+   - `stripNoise()` now filters out class tokens containing `[` before substring matching (Phase 5 fix, `extract.ts`).
+   - `www.cnnbrasil.com.br`/`cnnbrasil.com.br` moved from `AUTO_SELECTORS` to custom extractor using `[data-single-content="true"]` — stable data attribute, immune to Tailwind class churn.
+   - `looksPaywalled()` thresholds relaxed: `< 2 paragraphs AND < 200 chars` (was `< 3 AND < 400`).
+   - Both CNN Brasil test fixtures re-enabled (were `skip`).
+
+3. **Batch limit raised 15 → 30** — `BATCH_LIMIT` in `route.ts` raised to 30. `maxDuration` raised from 180 to 300 to cover worst-case concurrent headless browser fallbacks.
+
+**Test result post Phase 5 fixes**: 19/20 pass, 1 skipped (brasil-energia paywall only).
 
 #### SSRF guard
 

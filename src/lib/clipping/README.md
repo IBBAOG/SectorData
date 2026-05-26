@@ -262,18 +262,22 @@ Matching elements are removed before paragraph extraction.
 | `headlines` | Related articles | Related-article headline teaser blocks inside news body | Estadão |
 | `loading-text` | AI content | AI-generated summary placeholder text ("Gerando resumo") | Estadão |
 
-### Known issue: CNN Brasil + Tailwind arbitrary variants
+### CNN Brasil + Tailwind arbitrary variants — fixed (Phase 5, 2026-05-26)
 
 CNN Brasil uses Tailwind CSS arbitrary variant classes like `[&_.gallery]:mb-4` on the
-article body `<div>`. The string `gallery` appears inside the class attribute, triggering
-the noise filter and removing the entire article content container.
+article body `<div>`. The string `gallery` appeared inside the class attribute, triggering
+the noise filter and removing the entire article content container → zero paragraphs →
+`looksPaywalled()` returned `true` (false positive).
 
-**Status**: deferred. Two possible fixes:
-1. Add `www.cnnbrasil.com.br` to a custom extractor with a Tailwind-safe selector that
-   bypasses the noisy class matching.
-2. Implement an exclusion for Tailwind `[&_...]` arbitrary variant syntax in `stripNoise()`.
+**Fix applied (two layers):**
+1. `stripNoise()` in `extract.ts` now excludes Tailwind arbitrary-variant tokens (tokens
+   containing `[`) from the combined class string before substring matching. This prevents
+   `[&_.gallery]:mb-4` from matching the `"gallery"` noise substring.
+2. `www.cnnbrasil.com.br` and `cnnbrasil.com.br` moved from `AUTO_SELECTORS` to a custom
+   extractor using `[data-single-content="true"]` — a stable data attribute on the article
+   body div, immune to class-name churn from Tailwind utility changes.
 
-Until fixed, CNN Brasil fixtures are skipped in the test suite with an explicit `TODO`.
+Both CNN Brasil fixtures are now enabled in the test suite (no more `skip`).
 
 ---
 

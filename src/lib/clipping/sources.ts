@@ -88,6 +88,7 @@ export const SOURCE_NAMES: Record<string, string> = {
   "obastidor.com.br": "O Bastidor",
   "www.obastidor.com.br": "O Bastidor",
   "noticias.uol.com.br": "UOL",
+  "economia.uol.com.br": "UOL Economia",
   "www.terra.com.br": "Terra",
   "terra.com.br": "Terra",
   "www.moneytimes.com.br": "Money Times",
@@ -420,11 +421,23 @@ export const EXTRACTORS: Record<string, string[]> = {
     "div.post-content",
     "article",
   ],
+  // CNN Brasil (Arc Publishing / Next.js — Tailwind arbitrary-variant classes)
+  // The article body is identified by data-single-content="true", not a semantic class.
+  // Using AUTO_SELECTORS was causing the entire content div to be removed by the "gallery"
+  // noise filter (Tailwind token [&_.gallery]:mb-4 in the class attribute).
+  "www.cnnbrasil.com.br": [
+    "[data-single-content='true']",
+    "[data-single-content]",
+    "article",
+  ],
+  "cnnbrasil.com.br": [
+    "[data-single-content='true']",
+    "[data-single-content]",
+    "article",
+  ],
   // --- ex_auto (generic wide selectors) ---
   "theagribiz.com": AUTO_SELECTORS,
   "www.theagribiz.com": AUTO_SELECTORS,
-  "www.cnnbrasil.com.br": AUTO_SELECTORS,
-  "cnnbrasil.com.br": AUTO_SELECTORS,
   "veja.abril.com.br": AUTO_SELECTORS,
   "investnews.com.br": AUTO_SELECTORS,
   "www.investnews.com.br": AUTO_SELECTORS,
@@ -468,7 +481,22 @@ export const EXTRACTORS: Record<string, string[]> = {
   "www.tconline.com.br": AUTO_SELECTORS,
   "obastidor.com.br": AUTO_SELECTORS,
   "www.obastidor.com.br": AUTO_SELECTORS,
+  // UOL — noticias.uol.com.br is a general aggregator (redirects ~93% to Folha);
+  // kept as AUTO_SELECTORS for any original UOL articles that land here.
   "noticias.uol.com.br": AUTO_SELECTORS,
+  // UOL Economia (economia.uol.com.br) — added to scanner in commit 3be0edb.
+  // UOL's custom CMS uses class-based article body containers.
+  // Selectors ordered most-specific → broad fallback.
+  "economia.uol.com.br": [
+    "div.content-text",
+    "div.text-content",
+    '[itemprop="articleBody"]',
+    "div.conteudo-noticia",
+    "div.noticia-conteudo",
+    "div.texto",
+    "div.article-content",
+    "article",
+  ],
   "www.terra.com.br": AUTO_SELECTORS,
   "terra.com.br": AUTO_SELECTORS,
   "www.moneytimes.com.br": AUTO_SELECTORS,

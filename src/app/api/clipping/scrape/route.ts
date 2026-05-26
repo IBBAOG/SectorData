@@ -1,5 +1,5 @@
 // POST /api/clipping/scrape
-// Admin-only route. Accepts up to 15 URLs, scrapes each one, returns ScrapeResult[].
+// Admin-only route. Accepts up to 30 URLs, scrapes each one, returns ScrapeResult[].
 // Auth pattern mirrors src/app/api/upload-card-preview/route.ts (lines 29–52).
 // No curl_cffi TLS impersonation — 403 sites surface as fetch_failed.
 
@@ -11,12 +11,12 @@ import { scrapeLimiter, enforceLimit, rateLimitResponse, getClientIp } from "@/l
 import type { ScrapeResult } from "@/lib/clipping/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 180;
+export const maxDuration = 300; // raised from 180 (3 min) to 300 (5 min) to support 30-URL batches
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-const BATCH_LIMIT = 15;
+const BATCH_LIMIT = 30; // raised from 15 — 30 URLs × 30s timeout = 900s worst-case, but Promise.allSettled runs concurrently so real wall-clock is ~30s per slowest URL
 const PER_URL_TIMEOUT_MS = 30_000;
 
 interface ScrapeRequestBody {
@@ -75,12 +75,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "urls must be a non-empty array" }, { status: 400 });
     }
 
-    // ── 3. Enforce 15-URL batch cap ──────────────────────────────────────────────
+    // ── 3. Enforce 30-URL batch cap ──────────────────────────────────────────────
     const toProcess = urls.slice(0, BATCH_LIMIT);
     const skipped: ScrapeResult[] = urls.slice(BATCH_LIMIT).map((url) => ({
       url,
       status: "skipped" as const,
-      error: "Batch limit exceeded (max 15 URLs per request).",
+      error: "Batch limit exceeded (max 30 URLs per request).",
     }));
 
     // ── 4. Resolve cookies for all unique domains in the batch ───────────────────

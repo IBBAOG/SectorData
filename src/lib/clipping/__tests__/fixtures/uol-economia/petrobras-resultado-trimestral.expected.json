@@ -1,0 +1,9 @@
+{
+  "title": null,
+  "minParagraphCount": 4,
+  "maxParagraphCount": 12,
+  "firstParagraphContains": "Petrobras anunciou nesta quarta-feira um lucro líquido",
+  "lastParagraphContains": "dividendos",
+  "noNoiseMarkers": ["Veja também", "Compartilhe", "Newsletter", "Assine", "newsletter"],
+  "noiseMustNotAppearAnywhere": true
+}
