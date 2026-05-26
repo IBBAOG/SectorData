@@ -147,6 +147,21 @@ function buildBandRows(
     });
   }
 
+  if (showSubsidy && cv.petrobrasSubsidy != null) {
+    // Insert "Petrobras Price w/ subsidy" after the plain Petrobras row
+    const petrobrasIdx = rows.findIndex((r) => r.label === "Petrobras Price");
+    if (petrobrasIdx >= 0) {
+      rows.splice(petrobrasIdx + 1, 0, {
+        label: "Petrobras Price w/ subsidy",
+        value: cv.petrobrasSubsidy,
+        color: COLOR_PETRO,
+        pct: cv.pctPetroSubVsIppSub != null
+          ? `${cv.pctPetroSubVsIppSub >= 0 ? "+" : ""}${cv.pctPetroSubVsIppSub.toFixed(0)}% vs IPP w/ sub`
+          : undefined,
+      });
+    }
+  }
+
   return rows;
 }
 
@@ -509,7 +524,7 @@ export default function MobileView(): React.ReactElement {
                 Show subsidy lines
               </div>
               <div style={{ fontSize: 12, color: "var(--mobile-text-muted)", fontFamily: "Arial", marginTop: 2 }}>
-                Import Parity w/ subsidy (from Mar 2026)
+                Import Parity &amp; Petrobras w/ subsidy (from Mar 2026)
               </div>
             </div>
             <button

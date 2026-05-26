@@ -191,6 +191,9 @@ export default function DesktopView(): React.ReactElement {
                     <div className="col-6">
                       <ChartHeader product="Diesel" cv={currentValues.Diesel} rows={dieselRows} xMax={xMax} />
                       <PlotlyChart data={dieselChart.data} layout={dieselChart.layout} config={{ displayModeBar: false }} />
+                      <small style={{ color: "#aaa", fontFamily: "Arial", fontSize: 10, display: "block", marginTop: 2 }}>
+                        w/ subsidy lines auto-calculated from ANP daily reference price (updated daily)
+                      </small>
                     </div>
                   </div>
 
