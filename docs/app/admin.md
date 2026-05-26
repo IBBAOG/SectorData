@@ -179,13 +179,13 @@ Landing visual. Mostra cards/imagens dos módulos disponíveis pro user (filtrad
 
 #### Data Sources live table (2026-05-26, `[desktop-only]`)
 
-Desktop layout is now a 50/50 split: module cards (left column) + Data Sources live table (right column).
+Desktop layout is now a **70/30 split**: module cards (left column, `2fr`) + Data Sources live table (right column, `1fr`).
 Mobile view is **unchanged** — still shows cards only. The table is explicitly desktop-only.
 
 **Component tree:**
 ```
 src/
-  data/dataSources.ts                 — 23-entry TS catalog (DataSource interface + DATA_SOURCES array)
+  data/dataSources.ts                 — 17-entry TS catalog (DataSource interface + DATA_SOURCES array)
   components/home/DataSourcesTable/
     index.tsx                          — wrapper, groups by category, single-expand accordion
     DataSourcesTable.module.css        — glass + pulse styles; consumes only existing globals.css tokens
@@ -200,12 +200,14 @@ src/
 
 **RPC:** `get_data_sources_freshness()` — migration `20260526200000_data_sources_freshness.sql`. Returns `(source_key, last_update, row_count)` for all 22 ETL-fed tables. SECURITY DEFINER, accessible to `anon` + `authenticated`. Wrapper: `rpcGetDataSourcesFreshness` in `src/lib/rpc.ts`.
 
-**The 23 entries** (22 Supabase tables + `yahoo_finance` which has no stored table):
-- ANP Production (5): `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco`, `anp_cdp_producao`, `anp_voip`
-- ANP Distribution (7): `vendas`, `anp_precos_produtores`, `anp_glp`, `anp_lpc`, `anp_precos_distribuicao`, `anp_subsidy_diesel_reference`, `anp_subsidy_history`
-- Imports & Exports (3): `mdic_comex`, `anp_daie`, `anp_desembaracos`
-- Vessels (4): `navios_diesel`, `vessel_positions`, `port_arrivals`, `import_candidates`
-- Manual (2): `d_g_margins`, `price_bands`
+**Note on catalog vs. RPC key count:** The RPC returns 22 source_keys (one per ETL-fed table). The catalog has 17 entries — 6 "extra" DB source_keys (the 3 CDP Diária sub-tables, `anp_desembaracos`, `port_arrivals`, `import_candidates`, and `anp_subsidy_history`) are deduplicated in the catalog but still tracked by freshness. The hook silently ignores keys with no catalog entry (returns undefined → no render).
+
+**The 17 entries** (post-deduplication; 22 Supabase source_keys still active in RPC):
+- ANP Production (3): `anp_cdp_diaria` (covers all 3 Power BI tables), `anp_cdp_producao`, `anp_voip`
+- ANP Distribution (6): `vendas`, `anp_precos_produtores`, `anp_glp`, `anp_lpc`, `anp_precos_distribuicao`, `anp_subsidy_diesel_reference` (covers history too)
+- Imports & Exports (2): `mdic_comex`, `anp_daie` (covers Desembaraços too)
+- Vessels (2): `navios_diesel`, `vessel_positions` (covers arrivals + candidates)
+- Proprietary Data (2): `d_g_margins`, `price_bands`
 - News & Markets (2): `news_articles`, `yahoo_finance`
 
 **Status derivation** (computed client-side from `DataSource.staleAfterHours` / `overdueAfterHours`):

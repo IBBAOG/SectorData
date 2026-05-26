@@ -17,7 +17,7 @@ const CAT_VAR: Record<DataSourceCategory, string> = {
   "anp-distribution": "anp-distribution",
   imports: "imports",
   vessels: "vessels",
-  manual: "manual",
+  proprietary: "proprietary",
   news: "news",
 };
 
