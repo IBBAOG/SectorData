@@ -27,6 +27,7 @@ const DOMAIN_HOSTS: Record<string, string> = {
   "estadao": "www.estadao.com.br",
   "cnn-brasil": "www.cnnbrasil.com.br",
   "infomoney": "www.infomoney.com.br",
+  "uol-economia": "economia.uol.com.br",
 };
 
 // Domains whose fixtures are skipped with an explicit TODO.
@@ -36,10 +37,8 @@ const SKIP_REASONS: Record<string, string> = {
   // Paywall detected: div.editorial_ contains only teaser + "Já é assinante?" wall.
   // Full content not extractable without auth. Fixture kept as reference.
   "brasil-energia": "paywall — only teaser content accessible without auth",
-  // CNN Brasil uses Tailwind CSS arbitrary variants ([&_.gallery]:mb-4) that
-  // falsely match the 'gallery' noise substring, removing the entire article body.
-  // Requires either a custom allowlist for Tailwind sites or a selector bypass.
-  "cnn-brasil": "Tailwind false-positive: [&_.gallery]:mb-4 triggers 'gallery' noise match",
+  // CNN Brasil: fixed in Phase 5 (custom [data-single-content] selector +
+  // Tailwind-token exclusion in stripNoise). Tests re-enabled.
 };
 
 interface Expected {

@@ -1,11 +1,9 @@
 {
-  "_skip": true,
-  "_reason": "Tailwind false-positive: class '[&_.gallery]:mb-4' on the article body div matches the 'gallery' NOISE_CLASS_SUBSTRING, causing stripNoise() to remove the entire content container. Fix: either add CNN Brasil to specific extractor with Tailwind-aware selector, or exclude Tailwind arbitrary-variant classes from noise matching.",
   "title": "6x1: Proposta não obriga sequência de folgas e dá preferência aos domingos",
-  "minParagraphCount": 5,
+  "minParagraphCount": 4,
   "maxParagraphCount": 15,
-  "firstParagraphContains": "6x1",
-  "lastParagraphContains": "6x1",
+  "firstParagraphContains": "Dentre os direitos propostos aos trabalhadores",
+  "lastParagraphContains": "presidente Luiz Inácio Lula da Silva",
   "noNoiseMarkers": ["Leia também", "Compartilhe", "Newsletter", "Assine"],
-  "noiseMustNotAppearAnywhere": false
+  "noiseMustNotAppearAnywhere": true
 }

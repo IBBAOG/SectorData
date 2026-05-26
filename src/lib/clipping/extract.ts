@@ -123,11 +123,22 @@ function stripNoise($: CheerioRoot, container: cheerio.Cheerio<AnyNode>): void {
   container.find("figure, figcaption, aside, script, style, iframe, form, nav").remove();
   // Remove elements whose class/id contains noise substrings, or whose data-*/role
   // attributes match noise patterns (Phase 2: matchesNoiseAttr).
+  //
+  // Phase 5 fix: exclude Tailwind arbitrary-variant tokens (e.g. `[&_.gallery]:mb-4`)
+  // from the combined string before substring matching. These tokens start with `[` and
+  // contain substrings like "gallery", "related", "category", etc. as selector targets —
+  // not as semantic class names on the element itself. Without this filter, CNN Brasil's
+  // article body div (which has `[&_.gallery]:mb-4` in its class) was falsely removed
+  // by the "gallery" noise substring, producing zero paragraphs → paywall false-positive.
   container.find("*").each((_, el) => {
     const $el = $(el);
-    const classes = ($el.attr("class") ?? "").split(/\s+/);
+    const classTokens = ($el.attr("class") ?? "").split(/\s+/);
+    // Only include tokens that are plain class names (not Tailwind arbitrary variants).
+    // Arbitrary-variant tokens start with `[` (e.g. `[&_.gallery]:mb-4`,
+    // `[#id_&]:flex`, `group-has-[.foo]:w-full`).
+    const plainTokens = classTokens.filter((t) => !t.startsWith("[") && !t.includes("["));
     const id = $el.attr("id") ?? "";
-    const combined = [...classes, id].join(" ").toLowerCase();
+    const combined = [...plainTokens, id].join(" ").toLowerCase();
     if (
       NOISE_CLASS_SUBSTRINGS.some((sub) => combined.includes(sub)) ||
       matchesNoiseAttr(el as Element)
