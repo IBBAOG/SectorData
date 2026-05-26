@@ -6,7 +6,7 @@
  *
  * Naming:
  *   .tableRoot       — outermost wrapper (right column of the 50/50 split)
- *   .tableHeader     — sticky "DATA SOURCES · LIVE ●" bar
+ *   .tableHeader     — sticky "DATA SOURCES" bar
  *   .sectionHeader   — translucent "── ANP PRODUCTION ──" divider
  *   .sourceRowWrapper — per-row container (collapsed + expanded)
  *   .sourceRow       — collapsed clickable row
@@ -52,16 +52,6 @@
 /* Fix 3: title text must be white in dark mode (was #000 fixed — invisible) */
 :global(:root[data-theme="dark"]) .tableHeader {
   color: #ffffff;
-}
-
-.headerLiveDot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ds-status-fresh);
-  color: var(--ds-status-fresh); /* for currentColor-based pulse ring */
-  flex-shrink: 0;
 }
 
 /* ── Column header row ──────────────────────────────────────────────────────── */
