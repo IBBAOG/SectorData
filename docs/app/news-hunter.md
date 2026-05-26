@@ -147,6 +147,52 @@ Architecture of the debug path:
 
 This is the diagnostic foundation for Phase 2 (global quick-wins) and Phase 4 (per-site fixture tests) of the clipping noise reduction plan (`docs/` — plans folder).
 
+#### Phase 3 — Readability fallback (`CLIPPING_USE_READABILITY=1`) (2026-05-26)
+
+Mozilla Readability (the engine behind Firefox Reader View) is available as an **opt-in fallback**
+for domains that fall into `AUTO_SELECTORS` — i.e., sites without a custom selector in `sources.ts`.
+The 28 custom-selector domains (Globo, Folha, Estadão, Valor, Petrobras, etc.) are **never** sent
+through Readability — their selectors are already tuned and Readability could regress them.
+
+**Which sites are affected:** all domains whose `EXTRACTORS` entry is the shared `AUTO_SELECTORS`
+array reference — currently ~35 domains including CNN Brasil, Eixos, ClickPetróleo, InfoMoney,
+Reuters, Conjur, Argus, Bloomberg Línea, etc.
+
+**How it works (when the flag is on):**
+1. The cheerio-based extraction runs as normal (container selection, `stripNoise`, `paragraphsFrom`).
+2. `extractWithReadability()` (`src/lib/clipping/extractReadability.ts`) also runs against the same
+   raw HTML via `linkedom` + `@mozilla/readability`.
+3. Phase-2 noise filters (`cleanParagraphs`) are applied to Readability's output too — Readability
+   cleans structural noise (ads, nav, sidebars) but does not know about inline pt-BR noise patterns
+   ("Leia também: X | Y | Z").
+4. **Fragmentation guard:** if Readability produced ≥3× more paragraphs than cheerio (sign of
+   aggressive sentence splitting), cheerio wins regardless of joined-content length.
+5. Otherwise, the result with more total joined-content characters is preferred.
+6. The `selectorUsed` debug field (Phase 1 `?debug=1`) reflects the decision:
+   - `"readability"` — Readability was chosen.
+   - `"auto-vs-readability:rejected(frag=X.X)"` — Readability was rejected by the fragmentation guard.
+   - Any normal CSS selector — cheerio won on content length.
+
+**Enabling:** set `CLIPPING_USE_READABILITY=1` as a Vercel environment variable in Production. No
+code change required. Rollback is removing the env var.
+
+**Disabling:** remove or unset `CLIPPING_USE_READABILITY`. The flag being absent (or set to any
+value other than `"1"`) restores the Phase-2 cheerio-only behaviour — Readability is imported but
+`extractWithReadability()` is never called.
+
+**Debugging a specific site:** call `POST /api/clipping/scrape?debug=1` with the problematic URL.
+The `ScrapeDebug.selectorUsed` field in the response shows which path won. If the result is poor
+with Readability on, the fragmentation threshold (currently `3`) may need tuning in `extract.ts`.
+
+**Dependencies added:** `@mozilla/readability` + `linkedom` (pure JS, ~150 KB combined — safe for
+Vercel serverless). `linkedom` is used instead of `jsdom` (~2 MB) for serverless bundle efficiency.
+`next.config.ts` `serverExternalPackages` does NOT need updating (no native bindings).
+
+**Files:**
+- `src/lib/clipping/extractReadability.ts` — `extractWithReadability(html)` function
+- `src/lib/clipping/extract.ts` — `runCheerioExtraction()` helper, Readability branch in `extract()`
+- `src/lib/clipping/sources.ts` — `AUTO_SELECTORS` exported, `hasCustomSelectors(domain)` added
+
 #### Phase 4 — Fixture-based regression tests (2026-05-26)
 
 `src/lib/clipping/__tests__/extract.test.ts` is a vitest suite that runs `extract()` against

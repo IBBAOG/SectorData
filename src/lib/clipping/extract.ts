@@ -3,9 +3,10 @@
 
 import * as cheerio from "cheerio";
 import type { AnyNode, Element } from "domhandler";
-import { EXTRACTORS, matchesNoiseAttr, isNoisyContainer } from "./sources";
+import { EXTRACTORS, matchesNoiseAttr, isNoisyContainer, hasCustomSelectors } from "./sources";
 import { cleanTitle, cleanParagraphs } from "./clean";
 import type { ScrapeDebug } from "./types";
+import { extractWithReadability } from "./extractReadability";
 
 // ---------------------------------------------------------------------------
 // Debug recorder — zero overhead when debug=false (recorder is never created).
@@ -232,8 +233,110 @@ function firstMatching($: CheerioRoot, selectors: string[]): cheerio.Cheerio<Any
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// Internal cheerio-based extraction helper (shared by the main path and
+// the Readability comparison branch).
+// ---------------------------------------------------------------------------
+
+/**
+ * Runs the cheerio-based extraction pipeline for a given domain against
+ * pre-parsed HTML. Returns the raw {title, paragraphs} pair WITHOUT
+ * attaching debug metadata (the caller owns the recorder).
+ *
+ * Exposed as a named internal to allow the Readability comparison branch
+ * to call it separately and pick the better result.
+ */
+function runCheerioExtraction(
+  html: string,
+  domain: string,
+  rec?: ReturnType<typeof createDebugRecorder>,
+): { title: string; paragraphs: string[] } | null {
+  const selectors = EXTRACTORS[domain];
+  if (!selectors) return null;
+
+  const $ = cheerio.load(html);
+  const title = cleanTitle(titleFromMeta($));
+
+  // Phase 2: if the matched container is noisy (too many nav/aside children),
+  // skip it and try the next selector — avoids grabbing sidebar + article together.
+  let chosenSelector: string | null = null;
+  let container: cheerio.Cheerio<AnyNode> | null = null;
+
+  for (const sel of selectors) {
+    const el = $(sel).first();
+    if (el.length === 0) continue;
+    if (isNoisyContainer(el)) continue;
+    chosenSelector = sel;
+    container = el;
+    break;
+  }
+
+  if (!container || container.length === 0) {
+    // Fallback: try <article> (mirrors original firstMatching fallback).
+    const articleEl = $("article").first();
+    if (articleEl.length > 0) {
+      chosenSelector = "<article> (fallback)";
+      container = articleEl;
+    }
+  }
+
+  rec?.record("selectorUsed", chosenSelector);
+
+  if (!container || container.length === 0) {
+    return { title, paragraphs: [] };
+  }
+
+  rec?.record("containerHtmlByteSize", (container.html() ?? "").length);
+
+  const debugSink = rec
+    ? (sample: string) => rec.pushNoiseSample(sample)
+    : undefined;
+
+  const rawPs = paragraphsFrom($, container, rec);
+  const cleanedPs = cleanParagraphs(rawPs, debugSink);
+
+  rec?.record("pCountAfterClean", cleanedPs.length);
+
+  return { title, paragraphs: cleanedPs };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3: apply Phase-2 noise filters to Readability paragraph output.
+// Readability cleans structural noise (ads, nav, sidebars) but does NOT
+// handle inline pt-BR noise patterns (e.g. "Leia também: X | Y | Z") or
+// link-density patterns. We run cleanParagraphs() on top to catch those.
+// ---------------------------------------------------------------------------
+
+/**
+ * Applies the Phase-2 text-level noise filters (cleanParagraphs) to a raw
+ * paragraph list produced by Readability. The link-density / isMostlyLinks
+ * guards already ran at the DOM level inside runCheerioExtraction — they
+ * are not re-applied here because Readability's output is plain text nodes,
+ * not DOM elements. cleanParagraphs covers the remaining inline noise.
+ */
+function applyNoiseFilters(
+  paragraphs: string[],
+  debugSink?: (sample: string) => void,
+): string[] {
+  return cleanParagraphs(paragraphs, debugSink);
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
 /**
  * Extract title + paragraphs from raw HTML for the given domain.
+ *
+ * Phase 3 (2026-05-26): when CLIPPING_USE_READABILITY=1 is set AND the domain
+ * falls into AUTO_SELECTORS (no custom tuning), both the cheerio path and
+ * Mozilla Readability are executed. The result with more joined content is
+ * preferred, unless Readability fragments the text ≥3× more than cheerio
+ * (sign of bad paragraph splitting), in which case cheerio wins.
+ *
+ * Custom-selector domains (the 28 well-tuned sites) are never sent through
+ * Readability — their selectors are already precise, and Readability could
+ * regress them.
  *
  * @param html    Full HTML string from any fetcher.
  * @param domain  Hostname key (must exist in EXTRACTORS).
@@ -252,54 +355,63 @@ export function extract(
 
   const rec = debug ? createDebugRecorder() : undefined;
 
-  const $ = cheerio.load(html);
-  const title = cleanTitle(titleFromMeta($));
+  // ── Cheerio-based extraction (always runs) ────────────────────────────────
+  const cheerioResult = runCheerioExtraction(html, domain, rec) ?? {
+    title: "",
+    paragraphs: [],
+  };
 
-  // Determine which selector was chosen and record it.
-  // Phase 2: if the matched container is noisy (too many nav/aside children),
-  // skip it and try the next selector — avoids grabbing sidebar + article together.
-  let chosenSelector: string | null = null;
-  let container: cheerio.Cheerio<AnyNode> | null = null;
+  // ── Phase 3: Readability fallback for AUTO_SELECTORS domains ─────────────
+  const useReadability =
+    process.env.CLIPPING_USE_READABILITY === "1" &&
+    !hasCustomSelectors(domain); // custom domains skip Readability entirely
 
-  for (const sel of selectors) {
-    const el = $(sel).first();
-    if (el.length === 0) continue;
-    if (isNoisyContainer(el)) continue; // skip: grabbed sidebar along with article
-    chosenSelector = sel;
-    container = el;
-    break;
-  }
+  if (useReadability) {
+    const readabilityRaw = extractWithReadability(html);
 
-  if (!container || container.length === 0) {
-    // Fallback: try <article> (mirrors original firstMatching fallback).
-    const articleEl = $("article").first();
-    if (articleEl.length > 0) {
-      chosenSelector = "<article> (fallback)";
-      container = articleEl;
+    if (readabilityRaw) {
+      // Apply Phase-2 text-level filters to Readability's paragraph output.
+      const debugSink = rec
+        ? (sample: string) => rec.pushNoiseSample(sample)
+        : undefined;
+      const cleanedReadabilityParagraphs = applyNoiseFilters(
+        readabilityRaw.paragraphs,
+        debugSink,
+      );
+
+      const currentJoinedLength = cheerioResult.paragraphs.join("").length;
+      const readabilityJoinedLength = cleanedReadabilityParagraphs.join("").length;
+
+      // Fragmentation guard: if Readability produced ≥3× more paragraphs than
+      // cheerio, it split sentences too aggressively — prefer cheerio.
+      const fragmentationRatio =
+        cleanedReadabilityParagraphs.length /
+        Math.max(1, cheerioResult.paragraphs.length);
+
+      if (fragmentationRatio >= 3) {
+        rec?.record(
+          "selectorUsed",
+          `auto-vs-readability:rejected(frag=${fragmentationRatio.toFixed(1)})`,
+        );
+        // Fall through to cheerio result below.
+      } else if (readabilityJoinedLength > currentJoinedLength) {
+        // Readability produced more content — use it.
+        rec?.record("selectorUsed", "readability");
+        const result = {
+          title: (readabilityRaw.title ?? cheerioResult.title) as string,
+          paragraphs: cleanedReadabilityParagraphs,
+        };
+        return debug
+          ? { ...result, debug: rec!.build() }
+          : result;
+      }
+      // else: cheerio had more content — fall through.
     }
+    // Readability returned null or cheerio won — fall through to cheerio result.
   }
 
-  rec?.record("selectorUsed", chosenSelector);
-
-  if (!container || container.length === 0) {
-    return debug
-      ? { title, paragraphs: [], debug: rec!.build() }
-      : { title, paragraphs: [] };
-  }
-
-  rec?.record("containerHtmlByteSize", (container.html() ?? "").length);
-
-  // Build debug sink: collects discarded paragraph samples from cleanParagraphs.
-  const debugSink = rec
-    ? (sample: string) => rec.pushNoiseSample(sample)
-    : undefined;
-
-  const rawPs = paragraphsFrom($, container, rec);
-  const cleanedPs = cleanParagraphs(rawPs, debugSink);
-
-  rec?.record("pCountAfterClean", cleanedPs.length);
-
+  // ── Return cheerio result ─────────────────────────────────────────────────
   return debug
-    ? { title, paragraphs: cleanedPs, debug: rec!.build() }
-    : { title, paragraphs: cleanedPs };
+    ? { ...cheerioResult, debug: rec!.build() }
+    : cheerioResult;
 }

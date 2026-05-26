@@ -152,7 +152,9 @@ export function isNoisyContainer(container: { find: (sel: string) => { length: n
 // Order: itemprop → semantic class patterns → generic element selectors.
 // div.body and div.content intentionally removed (Phase 2): they capture the
 // full page skeleton including sidebar, nav, and widget columns.
-const AUTO_SELECTORS: string[] = [
+// Exported so that hasCustomSelectors() can detect domains that share this
+// reference (= no custom tuning, Phase 3 Readability fallback candidate).
+export const AUTO_SELECTORS: string[] = [
   '[itemprop="articleBody"]',
   '[itemprop="mainEntityOfPage"]',
   ".entry-content",
@@ -474,3 +476,22 @@ export const EXTRACTORS: Record<string, string[]> = {
   "visnoinvest.com.br": AUTO_SELECTORS,
   "www.visnoinvest.com.br": AUTO_SELECTORS,
 };
+
+// ---------------------------------------------------------------------------
+// Custom-selector detection (Phase 3, 2026-05-26)
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns true when a domain has a hand-tuned selector list in EXTRACTORS
+ * (i.e., its value is NOT the shared AUTO_SELECTORS array reference).
+ *
+ * Used by extract.ts to decide whether to offer the Readability fallback:
+ * - Custom-selector domains → skip Readability (already well-tuned, risk of regression)
+ * - AUTO_SELECTORS domains  → eligible for Readability comparison
+ */
+export function hasCustomSelectors(domain: string): boolean {
+  const selectors = EXTRACTORS[domain];
+  if (!selectors) return false;
+  // Reference equality: custom domains have their own array literal, not AUTO_SELECTORS.
+  return selectors !== AUTO_SELECTORS;
+}
