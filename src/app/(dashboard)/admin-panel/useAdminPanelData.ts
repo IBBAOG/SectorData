@@ -4,13 +4,13 @@
 //
 // Owns ALL state, RPC calls, and handlers used by both desktop/View.tsx and
 // mobile/View.tsx. Views are pure presentation layers — they MUST NOT call
-// Supabase or `profileRpc`/`cardPreviewRpc` directly. If a View needs a value
-// the other doesn't have yet, you add it here first.
+// Supabase or `profileRpc` directly. If a View needs a value the other doesn't
+// have yet, you add it here first.
 //
 // Sections covered:
 //   • Members           — list all users; promote/demote Admin ↔ Client
 //   • Permissions       — toggle is_visible_for_clients per module
-//   • Card Images       — upload home-card preview + Show-on-Home toggle
+//   • Home Visibility   — Show-on-Home toggle per module (is_visible_on_home)
 //   • Alert Emails      — manage automatic notification recipients
 //   • Default Keywords  — manage default News Hunter keywords for anonymous visitors
 //   • Data Input        — edit reference tables (desktop-only editor)
@@ -19,7 +19,7 @@
 // set_module_home_visibility, get_all_users_with_roles, set_user_role,
 // admin_list_default_news_keywords, admin_add_default_news_keyword,
 // admin_remove_default_news_keyword.
-// Plus direct PostgREST on alert_recipients and card_previews helpers.
+// Plus direct PostgREST on alert_recipients.
 
 import { useCallback, useEffect, useState } from "react";
 
@@ -40,7 +40,6 @@ import {
   type DefaultNewsKeyword,
 } from "../../../lib/rpc";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
-import { getCardPreviews, uploadCardPreview } from "../../../lib/cardPreviewRpc";
 import type { UserWithRole, UserProfile } from "../../../types/profile";
 import { EDITABLE_TABLES } from "@/lib/dataInput/registry";
 import {
@@ -90,7 +89,7 @@ export interface SectionMeta {
 export const SECTIONS: SectionMeta[] = [
   { id: "members",          label: "Members",               shortLabel: "Members",     description: "User roles & access" },
   { id: "permissions",      label: "Permissions",           shortLabel: "Access",      description: "Module visibility" },
-  { id: "card-images",      label: "Card Images",           shortLabel: "Cards",       description: "Home page previews" },
+  { id: "card-images",      label: "Home Visibility",       shortLabel: "Cards",       description: "Show/hide modules on the Home gallery" },
   { id: "alert-recipients", label: "Alert Emails",          shortLabel: "Alert Emails", description: "Notification recipients" },
   { id: "alerts-product",   label: "Alerts",                shortLabel: "Alerts",      description: "Alerts product management" },
   { id: "default-news",     label: "Default News Keywords", shortLabel: "News Defaults", description: "Keywords used by anonymous News Hunter visitors" },
@@ -177,13 +176,6 @@ export interface UseAdminPanelData {
   savedPublicSlug: string | null;
   publicToggleError: { slug: string; message: string } | null;
   handlePublicToggle: (slug: string, newValue: boolean) => Promise<void>;
-
-  // Card previews
-  localPreviews: Record<string, string>;
-  uploadingSlug: string | null;
-  savedPreviewSlug: string | null;
-  uploadError: { slug: string; message: string } | null;
-  handlePreviewUpload: (slug: string, file: File) => Promise<void>;
 
   // Users / roles
   users: UserWithRole[];
@@ -289,36 +281,6 @@ export function useAdminPanelData(): UseAdminPanelData {
   const [activeSection, setActiveSection] = useState<SectionId>("members");
   const [activeDataInputSlug, setActiveDataInputSlug] = useState<string>(
     EDITABLE_TABLES[0]?.slug ?? "",
-  );
-
-  // ── Card Previews ──────────────────────────────────────────────────────────
-  const [localPreviews, setLocalPreviews] = useState<Record<string, string>>({});
-  const [uploadingSlug, setUploadingSlug] = useState<string | null>(null);
-  const [savedPreviewSlug, setSavedPreviewSlug] = useState<string | null>(null);
-  const [uploadError, setUploadError] = useState<{ slug: string; message: string } | null>(null);
-
-  useEffect(() => {
-    if (!supabase) return;
-    getCardPreviews(supabase).then(setLocalPreviews);
-  }, [supabase]);
-
-  const handlePreviewUpload = useCallback(
-    async (slug: string, file: File) => {
-      if (!supabase || uploadingSlug) return;
-      setUploadingSlug(slug);
-      setUploadError(null);
-      const result = await uploadCardPreview(supabase, slug, file);
-      if ("url" in result) {
-        setLocalPreviews((prev) => ({ ...prev, [slug]: result.url }));
-        setSavedPreviewSlug(slug);
-        setTimeout(() => setSavedPreviewSlug((s) => (s === slug ? null : s)), 2000);
-      } else {
-        setUploadError({ slug, message: result.error });
-        setTimeout(() => setUploadError((s) => (s?.slug === slug ? null : s)), 6000);
-      }
-      setUploadingSlug(null);
-    },
-    [supabase, uploadingSlug],
   );
 
   // ── Module Visibility (Client access) ──────────────────────────────────────
@@ -801,12 +763,6 @@ export function useAdminPanelData(): UseAdminPanelData {
     savedPublicSlug,
     publicToggleError,
     handlePublicToggle,
-
-    localPreviews,
-    uploadingSlug,
-    savedPreviewSlug,
-    uploadError,
-    handlePreviewUpload,
 
     users,
     usersLoading,

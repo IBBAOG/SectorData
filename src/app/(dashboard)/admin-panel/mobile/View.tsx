@@ -7,8 +7,7 @@
 // section renders one MobileDataCard per row:
 //   • Members         — avatar, name+email, role pill on the right (tap to switch)
 //   • Permissions     — module name+description, switch on the right
-//   • Card Images     — thumb, label+slug, two rows of right-side controls
-//                       (Show on Home switch + Upload button)
+//   • Home Visibility — label+description, Show on Home switch on the right
 //   • Alert Emails    — email+date, status pill, inline action buttons in a
 //                       BottomSheet (deactivate / remove)
 //   • Data Input      — desktop-only message (EditableTableEditor is too
@@ -23,7 +22,6 @@
 //   declare `[mobile-only]` with an explicit reason.
 
 import { useMemo, useState } from "react";
-import Image from "next/image";
 
 import {
   MobileTopBar,
@@ -79,12 +77,6 @@ export default function MobileView(): React.ReactElement | null {
     savedPublicSlug,
     publicToggleError,
     handlePublicToggle,
-
-    localPreviews,
-    uploadingSlug,
-    savedPreviewSlug,
-    uploadError,
-    handlePreviewUpload,
 
     users,
     usersLoading,
@@ -623,24 +615,21 @@ export default function MobileView(): React.ReactElement | null {
       )}
 
       {/* ─────────────────────────────────────────────────────────────────── */}
-      {/* CARD IMAGES                                                         */}
+      {/* HOME VISIBILITY                                                      */}
       {/* ─────────────────────────────────────────────────────────────────── */}
       {activeSection === "card-images" && (
         <section>
           <div style={{ padding: "0 16px 12px", fontSize: 12, color: "var(--mobile-text-muted)", lineHeight: 1.5 }}>
-            Upload preview images and toggle <strong>Show on Home</strong> for each module.
-            The toggle hides the card from the Home gallery for <em>all</em> users (including Admins).
+            Toggle <strong>Show on Home</strong> to show or hide each module&apos;s card
+            in the <strong>/home</strong> gallery. When hidden, the card is invisible to{" "}
+            <em>all</em> users (including Admins). Module access is unchanged.
           </div>
           {filteredModules.length === 0 ? (
             <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
               No modules match your search.
             </div>
           ) : (
-            filteredModules.map(({ slug, label }) => {
-              const currentUrl = localPreviews[slug];
-              const isUploading = uploadingSlug === slug;
-              const justSavedUpload = savedPreviewSlug === slug;
-              const errorForSlug = uploadError?.slug === slug ? uploadError.message : null;
+            filteredModules.map(({ slug, label, description }) => {
               const isHomeVisible = localHomeVis[slug] ?? true;
               const isSavingHome = savingHome === slug;
               const justSavedHome = savedHomeSlug === slug;
@@ -653,149 +642,77 @@ export default function MobileView(): React.ReactElement | null {
                     borderBottom: "1px solid var(--mobile-divider)",
                     padding: "14px 16px",
                     display: "flex",
-                    flexDirection: "column",
+                    alignItems: "center",
                     gap: 12,
                   }}
                 >
-                  {/* Row 1: thumb + label */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  {/* Label + slug */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div
                       style={{
-                        width: 64,
-                        height: 40,
-                        borderRadius: 6,
+                        fontSize: 15,
+                        fontWeight: 600,
+                        color: "var(--mobile-text)",
+                        lineHeight: 1.2,
+                        whiteSpace: "nowrap",
                         overflow: "hidden",
-                        flexShrink: 0,
-                        background: "var(--mobile-divider)",
-                        border: "1px solid var(--mobile-border)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        position: "relative",
+                        textOverflow: "ellipsis",
                       }}
                     >
-                      {currentUrl ? (
-                        <Image src={currentUrl} alt={label} fill sizes="64px" style={{ objectFit: "cover" }} unoptimized />
-                      ) : (
-                        <span style={{ fontSize: 9, color: "var(--mobile-text-faint)" }}>No image</span>
-                      )}
+                      {label}
                     </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div
-                        style={{
-                          fontSize: 15,
-                          fontWeight: 600,
-                          color: "var(--mobile-text)",
-                          lineHeight: 1.2,
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                        }}
-                      >
-                        {label}
-                      </div>
-                      <div
-                        style={{
-                          marginTop: 2,
-                          fontSize: 11,
-                          color: "var(--mobile-text-faint)",
-                          fontFamily: "monospace",
-                        }}
-                      >
-                        {slug}
-                      </div>
+                    <div style={{ marginTop: 2, fontSize: 11, color: "var(--mobile-text-faint)", lineHeight: 1.4 }}>
+                      {description}
                     </div>
                   </div>
 
-                  {/* Row 2: controls (Show on Home + Upload) */}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                    {/* Show on Home */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <label
-                        className="form-check form-switch"
-                        style={{ margin: 0, paddingLeft: 0, display: "inline-block" }}
-                      >
-                        <input
-                          className="form-check-input"
-                          type="checkbox"
-                          role="switch"
-                          checked={isHomeVisible}
-                          disabled={isSavingHome}
-                          onChange={(e) => handleHomeToggle(slug, e.target.checked)}
-                          style={{
-                            width: "2.6em",
-                            height: "1.4em",
-                            cursor: isSavingHome ? "wait" : "pointer",
-                            opacity: isSavingHome ? 0.6 : 1,
-                            margin: 0,
-                          }}
-                        />
-                      </label>
-                      <span style={{ fontSize: 12, color: "var(--mobile-text-muted)", fontWeight: 600 }}>
-                        Show on Home
-                      </span>
-                      {justSavedHome && (
-                        <span
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            color: "#38a169",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 4,
-                          }}
-                          aria-live="polite"
-                        >
-                          <CheckIcon size={14} strokeWidth={2.5} />
-                        </span>
-                      )}
-                      {homeError && (
-                        <span style={{ fontSize: 11, color: "#c0392b" }} title={homeError}>
-                          Failed
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Upload */}
+                  {/* Show on Home toggle */}
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flexShrink: 0 }}>
                     <label
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                        minHeight: 36,
-                        padding: "0 14px",
-                        borderRadius: 8,
-                        border: `1px solid ${ORANGE}`,
-                        color: isUploading ? "var(--mobile-text-faint)" : ORANGE,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: isUploading ? "wait" : "pointer",
-                        background: "var(--mobile-surface)",
-                        opacity: isUploading ? 0.6 : 1,
-                        whiteSpace: "nowrap",
-                      }}
+                      className="form-check form-switch"
+                      style={{ margin: 0, paddingLeft: 0, display: "inline-block" }}
                     >
-                      {isUploading ? "Uploading…" : justSavedUpload ? "✓ Saved" : "Upload"}
                       <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp,image/gif"
-                        style={{ display: "none" }}
-                        disabled={isUploading}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handlePreviewUpload(slug, file);
-                          e.target.value = "";
+                        className="form-check-input"
+                        type="checkbox"
+                        role="switch"
+                        aria-label={`Show ${label} on Home`}
+                        checked={isHomeVisible}
+                        disabled={isSavingHome}
+                        onChange={(e) => handleHomeToggle(slug, e.target.checked)}
+                        style={{
+                          width: "2.6em",
+                          height: "1.4em",
+                          cursor: isSavingHome ? "wait" : "pointer",
+                          opacity: isSavingHome ? 0.6 : 1,
+                          margin: 0,
                         }}
                       />
                     </label>
+                    <span style={{ fontSize: 10, color: "var(--mobile-text-faint)", whiteSpace: "nowrap" }}>
+                      Show on Home
+                    </span>
+                    {justSavedHome && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: "#38a169",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
+                        }}
+                        aria-live="polite"
+                      >
+                        <CheckIcon size={14} strokeWidth={2.5} />
+                      </span>
+                    )}
+                    {homeError && (
+                      <span style={{ fontSize: 10, color: "#c0392b" }} title={homeError}>
+                        Failed
+                      </span>
+                    )}
                   </div>
-
-                  {/* Optional inline upload error */}
-                  {errorForSlug && (
-                    <div style={{ fontSize: 11, color: "#c0392b", lineHeight: 1.4 }}>
-                      {errorForSlug.length > 80 ? errorForSlug.slice(0, 80) + "…" : errorForSlug}
-                    </div>
-                  )}
                 </article>
               );
             })

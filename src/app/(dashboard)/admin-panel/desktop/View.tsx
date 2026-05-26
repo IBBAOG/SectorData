@@ -11,7 +11,6 @@
 //   mobile/View.tsx in the SAME commit, OR the commit message must declare
 //   `[desktop-only]` with an explicit reason.
 
-import Image from "next/image";
 import Link from "next/link";
 
 import NavBar from "../../../../components/NavBar";
@@ -32,7 +31,7 @@ const BG = "#f5f5f5";
 const SIDEBAR_BG = "#1a1a1a";
 const SIDEBAR_WIDTH = 220;
 
-// ── Sidebar section icons (desktop-only — mobile uses pill tabs without icons) ──
+// ── Sidebar section icons (desktop-only — mobile uses pill tabs without icons) ─
 
 const SECTION_ICONS: Record<SectionId, React.ReactNode> = {
   members: (
@@ -111,12 +110,6 @@ export default function DesktopView(): React.ReactElement | null {
     savedPublicSlug,
     publicToggleError,
     handlePublicToggle,
-
-    localPreviews,
-    uploadingSlug,
-    savedPreviewSlug,
-    uploadError,
-    handlePreviewUpload,
 
     users,
     usersLoading,
@@ -509,87 +502,64 @@ export default function DesktopView(): React.ReactElement | null {
             </div>
           )}
 
-          {/* ── Card Images ──────────────────────────────────────────────────── */}
+          {/* ── Home Visibility ──────────────────────────────────────────────── */}
           {activeSection === "card-images" && (
             <div className="settings-card">
-              <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>Card Preview Images</h2>
+              <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>Home Visibility</h2>
               <p style={{ fontSize: 13, color: "#888", margin: "0 0 20px" }}>
-                Upload a custom preview image for each dashboard card shown on the Home page.
-                Use the <strong>Show on Home</strong> toggle to hide a card from the Home gallery for all users (including Admins).
-                Images are stored in Supabase and replace the default screenshots immediately.
+                Toggle whether each module card appears in the <strong>/home</strong> gallery.
+                When hidden, the card is invisible to <em>all</em> users (including Admins).
+                This is independent of module access — a hidden card can still be reached via direct URL or the nav.
               </p>
-              {MODULE_LABELS.map(({ slug, label }) => {
-                const currentUrl = localPreviews[slug];
-                const isUploading = uploadingSlug === slug;
-                const justSaved = savedPreviewSlug === slug;
-                const errorForSlug = uploadError?.slug === slug ? uploadError.message : null;
+
+              {/* Column header */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  padding: "8px 0",
+                  borderBottom: "1px solid #f0f0f0",
+                  marginBottom: 4,
+                }}
+              >
+                <div style={{ flex: 1, paddingRight: 24, fontSize: 11, fontWeight: 700, color: "#888", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                  Module
+                </div>
+                <div style={{ width: 130, textAlign: "center", fontSize: 11, fontWeight: 700, color: "#888", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                  Show on Home
+                </div>
+              </div>
+
+              {MODULE_LABELS.map(({ slug, label, description }) => {
                 const isHomeVisible = localHomeVis[slug] ?? true;
                 const isSavingHome = savingHome === slug;
                 const justSavedHome = savedHomeSlug === slug;
                 const homeError = homeToggleError?.slug === slug ? homeToggleError.message : null;
                 return (
-                  <div key={slug} className="settings-module-row" style={{ alignItems: "center", gap: 16 }}>
-                    {/* Thumbnail */}
-                    <div style={{ width: 80, height: 50, borderRadius: 4, overflow: "hidden", flexShrink: 0, background: "#e0e0e0", border: "1px solid #ddd", display: "flex", alignItems: "center", justifyContent: "center", position: "relative" }}>
-                      {currentUrl
-                        ? <Image src={currentUrl} alt={label} fill sizes="80px" style={{ objectFit: "cover" }} unoptimized />
-                        : <span style={{ fontSize: 10, color: "#bbb" }}>No image</span>
-                      }
-                    </div>
-                    {/* Label */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                  <div key={slug} className="settings-module-row" style={{ alignItems: "center" }}>
+                    <div style={{ flex: 1, paddingRight: 24 }}>
                       <div className="settings-module-label">{label}</div>
-                      <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>{slug}</div>
+                      <div style={{ fontSize: 12, color: "#999", marginTop: 2 }}>{description}</div>
                     </div>
                     {/* Show on Home toggle */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                      {justSavedHome && <span className="settings-saved-tick" aria-live="polite">✓ Saved</span>}
+                    <div style={{ width: 130, display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }}>
+                      {justSavedHome && <span className="settings-saved-tick" aria-live="polite">✓</span>}
                       {homeError && (
-                        <span style={{ fontSize: 12, color: "#c0392b" }} title={homeError}>Error</span>
+                        <span style={{ fontSize: 11, color: "#c0392b" }} title={homeError}>Error</span>
                       )}
-                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                        <div className="form-check form-switch" style={{ margin: 0 }}>
-                          <input
-                            className="form-check-input"
-                            type="checkbox"
-                            role="switch"
-                            id={`home-toggle-${slug}`}
-                            checked={isHomeVisible}
-                            disabled={isSavingHome}
-                            onChange={(e) => handleHomeToggle(slug, e.target.checked)}
-                            style={{ width: "2.5em", height: "1.25em", cursor: isSavingHome ? "wait" : "pointer", opacity: isSavingHome ? 0.6 : 1 }}
-                          />
-                        </div>
-                        <label
-                          htmlFor={`home-toggle-${slug}`}
-                          style={{ fontSize: 10, color: "#999", whiteSpace: "nowrap", cursor: "pointer", userSelect: "none" }}
-                        >
-                          Show on Home
-                        </label>
-                      </div>
-                    </div>
-                    {/* Upload */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-                      {justSaved && <span className="settings-saved-tick" aria-live="polite">✓ Saved</span>}
-                      {errorForSlug && (
-                        <span style={{ fontSize: 12, color: "#c0392b", maxWidth: 200, wordBreak: "break-word" }} title={errorForSlug}>
-                          {errorForSlug.length > 40 ? errorForSlug.slice(0, 40) + "…" : errorForSlug}
-                        </span>
-                      )}
-                      <label style={{ display: "inline-block", padding: "6px 14px", borderRadius: 8, border: `1px solid ${ORANGE}`, color: isUploading ? "#aaa" : ORANGE, fontSize: 12, fontWeight: 600, cursor: isUploading ? "wait" : "pointer", background: "#fff", transition: "opacity 0.15s", opacity: isUploading ? 0.6 : 1, whiteSpace: "nowrap" }}>
-                        {isUploading ? "Uploading…" : "Upload image"}
+                      <div className="form-check form-switch" style={{ margin: 0 }}>
                         <input
-                          type="file"
-                          accept="image/jpeg,image/png,image/webp,image/gif"
-                          style={{ display: "none" }}
-                          disabled={isUploading}
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) handlePreviewUpload(slug, file);
-                            e.target.value = "";
-                          }}
+                          className="form-check-input"
+                          type="checkbox"
+                          role="switch"
+                          id={`home-toggle-${slug}`}
+                          aria-label={`Show ${label} on Home`}
+                          checked={isHomeVisible}
+                          disabled={isSavingHome}
+                          onChange={(e) => handleHomeToggle(slug, e.target.checked)}
+                          style={{ width: "2.5em", height: "1.25em", cursor: isSavingHome ? "wait" : "pointer", opacity: isSavingHome ? 0.6 : 1 }}
                         />
-                      </label>
+                      </div>
                     </div>
                   </div>
                 );

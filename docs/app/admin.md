@@ -80,8 +80,8 @@ admin-panel/
 
 **Shared hook (`useAdminPanelData`):**
 - Owns `useRoleGuard("Admin")` invocation (MFA-aware) — both Views early-return `null` if not allowed
-- Owns ALL state: `activeSection`, `localVis`, `localHomeVis`, `localPreviews`, `users`/`localRoles`, `recipients`, plus all `saving*`/`saved*`/`*Error` flags
-- Owns ALL handlers: `handleToggle`, `handleHomeToggle`, `handlePreviewUpload`, `handleRoleChange`, `handleAddRecipient`, `handleToggleRecipient`, `handleRemoveRecipient`
+- Owns ALL state: `activeSection`, `localVis`, `localHomeVis`, `users`/`localRoles`, `recipients`, plus all `saving*`/`saved*`/`*Error` flags
+- Owns ALL handlers: `handleToggle`, `handleHomeToggle`, `handleRoleChange`, `handleAddRecipient`, `handleToggleRecipient`, `handleRemoveRecipient`
 - Owns pure helpers `isValidEmail` and `formatDateBR`
 - Exports `SECTIONS` (id, label, shortLabel, description) and `MODULE_LABELS` (slug, label, description) as static module-level constants so both Views render the same catalog
 
@@ -93,7 +93,7 @@ admin-panel/
 - Per-section search bar (placeholder adapts: "Search by name, email, or role" / "Search modules" / "Search recipients")
 - **Members**: `MobileDataCard` per user with avatar, name+email, role pill. Tapping the row opens a `BottomSheet` with the Admin/Client picker.
 - **Permissions**: `MobileDataCard` (expanded variant) per module with switch on the right.
-- **Card Images**: custom card per module with two rows — thumb+label+slug, then a controls row with Show-on-Home switch + Upload button. Inline error message under the row when upload fails.
+- **Home Visibility**: one row per module — label+description on the left, Show-on-Home switch on the right. Upload UI removed 2026-05-26 (images no longer rendered in `/home`).
 - **Alert Emails**: Add form (input + button, 44px min-height for touch), then `MobileDataCard` per recipient with status pill + Enable/Disable button. Removing opens a `BottomSheet` with a confirm prompt (replaces the inline "Are you sure?" pattern from desktop, which doesn't fit on a 320px row).
 - **Data Input**: shows a desktop-only notice because `EditableTableEditor` needs a wide layout.
 
@@ -151,7 +151,7 @@ The login-required gate is being relaxed in favour of a 3-tier visibility model.
 |---|---|---|
 | `is_visible_for_public` | Anon (logged-out visitors) | Permissions tab — new toggle |
 | `is_visible_for_clients` | Client (logged-in non-Admin) | Permissions tab — existing toggle |
-| `is_visible_on_home` | All roles (controls Home gallery card) | Card Images tab — existing toggle |
+| `is_visible_on_home` | All roles (controls Home gallery card) | Home Visibility tab (formerly "Card Images") — existing toggle |
 
 **Invariant (Public ⇒ Clients):** a module visible to anonymous visitors must also be visible to Clients (otherwise a user would lose access on sign-in). The database enforces this in two places:
 1. A `CHECK` constraint (`module_visibility_public_implies_clients_chk`) rejects pathological inserts.
@@ -174,9 +174,9 @@ The login-required gate is being relaxed in favour of a 3-tier visibility model.
 ## Páginas — descrição rápida
 
 ### `/home`
-Landing visual. Mostra cards/imagens dos módulos disponíveis pro user (filtrado por role + visibility). **Cada módulo deve ter imagem própria.**
+Landing visual. Shows module cards (icon list, not image cards since 2026-05-26) filtered by role + visibility. **Each module needs an icon entry in `src/data/moduleIcons.tsx`.**
 
-> **Memória persistente do CEO**: TODO módulo novo precisa de upload de imagem aqui. Sem isso, `/home` fica com placeholder genérico.
+> **Memória persistente do CEO (updated 2026-05-26)**: TODO módulo novo precisa de ícone em `src/data/moduleIcons.tsx`. O upload de imagem foi removido — home agora usa ícones SVG inline, não imagens carregadas pelo admin.
 
 #### Data Sources live table (2026-05-26, `[desktop-only]`)
 
@@ -233,7 +233,7 @@ Protegida por `useRoleGuard("Admin")`. Funcionalidades (7 seções na sidebar):
   - `is_visible_for_public` toggle — affects anonymous (logged-out) visitors.
   - `is_visible_for_clients` toggle — affects logged-in Client tier users. Forced ON whenever Public is ON (DB invariant + UI lock).
   - Admin always has access regardless of these flags.
-- **Card Images** — upload de imagem por módulo (home page cards) + toggle **"Show on Home"** (`is_visible_on_home`): liga/desliga a exibição do card na galeria `/home` para TODOS os usuários (incluindo Admin). Default `true`. Controles independentes: pode ter `is_visible_on_home=false` (card some do Home pra todos) e `is_visible_for_clients=true` (não afeta, já sumiu). Ou `is_visible_on_home=true` + `is_visible_for_clients=false` (Admin vê no Home, Client não vê).
+- **Home Visibility** (tab ID `card-images`) — toggle **"Show on Home"** (`is_visible_on_home`) per module: controls whether the module card appears in the `/home` gallery for ALL users (including Admin). Default `true`. Independent from access flags: a module can be `is_visible_on_home=false` (card gone from Home for everyone) while `is_visible_for_clients=true` (direct URL still works). Or `is_visible_on_home=true` + `is_visible_for_clients=false` (Admin sees the card, Client cannot access the route). Image upload UI removed in 2026-05-26 (images no longer rendered in `/home` — icon list replaced image cards).
 - **Alert Emails** — gerenciar destinatários de alertas automáticos (legado local).
 - **Alerts** — Alerts Product management (cloud, multi-recipient). 5 sub-sections:
   - **Subscriber Stats** — total/active/unconfirmed counts, bounce/complaint rates (7d), per-source active count.
@@ -283,7 +283,7 @@ Protegida por `useRoleGuard("Admin")`. Funcionalidades (7 seções na sidebar):
 - RLS: read for anon + authenticated (Phase A opened anon SELECT), write only via Admin RPC.
 - `is_visible_for_public`: controls anonymous (logged-out) visitor access. Managed via Permissions tab "Public" toggle. RPC: `set_module_public_visibility` (Admin-only, MFA-gated).
 - `is_visible_for_clients`: controls Client tier visibility only (Admin always sees). Managed via Permissions tab "Clients" toggle. RPC: `set_module_visibility`.
-- `is_visible_on_home`: controls Home gallery visibility for ALL users including Admin. Managed via Card Images tab "Show on Home" toggle. Default `true` (backward-compatible). RPC: `set_module_home_visibility`.
+- `is_visible_on_home`: controls Home gallery visibility for ALL users including Admin. Managed via Home Visibility tab (tab ID `card-images`) "Show on Home" toggle. Default `true` (backward-compatible). RPC: `set_module_home_visibility`.
 - **Invariant:** `is_visible_for_public = true` ⇒ `is_visible_for_clients = true`. Enforced by both a `CHECK` constraint (`module_visibility_public_implies_clients_chk`) and a `BEFORE INSERT/UPDATE` trigger that coerces clients=TRUE when public flips ON.
 
 > **Tech debt**: ambas criadas via [`sql/create_profiles_and_visibility.sql`](../../sql/create_profiles_and_visibility.sql) aplicado direto no Dashboard, **não em migration versionada**.
@@ -331,10 +331,7 @@ Workflow disparado pelo Subgerente APP quando ele cria um dashboard novo:
 
 2. **Garantir toggle no `/admin-panel`** — a UI de admin-panel idealmente faz auto-discovery via query a `module_visibility`. Se não, adicionar explicitamente.
 
-3. **Foto/imagem na `/home`** — adicionar slot pro módulo novo:
-   - Componente de card na home aceita `module_slug` e busca imagem em `public/images/modules/<slug>.png` (ou padrão equivalente).
-   - Se a imagem ainda não existe, mostrar placeholder mas garantir que o slot exista.
-   - Admin tem opção de upload no `/admin-panel` (a confirmar implementação atual).
+3. **Ícone na `/home`** — adicionar entrada em `src/data/moduleIcons.tsx` para o novo slug (SVG `getModuleIcon` registry). Home cards no longer use uploaded images — they use inline SVG icons since 2026-05-26. Without an icon entry the slot renders a generic fallback circle. The upload UI in `/admin-panel` was removed as orphan in 2026-05-26 (images are no longer rendered).
 
 4. **Avisar Subgerente APP** que onboarding terminou.
 
@@ -527,6 +524,21 @@ Arquitetura extensível baseada em registry. Substitui o workflow de editar `dat
 As políticas de escrita para `price_bands` e `d_g_margins` são criadas pela migration
 `supabase/migrations/20260512000000_data_input_admin_policies.sql` (worker_supabase, branch paralela).
 Sem a migration, writes retornam 403 — a UI renderiza mas não persiste.
+
+## Changelog — Remove orphan image upload from Card Images tab (2026-05-26)
+
+Follow-up to the `/home` icon-list redesign. Since module cards no longer use uploaded preview images (replaced by inline SVG icons), the upload machinery in the admin panel served no purpose.
+
+**Changes in this commit:**
+
+| File | Change |
+|---|---|
+| `useAdminPanelData.ts` | Removed `localPreviews`, `uploadingSlug`, `savedPreviewSlug`, `uploadError`, `handlePreviewUpload` state and `getCardPreviews`/`uploadCardPreview` imports; removed fields from `UseAdminPanelData` interface; renamed section label from "Card Images" → "Home Visibility" |
+| `desktop/View.tsx` | Removed upload UI (thumbnail + "Upload image" button + saved/error indicators); replaced heading/description; restructured to 2-column grid (Module / Show on Home); removed `Image` import |
+| `mobile/View.tsx` | Removed thumbnail row and Upload button from Card Images articles; section now shows label+description + toggle only; removed `Image` import |
+| `docs/app/admin.md` | Updated section description, axis table, Wave 5 notes, and onboarding step 3 |
+
+**Orphan DB/Storage:** the `card_previews` table and `card-previews` Supabase Storage bucket are still intact — no data was deleted. The API routes `/api/card-previews` and `/api/upload-card-preview` are also still present. These are candidates for cleanup by `worker_supabase` if the bucket and table are confirmed unused.
 
 ## Changelog — Home cards redesign: icon list (2026-05-26)
 
