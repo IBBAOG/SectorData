@@ -2,7 +2,7 @@
 
 // Header export panel — "EXPORT DATA" card with Excel/CSV buttons.
 //
-// Replaces the inline markup duplicated across sales-volumes, market-share,
+// Replaces the inline markup duplicated across market-share,
 // diesel-gasoline-margins, and price-bands. The loading overlay
 // (centered barrel-loading image + spinner caption) is also handled here.
 //

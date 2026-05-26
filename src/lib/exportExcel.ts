@@ -124,6 +124,7 @@ function buildChartXml(
   dateCount: number,
   catAxisId: number,
   valAxisId: number,
+  valAxisNumFmt: string = '0"%"',
 ): string {
   const firstCol = colLetter(2);
   const lastCol  = colLetter(dateCount + 1);
@@ -188,7 +189,7 @@ function buildChartXml(
         <c:scaling><c:orientation val="minMax"/></c:scaling>
         <c:delete val="0"/>
         <c:axPos val="l"/>
-        <c:numFmt formatCode='0"%"' sourceLinked="0"/>
+        <c:numFmt formatCode="${valAxisNumFmt.replace(/"/g, '&quot;')}" sourceLinked="0"/>
         <c:majorTickMark val="none"/>
         <c:minorTickMark val="none"/>
         ${ARIAL10_TXPR}
@@ -272,10 +273,27 @@ function buildSheetDrawingRel(drawingFile: string): string {
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
+/**
+ * Build + download the Market Share / Sales Volumes Excel workbook.
+ *
+ * The single export covers both modes of the consolidated /market-share
+ * dashboard. Branches on `unitMode`:
+ *   - 'share'  (default) — % participation per (date, player) per segment.
+ *                          Sheet label "Market Share (%)", numFmt '0"%"',
+ *                          filename "FD Market Share DD-MM-YY.xlsx".
+ *   - 'volume' — absolute thousand-m³ volume (no /total normalisation).
+ *                Sheet label "Volume (thousand m³)", numFmt '0.0',
+ *                filename "SalesVolumes_DD-MM-YY.xlsx", sheet title
+ *                "Sales Volumes".
+ *
+ * Same workbook structure either way — 4 product sheets × multiple segments,
+ * with line charts placed below the data tables (shared chart builder).
+ */
 export async function downloadMarketShareExcel(
   serieRows: MsSerieRow[],
   players: string[],
   big3: boolean,
+  unitMode: "share" | "volume" = "share",
 ) {
   if (!serieRows || serieRows.length === 0) return;
 
@@ -348,7 +366,8 @@ export async function downloadMarketShareExcel(
       const hRow = ws.getRow(row);
       hRow.height = ROW_H;
       const lbl = ws.getCell(row, 1);
-      lbl.value = "Market Share (%)";
+      lbl.value =
+        unitMode === "share" ? "Market Share (%)" : "Volume (thousand m³)";
       lbl.font = { name: "Arial", size: 10, bold: true, color: C.headerFg };
       lbl.fill = { type: "pattern", pattern: "solid", fgColor: C.headerBg };
       lbl.alignment = { horizontal: "left" };
@@ -362,8 +381,14 @@ export async function downloadMarketShareExcel(
       }
       row++;
 
-      // Player rows
-      const msMap = computeMarketShare(rows, product.dbName, seg, players, big3);
+      // Player rows — values come from either the % builder or the absolute
+      // volume builder, depending on unitMode. Both helpers share the same
+      // Map<date, Map<player, number>> shape.
+      const valMap =
+        unitMode === "share"
+          ? computeMarketShare(rows, product.dbName, seg, players, big3)
+          : computeSalesVolumes(rows, product.dbName, seg, players, big3);
+      const cellNumFmt = unitMode === "share" ? '0"%"' : "0.0";
       const playerRowInfos: { player: string; row1based: number }[] = [];
       for (const player of players) {
         const pRow = ws.getRow(row);
@@ -372,10 +397,10 @@ export async function downloadMarketShareExcel(
         nameCell.value = player;
         nameCell.font = { name: "Arial", size: 10, color: C.cellFg };
         for (let c = 0; c < dateCount; c++) {
-          const pct = msMap.get(allDates[c])?.get(player);
+          const v = valMap.get(allDates[c])?.get(player);
           const cell = ws.getCell(row, c + 2);
-          cell.value = pct !== undefined ? Math.round(pct * 10) / 10 : null;
-          cell.numFmt = '0"%"';
+          cell.value = v !== undefined ? Math.round(v * 10) / 10 : null;
+          cell.numFmt = cellNumFmt;
           cell.font = { name: "Arial", size: 10, color: C.cellFg };
           cell.alignment = { horizontal: "center" };
         }
@@ -405,7 +430,9 @@ export async function downloadMarketShareExcel(
       row++;
     }
 
-    // Build chart XMLs for this sheet
+    // Build chart XMLs for this sheet. Y-axis numFmt matches the data
+    // cells — '0"%"' in share mode, "0.0" in volume mode.
+    const chartValNumFmt = unitMode === "share" ? '0"%"' : "0.0";
     for (const info of segmentInfos) {
       const catAxisId = globalChartIdx * 2 + 1;
       const valAxisId = globalChartIdx * 2 + 2;
@@ -417,6 +444,7 @@ export async function downloadMarketShareExcel(
         dateCount,
         catAxisId,
         valAxisId,
+        chartValNumFmt,
       );
       chartMetas.push({
         sheetIndex: sheetIdx + 1,
@@ -528,7 +556,13 @@ export async function downloadMarketShareExcel(
   const dd = String(now.getDate()).padStart(2, "0");
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const yy = String(now.getFullYear()).slice(-2);
-  a.download = `FD Market Share ${dd}-${mm}-${yy}.xlsx`;
+  // Filename follows the active unit mode — preserves the historical
+  // "FD Market Share DD-MM-YY.xlsx" for share, and "SalesVolumes_DD-MM-YY.xlsx"
+  // for volume (matches what /sales-volumes used to emit before consolidation).
+  a.download =
+    unitMode === "volume"
+      ? `SalesVolumes_${dd}-${mm}-${yy}.xlsx`
+      : `FD Market Share ${dd}-${mm}-${yy}.xlsx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

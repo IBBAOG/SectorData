@@ -121,7 +121,6 @@ export const DATA_SOURCES: DataSource[] = [
     cronDescription: "Ad-hoc — triggered by external cron-job.org when ANP publishes a new bulletin",
     sourceFrequency: "Monthly",
     dashboards: [
-      { slug: "sales-volumes", title: "Sales Volumes" },
       { slug: "market-share", title: "Market Share" },
     ],
     supabaseTable: "vendas",

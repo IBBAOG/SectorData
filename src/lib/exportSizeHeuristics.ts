@@ -23,7 +23,7 @@ export type ExportSizeEstimate = {
  * in the browser.
  */
 export const AVG_BYTES_PER_ROW: Record<string, { xlsx: number; csv: number }> = {
-  // Fuel sales (vendas) — used by /market-share, /sales-volumes
+  // Fuel sales (vendas) — used by /market-share
   vendas: { xlsx: 220, csv: 110 },
   // ANP CDP producao — narrower (numeric heavy)
   anp_cdp_producao: { xlsx: 200, csv: 100 },

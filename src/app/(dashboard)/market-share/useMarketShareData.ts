@@ -26,6 +26,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useSearchParams } from "next/navigation";
 import type { PlotData, Layout } from "plotly.js";
 import { getSupabaseClient } from "@/lib/supabaseClient";
 import {
@@ -76,6 +77,11 @@ export function dynColor(i: number): string {
 
 export type Mode = "Individual" | "Big-3" | "Others";
 export const MODE_OPTIONS: Mode[] = ["Individual", "Big-3", "Others"];
+
+/** Unit mode toggle — controls whether charts/exports show market-share % or
+ *  absolute volume in thousand m³. Default: 'share'. The 'volume' mode is the
+ *  former /sales-volumes dashboard, folded into /market-share. */
+export type UnitMode = "share" | "volume";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -222,6 +228,11 @@ export interface UseMarketShareData {
   ufsAll: string[];
   mercadosAll: string[];
 
+  // Unit mode toggle (% Share vs thousand m³). State-driven, but initialized
+  // from ?unit=volume URL param on first render. See useMarketShareData impl.
+  unitMode: UnitMode;
+  setUnitMode: (u: UnitMode) => void;
+
   // UI filter state (pre-apply)
   mode: Mode;
   setMode: (m: Mode) => void;
@@ -338,6 +349,8 @@ export function buildMarketShareLine(params: {
   xMax?: string | null;
   groupBy?: "classificacao" | "agente_regulado";
   colorsOverride?: Record<string, string>;
+  /** 'share' = % participation (default), 'volume' = absolute thousand m³. */
+  unitMode?: UnitMode;
 }): ChartResult {
   const {
     serieRows,
@@ -349,6 +362,7 @@ export function buildMarketShareLine(params: {
     xMax,
     groupBy = "classificacao",
     colorsOverride,
+    unitMode = "share",
   } = params;
   if (!serieRows || serieRows.length === 0) return emptyPlot(300);
 
@@ -375,26 +389,35 @@ export function buildMarketShareLine(params: {
     totalByDate.set(dateKey, (totalByDate.get(dateKey) ?? 0) + qty);
   }
 
-  const grouped: Array<{ date: string; classificacao: string; quantidade: number; pct: number }> = [];
+  // y holds the rendered value: percentage when unitMode='share', absolute
+  // quantidade (thousand m³) when unitMode='volume'. We still compute pct so
+  // the calling code can keep a single record shape downstream if needed.
+  const grouped: Array<{ date: string; classificacao: string; quantidade: number; pct: number; y: number }> = [];
   for (const [key, qty] of groupMap.entries()) {
     const [date, classificacao] = key.split("|");
     if (!players.includes(classificacao)) continue;
-    const total = totalByDate.get(date) ?? 0;
-    if (total <= 0) continue;
-    grouped.push({ date, classificacao, quantidade: qty, pct: (qty / total) * 100 });
+    if (unitMode === "share") {
+      const total = totalByDate.get(date) ?? 0;
+      if (total <= 0) continue;
+      const pct = (qty / total) * 100;
+      grouped.push({ date, classificacao, quantidade: qty, pct, y: pct });
+    } else {
+      grouped.push({ date, classificacao, quantidade: qty, pct: 0, y: qty });
+    }
   }
 
   if (grouped.length === 0) return emptyPlot(300);
 
   grouped.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 
-  const yVals = grouped.map((g) => g.pct);
+  const yVals = grouped.map((g) => g.y);
   const yMin = Math.min(...yVals);
   const yMax = Math.max(...yVals);
   const spread = yMax - yMin > 0 ? yMax - yMin : 1.0;
   const pad = spread * 0.2;
+  // In 'share' mode we clamp to [0, 100]; in 'volume' mode we let yHi float.
   const yLo = Math.max(0, yMin - pad);
-  const yHi = Math.min(100, yMax + pad);
+  const yHi = unitMode === "share" ? Math.min(100, yMax + pad) : yMax + pad;
 
   const ultimaData = grouped[grouped.length - 1].date;
   const colorsMap = colorsOverride ?? (big3 ? COLORS_BIG3 : COLORS_IND);
@@ -411,6 +434,14 @@ export function buildMarketShareLine(params: {
     font: { family: string; size: number; color: string };
   }> = [];
 
+  // Format helpers for hover + annotation labels.
+  const fmtAnnot = (v: number): string =>
+    unitMode === "share" ? `${v.toFixed(1)}%` : v.toFixed(1);
+  const hoverTpl =
+    unitMode === "share"
+      ? "%{fullData.name}: %{y:.1f}%<extra></extra>"
+      : "%{fullData.name}: %{y:.1f}<extra></extra>";
+
   for (const player of players) {
     const series = grouped.filter((g) => g.classificacao === player);
     if (series.length === 0) continue;
@@ -418,18 +449,18 @@ export function buildMarketShareLine(params: {
       type: "scatter",
       mode: "lines",
       x: series.map((s) => s.date),
-      y: series.map((s) => s.pct),
+      y: series.map((s) => s.y),
       name: player,
       line: { width: 2.5, color: colorsMap[player] ?? "#000000" },
-      hovertemplate: "%{fullData.name}: %{y:.1f}%<extra></extra>",
+      hovertemplate: hoverTpl,
     } as PlotData);
 
     const last = series.find((s) => s.date === ultimaData);
     if (last) {
       annotations.push({
         x: ultimaData,
-        y: last.pct,
-        text: `${last.pct.toFixed(1)}%`,
+        y: last.y,
+        text: fmtAnnot(last.y),
         showarrow: false,
         xanchor: "left",
         xshift: 6,
@@ -443,21 +474,35 @@ export function buildMarketShareLine(params: {
   const dataMin = allDates[0];
   const dataMax = allDates[allDates.length - 1];
 
+  const yAxis: NonNullable<Layout["yaxis"]> =
+    unitMode === "share"
+      ? {
+          title: { text: "Market Share (%)" },
+          ticksuffix: "%",
+          range: [yLo, yHi],
+          nticks: 10,
+          showgrid: false,
+          zeroline: false,
+          showline: true,
+          linecolor: "#000000",
+          linewidth: 1,
+        }
+      : {
+          title: { text: "Volume (thousand m³)" },
+          range: [yLo, yHi],
+          nticks: 10,
+          showgrid: false,
+          zeroline: false,
+          showline: true,
+          linecolor: "#000000",
+          linewidth: 1,
+        };
+
   const layout: Partial<Layout> = {
     title: { text: "" },
     margin: { t: 10, b: 80, l: 60, r: 75 },
     font: { family: "Arial", size: 12, color: "#000000" },
-    yaxis: {
-      title: { text: "Market Share (%)" },
-      ticksuffix: "%",
-      range: [yLo, yHi],
-      nticks: 10,
-      showgrid: false,
-      zeroline: false,
-      showline: true,
-      linecolor: "#000000",
-      linewidth: 1,
-    },
+    yaxis: yAxis,
     xaxis: {
       title: { text: "" },
       tickformat: "%b-%y",
@@ -590,6 +635,7 @@ function getMsAtDate(
   date: string,
   big3: boolean,
   groupBy: "classificacao" | "agente_regulado" = "classificacao",
+  unitMode: UnitMode = "share",
 ): Map<string, number> {
   let filtered = rows.filter((r) => r.nome_produto === produto && r.date === date);
   if (segmento) filtered = filtered.filter((r) => r.segmento === segmento);
@@ -603,6 +649,10 @@ function getMsAtDate(
       cls = BIG3_MEMBERS.includes(cls) ? "Big-3" : cls;
     grp.set(cls, (grp.get(cls) ?? 0) + Number(r.quantidade ?? 0));
   }
+  // 'volume' branch: return absolute quantidade per player. Mirrors
+  // getSvAtDate in the (now-retired) useSalesVolumesData hook.
+  if (unitMode === "volume") return grp;
+
   const total = Array.from(grp.values()).reduce((a, b) => a + b, 0);
   if (total <= 0) return new Map();
   const result = new Map<string, number>();
@@ -618,13 +668,18 @@ export function buildComparisonData(
   big3: boolean,
   latestDate: string,
   groupBy: "classificacao" | "agente_regulado" = "classificacao",
+  unitMode: UnitMode = "share",
 ): CompRow[] {
+  // In 'share' mode the deltas are percentage-point variations (units = pp).
+  // In 'volume' mode the deltas are absolute differences in thousand m³,
+  // mirroring buildSvComparisonData from the retired /sales-volumes hook
+  // (lines 258-285 of useSalesVolumesData.ts in commit history).
   const prevYearDec = `${parseInt(latestDate.slice(0, 4), 10) - 1}-12-01`;
-  const msNow = getMsAtDate(rows, produto, segmento, latestDate, big3, groupBy);
-  const msMoM = getMsAtDate(rows, produto, segmento, shiftMonth(latestDate, -1), big3, groupBy);
-  const ms3M  = getMsAtDate(rows, produto, segmento, shiftMonth(latestDate, -3), big3, groupBy);
-  const msYoY = getMsAtDate(rows, produto, segmento, shiftMonth(latestDate, -12), big3, groupBy);
-  const msYtd = getMsAtDate(rows, produto, segmento, prevYearDec, big3, groupBy);
+  const msNow = getMsAtDate(rows, produto, segmento, latestDate, big3, groupBy, unitMode);
+  const msMoM = getMsAtDate(rows, produto, segmento, shiftMonth(latestDate, -1), big3, groupBy, unitMode);
+  const ms3M  = getMsAtDate(rows, produto, segmento, shiftMonth(latestDate, -3), big3, groupBy, unitMode);
+  const msYoY = getMsAtDate(rows, produto, segmento, shiftMonth(latestDate, -12), big3, groupBy, unitMode);
+  const msYtd = getMsAtDate(rows, produto, segmento, prevYearDec, big3, groupBy, unitMode);
   const delta = (a: Map<string, number>, b: Map<string, number>, p: string): number | null => {
     const va = a.get(p);
     const vb = b.get(p);
@@ -648,9 +703,10 @@ function buildTopPlayers(
   groupBy: "classificacao" | "agente_regulado",
   chartColors: Record<string, string>,
   topN = 5,
+  unitMode: UnitMode = "share",
 ): TopPlayerRow[] {
-  const msNow = getMsAtDate(rows, produto, null, latestDate, big3, groupBy);
-  const msMoM = getMsAtDate(rows, produto, null, shiftMonth(latestDate, -1), big3, groupBy);
+  const msNow = getMsAtDate(rows, produto, null, latestDate, big3, groupBy, unitMode);
+  const msMoM = getMsAtDate(rows, produto, null, shiftMonth(latestDate, -1), big3, groupBy, unitMode);
   if (msNow.size === 0) return [];
 
   const entries = Array.from(msNow.entries())
@@ -687,6 +743,17 @@ export function useMarketShareData(): UseMarketShareData {
   // --- Options / datas ---
   const [opcoes, setOpcoes] = useState<Record<string, unknown> | null>(null);
   const datas = useMemo(() => resolverDatas(opcoes ?? {}), [opcoes]);
+
+  // --- Unit mode (share | volume) ---
+  // Read ?unit=volume from URL once on mount and seed state. Subsequent
+  // changes are user-driven (SegmentedToggle wired below). We don't sync
+  // back to the URL — the toggle is local state, the URL param is a
+  // deep-link convenience used by the /sales-volumes → /market-share?unit=volume
+  // 301 redirect (Frente 4).
+  const searchParams = useSearchParams();
+  const initialUnitMode: UnitMode =
+    searchParams?.get("unit") === "volume" ? "volume" : "share";
+  const [unitMode, setUnitMode] = useState<UnitMode>(initialUnitMode);
 
   // --- UI filter state ---
   const [mode, setMode] = useState<Mode>("Individual");
@@ -904,28 +971,31 @@ export function useMarketShareData(): UseMarketShareData {
   const onExportExcel = useCallback(async () => {
     setExcelLoading(true);
     try {
-      await downloadMarketShareExcel(serieRows, players, big3);
+      await downloadMarketShareExcel(serieRows, players, big3, unitMode);
       setExportOpen(false);
     } catch (e) {
       console.error("Excel export failed", e);
     } finally {
       setExcelLoading(false);
     }
-  }, [serieRows, players, big3]);
+  }, [serieRows, players, big3, unitMode]);
 
   const onExportCsv = useCallback(async () => {
     if (!supabase) return;
     setCsvLoading(true);
     try {
       const rows = await fetchVendasFiltered(supabase, exportFilters);
-      downloadCsv({ rows, filename: "market_share_vendas" });
+      // Filename mirrors the active unit mode so downloads carry the right
+      // semantic label — "SalesVolumes" in volume mode, "MarketShare" in share.
+      const filename = unitMode === "volume" ? "SalesVolumes" : "MarketShare";
+      downloadCsv({ rows, filename });
       setExportOpen(false);
     } catch (e) {
       console.error("CSV export failed", e);
     } finally {
       setCsvLoading(false);
     }
-  }, [supabase, exportFilters]);
+  }, [supabase, exportFilters, unitMode]);
 
   const latestDate = useMemo(() => {
     if (appliedFilters.data_fim) return appliedFilters.data_fim;
@@ -947,7 +1017,7 @@ export function useMarketShareData(): UseMarketShareData {
 
   const charts = useMemo<MarketShareCharts | null>(() => {
     if (seriesLoading) return null;
-    const common = { players, big3, xMin, xMax, groupBy, colorsOverride: chartColors };
+    const common = { players, big3, xMin, xMax, groupBy, colorsOverride: chartColors, unitMode };
     return {
       dieselRetail: buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "Retail", ...common }),
       dieselB2B:    buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "B2B",    ...common }),
@@ -963,32 +1033,32 @@ export function useMarketShareData(): UseMarketShareData {
       ottoB2B:      buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: "B2B",    ...common }),
       ottoTotal:    buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: null,     ...common }),
     };
-  }, [serieRows, ottoCycleRows, players, big3, xMin, xMax, groupBy, chartColors, seriesLoading]);
+  }, [serieRows, ottoCycleRows, players, big3, xMin, xMax, groupBy, chartColors, seriesLoading, unitMode]);
 
   const compData = useMemo<MarketShareCompData | null>(() => {
     if (!latestDate || seriesLoading) return null;
     return {
-      dieselRetail: buildComparisonData(serieRows, "Diesel B", "Retail", players, big3, latestDate, groupBy),
-      dieselB2B:    buildComparisonData(serieRows, "Diesel B", "B2B", players, big3, latestDate, groupBy),
-      dieselTrR:    buildComparisonData(serieRows, "Diesel B", "TRR", players, big3, latestDate, groupBy),
-      dieselTotal:  buildComparisonData(serieRows, "Diesel B", null, players, big3, latestDate, groupBy),
-      gasRetail:    buildComparisonData(serieRows, "Gasolina C", "Retail", players, big3, latestDate, groupBy),
-      gasB2B:       buildComparisonData(serieRows, "Gasolina C", "B2B", players, big3, latestDate, groupBy),
-      gasTotal:     buildComparisonData(serieRows, "Gasolina C", null, players, big3, latestDate, groupBy),
-      ethRetail:    buildComparisonData(serieRows, "Etanol Hidratado", "Retail", players, big3, latestDate, groupBy),
-      ethB2B:       buildComparisonData(serieRows, "Etanol Hidratado", "B2B", players, big3, latestDate, groupBy),
-      ethTotal:     buildComparisonData(serieRows, "Etanol Hidratado", null, players, big3, latestDate, groupBy),
-      ottoRetail:   buildComparisonData(ottoCycleRows, "Otto-Cycle", "Retail", players, big3, latestDate, groupBy),
-      ottoB2B:      buildComparisonData(ottoCycleRows, "Otto-Cycle", "B2B", players, big3, latestDate, groupBy),
-      ottoTotal:    buildComparisonData(ottoCycleRows, "Otto-Cycle", null, players, big3, latestDate, groupBy),
+      dieselRetail: buildComparisonData(serieRows, "Diesel B", "Retail", players, big3, latestDate, groupBy, unitMode),
+      dieselB2B:    buildComparisonData(serieRows, "Diesel B", "B2B", players, big3, latestDate, groupBy, unitMode),
+      dieselTrR:    buildComparisonData(serieRows, "Diesel B", "TRR", players, big3, latestDate, groupBy, unitMode),
+      dieselTotal:  buildComparisonData(serieRows, "Diesel B", null, players, big3, latestDate, groupBy, unitMode),
+      gasRetail:    buildComparisonData(serieRows, "Gasolina C", "Retail", players, big3, latestDate, groupBy, unitMode),
+      gasB2B:       buildComparisonData(serieRows, "Gasolina C", "B2B", players, big3, latestDate, groupBy, unitMode),
+      gasTotal:     buildComparisonData(serieRows, "Gasolina C", null, players, big3, latestDate, groupBy, unitMode),
+      ethRetail:    buildComparisonData(serieRows, "Etanol Hidratado", "Retail", players, big3, latestDate, groupBy, unitMode),
+      ethB2B:       buildComparisonData(serieRows, "Etanol Hidratado", "B2B", players, big3, latestDate, groupBy, unitMode),
+      ethTotal:     buildComparisonData(serieRows, "Etanol Hidratado", null, players, big3, latestDate, groupBy, unitMode),
+      ottoRetail:   buildComparisonData(ottoCycleRows, "Otto-Cycle", "Retail", players, big3, latestDate, groupBy, unitMode),
+      ottoB2B:      buildComparisonData(ottoCycleRows, "Otto-Cycle", "B2B", players, big3, latestDate, groupBy, unitMode),
+      ottoTotal:    buildComparisonData(ottoCycleRows, "Otto-Cycle", null, players, big3, latestDate, groupBy, unitMode),
     };
-  }, [serieRows, ottoCycleRows, players, big3, latestDate, groupBy, seriesLoading]);
+  }, [serieRows, ottoCycleRows, players, big3, latestDate, groupBy, seriesLoading, unitMode]);
 
   const topPlayers = useMemo<TopPlayerRow[]>(() => {
     if (!latestDate || serieRows.length === 0) return [];
     // Use Diesel B Total as the overview product (most representative)
-    return buildTopPlayers(serieRows, "Diesel B", latestDate, big3, groupBy, chartColors, 5);
-  }, [serieRows, latestDate, big3, groupBy, chartColors]);
+    return buildTopPlayers(serieRows, "Diesel B", latestDate, big3, groupBy, chartColors, 5, unitMode);
+  }, [serieRows, latestDate, big3, groupBy, chartColors, unitMode]);
 
   // ─── Mobile chart selector derivations ─────────────────────────────────────
   // Auto-correct: if the user picked a segment that doesn't exist for the
@@ -1018,8 +1088,8 @@ export function useMarketShareData(): UseMarketShareData {
   const topPlayersForSelected = useMemo<TopPlayerRow[]>(() => {
     if (!latestDate || serieRows.length === 0) return [];
     const sourceRows = selectedProduct === "Otto-Cycle" ? ottoCycleRows : serieRows;
-    return buildTopPlayers(sourceRows, selectedProduct, latestDate, big3, groupBy, chartColors, 5);
-  }, [serieRows, ottoCycleRows, selectedProduct, latestDate, big3, groupBy, chartColors]);
+    return buildTopPlayers(sourceRows, selectedProduct, latestDate, big3, groupBy, chartColors, 5, unitMode);
+  }, [serieRows, ottoCycleRows, selectedProduct, latestDate, big3, groupBy, chartColors, unitMode]);
 
   // ─── Mobile Compare toggle ────────────────────────────────────────────────
   const toggleCompareMember = useCallback((player: string) => {
@@ -1052,6 +1122,8 @@ export function useMarketShareData(): UseMarketShareData {
     regioesAll,
     ufsAll,
     mercadosAll,
+    unitMode,
+    setUnitMode,
     mode,
     setMode,
     sliderRange,

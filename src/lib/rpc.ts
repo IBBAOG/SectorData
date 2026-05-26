@@ -294,37 +294,16 @@ export async function rpcGetOthersPlayers(supabase: SupabaseClient): Promise<str
   }
 }
 
-// ─── MODULE: Sales Volumes (/src/app/(dashboard)/sales-volumes/page.tsx) ─────
-
-export async function rpcGetSvOpcoesFiltros(supabase: SupabaseClient) {
-  try {
-    const { data, error } = await supabase.rpc("get_sv_opcoes_filtros", {});
-    if (error) throw error;
-    return (data ?? {}) as Record<string, unknown>;
-  } catch (e) {
-    console.error("get_sv_opcoes_filtros failed", e);
-    return {};
-  }
-}
-
-export async function rpcGetSvSerieFast(supabase: SupabaseClient, filters: MarketShareFilters) {
-  return paginatedRpc(supabase, "get_sv_serie_fast", filters);
-}
-
-export async function rpcGetSvSerieOthers(supabase: SupabaseClient, filters: MarketShareFilters) {
-  return paginatedRpc(supabase, "get_sv_serie_others", filters);
-}
-
-export async function rpcGetSvOthersPlayers(supabase: SupabaseClient): Promise<string[]> {
-  try {
-    const { data, error } = await supabase.rpc("get_sv_others_players", {});
-    if (error) throw error;
-    return ((data ?? []) as { agente_regulado: string }[]).map(r => r.agente_regulado);
-  } catch (e) {
-    console.error("get_sv_others_players failed", e);
-    return [];
-  }
-}
+// ─── MODULE: Sales Volumes — RETIRED (2026-05-26) ────────────────────────────
+//
+// /sales-volumes was folded into /market-share via a top-level unit toggle.
+// The 4 wrappers below (rpcGetSvOpcoesFiltros, rpcGetSvSerieFast,
+// rpcGetSvSerieOthers, rpcGetSvOthersPlayers) were removed because:
+//   - The only consumer was useSalesVolumesData.ts, which was also retired.
+//   - /market-share now serves both modes off the existing get_ms_* RPCs.
+//   - The underlying get_sv_* PostgreSQL functions remain (no DB migration
+//     yet) — they can be dropped in a follow-up migration if desired, since
+//     get_ms_serie_fast / get_ms_serie_others cover both narratives.
 
 // ─── MODULE: Navios Diesel (/src/app/(dashboard)/navios-diesel/page.tsx) ─────
 

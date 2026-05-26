@@ -52,13 +52,9 @@ export interface UseHomeData {
 
 // ---- Static card catalogue ---------------------------------------------------
 
-/**
- * Maps a card href to its module_visibility slug.
- * The Sales card uses href="/sales-volumes" but the slug is "sales".
- */
+/** Maps a card href to its module_visibility slug. */
 function hrefToSlug(href: string | null): string {
   if (!href) return "";
-  if (href === "/sales-volumes") return "sales";
   return href.replace(/^\//, "");
 }
 
@@ -121,19 +117,10 @@ const CARDS: Omit<HomeCardDef, "category">[] = [
   },
   // Fuel Distribution
   {
-    slug: "sales",
-    preview: "/previews/preview-sales.jpg",
-    title: "Sales Volumes",
-    description: "Volume analysis by product, segment, agent, region, and period",
-    badge: "Available",
-    href: "/sales-volumes",
-    disabled: false,
-  },
-  {
     slug: "market-share",
     preview: "/previews/preview-market-share.jpg",
     title: "Market Share",
-    description: "Market share evolution over time broken down by distributor",
+    description: "Market share % and absolute volumes by product, segment, agent, region, and period",
     badge: "Available",
     href: "/market-share",
     disabled: false,
@@ -221,7 +208,6 @@ const SLUG_CATEGORY: Record<string, HomeCategory> = {
   "anp-cdp-bsw": "oilgas",
   "anp-cdp-depletion": "oilgas",
   "anp-cdp-diaria": "oilgas",
-  sales: "fuel",
   "market-share": "fuel",
   "navios-diesel": "fuel",
   "diesel-gasoline-margins": "fuel",

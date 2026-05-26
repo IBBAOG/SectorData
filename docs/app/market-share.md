@@ -1,6 +1,34 @@
 # Sub-PRD — `/market-share`
 
-Dashboard de Market Share (% de participação). Owner: [`worker_dash-market-share`](../../.claude/agents/worker_dash-market-share.md).
+Dashboard consolidado de **Market Share (% de participação)** e **Sales Volumes (volume absoluto em mil m³)**. Owner: [`worker_dash-market-share`](../../.claude/agents/worker_dash-market-share.md).
+
+## Unit Toggle (2026-05-26)
+
+A partir de 2026-05-26 o dashboard serve **dois modos** controlados por um `SegmentedToggle` top-level:
+
+| Mode | Eixo Y dos gráficos | Comparison table | Filename Excel | Filename CSV |
+|---|---|---|---|---|
+| `% Share` (default) | `(quantidade / total_do_mês) × 100`, clamp [0, 100], suffix `%` | `Market Share Var. (p.p.)` | `FD Market Share DD-MM-YY.xlsx` | `MarketShare_DD-MM-YY.csv` |
+| `thousand m³` | `quantidade` absoluta, auto-scale | `Volume Var. (thousand m³)` | `SalesVolumes_DD-MM-YY.xlsx` | `SalesVolumes_DD-MM-YY.csv` |
+
+- Ambos os modos usam o **mesmo backend**: as 4 RPCs `get_ms_*` e a MV `mv_ms_serie_fast`. Não há split de pipeline — a normalização para % acontece **no cliente** em `buildMarketShareLine` quando `unitMode === 'share'`.
+- A função pura `buildComparisonData` é parametrizada por `unitMode`: em `share` retorna deltas em pontos percentuais; em `volume` retorna deltas absolutos em mil m³ (mesma fórmula do antigo `buildSvComparisonData`).
+- O toggle vive no hook (`unitMode`, `setUnitMode`) e propaga para `charts`, `compData`, `topPlayers`, `topPlayersForSelected`, `onExportExcel`, `onExportCsv`.
+
+### Deep-link `?unit=volume`
+
+A URL `?unit=volume` força o modo `thousand m³` na primeira renderização (lida via `useSearchParams()` uma vez, depois é state-driven). Suporte adicionado para:
+
+1. O 301 redirect `/sales-volumes` → `/market-share?unit=volume` (mantém URLs antigas vivas).
+2. Permitir bookmarks/share-links que abrem direto no modo volume.
+
+A URL **não** é sincronizada quando o usuário troca o toggle — é apenas seed inicial.
+
+### `/sales-volumes` retirado
+
+Em 2026-05-26 a rota `/sales-volumes` foi retirada e redireciona (301) para `/market-share?unit=volume`. O hook `useSalesVolumesData.ts`, a View desktop+mobile, e os 4 wrappers `rpcGetSv*` em `src/lib/rpc.ts` foram removidos. Os RPCs PostgreSQL `get_sv_*` continuam no banco (não há migration de drop ainda) — podem ser dropados num follow-up, já que `get_ms_serie_fast` / `get_ms_serie_others` cobrem as duas narrativas.
+
+A entrada "Sales Volumes" do NavBar e o card de `/home` foram removidos em frentes paralelas. Esta tela passa a ser a única superfície para ambas as métricas.
 
 ## Dual-view structure (added 2026-05-20)
 
@@ -59,11 +87,13 @@ Pure helpers also exported from the hook file:
 - `buildComparisonData` — builds the MoM/QTD/YoY/YTD comparison rows
 - `makeOttoCycleRows` — synthesises Otto-Cycle = Gasolina C + Etanol × 0.7
 
-### Shared-RPC coordination note
+### RPC ownership note
 
-`get_ms_serie_fast`, `get_ms_serie_others`, `get_others_players` are also consumed by
-`/sales-volumes`. Any signature change requires coordination with `worker_dash-sales-volumes`.
-Both dashboards import from the same wrappers in `src/lib/rpc.ts` (Market Share section).
+`get_ms_serie_fast`, `get_ms_serie_others`, `get_others_players`, and
+`get_ms_opcoes_filtros` are now **owned exclusively** by `/market-share`.
+The pre-consolidation note about coordinating with `worker_dash-sales-volumes`
+no longer applies — that dashboard was retired (see "Unit Toggle (2026-05-26)"
+above).
 
 ## Escopo de código
 
@@ -79,46 +109,48 @@ RPC wrappers: seção "market-share" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts)
 
 ## Produto
 
-Visualização de **% de participação de mercado** entre players de combustíveis, ao longo do tempo. Filtros idênticos ao sales-volumes (período, região, UF, mercado, agentes), mas a narrativa é distinta:
-- Não importa o **valor absoluto** — importa **share relativo**.
-- "Outros" é tratado como agregado (soma dos pequenos players para não poluir o gráfico).
+Visualização das **duas narrativas** clássicas do mercado brasileiro de combustíveis num único dashboard:
+
+- **% Share** (default): participação relativa por player ao longo do tempo. Narrativa "quem ganhou/perdeu mercado".
+- **thousand m³**: volume absoluto vendido por player. Narrativa "quanto cada um vendeu".
+
+O toggle `SegmentedToggle` no topo (desktop) ou na chip-row (mobile) chaveia entre os dois modos sem refetch — mesma RPC, derivação client-side. Filtros (período, região, UF, mercado, agentes/modo) e "Outros" como agregado são preservados em ambos os modos.
 
 ## RPCs
 
 | RPC | Tipo | Função |
 |---|---|---|
 | `get_ms_opcoes_filtros` | próprio | Opções de filtros |
-| `get_ms_serie_fast` | **compartilhado com sales-volumes** | Série mensal |
-| `get_ms_serie_others` | **compartilhado** | Soma de "Outros" |
-| `get_others_players` | **compartilhado** | Lista de players em "Outros" |
+| `get_ms_serie_fast` | próprio | Série mensal (Individual/Big-3) |
+| `get_ms_serie_others` | próprio | Soma de "Outros" + breakdown por agente |
+| `get_others_players` | próprio | Lista de players em "Outros" |
+| `get_ms_export_count` | próprio | Calculadora live de tamanho do export |
 
-> **Coordenação obrigatória:** mudança nas 3 RPCs compartilhadas exige alinhamento com `worker_dash-sales-volumes`.
+> A pré-consolidação tinha 3 dessas RPCs marcadas como "compartilhadas com /sales-volumes". Não mais — agora são exclusivas. A coordenação cross-worker desapareceu junto com o dashboard.
 
 ## Tabelas / Views
 
 - `vendas`
 - `mv_ms_serie_fast`
 
-## Por que existe separado de `/sales-volumes`?
-
-Ambos consomem mesmas RPCs, mas:
-- **Sales Volumes**: eixo Y = volume absoluto (toneladas/m³), narrativa de "quanto cada um vendeu".
-- **Market Share**: eixo Y = % do total, narrativa de "quem ganhou/perdeu mercado".
-- Mesmo backend, **frontends distintos**. Manter separado permite evolução independente da apresentação.
-
 ## Filtros disponíveis (UI)
 
-Idênticos ao sales-volumes. Padronização intencional.
+- Período (slider mensal)
+- Região / UF
+- Mercado (no modal de export)
+- View Mode: Individual / Big-3 / Others
+- Competidores
+- **Unit (novo)**: % Share / thousand m³
 
 ## Dependências cross-dept
 
-Idênticas ao sales-volumes (ETL/`vendas_watch` → `vendas` → MV).
+ETL: `vendas_watch` → `vendas` → MV `mv_ms_serie_fast` (refresh via `classificar_agentes()`).
 
 ## Anti-padrões
 
-- Calcular % no cliente quando o backend já retorna agregado.
-- Misturar metáfora "absoluto" com "share" no mesmo gráfico.
-- Mudar `get_ms_*` sem coordenar.
+- Mudar `get_ms_*` sem revisar todos os derivados (`charts`, `compData`, `topPlayers`, `topPlayersForSelected`, exports) — eles agora dependem de `unitMode`.
+- Esquecer de incluir `unitMode` nas dependências dos `useMemo` que produzem `charts` / `compData` / `topPlayers` — leva a stale render no toggle.
+- Hardcodar `ticksuffix: "%"` em novos gráficos sem ramificar por `unitMode`.
 
 ## Export
 
@@ -128,8 +160,9 @@ Tier 2 — `<ExportPanel mode="modal">` abre `<ExportModal>` com filtros + calcu
 - JS wrapper: `getMsExportCount` em [`src/lib/rpc.ts`](../../src/lib/rpc.ts).
 - datasetKey heuristic: `vendas` (ver [`src/lib/exportSizeHeuristics.ts`](../../src/lib/exportSizeHeuristics.ts) → `AVG_BYTES_PER_ROW.vendas`).
 - Filtros expostos no modal: período (slider de meses), regiões, UFs, mercados/segmentos.
-- Excel handler: `downloadMarketShareExcel` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
-- CSV handler: paginated fetch via `fetchVendasFiltered` (helper em `src/lib/rpc.ts`) + `downloadCsv` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
-- Filename pattern: `MarketShare_DD-MM-YY.<xlsx|csv>`.
+- Excel handler: `downloadMarketShareExcel(rows, players, big3, unitMode)` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook 4-sheet (Diesel B / Gasoline C / Hydrous Ethanol / Otto-Cycle) com chart embarcado por segmento. Ramifica por `unitMode`:
+  - `share` → sheet label "Market Share (%)", numFmt `0"%"`, filename `FD Market Share DD-MM-YY.xlsx`.
+  - `volume` → sheet label "Volume (thousand m³)", numFmt `0.0`, filename `SalesVolumes_DD-MM-YY.xlsx`.
+- CSV handler: paginated fetch via `fetchVendasFiltered` (helper em `src/lib/rpc.ts`) + `downloadCsv` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts). Filename ramifica: `MarketShare_DD-MM-YY.csv` (share) ou `SalesVolumes_DD-MM-YY.csv` (volume). Rows são raw `vendas` (não dependem de unitMode).
 - Warning visual quando estimativa > 200 000 linhas.
-- Compartilha o `get_ms_export_count` com `/sales-volumes` — qualquer mudança de assinatura exige coordenação com `worker_dash-sales-volumes`.
+- `get_ms_export_count` agora é exclusivo de `/market-share` (antes era compartilhado).

@@ -77,7 +77,6 @@ const NAV_ENTRIES: NavEntry[] = [
           {
             label: "Volumes",
             items: [
-              { href: "/sales-volumes", label: "Sales Volumes — ANP" },
               { href: "/anp-glp",       label: "LPG" },
             ],
           },
@@ -104,7 +103,7 @@ const NAV_ENTRIES: NavEntry[] = [
 ];
 
 /** Map nested/alternate routes to the root module slug for visibility checks */
-const SLUG_MAP: Record<string, string> = { "sales-volumes": "sales" };
+const SLUG_MAP: Record<string, string> = {};
 
 /* ── Route → tab title map ─────────────────────────────────────────────────── */
 

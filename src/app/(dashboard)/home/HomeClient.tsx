@@ -5,13 +5,9 @@ import { useRouter } from "next/navigation";
 import NavBar from "../../../components/NavBar";
 import { useUserProfile } from "../../../context/UserProfileContext";
 
-/**
- * Maps a card's href to its module_visibility slug.
- * The Sales card uses href="/sales-volumes" but the slug is "sales".
- */
+/** Maps a card href to its module_visibility slug. */
 function hrefToSlug(href: string | null): string {
   if (!href) return "";
-  if (href === "/sales-volumes") return "sales";
   return href.replace(/^\//, "");
 }
 
@@ -30,19 +26,10 @@ interface CardDef {
 
 const CARDS: CardDef[] = [
   {
-    slug: "sales",
-    preview: "/previews/preview-sales.jpg",
-    title: "Sales Volumes",
-    description: "Volume analysis by product, segment, agent, region, and period",
-    badge: "Available",
-    href: "/sales-volumes",
-    disabled: false,
-  },
-  {
     slug: "market-share",
     preview: "/previews/preview-market-share.jpg",
     title: "Market Share",
-    description: "Market share evolution over time broken down by distributor",
+    description: "Market share % and absolute volumes by product, segment, agent, region, and period",
     badge: "Available",
     href: "/market-share",
     disabled: false,
