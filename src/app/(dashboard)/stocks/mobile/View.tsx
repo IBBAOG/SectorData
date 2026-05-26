@@ -472,6 +472,7 @@ function CompareTab() {
     compareTickers,
     addCompareTicker,
     removeCompareTicker,
+    compareBaseDate,
     mobileRange,
     setMobileRange,
     quoteMap,
@@ -490,13 +491,26 @@ function CompareTab() {
 
   const chartTraces = useMemo(() => {
     if (!compareTickers.length) return [];
+    // Unix seconds cutoff for `compareBaseDate` (anon viewers: 2026-01-01).
+    // 0 means "no filter" — normalize from the first datapoint of the loaded
+    // range (legacy behaviour for authed users).
+    const baseCutoff = compareBaseDate
+      ? Math.floor(new Date(compareBaseDate).getTime() / 1000)
+      : 0;
     return compareTickers.map((sym, i) => {
       const hist = allHistory[i];
       const color = COMPARE_COLORS[i % COMPARE_COLORS.length];
       if (!hist?.data.length) return null;
+      // Filter to the configured baseline window (YTD for anon). The first
+      // surviving datapoint becomes the normalization base, so the chart
+      // starts at 0% on `compareBaseDate`.
+      const filtered = baseCutoff
+        ? hist.data.filter((d) => d.date >= baseCutoff)
+        : hist.data;
+      if (!filtered.length) return null;
 
       // Base-100 normalisation
-      const basePrice = hist.data[0].close;
+      const basePrice = filtered[0].close;
       if (!basePrice || !isFinite(basePrice)) return null;
       // Guard against Yahoo Finance unadjusted history returning an
       // implausible base price (e.g. UGPA3.SA at long ranges returns a
@@ -504,12 +518,12 @@ function CompareTab() {
       // baseline would normalize the current price to ~-100%. Mirror the
       // ComparisonChart desktop guard so mobile never plots a fake
       // flat-line near -100%.
-      const lastClose = hist.data[hist.data.length - 1].close;
+      const lastClose = filtered[filtered.length - 1].close;
       if (lastClose > 0 && isFinite(lastClose)) {
         const ratio = basePrice / lastClose;
         if (ratio > 100 || ratio < 0.01) return null;
       }
-      const normalized = hist.data.map((d) => ({
+      const normalized = filtered.map((d) => ({
         x: new Date(d.date * 1000),
         y: ((d.close - basePrice) / basePrice) * 100,
       }));
@@ -533,7 +547,7 @@ function CompareTab() {
         hovertemplate: `<b>${sym}</b> %{y:+.2f}%<br>%{x|%b %d}<extra></extra>`,
       };
     }).filter(Boolean);
-  }, [compareTickers, allHistory, quoteMap]);
+  }, [compareTickers, allHistory, quoteMap, compareBaseDate]);
 
   return (
     <div

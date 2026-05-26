@@ -133,12 +133,27 @@ function defaultLayout(): Record<string, LayoutItem[]> {
 //   - Market overview (indices + FX)
 //   - News Hunter (curated default keywords, anon-readable)
 //   - Brent Futures curve (Yahoo public proxy, no auth)
-//   - Compare assets UGPA3 vs VBBR3 (two large fuel distributors)
+//   - Compare assets PETR4 vs PRIO3 vs Brent (YTD 2026, Change %)
 //
 // These cards / layout are recomputed on every render — never persisted to
 // localStorage — so refreshing the page always restores the canonical view.
 
-export const ANON_DEFAULT_COMPARE_TICKERS: string[] = ["UGPA3.SA", "VBBR3.SA"];
+// Compare Assets defaults for Anon viewers (updated 2026-05-26):
+//   - Tickers: PETR4, PRIO3, Brent (BZ=F is the Yahoo Finance symbol for
+//     Brent crude oil front-month futures).
+//   - baseDate `ANON_DEFAULT_COMPARE_BASE_DATE` (YTD 2026) feeds
+//     `ComparisonChart`'s date filter; range "1y" loads enough history to
+//     cover the YTD window regardless of when in the year the page is
+//     loaded.
+//   - mode "percent" → renders as "Change %" (normalized variation), not
+//     absolute price.
+export const ANON_DEFAULT_COMPARE_TICKERS: string[] = [
+  "PETR4.SA",
+  "PRIO3.SA",
+  "BZ=F",
+];
+export const ANON_DEFAULT_COMPARE_BASE_DATE = "2026-01-01";
+export const ANON_DEFAULT_COMPARE_RANGE: TimeRange = "1y";
 
 const ANON_DEFAULT_CARDS: DashCard[] = [
   { id: "portfolio", type: "portfolio" },
@@ -150,8 +165,8 @@ const ANON_DEFAULT_CARDS: DashCard[] = [
     type: "compare",
     tickers: ANON_DEFAULT_COMPARE_TICKERS,
     mode: "percent",
-    range: "1y",
-    baseDate: "",
+    range: ANON_DEFAULT_COMPARE_RANGE,
+    baseDate: ANON_DEFAULT_COMPARE_BASE_DATE,
     endDate: "",
   },
 ];
@@ -246,6 +261,15 @@ export interface UseStocksData {
   compareTickers: string[];
   addCompareTicker: (sym: string) => void;
   removeCompareTicker: (sym: string) => void;
+
+  /**
+   * Baseline date for the mobile compare normalization. Seeded with
+   * `ANON_DEFAULT_COMPARE_BASE_DATE` (YTD 2026) for anon viewers so the
+   * Compare tab mirrors the desktop Compare card. Empty string ("") for
+   * authenticated viewers — the mobile Compare tab then falls back to the
+   * first datapoint of the loaded history range (legacy behaviour).
+   */
+  compareBaseDate: string;
 
   // --- Mobile chart range ---
   mobileRange: TimeRange;
@@ -361,7 +385,7 @@ export function useStocksData(): UseStocksData {
   // Anonymous users: cards/layout are FORCED to ANON_DEFAULT_CARDS /
   // anonDefaultLayout on every render. No localStorage read, no persistence
   // — every anon visitor sees the same curated five-card layout (Portfolio,
-  // Market, News Hunter, Brent Futures, UGPA3 vs VBBR3 comparison). All
+  // Market, News Hunter, Brent Futures, PETR4/PRIO3/Brent comparison). All
   // mutating callbacks become no-ops in this mode.
   const [cards, setCards] = useState<DashCard[]>(DEFAULT_CARDS);
   const [layouts, setLayouts] = useState<Record<string, LayoutItem[]>>(
@@ -487,21 +511,44 @@ export function useStocksData(): UseStocksData {
   // --- Mobile-specific state ---
   const [mobileTab, setMobileTab] = useState<MobileTab>("portfolios");
   const [compareTickers, setCompareTickers] = useState<string[]>([]);
+  // mobileRange default: "1y" for anon (covers the YTD 2026 window
+  // regardless of current date), "1mo" for authed users (legacy default).
+  // Initialized lazily so the first render already reflects the right value
+  // — we cannot read `readOnly` at module scope, so we set it via a state
+  // initializer that runs once. The effect below corrects on anon flips.
   const [mobileRange, setMobileRange] = useState<TimeRange>("1mo");
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null);
+  // Whether we've already applied the anon initial seed (tickers / range /
+  // base date). Tracked separately from the values so the user can later
+  // clear them without us re-seeding on the next render.
+  const [anonCompareSeeded, setAnonCompareSeeded] = useState(false);
+  // Baseline date for the mobile compare normalization. Empty by default
+  // (legacy behaviour: normalize from first datapoint of the loaded range);
+  // anon viewers are seeded once with ANON_DEFAULT_COMPARE_BASE_DATE.
+  const [compareBaseDate, _setCompareBaseDate] = useState<string>("");
 
-  // Seed the mobile compare set for anonymous viewers with the same default
-  // pair shown in the desktop Compare card (UGPA3 vs VBBR3). Authenticated
-  // viewers start with an empty set as before. The effect re-runs whenever
-  // `readOnly` flips (e.g. on anon → sign-in transition) but only seeds on
-  // the anon→ side and only when the set is otherwise empty, so a user who
-  // chose to clear their pair manually keeps that choice.
+  // Seed the mobile compare set for anonymous viewers with the same defaults
+  // shown in the desktop Compare card (PETR4 / PRIO3 / Brent, YTD 2026,
+  // Change %). Authenticated viewers start with an empty set + empty
+  // baseDate as before. The seeding is one-shot per `readOnly=true`
+  // transition — if the anon viewer manually clears the chip set, we do NOT
+  // re-seed it on the next render.
   useEffect(() => {
-    if (!readOnly) return;
+    if (!readOnly) {
+      // On sign-in (anon → authed), reset the gate so the next anon visit
+      // gets seeded again. Do not touch user-set tickers/range here — the
+      // authed user owns their state.
+      if (anonCompareSeeded) setAnonCompareSeeded(false);
+      return;
+    }
+    if (anonCompareSeeded) return;
     setCompareTickers((prev) =>
       prev.length === 0 ? [...ANON_DEFAULT_COMPARE_TICKERS] : prev,
     );
-  }, [readOnly]);
+    setMobileRange((prev) => (prev === "1mo" ? ANON_DEFAULT_COMPARE_RANGE : prev));
+    _setCompareBaseDate((prev) => (prev === "" ? ANON_DEFAULT_COMPARE_BASE_DATE : prev));
+    setAnonCompareSeeded(true);
+  }, [readOnly, anonCompareSeeded]);
 
   const addCompareTicker = useCallback(
     (sym: string) => {
@@ -568,6 +615,7 @@ export function useStocksData(): UseStocksData {
     compareTickers,
     addCompareTicker,
     removeCompareTicker,
+    compareBaseDate,
     mobileRange,
     setMobileRange,
     expandedTicker,
