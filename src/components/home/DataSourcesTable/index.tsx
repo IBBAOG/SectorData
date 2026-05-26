@@ -46,19 +46,7 @@ export default function DataSourcesTable(): React.ReactElement {
     <div className={styles.tableRoot} aria-label="Data Sources">
       {/* ── Table header ──────────────────────────────────────────────────── */}
       <div className={styles.tableHeader}>
-        DATA SOURCES{" "}
-        <span
-          aria-hidden="true"
-          style={{ color: "rgba(0,0,0,0.3)", fontWeight: 400 }}
-        >
-          ·
-        </span>{" "}
-        LIVE{" "}
-        <span
-          className={`ds-pulse ${styles.headerLiveDot}`}
-          title="Refreshes every 60 seconds"
-          style={{ color: "var(--ds-status-fresh)", background: "var(--ds-status-fresh)" }}
-        />
+        DATA SOURCES
       </div>
 
       {/* ── Column headers ─────────────────────────────────────────────────── */}
