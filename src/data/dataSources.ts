@@ -212,6 +212,40 @@ export const DATA_SOURCES: DataSource[] = [
     staleAfterHours: 36,
     overdueAfterHours: 72,
   },
+  {
+    key: "anp_subsidy_caps",
+    name: "ANP Subsidy Caps",
+    description:
+      "Historical subsidy cap rates (cap_brl_l) by agent type (importador/produtor). Admin-editable seed table with 4 rows; updated when ANP revises the cap policy.",
+    category: "anp-distribution",
+    source: "ANP",
+    sourceUrl: "https://www.gov.br/anp/pt-br/assuntos/precos-e-defesa-da-concorrencia",
+    cronUtc: null,
+    cronDescription: "Ad-hoc — admin-edited when ANP revises the cap policy",
+    sourceFrequency: "Ad-hoc",
+    dashboards: [{ slug: "subsidy-tracker", title: "Subsidy Tracker" }],
+    supabaseTable: "anp_subsidy_caps",
+    isRealtime: false,
+    staleAfterHours: 720,   // 30 days — cap rarely changes
+    overdueAfterHours: 2160, // 90 days
+  },
+  {
+    key: "anp_subsidy_commercialization",
+    name: "ANP Subsidy Commercialization Prices",
+    description:
+      "Commercialization prices by period, region, and agent type (importador/produtor), scraped from the ANP subsidy HTML page. Used to compute subsidy amounts under the reformed framework.",
+    category: "anp-distribution",
+    source: "ANP",
+    sourceUrl: "https://www.gov.br/anp/pt-br/assuntos/precos-e-defesa-da-concorrencia",
+    cronUtc: "30 11 * * *",
+    cronDescription: "Daily at 11:30 UTC (scraped alongside reference prices)",
+    sourceFrequency: "Daily",
+    dashboards: [{ slug: "subsidy-tracker", title: "Subsidy Tracker" }],
+    supabaseTable: "anp_subsidy_commercialization",
+    isRealtime: false,
+    staleAfterHours: 36,
+    overdueAfterHours: 72,
+  },
 
   // ── IMPORTS & EXPORTS ───────────────────────────────────────────────────────
 
