@@ -62,9 +62,11 @@ type StackedRow = { ano: number; mes: number; name: string; value: number };
 // Minimum value to show a trace in the unified hover tooltip.
 // Points below this threshold are hidden from hover (shown as blank) to avoid
 // polluting the tooltip with near-zero entries.
-// Volume threshold: 0.05 mil m³ (50 m³). USD threshold: 50 000 USD.
-// A single constant works for both because the RPC already returns the correct
-// unit — server-side conversion means the numeric magnitude is comparable.
+// Volume threshold: 0.05 mil m³ (50 m³). For the Exports USD metric this
+// effectively suppresses true zeros only (any real export is orders of
+// magnitude larger). A single constant works for all panels because the RPC
+// already returns the correct unit — server-side conversion means the numeric
+// magnitude is comparable across panels.
 const HOVER_THRESHOLD = 0.05;
 
 function buildStackedTraces(rows: StackedRow[], unit: string): PlotData[] {
