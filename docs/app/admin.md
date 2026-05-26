@@ -522,6 +522,18 @@ As políticas de escrita para `price_bands` e `d_g_margins` são criadas pela mi
 `supabase/migrations/20260512000000_data_input_admin_policies.sql` (worker_supabase, branch paralela).
 Sem a migration, writes retornam 403 — a UI renderiza mas não persiste.
 
+## Changelog — Drop orphan `card_previews` table + Storage bucket (2026-05-26)
+
+Final cleanup of the `/home` icon redesign series. With all `src/` code paths to `card_previews` already deleted (commits `5eb97335`, `249a8270`, `d5f92cd9`), the matching database table and Supabase Storage bucket were also dropped.
+
+**Database:** migration `supabase/migrations/20260526600000_drop_card_previews.sql` — `DROP TABLE IF EXISTS public.card_previews CASCADE`.
+
+**Storage:** bucket `card-previews` deleted out-of-band (rows removed from `storage.objects` first, then row removed from `storage.buckets`). File count purged is reported in the commit body.
+
+**Verification:** post-deploy, `SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='card_previews'` and `SELECT 1 FROM storage.buckets WHERE id='card-previews'` both return zero rows.
+
+No frontend or backend code references either resource after this commit. Closes the `worker_supabase` follow-up noted in the previous changelog entry below.
+
 ## Changelog — Delete dead card_previews code paths (2026-05-26)
 
 Deep cleanup following the icon redesign and admin-panel upload removal. All remaining dead code referencing the old uploaded-image system was deleted.
