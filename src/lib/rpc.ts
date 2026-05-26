@@ -2004,26 +2004,37 @@ export async function rpcGetAnalyticsHeatmap(
 // MODULE: Subsidy Tracker (/src/app/(dashboard)/subsidy-tracker/page.tsx)
 // ============================================================
 //
-// Tracks the federal diesel subsidy impact: ANP Reference price (regional
-// average) vs. ANP Commercialization price (Reference - active subsidy),
-// alongside BBA Import Parity (IPP) and Petrobras reference price.
+// Tracks the federal diesel subsidy impact across two ANP agent types
+// (`importador`, `produtor`). For each agent the RPC returns:
+//   - anp_reference_<agent>        — daily regional average of the scraped
+//                                    reference price (`anp_subsidy_diesel_reference`)
+//   - anp_commercialization_<agent>— period-fixed commercialization price
+//                                    scraped from the ANP HTML page
+//                                    (`anp_subsidy_commercialization`),
+//                                    averaged across the 5 regions
+//   - regions_<agent>              — { NORTE, NORDESTE, ... } reference
+//                                    breakdown for the hover tooltip
 //
-// The RPC FULL OUTER JOINs `price_bands` (Diesel) with the daily regional
-// average of `anp_subsidy_diesel_reference`, then applies the subsidy
-// vigente from `anp_subsidy_history` to derive `anp_commercialization`.
-// `regions` is a JSONB object with the 5 regional reference prices for the
-// hover tooltip; it may be null when no ETL extraction exists for the day.
+// Adjustments (server-side, via `compute_subsidy_reimbursement(date, agent)`):
+//   - ipp_adjusted        = ipp − reimbursement_importador  (cap 1.52)
+//   - petrobras_adjusted  = petrobras + reimbursement_produtor (cap 1.12)
+//
+// Caps are managed in `anp_subsidy_caps` (PK `(vigente_desde, tipo_agente)`).
+// The legacy `anp_subsidy_history` table was DROPPED by the 2026-05-27 reform.
+// See `supabase/migrations/20260527200000_subsidy_reform.sql`.
 
 export type SubsidyTrackerRow = {
   date: string;                                        // YYYY-MM-DD
-  ipp: number | null;                                  // BBA import parity, Diesel
-  anp_reference_importer: number | null;               // daily avg across 5 regions (importer agent)
-  anp_commercialization_importer: number | null;       // anp_reference_importer - active_subsidy
-  anp_reference_producer: number | null;               // daily avg across 5 regions (producer agent)
-  anp_commercialization_producer: number | null;       // anp_reference_producer - active_subsidy
-  petrobras: number | null;                            // Petrobras price, Diesel
-  regions_importer: Record<string, number> | null;     // { NORTE, NORDESTE, ... } for importer
-  regions_producer: Record<string, number> | null;     // { NORTE, NORDESTE, ... } for producer
+  ipp: number | null;                                  // BBA import parity, Diesel (raw)
+  ipp_adjusted: number | null;                         // ipp − reimbursement_importador (server-side)
+  petrobras: number | null;                            // Petrobras price, Diesel (raw)
+  petrobras_adjusted: number | null;                   // petrobras + reimbursement_produtor (server-side)
+  anp_reference_importador: number | null;             // daily avg across 5 regions (importador)
+  anp_reference_produtor: number | null;               // daily avg across 5 regions (produtor)
+  anp_commercialization_importador: number | null;     // period-fixed avg (importador) — scraped from HTML
+  anp_commercialization_produtor: number | null;       // period-fixed avg (produtor)   — scraped from HTML
+  regions_importador: Record<string, number> | null;   // { NORTE, NORDESTE, ... } reference (importador)
+  regions_produtor: Record<string, number> | null;     // { NORTE, NORDESTE, ... } reference (produtor)
 };
 
 export async function rpcGetSubsidyTrackerDiesel(

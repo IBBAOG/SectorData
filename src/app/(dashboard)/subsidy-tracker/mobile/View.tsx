@@ -51,10 +51,11 @@ import { useModuleVisibilityGuard } from "@/hooks/useModuleVisibilityGuard";
 import {
   useSubsidyTrackerData,
   fmtDateLabel,
-  formatRegions,
-  SERIES_IMPORTER,
+  SERIES_IMPORTADOR,
+  SERIES_PRODUTOR,
   REGION_ORDER,
   type SeriesField,
+  type SeriesDef,
   type SubsidyTrackerRow,
   type SubsidyTrackerWowRow,
 } from "../useSubsidyTrackerData";
@@ -114,6 +115,29 @@ function ColorDot({ color }: { color: string }): React.ReactElement {
         height: 10,
         borderRadius: "50%",
         background: color,
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
+// Small line glyph for the mobile legend so dashed-vs-solid distinction is
+// readable next to the *_adjusted traces (which share their parent's color).
+function ColorLine({
+  color,
+  dashed,
+}: {
+  color: string;
+  dashed?: boolean;
+}): React.ReactElement {
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        display: "inline-block",
+        width: 18,
+        height: 0,
+        borderTop: `2px ${dashed ? "dashed" : "solid"} ${color}`,
         flexShrink: 0,
       }}
     />
@@ -246,7 +270,7 @@ function RegionalBreakdownCard({
 }: {
   rows: SubsidyTrackerRow[];
   xMax: string | null;
-  regionsField: "regions_importer" | "regions_producer";
+  regionsField: "regions_importador" | "regions_produtor";
   label: string;
 }): React.ReactElement | null {
   const latestWithRegions = useMemo(() => {
@@ -312,9 +336,9 @@ interface AgentBlockProps {
   activeSubsidy: number | null;
   rows: SubsidyTrackerRow[];
   xMax: string | null;
-  regionsField: "regions_importer" | "regions_producer";
+  regionsField: "regions_importador" | "regions_produtor";
   traceFilter: (field: SeriesField) => boolean;
-  seriesColorKey: typeof SERIES_IMPORTER;
+  seriesColorKey: SeriesDef[];
 }
 
 function AgentBlock({
@@ -378,7 +402,11 @@ function AgentBlock({
                 minHeight: 22,
               }}
             >
-              <ColorDot color={s.color} />
+              {s.dash === "dash" ? (
+                <ColorLine color={s.color} dashed />
+              ) : (
+                <ColorDot color={s.color} />
+              )}
               {s.label}
             </div>
           ))}
@@ -555,16 +583,38 @@ function AgentBlock({
 }
 
 // ─── Mirror map: ANP series keys that must move in lockstep ──────────────────
-// When a toggle fires on an importer key, the producer key must follow (and
-// vice-versa) so that both agent charts stay in sync.  IPP and Petrobras are
-// scalar (single key) and are NOT in this map.
+// When a toggle fires on an importador key, the produtor key must follow
+// (and vice-versa) so that both agent charts stay in sync.  IPP / Petrobras
+// (raw + adjusted) are agent-exclusive and NOT in this map.
 
 const MIRROR_MAP: Partial<Record<SeriesField, SeriesField>> = {
-  anp_reference_importer:        "anp_reference_producer",
-  anp_reference_producer:        "anp_reference_importer",
-  anp_commercialization_importer: "anp_commercialization_producer",
-  anp_commercialization_producer: "anp_commercialization_importer",
+  anp_reference_importador:         "anp_reference_produtor",
+  anp_reference_produtor:           "anp_reference_importador",
+  anp_commercialization_importador: "anp_commercialization_produtor",
+  anp_commercialization_produtor:   "anp_commercialization_importador",
 };
+
+// ─── Filter-drawer toggle list ────────────────────────────────────────────────
+// 6 unique concepts the user can toggle. ANP Reference / Commercialization
+// each get ONE toggle (keyed on the importador field) — MIRROR_MAP propagates
+// to the produtor key on click. IPP / IPP_adjusted (importador-only) and
+// Petrobras / Petrobras_adjusted (produtor-only) are agent-exclusive.
+
+interface FilterToggle {
+  field: SeriesField;
+  label: string;
+  color: string;
+  dash?: "solid" | "dash";
+}
+
+const FILTER_TOGGLES: FilterToggle[] = [
+  { field: "ipp",                              label: "IPP",                   color: "#111111" },
+  { field: "ipp_adjusted",                     label: "IPP (adjusted)",        color: "#111111", dash: "dash" },
+  { field: "petrobras",                        label: "Petrobras",             color: "#0F766E" },
+  { field: "petrobras_adjusted",               label: "Petrobras (adjusted)",  color: "#0F766E", dash: "dash" },
+  { field: "anp_reference_importador",         label: "ANP Reference",         color: "#F59E0B" },
+  { field: "anp_commercialization_importador", label: "ANP Commercialization", color: "#B91C1C" },
+];
 
 // ─── Mobile View ──────────────────────────────────────────────────────────────
 
@@ -622,27 +672,13 @@ export default function MobileView(): React.ReactElement {
     [filters.traces, setFilters],
   );
 
-  // Trace filter helper: maps importer-side visibility to both agent fields.
-  // IPP and Petrobras are shared; ANP Reference/Commercialization are mapped
-  // by toggling the importer key, which mirrors to the producer key.
+  // Trace filter helper: any visibility check goes through filters.traces.
+  // ANP Reference / Commercialization are mirrored across agents by toggleTrace
+  // (writes both importador + produtor keys at once via MIRROR_MAP), so a
+  // simple direct lookup is enough here.
   const traceVisible = useCallback(
     (field: SeriesField): boolean => {
-      // Shared fields
-      if (field === "ipp" || field === "petrobras") {
-        return filters.traces[field] !== false;
-      }
-      // Importer fields
-      if (field === "anp_reference_importer" || field === "anp_commercialization_importer") {
-        return filters.traces[field] !== false;
-      }
-      // Producer fields mirror the corresponding importer toggle
-      if (field === "anp_reference_producer") {
-        return filters.traces["anp_reference_importer"] !== false;
-      }
-      if (field === "anp_commercialization_producer") {
-        return filters.traces["anp_commercialization_importer"] !== false;
-      }
-      return true;
+      return filters.traces[field] !== false;
     },
     [filters.traces],
   );
@@ -746,32 +782,32 @@ export default function MobileView(): React.ReactElement {
         </div>
       ) : (
         <>
-          {/* ── Agent block 1: Importer ───────────────────────────────────── */}
-          <AgentDivider label="Importer Reference Prices" />
+          {/* ── Agent block 1: Importador ─────────────────────────────────── */}
+          <AgentDivider label="Importador Reference Prices" />
           <AgentBlock
-            label="Importer"
+            label="Importador"
             chartData={chartImporter}
             currentValues={currentValuesImporter}
             activeSubsidy={activeSubsidyImporter}
             rows={rows}
             xMax={xMax}
-            regionsField="regions_importer"
+            regionsField="regions_importador"
             traceFilter={traceVisible}
-            seriesColorKey={SERIES_IMPORTER}
+            seriesColorKey={SERIES_IMPORTADOR}
           />
 
-          {/* ── Agent block 2: Producer ───────────────────────────────────── */}
-          <AgentDivider label="Producer Reference Prices" />
+          {/* ── Agent block 2: Produtor ───────────────────────────────────── */}
+          <AgentDivider label="Produtor Reference Prices" />
           <AgentBlock
-            label="Producer"
+            label="Produtor"
             chartData={chartProducer}
             currentValues={currentValuesProducer}
             activeSubsidy={activeSubsidyProducer}
             rows={rows}
             xMax={xMax}
-            regionsField="regions_producer"
+            regionsField="regions_produtor"
             traceFilter={traceVisible}
-            seriesColorKey={SERIES_IMPORTER}
+            seriesColorKey={SERIES_PRODUTOR}
           />
         </>
       )}
@@ -840,9 +876,9 @@ export default function MobileView(): React.ReactElement {
               fontFamily: "Arial",
             }}
           >
-            Series (governs both agent charts)
+            Series (ANP toggles govern both agent charts)
           </div>
-          {SERIES_IMPORTER.map((s) => {
+          {FILTER_TOGGLES.map((s) => {
             const on = filters.traces[s.field] !== false;
             return (
               <div
@@ -862,7 +898,11 @@ export default function MobileView(): React.ReactElement {
                     gap: 10,
                   }}
                 >
-                  <ColorDot color={s.color} />
+                  {s.dash === "dash" ? (
+                    <ColorLine color={s.color} dashed />
+                  ) : (
+                    <ColorDot color={s.color} />
+                  )}
                   <span
                     style={{
                       fontSize: 14,
