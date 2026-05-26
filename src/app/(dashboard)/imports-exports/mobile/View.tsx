@@ -24,6 +24,19 @@ import dynamic from "next/dynamic";
 import type { Layout, PlotData } from "plotly.js";
 import { useMemo, useState } from "react";
 
+// ─── Unit conversion constants (mirrors desktop/View.tsx) ─────────────────────
+
+const PRODUCT_DENSITY_KG_M3: Record<string, number> = {
+  Diesel: 832,
+  Gasoline: 745,
+  "Crude Oil": 870,
+};
+
+const M3_PER_BBL = 6.2898;
+const GAL_PER_M3 = 264.172;
+
+type ImportsUPMetric = "usd_per_ton" | "cents_per_gal";
+
 import {
   MobileTopBar,
   FilterDrawer,
@@ -153,8 +166,16 @@ function buildPriceTraces(data: PricePoint[], unit: string): PlotData[] {
 }
 
 // ─── Unit price by country (multi-line, NOT stacked) — mobile ─────────────────
+//
+// `convertFn`: applied to each usd_per_m3 value before plotting.
+// `unitLabel`: shown in hovertemplate (e.g. "USD/ton", "¢/gal", "USD/bbl").
 
-function buildUnitPriceTraces(rows: UnitPriceRow[], entities: string[]): PlotData[] {
+function buildUnitPriceTraces(
+  rows: UnitPriceRow[],
+  entities: string[],
+  unitLabel: string,
+  convertFn: (v: number) => number = (v) => v,
+): PlotData[] {
   if (!rows.length) return [];
 
   const byEntity = new Map<string, Map<string, number | null>>();
@@ -171,7 +192,10 @@ function buildUnitPriceTraces(rows: UnitPriceRow[], entities: string[]): PlotDat
 
   return entities.map((entity, idx) => {
     const color = PALETTE[idx % PALETTE.length] ?? OTHERS_COLOR;
-    const ys = xs.map((x) => byEntity.get(entity)?.get(x) ?? null);
+    const ys = xs.map((x) => {
+      const raw = byEntity.get(entity)?.get(x) ?? null;
+      return raw != null ? convertFn(raw) : null;
+    });
     return {
       type: "scatter" as const,
       mode: "lines" as const,
@@ -180,7 +204,7 @@ function buildUnitPriceTraces(rows: UnitPriceRow[], entities: string[]): PlotDat
       y: ys,
       connectgaps: true,
       line: { color, width: 1.5 },
-      hovertemplate: `%{x}<br>${entity}: %{y:,.1f} USD/m³<extra></extra>`,
+      hovertemplate: `%{x}<br>${entity}: %{y:,.1f} ${unitLabel}<extra></extra>`,
     } as unknown as PlotData;
   });
 }
@@ -371,6 +395,9 @@ export default function MobileView(): React.ReactElement {
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
 
+  // Panel D — imports unit price metric toggle (local state, not global filter)
+  const [importsUPMetric, setImportsUPMetric] = useState<ImportsUPMetric>("usd_per_ton");
+
   const anoMin = filtros?.ano_min ?? 2010;
   const anoMax = filtros?.ano_max ?? new Date().getFullYear();
 
@@ -463,12 +490,23 @@ export default function MobileView(): React.ReactElement {
     return Array.from(totals.keys()).sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0));
   }, [importsUnitPriceData]);
 
+  // Imports unit price — conversion based on local metric toggle
+  const importsUPConvertFn = useMemo(() => {
+    const density = PRODUCT_DENSITY_KG_M3[filters.unifiedProduct] ?? 840;
+    if (importsUPMetric === "usd_per_ton") {
+      return (v: number) => v / (density / 1000);
+    }
+    return (v: number) => (v / GAL_PER_M3) * 100;
+  }, [filters.unifiedProduct, importsUPMetric]);
+
+  const importsUPUnitLabel = importsUPMetric === "usd_per_ton" ? "USD/ton" : "¢/gal";
+
   const importsUPTraces = useMemo(
-    () => buildUnitPriceTraces(importsUnitPriceData, importsUPEntities),
-    [importsUnitPriceData, importsUPEntities],
+    () => buildUnitPriceTraces(importsUnitPriceData, importsUPEntities, importsUPUnitLabel, importsUPConvertFn),
+    [importsUnitPriceData, importsUPEntities, importsUPUnitLabel, importsUPConvertFn],
   );
 
-  const unitPriceMobileLayout: Partial<Layout> = useMemo(
+  const importsUPMobileLayout: Partial<Layout> = useMemo(
     () => ({
       ...COMMON_LAYOUT,
       hovermode: "x unified" as const,
@@ -481,7 +519,7 @@ export default function MobileView(): React.ReactElement {
       },
       yaxis: {
         ...AXIS_LINE,
-        title: { text: "USD / m³", font: { family: "Arial", size: 10 } },
+        title: { text: importsUPUnitLabel, font: { family: "Arial", size: 10 } },
         tickformat: ",.1f",
       },
       legend: {
@@ -491,9 +529,10 @@ export default function MobileView(): React.ReactElement {
         font: { family: "Arial", size: 9 },
       },
     }),
-    [],
+    [importsUPUnitLabel],
   );
 
+  // Exports unit price — Crude Oil only, USD/bbl
   const exportsUPEntities = useMemo(() => {
     const totals = new Map<string, number>();
     for (const r of exportsUnitPriceData) {
@@ -503,8 +542,42 @@ export default function MobileView(): React.ReactElement {
   }, [exportsUnitPriceData]);
 
   const exportsUPTraces = useMemo(
-    () => buildUnitPriceTraces(exportsUnitPriceData, exportsUPEntities),
-    [exportsUnitPriceData, exportsUPEntities],
+    () =>
+      filters.unifiedProduct === "Crude Oil"
+        ? buildUnitPriceTraces(
+            exportsUnitPriceData,
+            exportsUPEntities,
+            "USD/bbl",
+            (v) => v / M3_PER_BBL,
+          )
+        : [],
+    [exportsUnitPriceData, exportsUPEntities, filters.unifiedProduct],
+  );
+
+  const exportsUPMobileLayout: Partial<Layout> = useMemo(
+    () => ({
+      ...COMMON_LAYOUT,
+      hovermode: "x unified" as const,
+      height: 240,
+      margin: { t: 8, b: 52, l: 56, r: 8 },
+      xaxis: {
+        ...AXIS_LINE,
+        tickangle: -60,
+        tickfont: { family: "Arial", size: 8 },
+      },
+      yaxis: {
+        ...AXIS_LINE,
+        title: { text: "USD / bbl", font: { family: "Arial", size: 10 } },
+        tickformat: ",.2f",
+      },
+      legend: {
+        orientation: "h" as const,
+        x: 0,
+        y: -0.3,
+        font: { family: "Arial", size: 9 },
+      },
+    }),
+    [],
   );
 
   // Guard — after all hooks
@@ -928,14 +1001,46 @@ export default function MobileView(): React.ReactElement {
 
           {/* Panel D — Import Unit Price by Origin Country */}
           <SectionHeading
-            title="Import Unit Price by Country (USD/m³)"
+            title={`Import Unit Price by Country (${importsUPUnitLabel})`}
             loading={importsUnitPriceLoading}
           />
+          {/* Metric toggle: USD/ton | ¢/gal */}
+          <div
+            style={{
+              padding: "0 16px 8px",
+              display: "flex",
+              gap: 8,
+            }}
+          >
+            {(["usd_per_ton", "cents_per_gal"] as ImportsUPMetric[]).map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => setImportsUPMetric(opt)}
+                style={{
+                  padding: "4px 14px",
+                  borderRadius: 999,
+                  border: "1px solid #d0d0d0",
+                  background: importsUPMetric === opt ? "#1a1a1a" : "#fff",
+                  color: importsUPMetric === opt ? "#fff" : "#333",
+                  fontFamily: "Arial",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  minHeight: 32,
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                }}
+              >
+                {opt === "usd_per_ton" ? "USD / ton" : "¢ / gal"}
+              </button>
+            ))}
+          </div>
           <div style={{ padding: "0 16px 8px" }}>
             {importsUPTraces.length > 0 ? (
               <Plot
                 data={importsUPTraces}
-                layout={unitPriceMobileLayout}
+                layout={importsUPMobileLayout}
                 config={{ responsive: true, displayModeBar: false }}
                 style={{ width: "100%" }}
               />
@@ -1018,31 +1123,36 @@ export default function MobileView(): React.ReactElement {
 
           <div style={{ height: 16 }} />
 
-          {/* Export Unit Price by Destination Country */}
-          <SectionHeading
-            title="Export Unit Price by Country (USD/m³)"
-            loading={exportsUnitPriceLoading}
-          />
-          <div style={{ padding: "0 16px 8px" }}>
-            {exportsUPTraces.length > 0 ? (
-              <Plot
-                data={exportsUPTraces}
-                layout={unitPriceMobileLayout}
-                config={{ responsive: true, displayModeBar: false }}
-                style={{ width: "100%" }}
+          {/* Export Unit Price by Destination Country — Crude Oil only */}
+          {filters.unifiedProduct === "Crude Oil" && (
+            <>
+              <div style={{ height: 16 }} />
+              <SectionHeading
+                title="Export Unit Price by Country (USD/bbl)"
+                loading={exportsUnitPriceLoading}
               />
-            ) : !exportsUnitPriceLoading ? (
-              <Plot
-                data={emptyPlot().data}
-                layout={{ ...emptyPlot().layout, height: 240 }}
-                config={{ responsive: true, displayModeBar: false }}
-                style={{ width: "100%" }}
-              />
-            ) : null}
-          </div>
-          <div style={{ padding: "0 16px 12px", fontSize: 10, color: "#aaa", fontStyle: "italic" }}>
-            Source: MDIC Comex — top 8 export destinations by volume.
-          </div>
+              <div style={{ padding: "0 16px 8px" }}>
+                {exportsUPTraces.length > 0 ? (
+                  <Plot
+                    data={exportsUPTraces}
+                    layout={exportsUPMobileLayout}
+                    config={{ responsive: true, displayModeBar: false }}
+                    style={{ width: "100%" }}
+                  />
+                ) : !exportsUnitPriceLoading ? (
+                  <Plot
+                    data={emptyPlot().data}
+                    layout={{ ...emptyPlot().layout, height: 240 }}
+                    config={{ responsive: true, displayModeBar: false }}
+                    style={{ width: "100%" }}
+                  />
+                ) : null}
+              </div>
+              <div style={{ padding: "0 16px 12px", fontSize: 10, color: "#aaa", fontStyle: "italic" }}>
+                Source: MDIC Comex — FOB USD/bbl per destination (1 m³ = 6.2898 bbl). Top 8 destinations by export volume. Crude Oil only.
+              </div>
+            </>
+          )}
         </div>
       )}
 
