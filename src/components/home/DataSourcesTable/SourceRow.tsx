@@ -28,7 +28,6 @@ interface SourceRowProps {
   freshnessLoading: boolean;
   isExpanded: boolean;
   onToggle: () => void;
-  isLoggedIn: boolean;
 }
 
 export default function SourceRow({
@@ -37,7 +36,6 @@ export default function SourceRow({
   freshnessLoading,
   isExpanded,
   onToggle,
-  isLoggedIn,
 }: SourceRowProps): React.ReactElement {
   const catVar = CAT_VAR[src.category];
 
@@ -101,6 +99,7 @@ export default function SourceRow({
           <LastUpdateCell
             lastUpdate={info?.lastUpdate ?? null}
             loading={freshnessLoading && !info}
+            isRealtime={src.isRealtime}
           />
         </span>
 
@@ -156,35 +155,6 @@ export default function SourceRow({
             </span>
           )}
 
-          {/* Download — only if has a table */}
-          {src.supabaseTable && (
-            <span
-              className={
-                isLoggedIn ? styles.iconBtn : styles.iconBtnDisabled
-              }
-              title={isLoggedIn ? "Download raw data" : "Sign in to download"}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (isLoggedIn) onToggle(); // expand to reach the download button
-              }}
-            >
-              <svg
-                width="13"
-                height="13"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-            </span>
-          )}
 
           {/* Expand chevron */}
           <span
@@ -210,7 +180,7 @@ export default function SourceRow({
 
       {/* ── Expanded panel ─────────────────────────────────────────────────── */}
       {isExpanded && (
-        <ExpandedRow src={src} info={info} isLoggedIn={isLoggedIn} />
+        <ExpandedRow src={src} info={info} />
       )}
     </div>
   );

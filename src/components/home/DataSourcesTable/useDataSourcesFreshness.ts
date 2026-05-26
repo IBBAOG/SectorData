@@ -60,8 +60,33 @@ export function useDataSourcesFreshness(): UseDataSourcesFreshnessResult {
 
   useEffect(() => {
     fetch();
-    const interval = setInterval(fetch, REFRESH_INTERVAL_MS);
-    return () => clearInterval(interval);
+
+    const interval = setInterval(() => {
+      // Skip the RPC call when the tab is hidden to avoid wasting bandwidth.
+      // The fetch fires immediately when the tab becomes visible again (below).
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return;
+      }
+      fetch();
+    }, REFRESH_INTERVAL_MS);
+
+    // Re-fetch immediately when the user returns to this tab, so the data is
+    // never stale by more than one full interval after a period of inactivity.
+    function handleVisibilityChange() {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        fetch();
+      }
+    }
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
+
+    return () => {
+      clearInterval(interval);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+      }
+    };
   }, [fetch]);
 
   return { freshness, loading, lastFetchedAt };

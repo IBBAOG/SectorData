@@ -12,7 +12,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import NavBar from "../../../../components/NavBar";
 import { useHomeData } from "../useHomeData";
-import { useUserProfile } from "../../../../context/UserProfileContext";
 import DataSourcesTable from "../../../../components/home/DataSourcesTable";
 
 const ORANGE = "#E85D20";
@@ -31,8 +30,6 @@ export default function DesktopView({
   // visibleCards already includes all visibility + search filtering.
   // Desktop ignores search (no search bar on desktop home) so search="" default is fine.
   const { visibleCards } = useHomeData();
-  const { role } = useUserProfile();
-  const isLoggedIn = role !== "Anon";
 
   return (
     <main
@@ -222,7 +219,7 @@ export default function DesktopView({
 
         {/* ── Right column: Data Sources live table ───────────────────── */}
         <section style={{ paddingLeft: 16, paddingTop: 2 }}>
-          <DataSourcesTable isLoggedIn={isLoggedIn} />
+          <DataSourcesTable />
         </section>
       </div>
     </main>

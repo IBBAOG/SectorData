@@ -6,6 +6,9 @@
 interface LastUpdateCellProps {
   lastUpdate: Date | null;
   loading: boolean;
+  /** When true and lastUpdate is null, renders a green "live" label.
+   *  When false and lastUpdate is null, renders "—" (no data yet). */
+  isRealtime: boolean;
 }
 
 function formatRelative(date: Date): string {
@@ -35,6 +38,7 @@ function formatRelative(date: Date): string {
 export default function LastUpdateCell({
   lastUpdate,
   loading,
+  isRealtime,
 }: LastUpdateCellProps): React.ReactElement {
   if (loading) {
     return (
@@ -51,16 +55,32 @@ export default function LastUpdateCell({
   }
 
   if (!lastUpdate) {
+    // Only show "live" for sources explicitly marked as real-time.
+    // Empty tables or RPC failures should not be mislabeled.
+    if (isRealtime) {
+      return (
+        <span
+          style={{
+            fontSize: 12,
+            color: "rgba(0,0,0,0.35)",
+            fontVariantNumeric: "tabular-nums",
+          }}
+          title="Real-time — no stored timestamp"
+        >
+          live
+        </span>
+      );
+    }
     return (
       <span
         style={{
           fontSize: 12,
-          color: "rgba(0,0,0,0.35)",
+          color: "rgba(0,0,0,0.25)",
           fontVariantNumeric: "tabular-nums",
         }}
-        title="Real-time — no stored timestamp"
+        title="No data yet"
       >
-        live
+        —
       </span>
     );
   }

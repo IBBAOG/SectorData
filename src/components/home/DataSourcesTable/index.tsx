@@ -24,13 +24,7 @@ const CATEGORY_ORDER: DataSourceCategory[] = [
   "news",
 ];
 
-interface DataSourcesTableProps {
-  isLoggedIn: boolean;
-}
-
-export default function DataSourcesTable({
-  isLoggedIn,
-}: DataSourcesTableProps): React.ReactElement {
+export default function DataSourcesTable(): React.ReactElement {
   const { freshness, loading } = useDataSourcesFreshness();
 
   // Track which row is expanded (only one at a time)
@@ -47,9 +41,9 @@ export default function DataSourcesTable({
   }));
 
   return (
-    <div className={styles.tableRoot} role="table" aria-label="Data Sources">
+    <div className={styles.tableRoot} aria-label="Data Sources">
       {/* ── Table header ──────────────────────────────────────────────────── */}
-      <div className={styles.tableHeader} role="row">
+      <div className={styles.tableHeader}>
         DATA SOURCES{" "}
         <span
           aria-hidden="true"
@@ -65,7 +59,7 @@ export default function DataSourcesTable({
       </div>
 
       {/* ── Column headers ─────────────────────────────────────────────────── */}
-      <div className={styles.colHeaders} role="row" aria-hidden="true">
+      <div className={styles.colHeaders} aria-hidden="true">
         <span />
         <span>Name</span>
         <span>Source</span>
@@ -85,7 +79,7 @@ export default function DataSourcesTable({
               freshnessLoading={loading}
               isExpanded={expandedKey === src.key}
               onToggle={() => handleToggle(src.key)}
-              isLoggedIn={isLoggedIn}
+
             />
           ))}
         </section>
