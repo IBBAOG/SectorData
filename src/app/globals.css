@@ -2576,7 +2576,7 @@ a {
   --ds-cat-anp-distribution:      #ff5000;   /* brand orange — anp_glp + anp_prices + subsidy */
   --ds-cat-imports:               #a855f7;   /* purple     — imports/exports + mdic_comex */
   --ds-cat-vessels:               #0d9488;   /* teal       — navios_diesel + AIS + vessel_positions */
-  --ds-cat-manual:                #10b981;   /* green      — d_g_margins + price_bands (manual Excel) */
+  --ds-cat-proprietary:           #10b981;   /* green      — d_g_margins + price_bands (proprietary data) */
   --ds-cat-news:                  #facc15;   /* yellow     — news_articles + news-hunter scanner */
 
   /* ── Category palette — soft tints (background / badge fill) ─────────── */
@@ -2584,7 +2584,7 @@ a {
   --ds-cat-anp-distribution-soft: rgba(255, 80, 0, 0.10);
   --ds-cat-imports-soft:          rgba(168, 85, 247, 0.10);
   --ds-cat-vessels-soft:          rgba(13, 148, 136, 0.10);
-  --ds-cat-manual-soft:           rgba(16, 185, 129, 0.10);
+  --ds-cat-proprietary-soft:           rgba(16, 185, 129, 0.10);
   --ds-cat-news-soft:             rgba(250, 204, 21, 0.14);   /* yellow needs more alpha to read */
 
   /* ── Category palette — hover (slightly stronger) ─────────────────────── */
@@ -2592,7 +2592,7 @@ a {
   --ds-cat-anp-distribution-hover: rgba(255, 80, 0, 0.18);
   --ds-cat-imports-hover:         rgba(168, 85, 247, 0.18);
   --ds-cat-vessels-hover:         rgba(13, 148, 136, 0.18);
-  --ds-cat-manual-hover:          rgba(16, 185, 129, 0.18);
+  --ds-cat-proprietary-hover:          rgba(16, 185, 129, 0.18);
   --ds-cat-news-hover:            rgba(250, 204, 21, 0.22);
 
   /* ── Category palette — text/foreground (WCAG AA on light surface) ───── */
@@ -2600,7 +2600,7 @@ a {
   --ds-cat-anp-distribution-text: #cc3d00;   /* brand-dark — 5.4:1 on #fff (matches existing nav-module hover) */
   --ds-cat-imports-text:          #7c3aed;   /* purple-600 — 5.0:1 on #fff */
   --ds-cat-vessels-text:          #0f766e;   /* teal-700  — 5.5:1 on #fff (darker than swatch for safety) */
-  --ds-cat-manual-text:           #047857;   /* emerald-700 — 5.4:1 on #fff */
+  --ds-cat-proprietary-text:           #047857;   /* emerald-700 — 5.4:1 on #fff */
   --ds-cat-news-text:             #a16207;   /* yellow-700 — 4.6:1 on #fff */
 
   /* ── Status tokens (derived from schedule × last_update) ──────────────── */
@@ -2644,14 +2644,14 @@ a {
   --ds-cat-anp-distribution-soft: rgba(255, 80, 0, 0.16);
   --ds-cat-imports-soft:          rgba(168, 85, 247, 0.14);
   --ds-cat-vessels-soft:          rgba(13, 148, 136, 0.16);
-  --ds-cat-manual-soft:           rgba(16, 185, 129, 0.14);
+  --ds-cat-proprietary-soft:           rgba(16, 185, 129, 0.14);
   --ds-cat-news-soft:             rgba(250, 204, 21, 0.18);
 
   --ds-cat-anp-production-hover:  rgba(0, 212, 255, 0.24);
   --ds-cat-anp-distribution-hover: rgba(255, 80, 0, 0.26);
   --ds-cat-imports-hover:         rgba(168, 85, 247, 0.24);
   --ds-cat-vessels-hover:         rgba(13, 148, 136, 0.26);
-  --ds-cat-manual-hover:          rgba(16, 185, 129, 0.24);
+  --ds-cat-proprietary-hover:          rgba(16, 185, 129, 0.24);
   --ds-cat-news-hover:            rgba(250, 204, 21, 0.30);
 
   /* Text — on dark, vivid swatches mostly pass AA, but we lift saturation
@@ -2660,7 +2660,7 @@ a {
   --ds-cat-anp-distribution-text: #ff7a3a;   /* lifted brand — 6.0:1 on #070d1c */
   --ds-cat-imports-text:          #c084fc;   /* purple-400  — 7.4:1 on #070d1c */
   --ds-cat-vessels-text:          #2dd4bf;   /* teal-400    — 9.8:1 on #070d1c */
-  --ds-cat-manual-text:           #34d399;   /* emerald-400 — 9.6:1 on #070d1c */
+  --ds-cat-proprietary-text:           #34d399;   /* emerald-400 — 9.6:1 on #070d1c */
   --ds-cat-news-text:             #fde047;   /* yellow-300  — 14.2:1 on #070d1c */
 
   /* Status — same vivid hue, soft tints with more alpha, brighter text */
