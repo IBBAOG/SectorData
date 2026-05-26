@@ -373,35 +373,18 @@ export function useImportsExportsData(): UseImportsExportsData {
     filters.priceMetric,
   ]);
 
-  // ── Derived: YoY anchor = period.end ────────────────────────────────────────
-  // The YoY RPCs use the explicit (yoyEndAno, *EndMes) the UI provides — we
-  // still derive the last "real" month from data so that incomplete-year edges
-  // don't bias the calculation. Falls back to period.end.mes when no rows.
+  // ── Derived: YoY anchor = period.end (single-month semantics) ───────────────
+  // Since migration 20260527000000_imports_exports_yoy_single_month.sql, the
+  // YoY RPCs compare a single anchor month vs the SAME month one year prior
+  // (previously: trailing 12m vs prior 12m). The anchor is always period.end
+  // — never data-driven — so that the user's explicit choice is honoured even
+  // when the trailing month has incomplete/zero data (renders as "n/a").
+  // The legacy var names (yoyEndAno, yoyEndMes, yoyImportersEndMes, yoyExportsEndMes)
+  // are preserved as part of the hook contract; they all collapse to period.end.
   const yoyEndAno = periodEndAno;
-
-  const yoyEndMes = useMemo(() => {
-    const rowsForYear = paisesData.filter(
-      (r) => r.ano === periodEndAno && r.total_kg > 0,
-    );
-    if (!rowsForYear.length) return periodEndMes;
-    return Math.max(...rowsForYear.map((r) => r.mes));
-  }, [paisesData, periodEndAno, periodEndMes]);
-
-  const yoyImportersEndMes = useMemo(() => {
-    const rowsForYear = importersData.filter(
-      (r) => r.ano === periodEndAno && r.total_mil_m3 > 0,
-    );
-    if (!rowsForYear.length) return yoyEndMes;
-    return Math.max(...rowsForYear.map((r) => r.mes));
-  }, [importersData, periodEndAno, yoyEndMes]);
-
-  const yoyExportsEndMes = useMemo(() => {
-    const rowsForYear = exportsPaisesData.filter(
-      (r) => r.ano === periodEndAno && r.value > 0,
-    );
-    if (!rowsForYear.length) return periodEndMes;
-    return Math.max(...rowsForYear.map((r) => r.mes));
-  }, [exportsPaisesData, periodEndAno, periodEndMes]);
+  const yoyEndMes = periodEndMes;
+  const yoyImportersEndMes = periodEndMes;
+  const yoyExportsEndMes = periodEndMes;
 
   // ── 2. Imports tab — Panel A (paises stacked) ───────────────────────────────
   const importsAFetchIdRef = useRef(0);
