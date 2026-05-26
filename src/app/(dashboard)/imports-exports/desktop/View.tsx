@@ -24,6 +24,23 @@ import dynamic from "next/dynamic";
 import type { Layout, PlotData } from "plotly.js";
 import { useMemo, useState } from "react";
 
+// ─── Unit conversion constants ─────────────────────────────────────────────────
+
+// Density by unified product (kg/m³). Used for client-side unit conversion of
+// the imports unit price chart (Panel D). RPC returns USD/m³; we convert here.
+// Values: ANP standard (same source as ncm_densidade_kg_m3 table).
+const PRODUCT_DENSITY_KG_M3: Record<string, number> = {
+  Diesel: 832,
+  Gasoline: 745,
+  "Crude Oil": 870,
+};
+
+// Crude Oil exports: 1 m³ = 6.2898 bbl (international standard for petroleum).
+const M3_PER_BBL = 6.2898;
+
+// Gallons per m³ (US liquid gallon).
+const GAL_PER_M3 = 264.172;
+
 import NavBar from "../../../../components/NavBar";
 import BrandLogo from "../../../../components/BrandLogo";
 import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
@@ -257,8 +274,17 @@ function buildPriceTraces(
 // skips those months in the unified hover (connectgaps keeps the line intact).
 // Countries are coloured from PALETTE (same rotation as stacked panels).
 // "Gulf of Mexico ≈ Estados Unidos (proxy)" — see sub-PRD.
+//
+// `convertFn`: applied to each usd_per_m3 value before plotting.
+//   null value → stays null (gap). non-null → converted.
+// `unitLabel`: string used in hovertemplate (e.g. "USD/ton", "¢/gal", "USD/bbl").
 
-function buildUnitPriceTraces(rows: UnitPriceRow[], entities: string[]): PlotData[] {
+function buildUnitPriceTraces(
+  rows: UnitPriceRow[],
+  entities: string[],
+  unitLabel: string,
+  convertFn: (v: number) => number = (v) => v,
+): PlotData[] {
   if (!rows.length) return [];
 
   // Build per-entity time series
@@ -276,7 +302,10 @@ function buildUnitPriceTraces(rows: UnitPriceRow[], entities: string[]): PlotDat
 
   return entities.map((entity, idx) => {
     const color = PALETTE[idx % PALETTE.length] ?? OTHERS_COLOR;
-    const ys = xs.map((x) => byEntity.get(entity)?.get(x) ?? null);
+    const ys = xs.map((x) => {
+      const raw = byEntity.get(entity)?.get(x) ?? null;
+      return raw != null ? convertFn(raw) : null;
+    });
     return {
       type: "scatter" as const,
       mode: "lines+markers" as const,
@@ -286,10 +315,14 @@ function buildUnitPriceTraces(rows: UnitPriceRow[], entities: string[]): PlotDat
       connectgaps: true,
       line: { color, width: 2 },
       marker: { size: 3, color },
-      hovertemplate: `%{x}<br>${entity}: %{y:,.1f} USD/m³<extra></extra>`,
+      hovertemplate: `%{x}<br>${entity}: %{y:,.1f} ${unitLabel}<extra></extra>`,
     } as unknown as PlotData;
   });
 }
+
+// ─── Imports unit price metric type ───────────────────────────────────────────
+
+type ImportsUPMetric = "usd_per_ton" | "cents_per_gal";
 
 // ─── Importer Panel empty state ────────────────────────────────────────────────
 
@@ -440,6 +473,9 @@ export default function DesktopView(): React.ReactElement {
   const [excelBusy, setExcelBusy] = useState(false);
   const [csvBusy, setCsvBusy] = useState(false);
 
+  // Panel D — imports unit price metric toggle (local state, not global filter)
+  const [importsUPMetric, setImportsUPMetric] = useState<ImportsUPMetric>("usd_per_ton");
+
   // ── Derived: year array for PeriodSlider ────────────────────────────────────
   const anoMin = filtros?.ano_min ?? 2010;
   const anoMax = filtros?.ano_max ?? new Date().getFullYear();
@@ -544,9 +580,22 @@ export default function DesktopView(): React.ReactElement {
     return Array.from(totals.keys()).sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0));
   }, [importsUnitPriceData]);
 
+  // Imports unit price — conversion based on local metric toggle
+  const importsUPConvertFn = useMemo(() => {
+    const density = PRODUCT_DENSITY_KG_M3[filters.unifiedProduct] ?? 840;
+    if (importsUPMetric === "usd_per_ton") {
+      // USD/m³ → USD/ton: divide by (density kg/m³ / 1000 ton/m³)
+      return (v: number) => v / (density / 1000);
+    }
+    // cents_per_gal: USD/m³ → ¢/gal: divide by gal_per_m3, multiply by 100
+    return (v: number) => (v / GAL_PER_M3) * 100;
+  }, [filters.unifiedProduct, importsUPMetric]);
+
+  const importsUPUnitLabel = importsUPMetric === "usd_per_ton" ? "USD/ton" : "¢/gal";
+
   const importsUPTraces = useMemo(
-    () => buildUnitPriceTraces(importsUnitPriceData, importsUPEntities),
-    [importsUnitPriceData, importsUPEntities],
+    () => buildUnitPriceTraces(importsUnitPriceData, importsUPEntities, importsUPUnitLabel, importsUPConvertFn),
+    [importsUnitPriceData, importsUPEntities, importsUPUnitLabel, importsUPConvertFn],
   );
 
   const importsUPLayout: Partial<Layout> = useMemo(
@@ -562,7 +611,7 @@ export default function DesktopView(): React.ReactElement {
       },
       yaxis: {
         ...AXIS_LINE,
-        title: { text: "USD / m³", font: { family: "Arial", size: 11 } },
+        title: { text: importsUPUnitLabel, font: { family: "Arial", size: 11 } },
         tickformat: ",.1f",
       },
       legend: {
@@ -572,7 +621,7 @@ export default function DesktopView(): React.ReactElement {
         font: { family: "Arial", size: 10 },
       },
     }),
-    [],
+    [importsUPUnitLabel],
   );
 
   // Exports — unit price by destination country
@@ -584,9 +633,18 @@ export default function DesktopView(): React.ReactElement {
     return Array.from(totals.keys()).sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0));
   }, [exportsUnitPriceData]);
 
+  // Exports unit price — Crude Oil only, USD/bbl (USD/m³ ÷ 6.2898)
   const exportsUPTraces = useMemo(
-    () => buildUnitPriceTraces(exportsUnitPriceData, exportsUPEntities),
-    [exportsUnitPriceData, exportsUPEntities],
+    () =>
+      filters.unifiedProduct === "Crude Oil"
+        ? buildUnitPriceTraces(
+            exportsUnitPriceData,
+            exportsUPEntities,
+            "USD/bbl",
+            (v) => v / M3_PER_BBL,
+          )
+        : [],
+    [exportsUnitPriceData, exportsUPEntities, filters.unifiedProduct],
   );
 
   const exportsUPLayout: Partial<Layout> = useMemo(
@@ -602,8 +660,8 @@ export default function DesktopView(): React.ReactElement {
       },
       yaxis: {
         ...AXIS_LINE,
-        title: { text: "USD / m³", font: { family: "Arial", size: 11 } },
-        tickformat: ",.1f",
+        title: { text: "USD / bbl", font: { family: "Arial", size: 11 } },
+        tickformat: ",.2f",
       },
       legend: {
         orientation: "h" as const,
@@ -976,10 +1034,22 @@ export default function DesktopView(): React.ReactElement {
 
                   {/* Panel D — Unit Price by Origin Country */}
                   <ChartSection
-                    title="Import Unit Price by Origin Country (USD/m³)"
+                    title={`Import Unit Price by Origin Country (${importsUPUnitLabel})`}
                     loading={importsUnitPriceLoading}
                     height={320}
                   >
+                    {/* Metric toggle: USD/ton | ¢/gal */}
+                    <div style={{ marginBottom: 10, maxWidth: 260 }}>
+                      <SegmentedToggle
+                        options={[
+                          { value: "usd_per_ton" as const, label: "USD / ton" },
+                          { value: "cents_per_gal" as const, label: "¢ / gal" },
+                        ]}
+                        value={importsUPMetric}
+                        onChange={(v) => setImportsUPMetric(v as ImportsUPMetric)}
+                        variant="compact"
+                      />
+                    </div>
                     {importsUPTraces.length > 0 ? (
                       <Plot
                         data={importsUPTraces}
@@ -1063,40 +1133,43 @@ export default function DesktopView(): React.ReactElement {
                     (NCM 27090010 / 27101259 / 27101921; kg→m³ via ANP standard densities).
                   </div>
 
-                  <div style={{ height: 24 }} />
-
-                  {/* Export unit price by destination country */}
-                  <ChartSection
-                    title="Export Unit Price by Destination Country (USD/m³)"
-                    loading={exportsUnitPriceLoading}
-                    height={320}
-                  >
-                    {exportsUPTraces.length > 0 ? (
-                      <Plot
-                        data={exportsUPTraces}
-                        layout={exportsUPLayout}
-                        config={{ responsive: true, displayModeBar: false }}
-                        style={{ width: "100%" }}
-                      />
-                    ) : !exportsUnitPriceLoading ? (
-                      <Plot
-                        data={emptyPlot().data}
-                        layout={{ ...emptyPlot().layout, height: 320 }}
-                        config={{ responsive: true, displayModeBar: false }}
-                        style={{ width: "100%" }}
-                      />
-                    ) : null}
-                  </ChartSection>
-                  <div
-                    style={{
-                      marginTop: 8,
-                      fontSize: 11,
-                      color: "#aaa",
-                      fontStyle: "italic",
-                    }}
-                  >
-                    Source: MDIC Comex — FOB USD ÷ volume per destination country per month. Top 8 countries by export volume in the selected period.
-                  </div>
+                  {/* Export unit price by destination country — Crude Oil only */}
+                  {filters.unifiedProduct === "Crude Oil" && (
+                    <>
+                      <div style={{ height: 24 }} />
+                      <ChartSection
+                        title="Export Unit Price by Destination Country (USD/bbl)"
+                        loading={exportsUnitPriceLoading}
+                        height={320}
+                      >
+                        {exportsUPTraces.length > 0 ? (
+                          <Plot
+                            data={exportsUPTraces}
+                            layout={exportsUPLayout}
+                            config={{ responsive: true, displayModeBar: false }}
+                            style={{ width: "100%" }}
+                          />
+                        ) : !exportsUnitPriceLoading ? (
+                          <Plot
+                            data={emptyPlot().data}
+                            layout={{ ...emptyPlot().layout, height: 320 }}
+                            config={{ responsive: true, displayModeBar: false }}
+                            style={{ width: "100%" }}
+                          />
+                        ) : null}
+                      </ChartSection>
+                      <div
+                        style={{
+                          marginTop: 8,
+                          fontSize: 11,
+                          color: "#aaa",
+                          fontStyle: "italic",
+                        }}
+                      >
+                        Source: MDIC Comex — FOB USD/bbl per destination country per month (1 m³ = 6.2898 bbl). Top 8 countries by export volume in the selected period. Crude Oil only.
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>

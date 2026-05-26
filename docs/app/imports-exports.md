@@ -165,7 +165,8 @@ The stacked-area chart ("Exports — By Destination Country") ranks destination 
 │              │     Plotly single-line — 1 trace (active product only)     │
 │              │     Source: mdic_comex. Color: matches active product       │
 │              │                                                             │
-│              │   ChartSection "Import Unit Price by Origin Country (USD/m³)"│
+│              │   ChartSection "Import Unit Price by Origin Country"       │
+│              │     PillToggle: USD/ton (default) · ¢/gal (local state)    │
 │              │     Plotly multi-line — 1 trace per country (NOT stacked)  │
 │              │     Top 8 countries by import volume. y=null for gaps.     │
 │              │     Source: mdic_comex. Colors: PALETTE rotation.           │
@@ -178,9 +179,9 @@ The stacked-area chart ("Exports — By Destination Country") ranks destination 
 │              │   YoY table (entity | last 12m | prior 12m | YoY%)         │
 │              │   Source note: MDIC Comex                                  │
 │              │                                                             │
-│              │   ChartSection "Export Unit Price by Destination Country"  │
-│              │     Plotly multi-line — 1 trace per country (NOT stacked)  │
-│              │     Top 8 countries by export volume. y=null for gaps.     │
+│              │   ChartSection "Export Unit Price..." (Crude Oil only)     │
+│              │     Unit: USD/bbl (1 m³ = 6.2898 bbl). Hidden for Diesel  │
+│              │     and Gasoline. Plotly multi-line, y=null for gaps.      │
 │              │     Source: mdic_comex. Colors: PALETTE rotation.           │
 └──────────────┴────────────────────────────────────────────────────────────┘
 ```
@@ -202,7 +203,9 @@ The stacked-area chart ("Exports — By Destination Country") ranks destination 
 - Charts rendered at 280px height (Panels A/B) or 240px (Panel C) via Plotly (no `MobileChart` wrapper needed — Plotly itself is responsive).
 - YoY rows rendered as `MobileDataCard` list (title = entity, subtitle = prior 12m, rightSlot = last 12m + YoY% in color).
 - Panel C metric toggle: horizontal-scroll pill row (USD/bbl · USD/m³ · USD/ton). Single trace for active product.
+- Panel D metric toggle: pill row (USD/ton · ¢/gal). Local state, default USD/ton. Same pill style as Panel C mobile toggle.
 - Exports tab: Volume/USD toggle (pill row). Stacked area chart at 280px height. YoY rows via `YoYCardList` (same MobileDataCard pattern as Imports panels). Source note below chart.
+- Exports unit price panel: rendered only when product = Crude Oil. Unit: USD/bbl. No toggle (single unit for Crude Oil exports).
 - `ExportFAB` triggers Excel export.
 - Sticky filter button at top of scroll area opens `FilterDrawer`.
 
@@ -306,23 +309,56 @@ Diesel 832 kg/m³ · Gasoline 745 kg/m³ · Crude Oil 870 kg/m³ — ANP standar
 
 ## Unit Price Panels — Notes
 
-Added 2026-05-26 (migration `20260526300000`).
+Added 2026-05-26 (migration `20260526300000`). Units updated 2026-05-26 (frontend conversion, no migration needed).
 
 ### Source
 
 Both unit price RPCs source from `mdic_comex` (same as Panel C and the Exports stacked chart). They are **not** sourced from `anp_desembaracos` because that table has no `valor_usd` column — only `quantidade_kg`.
 
-### Unit
+### RPC unit
 
-USD/m³ for all three products (Diesel, Gasoline, Crude Oil). This is consistent with the rest of the dashboard which expresses volumes in m³. If USD/bbl is preferred for Crude Oil in the future, add a metric toggle (same pattern as Panel C).
+Both RPCs return `usd_per_m3` (USD per cubic metre, FOB). All conversion to display units is done **client-side** in `desktop/View.tsx` and `mobile/View.tsx`.
+
+### Imports unit price — Panel D
+
+**Toggle (local state, not global filter):** USD/ton · ¢/gal. Default: USD/ton.
+
+Conversion from `usd_per_m3`:
+- USD/ton = `usd_per_m3 / (density_kg_m3 / 1000)` — density by product:
+  - Diesel: 832 kg/m³
+  - Gasoline: 745 kg/m³
+  - Crude Oil: 870 kg/m³
+- ¢/gal = `(usd_per_m3 / 264.172) * 100` (1 m³ = 264.172 US liquid gallons)
 
 Expected sanity-check ranges (approximate, will vary by period):
-- Diesel imports: ~$600–$1 000 /m³
-- Gasoline imports: ~$600–$900 /m³
-- Crude Oil imports: ~$300–$600 /m³
-- Crude Oil exports: ~$300–$600 /m³
+- Diesel imports: ~$700–$1 200/ton or ~200–340 ¢/gal
+- Gasoline imports: ~$650–$1 100/ton or ~190–310 ¢/gal
+- Crude Oil imports: ~$350–$700/ton (density 870 kg/m³)
 
-If values appear ~6× too high, density is being applied twice. If ~1 000× off, check whether m³ vs L confusion has entered the RPC.
+### Exports unit price — Crude Oil only
+
+**Visibility:** Panel is **only shown when selected product = Crude Oil**. For Diesel and Gasoline, the panel is hidden entirely (not rendered). The RPC fetch in the hook still runs for all products; suppression is UI-only.
+
+**Unit:** USD/bbl. Conversion: `usd_per_m3 / 6.2898` (1 m³ = 6.2898 bbl, international petroleum standard).
+
+Expected sanity-check range:
+- Crude Oil exports: ~$45–$95/bbl
+
+If values appear ~6× too high, the divisor `6.2898` may have been applied incorrectly (multiplied instead of divided). If values are in the $20 000+/bbl range, check for m³ vs litres confusion in the RPC volume.
+
+**Density constants (frontend, declared identically in both views):**
+
+```ts
+const PRODUCT_DENSITY_KG_M3: Record<string, number> = {
+  Diesel: 832,
+  Gasoline: 745,
+  "Crude Oil": 870,
+};
+const M3_PER_BBL = 6.2898;
+const GAL_PER_M3 = 264.172;
+```
+
+These mirror the `ncm_densidade_kg_m3` values used server-side by `get_imports_exports_fob_price_serie`.
 
 ### "Gulf of Mexico ≈ Estados Unidos" proxy
 
