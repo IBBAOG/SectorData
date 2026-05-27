@@ -110,7 +110,16 @@ Admins têm uma funcionalidade extra de **clipping de notícias**:
 
 #### Template do clipping (fidelidade ao clipinator.py)
 
-> **Email-safe HTML**: `buildHtml.ts` emits fully-inlined styles (`style="..."` on every element). No `<style>` block, no CSS classes. Outlook (desktop + web) and Gmail strip `<style>` blocks and class attributes on paste — inline styles are the only reliable vehicle. Font: Arial, Helvetica, sans-serif. Colors: hex only (`#FF5000`, `#1a1a1a`, `#0563C1`).
+> **Email-safe HTML (Outlook clipboard hardening, 2026-05-27)**: `buildHtml.ts` emits HTML that is built to survive **both** paths:
+> - **.eml download** — the file is parsed by Outlook's MIME engine, which respects `<html>/<head>/<body>` and inline CSS.
+> - **Copy → paste into a new Outlook compose window** — much harsher. Chrome converts our `text/html` into Windows clipboard format `CF_HTML`, injecting `<!--StartFragment-->` / `<!--EndFragment-->` markers. Outlook only imports the fragment, so the `<html>`, `<head>`, and (sometimes) `<body>` tags + their style attributes are **dropped**. Outlook then runs the surviving fragment through Word's HTML engine, which attaches `MsoNormal` (Calibri 11pt black) to every `<p>` it sees, frequently overriding inline CSS.
+>
+> Mitigations (all required, cumulative):
+> 1. Outer wrapper is a single-cell `<table role="presentation"><tr><td>` — tables are the lingua franca of email HTML and Outlook treats them verbatim, escaping the MsoNormal reset.
+> 2. Block elements are `<div>` (not `<p>`) — `<div>` escapes the MsoNormal trigger.
+> 3. Every leaf text run is wrapped as `<span style="font-family;font-size;color"><font face=... color=... size=...><b>text</b></font></span>`. The legacy `<font>` tag is belt-and-suspenders: Word HTML respects `<font>` even when it ignores CSS in some contexts.
+> 4. The `<b>` is the **innermost** tag (inside `<font>` and `<span>`) so the styled span's font/color cascades into the bold text correctly.
+> 5. Hex colors only (`#FF5000`, `#1A1A1A`, `#0563C1`, `#000512`, `#333333`). Font family: `Arial, Helvetica, sans-serif`, repeated on every block AND every leaf span.
 
 - Header: `*** IBBA Oil & Gas News – DD Month YYYY ***` (18pt bold laranja, centrado; `–` U+2013)
 - "Main Headlines" subheader 14pt laranja + bullet list `<título> (<fonte>)`
