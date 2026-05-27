@@ -41,7 +41,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/stocks` | `stock_portfolios` (direct PostgREST) + Yahoo Finance proxy | No |
 | `/news-hunter` | `seed_my_news_hunter_keywords` | No |
 | `/profile` | `get_my_profile`, `upsert_my_profile` | — |
-| `/admin-panel` | `get_module_visibility`, `set_module_visibility`, `set_module_home_visibility`, `set_module_public_visibility`, `get_all_users_with_roles`, `set_user_role`, `admin_list_default_news_keywords`, `admin_add_default_news_keyword`, `admin_set_default_news_keyword_match_type`, `admin_remove_default_news_keyword` | — |
+| `/admin-panel` | `get_module_visibility`, `set_module_visibility`, `set_module_home_visibility`, `set_module_public_visibility`, `get_all_users_with_roles`, `set_user_role`, `admin_list_default_news_keywords`, `admin_add_default_news_keyword`, `admin_set_default_news_keyword_match_type`, `admin_remove_default_news_keyword`, `get_field_stakes_overview`, `get_field_stakes`, `get_field_stakes_empresas`, `admin_upsert_field_stakes`, `admin_delete_field_stakes` | — |
 
 ### Statistics (Fase 3 onwards — 9 dashboards)
 
@@ -69,6 +69,8 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 > **Exports tab rewire (2026-05-25, migration `20260525000110_imports_exports_exports_by_country.sql`):** the Exports tab moved from a single-line ANP DAIE chart to a stacked-area-by-destination-country chart plus a YoY top-10 table, sourced from `mdic_comex` filtered by `flow='export'`. Volume (mil m³) / Value (USD) toggle is preserved. The old `get_imports_exports_exports_serie(text[], int, int)` was DROPPED and replaced by `get_imports_exports_exports_paises_stacked(p_unified_product text, p_ano_inicio int, p_ano_fim int, p_metric text, p_top_n int)` and `get_imports_exports_exports_yoy_table(p_unified_product text, p_ano_inicio int, p_ano_fim int, p_metric text, p_top_n int)`. Importer-level breakdown for exports remains unavailable (MDIC does not carry importer identity). Panel C ("Import Price") is unchanged and still uses `get_imports_exports_fob_price_serie`.
 
 > **`/mdic-comex` deprecation (2026-05-25):** standalone dashboard retired; its function was absorbed by `/imports-exports` Panel C ("Import Price"). The `mdic_comex` table and the `etl_mdic_comex.yml` workflow remain active — they feed Panel C via `get_imports_exports_fob_price_serie`. The 5 `get_mdic_comex_*` RPCs were dropped. Archived sub-PRD: `docs/app/_deprecated/mdic-comex.md`.
+
+> **Field Stakes admin input (2026-05-26, Fase 1 of Field Stakes & Production):** new admin-only-curated table `field_stakes(campo, empresa, stake_pct)` lets the Admin register the working-interest breakdown of each oil field — used to estimate company-attributable production (e.g. Petrobras stake in Búzios = 88.99%). CRUD lives in a new section of `/admin-panel` (Field Stakes). Migration: `supabase/migrations/20260527500000_field_stakes.sql`. Writes via `admin_upsert_field_stakes` (atomic replace-all per campo, enforces `SUM(stake_pct) = 100`) and `admin_delete_field_stakes`; reads via `get_field_stakes_overview`, `get_field_stakes`, `get_field_stakes_empresas`. A future `/production` dashboard (Fase 2, separate PRD) will join `anp_cdp_producao` x `field_stakes` to render company-level production charts mirroring the monthly Well-by-Well report.
 
 `template-module/` is a starter template, not a deployed module. RPC wrappers: [`src/lib/rpc.ts`](src/lib/rpc.ts) (by module) and [`src/lib/profileRpc.ts`](src/lib/profileRpc.ts).
 
@@ -172,6 +174,7 @@ All tables have RLS; frontend uses anon key. Only service role key (pipelines) w
 | `navios_diesel` | id | collected_at, porto, navio, status, produto, quantidade_convertida, eta, inicio_descarga, fim_descarga, origem, imo, mmsi, flag, is_cabotagem (generated) |
 | `vessel_registry`, `vessel_positions`, `port_arrivals`, `import_candidates` | — | AIS / port-call tracking |
 | `d_g_margins` | id | fuel_type, week, base_fuel, biofuel_component, federal_tax, state_tax, distribution_and_resale_margin, total |
+| `field_stakes` | (campo, empresa) | campo, empresa, stake_pct (numeric(6,3) CHECK >0 AND <=100), updated_at, updated_by. Admin-curated working-interest per oil field x per company; SUM(stake_pct) per campo = 100 enforced by RPC `admin_upsert_field_stakes`. Read by anon + authenticated; writes only via SECURITY DEFINER RPCs guarded by `is_admin()`. |
 | `price_bands` | id | date, product, bba_import_parity, **bba_import_parity_w_subsidy** (auto-populated by trigger since 2026-05-27), bba_export_parity, petrobras_price, **petrobras_price_w_subsidy** (auto-populated by trigger since 2026-05-27) |
 | `stock_portfolios` | uuid | user_id (nullable for system-owned public rows), name, tickers text[], groups jsonb, is_active, **is_public** (default false; anon SELECT policy opens public portfolios) |
 | `module_visibility` | module_slug | is_visible_for_clients, is_visible_on_home (default true), **is_visible_for_public** (default true; CHECK + BEFORE trigger enforce `public=true ⇒ clients=true`) |

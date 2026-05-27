@@ -199,6 +199,20 @@ Schema: `(keyword text PK, match_type text NOT NULL DEFAULT 'substring' CHECK IN
 | `admin_set_default_news_keyword_match_type` | `(p_keyword text, p_match_type text) → void` | Admin Panel — UPDATE idempotente, audit em `app_events` (event_type `admin.set_default_news_keyword_match_type`). **Nova** em `20260525250000` |
 | `admin_remove_default_news_keyword` | `(p_keyword text) → void` | Admin Panel — idempotente, audit em `app_events` (event_type `admin.remove_default_news_keyword`) |
 
+**Contrato `field_stakes` (APP ↔ Supabase, adicionado 2026-05-26 — Fase 1 de Field Stakes & Production):**
+
+Tabela admin-curated `field_stakes(campo, empresa, stake_pct)` registra a participação societária (working interest) por campo de petróleo × empresa. Usada para estimar produção atribuível por companhia (ex.: Petrobras detém 88.99% de Búzios). Schema: `(campo text, empresa text, stake_pct numeric(6,3) CHECK >0 AND <=100, updated_at timestamptz, updated_by uuid REFERENCES auth.users, PK (campo, empresa))`. RLS: SELECT aberto a `anon` + `authenticated`; sem policies INSERT/UPDATE/DELETE — writes exclusivamente via RPCs SECURITY DEFINER gated por `is_admin()`. Migration: `supabase/migrations/20260527500000_field_stakes.sql`. CRUD UI vive em nova seção do `/admin-panel` (Field Stakes — owner `worker_dash-admin`).
+
+| RPC | Assinatura | Consumidor |
+|---|---|---|
+| `get_field_stakes_overview` | `() → TABLE(campo text, n_empresas int, soma_pct numeric, is_complete boolean, has_data_in_producao boolean, last_updated timestamptz)` | Admin Panel → seção Field Stakes (lista de campos com badge de status). Callable por `anon` + `authenticated` |
+| `get_field_stakes` | `(p_campo text) → TABLE(empresa text, stake_pct numeric, updated_at timestamptz)` | Admin Panel → editor do campo selecionado. Callable por `anon` + `authenticated` |
+| `get_field_stakes_empresas` | `() → TABLE(empresa text, n_campos int)` | Admin Panel → autocomplete de empresas no editor. Callable por `anon` + `authenticated` |
+| `admin_upsert_field_stakes` | `(p_campo text, p_stakes jsonb) → void` | Admin Panel — replace-all atômico por campo, valida `SUM(stake_pct) = 100` antes de commitar (ERRCODE `23514` em caso contrário), gated por `is_admin()` (`forbidden` / ERRCODE `42501`). Callable por `authenticated` |
+| `admin_delete_field_stakes` | `(p_campo text) → void` | Admin Panel — deleta todos stakes de um campo, gated por `is_admin()`. Callable por `authenticated` |
+
+**Consumidor futuro:** o dashboard `/production` (Fase 2 — PRD separado, ainda não implementado) fará JOIN de `anp_cdp_producao` × `field_stakes` para renderizar produção atribuível por empresa (Brasil agregado, Petrobras agregado, top campos, FPSOs, YoY/MoM), espelhando o relatório mensal Well-by-Well.
+
 ### 3-tier visibility (Anon / Client / Admin) — adicionado 2026-05-22
 
 A partir da migration `20260522000001_anonymous_access.sql`, o login é **opcional**. Três tiers de acesso ao dashboard:
@@ -470,6 +484,10 @@ Workflow controlado pelo **Subgerente APP** (não pelo Gerente Geral). Ver detal
 ### Data Sources live table na `/home` (2026-05-26)
 
 `/home` desktop ganhou tabela live "Data Sources" no lado direito (split 50/50; mobile mantém só cards via `[desktop-only]`). Backend: nova RPC `get_data_sources_freshness()` (migration `20260526200000_data_sources_freshness.sql`) retornando `(source_key, last_update, row_count)` para 22 tabelas alimentadas por ETL; SECURITY DEFINER + search_path locked; `GRANT EXECUTE TO anon, authenticated`; polled 60s pelo front. Curadoria das fontes (categoria, cron, descrição, dashboards consumidores) vive em `src/data/dataSources.ts` (23 entries — 22 tabelas + Yahoo Finance). UI components em `src/components/home/DataSourcesTable/` (8 arquivos: `index.tsx`, `SectionHeader`, `SourceRow`, `ExpandedRow`, `StatusDot`, `LastUpdateCell`, `DashboardPicker`, `useDataSourcesFreshness`). Design tokens novos em `src/app/globals.css` (`--ds-cat-*`, `--ds-status-*`, `--ds-glass-*`, `--ds-pulse-*` + keyframe `ds-pulse-dot` + classe `.ds-pulse`). Visível para todos os tiers (Anon + Client + Admin) — transparência do produto. Detalhes em [`docs/app/admin.md`](app/admin.md) § "Data Sources live table".
+
+### Field Stakes admin input — Fase 1 de Field Stakes & Production (2026-05-26)
+
+Nova tabela admin-curated `field_stakes(campo, empresa, stake_pct)` + nova seção CRUD no `/admin-panel` (Field Stakes). Permite ao Admin (Eduardo) registrar a participação societária de cada campo de petróleo por empresa — base para estimar produção atribuível por companhia (ex.: Petrobras 88.99% de Búzios). Migration: `supabase/migrations/20260527500000_field_stakes.sql`. 5 RPCs novas (`get_field_stakes_overview`, `get_field_stakes`, `get_field_stakes_empresas`, `admin_upsert_field_stakes`, `admin_delete_field_stakes`) — todas SECURITY DEFINER + search_path locked; reads abertas a anon+authenticated, writes gated por `is_admin()` com validação atômica `SUM(stake_pct) = 100` por campo. Owner do schema: `worker_supabase` (vide [`docs/supabase/PRD.md`](supabase/PRD.md)). Owner da UI: `worker_dash-admin` (vide [`docs/app/admin.md`](app/admin.md) § "Field Stakes"). **Fase 2 planejada (PRD separado, não implementada ainda):** dashboard `/production` com charts replicando o relatório mensal Well-by-Well (Brasil agregado, Petrobras agregado via stakes, top campos, FPSOs, YoY/MoM), JOIN `anp_cdp_producao` × `field_stakes`.
 
 ### Consolidação Sales Volumes → Market Share (2026-05-26)
 
