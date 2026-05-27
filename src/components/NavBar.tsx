@@ -66,34 +66,10 @@ const NAV_ENTRIES: NavEntry[] = [
       },
       {
         heading: "ANP data",
-        noBorderRight: true,
-        items: [],
-        subGroups: [
-          {
-            label: "Prices",
-            items: [
-              { href: "/anp-prices", label: "ANP Prices" },
-            ],
-          },
-          {
-            label: "Volumes",
-            items: [
-              { href: "/anp-glp",       label: "LPG" },
-            ],
-          },
-        ],
-      },
-      {
-        heading: "ANP data",
-        hideHeading: true,
-        items: [],
-        subGroups: [
-          {
-            label: "Imports",
-            items: [
-              { href: "/imports-exports", label: "Imports & Exports" },
-            ],
-          },
+        items: [
+          { href: "/anp-prices", label: "ANP Prices" },
+          { href: "/anp-glp", label: "LPG" },
+          { href: "/imports-exports", label: "Imports & Exports" },
         ],
       },
     ],
