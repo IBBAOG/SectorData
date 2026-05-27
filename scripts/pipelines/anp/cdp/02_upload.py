@@ -440,6 +440,32 @@ def _refresh_production_mv(sb) -> None:
         print(f"  WARNING: failed to refresh production MVs: {e}")
 
 
+def _refresh_canonical_expansion(sb) -> None:
+    """Refresh the canonical->raw_variants cache for /well-by-well drill-down RPCs.
+
+    Calls refresh_field_canonical_expansion() (migration 20260601000000), which
+    rebuilds public.field_canonical_expansion from current anp_cdp_producao
+    state. Required when new field variants appear in anp_cdp_producao so the
+    /well-by-well popup BSW + Depletion aggregates (the 4 get_anp_cdp_*_*
+    RPCs with p_expand_canonical=true) pick them up automatically.
+
+    Idempotent — INSERT ... ON CONFLICT (canonical) DO UPDATE inside the
+    function. Granted to service_role only; the pipeline uses
+    SUPABASE_SERVICE_KEY, so the call is authorized.
+
+    Non-fatal: a stale cache is acceptable. The cache is rebuilt by the next
+    successful ETL run, and the canonical-expansion RPCs still return data
+    for existing canonicals — only newly-introduced variants would be missing
+    temporarily.
+    """
+    print("  Refreshing canonical expansion cache (field_canonical_expansion)…")
+    try:
+        sb.rpc("refresh_field_canonical_expansion", {}).execute()
+        print("  Canonical expansion cache refreshed.")
+    except Exception as e:
+        print(f"  WARNING: failed to refresh canonical expansion cache: {e}")
+
+
 def _warn_partial_offshore(sb, periods_uploaded: set[tuple[int, int]]) -> None:
     """
     Emit a warning when offshore (PosSal/PreSal) well counts for the uploaded month
@@ -762,6 +788,7 @@ def _from_parquet(sb, path: str, ano_inicio: int = 0, allow_non_apex: bool = Fal
     _upsert(sb, rows)
     _refresh_mv(sb)
     _refresh_production_mv(sb)
+    _refresh_canonical_expansion(sb)
 
 
 def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
@@ -1049,6 +1076,7 @@ def _from_csv_dir(sb, csv_dir: str, incremental: bool = True, purge: bool = Fals
     _upsert(sb, rows)
     _refresh_mv(sb)
     _refresh_production_mv(sb)
+    _refresh_canonical_expansion(sb)
 
     # Validation: report offshore row counts for each uploaded period
     for ano_p, mes_p in sorted(periods_to_purge):

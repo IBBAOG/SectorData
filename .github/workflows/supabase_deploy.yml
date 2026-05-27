@@ -42,11 +42,6 @@ jobs:
         # "relation public.anp_subsidy_history does not exist".
         run: |
           supabase migration repair 20260504000001 --status reverted || true
-          # 20260601000000: MCP apply_migration auto-timestamp for the
-          # imports-exports Panel C removal (migration db5fee26 /
-          # get_imports_exports_imports_unit_price + _exports_unit_price).
-          # No local .sql file at this slot.
-          supabase migration repair 20260601000000 --status reverted || true
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
@@ -146,7 +141,8 @@ jobs:
             20260526200000 \
             20260527100000 \
             20260527400000 \
-            20260528960000; do
+            20260528960000 \
+            20260601000000; do
             supabase migration repair "$v" --status applied || true
           done
         # 20260525280000 (alerts_module_visibility): migration body was applied
@@ -176,9 +172,16 @@ jobs:
         # 20260528960000 (imports_exports_unit_price_with_volume): replaces
         # get_imports_exports_fob_price_serie with get_imports_exports_imports_unit_price
         # and _exports_unit_price (both include vol_m3 numeric). Applied via MCP
-        # apply_migration which registered it as 20260601000000 in schema_migrations
-        # (see the revert step above for that phantom). Marking the canonical
-        # filename version as applied so db push never tries to re-apply the local file.
+        # apply_migration which registered it as 20260601000000 in schema_migrations.
+        # The 20260601000000 slot is NO LONGER PHANTOM — it now corresponds to the
+        # real local file 20260601000000_field_canonical_expansion_cache.sql merged
+        # in f6fdb976 (canonical expansion cache, /well-by-well perf fix). The
+        # earlier `migration repair 20260601000000 --status reverted` step was
+        # removed accordingly: keeping it would cause db push --include-all to
+        # re-apply the file on every push (idempotent DDL, but wasteful + drops
+        # and recreates the 4 CDP RPCs every time — Pegadinha #22 of CLAUDE.md).
+        # Marking 20260601000000 as applied here keeps the schema_migrations row
+        # stable even if it ever gets scrubbed.
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
