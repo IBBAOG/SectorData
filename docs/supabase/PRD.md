@@ -563,6 +563,46 @@ Total: 23 sources (era 22). Atributos preservados na recriação: `LANGUAGE sql 
 | Data Sources freshness | `get_data_sources_freshness() → TABLE(source_key text, last_update timestamptz, row_count bigint)` | Consumida pela tabela live "Data Sources" da `/home` (desktop only). UNION ALL sobre 23 tabelas ETL-fed (era 22 — Subsidy Reform `20260527300000` trocou `anp_subsidy_history` por `anp_subsidy_caps` + `anp_subsidy_commercialization`). SECURITY DEFINER + `search_path = public, pg_temp`; `GRANT EXECUTE TO anon, authenticated`. Migrations: `20260526200000_data_sources_freshness.sql` + hotfix `20260527300000_data_sources_freshness_subsidy_fix.sql`. Detalhes em § "Data Sources Freshness". Owner: dash-admin (UI) + worker_supabase (RPC). |
 | Subsidy Tracker | `get_subsidy_tracker_diesel() → TABLE(date, ipp, ipp_adjusted, petrobras, petrobras_adjusted, anp_reference_importador, anp_reference_produtor, anp_commercialization_importador, anp_commercialization_produtor, regions_importador jsonb, regions_produtor jsonb)` + interna `compute_subsidy_reimbursement(date, tipo_agente) → numeric`. RPC rewrite em `20260527200000_subsidy_reform.sql` (era 1 col simples antes; nova signature dual-agent com sufixos PT). SECURITY DEFINER + `search_path = public, pg_temp` + `GRANT EXECUTE TO anon, authenticated`. Detalhes em § "Subsidy Reform". | dash-subsidy-tracker + dash-price-bands (trigger-side: `_pb_populate_w_subsidy` lê via `compute_subsidy_reimbursement` para preencher `price_bands._w_subsidy`) |
 
+## Usuário compartilhado IBBA
+
+Login coletivo do time IBBA. Provisionado em 2026-05-27 via `execute_sql` one-time seed (**não versionado em migration** — senha em texto plano não vai para o git).
+
+| Campo | Valor |
+|---|---|
+| Email interno (alias para Supabase Auth) | `ibba@sectordata.internal` |
+| Username de exibição no login | `IBBA` (sem `@` — frontend traduz para o email interno antes do signIn) |
+| `auth.users.id` | `e3ebd6a1-2bc4-4aba-988b-bc439e643b99` |
+| `profiles.role` | `Client` |
+| `profiles.full_name` | `IBBA Team` |
+| MFA | **Não enrolado** (e nunca deve ser — é credencial compartilhada) |
+| `email_confirmed_at` | preenchido no insert (skip confirmation flow) |
+
+### Por que existe
+
+Time IBBA precisa de acesso ao SectorData sem o overhead de provisionar conta individual por pessoa. Tradeoff aceito: senha compartilhada + visibilidade restrita ao tier Client.
+
+### Como rotacionar a senha
+
+Supabase Dashboard → Authentication → Users → `ibba@sectordata.internal` → "Reset password" (ou via SQL: `UPDATE auth.users SET encrypted_password = extensions.crypt('<nova>', extensions.gen_salt('bf')) WHERE email = 'ibba@sectordata.internal';`).
+
+Comunicar a nova senha pelos canais usuais com o time IBBA.
+
+### Restrições e invariantes
+
+- **NÃO promover este usuário a Admin.** Admin exige MFA AAL2 (vide `useRoleGuard("Admin")` e `(dashboard)/layout.tsx`); credencial compartilhada não pode satisfazer MFA por design (várias pessoas atrás do mesmo secret). Promover quebra o invariante implícito "todo Admin tem MFA enrolado".
+- **NÃO recriar via migration versionada.** Migration vai para o histórico do git e expõe a senha permanentemente. Provisionamento foi feito uma única vez via `execute_sql` MCP; este doc é o registro do que foi feito.
+- **Profile inserido manualmente.** Não há trigger `handle_new_user` em `auth.users` neste projeto — o seed faz INSERT explícito em `public.profiles`.
+
+### Acoplamento frontend
+
+`src/app/login/page.tsx` aceita o username `IBBA` (sem `@`) e o traduz para `ibba@sectordata.internal` antes de chamar `supabase.auth.signInWithPassword`. Isso é UX-only — o backend só conhece o email interno. Worker `worker_subgerente-app` (ou `worker_dash-admin`) é dono dessa lógica de tradução.
+
+### Auditoria
+
+- Recriar o seed em ambiente novo: requer privilégio service-role + acesso ao `auth.users`. Documentar o SQL (sem a senha real) em runbook interno; nunca versionar.
+- Detecção: `SELECT * FROM auth.users WHERE email = 'ibba@sectordata.internal'` deve retornar exatamente 1 row com `email_confirmed_at IS NOT NULL`.
+- Cruzamento: `SELECT p.role FROM public.profiles p JOIN auth.users u ON u.id = p.id WHERE u.email = 'ibba@sectordata.internal'` deve retornar `Client`. Se virar `Admin` em algum momento, é regressão crítica.
+
 ## Migration smoke test
 
 `supabase/tests/migration_smoke.sql` — criado em 2026-05-07 após o bug do `/sales-volumes`.
