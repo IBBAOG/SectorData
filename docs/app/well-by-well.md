@@ -41,7 +41,7 @@ All math is done **server-side** in SECURITY DEFINER RPCs (migration `supabase/m
 | `get_field_stakes_overview` | (admin-only) | **Round 4:** now returns an extra `canonical text` column alongside `campo` so the admin variant editor can group variants by their canonical roll-up. Owned by `worker_supabase`, consumed by `worker_dash-admin`. |
 | `get_production_installation_timeseries` | `(p_instalacao text, p_empresa text, p_date_start date, p_date_end date)` | Stake-weighted monthly timeseries for one installation × one company. Powers the Installation drill-down in **company** view. Returns the SAME row shape as `get_production_field_timeseries`. |
 | `get_production_brazil_installation_timeseries` *(Round 9)* | `(p_instalacao text, p_date_start date, p_date_end date)` | Same as above but Brazil-wide. Powers the Installation drill-down in **Brasil** view. |
-| `get_well_by_well_header` | `(p_empresa text, p_year int, p_month int)` | PDF-style page-2 header table (Round 8). Always returns BOTH a Brazil section AND a company section. In **Brasil** view the wrapper still passes a fallback empresa (`Petrobras`) to satisfy the non-null param; the HeaderTable component filters to `section === 'BRAZIL'` client-side, dropping the company rows. |
+| `get_well_by_well_header` | `(p_empresa text, p_year int, p_month int)` | PDF-style page-2 header table (Round 8). Always returns BOTH a Brazil section AND a company section (24 rows total since Round 12 — 12 BRAZIL rows + 12 empresa rows with Oil + Gas + Main fields per empresa). The HeaderTable component renders ONLY the rows for the active pill's section: Brasil → `section === 'BRAZIL'`, empresa pill → `section === UPPER(p_empresa)`. In **Brasil** view the wrapper still passes a fallback empresa (`Petrobras`) to satisfy the non-null param; the company rows from the response are discarded by the filter. |
 
 All return `LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp` (Pegadinha #18) and are granted to `anon, authenticated`. Frontend wrappers live in `src/lib/rpc.ts` under the "MODULE: Well by Well" section.
 
@@ -136,12 +136,36 @@ A self-contained HTML table that replicates page 2 of the monthly Well-by-Well P
 - **Desktop (≥769px, Round 10)**: canonical project pattern — `NavBar` then `container-fluid g-0 > row g-0` with `col-xxl-2 col-md-3` sidebar (`#sidebar` with `BrandLogo variant="sidebar"`, `sidebar-section-label "Filters"`, then three `sidebar-filter-section` blocks for Period → Reference month → Environment) and `col-xxl-10 col-md-9` main content (`#page-content` with `DashboardHeader`, then pills row, then HeaderTable full-width, then Chart 1 full-width, then Charts 2+3 side-by-side). Sidebar is sticky (`top: 56px`, `height: calc(100vh - 56px)`, scrolls independently) and uses the liquid-glass background from `globals.css` (`#sidebar` rule). Reuses the exact pattern from `/anp-cdp` / `/imports-exports` / `/market-share` / 7 other dashboards — no inline overrides, no bespoke grid.
 - **Mobile (≤768px)**: pills row at the top (horizontally scrollable, ~5 pills wider than a phone viewport — the active pill auto-scrolls into view on tap), then HeaderTable, then tab bar, then tab content. A "Swipe left to see more columns ›" caption confirms the table's horizontal-scroll affordance. Filters stay in the `FilterDrawer` (BottomSheet) opened from the topbar — Round 9 dropped the empresa `<select>` from the drawer too.
 
-### Round 9 behaviour in Brasil mode
+### Pill-scoped section filter (Round 12, 2026-05-27)
 
-When `viewMode === "Brasil"`:
-- The HeaderTable component filters to rows where `section.toUpperCase() === 'BRAZIL'` client-side, dropping the company section.
-- The underlying `get_well_by_well_header` RPC is still called (it requires a non-null empresa param). The hook passes `HEADER_TABLE_FALLBACK_EMPRESA = "Petrobras"` to satisfy the contract — the returned company rows are discarded.
+`HeaderTable` renders **ONLY the rows belonging to the active pill's section** — never Brazil + empresa together.
+
+| Active pill | Filter | Rows rendered |
+|---|---|---|
+| `Brasil`           | `section === 'BRAZIL'`         | 12 rows: Oil (kbpd) + Pre-Salt/Post-Salt/Onshore + Gas (kboed) + Pre-Salt/Post-Salt/Onshore + Main fields + top campos |
+| `Petrobras`        | `section === 'PETROBRAS'`      | 12 rows for Petrobras: Oil + Gas + Main fields (stake-weighted) |
+| `PRIO`             | `section === 'PRIO'`           | 12 rows for PRIO (NULL cells permitted where PRIO has no Pre-Salt/Onshore presence — the RPC emits row stubs anyway so the structure stays consistent across pills) |
+| `PetroReconcavo`   | `section === 'PETRORECONCAVO'` | 12 rows for PetroReconcavo |
+| `Brava Energia`    | `section === 'BRAVA ENERGIA'`  | 12 rows for Brava Energia |
+
+Implementation details:
+
+- `viewMode === "Brasil"` is special-cased — `"Brasil".toUpperCase()` is `"BRASIL"` (Portuguese), but the RPC body emits the English-language section label `"BRAZIL"`. The filter maps `Brasil → BRAZIL` explicitly; every other pill name passes through `.toUpperCase()` (e.g. `Petrobras → PETROBRAS`, `Brava Energia → BRAVA ENERGIA`).
+- The underlying `get_well_by_well_header(p_empresa, p_year, p_month)` RPC is still called even in Brasil mode — the wrapper passes `HEADER_TABLE_FALLBACK_EMPRESA = "Petrobras"` to satisfy the non-null `p_empresa` contract. The RPC returns 24 rows total (12 Brazil + 12 empresa); the HeaderTable filter discards the empresa half.
+- In company view the RPC returns the empresa-specific 12-row section directly (rows where `section === UPPER(p_empresa)`).
 - This is an intentional tradeoff: one extra unused RPC slice in exchange for not having to build a separate Brazil-only header RPC.
+
+The caption above the table reflects the active scope: `Headline — Apr 2026 — BRAZIL` (Brasil pill) or `Headline — Apr 2026 — PRIO` (PRIO pill), etc. Both desktop and mobile render the same caption pattern.
+
+#### Why a single-section view (not split)
+
+Earlier rounds (Round 8 → Round 10) rendered Brazil + the selected empresa together in a single table. That was great for context but added 12 rows of "background noise" every time the user picked a company to focus on. With the pill-scoped filter:
+
+- The table shrinks from 24 rows to 12 in company views — fits a single laptop viewport without scroll.
+- The active pill and the visible content always agree — no mental mapping needed ("the pill says PRIO but I'm looking at Brazil rows on top, then PRIO at the bottom").
+- View-change transitions are instant: stale rows from the previous pill simply don't match the new filter and disappear on the next render, even before the RPC payload lands. This makes the **Round 10 defensive clear effect redundant** — it was removed in Round 12 in favour of the filter alone.
+
+If the user wants Brazil totals while drilled into PRIO, they tap the Brasil pill. The five pills are the navigation primitive; the table reflects whichever pill is active.
 
 ### Why this section displaced the old YoY table (desktop only)
 

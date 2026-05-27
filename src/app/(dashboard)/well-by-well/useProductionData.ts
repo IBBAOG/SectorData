@@ -717,21 +717,16 @@ export function useProductionData(): UseProductionData {
     if (headerFetched) setHeaderData(headerFetched);
   }, [headerFetched]);
 
-  // Clear the company-section rows of the previous empresa on view change.
-  // Without this, switching e.g. Petrobras → PRIO would briefly render the
-  // last fetched PETROBRAS section under the new active pill during the
-  // ~150ms debounce window between the click and the new RPC arrival. The
-  // Brazil-section rows are kept because they're empresa-independent (every
-  // call to `get_well_by_well_header` returns the same Brazil block) — that
-  // saves the user a skeleton flash on the half of the table that wouldn't
-  // change anyway. Switching Brasil ↔ Petrobras keeps the company rows
-  // (same fetch payload), but Brasil's `viewMode` filter hides them.
-  useEffect(() => {
-    setHeaderData((prev) =>
-      prev.filter((r) => (r.section ?? "").toUpperCase() === "BRAZIL"),
-    );
-  }, [view]);
-
+  // Round 12 (2026-05-27): the Round 10 defensive clear effect that pruned
+  // headerData to Brazil-only rows on view change has been REMOVED. The
+  // HeaderTable component now filters by `section === UPPER(viewMode)`
+  // client-side (Brasil → BRAZIL rows; empresa pill → that empresa's rows;
+  // see HeaderTable.tsx), which handles stale-data flashes on view change for
+  // free: when the user toggles Petrobras → PRIO, the previously fetched
+  // PETROBRAS rows no longer match the new filter and disappear immediately,
+  // even before the new RPC payload lands. The filter is a strict superset of
+  // what the clear effect did, so keeping both was redundant.
+  //
   // ── If the dateRange changes such that referenceDate falls outside it, ────
   //    snap referenceDate to dateRange[1] (most recent month in window).
   const lastSnapRef = useRef<string>("");

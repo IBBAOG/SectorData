@@ -146,11 +146,17 @@ export interface HeaderTableProps {
    *  labels ("Apr-26", "Mar-26", etc.). */
   referenceDate: string;
   /**
-   * Round 9 (2026-05-27): when set to "Brasil", the company section of the
-   * table is hidden client-side (the underlying RPC still returns both
-   * sections because the wrapper needs a non-null empresa param — the UI just
-   * doesn't render the company rows). When set to a company name, the full
-   * Brazil + company table renders as before.
+   * Round 9 (2026-05-27): when set to "Brasil", only the Brazil section rows
+   * render — the company section returned by the RPC is dropped client-side
+   * (the underlying RPC still returns both sections because the wrapper needs
+   * a non-null empresa param).
+   *
+   * Round 12 (2026-05-27): empresa views now render ONLY that empresa's
+   * section (12 rows: Oil + Gas + Main fields). The Brazil section is hidden
+   * to mirror the active pill — picking PRIO shows only PRIO numbers, picking
+   * Petrobras shows only Petrobras numbers, etc. Filter is by
+   * `section === UPPER(viewMode)` (the RPC body upper-cases the section
+   * label, e.g. `'PETROBRAS'`, `'PRIO'`).
    *
    * Optional / defaults to undefined → "show everything" (back-compat with
    * any caller that hasn't been updated yet).
@@ -167,16 +173,29 @@ export default function HeaderTable({
   viewMode,
 }: HeaderTableProps): React.ReactElement {
   // Sort rows by display_order defensively (DB should already do this, but
-  // guard against future RPC body changes). When the viewMode is Brasil we
-  // also drop everything that isn't on the BRAZIL section (the RPC always
-  // returns Brazil + a company section; in Brasil mode we render the Brazil
-  // half only).
+  // guard against future RPC body changes). Round 12 (2026-05-27): the table
+  // now renders ONLY the active pill's section.
+  //
+  //   - Brasil pill   → rows where section === 'BRAZIL' (note the spelling:
+  //                     the pill is named in Portuguese, "Brasil", but the
+  //                     RPC emits the English-language section label,
+  //                     "BRAZIL").
+  //   - Empresa pill  → rows where section === UPPER(viewMode). The RPC body
+  //                     upper-cases the section label (e.g. 'PETROBRAS',
+  //                     'PRIO', 'PETRORECONCAVO', 'BRAVA ENERGIA').
+  //
+  // The RPC still returns both sections in a single payload — this filter
+  // alone handles the partition. That also makes a defensive clear effect on
+  // view change unnecessary: stale rows from the previous view simply don't
+  // match the new filter.
   const sortedRows = useMemo(() => {
-    const base = [...rows].sort((a, b) => a.display_order - b.display_order);
-    if (viewMode !== "Brasil") return base;
-    // The section label is upper-cased by the RPC body — match against
-    // 'BRAZIL' case-insensitively to be defensive.
-    return base.filter((r) => (r.section ?? "").toUpperCase() === "BRAZIL");
+    const sorted = [...rows].sort((a, b) => a.display_order - b.display_order);
+    if (viewMode == null) return sorted; // back-compat: show everything
+    const wantedSection =
+      viewMode === "Brasil" ? "BRAZIL" : viewMode.toUpperCase();
+    return sorted.filter(
+      (r) => (r.section ?? "").toUpperCase() === wantedSection,
+    );
   }, [rows, viewMode]);
 
   // Column header labels — derive month abbreviations from referenceDate.

@@ -575,7 +575,7 @@ export default function MobileView(): React.ReactElement | null {
               textTransform: "uppercase",
             }}
           >
-            Headline — {fmtMonthLabel(referenceDate)}
+            Headline — {fmtMonthLabel(referenceDate)} — {(view === "Brasil" ? "Brazil" : view).toUpperCase()}
           </div>
           <HeaderTable
             rows={headerData}

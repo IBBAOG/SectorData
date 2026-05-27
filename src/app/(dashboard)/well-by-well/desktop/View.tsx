@@ -1150,7 +1150,7 @@ export default function DesktopView(): React.ReactElement | null {
                         marginBottom: 6,
                       }}
                     >
-                      Headline — {fmtMonthLabel(referenceDate)}
+                      Headline — {fmtMonthLabel(referenceDate)} — {(view === "Brasil" ? "Brazil" : view).toUpperCase()}
                     </div>
                     <HeaderTable
                       rows={headerData}
