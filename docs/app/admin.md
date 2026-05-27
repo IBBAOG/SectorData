@@ -210,7 +210,7 @@ src/
   data/dataSources.ts                 — 17-entry TS catalog (DataSource interface + DATA_SOURCES array)
   components/home/DataSourcesTable/
     index.tsx                          — wrapper, groups by category, single-expand accordion
-    DataSourcesTable.module.css        — glass + pulse styles; consumes only existing globals.css tokens
+    DataSourcesTable.module.css        — glass + pulse styles; consumes only existing globals.css tokens. Grid tracks on `.colHeaders` + `.sourceRow` use `minmax(0, Nfr)` (not bare `Nfr`) so columns ignore intrinsic content width — without this, longer Source labels ("Proprietary", "News Hunter scanner") or longer Last-update text ("2 weeks ago") expand the track and shift the centered SOURCE badge off the vertical baseline (alignment bug fixed 2026-05-28).
     SectionHeader.tsx                  — translucent "── ANP PRODUCTION ──" divider
     SourceRow.tsx                      — collapsed row: Status · Name · Source · Last update · Actions
     ExpandedRow.tsx                    — expanded panel: description + schedule + next run + action buttons + download
