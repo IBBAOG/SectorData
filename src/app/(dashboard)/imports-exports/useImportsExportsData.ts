@@ -261,16 +261,12 @@ const ORIGIN_COUNTRY_PINS_DATA: ReadonlyArray<{
   label: string;
   color: string;
 }> = [
-  // 2026-05-28 chart palette audit: United States navy (was brand orange) +
-  // Saudi Arabia teal (was near-yellow lime). Keep in sync with desktop and
-  // mobile Views' duplicated ORIGIN_COUNTRY_PINS. Canonical source:
-  // `COUNTRY_COLORS` in src/lib/plotlyDefaults.ts.
   { dbName: "Rússia", label: "Russia", color: "#000000" },
-  { dbName: "Estados Unidos", label: "United States", color: "#1D4080" },
+  { dbName: "Estados Unidos", label: "United States", color: "#FF5000" },
   { dbName: "Emirados Árabes Unidos", label: "UAE", color: "#73C6A1" },
   { dbName: "Países Baixos (Holanda)", label: "Netherlands", color: "#FFAE66" },
   { dbName: "Índia", label: "India", color: "#8258A0" },
-  { dbName: "Arábia Saudita", label: "Saudi Arabia", color: "#0F766E" },
+  { dbName: "Arábia Saudita", label: "Saudi Arabia", color: "#D2FF00" },
 ];
 
 const ORIGIN_LABEL_BY_DB_DATA: Record<string, string> = ORIGIN_COUNTRY_PINS_DATA.reduce(

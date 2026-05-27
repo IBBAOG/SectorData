@@ -104,18 +104,12 @@ const ORIGIN_COUNTRY_PINS: ReadonlyArray<{
   label: string;
   color: string;
 }> = [
-  // 2026-05-28 chart palette audit: United States moved from brand-orange to
-  // navy (brand-orange is now reserved for highlight only). Saudi Arabia moved
-  // from near-yellow lime (#D2FF00, unreadable on white bg) to saturated teal.
-  // Canonical values live in `COUNTRY_COLORS` (src/lib/plotlyDefaults.ts) —
-  // duplicated here to keep the dbName→label→color mapping co-located with
-  // the bucket helpers.
   { dbName: "Rússia", label: "Russia", color: "#000000" },
-  { dbName: "Estados Unidos", label: "United States", color: "#1D4080" },
+  { dbName: "Estados Unidos", label: "United States", color: "#FF5000" },
   { dbName: "Emirados Árabes Unidos", label: "UAE", color: "#73C6A1" },
   { dbName: "Países Baixos (Holanda)", label: "Netherlands", color: "#FFAE66" },
   { dbName: "Índia", label: "India", color: "#8258A0" },
-  { dbName: "Arábia Saudita", label: "Saudi Arabia", color: "#0F766E" },
+  { dbName: "Arábia Saudita", label: "Saudi Arabia", color: "#D2FF00" },
 ];
 
 // Lookup: DB Portuguese → English label

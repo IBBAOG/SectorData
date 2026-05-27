@@ -79,16 +79,12 @@ const ORIGIN_COUNTRY_PINS: ReadonlyArray<{
   label: string;
   color: string;
 }> = [
-  // 2026-05-28 chart palette audit: United States moved from brand-orange to
-  // navy (brand-orange is now reserved for highlight only). Saudi Arabia moved
-  // from near-yellow lime (#D2FF00, unreadable on white bg) to saturated teal.
-  // Keep in sync with desktop/View.tsx and the hook ORIGIN_COUNTRY_PINS_DATA.
   { dbName: "Rússia", label: "Russia", color: "#000000" },
-  { dbName: "Estados Unidos", label: "United States", color: "#1D4080" },
+  { dbName: "Estados Unidos", label: "United States", color: "#FF5000" },
   { dbName: "Emirados Árabes Unidos", label: "UAE", color: "#73C6A1" },
   { dbName: "Países Baixos (Holanda)", label: "Netherlands", color: "#FFAE66" },
   { dbName: "Índia", label: "India", color: "#8258A0" },
-  { dbName: "Arábia Saudita", label: "Saudi Arabia", color: "#0F766E" },
+  { dbName: "Arábia Saudita", label: "Saudi Arabia", color: "#D2FF00" },
 ];
 
 const ORIGIN_LABEL_BY_DB: Record<string, string> = ORIGIN_COUNTRY_PINS.reduce(
