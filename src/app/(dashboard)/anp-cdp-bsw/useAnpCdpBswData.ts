@@ -22,8 +22,7 @@ import type { Layout, PlotData } from "plotly.js";
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
-import { COMMON_LAYOUT, AXIS_LINE, emptyPlot, PALETTE } from "../../../lib/plotlyDefaults";
-import { bblDiaToKbpd } from "../../../lib/units";
+import { PALETTE } from "../../../lib/plotlyDefaults";
 import {
   rpcGetAnpCdpBswCampos,
   rpcGetAnpCdpBswScatter,
@@ -31,6 +30,11 @@ import {
   type AnpCdpBswPoint,
   type AnpCdpBswFieldPoint,
 } from "../../../lib/rpc";
+import {
+  buildPerWellChart,
+  buildFieldAverageChart,
+  plotlyMode,
+} from "../../../lib/charts/bsw";
 
 // ─── Constants / types (exported for Views) ──────────────────────────────────
 
@@ -49,10 +53,6 @@ export const LINE_STYLE_OPTIONS: { value: LineStyle; label: string }[] = [
   { value: "markers",       label: "Markers" },
   { value: "markers+lines", label: "Markers + lines" },
 ];
-
-// Maps the toggle value to Plotly's `mode` string.
-export const plotlyMode = (style: LineStyle): "markers" | "lines+markers" =>
-  style === "markers" ? "markers" : "lines+markers";
 
 // Maximum number of fields plottable simultaneously in "Field average" mode.
 // Beyond this, the legend/colors become hard to distinguish. PALETTE recycles
@@ -115,167 +115,6 @@ export interface UseAnpCdpBswData {
     months: string[],
     values: Record<string, number>,
   ) => { mom: number | null; ytd: number | null };
-}
-
-// ─── Chart builders (desktop / detailed) ─────────────────────────────────────
-
-function buildPerWellChart(
-  points: AnpCdpBswPoint[],
-  selectedCampos: string[],
-  lineStyle: LineStyle,
-): { data: PlotData[]; layout: Partial<Layout> } {
-  if (!selectedCampos.length) {
-    return emptyPlot(460, "Select a field to plot BSW evolution.");
-  }
-  if (!points.length) {
-    return emptyPlot(460, "No data for the selected field.");
-  }
-
-  // Per-well mode: one trace per unique poco (first-appearance order so colors
-  // stay stable between renders).
-  const seen: string[] = [];
-  for (const p of points) {
-    if (!seen.includes(p.poco)) seen.push(p.poco);
-  }
-  const mode = plotlyMode(lineStyle);
-  const traces: PlotData[] = seen.map((poco, i) => {
-    const subset = points.filter((p) => p.poco === poco);
-    const color = PALETTE[i % PALETTE.length];
-    return {
-      type: "scattergl",
-      mode,
-      name: poco,
-      x: subset.map((p) => p.mes_desde_t0),
-      y: subset.map((p) => p.bsw),
-      customdata: subset.map((p) => [p.poco, p.ano, p.mes] as [string, number, number]),
-      marker: { size: 4, opacity: 0.7, color },
-      line: { color, width: 1 },
-      hovertemplate:
-        "<b>%{customdata[0]}</b><br>" +
-        "Reference month: %{customdata[1]}-%{customdata[2]:02d}<br>" +
-        "BSW: %{y:.1%}<br>" +
-        "Months since start: %{x}" +
-        "<extra></extra>",
-    } as unknown as PlotData;
-  });
-
-  return {
-    data: traces,
-    layout: {
-      ...COMMON_LAYOUT,
-      height: 460,
-      margin: { t: 30, b: 60, l: 70, r: 30 },
-      xaxis: {
-        ...AXIS_LINE,
-        title: { text: "Months since first production" },
-        rangemode: "tozero",
-      },
-      yaxis: {
-        ...AXIS_LINE,
-        title: { text: "BSW (water cut)" },
-        rangemode: "tozero",
-        tickformat: ",.0%",
-      },
-      legend: {
-        orientation: "v",
-        x: 1.02,
-        xanchor: "left",
-        y: 1,
-        yanchor: "top",
-        itemsizing: "constant",
-      },
-      hovermode: "closest",
-    },
-  };
-}
-
-function buildFieldAverageChart(
-  points: AnpCdpBswFieldPoint[],
-  selectedCampos: string[],
-  lineStyle: LineStyle,
-): { data: PlotData[]; layout: Partial<Layout> } {
-  if (!selectedCampos.length) {
-    return emptyPlot(460, "Select one or more fields to plot BSW evolution.");
-  }
-  if (!points.length) {
-    return emptyPlot(460, "No data for the selected fields.");
-  }
-
-  // One trace per campo (volume-weighted average across wells at each calendar
-  // month). X axis is % of VOIP recovered (cumulative oil / VOIP). One trace
-  // per selected campo (even empty subsets) so the legend matches sidebar
-  // chips 1:1.
-  const mode = plotlyMode(lineStyle);
-  const traces: PlotData[] = selectedCampos.map((campo, i) => {
-    const subset = points
-      .filter((p) => p.campo === campo)
-      .sort((a, b) => a.pct_voip - b.pct_voip);
-    const color = PALETTE[i % PALETTE.length];
-    if (typeof window !== "undefined" && points.length > 0 && subset.length === 0) {
-      // Only warn when we actually received points but none for this campo.
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[anp-cdp-bsw] field "${campo}" is selected but has no points in the RPC result; rendering empty trace.`,
-      );
-    }
-    return {
-      type: "scatter",
-      mode,
-      name: campo,
-      x: subset.map((p) => p.pct_voip),
-      y: subset.map((p) => p.bsw),
-      customdata: subset.map(
-        (p) =>
-          [p.n_pocos, bblDiaToKbpd(p.volume_total), p.ref_ano, p.ref_mes, p.cumulative_oil_bbl] as [
-            number,
-            number,
-            number,
-            number,
-            number,
-          ],
-      ),
-      line: { color, width: 2 },
-      marker: { size: 6, color },
-      hovertemplate:
-        "<b>" + campo + "</b><br>" +
-        "Reference month: %{customdata[2]}-%{customdata[3]:02d}<br>" +
-        "VOIP recovered: %{x:.1%}<br>" +
-        "BSW: %{y:.1%}<br>" +
-        "Cumulative oil: %{customdata[4]:,.0f} bbl<br>" +
-        "Wells active: %{customdata[0]}<br>" +
-        "Daily volume: %{customdata[1]:,.1f} kbpd" +
-        "<extra></extra>",
-    } as unknown as PlotData;
-  });
-
-  return {
-    data: traces,
-    layout: {
-      ...COMMON_LAYOUT,
-      height: 460,
-      margin: { t: 30, b: 60, l: 70, r: 30 },
-      xaxis: {
-        ...AXIS_LINE,
-        title: { text: "% of VOIP recovered" },
-        tickformat: ",.1%",
-        rangemode: "tozero",
-      },
-      yaxis: {
-        ...AXIS_LINE,
-        title: { text: "BSW (water cut, volume-weighted)" },
-        rangemode: "tozero",
-        tickformat: ",.0%",
-      },
-      legend: {
-        orientation: "v",
-        x: 1.02,
-        xanchor: "left",
-        y: 1,
-        yanchor: "top",
-      },
-      hovermode: "closest",
-    },
-  };
 }
 
 // ─── Mobile chart trace builder ──────────────────────────────────────────────

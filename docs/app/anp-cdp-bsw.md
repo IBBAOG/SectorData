@@ -14,9 +14,25 @@ src/app/(dashboard)/anp-cdp-bsw/
 ├── useAnpCdpBswData.ts       ← THE BRAIN (RPCs, filters, derivations, chart/table)
 ├── desktop/View.tsx          ← desktop UX (sidebar + chart + 12-month table)
 └── mobile/View.tsx           ← mobile UX (hero chart + filter chips + 12-month table)
+
+src/lib/charts/bsw.ts         ← SHARED chart builders (also consumed by /well-by-well drill-down)
 ```
 
 RPC wrappers: `rpcGetAnpCdpBswCampos`, `rpcGetAnpCdpBswScatter`, `rpcGetAnpCdpBswFieldAggregate` in [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (section "ANP CDP — BSW by Well").
+
+### Shared chart module — `src/lib/charts/bsw.ts`
+
+Extracted 2026-05-27 to avoid logic duplication when `/well-by-well` drill-down adds a BSW tab.
+
+Exports:
+- `buildPerWellChart(wellPoints, selectedCampos, lineStyle)` → `{ data, layout }`
+- `buildFieldAverageChart(fieldPoints, selectedCampos, lineStyle)` → `{ data, layout }`
+- `plotlyMode(style)` — maps `LineStyle` toggle to Plotly `mode` string
+- `type AnpCdpBswPoint` — re-exported from `rpc.ts`
+- `type AnpCdpBswFieldPoint` — re-exported from `rpc.ts`
+- `type LineStyle` — `"markers" | "markers+lines"`
+
+`useAnpCdpBswData.ts` imports `buildPerWellChart` and `buildFieldAverageChart` from here; `buildMobileChart` stays in the hook (mobile-only, not shared). Do not add desktop layout concerns to the mobile builder or vice versa.
 
 ## Dual-view structure
 
