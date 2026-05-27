@@ -2,36 +2,38 @@
 
 // Desktop View — /well-by-well (≥769px).
 //
-// Layout (top → bottom):
+// Outer shell follows the project canonical pattern (matches /anp-cdp,
+// /imports-exports, /market-share, and 7 other dashboards):
+//   NavBar → container-fluid g-0 → row g-0
+//     col-xxl-2 col-md-3 (#sidebar with BrandLogo + sidebar-* CSS classes)
+//     col-xxl-10 col-md-9 (#page-content)
+//
+// Sidebar (left, ~280px): Period · Reference month · Environment
+// Main content (right):
 //   • Header — title + subtitle + period badge + Export panel (right)
 //   • 5 view pills row (Round 9) — Brasil · Petrobras · PRIO · PetroReconcavo
 //     · Brava Energia. Mutually exclusive; toggles the whole dashboard.
-//   • Top split:
-//       LEFT  (~35%)  — Period · Reference month · Ambientes
-//                       (empresa <select> was removed in Round 9 — pills
-//                       replaced it)
-//       RIGHT (~65%)  — HeaderTable (PDF-style page-2 replica)
-//     Falls back to single-column < 1100px so the table stays legible.
+//   • HeaderTable — PDF-style page-2 replica (full width of main)
 //   • 3 charts (Round 9 reduced from 4 → 3 by removing the dedicated
 //     Brazil-vs-Company comparison row):
-//       Chart 1: Oil Production stacked by ambiente (Brasil OR company)
-//       Chart 2: Top fields (Brasil OR stake-weighted)
-//       Chart 3: Installations (Brasil OR stake-weighted)
+//       Chart 1: Oil Production stacked by ambiente (Brasil OR company), full width
+//       Chart 2 + Chart 3: Top fields | Installations (side-by-side)
 //
 // Round 6 (2026-05-27): top KPI strip removed (broken Δ MoM/YoY against the
 // partial reference month). `KpiCard` is preserved because the field/
 // installation drill modals still use it.
 //
-// Round 8 (2026-05-27): added the PDF-style HeaderTable next to the filters
-// and removed the bottom YoY/MoM/YTD table — strict subset of the HeaderTable.
+// Round 8 (2026-05-27): added the PDF-style HeaderTable.
 //
-// Round 9 (2026-05-27): 5 view pills replace the empresa dropdown. Chart 1
-// shows Brazil OR company depending on the pill (not both side-by-side).
-// Chart 2 (Top fields) and Chart 3 (Installations) auto-switch between
-// Brazil-wide and stake-weighted RPCs via the hook. The 4-chart 2×2 grid is
-// gone; the new 3-chart layout stacks chart 1 full-width then puts charts 2
-// and 3 side-by-side. HeaderTable receives a `viewMode` prop and hides the
-// company section when the Brasil pill is active.
+// Round 9 (2026-05-27): 5 view pills replace the empresa dropdown.
+//
+// Round 10 (2026-05-27): filters moved from the in-content horizontal block
+// into a left-side sidebar matching the project's canonical pattern. The
+// inline `wbw-top-split` 2-column grid is gone — HeaderTable now occupies the
+// full width of the main content area below the pills row. Pills live at the
+// TOP of main content (not the sidebar) because they are view-mode selectors,
+// semantically distinct from the period/environment subsetters in the
+// sidebar.
 //
 // Binding sync rule (CLAUDE.md § Dual-view policy): meaningful changes to one
 // View must land in the OTHER View in the same commit, OR the commit message
@@ -41,6 +43,7 @@ import { useEffect, useMemo } from "react";
 import type { Layout, PlotData, PlotMouseEvent } from "plotly.js";
 
 import NavBar from "../../../../components/NavBar";
+import BrandLogo from "../../../../components/BrandLogo";
 import PlotlyChart from "../../../../components/PlotlyChart";
 import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
 import MultiSelectFilter from "../../../../components/dashboard/MultiSelectFilter";
@@ -1024,315 +1027,282 @@ export default function DesktopView(): React.ReactElement | null {
   return (
     <div>
       <NavBar />
-      <div className="container-fluid" style={{ padding: "20px 24px 80px" }}>
-        <DashboardHeader
-          title="Well by Well"
-          sub="Monthly oil & gas production from ANP CDP — company-attributable via field stakes"
-          period={periodBadge}
-          rightSlot={
-            <ExportPanel
-              actions={[
-                {
-                  kind: "excel",
-                  label: "Excel",
-                  busy: excelLoading,
-                  disabled: excelLoading || csvLoading || bootstrapping,
-                  loadingLabel: "Building workbook…",
-                  onClick: handleExportExcel,
-                },
-                {
-                  kind: "csv",
-                  label: "CSV (zip)",
-                  busy: csvLoading,
-                  disabled: excelLoading || csvLoading || bootstrapping,
-                  loadingLabel: "Building zip…",
-                  onClick: handleExportCsv,
-                },
-              ]}
-            />
-          }
-        />
+      <div className="container-fluid g-0">
+        <div className="row g-0">
 
-        {/* ── 5 view pills — Brasil + 4 companies (Round 9, 2026-05-27) ─── */}
-        <ViewPillsRow value={view} onChange={setView} />
-
-        {bootstrapping ? (
-          <div style={{ marginTop: 40 }}>
-            <BarrelLoading />
-            <div style={{ textAlign: "center", color: "#888", fontFamily: "Arial", fontSize: 13 }}>
-              Loading production data…
-            </div>
-          </div>
-        ) : (
-          <>
-            {/* ── Top region: filters (left ~35%) + Header table (right ~65%) ─
-                Round 8 split preserved; Round 9 removed the empresa <select>
-                from the filter column (pills above replaced it). */}
-            <div
-              className="wbw-top-split"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "minmax(260px, 35%) 1fr",
-                gap: 20,
-                alignItems: "stretch",
-                padding: "16px 0 20px",
-                borderBottom: "1px solid #f0f0f0",
-                marginBottom: 20,
-              }}
-            >
-              {/* ── Filters column (left) ───────────────────────────────── */}
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 14,
-                  minWidth: 0,
-                }}
-              >
-                {/* Period */}
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontFamily: "Arial",
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: "#1a1a1a",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.4px",
-                      marginBottom: 6,
-                    }}
-                  >
-                    Period
-                  </label>
-                  {allMonths.length > 0 && (
-                    <PeriodSlider
-                      dates={allMonths}
-                      value={monthIdxRange}
-                      onChange={setMonthIdxRange}
-                      fmtLabel={(d) => fmtMonthLabel(d)}
-                    />
-                  )}
-                </div>
-
-                {/* Reference month (for top fields / FPSOs / Header table) */}
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontFamily: "Arial",
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: "#1a1a1a",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.4px",
-                      marginBottom: 6,
-                    }}
-                  >
-                    Reference month
-                  </label>
-                  <select
-                    value={referenceDate}
-                    onChange={(e) => setReferenceDate(e.target.value)}
-                    style={{
-                      width: "100%",
-                      fontFamily: "Arial",
-                      fontSize: 13,
-                      padding: "8px 10px",
-                      border: "1px solid #c5c5cb",
-                      borderRadius: 6,
-                      background: "#ffffff",
-                    }}
-                  >
-                    {refMonthOptions.map((m) => (
-                      <option key={m} value={m}>{fmtMonthLabel(m)}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Ambiente */}
-                <div>
-                  <MultiSelectFilter
-                    label="Environment"
-                    items={AMBIENTES as unknown as string[]}
-                    selected={ambientes}
-                    onToggle={toggleAmbiente}
-                    onClear={ambientes.length < AMBIENTES.length ? () => setAmbientes([...AMBIENTES]) : undefined}
-                    idPrefix="prod-amb"
-                    swatch={(item) => AMBIENTE_COLOR[item] ?? "#aaa"}
-                  />
-                </div>
+          {/* ── Sidebar (left, ~280px) — canonical project pattern ─── */}
+          <div className="col-xxl-2 col-md-3 p-0">
+            <div id="sidebar">
+              <div style={{ textAlign: "center" }}>
+                <BrandLogo variant="sidebar" />
               </div>
+              <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
+              <div className="sidebar-section-label">Filters</div>
 
-              {/* ── Header table column (right) ─────────────────────────── */}
-              <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
-                <div
-                  style={{
-                    fontFamily: "Arial",
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: "#1a1a1a",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.4px",
-                    marginBottom: 2,
-                  }}
-                >
-                  Headline — {fmtMonthLabel(referenceDate)}
-                </div>
-                <HeaderTable
-                  rows={headerData}
-                  loading={headerLoading}
-                  referenceDate={referenceDate}
-                  viewMode={view}
-                />
-              </div>
-
-              <style>{`
-                @media (max-width: 1099px) {
-                  .wbw-top-split { grid-template-columns: 1fr !important; }
-                }
-              `}</style>
-            </div>
-
-            {/* ── Chart 1: Oil Production (full width) ─────────────────── */}
-            <div style={{ marginBottom: 16 }}>
-              <ChartSection
-                title={chart1Title}
-                loading={chart1Loading}
-                height={320}
-              >
-                <PlotlyChart
-                  data={oilChart.data}
-                  layout={oilChart.layout}
-                  style={{ width: "100%", height: 320 }}
-                />
-              </ChartSection>
-            </div>
-
-            {/* ── Charts 2 & 3 side-by-side ────────────────────────────── */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 16,
-                marginBottom: 16,
-              }}
-            >
-              <ChartSection
-                title={chart2Title}
-                loading={topFieldsLoading}
-                height={360}
-              >
-                <div style={{ position: "relative" }}>
-                  <PlotlyChart
-                    data={topFieldsChart.data}
-                    layout={topFieldsChart.layout}
-                    style={{ width: "100%", height: 360, cursor: topFields.length > 0 ? "pointer" : "default" }}
-                    onClick={(e: PlotMouseEvent) => {
-                      const point = e?.points?.[0];
-                      if (!point) return;
-                      const value = (point as { y?: unknown }).y;
-                      if (typeof value === "string" && value.length > 0) {
-                        openFieldDrill(value);
-                      }
-                    }}
+              {/* Period */}
+              <div className="sidebar-filter-section">
+                <div className="sidebar-filter-label">Period</div>
+                {allMonths.length > 0 ? (
+                  <PeriodSlider
+                    dates={allMonths}
+                    value={monthIdxRange}
+                    onChange={setMonthIdxRange}
+                    fmtLabel={(d) => fmtMonthLabel(d)}
                   />
-                  {topFields.length > 0 && (
-                    <div
-                      style={{
-                        marginTop: 4,
-                        fontFamily: "Arial",
-                        fontSize: 10.5,
-                        color: "#888",
-                        textAlign: "center",
-                      }}
-                    >
-                      Click a bar to drill into a field&apos;s monthly history
-                    </div>
-                  )}
-                </div>
-              </ChartSection>
-              <ChartSection
-                title={chart3Title}
-                loading={installationsLoading}
-                height={360}
-              >
-                <div
-                  style={{
-                    maxHeight: 336,
-                    overflowY: "auto",
-                    fontFamily: "Arial",
-                    fontSize: 12,
-                  }}
-                >
-                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead style={{ position: "sticky", top: 0, background: "#fafafa" }}>
-                      <tr>
-                        <th style={thStyle}>Installation</th>
-                        <th style={{ ...thStyle, textAlign: "right" }}>Oil (kbpd)</th>
-                        <th style={{ ...thStyle, textAlign: "right" }}>Gas (Mm³/d)</th>
-                        <th style={{ ...thStyle, textAlign: "right" }}>Hours rate</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {installations.slice(0, 12).map((inst) => (
-                        <tr
-                          key={inst.instalacao}
-                          onClick={() => openInstallationDrill(inst.instalacao)}
-                          style={{
-                            cursor: "pointer",
-                            transition: "background-color 0.12s",
-                          }}
-                          onMouseEnter={(e) => {
-                            (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "#fff5ef";
-                          }}
-                          onMouseLeave={(e) => {
-                            (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "transparent";
-                          }}
-                          title={`Drill into ${inst.instalacao} monthly history`}
-                        >
-                          <td style={tdStyle}>{inst.instalacao}</td>
-                          <td style={{ ...tdStyle, textAlign: "right" }}>
-                            {fmtNumber(bblDiaToKbpd(inst.oil_bbl_dia), 1)}
-                          </td>
-                          <td style={{ ...tdStyle, textAlign: "right" }}>
-                            {fmtNumber(inst.gas_mm3_dia, 2)}
-                          </td>
-                          <td style={{ ...tdStyle, textAlign: "right" }}>
-                            {(inst.hours_rate * 100).toFixed(1)}%
-                          </td>
-                        </tr>
-                      ))}
-                      {installations.length === 0 && (
-                        <tr>
-                          <td
-                            colSpan={4}
-                            style={{ ...tdStyle, textAlign: "center", color: "#888", padding: 20 }}
-                          >
-                            No installations for this month.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                {installations.length > 0 && (
-                  <div
-                    style={{
-                      marginTop: 4,
-                      fontFamily: "Arial",
-                      fontSize: 10.5,
-                      color: "#888",
-                      textAlign: "center",
-                    }}
-                  >
-                    Click a row to drill into an installation&apos;s monthly history
+                ) : (
+                  <div style={{ fontSize: 11, color: "#aaa", fontFamily: "Arial" }}>
+                    Loading…
                   </div>
                 )}
-              </ChartSection>
+              </div>
+
+              {/* Reference month (for top fields / FPSOs / Header table) */}
+              <div className="sidebar-filter-section">
+                <div className="sidebar-filter-label">Reference month</div>
+                <select
+                  value={referenceDate}
+                  onChange={(e) => setReferenceDate(e.target.value)}
+                  disabled={refMonthOptions.length === 0}
+                  style={{
+                    width: "100%",
+                    fontFamily: "Arial",
+                    fontSize: 13,
+                    padding: "8px 10px",
+                    border: "1px solid #c5c5cb",
+                    borderRadius: 6,
+                    background: "#ffffff",
+                  }}
+                >
+                  {refMonthOptions.map((m) => (
+                    <option key={m} value={m}>{fmtMonthLabel(m)}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Ambiente */}
+              <div className="sidebar-filter-section">
+                <MultiSelectFilter
+                  label="Environment"
+                  items={AMBIENTES as unknown as string[]}
+                  selected={ambientes}
+                  onToggle={toggleAmbiente}
+                  onClear={ambientes.length < AMBIENTES.length ? () => setAmbientes([...AMBIENTES]) : undefined}
+                  idPrefix="prod-amb"
+                  swatch={(item) => AMBIENTE_COLOR[item] ?? "#aaa"}
+                />
+              </div>
             </div>
-          </>
-        )}
+          </div>
+
+          {/* ── Main content (right) ─────────────────────────────────── */}
+          <div className="col-xxl-10 col-md-9">
+            <div id="page-content">
+              <DashboardHeader
+                title="Well by Well"
+                sub="Monthly oil & gas production from ANP CDP — company-attributable via field stakes"
+                period={periodBadge}
+                rightSlot={
+                  <ExportPanel
+                    actions={[
+                      {
+                        kind: "excel",
+                        label: "Excel",
+                        busy: excelLoading,
+                        disabled: excelLoading || csvLoading || bootstrapping,
+                        loadingLabel: "Building workbook…",
+                        onClick: handleExportExcel,
+                      },
+                      {
+                        kind: "csv",
+                        label: "CSV (zip)",
+                        busy: csvLoading,
+                        disabled: excelLoading || csvLoading || bootstrapping,
+                        loadingLabel: "Building zip…",
+                        onClick: handleExportCsv,
+                      },
+                    ]}
+                  />
+                }
+              />
+
+              {/* ── 5 view pills — Brasil + 4 companies (Round 9, 2026-05-27) ─── */}
+              <ViewPillsRow value={view} onChange={setView} />
+
+              {bootstrapping ? (
+                <div style={{ marginTop: 40 }}>
+                  <BarrelLoading />
+                  <div style={{ textAlign: "center", color: "#888", fontFamily: "Arial", fontSize: 13 }}>
+                    Loading production data…
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* ── Header table (full width of main, Round 10) ───── */}
+                  <div style={{ marginBottom: 24 }}>
+                    <div
+                      style={{
+                        fontFamily: "Arial",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: "#1a1a1a",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.4px",
+                        marginBottom: 6,
+                      }}
+                    >
+                      Headline — {fmtMonthLabel(referenceDate)}
+                    </div>
+                    <HeaderTable
+                      rows={headerData}
+                      loading={headerLoading}
+                      referenceDate={referenceDate}
+                      viewMode={view}
+                    />
+                  </div>
+
+                  {/* ── Chart 1: Oil Production (full width) ─────────────────── */}
+                  <div style={{ marginBottom: 16 }}>
+                    <ChartSection
+                      title={chart1Title}
+                      loading={chart1Loading}
+                      height={320}
+                    >
+                      <PlotlyChart
+                        data={oilChart.data}
+                        layout={oilChart.layout}
+                        style={{ width: "100%", height: 320 }}
+                      />
+                    </ChartSection>
+                  </div>
+
+                  {/* ── Charts 2 & 3 side-by-side ────────────────────────────── */}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr 1fr",
+                      gap: 16,
+                      marginBottom: 16,
+                    }}
+                  >
+                    <ChartSection
+                      title={chart2Title}
+                      loading={topFieldsLoading}
+                      height={360}
+                    >
+                      <div style={{ position: "relative" }}>
+                        <PlotlyChart
+                          data={topFieldsChart.data}
+                          layout={topFieldsChart.layout}
+                          style={{ width: "100%", height: 360, cursor: topFields.length > 0 ? "pointer" : "default" }}
+                          onClick={(e: PlotMouseEvent) => {
+                            const point = e?.points?.[0];
+                            if (!point) return;
+                            const value = (point as { y?: unknown }).y;
+                            if (typeof value === "string" && value.length > 0) {
+                              openFieldDrill(value);
+                            }
+                          }}
+                        />
+                        {topFields.length > 0 && (
+                          <div
+                            style={{
+                              marginTop: 4,
+                              fontFamily: "Arial",
+                              fontSize: 10.5,
+                              color: "#888",
+                              textAlign: "center",
+                            }}
+                          >
+                            Click a bar to drill into a field&apos;s monthly history
+                          </div>
+                        )}
+                      </div>
+                    </ChartSection>
+                    <ChartSection
+                      title={chart3Title}
+                      loading={installationsLoading}
+                      height={360}
+                    >
+                      <div
+                        style={{
+                          maxHeight: 336,
+                          overflowY: "auto",
+                          fontFamily: "Arial",
+                          fontSize: 12,
+                        }}
+                      >
+                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                          <thead style={{ position: "sticky", top: 0, background: "#fafafa" }}>
+                            <tr>
+                              <th style={thStyle}>Installation</th>
+                              <th style={{ ...thStyle, textAlign: "right" }}>Oil (kbpd)</th>
+                              <th style={{ ...thStyle, textAlign: "right" }}>Gas (Mm³/d)</th>
+                              <th style={{ ...thStyle, textAlign: "right" }}>Hours rate</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {installations.slice(0, 12).map((inst) => (
+                              <tr
+                                key={inst.instalacao}
+                                onClick={() => openInstallationDrill(inst.instalacao)}
+                                style={{
+                                  cursor: "pointer",
+                                  transition: "background-color 0.12s",
+                                }}
+                                onMouseEnter={(e) => {
+                                  (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "#fff5ef";
+                                }}
+                                onMouseLeave={(e) => {
+                                  (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "transparent";
+                                }}
+                                title={`Drill into ${inst.instalacao} monthly history`}
+                              >
+                                <td style={tdStyle}>{inst.instalacao}</td>
+                                <td style={{ ...tdStyle, textAlign: "right" }}>
+                                  {fmtNumber(bblDiaToKbpd(inst.oil_bbl_dia), 1)}
+                                </td>
+                                <td style={{ ...tdStyle, textAlign: "right" }}>
+                                  {fmtNumber(inst.gas_mm3_dia, 2)}
+                                </td>
+                                <td style={{ ...tdStyle, textAlign: "right" }}>
+                                  {(inst.hours_rate * 100).toFixed(1)}%
+                                </td>
+                              </tr>
+                            ))}
+                            {installations.length === 0 && (
+                              <tr>
+                                <td
+                                  colSpan={4}
+                                  style={{ ...tdStyle, textAlign: "center", color: "#888", padding: 20 }}
+                                >
+                                  No installations for this month.
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                      {installations.length > 0 && (
+                        <div
+                          style={{
+                            marginTop: 4,
+                            fontFamily: "Arial",
+                            fontSize: 10.5,
+                            color: "#888",
+                            textAlign: "center",
+                          }}
+                        >
+                          Click a row to drill into an installation&apos;s monthly history
+                        </div>
+                      )}
+                    </ChartSection>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+        </div>
       </div>
 
       {/* ── Drill modals ─────────────────────────────────────────────────── */}
