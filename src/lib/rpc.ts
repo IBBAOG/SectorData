@@ -2150,17 +2150,6 @@ export type IEExportsYoyRow = {
   yoy_pct: number | null;
 };
 
-export type IEFobPriceRow = {
-  ano: number;
-  mes: number;
-  total_volume_kg: number;
-  total_volume_m3: number;
-  total_fob_usd: number;
-  fob_per_ton: number | null;
-  fob_per_m3: number | null;
-  fob_per_bbl: number | null;
-};
-
 /**
  * Returns the available year range and the 3 unified product names.
  * Result is stable — call once on mount.
@@ -2300,48 +2289,6 @@ export async function rpcGetImportsExportsYoyTable(
 }
 
 /**
- * FOB import price series sourced from mdic_comex (flow='import').
- * Fetches one row per (ano, mes) for the given unified product.
- * fob_per_bbl / fob_per_m3 / fob_per_ton are NULL when volume = 0.
- * Density JOIN (ncm_densidade_kg_m3) is done server-side.
- */
-export async function rpcGetImportsExportsFobPriceSerie(
-  supabase: SupabaseClient,
-  unifiedProduct: string,
-  anoInicio: number,
-  mesInicio: number,
-  anoFim: number,
-  mesFim: number,
-): Promise<IEFobPriceRow[]> {
-  try {
-    const { data, error } = await supabase.rpc(
-      "get_imports_exports_fob_price_serie",
-      {
-        p_unified_product: unifiedProduct,
-        p_ano_inicio: anoInicio,
-        p_mes_inicio: mesInicio,
-        p_ano_fim: anoFim,
-        p_mes_fim: mesFim,
-      },
-    );
-    if (error) throw error;
-    return ((data ?? []) as IEFobPriceRow[]).map((r) => ({
-      ano: Number(r.ano),
-      mes: Number(r.mes),
-      total_volume_kg: Number(r.total_volume_kg ?? 0),
-      total_volume_m3: Number(r.total_volume_m3 ?? 0),
-      total_fob_usd: Number(r.total_fob_usd ?? 0),
-      fob_per_ton: r.fob_per_ton != null ? Number(r.fob_per_ton) : null,
-      fob_per_m3: r.fob_per_m3 != null ? Number(r.fob_per_m3) : null,
-      fob_per_bbl: r.fob_per_bbl != null ? Number(r.fob_per_bbl) : null,
-    }));
-  } catch (e) {
-    console.error("get_imports_exports_fob_price_serie failed", e);
-    return [];
-  }
-}
-
-/**
  * Stacked area data for the Exports tab — by destination country.
  * Source: mdic_comex (migration 20260525000110_imports_exports_exports_by_country.sql).
  * When metric='volume', server returns value in mil m³ (kg / density / 1000) — DO NOT divide client-side.
@@ -2426,13 +2373,17 @@ export async function rpcGetImportsExportsExportsYoyTable(
 /**
  * Row returned by the two unit-price-by-country RPCs.
  * usd_per_m3 is NULL for (pais, month) combos where volume = 0.
- * UI should map NULL → null in Plotly y-array (y=null + connectgaps).
+ * vol_m3 is the monthly aggregated volume (m³) for the country — used as the
+ * weight denominator when computing a volume-weighted-average USD/m3 for
+ * collapsed groups client-side (e.g. the "Others" row of the price summary).
+ * UI should map usd_per_m3 NULL → null in Plotly y-array (y=null + connectgaps).
  */
 export type IEUnitPriceRow = {
   ano: number;
   mes: number;
   pais: string;
   usd_per_m3: number | null;
+  vol_m3: number;
 };
 
 /**
@@ -2472,6 +2423,7 @@ export async function rpcGetImportsExportsImportsUnitPrice(
       mes: Number(r.mes),
       pais: String(r.pais),
       usd_per_m3: r.usd_per_m3 != null ? Number(r.usd_per_m3) : null,
+      vol_m3: Number(r.vol_m3 ?? 0),
     }));
   } catch (e) {
     console.error("get_imports_exports_imports_unit_price failed", e);
@@ -2511,6 +2463,7 @@ export async function rpcGetImportsExportsExportsUnitPrice(
       mes: Number(r.mes),
       pais: String(r.pais),
       usd_per_m3: r.usd_per_m3 != null ? Number(r.usd_per_m3) : null,
+      vol_m3: Number(r.vol_m3 ?? 0),
     }));
   } catch (e) {
     console.error("get_imports_exports_exports_unit_price failed", e);

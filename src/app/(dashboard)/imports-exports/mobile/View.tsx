@@ -35,8 +35,6 @@ const PRODUCT_DENSITY_KG_M3: Record<string, number> = {
 const M3_PER_BBL = 6.2898;
 const GAL_PER_M3 = 264.172;
 
-type ImportsUPMetric = "usd_per_ton" | "cents_per_gal";
-
 import {
   MobileTopBar,
   FilterDrawer,
@@ -53,10 +51,10 @@ import { useImportsExportsData, formatMonth, addMonths, cmpMonth } from "../useI
 import type {
   UnifiedProduct,
   YoyTableRow,
-  PriceMetric,
-  PricePoint,
   UnitPriceRow,
   MonthCursor,
+  PriceSummaryRow,
+  ImportsUnitPriceMetric,
 } from "../useImportsExportsData";
 
 import { COMMON_LAYOUT, AXIS_LINE, PALETTE, emptyPlot } from "../../../../lib/plotlyDefaults";
@@ -349,49 +347,6 @@ function mobileHorizontalBarLayout(
   };
 }
 
-// ─── Panel C — import price helpers (mobile) ──────────────────────────────────
-
-const PRICE_COLORS: Record<UnifiedProduct, string> = {
-  Diesel: "#ff5000",
-  Gasoline: "#FFB04F",
-  "Crude Oil": "#1a1a1a",
-};
-
-function buildPriceTraces(
-  data: PricePoint[],
-  unit: string,
-  isSingleMonth = false,
-): PlotData[] {
-  if (!data.length) return [];
-  const byProduct = new Map<UnifiedProduct, PricePoint[]>();
-  for (const p of data) {
-    if (!byProduct.has(p.product)) byProduct.set(p.product, []);
-    byProduct.get(p.product)!.push(p);
-  }
-  const traces: PlotData[] = [];
-  for (const [product, points] of byProduct.entries()) {
-    const sorted = [...points].sort((a, b) =>
-      a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes,
-    );
-    const xs = sorted.map(
-      (r) => `${r.ano}-${String(r.mes).padStart(2, "0")}-01`,
-    );
-    const ys = sorted.map((r) => r.value);
-    const markerSize = isSingleMonth ? 12 : 3;
-    traces.push({
-      type: "scatter" as const,
-      mode: "lines+markers" as const,
-      name: product,
-      x: xs,
-      y: ys,
-      line: { color: PRICE_COLORS[product], width: 2 },
-      marker: { size: markerSize, color: PRICE_COLORS[product] },
-      hovertemplate: `${product}: %{y:,.2f} ${unit}<extra></extra>`,
-    } as unknown as PlotData);
-  }
-  return traces;
-}
-
 // ─── Unit price by country (multi-line, NOT stacked) — mobile ─────────────────
 //
 // `convertFn`: applied to each usd_per_m3 value before plotting.
@@ -663,6 +618,116 @@ function YoYCardList({
   );
 }
 
+// ─── Price summary card list (mobile) ─────────────────────────────────────────
+//
+// Renders each PriceSummaryRow as a MobileDataCard with country in the header
+// (optionally with a colored dot) and Latest / MoM / YoY metrics in a 3-row
+// right slot. Same data as the desktop PriceSummaryTable; just adapted UX.
+
+function PriceSummaryCardList({
+  heading,
+  rows,
+  loading,
+  unitLabel,
+}: {
+  heading: string;
+  rows: PriceSummaryRow[];
+  loading: boolean;
+  unitLabel: string;
+}) {
+  if (loading) {
+    return (
+      <div style={{ padding: "8px 16px", color: "#aaa", fontSize: 12 }}>
+        Loading...
+      </div>
+    );
+  }
+  if (!rows.length) return null;
+
+  const metricRowStyle: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: "auto auto",
+    columnGap: 8,
+    rowGap: 2,
+    fontVariantNumeric: "tabular-nums",
+    fontFamily: "Arial",
+    fontSize: 11,
+  };
+  const labelStyle: React.CSSProperties = {
+    color: "#888",
+    textAlign: "right",
+    fontSize: 10,
+    whiteSpace: "nowrap",
+  };
+  const valueStyle: React.CSSProperties = {
+    color: "#1a1a1a",
+    textAlign: "right",
+    fontWeight: 600,
+    whiteSpace: "nowrap",
+  };
+
+  return (
+    <div>
+      <div
+        style={{
+          padding: "4px 16px 4px",
+          fontSize: 11,
+          fontWeight: 700,
+          color: "#888",
+          textTransform: "uppercase",
+          letterSpacing: "0.5px",
+        }}
+      >
+        {heading}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {rows.map((row) => {
+          const mom = fmtDeltaMobile(row.momPct);
+          const yoy = fmtDeltaMobile(row.yoyPct);
+          const dotColor = row.color ?? "#bbb";
+          const titleNode = (
+            <span style={{ display: "inline-flex", alignItems: "center" }}>
+              <span
+                aria-hidden
+                style={{
+                  display: "inline-block",
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  backgroundColor: dotColor,
+                  marginRight: 6,
+                }}
+              />
+              {row.country}
+            </span>
+          );
+          const rightSlot = (
+            <div style={metricRowStyle}>
+              <span style={labelStyle}>Latest:</span>
+              <span style={valueStyle}>
+                {row.latest.toLocaleString("en-US", { maximumFractionDigits: 2 })}{" "}
+                <span style={{ fontSize: 9, color: "#888", fontWeight: 400 }}>{unitLabel}</span>
+              </span>
+              <span style={labelStyle}>MoM %:</span>
+              <span style={{ ...valueStyle, color: mom.color }}>{mom.text}</span>
+              <span style={labelStyle}>YoY %:</span>
+              <span style={{ ...valueStyle, color: yoy.color }}>{yoy.text}</span>
+            </div>
+          );
+          return (
+            <MobileDataCard
+              key={row.country}
+              title={titleNode}
+              rightSlot={rightSlot}
+              variant="compact"
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Importer empty state ──────────────────────────────────────────────────────
 
 function ImporterEmptyStateMobile() {
@@ -738,12 +803,14 @@ export default function MobileView(): React.ReactElement {
     exportsPaisesLoading,
     yoyExportsData,
     yoyExportsLoading,
-    priceData,
-    priceLoading,
     importsUnitPriceData,
     importsUnitPriceLoading,
     exportsUnitPriceData,
     exportsUnitPriceLoading,
+    importsUPMetric,
+    setImportsUPMetric,
+    importsPriceSummary,
+    exportsPriceSummary,
     periodBadge,
     visible,
     visibilityLoading,
@@ -771,9 +838,6 @@ export default function MobileView(): React.ReactElement {
   const [filterOpen, setFilterOpen] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
-
-  // Panel D — imports unit price metric toggle (local state, not global filter)
-  const [importsUPMetric, setImportsUPMetric] = useState<ImportsUPMetric>("usd_per_ton");
 
   // Bounds for the month pickers (drawer). Fallbacks let the drawer render
   // sensibly while filtros is still loading.
@@ -883,49 +947,6 @@ export default function MobileView(): React.ReactElement {
     [exportsUnit, rangeMonths, isSingleMonth, singleMonthLabel],
   );
 
-  // Panel C — price metric
-  const priceUnitLabel: Record<PriceMetric, string> = {
-    fob_per_bbl: "USD / bbl",
-    fob_per_m3: "USD / m³",
-    fob_per_ton: "USD / ton",
-  };
-  const priceUnit = priceUnitLabel[filters.priceMetric];
-
-  const priceTraces = useMemo(
-    () => buildPriceTraces(priceData, priceUnit, isSingleMonth),
-    [priceData, priceUnit, isSingleMonth],
-  );
-
-  const priceLayout: Partial<Layout> = useMemo(
-    () => ({
-      ...COMMON_LAYOUT,
-      hovermode: "x unified" as const,
-      height: 240,
-      margin: { t: 8, b: 52, l: 56, r: 8 },
-      xaxis: {
-        ...AXIS_LINE,
-        type: "date" as const,
-        tickformat: "%b %Y",
-        dtick: pickDtickMobile(rangeMonths),
-        tickangle: -60,
-        tickfont: { family: "Arial", size: 12 },
-      },
-      yaxis: {
-        ...AXIS_LINE,
-        title: { text: priceUnit, font: { family: "Arial", size: 10 } },
-        tickformat: ",.2f",
-        tickfont: { family: "Arial", size: 12 },
-      },
-      legend: {
-        orientation: "h" as const,
-        x: 0,
-        y: -0.3,
-        font: { family: "Arial", size: 12 },
-      },
-    }),
-    [priceUnit, rangeMonths],
-  );
-
   // ── Unit price traces — imports (Panel D, pinned-country mode) ──────────────
   // Mirrors desktop Panel D: filter to the 6 pinned origins only, relabel to
   // English, force the canonical legend order so the chart color-aligns with
@@ -936,7 +957,7 @@ export default function MobileView(): React.ReactElement {
     for (const r of importsUnitPriceData) {
       const label = ORIGIN_LABEL_BY_DB[r.pais];
       if (!label) continue;
-      out.push({ ano: r.ano, mes: r.mes, pais: label, usd_per_m3: r.usd_per_m3 });
+      out.push({ ano: r.ano, mes: r.mes, pais: label, usd_per_m3: r.usd_per_m3, vol_m3: r.vol_m3 });
     }
     return out;
   }, [importsUnitPriceData]);
@@ -1070,6 +1091,19 @@ export default function MobileView(): React.ReactElement {
             },
           },
     [rangeMonths, isSingleMonth, singleMonthLabel],
+  );
+
+  // Exports price summary — fill in `color` per row from the same PALETTE
+  // rotation used by the chart (exportsUPEntities order). The hook leaves
+  // `color` undefined for exports because the palette is view-specific.
+  const exportsPriceSummaryColored: PriceSummaryRow[] = useMemo(
+    () =>
+      exportsPriceSummary.map((row) => {
+        const idx = exportsUPEntities.indexOf(row.country);
+        const color = idx >= 0 ? PALETTE[idx % PALETTE.length] ?? OTHERS_COLOR : OTHERS_COLOR;
+        return { ...row, color };
+      }),
+    [exportsPriceSummary, exportsUPEntities],
   );
 
   // ── Derived: previous-month value per entity (for new MoM% column) ──────────
@@ -1488,71 +1522,6 @@ export default function MobileView(): React.ReactElement {
 
           <div style={{ height: 16 }} />
 
-          {/* Panel C — Import Price */}
-          <SectionHeading
-            title={`Import Price (${priceUnit})`}
-            loading={priceLoading}
-          />
-
-          {/* Metric pills — horizontal scroll */}
-          <div
-            style={{
-              padding: "0 16px 8px",
-              display: "flex",
-              gap: 8,
-              overflowX: "auto",
-              WebkitOverflowScrolling: "touch",
-            }}
-          >
-            {(["fob_per_bbl", "fob_per_m3", "fob_per_ton"] as PriceMetric[]).map((opt) => (
-              <button
-                key={opt}
-                type="button"
-                onClick={() => setFilters({ priceMetric: opt })}
-                style={{
-                  padding: "4px 14px",
-                  borderRadius: 999,
-                  border: "1px solid #d0d0d0",
-                  background: filters.priceMetric === opt ? "#1a1a1a" : "#fff",
-                  color: filters.priceMetric === opt ? "#fff" : "#333",
-                  fontFamily: "Arial",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  minHeight: 32,
-                  whiteSpace: "nowrap",
-                  flexShrink: 0,
-                }}
-              >
-                {priceUnitLabel[opt]}
-              </button>
-            ))}
-          </div>
-
-          <div style={{ padding: "0 16px 8px" }}>
-            {priceTraces.length > 0 ? (
-              <Plot
-                data={priceTraces}
-                layout={priceLayout}
-                config={{ responsive: true, displayModeBar: false }}
-                style={{ width: "100%" }}
-              />
-            ) : !priceLoading ? (
-              <Plot
-                data={emptyPlot().data}
-                layout={{ ...emptyPlot().layout, height: 240 }}
-                config={{ responsive: true, displayModeBar: false }}
-                style={{ width: "100%" }}
-              />
-            ) : null}
-          </div>
-
-          <div style={{ padding: "0 16px 12px", fontSize: 10, color: "#aaa", fontStyle: "italic" }}>
-            Source: MDIC Comex — FOB unit price from total import value ÷ volume.
-          </div>
-
-          <div style={{ height: 16 }} />
-
           {/* Panel D — Import Unit Price by Origin Country */}
           <SectionHeading
             title={`Import Unit Price by Country (${importsUPUnitLabel})`}
@@ -1566,7 +1535,7 @@ export default function MobileView(): React.ReactElement {
               gap: 8,
             }}
           >
-            {(["usd_per_ton", "cents_per_gal"] as ImportsUPMetric[]).map((opt) => (
+            {(["usd_per_ton", "cents_per_gal"] as ImportsUnitPriceMetric[]).map((opt) => (
               <button
                 key={opt}
                 type="button"
@@ -1607,6 +1576,15 @@ export default function MobileView(): React.ReactElement {
               />
             ) : null}
           </div>
+
+          {/* Imports Price Summary — top-2 + Others (volume-weighted avg). */}
+          <PriceSummaryCardList
+            heading={`Import Price Summary — Latest, MoM, YoY (${importsUPUnitLabel})`}
+            rows={importsPriceSummary}
+            loading={importsUnitPriceLoading}
+            unitLabel={importsUPUnitLabel}
+          />
+
           <div style={{ padding: "0 16px 12px", fontSize: 10, color: "#aaa", fontStyle: "italic" }}>
             Source: MDIC Comex — top 8 import origins by volume. "Gulf of Mexico" ≈ Estados Unidos (proxy).
           </div>
@@ -1705,6 +1683,15 @@ export default function MobileView(): React.ReactElement {
                   />
                 ) : null}
               </div>
+
+              {/* Exports Price Summary — all top-N destinations. */}
+              <PriceSummaryCardList
+                heading="Export Price Summary — Latest, MoM, YoY (USD/bbl)"
+                rows={exportsPriceSummaryColored}
+                loading={exportsUnitPriceLoading}
+                unitLabel="USD/bbl"
+              />
+
               <div style={{ padding: "0 16px 12px", fontSize: 10, color: "#aaa", fontStyle: "italic" }}>
                 Source: MDIC Comex — FOB USD/bbl per destination (1 m³ = 6.2898 bbl). Top 8 destinations by export volume. Crude Oil only.
               </div>

@@ -54,10 +54,10 @@ import { useImportsExportsData, formatMonth, cmpMonth } from "../useImportsExpor
 import type {
   UnifiedProduct,
   YoyTableRow,
-  PriceMetric,
-  PricePoint,
   UnitPriceRow,
   MonthCursor,
+  PriceSummaryRow,
+  ImportsUnitPriceMetric,
 } from "../useImportsExportsData";
 
 import { COMMON_LAYOUT, AXIS_LINE, PALETTE, emptyPlot } from "../../../../lib/plotlyDefaults";
@@ -90,9 +90,11 @@ const OTHERS_LABEL = "Others";
 // and left to right in the legend): Russia → US → UAE → Netherlands → India
 // → Saudi Arabia → Others (last, neutral grey).
 //
-// Scope: applies to Imports tab Panel A (By Origin Country stacked area) and
-// its YoY table only. Importer panel (Panel B), Panel C (Import Price), and
-// Exports tab use their own coloring strategies.
+// Scope: applies to Imports tab Panel A (By Origin Country stacked area), its
+// YoY table, and Panel D (Imports Unit Price by Origin Country) + the Imports
+// Price Summary table — every Imports view that ranks/colors by origin country
+// uses the same pin set so colors stay consistent across panels. Importer
+// panel (Panel B) and the Exports tab use their own coloring strategies.
 const ORIGIN_COUNTRY_PINS: ReadonlyArray<{
   dbName: string;
   label: string;
@@ -710,51 +712,161 @@ function YoYTable({
   );
 }
 
-// ─── Panel C — Import price helpers ────────────────────────────────────────────
+// ─── Price summary table (Latest, MoM, YoY) ───────────────────────────────────
+//
+// Compact summary rendered directly below the unit-price chart it summarises.
+// Mirrors the YoYTable visual conventions (Bootstrap table-sm table-striped,
+// Arial 12, tabular-nums, MoM/YoY color coding) but with a fixed 4-column
+// layout: Entity · Latest · MoM% · YoY%.
+//
+// Used for both Imports (3 rows: top-2 + Others) and Exports (top-N).
+// `unitLabel` is appended to the Latest column header (USD/ton, ¢/gal, USD/bbl).
+// `rows` already carries the converted `latest` value, so this component is
+// presentation-only — all math happens in the hook.
 
-// Product colours: Diesel = brand orange, Gasoline = amber, Crude Oil = near-black
-const PRICE_COLORS: Record<UnifiedProduct, string> = {
-  Diesel: "#ff5000",
-  Gasoline: "#FFB04F",
-  "Crude Oil": "#1a1a1a",
-};
-
-function buildPriceTraces(
-  data: PricePoint[],
-  unit: string,
-  isSingleMonth = false,
-): PlotData[] {
-  if (!data.length) return [];
-
-  const byProduct = new Map<UnifiedProduct, PricePoint[]>();
-  for (const p of data) {
-    if (!byProduct.has(p.product)) byProduct.set(p.product, []);
-    byProduct.get(p.product)!.push(p);
-  }
-
-  const traces: PlotData[] = [];
-  for (const [product, points] of byProduct.entries()) {
-    const sorted = [...points].sort((a, b) =>
-      a.ano !== b.ano ? a.ano - b.ano : a.mes - b.mes,
+function PriceSummaryTable({
+  title,
+  rows,
+  loading,
+  unitLabel,
+  fallbackColorFor,
+}: {
+  title: string;
+  rows: PriceSummaryRow[];
+  loading: boolean;
+  unitLabel: string;
+  /** For destinations without a pinned palette color, derive a swatch color
+   *  from the chart's entity list (PALETTE rotation). Receives the row's
+   *  country label, returns a hex string. */
+  fallbackColorFor?: (country: string) => string;
+}) {
+  if (loading) {
+    return (
+      <div style={{ color: "#aaa", fontSize: 12, padding: "8px 0" }}>
+        Loading...
+      </div>
     );
-    const xs = sorted.map(
-      (r) => `${r.ano}-${String(r.mes).padStart(2, "0")}-01`,
-    );
-    const ys = sorted.map((r) => r.value);
-    // Single-month → big marker only (line is degenerate with 1 point).
-    const markerSize = isSingleMonth ? 14 : 4;
-    traces.push({
-      type: "scatter" as const,
-      mode: "lines+markers" as const,
-      name: product,
-      x: xs,
-      y: ys,
-      line: { color: PRICE_COLORS[product], width: 2 },
-      marker: { size: markerSize, color: PRICE_COLORS[product] },
-      hovertemplate: `${product}: %{y:,.2f} ${unit}<extra></extra>`,
-    } as unknown as PlotData);
   }
-  return traces;
+  if (!rows.length) return null;
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 700,
+          color: "#555",
+          textTransform: "uppercase",
+          letterSpacing: "0.5px",
+          marginBottom: 6,
+        }}
+      >
+        {title}
+      </div>
+      <div
+        style={{
+          overflowY: "auto",
+          overflowX: "auto",
+          border: "1px solid #ececec",
+          borderRadius: 4,
+        }}
+      >
+        <table
+          className="table table-sm table-striped mb-0"
+          style={{ fontFamily: "Arial", fontSize: 12 }}
+        >
+          <thead
+            style={{
+              position: "sticky",
+              top: 0,
+              background: "#fff",
+              zIndex: 1,
+            }}
+          >
+            <tr>
+              <th style={{ textAlign: "left", whiteSpace: "nowrap", borderBottom: "2px solid #888" }}>
+                Country
+              </th>
+              <th style={{ textAlign: "right", whiteSpace: "nowrap", borderBottom: "2px solid #888" }}>
+                Latest ({unitLabel})
+              </th>
+              <th style={{ textAlign: "right", whiteSpace: "nowrap", borderBottom: "2px solid #888" }}>
+                MoM %
+              </th>
+              <th style={{ textAlign: "right", whiteSpace: "nowrap", borderBottom: "2px solid #888" }}>
+                YoY %
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const mom = fmtDelta(row.momPct);
+              const yoy = fmtDelta(row.yoyPct);
+              const dotColor =
+                row.color ?? (fallbackColorFor ? fallbackColorFor(row.country) : "#bbb");
+              return (
+                <tr key={row.country}>
+                  <td
+                    style={{
+                      whiteSpace: "nowrap",
+                      maxWidth: 220,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                    title={row.country}
+                  >
+                    <span
+                      aria-hidden
+                      style={{
+                        display: "inline-block",
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        backgroundColor: dotColor,
+                        marginRight: 6,
+                        verticalAlign: "middle",
+                      }}
+                    />
+                    {row.country}
+                  </td>
+                  <td
+                    style={{
+                      textAlign: "right",
+                      whiteSpace: "nowrap",
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {row.latest.toLocaleString("en-US", { maximumFractionDigits: 2 })}
+                  </td>
+                  <td
+                    style={{
+                      textAlign: "right",
+                      whiteSpace: "nowrap",
+                      fontVariantNumeric: "tabular-nums",
+                      color: mom.color,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {mom.text}
+                  </td>
+                  <td
+                    style={{
+                      textAlign: "right",
+                      whiteSpace: "nowrap",
+                      fontVariantNumeric: "tabular-nums",
+                      color: yoy.color,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {yoy.text}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 // ─── Unit price by country (multi-line, NOT stacked) ──────────────────────────
@@ -815,9 +927,8 @@ function buildUnitPriceTraces(
   });
 }
 
-// ─── Imports unit price metric type ───────────────────────────────────────────
-
-type ImportsUPMetric = "usd_per_ton" | "cents_per_gal";
+// Imports unit price metric type — lives in the hook so both views and the
+// price-summary derivation stay in lockstep.
 
 // ─── Importer Panel empty state ────────────────────────────────────────────────
 
@@ -967,12 +1078,14 @@ export default function DesktopView(): React.ReactElement {
     exportsPaisesLoading,
     yoyExportsData,
     yoyExportsLoading,
-    priceData,
-    priceLoading,
     importsUnitPriceData,
     importsUnitPriceLoading,
     exportsUnitPriceData,
     exportsUnitPriceLoading,
+    importsUPMetric,
+    setImportsUPMetric,
+    importsPriceSummary,
+    exportsPriceSummary,
     periodBadge,
     visible,
     visibilityLoading,
@@ -980,9 +1093,6 @@ export default function DesktopView(): React.ReactElement {
 
   const [excelBusy, setExcelBusy] = useState(false);
   const [csvBusy, setCsvBusy] = useState(false);
-
-  // Panel D — imports unit price metric toggle (local state, not global filter)
-  const [importsUPMetric, setImportsUPMetric] = useState<ImportsUPMetric>("usd_per_ton");
 
   // ── Period bounds (for MonthRangePicker) ────────────────────────────────────
   // Picker enforces clamping + ordering against (anoMin/mesMin..anoMax/mesMax).
@@ -1096,49 +1206,6 @@ export default function DesktopView(): React.ReactElement {
       : buildStackedTraces(rows, exportsUnit);
   }, [exportsPaisesData, exportsUnit, isSingleMonth]);
 
-  // Panel C — price metric helpers
-  const priceUnitLabel: Record<PriceMetric, string> = {
-    fob_per_bbl: "USD / bbl",
-    fob_per_m3: "USD / m³",
-    fob_per_ton: "USD / ton",
-  };
-  const priceUnit = priceUnitLabel[filters.priceMetric];
-
-  const priceTraces = useMemo(
-    () => buildPriceTraces(priceData, priceUnit, isSingleMonth),
-    [priceData, priceUnit, isSingleMonth],
-  );
-
-  const priceLayout: Partial<Layout> = useMemo(
-    () => ({
-      ...COMMON_LAYOUT,
-      hovermode: "x unified" as const,
-      height: 320,
-      margin: { t: 12, b: 60, l: 72, r: 12 },
-      xaxis: {
-        ...AXIS_LINE,
-        type: "date" as const,
-        tickformat: "%b %Y",
-        dtick: pickDtick(rangeMonths),
-        tickangle: -45,
-        tickfont: { family: "Arial", size: 12 },
-      },
-      yaxis: {
-        ...AXIS_LINE,
-        title: { text: priceUnit, font: { family: "Arial", size: 11 } },
-        tickformat: ",.2f",
-        tickfont: { family: "Arial", size: 12 },
-      },
-      legend: {
-        orientation: "h" as const,
-        x: 0,
-        y: -0.22,
-        font: { family: "Arial", size: 12 },
-      },
-    }),
-    [priceUnit, rangeMonths],
-  );
-
   // Imports — unit price by country (Panel D): pinned-country mode.
   // Filter rows to the 6 pinned origins only (Others bucket would conflate
   // disparate per-country prices and be misleading), relabel to English,
@@ -1148,7 +1215,7 @@ export default function DesktopView(): React.ReactElement {
     for (const r of importsUnitPriceData) {
       const label = ORIGIN_LABEL_BY_DB[r.pais];
       if (!label) continue;
-      out.push({ ano: r.ano, mes: r.mes, pais: label, usd_per_m3: r.usd_per_m3 });
+      out.push({ ano: r.ano, mes: r.mes, pais: label, usd_per_m3: r.usd_per_m3, vol_m3: r.vol_m3 });
     }
     return out;
   }, [importsUnitPriceData]);
@@ -1685,58 +1752,6 @@ export default function DesktopView(): React.ReactElement {
 
                   <div style={{ height: 24 }} />
 
-                  {/* Panel C — Import Price (MDIC-sourced) */}
-                  <ChartSection
-                    title={`Import Price (${priceUnit})`}
-                    loading={priceLoading}
-                    height={320}
-                  >
-                    {/* Metric toggle */}
-                    <div style={{ marginBottom: 10, maxWidth: 360 }}>
-                      <SegmentedToggle
-                        options={[
-                          { value: "fob_per_bbl" as const, label: "USD / bbl" },
-                          { value: "fob_per_m3" as const, label: "USD / m³" },
-                          { value: "fob_per_ton" as const, label: "USD / ton" },
-                        ]}
-                        value={filters.priceMetric}
-                        onChange={(v) =>
-                          setFilters({ priceMetric: v as PriceMetric })
-                        }
-                        variant="compact"
-                      />
-                    </div>
-
-                    {priceTraces.length > 0 ? (
-                      <Plot
-                        data={priceTraces}
-                        layout={priceLayout}
-                        config={{ responsive: true, displayModeBar: false }}
-                        style={{ width: "100%" }}
-                      />
-                    ) : !priceLoading ? (
-                      <Plot
-                        data={emptyPlot().data}
-                        layout={{ ...emptyPlot().layout, height: 320 }}
-                        config={{ responsive: true, displayModeBar: false }}
-                        style={{ width: "100%" }}
-                      />
-                    ) : null}
-                  </ChartSection>
-
-                  <div
-                    style={{
-                      marginTop: 8,
-                      fontSize: 11,
-                      color: "#aaa",
-                      fontStyle: "italic",
-                    }}
-                  >
-                    Source: MDIC Comex — FOB unit price derived from total import value ÷ volume. Diesel = 832 kg/m³, Gasoline = 745 kg/m³, Crude Oil = 870 kg/m³.
-                  </div>
-
-                  <div style={{ height: 24 }} />
-
                   {/* Panel D — Unit Price by Origin Country */}
                   <ChartSection
                     title={`Import Unit Price by Origin Country (${importsUPUnitLabel})`}
@@ -1751,7 +1766,7 @@ export default function DesktopView(): React.ReactElement {
                           { value: "cents_per_gal" as const, label: "¢ / gal" },
                         ]}
                         value={importsUPMetric}
-                        onChange={(v) => setImportsUPMetric(v as ImportsUPMetric)}
+                        onChange={(v) => setImportsUPMetric(v as ImportsUnitPriceMetric)}
                         variant="compact"
                       />
                     </div>
@@ -1775,6 +1790,14 @@ export default function DesktopView(): React.ReactElement {
                       />
                     ) : null}
                   </ChartSection>
+
+                  <PriceSummaryTable
+                    title={`Import Price Summary — Latest, MoM, YoY (${importsUPUnitLabel})`}
+                    rows={importsPriceSummary}
+                    loading={importsUnitPriceLoading}
+                    unitLabel={importsUPUnitLabel}
+                  />
+
                   <div
                     style={{
                       marginTop: 8,
@@ -1878,6 +1901,17 @@ export default function DesktopView(): React.ReactElement {
                           />
                         ) : null}
                       </ChartSection>
+
+                      <PriceSummaryTable
+                        title="Export Price Summary — Latest, MoM, YoY (USD/bbl)"
+                        rows={exportsPriceSummary}
+                        loading={exportsUnitPriceLoading}
+                        unitLabel="USD/bbl"
+                        fallbackColorFor={(country) =>
+                          colourForEntity(exportsUPEntities, country)
+                        }
+                      />
+
                       <div
                         style={{
                           marginTop: 8,
