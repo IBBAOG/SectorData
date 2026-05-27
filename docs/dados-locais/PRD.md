@@ -9,10 +9,12 @@ data/
   d_g_margins.xlsx              Margens diesel/gasolina (atualização semanal)
   d_g_margins_backup.xlsx       Backup anterior do d_g_margins
   price_bands.xlsx              Bandas de preço (paridade import/export, Petrobras)
+  field_stakes_brasil.xlsx      Stakes (working interest) por campo × empresa — ANP Anuário 2025 (seed inicial)
   Liquidos_Vendas_Atual.csv     Vendas líquidos (snapshot)
 
-scripts/manual/dg_margins_upload.py    Upload de d_g_margins → Supabase
-scripts/manual/price_bands_upload.py   Upload de price_bands → Supabase
+scripts/manual/dg_margins_upload.py     Upload de d_g_margins → Supabase
+scripts/manual/price_bands_upload.py    Upload de price_bands → Supabase
+scripts/manual/field_stakes_upload.py   Upload (seed) de field_stakes → Supabase
 ```
 
 ## Tabelas-alvo no Supabase
@@ -23,6 +25,7 @@ Schema é dono do APP. Aqui só listamos o contrato esperado.
 |---|---|---|
 | `data/d_g_margins.xlsx` | `d_g_margins` | `(fuel_type, week)` |
 | `data/price_bands.xlsx` | `price_bands` | `(date, product)` |
+| `data/field_stakes_brasil.xlsx` | `field_stakes` | `(campo, empresa)` (one-shot seed; edits via Admin Panel) |
 | `data/Liquidos_Vendas_Atual.csv` | (verificar uso atual) | — |
 
 ## Fluxo padrão
@@ -103,6 +106,84 @@ O script `price_bands_upload.py` ignora silenciosamente as 2 colunas obsoletas c
 - Rodar upload de produção após mudança de schema sem dry run.
 - Comitar Excel inflado/grande sem necessidade.
 - Truncar tabela e re-popular do zero (memória do CEO: corrigir in-place).
+
+## Field Stakes seed (manual upload)
+
+### What it is
+
+`data/field_stakes_brasil.xlsx` — manually curated working-interest table (campo × empresa × stake_pct) sourced from ANP Anuário Estatístico 2025, Quadro 2.3 ("Concessionários por campo de produção, dezembro de 2024"), with supplementary entries from PRIO/PetroReconcavo/Brava IR materials and PPSA publications for PSC (Production Sharing Contract) fields where Petrobras + PPSA + consortium partners share stakes.
+
+The Excel has 4 sheets — only `field_stakes` is consumed by the upload script. The other 3 sheets are reference material:
+
+| Sheet | Purpose | Consumed? |
+|---|---|---|
+| `field_stakes` | 378 rows × 10 cols — campo, empresa, stake_pct, bacia, ambiente, situacao, operador, fonte, data_fonte, obs | YES |
+| `fontes` | 15 bibliographic refs (URLs to ANP, PPSA, IR releases) | no (documentation only) |
+| `lacunas` | Campos present in `anp_cdp_producao` but absent from Anuário (PSA unitization areas, exploration licenses, ceased fields). Eduardo fills these via UI. | no |
+| `resumo` | Metadata block | no |
+
+### Target
+
+| Table | Columns | PK | Writes by |
+|---|---|---|---|
+| `field_stakes` | `campo`, `empresa`, `stake_pct numeric(6,3) CHECK (stake_pct>0 AND stake_pct<=100)`, `updated_at`, `updated_by` | `(campo, empresa)` | Seed script (DIRECT upsert) + Admin Panel (via `admin_upsert_field_stakes` RPC) |
+
+### Script
+
+`scripts/manual/field_stakes_upload.py` — one-shot seed bootstrap. Reads the `field_stakes` sheet, normalizes empresa names, fuzzy-matches campo names to the canonical universe (`mv_anp_cdp_pocos.campo`), then `DELETE`s and `INSERT`s per campo. `updated_by` is left NULL (seed, not a user edit; column is nullable).
+
+**Why direct table writes instead of `admin_upsert_field_stakes()` RPC?** The RPC guards on `is_admin()` which evaluates `auth.uid()` — null under Service Role Key. This script is the ONE documented place where field_stakes is written outside that RPC. All subsequent edits should go through the Admin Panel UI.
+
+### Empresa normalization
+
+`EMPRESA_NORMALIZATION` dictionary at the top of `scripts/manual/field_stakes_upload.py` — maps the 77 distinct raw legal names ("Petroleo Brasileiro S.A. - Petrobras", "PRIO Bravo Ltda.", "Brava Energia (3R Pescada S.A.)", etc.) to ~63 canonical short names ("Petrobras", "PRIO", "Brava Energia"). Maintenance rules:
+
+- Strip legal suffixes (S.A., Ltda., Corp., Inc., Brasil) when the rest is unambiguous.
+- Collapse SPE / subsidiary fragmentation into the parent group: all `PRIO *` → `PRIO`; all `Brava Energia (3R *)` → `Brava Energia`; all `PetroReconcavo` SPEs → `PetroReconcavo`; both Seacrest SPEs → `Seacrest`; both Equinor entities → `Equinor`; both Reconcavo E&P/Energia → `Reconcavo Energia`.
+- Group ex-mergers under the surviving brand (Enauta → Brava Energia).
+- Unmapped raw strings fall through with `.strip()` only — extend the dict when new partners appear in future Anuario revisions.
+
+### Campo matching
+
+The Excel `campo` column uses ANP Anuário CAPSLOCK + diacritic format ("ANAMBÉ", "AZULÃO", "ALBACORA LESTE"). The canonical universe is the union of `mv_anp_cdp_pocos.campo` (from monthly production) + already-registered `field_stakes.campo`, fetched at runtime via `get_field_stakes_overview()` RPC (~540 names). Matching uses:
+
+1. ASCII-folded uppercase exact match (handles all diacritic variations).
+2. Fallback to `difflib.get_close_matches(cutoff=0.85)` if no exact hit.
+3. Anything still unmatched is skipped and reported — Eduardo decides via UI.
+
+### Validation
+
+The script only uploads campos whose post-normalization grouped sum is `100.0 ± 0.01`. (The Excel currently has all 306 campos summing exactly to 100, so this is just defense-in-depth.)
+
+### Seed run (2026-05-26)
+
+- 378 Excel rows / 306 distinct campos / 77 raw empresas → 64 canonical empresas
+- 304 campos exact-matched and uploaded (373 stake rows inserted)
+- 2 campos unmatched and skipped: `Mariqui`, `Xisto São Mateus do Sul` — neither exists in `mv_anp_cdp_pocos`; Eduardo will add via UI after table appears in `/admin-panel`.
+
+### Refresh cadence
+
+As needed, when:
+- ANP publishes a new Anuário (annual, ~April), OR
+- A partner deal closes that materially changes stakes on a marquee field (Tupi, Mero, Búzios, etc.).
+
+For ad-hoc partner-deal updates, prefer editing through the Admin Panel (logged-in Admin → `admin_upsert_field_stakes` RPC) instead of re-running the seed script. The seed script is for bulk refreshes from a freshly curated Excel.
+
+### How to re-run
+
+```bash
+# Default path (data/field_stakes_brasil.xlsx)
+python scripts/manual/field_stakes_upload.py
+
+# Alternative path
+python scripts/manual/field_stakes_upload.py path/to/alternate.xlsx
+# or env var
+FIELD_STAKES_XLSX=path/to/alternate.xlsx python scripts/manual/field_stakes_upload.py
+```
+
+Important: re-running is idempotent at the campo level (DELETE + INSERT per campo). Any campos NOT in the Excel are left untouched in the DB — that is intentional, because Admin Panel edits for campos beyond the Anuário scope (PSA unitizations, exploration blocks) must not be wiped by a future re-seed.
+
+---
 
 ## Clipping cookies (News Hunter)
 
