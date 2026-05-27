@@ -9,9 +9,17 @@
 // Tab: 'imports' | 'exports'
 // Imports tab: Panel A (countries stacked, kt) + Panel B (importers stacked, mil m³)
 //   + YoY tables for each panel.
-//   + Panel C (import price from mdic_comex — FOB/bbl | FOB/m³ | FOB/ton, single-line series).
+//   + Panel D (unit price by origin country, USD/m³) + price summary table.
 // Exports tab: stacked area by destination country (top-10 + Others) + YoY table.
 //   Source: mdic_comex (migration 20260525000110). RPC get_imports_exports_exports_serie DROPPED.
+//   For Crude Oil: unit price by destination country + price summary table.
+//
+// Panel C ("Import Price USD/bbl") was removed 2026-05-28. The orphaned RPC
+// get_imports_exports_fob_price_serie was dropped in migration 20260528960000.
+// Replacement is the new Imports / Exports Price Summary tables — top-2 origin
+// countries by volume + weighted-average "Others" row (imports) or top-N
+// destinations (exports), with Latest / MoM% / YoY% columns derived from the
+// existing unit-price RPCs (now augmented with vol_m3 server-side).
 //
 // Temporal granularity — MONTHLY (migration 20260526800000).
 //   Period is now { start: {ano, mes}, end: {ano, mes} }. RPCs accept the 4-int
@@ -26,7 +34,6 @@
 // Units:
 //   Panel A → quantidade_kg / 1e6 = kt. Label "kt".
 //   Panel B → total_mil_m3 from RPC (server converts kg→m³ via density). Label "mil m³".
-//   Panel C → fob_per_bbl (USD/bbl) | fob_per_m3 (USD/m³) | fob_per_ton (USD/ton). Sourced from mdic_comex.
 //   Exports (metric=volume) → server returns mil m³ directly — DO NOT divide client-side. Label "mil m³".
 //   Exports (metric=usd)    → server returns raw USD. Label "USD".
 
@@ -40,7 +47,6 @@ import {
   rpcGetImportsExportsYoyTable,
   rpcGetImportsExportsExportsPaisesStacked,
   rpcGetImportsExportsExportsYoyTable,
-  rpcGetImportsExportsFobPriceSerie,
   rpcGetImportsExportsImportsUnitPrice,
   rpcGetImportsExportsExportsUnitPrice,
 } from "@/lib/rpc";
@@ -58,7 +64,10 @@ export type ImportsExportsTab = "imports" | "exports";
 
 export type ExportsYAxis = "volume" | "usd";
 
-export type PriceMetric = "fob_per_bbl" | "fob_per_m3" | "fob_per_ton";
+// Imports Panel D unit toggle — also drives the imports price summary table.
+// "usd_per_ton" applies a per-product density (Diesel 832, Gasoline 745,
+// Crude Oil 870 kg/m³). "cents_per_gal" applies 264.172 gal per m³ × 100.
+export type ImportsUnitPriceMetric = "usd_per_ton" | "cents_per_gal";
 
 // Single-point month cursor (1-12).
 export interface MonthCursor {
@@ -72,20 +81,11 @@ export interface Period {
   end: MonthCursor;
 }
 
-// Panel C — one point per (month × product) flattened for the 3-line chart
-export interface PricePoint {
-  ano: number;
-  mes: number;
-  product: UnifiedProduct;
-  value: number | null;
-}
-
 export interface ImportsExportsFilters {
   unifiedProduct: UnifiedProduct;
   period: Period;
   tab: ImportsExportsTab;
   exportsYAxis: ExportsYAxis;
-  priceMetric: PriceMetric;           // Panel C metric toggle
 }
 
 // Panel A row (countries) — raw from RPC, quantity in kg; UI divides by 1e6 for kt
@@ -118,6 +118,21 @@ export type { IEExportsYoyRow as ExportsYoyRow } from "@/lib/rpc";
 
 // Unit price rows (USD/m³ per country per month) — imports + exports
 export type { IEUnitPriceRow as UnitPriceRow } from "@/lib/rpc";
+
+// One row of the Imports / Exports price summary table.
+// `latest` is already converted to the display unit (USD/ton or ¢/gal for
+// imports — chosen by the local toggle; USD/bbl for exports — fixed).
+// `momPct` / `yoyPct` are computed on the SAME converted unit so the
+// percentage deltas match the displayed Latest value.
+// `color` mirrors the chart legend color so the table dots align with the
+// per-country line on the chart above.
+export interface PriceSummaryRow {
+  country: string;        // English label as rendered in the chart legend
+  latest: number;
+  momPct: number | null;  // null when prior month is missing or zero
+  yoyPct: number | null;  // null when same-month-prev-year is missing or zero
+  color?: string;
+}
 
 export interface FiltrosResult {
   ano_min: number;
@@ -156,10 +171,6 @@ export interface UseImportsExportsData {
   yoyExportsData: IEExportsYoyRow[];
   yoyExportsLoading: boolean;
 
-  // Imports tab — Panel C (import price from mdic_comex)
-  priceData: PricePoint[];
-  priceLoading: boolean;
-
   // Imports tab — Panel D (unit price by origin country, USD/m³)
   importsUnitPriceData: IEUnitPriceRow[];
   importsUnitPriceLoading: boolean;
@@ -167,6 +178,22 @@ export interface UseImportsExportsData {
   // Exports tab — unit price by destination country (USD/m³)
   exportsUnitPriceData: IEUnitPriceRow[];
   exportsUnitPriceLoading: boolean;
+
+  // Local toggle for the imports unit price view (chart + summary table).
+  // Lives in the hook (not local View state) so both desktop and mobile share
+  // the same value and the price summary derivation uses the same unit math.
+  importsUPMetric: ImportsUnitPriceMetric;
+  setImportsUPMetric: (next: ImportsUnitPriceMetric) => void;
+
+  // Imports / Exports price summary tables (derived client-side from
+  // importsUnitPriceData / exportsUnitPriceData and the active unit toggle).
+  // Imports: exactly 3 rows — top-2 origin countries by total vol_m3 in the
+  // window + an "Others" row carrying the volume-weighted average price of
+  // the remaining countries. Values are in the unit dictated by importsUPMetric.
+  // Exports: all top-N destination countries returned by the RPC, no Others.
+  // Values are in USD/bbl (fixed).
+  importsPriceSummary: PriceSummaryRow[];
+  exportsPriceSummary: PriceSummaryRow[];
 
   // Derived helpers
   /** Month-array (YYYY-MM-01) from ano_min/mes_min to ano_max/mes_max. */
@@ -191,6 +218,53 @@ const MONTH_LABELS_SHORT = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
+
+// Density by unified product (kg/m³). Mirrors the constants declared in both
+// Views — duplicated here because the price summary derivation needs the same
+// math (USD/m³ → USD/ton requires density). Values match ncm_densidade_kg_m3
+// (Diesel 832, Gasoline 745, Crude Oil 870).
+const PRODUCT_DENSITY_KG_M3: Record<string, number> = {
+  Diesel: 832,
+  Gasoline: 745,
+  "Crude Oil": 870,
+};
+
+// Gallons per m³ (US liquid gallon).
+const GAL_PER_M3 = 264.172;
+
+// 1 m³ = 6.2898 bbl (international standard for petroleum). Used for the
+// exports price summary (Crude Oil only).
+const M3_PER_BBL = 6.2898;
+
+// Pinned origin-country palette — duplicated from the Views because both
+// Views share the same pin set and the price summary's color column must
+// match the chart legend exactly. Keep in sync with desktop/View.tsx and
+// mobile/View.tsx if the pin set ever changes.
+const ORIGIN_COUNTRY_PINS_DATA: ReadonlyArray<{
+  dbName: string;
+  label: string;
+  color: string;
+}> = [
+  { dbName: "Rússia", label: "Russia", color: "#000000" },
+  { dbName: "Estados Unidos", label: "United States", color: "#FF5000" },
+  { dbName: "Emirados Árabes Unidos", label: "UAE", color: "#73C6A1" },
+  { dbName: "Países Baixos (Holanda)", label: "Netherlands", color: "#FFAE66" },
+  { dbName: "Índia", label: "India", color: "#8258A0" },
+  { dbName: "Arábia Saudita", label: "Saudi Arabia", color: "#D2FF00" },
+];
+
+const ORIGIN_LABEL_BY_DB_DATA: Record<string, string> = ORIGIN_COUNTRY_PINS_DATA.reduce(
+  (acc, p) => ({ ...acc, [p.dbName]: p.label }),
+  {} as Record<string, string>,
+);
+
+const ORIGIN_COLOR_BY_LABEL_DATA: Record<string, string> = ORIGIN_COUNTRY_PINS_DATA.reduce(
+  (acc, p) => ({ ...acc, [p.label]: p.color }),
+  {} as Record<string, string>,
+);
+
+const OTHERS_COLOR_DATA = "#7F7F7F";
+const OTHERS_LABEL_DATA = "Others";
 
 // ─── Helpers (exported for the views) ──────────────────────────────────────────
 
@@ -272,7 +346,6 @@ const DEFAULT_FILTERS: ImportsExportsFilters = {
   period: { start: INITIAL_START, end: INITIAL_END },
   tab: "imports",
   exportsYAxis: "volume",
-  priceMetric: "fob_per_bbl",
 };
 
 // ─── Hook ──────────────────────────────────────────────────────────────────────
@@ -307,10 +380,6 @@ export function useImportsExportsData(): UseImportsExportsData {
   const [yoyExportsData, setYoyExportsData] = useState<IEExportsYoyRow[]>([]);
   const [yoyExportsLoading, setYoyExportsLoading] = useState(false);
 
-  // Panel C — import price (mdic_comex)
-  const [priceData, setPriceData] = useState<PricePoint[]>([]);
-  const [priceLoading, setPriceLoading] = useState(false);
-
   // Panel D — imports unit price by origin country (USD/m³, mdic_comex)
   const [importsUnitPriceData, setImportsUnitPriceData] = useState<IEUnitPriceRow[]>([]);
   const [importsUnitPriceLoading, setImportsUnitPriceLoading] = useState(false);
@@ -318,6 +387,9 @@ export function useImportsExportsData(): UseImportsExportsData {
   // Exports tab — unit price by destination country (USD/m³, mdic_comex)
   const [exportsUnitPriceData, setExportsUnitPriceData] = useState<IEUnitPriceRow[]>([]);
   const [exportsUnitPriceLoading, setExportsUnitPriceLoading] = useState(false);
+
+  // Imports unit price view toggle (shared across views + summary table).
+  const [importsUPMetric, setImportsUPMetric] = useState<ImportsUnitPriceMetric>("usd_per_ton");
 
   // Stable setter merging partial filter updates
   const setFilters = useCallback((next: Partial<ImportsExportsFilters>) => {
@@ -370,7 +442,6 @@ export function useImportsExportsData(): UseImportsExportsData {
     periodEndMes,
     filters.tab,
     filters.exportsYAxis,
-    filters.priceMetric,
   ]);
 
   // ── Derived: YoY anchor = period.end (single-month semantics) ───────────────
@@ -570,45 +641,7 @@ export function useImportsExportsData(): UseImportsExportsData {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stableFilters.tab, stableFilters.unifiedProduct, stableFilters.exportsYAxis, yoyEndAno, yoyExportsEndMes]);
 
-  // ── 7. Panel C — import price (mdic_comex, single active product) ────────────
-  const priceFetchIdRef = useRef(0);
-  const priceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (!supabase || stableFilters.tab !== "imports") return;
-    if (priceTimerRef.current) clearTimeout(priceTimerRef.current);
-    const myId = ++priceFetchIdRef.current;
-    priceTimerRef.current = setTimeout(async () => {
-      setPriceLoading(true);
-      try {
-        const rows = await rpcGetImportsExportsFobPriceSerie(
-          supabase,
-          stableFilters.unifiedProduct,
-          periodStartAno,
-          periodStartMes,
-          periodEndAno,
-          periodEndMes,
-        );
-        if (myId !== priceFetchIdRef.current) return;
-        const metric = stableFilters.priceMetric;
-        const points: PricePoint[] = rows.map((r) => ({
-          ano: r.ano,
-          mes: r.mes,
-          product: stableFilters.unifiedProduct,
-          value: r[metric],
-        }));
-        setPriceData(points);
-      } catch (err) {
-        console.error("get_imports_exports_fob_price_serie:", err);
-      } finally {
-        if (myId === priceFetchIdRef.current) setPriceLoading(false);
-      }
-    }, 400);
-    return () => { if (priceTimerRef.current) clearTimeout(priceTimerRef.current); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stableFilters.tab, stableFilters.unifiedProduct, periodStartAno, periodStartMes, periodEndAno, periodEndMes, stableFilters.priceMetric]);
-
-  // ── 8. Panel D — imports unit price by origin country (mdic_comex) ──────────
+  // ── 7. Panel D — imports unit price by origin country (mdic_comex) ──────────
   const importsUPFetchIdRef = useRef(0);
   const importsUPTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -639,7 +672,7 @@ export function useImportsExportsData(): UseImportsExportsData {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stableFilters.tab, stableFilters.unifiedProduct, periodStartAno, periodStartMes, periodEndAno, periodEndMes]);
 
-  // ── 9. Exports unit price by destination country (mdic_comex) ───────────────
+  // ── 8. Exports unit price by destination country (mdic_comex) ───────────────
   const exportsUPFetchIdRef = useRef(0);
   const exportsUPTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -669,6 +702,273 @@ export function useImportsExportsData(): UseImportsExportsData {
     return () => { if (exportsUPTimerRef.current) clearTimeout(exportsUPTimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stableFilters.tab, stableFilters.unifiedProduct, periodStartAno, periodStartMes, periodEndAno, periodEndMes]);
+
+  // ── Derived: Imports / Exports price summary tables ─────────────────────────
+  //
+  // Algorithm (mirror description in CLAUDE.md § B2 of the price-summary plan):
+  //  1. Choose the source rows (importsUnitPriceData / exportsUnitPriceData)
+  //     and apply the same unit conversion that the chart uses, so that the
+  //     `latest` cell in the table matches the rightmost line in the chart.
+  //     - Imports `usd_per_ton` (default toggle): density-based conversion.
+  //     - Imports `cents_per_gal`: divide by gal/m³, ×100.
+  //     - Exports: USD/bbl fixed (Crude Oil only renders, but we compute for all).
+  //  2. Imports only: rank countries by SUM(vol_m3) over the entire window
+  //     (server already returns top-N — typically 8 — so we just sort by the
+  //     in-period total). Keep top-2. Collapse the rest into an "Others"
+  //     synthetic series whose monthly value is a volume-weighted average of
+  //     remaining countries: y(m) = Σ(usd_per_m3 × vol_m3) / Σ(vol_m3).
+  //     If Σ(vol_m3) == 0 for that month, the value is null.
+  //  3. Exports: every country returned by the RPC becomes a row (no Others).
+  //  4. For each surviving series, find the latest month (period.end if
+  //     present, otherwise the last available non-null point).
+  //     - latest    = value at that month
+  //     - momPct    = (latest − prior_month) / prior_month × 100; null if
+  //                   the prior month value is missing or zero.
+  //     - yoyPct    = (latest − same_month_year_before) / same_month_year_before × 100;
+  //                   null if missing/zero.
+  //  5. Apply the unit conversion BEFORE computing momPct / yoyPct so that the
+  //     deltas are computed on the displayed unit (the percentage is unit-
+  //     agnostic for linear conversions, so this is mostly cosmetic, but it
+  //     avoids surprises in edge cases).
+  //  6. Attach the chart legend color (`color`) so the table dot matches.
+
+  // Imports price summary
+  const importsPriceSummary: PriceSummaryRow[] = useMemo(() => {
+    if (!importsUnitPriceData.length) return [];
+
+    // 1. Unit conversion fn for the active metric.
+    const density = PRODUCT_DENSITY_KG_M3[filters.unifiedProduct] ?? 840;
+    const convert: (usdPerM3: number) => number =
+      importsUPMetric === "usd_per_ton"
+        ? (v) => v / (density / 1000)
+        : (v) => (v / GAL_PER_M3) * 100;
+
+    // 2. Group rows by country, compute total vol_m3 in the window, sort desc.
+    type Aggr = { totalVol: number; byMonth: Map<string, { p: number | null; v: number }> };
+    const byCountry = new Map<string, Aggr>();
+    for (const r of importsUnitPriceData) {
+      const key = `${r.ano}-${String(r.mes).padStart(2, "0")}`;
+      let agg = byCountry.get(r.pais);
+      if (!agg) {
+        agg = { totalVol: 0, byMonth: new Map() };
+        byCountry.set(r.pais, agg);
+      }
+      agg.totalVol += r.vol_m3;
+      agg.byMonth.set(key, { p: r.usd_per_m3, v: r.vol_m3 });
+    }
+    const countries = Array.from(byCountry.entries()).sort(
+      ([, a], [, b]) => b.totalVol - a.totalVol,
+    );
+
+    // 3. Helper — given a per-month value lookup and an anchor month cursor,
+    // compute latest / mom / yoy on the converted unit.
+    type MonthAgg = Map<string, { p: number | null; v: number }>;
+    function evaluateSeries(byMonth: MonthAgg): {
+      latest: number;
+      momPct: number | null;
+      yoyPct: number | null;
+    } | null {
+      // Find latest non-null month, prefer period.end if present.
+      const endKey = `${periodEndAno}-${String(periodEndMes).padStart(2, "0")}`;
+      let anchorAno = periodEndAno;
+      let anchorMes = periodEndMes;
+      let anchorEntry = byMonth.get(endKey);
+      if (!anchorEntry || anchorEntry.p == null) {
+        // Walk backwards through months until we find a non-null point or
+        // run out of in-window data.
+        let y = periodEndAno;
+        let m = periodEndMes;
+        anchorEntry = undefined;
+        for (let i = 0; i < 600; i += 1) {
+          m -= 1;
+          if (m === 0) {
+            m = 12;
+            y -= 1;
+          }
+          if (y < periodStartAno || (y === periodStartAno && m < periodStartMes)) break;
+          const k = `${y}-${String(m).padStart(2, "0")}`;
+          const e = byMonth.get(k);
+          if (e && e.p != null) {
+            anchorEntry = e;
+            anchorAno = y;
+            anchorMes = m;
+            break;
+          }
+        }
+      }
+      if (!anchorEntry || anchorEntry.p == null) return null;
+
+      const latestUsdPerM3 = anchorEntry.p;
+      const latest = convert(latestUsdPerM3);
+
+      // Prior-month cursor.
+      const priorMes = anchorMes === 1 ? 12 : anchorMes - 1;
+      const priorAno = anchorMes === 1 ? anchorAno - 1 : anchorAno;
+      const priorKey = `${priorAno}-${String(priorMes).padStart(2, "0")}`;
+      const priorEntry = byMonth.get(priorKey);
+      const momPct =
+        priorEntry && priorEntry.p != null && priorEntry.p !== 0
+          ? ((latestUsdPerM3 - priorEntry.p) / priorEntry.p) * 100
+          : null;
+
+      // YoY cursor (same month, 1 year back).
+      const yoyKey = `${anchorAno - 1}-${String(anchorMes).padStart(2, "0")}`;
+      const yoyEntry = byMonth.get(yoyKey);
+      const yoyPct =
+        yoyEntry && yoyEntry.p != null && yoyEntry.p !== 0
+          ? ((latestUsdPerM3 - yoyEntry.p) / yoyEntry.p) * 100
+          : null;
+
+      return { latest, momPct, yoyPct };
+    }
+
+    // 4. Top-2 countries → individual rows.
+    const top2 = countries.slice(0, 2);
+    const rest = countries.slice(2);
+
+    const out: PriceSummaryRow[] = [];
+    for (const [pais, agg] of top2) {
+      const ev = evaluateSeries(agg.byMonth);
+      if (!ev) continue;
+      const englishLabel = ORIGIN_LABEL_BY_DB_DATA[pais] ?? pais;
+      const color = ORIGIN_COLOR_BY_LABEL_DATA[englishLabel];
+      out.push({ country: englishLabel, latest: ev.latest, momPct: ev.momPct, yoyPct: ev.yoyPct, color });
+    }
+
+    // 5. "Others" — volume-weighted monthly average of `rest`.
+    if (rest.length) {
+      const othersByMonth = new Map<string, { p: number | null; v: number }>();
+      // Union of all (rest) month keys
+      const monthKeys = new Set<string>();
+      for (const [, agg] of rest) {
+        for (const k of agg.byMonth.keys()) monthKeys.add(k);
+      }
+      for (const k of monthKeys) {
+        let weightedNum = 0;
+        let weightDen = 0;
+        for (const [, agg] of rest) {
+          const e = agg.byMonth.get(k);
+          if (!e || e.p == null || e.v <= 0) continue;
+          weightedNum += e.p * e.v;
+          weightDen += e.v;
+        }
+        const avg = weightDen > 0 ? weightedNum / weightDen : null;
+        const totalV = (() => {
+          let s = 0;
+          for (const [, agg] of rest) {
+            const e = agg.byMonth.get(k);
+            if (e && e.v > 0) s += e.v;
+          }
+          return s;
+        })();
+        othersByMonth.set(k, { p: avg, v: totalV });
+      }
+      const ev = evaluateSeries(othersByMonth);
+      if (ev) {
+        out.push({
+          country: OTHERS_LABEL_DATA,
+          latest: ev.latest,
+          momPct: ev.momPct,
+          yoyPct: ev.yoyPct,
+          color: OTHERS_COLOR_DATA,
+        });
+      }
+    }
+
+    return out;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    importsUnitPriceData,
+    importsUPMetric,
+    filters.unifiedProduct,
+    periodStartAno,
+    periodStartMes,
+    periodEndAno,
+    periodEndMes,
+  ]);
+
+  // Exports price summary — every top-N destination, USD/bbl fixed.
+  const exportsPriceSummary: PriceSummaryRow[] = useMemo(() => {
+    if (!exportsUnitPriceData.length) return [];
+
+    const convert = (v: number) => v / M3_PER_BBL;
+
+    type Aggr = { totalVol: number; byMonth: Map<string, { p: number | null; v: number }> };
+    const byCountry = new Map<string, Aggr>();
+    for (const r of exportsUnitPriceData) {
+      const key = `${r.ano}-${String(r.mes).padStart(2, "0")}`;
+      let agg = byCountry.get(r.pais);
+      if (!agg) {
+        agg = { totalVol: 0, byMonth: new Map() };
+        byCountry.set(r.pais, agg);
+      }
+      agg.totalVol += r.vol_m3;
+      agg.byMonth.set(key, { p: r.usd_per_m3, v: r.vol_m3 });
+    }
+    const countries = Array.from(byCountry.entries()).sort(
+      ([, a], [, b]) => b.totalVol - a.totalVol,
+    );
+
+    // For exports the chart legend colors come from PALETTE rotation in the
+    // Views (no pinned palette for destinations). We attach undefined here
+    // and let the View pick the color via the same `colourForEntity` it uses
+    // for the chart — this keeps the table dot in lockstep with the chart.
+    const out: PriceSummaryRow[] = [];
+    for (const [pais, agg] of countries) {
+      // Inline evaluator (same shape as imports' evaluateSeries).
+      const endKey = `${periodEndAno}-${String(periodEndMes).padStart(2, "0")}`;
+      let anchorAno = periodEndAno;
+      let anchorMes = periodEndMes;
+      let anchorEntry = agg.byMonth.get(endKey);
+      if (!anchorEntry || anchorEntry.p == null) {
+        let y = periodEndAno;
+        let m = periodEndMes;
+        anchorEntry = undefined;
+        for (let i = 0; i < 600; i += 1) {
+          m -= 1;
+          if (m === 0) {
+            m = 12;
+            y -= 1;
+          }
+          if (y < periodStartAno || (y === periodStartAno && m < periodStartMes)) break;
+          const k = `${y}-${String(m).padStart(2, "0")}`;
+          const e = agg.byMonth.get(k);
+          if (e && e.p != null) {
+            anchorEntry = e;
+            anchorAno = y;
+            anchorMes = m;
+            break;
+          }
+        }
+      }
+      if (!anchorEntry || anchorEntry.p == null) continue;
+      const latest = convert(anchorEntry.p);
+      const priorMes = anchorMes === 1 ? 12 : anchorMes - 1;
+      const priorAno = anchorMes === 1 ? anchorAno - 1 : anchorAno;
+      const priorKey = `${priorAno}-${String(priorMes).padStart(2, "0")}`;
+      const priorEntry = agg.byMonth.get(priorKey);
+      const momPct =
+        priorEntry && priorEntry.p != null && priorEntry.p !== 0
+          ? ((anchorEntry.p - priorEntry.p) / priorEntry.p) * 100
+          : null;
+      const yoyKey = `${anchorAno - 1}-${String(anchorMes).padStart(2, "0")}`;
+      const yoyEntry = agg.byMonth.get(yoyKey);
+      const yoyPct =
+        yoyEntry && yoyEntry.p != null && yoyEntry.p !== 0
+          ? ((anchorEntry.p - yoyEntry.p) / yoyEntry.p) * 100
+          : null;
+      out.push({ country: pais, latest, momPct, yoyPct });
+    }
+
+    return out;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    exportsUnitPriceData,
+    periodStartAno,
+    periodStartMes,
+    periodEndAno,
+    periodEndMes,
+  ]);
 
   // ── Derived: month list + period badge ──────────────────────────────────────
   const monthList = useMemo(() => {
@@ -700,12 +1000,14 @@ export function useImportsExportsData(): UseImportsExportsData {
     exportsPaisesLoading,
     yoyExportsData,
     yoyExportsLoading,
-    priceData,
-    priceLoading,
     importsUnitPriceData,
     importsUnitPriceLoading,
     exportsUnitPriceData,
     exportsUnitPriceLoading,
+    importsUPMetric,
+    setImportsUPMetric,
+    importsPriceSummary,
+    exportsPriceSummary,
     monthList,
     periodBadge,
     yoyEndAno,

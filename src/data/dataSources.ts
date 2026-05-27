@@ -253,7 +253,7 @@ export const DATA_SOURCES: DataSource[] = [
     key: "mdic_comex",
     name: "MDIC Comex Stat",
     description:
-      "Brazil's foreign trade statistics from MDIC Comex Stat. Filtered to fuel NCMs. Feeds the Imports & Exports FOB price panel (Panel C).",
+      "Brazil's foreign trade statistics from MDIC Comex Stat. Filtered to fuel NCMs. Feeds the Imports & Exports unit-price chart (Panel D) and the Imports / Exports Price Summary tables.",
     category: "imports",
     source: "MDIC",
     sourceUrl: "https://comexstat.mdic.gov.br/",

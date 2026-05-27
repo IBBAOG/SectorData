@@ -22,7 +22,7 @@ This dashboard **consolidates** the 4 deprecated dashboards:
 - `/anp-daie` (sub-PRD: `docs/app/_deprecated/anp-daie.md`)
 - `/anp-desembaracos` (sub-PRD: `docs/app/_deprecated/anp-desembaracos.md`)
 - `/anp-painel-importacoes` (sub-PRD: `docs/app/_deprecated/anp-painel-importacoes.md`)
-- `/mdic-comex` (sub-PRD: `docs/app/_deprecated/mdic-comex.md`) — absorbed by Panel C ("Import Price") on 2026-05-25
+- `/mdic-comex` (sub-PRD: `docs/app/_deprecated/mdic-comex.md`) — originally absorbed by Panel C ("Import Price") on 2026-05-25; after Panel C removal on 2026-05-28, MDIC data feeds Panel D and the new Imports / Exports Price Summary tables instead.
 
 ---
 
@@ -66,6 +66,7 @@ Source migrations:
 - `20260525000110_imports_exports_exports_by_country.sql` — exports stacked by destination + YoY.
 - `20260526300000_imports_exports_unit_price_by_country.sql` — unit price by country (imports + exports).
 - **`20260526800000_imports_exports_monthly_granularity.sql`** — temporal granularity upgrade from year to **month**. Added `(p_mes_inicio, p_mes_fim)` to the 7 RPCs whose bounds are inclusive on both ends; `get_imports_exports_filtros()` now also returns `mes_min` and `mes_max`. The 2 YoY RPCs were unchanged (they already accept `p_mes_fim`). Single-month view supported via `start === end`.
+- **`20260528960000_imports_exports_unit_price_with_volume.sql`** — Panel C removal + price summary tables (2026-05-28). Drops `get_imports_exports_fob_price_serie` (orphaned by Panel C deletion); re-creates `get_imports_exports_imports_unit_price` and `get_imports_exports_exports_unit_price` with an extra `vol_m3 numeric` column in the return tuple so the client can compute the volume-weighted-average "Others" row in the Imports Price Summary. `SECURITY DEFINER` + `SET search_path = public, pg_temp` re-applied after DROP+CREATE (Pegadinha #18).
 
 ### Temporal filter — monthly granularity
 
@@ -133,21 +134,23 @@ Returns `(entity text, last_12m numeric, prev_12m numeric, yoy_pct numeric)`.
 
 ### `get_imports_exports_imports_unit_price(p_unified_product, p_ano_inicio, p_mes_inicio, p_ano_fim, p_mes_fim, p_top_n DEFAULT 8)`
 
-Returns `(ano int, mes int, pais text, usd_per_m3 numeric)`.
+Returns `(ano int, mes int, pais text, usd_per_m3 numeric, vol_m3 numeric)`.
 
-- Source: `mdic_comex` (flow='import'). Migration `20260526300000_imports_exports_unit_price_by_country.sql`.
+- Source: `mdic_comex` (flow='import'). Migrations `20260526300000_imports_exports_unit_price_by_country.sql` (initial) + `20260528960000_imports_exports_unit_price_with_volume.sql` (added `vol_m3`).
 - Server ranks origin countries by total import volume in period; returns top-N. NOT collapsed to "Others" — each country is a distinct line.
 - `usd_per_m3` is `NULL` for (pais, month) rows where volume = 0. UI uses `y=null + connectgaps` to skip those months in hover without breaking the line.
+- `vol_m3` is the monthly aggregated import volume (m³) per country — used **client-side** as the weight denominator when computing the volume-weighted-average price of the "Others" row in the Imports Price Summary table.
 - SECURITY DEFINER (required — `mdic_comex` has RLS restricted to authenticated; without SECURITY DEFINER, anon callers get empty results).
 - Default top-N = 8. Chart title: "Import Unit Price by Origin Country (USD/m³)".
 
 ### `get_imports_exports_exports_unit_price(p_unified_product, p_ano_inicio, p_mes_inicio, p_ano_fim, p_mes_fim, p_top_n DEFAULT 8)`
 
-Returns `(ano int, mes int, pais text, usd_per_m3 numeric)`.
+Returns `(ano int, mes int, pais text, usd_per_m3 numeric, vol_m3 numeric)`.
 
-- Source: `mdic_comex` (flow='export'). Same migration as above.
+- Source: `mdic_comex` (flow='export'). Same migrations as the imports variant above.
 - Server ranks destination countries by total export volume; returns top-N distinct lines.
 - Same NULL semantics and SECURITY DEFINER requirement as the imports variant.
+- `vol_m3` is the monthly aggregated export volume (m³) — used as the weight denominator for client-side weighted-average price computation (currently unused for exports, where the summary table renders every top-N destination without collapsing into "Others").
 - Chart title: "Export Unit Price by Destination Country (USD/m³)".
 
 ---
@@ -181,16 +184,14 @@ The stacked-area chart ("Exports — By Destination Country") ranks destination 
 │              │   YoY table (entity | last 12m mil m³ | prior | YoY%)      │
 │              │   Empty state if 0 rows (pre-backfill sentinel)             │
 │              │                                                             │
-│              │   ChartSection "Import Price (USD/bbl | USD/m3 | USD/ton)" │
-│              │     SegmentedToggle metric (compact, above chart)          │
-│              │     Plotly single-line — 1 trace (active product only)     │
-│              │     Source: mdic_comex. Color: matches active product       │
-│              │                                                             │
 │              │   ChartSection "Import Unit Price by Origin Country"       │
-│              │     PillToggle: USD/ton (default) · ¢/gal (local state)    │
-│              │     Plotly multi-line — 1 trace per country (NOT stacked)  │
-│              │     Top 8 countries by import volume. y=null for gaps.     │
-│              │     Source: mdic_comex. Colors: PALETTE rotation.           │
+│              │     PillToggle: USD/ton (default) · ¢/gal (local state).    │
+│              │     Toggle lives in the hook (importsUPMetric) so it also  │
+│              │     drives the summary table unit.                         │
+│              │     Plotly multi-line — 1 trace per pinned origin country  │
+│              │     (NOT stacked). y=null for months with no data.         │
+│              │   Import Price Summary table (top-2 + Others, MoM, YoY)     │
+│              │     Source: mdic_comex. Colors: ORIGIN palette + grey.     │
 │              │                                                             │
 │              │ Exports tab:                                                │
 │              │   SegmentedToggle: Volume (mil m³) / Value (USD)           │
@@ -203,6 +204,7 @@ The stacked-area chart ("Exports — By Destination Country") ranks destination 
 │              │   ChartSection "Export Unit Price..." (Crude Oil only)     │
 │              │     Unit: USD/bbl (1 m³ = 6.2898 bbl). Hidden for Diesel  │
 │              │     and Gasoline. Plotly multi-line, y=null for gaps.      │
+│              │   Export Price Summary table (all top-N, MoM, YoY)         │
 │              │     Source: mdic_comex. Colors: PALETTE rotation.           │
 └──────────────┴────────────────────────────────────────────────────────────┘
 ```
@@ -227,12 +229,12 @@ The stacked-area chart ("Exports — By Destination Country") ranks destination 
 - `MobileTabBar` for Imports / Exports.
 - **Product pill row** (horizontal scroll): single-select product toggle, sits between the sub-header and the sticky filter button. Same semantics as desktop global product toggle.
 - Sidebar collapses into `FilterDrawer` (period selects only — product radio removed, replaced by the pill row).
-- Charts rendered at 280px height (Panels A/B) or 240px (Panel C) via Plotly (no `MobileChart` wrapper needed — Plotly itself is responsive).
+- Charts rendered at 280px height (Panels A/B) or 240px (Panel D) via Plotly (no `MobileChart` wrapper needed — Plotly itself is responsive).
 - YoY rows rendered as `MobileDataCard` list (title = entity, subtitle = prior 12m, rightSlot = last 12m + YoY% in color).
-- Panel C metric toggle: horizontal-scroll pill row (USD/bbl · USD/m³ · USD/ton). Single trace for active product.
-- Panel D metric toggle: pill row (USD/ton · ¢/gal). Local state, default USD/ton. Same pill style as Panel C mobile toggle.
+- Panel D metric toggle: pill row (USD/ton · ¢/gal). Toggle state is in the shared hook (`importsUPMetric`), so changing it also updates the summary table unit.
+- Price summary tables are rendered as `MobileDataCard` stacks (one card per row) — Latest / MoM / YoY shown as a 3-row grid in the card's right slot. Same data as desktop `PriceSummaryTable`, adapted layout.
 - Exports tab: Volume/USD toggle (pill row). Stacked area chart at 280px height. YoY rows via `YoYCardList` (same MobileDataCard pattern as Imports panels). Source note below chart.
-- Exports unit price panel: rendered only when product = Crude Oil. Unit: USD/bbl. No toggle (single unit for Crude Oil exports).
+- Exports unit price panel: rendered only when product = Crude Oil. Unit: USD/bbl. No toggle (single unit for Crude Oil exports). Followed by the Exports Price Summary `MobileDataCard` stack.
 - `ExportFAB` triggers Excel export.
 - Sticky filter button at top of scroll area opens `FilterDrawer`.
 
@@ -263,7 +265,6 @@ When `cmpMonth(period.start, period.end) === 0` (the user collapses `FROM` and `
 | Imports — Unit Price by Origin Country (Panel D) | Multi-line (top 8), x=month | Horizontal bar, one bar per origin country, ranked desc by converted unit |
 | Exports — By Destination Country | Stacked area, x=month | Horizontal bar, one bar per destination country, ranked desc |
 | Exports — Unit Price by Destination (Crude Oil) | Multi-line (top 8), x=month | Horizontal bar, one bar per destination, ranked desc by USD/bbl |
-| Imports — Import Price (Panel C, single-line) | Lines+markers, x=month | Same lines+markers but with `marker.size = 14` (desktop) / `12` (mobile) — single point still legible |
 
 The bar chart's `title.text` is the single-month label (e.g. `"Apr 2026"`) rendered as a small grey header above the bars. Hovertemplate format: `"<entity>: <value> <unit>"`. Y-axis tick labels carry the country/importer names (Plotly `automargin: true` to keep them visible). `hovermode` is `"closest"` (not `"x unified"`).
 
@@ -277,7 +278,7 @@ Stacked-area charts (Panel A, Panel B, Exports) use `hovermode: 'x unified'`. By
 
 `HOVER_THRESHOLD = 0.05` is defined as a module-level constant in both views. For volume panels the unit is mil m³ (50 m³ minimum). For USD panels the value is already in raw USD; at 0.05 this effectively suppresses true zero rows only, since any real USD export will be orders of magnitude larger. If the threshold needs tuning (e.g., suppress sub-1 kt entries), update the constant in both views.
 
-Panel C (single-line Import Price) is unaffected — it uses a scalar `hovertemplate`, not an array, because it has no stacking.
+Panel D (multi-line Import Unit Price) and the Exports Unit Price chart are unaffected — they use scalar `hovertemplate` per trace, not an array, because they're not stacked.
 
 ---
 
@@ -310,7 +311,6 @@ Implementation:
 
 Out of scope (not pinned — keep current auto-coloring):
 - Panel B (Imports by Importer) — different entity type (Brazilian companies, not countries).
-- Panel C (Import Price) — single-line chart, uses `PRICE_COLORS` per product.
 - Exports tab — destination countries are a different universe (Argentina, Singapore, etc.); the 6-country list is meaningless there.
 
 If a new top supplier emerges (e.g. China starts shipping diesel directly), it will be absorbed into Others until a code change updates `ORIGIN_COUNTRY_PINS`. This is the intended trade-off — fixed legend stability over auto-discovery.
@@ -337,55 +337,56 @@ Source: `desktop/View.tsx` § `ORIGIN_COUNTRY_PINS`; `mobile/View.tsx` mirrors t
 
 ---
 
-## Panel C — Import Price (MDIC-sourced)
+## Panel C — Import Price (MDIC-sourced) — REMOVED 2026-05-28
 
-Added 2026-05-25 (Part 4 of imports-exports × mdic-comex unification).
+The single-line "Import Price (USD/bbl | USD/m³ | USD/ton)" chart (added 2026-05-25 as Part 4 of the imports-exports × mdic-comex unification) was **removed on 2026-05-28**. The single-product, single-line view turned out to be redundant with Panel D (multi-line per origin country) once the analyst workflow shifted from "show me the average price" to "show me how each origin compares". Its replacement is the new **Imports Price Summary** table below Panel D — see § "Import / Export Price Summary tables" further down.
 
-### Source
+The orphaned RPC `get_imports_exports_fob_price_serie` was dropped in migration `20260528960000_imports_exports_unit_price_with_volume.sql`. The MDIC Comex pipeline and table remain — they continue to feed Panel D and the new summary tables via `get_imports_exports_imports_unit_price` / `get_imports_exports_exports_unit_price`.
 
-`mdic_comex` (flow='import'), joined server-side with `imports_product_map` (source='mdic') and `ncm_densidade_kg_m3`. RPC: `get_imports_exports_fob_price_serie`.
+See also: `docs/app/_deprecated/mdic-comex.md` (archived sub-PRD of the standalone `/mdic-comex` dashboard retired 2026-05-25; Panel C originally absorbed its function, and now the summary tables carry that responsibility forward).
 
-### RPC signature
+---
 
-```
-get_imports_exports_fob_price_serie(
-  p_unified_product text,
-  p_ano_inicio int, p_mes_inicio int,
-  p_ano_fim    int, p_mes_fim    int
-)
-returns (
-  ano int, mes int,
-  total_volume_kg numeric, total_volume_m3 numeric, total_fob_usd numeric,
-  fob_per_ton numeric, fob_per_m3 numeric, fob_per_bbl numeric
-)
-```
+## Import / Export Price Summary tables
 
-Returns one row per (ano, mes). NULL on the three derived `fob_per_*` columns when volume = 0. Anon grant confirmed (Part 3 of the unification project, commit `5a6f7ba6`).
+Added 2026-05-28 alongside the Panel C removal. Rendered directly below the corresponding unit-price chart on both the Imports tab (below Panel D) and the Exports tab (below the Crude Oil exports chart).
 
-### Metric toggle
+### Imports Price Summary
 
-`fob_per_bbl` (USD/bbl) · `fob_per_m3` (USD/m³) · `fob_per_ton` (USD/ton). Default: `fob_per_bbl`.
+| Column   | Content |
+|----------|---------|
+| Country  | English label as rendered in the Panel D chart legend (Russia, United States, Others, etc.) |
+| Latest   | Latest non-null month value in the selected period, in the unit dictated by the Panel D toggle (USD/ton or ¢/gal) |
+| MoM %    | `(latest − prior_month) / prior_month × 100`. Cell shows `—` if the prior-month value is missing or zero. |
+| YoY %    | `(latest − same_month_year_before) / same_month_year_before × 100`. Cell shows `—` if missing or zero. |
 
-### Chart
+Row count: **always 3** — top-2 origin countries by total `SUM(vol_m3)` in the window + an "Others" row carrying a volume-weighted-average price across the remaining countries. The "Others" monthly value is `Σ(usd_per_m3 × vol_m3) / Σ(vol_m3)`; if `Σ(vol_m3) == 0` for the anchor month, the value is `null` and the row shows `—`.
 
-Single-line (NOT stacked), one trace for the **active product** (governed by the global product pill toggle). The active product color is `#ff5000` (brand orange) — all products use the same color since only one is shown at a time. Hovertemplate shows 2 decimal places. Height 320px (desktop) / 240px (mobile). `hovermode: 'x unified'`.
+Color dots in the Country column mirror the chart's legend colors exactly (Russia black, United States brand orange, etc.; Others grey).
 
-Hook fetches a single RPC call (`get_imports_exports_fob_price_serie` for `stableFilters.unifiedProduct`) rather than 3 parallel calls. Switching products triggers a new fetch.
+Unit suffix in the Latest column header follows the active toggle. Switching the toggle re-renders both the chart and the table together.
 
-### Cross-source reconciliation
+### Exports Price Summary
 
-Panel A (countries) and Panel B (importers) draw from `anp_desembaracos` (importer-level granularity). Panel C draws from `mdic_comex` (FOB-bearing). The two sources agree on volumes for Diesel and Crude Oil within 1–2% on historical months; gap of up to 22% on recent months reflects `anp_desembaracos` ETL latency (monthly XLSX vs MDIC's daily cadence).
+Same shape as Imports, but:
 
-For Gasoline, the two sources disagree by design: `anp_desembaracos` tracks NCM 27101931 (Gasolina A, retail), MDIC tracks 27101259 (bulk gasoline, blending stock). **Panel C is the authoritative source for gasoline import prices.**
+- **No "Others" row** — every top-N destination returned by the RPC is rendered as its own row. Brazil's crude oil exports diversify across many destinations and the user wants visibility into all of them, so collapsing is intentionally suppressed.
+- **Unit is USD/bbl fixed** (1 m³ = 6.2898 bbl). No toggle.
+- **Only rendered for Crude Oil** (same gate the underlying Export Unit Price chart already uses; the panel is hidden for Diesel/Gasoline because those exports don't currently flow at meaningful volume).
 
-### Density assumptions (server-side)
+Color dots come from the same `PALETTE` rotation the chart uses, in the same `exportsUPEntities` order — table dot and chart legend line up 1:1.
 
-Diesel 832 kg/m³ · Gasoline 745 kg/m³ · Crude Oil 870 kg/m³ — ANP standards from `ncm_densidade_kg_m3`. These are the values used in `get_imports_exports_fob_price_serie`; Panel B uses slightly different densities (840/740/850) because it sources from `anp_desembaracos` (a separate table with its own mapping). Refinement is done by updating `ncm_densidade_kg_m3`, no code change required.
+### Math notes
 
-### See also
+- Conversions (`USD/m³ → USD/ton`, `USD/m³ → ¢/gal`, `USD/m³ → USD/bbl`) are applied **before** computing MoM% / YoY%. For linear conversions this is mathematically equivalent to applying them after, but it keeps the latest cell value, MoM%, and YoY% in lockstep with the displayed unit.
+- Density assumptions (Diesel 832, Gasoline 745, Crude Oil 870 kg/m³) match `ncm_densidade_kg_m3` server-side. Refinement is done by updating the table — no code change.
+- The summary derivation lives in the shared hook (`useImportsExportsData.ts`) as the memoized `importsPriceSummary` / `exportsPriceSummary` outputs. Both Views consume them; neither computes anything itself.
 
-- `docs/app/_deprecated/mdic-comex.md` — archived sub-PRD of the standalone `/mdic-comex` dashboard (retired 2026-05-25; its function was absorbed by Panel C above).
-- Panel A / Panel B — `anp_desembaracos` based (volume, not price).
+### Cross-source reconciliation (carried over from old Panel C section)
+
+Panel A (countries) and Panel B (importers) draw from `anp_desembaracos` (importer-level granularity). Panel D and the price summary tables draw from `mdic_comex` (FOB-bearing). The two sources agree on volumes for Diesel and Crude Oil within 1–2% on historical months; gap of up to 22% on recent months reflects `anp_desembaracos` ETL latency (monthly XLSX vs MDIC's daily cadence).
+
+For Gasoline, the two sources disagree by design: `anp_desembaracos` tracks NCM 27101931 (Gasolina A, retail), MDIC tracks 27101259 (bulk gasoline, blending stock). **The MDIC-sourced price (Panel D + Imports Price Summary) is the authoritative price for gasoline imports.**
 
 ---
 
@@ -469,4 +470,4 @@ Same traces, same data, mobile-tuned layout (240px height, no markers, tighter m
 
 - **Tier 2 export upgrade**: if users request full raw `anp_desembaracos` dumps (60k–200k rows), add `get_imports_exports_export_count` RPC + `ExportModal` + `useExportSize` integration.
 - **`importer_group_map` population**: after Worktree B backfill completes and real CNPJs are discovered, `worker_supabase` populates the mapping table via DML migration. Panel B then shows named groups (Vibra, Ipiranga, Raízen, etc.) instead of cleaned-up razão social strings.
-- **Panel C export**: add a 3rd sheet/CSV to the export containing the FOB price series (product, year, month, fob_per_bbl, fob_per_m3, fob_per_ton).
+- **Price summary export**: add a sheet/CSV to the export containing the unit-price series (origin/destination, year, month, usd_per_m3, vol_m3) so analysts can replay the Latest/MoM/YoY computation offline.
