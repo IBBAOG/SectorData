@@ -2608,6 +2608,125 @@ export async function rpcAdminRemoveDefaultNewsKeyword(
   }
 }
 
+// ─── MODULE: Admin — Field Stakes ─────────────────────────────────────────────
+//
+// Admin-only RPCs for managing per-field working-interest data in the
+// `field_stakes` table. Each row maps (campo, empresa) → stake_pct; sum per
+// campo must equal 100 (enforced by admin_upsert_field_stakes).
+//
+// Read RPCs (get_*) are SECURITY DEFINER and granted to Admin only.
+// Write RPCs (admin_*) additionally check the caller's role server-side.
+//
+// Source-of-truth migration: `supabase/migrations/20260527500000_field_stakes.sql`
+// (owned by worker_supabase). Future consumer: /production dashboard (Fase 2).
+
+import type {
+  FieldStakeOverview,
+  FieldStake,
+  FieldStakeEmpresa,
+  FieldStakeInput,
+} from "../types/fieldStakes";
+
+/**
+ * Returns one row per known oil field, with the count of registered
+ * stakeholders, the running sum of percentages, completeness flag and a
+ * flag indicating whether anp_cdp_producao has matching rows for the campo.
+ *
+ * Admin-only — backed by SECURITY DEFINER RPC `get_field_stakes_overview`.
+ *
+ * Postgres `numeric` serializes to string over JSON via PostgREST; we coerce
+ * `soma_pct` to a JS number here so downstream `.toFixed()` calls in the UI
+ * don't blow up.
+ */
+export async function rpcGetFieldStakesOverview(
+  supabase: SupabaseClient,
+): Promise<FieldStakeOverview[]> {
+  const { data, error } = await supabase.rpc("get_field_stakes_overview");
+  if (error) throw error;
+  const rows = (data ?? []) as Array<Omit<FieldStakeOverview, "soma_pct"> & { soma_pct: number | string }>;
+  return rows.map((r) => ({
+    ...r,
+    soma_pct: typeof r.soma_pct === "string" ? Number(r.soma_pct) : r.soma_pct,
+  }));
+}
+
+/**
+ * Lists every (empresa, stake_pct) row registered for a single campo,
+ * ordered by stake_pct DESC.
+ *
+ * Admin-only — backed by SECURITY DEFINER RPC `get_field_stakes`.
+ *
+ * Coerces `stake_pct` from string to number (numeric → JSON serialization).
+ */
+export async function rpcGetFieldStakes(
+  supabase: SupabaseClient,
+  campo: string,
+): Promise<FieldStake[]> {
+  const { data, error } = await supabase.rpc("get_field_stakes", {
+    p_campo: campo,
+  });
+  if (error) throw error;
+  const rows = (data ?? []) as Array<Omit<FieldStake, "stake_pct"> & { stake_pct: number | string }>;
+  return rows.map((r) => ({
+    ...r,
+    stake_pct: typeof r.stake_pct === "string" ? Number(r.stake_pct) : r.stake_pct,
+  }));
+}
+
+/**
+ * Returns the distinct companies known across all fields, with the number of
+ * fields in which they hold a stake. Drives the autocomplete `<datalist>` in
+ * the editor pane.
+ *
+ * Admin-only — backed by SECURITY DEFINER RPC `get_field_stakes_empresas`.
+ */
+export async function rpcGetFieldStakesEmpresas(
+  supabase: SupabaseClient,
+): Promise<FieldStakeEmpresa[]> {
+  const { data, error } = await supabase.rpc("get_field_stakes_empresas");
+  if (error) throw error;
+  return (data ?? []) as FieldStakeEmpresa[];
+}
+
+/**
+ * Replace-all upsert: deletes every existing row for `campo` and inserts the
+ * provided stakes atomically. Server-side validates that the sum of
+ * `stake_pct` equals 100 (within float tolerance) and raises a postgres
+ * exception otherwise — the message is surfaced verbatim in the UI banner.
+ *
+ * Admin-only — backed by SECURITY DEFINER RPC `admin_upsert_field_stakes`.
+ *
+ * Note: supabase-js serializes the JS array directly as JSONB when the RPC
+ * parameter is declared `jsonb`; no manual JSON.stringify is required.
+ */
+export async function rpcAdminUpsertFieldStakes(
+  supabase: SupabaseClient,
+  campo: string,
+  stakes: FieldStakeInput[],
+): Promise<void> {
+  const { error } = await supabase.rpc("admin_upsert_field_stakes", {
+    p_campo: campo,
+    p_stakes: stakes,
+  });
+  if (error) throw error;
+}
+
+/**
+ * Removes every stake row associated with `campo`. Used by the "Delete all"
+ * action in the editor's footer (gated by a confirm modal in the UI).
+ *
+ * Admin-only — backed by SECURITY DEFINER RPC `admin_delete_field_stakes`.
+ */
+export async function rpcAdminDeleteFieldStakes(
+  supabase: SupabaseClient,
+  campo: string,
+): Promise<void> {
+  const { error } = await supabase.rpc("admin_delete_field_stakes", {
+    p_campo: campo,
+  });
+  if (error) throw error;
+}
+
 // ─── MODULE: Alerts (/alerts) ─────────────────────────────────────────────────
 //
 // User-facing subscription management. All wrappers here are callable by both

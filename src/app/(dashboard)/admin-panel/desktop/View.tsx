@@ -72,6 +72,13 @@ const SECTION_ICONS: Record<SectionId, React.ReactNode> = {
       <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
     </svg>
   ),
+  "field-stakes": (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+      <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+      <line x1="12" y1="22.08" x2="12" y2="12" />
+    </svg>
+  ),
 };
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -167,6 +174,37 @@ export default function DesktopView(): React.ReactElement | null {
     handleAddKeyword,
     handleRemoveKeyword,
     handleToggleMatchType,
+
+    fieldStakesOverview,
+    fieldStakesEmpresas,
+    fieldStakesLoading,
+    selectedCampo,
+    editorStakes,
+    editorLoading,
+    newEmpresaInput,
+    setNewEmpresaInput,
+    newEmpresaPctInput,
+    setNewEmpresaPctInput,
+    savingStakes,
+    deleteCampoConfirm,
+    stakesError,
+    stakesSearchQuery,
+    setStakesSearchQuery,
+    stakesStatusFilter,
+    setStakesStatusFilter,
+    currentSum,
+    isValidSum,
+    pendingChanges,
+    filteredOverview,
+    selectedCampoLastUpdated,
+    handleSelectCampo,
+    handleAddEmpresaRow,
+    handleRemoveEmpresaRow,
+    handleChangeStake,
+    handleSaveStakes,
+    handleDeleteCampo,
+    handleConfirmDeleteCampo,
+    handleCancelDeleteCampo,
 
     isValidEmail,
     formatDateBR,
@@ -1269,6 +1307,386 @@ export default function DesktopView(): React.ReactElement | null {
                       </span>
                     );
                   })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Field Stakes ─────────────────────────────────────────────────── */}
+          {activeSection === "field-stakes" && (
+            <div className="settings-card" style={{ padding: 0, overflow: "hidden" }}>
+              <div style={{ display: "flex", minHeight: 560, alignItems: "stretch" }}>
+
+                {/* ── Left pane: field list ─────────────────────────────────── */}
+                <div style={{ width: 340, flexShrink: 0, borderRight: "1px solid #ececec", display: "flex", flexDirection: "column", background: "#fafafa" }}>
+                  <div style={{ padding: "20px 16px 12px", borderBottom: "1px solid #ececec", background: "#fff" }}>
+                    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+                      <h2 style={{ fontSize: "0.95rem", fontWeight: 700, color: "#1a1a1a", margin: 0 }}>
+                        Fields
+                      </h2>
+                      <span style={{ fontSize: 11, color: "#aaa", fontWeight: 600 }}>
+                        {fieldStakesOverview.length} total
+                      </span>
+                    </div>
+                    <input
+                      type="search"
+                      value={stakesSearchQuery}
+                      onChange={(e) => setStakesSearchQuery(e.target.value)}
+                      placeholder="Search field…"
+                      style={{
+                        width: "100%", padding: "7px 10px", borderRadius: 8,
+                        border: "1px solid #e0e0e0", fontSize: 13, fontFamily: "Arial, sans-serif",
+                        outline: "none", boxSizing: "border-box",
+                      }}
+                    />
+                    <div style={{ display: "flex", gap: 4, marginTop: 10 }}>
+                      {([
+                        { id: "all" as const,        label: "All",     color: "#888",    bg: "rgba(160,160,160,0.10)" },
+                        { id: "complete" as const,   label: "✓",       color: "#38a169", bg: "rgba(72,187,120,0.15)" },
+                        { id: "incomplete" as const, label: "⚠",       color: "#d69e2e", bg: "rgba(214,158,46,0.15)" },
+                        { id: "empty" as const,      label: "○",       color: "#999",    bg: "rgba(180,180,180,0.15)" },
+                      ] as const).map(({ id, label, color, bg }) => {
+                        const isActive = stakesStatusFilter === id;
+                        const count = id === "all"
+                          ? fieldStakesOverview.length
+                          : id === "complete"
+                            ? fieldStakesOverview.filter((o) => o.is_complete).length
+                            : id === "incomplete"
+                              ? fieldStakesOverview.filter((o) => !o.is_complete && o.n_empresas > 0).length
+                              : fieldStakesOverview.filter((o) => o.n_empresas === 0).length;
+                        return (
+                          <button
+                            key={id}
+                            onClick={() => setStakesStatusFilter(id)}
+                            style={{
+                              flex: 1, padding: "5px 6px", borderRadius: 6,
+                              border: isActive ? `1px solid ${color}` : "1px solid transparent",
+                              background: isActive ? bg : "#f5f5f5",
+                              color: isActive ? color : "#888",
+                              fontSize: 11, fontWeight: 700, cursor: "pointer",
+                              fontFamily: "Arial, sans-serif", textAlign: "center",
+                              display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+                              transition: "background 0.15s, border-color 0.15s",
+                            }}
+                            aria-pressed={isActive}
+                            title={id}
+                          >
+                            <span>{label}</span>
+                            <span style={{ fontSize: 10, opacity: 0.8, fontWeight: 600 }}>{count}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, overflowY: "auto", maxHeight: 520 }}>
+                    {fieldStakesLoading ? (
+                      <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>
+                        Loading fields…
+                      </div>
+                    ) : filteredOverview.length === 0 ? (
+                      <div style={{ padding: "24px 16px", textAlign: "center", color: "#bbb", fontSize: 12 }}>
+                        No fields match the current filters.
+                      </div>
+                    ) : (
+                      filteredOverview.map((row) => {
+                        const isSelected = selectedCampo === row.campo;
+                        const isEmpty = row.n_empresas === 0;
+                        const status = isEmpty ? "empty" : row.is_complete ? "complete" : "incomplete";
+                        const statusColor = status === "complete" ? "#38a169" : status === "incomplete" ? "#d69e2e" : "#aaa";
+                        const statusBg = status === "complete" ? "rgba(72,187,120,0.15)" : status === "incomplete" ? "rgba(214,158,46,0.15)" : "rgba(180,180,180,0.15)";
+                        const statusText = status === "complete" ? "100%" : status === "incomplete" ? `${row.soma_pct.toFixed(2)}%` : "—";
+                        return (
+                          <button
+                            key={row.campo}
+                            onClick={() => handleSelectCampo(row.campo)}
+                            style={{
+                              width: "100%", textAlign: "left", border: "none",
+                              borderLeft: isSelected ? `3px solid ${ORANGE}` : "3px solid transparent",
+                              background: isSelected ? "#fff" : "transparent",
+                              padding: "10px 14px", cursor: "pointer",
+                              borderBottom: "1px solid #f0f0f0",
+                              fontFamily: "Arial, sans-serif",
+                              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                              transition: "background 0.1s",
+                            }}
+                            onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "#f0f0f0"; }}
+                            onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+                          >
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a1a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {row.campo}
+                              </div>
+                              <div style={{ fontSize: 11, color: "#999", marginTop: 2 }}>
+                                {row.n_empresas} {row.n_empresas === 1 ? "company" : "companies"}
+                                {row.has_data_in_producao ? " · prod. data" : ""}
+                              </div>
+                            </div>
+                            <span style={{
+                              fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
+                              background: statusBg, color: statusColor, flexShrink: 0, whiteSpace: "nowrap",
+                            }}>
+                              {statusText}
+                            </span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Right pane: editor ────────────────────────────────────── */}
+                <div style={{ flex: 1, padding: "20px 24px", display: "flex", flexDirection: "column", minWidth: 0 }}>
+                  {!selectedCampo ? (
+                    <div style={{
+                      flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+                      color: "#bbb", fontSize: 13, textAlign: "center", padding: 32,
+                    }}>
+                      Select a field on the left to edit its working-interest breakdown.
+                    </div>
+                  ) : (
+                    <>
+                      {/* Header */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 4 }}>
+                        <h3 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#1a1a1a", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {selectedCampo}
+                        </h3>
+                        <span style={{
+                          fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 12,
+                          background: isValidSum ? "rgba(72,187,120,0.15)" : "rgba(229,62,62,0.15)",
+                          color: isValidSum ? "#38a169" : "#e53e3e",
+                          whiteSpace: "nowrap", flexShrink: 0,
+                        }}>
+                          {currentSum.toFixed(2)}% / 100%
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 11, color: "#aaa", marginBottom: 14 }}>
+                        {selectedCampoLastUpdated
+                          ? `Last updated: ${formatDateBR(selectedCampoLastUpdated)}`
+                          : "Not yet saved."}
+                      </div>
+
+                      {editorLoading ? (
+                        <div style={{ padding: "32px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>
+                          Loading stakes…
+                        </div>
+                      ) : (
+                        <>
+                          {/* datalist for autocomplete (shared across all rows) */}
+                          <datalist id="field-stakes-empresa-list">
+                            {fieldStakesEmpresas.map((e) => (
+                              <option key={e.empresa} value={e.empresa} />
+                            ))}
+                          </datalist>
+
+                          {/* Table header */}
+                          <div style={{ display: "flex", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #f0f0f0", fontSize: 11, fontWeight: 700, color: "#888", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                            <div style={{ flex: 1 }}>Company</div>
+                            <div style={{ width: 120, textAlign: "right", paddingRight: 8 }}>Stake %</div>
+                            <div style={{ width: 32 }} />
+                          </div>
+
+                          {/* Rows */}
+                          {editorStakes.length === 0 && (
+                            <div style={{ padding: "20px 0", textAlign: "center", color: "#bbb", fontSize: 12 }}>
+                              No companies registered yet. Use the form below to add one.
+                            </div>
+                          )}
+                          {editorStakes.map((row, idx) => (
+                            <div
+                              key={idx}
+                              style={{
+                                display: "flex", alignItems: "center", gap: 8, padding: "8px 0",
+                                borderBottom: "1px solid #f5f5f5",
+                              }}
+                            >
+                              <input
+                                type="text"
+                                list="field-stakes-empresa-list"
+                                value={row.empresa}
+                                onChange={(e) => handleChangeStake(idx, "empresa", e.target.value)}
+                                placeholder="Company name"
+                                style={{
+                                  flex: 1, padding: "6px 10px", borderRadius: 6,
+                                  border: "1px solid #e0e0e0", fontSize: 13, fontFamily: "Arial, sans-serif",
+                                  outline: "none", boxSizing: "border-box",
+                                }}
+                              />
+                              <input
+                                type="number"
+                                step={0.001}
+                                min={0}
+                                max={100}
+                                value={Number.isFinite(row.stake_pct) ? row.stake_pct : 0}
+                                onChange={(e) => handleChangeStake(idx, "stake_pct", e.target.value)}
+                                style={{
+                                  width: 120, padding: "6px 10px", borderRadius: 6,
+                                  border: "1px solid #e0e0e0", fontSize: 13, fontFamily: "Arial, sans-serif",
+                                  outline: "none", boxSizing: "border-box", textAlign: "right",
+                                }}
+                              />
+                              <button
+                                onClick={() => handleRemoveEmpresaRow(idx)}
+                                style={{
+                                  width: 32, height: 28, borderRadius: 6, border: "1px solid #e0e0e0",
+                                  background: "#fff", color: "#e53e3e", cursor: "pointer",
+                                  fontFamily: "Arial, sans-serif", fontSize: 14, lineHeight: 1,
+                                }}
+                                aria-label={`Remove ${row.empresa || "row"}`}
+                                title="Remove row"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+
+                          {/* Add company form */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 0 4px", borderTop: "1px dashed #e0e0e0", marginTop: 4 }}>
+                            <input
+                              type="text"
+                              list="field-stakes-empresa-list"
+                              value={newEmpresaInput}
+                              onChange={(e) => setNewEmpresaInput(e.target.value)}
+                              onKeyDown={(e) => e.key === "Enter" && handleAddEmpresaRow()}
+                              placeholder="+ Add company"
+                              style={{
+                                flex: 1, padding: "6px 10px", borderRadius: 6,
+                                border: "1px solid #e0e0e0", fontSize: 13, fontFamily: "Arial, sans-serif",
+                                outline: "none", boxSizing: "border-box",
+                              }}
+                            />
+                            <input
+                              type="number"
+                              step={0.001}
+                              min={0}
+                              max={100}
+                              value={newEmpresaPctInput}
+                              onChange={(e) => setNewEmpresaPctInput(e.target.value)}
+                              onKeyDown={(e) => e.key === "Enter" && handleAddEmpresaRow()}
+                              placeholder="0.00"
+                              style={{
+                                width: 120, padding: "6px 10px", borderRadius: 6,
+                                border: "1px solid #e0e0e0", fontSize: 13, fontFamily: "Arial, sans-serif",
+                                outline: "none", boxSizing: "border-box", textAlign: "right",
+                              }}
+                            />
+                            <button
+                              onClick={handleAddEmpresaRow}
+                              style={{
+                                width: 32, height: 28, borderRadius: 6, border: "none",
+                                background: ORANGE, color: "#fff", cursor: "pointer",
+                                fontFamily: "Arial, sans-serif", fontSize: 16, lineHeight: 1, fontWeight: 700,
+                              }}
+                              aria-label="Add row"
+                              title="Add row"
+                            >
+                              +
+                            </button>
+                          </div>
+
+                          {/* Error banner */}
+                          {stakesError && (
+                            <div style={{
+                              marginTop: 12, padding: "10px 12px", borderRadius: 8,
+                              background: "#fff5f5", border: "1px solid rgba(229,62,62,0.3)",
+                              color: "#c0392b", fontSize: 12, lineHeight: 1.4,
+                            }}>
+                              {stakesError}
+                            </div>
+                          )}
+
+                          {/* Footer actions */}
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 18, paddingTop: 14, borderTop: "1px solid #ececec" }}>
+                            <button
+                              onClick={handleSaveStakes}
+                              disabled={!isValidSum || savingStakes || !pendingChanges}
+                              title={
+                                !isValidSum
+                                  ? "Sum must equal 100% before saving"
+                                  : !pendingChanges
+                                    ? "No changes to save"
+                                    : undefined
+                              }
+                              style={{
+                                padding: "8px 22px", borderRadius: 8, border: "none",
+                                background: (!isValidSum || savingStakes || !pendingChanges) ? "#e0e0e0" : ORANGE,
+                                color: (!isValidSum || savingStakes || !pendingChanges) ? "#aaa" : "#fff",
+                                fontSize: 13, fontWeight: 700,
+                                cursor: (!isValidSum || savingStakes || !pendingChanges) ? "not-allowed" : "pointer",
+                                fontFamily: "Arial, sans-serif", transition: "background 0.15s",
+                              }}
+                            >
+                              {savingStakes ? "Saving…" : "Save"}
+                            </button>
+                            <button
+                              onClick={() => handleDeleteCampo(selectedCampo)}
+                              disabled={savingStakes}
+                              style={{
+                                background: "none", border: "none", color: "#e53e3e",
+                                fontSize: 12, fontWeight: 600, cursor: savingStakes ? "not-allowed" : "pointer",
+                                fontFamily: "Arial, sans-serif", padding: "4px 6px",
+                                opacity: savingStakes ? 0.5 : 1, textDecoration: "underline",
+                              }}
+                            >
+                              Delete all stakes for this field
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Delete-confirm modal overlay */}
+              {deleteCampoConfirm && (
+                <div
+                  style={{
+                    position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    zIndex: 1050, fontFamily: "Arial, sans-serif",
+                  }}
+                  onClick={handleCancelDeleteCampo}
+                >
+                  <div
+                    style={{
+                      background: "#fff", borderRadius: 10, padding: 24, maxWidth: 420,
+                      boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 8px" }}>
+                      Delete all stakes
+                    </h3>
+                    <p style={{ fontSize: 13, color: "#555", margin: "0 0 18px", lineHeight: 1.5 }}>
+                      Delete all stakes for <strong>«{deleteCampoConfirm}»</strong>?
+                      This cannot be undone.
+                    </p>
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                      <button
+                        onClick={handleCancelDeleteCampo}
+                        disabled={savingStakes}
+                        style={{
+                          padding: "8px 16px", borderRadius: 8, border: "1px solid #e0e0e0",
+                          background: "#fff", color: "#555", fontSize: 13, fontWeight: 600,
+                          cursor: savingStakes ? "not-allowed" : "pointer", fontFamily: "Arial, sans-serif",
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleConfirmDeleteCampo}
+                        disabled={savingStakes}
+                        style={{
+                          padding: "8px 16px", borderRadius: 8, border: "none",
+                          background: "#e53e3e", color: "#fff", fontSize: 13, fontWeight: 700,
+                          cursor: savingStakes ? "wait" : "pointer", fontFamily: "Arial, sans-serif",
+                          opacity: savingStakes ? 0.6 : 1,
+                        }}
+                      >
+                        {savingStakes ? "Deleting…" : "Confirm"}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

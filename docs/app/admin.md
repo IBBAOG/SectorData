@@ -743,6 +743,108 @@ Eduardo Mendes    eduardo.mendes@itaubba.com
 
 ---
 
+## Field Stakes (Fase 1 — 2026-05-27)
+
+New `Field Stakes` section in the `/admin-panel` sidebar — CRUD for per-oil-field working-interest data. Curated by Admins; consumed in Fase 2 by the future `/production` dashboard (separate PRD), which will join `anp_cdp_producao` × `field_stakes` to derive company-attributable production.
+
+### Backing schema
+
+Source-of-truth migration: [`supabase/migrations/20260527500000_field_stakes.sql`](../../supabase/migrations/20260527500000_field_stakes.sql) — owned by `worker_supabase` (Frente 1 of the parallel rollout).
+
+Table shape (per migration):
+```sql
+field_stakes (
+  campo       text   NOT NULL,
+  empresa     text   NOT NULL,
+  stake_pct   numeric NOT NULL CHECK (stake_pct >= 0 AND stake_pct <= 100),
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (campo, empresa)
+)
+```
+
+Invariant: `SUM(stake_pct) = 100` per campo — enforced server-side by `admin_upsert_field_stakes`, not by a table CHECK (cross-row checks belong in the write RPC).
+
+RLS pattern: all 5 RPCs are `SECURITY DEFINER` + `SET search_path = public, pg_temp`. Read RPCs (`get_*`) are admin-only via in-body `require_admin_mfa()` (or equivalent role check); write RPCs (`admin_*`) likewise.
+
+### RPCs consumed by this section (5)
+
+| RPC | Wrapper in `src/lib/rpc.ts` | Returns |
+|---|---|---|
+| `get_field_stakes_overview()` | `rpcGetFieldStakesOverview(supabase)` | `FieldStakeOverview[]` — one row per field with `n_empresas`, `soma_pct`, `is_complete`, `has_data_in_producao`, `last_updated` |
+| `get_field_stakes(p_campo text)` | `rpcGetFieldStakes(supabase, campo)` | `FieldStake[]` — `(empresa, stake_pct, updated_at)` ordered by `stake_pct DESC` |
+| `get_field_stakes_empresas()` | `rpcGetFieldStakesEmpresas(supabase)` | `FieldStakeEmpresa[]` — distinct companies + `n_campos`; drives autocomplete |
+| `admin_upsert_field_stakes(p_campo text, p_stakes jsonb)` | `rpcAdminUpsertFieldStakes(supabase, campo, stakes)` | void — replace-all per campo; validates sum=100; raises `sum_must_equal_100` (or similar) on failure |
+| `admin_delete_field_stakes(p_campo text)` | `rpcAdminDeleteFieldStakes(supabase, campo)` | void — wipes every row for `campo` |
+
+Types live in [`src/types/fieldStakes.ts`](../../src/types/fieldStakes.ts).
+
+### Save flow
+
+1. User taps a field in the left list (desktop) or card (mobile) → `handleSelectCampo(campo)` calls `rpcGetFieldStakes(supabase, campo)`, populates `editorStakes` working copy, snapshots it for change-detection via `editorSavedSnapshotRef`.
+2. User edits rows / adds new company / removes a row → local state mutations update `editorStakes`; `pendingChanges` (memo) flips true when the JSON shape differs from the snapshot.
+3. `currentSum` (memo) recomputes on every edit; `isValidSum` is `|currentSum - 100| < 0.001` (float tolerance).
+4. Save button is disabled unless `isValidSum && pendingChanges && !savingStakes`. Tooltip explains the reason when disabled.
+5. On click: `rpcAdminUpsertFieldStakes` (atomic replace-all). On error → message banner displays the raw postgres message verbatim (acceptable here because the only errors are sum-mismatch / similar curated server messages); on success → `editorSavedSnapshotRef` re-snaps, overview list is refetched.
+
+The payload is sent as JS array; supabase-js auto-serializes it to JSONB because the RPC declares `p_stakes jsonb`. **No manual `JSON.stringify` is needed** (Frente 1 contract).
+
+### Delete flow
+
+1. "Delete all stakes for this field" footer button (desktop link or mobile button) → `handleDeleteCampo(selectedCampo)` sets `deleteCampoConfirm` to the campo name.
+2. Modal (desktop overlay) / BottomSheet (mobile) appears with explicit Cancel / Confirm buttons. Copy: *"Delete all stakes for «{campo}»? This cannot be undone."*
+3. Confirm → `rpcAdminDeleteFieldStakes`; on success the overview refreshes and the selection is cleared (`selectedCampo = null`).
+
+### Dual-view layout
+
+**Desktop** (`desktop/View.tsx`, branch `activeSection === "field-stakes"`):
+
+- Two panes inside `.settings-card`:
+  - Left (340 px): scrollable list of all fields. Status pill colors — green `100%`, amber `{soma}%`, gray `—` for empty. 4-button status filter row (All / ✓ / ⚠ / ○) with count badges. Search input filters by campo (case-insensitive substring).
+  - Right: editor table with `Company` (text + `<datalist>` autocomplete) | `Stake %` (number, step 0.001, range 0–100) | `×` (remove). Sum pill in header colored green/red against 100%. `+ Add company` row below the table; "Last updated" line in header; error banner under the table; footer with Save (primary) + Delete-all (text button).
+- Empty state in the right pane when nothing is selected: *"Select a field on the left to edit its working-interest breakdown."*
+- Delete confirm: full-screen overlay modal (`position: fixed; inset: 0; background: rgba(0,0,0,0.45)`).
+
+**Mobile** (`mobile/View.tsx`, branch `activeSection === "field-stakes"`):
+
+- Sticky horizontal status-chip row (All / ✓ Complete / ⚠ Incomplete / ○ Empty), each chip with a count badge. Search input below.
+- Vertical list of campo cards (44+ px tap target). Tap → `await handleSelectCampo(row.campo); setFieldStakesSheetOpen(true)`.
+- Editor `BottomSheet` (`height="90vh"`): header shows campo name (ellipsized) + sum pill on the right. Scrollable body contains one card per stake (full-width company input, full-width stake % with `%` suffix, top-right remove ×). `+ Add company` card at the bottom (dashed border). "Delete all stakes for this field" outline button just above the sticky footer. Sticky footer: error banner + Save button (full width, label flips to "Sum must equal 100%" / "No changes" / "Saving…" / "Save").
+- Delete confirm: separate `BottomSheet` (`height="auto"`) with Cancel/Delete buttons (matches the recipient-remove pattern).
+
+Mobile-only state: `fieldStakesSheetOpen` (local `useState`) controls the editor sheet visibility, decoupled from the shared `selectedCampo` so closing the sheet preserves the user's selection. The shared search input at the top of the mobile View is suppressed for this section (`searchPlaceholder["field-stakes"] === ""`); the section has its own dedicated search inside the sticky filter area.
+
+### Hook (`useAdminPanelData`)
+
+State added (alphabetized for grep-ability):
+- `deleteCampoConfirm: string | null`
+- `editorLoading: boolean`
+- `editorStakes: FieldStakeInput[]`
+- `fieldStakesEmpresas: FieldStakeEmpresa[]`
+- `fieldStakesLoading: boolean`
+- `fieldStakesOverview: FieldStakeOverview[]`
+- `newEmpresaInput: string` / `newEmpresaPctInput: string`
+- `savingStakes: boolean`
+- `selectedCampo: string | null` / `selectedCampoLastUpdated: string | null`
+- `stakesError: string | null`
+- `stakesSearchQuery: string` / `stakesStatusFilter: 'all' | 'complete' | 'incomplete' | 'empty'`
+
+Plus the `editorSavedSnapshotRef: useRef<string>` (intentionally not state — change-detection only).
+
+Handlers: `handleSelectCampo`, `handleAddEmpresaRow`, `handleRemoveEmpresaRow`, `handleChangeStake`, `handleSaveStakes`, `handleDeleteCampo`, `handleConfirmDeleteCampo`, `handleCancelDeleteCampo`.
+
+Derived (`useMemo`): `currentSum`, `isValidSum`, `pendingChanges`, `filteredOverview`.
+
+Lazy-load: `loadFieldStakesOverview()` only fires when `activeSection === 'field-stakes'` for the first time (same pattern as `alerts-product` and `default-news`).
+
+### Sub-PRD links
+
+- Migration owner: `supabase/migrations/20260527500000_field_stakes.sql` (worker_supabase)
+- Future consumer: `/production` dashboard, Fase 2 (separate PRD)
+- Types: `src/types/fieldStakes.ts`
+- RPC wrappers: `src/lib/rpc.ts` § "MODULE: Admin — Field Stakes"
+
+---
+
 ## Anti-padrões
 
 - Páginas administrativas sem `useRoleGuard("Admin")`.

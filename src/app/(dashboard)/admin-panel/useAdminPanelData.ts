@@ -21,7 +21,7 @@
 // admin_remove_default_news_keyword.
 // Plus direct PostgREST on alert_recipients.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useRoleGuard } from "../../../hooks/useRoleGuard";
 import { useUserProfile } from "../../../context/UserProfileContext";
@@ -37,8 +37,18 @@ import {
   rpcAdminAddDefaultNewsKeyword,
   rpcAdminSetDefaultNewsKeywordMatchType,
   rpcAdminRemoveDefaultNewsKeyword,
+  rpcGetFieldStakesOverview,
+  rpcGetFieldStakes,
+  rpcGetFieldStakesEmpresas,
+  rpcAdminUpsertFieldStakes,
+  rpcAdminDeleteFieldStakes,
   type DefaultNewsKeyword,
 } from "../../../lib/rpc";
+import type {
+  FieldStakeOverview,
+  FieldStakeEmpresa,
+  FieldStakeInput,
+} from "../../../types/fieldStakes";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import type { UserWithRole, UserProfile } from "../../../types/profile";
 import { EDITABLE_TABLES } from "@/lib/dataInput/registry";
@@ -76,7 +86,8 @@ export type SectionId =
   | "alert-recipients"
   | "alerts-product"
   | "default-news"
-  | "data-input";
+  | "data-input"
+  | "field-stakes";
 
 export interface SectionMeta {
   id: SectionId;
@@ -92,6 +103,7 @@ export const SECTIONS: SectionMeta[] = [
   { id: "alerts-product",   label: "Alerts",                shortLabel: "Alerts",       description: "Alerts product management" },
   { id: "default-news",     label: "Default News Keywords", shortLabel: "News Defaults", description: "Keywords used by anonymous News Hunter visitors" },
   { id: "data-input",       label: "Data Input",            shortLabel: "Tables",       description: "Edit reference tables" },
+  { id: "field-stakes",     label: "Field Stakes",          shortLabel: "Stakes",       description: "Working-interest per oil field (company × stake %)" },
 ];
 
 // ── Module catalog ─────────────────────────────────────────────────────────────
@@ -242,6 +254,47 @@ export interface UseAdminPanelData {
   handleAddKeyword: () => Promise<void>;
   handleRemoveKeyword: (keyword: string) => Promise<void>;
   handleToggleMatchType: (keyword: string, currentMatchType: "substring" | "exact") => Promise<void>;
+
+  // Field Stakes
+  fieldStakesOverview: FieldStakeOverview[];
+  fieldStakesEmpresas: FieldStakeEmpresa[];
+  fieldStakesLoading: boolean;
+  selectedCampo: string | null;
+  editorStakes: FieldStakeInput[];
+  editorLoading: boolean;
+  newEmpresaInput: string;
+  setNewEmpresaInput: (v: string) => void;
+  newEmpresaPctInput: string;
+  setNewEmpresaPctInput: (v: string) => void;
+  savingStakes: boolean;
+  deleteCampoConfirm: string | null;
+  stakesError: string | null;
+  stakesSearchQuery: string;
+  setStakesSearchQuery: (v: string) => void;
+  stakesStatusFilter: "all" | "complete" | "incomplete" | "empty";
+  setStakesStatusFilter: (v: "all" | "complete" | "incomplete" | "empty") => void;
+  /** Sum of stake_pct across editorStakes — refreshed on every edit. */
+  currentSum: number;
+  /** True when |currentSum - 100| < 0.001. */
+  isValidSum: boolean;
+  /** True when editorStakes differs from the last server snapshot. */
+  pendingChanges: boolean;
+  /** Overview filtered by stakesSearchQuery + stakesStatusFilter. */
+  filteredOverview: FieldStakeOverview[];
+  /** Last_updated timestamp of the currently selected campo (or null). */
+  selectedCampoLastUpdated: string | null;
+  handleSelectCampo: (campo: string) => Promise<void>;
+  handleAddEmpresaRow: () => void;
+  handleRemoveEmpresaRow: (idx: number) => void;
+  handleChangeStake: (
+    idx: number,
+    field: "empresa" | "stake_pct",
+    value: string,
+  ) => void;
+  handleSaveStakes: () => Promise<void>;
+  handleDeleteCampo: (campo: string) => void;
+  handleConfirmDeleteCampo: () => Promise<void>;
+  handleCancelDeleteCampo: () => void;
 
   // Pure helpers (re-exported for both views)
   isValidEmail: (email: string) => boolean;
@@ -758,6 +811,225 @@ export function useAdminPanelData(): UseAdminPanelData {
     [supabase, togglingMatchType],
   );
 
+  // ── Field Stakes ───────────────────────────────────────────────────────────
+  const [fieldStakesOverview, setFieldStakesOverview] = useState<FieldStakeOverview[]>([]);
+  const [fieldStakesEmpresas, setFieldStakesEmpresas] = useState<FieldStakeEmpresa[]>([]);
+  const [fieldStakesLoading, setFieldStakesLoading] = useState(false);
+  const [selectedCampo, setSelectedCampo] = useState<string | null>(null);
+  const [editorStakes, setEditorStakes] = useState<FieldStakeInput[]>([]);
+  const [editorLoading, setEditorLoading] = useState(false);
+  const [newEmpresaInput, setNewEmpresaInput] = useState("");
+  const [newEmpresaPctInput, setNewEmpresaPctInput] = useState("");
+  const [savingStakes, setSavingStakes] = useState(false);
+  const [deleteCampoConfirm, setDeleteCampoConfirm] = useState<string | null>(null);
+  const [stakesError, setStakesError] = useState<string | null>(null);
+  const [stakesSearchQuery, setStakesSearchQuery] = useState("");
+  const [stakesStatusFilter, setStakesStatusFilter] = useState<
+    "all" | "complete" | "incomplete" | "empty"
+  >("all");
+  const [selectedCampoLastUpdated, setSelectedCampoLastUpdated] = useState<string | null>(null);
+
+  // Last-saved JSON snapshot for change-detection. A ref (not state) because
+  // changing it should NOT trigger a re-render — it's compared inside the
+  // pendingChanges useMemo below.
+  const editorSavedSnapshotRef = useRef<string>("[]");
+
+  const loadFieldStakesOverview = useCallback(async () => {
+    if (!supabase) return;
+    setFieldStakesLoading(true);
+    try {
+      const [overview, empresas] = await Promise.all([
+        rpcGetFieldStakesOverview(supabase),
+        rpcGetFieldStakesEmpresas(supabase),
+      ]);
+      setFieldStakesOverview(overview);
+      setFieldStakesEmpresas(empresas);
+    } catch (e) {
+      console.error("Failed to load field stakes overview", e);
+      setStakesError("Could not load field stakes. Please try again.");
+      setTimeout(() => setStakesError((err) => (err?.startsWith("Could not load") ? null : err)), 4000);
+    }
+    setFieldStakesLoading(false);
+  }, [supabase]);
+
+  // Lazy-load: only fetch when the section becomes active for the first time.
+  useEffect(() => {
+    if (allowed && activeSection === "field-stakes") loadFieldStakesOverview();
+  }, [allowed, activeSection, loadFieldStakesOverview]);
+
+  const handleSelectCampo = useCallback(
+    async (campo: string) => {
+      if (!supabase) return;
+      setSelectedCampo(campo);
+      setStakesError(null);
+      setNewEmpresaInput("");
+      setNewEmpresaPctInput("");
+      setEditorLoading(true);
+      try {
+        const rows = await rpcGetFieldStakes(supabase, campo);
+        const editorRows: FieldStakeInput[] = rows.map((r) => ({
+          empresa: r.empresa,
+          stake_pct: r.stake_pct,
+        }));
+        setEditorStakes(editorRows);
+        editorSavedSnapshotRef.current = JSON.stringify(editorRows);
+        // last_updated comes from the overview row (computed as MAX(updated_at))
+        const overviewRow = fieldStakesOverview.find((o) => o.campo === campo);
+        setSelectedCampoLastUpdated(overviewRow?.last_updated ?? null);
+      } catch (e) {
+        console.error("Failed to load field stakes", e);
+        setStakesError("Could not load stakes for this field. Please try again.");
+        setEditorStakes([]);
+        editorSavedSnapshotRef.current = "[]";
+        setSelectedCampoLastUpdated(null);
+      }
+      setEditorLoading(false);
+    },
+    [supabase, fieldStakesOverview],
+  );
+
+  const handleAddEmpresaRow = useCallback(() => {
+    const empresa = newEmpresaInput.trim();
+    const pct = Number(newEmpresaPctInput);
+    if (!empresa) {
+      setStakesError("Company name is required.");
+      setTimeout(() => setStakesError((e) => (e === "Company name is required." ? null : e)), 3000);
+      return;
+    }
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+      setStakesError("Stake % must be a number between 0 and 100.");
+      setTimeout(
+        () => setStakesError((e) => (e === "Stake % must be a number between 0 and 100." ? null : e)),
+        3000,
+      );
+      return;
+    }
+    setEditorStakes((prev) => [...prev, { empresa, stake_pct: pct }]);
+    setNewEmpresaInput("");
+    setNewEmpresaPctInput("");
+    setStakesError(null);
+  }, [newEmpresaInput, newEmpresaPctInput]);
+
+  const handleRemoveEmpresaRow = useCallback((idx: number) => {
+    setEditorStakes((prev) => prev.filter((_, i) => i !== idx));
+  }, []);
+
+  const handleChangeStake = useCallback(
+    (idx: number, field: "empresa" | "stake_pct", value: string) => {
+      setEditorStakes((prev) =>
+        prev.map((row, i) => {
+          if (i !== idx) return row;
+          if (field === "empresa") return { ...row, empresa: value };
+          // stake_pct: keep as Number (NaN allowed temporarily mid-typing)
+          const parsed = value === "" ? 0 : Number(value);
+          return { ...row, stake_pct: Number.isFinite(parsed) ? parsed : 0 };
+        }),
+      );
+    },
+    [],
+  );
+
+  const handleSaveStakes = useCallback(async () => {
+    if (!supabase || !selectedCampo || savingStakes) return;
+    setSavingStakes(true);
+    setStakesError(null);
+    try {
+      // Normalize: trim empresa, coerce stake_pct to Number. Drop rows with
+      // empty empresa (defensive — the UI also blocks adding them).
+      const payload: FieldStakeInput[] = editorStakes
+        .map((s) => ({ empresa: s.empresa.trim(), stake_pct: Number(s.stake_pct) || 0 }))
+        .filter((s) => s.empresa.length > 0);
+      await rpcAdminUpsertFieldStakes(supabase, selectedCampo, payload);
+      editorSavedSnapshotRef.current = JSON.stringify(payload);
+      setEditorStakes(payload);
+      await loadFieldStakesOverview();
+      // Refresh last_updated from the new overview snapshot
+      // (loadFieldStakesOverview will set fieldStakesOverview; pick the row).
+    } catch (e: unknown) {
+      const msg =
+        e && typeof e === "object" && "message" in e
+          ? String((e as { message?: unknown }).message ?? "Save failed.")
+          : "Save failed.";
+      setStakesError(msg);
+    }
+    setSavingStakes(false);
+  }, [supabase, selectedCampo, savingStakes, editorStakes, loadFieldStakesOverview]);
+
+  // Refresh selectedCampoLastUpdated whenever the overview refreshes after a save
+  useEffect(() => {
+    if (!selectedCampo) return;
+    const row = fieldStakesOverview.find((o) => o.campo === selectedCampo);
+    if (row) setSelectedCampoLastUpdated(row.last_updated);
+  }, [fieldStakesOverview, selectedCampo]);
+
+  const handleDeleteCampo = useCallback((campo: string) => {
+    setDeleteCampoConfirm(campo);
+  }, []);
+
+  const handleConfirmDeleteCampo = useCallback(async () => {
+    if (!supabase || !deleteCampoConfirm) return;
+    const campo = deleteCampoConfirm;
+    setSavingStakes(true);
+    setStakesError(null);
+    try {
+      await rpcAdminDeleteFieldStakes(supabase, campo);
+      await loadFieldStakesOverview();
+      if (selectedCampo === campo) {
+        setSelectedCampo(null);
+        setEditorStakes([]);
+        editorSavedSnapshotRef.current = "[]";
+        setSelectedCampoLastUpdated(null);
+      }
+      setDeleteCampoConfirm(null);
+    } catch (e: unknown) {
+      const msg =
+        e && typeof e === "object" && "message" in e
+          ? String((e as { message?: unknown }).message ?? "Delete failed.")
+          : "Delete failed.";
+      setStakesError(msg);
+    }
+    setSavingStakes(false);
+  }, [supabase, deleteCampoConfirm, selectedCampo, loadFieldStakesOverview]);
+
+  const handleCancelDeleteCampo = useCallback(() => {
+    setDeleteCampoConfirm(null);
+  }, []);
+
+  // Derived values
+  const currentSum = useMemo(
+    () => editorStakes.reduce((acc, s) => acc + (Number(s.stake_pct) || 0), 0),
+    [editorStakes],
+  );
+
+  const isValidSum = useMemo(
+    () => Math.abs(currentSum - 100) < 0.001,
+    [currentSum],
+  );
+
+  const pendingChanges = useMemo(() => {
+    // Compare current editor state against the last server-saved snapshot.
+    // JSON.stringify is stable here because we always set state through the
+    // same shape (no key reordering).
+    return JSON.stringify(editorStakes) !== editorSavedSnapshotRef.current;
+  }, [editorStakes]);
+
+  const filteredOverview = useMemo(() => {
+    const q = stakesSearchQuery.trim().toLowerCase();
+    return fieldStakesOverview.filter((row) => {
+      if (q && !row.campo.toLowerCase().includes(q)) return false;
+      switch (stakesStatusFilter) {
+        case "complete":
+          return row.is_complete;
+        case "incomplete":
+          return !row.is_complete && row.n_empresas > 0;
+        case "empty":
+          return row.n_empresas === 0;
+        default:
+          return true;
+      }
+    });
+  }, [fieldStakesOverview, stakesSearchQuery, stakesStatusFilter]);
+
   return {
     allowed,
     roleLoading,
@@ -848,6 +1120,37 @@ export function useAdminPanelData(): UseAdminPanelData {
     handleAddKeyword,
     handleRemoveKeyword,
     handleToggleMatchType,
+
+    fieldStakesOverview,
+    fieldStakesEmpresas,
+    fieldStakesLoading,
+    selectedCampo,
+    editorStakes,
+    editorLoading,
+    newEmpresaInput,
+    setNewEmpresaInput,
+    newEmpresaPctInput,
+    setNewEmpresaPctInput,
+    savingStakes,
+    deleteCampoConfirm,
+    stakesError,
+    stakesSearchQuery,
+    setStakesSearchQuery,
+    stakesStatusFilter,
+    setStakesStatusFilter,
+    currentSum,
+    isValidSum,
+    pendingChanges,
+    filteredOverview,
+    selectedCampoLastUpdated,
+    handleSelectCampo,
+    handleAddEmpresaRow,
+    handleRemoveEmpresaRow,
+    handleChangeStake,
+    handleSaveStakes,
+    handleDeleteCampo,
+    handleConfirmDeleteCampo,
+    handleCancelDeleteCampo,
 
     isValidEmail,
     formatDateBR,
