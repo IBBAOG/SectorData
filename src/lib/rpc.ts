@@ -2625,7 +2625,7 @@ export async function rpcAdminRemoveDefaultNewsKeyword(
 // Read RPCs (get_*) are SECURITY DEFINER and granted to Admin only.
 // Write RPCs (admin_*) additionally check the caller's role server-side.
 //
-// Source-of-truth migration: `supabase/migrations/20260527500000_field_stakes.sql`
+// Source-of-truth migration: `supabase/migrations/20260527600000_field_stakes.sql`
 // (owned by worker_supabase). Future consumer: /production dashboard (Fase 2).
 
 import type {

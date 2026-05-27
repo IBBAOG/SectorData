@@ -792,7 +792,7 @@ New `Field Stakes` section in the `/admin-panel` sidebar — CRUD for per-oil-fi
 
 ### Backing schema
 
-Source-of-truth migration: [`supabase/migrations/20260527500000_field_stakes.sql`](../../supabase/migrations/20260527500000_field_stakes.sql) — owned by `worker_supabase` (Frente 1 of the parallel rollout).
+Source-of-truth migration: [`supabase/migrations/20260527600000_field_stakes.sql`](../../supabase/migrations/20260527600000_field_stakes.sql) — owned by `worker_supabase` (Frente 1 of the parallel rollout).
 
 Table shape (per migration):
 ```sql
@@ -881,7 +881,7 @@ Lazy-load: `loadFieldStakesOverview()` only fires when `activeSection === 'field
 
 ### Sub-PRD links
 
-- Migration owner: `supabase/migrations/20260527500000_field_stakes.sql` (worker_supabase)
+- Migration owner: `supabase/migrations/20260527600000_field_stakes.sql` (worker_supabase)
 - Future consumer: `/production` dashboard, Fase 2 (separate PRD)
 - Types: `src/types/fieldStakes.ts`
 - RPC wrappers: `src/lib/rpc.ts` § "MODULE: Admin — Field Stakes"

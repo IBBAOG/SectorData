@@ -6,7 +6,7 @@
 // derive company-attributable oil production.
 //
 // Source of truth: `field_stakes` table — see
-// `supabase/migrations/20260527500000_field_stakes.sql` (owner:
+// `supabase/migrations/20260527600000_field_stakes.sql` (owner:
 // worker_supabase). Sum per `campo` must equal 100 (enforced by the
 // admin_upsert_field_stakes RPC).
 
