@@ -27,8 +27,13 @@ All math is done **server-side** in 5 SECURITY DEFINER RPCs (migration `supabase
 | `get_production_top_fields` | `(empresa text, date date, top_n int DEFAULT 10)` | Top-N producing fields for one company in one calendar month. |
 | `get_production_by_installation` | `(empresa text, date date)` | Installation-level (FPSO/UEP/land plant) production routed through the installation, stake-weighted, one month. |
 | `get_production_yoy_table` | `(empresa text, date date)` | YoY/MoM/YTD breakdown at the reference month — 1 TOTAL row + 1 row per environment. |
+| `get_production_field_timeseries` | `(p_campo text, p_empresa text, p_date_start date, p_date_end date)` | Stake-weighted monthly oil/gas/water/uptime timeseries for one field × one company. Powers the Field drill-down (Round 2). |
 
 All return `LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp` (Pegadinha #18) and are granted to `anon, authenticated`. Frontend wrappers live in `src/lib/rpc.ts` under the "MODULE: Production" section.
+
+Source-of-truth migrations:
+- `supabase/migrations/20260528000000_production_rpcs.sql` (Round 1, 5 RPCs).
+- `supabase/migrations/20260528100000_production_round2.sql` (Round 2: YoY TOTAL fix + `get_production_field_timeseries`).
 
 ### Companies (Empresa dropdown)
 
@@ -57,6 +62,32 @@ All filters live in `useProductionData` — single source of truth. Slider chang
 | P4 | Installations (FPSO/UEP) — {Reference month} | `get_production_by_installation` | Scrollable table: Installation · Oil kbpd · Gas Mm³/d · Hours rate %. Top 12. |
 | YoY | {Company} — YoY / MoM / YTD ({Reference month}) | `get_production_yoy_table` | TOTAL row bolded + per-ambiente rows. Δ MoM and Δ YoY coloured green/red. |
 
+## Field drill-down (Round 2, 2026-05-27)
+
+A secondary view that opens on demand when the user wants to dig into one of the Top Fields. The same hook owns its state; both Views render the same content through different surfaces.
+
+**Trigger:**
+- **Desktop:** click any bar in the P3 Top Fields chart, or click the helper caption beneath it.
+- **Mobile:** tap any field card in the Fields tab (the chart stays for at-a-glance comparison; cards are added below for drill-in).
+
+**Data:** `get_production_field_timeseries(p_campo, p_empresa, p_date_start, p_date_end)` — returns one row per (year, month) with `oil_bbl_dia`, `gas_mm3_dia`, `water_bbl_dia`, `hours_rate`, stake-weighted for the selected company. The fetch uses the dashboard's current `dateRange` + `empresa` (no separate filter).
+
+**Surfaces:**
+- **Desktop:** Bootstrap-styled modal (`FieldDrillModal` inline in `desktop/View.tsx`) — 820px wide, brand-orange accent bar, Esc / scrim / × all close.
+- **Mobile:** `BottomSheet` (`height="90vh"`) — same content reflowed to a single column with a 2×2 KPI grid.
+
+**KPIs (derived client-side from the timeseries, not from a separate RPC):**
+1. **Current oil** — last month in the series, kbpd
+2. **Δ MoM** — `(current - prev) / prev` (null if the series has 1 row or `prev == 0`)
+3. **Δ YoY** — `(current - same_month_last_year) / same_month_last_year` (null if the previous year's row isn't in the visible window or is zero)
+4. **YTD avg** — average of months in the same calendar year as the most-recent month (so for "Apr 2026" it averages Jan..Apr 2026)
+
+**Chart:** 13-month vertical stacked bars (oil dark `#1a1a1a` + water light blue `#7BB6DD`) on the left y-axis in kbpd, **plus** a hours-rate line (`BRAND_ORANGE`, `#ff5000`) on the right y-axis in `%` (0..105). Identical visual logic on both Views, layered via Plotly's `yaxis: "y2"` overlay.
+
+**Empty state:** fields whose stakes don't sum to 100 (i.e. listed in `field_stakes_lacunas`) return zero rows server-side. The modal/sheet still opens; KPIs show `—` and a centered "No data for this field in the current period." caption replaces the chart.
+
+**Error handling:** RPC failures bubble up as `drillError` (string) and render as a yellow warning banner inside the modal/sheet body. The drill stays open so the user can dismiss; closing clears the error.
+
 ## KPI cards (desktop top strip, mobile per-tab)
 
 1. **Brazil oil** — total oil at reference month, kbpd (neutral)
@@ -68,11 +99,11 @@ All filters live in `useProductionData` — single source of truth. Slider chang
 
 ## Dual-view
 
-- **Desktop (≥769px)** — 2×2 grid: KPI strip → P1 P2 → P3 P4 → YoY table. Topbar filters above the cards.
-- **Mobile (≤768px)** — `MobileTabBar` with 4 tabs (Brazil · {Company} · Fields · FPSOs). One chart full-width per tab + relevant KPI tiles. `FilterDrawer` (BottomSheet) for all filters, opened from the topbar. `ExportFAB` bottom-right with a tiny action sheet (Excel / CSV).
+- **Desktop (≥769px)** — 2×2 grid: KPI strip → P1 P2 → P3 P4 → YoY table. Topbar filters above the cards. Field drill-down opens as a centered Bootstrap-styled modal.
+- **Mobile (≤768px)** — `MobileTabBar` with 4 tabs (Brazil · {Company} · Fields · FPSOs). One chart full-width per tab + relevant KPI tiles. The Fields tab combines a compact comparison chart with a list of tappable `MobileDataCard`s. `FilterDrawer` (BottomSheet) for all filters, opened from the topbar. `ExportFAB` bottom-right with a tiny action sheet (Excel / CSV). Field drill-down opens as a 90vh `BottomSheet`.
 - YoY breakdown lives below the active tab as an expandable section on mobile; it's always-visible on desktop.
 
-Both Views consume `useProductionData`. Neither calls Supabase directly. The hook owns: filter state, RPC orchestration (5 separate debounced fetches), KPI math, export plumbing.
+Both Views consume `useProductionData`. Neither calls Supabase directly. The hook owns: filter state, RPC orchestration (6 separate debounced/intent-driven fetches), KPI math (top-level + drill-down), and export plumbing.
 
 ## Export tier
 

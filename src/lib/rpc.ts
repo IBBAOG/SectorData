@@ -2760,6 +2760,7 @@ import type {
   ProductionTopField,
   ProductionInstallation,
   ProductionYoYRow,
+  ProductionFieldTimeseriesRow,
 } from "../types/production";
 
 /**
@@ -2946,6 +2947,53 @@ export async function rpcGetProductionYoyTable(
     ytd_avg_kbpd:    r.ytd_avg_kbpd    == null ? null : Number(r.ytd_avg_kbpd),
     mom_pct:         r.mom_pct         == null ? null : Number(r.mom_pct),
     yoy_pct:         r.yoy_pct         == null ? null : Number(r.yoy_pct),
+  }));
+}
+
+/**
+ * Stake-weighted monthly timeseries for ONE field × ONE company across the
+ * given date range. Powers the Field drill-down panel (Round 2, 2026-05-27).
+ *
+ * Returns one row per (year, month) — typically 13 months for the default
+ * lookback. The server applies the same stake filter (`SUM(stake_pct) = 100`)
+ * as the rest of the Production RPCs, so campos in `field_stakes_lacunas`
+ * return zero rows.
+ *
+ * Source-of-truth migration: `supabase/migrations/20260528100000_production_round2.sql`
+ * (owned by worker_supabase, Round 2 of Fase 2).
+ */
+export async function rpcGetProductionFieldTimeseries(
+  supabase: SupabaseClient,
+  campo: string,
+  empresa: string,
+  dateStart: string,                     // 'YYYY-MM-DD'
+  dateEnd: string,                       // 'YYYY-MM-DD'
+): Promise<ProductionFieldTimeseriesRow[]> {
+  const { data, error } = await supabase.rpc("get_production_field_timeseries", {
+    p_campo:      campo,
+    p_empresa:    empresa,
+    p_date_start: dateStart,
+    p_date_end:   dateEnd,
+  });
+  if (error) {
+    console.error("get_production_field_timeseries failed", error);
+    throw new Error(`get_production_field_timeseries: ${error.message}`);
+  }
+  const rows = (data ?? []) as Array<{
+    ano:           number | string;
+    mes:           number | string;
+    oil_bbl_dia:   number | string;
+    gas_mm3_dia:   number | string;
+    water_bbl_dia: number | string;
+    hours_rate:    number | string;
+  }>;
+  return rows.map((r) => ({
+    ano:           Number(r.ano),
+    mes:           Number(r.mes),
+    oil_bbl_dia:   Number(r.oil_bbl_dia ?? 0),
+    gas_mm3_dia:   Number(r.gas_mm3_dia ?? 0),
+    water_bbl_dia: Number(r.water_bbl_dia ?? 0),
+    hours_rate:    Number(r.hours_rate ?? 0),
   }));
 }
 

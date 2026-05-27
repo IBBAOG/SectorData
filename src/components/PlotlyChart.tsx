@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { Layout, PlotData, Config } from "plotly.js";
+import type { Layout, PlotData, Config, PlotMouseEvent } from "plotly.js";
 import { useRef, useEffect } from "react";
 
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
@@ -11,6 +11,8 @@ export default function PlotlyChart(props: {
   layout: Partial<Layout>;
   config?: Partial<Config>;
   style?: React.CSSProperties;
+  /** Optional Plotly click handler — receives the PlotMouseEvent payload. */
+  onClick?: (e: PlotMouseEvent) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -41,6 +43,7 @@ export default function PlotlyChart(props: {
         config={props.config as any}
         style={{ width: "100%", height: "100%" }}
         useResizeHandler
+        onClick={props.onClick as any}
       />
     </div>
   );

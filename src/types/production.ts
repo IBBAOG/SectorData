@@ -89,3 +89,21 @@ export interface ProductionYoYRow {
   mom_pct: number | null;              // (current - prev_month) / prev_month
   yoy_pct: number | null;              // (current - prev_year) / prev_year
 }
+
+/**
+ * One row per (year, month) for one campo × empresa — stake-weighted monthly
+ * timeseries used by the Field drill-down (Round 2, 2026-05-27). Returned by
+ * `get_production_field_timeseries`.
+ *
+ * All bbl/day and Mm³/day metrics are returned in raw base units; the UI
+ * converts oil/water to kbpd at display time. `hours_rate` is the uptime
+ * fraction (0..1) for that field-month.
+ */
+export interface ProductionFieldTimeseriesRow {
+  ano: number;
+  mes: number;
+  oil_bbl_dia: number;
+  gas_mm3_dia: number;
+  water_bbl_dia: number;
+  hours_rate: number;
+}
