@@ -65,11 +65,92 @@ const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
 // ─── Colour helpers ────────────────────────────────────────────────────────────
 
-const OTHERS_COLOR = "#bdbdbd";
+const OTHERS_COLOR = "#7F7F7F";
+const OTHERS_LABEL = "Others";
+
+// ─── Pinned origin-country palette (mirrors desktop/View.tsx) ─────────────────
+//
+// Same 6-country pin set as desktop — see desktop/View.tsx for the full
+// rationale. Keeping the constant duplicated rather than extracting to a
+// shared module because the dashboard's `useImportsExportsData` hook is the
+// canonical shared brain; static UI constants like color palettes live with
+// each view (mobile and desktop have different palettes for other panels).
+// If the pin set diverges from desktop, it's a bug — keep in sync.
+const ORIGIN_COUNTRY_PINS: ReadonlyArray<{
+  dbName: string;
+  label: string;
+  color: string;
+}> = [
+  { dbName: "Rússia", label: "Russia", color: "#000000" },
+  { dbName: "Estados Unidos", label: "United States", color: "#FF5000" },
+  { dbName: "Emirados Árabes Unidos", label: "UAE", color: "#73C6A1" },
+  { dbName: "Países Baixos (Holanda)", label: "Netherlands", color: "#FFAE66" },
+  { dbName: "Índia", label: "India", color: "#8258A0" },
+  { dbName: "Arábia Saudita", label: "Saudi Arabia", color: "#D2FF00" },
+];
+
+const ORIGIN_LABEL_BY_DB: Record<string, string> = ORIGIN_COUNTRY_PINS.reduce(
+  (acc, p) => ({ ...acc, [p.dbName]: p.label }),
+  {} as Record<string, string>,
+);
+
+const ORIGIN_COLOR_BY_LABEL: Record<string, string> = ORIGIN_COUNTRY_PINS.reduce(
+  (acc, p) => ({ ...acc, [p.label]: p.color }),
+  { [OTHERS_LABEL]: OTHERS_COLOR } as Record<string, string>,
+);
+
+const ORIGIN_ORDER: string[] = [
+  ...ORIGIN_COUNTRY_PINS.map((p) => p.label),
+  OTHERS_LABEL,
+];
+
+function bucketPaisesByPins(
+  rows: { ano: number; mes: number; pais_origem: string; total_kg: number }[],
+): { ano: number; mes: number; name: string; total_kg: number }[] {
+  const byKey = new Map<string, number>();
+  for (const r of rows) {
+    const englishLabel = ORIGIN_LABEL_BY_DB[r.pais_origem] ?? OTHERS_LABEL;
+    const k = `${r.ano}|${r.mes}|${englishLabel}`;
+    byKey.set(k, (byKey.get(k) ?? 0) + r.total_kg);
+  }
+  const out: { ano: number; mes: number; name: string; total_kg: number }[] = [];
+  for (const [k, total_kg] of byKey.entries()) {
+    const [a, m, name] = k.split("|");
+    out.push({ ano: Number(a), mes: Number(m), name, total_kg });
+  }
+  return out;
+}
+
+function ensureAllPinsPresent(
+  rows: { ano: number; mes: number; name: string; value: number }[],
+): { ano: number; mes: number; name: string; value: number }[] {
+  if (!rows.length) return rows;
+  const monthKeys = new Set<string>();
+  for (const r of rows) monthKeys.add(`${r.ano}|${r.mes}`);
+  const present = new Set<string>();
+  for (const r of rows) present.add(`${r.ano}|${r.mes}|${r.name}`);
+  const out = [...rows];
+  for (const mk of monthKeys) {
+    const [a, m] = mk.split("|").map(Number);
+    for (const pin of ORIGIN_COUNTRY_PINS) {
+      const key = `${a}|${m}|${pin.label}`;
+      if (!present.has(key)) {
+        out.push({ ano: a, mes: m, name: pin.label, value: 0 });
+      }
+    }
+    const othersKey = `${a}|${m}|${OTHERS_LABEL}`;
+    if (!present.has(othersKey)) {
+      out.push({ ano: a, mes: m, name: OTHERS_LABEL, value: 0 });
+    }
+  }
+  return out;
+}
 
 function colourForEntity(entities: string[], entity: string): string {
-  if (entity === "Others") return OTHERS_COLOR;
-  const idx = entities.filter((e) => e !== "Others").indexOf(entity);
+  if (entity === OTHERS_LABEL) return OTHERS_COLOR;
+  const pinned = ORIGIN_COLOR_BY_LABEL[entity];
+  if (pinned) return pinned;
+  const idx = entities.filter((e) => e !== OTHERS_LABEL).indexOf(entity);
   return PALETTE[idx % PALETTE.length] ?? OTHERS_COLOR;
 }
 
@@ -85,7 +166,11 @@ type StackedRow = { ano: number; mes: number; name: string; value: number };
 // Mirrors desktop/View.tsx exactly — keep in sync.
 const HOVER_THRESHOLD = 0.05;
 
-function buildStackedTraces(rows: StackedRow[], unit: string): PlotData[] {
+function buildStackedTraces(
+  rows: StackedRow[],
+  unit: string,
+  orderOverride?: string[],
+): PlotData[] {
   if (!rows.length) return [];
   // xs are ISO date strings "YYYY-MM-01" so Plotly's xaxis.type='date' parses
   // them natively. Monthly granularity migration (20260526800000).
@@ -96,10 +181,14 @@ function buildStackedTraces(rows: StackedRow[], unit: string): PlotData[] {
     entitySet.add(r.name);
   }
   const xs = Array.from(xSet).sort();
-  const entities = [
-    ...Array.from(entitySet).filter((e) => e !== "Others").sort(),
-    ...(entitySet.has("Others") ? ["Others"] : []),
-  ];
+  // `orderOverride` (Imports Panel A — pinned-country mode) imposes fixed
+  // entity order so the stack reads Russia → US → UAE → ... → Others.
+  const entities = orderOverride
+    ? orderOverride.filter((e) => entitySet.has(e))
+    : [
+        ...Array.from(entitySet).filter((e) => e !== OTHERS_LABEL).sort(),
+        ...(entitySet.has(OTHERS_LABEL) ? [OTHERS_LABEL] : []),
+      ];
   const lookup = new Map<string, Map<string, number>>();
   for (const r of rows) {
     const key = `${r.ano}-${String(r.mes).padStart(2, "0")}-01`;
@@ -137,18 +226,29 @@ function buildStackedTraces(rows: StackedRow[], unit: string): PlotData[] {
 // stripe when start === end, so swap to a horizontal bar chart, one bar per
 // entity ranked by value desc. "Others" sinks to the bottom in grey.
 
-function buildHorizontalBarTraces(rows: StackedRow[], unit: string): PlotData[] {
+function buildHorizontalBarTraces(
+  rows: StackedRow[],
+  unit: string,
+  orderOverride?: string[],
+): PlotData[] {
   if (!rows.length) return [];
   const byEntity = new Map<string, number>();
   for (const r of rows) {
     byEntity.set(r.name, (byEntity.get(r.name) ?? 0) + r.value);
   }
-  const entries = Array.from(byEntity.entries());
-  entries.sort(([aName, aVal], [bName, bVal]) => {
-    if (aName === "Others") return 1;
-    if (bName === "Others") return -1;
-    return bVal - aVal;
-  });
+  let entries: [string, number][];
+  if (orderOverride) {
+    entries = orderOverride
+      .filter((n) => byEntity.has(n))
+      .map((n) => [n, byEntity.get(n) as number]);
+  } else {
+    entries = Array.from(byEntity.entries());
+    entries.sort(([aName, aVal], [bName, bVal]) => {
+      if (aName === OTHERS_LABEL) return 1;
+      if (bName === OTHERS_LABEL) return -1;
+      return bVal - aVal;
+    });
+  }
   const reversed = entries.slice().reverse();
   const allEntities = entries.map(([n]) => n);
   const ys = reversed.map(([n]) => n);
@@ -170,6 +270,7 @@ function buildHorizontalBarTracesFromUnitPrice(
   entities: string[],
   unitLabel: string,
   convertFn: (v: number) => number = (v) => v,
+  colorMap?: Record<string, string>,
 ): PlotData[] {
   if (!rows.length) return [];
   const byPais = new Map<string, number | null>();
@@ -187,6 +288,7 @@ function buildHorizontalBarTracesFromUnitPrice(
   const ys = reversed.map((c) => c.name);
   const xs = reversed.map((c) => c.value);
   const colors = reversed.map((c) => {
+    if (colorMap?.[c.name]) return colorMap[c.name];
     const idx = allEntities.indexOf(c.name);
     return PALETTE[idx % PALETTE.length] ?? OTHERS_COLOR;
   });
@@ -287,6 +389,7 @@ function buildUnitPriceTraces(
   entities: string[],
   unitLabel: string,
   convertFn: (v: number) => number = (v) => v,
+  colorMap?: Record<string, string>,
 ): PlotData[] {
   if (!rows.length) return [];
 
@@ -305,7 +408,8 @@ function buildUnitPriceTraces(
   const xs = Array.from(xSet).sort();
 
   return entities.map((entity, idx) => {
-    const color = PALETTE[idx % PALETTE.length] ?? OTHERS_COLOR;
+    const color =
+      colorMap?.[entity] ?? PALETTE[idx % PALETTE.length] ?? OTHERS_COLOR;
     const ys = xs.map((x) => {
       const raw = byEntity.get(entity)?.get(x) ?? null;
       return raw != null ? convertFn(raw) : null;
@@ -370,6 +474,8 @@ function YoYCardList({
   volumeLabel,
   anchorAno,
   anchorMes,
+  orderOverride,
+  colorMap,
 }: {
   rows: YoyTableRow[];
   loading: boolean;
@@ -380,6 +486,14 @@ function YoYCardList({
    * (anchorAno, anchorMes) and (anchorAno-1, anchorMes). */
   anchorAno: number;
   anchorMes: number;
+  /** Optional fixed render order — used by Imports Panel A (pinned countries)
+   *  to mirror the chart's legend order (Russia → Saudi Arabia → Others). */
+  orderOverride?: string[];
+  /** Optional color map (entity → hex) — adds an 8px color dot next to the
+   *  card title for visual parity with the desktop YoY table dots. Used by
+   *  the pinned-countries panel; absent for the importer / exports panels
+   *  which keep the existing dot-less layout. */
+  colorMap?: Record<string, string>;
 }) {
   if (loading) {
     return (
@@ -390,11 +504,21 @@ function YoYCardList({
   }
   if (!rows.length) return null;
 
+  // Apply order override if given; otherwise preserve incoming order.
+  const orderedRows: YoyTableRow[] = orderOverride
+    ? (() => {
+        const byEntity = new Map(rows.map((r) => [r.entity, r]));
+        return orderOverride
+          .map((e) => byEntity.get(e))
+          .filter((r): r is YoyTableRow => r != null);
+      })()
+    : rows;
+
   const priorLbl = formatMonth(anchorAno - 1, anchorMes);
 
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
-      {rows.map((row) => {
+      {orderedRows.map((row) => {
         const yoyColor =
           row.yoy_pct == null
             ? "#aaa"
@@ -421,10 +545,30 @@ function YoYCardList({
           </div>
         );
 
+        const dotColor = colorMap?.[row.entity];
+        const titleNode = dotColor ? (
+          <span style={{ display: "inline-flex", alignItems: "center" }}>
+            <span
+              aria-hidden
+              style={{
+                display: "inline-block",
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                backgroundColor: dotColor,
+                marginRight: 6,
+              }}
+            />
+            {row.entity}
+          </span>
+        ) : (
+          row.entity
+        );
+
         return (
           <MobileDataCard
             key={row.entity}
-            title={row.entity}
+            title={titleNode}
             subtitle={`${priorLbl}: ${row.prev_12m.toLocaleString("en-US", { maximumFractionDigits: 1 })} ${volumeLabel}`}
             rightSlot={rightSlot}
             variant="compact"
@@ -559,16 +703,49 @@ export default function MobileView(): React.ReactElement {
   // ── Derived traces ─────────────────────────────────────────────────────────
   // All useMemo calls MUST be before any conditional early returns (Rules of Hooks).
 
+  // YoY rows — Panel A (countries): re-bucket against pins + zero-inject so
+  // every pinned country has a row, even if absent from server result.
+  // Mirrors desktop yoyPaisesPinned exactly.
+  const yoyPaisesPinned: YoyTableRow[] = useMemo(() => {
+    if (!yoyPaisesData.length) return [];
+    const acc = new Map<string, { last_12m: number; prev_12m: number }>();
+    for (const r of yoyPaisesData) {
+      const englishLabel = ORIGIN_LABEL_BY_DB[r.entity] ?? OTHERS_LABEL;
+      const cur = acc.get(englishLabel) ?? { last_12m: 0, prev_12m: 0 };
+      cur.last_12m += r.last_12m;
+      cur.prev_12m += r.prev_12m;
+      acc.set(englishLabel, cur);
+    }
+    for (const pin of ORIGIN_COUNTRY_PINS) {
+      if (!acc.has(pin.label)) acc.set(pin.label, { last_12m: 0, prev_12m: 0 });
+    }
+    if (!acc.has(OTHERS_LABEL)) acc.set(OTHERS_LABEL, { last_12m: 0, prev_12m: 0 });
+    const rows: YoyTableRow[] = [];
+    for (const [entity, vals] of acc.entries()) {
+      const yoy_pct =
+        vals.prev_12m === 0
+          ? null
+          : ((vals.last_12m - vals.prev_12m) / vals.prev_12m) * 100;
+      rows.push({ entity, last_12m: vals.last_12m, prev_12m: vals.prev_12m, yoy_pct });
+    }
+    return rows;
+  }, [yoyPaisesData]);
+
+  // Panel A — kt. Pinned-country mode (mirrors desktop): bucket against 6
+  // fixed origins + Others, force-inject zero rows so every pinned country
+  // shows in the legend, render in canonical Russia → Saudi Arabia → Others.
   const paisesTraces = useMemo(() => {
-    const rows = paisesData.map((r) => ({
+    const bucketed = bucketPaisesByPins(paisesData);
+    const rawRows = bucketed.map((r) => ({
       ano: r.ano,
       mes: r.mes,
-      name: r.pais_origem,
+      name: r.name,
       value: r.total_kg / 1e6,
     }));
+    const rows = ensureAllPinsPresent(rawRows);
     return isSingleMonth
-      ? buildHorizontalBarTraces(rows, "kt")
-      : buildStackedTraces(rows, "kt");
+      ? buildHorizontalBarTraces(rows, "kt", ORIGIN_ORDER)
+      : buildStackedTraces(rows, "kt", ORIGIN_ORDER);
   }, [paisesData, isSingleMonth]);
 
   const paisesLayout: Partial<Layout> = useMemo(
@@ -664,14 +841,25 @@ export default function MobileView(): React.ReactElement {
     [priceUnit, rangeMonths],
   );
 
-  // ── Unit price traces (imports + exports) ─────────────────────────────────
-  const importsUPEntities = useMemo(() => {
-    const totals = new Map<string, number>();
+  // ── Unit price traces — imports (Panel D, pinned-country mode) ──────────────
+  // Mirrors desktop Panel D: filter to the 6 pinned origins only, relabel to
+  // English, force the canonical legend order so the chart color-aligns with
+  // Panel A. "Others" is omitted (aggregating disparate per-country prices
+  // would be misleading; see desktop View.tsx note).
+  const importsUnitPriceDataPinned: UnitPriceRow[] = useMemo(() => {
+    const out: UnitPriceRow[] = [];
     for (const r of importsUnitPriceData) {
-      if (r.usd_per_m3 != null) totals.set(r.pais, (totals.get(r.pais) ?? 0) + 1);
+      const label = ORIGIN_LABEL_BY_DB[r.pais];
+      if (!label) continue;
+      out.push({ ano: r.ano, mes: r.mes, pais: label, usd_per_m3: r.usd_per_m3 });
     }
-    return Array.from(totals.keys()).sort((a, b) => (totals.get(b) ?? 0) - (totals.get(a) ?? 0));
+    return out;
   }, [importsUnitPriceData]);
+
+  const importsUPEntities = useMemo(
+    () => ORIGIN_COUNTRY_PINS.map((p) => p.label),
+    [],
+  );
 
   // Imports unit price — conversion based on local metric toggle
   const importsUPConvertFn = useMemo(() => {
@@ -688,18 +876,20 @@ export default function MobileView(): React.ReactElement {
     () =>
       isSingleMonth
         ? buildHorizontalBarTracesFromUnitPrice(
-            importsUnitPriceData,
+            importsUnitPriceDataPinned,
             importsUPEntities,
             importsUPUnitLabel,
             importsUPConvertFn,
+            ORIGIN_COLOR_BY_LABEL,
           )
         : buildUnitPriceTraces(
-            importsUnitPriceData,
+            importsUnitPriceDataPinned,
             importsUPEntities,
             importsUPUnitLabel,
             importsUPConvertFn,
+            ORIGIN_COLOR_BY_LABEL,
           ),
-    [importsUnitPriceData, importsUPEntities, importsUPUnitLabel, importsUPConvertFn, isSingleMonth],
+    [importsUnitPriceDataPinned, importsUPEntities, importsUPUnitLabel, importsUPConvertFn, isSingleMonth],
   );
 
   const importsUPMobileLayout: Partial<Layout> = useMemo(
@@ -1102,17 +1292,19 @@ export default function MobileView(): React.ReactElement {
             ) : null}
           </div>
 
-          {yoyPaisesData.length > 0 && (
+          {yoyPaisesPinned.length > 0 && (
             <>
               <div style={{ padding: "4px 16px 4px", fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                 {formatMonth(filters.period.end.ano, filters.period.end.mes)} vs {formatMonth(filters.period.end.ano - 1, filters.period.end.mes)} — Countries
               </div>
               <YoYCardList
-                rows={yoyPaisesData}
+                rows={yoyPaisesPinned}
                 loading={yoyPaisesLoading}
                 volumeLabel="kt"
                 anchorAno={filters.period.end.ano}
                 anchorMes={filters.period.end.mes}
+                orderOverride={ORIGIN_ORDER}
+                colorMap={ORIGIN_COLOR_BY_LABEL}
               />
             </>
           )}

@@ -281,6 +281,44 @@ Panel C (single-line Import Price) is unaffected — it uses a scalar `hovertemp
 
 ---
 
+## Pinned origin-country palette (Imports tab — Panel A + Panel D + YoY table)
+
+Added 2026-05-27 per CTO directive. The Imports tab's country-based panels show
+a **fixed 6-country palette + Others**, regardless of which countries top the
+server's ranking in any given period.
+
+Pin set (legend order — top of stack and left of legend first):
+
+| DB name (`anp_desembaracos.pais_origem`) | Display label | Color |
+|---|---|---|
+| `Rússia` | Russia | `#000000` |
+| `Estados Unidos` | United States | `#FF5000` |
+| `Emirados Árabes Unidos` | UAE | `#73C6A1` |
+| `Países Baixos (Holanda)` | Netherlands | `#FFAE66` |
+| `Índia` | India | `#8258A0` |
+| `Arábia Saudita` | Saudi Arabia | `#D2FF00` |
+| *(any other country)* | Others | `#7F7F7F` |
+
+Implementation:
+
+- Hook fetches `p_top_n = 10` from `get_imports_exports_paises_stacked` (unchanged). UI re-buckets client-side: any `pais_origem` not in the pin set (including the server's pre-existing "Others" bucket, if any) collapses into a single client-side "Others" entry per month.
+- The UI **always renders all 7 legend entries** (6 pinned + Others), even at zero — `ensureAllPinsPresent` injects zero-value rows per (ano, mes) for missing pinned countries so the legend stays visually stable across periods.
+- Both Panel A (stacked area + single-month horizontal bar) and the YoY table render in the canonical order: Russia → United States → UAE → Netherlands → India → Saudi Arabia → Others. Stack reads top-to-bottom in that order; legend reads left-to-right in that order; YoY table reads top-to-bottom in that order.
+- Panel D (Import Unit Price by Origin Country) uses the **same 6 pinned countries** but **omits Others** entirely — aggregating disparate per-country unit prices into a single line would be misleading.
+- Panel D's color map matches Panel A 1:1 so a country's color is consistent across both panels.
+- DB values stay in Portuguese (read-only contract with ETL pipelines). Excel/CSV exports preserve the raw Portuguese names; only the on-screen labels are translated to English.
+
+Out of scope (not pinned — keep current auto-coloring):
+- Panel B (Imports by Importer) — different entity type (Brazilian companies, not countries).
+- Panel C (Import Price) — single-line chart, uses `PRICE_COLORS` per product.
+- Exports tab — destination countries are a different universe (Argentina, Singapore, etc.); the 6-country list is meaningless there.
+
+If a new top supplier emerges (e.g. China starts shipping diesel directly), it will be absorbed into Others until a code change updates `ORIGIN_COUNTRY_PINS`. This is the intended trade-off — fixed legend stability over auto-discovery.
+
+Source: `desktop/View.tsx` § `ORIGIN_COUNTRY_PINS`; `mobile/View.tsx` mirrors the same constant. Both views also share helpers `bucketPaisesByPins` / `ensureAllPinsPresent`. The mobile YoY card list gains an optional `colorMap` prop that renders an 8px dot next to the country name, mirroring the desktop table's dot.
+
+---
+
 ## Known Facts / Gotchas
 
 1. **Sentinel `__legacy__`** — `get_imports_exports_importers_stacked` returns 0 rows while ETL backfill hasn't run. UI shows an informational panel. Same for `get_imports_exports_yoy_table(p_scope='importers')`.
