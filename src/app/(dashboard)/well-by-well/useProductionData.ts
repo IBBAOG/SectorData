@@ -94,6 +94,14 @@ import {
   rpcGetProductionBrazilFieldTimeseries,
   rpcGetProductionBrazilInstallationTimeseries,
   rpcGetWellByWellHeader,
+  rpcGetAnpCdpBswScatterCanonical,
+  rpcGetAnpCdpBswFieldAggregateCanonical,
+  rpcGetAnpCdpDepletionScatterCanonical,
+  rpcGetAnpCdpDepletionFieldAggregateCanonical,
+  type AnpCdpBswPoint,
+  type AnpCdpBswFieldPoint,
+  type AnpCdpDepletionPoint,
+  type AnpCdpDepletionFieldPoint,
 } from "../../../lib/rpc";
 import type { FieldStakeEmpresa } from "../../../types/fieldStakes";
 import type {
@@ -172,6 +180,32 @@ export const AMBIENTE_COLOR: Record<string, string> = {
 
 /** Brand orange — kept for the operating-hours line + active-pill highlight. */
 export const BRAND_ORANGE = WBW_COLORS.hoursRate;
+
+// ─── Drill-down popup tab state (Phase 2 of /well-by-well drill enrichment) ───
+//
+// The field drill modal/BottomSheet now hosts three sub-analyses (was just
+// "Production"):
+//   - Production : 4 KPIs + Oil/Water/Hours stacked-bar chart (unchanged)
+//   - BSW        : water-cut analysis reusing /anp-cdp-bsw chart builders
+//   - Depletion  : uptime-normalized NP rolling depletion reusing
+//                  /anp-cdp-depletion chart builders
+//
+// Each non-Production tab has its own sub-mode toggle (Field average vs Per
+// well) and lazy-fetches data via the canonical-aware RPC wrappers. Cached
+// data sticks until `drillCampo` changes (auto-close on view-pill switch is
+// preserved separately).
+
+export type DrillTab = "production" | "bsw" | "depletion";
+export type DrillSubMode = "well" | "field";
+
+/**
+ * Default rolling-depletion window sizes used by the Depletion tab of the
+ * drill popup. The standalone /anp-cdp-depletion dashboard lets the user pick
+ * these via two number inputs; the popup keeps things minimal and uses fixed
+ * defaults (12 recent vs 12 prior months — matches the dashboard default).
+ */
+export const DRILL_DEPLETION_RECENT_MONTHS = 12;
+export const DRILL_DEPLETION_PRIOR_MONTHS  = 12;
 
 /**
  * Top fields chart: oil dark navy + water brand orange (PDF p4 — Petrobras
@@ -445,6 +479,31 @@ export interface UseProductionData {
   openFieldDrill: (campo: string) => void;
   closeFieldDrill: () => void;
 
+  // ── Drill popup tabs (Phase 2) ──────────────────────────────────────────
+  // Tab selector lives inside the drill modal/BottomSheet. Switching tabs
+  // does NOT close the drill — that only happens on view-pill change or
+  // explicit close. Default tab on open: "production".
+  drillTab: DrillTab;
+  setDrillTab: (t: DrillTab) => void;
+
+  // BSW tab sub-state. `drillBswMode` toggles between Field average (default)
+  // and Per well; data is lazy-fetched per sub-mode and cached until
+  // `drillCampo` changes.
+  drillBswMode: DrillSubMode;
+  setDrillBswMode: (m: DrillSubMode) => void;
+  drillBswWellPoints: AnpCdpBswPoint[] | null;
+  drillBswFieldPoints: AnpCdpBswFieldPoint[] | null;
+  drillBswLoading: boolean;
+  drillBswError: string | null;
+
+  // Depletion tab sub-state — same shape as BSW.
+  drillDepletionMode: DrillSubMode;
+  setDrillDepletionMode: (m: DrillSubMode) => void;
+  drillDepletionWellPoints: AnpCdpDepletionPoint[] | null;
+  drillDepletionFieldPoints: AnpCdpDepletionFieldPoint[] | null;
+  drillDepletionLoading: boolean;
+  drillDepletionError: string | null;
+
   // Installation drill-down. Same Brasil-vs-company branching as the field
   // drill. Mutually exclusive with the field drill.
   drillInstalacao: string | null;
@@ -508,6 +567,29 @@ export function useProductionData(): UseProductionData {
   const [drillInstalacaoTimeseries, setDrillInstalacaoTimeseries] = useState<ProductionInstallationTimeseriesRow[]>([]);
   const [drillInstalacaoLoading, setDrillInstalacaoLoading] = useState(false);
   const [drillInstalacaoError, setDrillInstalacaoError] = useState<string | null>(null);
+
+  // ── Drill popup tab state (Phase 2) ──────────────────────────────────────
+  const [drillTab, setDrillTabState] = useState<DrillTab>("production");
+  const [drillBswMode, setDrillBswModeState] = useState<DrillSubMode>("field");
+  const [drillDepletionMode, setDrillDepletionModeState] = useState<DrillSubMode>("field");
+
+  // BSW data caches — `null` means "not yet fetched"; `[]` means "fetched but
+  // empty result". Using `null` as the initial value lets the fetch effect
+  // distinguish "needs fetch" from "no data available".
+  const [drillBswWellPoints, setDrillBswWellPoints]   = useState<AnpCdpBswPoint[] | null>(null);
+  const [drillBswFieldPoints, setDrillBswFieldPoints] = useState<AnpCdpBswFieldPoint[] | null>(null);
+  const [drillBswLoading, setDrillBswLoading]         = useState(false);
+  const [drillBswError, setDrillBswError]             = useState<string | null>(null);
+
+  // Depletion data caches — same shape as BSW.
+  const [drillDepletionWellPoints,  setDrillDepletionWellPoints]  = useState<AnpCdpDepletionPoint[] | null>(null);
+  const [drillDepletionFieldPoints, setDrillDepletionFieldPoints] = useState<AnpCdpDepletionFieldPoint[] | null>(null);
+  const [drillDepletionLoading, setDrillDepletionLoading]         = useState(false);
+  const [drillDepletionError, setDrillDepletionError]             = useState<string | null>(null);
+
+  const setDrillTab          = useCallback((t: DrillTab)    => setDrillTabState(t), []);
+  const setDrillBswMode      = useCallback((m: DrillSubMode) => setDrillBswModeState(m), []);
+  const setDrillDepletionMode = useCallback((m: DrillSubMode) => setDrillDepletionModeState(m), []);
 
   // ── Derived: view ↔ empresa convenience ───────────────────────────────────
   const viewIsCompany = isCompanyView(view);
@@ -913,12 +995,33 @@ export function useProductionData(): UseProductionData {
     setDrillInstalacao(null);
     setDrillInstalacaoTimeseries([]);
     setDrillInstalacaoError(null);
+    // Reset the drill-popup tab state so each fresh open lands on
+    // "production" with both sub-toggles in their default position and no
+    // stale BSW/Depletion caches from a previous field.
+    setDrillTabState("production");
+    setDrillBswModeState("field");
+    setDrillDepletionModeState("field");
+    setDrillBswWellPoints(null);
+    setDrillBswFieldPoints(null);
+    setDrillBswError(null);
+    setDrillBswLoading(false);
+    setDrillDepletionWellPoints(null);
+    setDrillDepletionFieldPoints(null);
+    setDrillDepletionError(null);
+    setDrillDepletionLoading(false);
     setDrillCampo(campo);
   }, []);
   const closeFieldDrill = useCallback(() => {
     setDrillCampo(null);
     setDrillTimeseries([]);
     setDrillError(null);
+    // Clear the tab caches too so re-opening doesn't briefly flash stale data.
+    setDrillBswWellPoints(null);
+    setDrillBswFieldPoints(null);
+    setDrillBswError(null);
+    setDrillDepletionWellPoints(null);
+    setDrillDepletionFieldPoints(null);
+    setDrillDepletionError(null);
   }, []);
 
   useEffect(() => {
@@ -958,6 +1061,97 @@ export function useProductionData(): UseProductionData {
     })();
     return () => { cancelled = true; };
   }, [supabase, drillCampo, view, viewIsCompany, viewEmpresa, dateRange]);
+
+  // ── Drill popup: BSW tab lazy-fetch ──────────────────────────────────────
+  //
+  // Phase 2 of /well-by-well drill enrichment. The BSW tab reuses the
+  // `/anp-cdp-bsw` chart builders and the canonical-aware RPC variants added
+  // in migration 20260530000000. Cached per (drillCampo × sub-mode); switching
+  // sub-mode within the same tab fetches only the missing dataset.
+  //
+  // Key contract details (per CTO spec):
+  //  • The dashboard's period slider is NOT applied — BSW/Depletion are
+  //    lifecycle analyses, not period-windowed. The RPCs return the full
+  //    history for the canonical-expanded campo group.
+  //  • Fetch only fires when (a) the drill is open, (b) the active tab is BSW
+  //    and (c) the cache for the current sub-mode is null. Switching tabs
+  //    without changing campo does NOT clear caches — re-entry is free.
+  //  • Errors and loading are shared across sub-modes for simplicity.
+  // Avoid putting the loading flag in the deps array — toggling it inside the
+  // effect would cancel the in-flight fetch via the cleanup function and the
+  // resolved setState calls would no-op (`cancelled=true`), leaving the UI
+  // stuck on BarrelLoading forever. Same reason React StrictMode's
+  // double-render is harmless: the cleanup of the FIRST invocation cancels its
+  // own fetch, but the SECOND invocation fires a fresh one whose `cancelled`
+  // stays false through to completion.
+  useEffect(() => {
+    if (!supabase || !drillCampo) return;
+    if (drillTab !== "bsw") return;
+    // Skip if the data for the active sub-mode is already cached.
+    if (drillBswMode === "well"  && drillBswWellPoints  !== null) return;
+    if (drillBswMode === "field" && drillBswFieldPoints !== null) return;
+
+    let cancelled = false;
+    setDrillBswLoading(true);
+    setDrillBswError(null);
+    (async () => {
+      try {
+        if (drillBswMode === "well") {
+          const rows = await rpcGetAnpCdpBswScatterCanonical(supabase, [drillCampo]);
+          if (!cancelled) setDrillBswWellPoints(rows);
+        } else {
+          const rows = await rpcGetAnpCdpBswFieldAggregateCanonical(supabase, [drillCampo]);
+          if (!cancelled) setDrillBswFieldPoints(rows);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          console.error("Drill BSW fetch failed", e);
+          setDrillBswError(e instanceof Error ? e.message : String(e));
+          if (drillBswMode === "well") setDrillBswWellPoints([]);
+          else setDrillBswFieldPoints([]);
+        }
+      } finally {
+        if (!cancelled) setDrillBswLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase, drillCampo, drillTab, drillBswMode, drillBswWellPoints, drillBswFieldPoints]);
+
+  // ── Drill popup: Depletion tab lazy-fetch ────────────────────────────────
+  // Mirrors the BSW effect exactly, swapping in the depletion RPCs.
+  useEffect(() => {
+    if (!supabase || !drillCampo) return;
+    if (drillTab !== "depletion") return;
+    if (drillDepletionMode === "well"  && drillDepletionWellPoints  !== null) return;
+    if (drillDepletionMode === "field" && drillDepletionFieldPoints !== null) return;
+
+    let cancelled = false;
+    setDrillDepletionLoading(true);
+    setDrillDepletionError(null);
+    (async () => {
+      try {
+        if (drillDepletionMode === "well") {
+          const rows = await rpcGetAnpCdpDepletionScatterCanonical(supabase, [drillCampo]);
+          if (!cancelled) setDrillDepletionWellPoints(rows);
+        } else {
+          const rows = await rpcGetAnpCdpDepletionFieldAggregateCanonical(supabase, [drillCampo]);
+          if (!cancelled) setDrillDepletionFieldPoints(rows);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          console.error("Drill Depletion fetch failed", e);
+          setDrillDepletionError(e instanceof Error ? e.message : String(e));
+          if (drillDepletionMode === "well") setDrillDepletionWellPoints([]);
+          else setDrillDepletionFieldPoints([]);
+        }
+      } finally {
+        if (!cancelled) setDrillDepletionLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase, drillCampo, drillTab, drillDepletionMode, drillDepletionWellPoints, drillDepletionFieldPoints]);
 
   // ── Installation drill-down: open / close handlers + reactive fetch ───────
   //
@@ -1027,6 +1221,19 @@ export function useProductionData(): UseProductionData {
     setDrillInstalacao(null);
     setDrillInstalacaoTimeseries([]);
     setDrillInstalacaoError(null);
+    // Reset the popup tab state too (cleared caches force a fresh fetch when
+    // the user re-opens a drill after switching pills).
+    setDrillTabState("production");
+    setDrillBswModeState("field");
+    setDrillDepletionModeState("field");
+    setDrillBswWellPoints(null);
+    setDrillBswFieldPoints(null);
+    setDrillBswError(null);
+    setDrillBswLoading(false);
+    setDrillDepletionWellPoints(null);
+    setDrillDepletionFieldPoints(null);
+    setDrillDepletionError(null);
+    setDrillDepletionLoading(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
 
@@ -1341,5 +1548,21 @@ export function useProductionData(): UseProductionData {
     drillInstalacaoKpis,
     openInstallationDrill,
     closeInstallationDrill,
+
+    // Drill popup tabs (Phase 2)
+    drillTab,
+    setDrillTab,
+    drillBswMode,
+    setDrillBswMode,
+    drillBswWellPoints,
+    drillBswFieldPoints,
+    drillBswLoading,
+    drillBswError,
+    drillDepletionMode,
+    setDrillDepletionMode,
+    drillDepletionWellPoints,
+    drillDepletionFieldPoints,
+    drillDepletionLoading,
+    drillDepletionError,
   };
 }

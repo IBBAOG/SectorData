@@ -1135,6 +1135,30 @@ export async function rpcGetAnpCdpBswScatter(
   }
 }
 
+// canonical-aware variant for /well-by-well drill-down — passes
+// `p_expand_canonical: true` so the server expands every input campo via
+// `canonical_field_name()` (Round 4 grouping; migration 20260530000000).
+// Existing /anp-cdp-bsw call sites continue to use the strict variant above.
+export async function rpcGetAnpCdpBswScatterCanonical(
+  supabase: SupabaseClient,
+  campos: string[],
+): Promise<AnpCdpBswPoint[]> {
+  if (!campos || campos.length === 0) return [];
+  try {
+    const { data, error } = await supabase
+      .rpc("get_anp_cdp_bsw_scatter", {
+        p_campos: campos,
+        p_expand_canonical: true,
+      })
+      .limit(500000);
+    if (error) throw error;
+    return (data ?? []) as AnpCdpBswPoint[];
+  } catch (e) {
+    console.error("get_anp_cdp_bsw_scatter (canonical) failed", e);
+    return [];
+  }
+}
+
 // Field-aggregate variant: one point per (campo × calendar month) — volume-weighted
 // BSW averaged across all wells in the field, plotted against cumulative oil
 // recovered as a fraction of the field's VOIP (Volume Original In Place,
@@ -1170,6 +1194,26 @@ export async function rpcGetAnpCdpBswFieldAggregate(
     return ((data as unknown) ?? []) as AnpCdpBswFieldPoint[];
   } catch (e) {
     console.error("get_anp_cdp_bsw_field_aggregate failed", e);
+    return [];
+  }
+}
+
+// canonical-aware variant for /well-by-well drill-down — see comment above on
+// `rpcGetAnpCdpBswScatterCanonical`.
+export async function rpcGetAnpCdpBswFieldAggregateCanonical(
+  supabase: SupabaseClient,
+  campos: string[],
+): Promise<AnpCdpBswFieldPoint[]> {
+  if (!campos || campos.length === 0) return [];
+  try {
+    const { data, error } = await supabase.rpc("get_anp_cdp_bsw_field_aggregate", {
+      p_campos: campos,
+      p_expand_canonical: true,
+    });
+    if (error) throw error;
+    return ((data as unknown) ?? []) as AnpCdpBswFieldPoint[];
+  } catch (e) {
+    console.error("get_anp_cdp_bsw_field_aggregate (canonical) failed", e);
     return [];
   }
 }
@@ -1261,6 +1305,28 @@ export async function rpcGetAnpCdpDepletionScatter(
   }
 }
 
+// canonical-aware variant for /well-by-well drill-down — see comment above on
+// `rpcGetAnpCdpBswScatterCanonical`.
+export async function rpcGetAnpCdpDepletionScatterCanonical(
+  supabase: SupabaseClient,
+  campos: string[],
+): Promise<AnpCdpDepletionPoint[]> {
+  if (!campos || campos.length === 0) return [];
+  try {
+    const { data, error } = await supabase
+      .rpc("get_anp_cdp_depletion_scatter", {
+        p_campos: campos,
+        p_expand_canonical: true,
+      })
+      .limit(500000);
+    if (error) throw error;
+    return (data ?? []) as AnpCdpDepletionPoint[];
+  } catch (e) {
+    console.error("get_anp_cdp_depletion_scatter (canonical) failed", e);
+    return [];
+  }
+}
+
 // Field-aggregate — RETURNS jsonb (single row). Do NOT call .limit() here:
 // it's a single-row jsonb response and limit() would cap it incorrectly.
 export async function rpcGetAnpCdpDepletionFieldAggregate(
@@ -1276,6 +1342,26 @@ export async function rpcGetAnpCdpDepletionFieldAggregate(
     return ((data as unknown) ?? []) as AnpCdpDepletionFieldPoint[];
   } catch (e) {
     console.error("get_anp_cdp_depletion_field_aggregate failed", e);
+    return [];
+  }
+}
+
+// canonical-aware variant for /well-by-well drill-down — see comment above on
+// `rpcGetAnpCdpBswScatterCanonical`.
+export async function rpcGetAnpCdpDepletionFieldAggregateCanonical(
+  supabase: SupabaseClient,
+  campos: string[],
+): Promise<AnpCdpDepletionFieldPoint[]> {
+  if (!campos || campos.length === 0) return [];
+  try {
+    const { data, error } = await supabase.rpc("get_anp_cdp_depletion_field_aggregate", {
+      p_campos: campos,
+      p_expand_canonical: true,
+    });
+    if (error) throw error;
+    return ((data as unknown) ?? []) as AnpCdpDepletionFieldPoint[];
+  } catch (e) {
+    console.error("get_anp_cdp_depletion_field_aggregate (canonical) failed", e);
     return [];
   }
 }

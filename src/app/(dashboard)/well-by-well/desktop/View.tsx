@@ -49,6 +49,7 @@ import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
 import ChartSection from "../../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 import ExportPanel from "../../../../components/dashboard/ExportPanel";
+import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
 import HeaderTable from "../HeaderTable";
 import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../../lib/plotlyDefaults";
 import { bblDiaToKbpd } from "../../../../lib/units";
@@ -56,6 +57,14 @@ import {
   WELL_BY_WELL_VIEWS,
   type WellByWellView,
 } from "../../../../data/wellByWellEmpresas";
+import {
+  buildPerWellChart as buildBswPerWellChart,
+  buildFieldAverageChart as buildBswFieldAverageChart,
+} from "../../../../lib/charts/bsw";
+import {
+  buildPerWellChart as buildDepletionPerWellChart,
+  buildFieldAverageChart as buildDepletionFieldAverageChart,
+} from "../../../../lib/charts/depletion";
 
 import {
   useProductionData,
@@ -72,7 +81,11 @@ import {
   PERIOD_PRESET_LABEL,
   computePresetRange,
   detectPeriodPreset,
+  DRILL_DEPLETION_RECENT_MONTHS,
+  DRILL_DEPLETION_PRIOR_MONTHS,
   type PeriodPreset,
+  type DrillTab,
+  type DrillSubMode,
 } from "../useProductionData";
 import type {
   ProductionBrazilRow,
@@ -81,6 +94,12 @@ import type {
   ProductionFieldTimeseriesRow,
   ProductionInstallationTimeseriesRow,
 } from "../../../../types/production";
+import type {
+  AnpCdpBswPoint,
+  AnpCdpBswFieldPoint,
+  AnpCdpDepletionPoint,
+  AnpCdpDepletionFieldPoint,
+} from "../../../../lib/rpc";
 
 // ─── Chart builders ───────────────────────────────────────────────────────────
 
@@ -605,6 +624,14 @@ function ViewPillsRow({
 }
 
 // ─── Field drill-down modal ───────────────────────────────────────────────────
+//
+// Phase 2 (2026-05-30): the modal now hosts THREE tabs — Production (the
+// original 4-KPI + Oil/Water/Hours stacked-bar view, unchanged), BSW (water-cut
+// analysis reusing the /anp-cdp-bsw chart builders), and Depletion (rolling
+// uptime-normalized NP from /anp-cdp-depletion). Tabs are mutually exclusive
+// and DO NOT close the modal. The dashboard's period slider is intentionally
+// ignored on BSW/Depletion tabs — those are lifecycle analyses, not period-
+// windowed. Switching back to Production restores the original analysis.
 
 function FieldDrillModal({
   campo,
@@ -614,6 +641,21 @@ function FieldDrillModal({
   series,
   kpis,
   onClose,
+  // Tabs (Phase 2)
+  drillTab,
+  setDrillTab,
+  drillBswMode,
+  setDrillBswMode,
+  drillBswWellPoints,
+  drillBswFieldPoints,
+  drillBswLoading,
+  drillBswError,
+  drillDepletionMode,
+  setDrillDepletionMode,
+  drillDepletionWellPoints,
+  drillDepletionFieldPoints,
+  drillDepletionLoading,
+  drillDepletionError,
 }: {
   campo: string;
   empresa: string;
@@ -628,8 +670,85 @@ function FieldDrillModal({
     ytdAvg: number | null;
   };
   onClose: () => void;
+  drillTab: DrillTab;
+  setDrillTab: (t: DrillTab) => void;
+  drillBswMode: DrillSubMode;
+  setDrillBswMode: (m: DrillSubMode) => void;
+  drillBswWellPoints: AnpCdpBswPoint[] | null;
+  drillBswFieldPoints: AnpCdpBswFieldPoint[] | null;
+  drillBswLoading: boolean;
+  drillBswError: string | null;
+  drillDepletionMode: DrillSubMode;
+  setDrillDepletionMode: (m: DrillSubMode) => void;
+  drillDepletionWellPoints: AnpCdpDepletionPoint[] | null;
+  drillDepletionFieldPoints: AnpCdpDepletionFieldPoint[] | null;
+  drillDepletionLoading: boolean;
+  drillDepletionError: string | null;
 }): React.ReactElement {
-  const chart = useMemo(() => buildFieldDrillChart(series), [series]);
+  // Production tab chart (unchanged from the pre-Phase-2 modal).
+  const productionChart = useMemo(() => buildFieldDrillChart(series), [series]);
+
+  // BSW charts. Because the canonical-aware RPC expands variant names server-
+  // side (e.g. canonical "TUPI" → {TUPI, SUL DE TUPI, AnC_TUPI}), the response
+  // can contain multiple distinct `campo` values. We surface ALL of them as
+  // separate traces by deriving the selected campos from the response itself
+  // (preserves first-appearance order so colors stay stable across renders).
+  // If the user clicked a canonical that maps to a single raw name the list
+  // collapses to [campo] and we render exactly one trace.
+  const bswFieldCampos = useMemo(() => {
+    const seen: string[] = [];
+    for (const p of drillBswFieldPoints ?? []) {
+      if (!seen.includes(p.campo)) seen.push(p.campo);
+    }
+    return seen.length > 0 ? seen : [campo];
+  }, [drillBswFieldPoints, campo]);
+  const bswFieldChart = useMemo(
+    () => buildBswFieldAverageChart(drillBswFieldPoints ?? [], bswFieldCampos, "markers+lines"),
+    [drillBswFieldPoints, bswFieldCampos],
+  );
+  // Per-well: each well is its own trace already (the builder colors by poco).
+  // We still pass a non-empty selectedCampos so the "Select a field" empty
+  // state doesn't trigger when there's data — the value isn't used for trace
+  // grouping in the per-well builder, only as a "anything selected?" gate.
+  const bswWellChart = useMemo(
+    () => buildBswPerWellChart(drillBswWellPoints ?? [], [campo], "markers+lines"),
+    [drillBswWellPoints, campo],
+  );
+
+  // Depletion charts. xMode is fixed to "voip" (% VOIP recovered) per CTO spec
+  // — no Calendar/VOIP toggle in the popup; the dedicated dashboard is where
+  // analysts get to swap axis.
+  const depletionFieldCampos = useMemo(() => {
+    const seen: string[] = [];
+    for (const p of drillDepletionFieldPoints ?? []) {
+      if (!seen.includes(p.campo)) seen.push(p.campo);
+    }
+    return seen.length > 0 ? seen : [campo];
+  }, [drillDepletionFieldPoints, campo]);
+  const depletionFieldChart = useMemo(
+    () =>
+      buildDepletionFieldAverageChart(
+        drillDepletionFieldPoints ?? [],
+        depletionFieldCampos,
+        "markers+lines",
+        "voip",
+        DRILL_DEPLETION_RECENT_MONTHS,
+        DRILL_DEPLETION_PRIOR_MONTHS,
+      ),
+    [drillDepletionFieldPoints, depletionFieldCampos],
+  );
+  const depletionWellChart = useMemo(
+    () =>
+      buildDepletionPerWellChart(
+        drillDepletionWellPoints ?? [],
+        [campo],
+        "markers+lines",
+        "voip",
+        DRILL_DEPLETION_RECENT_MONTHS,
+        DRILL_DEPLETION_PRIOR_MONTHS,
+      ),
+    [drillDepletionWellPoints, campo],
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -638,6 +757,16 @@ function FieldDrillModal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  // Per-tab loading and error pickers so the rendering block stays uncluttered.
+  const tabLoading =
+    drillTab === "production" ? loading
+    : drillTab === "bsw" ? drillBswLoading
+    : drillDepletionLoading;
+  const tabError =
+    drillTab === "production" ? error
+    : drillTab === "bsw" ? drillBswError
+    : drillDepletionError;
 
   return (
     <div
@@ -661,7 +790,7 @@ function FieldDrillModal({
         onClick={(e) => e.stopPropagation()}
         style={{
           position: "relative",
-          width: "min(820px, calc(100vw - 32px))",
+          width: "min(900px, calc(100vw - 32px))",
           maxHeight: "calc(100vh - 64px)",
           display: "flex",
           flexDirection: "column",
@@ -718,10 +847,24 @@ function FieldDrillModal({
             flexDirection: "column",
             gap: 14,
             flex: "1 1 auto",
-            opacity: loading ? 0.6 : 1,
+            opacity: tabLoading ? 0.6 : 1,
           }}
         >
-          {error && (
+          {/* ── Tab bar (Production / BSW / Depletion) ─────────────────── */}
+          <div>
+            <SegmentedToggle<DrillTab>
+              options={[
+                { value: "production", label: "Production" },
+                { value: "bsw",        label: "BSW" },
+                { value: "depletion",  label: "Depletion" },
+              ]}
+              value={drillTab}
+              onChange={setDrillTab}
+              variant="full"
+            />
+          </div>
+
+          {tabError && (
             <div
               style={{
                 padding: "10px 12px",
@@ -732,68 +875,181 @@ function FieldDrillModal({
                 fontSize: 12,
               }}
             >
-              {error}
+              {tabError}
             </div>
           )}
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-              gap: 10,
-            }}
-          >
-            <KpiCard
-              label="Current oil"
-              value={fmtNumber(kpis.currentOil, 1)}
-              unit="kbpd"
-              accent
-            />
-            <KpiCard
-              label="Δ MoM"
-              value={kpis.momPct == null ? "—" : fmtPct(kpis.momPct)}
-              unit=""
-            />
-            <KpiCard
-              label="Δ YoY"
-              value={kpis.yoyPct == null ? "—" : fmtPct(kpis.yoyPct)}
-              unit=""
-            />
-            <KpiCard
-              label="YTD avg"
-              value={kpis.ytdAvg == null ? "—" : fmtNumber(kpis.ytdAvg, 1)}
-              unit="kbpd"
-            />
-          </div>
-
-          <div style={{ position: "relative" }}>
-            <PlotlyChart
-              data={chart.data}
-              layout={chart.layout}
-              style={{ width: "100%", height: 320 }}
-            />
-            {!loading && series.length === 0 && (
+          {drillTab === "production" && (
+            <>
               <div
                 style={{
-                  position: "absolute",
-                  inset: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  color: "#888",
-                  fontSize: 12,
-                  background: "rgba(255,255,255,0.6)",
+                  display: "grid",
+                  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                  gap: 10,
                 }}
               >
-                No data for this field in the current period.
+                <KpiCard
+                  label="Current oil"
+                  value={fmtNumber(kpis.currentOil, 1)}
+                  unit="kbpd"
+                  accent
+                />
+                <KpiCard
+                  label="Δ MoM"
+                  value={kpis.momPct == null ? "—" : fmtPct(kpis.momPct)}
+                  unit=""
+                />
+                <KpiCard
+                  label="Δ YoY"
+                  value={kpis.yoyPct == null ? "—" : fmtPct(kpis.yoyPct)}
+                  unit=""
+                />
+                <KpiCard
+                  label="YTD avg"
+                  value={kpis.ytdAvg == null ? "—" : fmtNumber(kpis.ytdAvg, 1)}
+                  unit="kbpd"
+                />
               </div>
-            )}
-          </div>
 
-          <div style={{ fontSize: 11, color: "#888" }}>
-            Bars: oil (dark) + water (light blue) in kbpd ·
-            Line: monthly uptime fraction · Period reflects the dashboard filters.
-          </div>
+              <div style={{ position: "relative" }}>
+                <PlotlyChart
+                  data={productionChart.data}
+                  layout={productionChart.layout}
+                  style={{ width: "100%", height: 320 }}
+                />
+                {!loading && series.length === 0 && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#888",
+                      fontSize: 12,
+                      background: "rgba(255,255,255,0.6)",
+                    }}
+                  >
+                    No data for this field in the current period.
+                  </div>
+                )}
+              </div>
+
+              <div style={{ fontSize: 11, color: "#888" }}>
+                Bars: oil (dark) + water (light blue) in kbpd ·
+                Line: monthly uptime fraction · Period reflects the dashboard filters.
+              </div>
+            </>
+          )}
+
+          {drillTab === "bsw" && (
+            <>
+              <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                <SegmentedToggle<DrillSubMode>
+                  options={[
+                    { value: "field", label: "Field average" },
+                    { value: "well",  label: "Per well" },
+                  ]}
+                  value={drillBswMode}
+                  onChange={setDrillBswMode}
+                  variant="compact"
+                />
+              </div>
+              {drillBswLoading &&
+               ((drillBswMode === "field" && drillBswFieldPoints == null) ||
+                (drillBswMode === "well"  && drillBswWellPoints  == null)) ? (
+                <div style={{ padding: "40px 0" }}>
+                  <BarrelLoading />
+                </div>
+              ) : (
+                <div style={{ position: "relative" }}>
+                  <PlotlyChart
+                    data={drillBswMode === "field" ? bswFieldChart.data : bswWellChart.data}
+                    layout={drillBswMode === "field" ? bswFieldChart.layout : bswWellChart.layout}
+                    style={{ width: "100%", height: 420 }}
+                  />
+                  {!drillBswLoading &&
+                   ((drillBswMode === "field" && (drillBswFieldPoints?.length ?? 0) === 0) ||
+                    (drillBswMode === "well"  && (drillBswWellPoints?.length  ?? 0) === 0)) && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#888",
+                        fontSize: 12,
+                        background: "rgba(255,255,255,0.6)",
+                        textAlign: "center",
+                        padding: "0 24px",
+                      }}
+                    >
+                      BSW data unavailable for this field — no VOIP reference published yet.
+                    </div>
+                  )}
+                </div>
+              )}
+              <div style={{ fontSize: 11, color: "#888" }}>
+                Y axis: water / (water + oil). X axis: % VOIP recovered (field average) or months since first production (per well).
+              </div>
+            </>
+          )}
+
+          {drillTab === "depletion" && (
+            <>
+              <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                <SegmentedToggle<DrillSubMode>
+                  options={[
+                    { value: "field", label: "Field average" },
+                    { value: "well",  label: "Per well" },
+                  ]}
+                  value={drillDepletionMode}
+                  onChange={setDrillDepletionMode}
+                  variant="compact"
+                />
+              </div>
+              {drillDepletionLoading &&
+               ((drillDepletionMode === "field" && drillDepletionFieldPoints == null) ||
+                (drillDepletionMode === "well"  && drillDepletionWellPoints  == null)) ? (
+                <div style={{ padding: "40px 0" }}>
+                  <BarrelLoading />
+                </div>
+              ) : (
+                <div style={{ position: "relative" }}>
+                  <PlotlyChart
+                    data={drillDepletionMode === "field" ? depletionFieldChart.data : depletionWellChart.data}
+                    layout={drillDepletionMode === "field" ? depletionFieldChart.layout : depletionWellChart.layout}
+                    style={{ width: "100%", height: 420 }}
+                  />
+                  {!drillDepletionLoading &&
+                   ((drillDepletionMode === "field" && (drillDepletionFieldPoints?.length ?? 0) === 0) ||
+                    (drillDepletionMode === "well"  && (drillDepletionWellPoints?.length  ?? 0) === 0)) && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#888",
+                        fontSize: 12,
+                        background: "rgba(255,255,255,0.6)",
+                        textAlign: "center",
+                        padding: "0 24px",
+                      }}
+                    >
+                      Depletion data unavailable for this field — VOIP reference may be missing.
+                    </div>
+                  )}
+                </div>
+              )}
+              <div style={{ fontSize: 11, color: "#888" }}>
+                Y axis: rolling depletion ({DRILL_DEPLETION_RECENT_MONTHS}m vs prior {DRILL_DEPLETION_PRIOR_MONTHS}m).
+                X axis: % VOIP recovered. NP rising = positive (good); NP falling = depletion.
+              </div>
+            </>
+          )}
         </div>
 
         <div
@@ -1082,6 +1338,14 @@ export default function DesktopView(): React.ReactElement | null {
     drillInstalacao, drillInstalacaoTimeseries, drillInstalacaoLoading,
     drillInstalacaoError, drillInstalacaoKpis,
     openInstallationDrill, closeInstallationDrill,
+    // Drill popup tabs (Phase 2)
+    drillTab, setDrillTab,
+    drillBswMode, setDrillBswMode,
+    drillBswWellPoints, drillBswFieldPoints,
+    drillBswLoading, drillBswError,
+    drillDepletionMode, setDrillDepletionMode,
+    drillDepletionWellPoints, drillDepletionFieldPoints,
+    drillDepletionLoading, drillDepletionError,
   } = useProductionData();
 
   // ── Chart 1 data (Brasil OR company) ─────────────────────────────────────
@@ -1398,6 +1662,20 @@ export default function DesktopView(): React.ReactElement | null {
           series={drillTimeseries}
           kpis={drillKpis}
           onClose={closeFieldDrill}
+          drillTab={drillTab}
+          setDrillTab={setDrillTab}
+          drillBswMode={drillBswMode}
+          setDrillBswMode={setDrillBswMode}
+          drillBswWellPoints={drillBswWellPoints}
+          drillBswFieldPoints={drillBswFieldPoints}
+          drillBswLoading={drillBswLoading}
+          drillBswError={drillBswError}
+          drillDepletionMode={drillDepletionMode}
+          setDrillDepletionMode={setDrillDepletionMode}
+          drillDepletionWellPoints={drillDepletionWellPoints}
+          drillDepletionFieldPoints={drillDepletionFieldPoints}
+          drillDepletionLoading={drillDepletionLoading}
+          drillDepletionError={drillDepletionError}
         />
       )}
 

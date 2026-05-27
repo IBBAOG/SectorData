@@ -58,12 +58,21 @@ import {
 } from "../../../../components/dashboard/mobile";
 import StickyBreadcrumb from "../../../../components/dashboard/mobile/StickyBreadcrumb";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
+import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
 import HeaderTable from "../HeaderTable";
 import { bblDiaToKbpd } from "../../../../lib/units";
 import {
   WELL_BY_WELL_VIEWS,
   type WellByWellView,
 } from "../../../../data/wellByWellEmpresas";
+import {
+  buildPerWellChart as buildBswPerWellChart,
+  buildFieldAverageChart as buildBswFieldAverageChart,
+} from "../../../../lib/charts/bsw";
+import {
+  buildPerWellChart as buildDepletionPerWellChart,
+  buildFieldAverageChart as buildDepletionFieldAverageChart,
+} from "../../../../lib/charts/depletion";
 
 import {
   useProductionData,
@@ -80,7 +89,11 @@ import {
   PERIOD_PRESET_LABEL,
   computePresetRange,
   detectPeriodPreset,
+  DRILL_DEPLETION_RECENT_MONTHS,
+  DRILL_DEPLETION_PRIOR_MONTHS,
   type PeriodPreset,
+  type DrillTab,
+  type DrillSubMode,
 } from "../useProductionData";
 import type {
   ProductionBrazilRow,
@@ -548,6 +561,14 @@ export default function MobileView(): React.ReactElement | null {
     drillInstalacao, drillInstalacaoTimeseries, drillInstalacaoLoading,
     drillInstalacaoError, drillInstalacaoKpis,
     openInstallationDrill, closeInstallationDrill,
+    // Drill popup tabs (Phase 2)
+    drillTab, setDrillTab,
+    drillBswMode, setDrillBswMode,
+    drillBswWellPoints, drillBswFieldPoints,
+    drillBswLoading, drillBswError,
+    drillDepletionMode, setDrillDepletionMode,
+    drillDepletionWellPoints, drillDepletionFieldPoints,
+    drillDepletionLoading, drillDepletionError,
   } = useProductionData();
 
   // Round 9: tab state defaults to "aggregate" (was "brazil").
@@ -578,6 +599,59 @@ export default function MobileView(): React.ReactElement | null {
   const drillInstalacaoSeries = useMemo(
     () => buildFieldDrillSeries(drillInstalacaoTimeseries as ProductionInstallationTimeseriesRow[]),
     [drillInstalacaoTimeseries],
+  );
+
+  // ── Drill popup BSW/Depletion charts (Phase 2) ──────────────────────────
+  // Reuse the same chart builders the desktop View uses, then let the
+  // MobileChart wrapper override the layout height for phone-sized canvases.
+  // The field-aggregate charts derive selectedCampos from the response so
+  // canonical variants (e.g. TUPI + SUL DE TUPI + AnC_TUPI) each render as
+  // their own trace. See the desktop View for the rationale.
+  const drillBswFieldCampos = useMemo(() => {
+    const seen: string[] = [];
+    for (const p of drillBswFieldPoints ?? []) {
+      if (!seen.includes(p.campo)) seen.push(p.campo);
+    }
+    return seen.length > 0 ? seen : (drillCampo ? [drillCampo] : []);
+  }, [drillBswFieldPoints, drillCampo]);
+  const drillBswFieldChart = useMemo(
+    () => buildBswFieldAverageChart(drillBswFieldPoints ?? [], drillBswFieldCampos, "markers+lines"),
+    [drillBswFieldPoints, drillBswFieldCampos],
+  );
+  const drillBswWellChart = useMemo(
+    () => buildBswPerWellChart(drillBswWellPoints ?? [], drillCampo ? [drillCampo] : [], "markers+lines"),
+    [drillBswWellPoints, drillCampo],
+  );
+  const drillDepletionFieldCampos = useMemo(() => {
+    const seen: string[] = [];
+    for (const p of drillDepletionFieldPoints ?? []) {
+      if (!seen.includes(p.campo)) seen.push(p.campo);
+    }
+    return seen.length > 0 ? seen : (drillCampo ? [drillCampo] : []);
+  }, [drillDepletionFieldPoints, drillCampo]);
+  const drillDepletionFieldChart = useMemo(
+    () =>
+      buildDepletionFieldAverageChart(
+        drillDepletionFieldPoints ?? [],
+        drillDepletionFieldCampos,
+        "markers+lines",
+        "voip",
+        DRILL_DEPLETION_RECENT_MONTHS,
+        DRILL_DEPLETION_PRIOR_MONTHS,
+      ),
+    [drillDepletionFieldPoints, drillDepletionFieldCampos],
+  );
+  const drillDepletionWellChart = useMemo(
+    () =>
+      buildDepletionPerWellChart(
+        drillDepletionWellPoints ?? [],
+        drillCampo ? [drillCampo] : [],
+        "markers+lines",
+        "voip",
+        DRILL_DEPLETION_RECENT_MONTHS,
+        DRILL_DEPLETION_PRIOR_MONTHS,
+      ),
+    [drillDepletionWellPoints, drillCampo],
   );
 
   if (visLoading || !visible) return null;
@@ -993,7 +1067,7 @@ export default function MobileView(): React.ReactElement | null {
         </div>
       </FilterDrawer>
 
-      {/* ── Field drill-down BottomSheet ─────────────────────────────── */}
+      {/* ── Field drill-down BottomSheet (Phase 2: tabbed) ───────────── */}
       <BottomSheet
         open={drillCampo !== null}
         onClose={closeFieldDrill}
@@ -1001,103 +1075,243 @@ export default function MobileView(): React.ReactElement | null {
         title={drillCampo ? `${drillCampo} — ${viewEmpresa ?? "Brasil"}` : undefined}
         ariaLabel="Field drill-down"
       >
-        <div style={{ opacity: drillLoading ? 0.6 : 1, display: "flex", flexDirection: "column", gap: 12 }}>
-          {drillError && (
-            <div
-              style={{
-                padding: "10px 12px",
-                background: "#fff3cd",
-                border: "1px solid #ffe69c",
-                borderRadius: 8,
-                color: "#7d5800",
-                fontSize: 12,
-                fontFamily: "Arial",
-              }}
-            >
-              {drillError}
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {/* Phase 2: tab bar (Production / BSW / Depletion) */}
+          <MobileTabBar
+            tabs={[
+              { key: "production", label: "Production" },
+              { key: "bsw",        label: "BSW" },
+              { key: "depletion",  label: "Depletion" },
+            ]}
+            activeKey={drillTab}
+            onChange={(key) => setDrillTab(key as DrillTab)}
+            ariaLabel="Drill-down analysis"
+          />
+
+          {drillTab === "production" && (
+            <div style={{ opacity: drillLoading ? 0.6 : 1, display: "flex", flexDirection: "column", gap: 12 }}>
+              {drillError && (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    background: "#fff3cd",
+                    border: "1px solid #ffe69c",
+                    borderRadius: 8,
+                    color: "#7d5800",
+                    fontSize: 12,
+                    fontFamily: "Arial",
+                  }}
+                >
+                  {drillError}
+                </div>
+              )}
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                  gap: 8,
+                }}
+              >
+                <MobileKpi
+                  label="Current oil"
+                  value={fmtNumber(drillKpis.currentOil, 1)}
+                  unit="kbpd"
+                />
+                <MobileKpi
+                  label="Δ MoM"
+                  value={drillKpis.momPct == null ? "—" : fmtPct(drillKpis.momPct)}
+                  unit=""
+                />
+                <MobileKpi
+                  label="Δ YoY"
+                  value={drillKpis.yoyPct == null ? "—" : fmtPct(drillKpis.yoyPct)}
+                  unit=""
+                />
+                <MobileKpi
+                  label="YTD avg"
+                  value={drillKpis.ytdAvg == null ? "—" : fmtNumber(drillKpis.ytdAvg, 1)}
+                  unit="kbpd"
+                />
+              </div>
+
+              <div
+                style={{
+                  background: "var(--mobile-surface, #ffffff)",
+                  border: "1px solid var(--mobile-border, #e6e6ec)",
+                  borderRadius: 12,
+                  padding: "10px 8px",
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: "Arial",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "#1a1a1a",
+                    marginBottom: 6,
+                    padding: "0 6px",
+                  }}
+                >
+                  Oil + Water (kbpd) · Hours rate (%)
+                </div>
+                {drillSeries.length > 0 ? (
+                  <MobileChart
+                    data={drillSeries}
+                    height={280}
+                    layout={{
+                      barmode: "stack",
+                      margin: { l: 36, r: 36, t: 8, b: 36 },
+                      xaxis: { type: "date", tickformat: "%b %y" },
+                      yaxis: { title: { text: "kbpd" } },
+                      yaxis2: {
+                        overlaying: "y",
+                        side: "right",
+                        range: [0, 105],
+                        showgrid: false,
+                        tickfont: { size: 10 },
+                        fixedrange: true,
+                      },
+                      showlegend: true,
+                      legend: { orientation: "h", y: -0.25, x: 0 },
+                    }}
+                  />
+                ) : (
+                  <div style={{ padding: 28, textAlign: "center", color: "#888", fontFamily: "Arial", fontSize: 12 }}>
+                    {drillLoading ? "Loading…" : "No data for this field in the current period."}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ fontSize: 11, color: "#888", fontFamily: "Arial", padding: "0 4px" }}>
+                Bars: oil (dark) + water (light blue) · Line: monthly uptime fraction.
+              </div>
             </div>
           )}
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-              gap: 8,
-            }}
-          >
-            <MobileKpi
-              label="Current oil"
-              value={fmtNumber(drillKpis.currentOil, 1)}
-              unit="kbpd"
-            />
-            <MobileKpi
-              label="Δ MoM"
-              value={drillKpis.momPct == null ? "—" : fmtPct(drillKpis.momPct)}
-              unit=""
-            />
-            <MobileKpi
-              label="Δ YoY"
-              value={drillKpis.yoyPct == null ? "—" : fmtPct(drillKpis.yoyPct)}
-              unit=""
-            />
-            <MobileKpi
-              label="YTD avg"
-              value={drillKpis.ytdAvg == null ? "—" : fmtNumber(drillKpis.ytdAvg, 1)}
-              unit="kbpd"
-            />
-          </div>
-
-          <div
-            style={{
-              background: "var(--mobile-surface, #ffffff)",
-              border: "1px solid var(--mobile-border, #e6e6ec)",
-              borderRadius: 12,
-              padding: "10px 8px",
-            }}
-          >
-            <div
-              style={{
-                fontFamily: "Arial",
-                fontSize: 12,
-                fontWeight: 700,
-                color: "#1a1a1a",
-                marginBottom: 6,
-                padding: "0 6px",
-              }}
-            >
-              Oil + Water (kbpd) · Hours rate (%)
-            </div>
-            {drillSeries.length > 0 ? (
-              <MobileChart
-                data={drillSeries}
-                height={280}
-                layout={{
-                  barmode: "stack",
-                  margin: { l: 36, r: 36, t: 8, b: 36 },
-                  xaxis: { type: "date", tickformat: "%b %y" },
-                  yaxis: { title: { text: "kbpd" } },
-                  yaxis2: {
-                    overlaying: "y",
-                    side: "right",
-                    range: [0, 105],
-                    showgrid: false,
-                    tickfont: { size: 10 },
-                    fixedrange: true,
-                  },
-                  showlegend: true,
-                  legend: { orientation: "h", y: -0.25, x: 0 },
-                }}
-              />
-            ) : (
-              <div style={{ padding: 28, textAlign: "center", color: "#888", fontFamily: "Arial", fontSize: 12 }}>
-                {drillLoading ? "Loading…" : "No data for this field in the current period."}
+          {drillTab === "bsw" && (
+            <div style={{ opacity: drillBswLoading ? 0.6 : 1, display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ display: "flex", justifyContent: "flex-start", padding: "0 4px" }}>
+                <SegmentedToggle<DrillSubMode>
+                  options={[
+                    { value: "field", label: "Field average" },
+                    { value: "well",  label: "Per well" },
+                  ]}
+                  value={drillBswMode}
+                  onChange={setDrillBswMode}
+                  variant="compact"
+                />
               </div>
-            )}
-          </div>
+              {drillBswError && (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    background: "#fff3cd",
+                    border: "1px solid #ffe69c",
+                    borderRadius: 8,
+                    color: "#7d5800",
+                    fontSize: 12,
+                    fontFamily: "Arial",
+                  }}
+                >
+                  {drillBswError}
+                </div>
+              )}
 
-          <div style={{ fontSize: 11, color: "#888", fontFamily: "Arial", padding: "0 4px" }}>
-            Bars: oil (dark) + water (light blue) · Line: monthly uptime fraction.
-          </div>
+              <div
+                style={{
+                  background: "var(--mobile-surface, #ffffff)",
+                  border: "1px solid var(--mobile-border, #e6e6ec)",
+                  borderRadius: 12,
+                  padding: "10px 8px",
+                }}
+              >
+                {drillBswLoading &&
+                 ((drillBswMode === "field" && drillBswFieldPoints == null) ||
+                  (drillBswMode === "well"  && drillBswWellPoints  == null)) ? (
+                  <div style={{ padding: 40, display: "flex", justifyContent: "center" }}>
+                    <BarrelLoading bare />
+                  </div>
+                ) : (drillBswMode === "field" ? drillBswFieldPoints : drillBswWellPoints)?.length ? (
+                  <MobileChart
+                    data={(drillBswMode === "field" ? drillBswFieldChart.data : drillBswWellChart.data) as PlotData[]}
+                    layout={drillBswMode === "field" ? drillBswFieldChart.layout : drillBswWellChart.layout}
+                    height={320}
+                  />
+                ) : (
+                  <div style={{ padding: 28, textAlign: "center", color: "#888", fontFamily: "Arial", fontSize: 12 }}>
+                    BSW data unavailable for this field — no VOIP reference published yet.
+                  </div>
+                )}
+              </div>
+
+              <div style={{ fontSize: 11, color: "#888", fontFamily: "Arial", padding: "0 4px" }}>
+                Y: water / (water + oil). X: % VOIP recovered (field) or months since first production (per well).
+              </div>
+            </div>
+          )}
+
+          {drillTab === "depletion" && (
+            <div style={{ opacity: drillDepletionLoading ? 0.6 : 1, display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ display: "flex", justifyContent: "flex-start", padding: "0 4px" }}>
+                <SegmentedToggle<DrillSubMode>
+                  options={[
+                    { value: "field", label: "Field average" },
+                    { value: "well",  label: "Per well" },
+                  ]}
+                  value={drillDepletionMode}
+                  onChange={setDrillDepletionMode}
+                  variant="compact"
+                />
+              </div>
+              {drillDepletionError && (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    background: "#fff3cd",
+                    border: "1px solid #ffe69c",
+                    borderRadius: 8,
+                    color: "#7d5800",
+                    fontSize: 12,
+                    fontFamily: "Arial",
+                  }}
+                >
+                  {drillDepletionError}
+                </div>
+              )}
+
+              <div
+                style={{
+                  background: "var(--mobile-surface, #ffffff)",
+                  border: "1px solid var(--mobile-border, #e6e6ec)",
+                  borderRadius: 12,
+                  padding: "10px 8px",
+                }}
+              >
+                {drillDepletionLoading &&
+                 ((drillDepletionMode === "field" && drillDepletionFieldPoints == null) ||
+                  (drillDepletionMode === "well"  && drillDepletionWellPoints  == null)) ? (
+                  <div style={{ padding: 40, display: "flex", justifyContent: "center" }}>
+                    <BarrelLoading bare />
+                  </div>
+                ) : (drillDepletionMode === "field" ? drillDepletionFieldPoints : drillDepletionWellPoints)?.length ? (
+                  <MobileChart
+                    data={(drillDepletionMode === "field" ? drillDepletionFieldChart.data : drillDepletionWellChart.data) as PlotData[]}
+                    layout={drillDepletionMode === "field" ? drillDepletionFieldChart.layout : drillDepletionWellChart.layout}
+                    height={320}
+                  />
+                ) : (
+                  <div style={{ padding: 28, textAlign: "center", color: "#888", fontFamily: "Arial", fontSize: 12 }}>
+                    Depletion data unavailable for this field — VOIP reference may be missing.
+                  </div>
+                )}
+              </div>
+
+              <div style={{ fontSize: 11, color: "#888", fontFamily: "Arial", padding: "0 4px" }}>
+                Y: rolling depletion ({DRILL_DEPLETION_RECENT_MONTHS}m vs prior {DRILL_DEPLETION_PRIOR_MONTHS}m). X: % VOIP recovered.
+              </div>
+            </div>
+          )}
         </div>
       </BottomSheet>
 
