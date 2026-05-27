@@ -162,7 +162,9 @@ export default function MobileView(): React.ReactElement | null {
     currentSum,
     isValidSum,
     pendingChanges,
-    filteredOverview,
+    groupedOverview,
+    expandedCanonicals,
+    handleToggleCanonical,
     selectedCampoLastUpdated,
     handleSelectCampo,
     handleAddEmpresaRow,
@@ -1590,64 +1592,234 @@ export default function MobileView(): React.ReactElement | null {
             </div>
           </div>
 
-          {/* Field list */}
+          {/* Field list — grouped by canonical name (Round 4) */}
           <div style={{ padding: "8px 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
             {fieldStakesLoading ? (
               <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
                 Loading fields…
               </div>
-            ) : filteredOverview.length === 0 ? (
+            ) : groupedOverview.length === 0 ? (
               <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
                 No fields match the current filters.
               </div>
             ) : (
-              filteredOverview.map((row) => {
-                const isEmpty = row.n_empresas === 0;
-                const status = isEmpty ? "empty" : row.is_complete ? "complete" : "incomplete";
-                const statusColor = status === "complete" ? "#38a169" : status === "incomplete" ? "#d69e2e" : "#999";
-                const statusBg = status === "complete" ? "rgba(72,187,120,0.15)" : status === "incomplete" ? "rgba(214,158,46,0.15)" : "rgba(180,180,180,0.15)";
-                const statusText = status === "complete" ? "100%" : status === "incomplete" ? `${row.soma_pct.toFixed(2)}%` : "—";
+              // Canonical-grouped rendering. Single-variant groups behave like
+              // the old flat row (tap → open editor sheet). Multi-variant
+              // groups render a header card; tap the header to expand inline,
+              // then tap any variant to open the editor on THAT variant.
+              groupedOverview.map((group) => {
+                const isMulti = group.n_variants > 1;
+                const isExpanded = expandedCanonicals.has(group.canonical);
+
+                const groupStatus: "empty" | "complete" | "incomplete" | "mixed" =
+                  group.all_empty
+                    ? "empty"
+                    : group.all_complete
+                      ? "complete"
+                      : group.any_incomplete && group.variants.some((v) => v.is_complete)
+                        ? "mixed"
+                        : "incomplete";
+                const groupStatusColor =
+                  groupStatus === "complete"
+                    ? "#38a169"
+                    : groupStatus === "incomplete"
+                      ? "#d69e2e"
+                      : groupStatus === "mixed"
+                        ? "#d69e2e"
+                        : "#999";
+                const groupStatusBg =
+                  groupStatus === "complete"
+                    ? "rgba(72,187,120,0.15)"
+                    : groupStatus === "incomplete"
+                      ? "rgba(214,158,46,0.15)"
+                      : groupStatus === "mixed"
+                        ? "rgba(214,158,46,0.10)"
+                        : "rgba(180,180,180,0.15)";
+                const groupStatusText =
+                  groupStatus === "complete"
+                    ? "100%"
+                    : groupStatus === "mixed"
+                      ? "Mixed"
+                      : groupStatus === "incomplete"
+                        ? `${group.variants[0].soma_pct.toFixed(2)}%`
+                        : "—";
+
+                // ── Single-variant: behaves exactly like the old flat row ─
+                if (!isMulti) {
+                  const row = group.variants[0];
+                  return (
+                    <button
+                      key={group.canonical}
+                      type="button"
+                      onClick={async () => {
+                        await handleSelectCampo(row.campo);
+                        setFieldStakesSheetOpen(true);
+                      }}
+                      style={{
+                        width: "100%",
+                        minHeight: 64,
+                        padding: "10px 14px",
+                        borderRadius: 12,
+                        border: "1px solid var(--mobile-border)",
+                        background: "var(--mobile-surface)",
+                        color: "var(--mobile-text)",
+                        fontFamily: "inherit",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        textAlign: "left",
+                      }}
+                    >
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--mobile-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {row.campo}
+                        </div>
+                        <div style={{ fontSize: 11, color: "var(--mobile-text-muted)", marginTop: 2 }}>
+                          {row.n_empresas} {row.n_empresas === 1 ? "company" : "companies"}
+                          {row.has_data_in_producao ? " · prod. data" : ""}
+                        </div>
+                      </div>
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 12,
+                        background: groupStatusBg, color: groupStatusColor, whiteSpace: "nowrap", flexShrink: 0,
+                      }}>
+                        {groupStatusText}
+                      </span>
+                    </button>
+                  );
+                }
+
+                // ── Multi-variant: collapsible group card ────────────────
                 return (
-                  <button
-                    key={row.campo}
-                    type="button"
-                    onClick={async () => {
-                      await handleSelectCampo(row.campo);
-                      setFieldStakesSheetOpen(true);
-                    }}
+                  <div
+                    key={group.canonical}
                     style={{
-                      width: "100%",
-                      minHeight: 64,
-                      padding: "10px 14px",
                       borderRadius: 12,
                       border: "1px solid var(--mobile-border)",
                       background: "var(--mobile-surface)",
-                      color: "var(--mobile-text)",
-                      fontFamily: "inherit",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 10,
-                      textAlign: "left",
+                      overflow: "hidden",
                     }}
                   >
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--mobile-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {row.campo}
+                    {/* Group header — tap to expand/collapse */}
+                    <button
+                      type="button"
+                      onClick={() => handleToggleCanonical(group.canonical)}
+                      aria-expanded={isExpanded}
+                      aria-controls={`mobile-field-stakes-group-${group.canonical}`}
+                      style={{
+                        width: "100%",
+                        minHeight: 64,
+                        padding: "10px 14px",
+                        border: "none",
+                        background: "transparent",
+                        color: "var(--mobile-text)",
+                        fontFamily: "inherit",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        textAlign: "left",
+                      }}
+                    >
+                      {/* Chevron */}
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          display: "inline-flex", alignItems: "center", justifyContent: "center",
+                          width: 16, height: 16, color: "var(--mobile-text-muted)", flexShrink: 0,
+                          transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)",
+                          transition: "transform 0.12s",
+                        }}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="9 18 15 12 9 6" />
+                        </svg>
+                      </span>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                          <span style={{
+                            fontSize: 14, fontWeight: 700, color: "var(--mobile-text)",
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          }}>
+                            {group.canonical}
+                          </span>
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, color: "var(--mobile-text-muted)",
+                            background: "rgba(0,0,0,0.05)", padding: "1px 6px", borderRadius: 8,
+                            flexShrink: 0, whiteSpace: "nowrap",
+                          }}>
+                            {group.n_variants} variants
+                          </span>
+                        </div>
                       </div>
-                      <div style={{ fontSize: 11, color: "var(--mobile-text-muted)", marginTop: 2 }}>
-                        {row.n_empresas} {row.n_empresas === 1 ? "company" : "companies"}
-                        {row.has_data_in_producao ? " · prod. data" : ""}
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 12,
+                        background: groupStatusBg, color: groupStatusColor, whiteSpace: "nowrap", flexShrink: 0,
+                      }}>
+                        {groupStatusText}
+                      </span>
+                    </button>
+
+                    {/* Expanded — variants stacked under the header */}
+                    {isExpanded && (
+                      <div
+                        id={`mobile-field-stakes-group-${group.canonical}`}
+                        style={{ borderTop: "1px solid var(--mobile-border)" }}
+                      >
+                        {group.variants.map((row) => {
+                          const isEmpty = row.n_empresas === 0;
+                          const status = isEmpty ? "empty" : row.is_complete ? "complete" : "incomplete";
+                          const statusColor = status === "complete" ? "#38a169" : status === "incomplete" ? "#d69e2e" : "#999";
+                          const statusBg = status === "complete" ? "rgba(72,187,120,0.15)" : status === "incomplete" ? "rgba(214,158,46,0.15)" : "rgba(180,180,180,0.15)";
+                          const statusText = status === "complete" ? "100%" : status === "incomplete" ? `${row.soma_pct.toFixed(2)}%` : "—";
+                          return (
+                            <button
+                              key={row.campo}
+                              type="button"
+                              onClick={async () => {
+                                await handleSelectCampo(row.campo);
+                                setFieldStakesSheetOpen(true);
+                              }}
+                              style={{
+                                width: "100%",
+                                minHeight: 56,
+                                padding: "8px 14px 8px 32px",
+                                border: "none",
+                                borderTop: "1px solid var(--mobile-border)",
+                                background: "transparent",
+                                color: "var(--mobile-text)",
+                                fontFamily: "inherit",
+                                cursor: "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                gap: 10,
+                                textAlign: "left",
+                              }}
+                            >
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--mobile-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {row.campo}
+                                </div>
+                                <div style={{ fontSize: 11, color: "var(--mobile-text-muted)", marginTop: 2 }}>
+                                  {row.n_empresas} {row.n_empresas === 1 ? "company" : "companies"}
+                                  {row.has_data_in_producao ? " · prod. data" : ""}
+                                </div>
+                              </div>
+                              <span style={{
+                                fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 12,
+                                background: statusBg, color: statusColor, whiteSpace: "nowrap", flexShrink: 0,
+                              }}>
+                                {statusText}
+                              </span>
+                            </button>
+                          );
+                        })}
                       </div>
-                    </div>
-                    <span style={{
-                      fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 12,
-                      background: statusBg, color: statusColor, whiteSpace: "nowrap", flexShrink: 0,
-                    }}>
-                      {statusText}
-                    </span>
-                  </button>
+                    )}
+                  </div>
                 );
               })
             )}

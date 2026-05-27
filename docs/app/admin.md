@@ -867,6 +867,7 @@ State added (alphabetized for grep-ability):
 - `deleteCampoConfirm: string | null`
 - `editorLoading: boolean`
 - `editorStakes: FieldStakeInput[]`
+- `expandedCanonicals: Set<string>` (Round 4 — see "Canonical grouping" below)
 - `fieldStakesEmpresas: FieldStakeEmpresa[]`
 - `fieldStakesLoading: boolean`
 - `fieldStakesOverview: FieldStakeOverview[]`
@@ -876,13 +877,59 @@ State added (alphabetized for grep-ability):
 - `stakesError: string | null`
 - `stakesSearchQuery: string` / `stakesStatusFilter: 'all' | 'complete' | 'incomplete' | 'empty'`
 
-Plus the `editorSavedSnapshotRef: useRef<string>` (intentionally not state — change-detection only).
+Plus the `editorSavedSnapshotRef: useRef<string>` (intentionally not state — change-detection only) and `seedSeenRef: useRef<Set<string>>` (Round 4 — tracks canonical groups already seen so admins can manually collapse a group without it being re-expanded on every overview refresh).
 
-Handlers: `handleSelectCampo`, `handleAddEmpresaRow`, `handleRemoveEmpresaRow`, `handleChangeStake`, `handleSaveStakes`, `handleDeleteCampo`, `handleConfirmDeleteCampo`, `handleCancelDeleteCampo`.
+Handlers: `handleSelectCampo`, `handleAddEmpresaRow`, `handleRemoveEmpresaRow`, `handleChangeStake`, `handleSaveStakes`, `handleDeleteCampo`, `handleConfirmDeleteCampo`, `handleCancelDeleteCampo`, `handleToggleCanonical` (Round 4).
 
-Derived (`useMemo`): `currentSum`, `isValidSum`, `pendingChanges`, `filteredOverview`.
+Derived (`useMemo`): `currentSum`, `isValidSum`, `pendingChanges`, `filteredOverview`, `groupedOverview` (Round 4).
 
 Lazy-load: `loadFieldStakesOverview()` only fires when `activeSection === 'field-stakes'` for the first time (same pattern as `alerts-product` and `default-news`).
+
+### Canonical grouping (Round 4 — 2026-05-28)
+
+Several variants of the same physical field (e.g. concession `Búzios`, coparticipação `AnC_Búzios`, cessão onerosa excedente `Búzios_ECO`) share the same canonical (family) name but have legitimately different stake compositions per contract type. Admin input has to keep them separate at the DB level so each contract's stakes can be edited independently, but seeing a flat list of ~300 campos with every Búzios variant scattered alphabetically made navigation painful.
+
+Round 4 (Frente C) introduces a **canonical grouping layer** in the left-pane list. The right-pane editor is unchanged — it still acts on ONE variant at a time.
+
+**Backing data**: the `get_field_stakes_overview` RPC (modified by Frente A in migration `20260528300000_well_by_well_round4.sql`) gains a `canonical text` column. Server-side it is computed by `public.canonical_field_name(p_variant text)` — strips `AnC_` / `EX_` prefixes and `_ECO` / `_EX` suffixes, plus an optional override table `field_canonical_names`. Type `FieldStakeOverview.canonical: string` mirrors it (see `src/types/fieldStakes.ts`).
+
+**`groupedOverview` derivation** (in `useAdminPanelData.ts`):
+- Groups `filteredOverview` by `canonical` (falls back to `campo` when null — defensive against older RPC payloads).
+- Within each group, the variant whose name equals the canonical (the "base" variant, if present) comes first; remaining variants sort alphabetically.
+- Groups themselves are sorted alphabetically by canonical (case-insensitive).
+- Returns `FieldStakeCanonicalGroup[]` with aggregate flags:
+  - `all_complete` — every variant has `soma_pct = 100`
+  - `any_incomplete` — at least one variant has stakes but `soma_pct ≠ 100`
+  - `all_empty` — every variant has `n_empresas = 0`
+
+**Aggregate group status pill** (rendered in the group header):
+| State | Source | Color | Text |
+|---|---|---|---|
+| Complete | `all_complete` | green | `100%` |
+| Mixed | some variants complete, others not | amber (lighter bg) | `Mixed` |
+| Incomplete | `any_incomplete && !mixed` | amber | `{first variant's soma_pct}%` |
+| Empty | `all_empty` | gray | `—` |
+
+**Expansion behavior**:
+- `expandedCanonicals: Set<string>` — controls which multi-variant groups are open.
+- **Default**: multi-variant groups are auto-expanded the FIRST time they appear in the data (so admins immediately see all variants of Búzios etc.). A `seedSeenRef` tracks which canonicals have been auto-seeded so manually collapsing a group is preserved across overview refreshes (the seed effect only runs for newly observed canonicals).
+- Single-variant groups have no chevron and never appear in this set — they render inline (clicking the row selects the variant directly).
+- `handleToggleCanonical(canonical)` flips membership.
+
+**Search integration** — `filteredOverview` now matches if EITHER the variant name OR the canonical contains the query (case-insensitive substring). Typing "buzios" surfaces all 3 Búzios variants at once. Status filter (`complete` / `incomplete` / `empty` / `all`) continues to operate on individual variants.
+
+**Desktop UI** (`desktop/View.tsx`):
+- Single-variant groups: the row is the variant selector. Same look as the pre-Round-4 flat row.
+- Multi-variant groups: a header row with chevron + canonical name (bold) + `N variants` pill + aggregate status pill, on a faint orange background. When expanded, variants are listed indented 30px below the header, with a slightly smaller font and lighter divider.
+- Selected variant continues to show the orange left-edge accent bar.
+
+**Mobile UI** (`mobile/View.tsx`):
+- Single-variant groups: same card as before (tap → open editor BottomSheet).
+- Multi-variant groups: a card with a header row (chevron + canonical + `N variants` pill + aggregate status). Tap the header to expand inline; the variants appear stacked inside the same card body, separated by `--mobile-border` lines and indented 32px. Tap a variant → opens the editor BottomSheet on THAT variant.
+
+**Right-pane / BottomSheet editor — UNCHANGED.** The editor still receives `selectedCampo` (a single variant name), still calls `rpcGetFieldStakes(supabase, selectedCampo)`, and still validates `SUM = 100` per variant. This is intentional: Búzios concession's stakes (Petrobras 88.99% + CNOOC 7.34% + CNPC 3.67%) differ from AnC_Búzios coparticipação and Búzios_ECO cessão onerosa excedente — they cannot be edited as a single block.
+
+**Dashboard side (`/well-by-well`)** is the place where variants ARE aggregated: Top Fields chart, drill-down timeseries, and KPI cards sum production across all variants of a canonical (handled server-side by Frente A in the same migration via the updated `get_production_top_fields` and `get_production_field_timeseries` RPCs). The admin panel remains the only surface where individual variants are visible per-row.
 
 ### Sub-PRD links
 

@@ -195,7 +195,9 @@ export default function DesktopView(): React.ReactElement | null {
     currentSum,
     isValidSum,
     pendingChanges,
-    filteredOverview,
+    groupedOverview,
+    expandedCanonicals,
+    handleToggleCanonical,
     selectedCampoLastUpdated,
     handleSelectCampo,
     handleAddEmpresaRow,
@@ -1383,51 +1385,204 @@ export default function DesktopView(): React.ReactElement | null {
                       <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>
                         Loading fields…
                       </div>
-                    ) : filteredOverview.length === 0 ? (
+                    ) : groupedOverview.length === 0 ? (
                       <div style={{ padding: "24px 16px", textAlign: "center", color: "#bbb", fontSize: 12 }}>
                         No fields match the current filters.
                       </div>
                     ) : (
-                      filteredOverview.map((row) => {
-                        const isSelected = selectedCampo === row.campo;
-                        const isEmpty = row.n_empresas === 0;
-                        const status = isEmpty ? "empty" : row.is_complete ? "complete" : "incomplete";
-                        const statusColor = status === "complete" ? "#38a169" : status === "incomplete" ? "#d69e2e" : "#aaa";
-                        const statusBg = status === "complete" ? "rgba(72,187,120,0.15)" : status === "incomplete" ? "rgba(214,158,46,0.15)" : "rgba(180,180,180,0.15)";
-                        const statusText = status === "complete" ? "100%" : status === "incomplete" ? `${row.soma_pct.toFixed(2)}%` : "—";
+                      // Canonical-grouped rendering (Round 4).
+                      // — Single-variant groups: render inline (no chevron),
+                      //   the row itself is the variant selector.
+                      // — Multi-variant groups: header is clickable (toggles
+                      //   `expandedCanonicals`); when expanded, variants are
+                      //   listed indented below.
+                      // Right-pane editor still acts on ONE variant at a time
+                      // because stakes legitimately differ per contract type.
+                      groupedOverview.map((group) => {
+                        const isMulti = group.n_variants > 1;
+                        const isExpanded = expandedCanonicals.has(group.canonical);
+
+                        // Group-level aggregate status (used in the header pill).
+                        const groupStatus: "empty" | "complete" | "incomplete" | "mixed" =
+                          group.all_empty
+                            ? "empty"
+                            : group.all_complete
+                              ? "complete"
+                              : group.any_incomplete && group.variants.some((v) => v.is_complete)
+                                ? "mixed"
+                                : "incomplete";
+                        const groupStatusColor =
+                          groupStatus === "complete"
+                            ? "#38a169"
+                            : groupStatus === "incomplete"
+                              ? "#d69e2e"
+                              : groupStatus === "mixed"
+                                ? "#d69e2e"
+                                : "#aaa";
+                        const groupStatusBg =
+                          groupStatus === "complete"
+                            ? "rgba(72,187,120,0.15)"
+                            : groupStatus === "incomplete"
+                              ? "rgba(214,158,46,0.15)"
+                              : groupStatus === "mixed"
+                                ? "rgba(214,158,46,0.10)"
+                                : "rgba(180,180,180,0.15)";
+                        const groupStatusText =
+                          groupStatus === "complete"
+                            ? "100%"
+                            : groupStatus === "mixed"
+                              ? "Mixed"
+                              : groupStatus === "incomplete"
+                                ? `${group.variants[0].soma_pct.toFixed(2)}%`
+                                : "—";
+
+                        // ── Single-variant inline row ─────────────────────
+                        if (!isMulti) {
+                          const row = group.variants[0];
+                          const isSelected = selectedCampo === row.campo;
+                          return (
+                            <button
+                              key={group.canonical}
+                              onClick={() => handleSelectCampo(row.campo)}
+                              style={{
+                                width: "100%", textAlign: "left", border: "none",
+                                borderLeft: isSelected ? `3px solid ${ORANGE}` : "3px solid transparent",
+                                background: isSelected ? "#fff" : "transparent",
+                                padding: "10px 14px", cursor: "pointer",
+                                borderBottom: "1px solid #f0f0f0",
+                                fontFamily: "Arial, sans-serif",
+                                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                                transition: "background 0.1s",
+                              }}
+                              onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "#f0f0f0"; }}
+                              onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+                            >
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a1a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {row.campo}
+                                </div>
+                                <div style={{ fontSize: 11, color: "#999", marginTop: 2 }}>
+                                  {row.n_empresas} {row.n_empresas === 1 ? "company" : "companies"}
+                                  {row.has_data_in_producao ? " · prod. data" : ""}
+                                </div>
+                              </div>
+                              <span style={{
+                                fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
+                                background: groupStatusBg, color: groupStatusColor, flexShrink: 0, whiteSpace: "nowrap",
+                              }}>
+                                {groupStatusText}
+                              </span>
+                            </button>
+                          );
+                        }
+
+                        // ── Multi-variant: collapsible group ──────────────
                         return (
-                          <button
-                            key={row.campo}
-                            onClick={() => handleSelectCampo(row.campo)}
-                            style={{
-                              width: "100%", textAlign: "left", border: "none",
-                              borderLeft: isSelected ? `3px solid ${ORANGE}` : "3px solid transparent",
-                              background: isSelected ? "#fff" : "transparent",
-                              padding: "10px 14px", cursor: "pointer",
-                              borderBottom: "1px solid #f0f0f0",
-                              fontFamily: "Arial, sans-serif",
-                              display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
-                              transition: "background 0.1s",
-                            }}
-                            onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "#f0f0f0"; }}
-                            onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
-                          >
-                            <div style={{ minWidth: 0, flex: 1 }}>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a1a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                {row.campo}
+                          <div key={group.canonical}>
+                            {/* Group header — clickable to expand/collapse */}
+                            <button
+                              onClick={() => handleToggleCanonical(group.canonical)}
+                              aria-expanded={isExpanded}
+                              aria-controls={`field-stakes-group-${group.canonical}`}
+                              style={{
+                                width: "100%", textAlign: "left", border: "none",
+                                background: "rgba(255,80,0,0.04)",
+                                padding: "10px 14px 10px 10px", cursor: "pointer",
+                                borderBottom: "1px solid #f0f0f0",
+                                fontFamily: "Arial, sans-serif",
+                                display: "flex", alignItems: "center", gap: 8,
+                                transition: "background 0.1s",
+                              }}
+                              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,80,0,0.08)"; }}
+                              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,80,0,0.04)"; }}
+                            >
+                              {/* Chevron */}
+                              <span
+                                aria-hidden="true"
+                                style={{
+                                  display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                  width: 14, height: 14, color: "#888", flexShrink: 0,
+                                  transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)",
+                                  transition: "transform 0.12s",
+                                }}
+                              >
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="9 18 15 12 9 6" />
+                                </svg>
+                              </span>
+                              {/* Canonical name */}
+                              <div style={{ minWidth: 0, flex: 1, display: "flex", alignItems: "baseline", gap: 6 }}>
+                                <span style={{
+                                  fontSize: 13, fontWeight: 700, color: "#1a1a1a",
+                                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                }}>
+                                  {group.canonical}
+                                </span>
+                                <span style={{
+                                  fontSize: 10, fontWeight: 600, color: "#888",
+                                  background: "rgba(0,0,0,0.05)", padding: "1px 6px", borderRadius: 8,
+                                  flexShrink: 0, whiteSpace: "nowrap",
+                                }}>
+                                  {group.n_variants} variants
+                                </span>
                               </div>
-                              <div style={{ fontSize: 11, color: "#999", marginTop: 2 }}>
-                                {row.n_empresas} {row.n_empresas === 1 ? "company" : "companies"}
-                                {row.has_data_in_producao ? " · prod. data" : ""}
+                              {/* Aggregate status pill */}
+                              <span style={{
+                                fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
+                                background: groupStatusBg, color: groupStatusColor, flexShrink: 0, whiteSpace: "nowrap",
+                              }}>
+                                {groupStatusText}
+                              </span>
+                            </button>
+
+                            {/* Expanded — variants indented under the header */}
+                            {isExpanded && (
+                              <div id={`field-stakes-group-${group.canonical}`}>
+                                {group.variants.map((row) => {
+                                  const isSelected = selectedCampo === row.campo;
+                                  const isEmpty = row.n_empresas === 0;
+                                  const status = isEmpty ? "empty" : row.is_complete ? "complete" : "incomplete";
+                                  const statusColor = status === "complete" ? "#38a169" : status === "incomplete" ? "#d69e2e" : "#aaa";
+                                  const statusBg = status === "complete" ? "rgba(72,187,120,0.15)" : status === "incomplete" ? "rgba(214,158,46,0.15)" : "rgba(180,180,180,0.15)";
+                                  const statusText = status === "complete" ? "100%" : status === "incomplete" ? `${row.soma_pct.toFixed(2)}%` : "—";
+                                  return (
+                                    <button
+                                      key={row.campo}
+                                      onClick={() => handleSelectCampo(row.campo)}
+                                      style={{
+                                        width: "100%", textAlign: "left", border: "none",
+                                        borderLeft: isSelected ? `3px solid ${ORANGE}` : "3px solid transparent",
+                                        background: isSelected ? "#fff" : "transparent",
+                                        padding: "8px 14px 8px 30px", cursor: "pointer",
+                                        borderBottom: "1px solid #f5f5f5",
+                                        fontFamily: "Arial, sans-serif",
+                                        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                                        transition: "background 0.1s",
+                                      }}
+                                      onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "#f0f0f0"; }}
+                                      onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+                                    >
+                                      <div style={{ minWidth: 0, flex: 1 }}>
+                                        <div style={{ fontSize: 12, fontWeight: 600, color: "#1a1a1a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                          {row.campo}
+                                        </div>
+                                        <div style={{ fontSize: 10, color: "#999", marginTop: 2 }}>
+                                          {row.n_empresas} {row.n_empresas === 1 ? "company" : "companies"}
+                                          {row.has_data_in_producao ? " · prod. data" : ""}
+                                        </div>
+                                      </div>
+                                      <span style={{
+                                        fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
+                                        background: statusBg, color: statusColor, flexShrink: 0, whiteSpace: "nowrap",
+                                      }}>
+                                        {statusText}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
                               </div>
-                            </div>
-                            <span style={{
-                              fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
-                              background: statusBg, color: statusColor, flexShrink: 0, whiteSpace: "nowrap",
-                            }}>
-                              {statusText}
-                            </span>
-                          </button>
+                            )}
+                          </div>
                         );
                       })
                     )}

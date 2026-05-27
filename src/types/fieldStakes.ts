@@ -13,6 +13,17 @@
 /** One row per oil field in the overview list. */
 export interface FieldStakeOverview {
   campo: string;
+  /**
+   * Canonical (family) name for grouping in the admin UI. Several variants of
+   * the same physical field (e.g. `Búzios`, `AnC_Búzios`, `Búzios_ECO`) share
+   * the same `canonical` so they collapse under a single header in the left
+   * pane. The editor on the right still operates on ONE variant at a time
+   * because stakes legitimately differ between contract types.
+   *
+   * Derived server-side by `public.canonical_field_name(p_variant text)` —
+   * see Round 4 migration `20260528300000_well_by_well_round4.sql` (Frente A).
+   */
+  canonical: string;
   n_empresas: number;
   /** Sum of stake_pct across all companies registered for this field. 0 if none. */
   soma_pct: number;
