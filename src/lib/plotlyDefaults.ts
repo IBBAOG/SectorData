@@ -10,12 +10,26 @@ import type { Layout, PlotData } from "plotly.js";
 
 export const BRAND_ORANGE = "#ff5000";
 
-// 16-color palette used by multi-series dashboards (anp-precos-distribuicao, imports-exports, etc.)
+// 16-color narrative palette used by multi-series dashboards (imports-exports, anp-cdp-bsw, market-share, etc.)
+// Positions 1-6 mirror the executive-presentation reference (black, brand orange, mint, beige, purple, yellow).
+// Positions 7-16 are coordinated desaturated extensions for dashboards needing >7 series.
 export const PALETTE = [
-  "#1E88E5", "#FF5000", "#43A047", "#FB8C00", "#8E24AA",
-  "#00ACC1", "#D81B60", "#6D4C41", "#F4511E", "#039BE5",
-  "#7CB342", "#FFB300", "#546E7A", "#AB47BC", "#26A69A",
-  "#EC407A",
+  "#1a1a1a",  // 1. Black
+  "#ff5000",  // 2. Brand Orange (unchanged)
+  "#a8d5a3",  // 3. Mint Green
+  "#d9c79a",  // 4. Beige / Cream
+  "#7d4ea3",  // 5. Purple
+  "#f5d05e",  // 6. Yellow
+  "#5b7fa0",  // 7. Steel Blue
+  "#b85c3a",  // 8. Rust / Brick
+  "#6e8f6c",  // 9. Sage Green
+  "#b89968",  // 10. Camel / Tan
+  "#5d3a6e",  // 11. Plum
+  "#c9a644",  // 12. Mustard
+  "#3d4a5c",  // 13. Slate
+  "#8a8c4a",  // 14. Olive
+  "#a85c3a",  // 15. Burnt Sienna
+  "#9a7a8a",  // 16. Dusty Mauve
 ] as const;
 
 export const COMMON_LAYOUT: Partial<Layout> = {
