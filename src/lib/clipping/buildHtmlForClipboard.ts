@@ -53,9 +53,10 @@ const COLOR_LABEL = "#333333";
 // size=5 ~= 18pt for header (Eduardo's mapping)
 // size=4 ~= 14pt for subheader / titles
 // size=2 ~= 10pt for footer names
+// NOTE: size=3 ~= 12pt, NOT 11pt. For 11pt body runs we omit <font size>
+// entirely and let CSS font-size:11pt take over.
 const SIZE_HEADER = "5";
 const SIZE_SUBHEADER = "4";
-const SIZE_BODY = "3"; // ~12px ~= 11pt
 const SIZE_SMALL = "2";
 
 // Block-level "div" style with explicit font properties. Inline on the <div>
@@ -82,10 +83,14 @@ function esc(s: string): string {
 // legacy <font> tag. Order is critical: <span style> OUTSIDE, <font> INSIDE,
 // then any <b>/<i> wrap the text. This stacking maximizes the chance that at
 // least one layer survives the Outlook/Word HTML normaliser.
+//
+// `size` is OPTIONAL. When omitted, the <font> tag is emitted WITHOUT a size
+// attribute so CSS font-size wins. This matters for 11pt runs: <font size="3">
+// forces 12pt in Outlook's resolution order, overriding inline style.
 function styledRun(opts: {
   text: string; // already-escaped or plain (we escape inside)
   bold?: boolean;
-  size?: string; // <font size=...>
+  size?: string; // <font size=...> — omit for 11pt (body) runs
   fontPx?: string; // CSS font-size value (e.g., "11pt", "18pt")
   color?: string; // hex like #FF5000
   preEscaped?: boolean; // skip esc() (used when text contains nested HTML)
@@ -93,7 +98,7 @@ function styledRun(opts: {
   const {
     text,
     bold = false,
-    size = SIZE_BODY,
+    size,
     fontPx = "11pt",
     color = COLOR_BODY,
     preEscaped = false,
@@ -101,10 +106,12 @@ function styledRun(opts: {
   const safe = preEscaped ? text : esc(text);
   const cssStyle = `font-family:${FONT_FAMILY};font-size:${fontPx};color:${color};`;
   const inner = bold ? `<b>${safe}</b>` : safe;
-  // <span style> OUTER + <font face/color/size> INNER + bold INNERMOST.
+  // <span style> OUTER + <font face/color[/size]> INNER + bold INNERMOST.
+  // Emit size attribute only when explicitly provided.
+  const sizeAttr = size ? ` size="${size}"` : "";
   return (
     `<span style="${cssStyle}">` +
-    `<font face="Calibri, Arial, sans-serif" color="${color}" size="${size}">` +
+    `<font face="Calibri, Arial, sans-serif" color="${color}"${sizeAttr}>` +
     inner +
     `</font>` +
     `</span>`
@@ -115,7 +122,6 @@ function buildTeamBlock(): string {
   const team = styledRun({
     text: "Itaú BBA Oil & Gas Team",
     bold: true,
-    size: SIZE_BODY,
     fontPx: "11pt",
     color: COLOR_BRAND,
   });
@@ -163,7 +169,7 @@ function buildHeaderBlock(dateText: string): string {
     color: COLOR_BRAND,
   });
   const blockStyle = `margin:0 0 6px 0;text-align:center;font-family:${FONT_FAMILY};font-size:18pt;color:${COLOR_BRAND};`;
-  return `<div style="${blockStyle}" align="center">${headerSpan}</div>`;
+  return `<center><div style="${blockStyle}" align="center">${headerSpan}</div></center>`;
 }
 
 function buildSubheader(): string {
@@ -185,7 +191,6 @@ function buildIndexBlock(items: ClippingItem[]): string {
       const bullet = styledRun({
         text: `• ${item.title} (${item.source})`,
         bold: true,
-        size: SIZE_BODY,
         fontPx: "11pt",
         color: COLOR_BODY,
       });
@@ -213,7 +218,6 @@ function buildArticleSection(item: ClippingItem): string {
     .map((par) => {
       const span = styledRun({
         text: par,
-        size: SIZE_BODY,
         fontPx: "11pt",
         color: COLOR_BODY,
       });
