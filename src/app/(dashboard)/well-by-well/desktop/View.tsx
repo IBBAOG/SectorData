@@ -5,10 +5,16 @@
 // Layout (top → bottom):
 //   • Header — title + subtitle + period badge + Export panel (right)
 //   • Topbar filter row — Empresa dropdown · Period slider · Ambientes multi-select
-//   • KPI cards (4-wide) — Brazil oil · Company oil · Company gas · Company YTD avg
 //   • Charts row 1 — P1 (Brazil oil, stacked) · P2 (Company oil, stacked)
 //   • Charts row 2 — P3 (Top fields, horizontal bar) · P4 (Installations table)
 //   • YoY table — TOTAL + per-ambiente rows
+//
+// Round 6 (2026-05-27): top KPI strip removed (broken Δ MoM/YoY against the
+// partial reference month). All three production charts now render in-bar
+// segment labels + a total annotation above each bar (per the PDF reference).
+// `KpiCard` is preserved because the field/installation drill modals still
+// use it — those KPIs are valid (full-month series, no partial-period
+// divisor).
 //
 // Binding sync rule (CLAUDE.md § Dual-view policy): meaningful changes to one
 // View must land in the OTHER View in the same commit, OR the commit message
@@ -49,7 +55,23 @@ import type {
 
 // ─── Chart builders ───────────────────────────────────────────────────────────
 
-/** Build a stacked-bar trace per ambiente, x = month label, y = oil in kbpd. */
+/**
+ * Build a stacked-bar trace per ambiente, x = month label, y = oil in kbpd.
+ *
+ * Round 6 (2026-05-27): each trace carries its rounded kbpd value as in-bar
+ * text (white, centered, hidden when the segment is too short to fit — i.e.
+ * < `MIN_SEGMENT_KBPD_LABEL` kbpd). The layout adds one annotation per month
+ * showing the per-month total above the bar so the reader sees both the mix
+ * (segments) and the headline (total) at a glance — mirroring the PDF
+ * Well-by-Well reference. Margin `t` bumped to 30 so totals don't clip into
+ * the legend.
+ */
+const MIN_SEGMENT_KBPD_LABEL = 30; // hide labels for segments < 30 kbpd
+
+function fmtIntPtBr(n: number): string {
+  return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(n);
+}
+
 function buildStackedOilBars(
   rows: (ProductionBrazilRow | ProductionCompanyRow)[],
   variant: "brazil" | "company",
@@ -74,17 +96,36 @@ function buildStackedOilBars(
     pivot[r.ambiente][key] = (pivot[r.ambiente][key] ?? 0) + r.oil_bbl_dia;
   }
 
+  // Precompute per-month per-ambiente values in kbpd so they can be reused
+  // for both the trace `y` arrays and the per-bar total annotations.
+  const ambienteY: Record<string, number[]> = {};
+  for (const amb of AMBIENTES) {
+    ambienteY[amb] = months.map((m) => bblDiaToKbpd(pivot[amb]?.[m] ?? 0));
+  }
+  const totals = months.map((_, i) =>
+    AMBIENTES.reduce((s, amb) => s + (ambienteY[amb]?.[i] ?? 0), 0),
+  );
+
   // Build one trace per ambiente. Company uses brand orange for PreSal accent;
   // Brazil uses neutral greyscale.
   const traces: PlotData[] = AMBIENTES.map((amb) => {
     const baseColor = variant === "company" && amb === "PreSal"
       ? BRAND_ORANGE
       : AMBIENTE_COLOR[amb] ?? "#aaaaaa";
+    const ys = ambienteY[amb];
+    // Light segments (Terra: #c5c5cb) need a dark label to remain readable;
+    // dark segments (PreSal/PosSal/brand orange) take a white label.
+    const labelColor = amb === "Terra" ? "#1a1a1a" : "#ffffff";
     return {
       type: "bar",
       name: amb,
       x: months,
-      y: months.map((m) => bblDiaToKbpd(pivot[amb]?.[m] ?? 0)),
+      y: ys,
+      text: ys.map((v) => (v >= MIN_SEGMENT_KBPD_LABEL ? fmtIntPtBr(v) : "")),
+      textposition: "inside",
+      insidetextanchor: "middle",
+      textfont: { color: labelColor, size: 11, family: "Arial" },
+      cliponaxis: false,
       marker: { color: baseColor },
       hovertemplate: `${amb}: %{y:,.1f} kbpd<extra></extra>`,
     } as PlotData;
@@ -95,7 +136,9 @@ function buildStackedOilBars(
     layout: {
       ...COMMON_LAYOUT,
       height: 320,
-      margin: { t: 10, b: 60, l: 60, r: 20 },
+      // `t: 30` gives the per-bar total annotations room without clipping
+      // against the legend strip at y = 1.01.
+      margin: { t: 30, b: 60, l: 60, r: 20 },
       barmode: "stack",
       hovermode: "x unified",
       yaxis: { ...AXIS_LINE, title: { text: "kbpd" } },
@@ -105,6 +148,15 @@ function buildStackedOilBars(
         tickformat: "%b %Y",
       },
       legend: { orientation: "h", yanchor: "bottom", y: 1.01, xanchor: "left", x: 0 },
+      annotations: months.map((m, i) => ({
+        x: m,
+        y: totals[i],
+        text: `<b>${fmtIntPtBr(totals[i])}</b>`,
+        showarrow: false,
+        yshift: 12,
+        font: { size: 11, color: "#1a1a1a", family: "Arial" },
+        xanchor: "center",
+      })),
     },
   };
 }
@@ -196,7 +248,15 @@ function buildFieldDrillChart(
   };
 }
 
-/** Build a horizontal stacked bar: top fields, oil + water in kbpd. */
+/**
+ * Build a horizontal stacked bar: top fields, oil + water in kbpd.
+ *
+ * Round 6 (2026-05-27): oil and water segments now carry rounded kbpd values
+ * inside the segment (hidden when < `MIN_SEGMENT_KBPD_LABEL` kbpd), and each
+ * row gets a bold total annotation at the right end of the stacked bar so
+ * the reader can rank fields at a glance. Right margin bumped to 60 to give
+ * the rightmost totals room without clipping.
+ */
 function buildTopFieldsChart(
   fields: ProductionTopField[],
 ): { data: PlotData[]; layout: Partial<Layout> } {
@@ -207,6 +267,7 @@ function buildTopFieldsChart(
   const names = sorted.map((f) => f.campo);
   const oil = sorted.map((f) => bblDiaToKbpd(f.oil_bbl_dia));
   const water = sorted.map((f) => bblDiaToKbpd(f.water_bbl_dia));
+  const totals = oil.map((v, i) => v + water[i]);
 
   return {
     data: [
@@ -216,6 +277,11 @@ function buildTopFieldsChart(
         name: "Oil",
         x: oil,
         y: names,
+        text: oil.map((v) => (v >= MIN_SEGMENT_KBPD_LABEL ? fmtIntPtBr(v) : "")),
+        textposition: "inside",
+        insidetextanchor: "middle",
+        textfont: { color: "#ffffff", size: 11, family: "Arial" },
+        cliponaxis: false,
         marker: { color: TOP_FIELDS_OIL_COLOR },
         hovertemplate: "Oil: %{x:,.1f} kbpd<extra>%{y}</extra>",
       } as PlotData,
@@ -225,6 +291,12 @@ function buildTopFieldsChart(
         name: "Water",
         x: water,
         y: names,
+        text: water.map((v) => (v >= MIN_SEGMENT_KBPD_LABEL ? fmtIntPtBr(v) : "")),
+        textposition: "inside",
+        insidetextanchor: "middle",
+        // Light blue (#7BB6DD) background — dark text reads better.
+        textfont: { color: "#1a1a1a", size: 11, family: "Arial" },
+        cliponaxis: false,
         marker: { color: TOP_FIELDS_WATER_COLOR },
         hovertemplate: "Water: %{x:,.1f} kbpd<extra>%{y}</extra>",
       } as PlotData,
@@ -232,7 +304,9 @@ function buildTopFieldsChart(
     layout: {
       ...COMMON_LAYOUT,
       height: 360,
-      margin: { t: 10, b: 40, l: 140, r: 20 },
+      // `r: 60` gives room for the per-bar total annotations at the right
+      // end of each stacked bar.
+      margin: { t: 10, b: 40, l: 140, r: 60 },
       barmode: "stack",
       yaxis: {
         ...AXIS_LINE,
@@ -242,6 +316,16 @@ function buildTopFieldsChart(
       },
       xaxis: { ...AXIS_LINE, title: { text: "kbpd" } },
       legend: { orientation: "h", yanchor: "bottom", y: 1.01, xanchor: "left", x: 0 },
+      annotations: names.map((n, i) => ({
+        x: totals[i],
+        y: n,
+        text: `<b>${fmtIntPtBr(totals[i])}</b>`,
+        showarrow: false,
+        xshift: 6,
+        xanchor: "left",
+        yanchor: "middle",
+        font: { size: 11, color: "#1a1a1a", family: "Arial" },
+      })),
     },
   };
 }
@@ -843,7 +927,6 @@ export default function DesktopView(): React.ReactElement | null {
     referenceDate, setReferenceDate,
     brazilData, companyData, topFields, installations, yoyTable,
     brazilLoading, companyLoading, topFieldsLoading, installationsLoading, yoyLoading,
-    kpi,
     excelLoading, csvLoading,
     handleExportExcel, handleExportCsv,
     drillCampo, drillTimeseries, drillLoading, drillError, drillKpis,
@@ -1055,62 +1138,15 @@ export default function DesktopView(): React.ReactElement | null {
               </div>
             </div>
 
-            {/* ── KPI cards ───────────────────────────────────────────────
-                Round 5: each card is wired to its backing data's loading
-                flag + `hasData` predicate. While the underlying RPC is in
-                flight AND no prior data exists, the value slot shows a
-                shimmer skeleton; while refreshing existing data, the card
-                dims subtly to 0.75 opacity. */}
-            <div
-              style={{
-                display: "flex",
-                gap: 14,
-                marginBottom: 24,
-                flexWrap: "wrap",
-              }}
-            >
-              <KpiCard
-                label="Brazil oil"
-                value={fmtNumber(kpi.brazilOilKbpd, 0)}
-                unit="kbpd"
-                loading={brazilLoading}
-                hasData={brazilData.length > 0}
-              />
-              <KpiCard
-                accent
-                label={`${empresa} oil`}
-                value={fmtNumber(kpi.companyOilKbpd, 0)}
-                unit="kbpd"
-                loading={companyLoading}
-                hasData={companyData.length > 0}
-                delta={
-                  kpi.companyMomPct != null
-                    ? { pct: kpi.companyMomPct, label: "MoM" }
-                    : undefined
-                }
-              />
-              <KpiCard
-                accent
-                label={`${empresa} gas`}
-                value={fmtNumber(kpi.companyGasMm3d, 1)}
-                unit="Mm³/d"
-                loading={companyLoading}
-                hasData={companyData.length > 0}
-              />
-              <KpiCard
-                accent
-                label={`${empresa} YTD avg`}
-                value={fmtNumber(kpi.companyYtdAvgKbpd, 0)}
-                unit="kbpd"
-                loading={companyLoading || yoyLoading}
-                hasData={companyData.length > 0}
-                delta={
-                  kpi.companyYoyPct != null
-                    ? { pct: kpi.companyYoyPct, label: "YoY" }
-                    : undefined
-                }
-              />
-            </div>
+            {/* ── KPI strip removed in Round 6 (2026-05-27) ───────────────
+                Δ MoM / Δ YoY computed against a partial reference month
+                produced misleading multi-hundred-percent figures. The YoY
+                table at the bottom (server-derived against full historical
+                months) is the canonical breakdown; the PDF Well-by-Well
+                report doesn't use KPI cards either. `KpiCard` is still
+                imported because the field/installation drill modals use it
+                (those KPIs sum a full historical timeseries and are
+                arithmetically sound). */}
 
             {/* ── Charts row 1 ────────────────────────────────────────────── */}
             <div

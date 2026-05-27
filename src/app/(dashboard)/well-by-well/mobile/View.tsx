@@ -6,7 +6,8 @@
 //   MobileTopBar              — wordmark
 //   StickyBreadcrumb          — "Well by Well › <Empresa> › <Ref month>"
 //   MobileTabBar              — Brazil · {Empresa} · Fields · FPSOs
-//   Tab content               — one chart full-width + KPI cards / table per tab
+//   Tab content               — one full-width chart per tab (Brazil/Company)
+//                               or a tappable list (Fields/FPSOs)
 //   YoY expandable section    — bottom, expands when tapped
 //   ExportFAB                 — opens an action sheet to pick Excel or CSV
 //   FilterDrawer              — empresa + period + ambientes + reference month
@@ -14,12 +15,19 @@
 // Mobile is "same analysis, adapted clothing" — same hook, same metrics, same
 // stake-weighting, presented one panel at a time so it's legible on a phone.
 //
+// Round 6 (2026-05-27): top KPI tiles removed from the Brazil and Company
+// tabs — they encoded the same broken Δ MoM/YoY against partial months that
+// desktop carried. Stacked-bar charts now render in-bar segment labels and a
+// total annotation above each bar. `MobileKpi` is preserved because the field
+// and installation drill BottomSheets still use it (those KPIs are sourced
+// from a full historical timeseries and are arithmetically sound).
+//
 // Binding sync rule (CLAUDE.md § Dual-view policy): meaningful changes to one
 // View must land in the OTHER View in the same commit, OR the commit message
 // must declare [mobile-only] with an explicit reason.
 
 import { useMemo, useState } from "react";
-import type { PlotData } from "plotly.js";
+import type { Layout, PlotData } from "plotly.js";
 
 import {
   MobileTopBar,
@@ -62,11 +70,51 @@ type Tab = "brazil" | "company" | "fields" | "fpsos";
 
 // ─── Mobile chart builders ───────────────────────────────────────────────────
 
+/**
+ * Round 6 (2026-05-27): mobile data-label threshold is higher than desktop
+ * (`80` vs `30` kbpd) because narrow phone bars cannot fit a 4-digit label
+ * even when the value is technically non-trivial. The total annotation above
+ * each bar carries the headline number regardless.
+ */
+const MOBILE_MIN_SEGMENT_KBPD_LABEL = 80;
+
+function fmtIntPtBr(n: number): string {
+  return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(n);
+}
+
+/**
+ * Build per-month totals from a stacked series. Returns Plotly `annotations`
+ * objects with the total rendered above each bar. Mobile font is 10px to
+ * stay readable on narrow phone widths without dominating the chart area.
+ */
+function buildTotalAnnotations(
+  months: string[],
+  ambienteYs: Record<string, number[]>,
+): Partial<Layout>["annotations"] {
+  const totals = months.map((_, i) =>
+    AMBIENTES.reduce((s, amb) => s + (ambienteYs[amb]?.[i] ?? 0), 0),
+  );
+  return months.map((m, i) => ({
+    x: m,
+    y: totals[i],
+    text: `<b>${fmtIntPtBr(totals[i])}</b>`,
+    showarrow: false,
+    yshift: 10,
+    xanchor: "center",
+    font: { size: 10, color: "#1a1a1a", family: "Arial" },
+  }));
+}
+
+interface StackedBuildResult {
+  data: PlotData[];
+  annotations: Partial<Layout>["annotations"];
+}
+
 function buildStackedSeries(
   rows: (ProductionBrazilRow | ProductionCompanyRow)[],
   variant: "brazil" | "company",
-): PlotData[] {
-  if (!rows.length) return [];
+): StackedBuildResult {
+  if (!rows.length) return { data: [], annotations: [] };
   const monthSet = new Set<string>();
   for (const r of rows) {
     monthSet.add(`${String(r.ano).padStart(4, "0")}-${String(r.mes).padStart(2, "0")}-01`);
@@ -81,19 +129,38 @@ function buildStackedSeries(
     pivot[r.ambiente][key] = (pivot[r.ambiente][key] ?? 0) + r.oil_bbl_dia;
   }
 
-  return AMBIENTES.map((amb) => {
+  // Precompute per-month per-ambiente values so the same numbers feed both
+  // the bar `y` and the annotations.
+  const ambienteYs: Record<string, number[]> = {};
+  for (const amb of AMBIENTES) {
+    ambienteYs[amb] = months.map((m) => bblDiaToKbpd(pivot[amb]?.[m] ?? 0));
+  }
+
+  const data: PlotData[] = AMBIENTES.map((amb) => {
     const baseColor = variant === "company" && amb === "PreSal"
       ? BRAND_ORANGE
       : AMBIENTE_COLOR[amb] ?? "#aaaaaa";
+    const ys = ambienteYs[amb];
+    // Light Terra segment needs dark text; everything else takes white.
+    const labelColor = amb === "Terra" ? "#1a1a1a" : "#ffffff";
     return {
       type: "bar",
       name: amb,
       x: months,
-      y: months.map((m) => bblDiaToKbpd(pivot[amb]?.[m] ?? 0)),
+      y: ys,
+      text: ys.map((v) =>
+        v >= MOBILE_MIN_SEGMENT_KBPD_LABEL ? fmtIntPtBr(v) : "",
+      ),
+      textposition: "inside",
+      insidetextanchor: "middle",
+      textfont: { color: labelColor, size: 10, family: "Arial" },
+      cliponaxis: false,
       marker: { color: baseColor },
       hovertemplate: `${amb}: %{y:,.1f} kbpd<extra></extra>`,
     } as PlotData;
   });
+
+  return { data, annotations: buildTotalAnnotations(months, ambienteYs) };
 }
 
 /**
@@ -143,32 +210,64 @@ function buildFieldDrillSeries(rows: ProductionFieldTimeseriesRow[]): PlotData[]
   ];
 }
 
-function buildTopFieldsHBars(fields: ProductionTopField[]): PlotData[] {
-  if (!fields.length) return [];
+interface TopFieldsBuildResult {
+  data: PlotData[];
+  annotations: Partial<Layout>["annotations"];
+}
+
+function buildTopFieldsHBars(fields: ProductionTopField[]): TopFieldsBuildResult {
+  if (!fields.length) return { data: [], annotations: [] };
   const sorted = [...fields].sort((a, b) => b.oil_bbl_dia - a.oil_bbl_dia);
   const names = sorted.map((f) => f.campo);
   const oil = sorted.map((f) => bblDiaToKbpd(f.oil_bbl_dia));
   const water = sorted.map((f) => bblDiaToKbpd(f.water_bbl_dia));
-  return [
-    {
-      type: "bar",
-      orientation: "h",
-      name: "Oil",
-      x: oil,
-      y: names,
-      marker: { color: TOP_FIELDS_OIL_COLOR },
-      hovertemplate: "Oil: %{x:,.1f} kbpd<extra>%{y}</extra>",
-    } as PlotData,
-    {
-      type: "bar",
-      orientation: "h",
-      name: "Water",
-      x: water,
-      y: names,
-      marker: { color: TOP_FIELDS_WATER_COLOR },
-      hovertemplate: "Water: %{x:,.1f} kbpd<extra>%{y}</extra>",
-    } as PlotData,
-  ];
+  const totals = oil.map((v, i) => v + water[i]);
+  return {
+    data: [
+      {
+        type: "bar",
+        orientation: "h",
+        name: "Oil",
+        x: oil,
+        y: names,
+        text: oil.map((v) =>
+          v >= MOBILE_MIN_SEGMENT_KBPD_LABEL ? fmtIntPtBr(v) : "",
+        ),
+        textposition: "inside",
+        insidetextanchor: "middle",
+        textfont: { color: "#ffffff", size: 10, family: "Arial" },
+        cliponaxis: false,
+        marker: { color: TOP_FIELDS_OIL_COLOR },
+        hovertemplate: "Oil: %{x:,.1f} kbpd<extra>%{y}</extra>",
+      } as PlotData,
+      {
+        type: "bar",
+        orientation: "h",
+        name: "Water",
+        x: water,
+        y: names,
+        text: water.map((v) =>
+          v >= MOBILE_MIN_SEGMENT_KBPD_LABEL ? fmtIntPtBr(v) : "",
+        ),
+        textposition: "inside",
+        insidetextanchor: "middle",
+        textfont: { color: "#1a1a1a", size: 10, family: "Arial" },
+        cliponaxis: false,
+        marker: { color: TOP_FIELDS_WATER_COLOR },
+        hovertemplate: "Water: %{x:,.1f} kbpd<extra>%{y}</extra>",
+      } as PlotData,
+    ],
+    annotations: names.map((n, i) => ({
+      x: totals[i],
+      y: n,
+      text: `<b>${fmtIntPtBr(totals[i])}</b>`,
+      showarrow: false,
+      xshift: 6,
+      xanchor: "left",
+      yanchor: "middle",
+      font: { size: 10, color: "#1a1a1a", family: "Arial" },
+    })),
+  };
 }
 
 // ─── Small KPI tile (mobile) ──────────────────────────────────────────────────
@@ -267,7 +366,6 @@ export default function MobileView(): React.ReactElement | null {
     referenceDate, setReferenceDate,
     brazilData, companyData, topFields, installations, yoyTable,
     brazilLoading, companyLoading, topFieldsLoading, installationsLoading, yoyLoading,
-    kpi,
     excelLoading, csvLoading,
     handleExportExcel, handleExportCsv,
     drillCampo, drillTimeseries, drillLoading, drillError, drillKpis,
@@ -296,7 +394,9 @@ export default function MobileView(): React.ReactElement | null {
     return allMonths.slice(i0, i1 + 1);
   }, [allMonths, monthIdxRange]);
 
-  // Mobile-tuned chart data per tab
+  // Mobile-tuned chart data per tab. Each stacked builder returns both the
+  // bar traces and per-month total annotations (Round 6) — the View threads
+  // the annotations into the chart's layout so totals render above every bar.
   const brazilSeries = useMemo(() => buildStackedSeries(brazilData, "brazil"), [brazilData]);
   const companySeries = useMemo(() => buildStackedSeries(companyData, "company"), [companyData]);
   const topFieldsSeries = useMemo(() => buildTopFieldsHBars(topFields), [topFields]);
@@ -378,15 +478,7 @@ export default function MobileView(): React.ReactElement | null {
         {/* ── Tab content ─────────────────────────────────────────────── */}
         {tab === "brazil" && (
           <>
-            <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-              <MobileKpi
-                label="Brazil oil"
-                value={fmtNumber(kpi.brazilOilKbpd, 0)}
-                unit="kbpd"
-                loading={brazilLoading}
-                hasData={brazilData.length > 0}
-              />
-            </div>
+            {/* KPI tile removed in Round 6 — same rationale as desktop. */}
             <div
               style={{
                 background: "var(--mobile-surface, #ffffff)",
@@ -409,16 +501,18 @@ export default function MobileView(): React.ReactElement | null {
               >
                 Brazil — Oil (kbpd, stacked by environment)
               </div>
-              {brazilSeries.length > 0 ? (
+              {brazilSeries.data.length > 0 ? (
                 <MobileChart
-                  data={brazilSeries}
+                  data={brazilSeries.data}
                   height={260}
                   layout={{
                     barmode: "stack",
+                    margin: { t: 28, b: 36, l: 36, r: 8 },
                     xaxis: { type: "date", tickformat: "%b %y" },
                     yaxis: { title: { text: "kbpd" } },
                     showlegend: true,
                     legend: { orientation: "h", y: -0.25, x: 0 },
+                    annotations: brazilSeries.annotations,
                   }}
                 />
               ) : (
@@ -432,31 +526,7 @@ export default function MobileView(): React.ReactElement | null {
 
         {tab === "company" && (
           <>
-            <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-              <MobileKpi
-                label={`${empresa.split(/\s+/)[0]} oil`}
-                value={fmtNumber(kpi.companyOilKbpd, 0)}
-                unit="kbpd"
-                loading={companyLoading}
-                hasData={companyData.length > 0}
-                delta={kpi.companyMomPct != null ? { pct: kpi.companyMomPct, label: "MoM" } : undefined}
-              />
-              <MobileKpi
-                label="Gas"
-                value={fmtNumber(kpi.companyGasMm3d, 1)}
-                unit="Mm³/d"
-                loading={companyLoading}
-                hasData={companyData.length > 0}
-              />
-              <MobileKpi
-                label="YTD avg"
-                value={fmtNumber(kpi.companyYtdAvgKbpd, 0)}
-                unit="kbpd"
-                loading={companyLoading || yoyLoading}
-                hasData={companyData.length > 0}
-                delta={kpi.companyYoyPct != null ? { pct: kpi.companyYoyPct, label: "YoY" } : undefined}
-              />
-            </div>
+            {/* KPI tiles removed in Round 6 — same rationale as desktop. */}
             <div
               style={{
                 background: "var(--mobile-surface, #ffffff)",
@@ -478,16 +548,18 @@ export default function MobileView(): React.ReactElement | null {
               >
                 {empresa} — Oil (kbpd, stake-weighted, stacked by environment)
               </div>
-              {companySeries.length > 0 ? (
+              {companySeries.data.length > 0 ? (
                 <MobileChart
-                  data={companySeries}
+                  data={companySeries.data}
                   height={260}
                   layout={{
                     barmode: "stack",
+                    margin: { t: 28, b: 36, l: 36, r: 8 },
                     xaxis: { type: "date", tickformat: "%b %y" },
                     yaxis: { title: { text: "kbpd" } },
                     showlegend: true,
                     legend: { orientation: "h", y: -0.25, x: 0 },
+                    annotations: companySeries.annotations,
                   }}
                 />
               ) : (
@@ -505,7 +577,7 @@ export default function MobileView(): React.ReactElement | null {
               {empresa} · top fields · {fmtMonthLabel(referenceDate)} · tap to drill in
             </div>
             {/* Compact chart for at-a-glance comparison */}
-            {topFieldsSeries.length > 0 && (
+            {topFieldsSeries.data.length > 0 && (
               <div
                 style={{
                   background: "var(--mobile-surface, #ffffff)",
@@ -517,15 +589,18 @@ export default function MobileView(): React.ReactElement | null {
                 }}
               >
                 <MobileChart
-                  data={topFieldsSeries}
+                  data={topFieldsSeries.data}
                   height={Math.max(180, topFields.length * 22)}
                   layout={{
                     barmode: "stack",
-                    margin: { l: 110, r: 8, t: 8, b: 36 },
+                    // r: 44 leaves room for the per-row total annotation;
+                    // l: 110 reserves enough width for field name labels.
+                    margin: { l: 110, r: 44, t: 8, b: 36 },
                     yaxis: { automargin: true, tickfont: { size: 10 } },
                     xaxis: { title: { text: "kbpd" } },
                     showlegend: true,
                     legend: { orientation: "h", y: -0.15, x: 0 },
+                    annotations: topFieldsSeries.annotations,
                   }}
                 />
               </div>

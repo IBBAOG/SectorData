@@ -138,13 +138,11 @@ export function fmtMonthLabel(anchor: string): string {
   return `${months[m - 1]} ${y}`;
 }
 
-/** Sum all ambientes for a given date list (Brazil or Company). */
-export function sumOil(rows: { oil_bbl_dia: number }[]): number {
-  return rows.reduce((s, r) => s + (r.oil_bbl_dia ?? 0), 0);
-}
-export function sumGas(rows: { gas_mm3_dia: number }[]): number {
-  return rows.reduce((s, r) => s + (r.gas_mm3_dia ?? 0), 0);
-}
+// `sumOil` / `sumGas` helpers were removed in Round 6 alongside the top KPI
+// strip. The remaining derived metrics (drill-down KPIs, YoY/MoM/YTD table)
+// are computed either client-side from a sorted timeseries or server-side by
+// `get_production_yoy_table`, neither of which needs an at-reference-month
+// fold over `companyData`/`brazilData`.
 
 // ─── Hook return type ─────────────────────────────────────────────────────────
 
@@ -198,17 +196,13 @@ export interface UseProductionData {
   // Error (single bubble; per-RPC errors are logged at the wrapper level)
   error: Error | null;
 
-  // Derived KPIs (all in kbpd unless noted)
-  kpi: {
-    brazilOilKbpd: number;            // total at reference month, kbpd
-    companyOilKbpd: number;
-    companyGasMm3d: number;            // gas stays in Mm³/d
-    companyYtdAvgKbpd: number;         // YTD avg (sum/months elapsed in year-of-reference)
-    /** MoM % delta for company oil at reference month (null if no prior month). */
-    companyMomPct: number | null;
-    /** YoY % delta for company oil at reference month (null if no prior year). */
-    companyYoyPct: number | null;
-  };
+  // (Round 6, 2026-05-27) The top KPI strip — `brazilOilKbpd`, `companyOilKbpd`,
+  // `companyGasMm3d`, `companyYtdAvgKbpd`, `companyMomPct`, `companyYoyPct` —
+  // was removed entirely because the at-reference-month Δ MoM / Δ YoY math is
+  // unreliable when the current month is partial (divides a full prior month
+  // by ~0). The PDF reference report uses tables exclusively (YoY table is
+  // already rendered at the bottom of both Views). Drill-down KPIs still
+  // exist and remain valid because they sum full historical months.
 
   // Export (Tier 1 — direct download, multi-sheet Excel + zip CSV)
   excelLoading: boolean;
@@ -591,44 +585,10 @@ export function useProductionData(): UseProductionData {
     }
   }, [dateRange, referenceDate]);
 
-  // ── Derived KPIs ──────────────────────────────────────────────────────────
-  const kpi = useMemo(() => {
-    // Brazil oil total at reference month, kbpd.
-    const refY = referenceDate ? parseInt(referenceDate.slice(0, 4), 10) : 0;
-    const refM = referenceDate ? parseInt(referenceDate.slice(5, 7), 10) : 0;
-
-    const brazilRefRows = brazilData.filter((r) => r.ano === refY && r.mes === refM);
-    const companyRefRows = companyData.filter((r) => r.ano === refY && r.mes === refM);
-
-    const brazilOilKbpd = bblDiaToKbpd(sumOil(brazilRefRows));
-    const companyOilKbpd = bblDiaToKbpd(sumOil(companyRefRows));
-    const companyGasMm3d = sumGas(companyRefRows);
-
-    // YTD avg = sum of company oil for ano = refY divided by months elapsed
-    // up to refM (inclusive).
-    const ytdRows = companyData.filter((r) => r.ano === refY && r.mes <= refM);
-    const ytdByMonth = new Map<number, number>();
-    for (const r of ytdRows) {
-      ytdByMonth.set(r.mes, (ytdByMonth.get(r.mes) ?? 0) + r.oil_bbl_dia);
-    }
-    const ytdSum = Array.from(ytdByMonth.values()).reduce((s, x) => s + x, 0);
-    const ytdMonthsElapsed = ytdByMonth.size || 1;
-    const companyYtdAvgKbpd = bblDiaToKbpd(ytdSum / ytdMonthsElapsed);
-
-    // MoM / YoY pulled straight from the yoyTable TOTAL row (already in pct).
-    const totalRow = yoyTable.find((r) => r.scope === "TOTAL");
-    const companyMomPct = totalRow?.mom_pct ?? null;
-    const companyYoyPct = totalRow?.yoy_pct ?? null;
-
-    return {
-      brazilOilKbpd,
-      companyOilKbpd,
-      companyGasMm3d,
-      companyYtdAvgKbpd,
-      companyMomPct,
-      companyYoyPct,
-    };
-  }, [brazilData, companyData, yoyTable, referenceDate]);
+  // (Round 6, 2026-05-27) The `kpi` useMemo was removed. See the matching
+  // comment on the hook return type — top-strip KPIs delivered unreliable Δ
+  // MoM / Δ YoY against partial months. The YoY table (rendered at the bottom
+  // of both Views) replaces it; drill-down KPIs are unaffected.
 
   // ── Field drill-down: open / close handlers + reactive fetch ──────────────
   //
@@ -1033,8 +993,6 @@ export function useProductionData(): UseProductionData {
     anyLoading,
 
     error,
-
-    kpi,
 
     excelLoading,
     csvLoading,
