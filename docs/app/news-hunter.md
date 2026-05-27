@@ -105,7 +105,7 @@ Admins têm uma funcionalidade extra de **clipping de notícias**:
 4. **ClippingModal** — modal com:
    - Aba "Preview": iframe renderizando o HTML do clipping (Calibri 11pt, header laranja #FF5000, "Main Headlines" TOC, TEAM_BLOCK com 3 emails).
    - Aba "Status": pills por artigo (ok/paywall/fetch_failed/etc) + textarea manual para sites bloqueados.
-   - Botões: **Download .eml** (RFC 5322 multipart/alternative, hand-rolled), **Copy HTML**, **Regenerate preview**.
+   - Botões: **Download .eml** (RFC 5322 multipart/alternative, hand-rolled), **Copy** (rich clipboard — `text/html` + `text/plain` fallback via `ClipboardItem`; pasting into Outlook/Gmail produces formatted output), **Regenerate preview**.
 5. **Rendering é client-side** — build_html/buildPlainText/buildEml rodam no browser, sem round-trip ao servidor para re-renderizar.
 
 #### Template do clipping (fidelidade ao clipinator.py)

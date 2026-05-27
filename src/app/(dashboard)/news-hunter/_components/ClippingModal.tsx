@@ -2,13 +2,14 @@
 
 // Admin-only clipping modal.
 // Shows: rendered HTML preview in an iframe, per-URL status pills,
-// manual-body textareas for failed/paywalled articles, Download .eml, Copy HTML.
+// manual-body textareas for failed/paywalled articles, Download .eml, Copy (rich clipboard).
 // Rendering is client-side — no extra network round-trip needed to re-render.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BarrelLoading from "@/components/dashboard/BarrelLoading";
 import { buildHtml } from "@/lib/clipping/buildHtml";
 import { buildEml } from "@/lib/clipping/buildEml";
+import { buildPlainText } from "@/lib/clipping/buildPlainText";
 import type { ScrapeResult, ClippingItem } from "@/lib/clipping/types";
 
 interface Props {
@@ -80,16 +81,29 @@ export default function ClippingModal({
     URL.revokeObjectURL(url);
   }, [items, today, emlFilename]);
 
-  const handleCopyHtml = useCallback(async () => {
+  // Copies the digest as rich content (text/html + text/plain) so that pasting
+  // into Outlook or Gmail produces formatted output (headings, links, lists)
+  // rather than raw HTML markup.
+  const handleCopy = useCallback(async () => {
+    const plainContent = buildPlainText(items, today);
     try {
-      await navigator.clipboard.writeText(htmlContent);
+      if (navigator.clipboard && typeof ClipboardItem !== "undefined") {
+        const clipItem = new ClipboardItem({
+          "text/html": new Blob([htmlContent], { type: "text/html" }),
+          "text/plain": new Blob([plainContent], { type: "text/plain" }),
+        });
+        await navigator.clipboard.write([clipItem]);
+      } else {
+        // Legacy fallback — plain text for browsers without ClipboardItem support.
+        await navigator.clipboard.writeText(plainContent);
+      }
       setCopyToast(true);
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
       toastTimerRef.current = setTimeout(() => setCopyToast(false), 2500);
     } catch {
-      // Fallback for non-secure contexts.
+      // Last-resort fallback for non-secure contexts.
       const ta = document.createElement("textarea");
-      ta.value = htmlContent;
+      ta.value = plainContent;
       document.body.appendChild(ta);
       ta.select();
       document.execCommand("copy");
@@ -98,7 +112,7 @@ export default function ClippingModal({
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
       toastTimerRef.current = setTimeout(() => setCopyToast(false), 2500);
     }
-  }, [htmlContent]);
+  }, [htmlContent, items, today]);
 
   const handleRegenerate = useCallback(async () => {
     await onRegenerate(manualBodies);
@@ -456,16 +470,16 @@ export default function ClippingModal({
           {/* Copy toast */}
           {copyToast && (
             <span style={{ fontSize: 12, color: "#155724", marginRight: 8 }}>
-              HTML copied!
+              Copied!
             </span>
           )}
           <button
             type="button"
-            onClick={() => void handleCopyHtml()}
+            onClick={() => void handleCopy()}
             disabled={items.length === 0}
             style={secondaryBtnStyle}
           >
-            Copy HTML
+            Copy
           </button>
           <button
             type="button"
