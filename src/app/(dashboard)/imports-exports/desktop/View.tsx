@@ -565,12 +565,22 @@ function YoYTable({
           overflowX: "auto",
           border: "1px solid #ececec",
           borderRadius: 4,
+          minWidth: 540,
         }}
       >
         <table
           className="table table-sm table-striped mb-0"
-          style={{ fontFamily: "Arial", fontSize: 12 }}
+          style={{ fontFamily: "Arial", fontSize: 12, tableLayout: "fixed", width: "100%" }}
         >
+          <colgroup>
+            {/* Entity: 28% — widest column; value cols share 72% equally (14.4% each). */}
+            <col style={{ width: "28%" }} />
+            <col style={{ width: "14.4%" }} />
+            <col style={{ width: "14.4%" }} />
+            <col style={{ width: "14.4%" }} />
+            <col style={{ width: "14.4%" }} />
+            <col style={{ width: "14.4%" }} />
+          </colgroup>
           <thead
             style={{
               position: "sticky",
@@ -585,6 +595,8 @@ function YoYTable({
                   textAlign: "left",
                   whiteSpace: "nowrap",
                   borderBottom: "2px solid #888",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
                 }}
               >
                 Entity
@@ -594,6 +606,8 @@ function YoYTable({
                   textAlign: "right",
                   whiteSpace: "nowrap",
                   borderBottom: "2px solid #888",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
                 }}
               >
                 {currentLbl} ({volumeLabel})
@@ -603,6 +617,8 @@ function YoYTable({
                   textAlign: "right",
                   whiteSpace: "nowrap",
                   borderBottom: "2px solid #888",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
                 }}
               >
                 {prevMonthLbl} ({volumeLabel})
@@ -612,6 +628,8 @@ function YoYTable({
                   textAlign: "right",
                   whiteSpace: "nowrap",
                   borderBottom: "2px solid #888",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
                 }}
               >
                 MoM %
@@ -621,6 +639,8 @@ function YoYTable({
                   textAlign: "right",
                   whiteSpace: "nowrap",
                   borderBottom: "2px solid #888",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
                 }}
               >
                 {priorYearLbl} ({volumeLabel})
@@ -630,6 +650,8 @@ function YoYTable({
                   textAlign: "right",
                   whiteSpace: "nowrap",
                   borderBottom: "2px solid #888",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
                 }}
               >
                 YoY %
@@ -647,10 +669,9 @@ function YoYTable({
                 <tr key={row.entity}>
                   <td
                     style={{
-                      whiteSpace: "nowrap",
-                      maxWidth: 220,
                       overflow: "hidden",
                       textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
                     }}
                     title={row.entity}
                   >
@@ -787,12 +808,21 @@ function PriceSummaryTable({
           overflowX: "auto",
           border: "1px solid #ececec",
           borderRadius: 4,
+          minWidth: 340,
         }}
       >
         <table
           className="table table-sm table-striped mb-0"
-          style={{ fontFamily: "Arial", fontSize: 12 }}
+          style={{ fontFamily: "Arial", fontSize: 12, tableLayout: "fixed", width: "100%" }}
         >
+          <colgroup>
+            {/* Country: 40% — wider entity column for price tables (fewer cols).
+                Remaining 3 value cols share 60% equally (20% each). */}
+            <col style={{ width: "40%" }} />
+            <col style={{ width: "20%" }} />
+            <col style={{ width: "20%" }} />
+            <col style={{ width: "20%" }} />
+          </colgroup>
           <thead
             style={{
               position: "sticky",
@@ -802,16 +832,16 @@ function PriceSummaryTable({
             }}
           >
             <tr>
-              <th style={{ textAlign: "left", whiteSpace: "nowrap", borderBottom: "2px solid #888" }}>
+              <th style={{ textAlign: "left", whiteSpace: "nowrap", borderBottom: "2px solid #888", overflow: "hidden", textOverflow: "ellipsis" }}>
                 Country
               </th>
-              <th style={{ textAlign: "right", whiteSpace: "nowrap", borderBottom: "2px solid #888" }}>
+              <th style={{ textAlign: "right", whiteSpace: "nowrap", borderBottom: "2px solid #888", overflow: "hidden", textOverflow: "ellipsis" }}>
                 Latest ({unitLabel})
               </th>
-              <th style={{ textAlign: "right", whiteSpace: "nowrap", borderBottom: "2px solid #888" }}>
+              <th style={{ textAlign: "right", whiteSpace: "nowrap", borderBottom: "2px solid #888", overflow: "hidden", textOverflow: "ellipsis" }}>
                 MoM %
               </th>
-              <th style={{ textAlign: "right", whiteSpace: "nowrap", borderBottom: "2px solid #888" }}>
+              <th style={{ textAlign: "right", whiteSpace: "nowrap", borderBottom: "2px solid #888", overflow: "hidden", textOverflow: "ellipsis" }}>
                 YoY %
               </th>
             </tr>
@@ -826,10 +856,9 @@ function PriceSummaryTable({
                 <tr key={row.country}>
                   <td
                     style={{
-                      whiteSpace: "nowrap",
-                      maxWidth: 220,
                       overflow: "hidden",
                       textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
                     }}
                     title={row.country}
                   >
