@@ -2735,6 +2735,220 @@ export async function rpcAdminDeleteFieldStakes(
   if (error) throw error;
 }
 
+// ─── MODULE: Production (/src/app/(dashboard)/production/) ───────────────────
+//
+// Executive monthly oil & gas production summary. Replicates the structure of
+// the Well-by-Well PDF: Brazil aggregate (3 ambientes), Company aggregate
+// stake-weighted, Top fields by company, Installation table, YoY/MoM/YTD
+// table.
+//
+// All 5 RPCs are SECURITY DEFINER (grants: anon + authenticated), they JOIN
+// `anp_cdp_producao` × `field_stakes` server-side and silently filter out
+// campos whose stakes don't SUM to 100 (the admin-curated incomplete set lives
+// in `field_stakes_lacunas` for Eduardo to backfill via the admin UI).
+//
+// Empresa list comes from `get_field_stakes_empresas()` (Fase 1 RPC) — never
+// hardcode company names; new companies in `field_stakes` appear automatically.
+//
+// Source-of-truth migration: `supabase/migrations/20260528000000_production_rpcs.sql`
+// (owned by worker_supabase, Frente A of Fase 2).
+// ──────────────────────────────────────────────────────────────────────────────
+
+import type {
+  ProductionBrazilRow,
+  ProductionCompanyRow,
+  ProductionTopField,
+  ProductionInstallation,
+  ProductionYoYRow,
+} from "../types/production";
+
+/**
+ * Brazil-wide monthly production by ambiente — NOT stake-weighted.
+ * Returns ~3 rows per calendar month (one per ambiente) for the period.
+ */
+export async function rpcGetProductionBrazilAggregate(
+  supabase: SupabaseClient,
+  dateStart: string,                     // 'YYYY-MM-DD'
+  dateEnd: string,                       // 'YYYY-MM-DD'
+  ambientes?: string[] | null,
+): Promise<ProductionBrazilRow[]> {
+  const { data, error } = await supabase.rpc("get_production_brazil_aggregate", {
+    p_date_start: dateStart,
+    p_date_end:   dateEnd,
+    p_ambientes:  toListOrNull(ambientes),
+  });
+  if (error) {
+    console.error("get_production_brazil_aggregate failed", error);
+    return [];
+  }
+  // Postgres `numeric` arrives over the wire as JS number via PostgREST jsonb;
+  // coerce defensively to avoid implicit string concatenation downstream.
+  const rows = (data ?? []) as Array<
+    Omit<ProductionBrazilRow, "oil_bbl_dia" | "gas_mm3_dia" | "water_bbl_dia" | "hours_rate"> & {
+      oil_bbl_dia:   number | string;
+      gas_mm3_dia:   number | string;
+      water_bbl_dia: number | string;
+      hours_rate:    number | string;
+    }
+  >;
+  return rows.map((r) => ({
+    ano:           Number(r.ano),
+    mes:           Number(r.mes),
+    ambiente:      r.ambiente,
+    oil_bbl_dia:   Number(r.oil_bbl_dia ?? 0),
+    gas_mm3_dia:   Number(r.gas_mm3_dia ?? 0),
+    water_bbl_dia: Number(r.water_bbl_dia ?? 0),
+    hours_rate:    Number(r.hours_rate ?? 0),
+  }));
+}
+
+/**
+ * Company monthly production by ambiente — stake-weighted.
+ * Only includes campos where SUM(stake_pct) = 100 across all empresas (silent
+ * filter; incomplete fields appear in `field_stakes_lacunas` for Eduardo).
+ */
+export async function rpcGetProductionCompanyAggregate(
+  supabase: SupabaseClient,
+  empresa: string,
+  dateStart: string,
+  dateEnd: string,
+  ambientes?: string[] | null,
+): Promise<ProductionCompanyRow[]> {
+  const { data, error } = await supabase.rpc("get_production_company_aggregate", {
+    p_empresa:    empresa,
+    p_date_start: dateStart,
+    p_date_end:   dateEnd,
+    p_ambientes:  toListOrNull(ambientes),
+  });
+  if (error) {
+    console.error("get_production_company_aggregate failed", error);
+    return [];
+  }
+  const rows = (data ?? []) as Array<
+    Omit<ProductionCompanyRow, "oil_bbl_dia" | "gas_mm3_dia" | "water_bbl_dia"> & {
+      oil_bbl_dia:   number | string;
+      gas_mm3_dia:   number | string;
+      water_bbl_dia: number | string;
+    }
+  >;
+  return rows.map((r) => ({
+    ano:           Number(r.ano),
+    mes:           Number(r.mes),
+    ambiente:      r.ambiente,
+    oil_bbl_dia:   Number(r.oil_bbl_dia ?? 0),
+    gas_mm3_dia:   Number(r.gas_mm3_dia ?? 0),
+    water_bbl_dia: Number(r.water_bbl_dia ?? 0),
+  }));
+}
+
+/**
+ * Top-N producing fields for one company in one calendar month.
+ * Used by the "Top Fields" horizontal bar (oil + water stacked).
+ */
+export async function rpcGetProductionTopFields(
+  supabase: SupabaseClient,
+  empresa: string,
+  date: string,                          // 'YYYY-MM-DD' — any day in the target month
+  topN: number = 10,
+): Promise<ProductionTopField[]> {
+  const { data, error } = await supabase.rpc("get_production_top_fields", {
+    p_empresa: empresa,
+    p_date:    date,
+    p_top_n:   topN,
+  });
+  if (error) {
+    console.error("get_production_top_fields failed", error);
+    return [];
+  }
+  const rows = (data ?? []) as Array<
+    Omit<ProductionTopField, "oil_bbl_dia" | "water_bbl_dia" | "hours_rate" | "stake_pct"> & {
+      oil_bbl_dia:   number | string;
+      water_bbl_dia: number | string;
+      hours_rate:    number | string;
+      stake_pct:     number | string;
+    }
+  >;
+  return rows.map((r) => ({
+    campo:         r.campo,
+    oil_bbl_dia:   Number(r.oil_bbl_dia ?? 0),
+    water_bbl_dia: Number(r.water_bbl_dia ?? 0),
+    hours_rate:    Number(r.hours_rate ?? 0),
+    stake_pct:     Number(r.stake_pct ?? 0),
+  }));
+}
+
+/**
+ * Installation-level production for one company in one calendar month.
+ * Returned ordered by oil_bbl_dia DESC server-side.
+ */
+export async function rpcGetProductionByInstallation(
+  supabase: SupabaseClient,
+  empresa: string,
+  date: string,
+): Promise<ProductionInstallation[]> {
+  const { data, error } = await supabase.rpc("get_production_by_installation", {
+    p_empresa: empresa,
+    p_date:    date,
+  });
+  if (error) {
+    console.error("get_production_by_installation failed", error);
+    return [];
+  }
+  const rows = (data ?? []) as Array<
+    Omit<ProductionInstallation, "oil_bbl_dia" | "gas_mm3_dia" | "hours_rate"> & {
+      oil_bbl_dia: number | string;
+      gas_mm3_dia: number | string;
+      hours_rate:  number | string;
+    }
+  >;
+  return rows.map((r) => ({
+    instalacao:  r.instalacao,
+    oil_bbl_dia: Number(r.oil_bbl_dia ?? 0),
+    gas_mm3_dia: Number(r.gas_mm3_dia ?? 0),
+    hours_rate:  Number(r.hours_rate ?? 0),
+  }));
+}
+
+/**
+ * YoY/MoM/YTD breakdown for one company at one reference month.
+ * Returns 1 TOTAL row + up to 3 per-ambiente rows.
+ *
+ * Server already computes deltas in kbpd; the UI just renders.
+ */
+export async function rpcGetProductionYoyTable(
+  supabase: SupabaseClient,
+  empresa: string,
+  date: string,
+): Promise<ProductionYoYRow[]> {
+  const { data, error } = await supabase.rpc("get_production_yoy_table", {
+    p_empresa: empresa,
+    p_date:    date,
+  });
+  if (error) {
+    console.error("get_production_yoy_table failed", error);
+    return [];
+  }
+  const rows = (data ?? []) as Array<
+    Omit<ProductionYoYRow, "current_kbpd" | "prev_month_kbpd" | "prev_year_kbpd" | "ytd_avg_kbpd" | "mom_pct" | "yoy_pct"> & {
+      current_kbpd:     number | string;
+      prev_month_kbpd:  number | string | null;
+      prev_year_kbpd:   number | string | null;
+      ytd_avg_kbpd:     number | string | null;
+      mom_pct:          number | string | null;
+      yoy_pct:          number | string | null;
+    }
+  >;
+  return rows.map((r) => ({
+    scope:           r.scope,
+    current_kbpd:    Number(r.current_kbpd ?? 0),
+    prev_month_kbpd: r.prev_month_kbpd == null ? null : Number(r.prev_month_kbpd),
+    prev_year_kbpd:  r.prev_year_kbpd  == null ? null : Number(r.prev_year_kbpd),
+    ytd_avg_kbpd:    r.ytd_avg_kbpd    == null ? null : Number(r.ytd_avg_kbpd),
+    mom_pct:         r.mom_pct         == null ? null : Number(r.mom_pct),
+    yoy_pct:         r.yoy_pct         == null ? null : Number(r.yoy_pct),
+  }));
+}
+
 // ─── MODULE: Alerts (/alerts) ─────────────────────────────────────────────────
 //
 // User-facing subscription management. All wrappers here are callable by both
