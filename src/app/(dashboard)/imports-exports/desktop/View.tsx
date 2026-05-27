@@ -150,17 +150,22 @@ function bucketPaisesByPins(
 }
 
 /**
- * Inject zero-valued points so every pinned country has a series in every
+ * Inject null-valued points so every pinned country has a series in every
  * month present in `rows`. Ensures the legend always carries the full 7
  * entries (Russia → Saudi Arabia + Others) even when a country has no
  * volume in the selected window — matches the reference image where UAE
  * and Netherlands always show in the legend even at near-zero values.
  *
- * Input/output rows carry English `name`.
+ * Null (not 0) is used so Plotly's unified hover tooltip omits these entries
+ * entirely for the affected month — no "UAE: 0 kt" pollution. In a
+ * stackgroup, null is treated as "no contribution" so the visual stack
+ * baseline of the OTHER traces is preserved (Plotly handles this natively).
+ *
+ * Input/output rows carry English `name`; value type widens to allow null.
  */
 function ensureAllPinsPresent(
-  rows: { ano: number; mes: number; name: string; value: number }[],
-): { ano: number; mes: number; name: string; value: number }[] {
+  rows: { ano: number; mes: number; name: string; value: number | null }[],
+): { ano: number; mes: number; name: string; value: number | null }[] {
   if (!rows.length) return rows;
   const monthKeys = new Set<string>();
   for (const r of rows) monthKeys.add(`${r.ano}|${r.mes}`);
@@ -172,13 +177,13 @@ function ensureAllPinsPresent(
     for (const pin of ORIGIN_COUNTRY_PINS) {
       const key = `${a}|${m}|${pin.label}`;
       if (!present.has(key)) {
-        out.push({ ano: a, mes: m, name: pin.label, value: 0 });
+        out.push({ ano: a, mes: m, name: pin.label, value: null });
       }
     }
-    // Ensure Others bucket exists too (even at zero) so legend stays stable.
+    // Ensure Others bucket exists too (even as null) so legend stays stable.
     const othersKey = `${a}|${m}|${OTHERS_LABEL}`;
     if (!present.has(othersKey)) {
-      out.push({ ano: a, mes: m, name: OTHERS_LABEL, value: 0 });
+      out.push({ ano: a, mes: m, name: OTHERS_LABEL, value: null });
     }
   }
   return out;
@@ -197,11 +202,13 @@ function colourForEntity(entities: string[], entity: string): string {
 
 // ─── Stacked area builder ──────────────────────────────────────────────────────
 
-type StackedRow = { ano: number; mes: number; name: string; value: number };
+type StackedRow = { ano: number; mes: number; name: string; value: number | null };
 
 // Minimum value to show a trace in the unified hover tooltip.
-// Points below this threshold are hidden from hover (shown as blank) to avoid
-// polluting the tooltip with near-zero entries.
+// Points below this threshold are converted to null in the y array so Plotly's
+// unified hover skips them entirely (no swatch, no "0 kt" pollution). In a
+// stackgroup, null is treated as "no contribution" so the visual baseline of
+// other traces is preserved.
 // Volume threshold: 0.05 mil m³ (50 m³). For the Exports USD metric this
 // effectively suppresses true zeros only (any real export is orders of
 // magnitude larger). A single constant works for all panels because the RPC
@@ -236,7 +243,7 @@ function buildStackedTraces(
         ...(entitySet.has(OTHERS_LABEL) ? [OTHERS_LABEL] : []),
       ];
 
-  const lookup = new Map<string, Map<string, number>>();
+  const lookup = new Map<string, Map<string, number | null>>();
   for (const r of rows) {
     const key = `${r.ano}-${String(r.mes).padStart(2, "0")}-01`;
     if (!lookup.has(r.name)) lookup.set(r.name, new Map());
@@ -245,24 +252,25 @@ function buildStackedTraces(
 
   return entities.map((entity) => {
     const color = colourForEntity(entities, entity);
-    const ys = xs.map((x) => lookup.get(entity)?.get(x) ?? 0);
-    // Per-point hovertemplate array: hide points below threshold from unified
-    // hover by emitting an empty template (Plotly skips blank entries).
-    const hovertemplates = ys.map((v) =>
-      v >= HOVER_THRESHOLD
-        ? `${entity}: %{y:,.1f} ${unit}<extra></extra>`
-        : `<extra></extra>`,
-    );
+    // Sub-threshold values → null so Plotly's unified hover omits them. In a
+    // stackgroup, null is "no contribution" — the other traces stack correctly.
+    const ys = xs.map((x) => {
+      const v = lookup.get(entity)?.get(x);
+      if (v == null) return null;
+      return v >= HOVER_THRESHOLD ? v : null;
+    });
     return {
       type: "scatter" as const,
       mode: "lines" as const,
       stackgroup: "one",
+      stackgaps: "infer zero" as const,
+      connectgaps: true,
       name: entity,
       x: xs,
       y: ys,
       line: { width: 0.5, color },
       fillcolor: color,
-      hovertemplate: hovertemplates,
+      hovertemplate: `${entity}: %{y:,.1f} ${unit}<extra></extra>`,
     };
   }) as unknown as PlotData[];
 }
@@ -282,9 +290,10 @@ function buildHorizontalBarTraces(
   if (!rows.length) return [];
   // Aggregate by entity (rows should already be single-month, but defensively
   // sum just in case the RPC ever returns multiple rows for the same entity).
+  // Null values (from `ensureAllPinsPresent`) are treated as 0 contribution.
   const byEntity = new Map<string, number>();
   for (const r of rows) {
-    byEntity.set(r.name, (byEntity.get(r.name) ?? 0) + r.value);
+    byEntity.set(r.name, (byEntity.get(r.name) ?? 0) + (r.value ?? 0));
   }
   let entries: [string, number][];
   if (orderOverride) {
@@ -827,13 +836,14 @@ function areaLayout(yLabel: string, rangeMonths = 12, height = 340): Partial<Lay
     ...COMMON_LAYOUT,
     hovermode: "x unified" as const,
     height,
-    margin: { t: 12, b: 60, l: 60, r: 12 },
+    // Bottom margin generous so vertical (-90°) month labels fit without clipping.
+    margin: { t: 12, b: 80, l: 60, r: 12 },
     xaxis: {
       ...AXIS_LINE,
       type: "date" as const,
       tickformat: "%b %Y",
       dtick: pickDtick(rangeMonths),
-      tickangle: -45,
+      tickangle: -90,
       tickfont: { family: "Arial", size: 10 },
     },
     yaxis: {
@@ -843,8 +853,12 @@ function areaLayout(yLabel: string, rangeMonths = 12, height = 340): Partial<Lay
     },
     legend: {
       orientation: "h" as const,
+      // Plotly defaults stacked-area legends to traceorder="reversed" (top of
+      // stack first). Force "normal" so the legend reads bottom-of-stack first:
+      // Russia → US → UAE → Netherlands → India → Saudi Arabia → Others.
+      traceorder: "normal" as const,
       x: 0,
-      y: -0.22,
+      y: -0.32,
       font: { family: "Arial", size: 10 },
     },
   };
@@ -955,8 +969,9 @@ export default function DesktopView(): React.ReactElement {
 
   // Panel A — kt (divide total_kg by 1e6).
   // Pinned-country mode: re-bucket against the 6 fixed origins + Others, then
-  // force-inject zero rows so every pinned country shows in the legend, and
-  // render in the canonical Russia → Saudi Arabia → Others order.
+  // force-inject null rows for any pinned country absent in a given month so
+  // the legend stays stable (Russia → Saudi Arabia → Others) and the unified
+  // hover tooltip omits absent countries (null = "no contribution" in stack).
   const paisesTraces = useMemo(() => {
     const bucketed = bucketPaisesByPins(paisesData);
     const rawRows = bucketed.map((r) => ({
