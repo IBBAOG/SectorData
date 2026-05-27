@@ -278,7 +278,17 @@ export function useNaviosDieselData(): UseNaviosDieselData {
       });
   }, [naviosDisplay, resumoPortos]);
 
-  /** Port × month summary for the desktop table. */
+  /** Port × month summary for the desktop table.
+   *
+   *  Months are derived from the UNION of `resumoMensal` (port × month
+   *  vessel/volume aggregates, current snapshot only) and `volumeMensal`
+   *  (full historical + future series from `get_nd_volume_mensal_historico`).
+   *  This keeps the table aligned with the bar chart's x-axis even when the
+   *  current snapshot doesn't carry a row for past or future months (the
+   *  table renders `—` for cells without a vessel/volume entry). The current
+   *  month is suffixed with " (live)" so the column header reads identically
+   *  to the bar chart's x-tick label.
+   */
   const portMonthlySummary = useMemo(() => {
     const portMap = new Map<string, Map<string, { vessels: number; volume: number }>>();
     const monthsSet = new Set<string>();
@@ -289,19 +299,28 @@ export function useNaviosDieselData(): UseNaviosDieselData {
       portMap.get(r.porto)!.set(r.month, { vessels: r.vessels, volume: r.volume });
     }
 
+    // Union with the bar-chart month list so past/future months from
+    // get_nd_volume_mensal_historico also appear as columns.
+    const currentMonths = new Set<string>();
+    for (const v of volumeMensal) {
+      monthsSet.add(v.month);
+      if (v.is_current) currentMonths.add(v.month);
+    }
+
     const months = Array.from(monthsSet).sort();
     const ports = Array.from(portMap.keys()).sort();
     const monthLabels: Record<string, string> = {};
     for (const m of months) {
       const [yr, mo] = m.split("-");
-      monthLabels[m] = new Date(Number(yr), Number(mo) - 1, 1).toLocaleDateString("en-US", {
+      const base = new Date(Number(yr), Number(mo) - 1, 1).toLocaleDateString("en-US", {
         month: "short",
         year: "numeric",
       });
+      monthLabels[m] = currentMonths.has(m) ? `${base} (live)` : base;
     }
 
     return { ports, months, monthLabels, portMap };
-  }, [resumoMensal]);
+  }, [resumoMensal, volumeMensal]);
 
   // ── setSelectedDay: auto-select first timestamp of the day ───────────────────
   const handleSetSelectedDay = useCallback(

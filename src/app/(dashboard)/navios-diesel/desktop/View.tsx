@@ -409,7 +409,7 @@ export default function DesktopView(): React.ReactElement {
           xaxis: { visible: false }, yaxis: { visible: false },
           annotations: [{ text: "No data", xref: "paper" as const, yref: "paper" as const,
             showarrow: false, font: { size: 13, family: "Arial", color: "#888" } }],
-          height: 220, margin: { t: 30, b: 36, l: 110, r: 0 },
+          height: 220, margin: { t: 30, b: 36, l: 110, r: 10 },
         } as Partial<Layout>,
       };
     }
@@ -508,13 +508,16 @@ export default function DesktopView(): React.ReactElement {
       barmode: "stack",
       paper_bgcolor: "white",
       plot_bgcolor: "white",
-      margin: { t: 54, b: 36, l: 110, r: 0 },
+      margin: { t: 54, b: 36, l: 110, r: 10 },
       height: 220,
       bargap: 0,
       yaxis: { visible: false, range: [0, maxTotal * 1.25] },
       xaxis: {
         tickfont: { family: "Arial", size: 11 },
         range: [-0.5, volumeMensal.length - 0.5],
+        automargin: false,
+        tickangle: 0,
+        fixedrange: true,
       },
       annotations: totalAnnotations,
       legend: {
@@ -804,8 +807,8 @@ export default function DesktopView(): React.ReactElement {
                       })()}
                     </div>
 
-                    {/* Row 1 — Col 2: Bar chart + Monthly Summary */}
-                    <div className="chart-container">
+                    {/* Row 1 — Col 2: Bar chart + Monthly Summary (stretches to map height) */}
+                    <div className="chart-container" style={{ display: "flex", flexDirection: "column" }}>
                       <div style={TITLE_STYLE}>Monthly Diesel Volume (m³)</div>
                       <div style={{ fontFamily: "Arial", fontSize: 11, color: "#666", marginTop: -2, marginBottom: 4 }}>
                         Past months frozen at last snapshot in the month · current and future months are live
@@ -817,59 +820,57 @@ export default function DesktopView(): React.ReactElement {
                         config={{ displayModeBar: false }}
                         style={{ width: "100%", height: 240 }}
                       />
-                      <div style={{ marginTop: 8 }}>
-                        <div style={{ ...TITLE_STYLE, marginBottom: 6 }}>Monthly Summary by Port</div>
-                        <hr className="section-hr" />
-                        <div style={{ overflowX: "auto" }}>
-                          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 12, tableLayout: "fixed" }}>
-                            <thead>
-                              <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
-                                <th style={{ width: 110, padding: "6px 10px", fontSize: 11, fontWeight: 700, textAlign: "left" }}>Port</th>
-                                {portMonthlySummary.months.map(m => (
-                                  <th key={m} style={{ padding: "6px 4px", fontSize: 11, fontWeight: 700, textAlign: "center", whiteSpace: "nowrap" }}>
-                                    {portMonthlySummary.monthLabels[m]}
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {portMonthlySummary.ports.map((porto, i) => (
-                                <tr
-                                  key={porto}
-                                  style={{ borderBottom: i === portMonthlySummary.ports.length - 1 ? "2px solid #d0d0d0" : "1px solid #eee" }}
-                                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
-                                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }}
-                                >
-                                  <td style={{ width: 110, padding: "4px 10px", fontWeight: 600, whiteSpace: "nowrap" }}>
-                                    {porto.replace("Porto de ", "")}
-                                  </td>
-                                  {portMonthlySummary.months.map(m => {
-                                    const cell = portMonthlySummary.portMap.get(porto)?.get(m);
-                                    return (
-                                      <td key={m} style={{ padding: "4px 10px", textAlign: "center" }}>
-                                        {cell ? (
-                                          <>
-                                            <div style={{ fontWeight: 700 }}>{cell.vessels} vessel{cell.vessels !== 1 ? "s" : ""}</div>
-                                            <div style={{ fontSize: 11, color: "#666" }}>
-                                              {cell.volume.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³
-                                            </div>
-                                          </>
-                                        ) : (
-                                          <span style={{ color: "#ccc" }}>—</span>
-                                        )}
-                                      </td>
-                                    );
-                                  })}
-                                </tr>
+                      {/* Summary table — title removed per layout rearrange (2026-05-27).
+                          Right edge aligns with chart's margin.r=10; left port column (110px) aligns with chart's margin.l=110. */}
+                      <div style={{ marginTop: 8, overflowY: "auto", maxHeight: `calc(${mapHeight}px - 280px)`, marginRight: 10 }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 12, tableLayout: "fixed" }}>
+                          <thead>
+                            <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
+                              <th style={{ width: 110, padding: "6px 10px", fontSize: 11, fontWeight: 700, textAlign: "left" }}>Port</th>
+                              {portMonthlySummary.months.map(m => (
+                                <th key={m} style={{ padding: "6px 4px", fontSize: 11, fontWeight: 700, textAlign: "center", whiteSpace: "nowrap" }}>
+                                  {portMonthlySummary.monthLabels[m]}
+                                </th>
                               ))}
-                            </tbody>
-                          </table>
-                        </div>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {portMonthlySummary.ports.map((porto, i) => (
+                              <tr
+                                key={porto}
+                                style={{ borderBottom: i === portMonthlySummary.ports.length - 1 ? "2px solid #d0d0d0" : "1px solid #eee" }}
+                                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = "#f8f8f8"; }}
+                                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = ""; }}
+                              >
+                                <td style={{ width: 110, padding: "4px 10px", fontWeight: 600, whiteSpace: "nowrap" }}>
+                                  {porto.replace("Porto de ", "")}
+                                </td>
+                                {portMonthlySummary.months.map(m => {
+                                  const cell = portMonthlySummary.portMap.get(porto)?.get(m);
+                                  return (
+                                    <td key={m} style={{ padding: "4px 10px", textAlign: "center" }}>
+                                      {cell ? (
+                                        <>
+                                          <div style={{ fontWeight: 700 }}>{cell.vessels} vessel{cell.vessels !== 1 ? "s" : ""}</div>
+                                          <div style={{ fontSize: 11, color: "#666" }}>
+                                            {cell.volume.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³
+                                          </div>
+                                        </>
+                                      ) : (
+                                        <span style={{ color: "#ccc" }}>—</span>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
 
-                    {/* Row 1 — Col 3: Vessel Details */}
-                    <div className="chart-container nd-span-full">
+                    {/* Row 2 — Col 1: Expected Vessels / Pending Discharge */}
+                    <div className="chart-container">
                       <div style={{ marginBottom: 8 }}>
                         <div style={TITLE_STYLE}>Expected Vessels / Pending Discharge</div>
                         <hr className="section-hr" />
@@ -939,20 +940,8 @@ export default function DesktopView(): React.ReactElement {
                       )}
                     </div>
 
-                    {/* Row 2 — Col 1–2: Disclaimer */}
-                    <div className="nd-disclaimer" style={{ backgroundColor: "#fffbf5", border: "1px solid #ffe0b2", borderRadius: 8, padding: "16px 20px", fontFamily: "Arial", fontSize: 12, color: "#555" }}>
-                      <div style={{ fontWeight: 700, marginBottom: 8, color: "#1a1a1a", fontSize: 13 }}>
-                        Data Limitations & Disclaimer
-                      </div>
-                      <ul style={{ margin: 0, paddingLeft: 18 }}>
-                        <li>Data is collected at 6-hour intervals and may not reflect real-time conditions or recent changes in vessel schedules.</li>
-                        <li>Ports monitored: Santos, Itaqui, Paranaguá, Suape, and São Sebastião. Ports with no vessels in the selected snapshot are shown in gray on the map.</li>
-                        <li>A vessel is considered delivered when the port marks it as "Despachado" or when it disappears from the line-up. Both are estimates and may be subject to error.</li>
-                      </ul>
-                    </div>
-
-                    {/* Row 2 — Col 3: Delivered Vessels */}
-                    <div className="chart-container nd-span-full">
+                    {/* Row 2 — Col 2: Delivered Vessels */}
+                    <div className="chart-container">
                       <div style={{ ...TITLE_STYLE, marginBottom: 4 }}>Delivered Vessels / Discharged</div>
                       <hr className="section-hr" />
                       <div style={{ overflowX: "auto", maxHeight: 280, overflowY: "auto" }}>
@@ -995,6 +984,18 @@ export default function DesktopView(): React.ReactElement {
                           </tbody>
                         </table>
                       </div>
+                    </div>
+
+                    {/* Row 3 — Full width: Disclaimer */}
+                    <div className="nd-row-full" style={{ backgroundColor: "#fffbf5", border: "1px solid #ffe0b2", borderRadius: 8, padding: "16px 20px", fontFamily: "Arial", fontSize: 12, color: "#555" }}>
+                      <div style={{ fontWeight: 700, marginBottom: 8, color: "#1a1a1a", fontSize: 13 }}>
+                        Data Limitations & Disclaimer
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: 18 }}>
+                        <li>Data is collected at 6-hour intervals and may not reflect real-time conditions or recent changes in vessel schedules.</li>
+                        <li>Ports monitored: Santos, Itaqui, Paranaguá, Suape, and São Sebastião. Ports with no vessels in the selected snapshot are shown in gray on the map.</li>
+                        <li>A vessel is considered delivered when the port marks it as "Despachado" or when it disappears from the line-up. Both are estimates and may be subject to error.</li>
+                      </ul>
                     </div>
                   </div>
 

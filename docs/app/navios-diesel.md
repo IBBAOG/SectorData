@@ -156,10 +156,33 @@ The hook is the single source of truth for all data. Both Views import from it a
 - AIS layer toggle (AIS On/Off `SegmentedToggle`) — not available on mobile
 - Inline sidebar calendar + collection-time picker
 - Plotly scattergeo map with port circles + AIS vessel markers
-- Monthly Summary by Port cross-tab table
+- Monthly Summary cross-tab table (Port × Month) — rendered below the bar chart, no subtitle (the chart's own header carries the section identity)
 - Live AIS port arrivals table
 
 These are tagged `[desktop-only]` in `desktop/View.tsx` per the binding sync rule.
+
+### Desktop Line-Up grid (`.nd-main-grid`, 2026-05-27 layout)
+
+The Line-Up tab uses a 2-column grid at ≥768px:
+
+| Row | Col 1 | Col 2 |
+|---|---|---|
+| 1 | Distribution by Port (Plotly map, `mapHeight` = 500 px ≥1920 / 380 px below) | Monthly Diesel Volume bar chart **+** Monthly Summary by Port table (flex column stretching to map height; table scrolls internally when content overflows via `maxHeight: calc(${mapHeight}px - 280px)` + `overflowY: auto`) |
+| 2 | Expected Vessels / Pending Discharge | Delivered Vessels / Discharged |
+| 3 | Data Limitations & Disclaimer (full-width via `.nd-row-full`, `grid-column: 1 / -1`) | — |
+
+Below 768px the grid collapses to a single column; the desktop View renders this fallback only when desktop is being strangulated by the viewport (mobile uses `mobile/View.tsx`).
+
+**Chart ↔ table alignment contract** (Row 1 Col 2):
+
+- The Plotly bar chart uses `margin: { l: 110, r: 10 }` and `xaxis: { automargin: false, tickangle: 0, fixedrange: true }`.
+- The summary table uses `tableLayout: "fixed"` with a `width: 110` Port column and `marginRight: 10` on the wrapping div.
+- Each bar's center column-aligns with the corresponding table-column header center (`110px` left port column = chart's left margin; `10px` right padding = chart's right margin).
+- `automargin: false` prevents tick label width (e.g. `"Apr 2026 (live)"`) from expanding the chart margins and breaking alignment.
+
+**Summary-table month source**: `portMonthlySummary.months` in `useNaviosDieselData.ts` is the UNION of `resumoMensal` months (current snapshot's port × month aggregates) and `volumeMensal` months (historical + future series from `get_nd_volume_mensal_historico`). Past months without data render `—` per port. The current month carries a `(live)` suffix on the column header so it matches the chart's x-tick label.
+
+The "Monthly Summary by Port" subtitle and its `<hr>` separator were removed in the same rearrange — the bar chart title above (`Monthly Diesel Volume (m³)`) covers the whole right-column section.
 
 ### Monthly Diesel Volume chart (both views — three temporal categories, latest 2026-05-27)
 

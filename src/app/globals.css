@@ -2273,30 +2273,25 @@ a {
 }
 
 /* ─── Navios Diesel — responsive main grid ─────────────────────────────────── */
-/* Default (xxl 1400px+): 3-column */
+/* Default (md 768px+): 2-column.
+   Row 1: [ Map ] [ Chart + Summary Table ] — both cells stretch to equal height
+   Row 2: [ Expected Vessels ] [ Delivered Vessels ]
+   Row 3: [ Disclaimer (full width) ]                                         */
 .nd-main-grid {
   display: grid;
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
   margin-bottom: 24px;
-  grid-template-columns: 1.5fr 1.5fr 3fr;
+  grid-template-columns: 1fr 1fr;
 }
 
-/* Disclaimer spans first two columns in the 3-col layout */
-.nd-disclaimer { grid-column: span 2; }
-
-/* Below full HD (< 1920px): 2-column — vessel details, disclaimer, delivered go full-width */
-@media (max-width: 1919.98px) {
-  .nd-main-grid { grid-template-columns: 1fr 1fr; }
-  .nd-span-full,
-  .nd-disclaimer { grid-column: span 2; }
-}
+/* Full-width cell (Disclaimer row) */
+.nd-row-full { grid-column: 1 / -1; }
 
 /* Below md (< 768px): 1-column — everything stacks */
 @media (max-width: 767.98px) {
   .nd-main-grid { grid-template-columns: 1fr; }
-  .nd-span-full,
-  .nd-disclaimer { grid-column: span 1; }
+  .nd-row-full { grid-column: 1; }
 }
 
 /* ===== Mobile design system (Fase 1 — 2026-05) =====
