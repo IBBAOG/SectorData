@@ -47,6 +47,7 @@
 
 import { useMemo } from "react";
 
+import type { WellByWellView } from "../../../data/wellByWellEmpresas";
 import type { WellByWellHeaderRow } from "../../../types/production";
 
 // ─── Number formatters ──────────────────────────────────────────────────────
@@ -139,6 +140,17 @@ export interface HeaderTableProps {
   /** YYYY-MM-DD anchor of the reference month — drives the column header
    *  labels ("Apr-26", "Mar-26", etc.). */
   referenceDate: string;
+  /**
+   * Round 9 (2026-05-27): when set to "Brasil", the company section of the
+   * table is hidden client-side (the underlying RPC still returns both
+   * sections because the wrapper needs a non-null empresa param — the UI just
+   * doesn't render the company rows). When set to a company name, the full
+   * Brazil + company table renders as before.
+   *
+   * Optional / defaults to undefined → "show everything" (back-compat with
+   * any caller that hasn't been updated yet).
+   */
+  viewMode?: WellByWellView;
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -147,13 +159,20 @@ export default function HeaderTable({
   rows,
   loading,
   referenceDate,
+  viewMode,
 }: HeaderTableProps): React.ReactElement {
   // Sort rows by display_order defensively (DB should already do this, but
-  // guard against future RPC body changes).
-  const sortedRows = useMemo(
-    () => [...rows].sort((a, b) => a.display_order - b.display_order),
-    [rows],
-  );
+  // guard against future RPC body changes). When the viewMode is Brasil we
+  // also drop everything that isn't on the BRAZIL section (the RPC always
+  // returns Brazil + a company section; in Brasil mode we render the Brazil
+  // half only).
+  const sortedRows = useMemo(() => {
+    const base = [...rows].sort((a, b) => a.display_order - b.display_order);
+    if (viewMode !== "Brasil") return base;
+    // The section label is upper-cased by the RPC body — match against
+    // 'BRAZIL' case-insensitively to be defensive.
+    return base.filter((r) => (r.section ?? "").toUpperCase() === "BRAZIL");
+  }, [rows, viewMode]);
 
   // Column header labels — derive month abbreviations from referenceDate.
   // referenceDate is "YYYY-MM-DD" (always anchored to day 01).

@@ -3,10 +3,12 @@
 > Monthly oil & gas production with company-level attribution via curated field stakes. The executive companion to `/anp-cdp` (granular well-by-well explorer).
 >
 > **Route rename (Round 4, 2026-05-28):** previously `/production`. The old URL is preserved via a permanent 301 redirect in `next.config.ts`. Backing RPC names (`get_production_*`) and DB-level identifiers were kept as-is — the rename is URL- and UI-only.
+>
+> **Layout reform (Round 9, 2026-05-27):** the empresa `<select>` dropdown was replaced by FIVE mutually-exclusive view pills (`Brasil` · `Petrobras` · `PRIO` · `PetroReconcavo` · `Brava Energia`) at the top of the page. The pills toggle the entire dashboard between Brazil-wide (100% WI, no stake math) and a stake-weighted view of one company. The chart count dropped from 4 to 3 because the dedicated Brazil-vs-Company comparison row was redundant under the new model — when the user wants Brazil context, they tap the Brasil pill; when they want a company, they tap that company pill.
 
 ## Purpose
 
-Replicate the monthly Well-by-Well report read by Eduardo: Brazil totals split by environment (Pre-Salt / Post-Salt / Onshore), one company's stake-weighted slice of those totals, the company's top producing fields, FPSO/UEP-level breakdown, and YoY / MoM / YTD deltas — all from a single dashboard, single auth tier, single data layer.
+Replicate the monthly Well-by-Well report read by Eduardo: Brazil-wide totals or one company's stake-weighted slice (toggled via view pill), split by environment (Pre-Salt / Post-Salt / Onshore), with the active view's top producing fields, FPSO/UEP-level breakdown, and YoY / MoM / YTD deltas — all from a single dashboard, single auth tier, single data layer.
 
 `/well-by-well` is the **executive summary** (one company at a time, monthly cadence, KPI-first). `/anp-cdp` remains the **granular explorer** (per-well, no company aggregation). The two coexist; they answer different questions.
 
@@ -19,21 +21,25 @@ Replicate the monthly Well-by-Well report read by Eduardo: Brazil totals split b
 | `field_stakes_lacunas` (admin view) | Fields whose stakes do NOT yet sum to 100 — silently excluded from `/well-by-well` until Eduardo completes them via `/admin-panel` |
 | `field_canonical_names` (Round 4, 2026-05-28) | Variant → canonical map for fields with operational sub-units (e.g. Búzios + AnC_Búzios + Búzios_ECO → "Búzios"). Owned by `worker_supabase`. Drives canonical grouping in `get_production_top_fields` + canonical expansion in `get_production_field_timeseries`. |
 
-All math is done **server-side** in 5 SECURITY DEFINER RPCs (migration `supabase/migrations/20260528000000_production_rpcs.sql`, owned by `worker_supabase`). The browser never re-derives company production — it only renders.
+All math is done **server-side** in SECURITY DEFINER RPCs (migration `supabase/migrations/20260528000000_production_rpcs.sql` + follow-up rounds, owned by `worker_supabase`). The browser never re-derives company production — it only renders.
 
 ### RPCs consumed
 
 | RPC | Signature | Purpose |
 |---|---|---|
-| `get_production_brazil_aggregate` | `(date_start date, date_end date, ambientes text[] DEFAULT NULL)` | Brazil-wide monthly totals by environment (NOT stake-weighted). |
-| `get_production_company_aggregate` | `(empresa text, date_start date, date_end date, ambientes text[] DEFAULT NULL)` | Stake-weighted monthly totals for one company by environment. Filters to campos whose stakes SUM to 100. |
-| `get_production_top_fields` | `(empresa text, date date, top_n int DEFAULT 10)` | Top-N producing fields for one company in one calendar month. **Round 4:** groups by `canonical_field_name(p.campo)` server-side; returned `campo` is the canonical label. |
-| `get_production_by_installation` | `(empresa text, date date)` | Installation-level (FPSO/UEP/land plant) production routed through the installation, stake-weighted, one month. |
-| `get_production_yoy_table` | `(empresa text, date date)` | YoY/MoM/YTD breakdown at the reference month — 1 TOTAL row + 1 row per environment. |
-| `get_production_field_timeseries` | `(p_campo text, p_empresa text, p_date_start date, p_date_end date)` | Stake-weighted monthly oil/gas/water/uptime timeseries for one field × one company. Powers the Field drill-down (Round 2). **Round 4:** `p_campo` is interpreted as a canonical label; the server expands the WHERE clause to all variants under that canonical (so drilling "Búzios" sums Búzios + AnC_Búzios + Búzios_ECO stake-weighted). |
-| `get_field_stakes_overview` | (admin-only) | **Round 4:** now returns an extra `canonical text` column alongside `campo` so the admin variant editor can group variants by their canonical roll-up. Owned by `worker_supabase`, consumed by `worker_dash-admin` (Frente C). |
-| `get_production_installation_timeseries` | `(p_instalacao text, p_empresa text, p_date_start date, p_date_end date)` | Stake-weighted monthly oil/gas/water/uptime timeseries for one installation (FPSO/UEP/land plant) × one company. Powers the Installation drill-down (Round 3). Returns the SAME row shape as `get_production_field_timeseries`. |
-| `get_well_by_well_header` | `(p_empresa text, p_year int, p_month int)` | PDF-style page-2 header table (Round 8, 2026-05-27). Returns one row per renderable line of the report: Brazil section (oil kbpd + gas kboed + main fields kbpd, split by Pre-Salt / Post-Salt / Onshore) and the {empresa} section (stake-weighted oil kbpd + main fields). Each row carries `(display_order, section, category, subcategory, is_total, current_val, prev_month_val, mom_pct, prev_year_val, yoy_pct, ytd_avg)`. The UI just renders; aggregation and MoM/YoY/YTD math are entirely server-side. Owned by `worker_supabase`. |
+| `get_production_brazil_aggregate` | `(date_start date, date_end date, ambientes text[] DEFAULT NULL)` | Brazil-wide monthly totals by environment (NOT stake-weighted). Powers Chart 1 in **Brasil** view. |
+| `get_production_company_aggregate` | `(empresa text, date_start date, date_end date, ambientes text[] DEFAULT NULL)` | Stake-weighted monthly totals for one company by environment. Filters to campos whose stakes SUM to 100. Powers Chart 1 in **company** view. |
+| `get_production_top_fields` | `(empresa text, date date, top_n int DEFAULT 10)` | Top-N producing fields for one company in one calendar month. **Round 4:** groups by `canonical_field_name(p.campo)` server-side; returned `campo` is the canonical label. Powers Chart 2 in **company** view. |
+| `get_production_brazil_top_fields` *(Round 9)* | `(date date, top_n int DEFAULT 10)` | Top-N producing fields nationwide (100% WI, no stake math). Same canonical grouping as the company variant. Powers Chart 2 in **Brasil** view. |
+| `get_production_by_installation` | `(empresa text, date date)` | Installation-level (FPSO/UEP/land plant) production stake-weighted for one company, one month. Powers Chart 3 in **company** view. |
+| `get_production_brazil_installation` *(Round 9)* | `(date date)` | Installation-level production nationwide (100% WI). Powers Chart 3 in **Brasil** view. |
+| `get_production_yoy_table` | `(empresa text, date date)` | YoY/MoM/YTD breakdown at the reference month — 1 TOTAL row + 1 row per environment. Consumed only by the mobile YoY drawer (company view only — hidden in Brasil mode). |
+| `get_production_field_timeseries` | `(p_campo text, p_empresa text, p_date_start date, p_date_end date)` | Stake-weighted monthly oil/gas/water/uptime timeseries for one field × one company. Powers the Field drill-down in **company** view. **Round 4:** `p_campo` interpreted as canonical; server expands to all variants. |
+| `get_production_brazil_field_timeseries` *(Round 9)* | `(p_campo text, p_date_start date, p_date_end date)` | Same as above but Brazil-wide (100% WI). Powers the Field drill-down in **Brasil** view. Canonical expansion preserved. |
+| `get_field_stakes_overview` | (admin-only) | **Round 4:** now returns an extra `canonical text` column alongside `campo` so the admin variant editor can group variants by their canonical roll-up. Owned by `worker_supabase`, consumed by `worker_dash-admin`. |
+| `get_production_installation_timeseries` | `(p_instalacao text, p_empresa text, p_date_start date, p_date_end date)` | Stake-weighted monthly timeseries for one installation × one company. Powers the Installation drill-down in **company** view. Returns the SAME row shape as `get_production_field_timeseries`. |
+| `get_production_brazil_installation_timeseries` *(Round 9)* | `(p_instalacao text, p_date_start date, p_date_end date)` | Same as above but Brazil-wide. Powers the Installation drill-down in **Brasil** view. |
+| `get_well_by_well_header` | `(p_empresa text, p_year int, p_month int)` | PDF-style page-2 header table (Round 8). Always returns BOTH a Brazil section AND a company section. In **Brasil** view the wrapper still passes a fallback empresa (`Petrobras`) to satisfy the non-null param; the HeaderTable component filters to `section === 'BRAZIL'` client-side, dropping the company rows. |
 
 All return `LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp` (Pegadinha #18) and are granted to `anon, authenticated`. Frontend wrappers live in `src/lib/rpc.ts` under the "MODULE: Well by Well" section.
 
@@ -43,39 +49,51 @@ Source-of-truth migrations:
 - `supabase/migrations/20260528200000_production_installation_timeseries.sql` (Round 3: `get_production_installation_timeseries`).
 - `supabase/migrations/20260528300000_well_by_well_round4.sql` (Round 4: `module_visibility` slug rename `production → well-by-well`, new `field_canonical_names` table, canonical-aware bodies for `get_production_top_fields` + `get_production_field_timeseries`, new `canonical` column in `get_field_stakes_overview`).
 - `supabase/migrations/20260528500000_well_by_well_header.sql` (Round 8: `get_well_by_well_header` RPC — PDF-style page-2 header table).
+- `supabase/migrations/20260528600000_well_by_well_brazil_rpcs.sql` (Round 9: 4 Brazil-wide RPCs + 2 MVs + updated refresh function — `get_production_brazil_top_fields`, `get_production_brazil_installation`, `get_production_brazil_field_timeseries`, `get_production_brazil_installation_timeseries`).
 
-### Companies (Empresa dropdown)
+### View pills (5)
 
-Populated from `get_field_stakes_empresas()` (Fase 1 RPC) and then **filtered client-side** against a 4-name whitelist (`src/data/wellByWellEmpresas.ts`): **Petrobras → PRIO → PetroReconcavo → Brava Energia**. The dropdown renders exactly those four options in that fixed order (most-coverage-first IR view, NOT `n_campos DESC`). Default selection: **Petrobras**.
+Replaced the empresa `<select>` in Round 9 (2026-05-27). Five mutually-exclusive pills sit at the top of both Views:
 
-The whitelist exists because `get_field_stakes_empresas()` returns 63+ companies (including many small onshore operators like Origem Energia, Petrosynergy, Eneva, Alvopetro) which are useful for stake input in the admin panel but visually noisy in the executive dashboard. Eduardo's covered universe is the 4 listed names.
+| Pill | Mode | Data source |
+|---|---|---|
+| **Brasil** *(default)* | Brazil-wide, 100% WI | `get_production_brazil_*` family — no stake math |
+| Petrobras | Stake-weighted | Existing `get_production_*` empresa RPCs |
+| PRIO | Stake-weighted | Existing `get_production_*` empresa RPCs |
+| PetroReconcavo | Stake-weighted | Existing `get_production_*` empresa RPCs |
+| Brava Energia | Stake-weighted | Existing `get_production_*` empresa RPCs |
 
-If a user lands on `/well-by-well` with stale state (query param, restored session) pointing to an empresa outside the whitelist, the hook snaps `empresa` back to `Petrobras` on bootstrap.
+Single source of truth: `src/data/wellByWellEmpresas.ts` exports `WELL_BY_WELL_VIEWS` (5 strings, ordered). The companion `WELL_BY_WELL_EMPRESAS` constant (just the 4 company names) is derived via the `isCompanyView` helper and kept for back-compat — used by the hook's bootstrap filter and by the admin panel via a different code path.
 
-The **admin panel's Field Stakes autocomplete is NOT affected** — it continues to consume the full `rpcGetFieldStakesEmpresas` list so Eduardo can edit stakes for any of the 63+ companies. Only this dashboard's company selector is narrowed.
+The pill order is the executive-report opening order: country first, then largest IR-relevant companies. Default = **Brasil** (was Petrobras pre-Round 9).
 
-To add a company: edit `src/data/wellByWellEmpresas.ts` (names must match the canonical normalized forms used in `field_stakes.empresa` — e.g. "Brava Energia", not "Brava"; "PetroReconcavo", no accent, no space).
+If a user lands on `/well-by-well` with stale state pointing outside the 5-pill whitelist, the hook snaps `view` back to **Brasil** on bootstrap.
+
+The **admin panel's Field Stakes autocomplete is NOT affected** — it continues to consume the full `rpcGetFieldStakesEmpresas` list (63+ companies). Only this dashboard's view selector is narrowed.
+
+To add a company pill: append it to `WELL_BY_WELL_VIEWS` in `src/data/wellByWellEmpresas.ts` (after the 4 existing companies). The name must match the canonical normalized form used in `field_stakes.empresa` — e.g. "Brava Energia" (not "Brava"); "PetroReconcavo" (no accent, no space).
 
 ## Filter model
 
 | Filter | Type | Default |
 |---|---|---|
-| Company | single-select `<select>` | `Petrobras` |
+| View (Brasil or company) | 5 pill row (mutually exclusive) | `Brasil` |
 | Period (`dateRange`) | month-granularity slider (rc-slider via `PeriodSlider dates={...}`) | Last 13 months ending at the most-recent month present in `anp_cdp_producao` |
 | Environment (`ambientes`) | multi-select with colour swatch | `[PreSal, PosSal, Terra]` |
 | Reference month | single-select `<select>` (restricted to current period window) | Most recent month in window (snaps when slider changes) |
 
-All filters live in `useProductionData` — single source of truth. Slider changes debounce all RPCs at 300ms via `useDebouncedFetch`.
+All filters live in `useProductionData` — single source of truth. Slider changes debounce all RPCs at 150ms via `useDebouncedFetch` (Round 5 perf tune). The view state machine drives which RPC family fires; the hook returns `view`, `setView`, `isCompanyView`, and `viewEmpresa` (null in Brasil view, company name otherwise).
 
-## Panels
+## Panels (Round 9 — 3 charts)
 
-| # | Panel | Source RPC | Notes |
-|---|---|---|---|
-| P1 | Brazil — Oil Production (kbpd) | `get_production_brazil_aggregate` | Stacked bars, x=month, y=oil kbpd, stack=ambiente. Greyscale palette (PreSal darkest). |
-| P2 | {Company} — Oil Production (kbpd, stake-weighted) | `get_production_company_aggregate` | Same shape as P1; PreSal accented in brand orange. |
-| P3 | Top {Company} Fields — {Reference month} (kbpd) | `get_production_top_fields` | Horizontal bar, top 10, oil+water stacked (oil dark, water light blue). |
-| P4 | Installations (FPSO/UEP) — {Reference month} | `get_production_by_installation` | Scrollable table: Installation · Oil kbpd · Gas Mm³/d · Hours rate %. Top 12. |
-| YoY | {Company} — YoY / MoM / YTD ({Reference month}) | `get_production_yoy_table` | TOTAL row bolded + per-ambiente rows. Δ MoM and Δ YoY coloured green/red. |
+The 4-chart layout (P1 Brazil + P2 Company side-by-side, P3 Top Fields + P4 Installations) was reduced to 3 in Round 9. The dedicated Brazil-vs-Company comparison row is gone — the active pill decides what Chart 1 shows. Chart 2 and Chart 3 also branch on the pill.
+
+| # | Panel | Source RPC (Brasil view) | Source RPC (company view) | Notes |
+|---|---|---|---|---|
+| 1 | {View} — Oil Production (kbpd) | `get_production_brazil_aggregate` | `get_production_company_aggregate` | Stacked bars, x=month, y=oil kbpd, stack=ambiente. Brasil view uses greyscale; company view accents PreSal in brand orange. Full-width on desktop, full-width tab on mobile. |
+| 2 | Top {View} Fields — {Reference month} (kbpd) | `get_production_brazil_top_fields` | `get_production_top_fields` | Horizontal bar, top 10, oil+water stacked. Click a bar to drill into the field's 13-month timeseries (the drill RPC also branches on view). |
+| 3 | Installations (FPSO/UEP) — {View} — {Reference month} | `get_production_brazil_installation` | `get_production_by_installation` | Scrollable table on desktop / tappable card list on mobile. Click a row to drill into the installation's 13-month timeseries. |
+| YoY drawer (mobile, company view only) | {Company} — YoY / MoM / YTD | — | `get_production_yoy_table` | Collapsible drawer below the active tab. Hidden in Brasil mode (no per-ambiente YoY rows from the Brazil-wide RPCs). |
 
 ## Header table (PDF-style) — Round 8 (2026-05-27)
 
@@ -113,24 +131,37 @@ A self-contained HTML table that replicates page 2 of the monthly Well-by-Well P
 
 ### Layout split
 
-- **Desktop (≥1100px)**: 2-column grid (`grid-template-columns: minmax(260px, 35%) 1fr`) — filters stacked left (Company → Period → Reference month → Environment), HeaderTable right. Collapses to 1-column below 1100px so the table never gets squished.
-- **Mobile (≤768px)**: table sits at the top above the tab bar, wrapped in a horizontally scrollable container (`overflow-x: auto`; the table itself sets `min-width: 480px`). A "Swipe left to see more columns ›" caption confirms the affordance. Filters stay in the `FilterDrawer` (BottomSheet) opened from the topbar FAB — nothing changes there.
+- **Desktop (≥1100px)**: pills row at the top, then 2-column grid (`grid-template-columns: minmax(260px, 35%) 1fr`) — filters stacked left (Period → Reference month → Environment), HeaderTable right. Collapses to 1-column below 1100px so the table never gets squished. (The Company `<select>` field was removed from the filters column in Round 9 — pills replaced it.)
+- **Mobile (≤768px)**: pills row at the top (horizontally scrollable, ~5 pills wider than a phone viewport — the active pill auto-scrolls into view on tap), then HeaderTable, then tab bar, then tab content. A "Swipe left to see more columns ›" caption confirms the table's horizontal-scroll affordance. Filters stay in the `FilterDrawer` (BottomSheet) opened from the topbar — Round 9 dropped the empresa `<select>` from the drawer too.
+
+### Round 9 behaviour in Brasil mode
+
+When `viewMode === "Brasil"`:
+- The HeaderTable component filters to rows where `section.toUpperCase() === 'BRAZIL'` client-side, dropping the company section.
+- The underlying `get_well_by_well_header` RPC is still called (it requires a non-null empresa param). The hook passes `HEADER_TABLE_FALLBACK_EMPRESA = "Petrobras"` to satisfy the contract — the returned company rows are discarded.
+- This is an intentional tradeoff: one extra unused RPC slice in exchange for not having to build a separate Brazil-only header RPC.
 
 ### Why this section displaced the old YoY table (desktop only)
 
-The original `/well-by-well` desktop layout had a YoY/MoM/YTD breakdown table at the bottom (TOTAL + per-ambiente rows for the selected company, sourced from `get_production_yoy_table`). The new HeaderTable's company section is a strict superset of that data (same TOTAL + per-ambiente rows, same MoM/YoY/YTD semantics, plus Brazil-wide context, gas, and main fields). Keeping both would have duplicated the same numbers in two places. **Removed the bottom YoY table from desktop; mobile keeps its YoY collapsible drawer** because the HeaderTable on mobile lives behind horizontal scroll and the drawer surfaces the company numbers without requiring a swipe.
+The original `/well-by-well` desktop layout had a YoY/MoM/YTD breakdown table at the bottom (TOTAL + per-ambiente rows for the selected company, sourced from `get_production_yoy_table`). The new HeaderTable's company section is a strict superset of that data (same TOTAL + per-ambiente rows, same MoM/YoY/YTD semantics, plus Brazil-wide context, gas, and main fields). Keeping both would have duplicated the same numbers in two places. **Removed the bottom YoY table from desktop; mobile keeps its YoY collapsible drawer in company view** because the HeaderTable on mobile lives behind horizontal scroll and the drawer surfaces the company numbers without requiring a swipe.
 
-The hook still fetches `yoyTable` because the mobile View consumes it. If mobile ever drops the YoY drawer, the `get_production_yoy_table` RPC and its hook state can be retired in a follow-up.
+Round 9 update: the YoY drawer is also **hidden in Brasil mode** since `get_production_yoy_table` requires a company name and the Brazil-wide RPCs don't produce per-ambiente YoY rows. Brasil users get the HeaderTable's Brazil section instead.
 
-## Field drill-down (Round 2, 2026-05-27)
+The hook still fetches `yoyTable` (skipped in Brasil view via early return) because the mobile View consumes it in company view. If mobile ever drops the YoY drawer, the `get_production_yoy_table` RPC and its hook state can be retired in a follow-up.
 
-A secondary view that opens on demand when the user wants to dig into one of the Top Fields. The same hook owns its state; both Views render the same content through different surfaces.
+## Field drill-down (Round 2, 2026-05-27; Brasil-aware since Round 9)
+
+A secondary view that opens on demand when the user wants to dig into one of the Top Fields. The same hook owns its state; both Views render the same content through different surfaces. Round 9: the drill auto-closes when the user switches the view pill (so a "BÚZIOS — Petrobras" modal doesn't linger as the user toggles to "Brasil").
 
 **Trigger:**
-- **Desktop:** click any bar in the P3 Top Fields chart, or click the helper caption beneath it.
-- **Mobile:** tap any field card in the Fields tab (the chart stays for at-a-glance comparison; cards are added below for drill-in).
+- **Desktop:** click any bar in the Chart 2 Top Fields chart, or click the helper caption beneath it.
+- **Mobile:** tap any field card in the Top Fields tab (the chart stays for at-a-glance comparison; cards are added below for drill-in).
 
-**Data:** `get_production_field_timeseries(p_campo, p_empresa, p_date_start, p_date_end)` — returns one row per (year, month) with `oil_bbl_dia`, `gas_mm3_dia`, `water_bbl_dia`, `hours_rate`, stake-weighted for the selected company. The fetch uses the dashboard's current `dateRange` + `empresa` (no separate filter).
+**Data:**
+- **Brasil view:** `get_production_brazil_field_timeseries(p_campo, p_date_start, p_date_end)` — Brazil-wide (100% WI). Modal title reads "BÚZIOS — Brasil".
+- **Company view:** `get_production_field_timeseries(p_campo, p_empresa, p_date_start, p_date_end)` — stake-weighted for the active company. Modal title reads "BÚZIOS — Petrobras".
+
+The fetch uses the dashboard's current `dateRange` (no separate filter). Both RPC variants return identical row shapes (`ProductionFieldTimeseriesRow`) so the chart builder is shared.
 
 **Surfaces:**
 - **Desktop:** Bootstrap-styled modal (`FieldDrillModal` inline in `desktop/View.tsx`) — 820px wide, brand-orange accent bar, Esc / scrim / × all close.
@@ -153,10 +184,14 @@ A secondary view that opens on demand when the user wants to dig into one of the
 Mirrors the Field drill-down pattern at the installation (FPSO/UEP/land plant) level — same hook owns the state, same dual-surface architecture, same client-side KPI math.
 
 **Trigger:**
-- **Desktop:** click any row in the P4 Installations table (cursor pointer + warm-orange hover bg `#fff5ef`). The helper caption below the table confirms the affordance.
-- **Mobile:** tap any FPSO `MobileDataCard` in the FPSOs tab (each card now shows a "Tap to drill ›" hint, matching the Fields tab pattern).
+- **Desktop:** click any row in the Chart 3 Installations table (cursor pointer + warm-orange hover bg `#fff5ef`). The helper caption below the table confirms the affordance.
+- **Mobile:** tap any FPSO `MobileDataCard` in the FPSOs tab (each card now shows a "Tap to drill ›" hint, matching the Top Fields tab pattern).
 
-**Data:** `get_production_installation_timeseries(p_instalacao, p_empresa, p_date_start, p_date_end)` — returns one row per (year, month) with `oil_bbl_dia`, `gas_mm3_dia`, `water_bbl_dia`, `hours_rate`, stake-weighted for the selected company. **Row shape is identical to `get_production_field_timeseries`** — the TypeScript layer expresses this with `type ProductionInstallationTimeseriesRow = ProductionFieldTimeseriesRow` in `src/types/production.ts`. The fetch uses the dashboard's current `dateRange` + `empresa` (no separate filter).
+**Data:**
+- **Brasil view:** `get_production_brazil_installation_timeseries(p_instalacao, p_date_start, p_date_end)` — Brazil-wide (100% WI). Modal title reads "FPSO P-79 — Brasil".
+- **Company view:** `get_production_installation_timeseries(p_instalacao, p_empresa, p_date_start, p_date_end)` — stake-weighted. Modal title reads "FPSO P-79 — Petrobras".
+
+**Row shape is identical to `get_production_field_timeseries`** — the TypeScript layer expresses this with `type ProductionInstallationTimeseriesRow = ProductionFieldTimeseriesRow`. The fetch uses the dashboard's current `dateRange` (no separate filter).
 
 **Surfaces:**
 - **Desktop:** Bootstrap-styled modal (`InstallationDrillModal` inline in `desktop/View.tsx`) — same 820px wide chrome, brand-orange accent bar, Esc / scrim / × all close. The chart builder (`buildFieldDrillChart`) is reused since the row shape is identical.
@@ -202,30 +237,27 @@ The big offshore fields are split in ANP CDP into operational variants (Búzios 
 
 **Backwards compatibility:** the `field_canonical_names` table starts seeded only with the most commonly-confused fields. Anything not in the table passes through unchanged via the helper's default behaviour, so existing dashboards see no regression.
 
-## KPI cards (desktop top strip, mobile per-tab)
+## KPI cards (drill modal only)
 
-1. **Brazil oil** — total oil at reference month, kbpd (neutral)
-2. **{Company} oil** — stake-weighted total, kbpd (orange accent), Δ MoM badge
-3. **{Company} gas** — stake-weighted gas, Mm³/d (orange accent)
-4. **{Company} YTD avg** — YTD average kbpd (orange accent), Δ YoY badge
-
-Δ percentages come from the `yoyTable` TOTAL row — no client-side re-derivation.
+The top KPI strip on the page was removed in Round 6 (broken Δ MoM/YoY against the partial reference month). `KpiCard` is preserved because the field / installation drill modals still use it — those KPIs are derived from a full historical timeseries and are arithmetically sound (4 cards: Current oil · Δ MoM · Δ YoY · YTD avg).
 
 ## Dual-view
 
-- **Desktop (≥769px)** — Top split: filters (~35%) + HeaderTable (~65%). Below: 2×2 grid (P1 P2 → P3 P4). Field drill-down opens as a centered Bootstrap-styled modal. The old bottom YoY table was removed in Round 8 since the HeaderTable absorbs its data.
-- **Mobile (≤768px)** — HeaderTable at the top (horizontally scrollable). Then `MobileTabBar` with 4 tabs (Brazil · {Company} · Fields · FPSOs); one chart full-width per tab. The Fields tab combines a compact comparison chart with a list of tappable `MobileDataCard`s. `FilterDrawer` (BottomSheet) for all filters, opened from the topbar. `ExportFAB` bottom-right with a tiny action sheet (Excel / CSV). Field drill-down opens as a 90vh `BottomSheet`. YoY breakdown lives below the active tab as a collapsible drawer (kept as a fallback surface for users who don't horizontally scroll the HeaderTable).
+- **Desktop (≥769px)** — View pills row at the top. Top split: filters (~35%) + HeaderTable (~65%). Below: Chart 1 (oil production) full-width, then Charts 2 & 3 (Top Fields + Installations) side-by-side. Field/installation drill-downs open as centered Bootstrap-styled modals. The old bottom YoY table was removed in Round 8.
+- **Mobile (≤768px)** — Pills row at the top (horizontally scrollable). HeaderTable below (horizontally scrollable). `MobileTabBar` with 3 tabs: **Aggregate** · **Top Fields** · **FPSOs** (Round 9: dropped from 4 to 3 — the legacy "Brazil" and "{Empresa}" tabs collapsed into "Aggregate" since the pills above already pick which one renders). The Top Fields tab combines a compact comparison chart with a list of tappable `MobileDataCard`s. `FilterDrawer` (BottomSheet) for period + reference month + environment (no company picker — pills replaced it). `ExportFAB` bottom-right with a tiny action sheet (Excel / CSV). Drill-downs open as 90vh `BottomSheet`. YoY breakdown drawer below the tabs is **company-view-only** (Round 9).
 
-Both Views consume `useProductionData`. Neither calls Supabase directly. The hook owns: filter state, RPC orchestration (6 separate debounced/intent-driven fetches), KPI math (top-level + drill-down), and export plumbing.
+Both Views consume `useProductionData`. Neither calls Supabase directly. The hook owns: view state machine, period/ambientes/refMonth state, RPC orchestration (7 separate debounced/intent-driven fetches that branch on view), drill KPI math, and export plumbing.
 
 ## Export tier
 
 **Tier 1** (direct download, no precount modal — dataset is small by construction: monthly × ≤120 months × ≤3 ambientes ≈ <500 rows for Brazil/Company, ≤10 rows for Top Fields, ≤50 rows for Installations).
 
+In **Brasil view**, the Company sheet/CSV is omitted (it would be empty under the no-stake-weighting model).
+
 | Format | What | Filename |
 |---|---|---|
-| Excel `.xlsx` | 4 sheets: Brazil aggregate · {Company} aggregate · Top Fields · Installations | `Production {Company} DD-MM-YY.xlsx` |
-| CSV `.zip` | Same 4 datasets, one CSV each, bundled | `Production {Company} DD-MM-YY.zip` |
+| Excel `.xlsx` | Brazil aggregate · (Company aggregate, company view only) · Top Fields · Installations | `Production {View} DD-MM-YY.xlsx` |
+| CSV `.zip` | Same datasets, one CSV each, bundled | `Production {View} DD-MM-YY.zip` |
 
 Both exports honor the active filter scope (period + ambientes + reference month). They do NOT re-fetch unfiltered data.
 

@@ -3140,6 +3140,181 @@ export async function rpcGetWellByWellHeader(
   }));
 }
 
+// ─── Brazil-wide (100% WI) RPCs — Round 9, 2026-05-27 ─────────────────────────
+//
+// When the user picks the "Brasil" pill on /well-by-well, the dashboard
+// renders Brazil-wide totals (no stake weighting). The Brazil aggregate
+// already exists (`get_production_brazil_aggregate`); these four wrappers
+// cover the remaining panels (top fields, installations, two timeseries for
+// drill-downs) at 100% working interest. Source-of-truth migration:
+//   supabase/migrations/20260528600000_well_by_well_brazil_rpcs.sql
+//   (owned by worker_supabase, Round 9 of Fase 2).
+//
+// Return shapes intentionally reuse the empresa types so the View / hook can
+// branch on the active pill without duplicating dataclasses. The semantic
+// difference is that:
+//   - `stake_pct` is irrelevant for Brazil and always returned as 100 (or NULL
+//     coerced to 0 — the UI drops the column when in Brazil mode).
+//   - All values are SUM() over campos with no stake filter, so they include
+//     fields that field_stakes_lacunas would otherwise exclude for empresa
+//     views. That's intentional: Brasil view = the country's production, full
+//     stop.
+
+/**
+ * Top-N producing fields nationwide (Brazil-wide, 100% WI) in one calendar
+ * month. Used by the "Top Fields" horizontal bar in Brasil view.
+ *
+ * Returned `campo` follows the same canonical grouping as
+ * `get_production_top_fields` (Round 4) — variants of the same field are
+ * rolled up server-side via `canonical_field_name()`. `stake_pct` is returned
+ * as 100 for every row (informational only — the Brasil-mode chart doesn't
+ * surface it; consumers can ignore the column).
+ */
+export async function rpcGetProductionBrazilTopFields(
+  supabase: SupabaseClient,
+  date: string,                          // 'YYYY-MM-DD' — any day in the target month
+  topN: number = 10,
+): Promise<ProductionTopField[]> {
+  const { data, error } = await supabase.rpc("get_production_brazil_top_fields", {
+    p_date:  date,
+    p_top_n: topN,
+  });
+  if (error) {
+    console.error("get_production_brazil_top_fields failed", error);
+    return [];
+  }
+  const rows = (data ?? []) as Array<
+    Omit<ProductionTopField, "oil_bbl_dia" | "water_bbl_dia" | "hours_rate" | "stake_pct"> & {
+      oil_bbl_dia:   number | string;
+      water_bbl_dia: number | string;
+      hours_rate:    number | string;
+      stake_pct:     number | string | null;
+    }
+  >;
+  return rows.map((r) => ({
+    campo:         r.campo,
+    oil_bbl_dia:   Number(r.oil_bbl_dia ?? 0),
+    water_bbl_dia: Number(r.water_bbl_dia ?? 0),
+    hours_rate:    Number(r.hours_rate ?? 0),
+    stake_pct:     Number(r.stake_pct ?? 100),
+  }));
+}
+
+/**
+ * Installation-level production nationwide (Brazil-wide, 100% WI) in one
+ * calendar month. Returned ordered by oil_bbl_dia DESC server-side.
+ */
+export async function rpcGetProductionBrazilInstallation(
+  supabase: SupabaseClient,
+  date: string,
+): Promise<ProductionInstallation[]> {
+  const { data, error } = await supabase.rpc("get_production_brazil_installation", {
+    p_date: date,
+  });
+  if (error) {
+    console.error("get_production_brazil_installation failed", error);
+    return [];
+  }
+  const rows = (data ?? []) as Array<
+    Omit<ProductionInstallation, "oil_bbl_dia" | "gas_mm3_dia" | "hours_rate"> & {
+      oil_bbl_dia: number | string;
+      gas_mm3_dia: number | string;
+      hours_rate:  number | string;
+    }
+  >;
+  return rows.map((r) => ({
+    instalacao:  r.instalacao,
+    oil_bbl_dia: Number(r.oil_bbl_dia ?? 0),
+    gas_mm3_dia: Number(r.gas_mm3_dia ?? 0),
+    hours_rate:  Number(r.hours_rate ?? 0),
+  }));
+}
+
+/**
+ * Brazil-wide (100% WI) monthly oil/gas/water/uptime timeseries for ONE
+ * canonical field across the given date range. Used by the field drill-down
+ * when the dashboard is in Brasil view.
+ *
+ * Row shape is identical to `get_production_field_timeseries` so the chart
+ * builder is shared at the call site. Canonical expansion matches Round 4
+ * semantics: the server JOINs against `field_canonical_names` and sums every
+ * variant under the given canonical (so drilling "Búzios" in Brasil view sums
+ * Búzios + AnC_Búzios + Búzios_ECO at 100% WI).
+ */
+export async function rpcGetProductionBrazilFieldTimeseries(
+  supabase: SupabaseClient,
+  campo: string,
+  dateStart: string,                     // 'YYYY-MM-DD'
+  dateEnd: string,                       // 'YYYY-MM-DD'
+): Promise<ProductionFieldTimeseriesRow[]> {
+  const { data, error } = await supabase.rpc("get_production_brazil_field_timeseries", {
+    p_campo:      campo,
+    p_date_start: dateStart,
+    p_date_end:   dateEnd,
+  });
+  if (error) {
+    console.error("get_production_brazil_field_timeseries failed", error);
+    throw new Error(`get_production_brazil_field_timeseries: ${error.message}`);
+  }
+  const rows = (data ?? []) as Array<{
+    ano:           number | string;
+    mes:           number | string;
+    oil_bbl_dia:   number | string;
+    gas_mm3_dia:   number | string;
+    water_bbl_dia: number | string;
+    hours_rate:    number | string;
+  }>;
+  return rows.map((r) => ({
+    ano:           Number(r.ano),
+    mes:           Number(r.mes),
+    oil_bbl_dia:   Number(r.oil_bbl_dia ?? 0),
+    gas_mm3_dia:   Number(r.gas_mm3_dia ?? 0),
+    water_bbl_dia: Number(r.water_bbl_dia ?? 0),
+    hours_rate:    Number(r.hours_rate ?? 0),
+  }));
+}
+
+/**
+ * Brazil-wide (100% WI) monthly oil/gas/water/uptime timeseries for ONE
+ * installation (FPSO/UEP/land plant) across the given date range. Used by
+ * the installation drill-down when the dashboard is in Brasil view.
+ *
+ * Row shape is identical to `get_production_installation_timeseries` (and
+ * to the field timeseries shape) — the chart builder is shared.
+ */
+export async function rpcGetProductionBrazilInstallationTimeseries(
+  supabase: SupabaseClient,
+  instalacao: string,
+  dateStart: string,                     // 'YYYY-MM-DD'
+  dateEnd: string,                       // 'YYYY-MM-DD'
+): Promise<ProductionInstallationTimeseriesRow[]> {
+  const { data, error } = await supabase.rpc("get_production_brazil_installation_timeseries", {
+    p_instalacao: instalacao,
+    p_date_start: dateStart,
+    p_date_end:   dateEnd,
+  });
+  if (error) {
+    console.error("get_production_brazil_installation_timeseries failed", error);
+    throw new Error(`get_production_brazil_installation_timeseries: ${error.message}`);
+  }
+  const rows = (data ?? []) as Array<{
+    ano:           number | string;
+    mes:           number | string;
+    oil_bbl_dia:   number | string;
+    gas_mm3_dia:   number | string;
+    water_bbl_dia: number | string;
+    hours_rate:    number | string;
+  }>;
+  return rows.map((r) => ({
+    ano:           Number(r.ano),
+    mes:           Number(r.mes),
+    oil_bbl_dia:   Number(r.oil_bbl_dia ?? 0),
+    gas_mm3_dia:   Number(r.gas_mm3_dia ?? 0),
+    water_bbl_dia: Number(r.water_bbl_dia ?? 0),
+    hours_rate:    Number(r.hours_rate ?? 0),
+  }));
+}
+
 // ─── MODULE: Alerts (/alerts) ─────────────────────────────────────────────────
 //
 // User-facing subscription management. All wrappers here are callable by both

@@ -4,29 +4,36 @@
 //
 // Layout (top → bottom):
 //   MobileTopBar              — wordmark
-//   StickyBreadcrumb          — "Well by Well › <Empresa> › <Ref month>"
-//   HeaderTable (Round 8)     — PDF-style page-2 header, wrapped in a
-//                               horizontally scrollable container so all 7
-//                               columns remain reachable on narrow phones
-//   MobileTabBar              — Brazil · {Empresa} · Fields · FPSOs
-//   Tab content               — one full-width chart per tab (Brazil/Company)
-//                               or a tappable list (Fields/FPSOs)
-//   YoY expandable section    — bottom, expands when tapped (kept on mobile
-//                               as a fallback collapse — the HeaderTable's
-//                               company numbers are reachable via h-scroll,
-//                               but the drawer surfaces them without scroll)
+//   StickyBreadcrumb          — "Well by Well › <View> › <Ref month>"
+//   View pills row (Round 9)  — 5 pills, horizontally scrollable. Replaces
+//                               the empresa <select> in the FilterDrawer.
+//   HeaderTable               — PDF-style page-2 header, wrapped in a
+//                               horizontally scrollable container. In Brasil
+//                               mode the company section is hidden client-
+//                               side.
+//   MobileTabBar              — Aggregate · Top Fields · FPSOs (Round 9: was
+//                               Brazil · {Empresa} · Fields · FPSOs; the
+//                               first two tabs collapsed into "Aggregate"
+//                               since the active view pill now decides
+//                               whether the aggregate chart shows Brazil or
+//                               company data).
+//   Tab content               — one full-width chart per tab.
+//   YoY expandable section    — bottom, hidden in Brasil mode (no per-
+//                               ambiente YoY rows from the Brazil-wide RPC).
 //   ExportFAB                 — opens an action sheet to pick Excel or CSV
-//   FilterDrawer              — empresa + period + ambientes + reference month
+//   FilterDrawer              — period + reference month + ambientes (no
+//                               company selector — pills replaced it).
 //
-// Mobile is "same analysis, adapted clothing" — same hook, same metrics, same
-// stake-weighting, presented one panel at a time so it's legible on a phone.
+// Mobile is "same analysis, adapted clothing" — same hook, same metrics,
+// same view pill state machine, presented one panel at a time so it's
+// legible on a phone.
 //
-// Round 6 (2026-05-27): top KPI tiles removed from the Brazil and Company
-// tabs — they encoded the same broken Δ MoM/YoY against partial months that
-// desktop carried. Stacked-bar charts now render in-bar segment labels and a
-// total annotation above each bar. `MobileKpi` is preserved because the field
-// and installation drill BottomSheets still use it (those KPIs are sourced
-// from a full historical timeseries and are arithmetically sound).
+// Round 6 (2026-05-27): top KPI tiles removed from the tabs. `MobileKpi` is
+// preserved because the field and installation drill BottomSheets still use
+// it.
+//
+// Round 9 (2026-05-27): pills row at the top + simplified 3-tab structure.
+// Empresa <select> dropped from FilterDrawer.
 //
 // Binding sync rule (CLAUDE.md § Dual-view policy): meaningful changes to one
 // View must land in the OTHER View in the same commit, OR the commit message
@@ -53,6 +60,10 @@ import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 import HeaderTable from "../HeaderTable";
 import { bblDiaToKbpd } from "../../../../lib/units";
+import {
+  WELL_BY_WELL_VIEWS,
+  type WellByWellView,
+} from "../../../../data/wellByWellEmpresas";
 
 import {
   useProductionData,
@@ -73,15 +84,19 @@ import type {
   ProductionInstallationTimeseriesRow,
 } from "../../../../types/production";
 
-type Tab = "brazil" | "company" | "fields" | "fpsos";
+// Round 9: tabs reduced from 4 → 3. The "Brazil" and "{Empresa}" tabs were
+// folded into a single "Aggregate" tab whose content branches on the active
+// view pill (Brasil → Brazil chart; company → company chart). "Fields" is
+// the same as the desktop chart 2; "FPSOs" is chart 3.
+type Tab = "aggregate" | "fields" | "fpsos";
 
 // ─── Mobile chart builders ───────────────────────────────────────────────────
 
 /**
- * Round 6 (2026-05-27): mobile data-label threshold is higher than desktop
- * (`80` vs `30` kbpd) because narrow phone bars cannot fit a 4-digit label
- * even when the value is technically non-trivial. The total annotation above
- * each bar carries the headline number regardless.
+ * Round 6: mobile data-label threshold is higher than desktop (`80` vs `30`
+ * kbpd) because narrow phone bars cannot fit a 4-digit label even when the
+ * value is technically non-trivial. The total annotation above each bar
+ * carries the headline number regardless.
  */
 const MOBILE_MIN_SEGMENT_KBPD_LABEL = 80;
 
@@ -89,11 +104,6 @@ function fmtIntPtBr(n: number): string {
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(n);
 }
 
-/**
- * Build per-month totals from a stacked series. Returns Plotly `annotations`
- * objects with the total rendered above each bar. Mobile font is 10px to
- * stay readable on narrow phone widths without dominating the chart area.
- */
 function buildTotalAnnotations(
   months: string[],
   ambienteYs: Record<string, number[]>,
@@ -136,8 +146,6 @@ function buildStackedSeries(
     pivot[r.ambiente][key] = (pivot[r.ambiente][key] ?? 0) + r.oil_bbl_dia;
   }
 
-  // Precompute per-month per-ambiente values so the same numbers feed both
-  // the bar `y` and the annotations.
   const ambienteYs: Record<string, number[]> = {};
   for (const amb of AMBIENTES) {
     ambienteYs[amb] = months.map((m) => bblDiaToKbpd(pivot[amb]?.[m] ?? 0));
@@ -148,7 +156,6 @@ function buildStackedSeries(
       ? BRAND_ORANGE
       : AMBIENTE_COLOR[amb] ?? "#aaaaaa";
     const ys = ambienteYs[amb];
-    // Light Terra segment needs dark text; everything else takes white.
     const labelColor = amb === "Terra" ? "#1a1a1a" : "#ffffff";
     return {
       type: "bar",
@@ -170,11 +177,6 @@ function buildStackedSeries(
   return { data, annotations: buildTotalAnnotations(months, ambienteYs) };
 }
 
-/**
- * Mobile drill chart: 13-month vertical stacked bars (oil + water) on left
- * axis (kbpd) + hours-rate line on right axis (%). Shared layout via the
- * `MobileChart` wrapper (it provides paper/plot colour, font, fixedrange).
- */
 function buildFieldDrillSeries(rows: ProductionFieldTimeseriesRow[]): PlotData[] {
   if (!rows.length) return [];
   const sorted = [...rows].sort((a, b) => {
@@ -291,14 +293,11 @@ function MobileKpi({
   value: string;
   unit: string;
   delta?: { pct: number | null; label: string };
-  /** Backing RPC is currently in-flight. Card dims subtly; value persists. */
   loading?: boolean;
-  /** Whether any value has ever been received. When false + loading, show skeleton. */
   hasData?: boolean;
 }): React.ReactElement {
   const deltaColor = delta?.pct == null ? "#888" : delta.pct >= 0 ? "#197a39" : "#b3261e";
   const deltaArrow = delta?.pct == null ? "" : delta.pct >= 0 ? "▲" : "▼";
-  // Round 5: first-load skeleton (no prior data + currently fetching).
   const showSkeleton = loading && !hasData;
   return (
     <div
@@ -309,7 +308,6 @@ function MobileKpi({
         border: "1px solid var(--mobile-border, #e6e6ec)",
         flex: "1 1 0",
         minWidth: 130,
-        // Subtle dim while refreshing existing data, but keep value readable.
         opacity: loading && hasData ? 0.75 : 1,
         transition: "opacity 0.18s ease",
       }}
@@ -361,13 +359,92 @@ function MobileKpi({
   );
 }
 
+// ─── View pills row (Round 9, 2026-05-27) ─────────────────────────────────────
+//
+// Horizontally scrollable on phones — 5 pills won't fit on a ~360px viewport
+// without scroll. The active pill auto-scrolls into view on selection (via
+// scrollIntoView with `inline: "center"`).
+
+function MobileViewPills({
+  value,
+  onChange,
+}: {
+  value: WellByWellView;
+  onChange: (v: WellByWellView) => void;
+}): React.ReactElement {
+  return (
+    <div
+      role="tablist"
+      aria-label="Production view"
+      className="wbw-mobile-pills"
+      style={{
+        display: "flex",
+        gap: 8,
+        padding: "10px 12px",
+        overflowX: "auto",
+        WebkitOverflowScrolling: "touch",
+        // Hide scrollbar visually but keep functionality.
+        scrollbarWidth: "none",
+        msOverflowStyle: "none",
+      }}
+    >
+      {/* Webkit scrollbar hide */}
+      <style>{`
+        .wbw-mobile-pills::-webkit-scrollbar { display: none; }
+      `}</style>
+      {WELL_BY_WELL_VIEWS.map((opt) => {
+        const isActive = opt === value;
+        return (
+          <button
+            key={opt}
+            type="button"
+            role="tab"
+            aria-selected={isActive}
+            onClick={(e) => {
+              onChange(opt);
+              // Scroll the tapped pill into view for clear visual feedback.
+              try {
+                (e.currentTarget as HTMLButtonElement).scrollIntoView({
+                  behavior: "smooth",
+                  inline: "center",
+                  block: "nearest",
+                });
+              } catch {
+                /* older browsers without scrollIntoView options */
+              }
+            }}
+            style={{
+              flex: "0 0 auto",
+              fontFamily: "Arial",
+              fontSize: 13,
+              fontWeight: isActive ? 700 : 500,
+              padding: "8px 16px",
+              borderRadius: 999,
+              border: isActive ? "1px solid transparent" : "1px solid #c5c5cb",
+              background: isActive ? BRAND_ORANGE : "#ffffff",
+              color: isActive ? "#ffffff" : "#1a1a1a",
+              cursor: "pointer",
+              minHeight: 36,
+              whiteSpace: "nowrap",
+              userSelect: "none",
+              transition: "background-color 0.18s, color 0.18s",
+            }}
+          >
+            {opt}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── View ─────────────────────────────────────────────────────────────────────
 
 export default function MobileView(): React.ReactElement | null {
   const {
     visible, visLoading,
     bootstrapping,
-    empresasList, empresa, setEmpresa,
+    view, setView, isCompanyView: viewIsCompany, viewEmpresa,
     allMonths, dateRange, monthIdxRange, setMonthIdxRange,
     ambientes, toggleAmbiente, setAmbientes,
     referenceDate, setReferenceDate,
@@ -383,18 +460,11 @@ export default function MobileView(): React.ReactElement | null {
     openInstallationDrill, closeInstallationDrill,
   } = useProductionData();
 
-  const [tab, setTab] = useState<Tab>("brazil");
+  // Round 9: tab state defaults to "aggregate" (was "brazil").
+  const [tab, setTab] = useState<Tab>("aggregate");
   const [filterOpen, setFilterOpen] = useState(false);
   const [yoyOpen, setYoyOpen] = useState(false);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
-
-  const dropdownOptions = useMemo(() => {
-    const list = empresasList.length ? empresasList : [{ empresa, n_campos: 0 }];
-    if (!list.find((e) => e.empresa === empresa)) {
-      return [{ empresa, n_campos: 0 }, ...list];
-    }
-    return list;
-  }, [empresasList, empresa]);
 
   const refMonthOptions = useMemo(() => {
     if (allMonths.length === 0) return [];
@@ -402,16 +472,19 @@ export default function MobileView(): React.ReactElement | null {
     return allMonths.slice(i0, i1 + 1);
   }, [allMonths, monthIdxRange]);
 
-  // Mobile-tuned chart data per tab. Each stacked builder returns both the
-  // bar traces and per-month total annotations (Round 6) — the View threads
-  // the annotations into the chart's layout so totals render above every bar.
-  const brazilSeries = useMemo(() => buildStackedSeries(brazilData, "brazil"), [brazilData]);
-  const companySeries = useMemo(() => buildStackedSeries(companyData, "company"), [companyData]);
+  // ── Aggregate chart data — branches on view ─────────────────────────────
+  const aggregateRows: (ProductionBrazilRow | ProductionCompanyRow)[] = viewIsCompany
+    ? companyData
+    : brazilData;
+  const aggregateLoading = viewIsCompany ? companyLoading : brazilLoading;
+  const aggregateVariant: "brazil" | "company" = viewIsCompany ? "company" : "brazil";
+  const aggregateSeries = useMemo(
+    () => buildStackedSeries(aggregateRows, aggregateVariant),
+    [aggregateRows, aggregateVariant],
+  );
+
   const topFieldsSeries = useMemo(() => buildTopFieldsHBars(topFields), [topFields]);
   const drillSeries = useMemo(() => buildFieldDrillSeries(drillTimeseries), [drillTimeseries]);
-  // Installation drill timeseries reuses the field-series builder — the row
-  // shape (ProductionInstallationTimeseriesRow) is a type alias of
-  // ProductionFieldTimeseriesRow.
   const drillInstalacaoSeries = useMemo(
     () => buildFieldDrillSeries(drillInstalacaoTimeseries as ProductionInstallationTimeseriesRow[]),
     [drillInstalacaoTimeseries],
@@ -429,6 +502,17 @@ export default function MobileView(): React.ReactElement | null {
       </div>
     );
   }
+
+  // ── Aggregate panel title — branches on view ───────────────────────────
+  const aggregateTitle = viewIsCompany
+    ? `${view} — Oil (kbpd, stake-weighted, stacked by environment)`
+    : "Brazil — Oil (kbpd, stacked by environment)";
+
+  // YoY drawer hidden in Brasil mode — the per-ambiente YoY rows are
+  // company-only (sourced from get_production_yoy_table which requires a
+  // company name). Brasil users get the HeaderTable's Brazil section
+  // instead, which already shows MoM/YoY/YTD.
+  const showYoyDrawer = viewIsCompany;
 
   return (
     <div style={{ paddingBottom: 120, background: "var(--mobile-surface-bg, #f5f5f7)", minHeight: "100vh" }}>
@@ -462,20 +546,16 @@ export default function MobileView(): React.ReactElement | null {
       <StickyBreadcrumb
         segments={[
           { label: "Well by Well", onClick: undefined },
-          { label: empresa, onClick: () => setFilterOpen(true) },
+          { label: view, onClick: undefined },
           { label: fmtMonthLabel(referenceDate), active: true },
         ]}
       />
 
-      {/* ── Round 8 (2026-05-27): PDF-style HeaderTable at the top ───────────
-          Per Eduardo's request the table sits "no topo" (at the top) above
-          the tab bar. On phones the table is naturally wider than the
-          viewport — wrapping it in a horizontally scrollable container
-          (`overflow-x: auto`, `min-width: 480px` on the table itself) keeps
-          every column reachable via a left/right swipe. The HeaderTable
-          component owns the scroll wrapper; this section only adds the
-          surrounding card + subtitle. */}
-      <div style={{ padding: "10px 12px 6px" }}>
+      {/* ── 5 view pills (Round 9) — horizontally scrollable on phones ─── */}
+      <MobileViewPills value={view} onChange={setView} />
+
+      {/* ── HeaderTable at the top (horizontally scrollable) ───────────── */}
+      <div style={{ padding: "4px 12px 6px" }}>
         <div
           style={{
             background: "var(--mobile-surface, #ffffff)",
@@ -501,6 +581,7 @@ export default function MobileView(): React.ReactElement | null {
             rows={headerData}
             loading={headerLoading}
             referenceDate={referenceDate}
+            viewMode={view}
           />
           <div
             style={{
@@ -521,119 +602,66 @@ export default function MobileView(): React.ReactElement | null {
           activeKey={tab}
           onChange={(k) => setTab(k as Tab)}
           variant="container"
-          ariaLabel="Production view"
+          ariaLabel="Production panels"
           tabs={[
-            { key: "brazil",  label: "Brazil" },
-            { key: "company", label: empresa.split(/\s+/)[0] },
-            { key: "fields",  label: "Fields" },
-            { key: "fpsos",   label: "FPSOs" },
+            { key: "aggregate", label: "Aggregate" },
+            { key: "fields",    label: "Top Fields" },
+            { key: "fpsos",     label: "FPSOs" },
           ]}
         />
       </div>
 
       <div style={{ padding: "8px 12px" }}>
-        {/* ── Tab content ─────────────────────────────────────────────── */}
-        {tab === "brazil" && (
-          <>
-            {/* KPI tile removed in Round 6 — same rationale as desktop. */}
+        {/* ── Aggregate tab — Brasil OR company stacked oil chart ────── */}
+        {tab === "aggregate" && (
+          <div
+            style={{
+              background: "var(--mobile-surface, #ffffff)",
+              border: "1px solid var(--mobile-border, #e6e6ec)",
+              borderRadius: 12,
+              padding: "10px 8px 4px",
+              opacity: aggregateLoading ? 0.6 : 1,
+            }}
+          >
             <div
               style={{
-                background: "var(--mobile-surface, #ffffff)",
-                border: "1px solid var(--mobile-border, #e6e6ec)",
-                borderRadius: 12,
-                padding: "10px 8px 4px",
-                position: "relative",
-                opacity: brazilLoading ? 0.6 : 1,
+                fontFamily: "Arial",
+                fontSize: 12,
+                fontWeight: 700,
+                color: "#1a1a1a",
+                marginBottom: 6,
+                padding: "0 6px",
               }}
             >
-              <div
-                style={{
-                  fontFamily: "Arial",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: "#1a1a1a",
-                  marginBottom: 6,
-                  padding: "0 6px",
-                }}
-              >
-                Brazil — Oil (kbpd, stacked by environment)
-              </div>
-              {brazilSeries.data.length > 0 ? (
-                <MobileChart
-                  data={brazilSeries.data}
-                  height={260}
-                  layout={{
-                    barmode: "stack",
-                    margin: { t: 28, b: 36, l: 36, r: 8 },
-                    xaxis: { type: "date", tickformat: "%b %y" },
-                    yaxis: { title: { text: "kbpd" } },
-                    showlegend: true,
-                    legend: { orientation: "h", y: -0.25, x: 0 },
-                    annotations: brazilSeries.annotations,
-                  }}
-                />
-              ) : (
-                <div style={{ padding: 28, textAlign: "center", color: "#888", fontFamily: "Arial", fontSize: 12 }}>
-                  No data for the selected period.
-                </div>
-              )}
+              {aggregateTitle}
             </div>
-          </>
-        )}
-
-        {tab === "company" && (
-          <>
-            {/* KPI tiles removed in Round 6 — same rationale as desktop. */}
-            <div
-              style={{
-                background: "var(--mobile-surface, #ffffff)",
-                border: "1px solid var(--mobile-border, #e6e6ec)",
-                borderRadius: 12,
-                padding: "10px 8px 4px",
-                opacity: companyLoading ? 0.6 : 1,
-              }}
-            >
-              <div
-                style={{
-                  fontFamily: "Arial",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: "#1a1a1a",
-                  marginBottom: 6,
-                  padding: "0 6px",
+            {aggregateSeries.data.length > 0 ? (
+              <MobileChart
+                data={aggregateSeries.data}
+                height={260}
+                layout={{
+                  barmode: "stack",
+                  margin: { t: 28, b: 36, l: 36, r: 8 },
+                  xaxis: { type: "date", tickformat: "%b %y" },
+                  yaxis: { title: { text: "kbpd" } },
+                  showlegend: true,
+                  legend: { orientation: "h", y: -0.25, x: 0 },
+                  annotations: aggregateSeries.annotations,
                 }}
-              >
-                {empresa} — Oil (kbpd, stake-weighted, stacked by environment)
+              />
+            ) : (
+              <div style={{ padding: 28, textAlign: "center", color: "#888", fontFamily: "Arial", fontSize: 12 }}>
+                No data for the selected period.
               </div>
-              {companySeries.data.length > 0 ? (
-                <MobileChart
-                  data={companySeries.data}
-                  height={260}
-                  layout={{
-                    barmode: "stack",
-                    margin: { t: 28, b: 36, l: 36, r: 8 },
-                    xaxis: { type: "date", tickformat: "%b %y" },
-                    yaxis: { title: { text: "kbpd" } },
-                    showlegend: true,
-                    legend: { orientation: "h", y: -0.25, x: 0 },
-                    annotations: companySeries.annotations,
-                  }}
-                />
-              ) : (
-                <div style={{ padding: 28, textAlign: "center", color: "#888", fontFamily: "Arial", fontSize: 12 }}>
-                  No data for the selected period.
-                </div>
-              )}
-            </div>
-          </>
+            )}
+          </div>
         )}
 
         {tab === "fields" && (
           <>
             <div style={{ marginBottom: 8, fontFamily: "Arial", fontSize: 12, color: "#888" }}>
-              {empresa} · top fields · {fmtMonthLabel(referenceDate)} · tap to drill in
+              {view} · top fields · {fmtMonthLabel(referenceDate)} · tap to drill in
             </div>
-            {/* Compact chart for at-a-glance comparison */}
             {topFieldsSeries.data.length > 0 && (
               <div
                 style={{
@@ -650,8 +678,6 @@ export default function MobileView(): React.ReactElement | null {
                   height={Math.max(180, topFields.length * 22)}
                   layout={{
                     barmode: "stack",
-                    // r: 44 leaves room for the per-row total annotation;
-                    // l: 110 reserves enough width for field name labels.
                     margin: { l: 110, r: 44, t: 8, b: 36 },
                     yaxis: { automargin: true, tickfont: { size: 10 } },
                     xaxis: { title: { text: "kbpd" } },
@@ -662,7 +688,6 @@ export default function MobileView(): React.ReactElement | null {
                 />
               </div>
             )}
-            {/* Tappable card list — each card opens the drill BottomSheet */}
             <div
               style={{
                 background: "var(--mobile-surface, #ffffff)",
@@ -677,7 +702,11 @@ export default function MobileView(): React.ReactElement | null {
                   key={f.campo}
                   variant="compact"
                   title={f.campo}
-                  subtitle={`Stake ${f.stake_pct.toFixed(1)}% · Hours ${(f.hours_rate * 100).toFixed(0)}%`}
+                  subtitle={
+                    viewIsCompany
+                      ? `Stake ${f.stake_pct.toFixed(1)}% · Hours ${(f.hours_rate * 100).toFixed(0)}%`
+                      : `Hours ${(f.hours_rate * 100).toFixed(0)}%`
+                  }
                   onClick={() => openFieldDrill(f.campo)}
                   rightSlot={
                     <div style={{ textAlign: "right", fontFamily: "Arial" }}>
@@ -704,7 +733,7 @@ export default function MobileView(): React.ReactElement | null {
         {tab === "fpsos" && (
           <>
             <div style={{ marginBottom: 8, fontFamily: "Arial", fontSize: 12, color: "#888" }}>
-              {empresa} · installations · {fmtMonthLabel(referenceDate)} · tap to drill in
+              {view} · installations · {fmtMonthLabel(referenceDate)} · tap to drill in
             </div>
             <div
               style={{
@@ -747,80 +776,84 @@ export default function MobileView(): React.ReactElement | null {
           </>
         )}
 
-        {/* ── YoY expandable section ──────────────────────────────────── */}
-        <button
-          type="button"
-          onClick={() => setYoyOpen((v) => !v)}
-          style={{
-            marginTop: 16,
-            width: "100%",
-            background: "var(--mobile-surface, #ffffff)",
-            border: "1px solid var(--mobile-border, #e6e6ec)",
-            borderRadius: 12,
-            padding: "12px 16px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            cursor: "pointer",
-            fontFamily: "Arial",
-            fontSize: 13,
-            fontWeight: 600,
-            color: "#1a1a1a",
-          }}
-        >
-          <span>YoY / MoM / YTD breakdown</span>
-          {yoyOpen ? <ChevronUpIcon size={18} /> : <ChevronDownIcon size={18} />}
-        </button>
-        {yoyOpen && (
-          <div
-            style={{
-              marginTop: 8,
-              background: "var(--mobile-surface, #ffffff)",
-              border: "1px solid var(--mobile-border, #e6e6ec)",
-              borderRadius: 12,
-              padding: "12px",
-              opacity: yoyLoading ? 0.6 : 1,
-            }}
-          >
-            {yoyTable.map((row) => {
-              const isTotal = row.scope === "TOTAL";
-              return (
-                <div
-                  key={row.scope}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr auto",
-                    padding: "8px 0",
-                    borderBottom: "1px solid #f0f0f0",
-                    fontFamily: "Arial",
-                    fontWeight: isTotal ? 700 : 400,
-                  }}
-                >
-                  <div>
-                    <div style={{ fontSize: 13, color: "#1a1a1a" }}>{row.scope}</div>
-                    <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
-                      MoM <span style={{ color: row.mom_pct != null && row.mom_pct >= 0 ? "#197a39" : "#b3261e" }}>{fmtPct(row.mom_pct)}</span>
-                      {"  ·  "}
-                      YoY <span style={{ color: row.yoy_pct != null && row.yoy_pct >= 0 ? "#197a39" : "#b3261e" }}>{fmtPct(row.yoy_pct)}</span>
+        {/* ── YoY expandable section — company view only ──────────────── */}
+        {showYoyDrawer && (
+          <>
+            <button
+              type="button"
+              onClick={() => setYoyOpen((v) => !v)}
+              style={{
+                marginTop: 16,
+                width: "100%",
+                background: "var(--mobile-surface, #ffffff)",
+                border: "1px solid var(--mobile-border, #e6e6ec)",
+                borderRadius: 12,
+                padding: "12px 16px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                cursor: "pointer",
+                fontFamily: "Arial",
+                fontSize: 13,
+                fontWeight: 600,
+                color: "#1a1a1a",
+              }}
+            >
+              <span>YoY / MoM / YTD breakdown</span>
+              {yoyOpen ? <ChevronUpIcon size={18} /> : <ChevronDownIcon size={18} />}
+            </button>
+            {yoyOpen && (
+              <div
+                style={{
+                  marginTop: 8,
+                  background: "var(--mobile-surface, #ffffff)",
+                  border: "1px solid var(--mobile-border, #e6e6ec)",
+                  borderRadius: 12,
+                  padding: "12px",
+                  opacity: yoyLoading ? 0.6 : 1,
+                }}
+              >
+                {yoyTable.map((row) => {
+                  const isTotal = row.scope === "TOTAL";
+                  return (
+                    <div
+                      key={row.scope}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "1fr auto",
+                        padding: "8px 0",
+                        borderBottom: "1px solid #f0f0f0",
+                        fontFamily: "Arial",
+                        fontWeight: isTotal ? 700 : 400,
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 13, color: "#1a1a1a" }}>{row.scope}</div>
+                        <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
+                          MoM <span style={{ color: row.mom_pct != null && row.mom_pct >= 0 ? "#197a39" : "#b3261e" }}>{fmtPct(row.mom_pct)}</span>
+                          {"  ·  "}
+                          YoY <span style={{ color: row.yoy_pct != null && row.yoy_pct >= 0 ? "#197a39" : "#b3261e" }}>{fmtPct(row.yoy_pct)}</span>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 14, fontWeight: 700 }}>{fmtNumber(row.current_kbpd, 0)}</div>
+                        <div style={{ fontSize: 10, color: "#888" }}>kbpd · YTD {fmtNumber(row.ytd_avg_kbpd, 0)}</div>
+                      </div>
                     </div>
+                  );
+                })}
+                {yoyTable.length === 0 && (
+                  <div style={{ padding: 16, textAlign: "center", color: "#888", fontFamily: "Arial", fontSize: 12 }}>
+                    No YoY data for this reference month.
                   </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 14, fontWeight: 700 }}>{fmtNumber(row.current_kbpd, 0)}</div>
-                    <div style={{ fontSize: 10, color: "#888" }}>kbpd · YTD {fmtNumber(row.ytd_avg_kbpd, 0)}</div>
-                  </div>
-                </div>
-              );
-            })}
-            {yoyTable.length === 0 && (
-              <div style={{ padding: 16, textAlign: "center", color: "#888", fontFamily: "Arial", fontSize: 12 }}>
-                No YoY data for this reference month.
+                )}
               </div>
             )}
-          </div>
+          </>
         )}
       </div>
 
-      {/* ── Filter drawer ────────────────────────────────────────────────── */}
+      {/* ── Filter drawer (no empresa picker — Round 9 dropped it) ───── */}
       <FilterDrawer
         open={filterOpen}
         onClose={() => setFilterOpen(false)}
@@ -829,32 +862,6 @@ export default function MobileView(): React.ReactElement | null {
         onApply={() => setFilterOpen(false)}
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-          <div>
-            <div className="sidebar-filter-label" style={{ fontFamily: "Arial", fontSize: 12, fontWeight: 700, marginBottom: 8 }}>
-              Company
-            </div>
-            <select
-              value={empresa}
-              onChange={(e) => setEmpresa(e.target.value)}
-              style={{
-                width: "100%",
-                fontFamily: "Arial",
-                fontSize: 14,
-                padding: "10px 12px",
-                border: "1px solid #c5c5cb",
-                borderRadius: 8,
-                background: "#ffffff",
-                minHeight: 44,
-              }}
-            >
-              {dropdownOptions.map((opt) => (
-                <option key={opt.empresa} value={opt.empresa}>
-                  {opt.empresa}{opt.n_campos > 0 ? ` (${opt.n_campos})` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-
           <div>
             <div className="sidebar-filter-label" style={{ fontFamily: "Arial", fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
               Period
@@ -905,12 +912,12 @@ export default function MobileView(): React.ReactElement | null {
         </div>
       </FilterDrawer>
 
-      {/* ── Field drill-down BottomSheet (Round 2, 2026-05-27) ─────────── */}
+      {/* ── Field drill-down BottomSheet ─────────────────────────────── */}
       <BottomSheet
         open={drillCampo !== null}
         onClose={closeFieldDrill}
         height="90vh"
-        title={drillCampo ? `${drillCampo} — ${empresa}` : undefined}
+        title={drillCampo ? `${drillCampo} — ${viewEmpresa ?? "Brasil"}` : undefined}
         ariaLabel="Field drill-down"
       >
         <div style={{ opacity: drillLoading ? 0.6 : 1, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -930,7 +937,6 @@ export default function MobileView(): React.ReactElement | null {
             </div>
           )}
 
-          {/* KPI tiles — 2×2 grid on mobile */}
           <div
             style={{
               display: "grid",
@@ -960,7 +966,6 @@ export default function MobileView(): React.ReactElement | null {
             />
           </div>
 
-          {/* Chart */}
           <div
             style={{
               background: "var(--mobile-surface, #ffffff)",
@@ -1010,20 +1015,17 @@ export default function MobileView(): React.ReactElement | null {
           </div>
 
           <div style={{ fontSize: 11, color: "#888", fontFamily: "Arial", padding: "0 4px" }}>
-            Bars: stake-weighted oil (dark) + water (light blue) · Line: monthly uptime fraction.
+            Bars: oil (dark) + water (light blue) · Line: monthly uptime fraction.
           </div>
         </div>
       </BottomSheet>
 
-      {/* ── Installation drill-down BottomSheet (Round 3, 2026-05-27) ──── */}
-      {/* Mirrors the field drill BottomSheet exactly — same 90vh height, same  */}
-      {/* 2x2 KPI grid + 13mo chart. Mutually exclusive at the hook level, so   */}
-      {/* only one of the two BottomSheets is ever `open` at a time.            */}
+      {/* ── Installation drill-down BottomSheet ───────────────────────── */}
       <BottomSheet
         open={drillInstalacao !== null}
         onClose={closeInstallationDrill}
         height="90vh"
-        title={drillInstalacao ? `${drillInstalacao} — ${empresa}` : undefined}
+        title={drillInstalacao ? `${drillInstalacao} — ${viewEmpresa ?? "Brasil"}` : undefined}
         ariaLabel="Installation drill-down"
       >
         <div style={{ opacity: drillInstalacaoLoading ? 0.6 : 1, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1043,7 +1045,6 @@ export default function MobileView(): React.ReactElement | null {
             </div>
           )}
 
-          {/* KPI tiles — 2×2 grid on mobile */}
           <div
             style={{
               display: "grid",
@@ -1073,7 +1074,6 @@ export default function MobileView(): React.ReactElement | null {
             />
           </div>
 
-          {/* Chart */}
           <div
             style={{
               background: "var(--mobile-surface, #ffffff)",
@@ -1123,7 +1123,7 @@ export default function MobileView(): React.ReactElement | null {
           </div>
 
           <div style={{ fontSize: 11, color: "#888", fontFamily: "Arial", padding: "0 4px" }}>
-            Bars: stake-weighted oil (dark) + water (light blue) routed through this installation · Line: monthly uptime fraction.
+            Bars: oil (dark) + water (light blue) routed through this installation · Line: monthly uptime fraction.
           </div>
         </div>
       </BottomSheet>

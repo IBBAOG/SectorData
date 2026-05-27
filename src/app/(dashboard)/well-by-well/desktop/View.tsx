@@ -4,24 +4,34 @@
 //
 // Layout (top → bottom):
 //   • Header — title + subtitle + period badge + Export panel (right)
-//   • Top split (Round 8, 2026-05-27):
-//       LEFT  (~35%)  — Empresa · Period · Reference month · Ambientes
+//   • 5 view pills row (Round 9) — Brasil · Petrobras · PRIO · PetroReconcavo
+//     · Brava Energia. Mutually exclusive; toggles the whole dashboard.
+//   • Top split:
+//       LEFT  (~35%)  — Period · Reference month · Ambientes
+//                       (empresa <select> was removed in Round 9 — pills
+//                       replaced it)
 //       RIGHT (~65%)  — HeaderTable (PDF-style page-2 replica)
 //     Falls back to single-column < 1100px so the table stays legible.
-//   • Charts row 1 — P1 (Brazil oil, stacked) · P2 (Company oil, stacked)
-//   • Charts row 2 — P3 (Top fields, horizontal bar) · P4 (Installations table)
+//   • 3 charts (Round 9 reduced from 4 → 3 by removing the dedicated
+//     Brazil-vs-Company comparison row):
+//       Chart 1: Oil Production stacked by ambiente (Brasil OR company)
+//       Chart 2: Top fields (Brasil OR stake-weighted)
+//       Chart 3: Installations (Brasil OR stake-weighted)
 //
 // Round 6 (2026-05-27): top KPI strip removed (broken Δ MoM/YoY against the
-// partial reference month). All three production charts now render in-bar
-// segment labels + a total annotation above each bar (per the PDF reference).
-// `KpiCard` is preserved because the field/installation drill modals still
-// use it — those KPIs are valid (full-month series, no partial-period
-// divisor).
+// partial reference month). `KpiCard` is preserved because the field/
+// installation drill modals still use it.
 //
 // Round 8 (2026-05-27): added the PDF-style HeaderTable next to the filters
-// (consumes `get_well_by_well_header` via the shared hook). Removed the bottom
-// YoY/MoM/YTD table — it was a strict subset of the HeaderTable's company
-// section. Mobile keeps its YoY collapsible drawer (different UX surface).
+// and removed the bottom YoY/MoM/YTD table — strict subset of the HeaderTable.
+//
+// Round 9 (2026-05-27): 5 view pills replace the empresa dropdown. Chart 1
+// shows Brazil OR company depending on the pill (not both side-by-side).
+// Chart 2 (Top fields) and Chart 3 (Installations) auto-switch between
+// Brazil-wide and stake-weighted RPCs via the hook. The 4-chart 2×2 grid is
+// gone; the new 3-chart layout stacks chart 1 full-width then puts charts 2
+// and 3 side-by-side. HeaderTable receives a `viewMode` prop and hides the
+// company section when the Brasil pill is active.
 //
 // Binding sync rule (CLAUDE.md § Dual-view policy): meaningful changes to one
 // View must land in the OTHER View in the same commit, OR the commit message
@@ -41,6 +51,10 @@ import ExportPanel from "../../../../components/dashboard/ExportPanel";
 import HeaderTable from "../HeaderTable";
 import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../../lib/plotlyDefaults";
 import { bblDiaToKbpd } from "../../../../lib/units";
+import {
+  WELL_BY_WELL_VIEWS,
+  type WellByWellView,
+} from "../../../../data/wellByWellEmpresas";
 
 import {
   useProductionData,
@@ -67,12 +81,9 @@ import type {
  * Build a stacked-bar trace per ambiente, x = month label, y = oil in kbpd.
  *
  * Round 6 (2026-05-27): each trace carries its rounded kbpd value as in-bar
- * text (white, centered, hidden when the segment is too short to fit — i.e.
- * < `MIN_SEGMENT_KBPD_LABEL` kbpd). The layout adds one annotation per month
- * showing the per-month total above the bar so the reader sees both the mix
- * (segments) and the headline (total) at a glance — mirroring the PDF
- * Well-by-Well reference. Margin `t` bumped to 30 so totals don't clip into
- * the legend.
+ * text. Round 9: variant "brazil" applies the greyscale palette (used both
+ * in Brasil view and the unused-but-still-imported brazilData case); variant
+ * "company" applies the brand-orange accent to PreSal.
  */
 const MIN_SEGMENT_KBPD_LABEL = 30; // hide labels for segments < 30 kbpd
 
@@ -144,8 +155,6 @@ function buildStackedOilBars(
     layout: {
       ...COMMON_LAYOUT,
       height: 320,
-      // `t: 30` gives the per-bar total annotations room without clipping
-      // against the legend strip at y = 1.01.
       margin: { t: 30, b: 60, l: 60, r: 20 },
       barmode: "stack",
       hovermode: "x unified",
@@ -258,19 +267,12 @@ function buildFieldDrillChart(
 
 /**
  * Build a horizontal stacked bar: top fields, oil + water in kbpd.
- *
- * Round 6 (2026-05-27): oil and water segments now carry rounded kbpd values
- * inside the segment (hidden when < `MIN_SEGMENT_KBPD_LABEL` kbpd), and each
- * row gets a bold total annotation at the right end of the stacked bar so
- * the reader can rank fields at a glance. Right margin bumped to 60 to give
- * the rightmost totals room without clipping.
  */
 function buildTopFieldsChart(
   fields: ProductionTopField[],
 ): { data: PlotData[]; layout: Partial<Layout> } {
   if (!fields.length) return emptyPlot(360, "No field-level data for this month.");
 
-  // Sort DESC by oil (server already does it, but be defensive).
   const sorted = [...fields].sort((a, b) => b.oil_bbl_dia - a.oil_bbl_dia);
   const names = sorted.map((f) => f.campo);
   const oil = sorted.map((f) => bblDiaToKbpd(f.oil_bbl_dia));
@@ -302,7 +304,6 @@ function buildTopFieldsChart(
         text: water.map((v) => (v >= MIN_SEGMENT_KBPD_LABEL ? fmtIntPtBr(v) : "")),
         textposition: "inside",
         insidetextanchor: "middle",
-        // Light blue (#7BB6DD) background — dark text reads better.
         textfont: { color: "#1a1a1a", size: 11, family: "Arial" },
         cliponaxis: false,
         marker: { color: TOP_FIELDS_WATER_COLOR },
@@ -312,8 +313,6 @@ function buildTopFieldsChart(
     layout: {
       ...COMMON_LAYOUT,
       height: 360,
-      // `r: 60` gives room for the per-bar total annotations at the right
-      // end of each stacked bar.
       margin: { t: 10, b: 40, l: 140, r: 60 },
       barmode: "stack",
       yaxis: {
@@ -362,7 +361,6 @@ function KpiCard({
   const deltaSign = delta?.pct == null ? null : delta.pct >= 0 ? "up" : "down";
   const deltaColor = deltaSign === "up" ? "#197a39" : deltaSign === "down" ? "#b3261e" : "#888";
   const deltaArrow = deltaSign === "up" ? "▲" : deltaSign === "down" ? "▼" : "";
-  // Round 5: first-load skeleton (no prior data + currently fetching).
   const showSkeleton = loading && !hasData;
   return (
     <div
@@ -374,7 +372,6 @@ function KpiCard({
         flex: "1 1 0",
         minWidth: 0,
         borderLeft: accent ? `4px solid ${BRAND_ORANGE}` : "4px solid transparent",
-        // Subtle dim while refreshing existing data, but keep value readable.
         opacity: loading && hasData ? 0.75 : 1,
         transition: "opacity 0.18s ease",
         position: "relative",
@@ -437,11 +434,75 @@ function KpiCard({
   );
 }
 
-// ─── Field drill-down modal ───────────────────────────────────────────────────
+// ─── View pills row (Round 9, 2026-05-27) ─────────────────────────────────────
 //
-// Bootstrap-styled modal (matches ExportModal chrome). Body: 4 KPI cards on top
-// + 13mo timeseries chart (oil/water stacked + hours-rate line on right axis).
-// Closes on Esc, scrim click, or × button.
+// 5 mutually-exclusive pills. Reuses the brand-orange palette and rounded-
+// full chrome used by the rest of the app (SegmentedToggle has too much
+// auto-shrink logic that doesn't suit a 5-cell row that needs more breathing
+// room; this thin component keeps the markup obvious).
+
+function ViewPillsRow({
+  value,
+  onChange,
+}: {
+  value: WellByWellView;
+  onChange: (v: WellByWellView) => void;
+}): React.ReactElement {
+  return (
+    <div
+      role="tablist"
+      aria-label="Production view"
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 8,
+        padding: "10px 0 14px",
+      }}
+    >
+      {WELL_BY_WELL_VIEWS.map((opt) => {
+        const isActive = opt === value;
+        return (
+          <button
+            key={opt}
+            type="button"
+            role="tab"
+            aria-selected={isActive}
+            onClick={() => onChange(opt)}
+            onMouseEnter={(e) => {
+              if (!isActive) {
+                (e.currentTarget as HTMLButtonElement).style.background = "#fff5ef";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isActive) {
+                (e.currentTarget as HTMLButtonElement).style.background = "#ffffff";
+              }
+            }}
+            style={{
+              fontFamily: "Arial",
+              fontSize: 13,
+              fontWeight: isActive ? 700 : 500,
+              padding: "8px 18px",
+              borderRadius: 999,
+              border: isActive ? "1px solid transparent" : "1px solid #c5c5cb",
+              background: isActive ? BRAND_ORANGE : "#ffffff",
+              color: isActive ? "#ffffff" : "#1a1a1a",
+              cursor: "pointer",
+              transition: "background-color 0.18s, color 0.18s, border-color 0.18s",
+              minHeight: 36,
+              whiteSpace: "nowrap",
+              userSelect: "none",
+            }}
+          >
+            {opt}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Field drill-down modal ───────────────────────────────────────────────────
 
 function FieldDrillModal({
   campo,
@@ -468,7 +529,6 @@ function FieldDrillModal({
 }): React.ReactElement {
   const chart = useMemo(() => buildFieldDrillChart(series), [series]);
 
-  // Close on Escape.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -509,7 +569,6 @@ function FieldDrillModal({
           overflow: "hidden",
         }}
       >
-        {/* Header */}
         <div
           style={{
             padding: "14px 20px",
@@ -549,7 +608,6 @@ function FieldDrillModal({
           </button>
         </div>
 
-        {/* Body */}
         <div
           style={{
             padding: "16px 20px",
@@ -576,7 +634,6 @@ function FieldDrillModal({
             </div>
           )}
 
-          {/* KPI strip */}
           <div
             style={{
               display: "grid",
@@ -607,7 +664,6 @@ function FieldDrillModal({
             />
           </div>
 
-          {/* Chart */}
           <div style={{ position: "relative" }}>
             <PlotlyChart
               data={chart.data}
@@ -633,12 +689,11 @@ function FieldDrillModal({
           </div>
 
           <div style={{ fontSize: 11, color: "#888" }}>
-            Bars: stake-weighted oil (dark) + water (light blue) in kbpd ·
+            Bars: oil (dark) + water (light blue) in kbpd ·
             Line: monthly uptime fraction · Period reflects the dashboard filters.
           </div>
         </div>
 
-        {/* Footer */}
         <div
           style={{
             padding: "12px 20px",
@@ -659,7 +714,6 @@ function FieldDrillModal({
           </button>
         </div>
 
-        {/* Brand accent bar */}
         <div
           style={{
             position: "absolute",
@@ -676,17 +730,7 @@ function FieldDrillModal({
   );
 }
 
-// ─── Installation drill-down modal (Round 3, 2026-05-27) ─────────────────────
-//
-// Mirrors FieldDrillModal exactly — same 820px chrome, brand-orange accent,
-// Esc/scrim/× close, same 4-KPI strip + 13mo timeseries chart. Only differences
-// are the header label ("Installation" semantic) and the source of timeseries
-// (installation RPC instead of field RPC). The chart builder is reused since
-// `ProductionInstallationTimeseriesRow` is a type alias of
-// `ProductionFieldTimeseriesRow` — both carry the same row shape.
-//
-// Field and installation drills are mutually exclusive at the hook level, so
-// only one of these modals is ever mounted at a time.
+// ─── Installation drill-down modal ─────────────────────────────────────────────
 
 function InstallationDrillModal({
   instalacao,
@@ -711,10 +755,8 @@ function InstallationDrillModal({
   };
   onClose: () => void;
 }): React.ReactElement {
-  // Reuse the field chart builder — the row shape is identical.
   const chart = useMemo(() => buildFieldDrillChart(series), [series]);
 
-  // Close on Escape.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -755,7 +797,6 @@ function InstallationDrillModal({
           overflow: "hidden",
         }}
       >
-        {/* Header */}
         <div
           style={{
             padding: "14px 20px",
@@ -795,7 +836,6 @@ function InstallationDrillModal({
           </button>
         </div>
 
-        {/* Body */}
         <div
           style={{
             padding: "16px 20px",
@@ -822,7 +862,6 @@ function InstallationDrillModal({
             </div>
           )}
 
-          {/* KPI strip */}
           <div
             style={{
               display: "grid",
@@ -853,7 +892,6 @@ function InstallationDrillModal({
             />
           </div>
 
-          {/* Chart */}
           <div style={{ position: "relative" }}>
             <PlotlyChart
               data={chart.data}
@@ -879,13 +917,12 @@ function InstallationDrillModal({
           </div>
 
           <div style={{ fontSize: 11, color: "#888" }}>
-            Bars: stake-weighted oil (dark) + water (light blue) routed through
+            Bars: oil (dark) + water (light blue) routed through
             this installation in kbpd · Line: monthly uptime fraction · Period
             reflects the dashboard filters.
           </div>
         </div>
 
-        {/* Footer */}
         <div
           style={{
             padding: "12px 20px",
@@ -906,7 +943,6 @@ function InstallationDrillModal({
           </button>
         </div>
 
-        {/* Brand accent bar */}
         <div
           style={{
             position: "absolute",
@@ -929,7 +965,8 @@ export default function DesktopView(): React.ReactElement | null {
   const {
     visible, visLoading,
     bootstrapping,
-    empresasList, empresa, setEmpresa,
+    view, setView, isCompanyView: viewIsCompany, viewEmpresa,
+    empresa,
     allMonths, dateRange, monthIdxRange, setMonthIdxRange,
     ambientes, toggleAmbiente, setAmbientes,
     referenceDate, setReferenceDate,
@@ -945,29 +982,25 @@ export default function DesktopView(): React.ReactElement | null {
     openInstallationDrill, closeInstallationDrill,
   } = useProductionData();
 
-  // ── Chart memoisation ─────────────────────────────────────────────────────
-  const brazilChart = useMemo(
-    () => buildStackedOilBars(brazilData, "brazil"),
-    [brazilData],
-  );
-  const companyChart = useMemo(
-    () => buildStackedOilBars(companyData, "company"),
-    [companyData],
+  // ── Chart 1 data (Brasil OR company) ─────────────────────────────────────
+  // The hook ensures only ONE of brazilData / companyData refreshes per view,
+  // but the OTHER may still hold stale state from a previous toggle. We pick
+  // the correct source based on the active view rather than rendering both.
+  const chart1Rows: (ProductionBrazilRow | ProductionCompanyRow)[] = viewIsCompany
+    ? companyData
+    : brazilData;
+  const chart1Loading = viewIsCompany ? companyLoading : brazilLoading;
+  const chart1Variant: "brazil" | "company" = viewIsCompany ? "company" : "brazil";
+  const chart1Title = `${view} — Oil Production (kbpd${viewIsCompany ? ", stake-weighted" : ""})`;
+
+  const oilChart = useMemo(
+    () => buildStackedOilBars(chart1Rows, chart1Variant),
+    [chart1Rows, chart1Variant],
   );
   const topFieldsChart = useMemo(
     () => buildTopFieldsChart(topFields),
     [topFields],
   );
-
-  // ── Empresa dropdown options ──────────────────────────────────────────────
-  const dropdownOptions = useMemo(() => {
-    const list = empresasList.length ? empresasList : [{ empresa, n_campos: 0 }];
-    // Make sure the current empresa is selectable even if not in the list yet.
-    if (!list.find((e) => e.empresa === empresa)) {
-      return [{ empresa, n_campos: 0 }, ...list];
-    }
-    return list;
-  }, [empresasList, empresa]);
 
   // ── Period badge label ────────────────────────────────────────────────────
   const periodBadge: [string, string] | null =
@@ -981,6 +1014,12 @@ export default function DesktopView(): React.ReactElement | null {
   }, [allMonths, monthIdxRange]);
 
   if (visLoading || !visible) return null;
+
+  // Helper for chart 2/3 titles that need to differentiate "Brasil" from a
+  // company name in the section labels (e.g. "Top Brasil Fields" vs "Top
+  // PRIO Fields"). Brasil view drops the "stake-weighted" qualifier.
+  const chart2Title = `Top ${view} Fields — ${fmtMonthLabel(referenceDate)} (kbpd)`;
+  const chart3Title = `Installations (FPSO/UEP) — ${view} — ${fmtMonthLabel(referenceDate)}`;
 
   return (
     <div>
@@ -1014,6 +1053,9 @@ export default function DesktopView(): React.ReactElement | null {
           }
         />
 
+        {/* ── 5 view pills — Brasil + 4 companies (Round 9, 2026-05-27) ─── */}
+        <ViewPillsRow value={view} onChange={setView} />
+
         {bootstrapping ? (
           <div style={{ marginTop: 40 }}>
             <BarrelLoading />
@@ -1024,13 +1066,8 @@ export default function DesktopView(): React.ReactElement | null {
         ) : (
           <>
             {/* ── Top region: filters (left ~35%) + Header table (right ~65%) ─
-                Round 8 (2026-05-27): the topbar was previously a single full-
-                width row of filters above the charts. We now split it into a
-                two-column grid so the PDF-style HeaderTable (which mirrors
-                page 2 of the monthly report) sits next to the filter stack
-                and gets first-fold real estate. On viewports < 1100px the
-                grid collapses to a single column (filters on top, table
-                below) so the table never gets squished. */}
+                Round 8 split preserved; Round 9 removed the empresa <select>
+                from the filter column (pills above replaced it). */}
             <div
               className="wbw-top-split"
               style={{
@@ -1052,43 +1089,6 @@ export default function DesktopView(): React.ReactElement | null {
                   minWidth: 0,
                 }}
               >
-                {/* Empresa */}
-                <div>
-                  <label
-                    style={{
-                      display: "block",
-                      fontFamily: "Arial",
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: "#1a1a1a",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.4px",
-                      marginBottom: 6,
-                    }}
-                  >
-                    Company
-                  </label>
-                  <select
-                    value={empresa}
-                    onChange={(e) => setEmpresa(e.target.value)}
-                    style={{
-                      width: "100%",
-                      fontFamily: "Arial",
-                      fontSize: 13,
-                      padding: "8px 10px",
-                      border: "1px solid #c5c5cb",
-                      borderRadius: 6,
-                      background: "#ffffff",
-                    }}
-                  >
-                    {dropdownOptions.map((opt) => (
-                      <option key={opt.empresa} value={opt.empresa}>
-                        {opt.empresa}{opt.n_campos > 0 ? ` (${opt.n_campos} fields)` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
                 {/* Period */}
                 <div>
                   <label
@@ -1183,12 +1183,10 @@ export default function DesktopView(): React.ReactElement | null {
                   rows={headerData}
                   loading={headerLoading}
                   referenceDate={referenceDate}
+                  viewMode={view}
                 />
               </div>
 
-              {/* Single-column fallback for narrow desktop / tablet widths.
-                  Below 1100px the table needs the full row to remain legible
-                  so the grid collapses to 1 column (filters then table). */}
               <style>{`
                 @media (max-width: 1099px) {
                   .wbw-top-split { grid-template-columns: 1fr !important; }
@@ -1196,50 +1194,22 @@ export default function DesktopView(): React.ReactElement | null {
               `}</style>
             </div>
 
-            {/* ── KPI strip removed in Round 6 (2026-05-27) ───────────────
-                Δ MoM / Δ YoY computed against a partial reference month
-                produced misleading multi-hundred-percent figures. The Round
-                8 PDF-style HeaderTable above (server-derived against full
-                historical months) is the canonical breakdown; the PDF
-                Well-by-Well report doesn't use KPI cards either. `KpiCard`
-                is still imported because the field/installation drill modals
-                use it (those KPIs sum a full historical timeseries and are
-                arithmetically sound). */}
-
-            {/* ── Charts row 1 ────────────────────────────────────────────── */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 16,
-                marginBottom: 16,
-              }}
-            >
+            {/* ── Chart 1: Oil Production (full width) ─────────────────── */}
+            <div style={{ marginBottom: 16 }}>
               <ChartSection
-                title="Brazil — Oil Production (kbpd)"
-                loading={brazilLoading}
+                title={chart1Title}
+                loading={chart1Loading}
                 height={320}
               >
                 <PlotlyChart
-                  data={brazilChart.data}
-                  layout={brazilChart.layout}
-                  style={{ width: "100%", height: 320 }}
-                />
-              </ChartSection>
-              <ChartSection
-                title={`${empresa} — Oil Production (kbpd, stake-weighted)`}
-                loading={companyLoading}
-                height={320}
-              >
-                <PlotlyChart
-                  data={companyChart.data}
-                  layout={companyChart.layout}
+                  data={oilChart.data}
+                  layout={oilChart.layout}
                   style={{ width: "100%", height: 320 }}
                 />
               </ChartSection>
             </div>
 
-            {/* ── Charts row 2 ────────────────────────────────────────────── */}
+            {/* ── Charts 2 & 3 side-by-side ────────────────────────────── */}
             <div
               style={{
                 display: "grid",
@@ -1249,7 +1219,7 @@ export default function DesktopView(): React.ReactElement | null {
               }}
             >
               <ChartSection
-                title={`Top ${empresa} Fields — ${fmtMonthLabel(referenceDate)} (kbpd)`}
+                title={chart2Title}
                 loading={topFieldsLoading}
                 height={360}
               >
@@ -1259,7 +1229,6 @@ export default function DesktopView(): React.ReactElement | null {
                     layout={topFieldsChart.layout}
                     style={{ width: "100%", height: 360, cursor: topFields.length > 0 ? "pointer" : "default" }}
                     onClick={(e: PlotMouseEvent) => {
-                      // Bar y-axis carries the campo name (one of `topFields[].campo`).
                       const point = e?.points?.[0];
                       if (!point) return;
                       const value = (point as { y?: unknown }).y;
@@ -1284,7 +1253,7 @@ export default function DesktopView(): React.ReactElement | null {
                 </div>
               </ChartSection>
               <ChartSection
-                title={`Installations (FPSO/UEP) — ${fmtMonthLabel(referenceDate)}`}
+                title={chart3Title}
                 loading={installationsLoading}
                 height={360}
               >
@@ -1362,28 +1331,15 @@ export default function DesktopView(): React.ReactElement | null {
                 )}
               </ChartSection>
             </div>
-
-            {/* ── YoY table REMOVED in Round 8 (2026-05-27) ───────────────
-                The existing YoY/MoM/YTD breakdown (TOTAL + per-ambiente rows
-                for the selected company) is now a STRICT SUBSET of the
-                PDF-style HeaderTable rendered at the top of the page next to
-                the filters. The HeaderTable shows the same TOTAL + per-
-                ambiente breakdown for the company AND Brazil-wide context
-                AND gas (kboed) AND main fields, all derived against full
-                historical months by the same server-side math
-                (`get_well_by_well_header`). Keeping both tables would have
-                duplicated the same numbers in two places. Mobile keeps the
-                YoY collapsible drawer because the HeaderTable is at the top
-                and horizontal-scroll discoverability is weaker on phones. */}
           </>
         )}
       </div>
 
-      {/* ── Field drill-down modal (Round 2, 2026-05-27) ─────────────────── */}
+      {/* ── Drill modals ─────────────────────────────────────────────────── */}
       {drillCampo && (
         <FieldDrillModal
           campo={drillCampo}
-          empresa={empresa}
+          empresa={viewEmpresa ?? "Brasil"}
           loading={drillLoading}
           error={drillError}
           series={drillTimeseries}
@@ -1392,11 +1348,10 @@ export default function DesktopView(): React.ReactElement | null {
         />
       )}
 
-      {/* ── Installation drill-down modal (Round 3, 2026-05-27) ──────────── */}
       {drillInstalacao && (
         <InstallationDrillModal
           instalacao={drillInstalacao}
-          empresa={empresa}
+          empresa={viewEmpresa ?? "Brasil"}
           loading={drillInstalacaoLoading}
           error={drillInstalacaoError}
           series={drillInstalacaoTimeseries}

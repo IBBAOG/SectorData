@@ -10,21 +10,39 @@
 // Scope: executive monthly oil & gas production summary, replicating the
 // Well-by-Well PDF structure.
 //
-// Data sources (5 RPCs, all SECURITY DEFINER in
-// `supabase/migrations/20260528000000_production_rpcs.sql`):
+// Round 9 (2026-05-27): the legacy "empresa dropdown" was replaced by FIVE
+// mutually-exclusive VIEW PILLS — `Brasil` (default), `Petrobras`, `PRIO`,
+// `PetroReconcavo`, `Brava Energia`. The hook exposes a `view` state machine
+// that toggles between Brasil (100% WI, no stake math) and one of four
+// stake-weighted company views. The chart count dropped from 4 to 3:
+//   - Chart 1: Oil production stacked by ambiente (Brazil OR company)
+//   - Chart 2: Top fields (Brazil OR stake-weighted)
+//   - Chart 3: Installations (Brazil OR stake-weighted)
+// The duplicated "P1 Brazil + P2 Company" desktop layout is gone — when the
+// user wants Brazil context, they tap the Brasil pill; when they want a
+// company, they tap that company pill. No side-by-side compare.
+//
+// Data sources (5 base + 4 Brazil RPCs, all SECURITY DEFINER):
 //   • get_production_brazil_aggregate(date_start, date_end, ambientes[]?)
 //       → Brazil-wide stacked bars (no stake weighting)
 //   • get_production_company_aggregate(empresa, date_start, date_end, ambientes[]?)
 //       → Stake-weighted stacked bars for the selected company
 //   • get_production_top_fields(empresa, date, top_n=10)
-//       → Horizontal bar: top fields in the reference month
+//       → Horizontal bar: top fields stake-weighted (company view)
 //   • get_production_by_installation(empresa, date)
-//       → Table: FPSO/UEP-level production in the reference month
+//       → Table: FPSO/UEP-level production stake-weighted (company view)
 //   • get_production_yoy_table(empresa, date)
-//       → YoY/MoM/YTD breakdown at the reference month (1 TOTAL + 3 ambiente rows)
+//       → YoY/MoM/YTD breakdown at the reference month (mobile drawer only)
+//   • get_production_brazil_top_fields(date, top_n=10)            ← Round 9
+//   • get_production_brazil_installation(date)                    ← Round 9
+//   • get_production_brazil_field_timeseries(campo, ...)          ← Round 9
+//   • get_production_brazil_installation_timeseries(instalacao,…) ← Round 9
 //
-// Empresa list comes from `get_field_stakes_empresas()` (Fase 1 RPC). Never
-// hardcode company names — new ones in `field_stakes` appear automatically.
+// View list comes from `WELL_BY_WELL_VIEWS` (`src/data/wellByWellEmpresas.ts`).
+// The empresa list from `get_field_stakes_empresas()` is no longer surfaced in
+// the dashboard, but the wrapper is still called to drive the admin panel
+// integration warmup and to silently snap `view` to `Brasil` if a stale
+// session points outside the 5-view whitelist.
 //
 // Binding sync rule (CLAUDE.md § Dual-view policy): meaningful changes to one
 // View must land in the OTHER View in the same commit, OR the commit message
@@ -32,7 +50,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { WELL_BY_WELL_EMPRESAS } from "../../../data/wellByWellEmpresas";
+import {
+  WELL_BY_WELL_VIEWS,
+  isCompanyView,
+  type WellByWellView,
+} from "../../../data/wellByWellEmpresas";
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
@@ -46,6 +68,10 @@ import {
   rpcGetProductionYoyTable,
   rpcGetProductionFieldTimeseries,
   rpcGetProductionInstallationTimeseries,
+  rpcGetProductionBrazilTopFields,
+  rpcGetProductionBrazilInstallation,
+  rpcGetProductionBrazilFieldTimeseries,
+  rpcGetProductionBrazilInstallationTimeseries,
   rpcGetWellByWellHeader,
 } from "../../../lib/rpc";
 import type { FieldStakeEmpresa } from "../../../types/fieldStakes";
@@ -62,7 +88,25 @@ import type {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** Default company. Petrobras is the primary investment-bank-research case. */
+/**
+ * Default pill on first paint. "Brasil" is the report-style opener: country-
+ * wide totals first, drill into a company afterward. Replaces the previous
+ * `DEFAULT_EMPRESA = "Petrobras"` default from Rounds 1-8.
+ */
+export const DEFAULT_VIEW: WellByWellView = "Brasil";
+
+/**
+ * Empresa default used by RPCs that REQUIRE a non-null empresa param even in
+ * Brasil view (specifically `get_well_by_well_header` — the header table
+ * always shows Brazil + a company section, so we still need a company name).
+ * The HeaderTable component drops the company section when `view === "Brasil"`.
+ */
+export const HEADER_TABLE_FALLBACK_EMPRESA = "Petrobras";
+
+/**
+ * Back-compat default for callers that still want a company name (none on
+ * mainline as of Round 9 — every Brasil-aware caller switches on `view`).
+ */
 export const DEFAULT_EMPRESA = "Petrobras";
 
 /** All three ambiente buckets carried verbatim from `anp_cdp_producao.local`. */
@@ -159,9 +203,27 @@ export interface UseProductionData {
   /** Most recent `YYYY-MM-01` available in `anp_cdp_producao`. */
   latestMonth: string | null;
 
-  // Empresa
+  // View pill state machine (Round 9, 2026-05-27).
+  // `view` is one of `WELL_BY_WELL_VIEWS` and drives which RPC family fires:
+  //   - "Brasil"        → Brazil-wide RPCs (no stake weighting)
+  //   - company name    → stake-weighted RPCs for that company
+  // `viewEmpresa` is a convenience derived value: `null` for Brasil, else the
+  // company name. Use it at the call site instead of branching on `view !==
+  // "Brasil"` everywhere.
+  view: WellByWellView;
+  setView: (v: WellByWellView) => void;
+  /** True when the active view is a company (everything except Brasil). */
+  isCompanyView: boolean;
+  /** Company name when `view !== "Brasil"`; null in Brasil view. */
+  viewEmpresa: string | null;
+
+  // Back-compat: existing call sites still read `empresa` (e.g. drill modal
+  // header labels). It now mirrors `viewEmpresa ?? "Brasil"` so labels read
+  // sensibly in both modes ("BÚZIOS — Brasil" / "BÚZIOS — Petrobras").
   empresasList: FieldStakeEmpresa[];
   empresa: string;
+  /** @deprecated since Round 9. Use `setView` instead. Kept as a noop alias
+   *  so legacy call sites compile during the transition. */
   setEmpresa: (e: string) => void;
 
   // Period (months, inclusive)
@@ -176,17 +238,19 @@ export interface UseProductionData {
   setAmbientes: (a: string[]) => void;
   toggleAmbiente: (a: string) => void;
 
-  // Reference month (used by top fields + installations + YoY)
+  // Reference month (used by top fields + installations + YoY + Header table)
   referenceDate: string;                          // YYYY-MM-01
   setReferenceDate: (d: string) => void;
 
-  // Data states
+  // Data states. In Brasil view, `companyData` is always [] (chart 1 reads
+  // brazilData); in company view, brazilData stays populated but is not
+  // rendered by chart 1 — only by the HeaderTable's Brazil section.
   brazilData: ProductionBrazilRow[];
   companyData: ProductionCompanyRow[];
   topFields: ProductionTopField[];
   installations: ProductionInstallation[];
   yoyTable: ProductionYoYRow[];
-  /** Round 8 (2026-05-27) — PDF page-2 header table (Brazil + Empresa rollup). */
+  /** PDF page-2 header table (Brazil + Empresa rollup). */
   headerData: WellByWellHeaderRow[];
 
   // Loading flags (per data state)
@@ -202,53 +266,31 @@ export interface UseProductionData {
   // Error (single bubble; per-RPC errors are logged at the wrapper level)
   error: Error | null;
 
-  // (Round 6, 2026-05-27) The top KPI strip — `brazilOilKbpd`, `companyOilKbpd`,
-  // `companyGasMm3d`, `companyYtdAvgKbpd`, `companyMomPct`, `companyYoyPct` —
-  // was removed entirely because the at-reference-month Δ MoM / Δ YoY math is
-  // unreliable when the current month is partial (divides a full prior month
-  // by ~0). The PDF reference report uses tables exclusively (YoY table is
-  // already rendered at the bottom of both Views). Drill-down KPIs still
-  // exist and remain valid because they sum full historical months.
-
   // Export (Tier 1 — direct download, multi-sheet Excel + zip CSV)
   excelLoading: boolean;
   csvLoading: boolean;
   handleExportExcel: () => Promise<void>;
   handleExportCsv: () => Promise<void>;
 
-  // Field drill-down (Round 2, 2026-05-27; canonical-aware since Round 4,
-  // 2026-05-28).
-  // Click a row in the Top Fields panel to open this. The modal/sheet shows a
-  // 13mo timeseries (oil + water stacked + hours-rate line) plus 4 KPIs
-  // derived client-side from the timeseries.
-  //
-  // Round 4 semantics: `drillCampo` now carries a **canonical field name** (the
-  // value returned by `get_production_top_fields`, which groups by
-  // `canonical_field_name(p.campo)` server-side). When passed back to
-  // `get_production_field_timeseries`, the server expands the WHERE clause to
-  // every variant that maps to that canonical (so clicking "Búzios" returns
-  // Búzios + AnC_Búzios + Búzios_ECO summed by stake). The field-stake variants
-  // remain individually editable from /admin-panel.
-  drillCampo: string | null;            // null = closed; non-null = open (canonical name)
+  // Field drill-down. In Brasil view the drill calls the Brazil-wide
+  // timeseries RPC; in company view the stake-weighted one. UI is identical.
+  drillCampo: string | null;
   drillTimeseries: ProductionFieldTimeseriesRow[];
   drillLoading: boolean;
   drillError: string | null;
   drillKpis: {
-    currentOil: number;                 // kbpd at most-recent month in series
-    prevOil: number | null;             // kbpd at prior month
-    momPct: number | null;              // (current - prev) / prev
-    yoyPct: number | null;              // vs same calendar month one year prior
-    ytdAvg: number | null;              // kbpd YTD average (year of most-recent month)
+    currentOil: number;
+    prevOil: number | null;
+    momPct: number | null;
+    yoyPct: number | null;
+    ytdAvg: number | null;
   };
   openFieldDrill: (campo: string) => void;
   closeFieldDrill: () => void;
 
-  // Installation (FPSO/UEP) drill-down (Round 3, 2026-05-27).
-  // Click a row in the P4 Installations table (desktop) or tap an FPSO card
-  // (mobile) to open this. Same shape as the field drill — a 13mo timeseries
-  // plus 4 client-side KPIs. The two drills are MUTUALLY EXCLUSIVE: opening
-  // one closes the other, so only ever one modal/BottomSheet is on-screen.
-  drillInstalacao: string | null;       // null = closed; non-null = open
+  // Installation drill-down. Same Brasil-vs-company branching as the field
+  // drill. Mutually exclusive with the field drill.
+  drillInstalacao: string | null;
   drillInstalacaoTimeseries: ProductionInstallationTimeseriesRow[];
   drillInstalacaoLoading: boolean;
   drillInstalacaoError: string | null;
@@ -274,7 +316,9 @@ export function useProductionData(): UseProductionData {
   const [latestMonth, setLatestMonth] = useState<string | null>(null);
   const [empresasList, setEmpresasList] = useState<FieldStakeEmpresa[]>([]);
 
-  const [empresa, setEmpresaState] = useState<string>(DEFAULT_EMPRESA);
+  // Round 9: view replaces empresa as the active toggle state. Default is
+  // "Brasil" — first thing the user sees on page load.
+  const [view, setViewState] = useState<WellByWellView>(DEFAULT_VIEW);
   const [ambientes, setAmbientesState] = useState<string[]>([...AMBIENTES]);
 
   const [allMonths, setAllMonths] = useState<string[]>([]);
@@ -287,7 +331,7 @@ export function useProductionData(): UseProductionData {
   const [topFields, setTopFields] = useState<ProductionTopField[]>([]);
   const [installations, setInstallations] = useState<ProductionInstallation[]>([]);
   const [yoyTable, setYoyTable] = useState<ProductionYoYRow[]>([]);
-  // Round 8 (2026-05-27) — PDF page-2 header table backing state.
+  // PDF page-2 header table backing state (Round 8, kept).
   const [headerData, setHeaderData] = useState<WellByWellHeaderRow[]>([]);
 
   const [error, setError] = useState<Error | null>(null);
@@ -295,20 +339,25 @@ export function useProductionData(): UseProductionData {
   const [excelLoading, setExcelLoading] = useState(false);
   const [csvLoading, setCsvLoading] = useState(false);
 
-  // Field drill-down state (Round 2). `drillCampo` doubles as visibility flag
-  // for the modal/sheet — null when closed, the field name when open.
+  // Field drill-down state (Round 2; canonical-aware since Round 4;
+  // Brasil-aware since Round 9). `drillCampo` doubles as the visibility flag
+  // for the modal/sheet — null when closed, the canonical name when open.
   const [drillCampo, setDrillCampo] = useState<string | null>(null);
   const [drillTimeseries, setDrillTimeseries] = useState<ProductionFieldTimeseriesRow[]>([]);
   const [drillLoading, setDrillLoading] = useState(false);
   const [drillError, setDrillError] = useState<string | null>(null);
 
-  // Installation drill-down state (Round 3). `drillInstalacao` doubles as
-  // visibility flag for the modal/sheet — null when closed, the installation
-  // name when open. Field and installation drills are mutually exclusive.
+  // Installation drill-down state (Round 3; Brasil-aware since Round 9).
   const [drillInstalacao, setDrillInstalacao] = useState<string | null>(null);
   const [drillInstalacaoTimeseries, setDrillInstalacaoTimeseries] = useState<ProductionInstallationTimeseriesRow[]>([]);
   const [drillInstalacaoLoading, setDrillInstalacaoLoading] = useState(false);
   const [drillInstalacaoError, setDrillInstalacaoError] = useState<string | null>(null);
+
+  // ── Derived: view ↔ empresa convenience ───────────────────────────────────
+  const viewIsCompany = isCompanyView(view);
+  const viewEmpresa: string | null = viewIsCompany ? view : null;
+  // Back-compat alias for legacy call sites that still read `empresa`.
+  const empresa = viewEmpresa ?? "Brasil";
 
   // ── Derived: dateRange from monthIdxRange ─────────────────────────────────
   const dateRange = useMemo<[string, string]>(() => {
@@ -319,7 +368,15 @@ export function useProductionData(): UseProductionData {
   }, [allMonths, monthIdxRange]);
 
   // ── Setters ────────────────────────────────────────────────────────────────
-  const setEmpresa = useCallback((e: string) => setEmpresaState(e), []);
+  const setView = useCallback((v: WellByWellView) => setViewState(v), []);
+  // `setEmpresa` kept as a back-compat alias — translates a company name back
+  // into the corresponding view pill. Setting it to a non-whitelisted name is
+  // a noop (defensive). Brand-new code should call `setView` directly.
+  const setEmpresa = useCallback((name: string) => {
+    if ((WELL_BY_WELL_VIEWS as readonly string[]).includes(name)) {
+      setViewState(name as WellByWellView);
+    }
+  }, []);
   const setAmbientes = useCallback((a: string[]) => setAmbientesState(a), []);
   const toggleAmbiente = useCallback((a: string) => {
     setAmbientesState((prev) =>
@@ -344,17 +401,10 @@ export function useProductionData(): UseProductionData {
 
   // ── Bootstrap: empresa list + latest month discovery ──────────────────────
   //
-  // Round 5 (perf): the bootstrap fires `rpcGetFieldStakesEmpresas` and the
-  // wide-range Brazil aggregate probe IN PARALLEL (Promise.allSettled), and
-  // SEEDS `brazilData` with the slice of the probe that falls in the default
-  // 13mo window — eliminating one round-trip the user would otherwise wait
-  // for (the reactive Brazil refetch immediately after bootstrap).
-  //
-  // The "wide range" call below probes the entire 2018→present window for the
-  // Brazil aggregate, then takes max(ano, mes) to discover the most-recent
-  // month with data. We deliberately reuse the same RPC the dashboard already
-  // consumes (no extra surface area) and key the slider min on 2018 (older
-  // than any data Eduardo currently exports).
+  // Round 9: the bootstrap still calls `rpcGetFieldStakesEmpresas` because the
+  // admin panel relies on the warm cache (and the snap-to-Brasil logic needs
+  // to know whether `view` is in the 5-view whitelist). Brazil aggregate probe
+  // still seeds `brazilData` for the default window — same Round 5 perf trick.
   useEffect(() => {
     if (!supabase) return;
     let cancelled = false;
@@ -382,15 +432,16 @@ export function useProductionData(): UseProductionData {
             empresasRes.reason,
           );
         }
-        // Restrict the dashboard dropdown to the IR-relevant whitelist
-        // (`src/data/wellByWellEmpresas.ts`). The admin panel's Field Stakes
-        // editor still consumes the full list via the same RPC wrapper — this
-        // filter only narrows what the dashboard renders. Sort follows the
-        // whitelist order (Petrobras → PRIO → PetroReconcavo → Brava Energia),
-        // which is the most-coverage-first IR view, not `n_campos DESC`.
-        const allowed = new Set<string>(WELL_BY_WELL_EMPRESAS);
+        // Restrict the dashboard's empresa list to the IR-relevant whitelist
+        // (4 companies). The admin panel's Field Stakes editor still consumes
+        // the full list via the same RPC wrapper — this filter only narrows
+        // what the dashboard sees. Round 9: the list is no longer rendered
+        // (pills replaced the dropdown), but we still expose it on
+        // `empresasList` for back-compat with anything that may consume it.
+        const companyViews = WELL_BY_WELL_VIEWS.filter(isCompanyView);
+        const allowed = new Set<string>(companyViews);
         const orderIdx = new Map<string, number>(
-          WELL_BY_WELL_EMPRESAS.map((name, i) => [name, i]),
+          companyViews.map((name, i) => [name, i]),
         );
         empresas = empresas
           .filter((e) => allowed.has(e.empresa))
@@ -401,12 +452,10 @@ export function useProductionData(): UseProductionData {
           );
         setEmpresasList(empresas);
 
-        // Safety: if the user landed here with state (e.g. query param,
-        // stale URL, restored session) pointing to an empresa outside the
-        // whitelist, snap back to the default (Petrobras). Read state
-        // imperatively to avoid adding the setter to the bootstrap deps.
-        setEmpresaState((cur) =>
-          allowed.has(cur) ? cur : DEFAULT_EMPRESA,
+        // Safety: snap `view` back to `Brasil` if a stale session points
+        // outside the 5-view whitelist (e.g. URL param or restored state).
+        setViewState((cur) =>
+          (WELL_BY_WELL_VIEWS as readonly string[]).includes(cur) ? cur : DEFAULT_VIEW,
         );
 
         // Brazil probe — required to know latestMonth; if it failed, bubble up.
@@ -440,13 +489,10 @@ export function useProductionData(): UseProductionData {
         setMonthIdxRangeState([startIdx, endIdx]);
         setReferenceDateState(maxAnchor);
 
-        // ── SEED Brazil data from the probe (Round 5 perf win) ───────────
-        // The probe already returned every month in 2018→present for Brazil.
-        // Slice it to the default window and seed `brazilData` so the Brazil
-        // chart renders IMMEDIATELY on first paint instead of waiting for the
-        // reactive `rpcGetProductionBrazilAggregate` debounce to fire again.
-        // The reactive fetch will still re-fire if the user changes period or
-        // ambientes — but on initial load, we skip an entire round-trip.
+        // Seed Brazil data from the probe (Round 5 perf win) — even though
+        // chart 1 only renders Brazil when `view === "Brasil"`, the
+        // HeaderTable in company view still needs Brazil values, and the
+        // bootstrap probe is already in flight regardless.
         const startAnchor = months[startIdx];
         const endAnchor   = months[endIdx];
         const windowed = probe.filter((r) => {
@@ -466,23 +512,23 @@ export function useProductionData(): UseProductionData {
     return () => { cancelled = true; };
   }, [supabase]);
 
-  // ── Reactive fetch: Brazil aggregate (period + ambientes) ─────────────────
+  // ── Reactive fetch: Brazil aggregate ──────────────────────────────────────
   //
-  // Round 5 perf notes:
-  //   • Deps INTENTIONALLY exclude `empresa` — Brazil aggregate is country-
-  //     wide, so switching companies should NOT re-fetch this. The user's "Δ
-  //     empresa only triggers 4 RPCs" expectation is satisfied here.
-  //   • `skipInitial: true` because the bootstrap probe already seeded
-  //     `brazilData` for the default window; the first mount of this effect
-  //     would otherwise re-fetch the same data redundantly.
-  //   • Debounce dropped from 300ms → 150ms — these inputs (period slider,
-  //     ambientes checkboxes) are click-driven not type-driven, so a smaller
-  //     window still coalesces accidental double-clicks without lag.
+  // Brazil aggregate is consumed by:
+  //   - Chart 1 when `view === "Brasil"`
+  // It's NOT needed by the HeaderTable (the table has its own server-side
+  // header RPC). Therefore we can SKIP this fetch entirely when the view is
+  // a company — chart 1 in company view reads companyData, not brazilData.
+  //
+  // Note: deps INTENTIONALLY include `view` so when the user toggles back to
+  // Brasil from a company, we re-fetch to ensure freshness for the period/
+  // ambientes that may have changed while the company tab was active.
   const { data: brazilFetched, loading: brazilLoading } = useDebouncedFetch<
     ProductionBrazilRow[] | null
   >(
     async () => {
       if (!supabase || bootstrapping || !dateRange[0] || !dateRange[1]) return null;
+      if (view !== "Brasil") return null; // skip when company is active
       const ambientesParam = ambientes.length > 0 && ambientes.length < AMBIENTES.length
         ? ambientes
         : null;
@@ -498,28 +544,31 @@ export function useProductionData(): UseProductionData {
         return [];
       }
     },
-    [supabase, bootstrapping, dateRange[0], dateRange[1], ambientes.join("|")],
+    [supabase, bootstrapping, view, dateRange[0], dateRange[1], ambientes.join("|")],
     { ms: 150, skipInitial: true },
   );
   useEffect(() => {
     if (brazilFetched) setBrazilData(brazilFetched);
   }, [brazilFetched]);
 
-  // ── Reactive fetch: Company aggregate (empresa + period + ambientes) ──────
+  // ── Reactive fetch: Company aggregate ─────────────────────────────────────
+  //
+  // Only fires when a company pill is active. In Brasil view we clear the
+  // companyData state on view-change so a stale company chart doesn't
+  // flash if the user re-enters a company tab.
   const { data: companyFetched, loading: companyLoading } = useDebouncedFetch<
     ProductionCompanyRow[] | null
   >(
     async () => {
-      if (!supabase || bootstrapping || !dateRange[0] || !dateRange[1] || !empresa) {
-        return null;
-      }
+      if (!supabase || bootstrapping || !dateRange[0] || !dateRange[1]) return null;
+      if (!viewIsCompany || !viewEmpresa) return null;
       const ambientesParam = ambientes.length > 0 && ambientes.length < AMBIENTES.length
         ? ambientes
         : null;
       try {
         return await rpcGetProductionCompanyAggregate(
           supabase,
-          empresa,
+          viewEmpresa,
           dateRange[0],
           dateRange[1],
           ambientesParam,
@@ -529,102 +578,125 @@ export function useProductionData(): UseProductionData {
         return [];
       }
     },
-    [supabase, bootstrapping, empresa, dateRange[0], dateRange[1], ambientes.join("|")],
+    [supabase, bootstrapping, view, dateRange[0], dateRange[1], ambientes.join("|")],
     { ms: 150, skipInitial: false },
   );
   useEffect(() => {
     if (companyFetched) setCompanyData(companyFetched);
   }, [companyFetched]);
 
-  // ── Reactive fetch: Top fields (empresa + referenceDate) ──────────────────
+  // Clear stale data when switching views so we don't render a flash of the
+  // previous mode's data while the new fetch is in flight.
+  useEffect(() => {
+    if (view === "Brasil") {
+      setCompanyData([]);
+    }
+  }, [view]);
+
+  // ── Reactive fetch: Top fields ────────────────────────────────────────────
+  //
+  // Brasil view → get_production_brazil_top_fields(date, top_n)
+  // Company view → get_production_top_fields(empresa, date, top_n) (existing)
   //
   // Deps deliberately exclude dateRange & ambientes — Top Fields is a single-
-  // month snapshot anchored to referenceDate; sliding the period window or
-  // toggling ambientes filters does NOT need to re-fetch this panel.
+  // month snapshot anchored to referenceDate.
   const { data: topFetched, loading: topFieldsLoading } = useDebouncedFetch<
     ProductionTopField[] | null
   >(
     async () => {
-      if (!supabase || bootstrapping || !empresa || !referenceDate) return null;
+      if (!supabase || bootstrapping || !referenceDate) return null;
       try {
-        return await rpcGetProductionTopFields(supabase, empresa, referenceDate, 10);
+        if (view === "Brasil") {
+          return await rpcGetProductionBrazilTopFields(supabase, referenceDate, 10);
+        }
+        if (!viewEmpresa) return null;
+        return await rpcGetProductionTopFields(supabase, viewEmpresa, referenceDate, 10);
       } catch (e) {
         console.error("Top fields refetch failed", e);
         return [];
       }
     },
-    [supabase, bootstrapping, empresa, referenceDate],
+    [supabase, bootstrapping, view, referenceDate],
     { ms: 150, skipInitial: false },
   );
   useEffect(() => {
     if (topFetched) setTopFields(topFetched);
   }, [topFetched]);
 
-  // ── Reactive fetch: Installations (empresa + referenceDate) ───────────────
-  // Same dep semantics as Top Fields — single-month snapshot.
+  // ── Reactive fetch: Installations ─────────────────────────────────────────
   const { data: instFetched, loading: installationsLoading } = useDebouncedFetch<
     ProductionInstallation[] | null
   >(
     async () => {
-      if (!supabase || bootstrapping || !empresa || !referenceDate) return null;
+      if (!supabase || bootstrapping || !referenceDate) return null;
       try {
-        return await rpcGetProductionByInstallation(supabase, empresa, referenceDate);
+        if (view === "Brasil") {
+          return await rpcGetProductionBrazilInstallation(supabase, referenceDate);
+        }
+        if (!viewEmpresa) return null;
+        return await rpcGetProductionByInstallation(supabase, viewEmpresa, referenceDate);
       } catch (e) {
         console.error("Installations refetch failed", e);
         return [];
       }
     },
-    [supabase, bootstrapping, empresa, referenceDate],
+    [supabase, bootstrapping, view, referenceDate],
     { ms: 150, skipInitial: false },
   );
   useEffect(() => {
     if (instFetched) setInstallations(instFetched);
   }, [instFetched]);
 
-  // ── Reactive fetch: YoY table (empresa + referenceDate) ───────────────────
-  // Same dep semantics as Top Fields / Installations — RPC computes its own
-  // MoM/YoY/YTD references off the reference month internally.
+  // ── Reactive fetch: YoY table (mobile drawer only, still company-only) ────
+  //
+  // The YoY/MoM/YTD table is consumed only by the mobile collapsible drawer
+  // (desktop dropped it in Round 8). In Brasil view the drawer is hidden, so
+  // we skip the fetch entirely.
   const { data: yoyFetched, loading: yoyLoading } = useDebouncedFetch<
     ProductionYoYRow[] | null
   >(
     async () => {
-      if (!supabase || bootstrapping || !empresa || !referenceDate) return null;
+      if (!supabase || bootstrapping || !referenceDate) return null;
+      if (!viewIsCompany || !viewEmpresa) return null;
       try {
-        return await rpcGetProductionYoyTable(supabase, empresa, referenceDate);
+        return await rpcGetProductionYoyTable(supabase, viewEmpresa, referenceDate);
       } catch (e) {
         console.error("YoY table refetch failed", e);
         return [];
       }
     },
-    [supabase, bootstrapping, empresa, referenceDate],
+    [supabase, bootstrapping, view, referenceDate],
     { ms: 150, skipInitial: false },
   );
   useEffect(() => {
     if (yoyFetched) setYoyTable(yoyFetched);
   }, [yoyFetched]);
 
-  // ── Reactive fetch: Header table (empresa + referenceDate) ────────────────
+  // ── Reactive fetch: Header table ──────────────────────────────────────────
   //
-  // Round 8 (2026-05-27). Same dep semantics as YoY / Top Fields /
-  // Installations — single reference-month snapshot, server computes MoM/YoY/
-  // YTD internally. Fires in parallel with the other reference-month-anchored
-  // panels (each panel has its own useDebouncedFetch instance).
+  // `get_well_by_well_header(p_empresa, p_year, p_month)` always returns
+  // Brazil + a company section together. In Brasil view we still call it but
+  // pass the fallback empresa (Petrobras) — the HeaderTable component filters
+  // to `section === 'BRAZIL'` when the view is Brasil, dropping the company
+  // section client-side. This is intentionally one extra unused RPC slice in
+  // exchange for not needing a separate Brazil-only header RPC.
   const { data: headerFetched, loading: headerLoading } = useDebouncedFetch<
     WellByWellHeaderRow[] | null
   >(
     async () => {
-      if (!supabase || bootstrapping || !empresa || !referenceDate) return null;
+      if (!supabase || bootstrapping || !referenceDate) return null;
       const year = parseInt(referenceDate.slice(0, 4), 10);
       const month = parseInt(referenceDate.slice(5, 7), 10);
       if (!Number.isFinite(year) || !Number.isFinite(month)) return null;
+      const empresaForHeader = viewEmpresa ?? HEADER_TABLE_FALLBACK_EMPRESA;
       try {
-        return await rpcGetWellByWellHeader(supabase, empresa, year, month);
+        return await rpcGetWellByWellHeader(supabase, empresaForHeader, year, month);
       } catch (e) {
         console.error("Header table refetch failed", e);
         return [];
       }
     },
-    [supabase, bootstrapping, empresa, referenceDate],
+    [supabase, bootstrapping, view, referenceDate],
     { ms: 150, skipInitial: false },
   );
   useEffect(() => {
@@ -644,30 +716,24 @@ export function useProductionData(): UseProductionData {
     }
   }, [dateRange, referenceDate]);
 
-  // (Round 6, 2026-05-27) The `kpi` useMemo was removed. See the matching
-  // comment on the hook return type — top-strip KPIs delivered unreliable Δ
-  // MoM / Δ YoY against partial months. The YoY table (rendered at the bottom
-  // of both Views) replaces it; drill-down KPIs are unaffected.
-
   // ── Field drill-down: open / close handlers + reactive fetch ──────────────
   //
-  // Open is intent-driven (user clicked a row) — feedback should be fast, so
-  // no debounce here. The fetch reuses the dashboard's current dateRange +
-  // empresa so the drilled-in timeseries matches the period the user is
-  // looking at. Closing clears the timeseries to avoid stale flicker if a
-  // different field is reopened later.
+  // Brasil view → get_production_brazil_field_timeseries(campo, dateStart, dateEnd)
+  // Company view → get_production_field_timeseries(campo, empresa, dateStart, dateEnd)
   //
-  // Mutual exclusivity (Round 3): opening the field drill auto-closes any
-  // open installation drill, and vice versa — only one modal/BottomSheet on
-  // screen at a time.
+  // Open is intent-driven (user clicked a row) — no debounce. Fetch reuses
+  // the dashboard's current dateRange so the drilled-in timeseries matches
+  // the period the user is looking at. Closing clears the timeseries to
+  // avoid stale flicker if a different field is reopened later.
   //
-  // Round 4 (canonical grouping, 2026-05-28): `campo` is a CANONICAL field
-  // name — `get_production_top_fields` already groups by
-  // `canonical_field_name(p.campo)`, so the value handed in from the Top
-  // Fields chart click / mobile card tap is canonical. The server-side
-  // `get_production_field_timeseries` interprets `p_campo` as canonical and
-  // expands the WHERE clause to all variants under it (so the drill timeseries
-  // sums Búzios + AnC_Búzios + Búzios_ECO etc.).
+  // Mutual exclusivity: opening the field drill auto-closes any open
+  // installation drill, and vice versa.
+  //
+  // Round 4 (canonical grouping): `campo` is a CANONICAL field name. Both
+  // RPC variants interpret it as canonical and expand server-side.
+  //
+  // Round 9: drill is also Brasil-aware — the company-vs-Brasil branch is
+  // decided inside the fetch effect using current `view` state.
   const openFieldDrill = useCallback((campo: string) => {
     // Close installation drill first (mutual exclusivity)
     setDrillInstalacao(null);
@@ -682,21 +748,29 @@ export function useProductionData(): UseProductionData {
   }, []);
 
   useEffect(() => {
-    if (!supabase || !drillCampo || !empresa || !dateRange[0] || !dateRange[1]) {
-      return;
-    }
+    if (!supabase || !drillCampo || !dateRange[0] || !dateRange[1]) return;
+    // Brazil drill needs only campo+dates; company drill also needs empresa.
+    if (viewIsCompany && !viewEmpresa) return;
+
     let cancelled = false;
     setDrillLoading(true);
     setDrillError(null);
     (async () => {
       try {
-        const rows = await rpcGetProductionFieldTimeseries(
-          supabase,
-          drillCampo,
-          empresa,
-          dateRange[0],
-          dateRange[1],
-        );
+        const rows = view === "Brasil"
+          ? await rpcGetProductionBrazilFieldTimeseries(
+              supabase,
+              drillCampo,
+              dateRange[0],
+              dateRange[1],
+            )
+          : await rpcGetProductionFieldTimeseries(
+              supabase,
+              drillCampo,
+              viewEmpresa as string,
+              dateRange[0],
+              dateRange[1],
+            );
         if (!cancelled) setDrillTimeseries(rows);
       } catch (e) {
         if (!cancelled) {
@@ -709,13 +783,14 @@ export function useProductionData(): UseProductionData {
       }
     })();
     return () => { cancelled = true; };
-  }, [supabase, drillCampo, empresa, dateRange]);
+  }, [supabase, drillCampo, view, viewIsCompany, viewEmpresa, dateRange]);
 
   // ── Installation drill-down: open / close handlers + reactive fetch ───────
   //
-  // Mirrors the field drill exactly (intent-driven open, no debounce, reuses
-  // dateRange + empresa, clears state on close). Mutually exclusive with the
-  // field drill — opening this auto-closes any open field drill.
+  // Brasil view → get_production_brazil_installation_timeseries(instalacao, ...)
+  // Company view → get_production_installation_timeseries(instalacao, empresa, ...)
+  //
+  // Mirrors the field drill exactly.
   const openInstallationDrill = useCallback((instalacao: string) => {
     // Close field drill first (mutual exclusivity)
     setDrillCampo(null);
@@ -730,21 +805,28 @@ export function useProductionData(): UseProductionData {
   }, []);
 
   useEffect(() => {
-    if (!supabase || !drillInstalacao || !empresa || !dateRange[0] || !dateRange[1]) {
-      return;
-    }
+    if (!supabase || !drillInstalacao || !dateRange[0] || !dateRange[1]) return;
+    if (viewIsCompany && !viewEmpresa) return;
+
     let cancelled = false;
     setDrillInstalacaoLoading(true);
     setDrillInstalacaoError(null);
     (async () => {
       try {
-        const rows = await rpcGetProductionInstallationTimeseries(
-          supabase,
-          drillInstalacao,
-          empresa,
-          dateRange[0],
-          dateRange[1],
-        );
+        const rows = view === "Brasil"
+          ? await rpcGetProductionBrazilInstallationTimeseries(
+              supabase,
+              drillInstalacao,
+              dateRange[0],
+              dateRange[1],
+            )
+          : await rpcGetProductionInstallationTimeseries(
+              supabase,
+              drillInstalacao,
+              viewEmpresa as string,
+              dateRange[0],
+              dateRange[1],
+            );
         if (!cancelled) setDrillInstalacaoTimeseries(rows);
       } catch (e) {
         if (!cancelled) {
@@ -757,20 +839,28 @@ export function useProductionData(): UseProductionData {
       }
     })();
     return () => { cancelled = true; };
-  }, [supabase, drillInstalacao, empresa, dateRange]);
+  }, [supabase, drillInstalacao, view, viewIsCompany, viewEmpresa, dateRange]);
+
+  // ── Drill close on view change (avoid mismatched header label) ────────────
+  //
+  // If a drill modal is open and the user switches the pill, the title
+  // currently shown ("BÚZIOS — Petrobras") would not match the new fetched
+  // data (Brasil-wide). Auto-close on view change to force re-entry.
+  useEffect(() => {
+    setDrillCampo(null);
+    setDrillTimeseries([]);
+    setDrillError(null);
+    setDrillInstalacao(null);
+    setDrillInstalacaoTimeseries([]);
+    setDrillInstalacaoError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
 
   // Derived KPIs for the drill (client-side from the 13mo series).
-  //   currentOil = last month's stake-weighted oil, kbpd
-  //   prevOil    = month-before-last
-  //   momPct     = (currentOil - prevOil) / prevOil
-  //   yoyPct     = vs same calendar month one year prior (if present in series)
-  //   ytdAvg     = average of all months in the same calendar year as the
-  //                most-recent month (so for "Apr 2026" it averages Jan..Apr 2026)
   const drillKpis = useMemo(() => {
     if (drillTimeseries.length === 0) {
       return { currentOil: 0, prevOil: null, momPct: null, yoyPct: null, ytdAvg: null };
     }
-    // Sort ascending so the last entry is the most-recent month.
     const sorted = [...drillTimeseries].sort((a, b) => {
       if (a.ano !== b.ano) return a.ano - b.ano;
       return a.mes - b.mes;
@@ -783,16 +873,12 @@ export function useProductionData(): UseProductionData {
       ? (currentOil - prevOil) / prevOil
       : null;
 
-    // YoY: find the row at (last.ano - 1, last.mes), if it exists in the
-    // visible window. If the window is shorter than 13 months it may not.
     const yoyMatch = sorted.find((r) => r.ano === last.ano - 1 && r.mes === last.mes);
     const yoyOil = yoyMatch ? bblDiaToKbpd(yoyMatch.oil_bbl_dia) : null;
     const yoyPct = yoyOil != null && yoyOil !== 0
       ? (currentOil - yoyOil) / yoyOil
       : null;
 
-    // YTD average — months in same calendar year as `last`, up to and
-    // including `last.mes`.
     const ytdRows = sorted.filter((r) => r.ano === last.ano && r.mes <= last.mes);
     const ytdAvg = ytdRows.length > 0
       ? bblDiaToKbpd(ytdRows.reduce((s, r) => s + r.oil_bbl_dia, 0) / ytdRows.length)
@@ -801,9 +887,9 @@ export function useProductionData(): UseProductionData {
     return { currentOil, prevOil, momPct, yoyPct, ytdAvg };
   }, [drillTimeseries]);
 
-  // Installation drill-down KPIs — identical math to drillKpis, sourced from
-  // the installation timeseries. Kept as a separate memo (rather than a shared
-  // helper) so the two states stay obviously independent in DevTools.
+  // Installation drill-down KPIs — identical math, sourced from the
+  // installation timeseries. Kept separate so the two states stay obviously
+  // independent in DevTools.
   const drillInstalacaoKpis = useMemo(() => {
     if (drillInstalacaoTimeseries.length === 0) {
       return { currentOil: 0, prevOil: null, momPct: null, yoyPct: null, ytdAvg: null };
@@ -836,10 +922,11 @@ export function useProductionData(): UseProductionData {
 
   // ── Export (Tier 1, multi-sheet XLSX + zip-of-CSVs) ───────────────────────
   //
-  // Excel: 4 sheets (Brazil aggregate, Company aggregate, Top Fields,
-  //        Installations). Reuses the active filter scope — does NOT refetch
-  //        unfiltered data.
-  // CSV: same 4 datasets, each as one CSV, bundled in a zip.
+  // Excel: in Brasil view → 3 sheets (Brazil aggregate / Top Fields / FPSOs).
+  //        In company view → 4 sheets (Brazil + Company aggregate + Top
+  //        Fields + FPSOs) for context.
+  //
+  // CSV: same datasets, one CSV per dataset, bundled in a zip.
 
   const handleExportExcel = useCallback(async () => {
     setExcelLoading(true);
@@ -901,14 +988,16 @@ export function useProductionData(): UseProductionData {
         { key: "hours_rate",    header: "Hours rate",      format: "0.000" },
       ]);
 
-      writeSheet(empresa.slice(0, 28), companyData, [
-        { key: "ano",           header: "Year" },
-        { key: "mes",           header: "Month" },
-        { key: "ambiente",      header: "Environment" },
-        { key: "oil_bbl_dia",   header: "Oil (bbl/day, stake-weighted)",   format: "#,##0.0" },
-        { key: "gas_mm3_dia",   header: "Gas (Mm³/day, stake-weighted)",   format: "#,##0.000" },
-        { key: "water_bbl_dia", header: "Water (bbl/day, stake-weighted)", format: "#,##0.0" },
-      ]);
+      if (viewIsCompany && viewEmpresa) {
+        writeSheet(viewEmpresa.slice(0, 28), companyData, [
+          { key: "ano",           header: "Year" },
+          { key: "mes",           header: "Month" },
+          { key: "ambiente",      header: "Environment" },
+          { key: "oil_bbl_dia",   header: "Oil (bbl/day, stake-weighted)",   format: "#,##0.0" },
+          { key: "gas_mm3_dia",   header: "Gas (Mm³/day, stake-weighted)",   format: "#,##0.000" },
+          { key: "water_bbl_dia", header: "Water (bbl/day, stake-weighted)", format: "#,##0.0" },
+        ]);
+      }
 
       writeSheet("Top Fields", topFields, [
         { key: "campo",         header: "Field" },
@@ -936,7 +1025,7 @@ export function useProductionData(): UseProductionData {
       const mm = String(now.getMonth() + 1).padStart(2, "0");
       const yy = String(now.getFullYear()).slice(-2);
       a.href = url;
-      a.download = `Production ${empresa} ${dd}-${mm}-${yy}.xlsx`;
+      a.download = `Production ${view} ${dd}-${mm}-${yy}.xlsx`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -946,7 +1035,7 @@ export function useProductionData(): UseProductionData {
     } finally {
       setExcelLoading(false);
     }
-  }, [brazilData, companyData, topFields, installations, empresa]);
+  }, [brazilData, companyData, topFields, installations, view, viewIsCompany, viewEmpresa]);
 
   const handleExportCsv = useCallback(async () => {
     setCsvLoading(true);
@@ -975,12 +1064,14 @@ export function useProductionData(): UseProductionData {
           "ano", "mes", "ambiente", "oil_bbl_dia", "gas_mm3_dia", "water_bbl_dia", "hours_rate",
         ]),
       );
-      zip.file(
-        `${empresa.replace(/\s+/g, "_").toLowerCase()}_aggregate.csv`,
-        rowsToCsv(companyData, [
-          "ano", "mes", "ambiente", "oil_bbl_dia", "gas_mm3_dia", "water_bbl_dia",
-        ]),
-      );
+      if (viewIsCompany && viewEmpresa) {
+        zip.file(
+          `${viewEmpresa.replace(/\s+/g, "_").toLowerCase()}_aggregate.csv`,
+          rowsToCsv(companyData, [
+            "ano", "mes", "ambiente", "oil_bbl_dia", "gas_mm3_dia", "water_bbl_dia",
+          ]),
+        );
+      }
       zip.file(
         "top_fields.csv",
         rowsToCsv(topFields, ["campo", "oil_bbl_dia", "water_bbl_dia", "hours_rate", "stake_pct"]),
@@ -998,7 +1089,7 @@ export function useProductionData(): UseProductionData {
       const mm = String(now.getMonth() + 1).padStart(2, "0");
       const yy = String(now.getFullYear()).slice(-2);
       a.href = url;
-      a.download = `Production ${empresa} ${dd}-${mm}-${yy}.zip`;
+      a.download = `Production ${view} ${dd}-${mm}-${yy}.zip`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -1008,7 +1099,7 @@ export function useProductionData(): UseProductionData {
     } finally {
       setCsvLoading(false);
     }
-  }, [brazilData, companyData, topFields, installations, empresa]);
+  }, [brazilData, companyData, topFields, installations, view, viewIsCompany, viewEmpresa]);
 
   // ── Anything loading? ─────────────────────────────────────────────────────
   const anyLoading =
@@ -1020,6 +1111,11 @@ export function useProductionData(): UseProductionData {
 
     bootstrapping,
     latestMonth,
+
+    view,
+    setView,
+    isCompanyView: viewIsCompany,
+    viewEmpresa,
 
     empresasList,
     empresa,
