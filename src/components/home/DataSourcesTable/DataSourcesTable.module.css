@@ -53,7 +53,7 @@
 
 .colHeaders {
   display: grid;
-  grid-template-columns: 3fr 1fr 1fr 1fr;
+  grid-template-columns: 3fr 1.5fr 1fr 0.5fr;
   align-items: center;
   gap: 8px;
   padding: 5px 14px;
@@ -64,6 +64,14 @@
   color: rgba(0, 0, 0, 0.38);
   border-bottom: 1px solid var(--ds-glass-border);
   background: var(--ds-glass-bg-elevated);
+}
+
+/* Column headers 2/3/4 centered (Source, Last update, Actions) */
+.colHeaders > span:nth-child(2),
+.colHeaders > span:nth-child(3),
+.colHeaders > span:nth-child(4) {
+  text-align: center;
+  justify-content: center;
 }
 
 /* Fix 3: column headers must also be white in dark mode */
@@ -106,7 +114,7 @@
 
 .sourceRow {
   display: grid;
-  grid-template-columns: 3fr 1fr 1fr 1fr;
+  grid-template-columns: 3fr 1.5fr 1fr 0.5fr;
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
@@ -177,18 +185,23 @@
   text-overflow: ellipsis;
   overflow: hidden;
   white-space: nowrap;
+  text-align: center;
+  justify-content: center;
 }
 
 .colLastUpdate {
   display: flex;
   align-items: center;
+  text-align: center;
+  justify-content: center;
 }
 
 .colActions {
   display: flex;
   align-items: center;
   gap: 6px;
-  justify-content: flex-start;
+  justify-content: center;
+  text-align: center;
 }
 
 .iconBtn {
