@@ -53,7 +53,10 @@
 
 .colHeaders {
   display: grid;
-  grid-template-columns: 3fr 1.5fr 1fr 0.5fr;
+  /* minmax(0, Nfr) prevents tracks from expanding to fit content — ensures
+     identical column geometry across header + every row, so the centered
+     SOURCE badge sits at the same x in every row. */
+  grid-template-columns: minmax(0, 3fr) minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 0.5fr);
   align-items: center;
   gap: 8px;
   padding: 5px 14px;
@@ -114,7 +117,11 @@
 
 .sourceRow {
   display: grid;
-  grid-template-columns: 3fr 1.5fr 1fr 0.5fr;
+  /* minmax(0, Nfr) on every track keeps column geometry identical row-to-row.
+     Without this, a long "Proprietary" source label or a long "2 weeks ago"
+     in Last update can steal width from Name and shift the centered SOURCE
+     badge off the vertical baseline. */
+  grid-template-columns: minmax(0, 3fr) minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 0.5fr);
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
