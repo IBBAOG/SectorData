@@ -38,7 +38,7 @@ A coluna `navios_diesel.is_cabotagem` é **generated** por:
 | `get_nd_navios` | Lista de navios filtrados (porto, produto, status, período) |
 | `get_nd_resumo_portos` | Agregado por porto (totais, contagens) |
 | `get_nd_volume_mensal_descarga` | Série mensal (Discharged / Pending / Indeterminate). Recalculada a cada snapshot — sobrescreve meses passados. Preservada por enquanto como fallback. |
-| `get_nd_volume_mensal_historico` | **Three temporal categories** (2026-05-27, evolved from frozen-history variant): (a) **PAST months** — anchored at LAST snapshot of the month; Pending bucket is reclassified into Indeterminate (Option A) since a closed month cannot have pending vessels; (b) **CURRENT month** — uses `p_collected_at` (live), all three buckets meaningful; (c) **FUTURE months** — derived from the live snapshot using ETA-based attribution, Pending-only, marked `is_current=true` so the frontend renders them as live. Baseline `2026-04`. `v_current_ts` is `timestamptz` (previous `::timestamp AT TIME ZONE 'America/Sao_Paulo'` chain shifted the anchor by 3h and silently emptied current-month buckets). Wrapper `rpcGetNdVolumeMensalDescarga` em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) chama esta primeiro e cai pra legacy se ela não existir (transição de deploy). |
+| `get_nd_volume_mensal_historico` | **Three temporal categories** (2026-05-27, latest revision in `20260527700000_nd_volume_mensal_historico_past_only_discharged.sql`): (a) **PAST closed months** — anchored at LAST snapshot of the month; **only `discharged_volume` is emitted, both `pending_volume` and `indeterminate_volume` are forced to 0** (per user contract — vessels still pending or indeterminate at month-end are discarded as retrospective noise, since they either never arrived, were redirected, or did not become real imports for that month); (b) **CURRENT month** — uses `p_collected_at` (live), all three buckets meaningful; (c) **FUTURE months** — derived from the live snapshot using ETA-based attribution, Pending-only, marked `is_current=true` so the frontend renders them as live. Baseline `2026-04`. `v_current_ts` is `timestamptz` with a regex-gated CASE handling SP-local-naive vs UTC-with-offset inputs. Wrapper `rpcGetNdVolumeMensalDescarga` em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) chama esta primeiro e cai pra legacy se ela não existir (transição de deploy). |
 
 ## Tabelas
 
@@ -161,17 +161,17 @@ The hook is the single source of truth for all data. Both Views import from it a
 
 These are tagged `[desktop-only]` in `desktop/View.tsx` per the binding sync rule.
 
-### Monthly Diesel Volume chart (both views — three temporal categories, 2026-05-27)
+### Monthly Diesel Volume chart (both views — three temporal categories, latest 2026-05-27)
 
 Desktop and mobile both render the monthly stacked-bar series sourced from `volumeMensal` (in turn fed by `get_nd_volume_mensal_historico`). Bars fall into three temporal categories, each with its own semantics:
 
 | Category | Anchor | Buckets emitted | `is_current` |
 |---|---|---|---|
-| **Past** (month < current) | LAST snapshot of that month (frozen — bars never get recomputed) | Discharged + Indeterminate. **Pending is reclassified into Indeterminate** (Option A) — a closed month cannot meaningfully have pending vessels; the honest answer is "we don't know if those ETAs eventually landed". | `false` |
+| **Past** (month < current) | LAST snapshot of that month (frozen — bars never get recomputed) | **Discharged only.** Both `pending_volume` and `indeterminate_volume` are forced to 0 in the SQL. A closed month has a single retrospective number: what actually discharged. Vessels still pending or indeterminate at month-end are intentionally discarded (they either never arrived, were redirected, or otherwise did not become real imports for that month). | `false` |
 | **Current** | `p_collected_at` (the snapshot the user picked, live) | Discharged + Pending + Indeterminate, all meaningful | `true` |
 | **Future** (month > current) | LIVE snapshot `p_collected_at`, vessels with ETA past current month-end grouped by attribution month | Pending only — these are scheduled ETAs that haven't happened yet | `true` |
 
-The frontend treats `is_current=true` as **live**, applying the same outline + `(live)` suffix to both the current month and every future month. No frontend change was needed to surface future months — they reuse the live styling path.
+The frontend treats `is_current=true` as **live**, applying the same outline + `(live)` suffix to both the current month and every future month. No frontend change was needed for the past-only-discharged contract either: both the desktop Plotly stacked bar and the mobile CSS bars already gate the Pending/Indeterminate segments on `volume > 0`, so past months naturally render as a single Discharged slice with no orange/green segment.
 
 | Slot | Desktop | Mobile |
 |---|---|---|
@@ -184,8 +184,8 @@ Mobile uses CSS bars (not Plotly) for weight and to avoid loading the Plotly bun
 
 Anti-regression:
 - If a future change ever re-introduces a single RPC that recomputes the whole series from one snapshot (the legacy `get_nd_volume_mensal_descarga` behavior), the frozen-history guarantee breaks silently — closed months will start moving again. Keep the wrapper in `rpc.ts` pointed at `get_nd_volume_mensal_historico` (with the legacy as fallback only).
-- The `v_current_ts` derivation must handle **two input formats**: the frontend sends SP-local-naive (`'2026-05-26T16:00:00'`, no offset, because `get_nd_coletas_distintas` serialises `(collected_at AT TIME ZONE 'America/Sao_Paulo')`); ad-hoc SQL callers usually pass UTC-with-offset (`'2026-05-26 19:00:00+00'`). Use the regex-gated CASE in `20260527500000_nd_volume_mensal_historico_future_months.sql` (`p_collected_at ~ '([+-][0-9]{2}(:?[0-9]{2})?|Z)$'` → `::timestamptz`, else `::timestamp AT TIME ZONE 'America/Sao_Paulo'`). A previous attempt to force `::timestamptz` for everything shifted the SP-local input by 3 hours and silently emptied current/future buckets — symptom: pending vessels appeared as discharged, future months never rendered. The opposite forcing (`::timestamp AT TIME ZONE 'America/Sao_Paulo'` for everything) breaks SQL callers passing UTC offsets.
-- "Past Pending = 0" is a contract, not a coincidence. The reclassification lives in the `past_and_current` CTE: `WHEN ma.month < v_current_mo THEN 0` for pending, `+ COALESCE(p.pending_volume, 0)` for indeterminate. Removing either half re-introduces the conceptually-impossible "pending in a closed month" bar.
+- The `v_current_ts` derivation must handle **two input formats**: the frontend sends SP-local-naive (`'2026-05-26T16:00:00'`, no offset, because `get_nd_coletas_distintas` serialises `(collected_at AT TIME ZONE 'America/Sao_Paulo')`); ad-hoc SQL callers usually pass UTC-with-offset (`'2026-05-26 19:00:00+00'`). Use the regex-gated CASE preserved in `20260527700000_nd_volume_mensal_historico_past_only_discharged.sql` (`p_collected_at ~ '([+-][0-9]{2}(:?[0-9]{2})?|Z)$'` → `::timestamptz`, else `::timestamp AT TIME ZONE 'America/Sao_Paulo'`). A previous attempt to force `::timestamptz` for everything shifted the SP-local input by 3 hours and silently emptied current/future buckets — symptom: pending vessels appeared as discharged, future months never rendered. The opposite forcing (`::timestamp AT TIME ZONE 'America/Sao_Paulo'` for everything) breaks SQL callers passing UTC offsets.
+- "Past = discharged only" is a contract, not a coincidence. It lives in the `past_and_current` CTE: `CASE WHEN ma.month < v_current_mo THEN 0 ELSE COALESCE(p.pending_volume, 0) END` for pending AND `CASE WHEN ma.month < v_current_mo THEN 0 ELSE COALESCE(i.indeterminate_volume, 0) END` for indeterminate. Removing either zero re-introduces noise into closed months. (Note: an earlier iteration tried "Option A" — folding past Pending into Indeterminate — and was rejected by the user. The current contract is stricter: drop both.)
 
 ## Export
 
