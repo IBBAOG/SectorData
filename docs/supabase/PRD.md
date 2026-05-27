@@ -440,6 +440,62 @@ Edge cases tested: PRIO (Pre-Salt + Onshore subcategory rows are NULL because PR
 
 **Consumer:** Frente B `dash-well-by-well` adds wrapper `getWellByWellHeader(empresa, year, month)` in `src/lib/rpc.ts` and renders the table in both `desktop/View.tsx` and `mobile/View.tsx` (dual-view sync rule). `is_total=TRUE` rows render with `font-weight: bold` and a thin top border to delimit category groups visually.
 
+#### Round 9 (2026-05-28) — Migration `20260528600000_well_by_well_brazil_rpcs.sql`
+
+Adds the data backend for the new "Visão Brasil" pill on `/well-by-well`. When the user toggles from an empresa to Brasil, the dashboard shows **raw 100% working-interest** numbers (no JOIN with `field_stakes` — country-level aggregates, like the PDF reports).
+
+**Two new materialized views** (private, no anon/authenticated GRANT — same Round 5 pattern as `mv_production_monthly`):
+
+| MV | Grain | Source | Rows | Size |
+|---|---|---|---|---|
+| `mv_brazil_canonical_monthly` | (canonical, ano, mes, ambiente) | `anp_cdp_producao` GROUP BY `canonical_field_name(campo)`, ano, mes, local | 76,933 | 6.5 MB |
+| `mv_brazil_installation_monthly` | (instalacao, ano, mes) | `anp_cdp_producao` GROUP BY COALESCE(`instalacao_destino`, em-dash), ano, mes | 64,929 | 6.5 MB |
+
+Both with `UNIQUE INDEX (...pk)` + secondary `(ano, mes)` index. `WHERE campo IS NOT NULL` on the canonical MV to keep the index clean.
+
+**`refresh_mv_production()` updated** to refresh all 5 MVs in this order:
+
+```sql
+REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_production_monthly;
+REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_production_installation_monthly;
+REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_brazil_monthly;
+REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_brazil_canonical_monthly;
+REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_brazil_installation_monthly;
+```
+
+`REVOKE ALL FROM PUBLIC, anon, authenticated` + `GRANT EXECUTE TO service_role` re-applied defensively (DoS guard on REFRESH CONCURRENTLY EXCLUSIVE locks). ETL `scripts/pipelines/anp/cdp/02_upload.py` already calls `refresh_mv_production()` at end of run — no pipeline changes needed.
+
+**Four new RPCs** (all `LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp`, all granted to `anon, authenticated`):
+
+| RPC | Signature | Reads from |
+|---|---|---|
+| `get_production_brazil_top_fields(p_date date, p_top_n int DEFAULT 10)` | `(campo, oil_bbl_dia, water_bbl_dia, hours_rate)` | `mv_brazil_canonical_monthly` |
+| `get_production_brazil_installation(p_date date)` | `(instalacao, oil_bbl_dia, gas_mm3_dia, hours_rate)` | `mv_brazil_installation_monthly` |
+| `get_production_brazil_field_timeseries(p_campo text, p_date_start date, p_date_end date)` | `(ano, mes, oil_bbl_dia, gas_mm3_dia, water_bbl_dia, hours_rate)` | `mv_brazil_canonical_monthly` |
+| `get_production_brazil_installation_timeseries(p_instalacao text, p_date_start date, p_date_end date)` | `(ano, mes, oil_bbl_dia, gas_mm3_dia, water_bbl_dia, hours_rate)` | `mv_brazil_installation_monthly` |
+
+Top-fields RPC groups by canonical across all ambientes before ordering by oil DESC.
+
+**Sanity-check vs PDF page 3 (Apr-26 Brazil top fields):**
+
+| Field | PDF | Got | Match |
+|---|---|---|---|
+| BÚZIOS | 910 | 910.1 | ✓ |
+| TUPI | 917 | 857.3 | ~ (-60 — see note) |
+| MERO | 721 | 720.9 | ✓ |
+| JUBARTE | 207 | 206.5 | ✓ |
+| ITAPU | 155 | 155.2 | ✓ |
+
+TUPI gap of ~60 kbpd is consistent across the 13-month timeseries (Apr-25 787 vs PDF 833; Apr-26 857 vs PDF 917). Other top fields match exactly, so the MV/RPC math is sound. Most likely cause: `canonical_field_name()` does not yet map every PDF-side TUPI variant to canonical TUPI (e.g. peripheral well clusters the report rolls in). Tracked separately; not a Round 9 regression — same canonicalization was present in Round 5 MVs.
+
+**Top installations Apr-26 vs PDF**: FPSO Almirante Tamandaré 248.6 (PDF ~249), Marechal Duque de Caxias 196.1 (PDF ~196), SEPETIBA 181.9 (PDF ~182) — exact match.
+
+**Performance:** `EXPLAIN ANALYZE get_production_brazil_top_fields('2026-04-01', 10)` returns in **3.7 ms** end-to-end (target was <50 ms). MV index lookup + small GROUP BY.
+
+**Security pattern (preserved from Round 5, Pegadinha #18):** MVs themselves are NOT granted to anon/authenticated. The 4 RPCs are the sole public surface; the MVs stay private to the function definer's privileges. The advisor's `materialized_view_in_api` warning is avoided this way (PostgREST does not expose them as `/rest/v1/<mv_name>`).
+
+**Consumer:** `worker_dash-well-by-well` adds 4 wrappers to `src/lib/rpc.ts` (`getProductionBrazilTopFields`, `getProductionBrazilInstallation`, `getProductionBrazilFieldTimeseries`, `getProductionBrazilInstallationTimeseries`) and the dashboard switches between empresa-scoped (`mv_production_*`-backed) and Brasil-scoped (`mv_brazil_*`-backed) RPCs based on the active pill. Dual-view sync rule applies to both desktop and mobile.
+
 ### Sessions / Auth state
 
 | Tabela | Dept consumidor | Populada por |
