@@ -21,8 +21,10 @@
 //   YoY expandable section    — bottom, hidden in Brasil mode (no per-
 //                               ambiente YoY rows from the Brazil-wide RPC).
 //   ExportFAB                 — opens an action sheet to pick Excel or CSV
-//   FilterDrawer              — period + reference month + ambientes (no
-//                               company selector — pills replaced it).
+//   FilterDrawer              — period + reference month only (no company
+//                               selector — Round 9 pills replaced it; no
+//                               environment multi-select — Round 14 removed it
+//                               and all 3 ambientes are always shown).
 //
 // Mobile is "same analysis, adapted clothing" — same hook, same metrics,
 // same view pill state machine, presented one panel at a time so it's
@@ -55,7 +57,6 @@ import {
   ChevronUpIcon,
 } from "../../../../components/dashboard/mobile";
 import StickyBreadcrumb from "../../../../components/dashboard/mobile/StickyBreadcrumb";
-import MultiSelectFilter from "../../../../components/dashboard/MultiSelectFilter";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 import HeaderTable from "../HeaderTable";
 import { bblDiaToKbpd } from "../../../../lib/units";
@@ -71,6 +72,7 @@ import {
   fmtMonthLabel,
   AMBIENTES,
   AMBIENTE_COLOR,
+  labelAmbiente,
   BRAND_ORANGE,
   TOP_FIELDS_OIL_COLOR,
   TOP_FIELDS_WATER_COLOR,
@@ -155,15 +157,19 @@ function buildStackedSeries(
     ambienteYs[amb] = months.map((m) => bblDiaToKbpd(pivot[amb]?.[m] ?? 0));
   }
 
+  // Display labels translate the raw DB value (`PreSal`/`PosSal`/`Terra`) to
+  // English (`Pre-Salt`/`Post-Salt`/`Onshore`) for legend + hover. Underlying
+  // data stays raw — only the user-visible string changes.
   const data: PlotData[] = AMBIENTES.map((amb) => {
     const baseColor = variant === "company" && amb === "PreSal"
       ? BRAND_ORANGE
       : AMBIENTE_COLOR[amb] ?? "#aaaaaa";
     const ys = ambienteYs[amb];
     const labelColor = amb === "Terra" ? "#1a1a1a" : "#ffffff";
+    const displayName = labelAmbiente(amb);
     return {
       type: "bar",
-      name: amb,
+      name: displayName,
       x: months,
       y: ys,
       text: ys.map((v) =>
@@ -174,7 +180,7 @@ function buildStackedSeries(
       textfont: { color: labelColor, size: 10, family: "Arial" },
       cliponaxis: false,
       marker: { color: baseColor },
-      hovertemplate: `${amb}: %{y:,.1f} kbpd<extra></extra>`,
+      hovertemplate: `${displayName}: %{y:,.1f} kbpd<extra></extra>`,
     } as PlotData;
   });
 
@@ -524,7 +530,6 @@ export default function MobileView(): React.ReactElement | null {
     latestMonth,
     view, setView, isCompanyView: viewIsCompany, viewEmpresa,
     allMonths, dateRange, monthIdxRange, setDateRange,
-    ambientes, toggleAmbiente, setAmbientes,
     referenceDate, setReferenceDate,
     brazilData, companyData, topFields, installations, yoyTable,
     headerData, headerLoading,
@@ -978,16 +983,6 @@ export default function MobileView(): React.ReactElement | null {
               ))}
             </select>
           </div>
-
-          <MultiSelectFilter
-            label="Environment"
-            items={AMBIENTES as unknown as string[]}
-            selected={ambientes}
-            onToggle={toggleAmbiente}
-            onClear={ambientes.length < AMBIENTES.length ? () => setAmbientes([...AMBIENTES]) : undefined}
-            idPrefix="prod-amb-m"
-            swatch={(item) => AMBIENTE_COLOR[item] ?? "#aaa"}
-          />
         </div>
       </FilterDrawer>
 

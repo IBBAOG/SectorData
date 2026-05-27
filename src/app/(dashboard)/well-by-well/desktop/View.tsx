@@ -46,7 +46,6 @@ import NavBar from "../../../../components/NavBar";
 import BrandLogo from "../../../../components/BrandLogo";
 import PlotlyChart from "../../../../components/PlotlyChart";
 import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
-import MultiSelectFilter from "../../../../components/dashboard/MultiSelectFilter";
 import ChartSection from "../../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 import ExportPanel from "../../../../components/dashboard/ExportPanel";
@@ -65,6 +64,7 @@ import {
   fmtMonthLabel,
   AMBIENTES,
   AMBIENTE_COLOR,
+  labelAmbiente,
   BRAND_ORANGE,
   TOP_FIELDS_OIL_COLOR,
   TOP_FIELDS_WATER_COLOR,
@@ -133,7 +133,10 @@ function buildStackedOilBars(
   );
 
   // Build one trace per ambiente. Company uses brand orange for PreSal accent;
-  // Brazil uses neutral greyscale.
+  // Brazil uses neutral greyscale. Display labels translate the raw DB value
+  // (`PreSal`/`PosSal`/`Terra`) to English (`Pre-Salt`/`Post-Salt`/`Onshore`)
+  // for legend + hover. Underlying data stays raw — only the user-visible
+  // string changes.
   const traces: PlotData[] = AMBIENTES.map((amb) => {
     const baseColor = variant === "company" && amb === "PreSal"
       ? BRAND_ORANGE
@@ -142,9 +145,10 @@ function buildStackedOilBars(
     // Light segments (Terra: #c5c5cb) need a dark label to remain readable;
     // dark segments (PreSal/PosSal/brand orange) take a white label.
     const labelColor = amb === "Terra" ? "#1a1a1a" : "#ffffff";
+    const displayName = labelAmbiente(amb);
     return {
       type: "bar",
-      name: amb,
+      name: displayName,
       x: months,
       y: ys,
       text: ys.map((v) => (v >= MIN_SEGMENT_KBPD_LABEL ? fmtIntPtBr(v) : "")),
@@ -153,7 +157,7 @@ function buildStackedOilBars(
       textfont: { color: labelColor, size: 11, family: "Arial" },
       cliponaxis: false,
       marker: { color: baseColor },
-      hovertemplate: `${amb}: %{y:,.1f} kbpd<extra></extra>`,
+      hovertemplate: `${displayName}: %{y:,.1f} kbpd<extra></extra>`,
     } as PlotData;
   });
 
@@ -1062,7 +1066,6 @@ export default function DesktopView(): React.ReactElement | null {
     view, setView, isCompanyView: viewIsCompany, viewEmpresa,
     empresa,
     allMonths, dateRange, monthIdxRange, setDateRange,
-    ambientes, toggleAmbiente, setAmbientes,
     referenceDate, setReferenceDate,
     brazilData, companyData, topFields, installations,
     headerData, headerLoading,
@@ -1165,19 +1168,6 @@ export default function DesktopView(): React.ReactElement | null {
                     <option key={m} value={m}>{fmtMonthLabel(m)}</option>
                   ))}
                 </select>
-              </div>
-
-              {/* Ambiente */}
-              <div className="sidebar-filter-section">
-                <MultiSelectFilter
-                  label="Environment"
-                  items={AMBIENTES as unknown as string[]}
-                  selected={ambientes}
-                  onToggle={toggleAmbiente}
-                  onClear={ambientes.length < AMBIENTES.length ? () => setAmbientes([...AMBIENTES]) : undefined}
-                  idPrefix="prod-amb"
-                  swatch={(item) => AMBIENTE_COLOR[item] ?? "#aaa"}
-                />
               </div>
             </div>
           </div>

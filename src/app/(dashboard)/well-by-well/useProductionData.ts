@@ -31,6 +31,17 @@
 // default lookback dropped from 13 → 12 months so "Last 12M" highlights
 // on first paint.
 //
+// Round 14 (2026-05-27): the Environment (ambientes) filter was removed.
+// `ambientes` state, setter, toggle and exports are gone; both aggregate
+// RPCs are now always invoked with `p_ambientes = null`, which they treat
+// as "all three buckets". Concurrently, display labels for the three
+// environment buckets were translated to English: `PreSal → Pre-Salt`,
+// `PosSal → Post-Salt`, `Terra → Onshore`. The translation lives in the
+// `AMBIENTE_LABEL` map and the `labelAmbiente(raw)` helper exported below,
+// applied by both Views to the Chart 1 stacked-bar trace `name` and
+// `hovertemplate`. Underlying RPC payload values stay raw so exported rows
+// remain comparable to the `anp_cdp_producao.local` column.
+//
 // Data sources (5 base + 4 Brazil RPCs, all SECURITY DEFINER):
 //   • get_production_brazil_aggregate(date_start, date_end, ambientes[]?)
 //       → Brazil-wide stacked bars (no stake weighting)
@@ -120,6 +131,24 @@ export const DEFAULT_EMPRESA = "Petrobras";
 
 /** All three ambiente buckets carried verbatim from `anp_cdp_producao.local`. */
 export const AMBIENTES: readonly string[] = ["PreSal", "PosSal", "Terra"];
+
+/**
+ * Display labels for the raw `anp_cdp_producao.local` values. Keep the DB
+ * values raw on the data side (RPC payloads, pivots, exports) — only the
+ * USER-FACING string is translated. This way exported rows stay comparable to
+ * the DB column and analyst diff tools keep working.
+ */
+export const AMBIENTE_LABEL: Record<string, string> = {
+  PreSal: "Pre-Salt",
+  PosSal: "Post-Salt",
+  Terra:  "Onshore",
+};
+
+/** Lookup helper for the ambiente display label; falls back to the raw value
+ *  if a future bucket appears that we haven't translated yet (defensive). */
+export function labelAmbiente(raw: string): string {
+  return AMBIENTE_LABEL[raw] ?? raw;
+}
 
 /** Default lookback window when initialising the period (12 months — Round 13
  *  preset migration; was 13 in slider mode). The "Last 12M" preset matches
@@ -355,11 +384,6 @@ export interface UseProductionData {
   monthIdxRange: [number, number];                // indices into `allMonths` for the slider
   setMonthIdxRange: (idx: [number, number]) => void;
 
-  // Ambientes (multi-select)
-  ambientes: string[];
-  setAmbientes: (a: string[]) => void;
-  toggleAmbiente: (a: string) => void;
-
   // Reference month (used by top fields + installations + YoY + Header table)
   referenceDate: string;                          // YYYY-MM-01
   setReferenceDate: (d: string) => void;
@@ -441,7 +465,6 @@ export function useProductionData(): UseProductionData {
   // Round 9: view replaces empresa as the active toggle state. Default is
   // "Brasil" — first thing the user sees on page load.
   const [view, setViewState] = useState<WellByWellView>(DEFAULT_VIEW);
-  const [ambientes, setAmbientesState] = useState<string[]>([...AMBIENTES]);
 
   const [allMonths, setAllMonths] = useState<string[]>([]);
   const [monthIdxRange, setMonthIdxRangeState] = useState<[number, number]>([0, 0]);
@@ -498,12 +521,6 @@ export function useProductionData(): UseProductionData {
     if ((WELL_BY_WELL_VIEWS as readonly string[]).includes(name)) {
       setViewState(name as WellByWellView);
     }
-  }, []);
-  const setAmbientes = useCallback((a: string[]) => setAmbientesState(a), []);
-  const toggleAmbiente = useCallback((a: string) => {
-    setAmbientesState((prev) =>
-      prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a],
-    );
   }, []);
   const setMonthIdxRange = useCallback((idx: [number, number]) => {
     setMonthIdxRangeState(idx);
@@ -653,22 +670,21 @@ export function useProductionData(): UseProductionData {
     async () => {
       if (!supabase || bootstrapping || !dateRange[0] || !dateRange[1]) return null;
       if (view !== "Brasil") return null; // skip when company is active
-      const ambientesParam = ambientes.length > 0 && ambientes.length < AMBIENTES.length
-        ? ambientes
-        : null;
       try {
+        // Ambiente filter was removed (all three environments always shown).
+        // Pass null so the RPC returns rows for every `local` bucket.
         return await rpcGetProductionBrazilAggregate(
           supabase,
           dateRange[0],
           dateRange[1],
-          ambientesParam,
+          null,
         );
       } catch (e) {
         console.error("Brazil aggregate refetch failed", e);
         return [];
       }
     },
-    [supabase, bootstrapping, view, dateRange[0], dateRange[1], ambientes.join("|")],
+    [supabase, bootstrapping, view, dateRange[0], dateRange[1]],
     { ms: 150, skipInitial: true },
   );
   useEffect(() => {
@@ -686,23 +702,22 @@ export function useProductionData(): UseProductionData {
     async () => {
       if (!supabase || bootstrapping || !dateRange[0] || !dateRange[1]) return null;
       if (!viewIsCompany || !viewEmpresa) return null;
-      const ambientesParam = ambientes.length > 0 && ambientes.length < AMBIENTES.length
-        ? ambientes
-        : null;
       try {
+        // Ambiente filter was removed (all three environments always shown).
+        // Pass null so the RPC returns rows for every `local` bucket.
         return await rpcGetProductionCompanyAggregate(
           supabase,
           viewEmpresa,
           dateRange[0],
           dateRange[1],
-          ambientesParam,
+          null,
         );
       } catch (e) {
         console.error("Company aggregate refetch failed", e);
         return [];
       }
     },
-    [supabase, bootstrapping, view, dateRange[0], dateRange[1], ambientes.join("|")],
+    [supabase, bootstrapping, view, dateRange[0], dateRange[1]],
     { ms: 150, skipInitial: false },
   );
   useEffect(() => {
@@ -1274,10 +1289,6 @@ export function useProductionData(): UseProductionData {
     setDateRange,
     monthIdxRange,
     setMonthIdxRange,
-
-    ambientes,
-    setAmbientes,
-    toggleAmbiente,
 
     referenceDate,
     setReferenceDate,
