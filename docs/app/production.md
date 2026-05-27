@@ -28,12 +28,14 @@ All math is done **server-side** in 5 SECURITY DEFINER RPCs (migration `supabase
 | `get_production_by_installation` | `(empresa text, date date)` | Installation-level (FPSO/UEP/land plant) production routed through the installation, stake-weighted, one month. |
 | `get_production_yoy_table` | `(empresa text, date date)` | YoY/MoM/YTD breakdown at the reference month — 1 TOTAL row + 1 row per environment. |
 | `get_production_field_timeseries` | `(p_campo text, p_empresa text, p_date_start date, p_date_end date)` | Stake-weighted monthly oil/gas/water/uptime timeseries for one field × one company. Powers the Field drill-down (Round 2). |
+| `get_production_installation_timeseries` | `(p_instalacao text, p_empresa text, p_date_start date, p_date_end date)` | Stake-weighted monthly oil/gas/water/uptime timeseries for one installation (FPSO/UEP/land plant) × one company. Powers the Installation drill-down (Round 3). Returns the SAME row shape as `get_production_field_timeseries`. |
 
 All return `LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp` (Pegadinha #18) and are granted to `anon, authenticated`. Frontend wrappers live in `src/lib/rpc.ts` under the "MODULE: Production" section.
 
 Source-of-truth migrations:
 - `supabase/migrations/20260528000000_production_rpcs.sql` (Round 1, 5 RPCs).
 - `supabase/migrations/20260528100000_production_round2.sql` (Round 2: YoY TOTAL fix + `get_production_field_timeseries`).
+- `supabase/migrations/20260528200000_production_installation_timeseries.sql` (Round 3: `get_production_installation_timeseries`).
 
 ### Companies (Empresa dropdown)
 
@@ -87,6 +89,34 @@ A secondary view that opens on demand when the user wants to dig into one of the
 **Empty state:** fields whose stakes don't sum to 100 (i.e. listed in `field_stakes_lacunas`) return zero rows server-side. The modal/sheet still opens; KPIs show `—` and a centered "No data for this field in the current period." caption replaces the chart.
 
 **Error handling:** RPC failures bubble up as `drillError` (string) and render as a yellow warning banner inside the modal/sheet body. The drill stays open so the user can dismiss; closing clears the error.
+
+## FPSO/Installation drill-down (Round 3, 2026-05-27)
+
+Mirrors the Field drill-down pattern at the installation (FPSO/UEP/land plant) level — same hook owns the state, same dual-surface architecture, same client-side KPI math.
+
+**Trigger:**
+- **Desktop:** click any row in the P4 Installations table (cursor pointer + warm-orange hover bg `#fff5ef`). The helper caption below the table confirms the affordance.
+- **Mobile:** tap any FPSO `MobileDataCard` in the FPSOs tab (each card now shows a "Tap to drill ›" hint, matching the Fields tab pattern).
+
+**Data:** `get_production_installation_timeseries(p_instalacao, p_empresa, p_date_start, p_date_end)` — returns one row per (year, month) with `oil_bbl_dia`, `gas_mm3_dia`, `water_bbl_dia`, `hours_rate`, stake-weighted for the selected company. **Row shape is identical to `get_production_field_timeseries`** — the TypeScript layer expresses this with `type ProductionInstallationTimeseriesRow = ProductionFieldTimeseriesRow` in `src/types/production.ts`. The fetch uses the dashboard's current `dateRange` + `empresa` (no separate filter).
+
+**Surfaces:**
+- **Desktop:** Bootstrap-styled modal (`InstallationDrillModal` inline in `desktop/View.tsx`) — same 820px wide chrome, brand-orange accent bar, Esc / scrim / × all close. The chart builder (`buildFieldDrillChart`) is reused since the row shape is identical.
+- **Mobile:** `BottomSheet` (`height="90vh"`) — same 2×2 KPI grid + `MobileChart` wrapper as the field drill.
+
+**KPIs (derived client-side from the timeseries, not from a separate RPC):**
+1. **Current oil** — last month in the series, kbpd
+2. **Δ MoM** — `(current - prev) / prev` (null if the series has 1 row or `prev == 0`)
+3. **Δ YoY** — `(current - same_month_last_year) / same_month_last_year` (null if the previous year's row isn't in the visible window or is zero)
+4. **YTD avg** — average of months in the same calendar year as the most-recent month
+
+**Chart:** identical to the field drill — 13-month vertical stacked bars (oil `#1a1a1a` + water `#7BB6DD`) on the left y-axis (kbpd), plus a hours-rate line (`BRAND_ORANGE`) on the right y-axis (%, 0..105).
+
+**Empty state:** installations whose constituent campos are all in `field_stakes_lacunas` return zero rows server-side. The modal/sheet still opens; KPIs show `—` and a centered "No data for this installation in the current period." caption replaces the chart.
+
+**Error handling:** RPC failures bubble up as `drillInstalacaoError` and render the same yellow warning banner.
+
+**Mutual exclusivity:** the field drill and installation drill are mutually exclusive at the hook level — opening one auto-closes the other (clearing its timeseries + error). Rationale: simpler UX with only one modal/BottomSheet on screen at a time; avoids stacked overlays on mobile in particular.
 
 ## KPI cards (desktop top strip, mobile per-tab)
 
@@ -147,7 +177,7 @@ Visibility is enforced by `useModuleVisibilityGuard("production")` inside the ho
 
 - **BSW overlay** — surface water-cut trends from `/anp-cdp-bsw` next to the Top Fields chart.
 - **Reserves certificate comparison** — overlay PRIO's reserves report against actual production curves.
-- **Per-FPSO drill-down** — tap an installation row to see its constituent wells (would link into `/anp-cdp-diaria-instalacao`).
+- **Per-FPSO well drill-down** — drill from an installation timeseries into its constituent wells (would link into `/anp-cdp-diaria-instalacao` for daily resolution). The current Round 3 drill-down is at the installation-aggregate level.
 - **Multi-company comparison** — overlay two companies' aggregate curves (would need a secondary empresa selector).
 
 ## Owner

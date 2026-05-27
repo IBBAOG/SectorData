@@ -55,6 +55,7 @@ import type {
   ProductionCompanyRow,
   ProductionTopField,
   ProductionFieldTimeseriesRow,
+  ProductionInstallationTimeseriesRow,
 } from "../../../../types/production";
 
 type Tab = "brazil" | "company" | "fields" | "fpsos";
@@ -247,6 +248,9 @@ export default function MobileView(): React.ReactElement | null {
     handleExportExcel, handleExportCsv,
     drillCampo, drillTimeseries, drillLoading, drillError, drillKpis,
     openFieldDrill, closeFieldDrill,
+    drillInstalacao, drillInstalacaoTimeseries, drillInstalacaoLoading,
+    drillInstalacaoError, drillInstalacaoKpis,
+    openInstallationDrill, closeInstallationDrill,
   } = useProductionData();
 
   const [tab, setTab] = useState<Tab>("brazil");
@@ -273,6 +277,13 @@ export default function MobileView(): React.ReactElement | null {
   const companySeries = useMemo(() => buildStackedSeries(companyData, "company"), [companyData]);
   const topFieldsSeries = useMemo(() => buildTopFieldsHBars(topFields), [topFields]);
   const drillSeries = useMemo(() => buildFieldDrillSeries(drillTimeseries), [drillTimeseries]);
+  // Installation drill timeseries reuses the field-series builder — the row
+  // shape (ProductionInstallationTimeseriesRow) is a type alias of
+  // ProductionFieldTimeseriesRow.
+  const drillInstalacaoSeries = useMemo(
+    () => buildFieldDrillSeries(drillInstalacaoTimeseries as ProductionInstallationTimeseriesRow[]),
+    [drillInstalacaoTimeseries],
+  );
 
   if (visLoading || !visible) return null;
 
@@ -525,7 +536,7 @@ export default function MobileView(): React.ReactElement | null {
         {tab === "fpsos" && (
           <>
             <div style={{ marginBottom: 8, fontFamily: "Arial", fontSize: 12, color: "#888" }}>
-              {empresa} · installations · {fmtMonthLabel(referenceDate)}
+              {empresa} · installations · {fmtMonthLabel(referenceDate)} · tap to drill in
             </div>
             <div
               style={{
@@ -542,6 +553,7 @@ export default function MobileView(): React.ReactElement | null {
                   variant="compact"
                   title={inst.instalacao}
                   subtitle={`Hours rate ${(inst.hours_rate * 100).toFixed(0)}%`}
+                  onClick={() => openInstallationDrill(inst.instalacao)}
                   rightSlot={
                     <div style={{ textAlign: "right", fontFamily: "Arial" }}>
                       <div style={{ fontSize: 14, fontWeight: 700, color: "#1a1a1a" }}>
@@ -550,6 +562,9 @@ export default function MobileView(): React.ReactElement | null {
                       </div>
                       <div style={{ fontSize: 11, color: "#888" }}>
                         {fmtNumber(inst.gas_mm3_dia, 1)} Mm³/d
+                      </div>
+                      <div style={{ fontSize: 10, color: "var(--mobile-accent, #ff5000)", fontWeight: 600, marginTop: 2 }}>
+                        Tap to drill ›
                       </div>
                     </div>
                   }
@@ -828,6 +843,119 @@ export default function MobileView(): React.ReactElement | null {
 
           <div style={{ fontSize: 11, color: "#888", fontFamily: "Arial", padding: "0 4px" }}>
             Bars: stake-weighted oil (dark) + water (light blue) · Line: monthly uptime fraction.
+          </div>
+        </div>
+      </BottomSheet>
+
+      {/* ── Installation drill-down BottomSheet (Round 3, 2026-05-27) ──── */}
+      {/* Mirrors the field drill BottomSheet exactly — same 90vh height, same  */}
+      {/* 2x2 KPI grid + 13mo chart. Mutually exclusive at the hook level, so   */}
+      {/* only one of the two BottomSheets is ever `open` at a time.            */}
+      <BottomSheet
+        open={drillInstalacao !== null}
+        onClose={closeInstallationDrill}
+        height="90vh"
+        title={drillInstalacao ? `${drillInstalacao} — ${empresa}` : undefined}
+        ariaLabel="Installation drill-down"
+      >
+        <div style={{ opacity: drillInstalacaoLoading ? 0.6 : 1, display: "flex", flexDirection: "column", gap: 12 }}>
+          {drillInstalacaoError && (
+            <div
+              style={{
+                padding: "10px 12px",
+                background: "#fff3cd",
+                border: "1px solid #ffe69c",
+                borderRadius: 8,
+                color: "#7d5800",
+                fontSize: 12,
+                fontFamily: "Arial",
+              }}
+            >
+              {drillInstalacaoError}
+            </div>
+          )}
+
+          {/* KPI tiles — 2×2 grid on mobile */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gap: 8,
+            }}
+          >
+            <MobileKpi
+              label="Current oil"
+              value={fmtNumber(drillInstalacaoKpis.currentOil, 1)}
+              unit="kbpd"
+            />
+            <MobileKpi
+              label="Δ MoM"
+              value={drillInstalacaoKpis.momPct == null ? "—" : fmtPct(drillInstalacaoKpis.momPct)}
+              unit=""
+            />
+            <MobileKpi
+              label="Δ YoY"
+              value={drillInstalacaoKpis.yoyPct == null ? "—" : fmtPct(drillInstalacaoKpis.yoyPct)}
+              unit=""
+            />
+            <MobileKpi
+              label="YTD avg"
+              value={drillInstalacaoKpis.ytdAvg == null ? "—" : fmtNumber(drillInstalacaoKpis.ytdAvg, 1)}
+              unit="kbpd"
+            />
+          </div>
+
+          {/* Chart */}
+          <div
+            style={{
+              background: "var(--mobile-surface, #ffffff)",
+              border: "1px solid var(--mobile-border, #e6e6ec)",
+              borderRadius: 12,
+              padding: "10px 8px",
+            }}
+          >
+            <div
+              style={{
+                fontFamily: "Arial",
+                fontSize: 12,
+                fontWeight: 700,
+                color: "#1a1a1a",
+                marginBottom: 6,
+                padding: "0 6px",
+              }}
+            >
+              Oil + Water (kbpd) · Hours rate (%)
+            </div>
+            {drillInstalacaoSeries.length > 0 ? (
+              <MobileChart
+                data={drillInstalacaoSeries}
+                height={280}
+                layout={{
+                  barmode: "stack",
+                  margin: { l: 36, r: 36, t: 8, b: 36 },
+                  xaxis: { type: "date", tickformat: "%b %y" },
+                  yaxis: { title: { text: "kbpd" } },
+                  yaxis2: {
+                    overlaying: "y",
+                    side: "right",
+                    range: [0, 105],
+                    showgrid: false,
+                    tickfont: { size: 10 },
+                    fixedrange: true,
+                  },
+                  showlegend: true,
+                  legend: { orientation: "h", y: -0.25, x: 0 },
+                }}
+              />
+            ) : (
+              <div style={{ padding: 28, textAlign: "center", color: "#888", fontFamily: "Arial", fontSize: 12 }}>
+                {drillInstalacaoLoading ? "Loading…" : "No data for this installation in the current period."}
+              </div>
+            )}
+          </div>
+
+          <div style={{ fontSize: 11, color: "#888", fontFamily: "Arial", padding: "0 4px" }}>
+            Bars: stake-weighted oil (dark) + water (light blue) routed through this installation · Line: monthly uptime fraction.
           </div>
         </div>
       </BottomSheet>

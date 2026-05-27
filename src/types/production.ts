@@ -107,3 +107,21 @@ export interface ProductionFieldTimeseriesRow {
   water_bbl_dia: number;
   hours_rate: number;
 }
+
+/**
+ * One row per (year, month) for one installation × empresa — stake-weighted
+ * monthly timeseries used by the Installation (FPSO/UEP) drill-down (Round 3,
+ * 2026-05-27). Returned by `get_production_installation_timeseries`.
+ *
+ * The RPC returns the SAME row shape as `get_production_field_timeseries`
+ * (`(ano, mes, oil_bbl_dia, gas_mm3_dia, water_bbl_dia, hours_rate)`), so this
+ * is intentionally a type alias rather than a structural duplicate — keeps the
+ * two drills wire-compatible while preserving the semantic distinction at the
+ * call site (`ProductionFieldTimeseriesRow` for the field drill,
+ * `ProductionInstallationTimeseriesRow` for the FPSO drill).
+ *
+ * Source-of-truth migration:
+ *   `supabase/migrations/20260528200000_production_installation_timeseries.sql`
+ *   (owned by worker_supabase, Round 3 of Fase 2).
+ */
+export type ProductionInstallationTimeseriesRow = ProductionFieldTimeseriesRow;

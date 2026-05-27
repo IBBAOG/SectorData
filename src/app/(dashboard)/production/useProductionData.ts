@@ -44,6 +44,7 @@ import {
   rpcGetProductionByInstallation,
   rpcGetProductionYoyTable,
   rpcGetProductionFieldTimeseries,
+  rpcGetProductionInstallationTimeseries,
 } from "../../../lib/rpc";
 import type { FieldStakeEmpresa } from "../../../types/fieldStakes";
 import type {
@@ -53,6 +54,7 @@ import type {
   ProductionInstallation,
   ProductionYoYRow,
   ProductionFieldTimeseriesRow,
+  ProductionInstallationTimeseriesRow,
 } from "../../../types/production";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -231,6 +233,25 @@ export interface UseProductionData {
   };
   openFieldDrill: (campo: string) => void;
   closeFieldDrill: () => void;
+
+  // Installation (FPSO/UEP) drill-down (Round 3, 2026-05-27).
+  // Click a row in the P4 Installations table (desktop) or tap an FPSO card
+  // (mobile) to open this. Same shape as the field drill — a 13mo timeseries
+  // plus 4 client-side KPIs. The two drills are MUTUALLY EXCLUSIVE: opening
+  // one closes the other, so only ever one modal/BottomSheet is on-screen.
+  drillInstalacao: string | null;       // null = closed; non-null = open
+  drillInstalacaoTimeseries: ProductionInstallationTimeseriesRow[];
+  drillInstalacaoLoading: boolean;
+  drillInstalacaoError: string | null;
+  drillInstalacaoKpis: {
+    currentOil: number;
+    prevOil: number | null;
+    momPct: number | null;
+    yoyPct: number | null;
+    ytdAvg: number | null;
+  };
+  openInstallationDrill: (instalacao: string) => void;
+  closeInstallationDrill: () => void;
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -269,6 +290,14 @@ export function useProductionData(): UseProductionData {
   const [drillTimeseries, setDrillTimeseries] = useState<ProductionFieldTimeseriesRow[]>([]);
   const [drillLoading, setDrillLoading] = useState(false);
   const [drillError, setDrillError] = useState<string | null>(null);
+
+  // Installation drill-down state (Round 3). `drillInstalacao` doubles as
+  // visibility flag for the modal/sheet — null when closed, the installation
+  // name when open. Field and installation drills are mutually exclusive.
+  const [drillInstalacao, setDrillInstalacao] = useState<string | null>(null);
+  const [drillInstalacaoTimeseries, setDrillInstalacaoTimeseries] = useState<ProductionInstallationTimeseriesRow[]>([]);
+  const [drillInstalacaoLoading, setDrillInstalacaoLoading] = useState(false);
+  const [drillInstalacaoError, setDrillInstalacaoError] = useState<string | null>(null);
 
   // ── Derived: dateRange from monthIdxRange ─────────────────────────────────
   const dateRange = useMemo<[string, string]>(() => {
@@ -553,7 +582,15 @@ export function useProductionData(): UseProductionData {
   // empresa so the drilled-in timeseries matches the period the user is
   // looking at. Closing clears the timeseries to avoid stale flicker if a
   // different field is reopened later.
+  //
+  // Mutual exclusivity (Round 3): opening the field drill auto-closes any
+  // open installation drill, and vice versa — only one modal/BottomSheet on
+  // screen at a time.
   const openFieldDrill = useCallback((campo: string) => {
+    // Close installation drill first (mutual exclusivity)
+    setDrillInstalacao(null);
+    setDrillInstalacaoTimeseries([]);
+    setDrillInstalacaoError(null);
     setDrillCampo(campo);
   }, []);
   const closeFieldDrill = useCallback(() => {
@@ -591,6 +628,54 @@ export function useProductionData(): UseProductionData {
     })();
     return () => { cancelled = true; };
   }, [supabase, drillCampo, empresa, dateRange]);
+
+  // ── Installation drill-down: open / close handlers + reactive fetch ───────
+  //
+  // Mirrors the field drill exactly (intent-driven open, no debounce, reuses
+  // dateRange + empresa, clears state on close). Mutually exclusive with the
+  // field drill — opening this auto-closes any open field drill.
+  const openInstallationDrill = useCallback((instalacao: string) => {
+    // Close field drill first (mutual exclusivity)
+    setDrillCampo(null);
+    setDrillTimeseries([]);
+    setDrillError(null);
+    setDrillInstalacao(instalacao);
+  }, []);
+  const closeInstallationDrill = useCallback(() => {
+    setDrillInstalacao(null);
+    setDrillInstalacaoTimeseries([]);
+    setDrillInstalacaoError(null);
+  }, []);
+
+  useEffect(() => {
+    if (!supabase || !drillInstalacao || !empresa || !dateRange[0] || !dateRange[1]) {
+      return;
+    }
+    let cancelled = false;
+    setDrillInstalacaoLoading(true);
+    setDrillInstalacaoError(null);
+    (async () => {
+      try {
+        const rows = await rpcGetProductionInstallationTimeseries(
+          supabase,
+          drillInstalacao,
+          empresa,
+          dateRange[0],
+          dateRange[1],
+        );
+        if (!cancelled) setDrillInstalacaoTimeseries(rows);
+      } catch (e) {
+        if (!cancelled) {
+          console.error("Installation drill timeseries refetch failed", e);
+          setDrillInstalacaoError(e instanceof Error ? e.message : String(e));
+          setDrillInstalacaoTimeseries([]);
+        }
+      } finally {
+        if (!cancelled) setDrillInstalacaoLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, drillInstalacao, empresa, dateRange]);
 
   // Derived KPIs for the drill (client-side from the 13mo series).
   //   currentOil = last month's stake-weighted oil, kbpd
@@ -633,6 +718,39 @@ export function useProductionData(): UseProductionData {
 
     return { currentOil, prevOil, momPct, yoyPct, ytdAvg };
   }, [drillTimeseries]);
+
+  // Installation drill-down KPIs — identical math to drillKpis, sourced from
+  // the installation timeseries. Kept as a separate memo (rather than a shared
+  // helper) so the two states stay obviously independent in DevTools.
+  const drillInstalacaoKpis = useMemo(() => {
+    if (drillInstalacaoTimeseries.length === 0) {
+      return { currentOil: 0, prevOil: null, momPct: null, yoyPct: null, ytdAvg: null };
+    }
+    const sorted = [...drillInstalacaoTimeseries].sort((a, b) => {
+      if (a.ano !== b.ano) return a.ano - b.ano;
+      return a.mes - b.mes;
+    });
+    const last = sorted[sorted.length - 1];
+    const prev = sorted.length >= 2 ? sorted[sorted.length - 2] : null;
+    const currentOil = bblDiaToKbpd(last.oil_bbl_dia);
+    const prevOil = prev ? bblDiaToKbpd(prev.oil_bbl_dia) : null;
+    const momPct = prev && prevOil && prevOil !== 0
+      ? (currentOil - prevOil) / prevOil
+      : null;
+
+    const yoyMatch = sorted.find((r) => r.ano === last.ano - 1 && r.mes === last.mes);
+    const yoyOil = yoyMatch ? bblDiaToKbpd(yoyMatch.oil_bbl_dia) : null;
+    const yoyPct = yoyOil != null && yoyOil !== 0
+      ? (currentOil - yoyOil) / yoyOil
+      : null;
+
+    const ytdRows = sorted.filter((r) => r.ano === last.ano && r.mes <= last.mes);
+    const ytdAvg = ytdRows.length > 0
+      ? bblDiaToKbpd(ytdRows.reduce((s, r) => s + r.oil_bbl_dia, 0) / ytdRows.length)
+      : null;
+
+    return { currentOil, prevOil, momPct, yoyPct, ytdAvg };
+  }, [drillInstalacaoTimeseries]);
 
   // ── Export (Tier 1, multi-sheet XLSX + zip-of-CSVs) ───────────────────────
   //
@@ -867,5 +985,13 @@ export function useProductionData(): UseProductionData {
     drillKpis,
     openFieldDrill,
     closeFieldDrill,
+
+    drillInstalacao,
+    drillInstalacaoTimeseries,
+    drillInstalacaoLoading,
+    drillInstalacaoError,
+    drillInstalacaoKpis,
+    openInstallationDrill,
+    closeInstallationDrill,
   };
 }
