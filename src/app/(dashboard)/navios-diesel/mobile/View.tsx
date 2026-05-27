@@ -1041,7 +1041,7 @@ export default function MobileView(): React.ReactElement {
                 Monthly Diesel Volume
               </h2>
               <div style={{ fontSize: 11, color: "var(--mobile-text-muted)", marginBottom: 12 }}>
-                Past months frozen · current is live · m³
+                Past months frozen · current and future are live · m³
               </div>
               <MonthlyEstimateBars rows={volumeMensal} />
             </section>
