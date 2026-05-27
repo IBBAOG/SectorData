@@ -171,13 +171,13 @@ Desktop and mobile both render the monthly stacked-bar series sourced from `volu
 | **Current** | `p_collected_at` (the snapshot the user picked, live) | Discharged + Pending + Indeterminate, all meaningful | `true` |
 | **Future** (month > current) | LIVE snapshot `p_collected_at`, vessels with ETA past current month-end grouped by attribution month | Pending only — these are scheduled ETAs that haven't happened yet | `true` |
 
-The frontend treats `is_current=true` as **live**, applying the same outline + `(live)` suffix to both the current month and every future month. No frontend change was needed for the past-only-discharged contract either: both the desktop Plotly stacked bar and the mobile CSS bars already gate the Pending/Indeterminate segments on `volume > 0`, so past months naturally render as a single Discharged slice with no orange/green segment.
+The frontend treats `is_current=true` as **live**, marking those bars with a `(live)` suffix on the x-tick (desktop) or an orange-tinted month label + `live` caption (mobile). Outlines/borders on the bars themselves were tried and rejected as visually noisy — the subtitle copy plus the per-tick `(live)` tag carry the distinction clearly enough. No frontend change was needed for the past-only-discharged contract either: both the desktop Plotly stacked bar and the mobile CSS bars already gate the Pending/Indeterminate segments on `volume > 0`, so past months naturally render as a single Discharged slice with no orange/green segment.
 
 | Slot | Desktop | Mobile |
 |---|---|---|
 | Container | Plotly stacked bar (`Discharged` / `Pending` / `Indeterminate`) in Row 1 Col 2 (right of map) | CSS-only stacked bars in a glass card on the **Ports** tab, above Port Summary |
 | Range | Past + current + future months, in one row | Horizontal scroller, 48px per bar, past + current + future months |
-| Live marker | Each live bar gets a contrasting outline + `(live)` suffix on the x-tick; hover text reads `· live` vs. `· frozen` | Each live bar gets an orange outline + `live` caption under the month label |
+| Live marker | x-tick label carries `(live)` suffix; hover text reads `· live` vs. `· frozen`. No outline on the bar — was tried and rejected as visually noisy. | Month label tinted orange (`#FF5000`) + bold + `live` caption under the bar. No outline on the bar — was tried and rejected as visually noisy. |
 | Subtitle | "Past months frozen at last snapshot in the month · current and future months are live" (below title, above hr) | "Past months frozen · current and future are live · m³" (below title) |
 
 Mobile uses CSS bars (not Plotly) for weight and to avoid loading the Plotly bundle on a narrow viewport that already carries the desktop map elsewhere. The data shape is identical, so flipping mobile to Plotly later is a 1-file change.

@@ -131,7 +131,7 @@ type VesselTab = "active" | "recent" | "expected";
 // Lightweight CSS-only stacked bars. Same data the desktop Plotly chart
 // consumes (volumeMensal), but tuned for narrow screens:
 //   - Horizontal scroller, 48px per bar
-//   - Current month outlined to read as "live"
+//   - Current month is tinted orange in label + "live" tag below the bar
 //   - Past months frozen (flat fill)
 //
 // This is the mobile counterpart of the desktop "Monthly Diesel Volume (m³)"
@@ -202,7 +202,9 @@ function MonthlyEstimateBars({
                 {fmtVolume(total)}
               </div>
 
-              {/* Stack container */}
+              {/* Stack container — live vs frozen is communicated via the
+                  month label tint and the "live" tag below; an outline here
+                  was rejected as visually noisy. */}
               <div
                 style={{
                   width: 32,
@@ -211,7 +213,6 @@ function MonthlyEstimateBars({
                   flexDirection: "column-reverse",
                   borderRadius: 4,
                   overflow: "hidden",
-                  border: isLive ? `1.5px solid ${ORANGE_MOB}` : "none",
                   boxSizing: "border-box",
                   background: "var(--mobile-surface-2, rgba(0,0,0,0.04))",
                 }}
