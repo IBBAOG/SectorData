@@ -138,17 +138,30 @@ export default function ComparisonChart({series,height,mode,baseDate,endDate,dar
     // Zero line
     if(mode==="percent"&&minV<0&&maxV>0){ctx.strokeStyle=t.border;ctx.lineWidth=1;ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(PAD.left,Math.round(toY(0))+0.5);ctx.lineTo(w-PAD.right,Math.round(toY(0))+0.5);ctx.stroke();ctx.setLineDash([]);}
 
-    // Lines — iterate through the unified time axis, lifting the pen when
-    // a series has no sample at a given date (no fake interpolation).
+    // Lines — iterate through the unified time axis. To avoid visual gaps
+    // on cross-market holidays (e.g. BZ=F has no settlement on a UK/US
+    // holiday but B3 traded that day, or vice versa), forward-fill the
+    // last known value within the drawing loop only. This is financially
+    // correct from a BR-investor perspective: when ICE is closed, BZ=F's
+    // "current" value is the prior settlement (the market literally did
+    // not move), so a horizontal segment is the truthful representation.
+    // The underlying `seriesByIndex` stays sparse so tooltip + end-of-line
+    // value badge keep showing real datapoints only (no fake values).
+    // We still lift the pen at the LEADING edge — i.e. before a series
+    // has its first sample (so a ticker that starts mid-range doesn't get
+    // a horizontal line dragged back to the y-axis).
     for(let si=0;si<active.length;si++){
       const s=active[si],arr=seriesByIndex[si];
       ctx.beginPath();ctx.strokeStyle=s.color;ctx.lineWidth=2;
       let drawing=false;
+      let lastVal:number|undefined=undefined;
       for(let vi=0;vi<vLen;vi++){
         const gi=vs+vi,val=arr[gi];
-        if(val===undefined){drawing=false;continue;}
-        const x=toX(vi),y=toY(val);
+        const eff=val!==undefined?val:lastVal;
+        if(eff===undefined){continue;} // still before this series' first sample
+        const x=toX(vi),y=toY(eff);
         if(!drawing){ctx.moveTo(x,y);drawing=true;}else{ctx.lineTo(x,y);}
+        if(val!==undefined)lastVal=val;
       }
       ctx.stroke();
     }
