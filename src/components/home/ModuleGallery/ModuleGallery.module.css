@@ -1,0 +1,529 @@
+/*
+ * ModuleGallery.module.css
+ *
+ * Coherent chrome with NewsHunterPanel + DataSourcesTable: glass card,
+ * black header bar, soft border, backdrop-filter blur. Then each module
+ * row gets a 44px icon tile pre-tinted with the category accent (markets
+ * orange, oilgas blue, fuel green) at rest — so the three sections read
+ * differently at a glance — plus a confident hover state with lift,
+ * stronger tint, accent left-bar and a chevron slide.
+ *
+ * Tokens consumed (already in globals.css):
+ *   --ds-glass-*              (chrome — matches NewsHunterPanel/DataSourcesTable)
+ *   --ds-cat-anp-distribution (brand orange #ff5000) — used for the live dot
+ *   --mobile-* (when `.galleryMobile` is applied) — dark/light aware mobile vars
+ *
+ * Category accents are LOCAL to this component since the existing --ds-cat-*
+ * palette is keyed to data-source categories, not to dashboard categories:
+ *   markets → orange (#ff5000) — matches brand
+ *   oilgas  → blue   (#2563eb) — matches existing CATEGORY_ACCENT inline value
+ *   fuel    → green  (#059669) — matches existing CATEGORY_ACCENT inline value
+ *
+ * Animations are GPU-friendly (transform + opacity + box-shadow only).
+ */
+
+/* ╔══════════════════════════════════════════════════════════════════════════╗
+   ║ DESKTOP VARIANT — glass card matching NewsHunterPanel/DataSourcesTable    ║
+   ╚══════════════════════════════════════════════════════════════════════════╝ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  font-family: Arial, Helvetica, sans-serif;
+  background: var(--ds-glass-bg);
+  border: 1px solid var(--ds-glass-border);
+  backdrop-filter: var(--ds-glass-backdrop);
+  -webkit-backdrop-filter: var(--ds-glass-backdrop);
+  box-shadow: var(--ds-glass-shadow);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* Header (black bar — identical visual language to NewsHunterPanel) */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #000;
+  border-bottom: 1px solid #000;
+}
+
+.headerTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #fff;
+}
+
+/* Brand pulse dot — orange, matches the orange in the brand identity */
+.pulseDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff5000;
+  box-shadow: 0 0 0 0 rgba(255, 80, 0, 0.65);
+  animation: mg-home-pulse 2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes mg-home-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(255, 80, 0, 0.65); }
+  70%  { box-shadow: 0 0 0 7px rgba(255, 80, 0, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 80, 0, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulseDot { animation: none; }
+}
+
+/* Category section block — divider above, except first */
+.section {
+  display: flex;
+  flex-direction: column;
+}
+.section + .section {
+  border-top: 1px solid var(--ds-glass-border);
+}
+
+/* Section header: filled colored bullet + uppercase label + count badge */
+.sectionHeader {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px 8px;
+  user-select: none;
+}
+
+.sectionDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--mg-accent);
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px var(--mg-accent-soft);
+}
+
+.sectionLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(0, 0, 0, 0.62);
+  white-space: nowrap;
+}
+:global(:root[data-theme="dark"]) .sectionLabel {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.sectionRule {
+  height: 1px;
+  background: var(--ds-glass-border);
+  align-self: center;
+  margin: 0 4px;
+}
+
+.sectionCount {
+  min-width: 22px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--mg-accent-soft);
+  color: var(--mg-accent-text);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Section body — column of rows */
+.sectionBody {
+  display: flex;
+  flex-direction: column;
+  padding: 0 6px 8px;
+}
+
+/* ── Row (module card) ─────────────────────────────────────────────────── */
+
+.row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px 9px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  background: transparent;
+  transition:
+    background-color 0.18s ease,
+    box-shadow 0.18s ease,
+    transform 0.18s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Left accent bar (hover/focus) — vertical pill */
+.row::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  width: 3px;
+  height: 22px;
+  background: var(--mg-accent);
+  border-radius: 999px;
+  transform: translateY(-50%) scaleY(0);
+  transform-origin: center;
+  transition: transform 0.18s ease;
+  pointer-events: none;
+}
+
+/* Hover (mouse) state */
+.row:hover:not(.rowDisabled) {
+  background: var(--mg-accent-soft);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.4) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.04) inset,
+    0 6px 18px var(--mg-accent-glow);
+  transform: translateY(-1px);
+}
+.row:hover:not(.rowDisabled)::before {
+  transform: translateY(-50%) scaleY(1);
+}
+
+/* Focus-visible (a11y) — same as hover + outline */
+.row:focus-visible:not(.rowDisabled) {
+  background: var(--mg-accent-soft);
+  box-shadow:
+    0 0 0 2px var(--mg-accent),
+    0 1px 0 rgba(255, 255, 255, 0.4) inset,
+    0 -1px 0 rgba(0, 0, 0, 0.04) inset,
+    0 6px 18px var(--mg-accent-glow);
+  transform: translateY(-1px);
+}
+.row:focus-visible:not(.rowDisabled)::before {
+  transform: translateY(-50%) scaleY(1);
+}
+
+/* Active (pressed) — gentle settle */
+.row:active:not(.rowDisabled) {
+  transform: translateY(0) scale(0.99);
+  transition-duration: 0.08s;
+}
+
+/* Disabled */
+.rowDisabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* Icon tile — pre-tinted at REST in the category color (low alpha) */
+.iconTile {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--mg-accent-tile);
+  color: var(--mg-accent-text);
+  position: relative;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.22s ease,
+    transform 0.22s ease;
+  /* Subtle inset edge so the tile feels lifted off the row even at rest */
+  box-shadow:
+    inset 0 0 0 1px var(--mg-accent-tile-border),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+:global(:root[data-theme="dark"]) .iconTile {
+  box-shadow:
+    inset 0 0 0 1px var(--mg-accent-tile-border),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.row:hover:not(.rowDisabled) .iconTile,
+.row:focus-visible:not(.rowDisabled) .iconTile {
+  background: var(--mg-accent-tile-hover);
+  color: var(--mg-accent);
+  box-shadow:
+    inset 0 0 0 1px var(--mg-accent),
+    0 4px 12px var(--mg-accent-glow);
+  transform: scale(1.05);
+}
+
+.row:active:not(.rowDisabled) .iconTile {
+  transform: scale(1.02);
+}
+
+/* Module name */
+.name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a1a1a;
+  font-family: Arial, Helvetica, sans-serif;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.15s ease;
+}
+:global(:root[data-theme="dark"]) .name {
+  color: #e6edf3;
+}
+.row:hover:not(.rowDisabled) .name,
+.row:focus-visible:not(.rowDisabled) .name {
+  color: var(--mg-accent-text);
+}
+
+/* Right cluster (badge + chevron) */
+.rightCluster {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Badge (e.g. "New", "Beta") — hidden when "Available" */
+.badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mg-accent-text);
+  background: var(--mg-accent-soft);
+  border-radius: 6px;
+  padding: 2px 7px;
+  line-height: 1.4;
+}
+
+.badgeDisabled {
+  color: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.06);
+}
+
+/* Chevron — soft at rest, slides + colorizes on hover */
+.chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(0, 0, 0, 0.28);
+  transition:
+    color 0.18s ease,
+    transform 0.18s ease;
+  flex-shrink: 0;
+}
+:global(:root[data-theme="dark"]) .chevron {
+  color: rgba(255, 255, 255, 0.32);
+}
+
+.row:hover:not(.rowDisabled) .chevron,
+.row:focus-visible:not(.rowDisabled) .chevron {
+  color: var(--mg-accent);
+  transform: translateX(3px);
+}
+
+/* ╔══════════════════════════════════════════════════════════════════════════╗
+   ║ MOBILE VARIANT — same logic, mobile tokens, touch-tuned                   ║
+   ╚══════════════════════════════════════════════════════════════════════════╝
+   On mobile the gallery is the page body itself — no outer glass card.
+   The per-category section IS the card (full-bleed surface stripe with
+   collapsible header), to match the existing native-iOS visual the home
+   mobile page already uses (sticky section headers, divider lines, etc).
+   We keep the icon tinting + accent bar + chevron-on-press from desktop. */
+
+.mobileRoot {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-bottom: 12px;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.mobileSection {
+  background: var(--mobile-surface);
+  border-top: 1px solid var(--mobile-divider);
+  border-bottom: 1px solid var(--mobile-divider);
+}
+
+.mobileSectionHeader {
+  position: sticky;
+  z-index: 18;
+  display: grid;
+  grid-template-columns: auto auto auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+  height: 44px;
+  padding: 0 16px;
+  background: var(--mobile-glass-bg);
+  -webkit-backdrop-filter: var(--mobile-glass-blur);
+  backdrop-filter: var(--mobile-glass-blur);
+  border-bottom: 1px solid var(--mobile-glass-border);
+  cursor: pointer;
+  user-select: none;
+}
+
+.mobileSectionChevron {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mobile-text-muted);
+  transition: transform 0.2s ease;
+}
+.mobileSectionChevronCollapsed {
+  transform: rotate(-90deg);
+}
+
+.mobileSectionDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--mg-accent);
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px var(--mg-accent-soft);
+}
+
+.mobileSectionLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--mobile-text);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.mobileSectionCount {
+  min-width: 24px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--mg-accent-soft);
+  color: var(--mg-accent-text);
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.mobileSectionBody {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Mobile row — pure list look, accent tile, accent bar on press */
+.mobileRow {
+  position: relative;
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 60px;
+  padding: 8px 16px 8px 12px;
+  background: var(--mobile-surface);
+  cursor: pointer;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.12s ease;
+}
+
+/* Press state via :active (touch) and via .mobileRowPressed (pointer-driven, kept for parity) */
+.mobileRow:active:not(.rowDisabled),
+.mobileRowPressed:not(.rowDisabled) {
+  background: var(--mg-accent-soft);
+}
+
+/* Accent bar on press */
+.mobileRow:active:not(.rowDisabled)::before,
+.mobileRowPressed:not(.rowDisabled)::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  background: var(--mg-accent);
+  border-radius: 0 999px 999px 0;
+  pointer-events: none;
+}
+
+.mobileRow:focus-visible:not(.rowDisabled) {
+  background: var(--mg-accent-soft);
+  box-shadow: inset 0 0 0 2px var(--mg-accent);
+}
+
+.mobileIconTile {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--mg-accent-tile);
+  color: var(--mg-accent-text);
+  box-shadow:
+    inset 0 0 0 1px var(--mg-accent-tile-border),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  transition: background-color 0.12s ease, color 0.12s ease, transform 0.12s ease;
+}
+:global(:root[data-theme="dark"]) .mobileIconTile {
+  box-shadow:
+    inset 0 0 0 1px var(--mg-accent-tile-border),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.mobileRow:active:not(.rowDisabled) .mobileIconTile,
+.mobileRowPressed:not(.rowDisabled) .mobileIconTile {
+  background: var(--mg-accent-tile-hover);
+  color: var(--mg-accent);
+  transform: scale(1.05);
+}
+
+.mobileName {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--mobile-text);
+  font-family: Arial, Helvetica, sans-serif;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobileChevron {
+  color: var(--mobile-text-faint);
+  display: flex;
+  align-items: center;
+  transition: transform 0.12s ease, color 0.12s ease;
+}
+.mobileRow:active:not(.rowDisabled) .mobileChevron,
+.mobileRowPressed:not(.rowDisabled) .mobileChevron {
+  color: var(--mg-accent);
+  transform: translateX(3px);
+}
+
+/* Divider between rows on mobile (in the same surface — like iOS list) */
+.mobileRowDivider {
+  height: 1px;
+  background: var(--mobile-divider);
+  margin: 0 16px 0 68px;
+}
