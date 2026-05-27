@@ -205,6 +205,23 @@ export function IconAdminPanel({ size = 24, strokeWidth = 2 }: SlugIconProps): I
   );
 }
 
+export function IconProduction({ size = 24, strokeWidth = 2 }: SlugIconProps): IconElement {
+  // Offshore production platform: sea baseline, deck on two legs with a
+  // diagonal brace, derrick tower on top, and a small flare tip.
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" width={size} height={size} aria-hidden="true">
+      <path d="M2 20h20" />
+      <path d="M5 14h14" />
+      <path d="M7 14v6" />
+      <path d="M17 14v6" />
+      <path d="M7 20l10-6" />
+      <path d="M10 14l2-9 2 9" />
+      <path d="M11 10h2" />
+      <path d="M12 5V3" />
+    </svg>
+  );
+}
+
 // ── Central registry ────────────────────────────────────────────────────────
 
 /** Returns the icon element for a given module slug at the requested size. */
@@ -246,6 +263,8 @@ export function getModuleIcon(slug: string, size = 24, strokeWidth = 2): IconEle
       return <IconProfile size={size} strokeWidth={strokeWidth} />;
     case "admin-panel":
       return <IconAdminPanel size={size} strokeWidth={strokeWidth} />;
+    case "production":
+      return <IconProduction size={size} strokeWidth={strokeWidth} />;
     default:
       // Generic fallback: grid/apps icon
       return (
