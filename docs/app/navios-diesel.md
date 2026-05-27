@@ -38,7 +38,7 @@ A coluna `navios_diesel.is_cabotagem` é **generated** por:
 | `get_nd_navios` | Lista de navios filtrados (porto, produto, status, período) |
 | `get_nd_resumo_portos` | Agregado por porto (totais, contagens) |
 | `get_nd_volume_mensal_descarga` | Série mensal (Discharged / Pending / Indeterminate). Recalculada a cada snapshot — sobrescreve meses passados. Preservada por enquanto como fallback. |
-| `get_nd_volume_mensal_historico` | **Frozen history variant** (2026-05-27). Para meses fechados ancora no LAST snapshot daquele mês — bars não são recomputados retroativamente. Mês corrente usa `p_collected_at` (live). Baseline `2026-04`. Retorna campo extra `is_current` (boolean). Wrapper `rpcGetNdVolumeMensalDescarga` em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) chama esta primeiro e cai pra legacy se ela não existir (transição de deploy). |
+| `get_nd_volume_mensal_historico` | **Three temporal categories** (2026-05-27, evolved from frozen-history variant): (a) **PAST months** — anchored at LAST snapshot of the month; Pending bucket is reclassified into Indeterminate (Option A) since a closed month cannot have pending vessels; (b) **CURRENT month** — uses `p_collected_at` (live), all three buckets meaningful; (c) **FUTURE months** — derived from the live snapshot using ETA-based attribution, Pending-only, marked `is_current=true` so the frontend renders them as live. Baseline `2026-04`. `v_current_ts` is `timestamptz` (previous `::timestamp AT TIME ZONE 'America/Sao_Paulo'` chain shifted the anchor by 3h and silently emptied current-month buckets). Wrapper `rpcGetNdVolumeMensalDescarga` em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) chama esta primeiro e cai pra legacy se ela não existir (transição de deploy). |
 
 ## Tabelas
 
@@ -161,20 +161,31 @@ The hook is the single source of truth for all data. Both Views import from it a
 
 These are tagged `[desktop-only]` in `desktop/View.tsx` per the binding sync rule.
 
-### Monthly Diesel Volume chart (both views — frozen history, 2026-05-27)
+### Monthly Diesel Volume chart (both views — three temporal categories, 2026-05-27)
 
-Desktop and mobile both render the monthly stacked-bar series sourced from `volumeMensal` (in turn fed by `get_nd_volume_mensal_historico`). Past months are **frozen** at the LAST snapshot of that month — bars don't get recomputed when new snapshots land. The current month is **live** (uses the selected snapshot).
+Desktop and mobile both render the monthly stacked-bar series sourced from `volumeMensal` (in turn fed by `get_nd_volume_mensal_historico`). Bars fall into three temporal categories, each with its own semantics:
+
+| Category | Anchor | Buckets emitted | `is_current` |
+|---|---|---|---|
+| **Past** (month < current) | LAST snapshot of that month (frozen — bars never get recomputed) | Discharged + Indeterminate. **Pending is reclassified into Indeterminate** (Option A) — a closed month cannot meaningfully have pending vessels; the honest answer is "we don't know if those ETAs eventually landed". | `false` |
+| **Current** | `p_collected_at` (the snapshot the user picked, live) | Discharged + Pending + Indeterminate, all meaningful | `true` |
+| **Future** (month > current) | LIVE snapshot `p_collected_at`, vessels with ETA past current month-end grouped by attribution month | Pending only — these are scheduled ETAs that haven't happened yet | `true` |
+
+The frontend treats `is_current=true` as **live**, applying the same outline + `(live)` suffix to both the current month and every future month. No frontend change was needed to surface future months — they reuse the live styling path.
 
 | Slot | Desktop | Mobile |
 |---|---|---|
 | Container | Plotly stacked bar (`Discharged` / `Pending` / `Indeterminate`) in Row 1 Col 2 (right of map) | CSS-only stacked bars in a glass card on the **Ports** tab, above Port Summary |
-| Range | All months from Apr 2026 onward, in one row | Horizontal scroller, 48px per bar, all months from Apr 2026 onward |
-| Live marker | Last bar gets a contrasting outline + `(live)` suffix on the x-tick; hover text reads `· live` vs. `· frozen` | Last bar gets an orange outline + `live` caption under the month label |
-| Subtitle | "Past months frozen at last snapshot in the month · current month is live" (below title, above hr) | "Past months frozen · current is live · m³" (below title) |
+| Range | Past + current + future months, in one row | Horizontal scroller, 48px per bar, past + current + future months |
+| Live marker | Each live bar gets a contrasting outline + `(live)` suffix on the x-tick; hover text reads `· live` vs. `· frozen` | Each live bar gets an orange outline + `live` caption under the month label |
+| Subtitle | "Past months frozen at last snapshot in the month · current and future months are live" (below title, above hr) | "Past months frozen · current and future are live · m³" (below title) |
 
 Mobile uses CSS bars (not Plotly) for weight and to avoid loading the Plotly bundle on a narrow viewport that already carries the desktop map elsewhere. The data shape is identical, so flipping mobile to Plotly later is a 1-file change.
 
-Anti-regression: if a future change ever re-introduces a single RPC that recomputes the whole series from one snapshot (the legacy `get_nd_volume_mensal_descarga` behavior), the frozen-history guarantee breaks silently — closed months will start moving again. Keep the wrapper in `rpc.ts` pointed at `get_nd_volume_mensal_historico` (with the legacy as fallback only).
+Anti-regression:
+- If a future change ever re-introduces a single RPC that recomputes the whole series from one snapshot (the legacy `get_nd_volume_mensal_descarga` behavior), the frozen-history guarantee breaks silently — closed months will start moving again. Keep the wrapper in `rpc.ts` pointed at `get_nd_volume_mensal_historico` (with the legacy as fallback only).
+- The `v_current_ts` declaration MUST stay `timestamptz` and parse `p_collected_at::timestamptz`. A previous regression used `::timestamp AT TIME ZONE 'America/Sao_Paulo'`, which shifted the anchor by 3 hours and silently emptied current- and future-month buckets (`nd.collected_at = ma.anchor_ts` matched nothing). Symptom: pending vessels appeared as discharged, future months never rendered. Fixed in `20260527500000_nd_volume_mensal_historico_future_months.sql`.
+- "Past Pending = 0" is a contract, not a coincidence. The reclassification lives in the `past_and_current` CTE: `WHEN ma.month < v_current_mo THEN 0` for pending, `+ COALESCE(p.pending_volume, 0)` for indeterminate. Removing either half re-introduces the conceptually-impossible "pending in a closed month" bar.
 
 ## Export
 

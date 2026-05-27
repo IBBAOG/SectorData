@@ -816,7 +816,7 @@ export default function DesktopView(): React.ReactElement {
                     <div className="chart-container">
                       <div style={TITLE_STYLE}>Monthly Diesel Volume (m³)</div>
                       <div style={{ fontFamily: "Arial", fontSize: 11, color: "#666", marginTop: -2, marginBottom: 4 }}>
-                        Past months frozen at last snapshot in the month · current month is live
+                        Past months frozen at last snapshot in the month · current and future months are live
                       </div>
                       <hr className="section-hr" />
                       <PlotlyChart
