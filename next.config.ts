@@ -56,6 +56,18 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async redirects() {
+    // Route migrations — keep external links / bookmarks working.
+    //   2026-05-28: /production → /well-by-well (Round 4 rename — dashboard
+    //               kept the same data, the URL became more descriptive).
+    return [
+      {
+        source: "/production",
+        destination: "/well-by-well",
+        permanent: true,
+      },
+    ];
+  },
   // Prevent the bundler from inlining native/binary modules — they must be
   // required at runtime by the Node.js process, not bundled into a webpack chunk.
   serverExternalPackages: [

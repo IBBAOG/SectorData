@@ -79,12 +79,12 @@ const CARDS: Omit<HomeCardDef, "category">[] = [
   },
   // Oil & Gas
   {
-    slug: "production",
+    slug: "well-by-well",
     preview: null,
-    title: "Production",
+    title: "Well by Well",
     description: "Executive monthly oil & gas production summary (stake-weighted, 4 panels + YoY)",
     badge: "Available",
-    href: "/production",
+    href: "/well-by-well",
     disabled: false,
   },
   {
@@ -212,7 +212,7 @@ const CARDS: Omit<HomeCardDef, "category">[] = [
 const SLUG_CATEGORY: Record<string, HomeCategory> = {
   stocks: "markets",
   "news-hunter": "markets",
-  production: "oilgas",
+  "well-by-well": "oilgas",
   "anp-cdp": "oilgas",
   "anp-cdp-bsw": "oilgas",
   "anp-cdp-depletion": "oilgas",

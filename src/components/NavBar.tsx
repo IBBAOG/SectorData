@@ -43,7 +43,7 @@ const NAV_ENTRIES: NavEntry[] = [
   {
     label: "Oil & Gas",
     items: [
-      { href: "/production", label: "Production" },
+      { href: "/well-by-well", label: "Well by Well" },
       { href: "/anp-cdp", label: "Production by Well" },
       { href: "/anp-cdp-diaria", label: "Daily Production" },
       { href: "/anp-cdp-bsw", label: "BSW by Well" },

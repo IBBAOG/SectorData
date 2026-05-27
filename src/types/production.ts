@@ -1,8 +1,11 @@
 // ─── Production (executive monthly summary) ──────────────────────────────────
 //
-// Shapes returned by the 5 `get_production_*` RPCs. Used by the /production
+// Shapes returned by the 5 `get_production_*` RPCs. Used by the /well-by-well
 // dashboard (Fase 2 of the field_stakes & production project — PRD in
-// `C:/Users/eduar/.claude/plans/production-fase-2.md`).
+// `C:/Users/eduar/.claude/plans/production-fase-2.md`; route renamed from
+// /production in Round 4, 2026-05-28). The file is named `production.ts`
+// because it backs the `get_production_*` RPC family (DB-level naming
+// preserved); the URL route is `/well-by-well`.
 //
 // The RPCs all do the heavy work server-side: join `anp_cdp_producao` with
 // `field_stakes` (filtered to campos whose stakes SUM to 100), apply
