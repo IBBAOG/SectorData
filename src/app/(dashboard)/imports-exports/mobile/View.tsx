@@ -338,11 +338,11 @@ function mobileHorizontalBarLayout(
       ...AXIS_LINE,
       title: { text: xLabel, font: { family: "Arial", size: 10 } },
       tickformat: ",.1f",
-      tickfont: { family: "Arial", size: 9 },
+      tickfont: { family: "Arial", size: 12 },
     },
     yaxis: {
       ...AXIS_LINE,
-      tickfont: { family: "Arial", size: 10 },
+      tickfont: { family: "Arial", size: 12 },
       automargin: true,
     },
     showlegend: false,
@@ -464,12 +464,13 @@ function mobileAreaLayout(yLabel: string, rangeMonths = 12): Partial<Layout> {
       tickformat: "%b %Y",
       dtick: pickDtickMobile(rangeMonths),
       tickangle: -90,
-      tickfont: { family: "Arial", size: 8 },
+      tickfont: { family: "Arial", size: 12 },
     },
     yaxis: {
       ...AXIS_LINE,
       title: { text: yLabel, font: { family: "Arial", size: 10 } },
       tickformat: ",.1f",
+      tickfont: { family: "Arial", size: 12 },
     },
     legend: {
       orientation: "h" as const,
@@ -479,12 +480,27 @@ function mobileAreaLayout(yLabel: string, rangeMonths = 12): Partial<Layout> {
       traceorder: "normal" as const,
       x: 0,
       y: -0.38,
-      font: { family: "Arial", size: 9 },
+      font: { family: "Arial", size: 12 },
     },
   };
 }
 
 // ─── YoY row as MobileDataCard ─────────────────────────────────────────────────
+
+// Mirror of desktop `fmtDelta` / `computeMoMPct` — kept duplicated because
+// each view owns its own constants (see ORIGIN_COUNTRY_PINS comment). Keep in
+// sync with desktop/View.tsx.
+function fmtDeltaMobile(v: number | null): { text: string; color: string } {
+  if (v == null || !isFinite(v)) return { text: "—", color: "#888" };
+  const text = (v > 0 ? "+" : "") + v.toFixed(1) + "%";
+  const color = v > 0 ? "#16a34a" : v < 0 ? "#dc2626" : "#555";
+  return { text, color };
+}
+
+function computeMoMPctMobile(current: number, prev: number | null | undefined): number | null {
+  if (prev == null || prev === 0) return null;
+  return ((current - prev) / prev) * 100;
+}
 
 function YoYCardList({
   rows,
@@ -494,6 +510,7 @@ function YoYCardList({
   anchorMes,
   orderOverride,
   colorMap,
+  prevMonthByEntity,
 }: {
   rows: YoyTableRow[];
   loading: boolean;
@@ -505,13 +522,18 @@ function YoYCardList({
   anchorAno: number;
   anchorMes: number;
   /** Optional fixed render order — used by Imports Panel A (pinned countries)
-   *  to mirror the chart's legend order (Russia → Saudi Arabia → Others). */
+   *  to mirror the chart's legend order. The non-Others entries are sorted by
+   *  current-month value descending; Others is anchored at the bottom. */
   orderOverride?: string[];
   /** Optional color map (entity → hex) — adds an 8px color dot next to the
    *  card title for visual parity with the desktop YoY table dots. Used by
    *  the pinned-countries panel; absent for the importer / exports panels
    *  which keep the existing dot-less layout. */
   colorMap?: Record<string, string>;
+  /** Map of entity → previous-month value (anchor - 1 month). Derived
+   *  client-side from the stacked-area chart data. null means the entity had
+   *  no data in the prior month (e.g. first month of the series). */
+  prevMonthByEntity: Map<string, number | null>;
 }) {
   if (loading) {
     return (
@@ -522,44 +544,89 @@ function YoYCardList({
   }
   if (!rows.length) return null;
 
-  // Apply order override if given; otherwise preserve incoming order.
-  const orderedRows: YoyTableRow[] = orderOverride
-    ? (() => {
-        const byEntity = new Map(rows.map((r) => [r.entity, r]));
-        return orderOverride
-          .map((e) => byEntity.get(e))
-          .filter((r): r is YoyTableRow => r != null);
-      })()
-    : rows;
+  // Sort by current-month value descending; pinned-countries case anchors
+  // Others at the bottom regardless of magnitude. Mirrors desktop YoYTable.
+  const byEntity = new Map(rows.map((r) => [r.entity, r]));
+  let orderedRows: YoyTableRow[];
+  if (orderOverride) {
+    const present = orderOverride.filter((e) => byEntity.has(e));
+    const nonOthers = present
+      .filter((e) => e !== OTHERS_LABEL)
+      .sort((a, b) => (byEntity.get(b)?.last_12m ?? 0) - (byEntity.get(a)?.last_12m ?? 0));
+    const hasOthers = present.includes(OTHERS_LABEL);
+    const ordered = hasOthers ? [...nonOthers, OTHERS_LABEL] : nonOthers;
+    orderedRows = ordered
+      .map((e) => byEntity.get(e))
+      .filter((r): r is YoyTableRow => r != null);
+  } else {
+    orderedRows = [...rows].sort((a, b) => b.last_12m - a.last_12m);
+  }
 
-  const priorLbl = formatMonth(anchorAno - 1, anchorMes);
+  // Column headers for the 5-row metric stack inside each card.
+  const currentLbl = formatMonth(anchorAno, anchorMes);
+  const prevMonthCursor =
+    anchorMes === 1
+      ? { ano: anchorAno - 1, mes: 12 }
+      : { ano: anchorAno, mes: anchorMes - 1 };
+  const prevMonthLbl = formatMonth(prevMonthCursor.ano, prevMonthCursor.mes);
+  const priorYearLbl = formatMonth(anchorAno - 1, anchorMes);
+
+  // Shared row style for the metric rows inside the card right-slot.
+  const metricRowStyle: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: "auto auto",
+    columnGap: 8,
+    rowGap: 2,
+    fontVariantNumeric: "tabular-nums",
+    fontFamily: "Arial",
+    fontSize: 11,
+  };
+  const labelStyle: React.CSSProperties = {
+    color: "#888",
+    textAlign: "right",
+    fontSize: 10,
+    whiteSpace: "nowrap",
+  };
+  const valueStyle: React.CSSProperties = {
+    color: "#1a1a1a",
+    textAlign: "right",
+    fontWeight: 600,
+    whiteSpace: "nowrap",
+  };
+  const dimmedValueStyle: React.CSSProperties = {
+    ...valueStyle,
+    color: "#777",
+    fontWeight: 500,
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
       {orderedRows.map((row) => {
-        const yoyColor =
-          row.yoy_pct == null
-            ? "#aaa"
-            : row.yoy_pct > 0
-            ? "#16a34a"
-            : row.yoy_pct < 0
-            ? "#dc2626"
-            : "#555";
-
-        const yoyText =
-          row.yoy_pct == null
-            ? "n/a"
-            : `${row.yoy_pct > 0 ? "+" : ""}${row.yoy_pct.toFixed(1)}%`;
+        const prevMonthValue = prevMonthByEntity.get(row.entity) ?? null;
+        const mom = fmtDeltaMobile(computeMoMPctMobile(row.last_12m, prevMonthValue));
+        const yoy = fmtDeltaMobile(row.yoy_pct);
 
         const rightSlot = (
-          <div style={{ textAlign: "right", fontFamily: "Arial" }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "#1a1a1a" }}>
+          <div style={metricRowStyle}>
+            <span style={labelStyle}>{currentLbl}:</span>
+            <span style={valueStyle}>
               {row.last_12m.toLocaleString("en-US", { maximumFractionDigits: 1 })}{" "}
-              <span style={{ fontSize: 10, color: "#888" }}>{volumeLabel}</span>
-            </div>
-            <div style={{ fontSize: 12, color: yoyColor, fontWeight: 600, marginTop: 2 }}>
-              {yoyText}
-            </div>
+              <span style={{ fontSize: 9, color: "#888", fontWeight: 400 }}>{volumeLabel}</span>
+            </span>
+            <span style={labelStyle}>{prevMonthLbl}:</span>
+            <span style={dimmedValueStyle}>
+              {prevMonthValue != null
+                ? prevMonthValue.toLocaleString("en-US", { maximumFractionDigits: 1 })
+                : "—"}
+            </span>
+            <span style={labelStyle}>MoM %:</span>
+            <span style={{ ...valueStyle, color: mom.color, fontWeight: 600 }}>{mom.text}</span>
+            <span style={labelStyle}>{priorYearLbl}:</span>
+            <span style={dimmedValueStyle}>
+              {row.prev_12m.toLocaleString("en-US", { maximumFractionDigits: 1 })}
+            </span>
+            <span style={labelStyle}>YoY %:</span>
+            <span style={{ ...valueStyle, color: yoy.color, fontWeight: 600 }}>{yoy.text}</span>
           </div>
         );
 
@@ -587,7 +654,6 @@ function YoYCardList({
           <MobileDataCard
             key={row.entity}
             title={titleNode}
-            subtitle={`${priorLbl}: ${row.prev_12m.toLocaleString("en-US", { maximumFractionDigits: 1 })} ${volumeLabel}`}
             rightSlot={rightSlot}
             variant="compact"
           />
@@ -842,18 +908,19 @@ export default function MobileView(): React.ReactElement {
         tickformat: "%b %Y",
         dtick: pickDtickMobile(rangeMonths),
         tickangle: -60,
-        tickfont: { family: "Arial", size: 8 },
+        tickfont: { family: "Arial", size: 12 },
       },
       yaxis: {
         ...AXIS_LINE,
         title: { text: priceUnit, font: { family: "Arial", size: 10 } },
         tickformat: ",.2f",
+        tickfont: { family: "Arial", size: 12 },
       },
       legend: {
         orientation: "h" as const,
         x: 0,
         y: -0.3,
-        font: { family: "Arial", size: 9 },
+        font: { family: "Arial", size: 12 },
       },
     }),
     [priceUnit, rangeMonths],
@@ -925,18 +992,19 @@ export default function MobileView(): React.ReactElement {
               tickformat: "%b %Y",
               dtick: pickDtickMobile(rangeMonths),
               tickangle: -60,
-              tickfont: { family: "Arial", size: 8 },
+              tickfont: { family: "Arial", size: 12 },
             },
             yaxis: {
               ...AXIS_LINE,
               title: { text: importsUPUnitLabel, font: { family: "Arial", size: 10 } },
               tickformat: ",.1f",
+              tickfont: { family: "Arial", size: 12 },
             },
             legend: {
               orientation: "h" as const,
               x: 0,
               y: -0.3,
-              font: { family: "Arial", size: 9 },
+              font: { family: "Arial", size: 12 },
             },
           },
     [importsUPUnitLabel, rangeMonths, isSingleMonth, singleMonthLabel],
@@ -986,22 +1054,79 @@ export default function MobileView(): React.ReactElement {
               tickformat: "%b %Y",
               dtick: pickDtickMobile(rangeMonths),
               tickangle: -60,
-              tickfont: { family: "Arial", size: 8 },
+              tickfont: { family: "Arial", size: 12 },
             },
             yaxis: {
               ...AXIS_LINE,
               title: { text: "USD / bbl", font: { family: "Arial", size: 10 } },
               tickformat: ",.2f",
+              tickfont: { family: "Arial", size: 12 },
             },
             legend: {
               orientation: "h" as const,
               x: 0,
               y: -0.3,
-              font: { family: "Arial", size: 9 },
+              font: { family: "Arial", size: 12 },
             },
           },
     [rangeMonths, isSingleMonth, singleMonthLabel],
   );
+
+  // ── Derived: previous-month value per entity (for new MoM% column) ──────────
+  // Mirrors desktop logic. Anchor is period.end; prev = anchor - 1 month.
+  const prevMonthCursor = useMemo(() => {
+    const a = filters.period.end.ano;
+    const m = filters.period.end.mes;
+    return m === 1 ? { ano: a - 1, mes: 12 } : { ano: a, mes: m - 1 };
+  }, [filters.period.end.ano, filters.period.end.mes]);
+
+  // Panel A (countries) — pinned-bucket lookup at prev_month, in kt.
+  const prevMonthByCountry: Map<string, number | null> = useMemo(() => {
+    const target = `${prevMonthCursor.ano}|${prevMonthCursor.mes}`;
+    const acc = new Map<string, number>();
+    for (const r of paisesData) {
+      if (`${r.ano}|${r.mes}` !== target) continue;
+      const englishLabel = ORIGIN_LABEL_BY_DB[r.pais_origem] ?? OTHERS_LABEL;
+      const valueKt = r.total_kg / 1e6;
+      acc.set(englishLabel, (acc.get(englishLabel) ?? 0) + valueKt);
+    }
+    const out = new Map<string, number | null>();
+    for (const pin of ORIGIN_COUNTRY_PINS) {
+      out.set(pin.label, acc.has(pin.label) ? acc.get(pin.label)! : null);
+    }
+    out.set(OTHERS_LABEL, acc.has(OTHERS_LABEL) ? acc.get(OTHERS_LABEL)! : null);
+    return out;
+  }, [paisesData, prevMonthCursor]);
+
+  // Panel B (importers) — per-importer lookup at prev_month.
+  const prevMonthByImporter: Map<string, number | null> = useMemo(() => {
+    const target = `${prevMonthCursor.ano}|${prevMonthCursor.mes}`;
+    const acc = new Map<string, number>();
+    for (const r of importersData) {
+      if (`${r.ano}|${r.mes}` !== target) continue;
+      acc.set(r.unified_importer, (acc.get(r.unified_importer) ?? 0) + r.total_mil_m3);
+    }
+    const out = new Map<string, number | null>();
+    for (const r of yoyImportersData) {
+      out.set(r.entity, acc.has(r.entity) ? acc.get(r.entity)! : null);
+    }
+    return out;
+  }, [importersData, yoyImportersData, prevMonthCursor]);
+
+  // Exports tab — per-destination lookup at prev_month.
+  const prevMonthByExportsCountry: Map<string, number | null> = useMemo(() => {
+    const target = `${prevMonthCursor.ano}|${prevMonthCursor.mes}`;
+    const acc = new Map<string, number>();
+    for (const r of exportsPaisesData) {
+      if (`${r.ano}|${r.mes}` !== target) continue;
+      acc.set(r.pais, (acc.get(r.pais) ?? 0) + r.value);
+    }
+    const out = new Map<string, number | null>();
+    for (const r of yoyExportsData) {
+      out.set(r.entity, acc.has(r.entity) ? acc.get(r.entity)! : null);
+    }
+    return out;
+  }, [exportsPaisesData, yoyExportsData, prevMonthCursor]);
 
   // Guard — after all hooks
   if (visibilityLoading) return <BarrelLoading bare />;
@@ -1323,6 +1448,7 @@ export default function MobileView(): React.ReactElement {
                 anchorMes={filters.period.end.mes}
                 orderOverride={ORIGIN_ORDER}
                 colorMap={ORIGIN_COLOR_BY_LABEL}
+                prevMonthByEntity={prevMonthByCountry}
               />
             </>
           )}
@@ -1355,6 +1481,7 @@ export default function MobileView(): React.ReactElement {
                 volumeLabel="mil m³"
                 anchorAno={filters.period.end.ano}
                 anchorMes={filters.period.end.mes}
+                prevMonthByEntity={prevMonthByImporter}
               />
             </>
           )}
@@ -1541,6 +1668,7 @@ export default function MobileView(): React.ReactElement {
                 volumeLabel={exportsUnit}
                 anchorAno={filters.period.end.ano}
                 anchorMes={filters.period.end.mes}
+                prevMonthByEntity={prevMonthByExportsCountry}
               />
             </>
           )}
