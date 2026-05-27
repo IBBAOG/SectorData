@@ -1052,12 +1052,26 @@ export function useImportsExportsData(): UseImportsExportsData {
   // ── Panel B (importers) chart + YoY derivation ─────────────────────────────
   //
   // Reduce the server-returned top-N importer list down to exactly top-6 +
-  // Others (sum of the remaining importers per month), in lockstep with
-  // Panel A's "6 named + Others" visual contract. Server returns top-10
-  // already; we client-side re-rank by SUM(total_mil_m3) in the selected
-  // window and collapse rank ≥7 into the "Others" bucket. Colors are bound
-  // to rank (not entity) so the leaderboard's #1 always gets the rank-1
-  // color regardless of which importer holds the position in a given period.
+  // Others, in lockstep with Panel A's "6 named + Others" visual contract.
+  //
+  // The server RPC already collapses everything outside its own top-10 into a
+  // row labeled 'Others'. We re-rank client-side over a different population
+  // (named importers only) and over a different metric (SUM of total_mil_m3
+  // across the selected window — the server orders by anchor month). To avoid
+  // the server's pre-aggregated 'Others' row sneaking into our rank set as a
+  // pseudo-importer (which produced two separate 'Others' entries in the
+  // legend before this fix — one from the server, one synthesized by the
+  // client), we:
+  //
+  //   a) Partition `importersData` into named rows vs. server-side 'Others'
+  //      rows BEFORE ranking.
+  //   b) Rank only named importers by SUM(total_mil_m3) over the window →
+  //      top-6.
+  //   c) The client-side 'Others' series sums BOTH the server-side 'Others'
+  //      rows AND the rank-≥7 named rows per (ano, mes). No data is lost.
+  //
+  // Colors are rank-bound (not entity-bound): top-1 → rank-1 color (black),
+  // ..., top-6 → rank-6 color (lime), Others → grey.
   const importersTop6Derivation = useMemo(() => {
     if (!importersData.length) {
       return {
@@ -1067,9 +1081,22 @@ export function useImportsExportsData(): UseImportsExportsData {
       };
     }
 
-    // 1. Aggregate total_mil_m3 per importer over the selected window.
-    const totalByImporter = new Map<string, number>();
+    // 1. Partition: named importers vs. server-aggregated "Others" rows.
+    const namedRows: ImportersStackedRow[] = [];
+    const serverOthersRows: ImportersStackedRow[] = [];
     for (const r of importersData) {
+      if (r.unified_importer === OTHERS_LABEL_DATA) {
+        serverOthersRows.push(r);
+      } else {
+        namedRows.push(r);
+      }
+    }
+
+    // 2. Aggregate total_mil_m3 per NAMED importer over the selected window.
+    //    Server-side "Others" volume is intentionally excluded from ranking
+    //    — it is not a single importer and must not earn a top-6 slot.
+    const totalByImporter = new Map<string, number>();
+    for (const r of namedRows) {
       totalByImporter.set(
         r.unified_importer,
         (totalByImporter.get(r.unified_importer) ?? 0) + r.total_mil_m3,
@@ -1079,35 +1106,43 @@ export function useImportsExportsData(): UseImportsExportsData {
       ([, a], [, b]) => b - a,
     );
     const top = ranked.slice(0, IMPORTER_TOP_N).map(([name]) => name);
-    const restSet = new Set(ranked.slice(IMPORTER_TOP_N).map(([name]) => name));
+    const topSet = new Set(top);
+    const restNamed = ranked.slice(IMPORTER_TOP_N).map(([name]) => name);
 
-    // 2. Build the canonical entity order (rank desc + Others last). Skip
-    //    Others if no rest exists.
+    // 3. Build the canonical entity order (rank desc + Others last). "Others"
+    //    appears whenever there is any non-top-6 volume to absorb (either
+    //    server-side "Others" rows OR rank-≥7 named importers).
+    const hasOthers = serverOthersRows.length > 0 || restNamed.length > 0;
     const entities: string[] = [...top];
-    if (restSet.size > 0) entities.push(OTHERS_LABEL_DATA);
+    if (hasOthers) entities.push(OTHERS_LABEL_DATA);
 
-    // 3. Color map — rank-bound (top-1 → rank-1 color, ..., top-6 → rank-6
+    // 4. Color map — rank-bound (top-1 → rank-1 color, ..., top-6 → rank-6
     //    color, Others → grey).
     const colorMap: Record<string, string> = {};
     for (let i = 0; i < top.length; i += 1) {
       colorMap[top[i]] = IMPORTER_RANK_COLORS[i] ?? OTHERS_COLOR_DATA;
     }
-    if (restSet.size > 0) colorMap[OTHERS_LABEL_DATA] = OTHERS_COLOR_DATA;
+    if (hasOthers) colorMap[OTHERS_LABEL_DATA] = OTHERS_COLOR_DATA;
 
-    // 4. Emit rows — keep top-6 verbatim, collapse rest into per-(ano,mes)
-    //    "Others" sums.
+    // 5. Emit rows — keep top-6 verbatim, collapse rank-≥7 named rows AND
+    //    server-side "Others" rows into a single per-(ano, mes) "Others"
+    //    bucket. Server "Others" volume is preserved, not discarded.
     const out: ImportersStackedRow[] = [];
     const othersByMonth = new Map<string, { ano: number; mes: number; total: number }>();
-    for (const r of importersData) {
-      if (restSet.has(r.unified_importer)) {
-        const key = `${r.ano}|${r.mes}`;
-        const bucket = othersByMonth.get(key) ?? { ano: r.ano, mes: r.mes, total: 0 };
-        bucket.total += r.total_mil_m3;
-        othersByMonth.set(key, bucket);
-      } else {
+    const fold = (r: ImportersStackedRow) => {
+      const key = `${r.ano}|${r.mes}`;
+      const bucket = othersByMonth.get(key) ?? { ano: r.ano, mes: r.mes, total: 0 };
+      bucket.total += r.total_mil_m3;
+      othersByMonth.set(key, bucket);
+    };
+    for (const r of namedRows) {
+      if (topSet.has(r.unified_importer)) {
         out.push(r);
+      } else {
+        fold(r);
       }
     }
+    for (const r of serverOthersRows) fold(r);
     for (const { ano, mes, total } of othersByMonth.values()) {
       out.push({ ano, mes, unified_importer: OTHERS_LABEL_DATA, total_mil_m3: total });
     }
@@ -1118,40 +1153,71 @@ export function useImportsExportsData(): UseImportsExportsData {
   const importersTop6Entities = importersTop6Derivation.entities;
   const importersTop6ColorMap = importersTop6Derivation.colorMap;
 
-  // Panel B YoY table aligned with the chart's 7-series — top-6 importers by
-  // last_12m (anchor-month value) + an aggregated Others row whose last_12m
-  // and prev_12m sum the non-top-6 entries returned by the server. The chart
-  // ranks by window total volume; the YoY table ranks by anchor-month value
-  // since "Last 12m" is the canonical reading order ("who's #1 right now?").
-  // The two rankings will usually agree because the anchor month is the most
-  // recent in the window, but they may diverge for older anchors — that's a
-  // tolerated quirk (chart shows the period's biggest, table shows the anchor
-  // month's biggest).
+  // Panel B YoY table — aligned 1:1 with the chart's top-6 + Others.
+  //
+  // The chart ranks by SUM(total_mil_m3) over the window. The table USED to
+  // rank by anchor-month value (last_12m, since the single-month YoY rewrite),
+  // which produced a confusing mismatch: an importer that dominated the
+  // window (e.g. Petrobras, top-1 over a 12m span) but dipped in the anchor
+  // month would appear in the chart's top-6 but be excluded from the table's
+  // top-6. To fix this, the table now reuses the chart's `importersTop6Entities`
+  // ranking (same window-sum top-6) and only consults `yoyImportersData` for
+  // the anchor-month and prior-year values. Server-side 'Others' rows are
+  // folded into the client-side aggregated Others alongside non-top-6 named
+  // entries, mirroring the chart's collapse logic.
   const yoyImportersTop6Data: YoyTableRow[] = useMemo(() => {
     if (!yoyImportersData.length) return [];
-    // Sort desc by anchor-month value to pick the top-6.
-    const sorted = [...yoyImportersData].sort((a, b) => b.last_12m - a.last_12m);
-    const top = sorted.slice(0, IMPORTER_TOP_N);
-    const rest = sorted.slice(IMPORTER_TOP_N);
-    if (rest.length === 0) return top;
+
+    const topNamed = importersTop6Entities.filter((e) => e !== OTHERS_LABEL_DATA);
+    const topSet = new Set(topNamed);
+
+    // Index server-returned YoY rows by entity for O(1) lookup. Multiple
+    // server-side 'Others' rows are unlikely but we tolerate them by summing.
     let othersLast = 0;
     let othersPrev = 0;
-    for (const r of rest) {
-      othersLast += r.last_12m;
-      othersPrev += r.prev_12m;
+    let consumedAnyOthers = false;
+    const byEntity = new Map<string, YoyTableRow>();
+    for (const r of yoyImportersData) {
+      if (r.entity === OTHERS_LABEL_DATA) {
+        othersLast += r.last_12m;
+        othersPrev += r.prev_12m;
+        consumedAnyOthers = true;
+        continue;
+      }
+      if (topSet.has(r.entity)) {
+        byEntity.set(r.entity, r);
+      } else {
+        othersLast += r.last_12m;
+        othersPrev += r.prev_12m;
+        consumedAnyOthers = true;
+      }
     }
-    const othersYoy =
-      othersPrev === 0 ? null : ((othersLast - othersPrev) / othersPrev) * 100;
-    return [
-      ...top,
-      {
+
+    // Top-6 in chart's window-sum order. Missing entries (chart picked an
+    // importer the YoY server query didn't return for the anchor month) get
+    // zero values so the row still renders in lockstep with the chart legend.
+    const out: YoyTableRow[] = topNamed.map((entity) => {
+      const row = byEntity.get(entity);
+      if (row) return row;
+      return { entity, last_12m: 0, prev_12m: 0, yoy_pct: null };
+    });
+
+    // Aggregated Others row — only included if the chart includes one and
+    // we actually folded something into it.
+    const chartHasOthers = importersTop6Entities.includes(OTHERS_LABEL_DATA);
+    if (chartHasOthers || consumedAnyOthers) {
+      const othersYoy =
+        othersPrev === 0 ? null : ((othersLast - othersPrev) / othersPrev) * 100;
+      out.push({
         entity: OTHERS_LABEL_DATA,
         last_12m: othersLast,
         prev_12m: othersPrev,
         yoy_pct: othersYoy,
-      },
-    ];
-  }, [yoyImportersData]);
+      });
+    }
+
+    return out;
+  }, [yoyImportersData, importersTop6Entities]);
 
   // Exports price summary — every top-N destination, USD/bbl fixed.
   const exportsPriceSummary: PriceSummaryRow[] = useMemo(() => {
