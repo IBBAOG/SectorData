@@ -57,7 +57,6 @@ const NAV_ENTRIES: NavEntry[] = [
       {
         heading: "Proprietary data",
         items: [
-          { href: "/market-share", label: "Market Share" },
           { href: "/navios-diesel", label: "Diesel Imports Line-Up" },
           { href: "/diesel-gasoline-margins", label: "Diesel and Gasoline Margins" },
           { href: "/price-bands", label: "Price Bands" },
@@ -67,6 +66,7 @@ const NAV_ENTRIES: NavEntry[] = [
       {
         heading: "ANP data",
         items: [
+          { href: "/market-share", label: "Market Share" },
           { href: "/anp-prices", label: "ANP Prices" },
           { href: "/anp-glp", label: "LPG" },
           { href: "/imports-exports", label: "Imports & Exports" },
