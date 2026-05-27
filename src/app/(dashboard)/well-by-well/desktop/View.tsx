@@ -4,10 +4,12 @@
 //
 // Layout (top → bottom):
 //   • Header — title + subtitle + period badge + Export panel (right)
-//   • Topbar filter row — Empresa dropdown · Period slider · Ambientes multi-select
+//   • Top split (Round 8, 2026-05-27):
+//       LEFT  (~35%)  — Empresa · Period · Reference month · Ambientes
+//       RIGHT (~65%)  — HeaderTable (PDF-style page-2 replica)
+//     Falls back to single-column < 1100px so the table stays legible.
 //   • Charts row 1 — P1 (Brazil oil, stacked) · P2 (Company oil, stacked)
 //   • Charts row 2 — P3 (Top fields, horizontal bar) · P4 (Installations table)
-//   • YoY table — TOTAL + per-ambiente rows
 //
 // Round 6 (2026-05-27): top KPI strip removed (broken Δ MoM/YoY against the
 // partial reference month). All three production charts now render in-bar
@@ -15,6 +17,11 @@
 // `KpiCard` is preserved because the field/installation drill modals still
 // use it — those KPIs are valid (full-month series, no partial-period
 // divisor).
+//
+// Round 8 (2026-05-27): added the PDF-style HeaderTable next to the filters
+// (consumes `get_well_by_well_header` via the shared hook). Removed the bottom
+// YoY/MoM/YTD table — it was a strict subset of the HeaderTable's company
+// section. Mobile keeps its YoY collapsible drawer (different UX surface).
 //
 // Binding sync rule (CLAUDE.md § Dual-view policy): meaningful changes to one
 // View must land in the OTHER View in the same commit, OR the commit message
@@ -31,6 +38,7 @@ import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 import ChartSection from "../../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 import ExportPanel from "../../../../components/dashboard/ExportPanel";
+import HeaderTable from "../HeaderTable";
 import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../../lib/plotlyDefaults";
 import { bblDiaToKbpd } from "../../../../lib/units";
 
@@ -925,8 +933,9 @@ export default function DesktopView(): React.ReactElement | null {
     allMonths, dateRange, monthIdxRange, setMonthIdxRange,
     ambientes, toggleAmbiente, setAmbientes,
     referenceDate, setReferenceDate,
-    brazilData, companyData, topFields, installations, yoyTable,
-    brazilLoading, companyLoading, topFieldsLoading, installationsLoading, yoyLoading,
+    brazilData, companyData, topFields, installations,
+    headerData, headerLoading,
+    brazilLoading, companyLoading, topFieldsLoading, installationsLoading,
     excelLoading, csvLoading,
     handleExportExcel, handleExportCsv,
     drillCampo, drillTimeseries, drillLoading, drillError, drillKpis,
@@ -1014,138 +1023,187 @@ export default function DesktopView(): React.ReactElement | null {
           </div>
         ) : (
           <>
-            {/* ── Topbar filters ──────────────────────────────────────────── */}
+            {/* ── Top region: filters (left ~35%) + Header table (right ~65%) ─
+                Round 8 (2026-05-27): the topbar was previously a single full-
+                width row of filters above the charts. We now split it into a
+                two-column grid so the PDF-style HeaderTable (which mirrors
+                page 2 of the monthly report) sits next to the filter stack
+                and gets first-fold real estate. On viewports < 1100px the
+                grid collapses to a single column (filters on top, table
+                below) so the table never gets squished. */}
             <div
+              className="wbw-top-split"
               style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 24,
-                alignItems: "flex-start",
-                padding: "16px 0",
+                display: "grid",
+                gridTemplateColumns: "minmax(260px, 35%) 1fr",
+                gap: 20,
+                alignItems: "stretch",
+                padding: "16px 0 20px",
                 borderBottom: "1px solid #f0f0f0",
                 marginBottom: 20,
               }}
             >
-              {/* Empresa */}
-              <div style={{ minWidth: 220, flex: "0 0 220px" }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontFamily: "Arial",
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: "#1a1a1a",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.4px",
-                    marginBottom: 6,
-                  }}
-                >
-                  Company
-                </label>
-                <select
-                  value={empresa}
-                  onChange={(e) => setEmpresa(e.target.value)}
-                  style={{
-                    width: "100%",
-                    fontFamily: "Arial",
-                    fontSize: 13,
-                    padding: "8px 10px",
-                    border: "1px solid #c5c5cb",
-                    borderRadius: 6,
-                    background: "#ffffff",
-                  }}
-                >
-                  {dropdownOptions.map((opt) => (
-                    <option key={opt.empresa} value={opt.empresa}>
-                      {opt.empresa}{opt.n_campos > 0 ? ` (${opt.n_campos} fields)` : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* ── Filters column (left) ───────────────────────────────── */}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 14,
+                  minWidth: 0,
+                }}
+              >
+                {/* Empresa */}
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontFamily: "Arial",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: "#1a1a1a",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.4px",
+                      marginBottom: 6,
+                    }}
+                  >
+                    Company
+                  </label>
+                  <select
+                    value={empresa}
+                    onChange={(e) => setEmpresa(e.target.value)}
+                    style={{
+                      width: "100%",
+                      fontFamily: "Arial",
+                      fontSize: 13,
+                      padding: "8px 10px",
+                      border: "1px solid #c5c5cb",
+                      borderRadius: 6,
+                      background: "#ffffff",
+                    }}
+                  >
+                    {dropdownOptions.map((opt) => (
+                      <option key={opt.empresa} value={opt.empresa}>
+                        {opt.empresa}{opt.n_campos > 0 ? ` (${opt.n_campos} fields)` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              {/* Period */}
-              <div style={{ flex: "1 1 360px", minWidth: 320 }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontFamily: "Arial",
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: "#1a1a1a",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.4px",
-                    marginBottom: 6,
-                  }}
-                >
-                  Period
-                </label>
-                {allMonths.length > 0 && (
-                  <PeriodSlider
-                    dates={allMonths}
-                    value={monthIdxRange}
-                    onChange={setMonthIdxRange}
-                    fmtLabel={(d) => fmtMonthLabel(d)}
+                {/* Period */}
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontFamily: "Arial",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: "#1a1a1a",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.4px",
+                      marginBottom: 6,
+                    }}
+                  >
+                    Period
+                  </label>
+                  {allMonths.length > 0 && (
+                    <PeriodSlider
+                      dates={allMonths}
+                      value={monthIdxRange}
+                      onChange={setMonthIdxRange}
+                      fmtLabel={(d) => fmtMonthLabel(d)}
+                    />
+                  )}
+                </div>
+
+                {/* Reference month (for top fields / FPSOs / Header table) */}
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontFamily: "Arial",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: "#1a1a1a",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.4px",
+                      marginBottom: 6,
+                    }}
+                  >
+                    Reference month
+                  </label>
+                  <select
+                    value={referenceDate}
+                    onChange={(e) => setReferenceDate(e.target.value)}
+                    style={{
+                      width: "100%",
+                      fontFamily: "Arial",
+                      fontSize: 13,
+                      padding: "8px 10px",
+                      border: "1px solid #c5c5cb",
+                      borderRadius: 6,
+                      background: "#ffffff",
+                    }}
+                  >
+                    {refMonthOptions.map((m) => (
+                      <option key={m} value={m}>{fmtMonthLabel(m)}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Ambiente */}
+                <div>
+                  <MultiSelectFilter
+                    label="Environment"
+                    items={AMBIENTES as unknown as string[]}
+                    selected={ambientes}
+                    onToggle={toggleAmbiente}
+                    onClear={ambientes.length < AMBIENTES.length ? () => setAmbientes([...AMBIENTES]) : undefined}
+                    idPrefix="prod-amb"
+                    swatch={(item) => AMBIENTE_COLOR[item] ?? "#aaa"}
                   />
-                )}
+                </div>
               </div>
 
-              {/* Ambiente */}
-              <div style={{ minWidth: 180, flex: "0 0 180px" }}>
-                <MultiSelectFilter
-                  label="Environment"
-                  items={AMBIENTES as unknown as string[]}
-                  selected={ambientes}
-                  onToggle={toggleAmbiente}
-                  onClear={ambientes.length < AMBIENTES.length ? () => setAmbientes([...AMBIENTES]) : undefined}
-                  idPrefix="prod-amb"
-                  swatch={(item) => AMBIENTE_COLOR[item] ?? "#aaa"}
+              {/* ── Header table column (right) ─────────────────────────── */}
+              <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                <div
+                  style={{
+                    fontFamily: "Arial",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: "#1a1a1a",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.4px",
+                    marginBottom: 2,
+                  }}
+                >
+                  Headline — {fmtMonthLabel(referenceDate)}
+                </div>
+                <HeaderTable
+                  rows={headerData}
+                  loading={headerLoading}
+                  referenceDate={referenceDate}
                 />
               </div>
 
-              {/* Reference month (for top fields / FPSOs / YoY) */}
-              <div style={{ minWidth: 180, flex: "0 0 180px" }}>
-                <label
-                  style={{
-                    display: "block",
-                    fontFamily: "Arial",
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: "#1a1a1a",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.4px",
-                    marginBottom: 6,
-                  }}
-                >
-                  Reference month
-                </label>
-                <select
-                  value={referenceDate}
-                  onChange={(e) => setReferenceDate(e.target.value)}
-                  style={{
-                    width: "100%",
-                    fontFamily: "Arial",
-                    fontSize: 13,
-                    padding: "8px 10px",
-                    border: "1px solid #c5c5cb",
-                    borderRadius: 6,
-                    background: "#ffffff",
-                  }}
-                >
-                  {refMonthOptions.map((m) => (
-                    <option key={m} value={m}>{fmtMonthLabel(m)}</option>
-                  ))}
-                </select>
-              </div>
+              {/* Single-column fallback for narrow desktop / tablet widths.
+                  Below 1100px the table needs the full row to remain legible
+                  so the grid collapses to 1 column (filters then table). */}
+              <style>{`
+                @media (max-width: 1099px) {
+                  .wbw-top-split { grid-template-columns: 1fr !important; }
+                }
+              `}</style>
             </div>
 
             {/* ── KPI strip removed in Round 6 (2026-05-27) ───────────────
                 Δ MoM / Δ YoY computed against a partial reference month
-                produced misleading multi-hundred-percent figures. The YoY
-                table at the bottom (server-derived against full historical
-                months) is the canonical breakdown; the PDF Well-by-Well
-                report doesn't use KPI cards either. `KpiCard` is still
-                imported because the field/installation drill modals use it
-                (those KPIs sum a full historical timeseries and are
+                produced misleading multi-hundred-percent figures. The Round
+                8 PDF-style HeaderTable above (server-derived against full
+                historical months) is the canonical breakdown; the PDF
+                Well-by-Well report doesn't use KPI cards either. `KpiCard`
+                is still imported because the field/installation drill modals
+                use it (those KPIs sum a full historical timeseries and are
                 arithmetically sound). */}
 
             {/* ── Charts row 1 ────────────────────────────────────────────── */}
@@ -1305,71 +1363,18 @@ export default function DesktopView(): React.ReactElement | null {
               </ChartSection>
             </div>
 
-            {/* ── YoY table ─────────────────────────────────────────────── */}
-            <ChartSection
-              title={`${empresa} — YoY / MoM / YTD (${fmtMonthLabel(referenceDate)})`}
-              loading={yoyLoading}
-              height={180}
-            >
-              <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 12 }}>
-                <thead>
-                  <tr>
-                    <th style={thStyle}>Scope</th>
-                    <th style={{ ...thStyle, textAlign: "right" }}>Current (kbpd)</th>
-                    <th style={{ ...thStyle, textAlign: "right" }}>Δ MoM</th>
-                    <th style={{ ...thStyle, textAlign: "right" }}>Δ YoY</th>
-                    <th style={{ ...thStyle, textAlign: "right" }}>YTD avg (kbpd)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {yoyTable.map((row) => {
-                    const isTotal = row.scope === "TOTAL";
-                    return (
-                      <tr
-                        key={row.scope}
-                        style={{
-                          background: isTotal ? "#fafafa" : "transparent",
-                          fontWeight: isTotal ? 700 : 400,
-                        }}
-                      >
-                        <td style={tdStyle}>{row.scope}</td>
-                        <td style={{ ...tdStyle, textAlign: "right" }}>
-                          {fmtNumber(row.current_kbpd, 0)}
-                        </td>
-                        <td
-                          style={{
-                            ...tdStyle,
-                            textAlign: "right",
-                            color: row.mom_pct != null && row.mom_pct >= 0 ? "#197a39" : "#b3261e",
-                          }}
-                        >
-                          {fmtPct(row.mom_pct)}
-                        </td>
-                        <td
-                          style={{
-                            ...tdStyle,
-                            textAlign: "right",
-                            color: row.yoy_pct != null && row.yoy_pct >= 0 ? "#197a39" : "#b3261e",
-                          }}
-                        >
-                          {fmtPct(row.yoy_pct)}
-                        </td>
-                        <td style={{ ...tdStyle, textAlign: "right" }}>
-                          {fmtNumber(row.ytd_avg_kbpd, 0)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {yoyTable.length === 0 && (
-                    <tr>
-                      <td colSpan={5} style={{ ...tdStyle, textAlign: "center", color: "#888", padding: 20 }}>
-                        No YoY data for this reference month.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </ChartSection>
+            {/* ── YoY table REMOVED in Round 8 (2026-05-27) ───────────────
+                The existing YoY/MoM/YTD breakdown (TOTAL + per-ambiente rows
+                for the selected company) is now a STRICT SUBSET of the
+                PDF-style HeaderTable rendered at the top of the page next to
+                the filters. The HeaderTable shows the same TOTAL + per-
+                ambiente breakdown for the company AND Brazil-wide context
+                AND gas (kboed) AND main fields, all derived against full
+                historical months by the same server-side math
+                (`get_well_by_well_header`). Keeping both tables would have
+                duplicated the same numbers in two places. Mobile keeps the
+                YoY collapsible drawer because the HeaderTable is at the top
+                and horizontal-scroll discoverability is weaker on phones. */}
           </>
         )}
       </div>

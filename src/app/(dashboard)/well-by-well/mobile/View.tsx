@@ -5,10 +5,16 @@
 // Layout (top → bottom):
 //   MobileTopBar              — wordmark
 //   StickyBreadcrumb          — "Well by Well › <Empresa> › <Ref month>"
+//   HeaderTable (Round 8)     — PDF-style page-2 header, wrapped in a
+//                               horizontally scrollable container so all 7
+//                               columns remain reachable on narrow phones
 //   MobileTabBar              — Brazil · {Empresa} · Fields · FPSOs
 //   Tab content               — one full-width chart per tab (Brazil/Company)
 //                               or a tappable list (Fields/FPSOs)
-//   YoY expandable section    — bottom, expands when tapped
+//   YoY expandable section    — bottom, expands when tapped (kept on mobile
+//                               as a fallback collapse — the HeaderTable's
+//                               company numbers are reachable via h-scroll,
+//                               but the drawer surfaces them without scroll)
 //   ExportFAB                 — opens an action sheet to pick Excel or CSV
 //   FilterDrawer              — empresa + period + ambientes + reference month
 //
@@ -45,6 +51,7 @@ import StickyBreadcrumb from "../../../../components/dashboard/mobile/StickyBrea
 import MultiSelectFilter from "../../../../components/dashboard/MultiSelectFilter";
 import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
+import HeaderTable from "../HeaderTable";
 import { bblDiaToKbpd } from "../../../../lib/units";
 
 import {
@@ -365,6 +372,7 @@ export default function MobileView(): React.ReactElement | null {
     ambientes, toggleAmbiente, setAmbientes,
     referenceDate, setReferenceDate,
     brazilData, companyData, topFields, installations, yoyTable,
+    headerData, headerLoading,
     brazilLoading, companyLoading, topFieldsLoading, installationsLoading, yoyLoading,
     excelLoading, csvLoading,
     handleExportExcel, handleExportCsv,
@@ -458,6 +466,55 @@ export default function MobileView(): React.ReactElement | null {
           { label: fmtMonthLabel(referenceDate), active: true },
         ]}
       />
+
+      {/* ── Round 8 (2026-05-27): PDF-style HeaderTable at the top ───────────
+          Per Eduardo's request the table sits "no topo" (at the top) above
+          the tab bar. On phones the table is naturally wider than the
+          viewport — wrapping it in a horizontally scrollable container
+          (`overflow-x: auto`, `min-width: 480px` on the table itself) keeps
+          every column reachable via a left/right swipe. The HeaderTable
+          component owns the scroll wrapper; this section only adds the
+          surrounding card + subtitle. */}
+      <div style={{ padding: "10px 12px 6px" }}>
+        <div
+          style={{
+            background: "var(--mobile-surface, #ffffff)",
+            border: "1px solid var(--mobile-border, #e6e6ec)",
+            borderRadius: 12,
+            padding: "10px 10px 4px",
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "Arial",
+              fontSize: 11,
+              fontWeight: 700,
+              color: "#1a1a1a",
+              padding: "0 2px 6px",
+              letterSpacing: "0.3px",
+              textTransform: "uppercase",
+            }}
+          >
+            Headline — {fmtMonthLabel(referenceDate)}
+          </div>
+          <HeaderTable
+            rows={headerData}
+            loading={headerLoading}
+            referenceDate={referenceDate}
+          />
+          <div
+            style={{
+              fontFamily: "Arial",
+              fontSize: 10,
+              color: "#888",
+              padding: "4px 2px 0",
+              textAlign: "center",
+            }}
+          >
+            Swipe left to see more columns ›
+          </div>
+        </div>
+      </div>
 
       <div style={{ padding: "12px 12px 8px" }}>
         <MobileTabBar
