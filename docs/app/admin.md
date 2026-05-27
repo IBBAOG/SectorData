@@ -176,9 +176,31 @@ Landing visual. Shows module cards (icon list, not image cards since 2026-05-26)
 
 > **Memória persistente do CEO (updated 2026-05-26)**: TODO módulo novo precisa de ícone em `src/data/moduleIcons.tsx`. O upload de imagem foi removido — home agora usa ícones SVG inline, não imagens carregadas pelo admin.
 
+#### News Hunter center panel (2026-05-28, `[desktop-only]`)
+
+Desktop layout was widened to a **3-column grid** (cards · News Hunter · Team + Data Sources) — `1.4fr 1fr 1fr`. The News Hunter panel sits visually centered horizontally as a live news ticker, between the module list (left, densest content) and the live Data Sources / Team stack (right). Mobile view is **unchanged** — still shows cards only.
+
+**Component tree:**
+```
+src/components/home/NewsHunterPanel/
+  index.tsx                   — Top-6 headlines list with pulse dot header,
+                                "Open" inline CTA, "Open full feed →" footer.
+                                Re-renders age labels every 30s via local tick.
+  NewsHunterPanel.module.css  — Glass card matching DataSourcesTable + TeamPanel.
+                                Yellow accent reuses --ds-cat-news / --ds-cat-news-soft
+                                tokens to tie this panel to the news_articles row
+                                of the Data Sources table (same category color).
+```
+
+**Data source:** consumes the already-mounted `NewsHunterProvider` (in `src/app/(dashboard)/layout.tsx`) via `useNewsHunter()`. No new RPC, no new fetch — the provider already polls every 60s on the `found_at` watermark and persists to localStorage (`nh_articles_v1` / `nh_watermark_v1`). The home panel only slices the top 6 articles sorted by `published_at desc nulls last`, then `found_at desc`.
+
+**Visibility:** panel renders for all roles (anon / client / admin). `NewsHunterProvider` itself handles the anon / authed branching (anon gets the default-keywords seed list), so the panel doubles as a "what's live" showcase on the public surface.
+
+**Rationale for placement:** the user (CEO) asked for "um painel de news hunter ao centro da página" (desktop-only). The 3-column layout puts the panel literally at the horizontal center of the page while preserving breathing room for both the module gallery (left) and the live data instruments (right).
+
 #### Data Sources live table (2026-05-26, `[desktop-only]`)
 
-Desktop layout is now a **70/30 split**: module cards (left column, `2fr`) + Data Sources live table (right column, `1fr`).
+Desktop layout is now a **3-column grid** (since 2026-05-28; was a 70/30 split before that): module cards (left, `1.4fr`) + News Hunter panel (center, `1fr`) + Team + Data Sources stack (right, `1fr`).
 Mobile view is **unchanged** — still shows cards only. The table is explicitly desktop-only.
 
 **Component tree:**

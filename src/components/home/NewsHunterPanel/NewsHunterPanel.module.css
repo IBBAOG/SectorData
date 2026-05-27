@@ -1,0 +1,249 @@
+/*
+ * NewsHunterPanel.module.css
+ *
+ * Glass card matching the DataSourcesTable + TeamPanel visual language.
+ * Tokens come from globals.css "Data Sources tokens" block. News-yellow
+ * accent (--ds-cat-news / --ds-cat-news-soft) is the category color for
+ * news_articles in the Data Sources table; reusing it here ties the two
+ * panels together as the live "news + data" pair.
+ *
+ * Desktop-only — this component is not rendered on mobile.
+ */
+
+/* ── Outer container ──────────────────────────────────────────────────────── */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  background: var(--ds-glass-bg);
+  border: 1px solid var(--ds-glass-border);
+  backdrop-filter: var(--ds-glass-backdrop);
+  -webkit-backdrop-filter: var(--ds-glass-backdrop);
+  box-shadow: var(--ds-glass-shadow);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* ── Header (black bar, identical to TeamPanel/DataSourcesTable) ──────────── */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #000;
+  border-bottom: 1px solid #000;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.headerTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #fff;
+}
+
+/* Pulse dot — signals "live feed", matches .ds-pulse semantics from globals.css */
+.pulseDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ds-cat-news);
+  box-shadow: 0 0 0 0 var(--ds-cat-news);
+  animation: nh-home-pulse 2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes nh-home-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.65); }
+  70%  { box-shadow: 0 0 0 7px rgba(250, 204, 21, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulseDot { animation: none; }
+}
+
+.headerCta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.75);
+  text-decoration: none;
+  transition: color 0.15s ease, gap 0.18s ease;
+}
+
+.headerCta:hover {
+  color: #fff;
+  gap: 6px;
+}
+
+.headerCta svg {
+  flex-shrink: 0;
+  transition: transform 0.18s ease;
+}
+
+.headerCta:hover svg {
+  transform: translateX(2px);
+}
+
+/* ── Article list ─────────────────────────────────────────────────────────── */
+
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+.item {
+  border-bottom: 1px solid var(--ds-glass-border);
+}
+
+.item:last-child {
+  border-bottom: none;
+}
+
+.itemLink {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.15s ease, transform 0.15s ease;
+  cursor: pointer;
+}
+
+.itemLink:hover {
+  background: var(--ds-cat-news-soft);
+  text-decoration: none;
+  color: inherit;
+}
+
+/* ── Title line ───────────────────────────────────────────────────────────── */
+
+.title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #000;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+:global(:root[data-theme="dark"]) .title {
+  color: #ffffff;
+}
+
+/* ── Meta line (source · time) ────────────────────────────────────────────── */
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.55);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+:global(:root[data-theme="dark"]) .meta {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.source {
+  font-weight: 600;
+  color: var(--ds-cat-news-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60%;
+}
+
+.dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.4;
+  flex-shrink: 0;
+}
+
+.time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Empty / loading / error states ───────────────────────────────────────── */
+
+.placeholder {
+  padding: 18px 14px;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.5);
+  text-align: center;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+:global(:root[data-theme="dark"]) .placeholder {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.errorPlaceholder {
+  padding: 18px 14px;
+  font-size: 12px;
+  color: #b91c1c;
+  text-align: center;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+:global(:root[data-theme="dark"]) .errorPlaceholder {
+  color: #fca5a5;
+}
+
+/* ── Footer (full-feed CTA) ───────────────────────────────────────────────── */
+
+.footer {
+  padding: 10px 14px;
+  border-top: 1px solid var(--ds-glass-border);
+  background: var(--ds-glass-bg-elevated);
+  text-align: center;
+}
+
+.footerLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ds-cat-news-text);
+  text-decoration: none;
+  transition: gap 0.18s ease;
+}
+
+.footerLink:hover {
+  text-decoration: none;
+  gap: 7px;
+}
+
+.footerLink svg {
+  flex-shrink: 0;
+  transition: transform 0.18s ease;
+}
+
+.footerLink:hover svg {
+  transform: translateX(2px);
+}

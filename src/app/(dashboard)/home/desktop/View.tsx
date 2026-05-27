@@ -2,12 +2,17 @@
 
 // Desktop view for /home.
 //
-// Layout: 70/30 split grid — left column holds module cards (vertical list),
-// right column holds the DataSourcesTable live panel.
+// Layout: 3-column grid — module cards (left), News Hunter live panel (center,
+// glanceable headlines), TeamPanel + DataSourcesTable (right). The News
+// Hunter panel is the visual focal point: positioned dead-center horizontally,
+// with a yellow pulse dot in the black header (matching the news_articles
+// category color in DataSourcesTable) to signal "live feed".
 //
-// Cards are now icon + module name rows (compact list, one card per row).
+// Cards are icon + module name rows (compact list, one card per row).
 // Hover: icon gains brand orange color + scale, row gets glass background +
-// left-bar accent + slight translateX. No more large image cards.
+// left-bar accent + slight translateX.
+//
+// Mobile view is unchanged (cards only, no right column, no center panel).
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -15,6 +20,7 @@ import NavBar from "../../../../components/NavBar";
 import { useHomeData } from "../useHomeData";
 import DataSourcesTable from "../../../../components/home/DataSourcesTable";
 import TeamPanel from "../../../../components/home/TeamPanel";
+import NewsHunterPanel from "../../../../components/home/NewsHunterPanel";
 import { getModuleIcon } from "../../../../data/moduleIcons";
 
 // ── Design tokens ─────────────────────────────────────────────────────────
@@ -255,11 +261,14 @@ export default function DesktopView(): React.ReactElement {
     >
       <NavBar />
 
-      {/* 70/30 split: cards left (~67%), Data Sources table right (~33%) */}
+      {/* 3-column split: cards (left, 1.4fr) · News Hunter (center, 1fr) ·
+          Team + Data Sources (right, 1fr). News Hunter sits visually
+          centered on the page; the cards list still gets the most width
+          because it carries the densest content (3 categories × ~5 rows). */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "2fr 1fr",
+          gridTemplateColumns: "1.4fr 1fr 1fr",
           gap: 0,
           alignItems: "start",
           padding: "32px 24px 80px",
@@ -267,7 +276,7 @@ export default function DesktopView(): React.ReactElement {
       >
         {/* ── Left column: module list ──────────────────────────────────── */}
         <section
-          style={{ paddingRight: 32, paddingLeft: 14 }}
+          style={{ paddingRight: 24, paddingLeft: 14 }}
           aria-label="Module navigation"
         >
           {CATEGORY_ORDER.map((cat) => {
@@ -297,8 +306,16 @@ export default function DesktopView(): React.ReactElement {
           })}
         </section>
 
+        {/* ── Center column: News Hunter live panel ───────────────────── */}
+        <section
+          style={{ paddingLeft: 12, paddingRight: 12, paddingTop: 2 }}
+          aria-label="Latest news"
+        >
+          <NewsHunterPanel />
+        </section>
+
         {/* ── Right column: Team + Data Sources ────────────────────────── */}
-        <section style={{ paddingLeft: 16, paddingTop: 2 }}>
+        <section style={{ paddingLeft: 12, paddingTop: 2 }}>
           <TeamPanel />
           <div style={{ marginBottom: 12 }} />
           <DataSourcesTable />
