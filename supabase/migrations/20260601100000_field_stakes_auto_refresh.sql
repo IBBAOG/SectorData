@@ -20,16 +20,32 @@
 -- anp_cdp_producao). Acceptable here: admin stake edits are rare, and the
 -- admin-panel UX can surface a "saving..." spinner. No pg_notify / async —
 -- over-engineering for the access pattern.
+--
+-- Timeout handling: this migration disables statement_timeout for its own
+-- transaction (the in-deploy refresh of ~2M rows blows past the supabase CLI
+-- default of 120s), and pins a 15min per-function timeout on the trigger so
+-- admin-edit refreshes survive even when the user session has a tight timeout.
+
+-- Supabase CLI default statement_timeout (~120s) cannot cover the in-deploy
+-- refresh of mv_production_monthly (~2M rows). Lift it for this transaction
+-- only; rolled back automatically at COMMIT.
+SET LOCAL statement_timeout = 0;
 
 -- ───── (1) Trigger function ─────────────────────────────────────────────────
 -- SECURITY DEFINER so it can call refresh_mv_production() (REVOKE'd from
 -- anon/authenticated; only service_role + this function's owner can execute).
 -- SET search_path per Pegadinha #18 (otherwise schema injection risk).
+-- SET statement_timeout = '15min' per-function so REFRESH CONCURRENTLY has
+-- room to finish even when the caller's session timeout is tight (admin RPC
+-- calls inherit the API user's session settings). CONCURRENTLY is kept here
+-- because at admin-edit time there can be a concurrent reader (the dashboard
+-- UI is likely loading while the save fires).
 CREATE OR REPLACE FUNCTION public.field_stakes_refresh_mv_trigger()
   RETURNS trigger
   LANGUAGE plpgsql
   SECURITY DEFINER
   SET search_path = public, pg_temp
+  SET statement_timeout = '15min'
   AS $$
   BEGIN
     PERFORM public.refresh_mv_production();
@@ -58,4 +74,11 @@ CREATE TRIGGER field_stakes_refresh_mv
 -- accumulated since 20260528400000) without requiring manual operator action.
 -- This runs as the migration deployer (service_role), so the function's
 -- REVOKE on anon/authenticated is irrelevant.
-SELECT public.refresh_mv_production();
+--
+-- Use non-CONCURRENT REFRESH here: during deploy there is no reader to
+-- protect, and non-CONCURRENT is 2-3x faster than CONCURRENTLY. Trade-off
+-- accepted. Runtime refreshes (via the trigger above) still use CONCURRENTLY
+-- through refresh_mv_production().
+REFRESH MATERIALIZED VIEW public.mv_brazil_monthly;
+REFRESH MATERIALIZED VIEW public.mv_production_monthly;
+REFRESH MATERIALIZED VIEW public.mv_production_installation_monthly;
