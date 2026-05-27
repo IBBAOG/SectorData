@@ -63,18 +63,15 @@ export default function MobileView(): React.ReactElement | null {
 
     localVis,
     saving,
-    savedSlug,
     handleToggle,
 
     localHomeVis,
     savingHome,
-    savedHomeSlug,
     homeToggleError,
     handleHomeToggle,
 
     localPublicVis,
     savingPublic,
-    savedPublicSlug,
     publicToggleError,
     handlePublicToggle,
 
@@ -542,11 +539,8 @@ export default function MobileView(): React.ReactElement | null {
               const isPublicVisible = localPublicVis[slug] ?? true;
               const isHomeVisible = localHomeVis[slug] ?? true;
               const isSavingClient = saving === slug;
-              const justSavedClient = savedSlug === slug;
               const isSavingPublic = savingPublic === slug;
-              const justSavedPublic = savedPublicSlug === slug;
               const isSavingHome = savingHome === slug;
-              const justSavedHome = savedHomeSlug === slug;
               const publicError = publicToggleError?.slug === slug ? publicToggleError.message : null;
               const homeError = homeToggleError?.slug === slug ? homeToggleError.message : null;
               const clientsForcedOn = isPublicVisible;
@@ -583,14 +577,6 @@ export default function MobileView(): React.ReactElement | null {
                       <span style={{ fontSize: 11, color: "var(--mobile-text-faint)" }}>Anonymous visitors</span>
                     </div>
                     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                      {justSavedPublic && (
-                        <span
-                          style={{ fontSize: 10, fontWeight: 700, color: "#38a169", display: "inline-flex", alignItems: "center", gap: 4 }}
-                          aria-live="polite"
-                        >
-                          <CheckIcon size={14} strokeWidth={2.5} />
-                        </span>
-                      )}
                       {publicError && (
                         <span style={{ fontSize: 11, color: "#c0392b" }} title={publicError}>Failed</span>
                       )}
@@ -624,14 +610,6 @@ export default function MobileView(): React.ReactElement | null {
                       </span>
                     </div>
                     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                      {justSavedClient && (
-                        <span
-                          style={{ fontSize: 10, fontWeight: 700, color: "#38a169", display: "inline-flex", alignItems: "center", gap: 4 }}
-                          aria-live="polite"
-                        >
-                          <CheckIcon size={14} strokeWidth={2.5} />
-                        </span>
-                      )}
                       <label className="form-check form-switch" style={{ margin: 0, paddingLeft: 0, display: "inline-block" }}>
                         <input
                           className="form-check-input"
@@ -665,14 +643,6 @@ export default function MobileView(): React.ReactElement | null {
                       </span>
                     </div>
                     <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                      {justSavedHome && !homeDisabled && (
-                        <span
-                          style={{ fontSize: 10, fontWeight: 700, color: "#38a169", display: "inline-flex", alignItems: "center", gap: 4 }}
-                          aria-live="polite"
-                        >
-                          <CheckIcon size={14} strokeWidth={2.5} />
-                        </span>
-                      )}
                       {homeError && (
                         <span style={{ fontSize: 11, color: "#c0392b" }} title={homeError}>Failed</span>
                       )}

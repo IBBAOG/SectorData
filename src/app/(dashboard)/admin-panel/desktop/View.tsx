@@ -96,18 +96,15 @@ export default function DesktopView(): React.ReactElement | null {
 
     localVis,
     saving,
-    savedSlug,
     handleToggle,
 
     localHomeVis,
     savingHome,
-    savedHomeSlug,
     homeToggleError,
     handleHomeToggle,
 
     localPublicVis,
     savingPublic,
-    savedPublicSlug,
     publicToggleError,
     handlePublicToggle,
 
@@ -473,11 +470,8 @@ export default function DesktopView(): React.ReactElement | null {
                 const isPublicVisible = localPublicVis[slug] ?? true;
                 const isHomeVisible = localHomeVis[slug] ?? true;
                 const isSavingClient = saving === slug;
-                const justSavedClient = savedSlug === slug;
                 const isSavingPublic = savingPublic === slug;
-                const justSavedPublic = savedPublicSlug === slug;
                 const isSavingHome = savingHome === slug;
-                const justSavedHome = savedHomeSlug === slug;
                 const publicError = publicToggleError?.slug === slug ? publicToggleError.message : null;
                 const homeError = homeToggleError?.slug === slug ? homeToggleError.message : null;
                 // When Public is ON, Clients must also be ON (DB invariant).
@@ -497,7 +491,6 @@ export default function DesktopView(): React.ReactElement | null {
 
                     {/* Public toggle */}
                     <div style={{ width: 90, display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }}>
-                      {justSavedPublic && <span className="settings-saved-tick" aria-live="polite">✓</span>}
                       {publicError && (
                         <span style={{ fontSize: 11, color: "#c0392b" }} title={publicError}>Error</span>
                       )}
@@ -518,7 +511,6 @@ export default function DesktopView(): React.ReactElement | null {
 
                     {/* Clients toggle */}
                     <div style={{ width: 90, display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }}>
-                      {justSavedClient && <span className="settings-saved-tick" aria-live="polite">✓</span>}
                       <div
                         className="form-check form-switch"
                         style={{ margin: 0 }}
@@ -548,7 +540,6 @@ export default function DesktopView(): React.ReactElement | null {
                       style={{ width: 90, display: "flex", justifyContent: "center", alignItems: "center", gap: 6 }}
                       title={homeDisabled ? "Make the module visible to Public or Clients first" : undefined}
                     >
-                      {justSavedHome && <span className="settings-saved-tick" aria-live="polite">✓</span>}
                       {homeError && (
                         <span style={{ fontSize: 11, color: "#c0392b" }} title={homeError}>Error</span>
                       )}

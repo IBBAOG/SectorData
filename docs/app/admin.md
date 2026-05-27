@@ -556,11 +556,11 @@ The Data Input → Price Bands form previously exposed 6 columns for Diesel: `Da
 
 ---
 
-## Changelog — Permissions toggle UX fixes (2026-05-26)
+## Changelog — Permissions toggle UX fixes (2026-05-26 → 2026-05-27)
 
 Two UX fixes applied to the Permissions tab toggles (both desktop and mobile views).
 
-**Fix 1 — Remove checkmark animation from switch pill.** Bootstrap 5's `form-check-input[role="switch"]` renders a white checkmark SVG inside the thumb when checked. This is overridden in `src/app/globals.css` with a plain white circle `background-image`, so only the pill color and thumb position change on toggle. No SVG elements, no animated check.
+**Fix 1 — Remove checkmark from switch pill (second attempt, 2026-05-27).** The check visible after clicking a toggle was not from Bootstrap's CSS background-image at all — it was the `✓` / `<CheckIcon>` save-confirmation span (`settings-saved-tick`) rendered directly beside the toggle input in the same 90px flex container. After the RPC round-trip completed, the span animated in via `fadeInTick` (scale + opacity), appearing to sit "on" the toggle. The first attempt (commit `63849680`) incorrectly targeted Bootstrap's `background-image` via `globals.css`. The real fix (this commit) removes `justSavedPublic`, `justSavedClient`, and `justSavedHome` spans from the three toggle columns in both desktop (`desktop/View.tsx`) and mobile (`mobile/View.tsx`) views. The corresponding `savedSlug`, `savedPublicSlug`, `savedHomeSlug` destructures are also dropped from both views since they are no longer used. Auto-save toggles are self-confirming via state change; no post-save tick is needed. The `globals.css` `background-image` override from the first attempt is retained (belt-and-suspenders).
 
 **Fix 2 — Home toggle disabled when both Public and Clients are false.** Mirrors the DB invariant from migration `20260526900000_module_visibility_home_requires_visible.sql`. Implementation:
 - `useAdminPanelData` state declarations for all three visibility axes (`localVis`, `localHomeVis`, `localPublicVis`) are now grouped together before the handlers to avoid forward-reference issues.
