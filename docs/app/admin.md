@@ -183,16 +183,17 @@ Desktop layout is a **3-column grid** (cards · News Hunter · Team + Data Sourc
 **Component tree:**
 ```
 src/components/home/NewsHunterPanel/
-  index.tsx                   — Top-6 headlines list with pulse dot header,
-                                "Open" inline CTA, "Open full feed →" footer.
-                                Re-renders age labels every 30s via local tick.
+  index.tsx                   — Top-20 headlines list with pulse dot header
+                                (no header CTA since 2026-05-27) and a single
+                                "Open full feed →" footer link. Re-renders age
+                                labels every 30s via local tick.
   NewsHunterPanel.module.css  — Glass card matching DataSourcesTable + TeamPanel.
                                 Yellow accent reuses --ds-cat-news / --ds-cat-news-soft
                                 tokens to tie this panel to the news_articles row
                                 of the Data Sources table (same category color).
 ```
 
-**Data source:** consumes the already-mounted `NewsHunterProvider` (in `src/app/(dashboard)/layout.tsx`) via `useNewsHunter()`. No new RPC, no new fetch — the provider already polls every 60s on the `found_at` watermark and persists to localStorage (`nh_articles_v1` / `nh_watermark_v1`). The home panel only slices the top 6 articles sorted by `published_at desc nulls last`, then `found_at desc`.
+**Data source:** consumes the already-mounted `NewsHunterProvider` (in `src/app/(dashboard)/layout.tsx`) via `useNewsHunter()`. No new RPC, no new fetch — the provider already polls every 60s on the `found_at` watermark and persists to localStorage (`nh_articles_v1` / `nh_watermark_v1`). The home panel slices the top 20 articles sorted by `published_at desc nulls last`, then `found_at desc` (bumped from 6 on 2026-05-27 per CTO — gives a deeper feed snapshot directly on /home; the panel grows taller than the right-column stack and /home scrolls naturally).
 
 **Visibility:** panel renders for all roles (anon / client / admin). `NewsHunterProvider` itself handles the anon / authed branching (anon gets the default-keywords seed list), so the panel doubles as a "what's live" showcase on the public surface.
 
