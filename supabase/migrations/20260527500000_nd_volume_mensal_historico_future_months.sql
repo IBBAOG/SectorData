@@ -16,15 +16,17 @@
 --       last snapshot of the month either eventually discharged or did not
 --       arrive. The honest classification for a CLOSED month is either
 --       Discharged or Indeterminate, never Pending.
---     * LATENT TZ BUG: v_current_ts was declared `timestamp` and computed as
---       `(p_collected_at::timestamp AT TIME ZONE 'America/Sao_Paulo')`. The
---       caller passes a UTC timestamptz string (e.g. '2026-05-26 19:00:00+00'),
---       which `::timestamp` strips into the naive value '2026-05-26 19:00:00',
---       then `AT TIME ZONE 'America/Sao_Paulo'` interprets *that naive value
---       as São Paulo local time*, returning '2026-05-26 22:00:00+00' — a 3-hour
---       shift. Downstream `nd.collected_at = ma.anchor_ts` then matched nothing
---       for the current month, so the pending CTE was always empty and all
---       current-month vessels fell through to "discharged".
+--     * INPUT-FORMAT FRAGILITY: p_collected_at arrives in two shapes depending
+--       on the caller. The frontend sends SP-local naive ('2026-05-26T16:00:00',
+--       no offset, because get_nd_coletas_distintas serialises
+--       (collected_at AT TIME ZONE 'America/Sao_Paulo')) while ad-hoc SQL
+--       callers use MAX(collected_at)::text → UTC with offset
+--       ('2026-05-26 19:00:00+00'). The previous chain
+--       `(p_collected_at::timestamp AT TIME ZONE 'America/Sao_Paulo')` was
+--       correct for the frontend case but shifted SQL-caller inputs by 3h.
+--       Defensive fix: detect a trailing offset (Postgres short +HH, ISO
+--       +HH:MM/+HHMM, or Z) and pick `::timestamptz` when present,
+--       `::timestamp AT TIME ZONE 'America/Sao_Paulo'` otherwise.
 --
 -- Fix (this migration)
 --   1. Reclassify past-month Pending → Indeterminate (Option A). The estimate
@@ -38,9 +40,9 @@
 --      strictly greater than the current month. These bars are marked
 --      `is_current = true` so the frontend treats them as LIVE (outline +
 --      "(live)" suffix), matching the current month's rendering.
---   3. Fix v_current_ts to `timestamptz` and parse p_collected_at with the
---      `::timestamptz` cast so the UTC offset is preserved. All anchor_ts
---      values are now timestamptz, matching navios_diesel.collected_at.
+--   3. Make v_current_ts robust to both input formats (SP-local-naive vs.
+--      UTC-with-offset) via a regex-gated CASE. All anchor_ts values remain
+--      timestamptz, matching navios_diesel.collected_at.
 --
 -- Frontend impact
 --   None. `is_current = true` already triggers the live-bar styling in both
@@ -63,11 +65,24 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-    -- Use timestamptz throughout so the parser preserves the caller's UTC
-    -- offset and matches navios_diesel.collected_at (also timestamptz).
-    -- The previous `::timestamp AT TIME ZONE 'America/Sao_Paulo'` chain
-    -- shifted the anchor by 3h and silently broke current-month buckets.
-    v_current_ts   timestamptz := p_collected_at::timestamptz;
+    -- p_collected_at arrives in two formats:
+    --   (a) SP-local naive, e.g. '2026-05-26T16:00:00' — what the frontend
+    --       sends, because get_nd_coletas_distintas serialises
+    --       (collected_at AT TIME ZONE 'America/Sao_Paulo') without an offset.
+    --   (b) UTC with offset, e.g. '2026-05-26 19:00:00+00' — what an ad-hoc
+    --       SQL caller produces with MAX(collected_at)::text.
+    -- Naive `::timestamptz` would treat (a) as UTC and yield 16:00 UTC,
+    -- shifting the anchor by 3h and emptying current/future buckets
+    -- (nd.collected_at = ma.anchor_ts matches nothing). Detect the offset
+    -- with a regex (Postgres short form +HH, ISO +HH:MM/+HHMM, or Z) and
+    -- pick the right cast: with offset → ::timestamptz preserves it;
+    -- without → AT TIME ZONE 'America/Sao_Paulo' interprets the naive
+    -- value as SP-local and produces the right UTC ts.
+    v_current_ts   timestamptz := CASE
+        WHEN p_collected_at ~ '([+-][0-9]{2}(:?[0-9]{2})?|Z)$'
+            THEN p_collected_at::timestamptz
+        ELSE (p_collected_at::timestamp AT TIME ZONE 'America/Sao_Paulo')
+    END;
     v_current_mo   text        := to_char(now() AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM');
     v_baseline_mo  text        := '2026-04';
     v_result       json;
@@ -274,4 +289,4 @@ $$;
 GRANT EXECUTE ON FUNCTION public.get_nd_volume_mensal_historico(text) TO anon, authenticated;
 
 COMMENT ON FUNCTION public.get_nd_volume_mensal_historico(text) IS
-'Monthly diesel-import estimate series with three temporal categories: PAST months are frozen at the last snapshot of the month (Pending reclassified into Indeterminate — Option A — since a closed month cannot have pending vessels); CURRENT month uses p_collected_at (live, all three buckets meaningful); FUTURE months derive from the live snapshot using ETA-based attribution (Pending only, marked is_current=true so the frontend renders as live). Cabotage rows excluded at every read.';
+'Monthly diesel-import estimate series with three temporal categories: PAST months are frozen at the last snapshot of the month (Pending reclassified into Indeterminate — Option A — since a closed month cannot have pending vessels); CURRENT month uses p_collected_at (live, all three buckets meaningful); FUTURE months derive from the live snapshot using ETA-based attribution (Pending only, marked is_current=true so the frontend renders as live). Cabotage rows excluded at every read. v_current_ts handles both SP-local-naive (frontend) and UTC-with-offset (SQL caller) input formats via a regex-gated CASE.';
