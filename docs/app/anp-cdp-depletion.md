@@ -14,9 +14,16 @@ src/app/(dashboard)/anp-cdp-depletion/
 │   └── View.tsx                   ← desktop layout (sidebar + chart + table)
 └── mobile/
     └── View.tsx                   ← mobile layout (tabs + chips + chart + card list)
+
+src/lib/charts/
+└── depletion.ts                   ← shared Plotly chart builders (extracted 2026-05-28)
+                                     buildPerWellChart, buildFieldAverageChart
+                                     re-exports AnpCdpDepletionPoint, AnpCdpDepletionFieldPoint
 ```
 
 RPC wrappers: `rpcGetAnpCdpDepletionCampos`, `rpcGetAnpCdpDepletionScatter`, `rpcGetAnpCdpDepletionFieldAggregate` in [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (section "ANP CDP — Depletion").
+
+> **Shared chart builders (2026-05-28):** `buildPerWellChart` and `buildFieldAverageChart` were extracted from `desktop/View.tsx` into `src/lib/charts/depletion.ts` so the same Plotly logic can be consumed by the `/well-by-well` drill-down popup without duplication. `desktop/View.tsx` imports from there. `mobile/View.tsx` retains its own mobile-tuned trace builders (`buildPerWellMobileTraces` / `buildFieldAverageMobileTraces`) which use SVG `scatter` instead of WebGL `scattergl` and return only traces (not full chart+layout).
 
 ## Dual-view structure
 
