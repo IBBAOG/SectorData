@@ -2730,3 +2730,28 @@ a {
     opacity: 1;
   }
 }
+
+/* ── /well-by-well — KPI skeleton shimmer (Round 5 perf, 2026-05-27) ─────
+   Per-panel loading shows a shimmer rectangle in KPI cards on first load
+   (before any data arrives). Once data lands, subsequent refreshes simply
+   dim the existing value (opacity transition handled inline by KpiCard).
+
+   Used by both desktop/View.tsx and mobile/View.tsx so the visual language
+   matches across viewports. */
+@keyframes wbw-kpi-skeleton-pulse {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.wbw-kpi-skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e6e6e6 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: wbw-kpi-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wbw-kpi-skeleton {
+    animation: none;
+    background: #ececec;
+  }
+}
