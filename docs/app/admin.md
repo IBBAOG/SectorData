@@ -178,7 +178,7 @@ Landing visual. Shows module cards (icon list, not image cards since 2026-05-26)
 
 #### News Hunter center panel (2026-05-28, `[desktop-only]`)
 
-Desktop layout was widened to a **3-column grid** (cards · News Hunter · Team + Data Sources) — `1.4fr 1fr 1fr`. The News Hunter panel sits visually centered horizontally as a live news ticker, between the module list (left, densest content) and the live Data Sources / Team stack (right). Mobile view is **unchanged** — still shows cards only.
+Desktop layout is a **3-column grid** (cards · News Hunter · Team + Data Sources) — `1fr 2fr 1fr` (bumped from `1.4fr 1fr 1fr` on 2026-05-28 so the live news ticker becomes the visual focal point with twice the width of the side columns). The News Hunter panel sits visually centered horizontally, between the module list (left, compact icon rows) and the live Data Sources / Team stack (right). Mobile view is **unchanged** — still shows cards only.
 
 **Component tree:**
 ```
@@ -200,7 +200,7 @@ src/components/home/NewsHunterPanel/
 
 #### Data Sources live table (2026-05-26, `[desktop-only]`)
 
-Desktop layout is now a **3-column grid** (since 2026-05-28; was a 70/30 split before that): module cards (left, `1.4fr`) + News Hunter panel (center, `1fr`) + Team + Data Sources stack (right, `1fr`).
+Desktop layout is now a **3-column grid** (since 2026-05-28; was a 70/30 split before that): module cards (left, `1fr`) + News Hunter panel (center, `2fr`) + Team + Data Sources stack (right, `1fr`) — News Hunter doubled on 2026-05-28.
 Mobile view is **unchanged** — still shows cards only. The table is explicitly desktop-only.
 
 **Component tree:**

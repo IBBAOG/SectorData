@@ -261,14 +261,15 @@ export default function DesktopView(): React.ReactElement {
     >
       <NavBar />
 
-      {/* 3-column split: cards (left, 1.4fr) · News Hunter (center, 1fr) ·
-          Team + Data Sources (right, 1fr). News Hunter sits visually
-          centered on the page; the cards list still gets the most width
-          because it carries the densest content (3 categories × ~5 rows). */}
+      {/* 3-column split: cards (left, 1fr) · News Hunter (center, 2fr) ·
+          Team + Data Sources (right, 1fr). News Hunter is the visual
+          focal point — given twice the width of the side columns so the
+          live headline feed has room to breathe. Cards (left) and Team +
+          Data Sources (right) stay compact at equal proportions. */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1.4fr 1fr 1fr",
+          gridTemplateColumns: "1fr 2fr 1fr",
           gap: 0,
           alignItems: "start",
           padding: "32px 24px 80px",
