@@ -219,6 +219,54 @@ Indexes: `field_stakes_campo_idx (campo)`, `field_stakes_empresa_idx (empresa)`.
 
 **Editor location:** `/admin-panel` → "Field Stakes" section (owned by dash-admin worker, to be added in plan Fase 2).
 
+### Production RPCs (added 2026-05-28)
+
+Migration: `20260528000000_production_rpcs.sql`. Five RPCs feeding the `/production` dashboard (built in Fase 2 of `vou-fazer-uma-mudan-a-fizzy-quiche.md`). Reads `anp_cdp_producao` JOIN `field_stakes` on `campo` server-side, returns stake-weighted oil/gas/water aggregates per company × ambiente × month plus Top-N, by-installation, and YoY/MoM/YTD summary.
+
+**JOIN pattern (used by 4 of the 5 RPCs):**
+
+```sql
+WITH valid_stakes AS (
+  SELECT campo, empresa, stake_pct
+    FROM field_stakes
+   WHERE campo IN (
+     SELECT campo FROM field_stakes
+      GROUP BY campo
+     HAVING SUM(stake_pct) = 100
+   )
+     AND empresa = p_empresa
+)
+SELECT ..., SUM(p.<metric> * vs.stake_pct / 100) ...
+  FROM anp_cdp_producao p
+  JOIN valid_stakes vs ON vs.campo = p.campo
+```
+
+The `HAVING SUM(stake_pct) = 100` filter silently excludes incomplete-stake campos from company aggregates (the Admin sees the incomplete state in `/admin-panel` "Field Stakes" via `get_field_stakes_overview.is_complete`). This is intentional: a campo with partial coverage would otherwise under-report a company's attributable production.
+
+**All 5 RPCs are `LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp`** because `anp_cdp_producao` and `field_stakes` have RLS scoped to `authenticated` (CLAUDE.md Pegadinha #18). Anon callers would otherwise get empty `[]` with no error.
+
+| RPC | Signature | Notes |
+|---|---|---|
+| `get_production_brazil_aggregate` | `(p_date_start date, p_date_end date, p_ambientes text[] DEFAULT NULL) RETURNS TABLE(ano int, mes int, ambiente text, oil_bbl_dia numeric, gas_mm3_dia numeric, water_bbl_dia numeric, hours_rate numeric)` | No stake math — pure SUM over `anp_cdp_producao` grouped by `(ano, mes, local AS ambiente)`. `hours_rate = AVG(tempo_prod_hs_mes) / (days_in_month × 24)`. Optional `p_ambientes` filter (`PreSal` / `PosSal` / `Terra`). |
+| `get_production_company_aggregate` | `(p_empresa text, p_date_start date, p_date_end date, p_ambientes text[] DEFAULT NULL) RETURNS TABLE(ano int, mes int, ambiente text, oil_bbl_dia numeric, gas_mm3_dia numeric, water_bbl_dia numeric)` | Stake-weighted via `valid_stakes` CTE. Same date/ambiente shape as Brazil aggregate, no `hours_rate` (rate is well-level, not stake-weightable). |
+| `get_production_top_fields` | `(p_empresa text, p_date date, p_top_n int DEFAULT 10) RETURNS TABLE(campo text, oil_bbl_dia numeric, water_bbl_dia numeric, hours_rate numeric, stake_pct numeric)` | Single-month top-N fields by stake-weighted oil. `stake_pct` returned for editor cross-ref. `hours_rate` uses `date_trunc('month', p_date)` for days-in-month (not `make_date(p.ano,p.mes,1)`, which would violate GROUP BY when grouping only by `campo`). |
+| `get_production_by_installation` | `(p_empresa text, p_date date) RETURNS TABLE(instalacao text, oil_bbl_dia numeric, gas_mm3_dia numeric, hours_rate numeric)` | Groups stake-weighted oil/gas by `instalacao_destino` (FPSO/UEP). NULL installation → `'— sem instalação —'` sentinel. |
+| `get_production_yoy_table` | `(p_empresa text, p_date date) RETURNS TABLE(scope text, current_kbpd numeric, prev_month_kbpd numeric, prev_year_kbpd numeric, ytd_avg_kbpd numeric, mom_pct numeric, yoy_pct numeric)` | Returns 1 `TOTAL` row + 1 row per ambiente (`PreSal` / `PosSal` / `Terra`). All volumes in **kbpd** (`SUM(petroleo_bbl_dia × stake_pct / 100) / 1000`). MoM = vs. `p_date - 1 month`; YoY = vs. `p_date - 1 year`; YTD avg = avg of months 1..M of `p_date` year. **Caveat:** `TOTAL.ytd_avg_kbpd` is `AVG(per_ambiente.ytd_avg_kbpd)`, not `SUM` — if the consumer needs the true total YTD, sum the per-ambiente YTDs client-side. The other 3 TOTAL columns are correct SUMs. |
+
+**Grants (all 5):** `TO anon, authenticated` — `/production` is exposed to anonymous visitors gated by `module_visibility.is_visible_for_public` (currently `false`, but the RPCs are anon-safe so toggling the flag requires no further migration).
+
+**Module visibility seed:** `INSERT INTO module_visibility ('production', is_visible_for_clients=true, is_visible_on_home=true, is_visible_for_public=false) ON CONFLICT DO NOTHING`.
+
+**Validation confirmed at apply time (Apr-26 / Petrobras):**
+
+- All 5 RPCs report `pg_proc.prosecdef = true`.
+- Brazil aggregate Apr-26: PreSal 3,568 kbpd / PosSal 690 kbpd / Terra 79 kbpd oil. Cross-validated PreSal against raw `SUM(petroleo_bbl_dia) WHERE local='PreSal'` → identical (3,567,700).
+- Petrobras Apr-26 total = **2,710.8 kbpd** (target from PDF Well-by-Well: ~2,708 kbpd → within 0.1%).
+- Top 10 Petrobras campos Apr-26: Búzios_Eco, Tupi, Mero, Búzios, Jubarte, Itapu, Marlim Sul, Berbigão, Itapu_Eco, Marlim — matches expected crown-jewel lineup.
+- YoY Apr-26: TOTAL MoM +2.13%, YoY +18.19%.
+
+**Future consumer:** `/production` dashboard (Frentes B+C of `vou-fazer-uma-mudan-a-fizzy-quiche.md` Fase 2). Wrapper to be added to `src/lib/rpc.ts` by the dash worker.
+
 ### Sessions / Auth state
 
 | Tabela | Dept consumidor | Populada por |
