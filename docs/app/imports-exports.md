@@ -441,7 +441,7 @@ const M3_PER_BBL = 6.2898;
 const GAL_PER_M3 = 264.172;
 ```
 
-These mirror the `ncm_densidade_kg_m3` values used server-side by `get_imports_exports_fob_price_serie`.
+These mirror the `ncm_densidade_kg_m3` values used server-side by `get_imports_exports_imports_unit_price` and `get_imports_exports_exports_unit_price`, which compute `vol_m3 = quantidade_kg / densidade_kg_m3` before returning the tuple.
 
 ### "Gulf of Mexico ≈ Estados Unidos" proxy
 
