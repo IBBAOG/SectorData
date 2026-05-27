@@ -496,6 +496,37 @@ TUPI gap of ~60 kbpd is consistent across the 13-month timeseries (Apr-25 787 vs
 
 **Consumer:** `worker_dash-well-by-well` adds 4 wrappers to `src/lib/rpc.ts` (`getProductionBrazilTopFields`, `getProductionBrazilInstallation`, `getProductionBrazilFieldTimeseries`, `getProductionBrazilInstallationTimeseries`) and the dashboard switches between empresa-scoped (`mv_production_*`-backed) and Brasil-scoped (`mv_brazil_*`-backed) RPCs based on the active pill. Dual-view sync rule applies to both desktop and mobile.
 
+#### Round 10 (2026-05-28) — Migration `20260528700000_canonical_overrides_tupi.sql`
+
+Closes the Round 9 TUPI gap. The PDF Well-by-Well explicitly aggregates `SUL DE TUPI` into `TUPI` (pages 3–4: "Tupi data contains 'Sul de Tupi' field"), but `canonical_field_name()`'s regex did not catch the `SUL DE` prefix. Fix: insert a single override row into `field_canonical_names`.
+
+```sql
+INSERT INTO public.field_canonical_names (variant, canonical, source)
+VALUES ('SUL DE TUPI', 'TUPI', 'manual')
+ON CONFLICT (variant) DO UPDATE
+   SET canonical = EXCLUDED.canonical,
+       source = EXCLUDED.source;
+```
+
+**Post-refresh validation (Apr-26):**
+
+| Check | Before | After | PDF |
+|---|---|---|---|
+| `mv_brazil_canonical_monthly` TUPI (consolidated) | ~857 kbpd | **917.5 kbpd** | 917 |
+| `get_production_top_fields('Petrobras', '2026-04-01', 3)` — TUPI row | ~540 kbpd | **613.6 kbpd** | (range 590–620) |
+
+**Why the refresh matters:** the override only affects rows joined through `canonical_field_name()` at MV build time. Existing MV rows keep the old canonical until the next refresh — so the migration ships the override **and** issues `REFRESH MATERIALIZED VIEW CONCURRENTLY` on both `mv_production_monthly` and `mv_brazil_canonical_monthly`. In production both refreshes ran in <60s; if a future override hits the MCP timeout, drop the REFRESH lines and rely on `02_upload.py` Round 5+ hook (which calls `refresh_mv_production()` at end of every ETL run).
+
+**Maintenance pattern (going forward).** When a PDF / IR report aggregates a "X de Y" field into Y but the regex misses it:
+
+1. Verify in source: `SELECT DISTINCT campo FROM anp_cdp_producao WHERE campo ILIKE '%<Y>%' ORDER BY 1;`
+2. Confirm in PDF that the aggregation is explicit (not the analyst's guess). Conservative default: leave separate unless the PDF states it.
+3. Insert override row in `field_canonical_names` (`variant=upper`, `canonical=target`, `source='manual'`).
+4. Refresh the 2 MVs (`mv_production_monthly`, `mv_brazil_canonical_monthly`).
+5. Cross-check the resulting kbpd against the PDF page that motivated the override.
+
+**Conservative scope of this round.** Other "X de Y" variants exist in the data (LESTE DE POÇO XAVIER, NORTE DE FAZENDA CARUAÇU, NORTE DE PESCADA, OESTE DE ATAPU, OESTE DE UBARANA, SUL DE BERBIGÃO, SUL DE CORURIPE, SUL DE LULA) but the PDF only explicitly aggregates Sul de Tupi into Tupi. All other variants stay separate until a PDF/IR doc justifies merging.
+
 ### Sessions / Auth state
 
 | Tabela | Dept consumidor | Populada por |
