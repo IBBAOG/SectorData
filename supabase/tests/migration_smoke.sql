@@ -389,9 +389,70 @@ BEGIN
     WHERE n.nspname = 'public' AND p.proname = 'get_imports_exports_exports_yoy_table';
   IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_imports_exports_exports_yoy_table'; END IF;
 
-  PERFORM 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'get_imports_exports_fob_price_serie';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: get_imports_exports_fob_price_serie'; END IF;
+  -- get_imports_exports_fob_price_serie was DROPPED by migration db5fee26 as
+  -- Panel C ("Import Price") was removed from /imports-exports. Do NOT add it back.
+
+  -- ─── IMPORTS & EXPORTS UNIT PRICE RPCs (migration db5fee26) ─────────────
+  -- Replaces get_imports_exports_fob_price_serie. Two new RPCs expose vol_m3
+  -- (density-derived m³ from kg) for imports and exports respectively.
+  -- Both must be SECURITY DEFINER so anon callers bypass RLS on mdic_comex
+  -- (Pegadinha #18 in CLAUDE.md).
+
+  PERFORM 1 FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'get_imports_exports_imports_unit_price'
+      AND pg_get_function_result(p.oid) ILIKE '%vol_m3 numeric%'
+      AND p.prosecdef = TRUE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'get_imports_exports_imports_unit_price missing, missing vol_m3 numeric column, or not SECURITY DEFINER';
+  END IF;
+
+  -- GRANT EXECUTE to anon
+  PERFORM 1 FROM information_schema.role_routine_grants
+    WHERE routine_schema = 'public'
+      AND routine_name = 'get_imports_exports_imports_unit_price'
+      AND grantee = 'anon';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'get_imports_exports_imports_unit_price: missing GRANT EXECUTE to anon';
+  END IF;
+
+  -- GRANT EXECUTE to authenticated
+  PERFORM 1 FROM information_schema.role_routine_grants
+    WHERE routine_schema = 'public'
+      AND routine_name = 'get_imports_exports_imports_unit_price'
+      AND grantee = 'authenticated';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'get_imports_exports_imports_unit_price: missing GRANT EXECUTE to authenticated';
+  END IF;
+
+  PERFORM 1 FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'get_imports_exports_exports_unit_price'
+      AND pg_get_function_result(p.oid) ILIKE '%vol_m3 numeric%'
+      AND p.prosecdef = TRUE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'get_imports_exports_exports_unit_price missing, missing vol_m3 numeric column, or not SECURITY DEFINER';
+  END IF;
+
+  -- GRANT EXECUTE to anon
+  PERFORM 1 FROM information_schema.role_routine_grants
+    WHERE routine_schema = 'public'
+      AND routine_name = 'get_imports_exports_exports_unit_price'
+      AND grantee = 'anon';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'get_imports_exports_exports_unit_price: missing GRANT EXECUTE to anon';
+  END IF;
+
+  -- GRANT EXECUTE to authenticated
+  PERFORM 1 FROM information_schema.role_routine_grants
+    WHERE routine_schema = 'public'
+      AND routine_name = 'get_imports_exports_exports_unit_price'
+      AND grantee = 'authenticated';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'get_imports_exports_exports_unit_price: missing GRANT EXECUTE to authenticated';
+  END IF;
 
   -- ─── ANP LPC RPCs ─────────────────────────────────────────────────────────
   -- get_anp_lpc_filtros / get_anp_lpc_serie / get_anp_lpc_nacional were DROPPED
@@ -749,6 +810,6 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'app_events CHECK constraint does not allow admin.* event types'; END IF;
 
   RAISE NOTICE 'migration_smoke: all % checks passed.',
-    '34 tables + 1 view + 3 materialized views + 76 functions + 27 RLS checks (subsidy reform 20260527200000)';
+    '34 tables + 1 view + 3 materialized views + 78 functions + 27 RLS checks + 4 grants (db5fee26: unit_price RPCs)';
 
 END $smoke$;
