@@ -24,6 +24,10 @@ src/app/(dashboard)/
 
 RPC wrappers: [`src/lib/profileRpc.ts`](../../src/lib/profileRpc.ts) (perfil) + seção em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (admin) + [`src/lib/alertsAdminRpc.ts`](../../src/lib/alertsAdminRpc.ts) (Alerts product admin — 7 wrappers + 2 PostgREST helpers).
 
+## Recent changes
+
+- **2026-05-28 (Round 2 — `/production` registration)**: added `production` slug to the hardcoded `MODULE_LABELS` array in `useAdminPanelData.ts` (placed FIRST in the Oil & Gas group, matching NavBar order) and to `CARDS` + `SLUG_CATEGORY` in `home/useHomeData.ts` (also FIRST in Oil & Gas). The `module_visibility` row was already seeded by migration `20260528000000_production_rpcs.sql` with `is_visible_for_public=false`, `is_visible_for_clients=true`, `is_visible_on_home=true`. Companion rename: the legacy `anp-cdp` label flipped from "Production" to "Production by Well" in both the Permissions tab and the Home gallery, so the two slugs co-exist without label collision. No `moduleIcons.tsx` entry added yet — the slot falls back to the generic grid icon until an SVG is contributed.
+
 ## Dual-view structure
 
 This bundle is being migrated to the dual-view pattern (desktop + mobile) in waves.

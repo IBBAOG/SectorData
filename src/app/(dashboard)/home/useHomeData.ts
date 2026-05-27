@@ -79,9 +79,18 @@ const CARDS: Omit<HomeCardDef, "category">[] = [
   },
   // Oil & Gas
   {
-    slug: "anp-cdp",
+    slug: "production",
     preview: null,
     title: "Production",
+    description: "Executive monthly oil & gas production summary (stake-weighted, 4 panels + YoY)",
+    badge: "Available",
+    href: "/production",
+    disabled: false,
+  },
+  {
+    slug: "anp-cdp",
+    preview: null,
+    title: "Production by Well",
     description: "Monthly oil and gas production by well and field (ANP CDP)",
     badge: "Available",
     href: "/anp-cdp",
@@ -203,6 +212,7 @@ const CARDS: Omit<HomeCardDef, "category">[] = [
 const SLUG_CATEGORY: Record<string, HomeCategory> = {
   stocks: "markets",
   "news-hunter": "markets",
+  production: "oilgas",
   "anp-cdp": "oilgas",
   "anp-cdp-bsw": "oilgas",
   "anp-cdp-depletion": "oilgas",
