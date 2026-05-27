@@ -351,11 +351,11 @@ function horizontalBarLayout(
       ...AXIS_LINE,
       title: { text: xLabel, font: { family: "Arial", size: 11 } },
       tickformat: ",.1f",
-      tickfont: { family: "Arial", size: 10 },
+      tickfont: { family: "Arial", size: 12 },
     },
     yaxis: {
       ...AXIS_LINE,
-      tickfont: { family: "Arial", size: 11 },
+      tickfont: { family: "Arial", size: 12 },
       automargin: true,
     },
     showlegend: false,
@@ -431,6 +431,22 @@ function fmtDelta(v: number | null): { text: string; color: string } {
   return { text, color };
 }
 
+/**
+ * Compute MoM % from current and previous-month values. Mirrors the YoY %
+ * server-side math but lives client-side because prev_month is derived from
+ * the stacked-area dataset, not returned by the YoY RPC.
+ *
+ * Semantics:
+ *   prev == null  → null  ("—" — no comparable baseline)
+ *   prev == 0     → null  ("—" — division-by-zero guard; matches existing
+ *                          yoy_pct convention in server RPC for zero priors)
+ *   else          → (current - prev) / prev * 100
+ */
+function computeMoMPct(current: number, prev: number | null | undefined): number | null {
+  if (prev == null || prev === 0) return null;
+  return ((current - prev) / prev) * 100;
+}
+
 function YoYTable({
   rows,
   loading,
@@ -439,6 +455,7 @@ function YoYTable({
   anchorAno,
   anchorMes,
   orderOverride,
+  prevMonthByEntity,
 }: {
   rows: YoyTableRow[];
   loading: boolean;
@@ -450,11 +467,15 @@ function YoYTable({
    * anchorMes) and (anchorAno-1, anchorMes) respectively. */
   anchorAno: number;
   anchorMes: number;
-  /** Optional fixed render order for the rows. When provided, rows are
-   *  sorted to match (entities not present in rows are omitted; entities
-   *  present but not in the override fall through to the end). Used by
-   *  Imports Panel A YoY table to mirror the chart's pinned legend. */
+  /** Optional fixed render order for the rows. When provided, the non-Others
+   *  entries inside this order are sorted by current-month value descending,
+   *  and the Others bucket is anchored at the bottom (regardless of magnitude).
+   *  Used by Imports Panel A YoY table to mirror the chart's pinned legend. */
   orderOverride?: string[];
+  /** Map of entity → previous-month value (anchor - 1 month). Derived
+   *  client-side from the stacked-area chart data. null means the entity
+   *  had no data in the prior month (e.g. first month of the series). */
+  prevMonthByEntity: Map<string, number | null>;
 }) {
   if (loading) {
     return (
@@ -465,22 +486,40 @@ function YoYTable({
   }
   if (!rows.length) return null;
 
+  // Column headers — three month labels driven by anchor.
   const currentLbl = formatMonth(anchorAno, anchorMes);
-  const priorLbl = formatMonth(anchorAno - 1, anchorMes);
+  const prevMonthCursor =
+    anchorMes === 1
+      ? { ano: anchorAno - 1, mes: 12 }
+      : { ano: anchorAno, mes: anchorMes - 1 };
+  const prevMonthLbl = formatMonth(prevMonthCursor.ano, prevMonthCursor.mes);
+  const priorYearLbl = formatMonth(anchorAno - 1, anchorMes);
 
   // Build the entity set in the same shape `buildStackedTraces` uses so the
   // table's color dots match the chart's trace colors for each entity.
   const entitySet = new Set(rows.map((r) => r.entity));
-  const tableEntities = orderOverride
-    ? orderOverride.filter((e) => entitySet.has(e))
-    : [
-        ...Array.from(entitySet).filter((e) => e !== OTHERS_LABEL).sort(),
-        ...(entitySet.has(OTHERS_LABEL) ? [OTHERS_LABEL] : []),
-      ];
 
-  // Reorder rows to match `tableEntities` so the table reads top-to-bottom
-  // in the same sequence as the chart's stack reads top-to-bottom.
+  // Sort by current-month value (last_12m) descending. Magnitude ordering is
+  // the canonical reading order for "who imported the most".
+  //
+  // Pinned-countries case (orderOverride present): pinned entities sort by
+  // current desc; Others is anchored at the bottom regardless of value
+  // (convention — Others is an aggregate bucket, not a peer entity).
   const rowByEntity = new Map(rows.map((r) => [r.entity, r]));
+  let tableEntities: string[];
+  if (orderOverride) {
+    const present = orderOverride.filter((e) => entitySet.has(e));
+    const nonOthers = present
+      .filter((e) => e !== OTHERS_LABEL)
+      .sort((a, b) => (rowByEntity.get(b)?.last_12m ?? 0) - (rowByEntity.get(a)?.last_12m ?? 0));
+    const hasOthers = present.includes(OTHERS_LABEL);
+    tableEntities = hasOthers ? [...nonOthers, OTHERS_LABEL] : nonOthers;
+  } else {
+    tableEntities = Array.from(entitySet).sort(
+      (a, b) => (rowByEntity.get(b)?.last_12m ?? 0) - (rowByEntity.get(a)?.last_12m ?? 0),
+    );
+  }
+
   const orderedRows: YoyTableRow[] = tableEntities
     .map((e) => rowByEntity.get(e))
     .filter((r): r is YoyTableRow => r != null);
@@ -497,7 +536,7 @@ function YoYTable({
           marginBottom: 6,
         }}
       >
-        {title} — {currentLbl} vs {priorLbl}
+        {title} — {currentLbl} vs {priorYearLbl}
       </div>
       <div
         style={{
@@ -546,7 +585,25 @@ function YoYTable({
                   borderBottom: "2px solid #888",
                 }}
               >
-                {priorLbl} ({volumeLabel})
+                {prevMonthLbl} ({volumeLabel})
+              </th>
+              <th
+                style={{
+                  textAlign: "right",
+                  whiteSpace: "nowrap",
+                  borderBottom: "2px solid #888",
+                }}
+              >
+                MoM %
+              </th>
+              <th
+                style={{
+                  textAlign: "right",
+                  whiteSpace: "nowrap",
+                  borderBottom: "2px solid #888",
+                }}
+              >
+                {priorYearLbl} ({volumeLabel})
               </th>
               <th
                 style={{
@@ -562,6 +619,8 @@ function YoYTable({
           <tbody>
             {orderedRows.map((row) => {
               const yoy = fmtDelta(row.yoy_pct);
+              const prevMonthValue = prevMonthByEntity.get(row.entity) ?? null;
+              const mom = fmtDelta(computeMoMPct(row.last_12m, prevMonthValue));
               const dotColor = colourForEntity(tableEntities, row.entity);
               return (
                 <tr key={row.entity}>
@@ -596,6 +655,29 @@ function YoYTable({
                     }}
                   >
                     {row.last_12m.toLocaleString("en-US", { maximumFractionDigits: 1 })}
+                  </td>
+                  <td
+                    style={{
+                      textAlign: "right",
+                      whiteSpace: "nowrap",
+                      fontVariantNumeric: "tabular-nums",
+                      color: "#777",
+                    }}
+                  >
+                    {prevMonthValue != null
+                      ? prevMonthValue.toLocaleString("en-US", { maximumFractionDigits: 1 })
+                      : "—"}
+                  </td>
+                  <td
+                    style={{
+                      textAlign: "right",
+                      whiteSpace: "nowrap",
+                      fontVariantNumeric: "tabular-nums",
+                      color: mom.color,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {mom.text}
                   </td>
                   <td
                     style={{
@@ -844,12 +926,13 @@ function areaLayout(yLabel: string, rangeMonths = 12, height = 340): Partial<Lay
       tickformat: "%b %Y",
       dtick: pickDtick(rangeMonths),
       tickangle: -90,
-      tickfont: { family: "Arial", size: 10 },
+      tickfont: { family: "Arial", size: 12 },
     },
     yaxis: {
       ...AXIS_LINE,
       title: { text: yLabel, font: { family: "Arial", size: 11 } },
       tickformat: ",.1f",
+      tickfont: { family: "Arial", size: 12 },
     },
     legend: {
       orientation: "h" as const,
@@ -859,7 +942,7 @@ function areaLayout(yLabel: string, rangeMonths = 12, height = 340): Partial<Lay
       traceorder: "normal" as const,
       x: 0,
       y: -0.32,
-      font: { family: "Arial", size: 10 },
+      font: { family: "Arial", size: 12 },
     },
   };
 }
@@ -1038,18 +1121,19 @@ export default function DesktopView(): React.ReactElement {
         tickformat: "%b %Y",
         dtick: pickDtick(rangeMonths),
         tickangle: -45,
-        tickfont: { family: "Arial", size: 10 },
+        tickfont: { family: "Arial", size: 12 },
       },
       yaxis: {
         ...AXIS_LINE,
         title: { text: priceUnit, font: { family: "Arial", size: 11 } },
         tickformat: ",.2f",
+        tickfont: { family: "Arial", size: 12 },
       },
       legend: {
         orientation: "h" as const,
         x: 0,
         y: -0.22,
-        font: { family: "Arial", size: 10 },
+        font: { family: "Arial", size: 12 },
       },
     }),
     [priceUnit, rangeMonths],
@@ -1119,18 +1203,19 @@ export default function DesktopView(): React.ReactElement {
         tickformat: "%b %Y",
         dtick: pickDtick(rangeMonths),
         tickangle: -45,
-        tickfont: { family: "Arial", size: 10 },
+        tickfont: { family: "Arial", size: 12 },
       },
       yaxis: {
         ...AXIS_LINE,
         title: { text: importsUPUnitLabel, font: { family: "Arial", size: 11 } },
         tickformat: ",.1f",
+        tickfont: { family: "Arial", size: 12 },
       },
       legend: {
         orientation: "h" as const,
         x: 0,
         y: -0.22,
-        font: { family: "Arial", size: 10 },
+        font: { family: "Arial", size: 12 },
       },
     }),
     [importsUPUnitLabel, rangeMonths],
@@ -1178,18 +1263,19 @@ export default function DesktopView(): React.ReactElement {
         tickformat: "%b %Y",
         dtick: pickDtick(rangeMonths),
         tickangle: -45,
-        tickfont: { family: "Arial", size: 10 },
+        tickfont: { family: "Arial", size: 12 },
       },
       yaxis: {
         ...AXIS_LINE,
         title: { text: "USD / bbl", font: { family: "Arial", size: 11 } },
         tickformat: ",.2f",
+        tickfont: { family: "Arial", size: 12 },
       },
       legend: {
         orientation: "h" as const,
         x: 0,
         y: -0.22,
-        font: { family: "Arial", size: 10 },
+        font: { family: "Arial", size: 12 },
       },
     }),
     [rangeMonths],
@@ -1199,6 +1285,77 @@ export default function DesktopView(): React.ReactElement {
     () => areaLayout(exportsUnit, rangeMonths, 420),
     [exportsUnit, rangeMonths],
   );
+
+  // ── Derived: previous-month value per entity (for new MoM% column) ──────────
+  // The YoY RPC only returns (current, prior_year, yoy_pct). To populate the
+  // "Previous month" + "MoM %" columns we derive prev_month entirely on the
+  // client from the same stacked-series data the chart already loads. Anchor
+  // is period.end; prev = anchor - 1 month (with year rollover at January).
+  //
+  // Edge case: when the selected period has only one month (start === end),
+  // no prev-month data is in scope — the chart loads exactly that month — so
+  // every entity gets null and the MoM/PrevMonth cells render "—".
+  const prevMonthCursor = useMemo(() => {
+    const a = filters.period.end.ano;
+    const m = filters.period.end.mes;
+    return m === 1 ? { ano: a - 1, mes: 12 } : { ano: a, mes: m - 1 };
+  }, [filters.period.end.ano, filters.period.end.mes]);
+
+  // Panel A (countries) — re-bucket against pins so the lookup keys match
+  // the YoY table's English labels. Sum into Russia/US/UAE/.../Others.
+  const prevMonthByCountry: Map<string, number | null> = useMemo(() => {
+    const target = `${prevMonthCursor.ano}|${prevMonthCursor.mes}`;
+    const acc = new Map<string, number>();
+    for (const r of paisesData) {
+      const key = `${r.ano}|${r.mes}`;
+      if (key !== target) continue;
+      const englishLabel = ORIGIN_LABEL_BY_DB[r.pais_origem] ?? OTHERS_LABEL;
+      // Convert kg → kt to match the table's units (last_12m is in kt for
+      // the countries panel — server returns it that way; the chart divides
+      // by 1e6 too).
+      const valueKt = r.total_kg / 1e6;
+      acc.set(englishLabel, (acc.get(englishLabel) ?? 0) + valueKt);
+    }
+    const out = new Map<string, number | null>();
+    for (const pin of ORIGIN_COUNTRY_PINS) {
+      out.set(pin.label, acc.has(pin.label) ? acc.get(pin.label)! : null);
+    }
+    out.set(OTHERS_LABEL, acc.has(OTHERS_LABEL) ? acc.get(OTHERS_LABEL)! : null);
+    return out;
+  }, [paisesData, prevMonthCursor]);
+
+  // Panel B (importers) — straight per-importer lookup at prev_month.
+  const prevMonthByImporter: Map<string, number | null> = useMemo(() => {
+    const target = `${prevMonthCursor.ano}|${prevMonthCursor.mes}`;
+    const acc = new Map<string, number>();
+    for (const r of importersData) {
+      const key = `${r.ano}|${r.mes}`;
+      if (key !== target) continue;
+      acc.set(r.unified_importer, (acc.get(r.unified_importer) ?? 0) + r.total_mil_m3);
+    }
+    // Return a Map keyed by entity; missing entries fall through to null.
+    const out = new Map<string, number | null>();
+    for (const r of yoyImportersData) {
+      out.set(r.entity, acc.has(r.entity) ? acc.get(r.entity)! : null);
+    }
+    return out;
+  }, [importersData, yoyImportersData, prevMonthCursor]);
+
+  // Exports tab — straight per-destination lookup at prev_month.
+  const prevMonthByExportsCountry: Map<string, number | null> = useMemo(() => {
+    const target = `${prevMonthCursor.ano}|${prevMonthCursor.mes}`;
+    const acc = new Map<string, number>();
+    for (const r of exportsPaisesData) {
+      const key = `${r.ano}|${r.mes}`;
+      if (key !== target) continue;
+      acc.set(r.pais, (acc.get(r.pais) ?? 0) + r.value);
+    }
+    const out = new Map<string, number | null>();
+    for (const r of yoyExportsData) {
+      out.set(r.entity, acc.has(r.entity) ? acc.get(r.entity)! : null);
+    }
+    return out;
+  }, [exportsPaisesData, yoyExportsData, prevMonthCursor]);
 
   // Guard — after all hooks
   if (visibilityLoading) return <BarrelLoading />;
@@ -1487,6 +1644,7 @@ export default function DesktopView(): React.ReactElement {
                     anchorAno={filters.period.end.ano}
                     anchorMes={filters.period.end.mes}
                     orderOverride={ORIGIN_ORDER}
+                    prevMonthByEntity={prevMonthByCountry}
                   />
 
                   <div style={{ height: 24 }} />
@@ -1521,6 +1679,7 @@ export default function DesktopView(): React.ReactElement {
                       title="By Importer"
                       anchorAno={filters.period.end.ano}
                       anchorMes={filters.period.end.mes}
+                      prevMonthByEntity={prevMonthByImporter}
                     />
                   )}
 
@@ -1675,6 +1834,7 @@ export default function DesktopView(): React.ReactElement {
                     title="By Destination Country"
                     anchorAno={filters.period.end.ano}
                     anchorMes={filters.period.end.mes}
+                    prevMonthByEntity={prevMonthByExportsCountry}
                   />
 
                   <div
