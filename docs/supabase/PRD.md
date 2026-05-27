@@ -591,6 +591,29 @@ Expands `get_well_by_well_header(p_empresa, p_year, p_month)` from 16 rows to **
 
 **Security preserved.** `SECURITY DEFINER` + `SET search_path = public, pg_temp` retained from Round 8. Explicit `GRANT EXECUTE TO anon, authenticated` re-stated in the migration for defense-in-depth (Pegadinha #18 — DROP+CREATE wipes grants, CREATE OR REPLACE preserves them but we don't rely on that).
 
+#### CDP RPCs — Canonical expansion (Phase 2 of `/well-by-well` drill-down, 2026-05-30) — Migration `20260530000000_cdp_rpcs_canonical_expansion.sql`
+
+Adiciona parâmetro opcional `p_expand_canonical bool DEFAULT false` em 4 RPCs CDP que servem os dashboards `/anp-cdp-bsw` e `/anp-cdp-depletion`. Quando `true`, o array `p_campos` é expandido server-side via o helper `canonical_field_name()` (Round 4) — todo campo cujo canonical bata com qualquer entrada do array é incluído (ex.: `p_campos=['TUPI']` agrega `{TUPI, SUL DE TUPI, AnC_TUPI}`).
+
+> **Slot:** o nome `20260528400000` originalmente sugerido já estava tomado no `schema_migrations` remoto pelo `well_by_well_perf_mv` (Round 5); por isso a migration usa o slot `20260530000000`, o próximo prefixo limpo após `20260529300000_well_by_well_header_expand`.
+
+**RPCs alteradas (4):**
+
+| RPC | Antes | Depois |
+|---|---|---|
+| `get_anp_cdp_bsw_scatter(text[])` | 1 param | `(text[], bool DEFAULT false)` — strict default preserva comportamento `/anp-cdp-bsw` |
+| `get_anp_cdp_bsw_field_aggregate(text[])` | 1 param | `(text[], bool DEFAULT false)` |
+| `get_anp_cdp_depletion_scatter(text[])` | 1 param | `(text[], bool DEFAULT false)` |
+| `get_anp_cdp_depletion_field_aggregate(text[])` | 1 param | `(text[], bool DEFAULT false)` |
+
+Todas mantêm `LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp` e `GRANT EXECUTE TO anon, authenticated`.
+
+**Compatibilidade.** Callers existentes (frontend `/anp-cdp-bsw`, `/anp-cdp-depletion`) não passam `p_expand_canonical` e recebem o default `false` — comportamento idêntico ao pré-migration. O novo popup de drill-down do `/well-by-well` chama via 4 wrappers `*Canonical` em `src/lib/rpc.ts` (`rpcGetAnpCdpBswScatterCanonical`, `rpcGetAnpCdpBswFieldAggregateCanonical`, `rpcGetAnpCdpDepletionScatterCanonical`, `rpcGetAnpCdpDepletionFieldAggregateCanonical`) que passam `true` explicitamente.
+
+**Frontend follow-up (não está nesta migration):** chart builders `buildPerWellChart` e `buildFieldAverageChart` foram extraídos para `src/lib/charts/bsw.ts` e `src/lib/charts/depletion.ts` (commits anteriores na Fase 1 do plano), permitindo que o popup do `/well-by-well` consuma a mesma lógica visual sem duplicar código. Mudanças em qualquer dos dois builders afetam ambos os dashboards — coordenar.
+
+**Padrão precedente.** Esta é a primeira RPC com `p_expand_canonical` — o padrão pode ser adotado por futuras RPCs que façam JOIN com `anp_cdp_producao` por `campo` e queiram coerência com a filosofia canonical do `/well-by-well` (`canonical_field_name()` helper, `field_canonical_names` table). Critério: o caller serve um sumário executivo onde "TUPI" deve significar "o campo físico TUPI" (agregando variantes); o default `false` continua adequado para callers analíticos que precisam ver as variantes separadas.
+
 ### Sessions / Auth state
 
 | Tabela | Dept consumidor | Populada por |

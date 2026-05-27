@@ -49,6 +49,19 @@ All math is done **server-side** in SECURITY DEFINER RPCs (migration `supabase/m
 
 All return `LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp` (Pegadinha #18) and are granted to `anon, authenticated`. Frontend wrappers live in `src/lib/rpc.ts` under the "MODULE: Well by Well" section.
 
+### Drill-down popup RPC wrappers (Phase 2, 2026-05-30)
+
+The BSW and Depletion tabs of the field drill-down modal consume the existing `/anp-cdp-bsw` and `/anp-cdp-depletion` RPCs through 4 thin wrappers in `src/lib/rpc.ts` that pass `p_expand_canonical=true` — every other call site (the dedicated `/anp-cdp-bsw` and `/anp-cdp-depletion` dashboards) keeps the strict default (`false`).
+
+| Wrapper | Underlying RPC | Purpose |
+|---|---|---|
+| `rpcGetAnpCdpBswScatterCanonical` | `get_anp_cdp_bsw_scatter(p_campos, p_expand_canonical=true)` | Per-well BSW scatter for canonical drill (aggregates all variants) |
+| `rpcGetAnpCdpBswFieldAggregateCanonical` | `get_anp_cdp_bsw_field_aggregate(p_campos, p_expand_canonical=true)` | Field-average BSW vs % VOIP, canonical-expanded |
+| `rpcGetAnpCdpDepletionScatterCanonical` | `get_anp_cdp_depletion_scatter(p_campos, p_expand_canonical=true)` | Per-well NP rolling depletion, canonical-expanded |
+| `rpcGetAnpCdpDepletionFieldAggregateCanonical` | `get_anp_cdp_depletion_field_aggregate(p_campos, p_expand_canonical=true)` | Field-average NP rolling depletion vs % VOIP, canonical-expanded |
+
+Server-side support: migration [`supabase/migrations/20260530000000_cdp_rpcs_canonical_expansion.sql`](../../supabase/migrations/20260530000000_cdp_rpcs_canonical_expansion.sql) added the optional `p_expand_canonical bool DEFAULT false` parameter to the 4 underlying RPCs. Chart builders are shared with the standalone dashboards via [`src/lib/charts/bsw.ts`](../../src/lib/charts/bsw.ts) and [`src/lib/charts/depletion.ts`](../../src/lib/charts/depletion.ts) — any visual change to the builders affects both call sites and must be coordinated with `worker_dash-anp-cdp-bsw` / `worker_dash-anp-cdp-depletion`.
+
 Source-of-truth migrations:
 - `supabase/migrations/20260528000000_production_rpcs.sql` (Round 1, 5 RPCs).
 - `supabase/migrations/20260528100000_production_round2.sql` (Round 2: YoY TOTAL fix + `get_production_field_timeseries`).
@@ -194,7 +207,7 @@ Round 9 update: the YoY drawer is also **hidden in Brasil mode** since `get_prod
 
 The hook still fetches `yoyTable` (skipped in Brasil view via early return) because the mobile View consumes it in company view. If mobile ever drops the YoY drawer, the `get_production_yoy_table` RPC and its hook state can be retired in a follow-up.
 
-## Field drill-down (Round 2, 2026-05-27; Brasil-aware since Round 9)
+## Field drill-down (Round 2, 2026-05-27; Brasil-aware since Round 9; 3-tab popup since Phase 2, 2026-05-30)
 
 A secondary view that opens on demand when the user wants to dig into one of the Top Fields. The same hook owns its state; both Views render the same content through different surfaces. Round 9: the drill auto-closes when the user switches the view pill (so a "BÚZIOS — Petrobras" modal doesn't linger as the user toggles to "Brasil").
 
@@ -202,15 +215,31 @@ A secondary view that opens on demand when the user wants to dig into one of the
 - **Desktop:** click any bar in the Chart 2 Top Fields chart, or click the helper caption beneath it.
 - **Mobile:** tap any field card in the Top Fields tab (the chart stays for at-a-glance comparison; cards are added below for drill-in).
 
+**Surfaces:**
+- **Desktop:** Bootstrap-styled modal (`FieldDrillModal` inline in `desktop/View.tsx`) — **900px wide** (was 820px pre-Phase 2 to fit the tab bar comfortably), brand-orange accent bar, Esc / scrim / × all close.
+- **Mobile:** `BottomSheet` (`height="90vh"`) — same content reflowed to a single column, with a `MobileTabBar` at the top of the sheet.
+
+### Tabs (Phase 2, 2026-05-30)
+
+The popup hosts **three mutually-exclusive tabs**: Production (default), BSW, Depletion. Switching tabs does **not** close the drill and does **not** re-fetch the Production data — each tab caches its rows until `drillCampo` changes. The dashboard's period preset (Last 12M / 24M / 36M / All / YTD) affects ONLY the Production tab; BSW and Depletion are lifecycle analyses spanning the entire history of the field.
+
+| Tab | Data source | Chart builder | X axis | Sub-toggle |
+|---|---|---|---|---|
+| **Production** *(default)* | `get_production_field_timeseries` (company view) or `get_production_brazil_field_timeseries` (Brasil view) | inline in `desktop/View.tsx` (4 KPIs + stacked bars + hours-rate line, see below) | calendar month over active period preset | — |
+| **BSW** | `rpcGetAnpCdpBswScatterCanonical` (Per well) or `rpcGetAnpCdpBswFieldAggregateCanonical` (Field average) — both wrap the same `/anp-cdp-bsw` RPCs with `p_expand_canonical=true` | `buildPerWellChart` / `buildFieldAverageChart` from [`src/lib/charts/bsw.ts`](../../src/lib/charts/bsw.ts) | months since first production (Per well) or % VOIP recovered (Field average) | **Field average** *(default)* / **Per well** |
+| **Depletion** | `rpcGetAnpCdpDepletionScatterCanonical` (Per well) or `rpcGetAnpCdpDepletionFieldAggregateCanonical` (Field average) — both wrap the same `/anp-cdp-depletion` RPCs with `p_expand_canonical=true` | `buildPerWellChart` / `buildFieldAverageChart` from [`src/lib/charts/depletion.ts`](../../src/lib/charts/depletion.ts) | **% VOIP recovered** (fixed — Calendar/VOIP toggle of the standalone dashboard is not exposed here) | **Field average** *(default)* / **Per well** |
+
+**Canonical expansion.** BSW and Depletion tabs call the 4 CDP RPCs with `p_expand_canonical=true`, so a click on the canonical "TUPI" row of Top Fields aggregates `{TUPI, SUL DE TUPI, AnC_TUPI}` — every variant rolled up under the canonical label. Pre-Phase-2 `/anp-cdp-bsw` and `/anp-cdp-depletion` call sites continue to use the strict (default `false`) variant. Backed by the optional parameter introduced in [`supabase/migrations/20260530000000_cdp_rpcs_canonical_expansion.sql`](../../supabase/migrations/20260530000000_cdp_rpcs_canonical_expansion.sql).
+
+**Empty state per tab.** BSW and Depletion show "BSW/Depletion data unavailable for this field — no VOIP reference published yet." when the field has no `anp_voip` row; the field-aggregate RPCs inner-join VOIP and return zero rows in that case.
+
+### Production tab (default)
+
 **Data:**
 - **Brasil view:** `get_production_brazil_field_timeseries(p_campo, p_date_start, p_date_end)` — Brazil-wide (100% WI). Modal title reads "BÚZIOS — Brasil".
 - **Company view:** `get_production_field_timeseries(p_campo, p_empresa, p_date_start, p_date_end)` — stake-weighted for the active company. Modal title reads "BÚZIOS — Petrobras".
 
 The fetch uses the dashboard's current `dateRange` (no separate filter). Both RPC variants return identical row shapes (`ProductionFieldTimeseriesRow`) so the chart builder is shared.
-
-**Surfaces:**
-- **Desktop:** Bootstrap-styled modal (`FieldDrillModal` inline in `desktop/View.tsx`) — 820px wide, brand-orange accent bar, Esc / scrim / × all close.
-- **Mobile:** `BottomSheet` (`height="90vh"`) — same content reflowed to a single column with a 2×2 KPI grid.
 
 **KPIs (derived client-side from the timeseries, not from a separate RPC):**
 1. **Current oil** — last month in the series, kbpd
@@ -222,7 +251,7 @@ The fetch uses the dashboard's current `dateRange` (no separate filter). Both RP
 
 **Empty state:** fields whose stakes don't sum to 100 (i.e. listed in `field_stakes_lacunas`) return zero rows server-side. The modal/sheet still opens; KPIs show `—` and a centered "No data for this field in the current period." caption replaces the chart.
 
-**Error handling:** RPC failures bubble up as `drillError` (string) and render as a yellow warning banner inside the modal/sheet body. The drill stays open so the user can dismiss; closing clears the error.
+**Error handling:** RPC failures bubble up as `drillError` (string) and render as a yellow warning banner inside the modal/sheet body. The drill stays open so the user can dismiss; closing clears the error. BSW and Depletion tabs surface their own `drillBswError` / `drillDepletionError` independently — switching tabs swaps the rendered banner.
 
 ## FPSO/Installation drill-down (Round 3, 2026-05-27)
 
@@ -363,7 +392,6 @@ Visibility is enforced by `useModuleVisibilityGuard("well-by-well")` inside the 
 
 ## Future enhancements
 
-- **BSW overlay** — surface water-cut trends from `/anp-cdp-bsw` next to the Top Fields chart.
 - **Reserves certificate comparison** — overlay PRIO's reserves report against actual production curves.
 - **Per-FPSO well drill-down** — drill from an installation timeseries into its constituent wells (would link into `/anp-cdp-diaria-instalacao` for daily resolution). The current Round 3 drill-down is at the installation-aggregate level.
 - **Multi-company comparison** — overlay two companies' aggregate curves (would need a secondary empresa selector).
