@@ -1234,8 +1234,13 @@ export default function MobileView(): React.ReactElement | null {
                   </div>
                 ) : (drillBswMode === "field" ? drillBswFieldPoints : drillBswWellPoints)?.length ? (
                   <MobileChart
-                    data={(drillBswMode === "field" ? drillBswFieldChart.data : drillBswWellChart.data) as PlotData[]}
-                    layout={drillBswMode === "field" ? drillBswFieldChart.layout : drillBswWellChart.layout}
+                    data={drillBswMode === "field" ? drillBswFieldChart.data : drillBswWellChart.data}
+                    layout={{
+                      ...(drillBswMode === "field" ? drillBswFieldChart.layout : drillBswWellChart.layout),
+                      height: undefined,
+                      legend: { orientation: "h", y: -0.25, x: 0 },
+                      margin: { l: 36, r: 8, t: 8, b: 36 },
+                    }}
                     height={320}
                   />
                 ) : (
@@ -1296,8 +1301,13 @@ export default function MobileView(): React.ReactElement | null {
                   </div>
                 ) : (drillDepletionMode === "field" ? drillDepletionFieldPoints : drillDepletionWellPoints)?.length ? (
                   <MobileChart
-                    data={(drillDepletionMode === "field" ? drillDepletionFieldChart.data : drillDepletionWellChart.data) as PlotData[]}
-                    layout={drillDepletionMode === "field" ? drillDepletionFieldChart.layout : drillDepletionWellChart.layout}
+                    data={drillDepletionMode === "field" ? drillDepletionFieldChart.data : drillDepletionWellChart.data}
+                    layout={{
+                      ...(drillDepletionMode === "field" ? drillDepletionFieldChart.layout : drillDepletionWellChart.layout),
+                      height: undefined,
+                      legend: { orientation: "h", y: -0.25, x: 0 },
+                      margin: { l: 36, r: 8, t: 8, b: 36 },
+                    }}
                     height={320}
                   />
                 ) : (
