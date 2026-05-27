@@ -527,6 +527,70 @@ ON CONFLICT (variant) DO UPDATE
 
 **Conservative scope of this round.** Other "X de Y" variants exist in the data (LESTE DE POÇO XAVIER, NORTE DE FAZENDA CARUAÇU, NORTE DE PESCADA, OESTE DE ATAPU, OESTE DE UBARANA, SUL DE BERBIGÃO, SUL DE CORURIPE, SUL DE LULA) but the PDF only explicitly aggregates Sul de Tupi into Tupi. All other variants stay separate until a PDF/IR doc justifies merging.
 
+#### Round 12 (2026-05-29) — Migration `20260529300000_well_by_well_header_expand.sql`
+
+Expands `get_well_by_well_header(p_empresa, p_year, p_month)` from 16 rows to **24 rows** so the per-empresa section matches the structure of the Brazil section verbatim. Before Round 12 the empresa block carried only Oil rows (display_order 13–16). After Round 12 it carries Oil + Gas + Main fields, mirroring Brazil (1–12).
+
+**New rows (display_order 17–24):**
+
+| # | section | category | subcategory | is_total | source |
+|---|---|---|---|---|---|
+| 17 | `UPPER(p_empresa)` | Gas (kboed) | NULL | TRUE | `mv_production_monthly` sum across ambiente |
+| 18 | `UPPER(p_empresa)` | Gas (kboed) | Pre-Salt | FALSE | `mv_production_monthly` per ambiente |
+| 19 | `UPPER(p_empresa)` | Gas (kboed) | Post-Salt | FALSE | `mv_production_monthly` per ambiente |
+| 20 | `UPPER(p_empresa)` | Gas (kboed) | Onshore | FALSE | `mv_production_monthly` per ambiente |
+| 21 | `UPPER(p_empresa)` | Main fields (kbpd) | NULL | TRUE | sum of top 3 stake-weighted canonical (= `company_top3_data`) |
+| 22 | `UPPER(p_empresa)` | Main fields (kbpd) | canonical name | FALSE | `mv_production_monthly` rank 1 by `oil_curr DESC` |
+| 23 | `UPPER(p_empresa)` | Main fields (kbpd) | canonical name | FALSE | `mv_production_monthly` rank 2 |
+| 24 | `UPPER(p_empresa)` | Main fields (kbpd) | canonical name | FALSE | `mv_production_monthly` rank 3 |
+
+**Math notes:**
+
+- **Gas conversion**: `gas_mm3_dia * 6.29 / 1000.0` → kboed. Identical factor to Brazil Gas (rows 5–8) — `anp_cdp_producao.gas_total_mm3_dia` is m³/d despite the name.
+- **Per-ambiente gas aggregation**: extended the existing `company_per_ambiente` CTE to also `MAX(...gas_mm3_dia...)` per ambiente per period. Inner subquery groups `mv_production_monthly` by `(empresa, ano, mes, ambiente)` and `SUM`s both `oil_bbl_dia` and `gas_mm3_dia` before the outer per-ambiente roll-up. The MV is **already stake-weighted at extract time** (Round 5) — no JOIN with `field_stakes` at query time.
+- **Top 3 canonical for empresa**: new CTEs `company_top3_set` → `company_top3_data` → `company_top3_ranked`. Same shape as `brazil_top3_*` but sourced from `mv_production_monthly` (stake-weighted) instead of `anp_cdp_producao` (100% WI). Tie-break by `oil_curr DESC NULLS LAST` via `ROW_NUMBER()`.
+- **Main fields total (row 21)**: SUM of the 3 stake-weighted canonical rows — matches how Brazil Main fields total (row 9) is the sum of TUPI + BÚZIOS + MERO at 100% WI.
+- **YTD avg**: AVG of monthly sums across months 1..p_month for the empresa. Mirrors Brazil Main YTD logic but with the empresa scope baked in.
+- **Empty-ambiente NULLs**: LEFT JOIN with `ambiente_label_map` already returns NULL for empresas without production in an ambiente (e.g. PRIO has no Pre-Salt or Onshore — rows 14/16/18/20 all emit NULL, and downstream `mom_pct`/`yoy_pct` correctly become NULL because the CASE guards on `prev_month_val IS NULL`).
+- **Backwards compat**: rows 1–16 preserved **verbatim** (same CTE names, math, signatures). Only NEW CTEs (`company_gas_total`, `company_gas_rows`, `company_main_total`, `company_main_rows`, `company_top3_set`, `company_top3_data`, `company_top3_ranked`) and 4 new entries in the final `UNION ALL`. Frontend filters on `display_order` / `section` / `is_total` keep working — same shape, more rows.
+
+**Validation vs PDF page 2 (Apr-26 Petrobras report):**
+
+| Row | Subcategory | PDF | Got | Match |
+|---|---|---|---|---|
+| 13 | PETROBRAS Oil total | 2,708 | 2,711 | ✓ |
+| 14 | PETROBRAS Oil Pre-Salt | 2,351 | 2,339 | ~ (snapshot variance) |
+| 15 | PETROBRAS Oil Post-Salt | 337 | 352 | ~ |
+| 16 | PETROBRAS Oil Onshore | 20 | 20 | ✓ |
+| 17 | PETROBRAS Gas total | — | 798 | (sum check 646+63+89=798 ✓) |
+| 21 | PETROBRAS Main fields total | — | 1,701 | (sum check 809+614+278=1701 ✓) |
+| 22 | PETROBRAS top-1 (BÚZIOS) | — | 809 | (matches Round 5 stake-weight 809.2 ✓) |
+| 23 | PETROBRAS top-2 (TUPI) | — | 614 | (matches Round 10 post-canonical 613.6 ✓) |
+| 24 | PETROBRAS top-3 (MERO) | — | 278 | (matches Round 5 278.2 ✓) |
+
+**Edge-case validation (PRIO, Apr-26):**
+
+| Row | Subcategory | Got | Notes |
+|---|---|---|---|
+| 13 | PRIO Oil total | 101.9 | |
+| 14 | PRIO Oil Pre-Salt | NULL | PRIO has no Pre-Salt assets — LEFT JOIN emits NULL → mom/yoy NULL |
+| 15 | PRIO Oil Post-Salt | 101.9 | Equals total — PRIO is all-PosSal |
+| 16 | PRIO Oil Onshore | NULL | |
+| 17 | PRIO Gas total | 7.0 | |
+| 18 | PRIO Gas Pre-Salt | NULL | |
+| 19 | PRIO Gas Post-Salt | 7.0 | |
+| 20 | PRIO Gas Onshore | NULL | |
+| 21 | PRIO Main fields total | 86.0 | PEREGRINO 34.5 + FRADE 28.9 + ALBACORA LESTE 22.5 |
+| 22 | PEREGRINO | 34.5 | |
+| 23 | FRADE | 28.9 | |
+| 24 | ALBACORA LESTE | 22.5 | |
+
+**Operator with <3 canonical fields.** If an empresa has fewer than 3 canonical fields with production in (p_year, p_month), `company_top3_set` returns fewer rows; the `JOIN ... ON canonical` in `company_top3_data` shrinks accordingly; `company_top3_ranked` ranks only what exists; the UNION emits 1 or 2 rows in slots 22/23 with no slot 24. The total row (21) still sums correctly because it aggregates `company_top3_data`. No NULL padding — frontend should not assume exactly 3 rows.
+
+**Signature unchanged.** Same `RETURNS TABLE(...)` columns, same param signature. Frontend `getWellByWellHeader(empresa, year, month)` wrapper in `src/lib/rpc.ts` needs **no** changes; both `desktop/View.tsx` and `mobile/View.tsx` get the 8 new rows automatically (dual-view rule). `is_total=TRUE` rendering for rows 17 and 21 reuses the same bold/border treatment as rows 5/9/13.
+
+**Security preserved.** `SECURITY DEFINER` + `SET search_path = public, pg_temp` retained from Round 8. Explicit `GRANT EXECUTE TO anon, authenticated` re-stated in the migration for defense-in-depth (Pegadinha #18 — DROP+CREATE wipes grants, CREATE OR REPLACE preserves them but we don't rely on that).
+
 ### Sessions / Auth state
 
 | Tabela | Dept consumidor | Populada por |
