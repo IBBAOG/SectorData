@@ -495,6 +495,17 @@ export interface UseProductionData {
   drillBswFieldPoints: AnpCdpBswFieldPoint[] | null;
   drillBswLoading: boolean;
   drillBswError: string | null;
+  /**
+   * Imperative prefetch for the BSW "Field average" dataset. Used by the
+   * desktop View as an `onMouseEnter` handler on the BSW tab button — if the
+   * user hovers the tab before clicking, the fetch starts a few hundred ms
+   * earlier so by the time they click the chart is already rendered.
+   *
+   * Idempotent: skips if data is already cached OR a fetch is in flight, so
+   * repeated hover events don't spam the RPC. Mobile Views never call it
+   * (no hover on touch devices).
+   */
+  prefetchBswField: () => void;
 
   // Depletion tab sub-state — same shape as BSW.
   drillDepletionMode: DrillSubMode;
@@ -503,6 +514,8 @@ export interface UseProductionData {
   drillDepletionFieldPoints: AnpCdpDepletionFieldPoint[] | null;
   drillDepletionLoading: boolean;
   drillDepletionError: string | null;
+  /** Symmetric hover-prefetch for the Depletion "Field average" dataset. */
+  prefetchDepletionField: () => void;
 
   // Installation drill-down. Same Brasil-vs-company branching as the field
   // drill. Mutually exclusive with the field drill.
@@ -1023,6 +1036,150 @@ export function useProductionData(): UseProductionData {
     setDrillDepletionFieldPoints(null);
     setDrillDepletionError(null);
   }, []);
+
+  // ── Drill popup: background prefetch on open ──────────────────────────────
+  //
+  // When the user clicks a field row the modal opens on the Production tab
+  // (which renders immediately from a cheap timeseries RPC). The BSW and
+  // Depletion tabs, by contrast, used to wait until the user clicked them
+  // before firing — meaning a hop to "BSW" would land on an empty BarrelLoading
+  // for the full RPC duration (29s on cold canonical paths before P1's index
+  // work, ~3s after).
+  //
+  // The prefetch effect below fires the two FIELD-mode RPCs in parallel as
+  // soon as `drillCampo` flips from null → string. We REUSE the existing
+  // loading flags so:
+  //   • If the user switches to BSW/Depletion mid-prefetch, the tab's
+  //     skeleton picks up the same `drillBswLoading=true` and renders the
+  //     descriptive skeleton — they never see an empty `BarrelLoading`.
+  //   • If the prefetch finishes BEFORE the user switches tabs, the data is
+  //     cached and the tab paints instantly (loading stays false because the
+  //     lazy-fetch effects below early-return when the cache is non-null).
+  //
+  // We deliberately DO NOT prefetch the per-well variants — those are heavy
+  // (~7000 rows on big campos) and only matter when the user explicitly
+  // toggles "Per well" inside the tab.
+  //
+  // Cancellation: a single AbortController-style flag survives until either
+  // (a) the user closes the modal, (b) opens a different field, or (c) the
+  // hook unmounts. The lazy-fetch effects below stay authoritative — they
+  // only fire if the cache is still `null` when the user actually opens the
+  // tab, so a cancelled prefetch followed by a tab click degrades to the
+  // pre-prefetch behaviour (load on click) without any race condition.
+  useEffect(() => {
+    if (!supabase || !drillCampo) return;
+    // If we somehow re-mount with caches already populated (StrictMode double
+    // invoke in dev, or a future hot-reload path), skip — both effects below
+    // are idempotent.
+    if (drillBswFieldPoints !== null && drillDepletionFieldPoints !== null) return;
+
+    let cancelled = false;
+    // Pre-flip both loading flags so any race where the user clicks the tab
+    // BEFORE this microtask's await lands also sees `loading=true` and
+    // renders the skeleton (instead of briefly flashing an empty chart).
+    if (drillBswFieldPoints === null) setDrillBswLoading(true);
+    if (drillDepletionFieldPoints === null) setDrillDepletionLoading(true);
+
+    (async () => {
+      const bswPromise = drillBswFieldPoints === null
+        ? rpcGetAnpCdpBswFieldAggregateCanonical(supabase, [drillCampo])
+            .then((rows) => {
+              if (cancelled) return;
+              setDrillBswFieldPoints(rows);
+            })
+            .catch((e) => {
+              if (cancelled) return;
+              console.error("Drill BSW prefetch failed", e);
+              setDrillBswError(e instanceof Error ? e.message : String(e));
+              setDrillBswFieldPoints([]);
+            })
+            .finally(() => {
+              if (cancelled) return;
+              setDrillBswLoading(false);
+            })
+        : Promise.resolve();
+
+      const depletionPromise = drillDepletionFieldPoints === null
+        ? rpcGetAnpCdpDepletionFieldAggregateCanonical(supabase, [drillCampo])
+            .then((rows) => {
+              if (cancelled) return;
+              setDrillDepletionFieldPoints(rows);
+            })
+            .catch((e) => {
+              if (cancelled) return;
+              console.error("Drill Depletion prefetch failed", e);
+              setDrillDepletionError(e instanceof Error ? e.message : String(e));
+              setDrillDepletionFieldPoints([]);
+            })
+            .finally(() => {
+              if (cancelled) return;
+              setDrillDepletionLoading(false);
+            })
+        : Promise.resolve();
+
+      await Promise.allSettled([bswPromise, depletionPromise]);
+    })();
+
+    return () => {
+      cancelled = true;
+      // Important: we don't clear the loading flags on cleanup. If the user
+      // closed the drill, the close handler already clears caches + we'll
+      // get a fresh prefetch on the next open. If the user just hopped to
+      // a different field, the new effect run flips the loading flags itself.
+    };
+    // We INTENTIONALLY exclude `drillBswFieldPoints` / `drillDepletionFieldPoints`
+    // from the deps array — otherwise this effect would re-fire on its own
+    // setState calls and cancel itself. The cache-null check above guards
+    // against duplicate work; running once per `drillCampo` change is the
+    // contract we want.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase, drillCampo]);
+
+  // Imperative hover-prefetch handlers (bonus). Cheap to call repeatedly —
+  // they early-return when the cache is already populated (or pending). The
+  // background prefetch effect above means most users never trigger these
+  // (the data lands before they hover); they're a belt-and-suspenders for
+  // (a) sessions where the prefetch is somehow cancelled before resolving
+  // and (b) cases where the user lingers on the modal long enough that the
+  // network slowed below 1 RTT — hovering primes the cache without making
+  // them commit to a click.
+  const prefetchBswField = useCallback(() => {
+    if (!supabase || !drillCampo) return;
+    if (drillBswFieldPoints !== null) return;
+    if (drillBswLoading) return; // already in flight
+    setDrillBswLoading(true);
+    (async () => {
+      try {
+        const rows = await rpcGetAnpCdpBswFieldAggregateCanonical(supabase, [drillCampo]);
+        setDrillBswFieldPoints(rows);
+      } catch (e) {
+        console.error("Drill BSW hover-prefetch failed", e);
+        setDrillBswError(e instanceof Error ? e.message : String(e));
+        setDrillBswFieldPoints([]);
+      } finally {
+        setDrillBswLoading(false);
+      }
+    })();
+  }, [supabase, drillCampo, drillBswFieldPoints, drillBswLoading]);
+
+  const prefetchDepletionField = useCallback(() => {
+    if (!supabase || !drillCampo) return;
+    if (drillDepletionFieldPoints !== null) return;
+    if (drillDepletionLoading) return;
+    setDrillDepletionLoading(true);
+    (async () => {
+      try {
+        const rows = await rpcGetAnpCdpDepletionFieldAggregateCanonical(supabase, [drillCampo]);
+        setDrillDepletionFieldPoints(rows);
+      } catch (e) {
+        console.error("Drill Depletion hover-prefetch failed", e);
+        setDrillDepletionError(e instanceof Error ? e.message : String(e));
+        setDrillDepletionFieldPoints([]);
+      } finally {
+        setDrillDepletionLoading(false);
+      }
+    })();
+  }, [supabase, drillCampo, drillDepletionFieldPoints, drillDepletionLoading]);
 
   useEffect(() => {
     if (!supabase || !drillCampo || !dateRange[0] || !dateRange[1]) return;
@@ -1558,11 +1715,13 @@ export function useProductionData(): UseProductionData {
     drillBswFieldPoints,
     drillBswLoading,
     drillBswError,
+    prefetchBswField,
     drillDepletionMode,
     setDrillDepletionMode,
     drillDepletionWellPoints,
     drillDepletionFieldPoints,
     drillDepletionLoading,
     drillDepletionError,
+    prefetchDepletionField,
   };
 }

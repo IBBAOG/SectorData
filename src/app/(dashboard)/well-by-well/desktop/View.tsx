@@ -623,6 +623,66 @@ function ViewPillsRow({
   );
 }
 
+// ─── Drill tab skeleton (BSW / Depletion loading state) ──────────────────────
+//
+// Replaces the previous empty `<BarrelLoading />` block that occupied the
+// BSW and Depletion tabs while their RPCs were in flight. Three jobs:
+//
+//   1. Tell the user something is happening (barrel spinner — kept for the
+//      visual continuity with the rest of the dashboard).
+//   2. Tell them WHAT is happening (descriptive title + sub-line that names
+//      the campo and the metric). When the canonical-grouping backend (P1)
+//      lands, the same skeleton accompanies a sub-3s render; before it does,
+//      the same skeleton stays on screen for ~30s — either way the user is
+//      no longer staring at an unbranded spinner without context.
+//   3. Hint at the shape of the answer with 4 horizontal placeholder bars
+//      that taper down (mimicking a typical BSW / depletion curve). Pulse
+//      animation reuses `wbw-kpi-skeleton-pulse` from globals.css.
+//
+// Two textual modes — "bsw" and "depletion" — so the same component renders
+// the right copy. `compact` enables the mobile-tuned size variant (smaller
+// type + tighter spacing) but the desktop modal never sets it.
+function DrillTabSkeleton({
+  campo,
+  metric,
+  compact = false,
+}: {
+  campo: string;
+  metric: "bsw" | "depletion";
+  compact?: boolean;
+}): React.ReactElement {
+  const title =
+    metric === "bsw"
+      ? `Computing BSW for ${campo}…`
+      : `Computing Depletion for ${campo}…`;
+  const detail =
+    metric === "bsw"
+      ? "Aggregating water-cut across canonical variants. This may take a few seconds the first time."
+      : "Calculating uptime-normalized cumulative NP across canonical variants. This may take a few seconds the first time.";
+  return (
+    <div
+      className={`wbw-drill-skeleton${compact ? " is-compact" : ""}`}
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <div className="wbw-drill-skeleton-header">
+        <BarrelLoading bare size={compact ? 64 : 96} />
+        <div className="wbw-drill-skeleton-text">
+          <strong>{title}</strong>
+          <small>{detail}</small>
+        </div>
+      </div>
+      <div className="wbw-drill-skeleton-chart" aria-hidden="true">
+        <div className="wbw-drill-skeleton-bar" />
+        <div className="wbw-drill-skeleton-bar" />
+        <div className="wbw-drill-skeleton-bar" />
+        <div className="wbw-drill-skeleton-bar" />
+      </div>
+    </div>
+  );
+}
+
 // ─── Field drill-down modal ───────────────────────────────────────────────────
 //
 // Phase 2 (2026-05-30): the modal now hosts THREE tabs — Production (the
@@ -650,12 +710,14 @@ function FieldDrillModal({
   drillBswFieldPoints,
   drillBswLoading,
   drillBswError,
+  prefetchBswField,
   drillDepletionMode,
   setDrillDepletionMode,
   drillDepletionWellPoints,
   drillDepletionFieldPoints,
   drillDepletionLoading,
   drillDepletionError,
+  prefetchDepletionField,
 }: {
   campo: string;
   empresa: string;
@@ -678,12 +740,14 @@ function FieldDrillModal({
   drillBswFieldPoints: AnpCdpBswFieldPoint[] | null;
   drillBswLoading: boolean;
   drillBswError: string | null;
+  prefetchBswField: () => void;
   drillDepletionMode: DrillSubMode;
   setDrillDepletionMode: (m: DrillSubMode) => void;
   drillDepletionWellPoints: AnpCdpDepletionPoint[] | null;
   drillDepletionFieldPoints: AnpCdpDepletionFieldPoint[] | null;
   drillDepletionLoading: boolean;
   drillDepletionError: string | null;
+  prefetchDepletionField: () => void;
 }): React.ReactElement {
   // Production tab chart (unchanged from the pre-Phase-2 modal).
   const productionChart = useMemo(() => buildFieldDrillChart(series), [series]);
@@ -850,8 +914,15 @@ function FieldDrillModal({
             opacity: tabLoading ? 0.6 : 1,
           }}
         >
-          {/* ── Tab bar (Production / BSW / Depletion) ─────────────────── */}
-          <div>
+          {/* ── Tab bar (Production / BSW / Depletion) ─────────────────────
+              `onMouseEnter` here fires the BSW + Depletion field-mode
+              prefetches if they haven't landed yet. The hook-level background
+              prefetch (triggered on drillCampo flip null → string) almost
+              always wins this race — but if the user hovers the tab bar
+              before that fetch resolves AND has not yet visited those tabs,
+              this primes both caches a few hundred ms earlier. Both callbacks
+              are idempotent (early-return when cached OR in-flight). */}
+          <div onMouseEnter={() => { prefetchBswField(); prefetchDepletionField(); }}>
             <SegmentedToggle<DrillTab>
               options={[
                 { value: "production", label: "Production" },
@@ -958,9 +1029,7 @@ function FieldDrillModal({
               {drillBswLoading &&
                ((drillBswMode === "field" && drillBswFieldPoints == null) ||
                 (drillBswMode === "well"  && drillBswWellPoints  == null)) ? (
-                <div style={{ padding: "40px 0" }}>
-                  <BarrelLoading />
-                </div>
+                <DrillTabSkeleton campo={campo} metric="bsw" />
               ) : (
                 <div style={{ position: "relative" }}>
                   <PlotlyChart
@@ -1012,9 +1081,7 @@ function FieldDrillModal({
               {drillDepletionLoading &&
                ((drillDepletionMode === "field" && drillDepletionFieldPoints == null) ||
                 (drillDepletionMode === "well"  && drillDepletionWellPoints  == null)) ? (
-                <div style={{ padding: "40px 0" }}>
-                  <BarrelLoading />
-                </div>
+                <DrillTabSkeleton campo={campo} metric="depletion" />
               ) : (
                 <div style={{ position: "relative" }}>
                   <PlotlyChart
@@ -1343,9 +1410,11 @@ export default function DesktopView(): React.ReactElement | null {
     drillBswMode, setDrillBswMode,
     drillBswWellPoints, drillBswFieldPoints,
     drillBswLoading, drillBswError,
+    prefetchBswField,
     drillDepletionMode, setDrillDepletionMode,
     drillDepletionWellPoints, drillDepletionFieldPoints,
     drillDepletionLoading, drillDepletionError,
+    prefetchDepletionField,
   } = useProductionData();
 
   // ── Chart 1 data (Brasil OR company) ─────────────────────────────────────
@@ -1670,12 +1739,14 @@ export default function DesktopView(): React.ReactElement | null {
           drillBswFieldPoints={drillBswFieldPoints}
           drillBswLoading={drillBswLoading}
           drillBswError={drillBswError}
+          prefetchBswField={prefetchBswField}
           drillDepletionMode={drillDepletionMode}
           setDrillDepletionMode={setDrillDepletionMode}
           drillDepletionWellPoints={drillDepletionWellPoints}
           drillDepletionFieldPoints={drillDepletionFieldPoints}
           drillDepletionLoading={drillDepletionLoading}
           drillDepletionError={drillDepletionError}
+          prefetchDepletionField={prefetchDepletionField}
         />
       )}
 
