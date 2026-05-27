@@ -30,7 +30,21 @@ function resolveOverlaps(ys:number[],boxH:number,minY:number,maxY:number):number
   const res=new Array<number>(ys.length);for(const{y,i}of items)res[i]=y;return res;
 }
 
-interface NSeries { ticker:string; color:string; values:{date:number;value:number}[] }
+interface NSeries { ticker:string; color:string; values:{date:number;day:number;value:number}[] }
+
+// Bucket a unix-seconds timestamp into a UTC calendar-day key (unix-seconds
+// for 00:00:00 UTC of that day). Tickers from different markets quote close
+// prices with different intraday timestamps (PETR4.SA → ~13:00 UTC market
+// close, BZ=F → ~01:00 UTC ICE settlement). Without bucketing, every
+// PETR4 bar sits on its own unified-axis index and every BZ=F bar sits on
+// a different one — each series ends up with values on only half the
+// indices, so the line drawing loop lifts the pen between every pair of
+// points and the chart renders as isolated dots, not a continuous line.
+// Bucketing collapses both quotes for the same calendar day onto a single
+// shared index so the lines connect.
+function toDayKey(unix:number):number{
+  return Math.floor(unix/86400)*86400;
+}
 
 export default function ComparisonChart({series,height,mode,baseDate,endDate,dark=true}:Props) {
   const canvasRef=useRef<HTMLCanvasElement>(null);
@@ -58,26 +72,29 @@ export default function ComparisonChart({series,height,mode,baseDate,endDate,dar
       const ratio=bv/lastClose;
       if(ratio>100||ratio<0.01)return{ticker:s.ticker,color:s.color??COLORS[i%COLORS.length],values:[]};
     }
-    return{ticker:s.ticker,color:s.color??COLORS[i%COLORS.length],values:f.map(d=>({date:d.date,value:mode==="percent"?((d.close-bv)/bv)*100:(d.close/bv)*100}))};
+    return{ticker:s.ticker,color:s.color??COLORS[i%COLORS.length],values:f.map(d=>({date:d.date,day:toDayKey(d.date),value:mode==="percent"?((d.close-bv)/bv)*100:(d.close/bv)*100}))};
   });
   const active=normalized.filter(s=>s.values.length>0);
   const skipped=normalized.filter(s=>s.values.length===0&&series.some(o=>o.ticker===s.ticker&&o.data.length>0)).map(s=>s.ticker);
-  // Build a unified, sorted, deduplicated date axis from the UNION of all
-  // active series. Previously we picked the longest single series as the
-  // axis and drew every other series with positional indices, which
-  // shuffled the X labels whenever two tickers had different histories
-  // (e.g. UGPA3 since 2006 vs VBBR3 since 2018 → labels rendered in the
-  // order MAY 30 → SEP 23 → JAN 30 instead of chronologically).
-  const dateSet=new Set<number>(); for(const s of active)for(const v of s.values)dateSet.add(v.date);
-  const allDates:number[]=Array.from(dateSet).sort((a,b)=>a-b);
+  // Build a unified, sorted, deduplicated CALENDAR-DAY axis from the UNION
+  // of all active series. We bucket each sample's intraday timestamp into
+  // a day key (UTC 00:00) so PETR4 (closes ~13 UTC) and BZ=F (settles ~01
+  // UTC) on the same calendar day share the same axis position.
+  // Previously the unified set used raw timestamps, which never overlapped
+  // across markets — every other index was undefined for a given series
+  // and the line drawing loop lifted the pen on every step, rendering the
+  // chart as isolated dots.
+  const daySet=new Set<number>(); for(const s of active)for(const v of s.values)daySet.add(v.day);
+  const allDates:number[]=Array.from(daySet).sort((a,b)=>a-b);
   const totalLen=allDates.length;
-  // Map each ticker's values to a sparse lookup keyed by the unified date
-  // index — points without a sample on a given date are left undefined and
-  // the line walks past them (no fake interpolation).
-  const dateIndexById=new Map<number,number>(); for(let i=0;i<allDates.length;i++)dateIndexById.set(allDates[i],i);
+  // Map each ticker's values to a dense lookup keyed by the unified day
+  // index. If a series has multiple samples on the same day (e.g. the
+  // appended live-quote point from useStockQuote), keep the LAST one — it
+  // represents the most recent close / live price for that day.
+  const dayIndexById=new Map<number,number>(); for(let i=0;i<allDates.length;i++)dayIndexById.set(allDates[i],i);
   const seriesByIndex:(number|undefined)[][]=active.map(s=>{
     const arr=new Array<number|undefined>(totalLen);
-    for(const v of s.values){const idx=dateIndexById.get(v.date);if(idx!==undefined)arr[idx]=v.value;}
+    for(const v of s.values){const idx=dayIndexById.get(v.day);if(idx!==undefined)arr[idx]=v.value;}
     return arr;
   });
 
