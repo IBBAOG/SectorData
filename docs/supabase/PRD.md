@@ -51,6 +51,7 @@ supabase/
 | `navios_diesel` | dash-navios-diesel | ETL (`pipelines/navios/01_lineup_scrape.py` → `pipelines/navios/02_diesel_import.mjs`) |
 | `vessel_registry`, `vessel_positions`, `port_arrivals`, `import_candidates` | dash-navios-diesel | ETL (`ais_*.py`, `vessel_*.py`) |
 | `d_g_margins` | dash-margins | Dados Locais (manual via `scripts/manual/dg_margins_upload.py`) |
+| `field_stakes` | future `/production` dashboard (read) + dash-admin "Field Stakes" editor (write via SECURITY DEFINER + `is_admin()`) | Admin via `admin_upsert_field_stakes(p_campo, p_stakes jsonb)` — replace-all-in-1-tx with `SUM(stake_pct)=100` validation. Migration `20260527600000_field_stakes.sql`. |
 | `price_bands` | dash-price-bands | Dados Locais (manual via `upload_price_bands.py`) |
 | `stock_portfolios` | dash-stocks | App (CRUD direto via PostgREST). Desde `20260522000001`: coluna `is_public` + nullable `user_id` + seed do portfolio público `00000000-...-001` "Brazilian Oil & Gas (default)" |
 | `news_articles`, `news_hunter_keywords` | dash-news-hunter | scanner externo + user via UI. Desde `20260522000001`: `news_articles` ganhou policy SELECT TO anon |
@@ -167,6 +168,56 @@ A query é um UNION ALL de 22 SELECTs (1 por tabela ETL-fed). Cada SELECT carreg
 **Consumidor:** `src/components/home/DataSourcesTable/` (8 arquivos — `index.tsx`, `SectionHeader.tsx`, `SourceRow.tsx`, `ExpandedRow.tsx`, `StatusDot.tsx`, `LastUpdateCell.tsx`, `DashboardPicker.tsx`, `useDataSourcesFreshness.ts`). Wrapper JS: `rpcGetDataSourcesFreshness` em `src/lib/rpc.ts`. Catálogo curado: `src/data/dataSources.ts`.
 
 **Visibilidade:** acessível para Anon + Client + Admin (`GRANT EXECUTE TO anon, authenticated` cobre ambos). O download nas linhas é gated por sessão (Anon vê botão "Sign in to download" desabilitado). Sub-PRD: [`docs/app/admin.md`](../app/admin.md) § "Data Sources live table".
+
+### Field Stakes (added 2026-05-27)
+
+Migration: `20260527600000_field_stakes.sql`. Manually-curated catalog of per-field × per-company working-interest (stake percentage), used by the future `/production` dashboard to estimate company-attributable oil/gas production from `anp_cdp_producao` (which carries only `operador`, never the full ownership split).
+
+**Schema — `public.field_stakes`:**
+
+| Column | Type | Notes |
+|---|---|---|
+| `campo` | text NOT NULL | Field name. Joins with `anp_cdp_producao.campo` and `mv_anp_cdp_pocos.campo` (UPPER-cased, accent-preserving — same convention as the source). |
+| `empresa` | text NOT NULL | Company name (operator or non-operating partner). Free-form text — autocomplete fed by `get_field_stakes_empresas()` against existing rows. |
+| `stake_pct` | numeric(6,3) NOT NULL | CHECK `stake_pct > 0 AND stake_pct <= 100`. 3-decimal precision (e.g. `88.999`). |
+| `updated_at` | timestamptz NOT NULL DEFAULT now() | Audit timestamp. |
+| `updated_by` | uuid REFERENCES auth.users(id) | Admin who last touched this `(campo, empresa)` row. Nullable for legacy rows. |
+| PK | (campo, empresa) | One stake row per company per field — composite PK enforces uniqueness. |
+
+Indexes: `field_stakes_campo_idx (campo)`, `field_stakes_empresa_idx (empresa)`.
+
+**RLS pattern (read-open / write-via-RPC-only):**
+
+- SELECT policy `field_stakes_read_all` granted to `anon, authenticated` with `USING (true)` — stakes are non-sensitive metadata (public ANP information aggregated by Admin).
+- **No INSERT / UPDATE / DELETE policies** — direct writes blocked by RLS. All mutations flow through `admin_*` SECURITY DEFINER RPCs that guard via `public.is_admin()`.
+
+**RPCs (all `LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp` unless noted; CLAUDE.md Pegadinha #18):**
+
+| RPC | Signature | Notes |
+|---|---|---|
+| `get_field_stakes_overview` | `() RETURNS TABLE(campo text, n_empresas int, soma_pct numeric, is_complete boolean, has_data_in_producao boolean, last_updated timestamptz)` | Drives the editor's master list. UNION of `mv_anp_cdp_pocos.campo` (all known fields) with `field_stakes.campo` (in case Admin added stakes for a campo no longer in production) — LEFT JOIN'd to aggregated stakes. `is_complete = (SUM=100)`. `has_data_in_producao` flags rows the editor can prioritize. `GRANT EXECUTE TO anon, authenticated`. |
+| `get_field_stakes(p_campo text)` | `RETURNS TABLE(empresa text, stake_pct numeric, updated_at timestamptz)` | Editor consumes this when opening one campo. Ordered by `stake_pct DESC, empresa`. `GRANT EXECUTE TO anon, authenticated`. |
+| `get_field_stakes_empresas()` | `RETURNS TABLE(empresa text, n_campos int)` | Autocomplete source — distinct companies already registered with the number of fields each appears in (DESC). `GRANT EXECUTE TO anon, authenticated`. |
+| `admin_upsert_field_stakes(p_campo text, p_stakes jsonb)` | `RETURNS void` — `LANGUAGE plpgsql SECURITY DEFINER` | **Replace-all-in-one-transaction upsert.** Validates `public.is_admin()` (RAISE 42501 `forbidden` otherwise), validates `p_campo` non-empty (22023), validates `SUM((stake_pct))=100` across the jsonb array (RAISE 23514 `sum_must_equal_100: got <value>` otherwise), then `DELETE` of all existing rows for that campo + `INSERT` of the new set in the same tx. Empty-empresa entries are filtered out. `updated_by = auth.uid()`. Input shape: `[{"empresa":"Petrobras","stake_pct":88.99}, ...]`. `GRANT EXECUTE TO authenticated`. |
+| `admin_delete_field_stakes(p_campo text)` | `RETURNS void` — `LANGUAGE plpgsql SECURITY DEFINER` | Admin-only nuke of all stakes for one campo. Validates `is_admin()`. `GRANT EXECUTE TO authenticated`. |
+
+**Design rationale:**
+
+- **Replace-all upsert (not row-by-row) + sum=100 enforcement in the RPC** — guarantees the editor never persists an inconsistent state. The pre-condition is a transactional invariant, not a UI concern.
+- **Hard sum=100 rule** — a field's stakes by definition partition 100% ownership. Allowing 99.5 or 100.5 would silently drift dashboards downstream.
+- **No DB-level trigger sum check** — sum invariant is RPC-scoped (the RPC owns the unit of work). A trigger would block the intermediate DELETE+INSERT mid-tx.
+- **Admin guard via `is_admin()` (the existing helper)** — same pattern as `set_module_visibility`, `admin_add_default_news_keyword`, `track_event` admin branches. Centralizes the Admin check definition.
+- **No UPDATE policy and no service-role write path defined here** — the only writer is Admin via UI. Bulk seed (if needed later) goes through a follow-up DML migration that calls `admin_upsert_field_stakes` after temporarily setting `request.jwt.claims` to an Admin uuid (same pattern used by `importer_group_map` seeding).
+
+**Validation confirmed at apply time:**
+
+- All 5 RPCs report `pg_proc.prosecdef = true` (Pegadinha #18 check).
+- `get_field_stakes_overview()` returns rows for all campos in `mv_anp_cdp_pocos` with `n_empresas=0, soma_pct=0, has_data_in_producao=true` (since `field_stakes` is empty at seed time).
+- `admin_upsert_field_stakes('__test__', '[{"empresa":"Petrobras","stake_pct":50}]'::jsonb)` raises `42501 forbidden` for non-admin callers and `23514 sum_must_equal_100: got 50` after simulating an Admin uuid via `request.jwt.claims`.
+
+**Future consumer:** `/production` dashboard (not yet built — see plan `vou-fazer-uma-mudan-a-fizzy-quiche.md` Fase 2+). Computes `company_volume = SUM(petroleo_bbl_dia * stake_pct / 100)` after JOIN of `anp_cdp_producao` × `field_stakes` on `campo`.
+
+**Editor location:** `/admin-panel` → "Field Stakes" section (owned by dash-admin worker, to be added in plan Fase 2).
 
 ### Sessions / Auth state
 
