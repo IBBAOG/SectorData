@@ -44,6 +44,7 @@ import type {
   ProductionCompanyRow,
   ProductionTopField,
   ProductionFieldTimeseriesRow,
+  ProductionInstallationTimeseriesRow,
 } from "../../../../types/production";
 
 // ─── Chart builders ───────────────────────────────────────────────────────────
@@ -558,6 +559,253 @@ function FieldDrillModal({
   );
 }
 
+// ─── Installation drill-down modal (Round 3, 2026-05-27) ─────────────────────
+//
+// Mirrors FieldDrillModal exactly — same 820px chrome, brand-orange accent,
+// Esc/scrim/× close, same 4-KPI strip + 13mo timeseries chart. Only differences
+// are the header label ("Installation" semantic) and the source of timeseries
+// (installation RPC instead of field RPC). The chart builder is reused since
+// `ProductionInstallationTimeseriesRow` is a type alias of
+// `ProductionFieldTimeseriesRow` — both carry the same row shape.
+//
+// Field and installation drills are mutually exclusive at the hook level, so
+// only one of these modals is ever mounted at a time.
+
+function InstallationDrillModal({
+  instalacao,
+  empresa,
+  loading,
+  error,
+  series,
+  kpis,
+  onClose,
+}: {
+  instalacao: string;
+  empresa: string;
+  loading: boolean;
+  error: string | null;
+  series: ProductionInstallationTimeseriesRow[];
+  kpis: {
+    currentOil: number;
+    prevOil: number | null;
+    momPct: number | null;
+    yoyPct: number | null;
+    ytdAvg: number | null;
+  };
+  onClose: () => void;
+}): React.ReactElement {
+  // Reuse the field chart builder — the row shape is identical.
+  const chart = useMemo(() => buildFieldDrillChart(series), [series]);
+
+  // Close on Escape.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${instalacao} drill-down`}
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1050,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "rgba(0,0,0,0.45)",
+        backdropFilter: "blur(2px)",
+        fontFamily: "Arial",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: "relative",
+          width: "min(820px, calc(100vw - 32px))",
+          maxHeight: "calc(100vh - 64px)",
+          display: "flex",
+          flexDirection: "column",
+          backgroundColor: "#ffffff",
+          borderRadius: 10,
+          boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
+          overflow: "hidden",
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: "14px 20px",
+            borderBottom: "1px solid #e6e6e6",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            backgroundColor: "#fafafa",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 700,
+              color: "#1a1a1a",
+              letterSpacing: "0.4px",
+              textTransform: "uppercase",
+            }}
+          >
+            {instalacao} <span style={{ color: "#888", fontWeight: 500 }}>— {empresa}</span>
+          </div>
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+            style={{
+              border: "none",
+              background: "transparent",
+              fontSize: 22,
+              lineHeight: 1,
+              color: "#888",
+              cursor: "pointer",
+              padding: "0 4px",
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Body */}
+        <div
+          style={{
+            padding: "16px 20px",
+            overflowY: "auto",
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+            flex: "1 1 auto",
+            opacity: loading ? 0.6 : 1,
+          }}
+        >
+          {error && (
+            <div
+              style={{
+                padding: "10px 12px",
+                background: "#fff3cd",
+                border: "1px solid #ffe69c",
+                borderRadius: 6,
+                color: "#7d5800",
+                fontSize: 12,
+              }}
+            >
+              {error}
+            </div>
+          )}
+
+          {/* KPI strip */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+              gap: 10,
+            }}
+          >
+            <KpiCard
+              label="Current oil"
+              value={fmtNumber(kpis.currentOil, 1)}
+              unit="kbpd"
+              accent
+            />
+            <KpiCard
+              label="Δ MoM"
+              value={kpis.momPct == null ? "—" : fmtPct(kpis.momPct)}
+              unit=""
+            />
+            <KpiCard
+              label="Δ YoY"
+              value={kpis.yoyPct == null ? "—" : fmtPct(kpis.yoyPct)}
+              unit=""
+            />
+            <KpiCard
+              label="YTD avg"
+              value={kpis.ytdAvg == null ? "—" : fmtNumber(kpis.ytdAvg, 1)}
+              unit="kbpd"
+            />
+          </div>
+
+          {/* Chart */}
+          <div style={{ position: "relative" }}>
+            <PlotlyChart
+              data={chart.data}
+              layout={chart.layout}
+              style={{ width: "100%", height: 320 }}
+            />
+            {!loading && series.length === 0 && (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#888",
+                  fontSize: 12,
+                  background: "rgba(255,255,255,0.6)",
+                }}
+              >
+                No data for this installation in the current period.
+              </div>
+            )}
+          </div>
+
+          <div style={{ fontSize: 11, color: "#888" }}>
+            Bars: stake-weighted oil (dark) + water (light blue) routed through
+            this installation in kbpd · Line: monthly uptime fraction · Period
+            reflects the dashboard filters.
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div
+          style={{
+            padding: "12px 20px",
+            borderTop: "1px solid #e6e6e6",
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: 8,
+            backgroundColor: "#ffffff",
+          }}
+        >
+          <button
+            type="button"
+            className="btn btn-outline-secondary btn-sm"
+            onClick={onClose}
+            style={{ fontFamily: "Arial" }}
+          >
+            Close
+          </button>
+        </div>
+
+        {/* Brand accent bar */}
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 3,
+            backgroundColor: BRAND_ORANGE,
+            pointerEvents: "none",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ─── View ─────────────────────────────────────────────────────────────────────
 
 export default function DesktopView(): React.ReactElement | null {
@@ -575,6 +823,9 @@ export default function DesktopView(): React.ReactElement | null {
     handleExportExcel, handleExportCsv,
     drillCampo, drillTimeseries, drillLoading, drillError, drillKpis,
     openFieldDrill, closeFieldDrill,
+    drillInstalacao, drillInstalacaoTimeseries, drillInstalacaoLoading,
+    drillInstalacaoError, drillInstalacaoKpis,
+    openInstallationDrill, closeInstallationDrill,
   } = useProductionData();
 
   // ── Chart memoisation ─────────────────────────────────────────────────────
@@ -907,7 +1158,7 @@ export default function DesktopView(): React.ReactElement | null {
               >
                 <div
                   style={{
-                    maxHeight: 360,
+                    maxHeight: 336,
                     overflowY: "auto",
                     fontFamily: "Arial",
                     fontSize: 12,
@@ -924,7 +1175,21 @@ export default function DesktopView(): React.ReactElement | null {
                     </thead>
                     <tbody>
                       {installations.slice(0, 12).map((inst) => (
-                        <tr key={inst.instalacao}>
+                        <tr
+                          key={inst.instalacao}
+                          onClick={() => openInstallationDrill(inst.instalacao)}
+                          style={{
+                            cursor: "pointer",
+                            transition: "background-color 0.12s",
+                          }}
+                          onMouseEnter={(e) => {
+                            (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "#fff5ef";
+                          }}
+                          onMouseLeave={(e) => {
+                            (e.currentTarget as HTMLTableRowElement).style.backgroundColor = "transparent";
+                          }}
+                          title={`Drill into ${inst.instalacao} monthly history`}
+                        >
                           <td style={tdStyle}>{inst.instalacao}</td>
                           <td style={{ ...tdStyle, textAlign: "right" }}>
                             {fmtNumber(bblDiaToKbpd(inst.oil_bbl_dia), 1)}
@@ -950,6 +1215,19 @@ export default function DesktopView(): React.ReactElement | null {
                     </tbody>
                   </table>
                 </div>
+                {installations.length > 0 && (
+                  <div
+                    style={{
+                      marginTop: 4,
+                      fontFamily: "Arial",
+                      fontSize: 10.5,
+                      color: "#888",
+                      textAlign: "center",
+                    }}
+                  >
+                    Click a row to drill into an installation&apos;s monthly history
+                  </div>
+                )}
               </ChartSection>
             </div>
 
@@ -1032,6 +1310,19 @@ export default function DesktopView(): React.ReactElement | null {
           series={drillTimeseries}
           kpis={drillKpis}
           onClose={closeFieldDrill}
+        />
+      )}
+
+      {/* ── Installation drill-down modal (Round 3, 2026-05-27) ──────────── */}
+      {drillInstalacao && (
+        <InstallationDrillModal
+          instalacao={drillInstalacao}
+          empresa={empresa}
+          loading={drillInstalacaoLoading}
+          error={drillInstalacaoError}
+          series={drillInstalacaoTimeseries}
+          kpis={drillInstalacaoKpis}
+          onClose={closeInstallationDrill}
         />
       )}
     </div>

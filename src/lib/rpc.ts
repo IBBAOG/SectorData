@@ -2761,6 +2761,7 @@ import type {
   ProductionInstallation,
   ProductionYoYRow,
   ProductionFieldTimeseriesRow,
+  ProductionInstallationTimeseriesRow,
 } from "../types/production";
 
 /**
@@ -2978,6 +2979,59 @@ export async function rpcGetProductionFieldTimeseries(
   if (error) {
     console.error("get_production_field_timeseries failed", error);
     throw new Error(`get_production_field_timeseries: ${error.message}`);
+  }
+  const rows = (data ?? []) as Array<{
+    ano:           number | string;
+    mes:           number | string;
+    oil_bbl_dia:   number | string;
+    gas_mm3_dia:   number | string;
+    water_bbl_dia: number | string;
+    hours_rate:    number | string;
+  }>;
+  return rows.map((r) => ({
+    ano:           Number(r.ano),
+    mes:           Number(r.mes),
+    oil_bbl_dia:   Number(r.oil_bbl_dia ?? 0),
+    gas_mm3_dia:   Number(r.gas_mm3_dia ?? 0),
+    water_bbl_dia: Number(r.water_bbl_dia ?? 0),
+    hours_rate:    Number(r.hours_rate ?? 0),
+  }));
+}
+
+/**
+ * Stake-weighted monthly timeseries for ONE installation (FPSO/UEP/land plant)
+ * × ONE company across the given date range. Powers the Installation drill-down
+ * panel (Round 3, 2026-05-27).
+ *
+ * Returns one row per (year, month) — typically 13 months for the default
+ * lookback. The server applies the same stake filter (`SUM(stake_pct) = 100`)
+ * as the rest of the Production RPCs, so installations whose constituent
+ * campos are in `field_stakes_lacunas` return zero rows.
+ *
+ * Row shape is identical to `get_production_field_timeseries` (see
+ * `ProductionInstallationTimeseriesRow`, aliased to
+ * `ProductionFieldTimeseriesRow`).
+ *
+ * Source-of-truth migration:
+ *   `supabase/migrations/20260528200000_production_installation_timeseries.sql`
+ *   (owned by worker_supabase, Round 3 of Fase 2).
+ */
+export async function rpcGetProductionInstallationTimeseries(
+  supabase: SupabaseClient,
+  instalacao: string,
+  empresa: string,
+  dateStart: string,                     // 'YYYY-MM-DD'
+  dateEnd: string,                       // 'YYYY-MM-DD'
+): Promise<ProductionInstallationTimeseriesRow[]> {
+  const { data, error } = await supabase.rpc("get_production_installation_timeseries", {
+    p_instalacao: instalacao,
+    p_empresa:    empresa,
+    p_date_start: dateStart,
+    p_date_end:   dateEnd,
+  });
+  if (error) {
+    console.error("get_production_installation_timeseries failed", error);
+    throw new Error(`get_production_installation_timeseries: ${error.message}`);
   }
   const rows = (data ?? []) as Array<{
     ano:           number | string;
