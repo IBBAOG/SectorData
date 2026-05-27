@@ -16,6 +16,18 @@ const BG_GIFS = [
 ];
 const BG_URL = BG_GIFS[Math.floor(Math.random() * BG_GIFS.length)];
 
+// Normalize the user-typed identifier into an email Supabase Auth accepts.
+// - Strings containing "@" are treated as emails (lowercased).
+// - Strings without "@" are treated as internal usernames and aliased to
+//   "<username>@sectordata.internal" (e.g. "IBBA" -> "ibba@sectordata.internal").
+// Internal accounts are provisioned server-side by worker_supabase; this helper
+// only translates the input transparently before signInWithPassword.
+function normalizeIdentifier(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.includes("@")) return trimmed.toLowerCase();
+  return `${trimmed.toLowerCase()}@sectordata.internal`;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const supabase = getSupabaseClient();
@@ -97,7 +109,7 @@ export default function LoginPage() {
     if (submitting) return;
     setError(null);
     if (!email || !password) {
-      setError("Please enter your email and password.");
+      setError("Please enter your email or username and password.");
       return;
     }
 
@@ -105,7 +117,7 @@ export default function LoginPage() {
     try {
       const { error: signInError } =
         await supabase.auth.signInWithPassword({
-          email,
+          email: normalizeIdentifier(email),
           password,
         });
       if (signInError) throw signInError;
@@ -120,7 +132,7 @@ export default function LoginPage() {
         router.replace("/home");
       }
     } catch (e) {
-      setError("Incorrect email or password.");
+      setError("Incorrect credentials.");
       // eslint-disable-next-line no-console
       console.error(e);
     } finally {
@@ -214,13 +226,14 @@ export default function LoginPage() {
             <hr />
 
             <label htmlFor="input-email" className="form-label" style={{ fontFamily: "Arial" }}>
-              Email
+              Email or username
             </label>
             <input
               id="input-email"
               className="form-control mb-3"
-              type="email"
-              placeholder="name@email.com"
+              type="text"
+              autoComplete="username"
+              placeholder="you@company.com or IBBA"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleLogin()}
