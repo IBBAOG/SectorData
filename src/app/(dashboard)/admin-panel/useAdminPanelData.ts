@@ -49,6 +49,25 @@ import type {
   FieldStakeEmpresa,
   FieldStakeInput,
 } from "../../../types/fieldStakes";
+
+// ── Field Stakes — canonical grouping (Round 4) ───────────────────────────────
+//
+// Several variants of the same physical field (e.g. Búzios concession +
+// AnC_Búzios coparticipação + Búzios_ECO cessão onerosa excedente) share the
+// same `canonical` so they collapse under a single header in the left pane.
+// The right-pane editor still acts on ONE variant at a time (stakes differ
+// per contract).
+export interface FieldStakeCanonicalGroup {
+  canonical: string;
+  variants: FieldStakeOverview[];
+  n_variants: number;
+  /** All variants have soma_pct = 100. */
+  all_complete: boolean;
+  /** At least one variant has stakes registered but soma_pct ≠ 100. */
+  any_incomplete: boolean;
+  /** Every variant has zero companies registered. */
+  all_empty: boolean;
+}
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import type { UserWithRole, UserProfile } from "../../../types/profile";
 import { EDITABLE_TABLES } from "@/lib/dataInput/registry";
@@ -282,6 +301,22 @@ export interface UseAdminPanelData {
   pendingChanges: boolean;
   /** Overview filtered by stakesSearchQuery + stakesStatusFilter. */
   filteredOverview: FieldStakeOverview[];
+  /**
+   * Filtered overview re-grouped by `canonical`. Drives the collapsible
+   * left-pane list. Groups are sorted alphabetically by canonical; inside
+   * each group the variant whose name matches the canonical comes first,
+   * followed by other variants sorted alphabetically.
+   */
+  groupedOverview: FieldStakeCanonicalGroup[];
+  /**
+   * Which canonical groups are currently expanded in the left pane. Default
+   * seed: every multi-variant group is auto-expanded the first time it is
+   * encountered (so admins immediately see all variants of Búzios etc.);
+   * single-variant groups have no chevron and never appear in this set.
+   */
+  expandedCanonicals: Set<string>;
+  /** Toggle membership of a canonical name in `expandedCanonicals`. */
+  handleToggleCanonical: (canonical: string) => void;
   /** Last_updated timestamp of the currently selected campo (or null). */
   selectedCampoLastUpdated: string | null;
   handleSelectCampo: (campo: string) => Promise<void>;
@@ -1017,7 +1052,14 @@ export function useAdminPanelData(): UseAdminPanelData {
   const filteredOverview = useMemo(() => {
     const q = stakesSearchQuery.trim().toLowerCase();
     return fieldStakesOverview.filter((row) => {
-      if (q && !row.campo.toLowerCase().includes(q)) return false;
+      // Search matches if EITHER the variant name OR the canonical (family)
+      // name contains the query — so typing "buzios" surfaces all 3 variants
+      // (Búzios, AnC_Búzios, Búzios_ECO) at once.
+      if (q) {
+        const inVariant = row.campo.toLowerCase().includes(q);
+        const inCanonical = (row.canonical ?? "").toLowerCase().includes(q);
+        if (!inVariant && !inCanonical) return false;
+      }
       switch (stakesStatusFilter) {
         case "complete":
           return row.is_complete;
@@ -1030,6 +1072,97 @@ export function useAdminPanelData(): UseAdminPanelData {
       }
     });
   }, [fieldStakesOverview, stakesSearchQuery, stakesStatusFilter]);
+
+  // ── Canonical grouping (Round 4) ───────────────────────────────────────────
+  // Drives the collapsible left-pane list. We keep BOTH the flat filtered
+  // overview (used by counts/status filter buttons) and the grouped projection
+  // (used to render the list itself).
+
+  const [expandedCanonicals, setExpandedCanonicals] = useState<Set<string>>(
+    () => new Set<string>(),
+  );
+
+  // Auto-expand multi-variant groups the first time they show up in the data.
+  // Single-variant canonicals are rendered inline (no chevron), so they don't
+  // need to live in the expanded set. We track the canonical names already
+  // seen so admins can still manually collapse a group without it getting
+  // re-expanded on every render.
+  const seedSeenRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (fieldStakesOverview.length === 0) return;
+    // Build canonical -> variant count from raw overview (NOT filtered) so
+    // seeding behaviour is stable across search/filter changes.
+    const variantCount = new Map<string, number>();
+    for (const row of fieldStakesOverview) {
+      const c = row.canonical ?? row.campo;
+      variantCount.set(c, (variantCount.get(c) ?? 0) + 1);
+    }
+    const newlySeenMulti: string[] = [];
+    for (const [canonical, count] of variantCount) {
+      if (count > 1 && !seedSeenRef.current.has(canonical)) {
+        seedSeenRef.current.add(canonical);
+        newlySeenMulti.push(canonical);
+      }
+    }
+    if (newlySeenMulti.length > 0) {
+      setExpandedCanonicals((prev) => {
+        const next = new Set(prev);
+        for (const c of newlySeenMulti) next.add(c);
+        return next;
+      });
+    }
+  }, [fieldStakesOverview]);
+
+  const handleToggleCanonical = useCallback((canonical: string) => {
+    setExpandedCanonicals((prev) => {
+      const next = new Set(prev);
+      if (next.has(canonical)) next.delete(canonical);
+      else next.add(canonical);
+      return next;
+    });
+  }, []);
+
+  const groupedOverview = useMemo<FieldStakeCanonicalGroup[]>(() => {
+    // Group filtered rows by canonical. Falls back to the variant name when
+    // canonical is missing (defensive — pre-Round-4 RPC payloads).
+    const byCanonical = new Map<string, FieldStakeOverview[]>();
+    for (const row of filteredOverview) {
+      const c = row.canonical ?? row.campo;
+      const bucket = byCanonical.get(c);
+      if (bucket) bucket.push(row);
+      else byCanonical.set(c, [row]);
+    }
+    const groups: FieldStakeCanonicalGroup[] = [];
+    for (const [canonical, variants] of byCanonical) {
+      // Variant order: the "base" variant whose name equals the canonical
+      // comes first; remaining variants sorted alphabetically (AnC_Búzios,
+      // Búzios_ECO, EX_Búzios, …).
+      const sorted = [...variants].sort((a, b) => {
+        const aBase = a.campo === canonical ? 0 : 1;
+        const bBase = b.campo === canonical ? 0 : 1;
+        if (aBase !== bBase) return aBase - bBase;
+        return a.campo.localeCompare(b.campo);
+      });
+      const all_complete = sorted.every((v) => v.is_complete);
+      const all_empty = sorted.every((v) => v.n_empresas === 0);
+      const any_incomplete = sorted.some(
+        (v) => v.n_empresas > 0 && !v.is_complete,
+      );
+      groups.push({
+        canonical,
+        variants: sorted,
+        n_variants: sorted.length,
+        all_complete,
+        any_incomplete,
+        all_empty,
+      });
+    }
+    // Canonical groups sorted alphabetically (case-insensitive).
+    groups.sort((a, b) =>
+      a.canonical.localeCompare(b.canonical, undefined, { sensitivity: "base" }),
+    );
+    return groups;
+  }, [filteredOverview]);
 
   return {
     allowed,
@@ -1143,6 +1276,9 @@ export function useAdminPanelData(): UseAdminPanelData {
     isValidSum,
     pendingChanges,
     filteredOverview,
+    groupedOverview,
+    expandedCanonicals,
+    handleToggleCanonical,
     selectedCampoLastUpdated,
     handleSelectCampo,
     handleAddEmpresaRow,
