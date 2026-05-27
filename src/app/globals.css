@@ -2797,6 +2797,99 @@ a {
   animation: wbw-kpi-skeleton-pulse 1.4s ease-in-out infinite;
 }
 
+/* ── /well-by-well — Drill modal BSW/Depletion skeleton (Phase 2, 2026-05-28)
+   Replaces the empty `<BarrelLoading />` that used to fill the drill tabs
+   while their RPCs were in flight. The new skeleton shows the user:
+     1) That work is in progress (barrel spinner + animated placeholder bars)
+     2) What's being computed (descriptive text — "Computing BSW for X...")
+     3) The shape of the answer (horizontal bars hint at the eventual chart)
+   Used by both desktop FieldDrillModal and the mobile BottomSheet so the
+   loading language is consistent across viewports. */
+.wbw-drill-skeleton {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  padding: 20px 12px;
+  font-family: Arial;
+}
+
+.wbw-drill-skeleton-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.wbw-drill-skeleton-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wbw-drill-skeleton-text strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1a1a1a;
+  letter-spacing: 0.2px;
+}
+
+.wbw-drill-skeleton-text small {
+  font-size: 11px;
+  color: #888;
+  line-height: 1.45;
+}
+
+.wbw-drill-skeleton-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 0 0 0;
+}
+
+.wbw-drill-skeleton-bar {
+  height: 14px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e6e6e6 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: wbw-kpi-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+/* Vary the widths so the placeholder reads as "a chart" rather than "a slab" —
+   the four bars taper down, evoking the descending shape of typical BSW/
+   Depletion field-average curves. */
+.wbw-drill-skeleton-bar:nth-child(1) { width: 92%; }
+.wbw-drill-skeleton-bar:nth-child(2) { width: 78%; }
+.wbw-drill-skeleton-bar:nth-child(3) { width: 64%; }
+.wbw-drill-skeleton-bar:nth-child(4) { width: 50%; }
+
+/* Compact variant for the mobile BottomSheet — less vertical breathing room
+   and smaller text since the sheet has a much tighter content area. */
+.wbw-drill-skeleton.is-compact {
+  padding: 14px 8px;
+  gap: 10px;
+}
+
+.wbw-drill-skeleton.is-compact .wbw-drill-skeleton-text strong {
+  font-size: 12px;
+}
+
+.wbw-drill-skeleton.is-compact .wbw-drill-skeleton-text small {
+  font-size: 10px;
+}
+
+.wbw-drill-skeleton.is-compact .wbw-drill-skeleton-bar {
+  height: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wbw-drill-skeleton-bar {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .wbw-kpi-skeleton {
     animation: none;

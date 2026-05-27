@@ -309,6 +309,57 @@ function buildTopFieldsHBars(fields: ProductionTopField[]): TopFieldsBuildResult
   };
 }
 
+// ─── Drill tab skeleton (BSW / Depletion loading state, mobile) ──────────────
+//
+// Mirror of the desktop `DrillTabSkeleton` (defined inline in
+// `desktop/View.tsx`). Same job — replace the empty `<BarrelLoading />` that
+// used to fill the BottomSheet while BSW/Depletion RPCs are in flight, with
+// a barrel spinner + descriptive title/detail + 4 tapering placeholder bars.
+// Two textual modes ("bsw" and "depletion") + `is-compact` styling for the
+// mobile content area.
+//
+// Sync rule (CLAUDE.md § Dual-view): copy and styles match the desktop
+// helper byte-for-byte so the loading language is identical across viewports.
+// If you change one, change the other in the same commit.
+function DrillTabSkeleton({
+  campo,
+  metric,
+}: {
+  campo: string;
+  metric: "bsw" | "depletion";
+}): React.ReactElement {
+  const title =
+    metric === "bsw"
+      ? `Computing BSW for ${campo}…`
+      : `Computing Depletion for ${campo}…`;
+  const detail =
+    metric === "bsw"
+      ? "Aggregating water-cut across canonical variants. This may take a few seconds the first time."
+      : "Calculating uptime-normalized cumulative NP across canonical variants. This may take a few seconds the first time.";
+  return (
+    <div
+      className="wbw-drill-skeleton is-compact"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <div className="wbw-drill-skeleton-header">
+        <BarrelLoading bare size={56} />
+        <div className="wbw-drill-skeleton-text">
+          <strong>{title}</strong>
+          <small>{detail}</small>
+        </div>
+      </div>
+      <div className="wbw-drill-skeleton-chart" aria-hidden="true">
+        <div className="wbw-drill-skeleton-bar" />
+        <div className="wbw-drill-skeleton-bar" />
+        <div className="wbw-drill-skeleton-bar" />
+        <div className="wbw-drill-skeleton-bar" />
+      </div>
+    </div>
+  );
+}
+
 // ─── Small KPI tile (mobile) ──────────────────────────────────────────────────
 
 function MobileKpi({
@@ -569,6 +620,10 @@ export default function MobileView(): React.ReactElement | null {
     drillDepletionMode, setDrillDepletionMode,
     drillDepletionWellPoints, drillDepletionFieldPoints,
     drillDepletionLoading, drillDepletionError,
+    // Prefetch callbacks intentionally not destructured here — mobile has
+    // no hover state, and the hook-level background prefetch (on drillCampo
+    // flip null → string) already primes both BSW and Depletion field caches
+    // automatically when the BottomSheet opens, no manual trigger needed.
   } = useProductionData();
 
   // Round 9: tab state defaults to "aggregate" (was "brazil").
@@ -1229,9 +1284,7 @@ export default function MobileView(): React.ReactElement | null {
                 {drillBswLoading &&
                  ((drillBswMode === "field" && drillBswFieldPoints == null) ||
                   (drillBswMode === "well"  && drillBswWellPoints  == null)) ? (
-                  <div style={{ padding: 40, display: "flex", justifyContent: "center" }}>
-                    <BarrelLoading bare />
-                  </div>
+                  <DrillTabSkeleton campo={drillCampo ?? ""} metric="bsw" />
                 ) : (drillBswMode === "field" ? drillBswFieldPoints : drillBswWellPoints)?.length ? (
                   <MobileChart
                     data={drillBswMode === "field" ? drillBswFieldChart.data : drillBswWellChart.data}
@@ -1296,9 +1349,7 @@ export default function MobileView(): React.ReactElement | null {
                 {drillDepletionLoading &&
                  ((drillDepletionMode === "field" && drillDepletionFieldPoints == null) ||
                   (drillDepletionMode === "well"  && drillDepletionWellPoints  == null)) ? (
-                  <div style={{ padding: 40, display: "flex", justifyContent: "center" }}>
-                    <BarrelLoading bare />
-                  </div>
+                  <DrillTabSkeleton campo={drillCampo ?? ""} metric="depletion" />
                 ) : (drillDepletionMode === "field" ? drillDepletionFieldPoints : drillDepletionWellPoints)?.length ? (
                   <MobileChart
                     data={drillDepletionMode === "field" ? drillDepletionFieldChart.data : drillDepletionWellChart.data}
