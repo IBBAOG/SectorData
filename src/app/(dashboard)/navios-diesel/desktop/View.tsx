@@ -423,15 +423,10 @@ export default function DesktopView(): React.ReactElement {
       return r.is_current ? `${base} (live)` : base;
     });
 
-    // Per-bar styling: closed (frozen) months are flat-filled; the current
-    // (live) month gets a contrasting outline so users can tell at a glance
-    // which bar will still move and which are historical truth.
-    const isLive = volumeMensal.map((r) => Boolean(r.is_current));
-    const dischargedLineColor = isLive.map((live) => (live ? ORANGE : "rgba(0,0,0,0)"));
-    const pendingLineColor    = isLive.map((live) => (live ? "#1a1a1a" : "rgba(0,0,0,0)"));
-    const indetLineColor      = isLive.map((live) => (live ? "#1a1a1a" : "rgba(0,0,0,0)"));
-    const liveLineWidth       = isLive.map((live) => (live ? 1.5 : 0));
-    const hoverSuffix         = volumeMensal.map((r) => (r.is_current ? " · live" : " · frozen"));
+    // Per-bar styling: all months are flat-filled. Live vs frozen distinction
+    // is communicated via the subtitle legend and the "(live)" tag on the
+    // x-axis label — outlines were rejected as visually noisy.
+    const hoverSuffix = volumeMensal.map((r) => (r.is_current ? " · live" : " · frozen"));
 
     const INDETERMINATE_COLOR = "#73C6A1";
     const maxTotal = Math.max(...volumeMensal.map(
@@ -454,7 +449,6 @@ export default function DesktopView(): React.ReactElement {
         marker: {
           color: "#000000",
           opacity: 0.85,
-          line: { color: dischargedLineColor, width: liveLineWidth },
         },
         customdata: hoverSuffix,
         hovertemplate: "%{x}<br>Discharged: %{y:,.0f} m³%{customdata}<extra></extra>",
@@ -474,7 +468,6 @@ export default function DesktopView(): React.ReactElement {
         marker: {
           color: ORANGE,
           opacity: 0.85,
-          line: { color: pendingLineColor, width: liveLineWidth },
         },
         customdata: hoverSuffix,
         hovertemplate: "%{x}<br>Pending: %{y:,.0f} m³%{customdata}<extra></extra>",
@@ -494,7 +487,6 @@ export default function DesktopView(): React.ReactElement {
         marker: {
           color: INDETERMINATE_COLOR,
           opacity: 0.85,
-          line: { color: indetLineColor, width: liveLineWidth },
         },
         customdata: hoverSuffix,
         hovertemplate: "%{x}<br>Indeterminate Status: %{y:,.0f} m³%{customdata}<extra></extra>",
