@@ -354,6 +354,8 @@ CREATE FUNCTION public.refresh_mv_production() RETURNS void
 
 **Recommended call site:** end of CDP ETL upload (`scripts/pipelines/anp/cdp/02_upload.py`) using the service-role key. Schema-side ownership stops at the function; the CTO must dispatch the ETL worker to wire the post-upload call. Until then, the operator runs `SELECT public.refresh_mv_production();` manually after each ETL run, or a `pg_cron` job is scheduled (every 4-6h matches CDP's incremental cadence).
 
+**Auto-refresh on `field_stakes` mutations (migration `20260601100000_field_stakes_auto_refresh.sql`):** STATEMENT-level `AFTER INSERT OR UPDATE OR DELETE` trigger on `field_stakes` fires `field_stakes_refresh_mv_trigger()` (SECURITY DEFINER + `SET search_path = public, pg_temp`), which calls `refresh_mv_production()`. STATEMENT-level (not row) so the atomic DELETE+INSERT inside `admin_upsert_field_stakes` collapses into a single refresh. Synchronous — admin stake edits are rare and the dashboard tolerates a few seconds of "saving..." latency; no pg_notify / async. Resolves stale-stake bug seen with Peregrino (Prio 40→80 stayed invisible until next CDP ETL ran). The migration also runs `SELECT public.refresh_mv_production();` once at deploy time to flush any pre-existing drift.
+
 **Security hardening:**
 
 - MVs **not** granted to `anon` / `authenticated`. Access path is RPC-only — the SECURITY DEFINER functions remain the sole entry point. This avoids the `materialized_view_in_api` advisor warning (PostgREST auto-exposes any granted view, creating a redundant attack surface beside the RPCs).

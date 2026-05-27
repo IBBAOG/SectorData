@@ -386,6 +386,7 @@ Visibility is enforced by `useModuleVisibilityGuard("well-by-well")` inside the 
 ## Known gaps
 
 - **Incomplete fields are silently filtered.** Campos in `field_stakes_lacunas` (PSA unitization, exploration, ceased — ~240 rows at Fase 2 start) do NOT contribute to the Company aggregate. The server filters them out via `HAVING SUM(stake_pct) = 100`. Eduardo backfills them via `/admin-panel` → "Field Stakes" CRUD; once complete, they appear automatically.
+- **Stale-MV bug resolved (2026-06-01).** Until `20260601100000_field_stakes_auto_refresh.sql`, admin edits to `field_stakes` did NOT trigger `refresh_mv_production()` — the dashboard kept showing the previous snapshot until the next CDP ETL run. Now a STATEMENT-level `AFTER` trigger on `field_stakes` calls the refresh function automatically (synchronous; few-seconds latency acceptable for the rare admin edit cadence).
 - **No per-well drill-down here.** Use `/anp-cdp` for that.
 - **No daily granularity.** Use `/anp-cdp-diaria` (sourced from ANP Power BI feed) for daily readings.
 - **Operator override is not modelled.** ANP's `operador` column is ignored — the company list comes 100% from `field_stakes`. This is deliberate: working interest > operatorship for production attribution.
