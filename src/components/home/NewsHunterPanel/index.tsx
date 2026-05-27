@@ -8,14 +8,25 @@
 // polling on found_at watermark) via useNewsHunter(). No additional fetches,
 // no additional RPCs.
 //
-// Renders top 6 articles sorted by published_at desc (the context already
-// sorts on every merge). Article rows link out to the external article URL;
-// the panel header + footer link to /news-hunter (full dashboard).
+// PARITY contract with /news-hunter dashboard:
+//   The /news-hunter page renders `filteredArticles` from useNewsHunterData,
+//   which (in its default landing state — no search, topic="All") reduces to
+//   the keyword-filtered article list. This panel applies the SAME keyword
+//   filter via the shared util `filterArticlesByKeywords` and takes the first
+//   6 items. The context already pre-sorts articles by `published_at desc`
+//   on every merge, so no extra sort is needed here — the top-6 shown here
+//   ARE the top-6 visible at the top of /news-hunter for the same user.
+//
+//   We deliberately do NOT mount useNewsHunterData() here because it calls
+//   useModuleVisibilityGuard("news-hunter"), which would redirect users who
+//   have news-hunter hidden — and the panel lives on /home itself, creating
+//   a self-redirect loop.
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { useNewsHunter } from "../../../context/NewsHunterContext";
+import { filterArticlesByKeywords } from "../../../app/(dashboard)/news-hunter/useNewsHunterData";
 
 import styles from "./NewsHunterPanel.module.css";
 
@@ -61,7 +72,7 @@ function ArrowRight({ size = 10 }: { size?: number }) {
 }
 
 export default function NewsHunterPanel(): React.ReactElement {
-  const { articles, loading, error } = useNewsHunter();
+  const { articles, keywordEntries, loading, error } = useNewsHunter();
 
   // Tick every 30s so "X m ago" labels stay current without coupling to the
   // news-hunter dashboard's ageTick state.
@@ -71,22 +82,17 @@ export default function NewsHunterPanel(): React.ReactElement {
     return () => clearInterval(id);
   }, []);
 
-  // Top-N most-recent. Context already sorts by published_at desc on merge,
-  // so we just slice. If published_at is missing on some rows, fall back
-  // to found_at-desc among the same prefix (defensive).
+  // Top-N most-recent — replicates the /news-hunter dashboard's default
+  // landing-state feed: same articles (context-sorted published_at desc),
+  // same keyword filter (via the shared filterArticlesByKeywords util),
+  // sliced to ITEM_COUNT. No additional sort, no extra fallback ordering —
+  // we trust the context's canonical order so the first 6 cards here are
+  // identical (and in the same order) to the first 6 cards rendered at the
+  // top of /news-hunter for the same viewer.
   const topArticles = useMemo(() => {
     if (!articles || articles.length === 0) return [];
-    // Sort defensively: published_at desc nulls last, then found_at desc.
-    const sorted = [...articles].sort((a, b) => {
-      const ap = a.published_at ? new Date(a.published_at).getTime() : 0;
-      const bp = b.published_at ? new Date(b.published_at).getTime() : 0;
-      if (bp !== ap) return bp - ap;
-      const af = a.found_at ? new Date(a.found_at).getTime() : 0;
-      const bf = b.found_at ? new Date(b.found_at).getTime() : 0;
-      return bf - af;
-    });
-    return sorted.slice(0, ITEM_COUNT);
-  }, [articles]);
+    return filterArticlesByKeywords(articles, keywordEntries).slice(0, ITEM_COUNT);
+  }, [articles, keywordEntries]);
 
   return (
     <div className={styles.root}>
