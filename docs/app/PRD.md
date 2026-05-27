@@ -359,7 +359,7 @@ return (
 | 1 (alta prioridade) | `market-share`, `navios-diesel` | Mais usuários ativos. Bugs silenciosos são caros aqui. (`/sales-volumes` foi retirado em 2026-05-26 — absorvido por `/market-share`.) |
 | 2 (média) | `diesel-gasoline-margins`, `price-bands`, `stocks` | Fluxo Market Watch — usuários executivos. |
 | 3 (baixa) | `news-hunter`, `home`/`profile`/`admin-panel` | Fluxos administrativos / passivos. |
-| 4 (Fase 3) | `anp-cdp`, `anp-prices`, `anp-glp`, `imports-exports` | Dashboards mais novos — já têm padrões consolidados; aplicar incrementalmente. `anp-prices` substitui o trio `anp-precos-produtores` + `anp-precos-distribuicao` + `anp-lpc` retirado em 2026-05-26 (UNION ALL server-side das 3 tabelas-fonte). `imports-exports` substitui o trio `anp-daie` + `anp-desembaracos` + `anp-painel-importacoes` retirado em 2026-05-25 e absorveu `/mdic-comex` no mesmo dia via Panel C. |
+| 4 (Fase 3) | `anp-cdp`, `anp-prices`, `anp-glp`, `imports-exports` | Dashboards mais novos — já têm padrões consolidados; aplicar incrementalmente. `anp-prices` substitui o trio `anp-precos-produtores` + `anp-precos-distribuicao` + `anp-lpc` retirado em 2026-05-26 (UNION ALL server-side das 3 tabelas-fonte). `imports-exports` substitui o trio `anp-daie` + `anp-desembaracos` + `anp-painel-importacoes` retirado em 2026-05-25 e absorveu `/mdic-comex` no mesmo dia — originalmente via Panel C, removido em 2026-05-28; MDIC agora alimenta Panel D + Import/Export Price Summary tables. |
 
 **Regras de migração:**
 
@@ -482,7 +482,7 @@ Clients **não** são bloqueados em nenhum RPC; MFA é apenas defesa adicional o
 
 ## Padrões consolidados na Fase 3 (referência para futuros dashboards)
 
-A Fase 3 entregou 9 dashboards (ANP CDP, PPI, Preços Produtores, GLP, MDIC Comex, ANP LPC, DAIE, Desembaraços, Painel Importações) e cristalizou os seguintes padrões. Use como checklist ao criar dashboard novo. (Nota: o trio DAIE / Desembaraços / Painel Importações foi consolidado em `/imports-exports` em 2026-05-25, e `/mdic-comex` foi absorvido pelo mesmo dashboard via Panel C "Import Price" no mesmo dia. O trio Preços Produtores / Preços Distribuição / LPC foi consolidado em `/anp-prices` em 2026-05-26 — os 7 sub-PRDs antigos foram movidos para `docs/app/_deprecated/`.)
+A Fase 3 entregou 9 dashboards (ANP CDP, PPI, Preços Produtores, GLP, MDIC Comex, ANP LPC, DAIE, Desembaraços, Painel Importações) e cristalizou os seguintes padrões. Use como checklist ao criar dashboard novo. (Nota: o trio DAIE / Desembaraços / Painel Importações foi consolidado em `/imports-exports` em 2026-05-25, e `/mdic-comex` foi absorvido pelo mesmo dashboard no mesmo dia — originalmente via Panel C "Import Price", removido em 2026-05-28; MDIC continua alimentando o dashboard via Panel D e as Import/Export Price Summary tables. O trio Preços Produtores / Preços Distribuição / LPC foi consolidado em `/anp-prices` em 2026-05-26 — os 7 sub-PRDs antigos foram movidos para `docs/app/_deprecated/`.)
 
 1. **Header** — `page-header-title` + `page-header-sub` + `<hr>` (`border-top: 2px solid #e0e0e0`) + period badge condicional.
 2. **Push de período para server-side** — passar ANO ou DATE pra RPC (`p_ano_inicio/p_ano_fim` ou `p_data_inicio/p_data_fim`); evita filtrar volumes grandes no cliente.

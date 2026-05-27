@@ -40,7 +40,7 @@ CEO (Eduardo)
      │   ├─ dash-anp-cdp-depletion       (/anp-cdp-depletion — Oil & Gas)
      │   ├─ dash-anp-glp                  (/anp-glp — Fuel Distribution)
      │   ├─ dash-anp-prices               (/anp-prices — Fuel Distribution; consolida /anp-precos-produtores + /anp-precos-distribuicao + /anp-lpc em 2026-05-26)
-     │   ├─ dash-imports-exports          (/imports-exports — Fuel Distribution; substitui /anp-daie + /anp-desembaracos + /anp-painel-importacoes; absorveu /mdic-comex via Panel C "Import Price" em 2026-05-25)
+     │   ├─ dash-imports-exports          (/imports-exports — Fuel Distribution; substitui /anp-daie + /anp-desembaracos + /anp-painel-importacoes; absorveu /mdic-comex em 2026-05-25 — originalmente via Panel C "Import Price", removido em 2026-05-28; MDIC agora alimenta Panel D + Import/Export Price Summary)
      │   ├─ dash-anp-cdp-diaria          (/anp-cdp-diaria — Oil & Gas)
      │   ├─ dash-subsidy-tracker          (/subsidy-tracker — Fuel Distribution, dados proprietários)
      │   ├─ dash-admin-analytics          (/admin-analytics — Admin-only, sem module_visibility)
@@ -498,7 +498,7 @@ Workflow controlado pelo **Subgerente APP** (não pelo Gerente Geral). Ver detal
 ## Estado atual (snapshot)
 
 - 4 departamentos + 3 papéis transversais.
-- 16 dashboards ativos (7 originais — `/sales-volumes` retirado em 2026-05-26 e absorvido por `/market-share` via toggle % Share ↔ thousand m³ — + 2 da Fase 3 remanescentes: `/anp-cdp`, `/anp-glp` + 7 novos: `/anp-prices` (consolida `/anp-precos-produtores` + `/anp-precos-distribuicao` + `/anp-lpc` retirados em 2026-05-26), `/imports-exports` (consolida `/anp-daie` + `/anp-desembaracos` + `/anp-painel-importacoes` retirados em 2026-05-25; absorveu `/mdic-comex` via Panel C "Import Price" no mesmo dia — `mdic_comex` table e workflow ETL permanecem ativos alimentando Panel C), `/anp-cdp-diaria`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/subsidy-tracker`, `/well-by-well` (Fase 2 de Field Stakes & Production — sumário executivo stake-weighted, renomeado de `/production` em 2026-05-28 Round 4) + `/admin-analytics` (Admin-only, sem `module_visibility`)).
+- 16 dashboards ativos (7 originais — `/sales-volumes` retirado em 2026-05-26 e absorvido por `/market-share` via toggle % Share ↔ thousand m³ — + 2 da Fase 3 remanescentes: `/anp-cdp`, `/anp-glp` + 7 novos: `/anp-prices` (consolida `/anp-precos-produtores` + `/anp-precos-distribuicao` + `/anp-lpc` retirados em 2026-05-26), `/imports-exports` (consolida `/anp-daie` + `/anp-desembaracos` + `/anp-painel-importacoes` retirados em 2026-05-25; absorveu `/mdic-comex` no mesmo dia — originalmente via Panel C "Import Price", removido em 2026-05-28; MDIC continua alimentando Panel D + as novas Import/Export Price Summary tables via as RPCs `get_imports_exports_imports_unit_price` / `get_imports_exports_exports_unit_price`; `mdic_comex` table e workflow ETL permanecem ativos), `/anp-cdp-diaria`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/subsidy-tracker`, `/well-by-well` (Fase 2 de Field Stakes & Production — sumário executivo stake-weighted, renomeado de `/production` em 2026-05-28 Round 4) + `/admin-analytics` (Admin-only, sem `module_visibility`)).
 - Documentação inicial criada em **2026-05-05**.
 
 ### Round 4 — Well by Well rename + canonical grouping + live admin field list (2026-05-28)
