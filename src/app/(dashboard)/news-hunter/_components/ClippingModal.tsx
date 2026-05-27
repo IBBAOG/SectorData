@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import BarrelLoading from "@/components/dashboard/BarrelLoading";
 import { buildHtml } from "@/lib/clipping/buildHtml";
+import { buildHtmlForClipboard } from "@/lib/clipping/buildHtmlForClipboard";
 import { buildEml } from "@/lib/clipping/buildEml";
 import { buildPlainText } from "@/lib/clipping/buildPlainText";
 import type { ScrapeResult, ClippingItem } from "@/lib/clipping/types";
@@ -86,10 +87,15 @@ export default function ClippingModal({
   // rather than raw HTML markup.
   const handleCopy = useCallback(async () => {
     const plainContent = buildPlainText(items, today);
+    // Use the clipboard-specific HTML (table + <div> + <font> stack) so that
+    // pasting into Outlook survives Word's HTML normaliser. The iframe preview
+    // above renders `buildHtml(items, today)` (the .eml-shaped HTML) so the
+    // user sees exactly what the downloaded .eml will look like.
+    const clipboardHtml = buildHtmlForClipboard(items, today);
     try {
       if (navigator.clipboard && typeof ClipboardItem !== "undefined") {
         const clipItem = new ClipboardItem({
-          "text/html": new Blob([htmlContent], { type: "text/html" }),
+          "text/html": new Blob([clipboardHtml], { type: "text/html" }),
           "text/plain": new Blob([plainContent], { type: "text/plain" }),
         });
         await navigator.clipboard.write([clipItem]);
@@ -112,7 +118,7 @@ export default function ClippingModal({
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
       toastTimerRef.current = setTimeout(() => setCopyToast(false), 2500);
     }
-  }, [htmlContent, items, today]);
+  }, [items, today]);
 
   const handleRegenerate = useCallback(async () => {
     await onRegenerate(manualBodies);
