@@ -303,7 +303,8 @@ Lista completa dos slugs atualmente registrados na tabela `module_visibility` (t
 | `anp-glp` | Estatísticas / Fuel Distribution | ANP GLP |
 | `imports-exports` | Estatísticas / Fuel Distribution | Imports & Exports |
 | `anp-lpc` | Estatísticas / Fuel Distribution | ANP LPC Preços |
-| `anp-cdp` | Estatísticas / Oil & Gas | Production |
+| `production` | Estatísticas / Oil & Gas | Production (Anon-hidden: `is_visible_for_public=false`) |
+| `anp-cdp` | Estatísticas / Oil & Gas | Production by Well |
 | `anp-cdp-diaria` | Estatísticas / Oil & Gas | Daily Production |
 | `anp-cdp-bsw` | Estatísticas / Oil & Gas | BSW by Well |
 | `anp-cdp-depletion` | Estatísticas / Oil & Gas | Depletion |
