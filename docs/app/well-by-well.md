@@ -111,7 +111,7 @@ The 4-chart layout (P1 Brazil + P2 Company side-by-side, P3 Top Fields + P4 Inst
 
 | # | Panel | Source RPC (Brasil view) | Source RPC (company view) | Notes |
 |---|---|---|---|---|
-| 1 | {View} — Oil Production (kbpd) | `get_production_brazil_aggregate` | `get_production_company_aggregate` | Stacked bars, x=month, y=oil kbpd, stack=ambiente. Brasil view uses greyscale; company view accents PreSal in brand orange. Full-width on desktop, full-width tab on mobile. |
+| 1 | {View} — Oil Production (kbpd) | `get_production_brazil_aggregate` | `get_production_company_aggregate` | Stacked bars, x=month, y=oil kbpd, stack=ambiente. Both views share the PDF palette (Pre-Salt dark navy, Post-Salt brand orange, Onshore mint green — see [Color palette](#color-palette)). Full-width on desktop, full-width tab on mobile. |
 | 2 | Top {View} Fields — {Reference month} (kbpd) | `get_production_brazil_top_fields` | `get_production_top_fields` | Horizontal bar, top 10, oil+water stacked. Click a bar to drill into the field's timeseries over the active period preset (the drill RPC also branches on view). |
 | 3 | Installations (FPSO/UEP) — {View} — {Reference month} | `get_production_brazil_installation` | `get_production_by_installation` | Scrollable table on desktop / tappable card list on mobile. Click a row to drill into the installation's timeseries over the active period preset. |
 | YoY drawer (mobile, company view only) | {Company} — YoY / MoM / YTD | — | `get_production_yoy_table` | Collapsible drawer below the active tab. Hidden in Brasil mode (no per-ambiente YoY rows from the Brazil-wide RPCs). |
@@ -281,6 +281,28 @@ The big offshore fields are split in ANP CDP into operational variants (Búzios 
 **Why server-side and not client-side?** Putting the canonical mapping in the database means BSW, depletion, and any future analytical RPC can reuse the same `canonical_field_name()` helper without duplicating the rules in JS. It also keeps the Top Fields ordering correct in pagination edge cases (top 10 by canonical, not top 10 variants).
 
 **Backwards compatibility:** the `field_canonical_names` table starts seeded only with the most commonly-confused fields. Anything not in the table passes through unchanged via the helper's default behaviour, so existing dashboards see no regression.
+
+## Color palette
+
+Chart colors across all `/well-by-well` panels are sourced from the monthly Itaú BBA "Well-by-Well" PDF report — Eduardo's reference document is the single source of truth for the dashboard's visual identity. The canonical tokens live in [`src/data/wellByWellColors.ts`](../../src/data/wellByWellColors.ts) (Round 15, 2026-05-27); the legacy hook exports (`AMBIENTE_COLOR`, `BRAND_ORANGE`, `TOP_FIELDS_OIL_COLOR`, `TOP_FIELDS_WATER_COLOR` in `useProductionData.ts`) are thin re-aliases that exist for back-compat with import sites.
+
+| Token | Hex | Applied to |
+|---|---|---|
+| `WBW_COLORS.ambiente.PreSal` | `#1f2937` (dark navy) | First (bottom) segment of Chart 1's stacked bars (Aggregate by ambiente) |
+| `WBW_COLORS.ambiente.PosSal` | `#ff5000` (brand orange) | Second segment of Chart 1's stacked bars |
+| `WBW_COLORS.ambiente.Terra` | `#9bd9a9` (mint green / Onshore) | Third (top) segment of Chart 1's stacked bars |
+| `WBW_COLORS.oil` | `#1f2937` (dark navy) | Chart 2 (Top Fields) oil bars + drill modal oil bars (single-color, non-stacked context) |
+| `WBW_COLORS.water` | `#ff5000` (brand orange) | Chart 2 (Top Fields) water bars + drill modal water bars (PDF p4 Petrobras Búzios sample) |
+| `WBW_COLORS.hoursRate` | `#ff5000` (brand orange) | Drill modal operating-hours line on dual-axis (PDF p11+ field detail charts) |
+| `WBW_COLORS.currentMonth` | `#ff5000` (brand orange) | Reserved for future current-vs-prior comparison bars (PDF p3) |
+| `WBW_COLORS.priorMonth` | `#1f2937` (dark navy) | Reserved for future current-vs-prior comparison bars (PDF p3) |
+
+Cross-reference samples in the PDF:
+- p2 "Brazil – Oil Production (kbpd)" stacked bar (navy / orange / green ascending)
+- p4 "Petrobras – Largest Oil Producing Fields" (dark navy oil + orange water)
+- p11+ field detail charts (dark navy bar + orange hours-rate line)
+
+The `HeaderTable` component (PDF page-2 replica) uses neutral table styling and is NOT ambiente-coded — its colors live in the component file and are unrelated to this palette. Other dashboards have their own palettes; these tokens are scoped to `/well-by-well` only.
 
 ## KPI cards (drill modal only)
 

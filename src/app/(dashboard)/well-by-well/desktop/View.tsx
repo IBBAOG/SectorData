@@ -132,18 +132,20 @@ function buildStackedOilBars(
     AMBIENTES.reduce((s, amb) => s + (ambienteY[amb]?.[i] ?? 0), 0),
   );
 
-  // Build one trace per ambiente. Company uses brand orange for PreSal accent;
-  // Brazil uses neutral greyscale. Display labels translate the raw DB value
-  // (`PreSal`/`PosSal`/`Terra`) to English (`Pre-Salt`/`Post-Salt`/`Onshore`)
-  // for legend + hover. Underlying data stays raw — only the user-visible
-  // string changes.
+  // Build one trace per ambiente. Round 15 (2026-05-27): palette swapped to
+  // the PDF report convention — PreSal dark navy, PosSal brand orange, Terra
+  // mint green — so the legacy "variant === company" PreSal-orange override
+  // is gone. Both Brasil and company views share the same PDF palette.
+  // Underlying RPC data stays raw (`PreSal`/`PosSal`/`Terra`); display labels
+  // translate to English (`Pre-Salt`/`Post-Salt`/`Onshore`) for legend +
+  // hover via `labelAmbiente`. `variant` is retained as a parameter for
+  // call-site signaling but no longer changes colors.
+  void variant; // intentionally unused now
   const traces: PlotData[] = AMBIENTES.map((amb) => {
-    const baseColor = variant === "company" && amb === "PreSal"
-      ? BRAND_ORANGE
-      : AMBIENTE_COLOR[amb] ?? "#aaaaaa";
+    const baseColor = AMBIENTE_COLOR[amb] ?? "#aaaaaa";
     const ys = ambienteY[amb];
-    // Light segments (Terra: #c5c5cb) need a dark label to remain readable;
-    // dark segments (PreSal/PosSal/brand orange) take a white label.
+    // Light segment (Terra: mint green) needs a dark label to remain readable;
+    // dark segments (PreSal navy / PosSal brand orange) take a white label.
     const labelColor = amb === "Terra" ? "#1a1a1a" : "#ffffff";
     const displayName = labelAmbiente(amb);
     return {
@@ -315,7 +317,10 @@ function buildTopFieldsChart(
         text: water.map((v) => (v >= MIN_SEGMENT_KBPD_LABEL ? fmtIntPtBr(v) : "")),
         textposition: "inside",
         insidetextanchor: "middle",
-        textfont: { color: "#1a1a1a", size: 11, family: "Arial" },
+        // Round 15: water bar swapped from light blue to brand orange per the
+        // PDF (p4 Petrobras Largest Oil Producing Fields). White label keeps
+        // contrast on the now-orange fill.
+        textfont: { color: "#ffffff", size: 11, family: "Arial" },
         cliponaxis: false,
         marker: { color: TOP_FIELDS_WATER_COLOR },
         hovertemplate: "Water: %{x:,.1f} kbpd<extra>%{y}</extra>",

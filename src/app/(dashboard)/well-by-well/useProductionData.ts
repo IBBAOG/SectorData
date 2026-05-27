@@ -75,6 +75,7 @@ import {
   isCompanyView,
   type WellByWellView,
 } from "../../../data/wellByWellEmpresas";
+import { WBW_COLORS } from "../../../data/wellByWellColors";
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
@@ -156,19 +157,29 @@ export function labelAmbiente(raw: string): string {
  *  without any extra wiring. */
 export const DEFAULT_LOOKBACK_MONTHS = 12;
 
-/** Colour palette for the ambiente stack — PreSal darkest → Terra lightest. */
+/**
+ * Colour palette for the ambiente stack — sourced from the Itaú BBA
+ * "Well-by-Well" PDF report (PDF p2 reference: dark navy PreSal → orange
+ * PosSal → mint green Onshore, ascending). These exports are now thin
+ * re-aliases of the canonical tokens in `src/data/wellByWellColors.ts` —
+ * keep them so existing import sites (Views) compile unchanged.
+ */
 export const AMBIENTE_COLOR: Record<string, string> = {
-  PreSal: "#1a1a1a",
-  PosSal: "#6b6b73",
-  Terra:  "#c5c5cb",
+  PreSal: WBW_COLORS.ambiente.PreSal,
+  PosSal: WBW_COLORS.ambiente.PosSal,
+  Terra:  WBW_COLORS.ambiente.Terra,
 };
 
-/** Brand orange for the Company-side accents. */
-export const BRAND_ORANGE = "#ff5000";
+/** Brand orange — kept for the operating-hours line + active-pill highlight. */
+export const BRAND_ORANGE = WBW_COLORS.hoursRate;
 
-/** Top fields stack: oil dark, water light blue (mirrors the PDF). */
-export const TOP_FIELDS_OIL_COLOR   = "#1a1a1a";
-export const TOP_FIELDS_WATER_COLOR = "#7BB6DD";
+/**
+ * Top fields chart: oil dark navy + water brand orange (PDF p4 — Petrobras
+ * "Largest Oil Producing Fields" sample). Round 15 (2026-05-27) swapped the
+ * legacy light-blue water bar for the PDF's orange.
+ */
+export const TOP_FIELDS_OIL_COLOR   = WBW_COLORS.oil;
+export const TOP_FIELDS_WATER_COLOR = WBW_COLORS.water;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
