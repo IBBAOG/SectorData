@@ -47,6 +47,49 @@ Tokens, componentes e padrões. Fonte da verdade derivada do código real (`src/
 | Erro inline | `#c0392b` | `.profile-edit-error`, `.profile-name-edit-error` |
 | Tick salvo | `#22aa55` | `.settings-saved-tick` |
 
+### Paleta narrativa multi-série (Plotly)
+
+Paleta canônica para gráficos com múltiplas séries (stacked area, multi-line, bar charts, dots em tabelas). Fonte da verdade: `PALETTE` em [`src/lib/plotlyDefaults.ts`](../../src/lib/plotlyDefaults.ts).
+
+**Princípio**: o tom geral é "executive presentation" — preto e laranja conduzem a narrativa, demais cores são dessaturadas e harmônicas, evitando o visual "Material Design" saturado que dominava antes.
+
+#### Posições 1-6 — paleta narrativa principal
+
+Espelha a referência de apresentação executiva. Use estas 6 cores quando o dashboard tem ≤6 séries — elas são o "core" da identidade visual de gráficos.
+
+| Pos | Token | Hex | Papel típico na narrativa |
+|---|---|---|---|
+| 1 | Preto | `#1a1a1a` | Série dominante / linha de referência / ator principal |
+| 2 | Laranja primário | `#ff5000` | Acento de marca — destaque ou ator brasileiro (Petrobras, Brasil) |
+| 3 | Verde menta | `#a8d5a3` | Série secundária calma |
+| 4 | Bege / Creme | `#d9c79a` | Série terciária neutra |
+| 5 | Roxo | `#7d4ea3` | Diferenciação clara (3º ou 4º ator) |
+| 6 | Amarelo | `#f5d05e` | Diferenciação clara (alto contraste com 3 e 4) |
+
+#### Posições 7-16 — extensões coordenadas
+
+Dessaturadas, harmônicas entre si. Use quando precisar >6 séries (ex: top-10 países importadores, top-N empresas). Evitam saturação visual e drift cromático.
+
+| Pos | Token | Hex |
+|---|---|---|
+| 7 | Steel Blue | `#5b7fa0` |
+| 8 | Rust / Brick | `#b85c3a` |
+| 9 | Sage Green | `#6e8f6c` |
+| 10 | Camel / Tan | `#b89968` |
+| 11 | Plum | `#5d3a6e` |
+| 12 | Mustard | `#c9a644` |
+| 13 | Slate | `#3d4a5c` |
+| 14 | Olive | `#8a8c4a` |
+| 15 | Burnt Sienna | `#a85c3a` |
+| 16 | Dusty Mauve | `#9a7a8a` |
+
+#### Regras
+
+1. **Sempre importe de `PALETTE`** — nunca hard-code hex de gráfico em componente.
+2. **Não reordene** — a ordem é semântica (pos 1 = preto = série principal).
+3. **`BRAND_ORANGE` (`#ff5000`) permanece a cor primária da identidade** (botões, links, accents UI). Em gráficos ele é a posição 2 da paleta; em UI continua sendo o único laranja autorizado.
+4. **Não invente cor nova** para gráfico — se precisar de mais de 16 séries, agrupe em "Outros" ou passe pelo CTO.
+
 ### Stocks (tema isolado — flat trading terminal)
 
 > **Aviso**: tema propositalmente distinto. Não use fora do `/stocks`.
