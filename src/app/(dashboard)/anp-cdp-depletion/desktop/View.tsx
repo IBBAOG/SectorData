@@ -13,7 +13,6 @@
  */
 
 import { useMemo } from "react";
-import type { Layout, PlotData } from "plotly.js";
 
 import NavBar from "../../../../components/NavBar";
 import BrandLogo from "../../../../components/BrandLogo";
@@ -24,276 +23,24 @@ import ChartSection from "../../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
 import { useModuleVisibilityGuard } from "../../../../hooks/useModuleVisibilityGuard";
-import { COMMON_LAYOUT, AXIS_LINE, emptyPlot, PALETTE } from "../../../../lib/plotlyDefaults";
+import {
+  buildPerWellChart,
+  buildFieldAverageChart,
+} from "../../../../lib/charts/depletion";
 
 import {
   useAnpCdpDepletionData,
-  rollingDepletion,
   computeRowMetrics,
   fmtNp,
   fmtDelta,
-  plotlyMode,
-  ymSort,
   VIEW_OPTIONS,
   X_MODE_OPTIONS,
   LINE_STYLE_OPTIONS,
   MAX_FIELDS_IN_FIELD_MODE,
-  type AnpCdpDepletionPoint,
-  type AnpCdpDepletionFieldPoint,
   type LineStyle,
   type XMode,
   type ViewMode,
 } from "../useAnpCdpDepletionData";
-
-// ── Chart builders ────────────────────────────────────────────────────────────
-
-function buildPerWellChart(
-  points: AnpCdpDepletionPoint[],
-  selectedCampos: string[],
-  lineStyle: LineStyle,
-  xMode: XMode,
-  recentMonths: number,
-  priorMonths: number,
-): { data: PlotData[]; layout: Partial<Layout> } {
-  if (!selectedCampos.length) {
-    return emptyPlot(460, "Select a field to plot rolling depletion.");
-  }
-  if (!points.length) {
-    return emptyPlot(460, "No data for the selected field.");
-  }
-
-  const seen: string[] = [];
-  for (const p of points) {
-    if (!seen.includes(p.poco)) seen.push(p.poco);
-  }
-  const mode = plotlyMode(lineStyle);
-  const traces: PlotData[] = seen.map((poco, i) => {
-    const fullSeries = points
-      .filter((p) => p.poco === poco)
-      .sort((a, b) => ymSort(a.ano, a.mes) - ymSort(b.ano, b.mes));
-    const depletionByYm = new Map<number, number>();
-    for (const d of rollingDepletion(
-      fullSeries.map((p) => ({ ano: p.ano, mes: p.mes, np: p.np_kbpd })),
-      recentMonths,
-      priorMonths,
-    )) {
-      depletionByYm.set(ymSort(d.ano, d.mes), d.depletion);
-    }
-
-    const renderedPoints = fullSeries
-      .map((p) => {
-        const dep = depletionByYm.get(ymSort(p.ano, p.mes));
-        if (dep === undefined) return null;
-        if (xMode === "voip" && (p.pct_voip_poco === null || !Number.isFinite(p.pct_voip_poco))) {
-          return null;
-        }
-        return { p, dep };
-      })
-      .filter((x): x is { p: AnpCdpDepletionPoint; dep: number } => x !== null);
-
-    const subset =
-      xMode === "voip"
-        ? renderedPoints.slice().sort(
-            (a, b) => (a.p.pct_voip_poco ?? 0) - (b.p.pct_voip_poco ?? 0),
-          )
-        : renderedPoints;
-
-    const color = PALETTE[i % PALETTE.length];
-    return {
-      type: "scattergl",
-      mode,
-      name: poco,
-      x:
-        xMode === "voip"
-          ? subset.map(({ p }) => p.pct_voip_poco ?? 0)
-          : subset.map(({ p }) => `${p.ano}-${String(p.mes).padStart(2, "0")}-01`),
-      y: subset.map(({ dep }) => dep),
-      customdata: subset.map(
-        ({ p }) =>
-          [p.poco, p.ano, p.mes, p.pct_voip_poco ?? 0] as [
-            string,
-            number,
-            number,
-            number,
-          ],
-      ),
-      marker: { size: 4, opacity: 0.7, color },
-      line: { color, width: 1 },
-      hovertemplate:
-        xMode === "voip"
-          ? "<b>%{customdata[0]}</b><br>" +
-            "Reference month: %{customdata[1]}-%{customdata[2]:02d}<br>" +
-            "VOIP recovered: %{customdata[3]:.1%}<br>" +
-            "Depletion: %{y:.2%}" +
-            "<extra></extra>"
-          : "<b>%{customdata[0]}</b><br>" +
-            "Reference month: %{customdata[1]}-%{customdata[2]:02d}<br>" +
-            "Depletion: %{y:.2%}" +
-            "<extra></extra>",
-    } as unknown as PlotData;
-  });
-
-  const xaxis: Partial<Layout["xaxis"]> =
-    xMode === "voip"
-      ? {
-          ...AXIS_LINE,
-          type: "linear",
-          title: { text: "% of VOIP recovered" },
-          tickformat: ",.1%",
-          rangemode: "tozero",
-        }
-      : {
-          ...AXIS_LINE,
-          type: "date",
-          title: { text: "Date" },
-        };
-
-  return {
-    data: traces,
-    layout: {
-      ...COMMON_LAYOUT,
-      height: 460,
-      margin: { t: 30, b: 60, l: 80, r: 30 },
-      xaxis,
-      yaxis: {
-        ...AXIS_LINE,
-        title: { text: `Depletion (rolling, ${recentMonths}m vs prior ${priorMonths}m)` },
-        tickformat: ",.1%",
-        zeroline: true,
-      },
-      legend: {
-        orientation: "v",
-        x: 1.02,
-        xanchor: "left",
-        y: 1,
-        yanchor: "top",
-        itemsizing: "constant",
-      },
-      hovermode: "closest",
-    },
-  };
-}
-
-function buildFieldAverageChart(
-  points: AnpCdpDepletionFieldPoint[],
-  selectedCampos: string[],
-  lineStyle: LineStyle,
-  xMode: XMode,
-  recentMonths: number,
-  priorMonths: number,
-): { data: PlotData[]; layout: Partial<Layout> } {
-  if (!selectedCampos.length) {
-    return emptyPlot(460, "Select one or more fields to plot rolling depletion.");
-  }
-  if (!points.length) {
-    return emptyPlot(460, "No data for the selected fields.");
-  }
-
-  const mode = plotlyMode(lineStyle);
-  const traces: PlotData[] = selectedCampos.map((campo, i) => {
-    const fullSeries = points
-      .filter((p) => p.campo === campo)
-      .sort((a, b) => ymSort(a.ano, a.mes) - ymSort(b.ano, b.mes));
-    const color = PALETTE[i % PALETTE.length];
-    if (typeof window !== "undefined" && points.length > 0 && fullSeries.length === 0) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[anp-cdp-depletion] field "${campo}" is selected but has no points in the RPC result; rendering empty trace.`,
-      );
-    }
-    const depletionByYm = new Map<number, number>();
-    for (const d of rollingDepletion(
-      fullSeries.map((p) => ({ ano: p.ano, mes: p.mes, np: p.np_kbpd })),
-      recentMonths,
-      priorMonths,
-    )) {
-      depletionByYm.set(ymSort(d.ano, d.mes), d.depletion);
-    }
-
-    const renderedPoints = fullSeries
-      .map((p) => {
-        const dep = depletionByYm.get(ymSort(p.ano, p.mes));
-        if (dep === undefined) return null;
-        return { p, dep };
-      })
-      .filter((x): x is { p: AnpCdpDepletionFieldPoint; dep: number } => x !== null);
-
-    const subset =
-      xMode === "voip"
-        ? renderedPoints.slice().sort((a, b) => a.p.pct_voip - b.p.pct_voip)
-        : renderedPoints;
-
-    return {
-      type: "scatter",
-      mode,
-      name: campo,
-      x:
-        xMode === "voip"
-          ? subset.map(({ p }) => p.pct_voip)
-          : subset.map(({ p }) => `${p.ano}-${String(p.mes).padStart(2, "0")}-01`),
-      y: subset.map(({ dep }) => dep),
-      customdata: subset.map(
-        ({ p }) =>
-          [p.ano, p.mes, p.n_pocos, p.pct_voip, p.cumulative_oil_bbl] as [
-            number,
-            number,
-            number,
-            number,
-            number,
-          ],
-      ),
-      line: { color, width: 2 },
-      marker: { size: 6, color },
-      hovertemplate:
-        "<b>" + campo + "</b><br>" +
-        "Reference month: %{customdata[0]}-%{customdata[1]:02d}<br>" +
-        "Depletion: %{y:.2%}<br>" +
-        "Wells active: %{customdata[2]}<br>" +
-        "VOIP recovered: %{customdata[3]:.1%}<br>" +
-        "Cumulative oil: %{customdata[4]:,.0f} bbl" +
-        "<extra></extra>",
-    } as unknown as PlotData;
-  });
-
-  const xaxis: Partial<Layout["xaxis"]> =
-    xMode === "voip"
-      ? {
-          ...AXIS_LINE,
-          type: "linear",
-          title: { text: "% of VOIP recovered" },
-          tickformat: ",.1%",
-          rangemode: "tozero",
-        }
-      : {
-          ...AXIS_LINE,
-          type: "date",
-          title: { text: "Date" },
-        };
-
-  return {
-    data: traces,
-    layout: {
-      ...COMMON_LAYOUT,
-      height: 460,
-      margin: { t: 30, b: 60, l: 80, r: 30 },
-      xaxis,
-      yaxis: {
-        ...AXIS_LINE,
-        title: { text: `Depletion (rolling, ${recentMonths}m vs prior ${priorMonths}m)` },
-        tickformat: ",.1%",
-        zeroline: true,
-      },
-      legend: {
-        orientation: "v",
-        x: 1.02,
-        xanchor: "left",
-        y: 1,
-        yanchor: "top",
-      },
-      hovermode: "closest",
-    },
-  };
-}
 
 // ── Desktop View ──────────────────────────────────────────────────────────────
 
