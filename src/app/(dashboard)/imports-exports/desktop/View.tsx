@@ -226,6 +226,7 @@ function buildStackedTraces(
   rows: StackedRow[],
   unit: string,
   orderOverride?: string[],
+  colorMap?: Record<string, string>,
 ): PlotData[] {
   if (!rows.length) return [];
 
@@ -257,7 +258,10 @@ function buildStackedTraces(
   }
 
   return entities.map((entity) => {
-    const color = colourForEntity(entities, entity);
+    // `colorMap` (Panel B importer rank palette) wins over `colourForEntity`
+    // when a mapping is provided — Panel A pinned palette path falls through
+    // because `ORIGIN_COLOR_BY_LABEL` still drives `colourForEntity`.
+    const color = colorMap?.[entity] ?? colourForEntity(entities, entity);
     // Sub-threshold values → null so Plotly's unified hover omits them. In a
     // stackgroup, null is "no contribution" — the other traces stack correctly.
     const ys = xs.map((x) => {
@@ -292,6 +296,7 @@ function buildHorizontalBarTraces(
   rows: StackedRow[],
   unit: string,
   orderOverride?: string[],
+  colorMap?: Record<string, string>,
 ): PlotData[] {
   if (!rows.length) return [];
   // Aggregate by entity (rows should already be single-month, but defensively
@@ -324,7 +329,10 @@ function buildHorizontalBarTraces(
   const allEntities = entries.map(([n]) => n);
   const ys = reversed.map(([n]) => n);
   const xs = reversed.map(([, v]) => v);
-  const colors = reversed.map(([n]) => colourForEntity(allEntities, n));
+  // `colorMap` (Panel B importer rank palette) wins over `colourForEntity`.
+  const colors = reversed.map(([n]) =>
+    colorMap?.[n] ?? colourForEntity(allEntities, n),
+  );
   return [{
     type: "bar" as const,
     orientation: "h" as const,
@@ -462,6 +470,7 @@ function YoYTable({
   anchorMes,
   orderOverride,
   prevMonthByEntity,
+  colorMap,
 }: {
   rows: YoyTableRow[];
   loading: boolean;
@@ -482,6 +491,11 @@ function YoYTable({
    *  client-side from the stacked-area chart data. null means the entity
    *  had no data in the prior month (e.g. first month of the series). */
   prevMonthByEntity: Map<string, number | null>;
+  /** Optional color map (entity → hex). When provided, dot colors come from
+   *  this map; falls back to `colourForEntity` lookup (Panel A pinned palette
+   *  / Exports PALETTE rotation). Used by Panel B to inject the rank-bound
+   *  importer palette. */
+  colorMap?: Record<string, string>;
 }) {
   if (loading) {
     return (
@@ -627,7 +641,8 @@ function YoYTable({
               const yoy = fmtDelta(row.yoy_pct);
               const prevMonthValue = prevMonthByEntity.get(row.entity) ?? null;
               const mom = fmtDelta(computeMoMPct(row.last_12m, prevMonthValue));
-              const dotColor = colourForEntity(tableEntities, row.entity);
+              const dotColor =
+                colorMap?.[row.entity] ?? colourForEntity(tableEntities, row.entity);
               return (
                 <tr key={row.entity}>
                   <td
@@ -1074,10 +1089,14 @@ export default function DesktopView(): React.ReactElement {
     paisesLoading,
     importersData,
     importersLoading,
+    importersTop6Data,
+    importersTop6Entities,
+    importersTop6ColorMap,
     yoyPaisesData,
     yoyPaisesLoading,
     yoyImportersData,
     yoyImportersLoading,
+    yoyImportersTop6Data,
     exportsPaisesData,
     exportsPaisesLoading,
     yoyExportsData,
@@ -1185,18 +1204,21 @@ export default function DesktopView(): React.ReactElement {
       : buildStackedTraces(rows, "kt", ORIGIN_ORDER);
   }, [paisesData, isSingleMonth]);
 
-  // Panel B — mil m³ (already from RPC)
+  // Panel B — mil m³ (already from RPC). Reduced to top-6 + Others to match
+  // Panel A's "6 named + Others" contract; color palette mirrors Panel A's
+  // rank order (black/orange/mint/amber/purple/lime + grey for Others) so
+  // the two panels look like siblings of the same family.
   const importersTraces = useMemo(() => {
-    const rows = importersData.map((r) => ({
+    const rows = importersTop6Data.map((r) => ({
       ano: r.ano,
       mes: r.mes,
       name: r.unified_importer,
       value: r.total_mil_m3,
     }));
     return isSingleMonth
-      ? buildHorizontalBarTraces(rows, "mil m³")
-      : buildStackedTraces(rows, "mil m³");
-  }, [importersData, isSingleMonth]);
+      ? buildHorizontalBarTraces(rows, "mil m³", importersTop6Entities, importersTop6ColorMap)
+      : buildStackedTraces(rows, "mil m³", importersTop6Entities, importersTop6ColorMap);
+  }, [importersTop6Data, importersTop6Entities, importersTop6ColorMap, isSingleMonth]);
 
   // Exports — stacked area by destination country (value already in correct unit from RPC)
   const exportsUnit = filters.exportsYAxis === "volume" ? "mil m³" : "USD";
@@ -1386,22 +1408,35 @@ export default function DesktopView(): React.ReactElement {
     return out;
   }, [paisesData, prevMonthCursor]);
 
-  // Panel B (importers) — straight per-importer lookup at prev_month.
+  // Panel B (importers) — per-importer lookup at prev_month, aggregated into
+  // the same top-6 + Others buckets the YoY table uses. Top-6 keys come from
+  // `importersTop6Entities`; everything else collapses into "Others".
   const prevMonthByImporter: Map<string, number | null> = useMemo(() => {
     const target = `${prevMonthCursor.ano}|${prevMonthCursor.mes}`;
+    const topSet = new Set(importersTop6Entities.filter((e) => e !== OTHERS_LABEL));
     const acc = new Map<string, number>();
+    let othersAcc = 0;
+    let othersAccSeen = false;
     for (const r of importersData) {
       const key = `${r.ano}|${r.mes}`;
       if (key !== target) continue;
-      acc.set(r.unified_importer, (acc.get(r.unified_importer) ?? 0) + r.total_mil_m3);
+      if (topSet.has(r.unified_importer)) {
+        acc.set(r.unified_importer, (acc.get(r.unified_importer) ?? 0) + r.total_mil_m3);
+      } else {
+        othersAcc += r.total_mil_m3;
+        othersAccSeen = true;
+      }
     }
-    // Return a Map keyed by entity; missing entries fall through to null.
     const out = new Map<string, number | null>();
-    for (const r of yoyImportersData) {
-      out.set(r.entity, acc.has(r.entity) ? acc.get(r.entity)! : null);
+    for (const e of importersTop6Entities) {
+      if (e === OTHERS_LABEL) {
+        out.set(OTHERS_LABEL, othersAccSeen ? othersAcc : null);
+      } else {
+        out.set(e, acc.has(e) ? acc.get(e)! : null);
+      }
     }
     return out;
-  }, [importersData, yoyImportersData, prevMonthCursor]);
+  }, [importersData, importersTop6Entities, prevMonthCursor]);
 
   // Exports tab — straight per-destination lookup at prev_month.
   const prevMonthByExportsCountry: Map<string, number | null> = useMemo(() => {
@@ -1711,7 +1746,11 @@ export default function DesktopView(): React.ReactElement {
 
                   <div style={{ height: 24 }} />
 
-                  {/* Panel B */}
+                  {/* Panel B — top-6 importers + Others. Rank-bound palette
+                       mirrors Panel A in order (black/orange/mint/amber/
+                       purple/lime + grey). Other importers collapse into the
+                       Others bucket (sum, not weighted average, since the
+                       Y-axis is volume). */}
                   <ChartSection
                     title="By Importer (Brazil)"
                     loading={importersLoading}
@@ -1735,12 +1774,14 @@ export default function DesktopView(): React.ReactElement {
 
                   {importersData.length > 0 && (
                     <YoYTable
-                      rows={yoyImportersData}
+                      rows={yoyImportersTop6Data}
                       loading={yoyImportersLoading}
                       volumeLabel="mil m³"
                       title="By Importer"
                       anchorAno={filters.period.end.ano}
                       anchorMes={filters.period.end.mes}
+                      orderOverride={importersTop6Entities}
+                      colorMap={importersTop6ColorMap}
                       prevMonthByEntity={prevMonthByImporter}
                     />
                   )}

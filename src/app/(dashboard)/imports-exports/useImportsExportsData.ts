@@ -160,11 +160,28 @@ export interface UseImportsExportsData {
   importersData: ImportersStackedRow[];
   importersLoading: boolean;
 
+  // Panel B chart-only derivation. Exactly 7 series — top-6 importer groups by
+  // SUM(total_mil_m3) in the window + a synthetic "Others" series that sums
+  // the remaining importers per (ano, mes). Color palette mirrors the Panel A
+  // origin-country pin set in rank order (Russia color → top-1 importer, US
+  // color → top-2, etc.), with Others rendered in grey.
+  importersTop6Data: ImportersStackedRow[];
+  /** Ordered list of the top-6 importer group labels (rank desc) + "Others". */
+  importersTop6Entities: string[];
+  /** Color per importer entity. Rank-based — top-1 gets the Panel A rank-1
+   *  color (black), top-2 gets rank-2 (orange), and so on; Others is grey. */
+  importersTop6ColorMap: Record<string, string>;
+
   // YoY tables (one per panel)
   yoyPaisesData: YoyTableRow[];
   yoyPaisesLoading: boolean;
   yoyImportersData: YoyTableRow[];
   yoyImportersLoading: boolean;
+  /** Panel B YoY table aligned with the 7-series chart: top-6 importers by
+   *  total_mil_m3 in the window (anchor-month last_12m used as tiebreaker)
+   *  + an aggregated Others row whose last_12m / prev_12m sum the non-top-6
+   *  entries. Color map is identical to importersTop6ColorMap. */
+  yoyImportersTop6Data: YoyTableRow[];
 
   // Exports tab — stacked area by destination country + YoY table
   exportsPaisesData: IEExportsPaisesStackedRow[];
@@ -281,6 +298,23 @@ const ORIGIN_COLOR_BY_LABEL_DATA: Record<string, string> = ORIGIN_COUNTRY_PINS_D
 
 const OTHERS_COLOR_DATA = "#7F7F7F";
 const OTHERS_LABEL_DATA = "Others";
+
+// Panel B rank palette — mirrors the Panel A origin-country palette in rank
+// order. Top-1 importer (highest total_mil_m3 in window) gets the rank-1
+// color (black, Russia), top-2 gets rank-2 (brand orange, US), etc. After
+// rank-6 the rest collapse into "Others" (grey). The colors themselves are
+// rank-bound, NOT entity-bound — when the leaderboard changes period to
+// period, the colors follow the rank, not the importer name.
+const IMPORTER_RANK_COLORS: ReadonlyArray<string> = [
+  "#000000", // rank 1
+  "#FF5000", // rank 2
+  "#73C6A1", // rank 3
+  "#FFAE66", // rank 4
+  "#8258A0", // rank 5
+  "#D2FF00", // rank 6
+];
+
+const IMPORTER_TOP_N = 6;
 
 // ─── Helpers (exported for the views) ──────────────────────────────────────────
 
@@ -1015,6 +1049,110 @@ export function useImportsExportsData(): UseImportsExportsData {
   const importsUnitPriceChartEntities = importsUnitPriceChartDerivation.entities;
   const importsUnitPriceChartColorMap = importsUnitPriceChartDerivation.colorMap;
 
+  // ── Panel B (importers) chart + YoY derivation ─────────────────────────────
+  //
+  // Reduce the server-returned top-N importer list down to exactly top-6 +
+  // Others (sum of the remaining importers per month), in lockstep with
+  // Panel A's "6 named + Others" visual contract. Server returns top-10
+  // already; we client-side re-rank by SUM(total_mil_m3) in the selected
+  // window and collapse rank ≥7 into the "Others" bucket. Colors are bound
+  // to rank (not entity) so the leaderboard's #1 always gets the rank-1
+  // color regardless of which importer holds the position in a given period.
+  const importersTop6Derivation = useMemo(() => {
+    if (!importersData.length) {
+      return {
+        rows: [] as ImportersStackedRow[],
+        entities: [] as string[],
+        colorMap: {} as Record<string, string>,
+      };
+    }
+
+    // 1. Aggregate total_mil_m3 per importer over the selected window.
+    const totalByImporter = new Map<string, number>();
+    for (const r of importersData) {
+      totalByImporter.set(
+        r.unified_importer,
+        (totalByImporter.get(r.unified_importer) ?? 0) + r.total_mil_m3,
+      );
+    }
+    const ranked = Array.from(totalByImporter.entries()).sort(
+      ([, a], [, b]) => b - a,
+    );
+    const top = ranked.slice(0, IMPORTER_TOP_N).map(([name]) => name);
+    const restSet = new Set(ranked.slice(IMPORTER_TOP_N).map(([name]) => name));
+
+    // 2. Build the canonical entity order (rank desc + Others last). Skip
+    //    Others if no rest exists.
+    const entities: string[] = [...top];
+    if (restSet.size > 0) entities.push(OTHERS_LABEL_DATA);
+
+    // 3. Color map — rank-bound (top-1 → rank-1 color, ..., top-6 → rank-6
+    //    color, Others → grey).
+    const colorMap: Record<string, string> = {};
+    for (let i = 0; i < top.length; i += 1) {
+      colorMap[top[i]] = IMPORTER_RANK_COLORS[i] ?? OTHERS_COLOR_DATA;
+    }
+    if (restSet.size > 0) colorMap[OTHERS_LABEL_DATA] = OTHERS_COLOR_DATA;
+
+    // 4. Emit rows — keep top-6 verbatim, collapse rest into per-(ano,mes)
+    //    "Others" sums.
+    const out: ImportersStackedRow[] = [];
+    const othersByMonth = new Map<string, { ano: number; mes: number; total: number }>();
+    for (const r of importersData) {
+      if (restSet.has(r.unified_importer)) {
+        const key = `${r.ano}|${r.mes}`;
+        const bucket = othersByMonth.get(key) ?? { ano: r.ano, mes: r.mes, total: 0 };
+        bucket.total += r.total_mil_m3;
+        othersByMonth.set(key, bucket);
+      } else {
+        out.push(r);
+      }
+    }
+    for (const { ano, mes, total } of othersByMonth.values()) {
+      out.push({ ano, mes, unified_importer: OTHERS_LABEL_DATA, total_mil_m3: total });
+    }
+    return { rows: out, entities, colorMap };
+  }, [importersData]);
+
+  const importersTop6Data = importersTop6Derivation.rows;
+  const importersTop6Entities = importersTop6Derivation.entities;
+  const importersTop6ColorMap = importersTop6Derivation.colorMap;
+
+  // Panel B YoY table aligned with the chart's 7-series — top-6 importers by
+  // last_12m (anchor-month value) + an aggregated Others row whose last_12m
+  // and prev_12m sum the non-top-6 entries returned by the server. The chart
+  // ranks by window total volume; the YoY table ranks by anchor-month value
+  // since "Last 12m" is the canonical reading order ("who's #1 right now?").
+  // The two rankings will usually agree because the anchor month is the most
+  // recent in the window, but they may diverge for older anchors — that's a
+  // tolerated quirk (chart shows the period's biggest, table shows the anchor
+  // month's biggest).
+  const yoyImportersTop6Data: YoyTableRow[] = useMemo(() => {
+    if (!yoyImportersData.length) return [];
+    // Sort desc by anchor-month value to pick the top-6.
+    const sorted = [...yoyImportersData].sort((a, b) => b.last_12m - a.last_12m);
+    const top = sorted.slice(0, IMPORTER_TOP_N);
+    const rest = sorted.slice(IMPORTER_TOP_N);
+    if (rest.length === 0) return top;
+    let othersLast = 0;
+    let othersPrev = 0;
+    for (const r of rest) {
+      othersLast += r.last_12m;
+      othersPrev += r.prev_12m;
+    }
+    const othersYoy =
+      othersPrev === 0 ? null : ((othersLast - othersPrev) / othersPrev) * 100;
+    return [
+      ...top,
+      {
+        entity: OTHERS_LABEL_DATA,
+        last_12m: othersLast,
+        prev_12m: othersPrev,
+        yoy_pct: othersYoy,
+      },
+    ];
+  }, [yoyImportersData]);
+
   // Exports price summary — every top-N destination, USD/bbl fixed.
   const exportsPriceSummary: PriceSummaryRow[] = useMemo(() => {
     if (!exportsUnitPriceData.length) return [];
@@ -1120,10 +1258,14 @@ export function useImportsExportsData(): UseImportsExportsData {
     paisesLoading,
     importersData,
     importersLoading,
+    importersTop6Data,
+    importersTop6Entities,
+    importersTop6ColorMap,
     yoyPaisesData,
     yoyPaisesLoading,
     yoyImportersData,
     yoyImportersLoading,
+    yoyImportersTop6Data,
     exportsPaisesData,
     exportsPaisesLoading,
     yoyExportsData,

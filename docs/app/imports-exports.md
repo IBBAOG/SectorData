@@ -311,12 +311,43 @@ Implementation:
 - DB values stay in Portuguese (read-only contract with ETL pipelines). Excel/CSV exports preserve the raw Portuguese names; only the on-screen labels are translated to English.
 
 Out of scope (not pinned — keep current auto-coloring):
-- Panel B (Imports by Importer) — different entity type (Brazilian companies, not countries).
 - Exports tab — destination countries are a different universe (Argentina, Singapore, etc.); the 6-country list is meaningless there.
 
 If a new top supplier emerges (e.g. China starts shipping diesel directly), it will be absorbed into Others until a code change updates `ORIGIN_COUNTRY_PINS`. This is the intended trade-off — fixed legend stability over auto-discovery.
 
 Source: `desktop/View.tsx` § `ORIGIN_COUNTRY_PINS`; `mobile/View.tsx` mirrors the same constant. Both views also share helpers `bucketPaisesByPins` / `ensureAllPinsPresent`. The mobile YoY card list gains an optional `colorMap` prop that renders an 8px dot next to the country name, mirroring the desktop table's dot.
+
+---
+
+## Panel B — Imports by Importer (top-6 + Others, palette synced with Panel A)
+
+Added 2026-05-28 per CTO directive — Panel B now shares Panel A's structural and visual contract: exactly **top-6 importer groups + Others**, with the color palette mirroring Panel A's rank order.
+
+| Rank | Color | Hex | Source |
+|---|---|---|---|
+| 1 | Black | `#000000` | Panel A rank-1 (Russia) |
+| 2 | Brand orange | `#FF5000` | Panel A rank-2 (United States) |
+| 3 | Mint | `#73C6A1` | Panel A rank-3 (UAE) |
+| 4 | Amber | `#FFAE66` | Panel A rank-4 (Netherlands) |
+| 5 | Purple | `#8258A0` | Panel A rank-5 (India) |
+| 6 | Lime | `#D2FF00` | Panel A rank-6 (Saudi Arabia) |
+| Others | Grey | `#7F7F7F` | Identical to Panel A Others |
+
+**Important difference from Panel A**: this palette is **rank-bound, not entity-bound**. The top-1 importer in the selected period always gets black, the top-2 always gets orange, etc. — when the leaderboard reshuffles period-over-period, the colors follow the rank instead of the importer name. Panel A's palette is entity-bound (Russia is always black even if it drops to rank-3), because the country pin set is curated. Panel B has no equivalent curation (the importer leaderboard is dynamic by design), so rank-binding is the principled fallback.
+
+Aggregation:
+
+- Chart: ranked by `SUM(total_mil_m3)` over the full selected window. Top-6 importers kept as their own series; rank ≥7 collapsed into a single per-month "Others" series whose monthly value is the **sum** (not weighted average — Y axis is volume, not unit price) of the remaining importers.
+- YoY table: ranked by anchor-month `last_12m` value (canonical "who's #1 right now" reading order). Top-6 + an aggregated Others row whose `last_12m` / `prev_12m` sum the non-top-6 entries; `yoy_pct` recomputed on the aggregated totals.
+
+Chart and table will usually rank the same importers identically, but may diverge when the anchor month differs significantly from the window's overall pattern (e.g., an importer that dominated months 1-11 of the window but stepped back in month 12). This is a tolerated quirk — chart shows the period's biggest, table shows the anchor month's biggest. Both share the same rank-bound color palette so a row labeled "X" in the table and a series labeled "X" in the chart will always carry the same color in a given render.
+
+Implementation:
+
+- Hook `useImportsExportsData` exposes three new outputs: `importersTop6Data` (chart rows), `importersTop6Entities` (canonical order: top-1 → top-6 → Others), `importersTop6ColorMap`, plus `yoyImportersTop6Data` (7-row max).
+- Server RPC unchanged — `get_imports_exports_importers_stacked` still returns up to top-10 by server-side ranking; client just re-ranks and collapses to 6+Others.
+- Both `desktop/View.tsx` Panel B chart + YoY table and `mobile/View.tsx` Panel B chart + YoYCardList consume the new outputs. Excel/CSV exports still write the raw `importersData` (full leaderboard) so downstream consumers retain the underlying granularity.
+- The shared `colorMap` prop on `buildStackedTraces` / `buildHorizontalBarTraces` / `buildUnitPriceTraces` / `YoYTable` / `YoYCardList` is the single mechanism that injects this palette — same hook used by Panel D (top-2 + Others) for visual consistency across the importers tab.
 
 ---
 

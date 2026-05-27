@@ -178,6 +178,7 @@ function buildStackedTraces(
   rows: StackedRow[],
   unit: string,
   orderOverride?: string[],
+  colorMap?: Record<string, string>,
 ): PlotData[] {
   if (!rows.length) return [];
   // xs are ISO date strings "YYYY-MM-01" so Plotly's xaxis.type='date' parses
@@ -204,7 +205,8 @@ function buildStackedTraces(
     lookup.get(r.name)!.set(key, r.value);
   }
   return entities.map((entity) => {
-    const color = colourForEntity(entities, entity);
+    // `colorMap` (Panel B importer rank palette) wins over the colour helper.
+    const color = colorMap?.[entity] ?? colourForEntity(entities, entity);
     // Set y=null for points below threshold or absent so Plotly omits them
     // from the unified hover entirely (no swatch, no blank entry).
     // connectgaps:true + stackgaps:"infer zero" ensures the filled area has
@@ -240,6 +242,7 @@ function buildHorizontalBarTraces(
   rows: StackedRow[],
   unit: string,
   orderOverride?: string[],
+  colorMap?: Record<string, string>,
 ): PlotData[] {
   if (!rows.length) return [];
   // Null values (from `ensureAllPinsPresent`) are treated as 0 contribution.
@@ -264,7 +267,10 @@ function buildHorizontalBarTraces(
   const allEntities = entries.map(([n]) => n);
   const ys = reversed.map(([n]) => n);
   const xs = reversed.map(([, v]) => v);
-  const colors = reversed.map(([n]) => colourForEntity(allEntities, n));
+  // `colorMap` (Panel B importer rank palette) wins over the colour helper.
+  const colors = reversed.map(([n]) =>
+    colorMap?.[n] ?? colourForEntity(allEntities, n),
+  );
   return [{
     type: "bar" as const,
     orientation: "h" as const,
@@ -795,10 +801,14 @@ export default function MobileView(): React.ReactElement {
     paisesLoading,
     importersData,
     importersLoading,
+    importersTop6Data,
+    importersTop6Entities,
+    importersTop6ColorMap,
     yoyPaisesData,
     yoyPaisesLoading,
     yoyImportersData,
     yoyImportersLoading,
+    yoyImportersTop6Data,
     exportsPaisesData,
     exportsPaisesLoading,
     yoyExportsData,
@@ -906,17 +916,20 @@ export default function MobileView(): React.ReactElement {
     [rangeMonths, isSingleMonth, singleMonthLabel],
   );
 
+  // Panel B — top-6 importers + Others. Color palette mirrors Panel A rank
+  // order (black / orange / mint / amber / purple / lime + grey). Mirrors
+  // desktop/View.tsx — keep in sync.
   const importersTraces = useMemo(() => {
-    const rows = importersData.map((r) => ({
+    const rows = importersTop6Data.map((r) => ({
       ano: r.ano,
       mes: r.mes,
       name: r.unified_importer,
       value: r.total_mil_m3,
     }));
     return isSingleMonth
-      ? buildHorizontalBarTraces(rows, "mil m³")
-      : buildStackedTraces(rows, "mil m³");
-  }, [importersData, isSingleMonth]);
+      ? buildHorizontalBarTraces(rows, "mil m³", importersTop6Entities, importersTop6ColorMap)
+      : buildStackedTraces(rows, "mil m³", importersTop6Entities, importersTop6ColorMap);
+  }, [importersTop6Data, importersTop6Entities, importersTop6ColorMap, isSingleMonth]);
 
   const importersLayout: Partial<Layout> = useMemo(
     () =>
@@ -1122,20 +1135,33 @@ export default function MobileView(): React.ReactElement {
     return out;
   }, [paisesData, prevMonthCursor]);
 
-  // Panel B (importers) — per-importer lookup at prev_month.
+  // Panel B (importers) — per-importer lookup at prev_month, aggregated into
+  // top-6 + Others (mirrors desktop). Non-top-6 importers sum into "Others".
   const prevMonthByImporter: Map<string, number | null> = useMemo(() => {
     const target = `${prevMonthCursor.ano}|${prevMonthCursor.mes}`;
+    const topSet = new Set(importersTop6Entities.filter((e) => e !== OTHERS_LABEL));
     const acc = new Map<string, number>();
+    let othersAcc = 0;
+    let othersAccSeen = false;
     for (const r of importersData) {
       if (`${r.ano}|${r.mes}` !== target) continue;
-      acc.set(r.unified_importer, (acc.get(r.unified_importer) ?? 0) + r.total_mil_m3);
+      if (topSet.has(r.unified_importer)) {
+        acc.set(r.unified_importer, (acc.get(r.unified_importer) ?? 0) + r.total_mil_m3);
+      } else {
+        othersAcc += r.total_mil_m3;
+        othersAccSeen = true;
+      }
     }
     const out = new Map<string, number | null>();
-    for (const r of yoyImportersData) {
-      out.set(r.entity, acc.has(r.entity) ? acc.get(r.entity)! : null);
+    for (const e of importersTop6Entities) {
+      if (e === OTHERS_LABEL) {
+        out.set(OTHERS_LABEL, othersAccSeen ? othersAcc : null);
+      } else {
+        out.set(e, acc.has(e) ? acc.get(e)! : null);
+      }
     }
     return out;
-  }, [importersData, yoyImportersData, prevMonthCursor]);
+  }, [importersData, importersTop6Entities, prevMonthCursor]);
 
   // Exports tab — per-destination lookup at prev_month.
   const prevMonthByExportsCountry: Map<string, number | null> = useMemo(() => {
@@ -1494,17 +1520,19 @@ export default function MobileView(): React.ReactElement {
             ) : null}
           </div>
 
-          {importersData.length > 0 && yoyImportersData.length > 0 && (
+          {importersData.length > 0 && yoyImportersTop6Data.length > 0 && (
             <>
               <div style={{ padding: "4px 16px 4px", fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                 {formatMonth(filters.period.end.ano, filters.period.end.mes)} vs {formatMonth(filters.period.end.ano - 1, filters.period.end.mes)} — Importers
               </div>
               <YoYCardList
-                rows={yoyImportersData}
+                rows={yoyImportersTop6Data}
                 loading={yoyImportersLoading}
                 volumeLabel="mil m³"
                 anchorAno={filters.period.end.ano}
                 anchorMes={filters.period.end.mes}
+                orderOverride={importersTop6Entities}
+                colorMap={importersTop6ColorMap}
                 prevMonthByEntity={prevMonthByImporter}
               />
             </>
