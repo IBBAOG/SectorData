@@ -20,8 +20,17 @@
 //       Chart 2 + Chart 3: Top fields | Installations (side-by-side)
 //
 // Round 6 (2026-05-27): top KPI strip removed (broken Δ MoM/YoY against the
-// partial reference month). `KpiCard` is preserved because the field/
-// installation drill modals still use it.
+// partial reference month).
+//
+// Round 16 (2026-05-28): the field- and installation-drill modals lost their
+// 4-card KPI strip (Current oil / Δ MoM / Δ YoY / YTD avg) and gained a
+// 5-column summary table (Current month / Previous month / MoM % / Same
+// month prev. year / YoY %) rendered below the chart. The new YoY column is
+// always populated when the underlying datapoint exists: KPI data lives in
+// its own `drillKpiSeries` / `drillInstalacaoKpiSeries` cache anchored to
+// `latestMonth` over a fixed 14-month window, so picking "Last 12M" no longer
+// blanks out the same-month-prev-year point (the bug the CTO flagged on the
+// FRADE — PRIO screenshot).
 //
 // Round 8 (2026-05-27): added the PDF-style HeaderTable.
 //
@@ -86,6 +95,7 @@ import {
   type PeriodPreset,
   type DrillTab,
   type DrillSubMode,
+  type DrillKpiTableData,
 } from "../useProductionData";
 import type {
   ProductionBrazilRow,
@@ -372,102 +382,154 @@ function buildTopFieldsChart(
   };
 }
 
-// ─── KPI card ─────────────────────────────────────────────────────────────────
+// ─── Drill KPI table (Round 16, 2026-05-28) ──────────────────────────────────
+//
+// Replaces the four KPI cards (Current oil / Δ MoM / Δ YoY / YTD avg) that
+// used to live at the top of the Production tab. Surfaces the same data and a
+// new useful column: the same month one year ago. Crucially, the YoY column
+// is now always populated whenever the underlying data point exists — the KPI
+// fetch in `useProductionData` is anchored to `latestMonth` independently of
+// the dashboard's period filter, so picking "Last 12M" (which doesn't include
+// the same-month-prev-year point in the chart) no longer blanks the YoY cell.
+//
+// Visual language matches the rest of the modal — Arial, neutral palette,
+// brand-orange accent bar at the top of the modal already provides the visual
+// anchor; the table itself stays understated.
 
-function KpiCard({
-  label,
-  value,
-  unit,
-  accent,
-  delta,
+const KPI_DELTA_POS_COLOR     = "#197a39"; // green for positive MoM/YoY
+const KPI_DELTA_NEG_COLOR     = "#b3261e"; // red for negative MoM/YoY
+const KPI_DELTA_NEUTRAL_COLOR = "#888888"; // gray for zero/null
+
+/**
+ * 5-column KPI summary table. Columns: Current month | Previous month |
+ * MoM % | Same month prev. year | YoY %. Loading state dims to 0.6 opacity.
+ * Em-dashes when a cell is null. Unit is kbpd for the well-by-well drill
+ * variant (the only consumer right now); kept as a prop in case BSW/Depletion
+ * tabs ever surface their own KPI table.
+ */
+function DrillKpiTable({
+  data,
   loading = false,
-  hasData = true,
+  unit = "kbpd",
+  compact = false,
 }: {
-  label: string;
-  value: string;
-  unit: string;
-  accent?: boolean;
-  delta?: { pct: number | null; label: string };
-  /** Backing RPC is currently in-flight. Card dims subtly; value persists. */
+  data: DrillKpiTableData;
   loading?: boolean;
-  /** Whether any value has ever been received. When false + loading, show skeleton. */
-  hasData?: boolean;
+  unit?: string;
+  /** Mobile-tuned compact density (smaller padding + fonts). */
+  compact?: boolean;
 }): React.ReactElement {
-  const deltaSign = delta?.pct == null ? null : delta.pct >= 0 ? "up" : "down";
-  const deltaColor = deltaSign === "up" ? "#197a39" : deltaSign === "down" ? "#b3261e" : "#888";
-  const deltaArrow = deltaSign === "up" ? "▲" : deltaSign === "down" ? "▼" : "";
-  const showSkeleton = loading && !hasData;
+  const fmtValue = (v: number | null): string => (v == null ? "—" : fmtNumber(v, 1));
+  const fmtDelta = (p: number | null): string => (p == null ? "—" : fmtPct(p));
+  const deltaColor = (p: number | null): string => {
+    if (p == null) return KPI_DELTA_NEUTRAL_COLOR;
+    if (p > 0) return KPI_DELTA_POS_COLOR;
+    if (p < 0) return KPI_DELTA_NEG_COLOR;
+    return KPI_DELTA_NEUTRAL_COLOR;
+  };
+
+  const cellPaddingY = compact ? 8 : 12;
+  const cellPaddingX = compact ? 8 : 14;
+  const headerFontSize = compact ? 9.5 : 10.5;
+  const valueFontSize = compact ? 13 : 16;
+  const subLabelFontSize = compact ? 9 : 10;
+  const unitFontSize = compact ? 9 : 10;
+
   return (
     <div
       style={{
         border: "1px solid #e0e0e0",
         borderRadius: 8,
-        padding: "14px 18px",
+        overflow: "hidden",
         background: "#ffffff",
-        flex: "1 1 0",
-        minWidth: 0,
-        borderLeft: accent ? `4px solid ${BRAND_ORANGE}` : "4px solid transparent",
-        opacity: loading && hasData ? 0.75 : 1,
+        opacity: loading ? 0.6 : 1,
         transition: "opacity 0.18s ease",
-        position: "relative",
       }}
     >
-      <div
+      <table
         style={{
+          width: "100%",
+          borderCollapse: "collapse",
           fontFamily: "Arial",
-          fontSize: 11,
-          textTransform: "uppercase",
-          letterSpacing: "0.4px",
-          color: "#888",
-          fontWeight: 600,
-          marginBottom: 6,
+          tableLayout: "fixed",
         }}
       >
-        {label}
-      </div>
-      {showSkeleton ? (
-        <div
-          aria-busy="true"
-          aria-label="Loading"
-          className="wbw-kpi-skeleton"
-          style={{
-            height: 26,
-            width: "70%",
-            borderRadius: 4,
-          }}
-        />
-      ) : (
-        <div
-          style={{
-            fontFamily: "Arial",
-            fontSize: 24,
-            fontWeight: 700,
-            color: "#1a1a1a",
-            lineHeight: 1.1,
-          }}
-        >
-          {value}
-          <span style={{ fontSize: 12, fontWeight: 500, color: "#888", marginLeft: 6 }}>
-            {unit}
-          </span>
-        </div>
-      )}
-      {delta && delta.pct != null && !showSkeleton && (
-        <div
-          style={{
-            marginTop: 6,
-            fontFamily: "Arial",
-            fontSize: 11,
-            fontWeight: 600,
-            color: deltaColor,
-          }}
-        >
-          {deltaArrow} {fmtPct(delta.pct)} {delta.label}
-        </div>
-      )}
+        <thead>
+          <tr style={{ background: "#fafafa" }}>
+            <th style={{ ...kpiThStyle, padding: `${cellPaddingY}px ${cellPaddingX}px`, fontSize: headerFontSize }}>
+              Current month
+              <div style={{ fontWeight: 400, fontSize: subLabelFontSize, color: "#888", marginTop: 2, textTransform: "none", letterSpacing: 0 }}>
+                {data.currentMonthLabel ?? "—"}
+              </div>
+            </th>
+            <th style={{ ...kpiThStyle, padding: `${cellPaddingY}px ${cellPaddingX}px`, fontSize: headerFontSize }}>
+              Previous month
+              <div style={{ fontWeight: 400, fontSize: subLabelFontSize, color: "#888", marginTop: 2, textTransform: "none", letterSpacing: 0 }}>
+                {data.prevMonthLabel ?? "—"}
+              </div>
+            </th>
+            <th style={{ ...kpiThStyle, padding: `${cellPaddingY}px ${cellPaddingX}px`, fontSize: headerFontSize }}>
+              MoM %
+            </th>
+            <th style={{ ...kpiThStyle, padding: `${cellPaddingY}px ${cellPaddingX}px`, fontSize: headerFontSize }}>
+              Same month prev. year
+              <div style={{ fontWeight: 400, fontSize: subLabelFontSize, color: "#888", marginTop: 2, textTransform: "none", letterSpacing: 0 }}>
+                {data.prevYearMonthLabel ?? "—"}
+              </div>
+            </th>
+            <th style={{ ...kpiThStyle, padding: `${cellPaddingY}px ${cellPaddingX}px`, fontSize: headerFontSize }}>
+              YoY %
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style={{ ...kpiTdStyle, padding: `${cellPaddingY}px ${cellPaddingX}px`, fontSize: valueFontSize }}>
+              {fmtValue(data.currentMonth)}
+              <span style={{ fontSize: unitFontSize, color: "#888", marginLeft: 4, fontWeight: 500 }}>{unit}</span>
+            </td>
+            <td style={{ ...kpiTdStyle, padding: `${cellPaddingY}px ${cellPaddingX}px`, fontSize: valueFontSize }}>
+              {fmtValue(data.prevMonth)}
+              <span style={{ fontSize: unitFontSize, color: "#888", marginLeft: 4, fontWeight: 500 }}>
+                {data.prevMonth == null ? "" : unit}
+              </span>
+            </td>
+            <td style={{ ...kpiTdStyle, padding: `${cellPaddingY}px ${cellPaddingX}px`, fontSize: valueFontSize, color: deltaColor(data.momPct) }}>
+              {fmtDelta(data.momPct)}
+            </td>
+            <td style={{ ...kpiTdStyle, padding: `${cellPaddingY}px ${cellPaddingX}px`, fontSize: valueFontSize }}>
+              {fmtValue(data.prevYear)}
+              <span style={{ fontSize: unitFontSize, color: "#888", marginLeft: 4, fontWeight: 500 }}>
+                {data.prevYear == null ? "" : unit}
+              </span>
+            </td>
+            <td style={{ ...kpiTdStyle, padding: `${cellPaddingY}px ${cellPaddingX}px`, fontSize: valueFontSize, color: deltaColor(data.yoyPct) }}>
+              {fmtDelta(data.yoyPct)}
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }
+
+const kpiThStyle: React.CSSProperties = {
+  borderBottom: "1px solid #e0e0e0",
+  fontWeight: 700,
+  textAlign: "center",
+  color: "#1a1a1a",
+  textTransform: "uppercase",
+  letterSpacing: "0.4px",
+  verticalAlign: "top",
+};
+
+const kpiTdStyle: React.CSSProperties = {
+  borderBottom: "none",
+  textAlign: "center",
+  color: "#1a1a1a",
+  fontWeight: 700,
+  fontFamily: "Arial",
+};
 
 // ─── Period preset buttons (Round 13, 2026-05-27) ─────────────────────────────
 //
@@ -699,7 +761,7 @@ function FieldDrillModal({
   loading,
   error,
   series,
-  kpis,
+  kpiTable,
   onClose,
   // Tabs (Phase 2)
   drillTab,
@@ -724,13 +786,12 @@ function FieldDrillModal({
   loading: boolean;
   error: string | null;
   series: ProductionFieldTimeseriesRow[];
-  kpis: {
-    currentOil: number;
-    prevOil: number | null;
-    momPct: number | null;
-    yoyPct: number | null;
-    ytdAvg: number | null;
-  };
+  /**
+   * KPI table data sourced from a period-independent 14-month window (see
+   * `drillKpiSeries` in `useProductionData`). Renders below the chart in
+   * place of the legacy 4 KPI cards.
+   */
+  kpiTable: DrillKpiTableData;
   onClose: () => void;
   drillTab: DrillTab;
   setDrillTab: (t: DrillTab) => void;
@@ -952,36 +1013,6 @@ function FieldDrillModal({
 
           {drillTab === "production" && (
             <>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-                  gap: 10,
-                }}
-              >
-                <KpiCard
-                  label="Current oil"
-                  value={fmtNumber(kpis.currentOil, 1)}
-                  unit="kbpd"
-                  accent
-                />
-                <KpiCard
-                  label="Δ MoM"
-                  value={kpis.momPct == null ? "—" : fmtPct(kpis.momPct)}
-                  unit=""
-                />
-                <KpiCard
-                  label="Δ YoY"
-                  value={kpis.yoyPct == null ? "—" : fmtPct(kpis.yoyPct)}
-                  unit=""
-                />
-                <KpiCard
-                  label="YTD avg"
-                  value={kpis.ytdAvg == null ? "—" : fmtNumber(kpis.ytdAvg, 1)}
-                  unit="kbpd"
-                />
-              </div>
-
               <div style={{ position: "relative" }}>
                 <PlotlyChart
                   data={productionChart.data}
@@ -1006,9 +1037,20 @@ function FieldDrillModal({
                 )}
               </div>
 
+              {/* Round 16 (2026-05-28): the 4 KPI cards (Current oil / Δ MoM /
+                  Δ YoY / YTD avg) at the top of this tab were replaced by a
+                  5-column summary table below the chart. The YoY column is
+                  now sourced from a period-independent 14-month series
+                  anchored to `latestMonth`, so picking "Last 12M" no longer
+                  blanks out same-month-prev-year (which is what the screenshot
+                  bug report flagged on FRADE — PRIO). */}
+              <DrillKpiTable data={kpiTable} />
+
               <div style={{ fontSize: 11, color: "#888" }}>
                 Bars: oil (dark) + water (light blue) in kbpd ·
-                Line: monthly uptime fraction · Period reflects the dashboard filters.
+                Line: monthly uptime fraction · Period reflects the dashboard
+                filters. KPI table reads its own 14-month window so MoM / YoY
+                stay populated even when the chart&apos;s preset excludes them.
               </div>
             </>
           )}
@@ -1163,7 +1205,7 @@ function InstallationDrillModal({
   loading,
   error,
   series,
-  kpis,
+  kpiTable,
   onClose,
 }: {
   instalacao: string;
@@ -1171,13 +1213,12 @@ function InstallationDrillModal({
   loading: boolean;
   error: string | null;
   series: ProductionInstallationTimeseriesRow[];
-  kpis: {
-    currentOil: number;
-    prevOil: number | null;
-    momPct: number | null;
-    yoyPct: number | null;
-    ytdAvg: number | null;
-  };
+  /**
+   * KPI table data sourced from a period-independent 14-month window (see
+   * `drillInstalacaoKpiSeries` in `useProductionData`). Same shape and
+   * semantics as the field-drill variant.
+   */
+  kpiTable: DrillKpiTableData;
   onClose: () => void;
 }): React.ReactElement {
   const chart = useMemo(() => buildFieldDrillChart(series), [series]);
@@ -1287,36 +1328,6 @@ function InstallationDrillModal({
             </div>
           )}
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-              gap: 10,
-            }}
-          >
-            <KpiCard
-              label="Current oil"
-              value={fmtNumber(kpis.currentOil, 1)}
-              unit="kbpd"
-              accent
-            />
-            <KpiCard
-              label="Δ MoM"
-              value={kpis.momPct == null ? "—" : fmtPct(kpis.momPct)}
-              unit=""
-            />
-            <KpiCard
-              label="Δ YoY"
-              value={kpis.yoyPct == null ? "—" : fmtPct(kpis.yoyPct)}
-              unit=""
-            />
-            <KpiCard
-              label="YTD avg"
-              value={kpis.ytdAvg == null ? "—" : fmtNumber(kpis.ytdAvg, 1)}
-              unit="kbpd"
-            />
-          </div>
-
           <div style={{ position: "relative" }}>
             <PlotlyChart
               data={chart.data}
@@ -1341,10 +1352,18 @@ function InstallationDrillModal({
             )}
           </div>
 
+          {/* Round 16 (2026-05-28): 5-column KPI table replaces the legacy
+              4 KPI cards. Same period-independent semantics as the field
+              drill — MoM/YoY computed from the 14-month KPI series anchored
+              to latestMonth, not from the dashboard's period filter. */}
+          <DrillKpiTable data={kpiTable} />
+
           <div style={{ fontSize: 11, color: "#888" }}>
-            Bars: oil (dark) + water (light blue) routed through
-            this installation in kbpd · Line: monthly uptime fraction · Period
-            reflects the dashboard filters.
+            Bars: oil (dark) + water (light blue) routed through this
+            installation in kbpd · Line: monthly uptime fraction · Period
+            reflects the dashboard filters. KPI table reads its own 14-month
+            window so MoM / YoY stay populated independent of the chart&apos;s
+            preset.
           </div>
         </div>
 
@@ -1400,10 +1419,10 @@ export default function DesktopView(): React.ReactElement | null {
     brazilLoading, companyLoading, topFieldsLoading, installationsLoading,
     excelLoading, csvLoading,
     handleExportExcel, handleExportCsv,
-    drillCampo, drillTimeseries, drillLoading, drillError, drillKpis,
+    drillCampo, drillTimeseries, drillLoading, drillError, drillKpiTable,
     openFieldDrill, closeFieldDrill,
     drillInstalacao, drillInstalacaoTimeseries, drillInstalacaoLoading,
-    drillInstalacaoError, drillInstalacaoKpis,
+    drillInstalacaoError, drillInstalacaoKpiTable,
     openInstallationDrill, closeInstallationDrill,
     // Drill popup tabs (Phase 2)
     drillTab, setDrillTab,
@@ -1729,7 +1748,7 @@ export default function DesktopView(): React.ReactElement | null {
           loading={drillLoading}
           error={drillError}
           series={drillTimeseries}
-          kpis={drillKpis}
+          kpiTable={drillKpiTable}
           onClose={closeFieldDrill}
           drillTab={drillTab}
           setDrillTab={setDrillTab}
@@ -1757,7 +1776,7 @@ export default function DesktopView(): React.ReactElement | null {
           loading={drillInstalacaoLoading}
           error={drillInstalacaoError}
           series={drillInstalacaoTimeseries}
-          kpis={drillInstalacaoKpis}
+          kpiTable={drillInstalacaoKpiTable}
           onClose={closeInstallationDrill}
         />
       )}

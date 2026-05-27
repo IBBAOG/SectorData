@@ -11,6 +11,8 @@
 > **Period preset buttons (Round 13, 2026-05-27):** the rc-slider `PeriodSlider` was replaced by FIVE mutually-exclusive preset buttons (**Last 12M** *(default)* · **Last 24M** · **Last 36M** · **All** · **YTD**) in both the desktop sidebar's Period section and the mobile FilterDrawer's Period section. State still lives in `dateRange` (unchanged shape) — clicks call the existing `setDateRange` setter; active state is detected by comparing the current `dateRange` against each preset's computed range (helpers `computePresetRange` + `detectPeriodPreset` exported from `useProductionData.ts`). Default lookback dropped from 13 → 12 months so "Last 12M" highlights as active on first paint. Shared `PeriodSlider` component is untouched (still used by 9+ other dashboards).
 >
 > **Environment filter removed + English labels (Round 14, 2026-05-27):** the `MultiSelectFilter` for `ambientes` was dropped from the desktop sidebar and the mobile `FilterDrawer`. All three environments are always shown — `get_production_brazil_aggregate` and `get_production_company_aggregate` are invoked with `p_ambientes = NULL`. The hook's `ambientes` state, setter, toggle and exports were removed. Concurrently, ambiente display labels were translated to English (`PreSal → Pre-Salt`, `PosSal → Post-Salt`, `Terra → Onshore`) via a new `AMBIENTE_LABEL` map + `labelAmbiente(raw)` helper in `useProductionData.ts`, applied to the Chart 1 stacked-bar trace `name` and `hovertemplate` in both views (legend + hover). Underlying RPC payload values stay raw (`ambiente: 'PreSal'` etc.) so exported rows remain comparable to the `anp_cdp_producao.local` column. HeaderTable was already English (RPC-side translation in `get_well_by_well_header`) — untouched.
+>
+> **Drill KPI strip → KPI summary table (Round 16, 2026-05-28):** the field-drill and installation-drill modals/sheets dropped the legacy 4-card KPI strip (Current oil / Δ MoM / Δ YoY / YTD avg) at the top and gained a 5-column **KPI summary table** rendered BELOW the chart. Columns: **Current month** · **Previous month** · **MoM %** · **Same month prev. year** · **YoY %**. The new table is sourced from a **period-independent** 14-month series anchored to `latestMonth` (see `drillKpiSeries` + `drillInstalacaoKpiSeries` in the hook, fetched in dedicated effects that depend on `latestMonth` but NOT on `dateRange`). This fixes the "ΔYoY = —" bug screenshotted on FRADE — PRIO with "Last 12M" selected: the same month one year ago sat just outside the chart's window so the legacy YoY column was blank even though the underlying datapoint exists. Builder `buildKpiTable` is shared across both drills and hoisted to module scope. Desktop renders the table as a horizontal 5-column layout (`DrillKpiTable`); mobile renders a 5-row stacked layout (`MobileDrillKpiTable`) since phones don't fit 5 legible columns. Both color the MoM/YoY cells green for positive, red for negative, gray for null/zero.
 
 ## Purpose
 
@@ -239,19 +241,29 @@ The popup hosts **three mutually-exclusive tabs**: Production (default), BSW, De
 - **Brasil view:** `get_production_brazil_field_timeseries(p_campo, p_date_start, p_date_end)` — Brazil-wide (100% WI). Modal title reads "BÚZIOS — Brasil".
 - **Company view:** `get_production_field_timeseries(p_campo, p_empresa, p_date_start, p_date_end)` — stake-weighted for the active company. Modal title reads "BÚZIOS — Petrobras".
 
-The fetch uses the dashboard's current `dateRange` (no separate filter). Both RPC variants return identical row shapes (`ProductionFieldTimeseriesRow`) so the chart builder is shared.
+The CHART fetch uses the dashboard's current `dateRange` (no separate filter). Both RPC variants return identical row shapes (`ProductionFieldTimeseriesRow`) so the chart builder is shared.
 
-**KPIs (derived client-side from the timeseries, not from a separate RPC):**
-1. **Current oil** — last month in the series, kbpd
-2. **Δ MoM** — `(current - prev) / prev` (null if the series has 1 row or `prev == 0`)
-3. **Δ YoY** — `(current - same_month_last_year) / same_month_last_year` (null if the previous year's row isn't in the visible window or is zero)
-4. **YTD avg** — average of months in the same calendar year as the most-recent month (so for "Apr 2026" it averages Jan..Apr 2026)
+**Layout (Round 16, 2026-05-28):** the Production tab is structured as **chart on top, KPI summary table below**. The legacy 4-card KPI strip at the top of the tab is gone.
+
+**KPI summary table.** A second fetch — separate from the chart — runs against the same RPC family with a **fixed 14-month window anchored to `latestMonth`** (the most recent month in `anp_cdp_producao`). It's deliberately INDEPENDENT of the dashboard's `dateRange` so the table always has access to current month, previous month, and same month one year ago, regardless of what period preset the user picked. Cache state in the hook: `drillKpiSeries` (field) and `drillInstalacaoKpiSeries` (installation). The builder `buildKpiTable` is shared.
+
+| Column | Source | Format |
+|---|---|---|
+| **Current month** | last `(ano, mes)` point in `drillKpiSeries` | kbpd, 1 decimal; em-dash if series empty |
+| **Previous month** | immediately preceding `(ano, mes)` point | kbpd, 1 decimal; em-dash if absent |
+| **MoM %** | `(current - prev) / prev` | signed pct, 1 decimal; green positive, red negative, gray null |
+| **Same month prev. year** | `current.ano - 1, current.mes` lookup | kbpd, 1 decimal; em-dash if row missing |
+| **YoY %** | `(current - prev_year) / prev_year` | signed pct, 1 decimal; green positive, red negative, gray null |
+
+Each column header carries a sub-line with the corresponding month label (e.g. "Apr 2026", "Mar 2026", "Apr 2025"). The same-month-prev-year sub-line is always shown (it's derived from `last.ano - 1, last.mes`) even when the underlying row is missing — keeps the column header meaningful.
+
+**Bug that motivated Round 16.** With `Last 12M` selected, picking April 2026 gave a chart window of May 2025 → April 2026, which doesn't include April 2025 — the legacy ΔYoY card therefore displayed "—" even though April 2025 data is in the database. Round 16's separate 14-month KPI fetch fixes this; the YoY cell is now populated whenever the data point exists, independent of the chart's preset.
 
 **Chart:** vertical stacked bars (oil dark `#1a1a1a` + water light blue `#7BB6DD`) on the left y-axis in kbpd over the active period preset window, **plus** a hours-rate line (`BRAND_ORANGE`, `#ff5000`) on the right y-axis in `%` (0..105). Identical visual logic on both Views, layered via Plotly's `yaxis: "y2"` overlay.
 
-**Empty state:** fields whose stakes don't sum to 100 (i.e. listed in `field_stakes_lacunas`) return zero rows server-side. The modal/sheet still opens; KPIs show `—` and a centered "No data for this field in the current period." caption replaces the chart.
+**Empty state:** fields whose stakes don't sum to 100 (i.e. listed in `field_stakes_lacunas`) return zero rows server-side. The modal/sheet still opens; the KPI table renders all em-dashes and a centered "No data for this field in the current period." caption replaces the chart.
 
-**Error handling:** RPC failures bubble up as `drillError` (string) and render as a yellow warning banner inside the modal/sheet body. The drill stays open so the user can dismiss; closing clears the error. BSW and Depletion tabs surface their own `drillBswError` / `drillDepletionError` independently — switching tabs swaps the rendered banner.
+**Error handling:** RPC failures on the chart fetch bubble up as `drillError` (string) and render as a yellow warning banner inside the modal/sheet body. RPC failures on the KPI series fetch are non-fatal — the table simply shows em-dashes (so a single transient error doesn't blank the whole popup; the chart's error already surfaces the issue). The drill stays open so the user can dismiss; closing clears the error. BSW and Depletion tabs surface their own `drillBswError` / `drillDepletionError` independently — switching tabs swaps the rendered banner.
 
 ## FPSO/Installation drill-down (Round 3, 2026-05-27)
 
@@ -265,25 +277,21 @@ Mirrors the Field drill-down pattern at the installation (FPSO/UEP/land plant) l
 - **Brasil view:** `get_production_brazil_installation_timeseries(p_instalacao, p_date_start, p_date_end)` — Brazil-wide (100% WI). Modal title reads "FPSO P-79 — Brasil".
 - **Company view:** `get_production_installation_timeseries(p_instalacao, p_empresa, p_date_start, p_date_end)` — stake-weighted. Modal title reads "FPSO P-79 — Petrobras".
 
-**Row shape is identical to `get_production_field_timeseries`** — the TypeScript layer expresses this with `type ProductionInstallationTimeseriesRow = ProductionFieldTimeseriesRow`. The fetch uses the dashboard's current `dateRange` (no separate filter).
+**Row shape is identical to `get_production_field_timeseries`** — the TypeScript layer expresses this with `type ProductionInstallationTimeseriesRow = ProductionFieldTimeseriesRow`. The CHART fetch uses the dashboard's current `dateRange` (no separate filter).
 
 **Surfaces:**
 - **Desktop:** Bootstrap-styled modal (`InstallationDrillModal` inline in `desktop/View.tsx`) — same 820px wide chrome, brand-orange accent bar, Esc / scrim / × all close. The chart builder (`buildFieldDrillChart`) is reused since the row shape is identical.
-- **Mobile:** `BottomSheet` (`height="90vh"`) — same 2×2 KPI grid + `MobileChart` wrapper as the field drill.
+- **Mobile:** `BottomSheet` (`height="90vh"`) — same chart + KPI table as the field drill (Round 16 stacked layout).
 
-**KPIs (derived client-side from the timeseries, not from a separate RPC):**
-1. **Current oil** — last month in the series, kbpd
-2. **Δ MoM** — `(current - prev) / prev` (null if the series has 1 row or `prev == 0`)
-3. **Δ YoY** — `(current - same_month_last_year) / same_month_last_year` (null if the previous year's row isn't in the visible window or is zero)
-4. **YTD avg** — average of months in the same calendar year as the most-recent month
+**Layout (Round 16, 2026-05-28):** chart on top, **KPI summary table** below — same 5-column / 5-row pattern as the field drill (`Current month` / `Previous month` / `MoM %` / `Same month prev. year` / `YoY %`). KPI data is sourced from a separate, period-independent 14-month series anchored to `latestMonth` (`drillInstalacaoKpiSeries`); the chart series remains period-filtered. See the field-drill section above for full column semantics + the bug-fix rationale.
 
 **Chart:** identical to the field drill — vertical stacked bars (oil `#1a1a1a` + water `#7BB6DD`) on the left y-axis (kbpd) over the active period preset window, plus a hours-rate line (`BRAND_ORANGE`) on the right y-axis (%, 0..105).
 
-**Empty state:** installations whose constituent campos are all in `field_stakes_lacunas` return zero rows server-side. The modal/sheet still opens; KPIs show `—` and a centered "No data for this installation in the current period." caption replaces the chart.
+**Empty state:** installations whose constituent campos are all in `field_stakes_lacunas` return zero rows server-side. The modal/sheet still opens; the KPI table renders em-dashes and a centered "No data for this installation in the current period." caption replaces the chart.
 
-**Error handling:** RPC failures bubble up as `drillInstalacaoError` and render the same yellow warning banner.
+**Error handling:** RPC failures on the chart fetch bubble up as `drillInstalacaoError` and render the same yellow warning banner. KPI-series fetch errors are non-fatal — the table simply shows em-dashes.
 
-**Mutual exclusivity:** the field drill and installation drill are mutually exclusive at the hook level — opening one auto-closes the other (clearing its timeseries + error). Rationale: simpler UX with only one modal/BottomSheet on screen at a time; avoids stacked overlays on mobile in particular.
+**Mutual exclusivity:** the field drill and installation drill are mutually exclusive at the hook level — opening one auto-closes the other (clearing its timeseries + KPI series + error). Rationale: simpler UX with only one modal/BottomSheet on screen at a time; avoids stacked overlays on mobile in particular.
 
 ## Round 4 — canonical field grouping (2026-05-28)
 
@@ -333,9 +341,11 @@ Cross-reference samples in the PDF:
 
 The `HeaderTable` component (PDF page-2 replica) uses neutral table styling and is NOT ambiente-coded — its colors live in the component file and are unrelated to this palette. Other dashboards have their own palettes; these tokens are scoped to `/well-by-well` only.
 
-## KPI cards (drill modal only)
+## KPI cards (drill modal only) — superseded by Round 16 KPI table
 
-The top KPI strip on the page was removed in Round 6 (broken Δ MoM/YoY against the partial reference month). `KpiCard` is preserved because the field / installation drill modals still use it — those KPIs are derived from a full historical timeseries and are arithmetically sound (4 cards: Current oil · Δ MoM · Δ YoY · YTD avg).
+The top KPI strip on the dashboard page was removed in Round 6 (broken Δ MoM/YoY against the partial reference month).
+
+**Round 16 (2026-05-28) update:** the 4-card KPI strip inside the field- and installation-drill modals was likewise retired and replaced by a 5-column **KPI summary table** rendered BELOW the chart. The `KpiCard` (desktop) and `MobileKpi` (mobile) components are removed; the new shared component pair is `DrillKpiTable` (desktop) + `MobileDrillKpiTable` (mobile), both consuming the shared `DrillKpiTableData` shape exported from `useProductionData.ts`. See the Field drill-down → Production tab section for the full table column spec, fetch semantics, and the bug fix that motivated the change.
 
 ## Dual-view
 

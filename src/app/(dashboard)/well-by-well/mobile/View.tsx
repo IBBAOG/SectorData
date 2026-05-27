@@ -30,9 +30,15 @@
 // same view pill state machine, presented one panel at a time so it's
 // legible on a phone.
 //
-// Round 6 (2026-05-27): top KPI tiles removed from the tabs. `MobileKpi` is
-// preserved because the field and installation drill BottomSheets still use
-// it.
+// Round 6 (2026-05-27): top KPI tiles removed from the tabs.
+//
+// Round 16 (2026-05-28): drill BottomSheets dropped the 4 `MobileKpi` tiles
+// (Current oil / Δ MoM / Δ YoY / YTD avg) and gained a 5-column KPI summary
+// table rendered below the chart (Current month / Previous month / MoM % /
+// Same month prev. year / YoY %). KPI data comes from a period-independent
+// 14-month series anchored to `latestMonth`, so MoM/YoY no longer blank when
+// the dashboard's period preset (e.g. Last 12M) excludes the same-month-prev-
+// year point. `MobileKpi` is removed.
 //
 // Round 9 (2026-05-27): pills row at the top + simplified 3-tab structure.
 // Empresa <select> dropped from FilterDrawer.
@@ -94,6 +100,7 @@ import {
   type PeriodPreset,
   type DrillTab,
   type DrillSubMode,
+  type DrillKpiTableData,
 } from "../useProductionData";
 import type {
   ProductionBrazilRow,
@@ -360,82 +367,128 @@ function DrillTabSkeleton({
   );
 }
 
-// ─── Small KPI tile (mobile) ──────────────────────────────────────────────────
+// ─── Mobile drill KPI summary (Round 16, 2026-05-28) ─────────────────────────
+//
+// Replaces the legacy `MobileKpi` 2×2 grid in both the field- and
+// installation-drill BottomSheets. Uses a stacked-card layout (one row per
+// metric) instead of a horizontal table — phones don't have width for 5
+// columns at a legible font size. Visually consistent with the desktop
+// `DrillKpiTable` (same data, same colors, same em-dash empty cells).
+//
+// Why two rows for current/prev_year and a divider before MoM/YoY: the user's
+// cognitive grouping is "values" vs "deltas". Keeping the 3 values together
+// (current / previous month / prev year) and then the 2 deltas (MoM / YoY) at
+// the bottom matches that grouping; the per-metric date stays muted below
+// the metric label so each row is self-describing without horizontal scroll.
+const MOBILE_KPI_POS_COLOR     = "#197a39";
+const MOBILE_KPI_NEG_COLOR     = "#b3261e";
+const MOBILE_KPI_NEUTRAL_COLOR = "#888888";
 
-function MobileKpi({
-  label,
-  value,
-  unit,
-  delta,
+function MobileDrillKpiTable({
+  data,
   loading = false,
-  hasData = true,
+  unit = "kbpd",
 }: {
-  label: string;
-  value: string;
-  unit: string;
-  delta?: { pct: number | null; label: string };
+  data: DrillKpiTableData;
   loading?: boolean;
-  hasData?: boolean;
+  unit?: string;
 }): React.ReactElement {
-  const deltaColor = delta?.pct == null ? "#888" : delta.pct >= 0 ? "#197a39" : "#b3261e";
-  const deltaArrow = delta?.pct == null ? "" : delta.pct >= 0 ? "▲" : "▼";
-  const showSkeleton = loading && !hasData;
+  const fmtValue = (v: number | null): string => (v == null ? "—" : fmtNumber(v, 1));
+  const fmtDelta = (p: number | null): string => (p == null ? "—" : fmtPct(p));
+  const deltaColor = (p: number | null): string => {
+    if (p == null) return MOBILE_KPI_NEUTRAL_COLOR;
+    if (p > 0) return MOBILE_KPI_POS_COLOR;
+    if (p < 0) return MOBILE_KPI_NEG_COLOR;
+    return MOBILE_KPI_NEUTRAL_COLOR;
+  };
+  const rowStyle: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: "1fr auto",
+    alignItems: "center",
+    padding: "10px 12px",
+    borderBottom: "1px solid var(--mobile-border, #e6e6ec)",
+  };
+  const labelStyle: React.CSSProperties = {
+    fontFamily: "Arial",
+    fontSize: 11,
+    fontWeight: 700,
+    textTransform: "uppercase",
+    color: "var(--mobile-text-muted, #6b6b73)",
+    letterSpacing: "0.4px",
+  };
+  const subLabelStyle: React.CSSProperties = {
+    fontFamily: "Arial",
+    fontSize: 10,
+    color: "#888",
+    marginTop: 2,
+  };
+  const valueStyle: React.CSSProperties = {
+    fontFamily: "Arial",
+    fontSize: 16,
+    fontWeight: 700,
+    color: "var(--mobile-text, #1a1a1a)",
+    lineHeight: 1.1,
+  };
   return (
     <div
       style={{
-        padding: "10px 12px",
-        borderRadius: 10,
         background: "var(--mobile-surface, #ffffff)",
         border: "1px solid var(--mobile-border, #e6e6ec)",
-        flex: "1 1 0",
-        minWidth: 130,
-        opacity: loading && hasData ? 0.75 : 1,
+        borderRadius: 12,
+        overflow: "hidden",
+        opacity: loading ? 0.6 : 1,
         transition: "opacity 0.18s ease",
       }}
     >
-      <div
-        style={{
-          fontFamily: "Arial",
-          fontSize: 10,
-          fontWeight: 700,
-          textTransform: "uppercase",
-          color: "var(--mobile-text-muted, #6b6b73)",
-          letterSpacing: "0.4px",
-          marginBottom: 4,
-        }}
-      >
-        {label}
+      {/* Current month */}
+      <div style={rowStyle}>
+        <div>
+          <div style={labelStyle}>Current month</div>
+          <div style={subLabelStyle}>{data.currentMonthLabel ?? "—"}</div>
+        </div>
+        <div style={valueStyle}>
+          {fmtValue(data.currentMonth)}
+          <span style={{ fontSize: 10, color: "#888", marginLeft: 4, fontWeight: 500 }}>
+            {data.currentMonth == null ? "" : unit}
+          </span>
+        </div>
       </div>
-      {showSkeleton ? (
-        <div
-          aria-busy="true"
-          aria-label="Loading"
-          className="wbw-kpi-skeleton"
-          style={{
-            height: 20,
-            width: "70%",
-            borderRadius: 4,
-          }}
-        />
-      ) : (
-        <div
-          style={{
-            fontFamily: "Arial",
-            fontSize: 18,
-            fontWeight: 700,
-            color: "var(--mobile-text, #1a1a1a)",
-            lineHeight: 1.1,
-          }}
-        >
-          {value}
-          <span style={{ fontSize: 10, fontWeight: 500, color: "#888", marginLeft: 4 }}>{unit}</span>
+      {/* Previous month */}
+      <div style={rowStyle}>
+        <div>
+          <div style={labelStyle}>Previous month</div>
+          <div style={subLabelStyle}>{data.prevMonthLabel ?? "—"}</div>
         </div>
-      )}
-      {delta && delta.pct != null && !showSkeleton && (
-        <div style={{ marginTop: 4, fontFamily: "Arial", fontSize: 10, fontWeight: 600, color: deltaColor }}>
-          {deltaArrow} {fmtPct(delta.pct)} {delta.label}
+        <div style={valueStyle}>
+          {fmtValue(data.prevMonth)}
+          <span style={{ fontSize: 10, color: "#888", marginLeft: 4, fontWeight: 500 }}>
+            {data.prevMonth == null ? "" : unit}
+          </span>
         </div>
-      )}
+      </div>
+      {/* MoM % */}
+      <div style={rowStyle}>
+        <div style={labelStyle}>MoM %</div>
+        <div style={{ ...valueStyle, color: deltaColor(data.momPct) }}>{fmtDelta(data.momPct)}</div>
+      </div>
+      {/* Same month previous year */}
+      <div style={rowStyle}>
+        <div>
+          <div style={labelStyle}>Same month prev. year</div>
+          <div style={subLabelStyle}>{data.prevYearMonthLabel ?? "—"}</div>
+        </div>
+        <div style={valueStyle}>
+          {fmtValue(data.prevYear)}
+          <span style={{ fontSize: 10, color: "#888", marginLeft: 4, fontWeight: 500 }}>
+            {data.prevYear == null ? "" : unit}
+          </span>
+        </div>
+      </div>
+      {/* YoY % — last row has no bottom border */}
+      <div style={{ ...rowStyle, borderBottom: "none" }}>
+        <div style={labelStyle}>YoY %</div>
+        <div style={{ ...valueStyle, color: deltaColor(data.yoyPct) }}>{fmtDelta(data.yoyPct)}</div>
+      </div>
     </div>
   );
 }
@@ -607,10 +660,10 @@ export default function MobileView(): React.ReactElement | null {
     brazilLoading, companyLoading, topFieldsLoading, installationsLoading, yoyLoading,
     excelLoading, csvLoading,
     handleExportExcel, handleExportCsv,
-    drillCampo, drillTimeseries, drillLoading, drillError, drillKpis,
+    drillCampo, drillTimeseries, drillLoading, drillError, drillKpiTable,
     openFieldDrill, closeFieldDrill,
     drillInstalacao, drillInstalacaoTimeseries, drillInstalacaoLoading,
-    drillInstalacaoError, drillInstalacaoKpis,
+    drillInstalacaoError, drillInstalacaoKpiTable,
     openInstallationDrill, closeInstallationDrill,
     // Drill popup tabs (Phase 2)
     drillTab, setDrillTab,
@@ -1163,35 +1216,6 @@ export default function MobileView(): React.ReactElement | null {
 
               <div
                 style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                  gap: 8,
-                }}
-              >
-                <MobileKpi
-                  label="Current oil"
-                  value={fmtNumber(drillKpis.currentOil, 1)}
-                  unit="kbpd"
-                />
-                <MobileKpi
-                  label="Δ MoM"
-                  value={drillKpis.momPct == null ? "—" : fmtPct(drillKpis.momPct)}
-                  unit=""
-                />
-                <MobileKpi
-                  label="Δ YoY"
-                  value={drillKpis.yoyPct == null ? "—" : fmtPct(drillKpis.yoyPct)}
-                  unit=""
-                />
-                <MobileKpi
-                  label="YTD avg"
-                  value={drillKpis.ytdAvg == null ? "—" : fmtNumber(drillKpis.ytdAvg, 1)}
-                  unit="kbpd"
-                />
-              </div>
-
-              <div
-                style={{
                   background: "var(--mobile-surface, #ffffff)",
                   border: "1px solid var(--mobile-border, #e6e6ec)",
                   borderRadius: 12,
@@ -1238,8 +1262,18 @@ export default function MobileView(): React.ReactElement | null {
                 )}
               </div>
 
+              {/* Round 16 (2026-05-28): 5-row KPI table below the chart
+                  replaces the legacy 2×2 grid of `MobileKpi` tiles. KPI data
+                  is sourced from a period-independent 14-month series — so
+                  MoM/YoY stay populated even when the dashboard's period
+                  preset (e.g. Last 12M) excludes the same-month-prev-year
+                  point. */}
+              <MobileDrillKpiTable data={drillKpiTable} />
+
               <div style={{ fontSize: 11, color: "#888", fontFamily: "Arial", padding: "0 4px" }}>
-                Bars: oil (dark) + water (light blue) · Line: monthly uptime fraction.
+                Bars: oil (dark) + water (light blue) · Line: monthly uptime
+                fraction. KPI table reads its own 14-month window so MoM / YoY
+                stay populated independent of the period preset.
               </div>
             </div>
           )}
@@ -1403,35 +1437,6 @@ export default function MobileView(): React.ReactElement | null {
 
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-              gap: 8,
-            }}
-          >
-            <MobileKpi
-              label="Current oil"
-              value={fmtNumber(drillInstalacaoKpis.currentOil, 1)}
-              unit="kbpd"
-            />
-            <MobileKpi
-              label="Δ MoM"
-              value={drillInstalacaoKpis.momPct == null ? "—" : fmtPct(drillInstalacaoKpis.momPct)}
-              unit=""
-            />
-            <MobileKpi
-              label="Δ YoY"
-              value={drillInstalacaoKpis.yoyPct == null ? "—" : fmtPct(drillInstalacaoKpis.yoyPct)}
-              unit=""
-            />
-            <MobileKpi
-              label="YTD avg"
-              value={drillInstalacaoKpis.ytdAvg == null ? "—" : fmtNumber(drillInstalacaoKpis.ytdAvg, 1)}
-              unit="kbpd"
-            />
-          </div>
-
-          <div
-            style={{
               background: "var(--mobile-surface, #ffffff)",
               border: "1px solid var(--mobile-border, #e6e6ec)",
               borderRadius: 12,
@@ -1478,8 +1483,14 @@ export default function MobileView(): React.ReactElement | null {
             )}
           </div>
 
+          {/* Round 16 (2026-05-28): KPI summary table replaces the 2×2 KPI tiles. */}
+          <MobileDrillKpiTable data={drillInstalacaoKpiTable} />
+
           <div style={{ fontSize: 11, color: "#888", fontFamily: "Arial", padding: "0 4px" }}>
-            Bars: oil (dark) + water (light blue) routed through this installation · Line: monthly uptime fraction.
+            Bars: oil (dark) + water (light blue) routed through this
+            installation · Line: monthly uptime fraction. KPI table reads its
+            own 14-month window so MoM / YoY stay populated independent of the
+            period preset.
           </div>
         </div>
       </BottomSheet>

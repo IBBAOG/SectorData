@@ -42,6 +42,19 @@
 // `hovertemplate`. Underlying RPC payload values stay raw so exported rows
 // remain comparable to the `anp_cdp_producao.local` column.
 //
+// Round 16 (2026-05-28): drill modal KPI strip refactor. The legacy 4 KPI
+// cards (Current oil / Δ MoM / Δ YoY / YTD avg) were replaced by a
+// 5-column summary table (Current month / Previous month / MoM % / Same
+// month prev. year / YoY %) rendered BELOW the chart. The KPI data is now
+// fetched on a separate, period-INDEPENDENT 14-month window anchored to
+// `latestMonth` (see `drillKpiSeries` + `drillInstalacaoKpiSeries` states
+// and their dedicated fetch effects), so picking "Last 12M" no longer
+// blanks the YoY cell when the same-month-prev-year point sits outside
+// the chart window. The same applies to both the field- and installation-
+// drill modals/sheets; the desktop View renders a 5-column wide table and
+// the mobile View renders a 5-row stacked variant — same data, same
+// builder (`buildKpiTable`), different layout for the available width.
+//
 // Data sources (5 base + 4 Brazil RPCs, all SECURITY DEFINER):
 //   • get_production_brazil_aggregate(date_start, date_end, ambientes[]?)
 //       → Brazil-wide stacked bars (no stake weighting)
@@ -271,6 +284,89 @@ export function fmtMonthLabel(anchor: string): string {
   return `${months[m - 1]} ${y}`;
 }
 
+// ─── Drill KPI table builder (Round 16, 2026-05-28) ───────────────────────────
+//
+// Reduces a period-independent timeseries (anchored to `latestMonth` over a
+// fixed 14-month window — see `drillKpiSeries` + `drillInstalacaoKpiSeries`
+// in the hook) to the 5-column KPI summary the drill modals render below
+// their charts.
+//
+// Hoisted to module scope so React doesn't re-create the reference on every
+// render (the consumers wrap it in `useMemo`, so a stable identity is enough
+// — no `useCallback` needed).
+//
+// Semantics:
+//   • current month  — last (year, month) point in the series
+//   • previous month — immediately preceding (year, month) point
+//   • same month previous year — `current.ano - 1, current.mes` lookup
+//   • MoM/YoY pct — null when the prior datapoint is missing OR equals zero
+//   • month labels — pre-formatted "Apr 2026" strings; null when the
+//     underlying point is unavailable (except prev-year, which derives its
+//     label from `last.ano - 1, last.mes` even when the row itself is
+//     missing — gives the column header something meaningful).
+//
+// If the series is empty (e.g. canonical drill with no `field_stakes`
+// coverage), every numeric field is `null` and the table renders all
+// em-dashes — no crash.
+export interface DrillKpiTableData {
+  currentMonth:       number | null;
+  prevMonth:          number | null;
+  momPct:             number | null;
+  prevYear:           number | null;
+  yoyPct:             number | null;
+  currentMonthLabel:  string | null;
+  prevMonthLabel:     string | null;
+  prevYearMonthLabel: string | null;
+}
+
+export function buildKpiTable(
+  rows: ReadonlyArray<{ ano: number; mes: number; oil_bbl_dia: number }>,
+): DrillKpiTableData {
+  if (rows.length === 0) {
+    return {
+      currentMonth: null, prevMonth: null, momPct: null,
+      prevYear: null, yoyPct: null,
+      currentMonthLabel: null, prevMonthLabel: null, prevYearMonthLabel: null,
+    };
+  }
+  const sorted = [...rows].sort((a, b) => {
+    if (a.ano !== b.ano) return a.ano - b.ano;
+    return a.mes - b.mes;
+  });
+  const last = sorted[sorted.length - 1];
+  const prev = sorted.length >= 2 ? sorted[sorted.length - 2] : null;
+  const currentMonth = bblDiaToKbpd(last.oil_bbl_dia);
+  const prevMonth = prev ? bblDiaToKbpd(prev.oil_bbl_dia) : null;
+  const momPct = prevMonth != null && prevMonth !== 0
+    ? (currentMonth - prevMonth) / prevMonth
+    : null;
+
+  const yoyMatch = sorted.find((r) => r.ano === last.ano - 1 && r.mes === last.mes);
+  const prevYear = yoyMatch ? bblDiaToKbpd(yoyMatch.oil_bbl_dia) : null;
+  const yoyPct = prevYear != null && prevYear !== 0
+    ? (currentMonth - prevYear) / prevYear
+    : null;
+
+  const lastAnchor = `${String(last.ano).padStart(4, "0")}-${String(last.mes).padStart(2, "0")}-01`;
+  const prevAnchor = prev
+    ? `${String(prev.ano).padStart(4, "0")}-${String(prev.mes).padStart(2, "0")}-01`
+    : null;
+  // Same-month-prev-year label always derivable from `last` — gives the
+  // table column a meaningful header even when the data point is missing.
+  const prevYearAnchor = `${String(last.ano - 1).padStart(4, "0")}-${String(last.mes).padStart(2, "0")}-01`;
+
+  return {
+    currentMonth,
+    prevMonth,
+    momPct,
+    prevYear,
+    yoyPct,
+    currentMonthLabel:  fmtMonthLabel(lastAnchor),
+    prevMonthLabel:     prevAnchor ? fmtMonthLabel(prevAnchor) : null,
+    prevYearMonthLabel: fmtMonthLabel(prevYearAnchor),
+  };
+}
+
 // ─── Period presets (Round 13, 2026-05-27) ────────────────────────────────────
 //
 // Replaces the rc-slider `PeriodSlider` with 5 mutually-exclusive buttons.
@@ -469,13 +565,19 @@ export interface UseProductionData {
   drillTimeseries: ProductionFieldTimeseriesRow[];
   drillLoading: boolean;
   drillError: string | null;
-  drillKpis: {
-    currentOil: number;
-    prevOil: number | null;
-    momPct: number | null;
-    yoyPct: number | null;
-    ytdAvg: number | null;
-  };
+  /**
+   * KPI table data for the drill modal/sheet.
+   *
+   * Decoupled from the dashboard's period filter: always carries the current
+   * month, the previous month, and the same month one year ago — even when
+   * the dashboard's period preset (e.g. Last 12M) doesn't include the
+   * same-month-prev-year point.
+   *
+   * Values are in kbpd. `*MonthLabel` are pre-formatted month labels (e.g.
+   * "Apr 2026") for table headers; `null` when the underlying data point is
+   * unavailable (e.g. brand-new field with no prev year).
+   */
+  drillKpiTable: DrillKpiTableData;
   openFieldDrill: (campo: string) => void;
   closeFieldDrill: () => void;
 
@@ -523,13 +625,11 @@ export interface UseProductionData {
   drillInstalacaoTimeseries: ProductionInstallationTimeseriesRow[];
   drillInstalacaoLoading: boolean;
   drillInstalacaoError: string | null;
-  drillInstalacaoKpis: {
-    currentOil: number;
-    prevOil: number | null;
-    momPct: number | null;
-    yoyPct: number | null;
-    ytdAvg: number | null;
-  };
+  /**
+   * KPI table data for the installation drill-down. Same shape and semantics
+   * as `drillKpiTable` (independent of the dashboard's period filter).
+   */
+  drillInstalacaoKpiTable: DrillKpiTableData;
   openInstallationDrill: (instalacao: string) => void;
   closeInstallationDrill: () => void;
 }
@@ -575,11 +675,21 @@ export function useProductionData(): UseProductionData {
   const [drillLoading, setDrillLoading] = useState(false);
   const [drillError, setDrillError] = useState<string | null>(null);
 
+  // KPI-table series for the field drill (Round 16, 2026-05-28). Always
+  // anchored to the dashboard's `latestMonth` over a fixed 14-month window so
+  // the table can read current month, previous month and same-month-prev-year
+  // without depending on the user's period preset (the chart still consumes
+  // the period-filtered `drillTimeseries`).
+  const [drillKpiSeries, setDrillKpiSeries] = useState<ProductionFieldTimeseriesRow[]>([]);
+
   // Installation drill-down state (Round 3; Brasil-aware since Round 9).
   const [drillInstalacao, setDrillInstalacao] = useState<string | null>(null);
   const [drillInstalacaoTimeseries, setDrillInstalacaoTimeseries] = useState<ProductionInstallationTimeseriesRow[]>([]);
   const [drillInstalacaoLoading, setDrillInstalacaoLoading] = useState(false);
   const [drillInstalacaoError, setDrillInstalacaoError] = useState<string | null>(null);
+  // KPI-table series for the installation drill — same period-independent
+  // 14-month window as the field counterpart.
+  const [drillInstalacaoKpiSeries, setDrillInstalacaoKpiSeries] = useState<ProductionInstallationTimeseriesRow[]>([]);
 
   // ── Drill popup tab state (Phase 2) ──────────────────────────────────────
   const [drillTab, setDrillTabState] = useState<DrillTab>("production");
@@ -1007,6 +1117,7 @@ export function useProductionData(): UseProductionData {
     // Close installation drill first (mutual exclusivity)
     setDrillInstalacao(null);
     setDrillInstalacaoTimeseries([]);
+    setDrillInstalacaoKpiSeries([]);
     setDrillInstalacaoError(null);
     // Reset the drill-popup tab state so each fresh open lands on
     // "production" with both sub-toggles in their default position and no
@@ -1022,11 +1133,16 @@ export function useProductionData(): UseProductionData {
     setDrillDepletionFieldPoints(null);
     setDrillDepletionError(null);
     setDrillDepletionLoading(false);
+    // Round 16: clear the KPI series so re-opening a different field doesn't
+    // flash the previous field's KPI numbers between the close and the next
+    // fetch landing.
+    setDrillKpiSeries([]);
     setDrillCampo(campo);
   }, []);
   const closeFieldDrill = useCallback(() => {
     setDrillCampo(null);
     setDrillTimeseries([]);
+    setDrillKpiSeries([]);
     setDrillError(null);
     // Clear the tab caches too so re-opening doesn't briefly flash stale data.
     setDrillBswWellPoints(null);
@@ -1219,6 +1335,64 @@ export function useProductionData(): UseProductionData {
     return () => { cancelled = true; };
   }, [supabase, drillCampo, view, viewIsCompany, viewEmpresa, dateRange]);
 
+  // ── KPI-table series (Round 16, 2026-05-28) ──────────────────────────────
+  //
+  // The drill popup's KPI table needs three reference points (current month,
+  // previous month, and same month one year ago) regardless of the dashboard's
+  // active period preset. When the user selected "Last 12M" the same month a
+  // year ago falls OUTSIDE the chart's window — but the table must still show
+  // it.
+  //
+  // Solution: a second fetch anchored to `latestMonth` (most recent month in
+  // `anp_cdp_producao`) with a fixed 14-month lookback. 14 months covers the
+  // worst case (current month + 13 months back includes the same month one
+  // year prior with one month of slack) and stays bounded in size — the RPC
+  // returns one row per (year, month), so the response is ~14 rows max.
+  //
+  // The chart still reads `drillTimeseries` (period-filtered). The KPI table
+  // reads from `drillKpiSeries` exclusively. Both share the same RPC; the
+  // payloads cost ~the same on Brasil-wide drills and a small extra on
+  // company drills where the JOIN dominates.
+  //
+  // Re-fetches when `drillCampo`, `view`, or `latestMonth` changes. Does NOT
+  // depend on `dateRange` — that's the whole point.
+  useEffect(() => {
+    if (!supabase || !drillCampo || !latestMonth) return;
+    if (viewIsCompany && !viewEmpresa) return;
+
+    const kpiEnd = latestMonth;
+    const kpiStart = shiftMonth(latestMonth, -13);
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = view === "Brasil"
+          ? await rpcGetProductionBrazilFieldTimeseries(
+              supabase,
+              drillCampo,
+              kpiStart,
+              kpiEnd,
+            )
+          : await rpcGetProductionFieldTimeseries(
+              supabase,
+              drillCampo,
+              viewEmpresa as string,
+              kpiStart,
+              kpiEnd,
+            );
+        if (!cancelled) setDrillKpiSeries(rows);
+      } catch (e) {
+        // Errors here are non-fatal — the table simply shows em-dashes. The
+        // chart-driving `drillError` already surfaces RPC failures to the UI.
+        if (!cancelled) {
+          console.error("Field drill KPI series refetch failed", e);
+          setDrillKpiSeries([]);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, drillCampo, view, viewIsCompany, viewEmpresa, latestMonth]);
+
   // ── Drill popup: BSW tab lazy-fetch ──────────────────────────────────────
   //
   // Phase 2 of /well-by-well drill enrichment. The BSW tab reuses the
@@ -1320,12 +1494,16 @@ export function useProductionData(): UseProductionData {
     // Close field drill first (mutual exclusivity)
     setDrillCampo(null);
     setDrillTimeseries([]);
+    setDrillKpiSeries([]);
     setDrillError(null);
+    // Clear stale installation KPI rows from a previous drill.
+    setDrillInstalacaoKpiSeries([]);
     setDrillInstalacao(instalacao);
   }, []);
   const closeInstallationDrill = useCallback(() => {
     setDrillInstalacao(null);
     setDrillInstalacaoTimeseries([]);
+    setDrillInstalacaoKpiSeries([]);
     setDrillInstalacaoError(null);
   }, []);
 
@@ -1366,6 +1544,46 @@ export function useProductionData(): UseProductionData {
     return () => { cancelled = true; };
   }, [supabase, drillInstalacao, view, viewIsCompany, viewEmpresa, dateRange]);
 
+  // ── Installation KPI-table series (Round 16, 2026-05-28) ────────────────
+  //
+  // Mirror of the field KPI effect — fetches a 14-month window ending at
+  // `latestMonth` (independent of the dashboard's period filter) so the
+  // installation drill modal can render the same 5-column KPI table.
+  useEffect(() => {
+    if (!supabase || !drillInstalacao || !latestMonth) return;
+    if (viewIsCompany && !viewEmpresa) return;
+
+    const kpiEnd = latestMonth;
+    const kpiStart = shiftMonth(latestMonth, -13);
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = view === "Brasil"
+          ? await rpcGetProductionBrazilInstallationTimeseries(
+              supabase,
+              drillInstalacao,
+              kpiStart,
+              kpiEnd,
+            )
+          : await rpcGetProductionInstallationTimeseries(
+              supabase,
+              drillInstalacao,
+              viewEmpresa as string,
+              kpiStart,
+              kpiEnd,
+            );
+        if (!cancelled) setDrillInstalacaoKpiSeries(rows);
+      } catch (e) {
+        if (!cancelled) {
+          console.error("Installation drill KPI series refetch failed", e);
+          setDrillInstalacaoKpiSeries([]);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, drillInstalacao, view, viewIsCompany, viewEmpresa, latestMonth]);
+
   // ── Drill close on view change (avoid mismatched header label) ────────────
   //
   // If a drill modal is open and the user switches the pill, the title
@@ -1374,9 +1592,11 @@ export function useProductionData(): UseProductionData {
   useEffect(() => {
     setDrillCampo(null);
     setDrillTimeseries([]);
+    setDrillKpiSeries([]);
     setDrillError(null);
     setDrillInstalacao(null);
     setDrillInstalacaoTimeseries([]);
+    setDrillInstalacaoKpiSeries([]);
     setDrillInstalacaoError(null);
     // Reset the popup tab state too (cleared caches force a fresh fetch when
     // the user re-opens a drill after switching pills).
@@ -1394,69 +1614,17 @@ export function useProductionData(): UseProductionData {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
 
-  // Derived KPIs for the drill (client-side from the 13mo series).
-  const drillKpis = useMemo(() => {
-    if (drillTimeseries.length === 0) {
-      return { currentOil: 0, prevOil: null, momPct: null, yoyPct: null, ytdAvg: null };
-    }
-    const sorted = [...drillTimeseries].sort((a, b) => {
-      if (a.ano !== b.ano) return a.ano - b.ano;
-      return a.mes - b.mes;
-    });
-    const last = sorted[sorted.length - 1];
-    const prev = sorted.length >= 2 ? sorted[sorted.length - 2] : null;
-    const currentOil = bblDiaToKbpd(last.oil_bbl_dia);
-    const prevOil = prev ? bblDiaToKbpd(prev.oil_bbl_dia) : null;
-    const momPct = prev && prevOil && prevOil !== 0
-      ? (currentOil - prevOil) / prevOil
-      : null;
+  // Field-drill KPI table (period-independent — see drillKpiSeries fetch).
+  const drillKpiTable = useMemo(
+    () => buildKpiTable(drillKpiSeries),
+    [drillKpiSeries],
+  );
 
-    const yoyMatch = sorted.find((r) => r.ano === last.ano - 1 && r.mes === last.mes);
-    const yoyOil = yoyMatch ? bblDiaToKbpd(yoyMatch.oil_bbl_dia) : null;
-    const yoyPct = yoyOil != null && yoyOil !== 0
-      ? (currentOil - yoyOil) / yoyOil
-      : null;
-
-    const ytdRows = sorted.filter((r) => r.ano === last.ano && r.mes <= last.mes);
-    const ytdAvg = ytdRows.length > 0
-      ? bblDiaToKbpd(ytdRows.reduce((s, r) => s + r.oil_bbl_dia, 0) / ytdRows.length)
-      : null;
-
-    return { currentOil, prevOil, momPct, yoyPct, ytdAvg };
-  }, [drillTimeseries]);
-
-  // Installation drill-down KPIs — identical math, sourced from the
-  // installation timeseries. Kept separate so the two states stay obviously
-  // independent in DevTools.
-  const drillInstalacaoKpis = useMemo(() => {
-    if (drillInstalacaoTimeseries.length === 0) {
-      return { currentOil: 0, prevOil: null, momPct: null, yoyPct: null, ytdAvg: null };
-    }
-    const sorted = [...drillInstalacaoTimeseries].sort((a, b) => {
-      if (a.ano !== b.ano) return a.ano - b.ano;
-      return a.mes - b.mes;
-    });
-    const last = sorted[sorted.length - 1];
-    const prev = sorted.length >= 2 ? sorted[sorted.length - 2] : null;
-    const currentOil = bblDiaToKbpd(last.oil_bbl_dia);
-    const prevOil = prev ? bblDiaToKbpd(prev.oil_bbl_dia) : null;
-    const momPct = prev && prevOil && prevOil !== 0
-      ? (currentOil - prevOil) / prevOil
-      : null;
-
-    const yoyMatch = sorted.find((r) => r.ano === last.ano - 1 && r.mes === last.mes);
-    const yoyOil = yoyMatch ? bblDiaToKbpd(yoyMatch.oil_bbl_dia) : null;
-    const yoyPct = yoyOil != null && yoyOil !== 0
-      ? (currentOil - yoyOil) / yoyOil
-      : null;
-
-    const ytdRows = sorted.filter((r) => r.ano === last.ano && r.mes <= last.mes);
-    const ytdAvg = ytdRows.length > 0
-      ? bblDiaToKbpd(ytdRows.reduce((s, r) => s + r.oil_bbl_dia, 0) / ytdRows.length)
-      : null;
-
-    return { currentOil, prevOil, momPct, yoyPct, ytdAvg };
-  }, [drillInstalacaoTimeseries]);
+  // Installation-drill KPI table — same builder, different source series.
+  const drillInstalacaoKpiTable = useMemo(
+    () => buildKpiTable(drillInstalacaoKpiSeries),
+    [drillInstalacaoKpiSeries],
+  );
 
   // ── Export (Tier 1, multi-sheet XLSX + zip-of-CSVs) ───────────────────────
   //
@@ -1694,7 +1862,7 @@ export function useProductionData(): UseProductionData {
     drillTimeseries,
     drillLoading,
     drillError,
-    drillKpis,
+    drillKpiTable,
     openFieldDrill,
     closeFieldDrill,
 
@@ -1702,7 +1870,7 @@ export function useProductionData(): UseProductionData {
     drillInstalacaoTimeseries,
     drillInstalacaoLoading,
     drillInstalacaoError,
-    drillInstalacaoKpis,
+    drillInstalacaoKpiTable,
     openInstallationDrill,
     closeInstallationDrill,
 
