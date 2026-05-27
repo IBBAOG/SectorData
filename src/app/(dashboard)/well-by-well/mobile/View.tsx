@@ -178,14 +178,22 @@ function MobileKpi({
   value,
   unit,
   delta,
+  loading = false,
+  hasData = true,
 }: {
   label: string;
   value: string;
   unit: string;
   delta?: { pct: number | null; label: string };
+  /** Backing RPC is currently in-flight. Card dims subtly; value persists. */
+  loading?: boolean;
+  /** Whether any value has ever been received. When false + loading, show skeleton. */
+  hasData?: boolean;
 }): React.ReactElement {
   const deltaColor = delta?.pct == null ? "#888" : delta.pct >= 0 ? "#197a39" : "#b3261e";
   const deltaArrow = delta?.pct == null ? "" : delta.pct >= 0 ? "▲" : "▼";
+  // Round 5: first-load skeleton (no prior data + currently fetching).
+  const showSkeleton = loading && !hasData;
   return (
     <div
       style={{
@@ -195,6 +203,9 @@ function MobileKpi({
         border: "1px solid var(--mobile-border, #e6e6ec)",
         flex: "1 1 0",
         minWidth: 130,
+        // Subtle dim while refreshing existing data, but keep value readable.
+        opacity: loading && hasData ? 0.75 : 1,
+        transition: "opacity 0.18s ease",
       }}
     >
       <div
@@ -210,19 +221,32 @@ function MobileKpi({
       >
         {label}
       </div>
-      <div
-        style={{
-          fontFamily: "Arial",
-          fontSize: 18,
-          fontWeight: 700,
-          color: "var(--mobile-text, #1a1a1a)",
-          lineHeight: 1.1,
-        }}
-      >
-        {value}
-        <span style={{ fontSize: 10, fontWeight: 500, color: "#888", marginLeft: 4 }}>{unit}</span>
-      </div>
-      {delta && delta.pct != null && (
+      {showSkeleton ? (
+        <div
+          aria-busy="true"
+          aria-label="Loading"
+          className="wbw-kpi-skeleton"
+          style={{
+            height: 20,
+            width: "70%",
+            borderRadius: 4,
+          }}
+        />
+      ) : (
+        <div
+          style={{
+            fontFamily: "Arial",
+            fontSize: 18,
+            fontWeight: 700,
+            color: "var(--mobile-text, #1a1a1a)",
+            lineHeight: 1.1,
+          }}
+        >
+          {value}
+          <span style={{ fontSize: 10, fontWeight: 500, color: "#888", marginLeft: 4 }}>{unit}</span>
+        </div>
+      )}
+      {delta && delta.pct != null && !showSkeleton && (
         <div style={{ marginTop: 4, fontFamily: "Arial", fontSize: 10, fontWeight: 600, color: deltaColor }}>
           {deltaArrow} {fmtPct(delta.pct)} {delta.label}
         </div>
@@ -355,7 +379,13 @@ export default function MobileView(): React.ReactElement | null {
         {tab === "brazil" && (
           <>
             <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-              <MobileKpi label="Brazil oil" value={fmtNumber(kpi.brazilOilKbpd, 0)} unit="kbpd" />
+              <MobileKpi
+                label="Brazil oil"
+                value={fmtNumber(kpi.brazilOilKbpd, 0)}
+                unit="kbpd"
+                loading={brazilLoading}
+                hasData={brazilData.length > 0}
+              />
             </div>
             <div
               style={{
@@ -407,17 +437,23 @@ export default function MobileView(): React.ReactElement | null {
                 label={`${empresa.split(/\s+/)[0]} oil`}
                 value={fmtNumber(kpi.companyOilKbpd, 0)}
                 unit="kbpd"
+                loading={companyLoading}
+                hasData={companyData.length > 0}
                 delta={kpi.companyMomPct != null ? { pct: kpi.companyMomPct, label: "MoM" } : undefined}
               />
               <MobileKpi
                 label="Gas"
                 value={fmtNumber(kpi.companyGasMm3d, 1)}
                 unit="Mm³/d"
+                loading={companyLoading}
+                hasData={companyData.length > 0}
               />
               <MobileKpi
                 label="YTD avg"
                 value={fmtNumber(kpi.companyYtdAvgKbpd, 0)}
                 unit="kbpd"
+                loading={companyLoading || yoyLoading}
+                hasData={companyData.length > 0}
                 delta={kpi.companyYoyPct != null ? { pct: kpi.companyYoyPct, label: "YoY" } : undefined}
               />
             </div>

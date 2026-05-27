@@ -342,6 +342,12 @@ export function useProductionData(): UseProductionData {
 
   // ── Bootstrap: empresa list + latest month discovery ──────────────────────
   //
+  // Round 5 (perf): the bootstrap fires `rpcGetFieldStakesEmpresas` and the
+  // wide-range Brazil aggregate probe IN PARALLEL (Promise.allSettled), and
+  // SEEDS `brazilData` with the slice of the probe that falls in the default
+  // 13mo window — eliminating one round-trip the user would otherwise wait
+  // for (the reactive Brazil refetch immediately after bootstrap).
+  //
   // The "wide range" call below probes the entire 2018→present window for the
   // Brazil aggregate, then takes max(ano, mes) to discover the most-recent
   // month with data. We deliberately reuse the same RPC the dashboard already
@@ -355,29 +361,36 @@ export function useProductionData(): UseProductionData {
 
     (async () => {
       try {
+        // Fire both bootstrap RPCs IN PARALLEL — empresa list is independent
+        // of the Brazil probe, no reason to chain them.
+        const [empresasRes, probeRes] = await Promise.allSettled([
+          rpcGetFieldStakesEmpresas(supabase),
+          rpcGetProductionBrazilAggregate(supabase, "2018-01-01", "2099-12-31", null),
+        ]);
+        if (cancelled) return;
+
         // Empresa list — graceful: if anon doesn't have GRANT, list is empty
         // and the dropdown shows the default. Once auth lands, it populates.
         let empresas: FieldStakeEmpresa[] = [];
-        try {
-          empresas = await rpcGetFieldStakesEmpresas(supabase);
-        } catch (e) {
-          console.warn("rpcGetFieldStakesEmpresas failed (admin-only? continuing with default)", e);
+        if (empresasRes.status === "fulfilled") {
+          empresas = empresasRes.value;
+        } else {
+          console.warn(
+            "rpcGetFieldStakesEmpresas failed (admin-only? continuing with default)",
+            empresasRes.reason,
+          );
         }
-        if (cancelled) return;
         // Sort by n_campos DESC for the dropdown — biggest portfolios first.
         empresas = [...empresas].sort((a, b) => b.n_campos - a.n_campos);
         setEmpresasList(empresas);
 
-        // Discover latest month via a wide-range Brazil aggregate probe.
-        const PROBE_START = "2018-01-01";
-        const PROBE_END   = "2099-12-31";
-        const probe = await rpcGetProductionBrazilAggregate(
-          supabase,
-          PROBE_START,
-          PROBE_END,
-          null,
-        );
-        if (cancelled) return;
+        // Brazil probe — required to know latestMonth; if it failed, bubble up.
+        if (probeRes.status === "rejected") {
+          throw probeRes.reason instanceof Error
+            ? probeRes.reason
+            : new Error(String(probeRes.reason));
+        }
+        const probe = probeRes.value;
 
         let maxAnchor: string | null = null;
         for (const r of probe) {
@@ -401,6 +414,21 @@ export function useProductionData(): UseProductionData {
         const startIdx = Math.max(0, endIdx - (DEFAULT_LOOKBACK_MONTHS - 1));
         setMonthIdxRangeState([startIdx, endIdx]);
         setReferenceDateState(maxAnchor);
+
+        // ── SEED Brazil data from the probe (Round 5 perf win) ───────────
+        // The probe already returned every month in 2018→present for Brazil.
+        // Slice it to the default window and seed `brazilData` so the Brazil
+        // chart renders IMMEDIATELY on first paint instead of waiting for the
+        // reactive `rpcGetProductionBrazilAggregate` debounce to fire again.
+        // The reactive fetch will still re-fire if the user changes period or
+        // ambientes — but on initial load, we skip an entire round-trip.
+        const startAnchor = months[startIdx];
+        const endAnchor   = months[endIdx];
+        const windowed = probe.filter((r) => {
+          const a = `${String(r.ano).padStart(4, "0")}-${String(r.mes).padStart(2, "0")}-01`;
+          return a >= startAnchor && a <= endAnchor;
+        });
+        if (windowed.length > 0) setBrazilData(windowed);
       } catch (e) {
         if (!cancelled) {
           console.error("/well-by-well bootstrap failed", e);
@@ -414,6 +442,17 @@ export function useProductionData(): UseProductionData {
   }, [supabase]);
 
   // ── Reactive fetch: Brazil aggregate (period + ambientes) ─────────────────
+  //
+  // Round 5 perf notes:
+  //   • Deps INTENTIONALLY exclude `empresa` — Brazil aggregate is country-
+  //     wide, so switching companies should NOT re-fetch this. The user's "Δ
+  //     empresa only triggers 4 RPCs" expectation is satisfied here.
+  //   • `skipInitial: true` because the bootstrap probe already seeded
+  //     `brazilData` for the default window; the first mount of this effect
+  //     would otherwise re-fetch the same data redundantly.
+  //   • Debounce dropped from 300ms → 150ms — these inputs (period slider,
+  //     ambientes checkboxes) are click-driven not type-driven, so a smaller
+  //     window still coalesces accidental double-clicks without lag.
   const { data: brazilFetched, loading: brazilLoading } = useDebouncedFetch<
     ProductionBrazilRow[] | null
   >(
@@ -435,7 +474,7 @@ export function useProductionData(): UseProductionData {
       }
     },
     [supabase, bootstrapping, dateRange[0], dateRange[1], ambientes.join("|")],
-    { ms: 300, skipInitial: false },
+    { ms: 150, skipInitial: true },
   );
   useEffect(() => {
     if (brazilFetched) setBrazilData(brazilFetched);
@@ -466,13 +505,17 @@ export function useProductionData(): UseProductionData {
       }
     },
     [supabase, bootstrapping, empresa, dateRange[0], dateRange[1], ambientes.join("|")],
-    { ms: 300, skipInitial: false },
+    { ms: 150, skipInitial: false },
   );
   useEffect(() => {
     if (companyFetched) setCompanyData(companyFetched);
   }, [companyFetched]);
 
   // ── Reactive fetch: Top fields (empresa + referenceDate) ──────────────────
+  //
+  // Deps deliberately exclude dateRange & ambientes — Top Fields is a single-
+  // month snapshot anchored to referenceDate; sliding the period window or
+  // toggling ambientes filters does NOT need to re-fetch this panel.
   const { data: topFetched, loading: topFieldsLoading } = useDebouncedFetch<
     ProductionTopField[] | null
   >(
@@ -486,13 +529,14 @@ export function useProductionData(): UseProductionData {
       }
     },
     [supabase, bootstrapping, empresa, referenceDate],
-    { ms: 300, skipInitial: false },
+    { ms: 150, skipInitial: false },
   );
   useEffect(() => {
     if (topFetched) setTopFields(topFetched);
   }, [topFetched]);
 
   // ── Reactive fetch: Installations (empresa + referenceDate) ───────────────
+  // Same dep semantics as Top Fields — single-month snapshot.
   const { data: instFetched, loading: installationsLoading } = useDebouncedFetch<
     ProductionInstallation[] | null
   >(
@@ -506,13 +550,15 @@ export function useProductionData(): UseProductionData {
       }
     },
     [supabase, bootstrapping, empresa, referenceDate],
-    { ms: 300, skipInitial: false },
+    { ms: 150, skipInitial: false },
   );
   useEffect(() => {
     if (instFetched) setInstallations(instFetched);
   }, [instFetched]);
 
   // ── Reactive fetch: YoY table (empresa + referenceDate) ───────────────────
+  // Same dep semantics as Top Fields / Installations — RPC computes its own
+  // MoM/YoY/YTD references off the reference month internally.
   const { data: yoyFetched, loading: yoyLoading } = useDebouncedFetch<
     ProductionYoYRow[] | null
   >(
@@ -526,7 +572,7 @@ export function useProductionData(): UseProductionData {
       }
     },
     [supabase, bootstrapping, empresa, referenceDate],
-    { ms: 300, skipInitial: false },
+    { ms: 150, skipInitial: false },
   );
   useEffect(() => {
     if (yoyFetched) setYoyTable(yoyFetched);

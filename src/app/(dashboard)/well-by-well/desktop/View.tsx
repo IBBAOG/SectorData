@@ -254,16 +254,24 @@ function KpiCard({
   unit,
   accent,
   delta,
+  loading = false,
+  hasData = true,
 }: {
   label: string;
   value: string;
   unit: string;
   accent?: boolean;
   delta?: { pct: number | null; label: string };
+  /** Backing RPC is currently in-flight. Card dims subtly; value persists. */
+  loading?: boolean;
+  /** Whether any value has ever been received. When false + loading, show skeleton. */
+  hasData?: boolean;
 }): React.ReactElement {
   const deltaSign = delta?.pct == null ? null : delta.pct >= 0 ? "up" : "down";
   const deltaColor = deltaSign === "up" ? "#197a39" : deltaSign === "down" ? "#b3261e" : "#888";
   const deltaArrow = deltaSign === "up" ? "▲" : deltaSign === "down" ? "▼" : "";
+  // Round 5: first-load skeleton (no prior data + currently fetching).
+  const showSkeleton = loading && !hasData;
   return (
     <div
       style={{
@@ -274,6 +282,10 @@ function KpiCard({
         flex: "1 1 0",
         minWidth: 0,
         borderLeft: accent ? `4px solid ${BRAND_ORANGE}` : "4px solid transparent",
+        // Subtle dim while refreshing existing data, but keep value readable.
+        opacity: loading && hasData ? 0.75 : 1,
+        transition: "opacity 0.18s ease",
+        position: "relative",
       }}
     >
       <div
@@ -289,21 +301,34 @@ function KpiCard({
       >
         {label}
       </div>
-      <div
-        style={{
-          fontFamily: "Arial",
-          fontSize: 24,
-          fontWeight: 700,
-          color: "#1a1a1a",
-          lineHeight: 1.1,
-        }}
-      >
-        {value}
-        <span style={{ fontSize: 12, fontWeight: 500, color: "#888", marginLeft: 6 }}>
-          {unit}
-        </span>
-      </div>
-      {delta && delta.pct != null && (
+      {showSkeleton ? (
+        <div
+          aria-busy="true"
+          aria-label="Loading"
+          className="wbw-kpi-skeleton"
+          style={{
+            height: 26,
+            width: "70%",
+            borderRadius: 4,
+          }}
+        />
+      ) : (
+        <div
+          style={{
+            fontFamily: "Arial",
+            fontSize: 24,
+            fontWeight: 700,
+            color: "#1a1a1a",
+            lineHeight: 1.1,
+          }}
+        >
+          {value}
+          <span style={{ fontSize: 12, fontWeight: 500, color: "#888", marginLeft: 6 }}>
+            {unit}
+          </span>
+        </div>
+      )}
+      {delta && delta.pct != null && !showSkeleton && (
         <div
           style={{
             marginTop: 6,
@@ -1030,7 +1055,12 @@ export default function DesktopView(): React.ReactElement | null {
               </div>
             </div>
 
-            {/* ── KPI cards ──────────────────────────────────────────────── */}
+            {/* ── KPI cards ───────────────────────────────────────────────
+                Round 5: each card is wired to its backing data's loading
+                flag + `hasData` predicate. While the underlying RPC is in
+                flight AND no prior data exists, the value slot shows a
+                shimmer skeleton; while refreshing existing data, the card
+                dims subtly to 0.75 opacity. */}
             <div
               style={{
                 display: "flex",
@@ -1043,12 +1073,16 @@ export default function DesktopView(): React.ReactElement | null {
                 label="Brazil oil"
                 value={fmtNumber(kpi.brazilOilKbpd, 0)}
                 unit="kbpd"
+                loading={brazilLoading}
+                hasData={brazilData.length > 0}
               />
               <KpiCard
                 accent
                 label={`${empresa} oil`}
                 value={fmtNumber(kpi.companyOilKbpd, 0)}
                 unit="kbpd"
+                loading={companyLoading}
+                hasData={companyData.length > 0}
                 delta={
                   kpi.companyMomPct != null
                     ? { pct: kpi.companyMomPct, label: "MoM" }
@@ -1060,12 +1094,16 @@ export default function DesktopView(): React.ReactElement | null {
                 label={`${empresa} gas`}
                 value={fmtNumber(kpi.companyGasMm3d, 1)}
                 unit="Mm³/d"
+                loading={companyLoading}
+                hasData={companyData.length > 0}
               />
               <KpiCard
                 accent
                 label={`${empresa} YTD avg`}
                 value={fmtNumber(kpi.companyYtdAvgKbpd, 0)}
                 unit="kbpd"
+                loading={companyLoading || yoyLoading}
+                hasData={companyData.length > 0}
                 delta={
                   kpi.companyYoyPct != null
                     ? { pct: kpi.companyYoyPct, label: "YoY" }
