@@ -13,9 +13,9 @@
 //   which (in its default landing state — no search, topic="All") reduces to
 //   the keyword-filtered article list. This panel applies the SAME keyword
 //   filter via the shared util `filterArticlesByKeywords` and takes the first
-//   6 items. The context already pre-sorts articles by `published_at desc`
-//   on every merge, so no extra sort is needed here — the top-6 shown here
-//   ARE the top-6 visible at the top of /news-hunter for the same user.
+//   N items. The context already pre-sorts articles by `published_at desc`
+//   on every merge, so no extra sort is needed here — the top-N shown here
+//   ARE the top-N visible at the top of /news-hunter for the same user.
 //
 //   We deliberately do NOT mount useNewsHunterData() here because it calls
 //   useModuleVisibilityGuard("news-hunter"), which would redirect users who
@@ -31,9 +31,10 @@ import { filterArticlesByKeywords } from "../../../app/(dashboard)/news-hunter/u
 import styles from "./NewsHunterPanel.module.css";
 
 // Number of articles to show in the home panel.
-// 6 keeps the panel visually balanced with TeamPanel (3 rows above) +
-// DataSourcesTable (≈19 rows expanded). Tuned for ~360px column width.
-const ITEM_COUNT = 6;
+// 20 was requested by the CTO — gives a deeper feed snapshot directly on
+// /home. The panel grows taller than the right-column stack (TeamPanel +
+// DataSourcesTable) and the home page scrolls naturally as a result.
+const ITEM_COUNT = 20;
 
 // Local age helper — kept here (not re-exported from useNewsHunterData) so
 // this panel has zero coupling to the news-hunter dashboard internals.
@@ -86,8 +87,8 @@ export default function NewsHunterPanel(): React.ReactElement {
   // landing-state feed: same articles (context-sorted published_at desc),
   // same keyword filter (via the shared filterArticlesByKeywords util),
   // sliced to ITEM_COUNT. No additional sort, no extra fallback ordering —
-  // we trust the context's canonical order so the first 6 cards here are
-  // identical (and in the same order) to the first 6 cards rendered at the
+  // we trust the context's canonical order so the first N cards here are
+  // identical (and in the same order) to the first N cards rendered at the
   // top of /news-hunter for the same viewer.
   const topArticles = useMemo(() => {
     if (!articles || articles.length === 0) return [];
@@ -96,20 +97,13 @@ export default function NewsHunterPanel(): React.ReactElement {
 
   return (
     <div className={styles.root}>
-      {/* Header — pulse dot + label + inline "Open" CTA */}
+      {/* Header — pulse dot + label. The footer "Open full feed" CTA is the
+          only entry point to the full dashboard now (per CTO 2026-05-27). */}
       <div className={styles.header}>
         <span className={styles.headerTitle}>
           <span className={styles.pulseDot} aria-hidden="true" />
           News Hunter
         </span>
-        <Link
-          href="/news-hunter"
-          className={styles.headerCta}
-          aria-label="Open News Hunter dashboard"
-        >
-          Open
-          <ArrowRight />
-        </Link>
       </div>
 
       {/* Body */}
