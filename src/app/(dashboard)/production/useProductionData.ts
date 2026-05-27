@@ -43,6 +43,7 @@ import {
   rpcGetProductionTopFields,
   rpcGetProductionByInstallation,
   rpcGetProductionYoyTable,
+  rpcGetProductionFieldTimeseries,
 } from "../../../lib/rpc";
 import type { FieldStakeEmpresa } from "../../../types/fieldStakes";
 import type {
@@ -51,6 +52,7 @@ import type {
   ProductionTopField,
   ProductionInstallation,
   ProductionYoYRow,
+  ProductionFieldTimeseriesRow,
 } from "../../../types/production";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -211,6 +213,24 @@ export interface UseProductionData {
   csvLoading: boolean;
   handleExportExcel: () => Promise<void>;
   handleExportCsv: () => Promise<void>;
+
+  // Field drill-down (Round 2, 2026-05-27)
+  // Click a row in the Top Fields panel to open this. The modal/sheet shows a
+  // 13mo timeseries (oil + water stacked + hours-rate line) plus 4 KPIs
+  // derived client-side from the timeseries.
+  drillCampo: string | null;            // null = closed; non-null = open
+  drillTimeseries: ProductionFieldTimeseriesRow[];
+  drillLoading: boolean;
+  drillError: string | null;
+  drillKpis: {
+    currentOil: number;                 // kbpd at most-recent month in series
+    prevOil: number | null;             // kbpd at prior month
+    momPct: number | null;              // (current - prev) / prev
+    yoyPct: number | null;              // vs same calendar month one year prior
+    ytdAvg: number | null;              // kbpd YTD average (year of most-recent month)
+  };
+  openFieldDrill: (campo: string) => void;
+  closeFieldDrill: () => void;
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -242,6 +262,13 @@ export function useProductionData(): UseProductionData {
 
   const [excelLoading, setExcelLoading] = useState(false);
   const [csvLoading, setCsvLoading] = useState(false);
+
+  // Field drill-down state (Round 2). `drillCampo` doubles as visibility flag
+  // for the modal/sheet — null when closed, the field name when open.
+  const [drillCampo, setDrillCampo] = useState<string | null>(null);
+  const [drillTimeseries, setDrillTimeseries] = useState<ProductionFieldTimeseriesRow[]>([]);
+  const [drillLoading, setDrillLoading] = useState(false);
+  const [drillError, setDrillError] = useState<string | null>(null);
 
   // ── Derived: dateRange from monthIdxRange ─────────────────────────────────
   const dateRange = useMemo<[string, string]>(() => {
@@ -519,6 +546,94 @@ export function useProductionData(): UseProductionData {
     };
   }, [brazilData, companyData, yoyTable, referenceDate]);
 
+  // ── Field drill-down: open / close handlers + reactive fetch ──────────────
+  //
+  // Open is intent-driven (user clicked a row) — feedback should be fast, so
+  // no debounce here. The fetch reuses the dashboard's current dateRange +
+  // empresa so the drilled-in timeseries matches the period the user is
+  // looking at. Closing clears the timeseries to avoid stale flicker if a
+  // different field is reopened later.
+  const openFieldDrill = useCallback((campo: string) => {
+    setDrillCampo(campo);
+  }, []);
+  const closeFieldDrill = useCallback(() => {
+    setDrillCampo(null);
+    setDrillTimeseries([]);
+    setDrillError(null);
+  }, []);
+
+  useEffect(() => {
+    if (!supabase || !drillCampo || !empresa || !dateRange[0] || !dateRange[1]) {
+      return;
+    }
+    let cancelled = false;
+    setDrillLoading(true);
+    setDrillError(null);
+    (async () => {
+      try {
+        const rows = await rpcGetProductionFieldTimeseries(
+          supabase,
+          drillCampo,
+          empresa,
+          dateRange[0],
+          dateRange[1],
+        );
+        if (!cancelled) setDrillTimeseries(rows);
+      } catch (e) {
+        if (!cancelled) {
+          console.error("Field drill timeseries refetch failed", e);
+          setDrillError(e instanceof Error ? e.message : String(e));
+          setDrillTimeseries([]);
+        }
+      } finally {
+        if (!cancelled) setDrillLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, drillCampo, empresa, dateRange]);
+
+  // Derived KPIs for the drill (client-side from the 13mo series).
+  //   currentOil = last month's stake-weighted oil, kbpd
+  //   prevOil    = month-before-last
+  //   momPct     = (currentOil - prevOil) / prevOil
+  //   yoyPct     = vs same calendar month one year prior (if present in series)
+  //   ytdAvg     = average of all months in the same calendar year as the
+  //                most-recent month (so for "Apr 2026" it averages Jan..Apr 2026)
+  const drillKpis = useMemo(() => {
+    if (drillTimeseries.length === 0) {
+      return { currentOil: 0, prevOil: null, momPct: null, yoyPct: null, ytdAvg: null };
+    }
+    // Sort ascending so the last entry is the most-recent month.
+    const sorted = [...drillTimeseries].sort((a, b) => {
+      if (a.ano !== b.ano) return a.ano - b.ano;
+      return a.mes - b.mes;
+    });
+    const last = sorted[sorted.length - 1];
+    const prev = sorted.length >= 2 ? sorted[sorted.length - 2] : null;
+    const currentOil = bblDiaToKbpd(last.oil_bbl_dia);
+    const prevOil = prev ? bblDiaToKbpd(prev.oil_bbl_dia) : null;
+    const momPct = prev && prevOil && prevOil !== 0
+      ? (currentOil - prevOil) / prevOil
+      : null;
+
+    // YoY: find the row at (last.ano - 1, last.mes), if it exists in the
+    // visible window. If the window is shorter than 13 months it may not.
+    const yoyMatch = sorted.find((r) => r.ano === last.ano - 1 && r.mes === last.mes);
+    const yoyOil = yoyMatch ? bblDiaToKbpd(yoyMatch.oil_bbl_dia) : null;
+    const yoyPct = yoyOil != null && yoyOil !== 0
+      ? (currentOil - yoyOil) / yoyOil
+      : null;
+
+    // YTD average — months in same calendar year as `last`, up to and
+    // including `last.mes`.
+    const ytdRows = sorted.filter((r) => r.ano === last.ano && r.mes <= last.mes);
+    const ytdAvg = ytdRows.length > 0
+      ? bblDiaToKbpd(ytdRows.reduce((s, r) => s + r.oil_bbl_dia, 0) / ytdRows.length)
+      : null;
+
+    return { currentOil, prevOil, momPct, yoyPct, ytdAvg };
+  }, [drillTimeseries]);
+
   // ── Export (Tier 1, multi-sheet XLSX + zip-of-CSVs) ───────────────────────
   //
   // Excel: 4 sheets (Brazil aggregate, Company aggregate, Top Fields,
@@ -744,5 +859,13 @@ export function useProductionData(): UseProductionData {
     csvLoading,
     handleExportExcel,
     handleExportCsv,
+
+    drillCampo,
+    drillTimeseries,
+    drillLoading,
+    drillError,
+    drillKpis,
+    openFieldDrill,
+    closeFieldDrill,
   };
 }

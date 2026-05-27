@@ -28,6 +28,7 @@ import {
   MobileDataCard,
   ExportFAB,
   MobileTabBar,
+  BottomSheet,
   FilterIcon,
   ChevronDownIcon,
   ChevronUpIcon,
@@ -53,6 +54,7 @@ import type {
   ProductionBrazilRow,
   ProductionCompanyRow,
   ProductionTopField,
+  ProductionFieldTimeseriesRow,
 } from "../../../../types/production";
 
 type Tab = "brazil" | "company" | "fields" | "fpsos";
@@ -91,6 +93,53 @@ function buildStackedSeries(
       hovertemplate: `${amb}: %{y:,.1f} kbpd<extra></extra>`,
     } as PlotData;
   });
+}
+
+/**
+ * Mobile drill chart: 13-month vertical stacked bars (oil + water) on left
+ * axis (kbpd) + hours-rate line on right axis (%). Shared layout via the
+ * `MobileChart` wrapper (it provides paper/plot colour, font, fixedrange).
+ */
+function buildFieldDrillSeries(rows: ProductionFieldTimeseriesRow[]): PlotData[] {
+  if (!rows.length) return [];
+  const sorted = [...rows].sort((a, b) => {
+    if (a.ano !== b.ano) return a.ano - b.ano;
+    return a.mes - b.mes;
+  });
+  const xs = sorted.map(
+    (r) => `${String(r.ano).padStart(4, "0")}-${String(r.mes).padStart(2, "0")}-01`,
+  );
+  return [
+    {
+      type: "bar",
+      name: "Oil",
+      x: xs,
+      y: sorted.map((r) => bblDiaToKbpd(r.oil_bbl_dia)),
+      marker: { color: TOP_FIELDS_OIL_COLOR },
+      hovertemplate: "Oil: %{y:,.1f} kbpd<extra></extra>",
+      yaxis: "y",
+    } as PlotData,
+    {
+      type: "bar",
+      name: "Water",
+      x: xs,
+      y: sorted.map((r) => bblDiaToKbpd(r.water_bbl_dia)),
+      marker: { color: TOP_FIELDS_WATER_COLOR },
+      hovertemplate: "Water: %{y:,.1f} kbpd<extra></extra>",
+      yaxis: "y",
+    } as PlotData,
+    {
+      type: "scatter",
+      mode: "lines+markers",
+      name: "Hours",
+      x: xs,
+      y: sorted.map((r) => r.hours_rate * 100),
+      line: { color: BRAND_ORANGE, width: 2 },
+      marker: { color: BRAND_ORANGE, size: 5 },
+      hovertemplate: "Hours: %{y:.0f}%<extra></extra>",
+      yaxis: "y2",
+    } as PlotData,
+  ];
 }
 
 function buildTopFieldsHBars(fields: ProductionTopField[]): PlotData[] {
@@ -196,6 +245,8 @@ export default function MobileView(): React.ReactElement | null {
     kpi,
     excelLoading, csvLoading,
     handleExportExcel, handleExportCsv,
+    drillCampo, drillTimeseries, drillLoading, drillError, drillKpis,
+    openFieldDrill, closeFieldDrill,
   } = useProductionData();
 
   const [tab, setTab] = useState<Tab>("brazil");
@@ -221,6 +272,7 @@ export default function MobileView(): React.ReactElement | null {
   const brazilSeries = useMemo(() => buildStackedSeries(brazilData, "brazil"), [brazilData]);
   const companySeries = useMemo(() => buildStackedSeries(companyData, "company"), [companyData]);
   const topFieldsSeries = useMemo(() => buildTopFieldsHBars(topFields), [topFields]);
+  const drillSeries = useMemo(() => buildFieldDrillSeries(drillTimeseries), [drillTimeseries]);
 
   if (visLoading || !visible) return null;
 
@@ -403,21 +455,23 @@ export default function MobileView(): React.ReactElement | null {
         {tab === "fields" && (
           <>
             <div style={{ marginBottom: 8, fontFamily: "Arial", fontSize: 12, color: "#888" }}>
-              {empresa} · top fields · {fmtMonthLabel(referenceDate)}
+              {empresa} · top fields · {fmtMonthLabel(referenceDate)} · tap to drill in
             </div>
-            <div
-              style={{
-                background: "var(--mobile-surface, #ffffff)",
-                border: "1px solid var(--mobile-border, #e6e6ec)",
-                borderRadius: 12,
-                padding: "10px 8px",
-                opacity: topFieldsLoading ? 0.6 : 1,
-              }}
-            >
-              {topFieldsSeries.length > 0 ? (
+            {/* Compact chart for at-a-glance comparison */}
+            {topFieldsSeries.length > 0 && (
+              <div
+                style={{
+                  background: "var(--mobile-surface, #ffffff)",
+                  border: "1px solid var(--mobile-border, #e6e6ec)",
+                  borderRadius: 12,
+                  padding: "10px 8px",
+                  marginBottom: 12,
+                  opacity: topFieldsLoading ? 0.6 : 1,
+                }}
+              >
                 <MobileChart
                   data={topFieldsSeries}
-                  height={Math.max(220, topFields.length * 28)}
+                  height={Math.max(180, topFields.length * 22)}
                   layout={{
                     barmode: "stack",
                     margin: { l: 110, r: 8, t: 8, b: 36 },
@@ -427,7 +481,39 @@ export default function MobileView(): React.ReactElement | null {
                     legend: { orientation: "h", y: -0.15, x: 0 },
                   }}
                 />
-              ) : (
+              </div>
+            )}
+            {/* Tappable card list — each card opens the drill BottomSheet */}
+            <div
+              style={{
+                background: "var(--mobile-surface, #ffffff)",
+                border: "1px solid var(--mobile-border, #e6e6ec)",
+                borderRadius: 12,
+                overflow: "hidden",
+                opacity: topFieldsLoading ? 0.6 : 1,
+              }}
+            >
+              {topFields.map((f) => (
+                <MobileDataCard
+                  key={f.campo}
+                  variant="compact"
+                  title={f.campo}
+                  subtitle={`Stake ${f.stake_pct.toFixed(1)}% · Hours ${(f.hours_rate * 100).toFixed(0)}%`}
+                  onClick={() => openFieldDrill(f.campo)}
+                  rightSlot={
+                    <div style={{ textAlign: "right", fontFamily: "Arial" }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#1a1a1a" }}>
+                        {fmtNumber(bblDiaToKbpd(f.oil_bbl_dia), 1)}
+                        <span style={{ fontSize: 10, color: "#888", marginLeft: 4 }}>kbpd</span>
+                      </div>
+                      <div style={{ fontSize: 10, color: "var(--mobile-accent, #ff5000)", fontWeight: 600 }}>
+                        Tap to drill ›
+                      </div>
+                    </div>
+                  }
+                />
+              ))}
+              {topFields.length === 0 && (
                 <div style={{ padding: 28, textAlign: "center", color: "#888", fontFamily: "Arial", fontSize: 12 }}>
                   No field-level data for this month.
                 </div>
@@ -635,6 +721,116 @@ export default function MobileView(): React.ReactElement | null {
           />
         </div>
       </FilterDrawer>
+
+      {/* ── Field drill-down BottomSheet (Round 2, 2026-05-27) ─────────── */}
+      <BottomSheet
+        open={drillCampo !== null}
+        onClose={closeFieldDrill}
+        height="90vh"
+        title={drillCampo ? `${drillCampo} — ${empresa}` : undefined}
+        ariaLabel="Field drill-down"
+      >
+        <div style={{ opacity: drillLoading ? 0.6 : 1, display: "flex", flexDirection: "column", gap: 12 }}>
+          {drillError && (
+            <div
+              style={{
+                padding: "10px 12px",
+                background: "#fff3cd",
+                border: "1px solid #ffe69c",
+                borderRadius: 8,
+                color: "#7d5800",
+                fontSize: 12,
+                fontFamily: "Arial",
+              }}
+            >
+              {drillError}
+            </div>
+          )}
+
+          {/* KPI tiles — 2×2 grid on mobile */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gap: 8,
+            }}
+          >
+            <MobileKpi
+              label="Current oil"
+              value={fmtNumber(drillKpis.currentOil, 1)}
+              unit="kbpd"
+            />
+            <MobileKpi
+              label="Δ MoM"
+              value={drillKpis.momPct == null ? "—" : fmtPct(drillKpis.momPct)}
+              unit=""
+            />
+            <MobileKpi
+              label="Δ YoY"
+              value={drillKpis.yoyPct == null ? "—" : fmtPct(drillKpis.yoyPct)}
+              unit=""
+            />
+            <MobileKpi
+              label="YTD avg"
+              value={drillKpis.ytdAvg == null ? "—" : fmtNumber(drillKpis.ytdAvg, 1)}
+              unit="kbpd"
+            />
+          </div>
+
+          {/* Chart */}
+          <div
+            style={{
+              background: "var(--mobile-surface, #ffffff)",
+              border: "1px solid var(--mobile-border, #e6e6ec)",
+              borderRadius: 12,
+              padding: "10px 8px",
+            }}
+          >
+            <div
+              style={{
+                fontFamily: "Arial",
+                fontSize: 12,
+                fontWeight: 700,
+                color: "#1a1a1a",
+                marginBottom: 6,
+                padding: "0 6px",
+              }}
+            >
+              Oil + Water (kbpd) · Hours rate (%)
+            </div>
+            {drillSeries.length > 0 ? (
+              <MobileChart
+                data={drillSeries}
+                height={280}
+                layout={{
+                  barmode: "stack",
+                  margin: { l: 36, r: 36, t: 8, b: 36 },
+                  xaxis: { type: "date", tickformat: "%b %y" },
+                  yaxis: { title: { text: "kbpd" } },
+                  yaxis2: {
+                    overlaying: "y",
+                    side: "right",
+                    range: [0, 105],
+                    showgrid: false,
+                    tickfont: { size: 10 },
+                    fixedrange: true,
+                  },
+                  showlegend: true,
+                  legend: { orientation: "h", y: -0.25, x: 0 },
+                }}
+              />
+            ) : (
+              <div style={{ padding: 28, textAlign: "center", color: "#888", fontFamily: "Arial", fontSize: 12 }}>
+                {drillLoading ? "Loading…" : "No data for this field in the current period."}
+              </div>
+            )}
+          </div>
+
+          <div style={{ fontSize: 11, color: "#888", fontFamily: "Arial", padding: "0 4px" }}>
+            Bars: stake-weighted oil (dark) + water (light blue) · Line: monthly uptime fraction.
+          </div>
+        </div>
+      </BottomSheet>
 
       {/* ── Export FAB + tiny action sheet ──────────────────────────────── */}
       <ExportFAB

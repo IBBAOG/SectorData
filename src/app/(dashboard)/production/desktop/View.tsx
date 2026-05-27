@@ -14,8 +14,8 @@
 // View must land in the OTHER View in the same commit, OR the commit message
 // must declare [desktop-only] with an explicit reason.
 
-import { useMemo } from "react";
-import type { Layout, PlotData } from "plotly.js";
+import { useEffect, useMemo } from "react";
+import type { Layout, PlotData, PlotMouseEvent } from "plotly.js";
 
 import NavBar from "../../../../components/NavBar";
 import PlotlyChart from "../../../../components/PlotlyChart";
@@ -43,6 +43,7 @@ import type {
   ProductionBrazilRow,
   ProductionCompanyRow,
   ProductionTopField,
+  ProductionFieldTimeseriesRow,
 } from "../../../../types/production";
 
 // ─── Chart builders ───────────────────────────────────────────────────────────
@@ -103,6 +104,93 @@ function buildStackedOilBars(
         tickformat: "%b %Y",
       },
       legend: { orientation: "h", yanchor: "bottom", y: 1.01, xanchor: "left", x: 0 },
+    },
+  };
+}
+
+/**
+ * Build the drill-down chart: 13-month stacked vertical bars (oil dark + water
+ * light blue) on the left y-axis (kbpd), plus a hours-rate line on the right
+ * y-axis (% of month). Empty if the series is empty (e.g. stake != 100 case).
+ */
+function buildFieldDrillChart(
+  rows: ProductionFieldTimeseriesRow[],
+): { data: PlotData[]; layout: Partial<Layout> } {
+  if (!rows.length) return emptyPlot(320, "No data for this field in the current period.");
+
+  const sorted = [...rows].sort((a, b) => {
+    if (a.ano !== b.ano) return a.ano - b.ano;
+    return a.mes - b.mes;
+  });
+  const xs = sorted.map(
+    (r) => `${String(r.ano).padStart(4, "0")}-${String(r.mes).padStart(2, "0")}-01`,
+  );
+  const oil = sorted.map((r) => bblDiaToKbpd(r.oil_bbl_dia));
+  const water = sorted.map((r) => bblDiaToKbpd(r.water_bbl_dia));
+  const hoursPct = sorted.map((r) => r.hours_rate * 100);
+
+  return {
+    data: [
+      {
+        type: "bar",
+        name: "Oil",
+        x: xs,
+        y: oil,
+        marker: { color: TOP_FIELDS_OIL_COLOR },
+        hovertemplate: "Oil: %{y:,.1f} kbpd<extra></extra>",
+        yaxis: "y",
+      } as PlotData,
+      {
+        type: "bar",
+        name: "Water",
+        x: xs,
+        y: water,
+        marker: { color: TOP_FIELDS_WATER_COLOR },
+        hovertemplate: "Water: %{y:,.1f} kbpd<extra></extra>",
+        yaxis: "y",
+      } as PlotData,
+      {
+        type: "scatter",
+        mode: "lines+markers",
+        name: "Hours rate",
+        x: xs,
+        y: hoursPct,
+        line: { color: BRAND_ORANGE, width: 2 },
+        marker: { color: BRAND_ORANGE, size: 6 },
+        hovertemplate: "Hours: %{y:.1f}%<extra></extra>",
+        yaxis: "y2",
+      } as PlotData,
+    ],
+    layout: {
+      ...COMMON_LAYOUT,
+      height: 320,
+      margin: { t: 10, b: 50, l: 60, r: 60 },
+      barmode: "stack",
+      hovermode: "x unified",
+      xaxis: {
+        ...AXIS_LINE,
+        type: "date",
+        tickformat: "%b %Y",
+      },
+      yaxis: {
+        ...AXIS_LINE,
+        title: { text: "kbpd" },
+      },
+      yaxis2: {
+        ...AXIS_LINE,
+        overlaying: "y",
+        side: "right",
+        title: { text: "Hours rate (%)" },
+        range: [0, 105],
+        showgrid: false,
+      },
+      legend: {
+        orientation: "h",
+        yanchor: "bottom",
+        y: 1.01,
+        xanchor: "left",
+        x: 0,
+      },
     },
   };
 }
@@ -231,6 +319,245 @@ function KpiCard({
   );
 }
 
+// ─── Field drill-down modal ───────────────────────────────────────────────────
+//
+// Bootstrap-styled modal (matches ExportModal chrome). Body: 4 KPI cards on top
+// + 13mo timeseries chart (oil/water stacked + hours-rate line on right axis).
+// Closes on Esc, scrim click, or × button.
+
+function FieldDrillModal({
+  campo,
+  empresa,
+  loading,
+  error,
+  series,
+  kpis,
+  onClose,
+}: {
+  campo: string;
+  empresa: string;
+  loading: boolean;
+  error: string | null;
+  series: ProductionFieldTimeseriesRow[];
+  kpis: {
+    currentOil: number;
+    prevOil: number | null;
+    momPct: number | null;
+    yoyPct: number | null;
+    ytdAvg: number | null;
+  };
+  onClose: () => void;
+}): React.ReactElement {
+  const chart = useMemo(() => buildFieldDrillChart(series), [series]);
+
+  // Close on Escape.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${campo} drill-down`}
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1050,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "rgba(0,0,0,0.45)",
+        backdropFilter: "blur(2px)",
+        fontFamily: "Arial",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: "relative",
+          width: "min(820px, calc(100vw - 32px))",
+          maxHeight: "calc(100vh - 64px)",
+          display: "flex",
+          flexDirection: "column",
+          backgroundColor: "#ffffff",
+          borderRadius: 10,
+          boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
+          overflow: "hidden",
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: "14px 20px",
+            borderBottom: "1px solid #e6e6e6",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            backgroundColor: "#fafafa",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 700,
+              color: "#1a1a1a",
+              letterSpacing: "0.4px",
+              textTransform: "uppercase",
+            }}
+          >
+            {campo} <span style={{ color: "#888", fontWeight: 500 }}>— {empresa}</span>
+          </div>
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+            style={{
+              border: "none",
+              background: "transparent",
+              fontSize: 22,
+              lineHeight: 1,
+              color: "#888",
+              cursor: "pointer",
+              padding: "0 4px",
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Body */}
+        <div
+          style={{
+            padding: "16px 20px",
+            overflowY: "auto",
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+            flex: "1 1 auto",
+            opacity: loading ? 0.6 : 1,
+          }}
+        >
+          {error && (
+            <div
+              style={{
+                padding: "10px 12px",
+                background: "#fff3cd",
+                border: "1px solid #ffe69c",
+                borderRadius: 6,
+                color: "#7d5800",
+                fontSize: 12,
+              }}
+            >
+              {error}
+            </div>
+          )}
+
+          {/* KPI strip */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+              gap: 10,
+            }}
+          >
+            <KpiCard
+              label="Current oil"
+              value={fmtNumber(kpis.currentOil, 1)}
+              unit="kbpd"
+              accent
+            />
+            <KpiCard
+              label="Δ MoM"
+              value={kpis.momPct == null ? "—" : fmtPct(kpis.momPct)}
+              unit=""
+            />
+            <KpiCard
+              label="Δ YoY"
+              value={kpis.yoyPct == null ? "—" : fmtPct(kpis.yoyPct)}
+              unit=""
+            />
+            <KpiCard
+              label="YTD avg"
+              value={kpis.ytdAvg == null ? "—" : fmtNumber(kpis.ytdAvg, 1)}
+              unit="kbpd"
+            />
+          </div>
+
+          {/* Chart */}
+          <div style={{ position: "relative" }}>
+            <PlotlyChart
+              data={chart.data}
+              layout={chart.layout}
+              style={{ width: "100%", height: 320 }}
+            />
+            {!loading && series.length === 0 && (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#888",
+                  fontSize: 12,
+                  background: "rgba(255,255,255,0.6)",
+                }}
+              >
+                No data for this field in the current period.
+              </div>
+            )}
+          </div>
+
+          <div style={{ fontSize: 11, color: "#888" }}>
+            Bars: stake-weighted oil (dark) + water (light blue) in kbpd ·
+            Line: monthly uptime fraction · Period reflects the dashboard filters.
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div
+          style={{
+            padding: "12px 20px",
+            borderTop: "1px solid #e6e6e6",
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: 8,
+            backgroundColor: "#ffffff",
+          }}
+        >
+          <button
+            type="button"
+            className="btn btn-outline-secondary btn-sm"
+            onClick={onClose}
+            style={{ fontFamily: "Arial" }}
+          >
+            Close
+          </button>
+        </div>
+
+        {/* Brand accent bar */}
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 3,
+            backgroundColor: BRAND_ORANGE,
+            pointerEvents: "none",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ─── View ─────────────────────────────────────────────────────────────────────
 
 export default function DesktopView(): React.ReactElement | null {
@@ -246,6 +573,8 @@ export default function DesktopView(): React.ReactElement | null {
     kpi,
     excelLoading, csvLoading,
     handleExportExcel, handleExportCsv,
+    drillCampo, drillTimeseries, drillLoading, drillError, drillKpis,
+    openFieldDrill, closeFieldDrill,
   } = useProductionData();
 
   // ── Chart memoisation ─────────────────────────────────────────────────────
@@ -541,11 +870,35 @@ export default function DesktopView(): React.ReactElement | null {
                 loading={topFieldsLoading}
                 height={360}
               >
-                <PlotlyChart
-                  data={topFieldsChart.data}
-                  layout={topFieldsChart.layout}
-                  style={{ width: "100%", height: 360 }}
-                />
+                <div style={{ position: "relative" }}>
+                  <PlotlyChart
+                    data={topFieldsChart.data}
+                    layout={topFieldsChart.layout}
+                    style={{ width: "100%", height: 360, cursor: topFields.length > 0 ? "pointer" : "default" }}
+                    onClick={(e: PlotMouseEvent) => {
+                      // Bar y-axis carries the campo name (one of `topFields[].campo`).
+                      const point = e?.points?.[0];
+                      if (!point) return;
+                      const value = (point as { y?: unknown }).y;
+                      if (typeof value === "string" && value.length > 0) {
+                        openFieldDrill(value);
+                      }
+                    }}
+                  />
+                  {topFields.length > 0 && (
+                    <div
+                      style={{
+                        marginTop: 4,
+                        fontFamily: "Arial",
+                        fontSize: 10.5,
+                        color: "#888",
+                        textAlign: "center",
+                      }}
+                    >
+                      Click a bar to drill into a field&apos;s monthly history
+                    </div>
+                  )}
+                </div>
               </ChartSection>
               <ChartSection
                 title={`Installations (FPSO/UEP) — ${fmtMonthLabel(referenceDate)}`}
@@ -668,6 +1021,19 @@ export default function DesktopView(): React.ReactElement | null {
           </>
         )}
       </div>
+
+      {/* ── Field drill-down modal (Round 2, 2026-05-27) ─────────────────── */}
+      {drillCampo && (
+        <FieldDrillModal
+          campo={drillCampo}
+          empresa={empresa}
+          loading={drillLoading}
+          error={drillError}
+          series={drillTimeseries}
+          kpis={drillKpis}
+          onClose={closeFieldDrill}
+        />
+      )}
     </div>
   );
 }
