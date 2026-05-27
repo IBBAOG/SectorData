@@ -42,7 +42,7 @@
 import type { ClippingItem } from "./types";
 import { formatDateHeader } from "./buildHtml";
 
-const FONT_FAMILY = "Arial, Helvetica, sans-serif";
+const FONT_FAMILY = "Calibri, Arial, sans-serif";
 const COLOR_BODY = "#1A1A1A";
 const COLOR_BRAND = "#FF5000";
 const COLOR_LINK = "#0563C1";
@@ -50,10 +50,10 @@ const COLOR_NAME = "#000512";
 const COLOR_LABEL = "#333333";
 
 // Word-HTML "size" attribute maps to a discrete scale (1..7).
-// size=6 ~= 24px ~= 18pt for header
-// size=4 ~= 14px ~= 14pt for subheader / titles
-// size=2 ~= 13px ~= 10pt for footer names
-const SIZE_HEADER = "6";
+// size=5 ~= 18pt for header (Eduardo's mapping)
+// size=4 ~= 14pt for subheader / titles
+// size=2 ~= 10pt for footer names
+const SIZE_HEADER = "5";
 const SIZE_SUBHEADER = "4";
 const SIZE_BODY = "3"; // ~12px ~= 11pt
 const SIZE_SMALL = "2";
@@ -104,7 +104,7 @@ function styledRun(opts: {
   // <span style> OUTER + <font face/color/size> INNER + bold INNERMOST.
   return (
     `<span style="${cssStyle}">` +
-    `<font face="Arial, Helvetica, sans-serif" color="${color}" size="${size}">` +
+    `<font face="Calibri, Arial, sans-serif" color="${color}" size="${size}">` +
     inner +
     `</font>` +
     `</span>`
