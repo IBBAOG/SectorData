@@ -153,8 +153,9 @@ export type ProductionInstallationTimeseriesRow = ProductionFieldTimeseriesRow;
  *   - `is_total` flags totals/grand-totals for bold rendering.
  *   - Numeric cells: `current_val` / `prev_month_val` / `prev_year_val` /
  *     `ytd_avg` are already in the row's native unit (kbpd or kboed) — the UI
- *     does not re-convert. `mom_pct` / `yoy_pct` are fractions in the [-1, +∞)
- *     range (e.g. `0.024` for +2.4%); the UI rounds to integer percent.
+ *     does not re-convert. `mom_pct` / `yoy_pct` are already in percent units
+ *     (server computed as `(current/prev - 1) * 100`), e.g. `2.4` means +2.4%
+ *     — do NOT multiply by 100 again. The UI rounds to integer percent.
  *
  * Source-of-truth migration (slot 20260528500000):
  *   `supabase/migrations/20260528500000_well_by_well_header.sql`
@@ -168,8 +169,8 @@ export interface WellByWellHeaderRow {
   is_total: boolean;                     // bold styling cue
   current_val: number | null;
   prev_month_val: number | null;
-  mom_pct: number | null;                // fraction (e.g. 0.024 = +2.4%)
+  mom_pct: number | null;                // percent units (already × 100 server-side); 2.4 = +2.4%
   prev_year_val: number | null;
-  yoy_pct: number | null;                // fraction
+  yoy_pct: number | null;                // percent units (already × 100 server-side); 2.4 = +2.4%
   ytd_avg: number | null;
 }

@@ -58,10 +58,15 @@ function fmtIntPtBr(n: number | null): string {
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(n);
 }
 
-/** "+2%" / "-1%" / "" — integer percent with sign. NULL → "". */
+/** "+2%" / "-1%" / "" — integer percent with sign. NULL → "".
+ *
+ *  Contract: `p` is already in percent units (the RPC `get_well_by_well_header`
+ *  emits `(current/prev - 1) * 100`, e.g. 2.4 means +2.4%). Do NOT multiply by
+ *  100 again — we only round to the nearest integer for the PDF-style render.
+ */
 function fmtPctInt(p: number | null): string {
   if (p == null || !Number.isFinite(p)) return "";
-  const v = Math.round(p * 100);
+  const v = Math.round(p);
   if (v === 0) return "0%";
   const sign = v > 0 ? "+" : "";
   return `${sign}${v}%`;
