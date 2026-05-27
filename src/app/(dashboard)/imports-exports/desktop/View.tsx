@@ -90,11 +90,15 @@ const OTHERS_LABEL = "Others";
 // and left to right in the legend): Russia → US → UAE → Netherlands → India
 // → Saudi Arabia → Others (last, neutral grey).
 //
-// Scope: applies to Imports tab Panel A (By Origin Country stacked area), its
-// YoY table, and Panel D (Imports Unit Price by Origin Country) + the Imports
-// Price Summary table — every Imports view that ranks/colors by origin country
-// uses the same pin set so colors stay consistent across panels. Importer
-// panel (Panel B) and the Exports tab use their own coloring strategies.
+// Scope: applies to Imports tab Panel A (By Origin Country stacked area) and
+// its YoY table — the volume-side view of the same data. Panel D (Imports
+// Unit Price by Origin Country) and the Imports Price Summary table are NOT
+// pinned anymore (since 2026-05-28): they render exactly 3 series — top-2
+// origin countries by SUM(vol_m3) in the window + Others (volume-weighted
+// average) — so the chart and the table beneath it agree 1:1. When a top-2
+// country happens to be in this pin set, its trace inherits the pinned color;
+// otherwise the trace falls back to PALETTE rotation. Importer panel (Panel B)
+// and the Exports tab use their own coloring strategies.
 const ORIGIN_COUNTRY_PINS: ReadonlyArray<{
   dbName: string;
   label: string;
@@ -1078,8 +1082,10 @@ export default function DesktopView(): React.ReactElement {
     exportsPaisesLoading,
     yoyExportsData,
     yoyExportsLoading,
-    importsUnitPriceData,
     importsUnitPriceLoading,
+    importsUnitPriceChartData,
+    importsUnitPriceChartEntities,
+    importsUnitPriceChartColorMap,
     exportsUnitPriceData,
     exportsUnitPriceLoading,
     importsUPMetric,
@@ -1206,24 +1212,13 @@ export default function DesktopView(): React.ReactElement {
       : buildStackedTraces(rows, exportsUnit);
   }, [exportsPaisesData, exportsUnit, isSingleMonth]);
 
-  // Imports — unit price by country (Panel D): pinned-country mode.
-  // Filter rows to the 6 pinned origins only (Others bucket would conflate
-  // disparate per-country prices and be misleading), relabel to English,
-  // and force the fixed legend order.
-  const importsUnitPriceDataPinned: UnitPriceRow[] = useMemo(() => {
-    const out: UnitPriceRow[] = [];
-    for (const r of importsUnitPriceData) {
-      const label = ORIGIN_LABEL_BY_DB[r.pais];
-      if (!label) continue;
-      out.push({ ano: r.ano, mes: r.mes, pais: label, usd_per_m3: r.usd_per_m3, vol_m3: r.vol_m3 });
-    }
-    return out;
-  }, [importsUnitPriceData]);
-
-  const importsUPEntities = useMemo(
-    () => ORIGIN_COUNTRY_PINS.map((p) => p.label),
-    [],
-  );
+  // Imports — unit price by country (Panel D): 3-series mode (top-2 + Others).
+  // Both the rows and entity/color metadata come from the shared hook so the
+  // chart legend matches the Imports Price Summary table beneath it 1:1.
+  // The hook already collapsed non-top-2 countries into a volume-weighted
+  // "Others" series — the View just plots what arrives. The previous
+  // pinned-6-country mode was retired per CTO directive to align chart ↔ table.
+  const importsUPEntities = importsUnitPriceChartEntities;
 
   // Imports unit price — conversion based on local metric toggle
   const importsUPConvertFn = useMemo(() => {
@@ -1242,20 +1237,20 @@ export default function DesktopView(): React.ReactElement {
     () =>
       isSingleMonth
         ? buildHorizontalBarTracesFromUnitPrice(
-            importsUnitPriceDataPinned,
+            importsUnitPriceChartData,
             importsUPEntities,
             importsUPUnitLabel,
             importsUPConvertFn,
-            ORIGIN_COLOR_BY_LABEL,
+            importsUnitPriceChartColorMap,
           )
         : buildUnitPriceTraces(
-            importsUnitPriceDataPinned,
+            importsUnitPriceChartData,
             importsUPEntities,
             importsUPUnitLabel,
             importsUPConvertFn,
-            ORIGIN_COLOR_BY_LABEL,
+            importsUnitPriceChartColorMap,
           ),
-    [importsUnitPriceDataPinned, importsUPEntities, importsUPUnitLabel, importsUPConvertFn, isSingleMonth],
+    [importsUnitPriceChartData, importsUnitPriceChartColorMap, importsUPEntities, importsUPUnitLabel, importsUPConvertFn, isSingleMonth],
   );
 
   const importsUPLayout: Partial<Layout> = useMemo(

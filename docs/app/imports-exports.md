@@ -188,10 +188,12 @@ The stacked-area chart ("Exports — By Destination Country") ranks destination 
 │              │     PillToggle: USD/ton (default) · ¢/gal (local state).    │
 │              │     Toggle lives in the hook (importsUPMetric) so it also  │
 │              │     drives the summary table unit.                         │
-│              │     Plotly multi-line — 1 trace per pinned origin country  │
-│              │     (NOT stacked). y=null for months with no data.         │
+│              │     Plotly multi-line — exactly 3 traces (top-2 origin     │
+│              │     countries by volume + Others). NOT stacked.            │
+│              │     y=null for months with no data; Others omitted for     │
+│              │     months where Σ(vol_m3)==0 in the rest-bucket.          │
 │              │   Import Price Summary table (top-2 + Others, MoM, YoY)     │
-│              │     Source: mdic_comex. Colors: ORIGIN palette + grey.     │
+│              │     Source: mdic_comex. Same 3 rows as chart, 1:1 colors.  │
 │              │                                                             │
 │              │ Exports tab:                                                │
 │              │   SegmentedToggle: Volume (mil m³) / Value (USD)           │
@@ -282,11 +284,11 @@ Panel D (multi-line Import Unit Price) and the Exports Unit Price chart are unaf
 
 ---
 
-## Pinned origin-country palette (Imports tab — Panel A + Panel D + YoY table)
+## Pinned origin-country palette (Imports tab — Panel A + YoY table)
 
-Added 2026-05-27 per CTO directive. The Imports tab's country-based panels show
-a **fixed 6-country palette + Others**, regardless of which countries top the
-server's ranking in any given period.
+Added 2026-05-27 per CTO directive. The Imports tab's volume-side country panels
+show a **fixed 6-country palette + Others**, regardless of which countries top
+the server's ranking in any given period.
 
 Pin set (legend order — top of stack and left of legend first):
 
@@ -305,8 +307,7 @@ Implementation:
 - Hook fetches `p_top_n = 10` from `get_imports_exports_paises_stacked` (unchanged). UI re-buckets client-side: any `pais_origem` not in the pin set (including the server's pre-existing "Others" bucket, if any) collapses into a single client-side "Others" entry per month.
 - The UI **always renders all 7 legend entries** (6 pinned + Others), even at zero — `ensureAllPinsPresent` injects zero-value rows per (ano, mes) for missing pinned countries so the legend stays visually stable across periods.
 - Both Panel A (stacked area + single-month horizontal bar) and the YoY table render in the canonical order: Russia → United States → UAE → Netherlands → India → Saudi Arabia → Others. Stack reads top-to-bottom in that order; legend reads left-to-right in that order; YoY table reads top-to-bottom in that order.
-- Panel D (Import Unit Price by Origin Country) uses the **same 6 pinned countries** but **omits Others** entirely — aggregating disparate per-country unit prices into a single line would be misleading.
-- Panel D's color map matches Panel A 1:1 so a country's color is consistent across both panels.
+- Panel D (Import Unit Price by Origin Country) is **NOT pinned** — see the next section. It renders top-2 by volume + Others to mirror the Imports Price Summary table beneath it.
 - DB values stay in Portuguese (read-only contract with ETL pipelines). Excel/CSV exports preserve the raw Portuguese names; only the on-screen labels are translated to English.
 
 Out of scope (not pinned — keep current auto-coloring):
@@ -316,6 +317,43 @@ Out of scope (not pinned — keep current auto-coloring):
 If a new top supplier emerges (e.g. China starts shipping diesel directly), it will be absorbed into Others until a code change updates `ORIGIN_COUNTRY_PINS`. This is the intended trade-off — fixed legend stability over auto-discovery.
 
 Source: `desktop/View.tsx` § `ORIGIN_COUNTRY_PINS`; `mobile/View.tsx` mirrors the same constant. Both views also share helpers `bucketPaisesByPins` / `ensureAllPinsPresent`. The mobile YoY card list gains an optional `colorMap` prop that renders an 8px dot next to the country name, mirroring the desktop table's dot.
+
+---
+
+## Panel D — Imports Unit Price by Origin Country (3-series mode)
+
+Updated 2026-05-28 per CTO directive: the chart now renders **exactly 3
+series** in lockstep with the Imports Price Summary table directly beneath
+it — eliminating the prior visual divergence (chart showed 6 pinned origins,
+table showed top-2 + Others).
+
+Series rendered:
+
+| Position | Source | Color |
+|---|---|---|
+| Trace 1 | Top origin country by SUM(`vol_m3`) in the selected window | Pinned-palette color if the country is in `ORIGIN_COUNTRY_PINS`, else PALETTE rotation |
+| Trace 2 | Second-place origin country by SUM(`vol_m3`) | Same rule |
+| Trace 3 | **Others** — volume-weighted monthly average of every non-top-2 country: `Σ(usd_per_m3 × vol_m3) / Σ(vol_m3)` over the rest. Months where `Σ(vol_m3) == 0` are silently omitted (no zero/null row emitted, so the chart simply has a gap there — `connectgaps` handles it visually). | `#7F7F7F` (grey, identical to the Others dot on the summary table) |
+
+Ranking and "Others" aggregation happen **server-side-then-client-side**:
+
+1. RPC `get_imports_exports_imports_unit_price` returns up to top-8 countries by volume in the window (each as its own row stream).
+2. The hook derivation `importsUnitPriceChartData` (in `useImportsExportsData.ts`) re-ranks the returned countries by SUM(`vol_m3`) in the window, keeps the top-2, collapses the rest into a synthetic "Others" series, and emits the result as `IEUnitPriceRow[]` with `pais` already translated to English.
+3. Both Views consume `importsUnitPriceChartData` + `importsUnitPriceChartEntities` + `importsUnitPriceChartColorMap` (also from the hook) and pass them straight to their local `buildUnitPriceTraces` helper.
+
+This contract means the chart legend, the per-trace color, and the summary table's row dots all derive from a single source. The chart and the table can no longer drift.
+
+**Why not pinned (like Panel A):** the user wants Panel D to answer "what's the going price for diesel imports from our two biggest suppliers, and what's everyone else paying on average?" — a focused question that demands focused visuals. The pinned-6-country mode (legacy) was useful when Panel D and Panel A shared a single mental model, but with the summary table beneath, top-2-plus-Others is the cleaner story.
+
+**Exports tab (Crude Oil unit price chart) is NOT affected** — it keeps its existing per-destination top-N rendering. The user was explicit that exports want full visibility of every destination on both chart and table, since Brazilian crude oil exports diversify across many destinations and no destination dominates.
+
+**Edge cases handled:**
+
+- **Single-month window** (start === end): top-2 + Others still works; the chart becomes a horizontal ranked bar with 3 bars (instead of 6).
+- **Single-country window**: top-2 collapses to top-1; Others is absent; the chart renders a single trace. No null entries.
+- **Empty window**: the chart renders nothing; the summary table also empty.
+
+Source: `useImportsExportsData.ts` § `importsUnitPriceChartDerivation`; `desktop/View.tsx` § Panel D block; `mobile/View.tsx` mirrors. The underlying `importsUnitPriceData` (raw top-8 from RPC) remains exposed on the hook for the Imports Price Summary table's per-country ranking — only the chart-facing derivation changed.
 
 ---
 
@@ -362,9 +400,11 @@ Added 2026-05-28 alongside the Panel C removal. Rendered directly below the corr
 
 Row count: **always 3** — top-2 origin countries by total `SUM(vol_m3)` in the window + an "Others" row carrying a volume-weighted-average price across the remaining countries. The "Others" monthly value is `Σ(usd_per_m3 × vol_m3) / Σ(vol_m3)`; if `Σ(vol_m3) == 0` for the anchor month, the value is `null` and the row shows `—`.
 
-Color dots in the Country column mirror the chart's legend colors exactly (Russia black, United States brand orange, etc.; Others grey).
+Color dots in the Country column mirror the chart's legend colors exactly (top-2: pinned-palette color when applicable, PALETTE rotation otherwise; Others: grey `#7F7F7F`).
 
 Unit suffix in the Latest column header follows the active toggle. Switching the toggle re-renders both the chart and the table together.
+
+**Chart ↔ table parity (2026-05-28):** since the Panel D chart was collapsed to 3 series in lockstep with this table (see § "Panel D — Imports Unit Price by Origin Country (3-series mode)"), each chart line and each table row reference the exact same `importsUnitPriceChartData` derivation — both consume `top-2 + Others` from the shared hook, with the same color per entity. They cannot drift apart.
 
 ### Exports Price Summary
 

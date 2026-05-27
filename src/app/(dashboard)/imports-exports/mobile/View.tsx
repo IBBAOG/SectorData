@@ -803,8 +803,10 @@ export default function MobileView(): React.ReactElement {
     exportsPaisesLoading,
     yoyExportsData,
     yoyExportsLoading,
-    importsUnitPriceData,
     importsUnitPriceLoading,
+    importsUnitPriceChartData,
+    importsUnitPriceChartEntities,
+    importsUnitPriceChartColorMap,
     exportsUnitPriceData,
     exportsUnitPriceLoading,
     importsUPMetric,
@@ -947,25 +949,13 @@ export default function MobileView(): React.ReactElement {
     [exportsUnit, rangeMonths, isSingleMonth, singleMonthLabel],
   );
 
-  // ── Unit price traces — imports (Panel D, pinned-country mode) ──────────────
-  // Mirrors desktop Panel D: filter to the 6 pinned origins only, relabel to
-  // English, force the canonical legend order so the chart color-aligns with
-  // Panel A. "Others" is omitted (aggregating disparate per-country prices
-  // would be misleading; see desktop View.tsx note).
-  const importsUnitPriceDataPinned: UnitPriceRow[] = useMemo(() => {
-    const out: UnitPriceRow[] = [];
-    for (const r of importsUnitPriceData) {
-      const label = ORIGIN_LABEL_BY_DB[r.pais];
-      if (!label) continue;
-      out.push({ ano: r.ano, mes: r.mes, pais: label, usd_per_m3: r.usd_per_m3, vol_m3: r.vol_m3 });
-    }
-    return out;
-  }, [importsUnitPriceData]);
-
-  const importsUPEntities = useMemo(
-    () => ORIGIN_COUNTRY_PINS.map((p) => p.label),
-    [],
-  );
+  // ── Unit price traces — imports (Panel D, 3-series mode) ───────────────────
+  // Both the rows and the entity/color metadata come from the shared hook so
+  // the chart legend matches the Imports Price Summary table beneath it 1:1
+  // (top-2 origin countries + a volume-weighted "Others" series). Mirrors
+  // desktop/View.tsx — the previous pinned-6-country mode was retired per
+  // CTO directive to align chart ↔ table.
+  const importsUPEntities = importsUnitPriceChartEntities;
 
   // Imports unit price — conversion based on local metric toggle
   const importsUPConvertFn = useMemo(() => {
@@ -982,20 +972,20 @@ export default function MobileView(): React.ReactElement {
     () =>
       isSingleMonth
         ? buildHorizontalBarTracesFromUnitPrice(
-            importsUnitPriceDataPinned,
+            importsUnitPriceChartData,
             importsUPEntities,
             importsUPUnitLabel,
             importsUPConvertFn,
-            ORIGIN_COLOR_BY_LABEL,
+            importsUnitPriceChartColorMap,
           )
         : buildUnitPriceTraces(
-            importsUnitPriceDataPinned,
+            importsUnitPriceChartData,
             importsUPEntities,
             importsUPUnitLabel,
             importsUPConvertFn,
-            ORIGIN_COLOR_BY_LABEL,
+            importsUnitPriceChartColorMap,
           ),
-    [importsUnitPriceDataPinned, importsUPEntities, importsUPUnitLabel, importsUPConvertFn, isSingleMonth],
+    [importsUnitPriceChartData, importsUnitPriceChartColorMap, importsUPEntities, importsUPUnitLabel, importsUPConvertFn, isSingleMonth],
   );
 
   const importsUPMobileLayout: Partial<Layout> = useMemo(

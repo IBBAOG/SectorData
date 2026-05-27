@@ -55,6 +55,7 @@ import type {
   IEExportsYoyRow,
   IEUnitPriceRow,
 } from "@/lib/rpc";
+import { PALETTE } from "@/lib/plotlyDefaults";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -174,6 +175,21 @@ export interface UseImportsExportsData {
   // Imports tab — Panel D (unit price by origin country, USD/m³)
   importsUnitPriceData: IEUnitPriceRow[];
   importsUnitPriceLoading: boolean;
+
+  // Panel D chart-only derivation. Exactly 3 series (top-2 origin countries
+  // by SUM(vol_m3) in the window + an "Others" row whose monthly value is
+  // Σ(usd_per_m3 × vol_m3) / Σ(vol_m3) across the remaining countries).
+  // Months where Σ(vol_m3) == 0 for Others are silently dropped.
+  // Rows carry English country labels (Russia / United States / Others) so
+  // the chart legend matches the Imports Price Summary table 1:1.
+  // The underlying `importsUnitPriceData` (raw top-N from RPC) remains
+  // available for the table's per-country ranking and other consumers.
+  importsUnitPriceChartData: IEUnitPriceRow[];
+  /** Ordered list of the 3 chart entity labels (top-2 + "Others"). */
+  importsUnitPriceChartEntities: string[];
+  /** Color per chart entity. Pinned countries use their fixed palette color;
+   *  non-pinned countries fall back to PALETTE rotation; "Others" is grey. */
+  importsUnitPriceChartColorMap: Record<string, string>;
 
   // Exports tab — unit price by destination country (USD/m³)
   exportsUnitPriceData: IEUnitPriceRow[];
@@ -887,6 +903,118 @@ export function useImportsExportsData(): UseImportsExportsData {
     periodEndMes,
   ]);
 
+  // Panel D chart data — same top-2 ranking as importsPriceSummary, but
+  // emitted as IEUnitPriceRow[] rows in raw USD/m³ so the chart applies its
+  // own unit conversion (USD/ton or ¢/gal). The "Others" series carries the
+  // volume-weighted average across non-top-2 countries per month; months
+  // where Σ(vol_m3) == 0 are silently omitted (no zero/null row emitted).
+  //
+  // Rationale: the prior implementation rendered the 6 pinned origin
+  // countries on the chart while the summary table beneath rendered only 3
+  // rows (top-2 + Others). The user requested chart ↔ table parity, so the
+  // chart now also collapses to exactly 3 series.
+  //
+  // Side outputs (importsUnitPriceChartEntities + importsUnitPriceChartColorMap)
+  // let the Views pass the canonical legend order and color map to their
+  // local buildUnitPriceTraces helper without re-deriving the top-2 ranking.
+  const importsUnitPriceChartDerivation = useMemo(() => {
+    if (!importsUnitPriceData.length) {
+      return {
+        rows: [] as IEUnitPriceRow[],
+        entities: [] as string[],
+        colorMap: {} as Record<string, string>,
+      };
+    }
+
+    // 1. Group rows by country (DB name), compute total vol_m3 in window,
+    //    sort desc. Top-2 by total volume → kept as individual series;
+    //    rest collapsed into a single "Others" series per month.
+    type Aggr = { totalVol: number; rows: IEUnitPriceRow[] };
+    const byCountry = new Map<string, Aggr>();
+    for (const r of importsUnitPriceData) {
+      let agg = byCountry.get(r.pais);
+      if (!agg) {
+        agg = { totalVol: 0, rows: [] };
+        byCountry.set(r.pais, agg);
+      }
+      agg.totalVol += r.vol_m3;
+      agg.rows.push(r);
+    }
+    const ranked = Array.from(byCountry.entries()).sort(
+      ([, a], [, b]) => b.totalVol - a.totalVol,
+    );
+    const top2 = ranked.slice(0, 2);
+    const rest = ranked.slice(2);
+
+    const out: IEUnitPriceRow[] = [];
+    const entities: string[] = [];
+    const colorMap: Record<string, string> = {};
+
+    // 2. Top-2: emit rows directly under their English label; colors come
+    //    from the pinned-country palette when the country is in the pin set,
+    //    PALETTE rotation otherwise.
+    for (let i = 0; i < top2.length; i += 1) {
+      const [dbName, agg] = top2[i];
+      const englishLabel = ORIGIN_LABEL_BY_DB_DATA[dbName] ?? dbName;
+      const color =
+        ORIGIN_COLOR_BY_LABEL_DATA[englishLabel] ?? PALETTE[i % PALETTE.length] ?? OTHERS_COLOR_DATA;
+      entities.push(englishLabel);
+      colorMap[englishLabel] = color;
+      for (const r of agg.rows) {
+        out.push({
+          ano: r.ano,
+          mes: r.mes,
+          pais: englishLabel,
+          usd_per_m3: r.usd_per_m3,
+          vol_m3: r.vol_m3,
+        });
+      }
+    }
+
+    // 3. Others: per-(ano,mes), volume-weighted average across remaining
+    //    countries. Month-key set = union of all months the rest cover.
+    //    If Σ(vol_m3) == 0 for a month (no usable rows), skip that month
+    //    entirely — no null/zero point emitted, so the chart simply has a
+    //    gap there (connectgaps handles it visually).
+    if (rest.length) {
+      const monthBuckets = new Map<string, { num: number; den: number; ano: number; mes: number }>();
+      for (const [, agg] of rest) {
+        for (const r of agg.rows) {
+          if (r.usd_per_m3 == null || r.vol_m3 <= 0) continue;
+          const key = `${r.ano}-${String(r.mes).padStart(2, "0")}`;
+          let bucket = monthBuckets.get(key);
+          if (!bucket) {
+            bucket = { num: 0, den: 0, ano: r.ano, mes: r.mes };
+            monthBuckets.set(key, bucket);
+          }
+          bucket.num += r.usd_per_m3 * r.vol_m3;
+          bucket.den += r.vol_m3;
+        }
+      }
+      const hasOthers = Array.from(monthBuckets.values()).some((b) => b.den > 0);
+      if (hasOthers) {
+        entities.push(OTHERS_LABEL_DATA);
+        colorMap[OTHERS_LABEL_DATA] = OTHERS_COLOR_DATA;
+        for (const bucket of monthBuckets.values()) {
+          if (bucket.den <= 0) continue;
+          out.push({
+            ano: bucket.ano,
+            mes: bucket.mes,
+            pais: OTHERS_LABEL_DATA,
+            usd_per_m3: bucket.num / bucket.den,
+            vol_m3: bucket.den,
+          });
+        }
+      }
+    }
+
+    return { rows: out, entities, colorMap };
+  }, [importsUnitPriceData]);
+
+  const importsUnitPriceChartData = importsUnitPriceChartDerivation.rows;
+  const importsUnitPriceChartEntities = importsUnitPriceChartDerivation.entities;
+  const importsUnitPriceChartColorMap = importsUnitPriceChartDerivation.colorMap;
+
   // Exports price summary — every top-N destination, USD/bbl fixed.
   const exportsPriceSummary: PriceSummaryRow[] = useMemo(() => {
     if (!exportsUnitPriceData.length) return [];
@@ -1002,6 +1130,9 @@ export function useImportsExportsData(): UseImportsExportsData {
     yoyExportsLoading,
     importsUnitPriceData,
     importsUnitPriceLoading,
+    importsUnitPriceChartData,
+    importsUnitPriceChartEntities,
+    importsUnitPriceChartColorMap,
     exportsUnitPriceData,
     exportsUnitPriceLoading,
     importsUPMetric,
