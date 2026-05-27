@@ -562,15 +562,20 @@ function YoYTable({
         style={{
           maxHeight: 400,
           overflowY: "auto",
-          overflowX: "auto",
+          overflowX: "hidden",
           border: "1px solid #ececec",
           borderRadius: 4,
-          minWidth: 540,
         }}
       >
         <table
           className="table table-sm table-striped mb-0"
-          style={{ fontFamily: "Arial", fontSize: 12, tableLayout: "fixed", width: "100%" }}
+          style={{
+            fontFamily: "Arial",
+            fontSize: 12,
+            tableLayout: "fixed",
+            width: "100%",
+            margin: 0,
+          }}
         >
           <colgroup>
             {/* Entity: 28% — widest column; value cols share 72% equally (14.4% each). */}
@@ -805,15 +810,20 @@ function PriceSummaryTable({
       <div
         style={{
           overflowY: "auto",
-          overflowX: "auto",
+          overflowX: "hidden",
           border: "1px solid #ececec",
           borderRadius: 4,
-          minWidth: 340,
         }}
       >
         <table
           className="table table-sm table-striped mb-0"
-          style={{ fontFamily: "Arial", fontSize: 12, tableLayout: "fixed", width: "100%" }}
+          style={{
+            fontFamily: "Arial",
+            fontSize: 12,
+            tableLayout: "fixed",
+            width: "100%",
+            margin: 0,
+          }}
         >
           <colgroup>
             {/* Country: 40% — wider entity column for price tables (fewer cols).
