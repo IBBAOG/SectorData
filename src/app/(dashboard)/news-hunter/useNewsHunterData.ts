@@ -143,6 +143,43 @@ export function domainInitial(domain: string): string {
   return domain.replace(/^www\./, "").charAt(0).toUpperCase();
 }
 
+// ── Shared filter util ───────────────────────────────────────────────────────
+
+/**
+ * Filters an article list by keyword entries, honoring each entry's
+ * `match_type` (substring vs exact / whole-word).
+ *
+ * This is the SAME first-stage filter applied inside `useNewsHunterData`'s
+ * `filteredArticles` derivation — extracted so consumers that can't safely
+ * mount the full hook (e.g. `/home` NewsHunterPanel, which would otherwise
+ * trigger a `useModuleVisibilityGuard("news-hunter")` redirect to /home for
+ * users with the module hidden) get byte-for-byte the same baseline list.
+ *
+ * Order is preserved from `articles` (the context already sorts
+ * `published_at desc` on merge). When `keywordEntries` is empty, all articles
+ * pass through — matching the dashboard's "no active filter" state.
+ *
+ * NOTE: this util intentionally does NOT apply the dashboard's later search /
+ * topic-pill filters — those are user-driven UI state with no equivalent on
+ * the home panel. The home panel mirrors the dashboard's *default landing
+ * state* (search empty, topic = "All"), which is exactly what `filteredArticles`
+ * reduces to when those secondary filters are inert.
+ */
+export function filterArticlesByKeywords(
+  articles: NewsArticle[],
+  keywordEntries: KeywordEntry[],
+): NewsArticle[] {
+  if (keywordEntries.length === 0) return articles;
+  return articles.filter((a) => {
+    const haystack = stripAccents(
+      `${a.title} ${a.source_name} ${a.snippet} ${a.matched_keywords.join(" ")}`.toLowerCase(),
+    );
+    return keywordEntries.some((e) =>
+      keywordHitsNormalized(haystack, e.keyword, e.match_type),
+    );
+  });
+}
+
 // ── Hook ─────────────────────────────────────────────────────────────────────
 
 export interface UseNewsHunterDataReturn {
@@ -358,6 +395,11 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
     // article only carries the user's exact-keyword hit when it actually
     // word-bounded matched. Client-side re-check stays defensive (cheap and
     // catches articles persisted by older scanner runs).
+    //
+    // Semantics MUST stay aligned with `filterArticlesByKeywords` (the shared
+    // util consumed by the /home NewsHunterPanel). This branch uses
+    // pre-normalized haystacks for perf, but the underlying predicate
+    // (`keywordHitsNormalized`) is the same one filterArticlesByKeywords calls.
     if (keywordEntries.length > 0) {
       indices = indices.filter((idx) =>
         keywordEntries.some((e) =>
