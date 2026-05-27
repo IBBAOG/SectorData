@@ -1,9 +1,10 @@
 // ─── Field Stakes (working-interest per oil field) ───────────────────────────
 //
 // Shapes returned by the `field_stakes` admin RPCs. Used by /admin-panel
-// "Field Stakes" section (CRUD) and, in Fase 2 (separate PRD), by the future
-// /production dashboard which joins `anp_cdp_producao` × `field_stakes` to
-// derive company-attributable oil production.
+// "Field Stakes" section (CRUD) and by the /well-by-well dashboard (route
+// renamed from /production in Round 4, 2026-05-28) which joins
+// `anp_cdp_producao` × `field_stakes` to derive company-attributable oil
+// production.
 //
 // Source of truth: `field_stakes` table — see
 // `supabase/migrations/20260527600000_field_stakes.sql` (owner:

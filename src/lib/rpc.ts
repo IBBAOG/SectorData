@@ -2626,7 +2626,8 @@ export async function rpcAdminRemoveDefaultNewsKeyword(
 // Write RPCs (admin_*) additionally check the caller's role server-side.
 //
 // Source-of-truth migration: `supabase/migrations/20260527600000_field_stakes.sql`
-// (owned by worker_supabase). Future consumer: /production dashboard (Fase 2).
+// (owned by worker_supabase). Consumed by /well-by-well dashboard (Fase 2;
+// route renamed from /production in Round 4, 2026-05-28).
 
 import type {
   FieldStakeOverview,
@@ -2735,7 +2736,7 @@ export async function rpcAdminDeleteFieldStakes(
   if (error) throw error;
 }
 
-// ─── MODULE: Production (/src/app/(dashboard)/production/) ───────────────────
+// ─── MODULE: Well by Well (/src/app/(dashboard)/well-by-well/) ──────────────
 //
 // Executive monthly oil & gas production summary. Replicates the structure of
 // the Well-by-Well PDF: Brazil aggregate (3 ambientes), Company aggregate
@@ -2750,8 +2751,21 @@ export async function rpcAdminDeleteFieldStakes(
 // Empresa list comes from `get_field_stakes_empresas()` (Fase 1 RPC) — never
 // hardcode company names; new companies in `field_stakes` appear automatically.
 //
+// Round 4 (2026-05-28): the dashboard route migrated `/production` →
+// `/well-by-well` (with 301 redirect) and the field-level RPCs became
+// canonical-aware server-side. `get_production_top_fields` now groups by
+// `canonical_field_name(p.campo)` and the returned `campo` is the canonical
+// label. `get_production_field_timeseries` expects `p_campo` to be the
+// canonical label and expands the WHERE clause to all variants under it (so
+// Búzios drills sum Búzios + AnC_Búzios + Búzios_ECO). Frontend wrapper
+// signatures DID NOT change — server handles everything; the wrappers below
+// just pass strings through.
+//
 // Source-of-truth migration: `supabase/migrations/20260528000000_production_rpcs.sql`
-// (owned by worker_supabase, Frente A of Fase 2).
+// (Round 1, owned by worker_supabase) +
+// `supabase/migrations/20260528300000_well_by_well_round4.sql` (Round 4 —
+// route rename in module_visibility + field_canonical_names + canonical-aware
+// RPC bodies, owned by worker_supabase).
 // ──────────────────────────────────────────────────────────────────────────────
 
 import type {
@@ -2846,6 +2860,13 @@ export async function rpcGetProductionCompanyAggregate(
 /**
  * Top-N producing fields for one company in one calendar month.
  * Used by the "Top Fields" horizontal bar (oil + water stacked).
+ *
+ * Round 4 (2026-05-28): the server groups by `canonical_field_name(p.campo)`
+ * server-side, so the returned `campo` is the canonical label (e.g. "Búzios"
+ * collapses Búzios + AnC_Búzios + Búzios_ECO into one row). The wrapper
+ * signature is unchanged; the canonical label flows back into
+ * `rpcGetProductionFieldTimeseries` on drill-in to fetch the consolidated
+ * timeseries.
  */
 export async function rpcGetProductionTopFields(
   supabase: SupabaseClient,
@@ -2953,15 +2974,24 @@ export async function rpcGetProductionYoyTable(
 
 /**
  * Stake-weighted monthly timeseries for ONE field × ONE company across the
- * given date range. Powers the Field drill-down panel (Round 2, 2026-05-27).
+ * given date range. Powers the Field drill-down panel (Round 2, 2026-05-27;
+ * canonical-aware since Round 4, 2026-05-28).
  *
  * Returns one row per (year, month) — typically 13 months for the default
  * lookback. The server applies the same stake filter (`SUM(stake_pct) = 100`)
  * as the rest of the Production RPCs, so campos in `field_stakes_lacunas`
  * return zero rows.
  *
- * Source-of-truth migration: `supabase/migrations/20260528100000_production_round2.sql`
- * (owned by worker_supabase, Round 2 of Fase 2).
+ * Round 4 semantics: `campo` is now interpreted as a **canonical field name**.
+ * The server expands the WHERE clause to every variant that maps to this
+ * canonical (via `field_canonical_names`), so drilling "Búzios" sums Búzios,
+ * AnC_Búzios and Búzios_ECO stake-weighted. The wrapper signature is
+ * unchanged; pass the value returned by `rpcGetProductionTopFields`.
+ *
+ * Source-of-truth migrations:
+ *   `supabase/migrations/20260528100000_production_round2.sql` (Round 2).
+ *   `supabase/migrations/20260528300000_well_by_well_round4.sql` (Round 4 —
+ *     canonical expansion).
  */
 export async function rpcGetProductionFieldTimeseries(
   supabase: SupabaseClient,

@@ -1,6 +1,6 @@
 "use client";
 
-// ─── Single "brain" hook for /production (dual-view pattern) ──────────────────
+// ─── Single "brain" hook for /well-by-well (dual-view pattern) ──────────────
 //
 // Both desktop/View.tsx and mobile/View.tsx consume this hook. Neither View
 // ever calls Supabase or derives metrics on its own. All filter state, fetch
@@ -216,11 +216,20 @@ export interface UseProductionData {
   handleExportExcel: () => Promise<void>;
   handleExportCsv: () => Promise<void>;
 
-  // Field drill-down (Round 2, 2026-05-27)
+  // Field drill-down (Round 2, 2026-05-27; canonical-aware since Round 4,
+  // 2026-05-28).
   // Click a row in the Top Fields panel to open this. The modal/sheet shows a
   // 13mo timeseries (oil + water stacked + hours-rate line) plus 4 KPIs
   // derived client-side from the timeseries.
-  drillCampo: string | null;            // null = closed; non-null = open
+  //
+  // Round 4 semantics: `drillCampo` now carries a **canonical field name** (the
+  // value returned by `get_production_top_fields`, which groups by
+  // `canonical_field_name(p.campo)` server-side). When passed back to
+  // `get_production_field_timeseries`, the server expands the WHERE clause to
+  // every variant that maps to that canonical (so clicking "Búzios" returns
+  // Búzios + AnC_Búzios + Búzios_ECO summed by stake). The field-stake variants
+  // remain individually editable from /admin-panel.
+  drillCampo: string | null;            // null = closed; non-null = open (canonical name)
   drillTimeseries: ProductionFieldTimeseriesRow[];
   drillLoading: boolean;
   drillError: string | null;
@@ -257,7 +266,7 @@ export interface UseProductionData {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useProductionData(): UseProductionData {
-  const { visible, loading: visLoading } = useModuleVisibilityGuard("production");
+  const { visible, loading: visLoading } = useModuleVisibilityGuard("well-by-well");
   const supabase = getSupabaseClient();
 
   // ── State ──────────────────────────────────────────────────────────────────
@@ -394,7 +403,7 @@ export function useProductionData(): UseProductionData {
         setReferenceDateState(maxAnchor);
       } catch (e) {
         if (!cancelled) {
-          console.error("/production bootstrap failed", e);
+          console.error("/well-by-well bootstrap failed", e);
           setError(e instanceof Error ? e : new Error(String(e)));
         }
       } finally {
@@ -586,6 +595,14 @@ export function useProductionData(): UseProductionData {
   // Mutual exclusivity (Round 3): opening the field drill auto-closes any
   // open installation drill, and vice versa — only one modal/BottomSheet on
   // screen at a time.
+  //
+  // Round 4 (canonical grouping, 2026-05-28): `campo` is a CANONICAL field
+  // name — `get_production_top_fields` already groups by
+  // `canonical_field_name(p.campo)`, so the value handed in from the Top
+  // Fields chart click / mobile card tap is canonical. The server-side
+  // `get_production_field_timeseries` interprets `p_campo` as canonical and
+  // expands the WHERE clause to all variants under it (so the drill timeseries
+  // sums Búzios + AnC_Búzios + Búzios_ECO etc.).
   const openFieldDrill = useCallback((campo: string) => {
     // Close installation drill first (mutual exclusivity)
     setDrillInstalacao(null);
@@ -860,7 +877,7 @@ export function useProductionData(): UseProductionData {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (e) {
-      console.error("/production Excel export failed", e);
+      console.error("/well-by-well Excel export failed", e);
     } finally {
       setExcelLoading(false);
     }
@@ -922,7 +939,7 @@ export function useProductionData(): UseProductionData {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (e) {
-      console.error("/production CSV export failed", e);
+      console.error("/well-by-well CSV export failed", e);
     } finally {
       setCsvLoading(false);
     }

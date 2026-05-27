@@ -1,12 +1,14 @@
-# /production — Executive Production Summary
+# /well-by-well — Executive Production Summary
 
 > Monthly oil & gas production with company-level attribution via curated field stakes. The executive companion to `/anp-cdp` (granular well-by-well explorer).
+>
+> **Route rename (Round 4, 2026-05-28):** previously `/production`. The old URL is preserved via a permanent 301 redirect in `next.config.ts`. Backing RPC names (`get_production_*`) and DB-level identifiers were kept as-is — the rename is URL- and UI-only.
 
 ## Purpose
 
 Replicate the monthly Well-by-Well report read by Eduardo: Brazil totals split by environment (Pre-Salt / Post-Salt / Onshore), one company's stake-weighted slice of those totals, the company's top producing fields, FPSO/UEP-level breakdown, and YoY / MoM / YTD deltas — all from a single dashboard, single auth tier, single data layer.
 
-`/production` is the **executive summary** (one company at a time, monthly cadence, KPI-first). `/anp-cdp` remains the **granular explorer** (per-well, no company aggregation). The two coexist; they answer different questions.
+`/well-by-well` is the **executive summary** (one company at a time, monthly cadence, KPI-first). `/anp-cdp` remains the **granular explorer** (per-well, no company aggregation). The two coexist; they answer different questions.
 
 ## Data sources
 
@@ -14,7 +16,8 @@ Replicate the monthly Well-by-Well report read by Eduardo: Brazil totals split b
 |---|---|
 | `anp_cdp_producao` (~1.8M rows, ANP CDP, monthly per-well) | Production facts |
 | `field_stakes` (Fase 1 — admin-curated working interests per field) | Company attribution map |
-| `field_stakes_lacunas` (admin view) | Fields whose stakes do NOT yet sum to 100 — silently excluded from `/production` until Eduardo completes them via `/admin-panel` |
+| `field_stakes_lacunas` (admin view) | Fields whose stakes do NOT yet sum to 100 — silently excluded from `/well-by-well` until Eduardo completes them via `/admin-panel` |
+| `field_canonical_names` (Round 4, 2026-05-28) | Variant → canonical map for fields with operational sub-units (e.g. Búzios + AnC_Búzios + Búzios_ECO → "Búzios"). Owned by `worker_supabase`. Drives canonical grouping in `get_production_top_fields` + canonical expansion in `get_production_field_timeseries`. |
 
 All math is done **server-side** in 5 SECURITY DEFINER RPCs (migration `supabase/migrations/20260528000000_production_rpcs.sql`, owned by `worker_supabase`). The browser never re-derives company production — it only renders.
 
@@ -24,18 +27,20 @@ All math is done **server-side** in 5 SECURITY DEFINER RPCs (migration `supabase
 |---|---|---|
 | `get_production_brazil_aggregate` | `(date_start date, date_end date, ambientes text[] DEFAULT NULL)` | Brazil-wide monthly totals by environment (NOT stake-weighted). |
 | `get_production_company_aggregate` | `(empresa text, date_start date, date_end date, ambientes text[] DEFAULT NULL)` | Stake-weighted monthly totals for one company by environment. Filters to campos whose stakes SUM to 100. |
-| `get_production_top_fields` | `(empresa text, date date, top_n int DEFAULT 10)` | Top-N producing fields for one company in one calendar month. |
+| `get_production_top_fields` | `(empresa text, date date, top_n int DEFAULT 10)` | Top-N producing fields for one company in one calendar month. **Round 4:** groups by `canonical_field_name(p.campo)` server-side; returned `campo` is the canonical label. |
 | `get_production_by_installation` | `(empresa text, date date)` | Installation-level (FPSO/UEP/land plant) production routed through the installation, stake-weighted, one month. |
 | `get_production_yoy_table` | `(empresa text, date date)` | YoY/MoM/YTD breakdown at the reference month — 1 TOTAL row + 1 row per environment. |
-| `get_production_field_timeseries` | `(p_campo text, p_empresa text, p_date_start date, p_date_end date)` | Stake-weighted monthly oil/gas/water/uptime timeseries for one field × one company. Powers the Field drill-down (Round 2). |
+| `get_production_field_timeseries` | `(p_campo text, p_empresa text, p_date_start date, p_date_end date)` | Stake-weighted monthly oil/gas/water/uptime timeseries for one field × one company. Powers the Field drill-down (Round 2). **Round 4:** `p_campo` is interpreted as a canonical label; the server expands the WHERE clause to all variants under that canonical (so drilling "Búzios" sums Búzios + AnC_Búzios + Búzios_ECO stake-weighted). |
+| `get_field_stakes_overview` | (admin-only) | **Round 4:** now returns an extra `canonical text` column alongside `campo` so the admin variant editor can group variants by their canonical roll-up. Owned by `worker_supabase`, consumed by `worker_dash-admin` (Frente C). |
 | `get_production_installation_timeseries` | `(p_instalacao text, p_empresa text, p_date_start date, p_date_end date)` | Stake-weighted monthly oil/gas/water/uptime timeseries for one installation (FPSO/UEP/land plant) × one company. Powers the Installation drill-down (Round 3). Returns the SAME row shape as `get_production_field_timeseries`. |
 
-All return `LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp` (Pegadinha #18) and are granted to `anon, authenticated`. Frontend wrappers live in `src/lib/rpc.ts` under the "MODULE: Production" section.
+All return `LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp` (Pegadinha #18) and are granted to `anon, authenticated`. Frontend wrappers live in `src/lib/rpc.ts` under the "MODULE: Well by Well" section.
 
 Source-of-truth migrations:
 - `supabase/migrations/20260528000000_production_rpcs.sql` (Round 1, 5 RPCs).
 - `supabase/migrations/20260528100000_production_round2.sql` (Round 2: YoY TOTAL fix + `get_production_field_timeseries`).
 - `supabase/migrations/20260528200000_production_installation_timeseries.sql` (Round 3: `get_production_installation_timeseries`).
+- `supabase/migrations/20260528300000_well_by_well_round4.sql` (Round 4: `module_visibility` slug rename `production → well-by-well`, new `field_canonical_names` table, canonical-aware bodies for `get_production_top_fields` + `get_production_field_timeseries`, new `canonical` column in `get_field_stakes_overview`).
 
 ### Companies (Empresa dropdown)
 
@@ -118,6 +123,32 @@ Mirrors the Field drill-down pattern at the installation (FPSO/UEP/land plant) l
 
 **Mutual exclusivity:** the field drill and installation drill are mutually exclusive at the hook level — opening one auto-closes the other (clearing its timeseries + error). Rationale: simpler UX with only one modal/BottomSheet on screen at a time; avoids stacked overlays on mobile in particular.
 
+## Round 4 — canonical field grouping (2026-05-28)
+
+The big offshore fields are split in ANP CDP into operational variants (Búzios + AnC_Búzios + Búzios_ECO; Tupi + AnC_Tupi; Lula + Lula Nordeste; etc.). Before Round 4, the dashboard surfaced each variant as a separate row in the Top Fields panel — splitting Petrobras's biggest field across three rows none of which matched what bankers/research analysts call "Búzios". Round 4 introduces server-side canonical grouping while keeping variants individually editable.
+
+**Server-side (Frente A, migration `20260528300000_well_by_well_round4.sql`):**
+- New lookup table `field_canonical_names(variant text PK, canonical text)` + helper function `canonical_field_name(text) → text` that defaults to the input when no mapping exists (so plain unique fields like "Frade" pass through unchanged).
+- `get_production_top_fields` now `GROUP BY canonical_field_name(p.campo)` and returns the canonical label in the `campo` column. The 10-row top list collapses Búzios variants into one canonical "Búzios" row whose oil/water/hours sum the contributing variants stake-weighted.
+- `get_production_field_timeseries` reinterprets `p_campo` as a canonical label and `JOIN`s in the variants from `field_canonical_names`, expanding the WHERE clause to every variant under that canonical (so the timeseries returned for "Búzios" is the stake-weighted sum across Búzios, AnC_Búzios, and Búzios_ECO).
+- `get_field_stakes_overview` (admin-only) gains a new `canonical text` column so the Field Stakes editor can show "Búzios" as a parent row containing the three variant children.
+
+**Frontend (this worktree — Frente B):**
+- Route rename `/production` → `/well-by-well` (with 301 redirect in `next.config.ts`).
+- `useModuleVisibilityGuard("well-by-well")` (was `"production"`).
+- Hook's `drillCampo` state and `openFieldDrill(campo)` now carry/accept a canonical label. The value handed in from the Top Fields chart click / mobile card tap is whatever the server returned, so no client-side mapping is required — drilling "Búzios" sums all three variants.
+- RPC wrapper signatures are unchanged; only comments were updated to reflect the canonical-aware server behaviour.
+
+**Admin UI (Frente C, owned by `worker_dash-admin`):**
+- Field Stakes section in `/admin-panel` will group rows by their canonical roll-up. Variants remain individually editable (each Búzios variant keeps its own stake row), but the parent canonical row shows the combined coverage.
+
+**Docs / branding (Frente D, owned by `worker_documentador`):**
+- README + docs/master.md updated to reflect the rename.
+
+**Why server-side and not client-side?** Putting the canonical mapping in the database means BSW, depletion, and any future analytical RPC can reuse the same `canonical_field_name()` helper without duplicating the rules in JS. It also keeps the Top Fields ordering correct in pagination edge cases (top 10 by canonical, not top 10 variants).
+
+**Backwards compatibility:** the `field_canonical_names` table starts seeded only with the most commonly-confused fields. Anything not in the table passes through unchanged via the helper's default behaviour, so existing dashboards see no regression.
+
 ## KPI cards (desktop top strip, mobile per-tab)
 
 1. **Brazil oil** — total oil at reference month, kbpd (neutral)
@@ -157,14 +188,20 @@ ExcelJS and JSZip are dynamically imported on demand to avoid bloating the initi
 | Admin | Always visible |
 | Home gallery | `is_visible_on_home = true` — module card appears on `/home` |
 
-Seed row inserted by Frente A in the same migration as the RPCs:
+Seed row inserted by Frente A in the original Round 1 migration:
 ```sql
 INSERT INTO module_visibility (module_slug, is_visible_for_clients, is_visible_on_home, is_visible_for_public)
 VALUES ('production', true, true, false)
 ON CONFLICT (module_slug) DO NOTHING;
 ```
 
-Visibility is enforced by `useModuleVisibilityGuard("production")` inside the hook — Anon visitors are redirected to `/home`.
+Round 4 (2026-05-28) migrated the slug to `'well-by-well'`:
+```sql
+-- supabase/migrations/20260528300000_well_by_well_round4.sql
+UPDATE module_visibility SET module_slug = 'well-by-well' WHERE module_slug = 'production';
+```
+
+Visibility is enforced by `useModuleVisibilityGuard("well-by-well")` inside the hook — Anon visitors are redirected to `/home`.
 
 ## Known gaps
 
@@ -182,9 +219,9 @@ Visibility is enforced by `useModuleVisibilityGuard("production")` inside the ho
 
 ## Owner
 
-- **Worker agent:** `worker_dash-production` (file: `.claude/agents/worker_dash-production.md`, gitignored but persists locally; activated next session per Pegadinha #9).
+- **Worker agent:** `worker_dash-well-by-well` (renamed from `worker_dash-production` in Round 4, 2026-05-28 — file: `.claude/agents/worker_dash-well-by-well.md`, gitignored but persists locally; activated next session per Pegadinha #9).
 - **Fase 2 PRD:** `C:/Users/eduar/.claude/plans/production-fase-2.md`.
 - **Cross-dept dependencies:**
-  - `worker_supabase` owns the 5 RPCs (migration `20260528000000_production_rpcs.sql`).
+  - `worker_supabase` owns the 5 production RPCs (migration `20260528000000_production_rpcs.sql`) and the Round 4 canonical layer (`20260528300000_well_by_well_round4.sql`).
   - `worker_dash-admin` owns the `field_stakes` CRUD UI (Fase 1) that feeds this dashboard.
-- **Shared infrastructure owner:** `worker_subgerente-app` created this dashboard in Fase 2 because Pegadinha #9 prevented mid-session invocation of the brand-new `worker_dash-production` agent.
+- **Shared infrastructure owner:** `worker_subgerente-app` created this dashboard in Fase 2 because Pegadinha #9 prevented mid-session invocation of the brand-new `worker_dash-production` agent. Round 4's parallel rollout was orchestrated across four worktrees (supabase / well-by-well / dash-admin / documentador), with this worktree responsible for the frontend rename.

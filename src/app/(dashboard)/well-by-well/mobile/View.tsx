@@ -1,10 +1,10 @@
 "use client";
 
-// Mobile View — /production (≤768px).
+// Mobile View — /well-by-well (≤768px).
 //
 // Layout (top → bottom):
 //   MobileTopBar              — wordmark
-//   StickyBreadcrumb          — "Production › <Empresa> › <Ref month>"
+//   StickyBreadcrumb          — "Well by Well › <Empresa> › <Ref month>"
 //   MobileTabBar              — Brazil · {Empresa} · Fields · FPSOs
 //   Tab content               — one chart full-width + KPI cards / table per tab
 //   YoY expandable section    — bottom, expands when tapped
@@ -301,7 +301,7 @@ export default function MobileView(): React.ReactElement | null {
   return (
     <div style={{ paddingBottom: 120, background: "var(--mobile-surface-bg, #f5f5f7)", minHeight: "100vh" }}>
       <MobileTopBar
-        title="Production"
+        title="Well by Well"
         rightSlot={
           <button
             type="button"
@@ -329,7 +329,7 @@ export default function MobileView(): React.ReactElement | null {
 
       <StickyBreadcrumb
         segments={[
-          { label: "Production", onClick: undefined },
+          { label: "Well by Well", onClick: undefined },
           { label: empresa, onClick: () => setFilterOpen(true) },
           { label: fmtMonthLabel(referenceDate), active: true },
         ]}

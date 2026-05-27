@@ -263,7 +263,7 @@ export function getModuleIcon(slug: string, size = 24, strokeWidth = 2): IconEle
       return <IconProfile size={size} strokeWidth={strokeWidth} />;
     case "admin-panel":
       return <IconAdminPanel size={size} strokeWidth={strokeWidth} />;
-    case "production":
+    case "well-by-well":
       return <IconProduction size={size} strokeWidth={strokeWidth} />;
     default:
       // Generic fallback: grid/apps icon

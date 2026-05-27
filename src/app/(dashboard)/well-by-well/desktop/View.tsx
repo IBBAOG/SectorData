@@ -1,6 +1,6 @@
 "use client";
 
-// Desktop View — /production (≥769px).
+// Desktop View — /well-by-well (≥769px).
 //
 // Layout (top → bottom):
 //   • Header — title + subtitle + period badge + Export panel (right)
@@ -870,7 +870,7 @@ export default function DesktopView(): React.ReactElement | null {
       <NavBar />
       <div className="container-fluid" style={{ padding: "20px 24px 80px" }}>
         <DashboardHeader
-          title="Production"
+          title="Well by Well"
           sub="Monthly oil & gas production from ANP CDP — company-attributable via field stakes"
           period={periodBadge}
           rightSlot={
