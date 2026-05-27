@@ -103,12 +103,14 @@ Admins têm uma funcionalidade extra de **clipping de notícias**:
 2. **SelectionSidebar** — painel direito com artigos selecionados em ordem, controles de reordenação (↑/↓), botão "Generate Clipping".
 3. **POST /api/clipping/scrape** — rota Admin-gated (mirror do padrão de auth em `upload-card-preview/route.ts`). Cap de 30 URLs (raised from 15 in Phase 5), 30s timeout por URL, `maxDuration = 300` (raised from 180 to accommodate 30-URL batches with headless tier).
 4. **ClippingModal** — modal com:
-   - Aba "Preview": iframe renderizando o HTML do clipping (Calibri 11pt, header laranja #FF5000, "Main Headlines" TOC, TEAM_BLOCK com 3 emails).
+   - Aba "Preview": iframe renderizando o HTML do clipping (Arial 11pt, header laranja #FF5000, "Main Headlines" TOC, TEAM_BLOCK com 3 emails).
    - Aba "Status": pills por artigo (ok/paywall/fetch_failed/etc) + textarea manual para sites bloqueados.
    - Botões: **Download .eml** (RFC 5322 multipart/alternative, hand-rolled), **Copy** (rich clipboard — `text/html` + `text/plain` fallback via `ClipboardItem`; pasting into Outlook/Gmail produces formatted output), **Regenerate preview**.
 5. **Rendering é client-side** — build_html/buildPlainText/buildEml rodam no browser, sem round-trip ao servidor para re-renderizar.
 
 #### Template do clipping (fidelidade ao clipinator.py)
+
+> **Email-safe HTML**: `buildHtml.ts` emits fully-inlined styles (`style="..."` on every element). No `<style>` block, no CSS classes. Outlook (desktop + web) and Gmail strip `<style>` blocks and class attributes on paste — inline styles are the only reliable vehicle. Font: Arial, Helvetica, sans-serif. Colors: hex only (`#FF5000`, `#1a1a1a`, `#0563C1`).
 
 - Header: `*** IBBA Oil & Gas News – DD Month YYYY ***` (18pt bold laranja, centrado; `–` U+2013)
 - "Main Headlines" subheader 14pt laranja + bullet list `<título> (<fonte>)`
