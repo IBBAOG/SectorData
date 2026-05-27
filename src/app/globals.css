@@ -2273,16 +2273,28 @@ a {
 }
 
 /* ─── Navios Diesel — responsive main grid ─────────────────────────────────── */
-/* Default (md 768px+): 2-column.
-   Row 1: [ Map ] [ Chart + Summary Table ] — both cells stretch to equal height
-   Row 2: [ Expected Vessels ] [ Delivered Vessels ]
-   Row 3: [ Disclaimer (full width) ]                                         */
+/* Default (md 768px+): non-uniform 2-column to preserve the original Map width
+   (~25% — same as the pre-rearrange 1.5fr / 4.5fr split).
+   Row 1: [ Map (1.5fr) ] [ Chart + Summary Table (4.5fr) ]
+   Row 2: [ Expected Vessels | Delivered Vessels ] (sub-grid 1fr 1fr, full width)
+   Row 3: [ Disclaimer (full width) ]
+   align-items: start prevents Row 1 Col 1 (Map) from being stretched vertically
+   to match Col 2 height — the map keeps its intrinsic mapHeight (380/500).    */
 .nd-main-grid {
   display: grid;
   gap: 16px;
-  align-items: stretch;
+  align-items: start;
   margin-bottom: 24px;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 4.5fr);
+}
+
+/* Row 2: Expected + Delivered side-by-side, occupies full width across both cols.
+   minmax(0, 1fr) prevents intrinsic table widths from pushing past the grid track. */
+.nd-row-tables {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
 }
 
 /* Full-width cell (Disclaimer row) */
@@ -2291,6 +2303,7 @@ a {
 /* Below md (< 768px): 1-column — everything stacks */
 @media (max-width: 767.98px) {
   .nd-main-grid { grid-template-columns: 1fr; }
+  .nd-row-tables { grid-template-columns: 1fr; grid-column: 1; }
   .nd-row-full { grid-column: 1; }
 }
 

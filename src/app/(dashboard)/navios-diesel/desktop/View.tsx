@@ -508,7 +508,7 @@ export default function DesktopView(): React.ReactElement {
       barmode: "stack",
       paper_bgcolor: "white",
       plot_bgcolor: "white",
-      margin: { t: 54, b: 36, l: 110, r: 10 },
+      margin: { t: 54, b: 36, l: 110, r: 0 },
       height: 220,
       bargap: 0,
       yaxis: { visible: false, range: [0, maxTotal * 1.25] },
@@ -522,7 +522,10 @@ export default function DesktopView(): React.ReactElement {
       annotations: totalAnnotations,
       legend: {
         orientation: "h",
-        x: -0.3,
+        // x: 0 places legend at plot-area left (which aligns with the table's first
+        // month column). A negative x would force Plotly to auto-expand margin.l
+        // beyond the configured 110 px, breaking bar↔column alignment.
+        x: 0,
         y: 1.02,
         xanchor: "left",
         yanchor: "bottom",
@@ -807,8 +810,8 @@ export default function DesktopView(): React.ReactElement {
                       })()}
                     </div>
 
-                    {/* Row 1 — Col 2: Bar chart + Monthly Summary (stretches to map height) */}
-                    <div className="chart-container" style={{ display: "flex", flexDirection: "column" }}>
+                    {/* Row 1 — Col 2: Bar chart + Monthly Summary */}
+                    <div className="chart-container">
                       <div style={TITLE_STYLE}>Monthly Diesel Volume (m³)</div>
                       <div style={{ fontFamily: "Arial", fontSize: 11, color: "#666", marginTop: -2, marginBottom: 4 }}>
                         Past months frozen at last snapshot in the month · current and future months are live
@@ -821,8 +824,11 @@ export default function DesktopView(): React.ReactElement {
                         style={{ width: "100%", height: 240 }}
                       />
                       {/* Summary table — title removed per layout rearrange (2026-05-27).
-                          Right edge aligns with chart's margin.r=10; left port column (110px) aligns with chart's margin.l=110. */}
-                      <div style={{ marginTop: 8, overflowY: "auto", maxHeight: `calc(${mapHeight}px - 280px)`, marginRight: 10 }}>
+                          Left port column (110px) aligns with chart's margin.l=110;
+                          chart's margin.r=0 so the table's right edge (100% width) also aligns.
+                          NO overflow / maxHeight / marginRight — reserving scrollbar space would
+                          shrink the internal table width and break bar↔column centering. */}
+                      <div style={{ marginTop: 8 }}>
                         <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: "Arial", fontSize: 12, tableLayout: "fixed" }}>
                           <thead>
                             <tr style={{ backgroundColor: "#000512", color: "#fff" }}>
@@ -869,6 +875,8 @@ export default function DesktopView(): React.ReactElement {
                       </div>
                     </div>
 
+                    {/* Row 2 — Expected | Delivered side-by-side (sub-grid spanning both cols) */}
+                    <div className="nd-row-tables">
                     {/* Row 2 — Col 1: Expected Vessels / Pending Discharge */}
                     <div className="chart-container">
                       <div style={{ marginBottom: 8 }}>
@@ -984,6 +992,7 @@ export default function DesktopView(): React.ReactElement {
                           </tbody>
                         </table>
                       </div>
+                    </div>
                     </div>
 
                     {/* Row 3 — Full width: Disclaimer */}
