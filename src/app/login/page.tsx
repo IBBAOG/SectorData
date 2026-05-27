@@ -9,12 +9,21 @@ import { getSupabaseClient } from "../../lib/supabaseClient";
 import Footer from "../../components/Footer";
 
 
+// Locally hosted to avoid hotlink blocking by Giphy/Pinterest (observed 100%
+// block rate from those CDNs in 2026-05; the rotation was producing a white
+// background in production). Files live in /public/login-bg/ and ship with
+// the build.
 const BG_GIFS = [
-  "https://media0.giphy.com/media/fy9QYx06VF8c9D3Sc3/giphy.gif",
-  "https://i.pinimg.com/originals/c5/b0/c6/c5b0c6ca2a20e5fea7f938e8027b255b.gif",
-  "https://media3.giphy.com/media/4B9havABFnB2U/giphy.gif",
+  "/login-bg/bg1.gif",
+  "/login-bg/bg2.gif",
+  "/login-bg/bg3.gif",
 ];
-const BG_URL = BG_GIFS[Math.floor(Math.random() * BG_GIFS.length)];
+// Deterministic default for SSR — picking with Math.random() at module scope
+// caused an SSR/CSR hydration mismatch (server-rendered URL differed from
+// client-rendered URL, and React silently dropped the inline style). The
+// random pick now happens client-side in useEffect (see useState + useEffect
+// in LoginPage below).
+const DEFAULT_BG = BG_GIFS[0];
 
 // Normalize the user-typed identifier into an email Supabase Auth accepts.
 // - Strings containing "@" are treated as emails (lowercased).
@@ -43,6 +52,15 @@ export default function LoginPage() {
   // completed the AAL2 challenge for this session, we display the challenge
   // form instead of the credential form.
   const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
+
+  // GIF rotation is client-only to keep SSR/CSR markup identical (see
+  // DEFAULT_BG note above). On first client paint we pick a random one of
+  // the three; SSR/initial render always shows DEFAULT_BG.
+  const [bgUrl, setBgUrl] = useState<string>(DEFAULT_BG);
+
+  useEffect(() => {
+    setBgUrl(BG_GIFS[Math.floor(Math.random() * BG_GIFS.length)]);
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -165,7 +183,7 @@ export default function LoginPage() {
   return (
     <div
       id="login-container"
-      style={{ backgroundImage: `url("${BG_URL}")`, display: "flex", flexDirection: "column", minHeight: "100vh" }}
+      style={{ backgroundImage: `url("${bgUrl}")` }}
     >
       {/* SVG filter for glass distortion */}
       <svg style={{ position: "absolute", width: 0, height: 0 }} aria-hidden="true">

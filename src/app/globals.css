@@ -151,22 +151,70 @@ body {
 }
 
 /* ─── Login page ──────────────────────────────────────────────────────────── */
+/*
+ * Layout: CSS grid with a single 1fr row + auto row for the footer. The
+ * card is placed in row 1 and centered (`place-self: center`); the footer
+ * (added by /login/page.tsx since the LGPD compliance change) sits in
+ * row 2 at the bottom. Earlier flex-column + justify-content:center fought
+ * with the footer's Bootstrap `mt-auto` and ended up pushing the card to
+ * the very top of the viewport.
+ *
+ * Background image is set inline from React (rotated client-side across
+ * the three /login-bg/bg*.gif files). We keep a safe fallback url here in
+ * case the inline style somehow fails to apply.
+ */
 #login-container {
   min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-image: url("https://media0.giphy.com/media/fy9QYx06VF8c9D3Sc3/giphy.gif");
+  display: grid;
+  grid-template-rows: 1fr auto;
+  background-image: url("/login-bg/bg1.gif");
   background-size: cover;
   background-position: center;
+  background-repeat: no-repeat;
+  background-color: #000512; /* dark fallback before the GIF loads */
   position: relative;
+}
+
+/* The inline SVG filter (#glass-distortion) is a zero-size helper —
+ * stack it on the same cell as the card so it never adds layout space. */
+#login-container > svg[aria-hidden="true"] {
+  grid-row: 1;
+  grid-column: 1;
+  pointer-events: none;
+}
+
+/* Footer always sits in row 2 (bottom of viewport). On the login page the
+ * background is a dark GIF, so the default white border-top + grey muted
+ * text would be unreadable — we override to a translucent dark band. */
+#login-container > footer {
+  grid-row: 2;
+  grid-column: 1;
+  background: rgba(0, 5, 18, 0.55);
+  backdrop-filter: blur(12px) saturate(160%);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+#login-container > footer a {
+  color: rgba(255, 255, 255, 0.75) !important;
+  transition: color 0.15s;
+}
+
+#login-container > footer a:hover {
+  color: #ff5000 !important;
 }
 
 /* ── Liquid Glass card ─────────────────────────────────────────────────────── */
 #login-card {
+  /* Grid placement: row 1, centered both axes — pairs with the
+   * #login-container grid above (row 1 = 1fr, row 2 = auto footer). */
+  grid-row: 1;
+  grid-column: 1;
+  place-self: center;
   position: relative;
   max-width: 400px;
-  width: 100%;
+  width: calc(100% - 32px);
   padding: 44px 38px;
   border-radius: 28px;
   /* Very opaque frosted glass — easy to read */
