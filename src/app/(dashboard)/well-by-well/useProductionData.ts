@@ -680,6 +680,15 @@ export function useProductionData(): UseProductionData {
   // to `section === 'BRAZIL'` when the view is Brasil, dropping the company
   // section client-side. This is intentionally one extra unused RPC slice in
   // exchange for not needing a separate Brazil-only header RPC.
+  //
+  // Empresa decision is derived from `view` INSIDE the closure (not from the
+  // outer-scope `viewEmpresa`) so it's obvious-by-inspection that this fetch
+  // reacts to view-pill clicks. Listed explicitly in the deps array too.
+  // Switching Brasil ↔ Petrobras sends the same empresa string ("Petrobras")
+  // — the user-visible change in that case is driven by HeaderTable's
+  // `viewMode` prop filter, not by new data. Switching to PRIO /
+  // PetroReconcavo / Brava Energia DOES change the empresa string and yields
+  // a fresh RPC payload.
   const { data: headerFetched, loading: headerLoading } = useDebouncedFetch<
     WellByWellHeaderRow[] | null
   >(
@@ -688,7 +697,12 @@ export function useProductionData(): UseProductionData {
       const year = parseInt(referenceDate.slice(0, 4), 10);
       const month = parseInt(referenceDate.slice(5, 7), 10);
       if (!Number.isFinite(year) || !Number.isFinite(month)) return null;
-      const empresaForHeader = viewEmpresa ?? HEADER_TABLE_FALLBACK_EMPRESA;
+      // Explicit branch on `view` (matches the deps array entry below). For
+      // Brasil view we send the non-null fallback empresa because the RPC
+      // requires a non-null `p_empresa` — the HeaderTable component then
+      // hides the company-section rows client-side via its `viewMode` prop.
+      const empresaForHeader: string =
+        view === "Brasil" ? HEADER_TABLE_FALLBACK_EMPRESA : view;
       try {
         return await rpcGetWellByWellHeader(supabase, empresaForHeader, year, month);
       } catch (e) {
@@ -702,6 +716,21 @@ export function useProductionData(): UseProductionData {
   useEffect(() => {
     if (headerFetched) setHeaderData(headerFetched);
   }, [headerFetched]);
+
+  // Clear the company-section rows of the previous empresa on view change.
+  // Without this, switching e.g. Petrobras → PRIO would briefly render the
+  // last fetched PETROBRAS section under the new active pill during the
+  // ~150ms debounce window between the click and the new RPC arrival. The
+  // Brazil-section rows are kept because they're empresa-independent (every
+  // call to `get_well_by_well_header` returns the same Brazil block) — that
+  // saves the user a skeleton flash on the half of the table that wouldn't
+  // change anyway. Switching Brasil ↔ Petrobras keeps the company rows
+  // (same fetch payload), but Brasil's `viewMode` filter hides them.
+  useEffect(() => {
+    setHeaderData((prev) =>
+      prev.filter((r) => (r.section ?? "").toUpperCase() === "BRAZIL"),
+    );
+  }, [view]);
 
   // ── If the dateRange changes such that referenceDate falls outside it, ────
   //    snap referenceDate to dateRange[1] (most recent month in window).
