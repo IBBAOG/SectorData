@@ -421,6 +421,25 @@ def _refresh_mv(sb) -> None:
         print(f"  WARN: could not refresh view: {e}")
 
 
+def _refresh_production_mv(sb) -> None:
+    """Refresh the /well-by-well dashboard MVs after a CDP upload batch.
+
+    Calls refresh_mv_production() which refreshes:
+      - mv_production_monthly
+      - mv_production_installation_monthly
+      - mv_brazil_monthly
+    These MVs cache pre-joined anp_cdp_producao x field_stakes data (Round 5 perf).
+    Granted to service_role only. Non-fatal: stale MVs are acceptable until next run.
+    """
+    try:
+        sb.rpc("refresh_mv_production", {}).execute()
+        print("  Refreshed mv_production_monthly + mv_production_installation_monthly + mv_brazil_monthly")
+    except Exception as e:
+        # Don't fail the pipeline on MV refresh error — data is still in anp_cdp_producao;
+        # MV just stale until next run.
+        print(f"  WARNING: failed to refresh production MVs: {e}")
+
+
 def _warn_partial_offshore(sb, periods_uploaded: set[tuple[int, int]]) -> None:
     """
     Emit a warning when offshore (PosSal/PreSal) well counts for the uploaded month
@@ -742,6 +761,7 @@ def _from_parquet(sb, path: str, ano_inicio: int = 0, allow_non_apex: bool = Fal
     print(f"  {len(rows)} rows to upsert…")
     _upsert(sb, rows)
     _refresh_mv(sb)
+    _refresh_production_mv(sb)
 
 
 def _parse_csv(path: str, local: str) -> pd.DataFrame | None:
@@ -1028,6 +1048,7 @@ def _from_csv_dir(sb, csv_dir: str, incremental: bool = True, purge: bool = Fals
     print(f"  {len(rows)} rows to upsert (as-is, no aggregation)…")
     _upsert(sb, rows)
     _refresh_mv(sb)
+    _refresh_production_mv(sb)
 
     # Validation: report offshore row counts for each uploaded period
     for ano_p, mes_p in sorted(periods_to_purge):
