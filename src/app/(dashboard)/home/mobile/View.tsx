@@ -2,55 +2,34 @@
 
 // Mobile view for /home.
 //
-// Redesigned 2026-05-26: icon + module name list layout.
-// One card per row, compact, with per-slug SVG icons from moduleIcons.tsx.
-// Hover/tap: icon glows orange, row gets accent-left-bar, translateX(3px).
+// Redesigned 2026-05-28: gallery extracted to <ModuleGallery variant="mobile" />,
+// which carries the same category accent treatment as the desktop variant
+// (colored icon tiles + accent press states + section dot/count badges).
 // Same analysis/structure as desktop — same categories, same visibility logic.
 //
 // Structure:
 //   MobileTopBar  — sticky glass top bar (wordmark + Sign in / avatar)
 //   Greeting      — "Good morning / afternoon / evening, <name>"
 //   Search input  — sticky below top bar, live-filters module list
-//   3× category sections — Markets / Oil & Gas / Fuel Distribution
-//     - sticky collapsible section header with chevron + count badge
-//     - compact list: icon circle + module name + chevron
+//   <ModuleGallery variant="mobile" /> — 3× collapsible sections
 //   MobileBottomTabBar — fixed bottom nav
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
 import {
   MobileTopBar,
   MobileBottomTabBar,
   type MobileBottomTab,
-  ChevronRightIcon,
-  ChevronDownIcon,
   SearchIcon,
 } from "@/components/dashboard/mobile";
-import { useHomeData, type HomeCategory } from "../useHomeData";
+import { useHomeData } from "../useHomeData";
 import { useUserProfile } from "../../../../context/UserProfileContext";
-import { getModuleIcon } from "../../../../data/moduleIcons";
+import ModuleGallery from "../../../../components/home/ModuleGallery";
 
-// ── Design tokens ─────────────────────────────────────────────────────────
-const CATEGORY_ACCENT: Record<HomeCategory, string> = {
-  markets: "#ff5000",
-  oilgas: "#2563eb",
-  fuel: "#059669",
-};
-
-const CATEGORY_ACCENT_SOFT: Record<HomeCategory, string> = {
-  markets: "rgba(255, 80, 0, 0.12)",
-  oilgas: "rgba(37, 99, 235, 0.12)",
-  fuel: "rgba(5, 150, 105, 0.12)",
-};
-
-const CATEGORY_LABELS: Record<HomeCategory, string> = {
-  markets: "Markets",
-  oilgas: "Oil & Gas",
-  fuel: "Fuel Distribution",
-};
-
-const CATEGORY_ORDER: HomeCategory[] = ["markets", "oilgas", "fuel"];
+// Sticky-top offset for category section headers — must equal
+// MobileTopBar height + the height of the sticky search row beneath it.
+// Topbar = 56 (var --mobile-topbar-h), search container = 60.
+const GALLERY_STICKY_TOP = 56 + 60;
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -71,112 +50,6 @@ function getInitials(fullName: string | null | undefined): string {
 function getFirstName(fullName: string | null | undefined): string {
   if (!fullName) return "there";
   return fullName.trim().split(/\s+/)[0];
-}
-
-// ── Module row (icon + name) ──────────────────────────────────────────────
-
-interface ModuleRowProps {
-  slug: string;
-  title: string;
-  disabled: boolean;
-  href: string | null;
-  accent: string;
-  accentSoft: string;
-  onNavigate: (href: string) => void;
-}
-
-function ModuleRow({ slug, title, disabled, href, accent, accentSoft, onNavigate }: ModuleRowProps) {
-  const [pressed, setPressed] = useState(false);
-
-  return (
-    <div
-      role="button"
-      tabIndex={disabled ? -1 : 0}
-      aria-label={title}
-      aria-disabled={disabled}
-      onClick={() => { if (!disabled && href) onNavigate(href); }}
-      onKeyDown={(e) => {
-        if ((e.key === "Enter" || e.key === " ") && !disabled && href) {
-          e.preventDefault();
-          onNavigate(href);
-        }
-      }}
-      onPointerDown={() => !disabled && setPressed(true)}
-      onPointerUp={() => setPressed(false)}
-      onPointerLeave={() => setPressed(false)}
-      style={{
-        display: "grid",
-        gridTemplateColumns: "44px 1fr auto",
-        alignItems: "center",
-        gap: 12,
-        minHeight: 56,
-        padding: "0 16px 0 12px",
-        background: pressed ? "rgba(0,0,0,0.04)" : "var(--mobile-surface)",
-        cursor: disabled ? "default" : "pointer",
-        opacity: disabled ? 0.45 : 1,
-        WebkitTapHighlightColor: "transparent",
-        outline: "none",
-        // Left accent bar via box-shadow
-        boxShadow: pressed
-          ? `inset 3px 0 0 ${accent}`
-          : "none",
-        transition: "background 0.12s ease, box-shadow 0.12s ease",
-        position: "relative",
-      }}
-    >
-      {/* Icon bubble */}
-      <div
-        style={{
-          width: 40,
-          height: 40,
-          borderRadius: 12,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-          background: pressed ? accentSoft : "rgba(0,0,0,0.05)",
-          color: pressed ? accent : "var(--mobile-text-muted)",
-          transition: "background 0.12s ease, color 0.12s ease, transform 0.12s ease",
-          transform: pressed ? "scale(1.08)" : "scale(1)",
-        }}
-        aria-hidden="true"
-      >
-        {getModuleIcon(slug, 20, 2)}
-      </div>
-
-      {/* Module name */}
-      <span
-        style={{
-          fontSize: 15,
-          fontWeight: 600,
-          color: "var(--mobile-text)",
-          fontFamily: "Arial, Helvetica, sans-serif",
-          lineHeight: 1.25,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {title}
-      </span>
-
-      {/* Chevron */}
-      {!disabled && (
-        <span
-          style={{
-            color: "var(--mobile-text-faint)",
-            display: "flex",
-            alignItems: "center",
-            transition: "transform 0.12s ease",
-            transform: pressed ? "translateX(3px)" : "translateX(0)",
-          }}
-          aria-hidden="true"
-        >
-          <ChevronRightIcon size={16} />
-        </span>
-      )}
-    </div>
-  );
 }
 
 // ── Tab bar icons ─────────────────────────────────────────────────────────
@@ -243,6 +116,9 @@ export default function MobileView(): React.ReactElement {
   const isAnon = role === "Anon";
   const initials = getInitials(profile?.full_name);
   const firstName = isAnon ? "Guest" : getFirstName(profile?.full_name);
+
+  // When search is active, hide sections that have no matching cards.
+  const isSearching = search.trim().length > 0;
 
   function handleTabChange(key: string) {
     if (key === "profile") {
@@ -421,148 +297,17 @@ export default function MobileView(): React.ReactElement {
         </div>
       </div>
 
-      {/* ── Module list ──────────────────────────────────────────────── */}
-      <main style={{ paddingBottom: 12 }}>
-        {CATEGORY_ORDER.map((cat) => {
-          const cards = cardsByCategory[cat];
-          if (search && cards.length === 0) return null;
-
-          const isCollapsed = collapsed[cat];
-          const label = CATEGORY_LABELS[cat];
-          const accent = CATEGORY_ACCENT[cat];
-          const accentSoft = CATEGORY_ACCENT_SOFT[cat];
-
-          return (
-            <section
-              key={cat}
-              style={{
-                background: "var(--mobile-surface)",
-                borderTop: "1px solid var(--mobile-divider)",
-                borderBottom: "1px solid var(--mobile-divider)",
-                marginTop: 14,
-              }}
-            >
-              {/* Section header */}
-              <header
-                role="button"
-                tabIndex={0}
-                aria-expanded={!isCollapsed}
-                onClick={() => toggleCollapsed(cat)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    toggleCollapsed(cat);
-                  }
-                }}
-                style={{
-                  position: "sticky",
-                  top: "calc(var(--mobile-topbar-h) + 60px)",
-                  zIndex: 18,
-                  display: "grid",
-                  gridTemplateColumns: "auto auto 1fr auto",
-                  alignItems: "center",
-                  gap: 8,
-                  height: 44,
-                  padding: "0 16px",
-                  background: "var(--mobile-glass-bg)",
-                  WebkitBackdropFilter: "var(--mobile-glass-blur)",
-                  backdropFilter: "var(--mobile-glass-blur)",
-                  borderBottom: "1px solid var(--mobile-glass-border)",
-                  cursor: "pointer",
-                  userSelect: "none",
-                }}
-              >
-                {/* Chevron */}
-                <span
-                  style={{
-                    width: 18,
-                    height: 18,
-                    color: "var(--mobile-text-muted)",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    transition: "transform 0.2s ease",
-                    transform: isCollapsed ? "rotate(-90deg)" : "none",
-                  }}
-                >
-                  <ChevronDownIcon size={14} strokeWidth={2.5} />
-                </span>
-
-                {/* Category dot */}
-                <span
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: "50%",
-                    background: accent,
-                    flexShrink: 0,
-                  }}
-                />
-
-                {/* Label */}
-                <span
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: "var(--mobile-text)",
-                    letterSpacing: "0.06em",
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {label}
-                </span>
-
-                {/* Count badge */}
-                <span
-                  style={{
-                    minWidth: 24,
-                    height: 20,
-                    padding: "0 7px",
-                    borderRadius: 999,
-                    background: "rgba(0,0,0,0.06)",
-                    color: "var(--mobile-text-muted)",
-                    fontSize: 11,
-                    fontWeight: 700,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    letterSpacing: "0.02em",
-                  }}
-                >
-                  {cards.length}
-                </span>
-              </header>
-
-              {/* Section body */}
-              {!isCollapsed && (
-                <div>
-                  {cards.map((card, idx) => (
-                    <div key={card.slug}>
-                      <ModuleRow
-                        slug={card.slug}
-                        title={card.title}
-                        disabled={card.disabled}
-                        href={card.href}
-                        accent={accent}
-                        accentSoft={accentSoft}
-                        onNavigate={(href) => router.push(href)}
-                      />
-                      {idx < cards.length - 1 && (
-                        <div
-                          style={{
-                            height: 1,
-                            background: "var(--mobile-divider)",
-                            margin: "0 16px 0 68px",
-                          }}
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          );
-        })}
+      {/* ── Module list (glass-coherent gallery) ─────────────────────── */}
+      <main>
+        <ModuleGallery
+          variant="mobile"
+          cardsByCategory={cardsByCategory}
+          onNavigate={(href) => router.push(href)}
+          collapsed={collapsed}
+          toggleCollapsed={toggleCollapsed}
+          hideEmptySections={isSearching}
+          stickyTop={GALLERY_STICKY_TOP}
+        />
       </main>
 
       {/* ── Bottom tab bar ───────────────────────────────────────────── */}
