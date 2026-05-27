@@ -431,13 +431,16 @@ def _refresh_production_mv(sb) -> None:
     These MVs cache pre-joined anp_cdp_producao x field_stakes data (Round 5 perf).
     Granted to service_role only. Non-fatal: stale MVs are acceptable until next run.
     """
+    print("  Refreshing well-by-well materialized views...")
+    _t0 = time.time()
     try:
         sb.rpc("refresh_mv_production", {}).execute()
-        print("  Refreshed mv_production_monthly + mv_production_installation_monthly + mv_brazil_monthly")
+        _elapsed = time.time() - _t0
+        print(f"  MV refresh completed in {_elapsed:.1f}s")
     except Exception as e:
         # Don't fail the pipeline on MV refresh error — data is still in anp_cdp_producao;
         # MV just stale until next run.
-        print(f"  WARNING: failed to refresh production MVs: {e}")
+        print(f"  MV refresh failed: {e}")
 
 
 def _refresh_canonical_expansion(sb) -> None:
