@@ -371,6 +371,75 @@ CREATE FUNCTION public.refresh_mv_production() RETURNS void
 
 All 7 RPC signatures (param names, types, RETURNS TABLE columns) preserved verbatim. Frontend wrappers in `src/lib/rpc.ts` need **no** changes. The change is purely internal to the function bodies — same input, same output, different (cached) compute path.
 
+#### Round 8 (2026-05-28) — Migration `20260528500000_well_by_well_header_rpc.sql`
+
+One new RPC `get_well_by_well_header(p_empresa text, p_year int, p_month int)` to power the PDF-style 16-row stacked header table on `/well-by-well`. Single round trip returns all rows ordered by `display_order` (1..16) so the frontend renders top→down without re-sorting.
+
+**Signature:**
+
+```sql
+RETURNS TABLE (
+  display_order  int,        -- 1..16, stable client-side ordering
+  section        text,       -- 'BRAZIL' | UPPER(p_empresa)
+  category       text,       -- 'Oil (kbpd)' | 'Gas (kboed)' | 'Main fields (kbpd)'
+  subcategory    text,       -- NULL = total row (bold) | 'Pre-Salt' / 'Post-Salt' / 'Onshore' | canonical field name
+  is_total       boolean,    -- TRUE on the category-total row (display hint for bold)
+  current_val    numeric,    -- value at (p_year, p_month), display unit
+  prev_month_val numeric,    -- previous month (Jan rolls to Dec/y-1 automatically)
+  mom_pct        numeric,    -- (current/prev_month - 1) * 100; NULL if prev_month NULL/0
+  prev_year_val  numeric,    -- same month, p_year - 1
+  yoy_pct        numeric,    -- (current/prev_year - 1) * 100; NULL if prev_year NULL/0
+  ytd_avg        numeric     -- average of (sum-per-month) across months 1..p_month of p_year
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp;
+GRANT EXECUTE ON FUNCTION ... TO anon, authenticated;
+```
+
+**Row order (display_order):**
+
+| # | section | category | subcategory | is_total | source |
+|---|---|---|---|---|---|
+| 1 | BRAZIL | Oil (kbpd) | NULL | TRUE | `mv_brazil_monthly` sum |
+| 2-4 | BRAZIL | Oil (kbpd) | Pre-Salt / Post-Salt / Onshore | FALSE | `mv_brazil_monthly` per ambiente |
+| 5 | BRAZIL | Gas (kboed) | NULL | TRUE | `mv_brazil_monthly` sum |
+| 6-8 | BRAZIL | Gas (kboed) | Pre-Salt / Post-Salt / Onshore | FALSE | `mv_brazil_monthly` per ambiente |
+| 9 | BRAZIL | Main fields (kbpd) | NULL | TRUE | sum of top 3 100% WI campos |
+| 10-12 | BRAZIL | Main fields (kbpd) | canonical name | FALSE | `anp_cdp_producao` raw + `canonical_field_name()` |
+| 13 | `UPPER(p_empresa)` | Oil (kbpd) | NULL | TRUE | `mv_production_monthly` stake-weighted |
+| 14-16 | `UPPER(p_empresa)` | Oil (kbpd) | Pre-Salt / Post-Salt / Onshore | FALSE | `mv_production_monthly` per ambiente |
+
+**Math notes:**
+
+- **Oil unit**: `oil_bbl_dia / 1000.0` → kbpd. All sources are bbl/d at row grain.
+- **Gas unit**: `gas_mm3_dia * 6.29 / 1000.0` → kboed. Industry-standard 1 m³ gas ≈ 6.29 boe (`anp_cdp_producao.gas_total_mm3_dia` is stored in m³/d despite the column name — Apr-26 raw sum 206,603 m³/d × 6.29 / 1000 ≈ 1,299 kboed, matches PDF page 2).
+- **Ambiente labels**: source values `PreSal` / `PosSal` / `Terra` are translated to display labels `Pre-Salt` / `Post-Salt` / `Onshore` in the RPC. Frontend renders these verbatim.
+- **Main fields**: top 3 canonical campos by Brazil 100% WI oil in (p_year, p_month). Tie-break by `oil_curr DESC NULLS LAST` via `ROW_NUMBER()`. Each campo's prev_month / prev_year / ytd_avg is computed across all variants (`canonical_field_name(campo) = canonical`).
+- **Company section**: reads `mv_production_monthly` (already pre-applies `stake_pct/100`). Collapsed inline to (`ambiente`, `ano`, `mes`) before time-slicing.
+- **MoM / YoY**: returned as percent (`* 100`). NULL when denominator is NULL or 0.
+- **YTD avg**: `AVG()` of the per-month aggregate across months 1..p_month of p_year inclusive. For Brazil/Company sections, the per-month aggregate is the per-ambiente value; for Main fields, it's the per-month SUM across all variants of that canonical.
+- **Type discipline**: all numeric outputs explicit-cast to `numeric` to avoid `double precision` coercion from the literal `6.29` (Postgres parses it as numeric but mixed-type aggregates can drift; `RETURNS TABLE` requires exact match per Pegadinha #18 family).
+
+**Sanity-check vs PDF page 2 (Apr-26 Petrobras report):**
+
+| Row | Expected | Got | Match |
+|---|---|---|---|
+| BRAZIL Oil total | 4,337 | 4,337.4 | ✓ |
+| BRAZIL Oil Pre-Salt | 3,584 | 3,567.7 | ~ (snapshot variance) |
+| BRAZIL Oil Onshore | 79 | 79.4 | ✓ |
+| BRAZIL Gas total | 1,299 | 1,299.5 | ✓ |
+| BRAZIL Gas Onshore | 155 | 154.9 | ✓ |
+| BÚZIOS (kbpd) | 910 | 910.1 | ✓ |
+| MERO (kbpd) | 721 | 720.9 | ✓ |
+| PETROBRAS Oil total | 2,708 | 2,710.8 | ✓ |
+| PETROBRAS Oil Onshore | 20 | 20.0 | ✓ |
+| Petrobras MoM | +2% | +2.1% | ✓ |
+| Petrobras YoY | +18% | +18.2% | ✓ |
+| Petrobras YTD | 2,596 | 2,599 | ✓ |
+
+Edge cases tested: PRIO (Pre-Salt + Onshore subcategory rows are NULL because PRIO has zero production there — frontend should render as em-dash / blank); January query (prev_month correctly rolls to Dec of previous year).
+
+**Consumer:** Frente B `dash-well-by-well` adds wrapper `getWellByWellHeader(empresa, year, month)` in `src/lib/rpc.ts` and renders the table in both `desktop/View.tsx` and `mobile/View.tsx` (dual-view sync rule). `is_total=TRUE` rows render with `font-weight: bold` and a thin top border to delimit category groups visually.
+
 ### Sessions / Auth state
 
 | Tabela | Dept consumidor | Populada por |
