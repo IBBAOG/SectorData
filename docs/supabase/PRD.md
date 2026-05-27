@@ -298,6 +298,79 @@ Five coordinated changes to support the `/production` → `/well-by-well` rename
 
 **Frontend follow-ups (other Frentes of Round 4, not this migration):** Frente B renames route `/production` → `/well-by-well` and updates `getModuleVisibility('production')` → `'well-by-well'` calls. Frente C updates `/admin-panel` "Field Stakes" section to display the new `canonical` column. Frente D updates `src/lib/rpc.ts` wrappers if they hardcoded the old `RETURNS TABLE` shape.
 
+#### Round 5 (2026-05-28) — Migration `20260528400000_well_by_well_perf_mv.sql`
+
+Pre-aggregated materialized views to fix `/well-by-well` load latency. The 7 production RPCs were doing 2.2M-row JOINs + per-row `canonical_field_name()` calls on every dashboard load. Migration ships 3 MVs, a refresh function, and rewrites all 7 RPCs to read from the MVs.
+
+**Baseline (Apr-26 Petrobras, typical input, EXPLAIN ANALYZE):**
+
+| RPC | Before | After | Speedup |
+|---|---:|---:|---:|
+| `get_production_brazil_aggregate` (13 mo) | 2 822 ms | 2.6 ms | **1086×** |
+| `get_production_company_aggregate` (13 mo) | 12 243 ms | 7.1 ms | **1724×** |
+| `get_production_top_fields` (1 mo, top 10) | 268 ms | 4.3 ms | **62×** |
+| `get_production_by_installation` (1 mo) | 172 ms | 6.7 ms | **26×** |
+| `get_production_yoy_table` (2 yr) | 493 ms | 6.9 ms | **71×** |
+| `get_production_field_timeseries` (13 mo, BÚZIOS) | 7 013 ms | 4.5 ms | **1558×** |
+| `get_production_installation_timeseries` (13 mo, FPSO) | 33 ms | 4.3 ms | **8×** |
+| **TOTAL dashboard load** | **~23.0 s** | **~36 ms** | **~640×** |
+
+**Materialized views:**
+
+| MV | Grain | Rows | Disk |
+|---|---|---:|---:|
+| `mv_brazil_monthly` | `(ano, mes, ambiente)` | 651 | 64 kB |
+| `mv_production_monthly` | `(canonical, empresa, ano, mes, ambiente)` + pre-baked `stake_pct_weighted` column | 66 690 | 8 192 kB |
+| `mv_production_installation_monthly` | `(instalacao, empresa, ano, mes)` | 70 758 | 8 704 kB |
+
+Both stake-weighted MVs filter to campos with `SUM(stake_pct) = 100` via `valid_stakes` CTE inside the MV definition — same business rule the RPCs applied at runtime, now pre-applied at refresh time. The `canonical_field_name()` call is also pre-baked into `mv_production_monthly.canonical`.
+
+**Indexes (each MV has UNIQUE PK + 1-2 secondary):**
+
+- `mv_brazil_monthly_pk (ano, mes, ambiente)` UNIQUE — required for CONCURRENTLY
+- `mv_brazil_monthly_date_idx (make_date(ano, mes, 1))` — supports the date BETWEEN filter
+- `mv_production_monthly_pk (canonical, empresa, ano, mes, ambiente)` UNIQUE
+- `mv_production_monthly_empresa_year_month_idx (empresa, ano, mes)` — top fields lookup
+- `mv_production_monthly_empresa_date_idx (empresa, make_date(ano, mes, 1))` — company aggregate date range
+- `mv_production_monthly_canonical_empresa_idx (canonical, empresa)` — field timeseries lookup
+- `mv_production_installation_monthly_pk (instalacao, empresa, ano, mes)` UNIQUE
+- `mv_production_installation_monthly_empresa_year_month_idx (empresa, ano, mes)`
+- `mv_production_installation_monthly_empresa_date_idx (empresa, make_date(ano, mes, 1))`
+
+**Refresh function:**
+
+```sql
+CREATE FUNCTION public.refresh_mv_production() RETURNS void
+  LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+  BEGIN
+    REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_brazil_monthly;
+    REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_production_monthly;
+    REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_production_installation_monthly;
+  END;
+  $$;
+```
+
+`REFRESH CONCURRENTLY` requires each MV's UNIQUE INDEX (already shipped) and does **not** lock readers — dashboard stays responsive during refresh.
+
+**Recommended call site:** end of CDP ETL upload (`scripts/pipelines/anp/cdp/02_upload.py`) using the service-role key. Schema-side ownership stops at the function; the CTO must dispatch the ETL worker to wire the post-upload call. Until then, the operator runs `SELECT public.refresh_mv_production();` manually after each ETL run, or a `pg_cron` job is scheduled (every 4-6h matches CDP's incremental cadence).
+
+**Security hardening:**
+
+- MVs **not** granted to `anon` / `authenticated`. Access path is RPC-only — the SECURITY DEFINER functions remain the sole entry point. This avoids the `materialized_view_in_api` advisor warning (PostgREST auto-exposes any granted view, creating a redundant attack surface beside the RPCs).
+- `refresh_mv_production()` granted **only** to `service_role`. Supabase auto-grants EXECUTE to anon/authenticated on every new public function (via schema-level grants), so an explicit `REVOKE ALL ... FROM PUBLIC, anon, authenticated` is required — `REVOKE FROM PUBLIC` alone does not suffice. Without this, any visitor could trigger a full refresh via `/rest/v1/rpc/refresh_mv_production` (DoS + EXCLUSIVE lock vector).
+- All 7 production RPCs keep `SECURITY DEFINER + SET search_path = public, pg_temp` per Pegadinha #18.
+
+**Sanity-check vs Round 4 (numbers must match exactly):**
+
+- Apr-26 Petrobras total = **2 710 806 bbl/d** (identical to Round 4; matches earlier PDF cross-check).
+- BÚZIOS canonical = **809 239.6 bbl/d** (identical — sum of BÚZIOS + BÚZIOS_ECO variants).
+- TUPI = 553 425 / MERO = 278 250 / JUBARTE = 206 548 / ITAPU = 155 202 bbl/d — all identical.
+- YoY table TOTAL.current_kbpd = 2 710.8 (= sum of company aggregate / 1000).
+
+**Surface area / RPCs unchanged:**
+
+All 7 RPC signatures (param names, types, RETURNS TABLE columns) preserved verbatim. Frontend wrappers in `src/lib/rpc.ts` need **no** changes. The change is purely internal to the function bodies — same input, same output, different (cached) compute path.
+
 ### Sessions / Auth state
 
 | Tabela | Dept consumidor | Populada por |
