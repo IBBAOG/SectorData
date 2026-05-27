@@ -46,11 +46,26 @@ export type Fonte = "producer" | "distribution" | "retail";
 
 // ─── Constants (visual + behaviour) ───────────────────────────────────────────
 
-/** 3 fixed colours for the 3 supply-chain links. Never invent. */
+/**
+ * 3 fixed colours for the 3 supply-chain links. Never invent.
+ *
+ * 2026-05-28 chart palette audit: producer moved from brand-orange (#FF5000)
+ * to navy (#1D4080). Brand orange is reserved for highlight only (active UI
+ * states, leader-trace highlight). "Producer" is a stable recurring entity
+ * across every chart render in this dashboard.
+ *
+ * Canonical source for the segment palette: `SEGMENT_COLORS` in
+ * src/lib/plotlyDefaults.ts (Producer = navy, Distribution = teal,
+ * Retail = mint). Local values here keep the existing indigo/teal pair for
+ * Distribution/Retail to preserve recognition between releases — only the
+ * brand-orange offender was swapped.
+ */
 export const FONTE_COLORS: Record<Fonte, string> = {
-  producer:     "#FF5000",   // brand orange — wholesale
-  distribution: "#3F51B5",   // indigo       — B2B distribution
-  retail:       "#009688",   // teal         — pump
+  producer:     "#1D4080",   // navy        — wholesale (was brand orange)
+  distribution: "#A16207",   // bronze      — B2B distribution (was #3F51B5 indigo,
+                              //               swapped to avoid blue-on-blue clash
+                              //               with the new navy producer)
+  retail:       "#009688",   // deep teal   — pump
 };
 
 export const FONTE_LABEL: Record<Fonte, string> = {

@@ -51,48 +51,105 @@ Tokens, componentes e padrões. Fonte da verdade derivada do código real (`src/
 
 Paleta canônica para gráficos com múltiplas séries (stacked area, multi-line, bar charts, dots em tabelas). Fonte da verdade: `PALETTE` em [`src/lib/plotlyDefaults.ts`](../../src/lib/plotlyDefaults.ts).
 
-Spec definido pelo CTO em 2026-05-27: **14 cores em 2 tiers** — 3 *highlight* consumidos primeiro, 11 *fallback* quando o tier de destaque se esgota. Os consumers indexam posicionalmente via `PALETTE[i % PALETTE.length]`.
+Spec definido pelo CTO em 2026-05-27, atualizado em 2026-05-28 (audit "sem branco em gráficos"): **14 cores em 2 tiers** — 3 *highlight* consumidos primeiro, 11 *fallback* quando o tier de destaque se esgota. Os consumers indexam posicionalmente via `PALETTE[i % PALETTE.length]`.
 
 #### Highlight tier (posições 1-3)
 
-Cores de destaque — atribuídas primeiro às séries que devem chamar atenção.
+Cores de destaque — atribuídas primeiro às séries que devem chamar atenção. A **posição 1 é o laranja de marca**: é entregue à primeira série (leader) de cada gráfico que rotaciona pela paleta. Em práticas onde a "primeira série" não é semanticamente o destaque (ex: stacked area por país com ordem fixa), use os canonical maps abaixo em vez da rotação ordinal.
 
 | Pos | Hex | Papel típico |
 |---|---|---|
-| 1 | `#FF5000` | Primary highlight — laranja de marca (`BRAND_ORANGE`) |
-| 2 | `#FFAE66` | Secondary highlight |
-| 3 | `#000512` | Tertiary highlight (near-black com nuance azul) |
+| 1 | `#FF5000` | Primary highlight — laranja de marca (`BRAND_ORANGE`) — leader/topo |
+| 2 | `#FFAE66` | Secondary highlight (peach) |
+| 3 | `#000512` | Tertiary highlight (near-black com nuance navy) |
 
 #### Fallback tier (posições 4-14)
 
-Usadas apenas quando o highlight tier se esgota (≥4 séries simultâneas).
+Usadas apenas quando o highlight tier se esgota (≥4 séries simultâneas). Todas as posições problemáticas (branco, near-yellow, near-white grey) foram removidas no audit de 2026-05-28.
 
-| Pos | Hex |
-|---|---|
-| 4 | `#FFFFFF` |
-| 5 | `#000000` |
-| 6 | `#1D4080` |
-| 7 | `#73C6A1` |
-| 8 | `#8258A0` |
-| 9 | `#D2FF00` |
-| 10 | `#7030A0` |
-| 11 | `#FFFF99` |
-| 12 | `#F2F2F2` |
-| 13 | `#D8D8D8` |
-| 14 | `#7F7F7F` |
-
-#### Avisos de contraste
-
-- **`#FFFFFF` (pos 4)** é branco — em qualquer gráfico com `paper_bgcolor: "white"` (padrão de `COMMON_LAYOUT`) a série fica invisível. Decisão explícita do CTO. Dashboards com ≥4 categorias simultâneas precisam ou de outline na trace, ou não devem usar a paleta as-is nessa posição.
-- **`#F2F2F2` (pos 12)** e **`#D8D8D8` (pos 13)** são cinzas muito claros — mesmo aviso contra fundos brancos.
-- **`colourForEntity()`** em [`src/app/(dashboard)/imports-exports/desktop/View.tsx`](../../src/app/(dashboard)/imports-exports/desktop/View.tsx) reserva `#bdbdbd` para o bucket "Others". `#D8D8D8` (pos 13) e `#7F7F7F` (pos 14) são visualmente próximos mas distintos — nenhum conflito de código, apenas awareness para quem auditar paletas localmente.
+| Pos | Hex | Cor |
+|---|---|---|
+| 4 | `#0EA5E9` | Sky blue *(substituiu `#FFFFFF` branco)* |
+| 5 | `#000000` | Preto |
+| 6 | `#1D4080` | Navy |
+| 7 | `#73C6A1` | Mint |
+| 8 | `#8258A0` | Purple |
+| 9 | `#0F766E` | Teal *(substituiu `#D2FF00` lime — quase-amarelo ilegível)* |
+| 10 | `#7030A0` | Deep purple |
+| 11 | `#D97706` | Amber *(substituiu `#FFFF99` amarelo claro)* |
+| 12 | `#52525B` | Slate *(substituiu `#F2F2F2` near-white)* |
+| 13 | `#BE185D` | Magenta *(substituiu `#D8D8D8` light grey)* |
+| 14 | `#7F7F7F` | Mid grey |
 
 #### Regras
 
 1. **Sempre importe de `PALETTE`** — nunca hard-code hex de gráfico em componente.
 2. **Não reordene** — a ordem é semântica (pos 1-3 = highlight; pos 4-14 = fallback).
-3. **`BRAND_ORANGE` (`#FF5000`) é a cor primária canônica da identidade** (botões, links, accents UI) e ocupa a **posição 1** da paleta. Em UI continua sendo o único laranja autorizado.
-4. **Não invente cor nova** para gráfico — se precisar de mais de 14 séries, agrupe em "Outros" ou passe pelo CTO.
+3. **`BRAND_ORANGE` (`#FF5000`)** é a cor primária canônica da identidade (botões, links, accents UI). Como cor de **série de gráfico**, só aparece via `PALETTE[0]` (leader rotacional — primeira série do chart) ou via padrão `leader = BRAND_ORANGE` (BSW, anp-cdp-diaria). **Nunca é usado para "fixar" uma entidade recorrente** (Diesel, Estados Unidos, Big-3, etc) — use os canonical maps abaixo.
+4. **Não use branco** em traces, markers, fillcolor ou line.color. White paper/plot bg está OK (padrão Plotly); white text em barra escura também (legibilidade).
+5. **Não invente cor nova** para gráfico — se precisar de mais de 14 séries, agrupe em "Outros" ou passe pelo CTO.
+
+### Canonical chart colors — mapeamentos fixos por entidade
+
+Tabelas pinadas em `src/lib/plotlyDefaults.ts`. **Use estas constantes em vez de `PALETTE` rotation quando a entidade existe em mais de um dashboard** — garante que a mesma entidade tem a mesma cor em todas as views.
+
+#### `PRODUCT_COLORS`
+
+| Produto | Hex | Aliases aceitos |
+|---|---|---|
+| Diesel | `#1D4080` (navy) | Diesel B, Diesel S10 |
+| Gasoline | `#0F766E` (teal) | Gasoline C, Gasolina C |
+| Crude Oil | `#1f2937` (dark slate) | — |
+| Ethanol | `#73C6A1` (mint) | Etanol Hidratado, Hydrous Ethanol, An. Ethanol |
+| Biodiesel | `#0EA5E9` (sky blue) | — |
+| LPG | `#8258A0` (purple) | GLP |
+| Otto-Cycle | `#A16207` (bronze) | — |
+
+Brand orange é reservada para "highlight" — não aparece como cor de produto.
+
+#### `COUNTRY_COLORS` (origens + destinos em `/imports-exports`)
+
+| País | Hex | Note |
+|---|---|---|
+| Russia | `#000000` | preto |
+| United States | `#1D4080` | navy (era `#FF5000` brand orange — flagged no audit 2026-05-28) |
+| UAE | `#73C6A1` | mint (afinidade com verde emiradense) |
+| Netherlands | `#FFAE66` | peach (próximo do laranja holandês, sem colidir com brand) |
+| India | `#8258A0` | purple |
+| Saudi Arabia | `#0F766E` | teal saturado (era `#D2FF00` near-yellow ilegível) |
+| Norway | `#0EA5E9` | sky blue |
+| Argentina | `#A16207` | bronze |
+| Others | `#7F7F7F` | mid grey neutro |
+
+#### `REGION_COLORS` (Brasil — N / NE / CO / SE / S)
+
+| Região | Hex | Aliases |
+|---|---|---|
+| N (Norte) | `#0F766E` | NORTE |
+| NE (Nordeste) | `#FFAE66` | NORDESTE |
+| CO (Centro-Oeste) | `#A16207` | CENTRO-OESTE |
+| SE (Sudeste) | `#1D4080` | SUDESTE |
+| S (Sul) | `#8258A0` | SUL |
+
+#### `SEGMENT_COLORS` (cadeia de suprimentos / segmento de venda)
+
+| Segmento | Hex | Note |
+|---|---|---|
+| Producer | `#1D4080` | navy — wholesale (refinaria / importador) |
+| Refinery | `#1D4080` | alias |
+| Distribution | `#0F766E` | teal — B2B (canonical) |
+| Retail | `#73C6A1` | mint — bomba |
+| TRR | `#A16207` | bronze — Transporte Revendedor Retalhista |
+| Importer | `#8258A0` | purple |
+| Total | `#000512` | near-black — agregado |
+
+> Dashboards que já tinham mapeamento próprio (ex: `/anp-prices` mantém Producer=navy / Distribution=bronze / Retail=teal para distinguir B2B de Retail num gráfico com os 3 simultaneamente; `/diesel-gasoline-margins` mantém o stack com 5 cores fixas) mantêm essas tabelas locais — mas devem se alinhar com a paleta canônica quando possível.
+
+#### Quando NÃO usar o canonical map
+
+- Dashboards com 1 produto fixo (filter implícito) onde a série representa **role** (Import Parity / Export Parity / Petrobras / Reference) — use cores semânticas locais (ver `price-bands.ts` e `subsidy-tracker.ts`).
+- Tabela locais como `STACK_COLORS` em `/diesel-gasoline-margins` (componentes da composição do preço, não-aplicável a "produto" como entidade).
+- Brand-coloring de empresas reais (ex: Vibra `#f26522`, Ipiranga `#73C6A1`) onde a marca define a cor — manter como está.
 
 ### Stocks (tema isolado — flat trading terminal)
 

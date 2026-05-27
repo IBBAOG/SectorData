@@ -56,8 +56,13 @@ export const COLORS_IND: Record<string, string> = {
   Others: "#A9A9A9",
 };
 
+// 2026-05-28 chart palette audit: Big-3 line moved from brand-orange to navy.
+// Brand orange is reserved for highlight only (active pills, leader-trace
+// pattern); "Big-3" is a stable recurring entity on the chart, not a
+// transient highlight. Matches the canonical convention used by the other
+// fuel-distribution dashboards (e.g. PRODUCT_COLORS.Diesel = navy).
 export const COLORS_BIG3: Record<string, string> = {
-  "Big-3": "#FF5000",
+  "Big-3": "#1D4080",
   Others: "#A9A9A9",
 };
 

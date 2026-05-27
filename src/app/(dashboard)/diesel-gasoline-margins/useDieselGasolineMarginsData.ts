@@ -50,8 +50,15 @@ export const ANNOT_COLORS: Record<string, string> = {
   distribution_and_resale_margin:  "#FF5000",
 };
 
+// 2026-05-28 chart palette audit: Diesel line moved from brand-orange to
+// navy (`PRODUCT_COLORS.Diesel`). Brand orange is reserved for highlight only.
+// Gasoline C kept at #1a1a1a — that's the existing "secondary line" pattern;
+// product-canonical color (#0F766E teal) is reserved for stacked panels where
+// gasoline appears alongside other products and a green tinge helps it read.
+// Here we have only 2 lines (Diesel vs Gasoline) and the navy/black pair is
+// the most legible cross-product comparison.
 export const MARGIN_LINE_COLORS: Record<string, string> = {
-  "Diesel B":   "#FF5000",
+  "Diesel B":   "#1D4080",
   "Gasoline C": "#1a1a1a",
 };
 
