@@ -46,6 +46,7 @@ import {
   rpcGetProductionYoyTable,
   rpcGetProductionFieldTimeseries,
   rpcGetProductionInstallationTimeseries,
+  rpcGetWellByWellHeader,
 } from "../../../lib/rpc";
 import type { FieldStakeEmpresa } from "../../../types/fieldStakes";
 import type {
@@ -56,6 +57,7 @@ import type {
   ProductionYoYRow,
   ProductionFieldTimeseriesRow,
   ProductionInstallationTimeseriesRow,
+  WellByWellHeaderRow,
 } from "../../../types/production";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -184,6 +186,8 @@ export interface UseProductionData {
   topFields: ProductionTopField[];
   installations: ProductionInstallation[];
   yoyTable: ProductionYoYRow[];
+  /** Round 8 (2026-05-27) — PDF page-2 header table (Brazil + Empresa rollup). */
+  headerData: WellByWellHeaderRow[];
 
   // Loading flags (per data state)
   brazilLoading: boolean;
@@ -191,6 +195,7 @@ export interface UseProductionData {
   topFieldsLoading: boolean;
   installationsLoading: boolean;
   yoyLoading: boolean;
+  headerLoading: boolean;
   /** Any of the data fetches is in-flight. Useful for "updating…" hints. */
   anyLoading: boolean;
 
@@ -282,6 +287,8 @@ export function useProductionData(): UseProductionData {
   const [topFields, setTopFields] = useState<ProductionTopField[]>([]);
   const [installations, setInstallations] = useState<ProductionInstallation[]>([]);
   const [yoyTable, setYoyTable] = useState<ProductionYoYRow[]>([]);
+  // Round 8 (2026-05-27) — PDF page-2 header table backing state.
+  const [headerData, setHeaderData] = useState<WellByWellHeaderRow[]>([]);
 
   const [error, setError] = useState<Error | null>(null);
 
@@ -595,6 +602,34 @@ export function useProductionData(): UseProductionData {
   useEffect(() => {
     if (yoyFetched) setYoyTable(yoyFetched);
   }, [yoyFetched]);
+
+  // ── Reactive fetch: Header table (empresa + referenceDate) ────────────────
+  //
+  // Round 8 (2026-05-27). Same dep semantics as YoY / Top Fields /
+  // Installations — single reference-month snapshot, server computes MoM/YoY/
+  // YTD internally. Fires in parallel with the other reference-month-anchored
+  // panels (each panel has its own useDebouncedFetch instance).
+  const { data: headerFetched, loading: headerLoading } = useDebouncedFetch<
+    WellByWellHeaderRow[] | null
+  >(
+    async () => {
+      if (!supabase || bootstrapping || !empresa || !referenceDate) return null;
+      const year = parseInt(referenceDate.slice(0, 4), 10);
+      const month = parseInt(referenceDate.slice(5, 7), 10);
+      if (!Number.isFinite(year) || !Number.isFinite(month)) return null;
+      try {
+        return await rpcGetWellByWellHeader(supabase, empresa, year, month);
+      } catch (e) {
+        console.error("Header table refetch failed", e);
+        return [];
+      }
+    },
+    [supabase, bootstrapping, empresa, referenceDate],
+    { ms: 150, skipInitial: false },
+  );
+  useEffect(() => {
+    if (headerFetched) setHeaderData(headerFetched);
+  }, [headerFetched]);
 
   // ── If the dateRange changes such that referenceDate falls outside it, ────
   //    snap referenceDate to dateRange[1] (most recent month in window).
@@ -977,7 +1012,7 @@ export function useProductionData(): UseProductionData {
 
   // ── Anything loading? ─────────────────────────────────────────────────────
   const anyLoading =
-    brazilLoading || companyLoading || topFieldsLoading || installationsLoading || yoyLoading;
+    brazilLoading || companyLoading || topFieldsLoading || installationsLoading || yoyLoading || headerLoading;
 
   return {
     visible,
@@ -1008,12 +1043,14 @@ export function useProductionData(): UseProductionData {
     topFields,
     installations,
     yoyTable,
+    headerData,
 
     brazilLoading,
     companyLoading,
     topFieldsLoading,
     installationsLoading,
     yoyLoading,
+    headerLoading,
     anyLoading,
 
     error,

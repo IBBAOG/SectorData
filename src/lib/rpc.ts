@@ -2776,6 +2776,7 @@ import type {
   ProductionYoYRow,
   ProductionFieldTimeseriesRow,
   ProductionInstallationTimeseriesRow,
+  WellByWellHeaderRow,
 } from "../types/production";
 
 /**
@@ -3078,6 +3079,64 @@ export async function rpcGetProductionInstallationTimeseries(
     gas_mm3_dia:   Number(r.gas_mm3_dia ?? 0),
     water_bbl_dia: Number(r.water_bbl_dia ?? 0),
     hours_rate:    Number(r.hours_rate ?? 0),
+  }));
+}
+
+/**
+ * PDF-style Well-by-Well header table (Round 8, 2026-05-27).
+ *
+ * Returns one row per renderable line of the report's page-2 header table:
+ *   • "Brazil" section: oil (kbpd) + gas (kboed) totals + main fields
+ *   • "{Empresa}" section: stake-weighted oil (kbpd) + main fields
+ *
+ * Server-side aggregation; the UI just renders. See `WellByWellHeaderRow`
+ * for row-shape contract. Rows arrive pre-ordered via `display_order` but
+ * the component re-sorts defensively in case the DB ever reorders.
+ *
+ * Source-of-truth migration (slot 20260528500000):
+ *   `supabase/migrations/20260528500000_well_by_well_header.sql`
+ *   (owned by worker_supabase, Round 8 of Fase 2).
+ */
+export async function rpcGetWellByWellHeader(
+  supabase: SupabaseClient,
+  empresa: string,
+  year: number,
+  month: number,
+): Promise<WellByWellHeaderRow[]> {
+  const { data, error } = await supabase.rpc("get_well_by_well_header", {
+    p_empresa: empresa,
+    p_year:    year,
+    p_month:   month,
+  });
+  if (error) {
+    console.error("get_well_by_well_header failed", error);
+    throw new Error(`get_well_by_well_header: ${error.message}`);
+  }
+  const rows = (data ?? []) as Array<{
+    display_order:   number | string;
+    section:         string;
+    category:        string;
+    subcategory:     string | null;
+    is_total:        boolean | string | number;
+    current_val:     number | string | null;
+    prev_month_val:  number | string | null;
+    mom_pct:         number | string | null;
+    prev_year_val:   number | string | null;
+    yoy_pct:         number | string | null;
+    ytd_avg:         number | string | null;
+  }>;
+  return rows.map((r) => ({
+    display_order:  Number(r.display_order ?? 0),
+    section:        r.section,
+    category:       r.category,
+    subcategory:    r.subcategory ?? null,
+    is_total:       r.is_total === true || r.is_total === "true" || r.is_total === 1,
+    current_val:    r.current_val    == null ? null : Number(r.current_val),
+    prev_month_val: r.prev_month_val == null ? null : Number(r.prev_month_val),
+    mom_pct:        r.mom_pct        == null ? null : Number(r.mom_pct),
+    prev_year_val:  r.prev_year_val  == null ? null : Number(r.prev_year_val),
+    yoy_pct:        r.yoy_pct        == null ? null : Number(r.yoy_pct),
+    ytd_avg:        r.ytd_avg        == null ? null : Number(r.ytd_avg),
   }));
 }
 

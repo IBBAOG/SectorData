@@ -33,6 +33,7 @@ All math is done **server-side** in 5 SECURITY DEFINER RPCs (migration `supabase
 | `get_production_field_timeseries` | `(p_campo text, p_empresa text, p_date_start date, p_date_end date)` | Stake-weighted monthly oil/gas/water/uptime timeseries for one field × one company. Powers the Field drill-down (Round 2). **Round 4:** `p_campo` is interpreted as a canonical label; the server expands the WHERE clause to all variants under that canonical (so drilling "Búzios" sums Búzios + AnC_Búzios + Búzios_ECO stake-weighted). |
 | `get_field_stakes_overview` | (admin-only) | **Round 4:** now returns an extra `canonical text` column alongside `campo` so the admin variant editor can group variants by their canonical roll-up. Owned by `worker_supabase`, consumed by `worker_dash-admin` (Frente C). |
 | `get_production_installation_timeseries` | `(p_instalacao text, p_empresa text, p_date_start date, p_date_end date)` | Stake-weighted monthly oil/gas/water/uptime timeseries for one installation (FPSO/UEP/land plant) × one company. Powers the Installation drill-down (Round 3). Returns the SAME row shape as `get_production_field_timeseries`. |
+| `get_well_by_well_header` | `(p_empresa text, p_year int, p_month int)` | PDF-style page-2 header table (Round 8, 2026-05-27). Returns one row per renderable line of the report: Brazil section (oil kbpd + gas kboed + main fields kbpd, split by Pre-Salt / Post-Salt / Onshore) and the {empresa} section (stake-weighted oil kbpd + main fields). Each row carries `(display_order, section, category, subcategory, is_total, current_val, prev_month_val, mom_pct, prev_year_val, yoy_pct, ytd_avg)`. The UI just renders; aggregation and MoM/YoY/YTD math are entirely server-side. Owned by `worker_supabase`. |
 
 All return `LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp` (Pegadinha #18) and are granted to `anon, authenticated`. Frontend wrappers live in `src/lib/rpc.ts` under the "MODULE: Well by Well" section.
 
@@ -41,6 +42,7 @@ Source-of-truth migrations:
 - `supabase/migrations/20260528100000_production_round2.sql` (Round 2: YoY TOTAL fix + `get_production_field_timeseries`).
 - `supabase/migrations/20260528200000_production_installation_timeseries.sql` (Round 3: `get_production_installation_timeseries`).
 - `supabase/migrations/20260528300000_well_by_well_round4.sql` (Round 4: `module_visibility` slug rename `production → well-by-well`, new `field_canonical_names` table, canonical-aware bodies for `get_production_top_fields` + `get_production_field_timeseries`, new `canonical` column in `get_field_stakes_overview`).
+- `supabase/migrations/20260528500000_well_by_well_header.sql` (Round 8: `get_well_by_well_header` RPC — PDF-style page-2 header table).
 
 ### Companies (Empresa dropdown)
 
@@ -74,6 +76,51 @@ All filters live in `useProductionData` — single source of truth. Slider chang
 | P3 | Top {Company} Fields — {Reference month} (kbpd) | `get_production_top_fields` | Horizontal bar, top 10, oil+water stacked (oil dark, water light blue). |
 | P4 | Installations (FPSO/UEP) — {Reference month} | `get_production_by_installation` | Scrollable table: Installation · Oil kbpd · Gas Mm³/d · Hours rate %. Top 12. |
 | YoY | {Company} — YoY / MoM / YTD ({Reference month}) | `get_production_yoy_table` | TOTAL row bolded + per-ambiente rows. Δ MoM and Δ YoY coloured green/red. |
+
+## Header table (PDF-style) — Round 8 (2026-05-27)
+
+A self-contained HTML table that replicates page 2 of the monthly Well-by-Well PDF report. Sits at the top of both Views — desktop puts it next to the filters (left ~35% filters, right ~65% table), mobile stacks it above the tab bar with horizontal scroll for the wider columns.
+
+### What it shows
+
+| Section | Categories | Sub-rows |
+|---|---|---|
+| **Brazil** (no stake weighting) | Oil (kbpd), Gas (kboed), Main fields (kbpd) | Pre-Salt / Post-Salt / Onshore (Oil & Gas); top fields by name (Main fields) |
+| **{Empresa}** (stake-weighted) | Oil (kbpd), Main fields (kbpd) | Pre-Salt / Post-Salt / Onshore (Oil); company's main fields (Main fields) |
+
+### Columns
+
+`(empty)` | `{currentMonth-YY}` | `{prevMonth-YY}` | `Δ MoM` | `{sameMonthPrevYear-YY}` | `Δ YoY` | `YTD`
+
+- Numeric cells: right-aligned, pt-BR thousand separator (e.g. `4.337`).
+- Δ MoM / Δ YoY: integer percent with sign (e.g. `+2%`, `-1%`); blank if the prior value is NULL or zero.
+- YTD: average of all months in the current year up to and including the reference month.
+
+### Data source
+
+`get_well_by_well_header(p_empresa text, p_year int, p_month int)` (slot `20260528500000`) — single RPC, server-side aggregation, returns one row per renderable line. Row shape: `(display_order, section, category, subcategory, is_total, current_val, prev_month_val, mom_pct, prev_year_val, yoy_pct, ytd_avg)`.
+
+- Section header rows (`subcategory IS NULL` AND `category IS ''`): rendered as a wide dark-navy banner spanning all 7 columns (e.g. "BRAZIL" / "PETROBRAS").
+- Category header rows (`subcategory IS NULL` AND `category != ''`): light-gray band, bold, carries the category-total numbers (e.g. "Oil (kbpd)" row).
+- Sub-rows (`subcategory IS NOT NULL`): white background, indented ~28px, normal weight (or bold if `is_total=true`).
+
+### Loading / empty / error states
+
+- `loading && rows.length === 0` → 4 skeleton lines with a shimmering gradient.
+- `loading && rows.length > 0` → existing rows render with `opacity: 0.7`.
+- `rows.length === 0 && !loading` → "No header data for this reference month." caption.
+- RPC error → wrapper throws; the fetch effect inside `useProductionData` catches and sets `headerData = []` (the empty caption shows).
+
+### Layout split
+
+- **Desktop (≥1100px)**: 2-column grid (`grid-template-columns: minmax(260px, 35%) 1fr`) — filters stacked left (Company → Period → Reference month → Environment), HeaderTable right. Collapses to 1-column below 1100px so the table never gets squished.
+- **Mobile (≤768px)**: table sits at the top above the tab bar, wrapped in a horizontally scrollable container (`overflow-x: auto`; the table itself sets `min-width: 480px`). A "Swipe left to see more columns ›" caption confirms the affordance. Filters stay in the `FilterDrawer` (BottomSheet) opened from the topbar FAB — nothing changes there.
+
+### Why this section displaced the old YoY table (desktop only)
+
+The original `/well-by-well` desktop layout had a YoY/MoM/YTD breakdown table at the bottom (TOTAL + per-ambiente rows for the selected company, sourced from `get_production_yoy_table`). The new HeaderTable's company section is a strict superset of that data (same TOTAL + per-ambiente rows, same MoM/YoY/YTD semantics, plus Brazil-wide context, gas, and main fields). Keeping both would have duplicated the same numbers in two places. **Removed the bottom YoY table from desktop; mobile keeps its YoY collapsible drawer** because the HeaderTable on mobile lives behind horizontal scroll and the drawer surfaces the company numbers without requiring a swipe.
+
+The hook still fetches `yoyTable` because the mobile View consumes it. If mobile ever drops the YoY drawer, the `get_production_yoy_table` RPC and its hook state can be retired in a follow-up.
 
 ## Field drill-down (Round 2, 2026-05-27)
 
@@ -166,9 +213,8 @@ The big offshore fields are split in ANP CDP into operational variants (Búzios 
 
 ## Dual-view
 
-- **Desktop (≥769px)** — 2×2 grid: KPI strip → P1 P2 → P3 P4 → YoY table. Topbar filters above the cards. Field drill-down opens as a centered Bootstrap-styled modal.
-- **Mobile (≤768px)** — `MobileTabBar` with 4 tabs (Brazil · {Company} · Fields · FPSOs). One chart full-width per tab + relevant KPI tiles. The Fields tab combines a compact comparison chart with a list of tappable `MobileDataCard`s. `FilterDrawer` (BottomSheet) for all filters, opened from the topbar. `ExportFAB` bottom-right with a tiny action sheet (Excel / CSV). Field drill-down opens as a 90vh `BottomSheet`.
-- YoY breakdown lives below the active tab as an expandable section on mobile; it's always-visible on desktop.
+- **Desktop (≥769px)** — Top split: filters (~35%) + HeaderTable (~65%). Below: 2×2 grid (P1 P2 → P3 P4). Field drill-down opens as a centered Bootstrap-styled modal. The old bottom YoY table was removed in Round 8 since the HeaderTable absorbs its data.
+- **Mobile (≤768px)** — HeaderTable at the top (horizontally scrollable). Then `MobileTabBar` with 4 tabs (Brazil · {Company} · Fields · FPSOs); one chart full-width per tab. The Fields tab combines a compact comparison chart with a list of tappable `MobileDataCard`s. `FilterDrawer` (BottomSheet) for all filters, opened from the topbar. `ExportFAB` bottom-right with a tiny action sheet (Excel / CSV). Field drill-down opens as a 90vh `BottomSheet`. YoY breakdown lives below the active tab as a collapsible drawer (kept as a fallback surface for users who don't horizontally scroll the HeaderTable).
 
 Both Views consume `useProductionData`. Neither calls Supabase directly. The hook owns: filter state, RPC orchestration (6 separate debounced/intent-driven fetches), KPI math (top-level + drill-down), and export plumbing.
 

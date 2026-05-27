@@ -128,3 +128,48 @@ export interface ProductionFieldTimeseriesRow {
  *   (owned by worker_supabase, Round 3 of Fase 2).
  */
 export type ProductionInstallationTimeseriesRow = ProductionFieldTimeseriesRow;
+
+/**
+ * One row of the PDF-style Well-by-Well header table (Round 8, 2026-05-27).
+ *
+ * Returned by `get_well_by_well_header(p_empresa text, p_year int, p_month int)`
+ * — server-side aggregation that replicates page 2 of the monthly PDF report:
+ *   - "Brazil" section: oil (kbpd) & gas (kboed) totals split by environment
+ *     (Pre-Salt / Post-Salt / Onshore) plus category totals.
+ *   - "{Empresa}" section: stake-weighted oil (kbpd) by environment + main
+ *     producing fields list, all aligned to the same reference (year, month).
+ *
+ * Row semantics:
+ *   - `display_order` is the canonical PDF row order — render rows sorted ASC
+ *     by this column.
+ *   - `section` distinguishes the two top-level groups ('BRAZIL' or the
+ *     upper-cased empresa name). Section-header rows have NULL category and
+ *     subcategory (rendered as a wide dark-navy banner).
+ *   - `category` is one of 'Oil (kbpd)' | 'Gas (kboed)' | 'Main fields (kbpd)'.
+ *     Category-header rows carry the category name with NULL subcategory and
+ *     are styled with a light-gray band (no indent, bold).
+ *   - `subcategory` is the ambiente bucket ('Pre-Salt' / 'Post-Salt' /
+ *     'Onshore' / 'Total') or a field name. Indented sub-rows.
+ *   - `is_total` flags totals/grand-totals for bold rendering.
+ *   - Numeric cells: `current_val` / `prev_month_val` / `prev_year_val` /
+ *     `ytd_avg` are already in the row's native unit (kbpd or kboed) — the UI
+ *     does not re-convert. `mom_pct` / `yoy_pct` are fractions in the [-1, +∞)
+ *     range (e.g. `0.024` for +2.4%); the UI rounds to integer percent.
+ *
+ * Source-of-truth migration (slot 20260528500000):
+ *   `supabase/migrations/20260528500000_well_by_well_header.sql`
+ *   (owned by worker_supabase, Round 8 of Fase 2).
+ */
+export interface WellByWellHeaderRow {
+  display_order: number;
+  section: string;                       // 'BRAZIL' or upper-cased empresa name
+  category: string;                      // 'Oil (kbpd)' | 'Gas (kboed)' | 'Main fields (kbpd)'
+  subcategory: string | null;            // NULL = category-total row; else ambiente or campo name
+  is_total: boolean;                     // bold styling cue
+  current_val: number | null;
+  prev_month_val: number | null;
+  mom_pct: number | null;                // fraction (e.g. 0.024 = +2.4%)
+  prev_year_val: number | null;
+  yoy_pct: number | null;                // fraction
+  ytd_avg: number | null;
+}
