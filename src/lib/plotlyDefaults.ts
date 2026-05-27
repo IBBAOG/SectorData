@@ -10,26 +10,26 @@ import type { Layout, PlotData } from "plotly.js";
 
 export const BRAND_ORANGE = "#ff5000";
 
-// 16-color narrative palette used by multi-series dashboards (imports-exports, anp-cdp-bsw, market-share, etc.)
-// Positions 1-6 mirror the executive-presentation reference (black, brand orange, mint, beige, purple, yellow).
-// Positions 7-16 are coordinated desaturated extensions for dashboards needing >7 series.
+// 14-color palette used by multi-series dashboards (imports-exports, anp-cdp-bsw, market-share, etc.).
+// CTO-specified spec (2026-05-27): 3 highlight colors consumed first, 11 fallback colors thereafter.
+// Consumers index positionally via `PALETTE[i % PALETTE.length]`.
 export const PALETTE = [
-  "#1a1a1a",  // 1. Black
-  "#ff5000",  // 2. Brand Orange (unchanged)
-  "#a8d5a3",  // 3. Mint Green
-  "#d9c79a",  // 4. Beige / Cream
-  "#7d4ea3",  // 5. Purple
-  "#f5d05e",  // 6. Yellow
-  "#5b7fa0",  // 7. Steel Blue
-  "#b85c3a",  // 8. Rust / Brick
-  "#6e8f6c",  // 9. Sage Green
-  "#b89968",  // 10. Camel / Tan
-  "#5d3a6e",  // 11. Plum
-  "#c9a644",  // 12. Mustard
-  "#3d4a5c",  // 13. Slate
-  "#8a8c4a",  // 14. Olive
-  "#a85c3a",  // 15. Burnt Sienna
-  "#9a7a8a",  // 16. Dusty Mauve
+  // Highlight tier — first 3 positions, consumed first
+  "#FF5000",  // 1. Primary highlight (brand orange)
+  "#FFAE66",  // 2. Secondary highlight
+  "#000512",  // 3. Tertiary highlight
+  // Fallback tier — only when highlight tier exhausted
+  "#FFFFFF",  // 4
+  "#000000",  // 5
+  "#1D4080",  // 6
+  "#73C6A1",  // 7
+  "#8258A0",  // 8
+  "#D2FF00",  // 9
+  "#7030A0",  // 10
+  "#FFFF99",  // 11
+  "#F2F2F2",  // 12
+  "#D8D8D8",  // 13
+  "#7F7F7F",  // 14
 ] as const;
 
 export const COMMON_LAYOUT: Partial<Layout> = {
