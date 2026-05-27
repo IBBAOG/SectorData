@@ -142,6 +142,37 @@ export default function MobileView(): React.ReactElement | null {
     handleRemoveKeyword,
     handleToggleMatchType,
 
+    fieldStakesOverview,
+    fieldStakesEmpresas,
+    fieldStakesLoading,
+    selectedCampo,
+    editorStakes,
+    editorLoading,
+    newEmpresaInput,
+    setNewEmpresaInput,
+    newEmpresaPctInput,
+    setNewEmpresaPctInput,
+    savingStakes,
+    deleteCampoConfirm,
+    stakesError,
+    stakesSearchQuery,
+    setStakesSearchQuery,
+    stakesStatusFilter,
+    setStakesStatusFilter,
+    currentSum,
+    isValidSum,
+    pendingChanges,
+    filteredOverview,
+    selectedCampoLastUpdated,
+    handleSelectCampo,
+    handleAddEmpresaRow,
+    handleRemoveEmpresaRow,
+    handleChangeStake,
+    handleSaveStakes,
+    handleDeleteCampo,
+    handleConfirmDeleteCampo,
+    handleCancelDeleteCampo,
+
     isValidEmail,
     formatDateBR,
   } = useAdminPanelData();
@@ -149,6 +180,10 @@ export default function MobileView(): React.ReactElement | null {
   // Local mobile-only UI state (not part of the brain — pure presentation)
   const [search, setSearch] = useState("");
   const [rolePickerUserId, setRolePickerUserId] = useState<string | null>(null);
+  // Field-stakes editor sheet visibility — mobile-only. Decoupled from the
+  // shared `selectedCampo` (which the brain hook owns) so closing the sheet
+  // doesn't lose the user's selection; re-opening is one tap on the card.
+  const [fieldStakesSheetOpen, setFieldStakesSheetOpen] = useState(false);
 
   const rolePickerUser = useMemo(
     () => users.find((u) => u.id === rolePickerUserId) ?? null,
@@ -185,6 +220,7 @@ export default function MobileView(): React.ReactElement | null {
     "alerts-product": "Search subscribers or sources",
     "default-news": "Search keywords",
     "data-input": "",
+    "field-stakes": "", // section has its own dedicated search/filter UI
   };
 
   return (
@@ -321,7 +357,7 @@ export default function MobileView(): React.ReactElement | null {
       </section>
 
       {/* Search input (only for sections with searchable rows) */}
-      {activeSection !== "data-input" && (
+      {activeSection !== "data-input" && activeSection !== "field-stakes" && (
         <div style={{ padding: "4px 16px 12px" }}>
           <div style={{ position: "relative", height: 40 }}>
             <span
@@ -1447,6 +1483,472 @@ export default function MobileView(): React.ReactElement | null {
           </div>
         </section>
       )}
+
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {/* FIELD STAKES                                                        */}
+      {/* ─────────────────────────────────────────────────────────────────── */}
+      {activeSection === "field-stakes" && (
+        <section>
+          {/* Sticky filter chips */}
+          <div
+            style={{
+              position: "sticky",
+              top: "calc(var(--mobile-topbar-h) + 56px)",
+              zIndex: 20,
+              padding: "8px 16px",
+              background: "var(--mobile-glass-bg)",
+              WebkitBackdropFilter: "var(--mobile-glass-blur)",
+              backdropFilter: "var(--mobile-glass-blur)",
+              borderBottom: "1px solid var(--mobile-glass-border)",
+              display: "flex",
+              gap: 6,
+              overflowX: "auto",
+              scrollbarWidth: "none",
+              WebkitOverflowScrolling: "touch",
+            }}
+          >
+            {([
+              { id: "all" as const,        label: "All" },
+              { id: "complete" as const,   label: "✓ Complete" },
+              { id: "incomplete" as const, label: "⚠ Incomplete" },
+              { id: "empty" as const,      label: "○ Empty" },
+            ] as const).map(({ id, label }) => {
+              const isActive = stakesStatusFilter === id;
+              const count = id === "all"
+                ? fieldStakesOverview.length
+                : id === "complete"
+                  ? fieldStakesOverview.filter((o) => o.is_complete).length
+                  : id === "incomplete"
+                    ? fieldStakesOverview.filter((o) => !o.is_complete && o.n_empresas > 0).length
+                    : fieldStakesOverview.filter((o) => o.n_empresas === 0).length;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setStakesStatusFilter(id)}
+                  aria-pressed={isActive}
+                  style={{
+                    flex: "0 0 auto",
+                    minHeight: 32,
+                    padding: "0 12px",
+                    borderRadius: 999,
+                    border: isActive ? `1px solid ${ORANGE}` : "1px solid var(--mobile-border)",
+                    background: isActive ? ORANGE : "var(--mobile-surface)",
+                    color: isActive ? "#fff" : "var(--mobile-text-muted)",
+                    fontFamily: "inherit",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <span>{label}</span>
+                  <span style={{ fontSize: 11, opacity: 0.85, fontWeight: 700 }}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Search input */}
+          <div style={{ padding: "12px 16px 4px" }}>
+            <div style={{ position: "relative", height: 40 }}>
+              <span
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  left: 12,
+                  transform: "translateY(-50%)",
+                  color: "var(--mobile-text-faint)",
+                  pointerEvents: "none",
+                }}
+              >
+                <SearchIcon size={18} />
+              </span>
+              <input
+                type="search"
+                value={stakesSearchQuery}
+                onChange={(e) => setStakesSearchQuery(e.target.value)}
+                placeholder="Search field…"
+                aria-label="Search field"
+                style={{
+                  width: "100%",
+                  height: 40,
+                  borderRadius: 10,
+                  border: "1px solid var(--mobile-border)",
+                  background: "var(--mobile-surface)",
+                  color: "var(--mobile-text)",
+                  fontFamily: "inherit",
+                  fontSize: 14,
+                  padding: "0 12px 0 38px",
+                  outline: "none",
+                  boxSizing: "border-box",
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Field list */}
+          <div style={{ padding: "8px 16px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+            {fieldStakesLoading ? (
+              <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
+                Loading fields…
+              </div>
+            ) : filteredOverview.length === 0 ? (
+              <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
+                No fields match the current filters.
+              </div>
+            ) : (
+              filteredOverview.map((row) => {
+                const isEmpty = row.n_empresas === 0;
+                const status = isEmpty ? "empty" : row.is_complete ? "complete" : "incomplete";
+                const statusColor = status === "complete" ? "#38a169" : status === "incomplete" ? "#d69e2e" : "#999";
+                const statusBg = status === "complete" ? "rgba(72,187,120,0.15)" : status === "incomplete" ? "rgba(214,158,46,0.15)" : "rgba(180,180,180,0.15)";
+                const statusText = status === "complete" ? "100%" : status === "incomplete" ? `${row.soma_pct.toFixed(2)}%` : "—";
+                return (
+                  <button
+                    key={row.campo}
+                    type="button"
+                    onClick={async () => {
+                      await handleSelectCampo(row.campo);
+                      setFieldStakesSheetOpen(true);
+                    }}
+                    style={{
+                      width: "100%",
+                      minHeight: 64,
+                      padding: "10px 14px",
+                      borderRadius: 12,
+                      border: "1px solid var(--mobile-border)",
+                      background: "var(--mobile-surface)",
+                      color: "var(--mobile-text)",
+                      fontFamily: "inherit",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      textAlign: "left",
+                    }}
+                  >
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--mobile-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {row.campo}
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--mobile-text-muted)", marginTop: 2 }}>
+                        {row.n_empresas} {row.n_empresas === 1 ? "company" : "companies"}
+                        {row.has_data_in_producao ? " · prod. data" : ""}
+                      </div>
+                    </div>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 12,
+                      background: statusBg, color: statusColor, whiteSpace: "nowrap", flexShrink: 0,
+                    }}>
+                      {statusText}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* ── Field Stakes editor sheet ─────────────────────────────────────── */}
+      <BottomSheet
+        open={fieldStakesSheetOpen && selectedCampo != null && activeSection === "field-stakes"}
+        onClose={() => setFieldStakesSheetOpen(false)}
+        title={
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
+              {selectedCampo ?? ""}
+            </span>
+            <span style={{
+              fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 12,
+              background: isValidSum ? "rgba(72,187,120,0.15)" : "rgba(229,62,62,0.15)",
+              color: isValidSum ? "#38a169" : "#e53e3e",
+              whiteSpace: "nowrap", flexShrink: 0,
+            }}>
+              {currentSum.toFixed(2)}% / 100%
+            </span>
+          </span>
+        }
+        height="90vh"
+      >
+        {selectedCampo && (
+          <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+            {/* datalist for autocomplete */}
+            <datalist id="field-stakes-empresa-list-mobile">
+              {fieldStakesEmpresas.map((e) => (
+                <option key={e.empresa} value={e.empresa} />
+              ))}
+            </datalist>
+
+            {/* Scrollable body */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px 16px" }}>
+              <div style={{ fontSize: 11, color: "var(--mobile-text-faint)", marginBottom: 12 }}>
+                {selectedCampoLastUpdated
+                  ? `Last updated: ${formatDateBR(selectedCampoLastUpdated)}`
+                  : "Not yet saved."}
+              </div>
+
+              {editorLoading ? (
+                <div style={{ padding: "32px 0", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 13 }}>
+                  Loading stakes…
+                </div>
+              ) : (
+                <>
+                  {editorStakes.length === 0 && (
+                    <div style={{
+                      padding: "20px 12px", textAlign: "center", color: "var(--mobile-text-muted)",
+                      fontSize: 13, border: "1px dashed var(--mobile-border)", borderRadius: 10, marginBottom: 12,
+                    }}>
+                      No companies registered yet. Add the first one below.
+                    </div>
+                  )}
+
+                  {editorStakes.map((row, idx) => (
+                    <article
+                      key={idx}
+                      style={{
+                        position: "relative", padding: "12px 12px 12px", marginBottom: 10,
+                        borderRadius: 12, background: "var(--mobile-surface)",
+                        border: "1px solid var(--mobile-border)",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveEmpresaRow(idx)}
+                        aria-label={`Remove ${row.empresa || "row"}`}
+                        style={{
+                          position: "absolute", top: 8, right: 8,
+                          width: 28, height: 28, borderRadius: 6,
+                          background: "transparent", border: "1px solid var(--mobile-border)",
+                          color: "#e53e3e", fontFamily: "inherit", fontSize: 16, lineHeight: 1,
+                          cursor: "pointer",
+                        }}
+                      >
+                        ×
+                      </button>
+                      <label style={{ display: "block", fontSize: 11, color: "var(--mobile-text-faint)", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 }}>
+                        Company
+                      </label>
+                      <input
+                        type="text"
+                        list="field-stakes-empresa-list-mobile"
+                        value={row.empresa}
+                        onChange={(e) => handleChangeStake(idx, "empresa", e.target.value)}
+                        placeholder="Company name"
+                        style={{
+                          width: "100%", minHeight: 40, padding: "0 12px", borderRadius: 8,
+                          border: "1px solid var(--mobile-border)", background: "var(--mobile-bg)",
+                          color: "var(--mobile-text)", fontFamily: "inherit", fontSize: 14,
+                          outline: "none", boxSizing: "border-box", marginBottom: 10,
+                        }}
+                      />
+                      <label style={{ display: "block", fontSize: 11, color: "var(--mobile-text-faint)", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 }}>
+                        Stake
+                      </label>
+                      <div style={{ position: "relative" }}>
+                        <input
+                          type="number"
+                          step={0.001}
+                          min={0}
+                          max={100}
+                          value={Number.isFinite(row.stake_pct) ? row.stake_pct : 0}
+                          onChange={(e) => handleChangeStake(idx, "stake_pct", e.target.value)}
+                          style={{
+                            width: "100%", minHeight: 40, padding: "0 36px 0 12px", borderRadius: 8,
+                            border: "1px solid var(--mobile-border)", background: "var(--mobile-bg)",
+                            color: "var(--mobile-text)", fontFamily: "inherit", fontSize: 14,
+                            outline: "none", boxSizing: "border-box", textAlign: "right",
+                          }}
+                        />
+                        <span style={{
+                          position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+                          color: "var(--mobile-text-faint)", fontSize: 14, pointerEvents: "none",
+                        }}>
+                          %
+                        </span>
+                      </div>
+                    </article>
+                  ))}
+
+                  {/* + Add company card */}
+                  <article style={{
+                    padding: 12, marginBottom: 10, borderRadius: 12,
+                    background: "var(--mobile-surface)",
+                    border: "1px dashed var(--mobile-border)",
+                  }}>
+                    <label style={{ display: "block", fontSize: 11, color: "var(--mobile-text-faint)", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 }}>
+                      Add company
+                    </label>
+                    <input
+                      type="text"
+                      list="field-stakes-empresa-list-mobile"
+                      value={newEmpresaInput}
+                      onChange={(e) => setNewEmpresaInput(e.target.value)}
+                      placeholder="Company name"
+                      style={{
+                        width: "100%", minHeight: 40, padding: "0 12px", borderRadius: 8,
+                        border: "1px solid var(--mobile-border)", background: "var(--mobile-bg)",
+                        color: "var(--mobile-text)", fontFamily: "inherit", fontSize: 14,
+                        outline: "none", boxSizing: "border-box", marginBottom: 8,
+                      }}
+                    />
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <div style={{ position: "relative", flex: 1 }}>
+                        <input
+                          type="number"
+                          step={0.001}
+                          min={0}
+                          max={100}
+                          value={newEmpresaPctInput}
+                          onChange={(e) => setNewEmpresaPctInput(e.target.value)}
+                          placeholder="0.00"
+                          style={{
+                            width: "100%", minHeight: 40, padding: "0 36px 0 12px", borderRadius: 8,
+                            border: "1px solid var(--mobile-border)", background: "var(--mobile-bg)",
+                            color: "var(--mobile-text)", fontFamily: "inherit", fontSize: 14,
+                            outline: "none", boxSizing: "border-box", textAlign: "right",
+                          }}
+                        />
+                        <span style={{
+                          position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+                          color: "var(--mobile-text-faint)", fontSize: 14, pointerEvents: "none",
+                        }}>
+                          %
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddEmpresaRow}
+                        style={{
+                          minWidth: 96, minHeight: 40, padding: "0 14px",
+                          borderRadius: 8, border: "none",
+                          background: ORANGE, color: "#fff", fontFamily: "inherit",
+                          fontSize: 14, fontWeight: 700, cursor: "pointer",
+                        }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </article>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteCampo(selectedCampo)}
+                    disabled={savingStakes}
+                    style={{
+                      width: "100%", minHeight: 44, padding: "0 14px", marginTop: 8,
+                      borderRadius: 10, border: "1px solid rgba(229,62,62,0.4)",
+                      background: "transparent", color: "#e53e3e", fontFamily: "inherit",
+                      fontSize: 13, fontWeight: 600, cursor: savingStakes ? "not-allowed" : "pointer",
+                      opacity: savingStakes ? 0.5 : 1,
+                    }}
+                  >
+                    Delete all stakes for this field
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Sticky footer */}
+            <div
+              style={{
+                padding: "12px 16px calc(var(--mobile-safe-bottom) + 12px)",
+                borderTop: "1px solid var(--mobile-divider)",
+                background: "var(--mobile-surface)",
+              }}
+            >
+              {stakesError && (
+                <div style={{
+                  padding: "8px 10px", borderRadius: 8, marginBottom: 10,
+                  background: "#fff5f5", border: "1px solid rgba(229,62,62,0.3)",
+                  color: "#c0392b", fontSize: 12, lineHeight: 1.4,
+                }}>
+                  {stakesError}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={handleSaveStakes}
+                disabled={!isValidSum || savingStakes || !pendingChanges}
+                style={{
+                  width: "100%", minHeight: 48, padding: "0 16px", borderRadius: 12, border: 0,
+                  background: (!isValidSum || savingStakes || !pendingChanges) ? "var(--mobile-border)" : ORANGE,
+                  color: (!isValidSum || savingStakes || !pendingChanges) ? "var(--mobile-text-muted)" : "#fff",
+                  fontFamily: "inherit", fontSize: 15, fontWeight: 700,
+                  cursor: (!isValidSum || savingStakes || !pendingChanges) ? "not-allowed" : "pointer",
+                }}
+              >
+                {savingStakes ? "Saving…" : !isValidSum ? "Sum must equal 100%" : !pendingChanges ? "No changes" : "Save"}
+              </button>
+            </div>
+          </div>
+        )}
+      </BottomSheet>
+
+      {/* ── Confirm-delete campo sheet ────────────────────────────────────── */}
+      <BottomSheet
+        open={deleteCampoConfirm != null}
+        onClose={handleCancelDeleteCampo}
+        title="Delete all stakes"
+        height="auto"
+      >
+        {deleteCampoConfirm && (
+          <div style={{ padding: "12px 16px 16px" }}>
+            <div style={{ fontSize: 13, color: "var(--mobile-text-muted)", marginBottom: 4 }}>
+              Delete all stakes for:
+            </div>
+            <div
+              style={{
+                fontSize: 15,
+                fontWeight: 700,
+                color: "var(--mobile-text)",
+                marginBottom: 16,
+                wordBreak: "break-all",
+              }}
+            >
+              {deleteCampoConfirm}
+            </div>
+            <div style={{ fontSize: 12, color: "var(--mobile-text-muted)", marginBottom: 16, lineHeight: 1.5 }}>
+              Every (company, stake %) row registered for this field will be removed.
+              This action cannot be undone.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                onClick={handleCancelDeleteCampo}
+                disabled={savingStakes}
+                style={{
+                  flex: 1, minHeight: 44, borderRadius: 10,
+                  border: "1px solid var(--mobile-border)",
+                  background: "var(--mobile-surface)", color: "var(--mobile-text)",
+                  fontFamily: "inherit", fontSize: 14, fontWeight: 600,
+                  cursor: savingStakes ? "not-allowed" : "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteCampo}
+                disabled={savingStakes}
+                style={{
+                  flex: 1, minHeight: 44, borderRadius: 10, border: 0,
+                  background: "#e53e3e", color: "#fff",
+                  fontFamily: "inherit", fontSize: 14, fontWeight: 700,
+                  cursor: savingStakes ? "wait" : "pointer", opacity: savingStakes ? 0.6 : 1,
+                }}
+              >
+                {savingStakes ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        )}
+      </BottomSheet>
 
       {/* ── Role picker (Members section) ─────────────────────────────────── */}
       <BottomSheet
