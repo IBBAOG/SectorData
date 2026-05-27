@@ -297,13 +297,10 @@ export async function rpcGetOthersPlayers(supabase: SupabaseClient): Promise<str
 // ─── MODULE: Sales Volumes — RETIRED (2026-05-26) ────────────────────────────
 //
 // /sales-volumes was folded into /market-share via a top-level unit toggle.
-// The 4 wrappers below (rpcGetSvOpcoesFiltros, rpcGetSvSerieFast,
-// rpcGetSvSerieOthers, rpcGetSvOthersPlayers) were removed because:
-//   - The only consumer was useSalesVolumesData.ts, which was also retired.
-//   - /market-share now serves both modes off the existing get_ms_* RPCs.
-//   - The underlying get_sv_* PostgreSQL functions remain (no DB migration
-//     yet) — they can be dropped in a follow-up migration if desired, since
-//     get_ms_serie_fast / get_ms_serie_others cover both narratives.
+// The legacy get_sv_* RPC family was dropped by
+// 20260526400000_drop_sv_rpcs.sql. /market-share's get_ms_serie_fast +
+// get_ms_serie_others now serve both narratives (% Share + thousand m³) via
+// the unitMode toggle.
 
 // ─── MODULE: Navios Diesel (/src/app/(dashboard)/navios-diesel/page.tsx) ─────
 
