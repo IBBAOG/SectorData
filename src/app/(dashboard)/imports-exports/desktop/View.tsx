@@ -256,15 +256,22 @@ function buildHorizontalBarTracesFromUnitPrice(
 }
 
 // ─── YoY table ─────────────────────────────────────────────────────────────────
+//
+// Canonical pattern mirrored from /anp-cdp-bsw and /anp-cdp-depletion:
+//   - Scrollable container (maxHeight 400 + overflow auto + border + radius)
+//   - Bootstrap `table-sm table-striped`
+//   - Sticky <thead> with darker 2px bottom border
+//   - First column: color dot (matches chart palette via colourForEntity)
+//     + ellipsis-truncated entity (maxWidth 220, title tooltip)
+//   - Numeric cells: fontVariantNumeric "tabular-nums"
+//   - Delta cells: green (>0) / red (<0) / muted grey (null/0), weight 600
+//   - Prior-period cell: muted color (#777)
 
-function YoYCell({ value }: { value: number | null }) {
-  if (value == null) return <span style={{ color: "#aaa" }}>n/a</span>;
-  const color = value > 0 ? "#16a34a" : value < 0 ? "#dc2626" : "#555";
-  return (
-    <span style={{ color, fontWeight: 600 }}>
-      {value > 0 ? "+" : ""}{value.toFixed(1)}%
-    </span>
-  );
+function fmtDelta(v: number | null): { text: string; color: string } {
+  if (v == null || !isFinite(v)) return { text: "—", color: "#666" };
+  const text = (v > 0 ? "+" : "") + v.toFixed(1) + "%";
+  const color = v > 0 ? "#28a745" : v < 0 ? "#dc3545" : "#666";
+  return { text, color };
 }
 
 function YoYTable({
@@ -298,6 +305,15 @@ function YoYTable({
   const currentLbl = formatMonth(anchorAno, anchorMes);
   const priorLbl = formatMonth(anchorAno - 1, anchorMes);
 
+  // Build the entity set in the same shape `buildStackedTraces` uses so the
+  // table's color dots match the chart's trace colors for each entity:
+  //   non-"Others" entries first (sorted alphabetically), "Others" last.
+  const entitySet = new Set(rows.map((r) => r.entity));
+  const tableEntities = [
+    ...Array.from(entitySet).filter((e) => e !== "Others").sort(),
+    ...(entitySet.has("Others") ? ["Others"] : []),
+  ];
+
   return (
     <div style={{ marginTop: 12 }}>
       <div
@@ -312,52 +328,131 @@ function YoYTable({
       >
         {title} — {currentLbl} vs {priorLbl}
       </div>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-        <thead>
-          <tr>
-            {[
-              "Entity",
-              `${currentLbl} (${volumeLabel})`,
-              `${priorLbl} (${volumeLabel})`,
-              "YoY %",
-            ].map(
-              (h) => (
-                <th
-                  key={h}
-                  style={{
-                    textAlign: h === "Entity" ? "left" : "right",
-                    padding: "4px 8px",
-                    borderBottom: "1px solid #e0e0e0",
-                    fontFamily: "Arial",
-                    fontWeight: 700,
-                    color: "#333",
-                  }}
-                >
-                  {h}
-                </th>
-              ),
-            )}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.entity} style={{ borderBottom: "1px solid #f0f0f0" }}>
-              <td style={{ padding: "4px 8px", fontFamily: "Arial" }}>
-                {row.entity}
-              </td>
-              <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: "Arial" }}>
-                {row.last_12m.toLocaleString("en-US", { maximumFractionDigits: 1 })}
-              </td>
-              <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: "Arial", color: "#777" }}>
-                {row.prev_12m.toLocaleString("en-US", { maximumFractionDigits: 1 })}
-              </td>
-              <td style={{ padding: "4px 8px", textAlign: "right", fontFamily: "Arial" }}>
-                <YoYCell value={row.yoy_pct} />
-              </td>
+      <div
+        style={{
+          maxHeight: 400,
+          overflowY: "auto",
+          overflowX: "auto",
+          border: "1px solid #ececec",
+          borderRadius: 4,
+        }}
+      >
+        <table
+          className="table table-sm table-striped mb-0"
+          style={{ fontFamily: "Arial", fontSize: 12 }}
+        >
+          <thead
+            style={{
+              position: "sticky",
+              top: 0,
+              background: "#fff",
+              zIndex: 1,
+            }}
+          >
+            <tr>
+              <th
+                style={{
+                  textAlign: "left",
+                  whiteSpace: "nowrap",
+                  borderBottom: "2px solid #888",
+                }}
+              >
+                Entity
+              </th>
+              <th
+                style={{
+                  textAlign: "right",
+                  whiteSpace: "nowrap",
+                  borderBottom: "2px solid #888",
+                }}
+              >
+                {currentLbl} ({volumeLabel})
+              </th>
+              <th
+                style={{
+                  textAlign: "right",
+                  whiteSpace: "nowrap",
+                  borderBottom: "2px solid #888",
+                }}
+              >
+                {priorLbl} ({volumeLabel})
+              </th>
+              <th
+                style={{
+                  textAlign: "right",
+                  whiteSpace: "nowrap",
+                  borderBottom: "2px solid #888",
+                }}
+              >
+                YoY %
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const yoy = fmtDelta(row.yoy_pct);
+              const dotColor = colourForEntity(tableEntities, row.entity);
+              return (
+                <tr key={row.entity}>
+                  <td
+                    style={{
+                      whiteSpace: "nowrap",
+                      maxWidth: 220,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                    title={row.entity}
+                  >
+                    <span
+                      aria-hidden
+                      style={{
+                        display: "inline-block",
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        backgroundColor: dotColor,
+                        marginRight: 6,
+                        verticalAlign: "middle",
+                      }}
+                    />
+                    {row.entity}
+                  </td>
+                  <td
+                    style={{
+                      textAlign: "right",
+                      whiteSpace: "nowrap",
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {row.last_12m.toLocaleString("en-US", { maximumFractionDigits: 1 })}
+                  </td>
+                  <td
+                    style={{
+                      textAlign: "right",
+                      whiteSpace: "nowrap",
+                      fontVariantNumeric: "tabular-nums",
+                      color: "#777",
+                    }}
+                  >
+                    {row.prev_12m.toLocaleString("en-US", { maximumFractionDigits: 1 })}
+                  </td>
+                  <td
+                    style={{
+                      textAlign: "right",
+                      whiteSpace: "nowrap",
+                      fontVariantNumeric: "tabular-nums",
+                      color: yoy.color,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {yoy.text}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

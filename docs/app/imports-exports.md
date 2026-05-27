@@ -216,6 +216,12 @@ The stacked-area chart ("Exports — By Destination Country") ranks destination 
 
 ---
 
+## Visual conventions
+
+**YoY tables** follow the canonical pattern shared with `/anp-cdp-bsw` and `/anp-cdp-depletion`: scrollable container (`maxHeight: 400`, `overflowY/X: auto`, `1px solid #ececec`, `borderRadius: 4`) wrapping a Bootstrap `table table-sm table-striped` with `Arial 12px`. The `<thead>` is sticky (`position: sticky; top: 0; background: #fff`) and each `<th>` carries a darker bottom border (`2px solid #888`). The first column ("Entity") prepends an 8×8 color dot matching the chart's palette via `colourForEntity(entities, entity)` and is ellipsis-truncated at `maxWidth: 220` with a `title` tooltip. All numeric cells use `fontVariantNumeric: "tabular-nums"`. Delta cells (YoY %) render via `fmtDelta`: `#28a745` for positive, `#dc3545` for negative, `#666` for null/zero/non-finite (formatted as `—`), `fontWeight: 600`. The prior-period cell is muted (`#777`). The same `<YoYTable>` component instance is reused across all panels (Imports by Origin Country, Imports by Importer, Exports by Destination Country) — no per-panel forks.
+
+---
+
 ## Mobile Adaptation
 
 - `MobileTabBar` for Imports / Exports.
