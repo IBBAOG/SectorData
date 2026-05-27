@@ -56,7 +56,6 @@ import {
 } from "../../../../components/dashboard/mobile";
 import StickyBreadcrumb from "../../../../components/dashboard/mobile/StickyBreadcrumb";
 import MultiSelectFilter from "../../../../components/dashboard/MultiSelectFilter";
-import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 import HeaderTable from "../HeaderTable";
 import { bblDiaToKbpd } from "../../../../lib/units";
@@ -75,6 +74,11 @@ import {
   BRAND_ORANGE,
   TOP_FIELDS_OIL_COLOR,
   TOP_FIELDS_WATER_COLOR,
+  PERIOD_PRESETS,
+  PERIOD_PRESET_LABEL,
+  computePresetRange,
+  detectPeriodPreset,
+  type PeriodPreset,
 } from "../useProductionData";
 import type {
   ProductionBrazilRow,
@@ -438,14 +442,88 @@ function MobileViewPills({
   );
 }
 
+// ─── Period preset buttons (Round 13, 2026-05-27) ─────────────────────────────
+//
+// 5 mutually-exclusive preset buttons replacing the rc-slider inside the
+// FilterDrawer's Period section. Same visual language as the view pills
+// (brand-orange filled when active, white with 1px border otherwise).
+// Mobile uses a 3+2 grid (3 columns × 2 rows) — empirically the best fit
+// for ~360-420px viewports without horizontal scroll.
+
+function MobilePeriodPresetButtons({
+  dateRange,
+  latestMonth,
+  firstAvailableMonth,
+  onPick,
+  disabled = false,
+}: {
+  dateRange: [string, string];
+  latestMonth: string | null;
+  firstAvailableMonth: string | null;
+  onPick: (range: [string, string]) => void;
+  disabled?: boolean;
+}): React.ReactElement {
+  const active: PeriodPreset | null = detectPeriodPreset(
+    dateRange,
+    latestMonth,
+    firstAvailableMonth,
+  );
+  return (
+    <div
+      role="group"
+      aria-label="Period preset"
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(3, 1fr)",
+        gap: 8,
+      }}
+    >
+      {PERIOD_PRESETS.map((preset) => {
+        const isActive = preset === active;
+        return (
+          <button
+            key={preset}
+            type="button"
+            aria-pressed={isActive}
+            disabled={disabled || !latestMonth}
+            onClick={() => {
+              const range = computePresetRange(preset, latestMonth);
+              if (range) onPick(range);
+            }}
+            style={{
+              fontFamily: "Arial",
+              fontSize: 13,
+              fontWeight: isActive ? 700 : 500,
+              padding: "10px 8px",
+              borderRadius: 8,
+              border: isActive ? "1px solid transparent" : "1px solid #d0d0d0",
+              background: isActive ? BRAND_ORANGE : "#ffffff",
+              color: isActive ? "#ffffff" : "#1a1a1a",
+              cursor: disabled || !latestMonth ? "not-allowed" : "pointer",
+              minHeight: 44, // 44px touch target (iOS HIG)
+              whiteSpace: "nowrap",
+              userSelect: "none",
+              transition: "background-color 0.18s, color 0.18s",
+              opacity: disabled || !latestMonth ? 0.55 : 1,
+            }}
+          >
+            {PERIOD_PRESET_LABEL[preset]}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── View ─────────────────────────────────────────────────────────────────────
 
 export default function MobileView(): React.ReactElement | null {
   const {
     visible, visLoading,
     bootstrapping,
+    latestMonth,
     view, setView, isCompanyView: viewIsCompany, viewEmpresa,
-    allMonths, dateRange, monthIdxRange, setMonthIdxRange,
+    allMonths, dateRange, monthIdxRange, setDateRange,
     ambientes, toggleAmbiente, setAmbientes,
     referenceDate, setReferenceDate,
     brazilData, companyData, topFields, installations, yoyTable,
@@ -863,17 +941,18 @@ export default function MobileView(): React.ReactElement | null {
       >
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           <div>
-            <div className="sidebar-filter-label" style={{ fontFamily: "Arial", fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
+            <div className="sidebar-filter-label" style={{ fontFamily: "Arial", fontSize: 12, fontWeight: 700, marginBottom: 8 }}>
               Period
             </div>
-            {allMonths.length > 0 && (
-              <PeriodSlider
-                dates={allMonths}
-                value={monthIdxRange}
-                onChange={setMonthIdxRange}
-                fmtLabel={(d) => fmtMonthLabel(d)}
-              />
-            )}
+            {/* Round 13 (2026-05-27): 5 preset buttons replace the rc-slider.
+                State still lives in `dateRange`; clicks call `setDateRange`. */}
+            <MobilePeriodPresetButtons
+              dateRange={dateRange}
+              latestMonth={latestMonth}
+              firstAvailableMonth={allMonths[0] ?? null}
+              onPick={setDateRange}
+              disabled={allMonths.length === 0}
+            />
           </div>
 
           <div>

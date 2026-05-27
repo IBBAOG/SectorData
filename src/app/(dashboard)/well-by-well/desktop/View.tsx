@@ -47,7 +47,6 @@ import BrandLogo from "../../../../components/BrandLogo";
 import PlotlyChart from "../../../../components/PlotlyChart";
 import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
 import MultiSelectFilter from "../../../../components/dashboard/MultiSelectFilter";
-import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 import ChartSection from "../../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 import ExportPanel from "../../../../components/dashboard/ExportPanel";
@@ -69,6 +68,11 @@ import {
   BRAND_ORANGE,
   TOP_FIELDS_OIL_COLOR,
   TOP_FIELDS_WATER_COLOR,
+  PERIOD_PRESETS,
+  PERIOD_PRESET_LABEL,
+  computePresetRange,
+  detectPeriodPreset,
+  type PeriodPreset,
 } from "../useProductionData";
 import type {
   ProductionBrazilRow,
@@ -433,6 +437,92 @@ function KpiCard({
           {deltaArrow} {fmtPct(delta.pct)} {delta.label}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Period preset buttons (Round 13, 2026-05-27) ─────────────────────────────
+//
+// 5 mutually-exclusive preset buttons that replace the rc-slider in the
+// sidebar's Period section. Reuses the same brand-orange filled / white-
+// outlined visual language as the view pills (Round 9) — consistency across
+// the dashboard's two button rows.
+//
+// State lives in the hook's `dateRange` (unchanged). Clicks call the existing
+// `setDateRange`. The active button is detected by `detectPeriodPreset()`
+// comparing the current `dateRange` against each preset's computed range.
+
+function PeriodPresetButtons({
+  dateRange,
+  latestMonth,
+  firstAvailableMonth,
+  onPick,
+  disabled = false,
+}: {
+  dateRange: [string, string];
+  latestMonth: string | null;
+  firstAvailableMonth: string | null;
+  onPick: (range: [string, string]) => void;
+  disabled?: boolean;
+}): React.ReactElement {
+  const active: PeriodPreset | null = detectPeriodPreset(
+    dateRange,
+    latestMonth,
+    firstAvailableMonth,
+  );
+  return (
+    <div
+      role="group"
+      aria-label="Period preset"
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(3, 1fr)",
+        gap: 6,
+      }}
+    >
+      {PERIOD_PRESETS.map((preset) => {
+        const isActive = preset === active;
+        return (
+          <button
+            key={preset}
+            type="button"
+            aria-pressed={isActive}
+            disabled={disabled || !latestMonth}
+            onClick={() => {
+              const range = computePresetRange(preset, latestMonth);
+              if (range) onPick(range);
+            }}
+            onMouseEnter={(e) => {
+              if (!isActive && !disabled && latestMonth) {
+                (e.currentTarget as HTMLButtonElement).style.background = "#fff5ef";
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isActive && !disabled && latestMonth) {
+                (e.currentTarget as HTMLButtonElement).style.background = "#ffffff";
+              }
+            }}
+            style={{
+              fontFamily: "Arial",
+              fontSize: 12,
+              fontWeight: isActive ? 700 : 500,
+              padding: "7px 6px",
+              borderRadius: 6,
+              border: isActive ? "1px solid transparent" : "1px solid #d0d0d0",
+              background: isActive ? BRAND_ORANGE : "#ffffff",
+              color: isActive ? "#ffffff" : "#1a1a1a",
+              cursor: disabled || !latestMonth ? "not-allowed" : "pointer",
+              transition: "background-color 0.18s, color 0.18s, border-color 0.18s",
+              minHeight: 32,
+              whiteSpace: "nowrap",
+              userSelect: "none",
+              opacity: disabled || !latestMonth ? 0.55 : 1,
+            }}
+          >
+            {PERIOD_PRESET_LABEL[preset]}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -968,9 +1058,10 @@ export default function DesktopView(): React.ReactElement | null {
   const {
     visible, visLoading,
     bootstrapping,
+    latestMonth,
     view, setView, isCompanyView: viewIsCompany, viewEmpresa,
     empresa,
-    allMonths, dateRange, monthIdxRange, setMonthIdxRange,
+    allMonths, dateRange, monthIdxRange, setDateRange,
     ambientes, toggleAmbiente, setAmbientes,
     referenceDate, setReferenceDate,
     brazilData, companyData, topFields, installations,
@@ -1039,21 +1130,18 @@ export default function DesktopView(): React.ReactElement | null {
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
               <div className="sidebar-section-label">Filters</div>
 
-              {/* Period */}
+              {/* Period — Round 13 (2026-05-27): 5 preset buttons replace
+                  the rc-slider. State still lives in `dateRange`; clicks
+                  call the existing `setDateRange`. */}
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Period</div>
-                {allMonths.length > 0 ? (
-                  <PeriodSlider
-                    dates={allMonths}
-                    value={monthIdxRange}
-                    onChange={setMonthIdxRange}
-                    fmtLabel={(d) => fmtMonthLabel(d)}
-                  />
-                ) : (
-                  <div style={{ fontSize: 11, color: "#aaa", fontFamily: "Arial" }}>
-                    Loading…
-                  </div>
-                )}
+                <PeriodPresetButtons
+                  dateRange={dateRange}
+                  latestMonth={latestMonth}
+                  firstAvailableMonth={allMonths[0] ?? null}
+                  onPick={setDateRange}
+                  disabled={allMonths.length === 0}
+                />
               </div>
 
               {/* Reference month (for top fields / FPSOs / Header table) */}

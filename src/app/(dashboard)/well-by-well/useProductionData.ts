@@ -22,6 +22,15 @@
 // user wants Brazil context, they tap the Brasil pill; when they want a
 // company, they tap that company pill. No side-by-side compare.
 //
+// Round 13 (2026-05-27): the period rc-slider was replaced by 5 PERIOD
+// PRESET BUTTONS — Last 12M (default), Last 24M, Last 36M, All, YTD. The
+// `dateRange` state shape is unchanged (still `[startMonth, endMonth]`
+// anchored to day=1); clicks call the existing `setDateRange` setter. Active
+// state is derived by `detectPeriodPreset()` (see helpers section) comparing
+// the current dateRange against each preset's computed range. The bootstrap
+// default lookback dropped from 13 → 12 months so "Last 12M" highlights
+// on first paint.
+//
 // Data sources (5 base + 4 Brazil RPCs, all SECURITY DEFINER):
 //   • get_production_brazil_aggregate(date_start, date_end, ambientes[]?)
 //       → Brazil-wide stacked bars (no stake weighting)
@@ -112,8 +121,11 @@ export const DEFAULT_EMPRESA = "Petrobras";
 /** All three ambiente buckets carried verbatim from `anp_cdp_producao.local`. */
 export const AMBIENTES: readonly string[] = ["PreSal", "PosSal", "Terra"];
 
-/** Default lookback window when initialising the period slider (13 months). */
-export const DEFAULT_LOOKBACK_MONTHS = 13;
+/** Default lookback window when initialising the period (12 months — Round 13
+ *  preset migration; was 13 in slider mode). The "Last 12M" preset matches
+ *  this exactly on first paint, so the preset button highlights as active
+ *  without any extra wiring. */
+export const DEFAULT_LOOKBACK_MONTHS = 12;
 
 /** Colour palette for the ambiente stack — PreSal darkest → Terra lightest. */
 export const AMBIENTE_COLOR: Record<string, string> = {
@@ -183,6 +195,116 @@ export function fmtMonthLabel(anchor: string): string {
   const m = parseInt(anchor.slice(5, 7), 10);
   const y = anchor.slice(0, 4);
   return `${months[m - 1]} ${y}`;
+}
+
+// ─── Period presets (Round 13, 2026-05-27) ────────────────────────────────────
+//
+// Replaces the rc-slider `PeriodSlider` with 5 mutually-exclusive buttons.
+// State lives in `dateRange` (unchanged) — clicks call the existing
+// `setDateRange`. Active styling is driven by `detectPeriodPreset()`, which
+// compares the current `dateRange` against each preset's computed range.
+
+/**
+ * Period preset identifiers. Default on first paint is `last12m` (matches
+ * `DEFAULT_LOOKBACK_MONTHS`). Each preset is anchored to `latestMonth` (most
+ * recent month present in `anp_cdp_producao`), exposed by the hook.
+ */
+export type PeriodPreset = "last12m" | "last24m" | "last36m" | "all" | "ytd";
+
+/** Ordered list of presets — drives the button row order in both Views. */
+export const PERIOD_PRESETS: readonly PeriodPreset[] = [
+  "last12m",
+  "last24m",
+  "last36m",
+  "all",
+  "ytd",
+] as const;
+
+/** Display label per preset (English, matches the task spec). */
+export const PERIOD_PRESET_LABEL: Record<PeriodPreset, string> = {
+  last12m: "Last 12M",
+  last24m: "Last 24M",
+  last36m: "Last 36M",
+  all:     "All",
+  ytd:     "YTD",
+};
+
+/**
+ * Safe lower-bound anchor for the "All" preset. Older than any expected
+ * `anp_cdp_producao` row; RPCs filter to existing rows anyway. Anchored to
+ * day=1 to match the rest of the period state.
+ */
+export const ALL_PRESET_START = "2010-01-01";
+
+/**
+ * Compute the `[start, end]` dateRange anchors for a given preset, relative
+ * to a `latestMonth` anchor (YYYY-MM-01). Returns `null` if `latestMonth` is
+ * not set (bootstrap hasn't completed yet). All start/end values are
+ * YYYY-MM-DD strings anchored to day=1.
+ *
+ * Semantics:
+ *   • last12m → [latestMonth - 11mo, latestMonth] (12 months inclusive)
+ *   • last24m → [latestMonth - 23mo, latestMonth]
+ *   • last36m → [latestMonth - 35mo, latestMonth]
+ *   • all     → [ALL_PRESET_START, latestMonth]
+ *   • ytd     → [{latestMonth.year}-01-01, latestMonth]
+ */
+export function computePresetRange(
+  preset: PeriodPreset,
+  latestMonth: string | null,
+): [string, string] | null {
+  if (!latestMonth) return null;
+  const end = monthAnchor(latestMonth);
+  switch (preset) {
+    case "last12m": return [shiftMonth(end, -11), end];
+    case "last24m": return [shiftMonth(end, -23), end];
+    case "last36m": return [shiftMonth(end, -35), end];
+    case "all":     return [ALL_PRESET_START, end];
+    case "ytd": {
+      const year = end.slice(0, 4);
+      return [`${year}-01-01`, end];
+    }
+  }
+}
+
+/**
+ * Detect which preset (if any) matches the current `dateRange` exactly.
+ * Used by the Views to drive `aria-pressed` / active styling on the preset
+ * buttons. Returns `null` if no preset matches.
+ *
+ * Comparison rules:
+ *   • End anchor must equal `latestMonth` (all presets end there).
+ *   • For "all", we match when the start equals `firstAvailableMonth`
+ *     (the first month present in `allMonths`, typically 2018-01-01) —
+ *     because the hook's `setDateRange` snaps `'2010-01-01'` to the
+ *     first available month via `indexOf` + `Math.max(0, …)`.
+ *   • For other presets, the start must match exactly.
+ */
+export function detectPeriodPreset(
+  dateRange: [string, string],
+  latestMonth: string | null,
+  firstAvailableMonth: string | null,
+): PeriodPreset | null {
+  if (!latestMonth || !dateRange[0] || !dateRange[1]) return null;
+  const end = monthAnchor(dateRange[1]);
+  const start = monthAnchor(dateRange[0]);
+  if (end !== monthAnchor(latestMonth)) return null;
+
+  // "All" — start equals the first available month (after snap-to-bounds).
+  // Falls back to literal ALL_PRESET_START if firstAvailableMonth is unknown.
+  const allStart = firstAvailableMonth ?? ALL_PRESET_START;
+  if (start === monthAnchor(allStart)) return "all";
+
+  // YTD — start is January of latestMonth's year.
+  const year = end.slice(0, 4);
+  if (start === `${year}-01-01`) return "ytd";
+
+  // Last-N — exact arithmetic match.
+  if (start === shiftMonth(end, -11)) return "last12m";
+  if (start === shiftMonth(end, -23)) return "last24m";
+  if (start === shiftMonth(end, -35)) return "last36m";
+
+  return null;
 }
 
 // `sumOil` / `sumGas` helpers were removed in Round 6 alongside the top KPI
@@ -482,8 +604,10 @@ export function useProductionData(): UseProductionData {
         setAllMonths(months);
         setLatestMonth(maxAnchor);
 
-        // Default slider window: last DEFAULT_LOOKBACK_MONTHS months ending
-        // at maxAnchor. Snap to bounds.
+        // Default window: last DEFAULT_LOOKBACK_MONTHS months ending at
+        // maxAnchor. Snap to bounds. Round 13 (2026-05-27): matches the
+        // "Last 12M" preset, so the corresponding preset button highlights
+        // as active on first paint without any extra wiring.
         const endIdx = months.length - 1;
         const startIdx = Math.max(0, endIdx - (DEFAULT_LOOKBACK_MONTHS - 1));
         setMonthIdxRangeState([startIdx, endIdx]);

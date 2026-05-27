@@ -7,6 +7,8 @@
 > **Layout reform (Round 9, 2026-05-27):** the empresa `<select>` dropdown was replaced by FIVE mutually-exclusive view pills (`Brasil` · `Petrobras` · `PRIO` · `PetroReconcavo` · `Brava Energia`) at the top of the page. The pills toggle the entire dashboard between Brazil-wide (100% WI, no stake math) and a stake-weighted view of one company. The chart count dropped from 4 to 3 because the dedicated Brazil-vs-Company comparison row was redundant under the new model — when the user wants Brazil context, they tap the Brasil pill; when they want a company, they tap that company pill.
 >
 > **Sidebar refactor (Round 10, 2026-05-27, `[desktop-only]`):** the desktop View was migrated to the project's canonical left-sidebar pattern (`#sidebar` · `sidebar-section-label` · `sidebar-filter-section`) shared with `/anp-cdp`, `/imports-exports`, `/market-share`, and 7 other dashboards. Filters (Period · Reference month · Environment) moved from the in-content horizontal block into the sticky left column. HeaderTable now occupies the full width of the main content area below the pills row — the inline `wbw-top-split` 2-column grid is gone. Pills stay at the TOP of main content (not in the sidebar) because they are view-mode selectors, semantically distinct from the in-view subsetters in the sidebar. Mobile View is unchanged — phones keep the `FilterDrawer` (BottomSheet) pattern.
+>
+> **Period preset buttons (Round 13, 2026-05-27):** the rc-slider `PeriodSlider` was replaced by FIVE mutually-exclusive preset buttons (**Last 12M** *(default)* · **Last 24M** · **Last 36M** · **All** · **YTD**) in both the desktop sidebar's Period section and the mobile FilterDrawer's Period section. State still lives in `dateRange` (unchanged shape) — clicks call the existing `setDateRange` setter; active state is detected by comparing the current `dateRange` against each preset's computed range (helpers `computePresetRange` + `detectPeriodPreset` exported from `useProductionData.ts`). Default lookback dropped from 13 → 12 months so "Last 12M" highlights as active on first paint. Shared `PeriodSlider` component is untouched (still used by 9+ other dashboards).
 
 ## Purpose
 
@@ -80,11 +82,25 @@ To add a company pill: append it to `WELL_BY_WELL_VIEWS` in `src/data/wellByWell
 | Filter | Type | Default |
 |---|---|---|
 | View (Brasil or company) | 5 pill row (mutually exclusive) | `Brasil` |
-| Period (`dateRange`) | month-granularity slider (rc-slider via `PeriodSlider dates={...}`) | Last 13 months ending at the most-recent month present in `anp_cdp_producao` |
+| Period (`dateRange`) | Period preset buttons (Last 12M / 24M / 36M / All / YTD) — 5 mutually-exclusive buttons; clicks call the hook's `setDateRange` (Round 13) | `Last 12M` — `[latestMonth − 11mo, latestMonth]` (12 months inclusive) |
 | Environment (`ambientes`) | multi-select with colour swatch | `[PreSal, PosSal, Terra]` |
-| Reference month | single-select `<select>` (restricted to current period window) | Most recent month in window (snaps when slider changes) |
+| Reference month | single-select `<select>` (restricted to current period window) | Most recent month in window (snaps when range changes) |
 
-All filters live in `useProductionData` — single source of truth. Slider changes debounce all RPCs at 150ms via `useDebouncedFetch` (Round 5 perf tune). The view state machine drives which RPC family fires; the hook returns `view`, `setView`, `isCompanyView`, and `viewEmpresa` (null in Brasil view, company name otherwise).
+All filters live in `useProductionData` — single source of truth. Period preset clicks debounce all RPCs at 150ms via `useDebouncedFetch` (Round 5 perf tune). The view state machine drives which RPC family fires; the hook returns `view`, `setView`, `isCompanyView`, and `viewEmpresa` (null in Brasil view, company name otherwise).
+
+### Period preset semantics (Round 13)
+
+All presets anchor their `end` to `latestMonth` (the most recent `(ano, mes)` in `anp_cdp_producao`, exposed by the hook). Presets are exported from `useProductionData.ts` so both Views share a single source of truth.
+
+| Button | Start anchor | End anchor |
+|---|---|---|
+| Last 12M *(default)* | `latestMonth − 11mo` | `latestMonth` |
+| Last 24M | `latestMonth − 23mo` | `latestMonth` |
+| Last 36M | `latestMonth − 35mo` | `latestMonth` |
+| All | `2010-01-01` (safe lower bound; `setDateRange` snaps to the first available month, typically `2018-01-01`) | `latestMonth` |
+| YTD | `{latestMonth.year}-01-01` | `latestMonth` |
+
+Active state is detected by `detectPeriodPreset(dateRange, latestMonth, firstAvailableMonth)`: each candidate preset's computed range is compared against the current `dateRange` end-anchor + start-anchor; first exact match wins. Returns `null` if no preset matches (defensive — no UI path currently produces a custom range).
 
 ## Panels (Round 9 — 3 charts)
 
@@ -93,8 +109,8 @@ The 4-chart layout (P1 Brazil + P2 Company side-by-side, P3 Top Fields + P4 Inst
 | # | Panel | Source RPC (Brasil view) | Source RPC (company view) | Notes |
 |---|---|---|---|---|
 | 1 | {View} — Oil Production (kbpd) | `get_production_brazil_aggregate` | `get_production_company_aggregate` | Stacked bars, x=month, y=oil kbpd, stack=ambiente. Brasil view uses greyscale; company view accents PreSal in brand orange. Full-width on desktop, full-width tab on mobile. |
-| 2 | Top {View} Fields — {Reference month} (kbpd) | `get_production_brazil_top_fields` | `get_production_top_fields` | Horizontal bar, top 10, oil+water stacked. Click a bar to drill into the field's 13-month timeseries (the drill RPC also branches on view). |
-| 3 | Installations (FPSO/UEP) — {View} — {Reference month} | `get_production_brazil_installation` | `get_production_by_installation` | Scrollable table on desktop / tappable card list on mobile. Click a row to drill into the installation's 13-month timeseries. |
+| 2 | Top {View} Fields — {Reference month} (kbpd) | `get_production_brazil_top_fields` | `get_production_top_fields` | Horizontal bar, top 10, oil+water stacked. Click a bar to drill into the field's timeseries over the active period preset (the drill RPC also branches on view). |
+| 3 | Installations (FPSO/UEP) — {View} — {Reference month} | `get_production_brazil_installation` | `get_production_by_installation` | Scrollable table on desktop / tappable card list on mobile. Click a row to drill into the installation's timeseries over the active period preset. |
 | YoY drawer (mobile, company view only) | {Company} — YoY / MoM / YTD | — | `get_production_yoy_table` | Collapsible drawer below the active tab. Hidden in Brasil mode (no per-ambiente YoY rows from the Brazil-wide RPCs). |
 
 ## Header table (PDF-style) — Round 8 (2026-05-27)
@@ -199,7 +215,7 @@ The fetch uses the dashboard's current `dateRange` (no separate filter). Both RP
 3. **Δ YoY** — `(current - same_month_last_year) / same_month_last_year` (null if the previous year's row isn't in the visible window or is zero)
 4. **YTD avg** — average of months in the same calendar year as the most-recent month (so for "Apr 2026" it averages Jan..Apr 2026)
 
-**Chart:** 13-month vertical stacked bars (oil dark `#1a1a1a` + water light blue `#7BB6DD`) on the left y-axis in kbpd, **plus** a hours-rate line (`BRAND_ORANGE`, `#ff5000`) on the right y-axis in `%` (0..105). Identical visual logic on both Views, layered via Plotly's `yaxis: "y2"` overlay.
+**Chart:** vertical stacked bars (oil dark `#1a1a1a` + water light blue `#7BB6DD`) on the left y-axis in kbpd over the active period preset window, **plus** a hours-rate line (`BRAND_ORANGE`, `#ff5000`) on the right y-axis in `%` (0..105). Identical visual logic on both Views, layered via Plotly's `yaxis: "y2"` overlay.
 
 **Empty state:** fields whose stakes don't sum to 100 (i.e. listed in `field_stakes_lacunas`) return zero rows server-side. The modal/sheet still opens; KPIs show `—` and a centered "No data for this field in the current period." caption replaces the chart.
 
@@ -229,7 +245,7 @@ Mirrors the Field drill-down pattern at the installation (FPSO/UEP/land plant) l
 3. **Δ YoY** — `(current - same_month_last_year) / same_month_last_year` (null if the previous year's row isn't in the visible window or is zero)
 4. **YTD avg** — average of months in the same calendar year as the most-recent month
 
-**Chart:** identical to the field drill — 13-month vertical stacked bars (oil `#1a1a1a` + water `#7BB6DD`) on the left y-axis (kbpd), plus a hours-rate line (`BRAND_ORANGE`) on the right y-axis (%, 0..105).
+**Chart:** identical to the field drill — vertical stacked bars (oil `#1a1a1a` + water `#7BB6DD`) on the left y-axis (kbpd) over the active period preset window, plus a hours-rate line (`BRAND_ORANGE`) on the right y-axis (%, 0..105).
 
 **Empty state:** installations whose constituent campos are all in `field_stakes_lacunas` return zero rows server-side. The modal/sheet still opens; KPIs show `—` and a centered "No data for this installation in the current period." caption replaces the chart.
 
