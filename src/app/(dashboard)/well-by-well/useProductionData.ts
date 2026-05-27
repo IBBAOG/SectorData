@@ -32,6 +32,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { WELL_BY_WELL_EMPRESAS } from "../../../data/wellByWellEmpresas";
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
@@ -374,9 +375,32 @@ export function useProductionData(): UseProductionData {
             empresasRes.reason,
           );
         }
-        // Sort by n_campos DESC for the dropdown — biggest portfolios first.
-        empresas = [...empresas].sort((a, b) => b.n_campos - a.n_campos);
+        // Restrict the dashboard dropdown to the IR-relevant whitelist
+        // (`src/data/wellByWellEmpresas.ts`). The admin panel's Field Stakes
+        // editor still consumes the full list via the same RPC wrapper — this
+        // filter only narrows what the dashboard renders. Sort follows the
+        // whitelist order (Petrobras → PRIO → PetroReconcavo → Brava Energia),
+        // which is the most-coverage-first IR view, not `n_campos DESC`.
+        const allowed = new Set<string>(WELL_BY_WELL_EMPRESAS);
+        const orderIdx = new Map<string, number>(
+          WELL_BY_WELL_EMPRESAS.map((name, i) => [name, i]),
+        );
+        empresas = empresas
+          .filter((e) => allowed.has(e.empresa))
+          .sort(
+            (a, b) =>
+              (orderIdx.get(a.empresa) ?? Number.MAX_SAFE_INTEGER) -
+              (orderIdx.get(b.empresa) ?? Number.MAX_SAFE_INTEGER),
+          );
         setEmpresasList(empresas);
+
+        // Safety: if the user landed here with state (e.g. query param,
+        // stale URL, restored session) pointing to an empresa outside the
+        // whitelist, snap back to the default (Petrobras). Read state
+        // imperatively to avoid adding the setter to the bootstrap deps.
+        setEmpresaState((cur) =>
+          allowed.has(cur) ? cur : DEFAULT_EMPRESA,
+        );
 
         // Brazil probe — required to know latestMonth; if it failed, bubble up.
         if (probeRes.status === "rejected") {

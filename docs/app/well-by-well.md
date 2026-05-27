@@ -44,9 +44,15 @@ Source-of-truth migrations:
 
 ### Companies (Empresa dropdown)
 
-Populated from `get_field_stakes_empresas()` (Fase 1 RPC). The list is sorted by `n_campos DESC` so the largest portfolios surface first (Petrobras, PRIO, PetroReconcavo, Brava Energia, Shell, Equinor, ...). Default selection: **Petrobras**.
+Populated from `get_field_stakes_empresas()` (Fase 1 RPC) and then **filtered client-side** against a 4-name whitelist (`src/data/wellByWellEmpresas.ts`): **Petrobras → PRIO → PetroReconcavo → Brava Energia**. The dropdown renders exactly those four options in that fixed order (most-coverage-first IR view, NOT `n_campos DESC`). Default selection: **Petrobras**.
 
-The dropdown is **never** hardcoded — when Eduardo seeds a new company in `field_stakes` via `/admin-panel`, it appears here on next load.
+The whitelist exists because `get_field_stakes_empresas()` returns 63+ companies (including many small onshore operators like Origem Energia, Petrosynergy, Eneva, Alvopetro) which are useful for stake input in the admin panel but visually noisy in the executive dashboard. Eduardo's covered universe is the 4 listed names.
+
+If a user lands on `/well-by-well` with stale state (query param, restored session) pointing to an empresa outside the whitelist, the hook snaps `empresa` back to `Petrobras` on bootstrap.
+
+The **admin panel's Field Stakes autocomplete is NOT affected** — it continues to consume the full `rpcGetFieldStakesEmpresas` list so Eduardo can edit stakes for any of the 63+ companies. Only this dashboard's company selector is narrowed.
+
+To add a company: edit `src/data/wellByWellEmpresas.ts` (names must match the canonical normalized forms used in `field_stakes.empresa` — e.g. "Brava Energia", not "Brava"; "PetroReconcavo", no accent, no space).
 
 ## Filter model
 
