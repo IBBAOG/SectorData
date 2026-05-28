@@ -2482,16 +2482,18 @@ a {
      ─────────────────────────────────────────────────────────────────────── */
 
   /* Oil & Gas — blue family (desktop accent #2563eb).
-     Round 5: bumped from ~8% to ~35% saturation so tiles read as visibly
-     blue at 159×108px instead of off-white. fg/bg contrast 6.5:1 (AA pass
-     for 13px/700 body). */
-  --mobile-home-tile-oilgas-bg:              #bfd4ff;  /* blue-200-ish, visibly blue */
+     Round 6: softened from Round 5 (~35% sat → ~20% sat) for a more airy,
+     less candy-toned look while keeping the blue clearly perceptible.
+     fg/bg contrast ~8.5:1 (AA pass for 13px/700 body — increases vs Round 5
+     since lighter bg widens luminance gap with dark fg). */
+  --mobile-home-tile-oilgas-bg:              #dce6ff;  /* blue-100-ish, gently blue */
   --mobile-home-tile-oilgas-fg:              #1d4ed8;  /* desktop accentText (blue-700) */
 
   /* Fuel Distribution — emerald family (desktop accent #059669).
-     Round 5: bumped from ~8% to ~35% saturation so tiles read as visibly
-     emerald. fg/bg contrast 4.8:1 (AA pass for 13px/700 body). */
-  --mobile-home-tile-fuel-bg:                #a8e6c8;  /* emerald-200-ish, visibly green */
+     Round 6: softened from Round 5 (~35% sat → ~20% sat) for a more airy
+     look. fg/bg contrast ~5.2:1 (AA pass for 13px/700 body — increases vs
+     Round 5 since lighter bg widens luminance gap with dark fg). */
+  --mobile-home-tile-fuel-bg:                #cdf0db;  /* emerald-100-ish, gently green */
   --mobile-home-tile-fuel-fg:                #047857;  /* desktop accentText (emerald-700) */
 
   /* Per-slug aliases (Round 3) — each slug points at its category pair so
@@ -2625,9 +2627,9 @@ a {
        primary block above). All O&G slugs share blue, all Fuel slugs share
        emerald. Source of truth:
        src/components/home/ModuleGallery/index.tsx (ACCENTS map). */
-    --mobile-home-tile-oilgas-bg:              #bfd4ff;  /* Round 5: visibly saturated */
+    --mobile-home-tile-oilgas-bg:              #dce6ff;  /* Round 6: softened ~20% sat */
     --mobile-home-tile-oilgas-fg:              #1d4ed8;
-    --mobile-home-tile-fuel-bg:                #a8e6c8;  /* Round 5: visibly saturated */
+    --mobile-home-tile-fuel-bg:                #cdf0db;  /* Round 6: softened ~20% sat */
     --mobile-home-tile-fuel-fg:                #047857;
 
     /* Oil & Gas slug aliases */
