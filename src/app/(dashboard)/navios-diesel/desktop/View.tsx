@@ -870,6 +870,40 @@ export default function DesktopView(): React.ReactElement {
                                 })}
                               </tr>
                             ))}
+                            {/* Total row — sums vessels and volume per month across all ports.
+                                Mirrors mobile/View.tsx Port Summary table Total row. */}
+                            {portMonthlySummary.ports.length > 0 && (
+                              <tr style={{ borderTop: "2px solid #000512", backgroundColor: "#fafafa" }}>
+                                <td style={{ width: 110, padding: "6px 10px", fontWeight: 700, whiteSpace: "nowrap", textTransform: "uppercase", fontSize: 11, letterSpacing: "0.04em" }}>
+                                  Total
+                                </td>
+                                {portMonthlySummary.months.map(m => {
+                                  let vessels = 0;
+                                  let volume = 0;
+                                  for (const porto of portMonthlySummary.ports) {
+                                    const cell = portMonthlySummary.portMap.get(porto)?.get(m);
+                                    if (cell) {
+                                      vessels += cell.vessels;
+                                      volume += cell.volume;
+                                    }
+                                  }
+                                  return (
+                                    <td key={m} style={{ padding: "6px 10px", textAlign: "center" }}>
+                                      {vessels > 0 ? (
+                                        <>
+                                          <div style={{ fontWeight: 700 }}>{vessels} vessel{vessels !== 1 ? "s" : ""}</div>
+                                          <div style={{ fontSize: 11, color: "#444", fontWeight: 600 }}>
+                                            {volume.toLocaleString("en-US", { maximumFractionDigits: 0 })} m³
+                                          </div>
+                                        </>
+                                      ) : (
+                                        <span style={{ color: "#ccc" }}>—</span>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            )}
                           </tbody>
                         </table>
                       </div>

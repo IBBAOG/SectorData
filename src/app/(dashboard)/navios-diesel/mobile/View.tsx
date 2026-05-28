@@ -84,6 +84,8 @@ function PortSummaryTable({
 }: {
   rows: PortTableRow[];
 }): React.ReactElement {
+  const totalVolume = rows.reduce((acc, r) => acc + (r.totalVolume || 0), 0);
+  const totalVessels = rows.reduce((acc, r) => acc + (r.vesselCount || 0), 0);
   return (
     <div
       style={{
@@ -202,6 +204,70 @@ function PortSummaryTable({
               </td>
             </tr>
           ))}
+
+          {/* Total row — sums Volume + Vessels across all ports.
+              Next ETA is per-vessel, so it cannot be aggregated → "—". */}
+          {rows.length > 0 && (
+            <tr>
+              <td
+                style={{
+                  padding: "10px 12px",
+                  fontWeight: 700,
+                  color: "var(--mobile-text)",
+                  borderTop: "2px solid var(--mobile-text)",
+                  whiteSpace: "nowrap",
+                  position: "sticky" as const,
+                  left: 0,
+                  background: "var(--mobile-surface)",
+                  zIndex: 1,
+                  textTransform: "uppercase",
+                  fontSize: 11,
+                  letterSpacing: "0.05em",
+                }}
+              >
+                Total
+              </td>
+              <td
+                style={{
+                  padding: "10px 12px",
+                  textAlign: "right",
+                  color: "var(--mobile-text)",
+                  fontWeight: 700,
+                  fontVariantNumeric: "tabular-nums",
+                  borderTop: "2px solid var(--mobile-text)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {fmtVolume(totalVolume)}
+              </td>
+              <td
+                style={{
+                  padding: "10px 12px",
+                  textAlign: "right",
+                  color: "var(--mobile-text-faint)",
+                  fontVariantNumeric: "tabular-nums",
+                  borderTop: "2px solid var(--mobile-text)",
+                  whiteSpace: "nowrap",
+                  fontSize: 12,
+                }}
+              >
+                —
+              </td>
+              <td
+                style={{
+                  padding: "10px 12px",
+                  textAlign: "right",
+                  color: "var(--mobile-text)",
+                  fontWeight: 700,
+                  fontVariantNumeric: "tabular-nums",
+                  borderTop: "2px solid var(--mobile-text)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {totalVessels}
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>
@@ -271,25 +337,35 @@ export default function MobileView(): React.ReactElement {
   }, [currentMonth]);
 
   // ── Monthly stacked bar chart — same data shape as desktop ──────────────────
-  const monthlyChart = useMemo((): { data: PlotData[]; maxTotal: number } => {
+  const monthlyChart = useMemo((): {
+    data: PlotData[];
+    maxTotal: number;
+    totals: { x: string; total: number }[];
+  } => {
     if (volumeMensal.length === 0) {
-      return { data: [], maxTotal: 0 };
+      return { data: [], maxTotal: 0, totals: [] };
     }
 
     const labels = volumeMensal.map((r) => monthLabel(r.month, !!r.is_current));
     const hoverSuffix = volumeMensal.map((r) => (r.is_current ? " · live" : " · frozen"));
 
-    const maxTotal = Math.max(
-      ...volumeMensal.map(
-        (r) => r.discharged_volume + r.pending_volume + r.indeterminate_volume,
-      ),
-    );
-
-    // Visibility per tab. "Expected" → Pending only. "Active" → Discharged only.
-    // "All" → all three traces stacked.
+    // Per-bar totals (sum of the 3 traces) — used by tab-aware annotations
+    // below so the label above each bar reflects what is currently visible.
     const showDischarged = statusFilter === "all" || statusFilter === "active";
     const showPending = statusFilter === "all" || statusFilter === "expected";
     const showIndeterminate = statusFilter === "all";
+    const totals = volumeMensal.map((r, i) => ({
+      x: labels[i],
+      total:
+        (showDischarged ? r.discharged_volume : 0) +
+        (showPending ? r.pending_volume : 0) +
+        (showIndeterminate ? r.indeterminate_volume : 0),
+    }));
+
+    const maxTotal = Math.max(...totals.map((t) => t.total), 0);
+
+    // Visibility per tab. "Expected" → Pending only. "Active" → Discharged only.
+    // "All" → all three traces stacked. (Booleans defined above for totals.)
 
     const data: PlotData[] = [];
 
@@ -329,13 +405,13 @@ export default function MobileView(): React.ReactElement {
       } as unknown as PlotData);
     }
 
-    return { data, maxTotal };
+    return { data, maxTotal, totals };
   }, [volumeMensal, statusFilter]);
 
   const chartLayout = useMemo(
     () => ({
       barmode: "stack" as const,
-      margin: { l: 44, r: 10, t: 8, b: 56 },
+      margin: { l: 44, r: 10, t: 20, b: 56 },
       xaxis: {
         tickfont: { size: 10 },
         tickangle: -40,
@@ -347,20 +423,35 @@ export default function MobileView(): React.ReactElement {
         tickformat: "~s",
         title: { text: "m³", font: { size: 10 } },
         fixedrange: true,
-        range: monthlyChart.maxTotal > 0 ? [0, monthlyChart.maxTotal * 1.15] : undefined,
+        // Extra headroom (×1.22) so the total label above the tallest bar
+        // does not clip against the legend / plot top edge on ~390px viewports.
+        range: monthlyChart.maxTotal > 0 ? [0, monthlyChart.maxTotal * 1.22] : undefined,
       },
       bargap: 0.25,
       legend: {
         orientation: "h" as const,
         x: 0,
-        y: 1.18,
+        y: 1.22,
         xanchor: "left" as const,
         yanchor: "bottom" as const,
         font: { size: 10 },
       },
       showlegend: monthlyChart.data.length > 1,
+      // Total label above each stacked bar (compact format, e.g. "113K").
+      // Reflects the currently visible traces (tab-aware via monthlyChart.totals).
+      annotations: monthlyChart.totals
+        .filter((t) => t.total > 0)
+        .map((t) => ({
+          x: t.x,
+          y: t.total,
+          text: fmtVolume(t.total),
+          showarrow: false,
+          yanchor: "bottom" as const,
+          yshift: 2,
+          font: { family: "Arial, Helvetica, sans-serif", size: 9, color: "#1a1a1a" },
+        })),
     }),
-    [monthlyChart.maxTotal, monthlyChart.data.length],
+    [monthlyChart.maxTotal, monthlyChart.data.length, monthlyChart.totals],
   );
 
   // Slightly taller when legend visible (multi-trace "All" view).
