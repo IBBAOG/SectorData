@@ -21,6 +21,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import MobileExcludedRedirect from "@/components/dashboard/mobile/MobileExcludedRedirect";
 import NavBar from "@/components/NavBar";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import BarrelLoading from "@/components/dashboard/BarrelLoading";
@@ -246,6 +247,7 @@ export default function AdminAnalyticsPage() {
 
   return (
     <main style={{ background: "#f5f5f5", minHeight: "100vh", fontFamily: "Arial, sans-serif" }}>
+      <MobileExcludedRedirect slug="admin-analytics" />
       <NavBar />
       <div style={{ padding: "clamp(16px, 3vw, 32px)", maxWidth: 1400, margin: "0 auto" }}>
         <DashboardHeader

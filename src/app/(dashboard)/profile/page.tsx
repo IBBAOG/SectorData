@@ -1,21 +1,20 @@
 "use client";
 
-// Viewport router for /profile.
-// useIsMobile is SSR-safe — returns false during SSR + first paint, then flips
-// after mount. See docs/app/dual-view-pattern.md for the canonical template.
+// /profile — excluded from mobile (mobile users are redirected to /home).
+// Desktop: full profile editor with inline name editing and avatar.
+// Anonymous visitors are redirected to /login (DesktopView assumes auth).
 //
-// Anonymous visitors are redirected to /login at this layer (the underlying
-// Views assume a profile is present and rely on RPCs that require auth).
+// MobileExcludedRedirect is a side-effect-only client component — on mobile it
+// redirects to /home?excluded=profile and fires an app-toast event; on desktop
+// it renders null.
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useIsMobile } from "@/hooks/useIsMobile";
 import { useUserProfile } from "@/context/UserProfileContext";
+import MobileExcludedRedirect from "@/components/dashboard/mobile/MobileExcludedRedirect";
 import DesktopView from "./desktop/View";
-import MobileView from "./mobile/View";
 
 export default function ProfilePage(): React.ReactElement | null {
-  const isMobile = useIsMobile();
   const router = useRouter();
   const { role, loading } = useUserProfile();
 
@@ -29,5 +28,10 @@ export default function ProfilePage(): React.ReactElement | null {
   // briefly see profile chrome backed by null data.
   if (!loading && role === "Anon") return null;
 
-  return isMobile ? <MobileView /> : <DesktopView />;
+  return (
+    <>
+      <MobileExcludedRedirect slug="profile" />
+      <DesktopView />
+    </>
+  );
 }
