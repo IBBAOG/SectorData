@@ -330,14 +330,14 @@ Chart colors across all `/well-by-well` panels are sourced from the monthly Ita�
 | `WBW_COLORS.ambiente.Terra` | `#9bd9a9` (mint green / Onshore) | Third (top) segment of Chart 1's stacked bars |
 | `WBW_COLORS.oil` | `#1f2937` (dark navy) | Chart 2 (Top Fields) oil bars + drill modal oil bars (single-color, non-stacked context) |
 | `WBW_COLORS.water` | `#ff5000` (brand orange) | Chart 2 (Top Fields) water bars + drill modal water bars (PDF p4 Petrobras Búzios sample) |
-| `WBW_COLORS.hoursRate` | `#ff5000` (brand orange) | Drill modal operating-hours line on dual-axis (PDF p11+ field detail charts) |
+| `WBW_COLORS.hoursRate` | `#73C6A1` (mint green — PALETTE pos 7) | Drill modal operating-hours line on dual-axis (PDF p11+ field detail charts). Changed from `#ff5000` to avoid blending with the Water bars which also use brand orange. |
 | `WBW_COLORS.currentMonth` | `#ff5000` (brand orange) | Reserved for future current-vs-prior comparison bars (PDF p3) |
 | `WBW_COLORS.priorMonth` | `#1f2937` (dark navy) | Reserved for future current-vs-prior comparison bars (PDF p3) |
 
 Cross-reference samples in the PDF:
 - p2 "Brazil – Oil Production (kbpd)" stacked bar (navy / orange / green ascending)
 - p4 "Petrobras – Largest Oil Producing Fields" (dark navy oil + orange water)
-- p11+ field detail charts (dark navy bar + orange hours-rate line)
+- p11+ field detail charts (dark navy bar + mint-green hours-rate line)
 
 The `HeaderTable` component (PDF page-2 replica) uses neutral table styling and is NOT ambiente-coded — its colors live in the component file and are unrelated to this palette. Other dashboards have their own palettes; these tokens are scoped to `/well-by-well` only.
 

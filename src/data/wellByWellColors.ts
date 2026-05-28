@@ -21,8 +21,10 @@ export const WBW_COLORS = {
   /** "Water" bar shown alongside Oil. PDF p4 (Petrobras Búzios sample). */
   water: "#ff5000",
 
-  /** Operating hours rate line (on dual-axis). PDF p11+ field detail charts. */
-  hoursRate: "#ff5000",
+  /** Operating hours rate line (on dual-axis). PDF p11+ field detail charts.
+   *  Light green (#73C6A1 mint — PALETTE pos 7) so the line does not blend
+   *  with the Water bars which also use brand orange (#ff5000). */
+  hoursRate: "#73C6A1",
 
   /** Current month bar in current-vs-prior comparison. PDF p3. */
   currentMonth: "#ff5000",
