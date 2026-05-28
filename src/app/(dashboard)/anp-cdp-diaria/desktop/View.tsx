@@ -17,11 +17,14 @@ import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
 import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 import ChartSection from "../../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
-import ExportPanel from "../../../../components/dashboard/ExportPanel";
-import ExportModal from "../../../../components/dashboard/ExportModal";
 import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
 import SearchableMultiSelect from "../../../../components/SearchableMultiSelect";
 import { bblDiaToKbpd } from "../../../../lib/units";
+
+// Unified export library (worker_subgerente-app / worker_designer own the
+// internals; this dashboard only consumes <ExportButton spec={...} />).
+import { ExportButton } from "@/lib/export";
+import { anpCdpDiariaExport } from "@/lib/export/dashboards/anpCdpDiaria";
 
 import {
   useAnpCdpDiariaData,
@@ -44,17 +47,8 @@ export default function DesktopView(): React.ReactElement | null {
     explicitDims,
     petroleoChart, gasChart,
     tableRows,
-    dimLabel, datasetKey,
+    dimLabel,
     headerTitle, headerSub,
-    exportOpen, setExportOpen,
-    excelLoading, csvLoading,
-    exportCampos, setExportCampos,
-    exportInstalacoes, setExportInstalacoes,
-    exportPocos, setExportPocos,
-    exportRange, setExportRange,
-    exportFilters,
-    openExportModal,
-    estimateExportRows, handleExportExcel, handleExportCsv,
   } = useAnpCdpDiariaData();
 
   if (visLoading || !visible) return null;
@@ -169,24 +163,7 @@ export default function DesktopView(): React.ReactElement | null {
                 title={headerTitle}
                 sub={headerSub}
                 period={periodBadge}
-                rightSlot={
-                  <ExportPanel
-                    actions={[
-                      {
-                        kind: "excel",
-                        label: "Excel",
-                        disabled: loading || excelLoading || csvLoading,
-                        onClick: openExportModal,
-                      },
-                      {
-                        kind: "csv",
-                        label: "CSV",
-                        disabled: loading || excelLoading || csvLoading,
-                        onClick: openExportModal,
-                      },
-                    ]}
-                  />
-                }
+                rightSlot={<ExportButton spec={anpCdpDiariaExport} />}
               />
 
               {loading ? (
@@ -325,67 +302,6 @@ export default function DesktopView(): React.ReactElement | null {
 
         </div>
       </div>
-
-      <ExportModal
-        open={exportOpen}
-        onClose={() => setExportOpen(false)}
-        title={`Export — Daily Production (${dimLabel.en})`}
-        datasetKey={datasetKey}
-        currentFilters={exportFilters}
-        countFetcher={estimateExportRows}
-        excelBusy={excelLoading}
-        csvBusy={csvLoading}
-        loadingLabel={excelLoading ? "Generating Excel..." : "Downloading CSV..."}
-        onExportExcel={handleExportExcel}
-        onExportCsv={handleExportCsv}
-        filters={
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: "Arial" }}>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Period</div>
-              {hasDates && (
-                <PeriodSlider dates={allDates} value={exportRange} onChange={setExportRange} />
-              )}
-            </div>
-
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                Fields <span style={{ color: "#888", fontWeight: 400 }}>({exportCampos.length === 0 ? campos.length : exportCampos.length}/{campos.length})</span>
-              </div>
-              <SearchableMultiSelect
-                options={campos}
-                value={exportCampos}
-                onChange={setExportCampos}
-              />
-            </div>
-
-            {granularity === "installation" && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                  Installations <span style={{ color: "#888", fontWeight: 400 }}>({exportInstalacoes.length === 0 ? instalacoes.length : exportInstalacoes.length}/{instalacoes.length})</span>
-                </div>
-                <SearchableMultiSelect
-                  options={instalacoes}
-                  value={exportInstalacoes}
-                  onChange={setExportInstalacoes}
-                />
-              </div>
-            )}
-
-            {granularity === "well" && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                  Wells <span style={{ color: "#888", fontWeight: 400 }}>({exportPocos.length === 0 ? pocos.length : exportPocos.length}/{pocos.length})</span>
-                </div>
-                <SearchableMultiSelect
-                  options={pocos}
-                  value={exportPocos}
-                  onChange={setExportPocos}
-                />
-              </div>
-            )}
-          </div>
-        }
-      />
     </div>
   );
 }

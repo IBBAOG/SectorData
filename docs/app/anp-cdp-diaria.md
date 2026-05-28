@@ -16,7 +16,7 @@ src/app/(dashboard)/anp-cdp-diaria/
 
 RPC wrappers: seções "ANP CDP Diária" + "ANP CDP Diária — Installation level" + "ANP CDP Diária — Well level" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts).
 
-Heurística de tamanho de export: chaves `anp_cdp_diaria` (field), `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco` em [`src/lib/exportSizeHeuristics.ts`](../../src/lib/exportSizeHeuristics.ts).
+Export spec: [`src/lib/export/dashboards/anpCdpDiaria.ts`](../../src/lib/export/dashboards/anpCdpDiaria.ts) (unified export library, see [`docs/app/export-library-contract.md`](export-library-contract.md)). Count helper: `rpcGetAnpCdpDiariaExportCount(nivel, filtros)` wrapping `get_anp_cdp_diaria_export_count(p_nivel, p_filtros)`. The legacy heuristic chaves in `src/lib/exportSizeHeuristics.ts` are no longer consumed by this dashboard.
 
 ## Dual-view structure (Phase 2 — 2026-05-20)
 
@@ -90,7 +90,7 @@ Por nível, o usuário pode:
 - Restringir o **período** via `PeriodSlider` em modo `dates` (server-side).
 - Ver duas séries temporais (Petróleo `kbpd` e Gás `Mm³/dia`) para a "dimensão" do nível atual (Top 10 por média se sem seleção, ou exatos selecionados).
 - Inspecionar a tabela de produção mais recente (até 500 linhas).
-- Exportar Excel/CSV via `ExportPanel` Tier 2 (`ExportModal` com calculadora de tamanho).
+- Exportar Excel/CSV via `<ExportButton spec={anpCdpDiariaExport} />` do unified export library (Tier 2, modal com calculadora de tamanho server-side).
 
 Header: título e sub variam por nível ("Daily Production by Field/Installation/Well").
 
@@ -241,12 +241,51 @@ The petroleum trace, the table column "Petróleo", and the chart Y-axis label ar
 
 ## Anti-padrões / decisões técnicas
 
-- **Sem RPC dedicada `get_anp_cdp_diaria_*_export_count`**: para a primeira versão usamos heurística (refetch + length) por nível. TODO: virar RPC se export pesado virar gargalo.
+- **RPC `get_anp_cdp_diaria_export_count(p_nivel, p_filtros)` é o oráculo de tamanho do modal** desde a migração para o unified export library (2026-05-28). Substitui a heurística `refetch + length` por nível. Wrapper TS: `rpcGetAnpCdpDiariaExportCount(nivel, filtros)`.
 - **Filtro de "dimensão" não é empurrado pra RPC do chart no nível Field e Well**: queremos buscar todos os campos/poços no período para que a Top-N (defaults) seja estável — só o slider de período dispara refetch debounced. Filtro de dimensão é client-side.
 - **No nível Installation, push de campos para RPC**: como instalação não pertence a uma bacia explícita e o universo de instalações pode ser denso, o filtro de campos é empurrado server-side para reduzir payload. Filtro de instalação é client-side.
 - **Reset de filtros ao trocar nível**: vocabulários diferentes (instalação só existe em Installation, poço só em Well) — manter seleções antigas após troca causaria filtros vazios silenciosos.
 - **Basin filter removido (2026-05-28)**: o filtro de bacia foi removido da sidebar (desktop) e do FilterDrawer (mobile) por não ser relevante para a análise diária. Os wrappers TS continuam aceitando o parâmetro internamente (pinned a NULL) e o backend não foi tocado.
 - **Linha unificada (`UnifiedRow`) para chart/table**: cada nível projeta seu shape específico para `{ data, campo, bacia, dimension, ... }` antes de alimentar `pickTopDimensions` e `buildSerieChart`, mantendo o downstream level-agnostic.
+
+## Export (unified library)
+
+Migrated to the unified export library on 2026-05-28 (contract: [`docs/app/export-library-contract.md`](export-library-contract.md)). Spec file: [`src/lib/export/dashboards/anpCdpDiaria.ts`](../../src/lib/export/dashboards/anpCdpDiaria.ts).
+
+| Field | Value |
+|---|---|
+| `filename` | `DailyProduction` (library appends `_{nivel}_DD-MM-YY.<ext>`) |
+| `tier` | 2 (modal with size estimator) |
+| `filterSource` | `"modal-editable"` — filters drawn from zero in the modal, **not** WYSIWYG of dashboard state. The dashboard's `granularity` sidebar toggle does **not** propagate into the export; the user picks the nível inside the modal. |
+| Sheets / files | 1 sheet, name = chosen nível (`"Campo"` / `"Instalação"` / `"Poço"`) |
+| CSV mode | `single` — same row set as the active sheet |
+| Charts | None |
+
+### Modal filters
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `nivel` | `segmented` | `"campo"` | Field / Installation / Well — selects which sheet (and which columns) is materialized |
+| `period` | `date-range` | Last 30 days (today − 30 → today) | |
+| `campos` | `multi-select` (options from `rpcGetAnpCdpDiariaFiltros`) | `[]` (= all) | Always visible |
+| `instalacoes` | `multi-select` (options from `rpcGetAnpCdpDiariaInstalacaoFiltros`) | `[]` (= all) | Library should show only when `nivel = instalacao` |
+| `poco` | `search` | empty | Library should show only when `nivel = poco`; wrapper passes the typed string as a single-element `pocos` array |
+
+### Sheet columns per nível
+
+| Nível | Sheet name | Columns |
+|---|---|---|
+| `campo` | `"Campo"` | Date · Field · Basin · Oil (bbl/day) · Gas (Mm³/day) |
+| `instalacao` | `"Instalação"` | Date · Installation · Field · Oil (bbl/day) · Gas (Mm³/day) |
+| `poco` | `"Poço"` | Date · Well · Field · Basin · Installation · Oil (bbl/day) · Gas (Mm³/day) |
+
+### Size estimator
+
+Server-side count via `rpcGetAnpCdpDiariaExportCount(nivel, filtros)` → `get_anp_cdp_diaria_export_count(p_nivel text, p_filtros jsonb)`. Filter payload keys: `data_inicio`, `data_fim`, `campos`, `instalacoes`, `pocos`. Unknown keys silently ignored by the SQL function. The legacy heuristic in `src/lib/exportSizeHeuristics.ts` (`anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco`) is no longer consumed by this dashboard, but the keys remain in the file for backward compatibility until the cleanup wave.
+
+### Sheet-selection convention
+
+When `filterSource === "modal-editable"` and the modal declares a `segmented` filter with `key = "nivel"`, the library materializes only the matching sheet at download time (mapping `campo → "Campo"`, `instalacao → "Instalação"`, `poco → "Poço"`). The unified library author (`worker_subgerente-app`) is responsible for wiring this selection — see the binding header comment in the spec file.
 
 ## Performance
 
@@ -291,3 +330,4 @@ Os 19 campos faltantes representam ~0,3% da produção nacional (maioria são bu
 - `2026-05-08` — Implementação inicial (Field-only).
 - `2026-05-08` — **Adicionada granularidade Installation e Well via `SegmentedToggle`**. 4 RPC wrappers novos, 2 chaves novas em export heuristics, sub-PRD atualizado. Migration `20260508120001_anp_cdp_diaria_levels.sql` aplicada via supabase_deploy.yml.
 - `2026-05-27` — **Mobile reform v2 (Onda 3)**. `mobile/View.tsx` reescrito: período preset pills (1M/3M/6M/1Y/All) no chip row sticky; dois charts (Oil + Gas) empilhados verticalmente sempre visíveis (sem tab Oil/Gas); ranking Top 10 com `MobileDataCard` + botão "See all N fields" abre `BottomSheet` (90vh) com lista completa pesquisável; production summary card 2×3; `ExportFAB`/`ExportModal` removidos (export é desktop-only); `MobileTabBar` de produto removido. Commit `b29914ff`, branch `worktree-agent-ae3d7c80602ee09fb`.
+- `2026-05-28` — **Export migrado para o unified export library** ([contract](export-library-contract.md)). Novo spec em `src/lib/export/dashboards/anpCdpDiaria.ts`; `desktop/View.tsx` agora consome `<ExportButton spec={anpCdpDiariaExport} />` em `DashboardHeader.rightSlot`. Estado de export modal/handlers removidos do hook do desktop (modal-editable filters: período default last 30d, todos os campos). Novo wrapper TS `rpcGetAnpCdpDiariaExportCount(nivel, filtros)` em `src/lib/rpc.ts` envelopando `get_anp_cdp_diaria_export_count(p_nivel, p_filtros)` (shipped por worker_supabase). Heurística em `exportSizeHeuristics.ts` deprecada para este dashboard.
