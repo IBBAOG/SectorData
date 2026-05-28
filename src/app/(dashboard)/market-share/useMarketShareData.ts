@@ -477,39 +477,62 @@ export function buildMarketShareLine(params: {
   }
 
   // Anti-overlap: when two or more end-of-line labels land at nearly the same
-  // Y, stack them with a minimum vertical separation (~3% of axis range, which
-  // corresponds to ~12-14px at the chart's 300px height). Labels stay anchored
-  // at the right of the last data point — only their Y is nudged.
+  // Y, stack them with a minimum vertical separation. The threshold has to
+  // account for the actual plot pixel height — at 300px total chart height
+  // with margins t:10 / b:80, the plot area is ~210px, and a 12px Arial label
+  // needs ~16px of vertical breathing room to not visually overlap. That is
+  // ≈ axisSpan * 16/210 ≈ 7.6% of the axis range. We also enforce a hard
+  // floor of 1.6pp in 'share' mode so charts with very wide ranges (e.g.
+  // Big-3 mode where yRange can be 80pp) still get a sane minimum gap, and
+  // a max ceiling so absurd ranges don't push labels off the canvas.
+  //
+  // Iteration: we do a sort-by-original-y → bottom-up greedy packing
+  // (each label sits at max(originalY, prevY + minGap)), then if the top
+  // overshoots yHi we redo the pass top-down to redistribute. Repeated to
+  // convergence (max 4 iterations) — handles 3-4 label clusters reliably.
   if (annotations.length > 1) {
     const axisSpan = yHi - yLo > 0 ? yHi - yLo : 1.0;
-    const minGap = axisSpan * 0.03;
+    // Pixel-derived gap: 16px per label / ~210px plot area ≈ 0.076 of span.
+    const pixelGap = axisSpan * 0.076;
+    // In 'share' mode (percentage) enforce a 1.6pp floor; in 'volume' mode
+    // there's no natural unit floor so fall back to 4% of axisSpan as floor.
+    const floorGap = unitMode === "share" ? 1.6 : axisSpan * 0.04;
+    const minGap = Math.max(pixelGap, floorGap);
 
-    // Sort by current y descending (top → bottom) and remember original index
-    // so we can write the adjusted y back in place.
-    const order = annotations
-      .map((a, i) => ({ i, y: a.y }))
-      .sort((a, b) => b.y - a.y);
+    // Capture original positions (we'll need them as "anchors" — we never
+    // want to push a label further from its true Y than necessary).
+    const items = annotations.map((a, i) => ({ i, original: a.y, y: a.y }));
 
-    // Top-down pass: each label must be at least minGap below the previous.
-    for (let k = 1; k < order.length; k++) {
-      const prev = order[k - 1].y;
-      if (order[k].y > prev - minGap) order[k].y = prev - minGap;
-    }
+    // Sort by original Y ascending (bottom → top).
+    items.sort((a, b) => a.original - b.original);
 
-    // If the bottom-most label fell below yLo, shift the whole stack up while
-    // respecting yHi as the ceiling.
-    const bottom = order[order.length - 1].y;
-    if (bottom < yLo) {
-      const shift = yLo - bottom;
-      for (const o of order) o.y = Math.min(yHi, o.y + shift);
-      // Bottom-up pass to restore minGap if the top-clamp compressed pairs.
-      for (let k = order.length - 2; k >= 0; k--) {
-        const next = order[k + 1].y;
-        if (order[k].y < next + minGap) order[k].y = next + minGap;
+    // Bottom-up greedy packing: each label must sit at least minGap above
+    // the previous one.
+    for (let pass = 0; pass < 4; pass++) {
+      // Bottom-up sweep
+      items[0].y = Math.max(items[0].original, yLo);
+      for (let k = 1; k < items.length; k++) {
+        const minY = items[k - 1].y + minGap;
+        items[k].y = Math.max(items[k].original, minY);
       }
+
+      // If the top exceeds yHi, switch to top-down: clamp the top to yHi and
+      // push downward maintaining minGap.
+      const top = items[items.length - 1].y;
+      if (top <= yHi) break;
+
+      items[items.length - 1].y = yHi;
+      for (let k = items.length - 2; k >= 0; k--) {
+        const maxY = items[k + 1].y - minGap;
+        items[k].y = Math.min(items[k].original, maxY);
+        // If even at maxY we're below yLo, accept the floor — the chart is
+        // too small for the label count; better to clip than overlap.
+        if (items[k].y < yLo) items[k].y = yLo;
+      }
+      // Re-converge: another bottom-up may be needed if floor was hit.
     }
 
-    for (const o of order) annotations[o.i].y = o.y;
+    for (const it of items) annotations[it.i].y = it.y;
   }
 
   const allDates = traces.flatMap((t) => (t.x as string[]) ?? []).sort();
