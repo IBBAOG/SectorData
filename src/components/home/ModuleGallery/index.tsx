@@ -51,17 +51,19 @@ interface AccentTokens {
 
 const ACCENTS: Record<HomeCategory, AccentTokens> = {
   markets: {
-    // Light-yellow family per user request (2026-05-28) — visually separates
-    // the MARKETS group (Market Watch, News Hunter) from O&G (peach) and
-    // Fuel (emerald). bg #fff8d6 (very low-sat yellow), fg #a16207
-    // (amber-700, AA-compliant ~5.6:1).
-    accent:      "#a16207",                    // amber-700
-    accentText:  "#a16207",
+    // Light-yellow family per user request (2026-05-28). Round 2: the
+    // 10%-alpha amber on the icon tile composited to a muddy beige that
+    // read orange-ish next to the brand chrome. Switching to OPAQUE pale
+    // yellows on the tile so it visibly reads as yellow at rest:
+    //   tile bg #fef3a8 (yellow-200, clearly yellow on the #fff8d6 row),
+    //   tile fg #854d0e (yellow-800 / dark amber, AA on #fef3a8 ~7.4:1).
+    accent:      "#a16207",                    // amber-700 (section dot, accent bar)
+    accentText:  "#854d0e",                    // yellow-800 — used by icon stroke + name on hover
     soft:        "#fff8d6",                    // light yellow row tint (rest + hover)
-    tile:        "rgba(161, 98, 7, 0.10)",
-    tileHover:   "rgba(161, 98, 7, 0.18)",
-    tileBorder:  "rgba(161, 98, 7, 0.16)",
-    glow:        "rgba(161, 98, 7, 0.22)",
+    tile:        "#fef3a8",                    // OPAQUE yellow-200 — readable as yellow
+    tileHover:   "#fde047",                    // yellow-400 — clearly yellow on hover
+    tileBorder:  "rgba(133, 77, 14, 0.20)",
+    glow:        "rgba(202, 138, 4, 0.30)",   // yellow-600 glow
   },
   oilgas: {
     accent:      "#FF5000",                    // brand orange pure (Round 8, per user request)
