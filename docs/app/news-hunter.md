@@ -41,14 +41,20 @@ intentionally NOT ported to mobile/View.tsx. It requires multi-select UX,
 a large modal, and relies on desktop real estate. Tag: `[mobile-only-deferred-clipping]`.
 When clipping lands on mobile, the hook already exposes all article data needed.
 
-### Mobile View (2026-05-28)
+### Mobile View — single-page feed (2026-05-28, simplified)
 
-The mobile View (`mobile/View.tsx`) was added when `/news-hunter` was moved
-from the "desktop-only" list to the "mobile-eligible" list. Until then, the
-mobile entry path mounted `<MobileExcludedRedirect slug="news-hunter" />`,
-which routed mobile visitors back to `/home?excluded=news-hunter` and
-fired an `app-toast`. With the mobile View in place, `page.tsx` is now a
-pure `useIsMobile()` router and the redirect was removed.
+The mobile View (`mobile/View.tsx`) is a **single-page feed** — no tabs,
+no search input, no saved/bookmark surface, no settings/keyword CRUD.
+Users land directly on the feed; the only in-view interaction is the
+horizontal chip row, which filters the feed in-place.
+
+> History: an earlier mobile wave (same day) shipped a 4-tab layout
+> (Feed / Search / Saved / Settings) mirroring desktop. The product
+> decision was to collapse mobile to a monitoring-only feed and let
+> desktop remain the rich surface. The shared hook still exposes
+> `searchTerm` / `bookmarkedUrls` / `toggleBookmark` /
+> `setMobileTab` / `savedArticles` / `newKeyword` / `addKeyword` etc.
+> for desktop — mobile simply stops consuming them.
 
 **Layout (top → bottom — the global mobile chrome `MobileTopBar` /
 `MobileKebabMenu` / `MobileHomePill` / `MobileToastHost` is mounted by
@@ -56,36 +62,22 @@ pure `useIsMobile()` router and the redirect was removed.
 
 1. In-page sticky header — page title "News Hunter" + scan status
    ("latest headline X ago" / "Loading headlines…").
-2. Sticky 4-tab segmented control (`MobileTabBar`, `variant="container"`):
-   **Feed** / **Search** / **Saved** / **Settings**. Active tab uses
-   brand orange. The Saved tab carries a numeric badge with the
-   bookmark count when > 0.
-3. Tab body (one of):
-   - **Feed** — quick-search chip row (mirrors the desktop
-     `QUICK_SEARCH_CHIPS` — same 14 curated terms: Petrobras, PRIO,
-     Vibra, Ultrapar, Cosan, Petróleo, Gasolina, Diesel, PetroReconcavo,
-     Braskem, Brava, Raízen, Compass, OceanPact). Tapping a chip fills
-     the shared `searchTerm` and jumps to the Search tab so the user
-     immediately sees the filtered feed. Below the chips: the
-     ArticleCard list. Anonymous visitors see an AnonCTA banner above
-     the chips. **We deliberately do NOT expose every tracked keyword
-     as a filter pill** — that would dump 27+ default keywords + any
-     user additions at the top of the feed, taking vertical space and
-     adding a competing scroll axis. The desktop never shows tracked
-     keywords inline either; keyword CRUD lives in the Settings tab.
-   - **Search** — search input + ArticleCard list filtered by title /
-     source. Empty state hints what the input does.
-   - **Saved** — ArticleCard list of bookmarked articles only
-     (`bookmarkedUrls`, sourced from `localStorage["nh_bookmarks_v1"]`).
-   - **Settings** — keyword CRUD: chip list with × to remove + add
-     form with **Exact match** checkbox toggle. Anonymous visitors see
-     AnonCTA + a read-only list of the default keywords.
+2. Error banner (if `error` from the hook).
+3. AnonCTA — only when `readOnly` (logged-out visitor). Hints that
+   keyword customization is desktop-only.
+4. Quick-search chip row — 14 curated terms (Petrobras, PRIO, Vibra,
+   Ultrapar, Cosan, Petróleo, Gasolina, Diesel, PetroReconcavo, Braskem,
+   Brava, Raízen, Compass, OceanPact). Same list as desktop's
+   `QUICK_SEARCH_CHIPS`. **Behaviour**: tap a chip → filter feed
+   in-place by substring (case + accent insensitive) against
+   `title + snippet + matched_keywords`. Active chip uses brand-orange
+   background; tap the active chip to clear (= "All"). No selected
+   chip ≡ "All" (no extra "All" pill, by design).
+5. ArticleList — sliced to `MAX_VISIBLE` = 60 most recent matches.
 
-**ArticleCard** is local to `mobile/View.tsx` (not extracted to the
-shared mobile components directory). Each card has:
+**ArticleCard** (local to `mobile/View.tsx`):
 - Domain initial badge (color hashed from domain via `domainColor`)
 - Source name · relative time (`humanizeAge`)
-- Bookmark icon button (fill when bookmarked, stroke when not)
 - Title (line-clamp 3, tap = open URL in new tab via
   `<a target="_blank" rel="noopener noreferrer">`)
 - Snippet (line-clamp 2)
@@ -94,44 +86,22 @@ shared mobile components directory). Each card has:
   (just-arrived flash for ~3.4s after the polling tick that fetched it)
 
 The list is capped at the **60 most recent matching articles** in DOM
-at any time (`MAX_VISIBLE` constant). The mobile feed is monitoring-
-only; deeper paging belongs in the desktop view (which uses
-react-window for full virtualization).
+at any time (`MAX_VISIBLE` constant). Deeper paging belongs in the
+desktop view (which uses react-window for full virtualization).
 
 ### Mobile-only divergences vs desktop (declared)
 
+- **Single-page feed** — no tab navigation; no search input; no Saved
+  panel; no Settings/keyword CRUD on mobile.
+- **No bookmark affordance** — ArticleCard has no bookmark icon. The
+  hook's `bookmarkedUrls` / `toggleBookmark` remain alive for desktop
+  but are no longer consumed by mobile.
 - **No export** — `mobile/View.tsx` has no `ExportFAB`, no Excel/CSV
   buttons (Mobile reform 2026-05-27 § 3.4 — mobile is no-export by
   design).
 - **No admin clipping** — `[mobile-only-deferred-clipping]` (above).
 - **No theme toggle** — mobile is light-only (Mobile reform 2026-05-27).
-  The hook still exposes `theme` / `toggleTheme` for the desktop view;
-  mobile ignores both.
-- **No `react-window` virtualization** — the slice-to-60 fixed cap is
-  cheaper than mounting the lib on a list users won't scroll deeply.
-- _(removed 2026-05-28)_ Earlier mobile waves used a personalized
-  `TopicPillRow` listing every tracked keyword as a pill above the
-  Feed. This was replaced by the same `QUICK_SEARCH_CHIPS` row the
-  desktop uses (14 curated terms) for parity. Tapping a chip on mobile
-  fills `searchTerm` and switches the active tab to **Search** — the
-  desktop equivalent on a tabbed surface.
-
-### Mobile tab state
-
-Tab state lives in the shared hook (`mobileTab: "feed" | "search" |
-"saved" | "settings"`) so future deep-link/back-button behaviour can
-preserve it without rewiring the View. Today it resets to `"feed"` on
-each mount; persistence is not yet implemented (deferred).
-
-### Bookmarks
-
-Bookmarks are local-only (no DB column). The `toggleBookmark` callback
-in `useNewsHunterData` manages `bookmarkedUrls: Set<string>` persisted
-to `localStorage["nh_bookmarks_v1"]`. Desktop currently does not expose
-a bookmark affordance — bookmarks are mobile-only by design (saved
-articles are a phone-context need; on the desktop view the user has
-filters + search + keyword chips). The hook keeps the state cross-View
-to avoid drift if/when the desktop adds the affordance.
+- **No `react-window` virtualization** — slice-to-60 fixed cap.
 
 ## Escopo de código
 
