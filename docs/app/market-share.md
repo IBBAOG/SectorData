@@ -44,7 +44,7 @@ src/app/(dashboard)/market-share/
     View.tsx                   ← mobile UX v2 (thumb-scroll layout per Onda 3 reform)
 ```
 
-### Mobile layout v2 (Onda 3, 2026-05-27) — top → bottom
+### Mobile layout v2 (Onda 3, 2026-05-27; updated 2026-05-28) — top → bottom
 
 1. `MobileTopBar` + `MobileKebabMenu` (account actions)
 2. Title block (h1 + subtitle + period badge)
@@ -53,9 +53,8 @@ src/app/(dashboard)/market-share/
 5. Segment `MobileTabBar` — underline variant (Total / Retail / B2B / TRR; TRR only for Diesel B)
 6. Hero stacked-area chart card (active product × segment, 12M rolling, `MobileChart`)
 7. 2-column legend below chart
-8. Top Distributors list (rank badge + value + MoM delta cards, 5 players)
-9. Comparison table inline (player picker pills capped at 3 + MoM/QTD/YoY/YTD cards)
-10. Filter chip row (Period info chip + Region/UF active chips + `+ Filters` trigger)
+8. Comparison table inline (player picker pills capped at 3 + MoM/QTD/YoY/YTD cards)
+9. Filter chip row (Period info chip + Region/UF active chips + `+ Filters` trigger)
     `FilterDrawer` (Period slider + Region multi-select + UF multi-select + View Mode)
     `MobileHomePill` (floating, replaces old bottom tab bar)
 
@@ -63,6 +62,7 @@ src/app/(dashboard)/market-share/
 - `MobileBottomTabBar` (Overview/Compare/Filters/Profile) — replaced by single `MobileHomePill` + filter chip row
 - `ExportFAB` + `ExportModal` — policy § 3.4: no export on mobile
 - Placeholder tabs (Map/Compare as isolated screens)
+- Top Distributors section (rank badge + progress bar + MoM delta per player) — removed [mobile-only] 2026-05-28; chart legend still identifies players
 
 ### Analyses preserved in both Views
 
@@ -70,7 +70,7 @@ src/app/(dashboard)/market-share/
 |---|---|---|
 | 13 product×segment charts (Diesel B Retail/B2B/TRR/Total, Gasoline C Retail/B2B/Total, Ethanol Retail/B2B/Total, Otto-Cycle Retail/B2B/Total) | Full (all 13 rendered as a 2-column grid) | Product `MobileTabBar` + Segment `MobileTabBar` navigates the same 13 chart variants, one at a time. Hero stacked-area chart reflects active combination. |
 | Comparison table (MoM/QTD/YoY/YTD p.p. delta) | Yes (inline table under each chart) | Inline section (always visible) below Top Distributors — player picker pills (up to 3) + MoM/QTD/YoY/YTD metric cards |
-| Top players ranking with MoM delta | Implicit via chart | Dedicated section above Comparison — rank badge + progress bar + MoM delta per player |
+| Top players ranking with MoM delta | Implicit via chart | Removed from mobile [mobile-only] 2026-05-28 — chart legend still shows players |
 | Export (Tier 2 ExportModal) | Yes | No — policy § 3.4 |
 | Period / Region / UF / Mode filters | Yes (sidebar) | Yes (FilterDrawer bottom sheet triggered from chip row) |
 
