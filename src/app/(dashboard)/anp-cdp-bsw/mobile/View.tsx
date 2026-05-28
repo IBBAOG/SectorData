@@ -16,15 +16,15 @@
  *
  * Intentionally omitted on mobile (vs desktop):
  *   - Per-well view toggle (MobileTabBar removed — field-aggregate only)
- *   - 12-month BSW history table
  *   - Drill-down BottomSheet
  *   - ExportFAB (no export by design — consistent with desktop)
  *   - Plot-style toggle (defaults to markers+lines; not a primary mobile concern)
  *
- * Binding sync rule [mobile-only]: this commit removes the per-well view toggle
- * and BSW history table that existed in the previous mobile view. Desktop keeps
- * both. Justification: § 4.7 spec explicitly calls for field-aggregate only on
- * mobile ("no well-level toggle on mobile") and no drill-down sheet.
+ * 2026-05-28 update [mobile-only]: the 12-month BSW history table from the
+ * desktop View is now mirrored below the chart, adapted to mobile (compact
+ * font, horizontal scroll with sticky first column, color swatch per field).
+ * The table consumes the same `tableModel` from the hook the desktop reads
+ * — no new RPC, no new derivation.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -96,6 +96,10 @@ export default function MobileView(): React.ReactElement | null {
     setSelectedCampos,
     fieldPoints,
     fieldColor,
+    tableModel,
+    fmtBsw,
+    fmtDelta,
+    computeDeltas,
   } = useAnpCdpBswData();
 
   // Pin viewMode to "field" on mobile — field-aggregate is the only view.
@@ -497,6 +501,259 @@ export default function MobileView(): React.ReactElement | null {
               <span>X: VOIP recovered</span>
             </div>
           )}
+        </section>
+      )}
+
+      {/* ── 12-month BSW history table (mirrors desktop) ──────────────────── */}
+      {!filtrosLoading && tableModel.rows.length > 0 && (
+        <section
+          style={{
+            margin: "0 16px 16px",
+            padding: "14px 14px 12px",
+            background: "var(--mobile-surface, #fff)",
+            borderRadius: 14,
+            border: "1px solid var(--mobile-border-soft, #f0f0f5)",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              justifyContent: "space-between",
+              marginBottom: 10,
+              gap: 8,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                color: "var(--mobile-text, #1a1a1a)",
+                letterSpacing: "0.02em",
+              }}
+            >
+              Recent BSW history
+            </div>
+            <div
+              style={{
+                fontSize: 10,
+                color: "var(--mobile-text-muted, #6b6b73)",
+                fontWeight: 600,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                flexShrink: 0,
+              }}
+            >
+              Last 12 mo
+            </div>
+          </div>
+
+          <div
+            style={{
+              overflowX: "auto",
+              WebkitOverflowScrolling: "touch",
+              border: "1px solid var(--mobile-border, #e6e6ec)",
+              borderRadius: 10,
+              maxHeight: 360,
+              overflowY: "auto",
+            }}
+          >
+            <table
+              style={{
+                borderCollapse: "separate",
+                borderSpacing: 0,
+                width: "100%",
+                fontFamily: "Arial, Helvetica, sans-serif",
+              }}
+            >
+              <thead>
+                <tr>
+                  <th
+                    style={{
+                      position: "sticky",
+                      left: 0,
+                      top: 0,
+                      zIndex: 2,
+                      background: "var(--mobile-surface-elevated, #fafafc)",
+                      borderBottom: "1px solid var(--mobile-border, #e6e6ec)",
+                      boxShadow: "1px 0 0 var(--mobile-border, #e6e6ec)",
+                      padding: "8px 10px",
+                      textAlign: "left",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "var(--mobile-text-muted, #6b6b73)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.4px",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Field
+                  </th>
+                  {tableModel.months.map((m) => (
+                    <th
+                      key={m}
+                      style={{
+                        position: "sticky",
+                        top: 0,
+                        zIndex: 1,
+                        background: "var(--mobile-surface-elevated, #fafafc)",
+                        borderBottom: "1px solid var(--mobile-border, #e6e6ec)",
+                        padding: "8px 10px",
+                        textAlign: "right",
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: "var(--mobile-text-muted, #6b6b73)",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.4px",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {m}
+                    </th>
+                  ))}
+                  <th
+                    style={{
+                      position: "sticky",
+                      top: 0,
+                      zIndex: 1,
+                      background: "var(--mobile-surface-elevated, #fafafc)",
+                      borderBottom: "1px solid var(--mobile-border, #e6e6ec)",
+                      padding: "8px 10px",
+                      textAlign: "right",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "var(--mobile-text-muted, #6b6b73)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.4px",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    MoM%
+                  </th>
+                  <th
+                    style={{
+                      position: "sticky",
+                      top: 0,
+                      zIndex: 1,
+                      background: "var(--mobile-surface-elevated, #fafafc)",
+                      borderBottom: "1px solid var(--mobile-border, #e6e6ec)",
+                      padding: "8px 10px",
+                      textAlign: "right",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "var(--mobile-text-muted, #6b6b73)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.4px",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    YTD%
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {tableModel.rows.map((row) => {
+                  const { mom, ytd } = computeDeltas(tableModel.months, row.values);
+                  const momFmt = fmtDelta(mom);
+                  const ytdFmt = fmtDelta(ytd);
+                  return (
+                    <tr key={row.item}>
+                      <td
+                        title={row.item}
+                        style={{
+                          position: "sticky",
+                          left: 0,
+                          zIndex: 1,
+                          background: "var(--mobile-surface, #fff)",
+                          boxShadow: "1px 0 0 var(--mobile-border, #e6e6ec)",
+                          borderBottom: "1px solid var(--mobile-border, #f0f0f0)",
+                          padding: "10px 10px",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: "var(--mobile-text, #1a1a1a)",
+                          whiteSpace: "nowrap",
+                          maxWidth: 140,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        <span
+                          aria-hidden
+                          style={{
+                            display: "inline-block",
+                            width: 8,
+                            height: 8,
+                            borderRadius: "50%",
+                            backgroundColor: row.color,
+                            marginRight: 6,
+                            verticalAlign: "middle",
+                            flexShrink: 0,
+                          }}
+                        />
+                        {row.item}
+                      </td>
+                      {tableModel.months.map((m) => (
+                        <td
+                          key={m}
+                          style={{
+                            borderBottom: "1px solid var(--mobile-border, #f0f0f0)",
+                            padding: "10px 10px",
+                            fontSize: 11,
+                            color: "var(--mobile-text, #1a1a1a)",
+                            textAlign: "right",
+                            whiteSpace: "nowrap",
+                            fontVariantNumeric: "tabular-nums",
+                          }}
+                        >
+                          {fmtBsw(row.values[m])}
+                        </td>
+                      ))}
+                      <td
+                        style={{
+                          borderBottom: "1px solid var(--mobile-border, #f0f0f0)",
+                          padding: "10px 10px",
+                          fontSize: 11,
+                          textAlign: "right",
+                          whiteSpace: "nowrap",
+                          fontVariantNumeric: "tabular-nums",
+                          color: momFmt.color,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {momFmt.text}
+                      </td>
+                      <td
+                        style={{
+                          borderBottom: "1px solid var(--mobile-border, #f0f0f0)",
+                          padding: "10px 10px",
+                          fontSize: 11,
+                          textAlign: "right",
+                          whiteSpace: "nowrap",
+                          fontVariantNumeric: "tabular-nums",
+                          color: ytdFmt.color,
+                          fontWeight: 700,
+                        }}
+                      >
+                        {ytdFmt.text}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div
+            style={{
+              marginTop: 8,
+              fontSize: 10,
+              color: "var(--mobile-text-muted, #6b6b73)",
+              lineHeight: 1.4,
+            }}
+          >
+            Swipe horizontally to see all months. MoM and YTD compare the latest available month against the prior month and the first month of the same year.
+          </div>
         </section>
       )}
 

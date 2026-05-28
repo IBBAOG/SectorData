@@ -43,7 +43,7 @@ Exports:
 | Viewport router (`useIsMobile`) | `page.tsx` |
 | Data fetching, filters, view/style state, chart traces, 12-month table model, format helpers | `useAnpCdpBswData.ts` |
 | Desktop UX — Bootstrap sidebar (`#sidebar`) with `SearchableMultiSelect`, two `SegmentedToggle`s (View, Plot style), chart via `PlotlyChart`, history table | `desktop/View.tsx` |
-| Mobile UX — `MobileTopBar` + `MobileKebabMenu` + page heading + sticky Campo filter chip row + hero `MobileChart` (field-aggregate only) + `MobileHomePill`; `FilterDrawer` with campo chip-cloud + search | `mobile/View.tsx` |
+| Mobile UX — `MobileTopBar` + `MobileKebabMenu` + page heading + sticky Campo filter chip row + hero `MobileChart` (field-aggregate only) + **12-month BSW history table** (horizontal scroll, sticky first column) + `MobileHomePill`; `FilterDrawer` with campo chip-cloud + search | `mobile/View.tsx` |
 
 Both Views consume `useAnpCdpBswData()` exclusively — neither touches Supabase or `rpc.ts`. The hook is the single source of truth:
 
@@ -62,7 +62,7 @@ Mobile is "same analysis, adapted clothing" per plan § 4.7 (non-flagship).
 | **Field-aggregate only** — per-well view toggle removed | Plan § 4.7 explicit: "field-aggregate view ONLY, no well-level toggle on mobile" |
 | `viewMode` pinned to `"field"` on mount via `useEffect` | Hook owns mode state; mobile forces field-fetch without modifying the hook contract |
 | Field traces built locally from `fieldPoints` (not from `mobileChartTraces`) | Avoids dependency on hook's `viewMode` state during the mount cycle |
-| 12-month BSW history table removed | Plan § 4.7: no drill-down, no secondary data table on mobile |
+| **12-month BSW history table mirrored from desktop (2026-05-28)** — compact font, horizontal scroll with sticky first column, color swatch per field; shows the latest 12 months of volume-weighted BSW per selected field plus MoM% / YTD% deltas | User feedback: the table is the natural numeric counterpart to the chart and was already free in the shared hook (`tableModel` from `useAnpCdpBswData`). Reverses the original Onda 3 omission. |
 | Plot-style toggle removed from `FilterDrawer` | Defaults to `markers+lines`; one fewer decision for mobile user |
 | `MobileHomePill` always visible | Global nav for the Onda 3 reform — routes back to /home |
 | `MobileKebabMenu` in `MobileTopBar` rightSlot | Account actions (logout) via bottom-sheet, per Onda 1 pattern |
