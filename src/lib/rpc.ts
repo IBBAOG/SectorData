@@ -3610,6 +3610,149 @@ export async function rpcGetProductionBrazilInstallationTimeseries(
   }));
 }
 
+// ─── Unified export — well-level full history ─────────────────────────────────
+//
+// Backing the /well-by-well export tab of the unified export library (Tier 2,
+// 5 sheets, filterSource "none"). Each call returns 1 row per (ano, mes,
+// campo, poço) over the full history — these RPCs intentionally ignore the
+// dashboard's Period / Reference Month filters because the export contract
+// says "always full history". For company sheets, values are stake-weighted
+// server-side and include `stake_pct` (the working interest the company
+// holds in the field at that row's reference period); the Brasil sheet does
+// not include `stake_pct` (everything is 100% WI).
+//
+// Source-of-truth migration (shipped in parallel by worker_supabase):
+//   supabase/migrations/* — `get_production_brazil_well_full_history()` and
+//   `get_production_well_full_history(p_empresa text)`.
+//
+// Both RPCs are SECURITY DEFINER (Pegadinha #18). If they ever fail at the
+// network layer the wrappers log + return `[]` — the modal SizeEstimator and
+// the workbook builder both degrade to "0 rows" rather than crashing.
+
+/**
+ * Row shape for the well-level export. Mirrors the columns declared in the
+ * ExportSpec at `src/lib/export/dashboards/wellByWell.ts`. The `stake_pct`
+ * field is only meaningful on company rows; the Brasil RPC returns null
+ * (or omits the column) and the typed wrapper coerces to 100 for safety.
+ */
+export interface ProductionWellFullHistoryRow {
+  ano: number;
+  mes: number;
+  bacia: string | null;
+  estado: string | null;
+  ambiente: string | null;
+  campo: string | null;
+  poco: string | null;
+  operador: string | null;
+  instalacao: string | null;
+  oil_bbl_dia: number;
+  gas_mm3_dia: number;
+  water_bbl_dia: number;
+  uptime_hs_mes: number;
+  stake_pct: number;
+}
+
+/**
+ * Stake-weighted full history at well level for one company.
+ * Returns one row per (ano, mes, campo, poço); values are scaled by the
+ * company's stake in the field for that period. Used by the four company
+ * sheets of the /well-by-well unified export.
+ */
+export async function rpcGetProductionWellFullHistory(
+  supabase: SupabaseClient,
+  empresa: string,
+): Promise<ProductionWellFullHistoryRow[]> {
+  const { data, error } = await supabase.rpc("get_production_well_full_history", {
+    p_empresa: empresa,
+  });
+  if (error) {
+    console.error("get_production_well_full_history failed", error);
+    return [];
+  }
+  const rows = (data ?? []) as Array<{
+    ano:            number | string;
+    mes:            number | string;
+    bacia:          string | null;
+    estado:         string | null;
+    ambiente:       string | null;
+    campo:          string | null;
+    poco:           string | null;
+    operador:       string | null;
+    instalacao:     string | null;
+    oil_bbl_dia:    number | string | null;
+    gas_mm3_dia:    number | string | null;
+    water_bbl_dia:  number | string | null;
+    uptime_hs_mes:  number | string | null;
+    stake_pct:      number | string | null;
+  }>;
+  return rows.map((r) => ({
+    ano:           Number(r.ano),
+    mes:           Number(r.mes),
+    bacia:         r.bacia ?? null,
+    estado:        r.estado ?? null,
+    ambiente:      r.ambiente ?? null,
+    campo:         r.campo ?? null,
+    poco:          r.poco ?? null,
+    operador:      r.operador ?? null,
+    instalacao:    r.instalacao ?? null,
+    oil_bbl_dia:   Number(r.oil_bbl_dia ?? 0),
+    gas_mm3_dia:   Number(r.gas_mm3_dia ?? 0),
+    water_bbl_dia: Number(r.water_bbl_dia ?? 0),
+    uptime_hs_mes: Number(r.uptime_hs_mes ?? 0),
+    stake_pct:     Number(r.stake_pct ?? 0),
+  }));
+}
+
+/**
+ * Brazil-wide (100% WI) full history at well level. Returns one row per
+ * (ano, mes, campo, poço) without stake math. Used by the Brasil sheet of
+ * the /well-by-well unified export. `stake_pct` always coerces to 100.
+ */
+export async function rpcGetProductionBrazilWellFullHistory(
+  supabase: SupabaseClient,
+): Promise<ProductionWellFullHistoryRow[]> {
+  const { data, error } = await supabase.rpc(
+    "get_production_brazil_well_full_history",
+    {},
+  );
+  if (error) {
+    console.error("get_production_brazil_well_full_history failed", error);
+    return [];
+  }
+  const rows = (data ?? []) as Array<{
+    ano:            number | string;
+    mes:            number | string;
+    bacia:          string | null;
+    estado:         string | null;
+    ambiente:       string | null;
+    campo:          string | null;
+    poco:           string | null;
+    operador:       string | null;
+    instalacao:     string | null;
+    oil_bbl_dia:    number | string | null;
+    gas_mm3_dia:    number | string | null;
+    water_bbl_dia:  number | string | null;
+    uptime_hs_mes:  number | string | null;
+    stake_pct:      number | string | null;
+  }>;
+  return rows.map((r) => ({
+    ano:           Number(r.ano),
+    mes:           Number(r.mes),
+    bacia:         r.bacia ?? null,
+    estado:        r.estado ?? null,
+    ambiente:      r.ambiente ?? null,
+    campo:         r.campo ?? null,
+    poco:          r.poco ?? null,
+    operador:      r.operador ?? null,
+    instalacao:    r.instalacao ?? null,
+    oil_bbl_dia:   Number(r.oil_bbl_dia ?? 0),
+    gas_mm3_dia:   Number(r.gas_mm3_dia ?? 0),
+    water_bbl_dia: Number(r.water_bbl_dia ?? 0),
+    uptime_hs_mes: Number(r.uptime_hs_mes ?? 0),
+    stake_pct:     Number(r.stake_pct ?? 100),
+  }));
+}
+
 // ─── MODULE: Alerts (/alerts) ─────────────────────────────────────────────────
 //
 // User-facing subscription management. All wrappers here are callable by both

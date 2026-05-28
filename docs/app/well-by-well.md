@@ -356,20 +356,47 @@ The top KPI strip on the dashboard page was removed in Round 6 (broken Δ MoM/Yo
 
 Both Views consume `useProductionData`. Neither calls Supabase directly. The hook owns: view state machine, period/refMonth state, RPC orchestration (7 separate debounced/intent-driven fetches that branch on view), drill KPI math, and export plumbing. (Round 14 removed the `ambientes` state and filter — `get_production_brazil_aggregate` and `get_production_company_aggregate` are now always called with `p_ambientes = null`.)
 
-## Export tier
+## Export
 
-**Tier 1** (direct download, no precount modal — dataset is small by construction: monthly × ≤120 months × ≤3 ambientes ≈ <500 rows for Brazil/Company, ≤10 rows for Top Fields, ≤50 rows for Installations).
+**Tier 2 · unified library · always full history.** Migrated from the legacy per-dashboard exporter to the unified library at `src/lib/export/` on 2026-05-28 (see `docs/app/export-library-contract.md`). The dashboard now exposes a single `<ExportButton spec={wellByWellExport} />` in the `DashboardHeader.rightSlot`, which opens the universal modal with a size estimator + Excel/CSV format toggle.
 
-In **Brasil view**, the Company sheet/CSV is omitted (it would be empty under the no-stake-weighting model).
+The export is **decoupled from the screen filters**. `filterSource: "none"` — the Period selector and Reference Month dropdown scope what is rendered on screen, but every export returns the full history at well level, no period clipping, no view scoping (all five views are always present). This matches the executive-report use case: the user toggles views to look around, then downloads everything once for offline analysis.
 
-| Format | What | Filename |
-|---|---|---|
-| Excel `.xlsx` | Brazil aggregate · (Company aggregate, company view only) · Top Fields · Installations | `Production {View} DD-MM-YY.xlsx` |
-| CSV `.zip` | Same datasets, one CSV each, bundled | `Production {View} DD-MM-YY.zip` |
+Spec: `src/lib/export/dashboards/wellByWell.ts` (`wellByWellExport`).
 
-Both exports honor the active filter scope (period + reference month). They do NOT re-fetch unfiltered data. The ambiente axis is always all-three (Round 14 removed the filter); the per-environment split is preserved in the exported rows.
+| Property | Value |
+|---|---|
+| `filename` | `BrazilProductionSummary` → e.g. `BrazilProductionSummary_28-05-26.xlsx` / `.csv` |
+| `tier` | `2` (modal with size estimator + format toggle) |
+| `filterSource` | `"none"` (no filter editor; ignores screen Period filter) |
+| Excel sheets | 5 — `Brasil`, `Petrobras`, `PRIO`, `PetroReconcavo`, `Brava Energia`. Each sheet = a view name. |
+| CSV mode | `single-with-discriminator` with discriminator column `view` — one `.csv` file, with a `view` column whose value is one of the 5 view names. |
 
-ExcelJS and JSZip are dynamically imported on demand to avoid bloating the initial bundle.
+**Per-row schema** (1 row per `(ano, mes, campo, poço)`):
+
+| Column | Brasil | Companies | Source |
+|---|---|---|---|
+| `ano`, `mes` | yes | yes | ANP reference month |
+| `bacia`, `estado`, `ambiente` | yes | yes | `anp_cdp_producao` carry-through |
+| `campo`, `poco`, `operador`, `instalacao` | yes | yes | `anp_cdp_producao` carry-through |
+| `oil_bbl_dia`, `gas_mm3_dia`, `water_bbl_dia` | 100% WI | stake-weighted | server-side aggregation |
+| `uptime_hs_mes` | yes | yes | wells operating hours in the month |
+| `stake_pct` | omitted (always 100) | yes | `field_stakes.stake_pct` for the (campo, empresa) pair |
+
+**Backend RPCs** (owned by `worker_supabase`, shipped in parallel):
+
+- `get_production_brazil_well_full_history()` — Brasil sheet (no stake math).
+- `get_production_well_full_history(p_empresa text)` — one call per company sheet, stake-weighted.
+
+Both RPCs are `SECURITY DEFINER` granted to `anon + authenticated` (Pegadinha #18). They ignore the dashboard filters by design.
+
+**Modal size estimator.** There is no dedicated count helper RPC; the estimator calls all 5 row-fetching RPCs in parallel and sums the resulting lengths. `SizeEstimator` debounces this to 300ms and only fires on modal open / format toggle, so the cost is bounded. Wrapper: `countAllRows()` in `src/lib/export/dashboards/wellByWell.ts`.
+
+**No charts in Excel.** Pure tabular export.
+
+**Mobile.** No export on mobile per the Mobile reform v2 (2026-05-27); `ExportButton` returns `null` when `useIsMobile()` is `true`.
+
+> Legacy ExcelJS/JSZip plumbing in `useProductionData.ts` (`handleExportExcel`, `handleExportCsv`, `excelLoading`, `csvLoading`, `setExcelLoading`, `setCsvLoading`) is no longer wired into the View but remains in the hook. Cleanup is scheduled with the global `src/lib/exportExcel.ts` removal once all dashboards finish migrating.
 
 ## Visibility
 
