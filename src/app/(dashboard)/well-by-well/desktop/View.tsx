@@ -239,16 +239,41 @@ function buildFieldDrillChart(
 ): { data: PlotData[]; layout: Partial<Layout> } {
   if (!rows.length) return emptyPlot(320, "No data for this field in the current period.");
 
-  const sorted = [...rows].sort((a, b) => {
+  // Defensive consolidation: server RPC already GROUPs BY (ano, mes), but if
+  // the canonical-expansion path ever returns duplicates we collapse them
+  // here too — sum oil/water/gas, average hours_rate. Stops Plotly from
+  // rendering two stacked bars on the same x-tick.
+  const byMonth = new Map<string, {
+    ano: number; mes: number;
+    oil: number; water: number;
+    hoursSum: number; hoursCount: number;
+  }>();
+  for (const r of rows) {
+    const key = `${String(r.ano).padStart(4, "0")}-${String(r.mes).padStart(2, "0")}`;
+    const cur = byMonth.get(key);
+    if (cur) {
+      cur.oil   += r.oil_bbl_dia;
+      cur.water += r.water_bbl_dia;
+      cur.hoursSum += r.hours_rate;
+      cur.hoursCount += 1;
+    } else {
+      byMonth.set(key, {
+        ano: r.ano, mes: r.mes,
+        oil: r.oil_bbl_dia, water: r.water_bbl_dia,
+        hoursSum: r.hours_rate, hoursCount: 1,
+      });
+    }
+  }
+  const sorted = Array.from(byMonth.values()).sort((a, b) => {
     if (a.ano !== b.ano) return a.ano - b.ano;
     return a.mes - b.mes;
   });
   const xs = sorted.map(
     (r) => `${String(r.ano).padStart(4, "0")}-${String(r.mes).padStart(2, "0")}-01`,
   );
-  const oil = sorted.map((r) => bblDiaToKbpd(r.oil_bbl_dia));
-  const water = sorted.map((r) => bblDiaToKbpd(r.water_bbl_dia));
-  const hoursPct = sorted.map((r) => r.hours_rate * 100);
+  const oil = sorted.map((r) => bblDiaToKbpd(r.oil));
+  const water = sorted.map((r) => bblDiaToKbpd(r.water));
+  const hoursPct = sorted.map((r) => (r.hoursCount > 0 ? r.hoursSum / r.hoursCount : 0) * 100);
 
   return {
     data: [
@@ -291,7 +316,15 @@ function buildFieldDrillChart(
       xaxis: {
         ...AXIS_LINE,
         type: "date",
-        tickformat: "%b %Y",
+        // Pin one tick per data-month with explicit tickvals so a short series
+        // (e.g. a recently-onlined well like WAHOO with only 3–4 months of
+        // history) doesn't trigger Plotly's auto-tick algorithm — which on a
+        // sparse date axis picks ~4–5 evenly-spaced positions that round to
+        // the same month label twice (visible bug 2026-05-28: "Feb 26 ·
+        // Mar 26 · Mar 26 · Apr 26"). Same pattern as the hero chart above.
+        tickmode: "array",
+        tickvals: xs,
+        ticktext: xs.map((m) => fmtMonthLabel(m)),
       },
       yaxis: {
         ...AXIS_LINE,
