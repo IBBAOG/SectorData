@@ -2685,35 +2685,26 @@ a {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* MobileHomePill — press & focus feedback (can't be inline-styled in JSX).
-   The pill renders a Liquid Glass capsule via inline style; here we layer
-   the brand-orange halo on :active and the accessibility outline on
-   :focus-visible. Halo uses --mobile-accent-glow (rgba). */
-.mobile-home-pill:active {
-  transform: translateX(-50%) scale(0.96);
-  box-shadow:
-    0 0 0 6px var(--mobile-accent-glow),
-    0 8px 24px rgba(15, 23, 42, 0.08),
-    0 2px 6px rgba(15, 23, 42, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.7);
-}
-.mobile-home-pill:focus-visible {
-  outline: 2px solid var(--mobile-accent);
-  outline-offset: 3px;
-}
+/* MobileHomePill + MobileNewsHunterPill — press & focus feedback.
+   Both pills render a Liquid Glass capsule via inline style and write the
+   horizontal offset to the CSS custom property `--pill-offset` so the layout
+   adapts to the active route (solo when its sibling auto-hides, paired
+   otherwise). The :active rule reads the SAME variable so the press-scale
+   animation stays horizontally locked at any offset, without us duplicating
+   route logic in CSS. Halo uses --mobile-accent-glow (rgba).
 
-/* MobileNewsHunterPill — second floating shortcut, paired with the Home pill.
-   Same press/focus treatment, but the :active transform preserves the
-   horizontal offset (Home pill centers via translateX(-50%); this one centers
-   then offsets by PILL_W + GAP = 78px so the inner edges sit 14px apart). */
+   See MobileHomePill.tsx / MobileNewsHunterPill.tsx § "Positioning math" for
+   the offset values and the route → mode mapping. */
+.mobile-home-pill:active,
 .mobile-news-hunter-pill:active {
-  transform: translateX(calc(-50% + 78px)) scale(0.96);
+  transform: translateX(calc(-50% + var(--pill-offset, 0px))) scale(0.96);
   box-shadow:
     0 0 0 6px var(--mobile-accent-glow),
     0 8px 24px rgba(15, 23, 42, 0.08),
     0 2px 6px rgba(15, 23, 42, 0.06),
     inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
+.mobile-home-pill:focus-visible,
 .mobile-news-hunter-pill:focus-visible {
   outline: 2px solid var(--mobile-accent);
   outline-offset: 3px;

@@ -12,17 +12,32 @@
 // Visual recipe (Liquid Glass v2):
 //   Identical to MobileHomePill — same diameter (64×56 capsule), same blur,
 //   same border, same shadow stack. The only divergence is the icon
-//   (NewspaperIcon) and the horizontal offset so the two pills sit side-by-
-//   side instead of overlapping at the viewport center.
+//   (NewspaperIcon) and the horizontal offset relative to the viewport center.
 //
-// Positioning math (paired layout):
-//   Home pill is anchored at `left: 50%` then `translateX(-50%)` — i.e. its
-//   geometric center sits on the viewport vertical centerline.
-//   This pill is anchored at `left: 50%` then `translateX(calc(-50% + offset))`
-//   where `offset` = (PILL_W / 2) + GAP + (PILL_W / 2) = PILL_W + GAP, so the
-//   inner edges of the two pills are GAP px apart. With PILL_W=64 and GAP=14
-//   that puts this pill's center 78px to the right of the Home pill's center.
-//   Both pills share the same `bottom` so the row is visually balanced.
+// Positioning math (two modes — see "Why two modes" below):
+//   Both pills are anchored at `left: 50%` and translated by
+//   `translateX(calc(-50% + var(--pill-offset)))`. The `--pill-offset` CSS
+//   custom property is set inline by each pill based on the active route:
+//
+//   ┌──────────────────┬─────────────────┬──────────────────────────────────┐
+//   │ Route            │ Visible pills   │ News Hunter pill offset          │
+//   ├──────────────────┼─────────────────┼──────────────────────────────────┤
+//   │ /home            │ News Hunter     │  0px      (solo, centered)       │
+//   │ /news-hunter     │ Home only       │  hidden   (n/a)                  │
+//   │ everywhere else  │ Home + News     │  +39px    (paired, balanced)     │
+//   └──────────────────┴─────────────────┴──────────────────────────────────┘
+//
+//   "Paired" offset = (PILL_W + GAP) / 2 = (64 + 14) / 2 = 39px, so that the
+//   pair as a group is centered around the viewport vertical centerline with
+//   GAP px between their inner edges. Home pill mirrors this with −39px.
+//
+// Why two modes:
+//   On /home the Home pill auto-hides (would be a no-op). Before this change
+//   the News Hunter pill stayed at its paired offset (+78px), which made the
+//   only visible pill look off-center on /home. Switching to a route-aware
+//   offset keeps the solo pill on the viewport centerline (the natural
+//   resting position of any single floating action), while the paired layout
+//   stays balanced as a group on every other route.
 //
 // Behaviour:
 //   • Hidden on /news-hunter (would be redundant) — same pattern Home uses
@@ -36,16 +51,18 @@
 //     and tapping it routes via the redirect inside the page. Acceptable —
 //     no extra client-side complexity here.
 
+import type { CSSProperties } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { NewspaperIcon } from "./icons";
 
 const PILL_W = 64;
 const PILL_H = 56;
-// Visual gap between the two pills' inner edges, in pixels.
+// Visual gap between the two pills' inner edges in paired layout, in pixels.
 const GAP = 14;
-// Distance to offset this pill's center from the viewport center.
-// PILL_W + GAP places the inner edges GAP px apart.
-const CENTER_OFFSET = PILL_W + GAP;
+// Paired-mode offset from the viewport center.
+// (PILL_W + GAP) / 2 keeps the inner edges GAP px apart AND centers the pair
+// as a group around the viewport's vertical centerline.
+const PAIRED_OFFSET = (PILL_W + GAP) / 2;
 
 export interface MobileNewsHunterPillProps {
   /** Override the route target. Defaults to /news-hunter. */
@@ -73,51 +90,66 @@ export default function MobileNewsHunterPill(
     (pathname === "/news-hunter" || pathname.startsWith("/news-hunter/"));
   if (onNewsHunter && !forceVisible) return null;
 
+  // Mode resolution — solo on /home (Home pill is hidden there), paired on
+  // every other route. The offset is exposed as a CSS custom property so the
+  // `:active` rule in globals.css can re-use it without duplicating route
+  // logic. See "Positioning math" in the header comment.
+  const onHome =
+    !!pathname && (pathname === "/home" || pathname.startsWith("/home/"));
+  const offsetPx = onHome ? 0 : PAIRED_OFFSET;
+  const positionMode = onHome ? "solo" : "paired";
+
   return (
     <button
       type="button"
       onClick={() => router.push(href)}
       aria-label={ariaLabel}
       className="mobile-news-hunter-pill"
-      style={{
-        // Positioning — fixed, offset to the right of the Home pill, sitting
-        // above safe-area inset. See "Positioning math" in the header comment.
-        position: "fixed",
-        left: "50%",
-        bottom: `calc(24px + ${"var(--mobile-safe-bottom)"})`,
-        transform: `translateX(calc(-50% + ${CENTER_OFFSET}px))`,
-        zIndex: 1000,
+      data-position={positionMode}
+      style={
+        {
+          // Positioning — fixed, route-aware offset, sitting above safe-area
+          // inset. `--pill-offset` is the single source of truth; the :active
+          // rule in globals.css reads the same variable to preserve the
+          // horizontal placement during the press-scale animation.
+          position: "fixed",
+          left: "50%",
+          bottom: `calc(24px + ${"var(--mobile-safe-bottom)"})`,
+          "--pill-offset": `${offsetPx}px`,
+          transform: "translateX(calc(-50% + var(--pill-offset)))",
+          zIndex: 1000,
 
-        // Box model — matches Home pill exactly.
-        width: PILL_W,
-        height: PILL_H,
-        minWidth: PILL_W,
-        minHeight: PILL_H,
-        padding: 0,
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
+          // Box model — matches Home pill exactly.
+          width: PILL_W,
+          height: PILL_H,
+          minWidth: PILL_W,
+          minHeight: PILL_H,
+          padding: 0,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
 
-        // Shape — full capsule.
-        borderRadius: 999,
+          // Shape — full capsule.
+          borderRadius: 999,
 
-        // Liquid Glass v2 surface (identical to Home pill).
-        background:
-          "linear-gradient(180deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0) 50%), var(--mobile-glass-bg)",
-        WebkitBackdropFilter: "var(--mobile-glass-blur)",
-        backdropFilter: "var(--mobile-glass-blur)",
-        border: "1px solid var(--mobile-glass-border)",
-        boxShadow: "var(--mobile-glass-shadow)",
+          // Liquid Glass v2 surface (identical to Home pill).
+          background:
+            "linear-gradient(180deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0) 50%), var(--mobile-glass-bg)",
+          WebkitBackdropFilter: "var(--mobile-glass-blur)",
+          backdropFilter: "var(--mobile-glass-blur)",
+          border: "1px solid var(--mobile-glass-border)",
+          boxShadow: "var(--mobile-glass-shadow)",
 
-        // Foreground.
-        color: "var(--mobile-text)",
-        fontFamily: "Arial, Helvetica, sans-serif",
-        cursor: "pointer",
+          // Foreground.
+          color: "var(--mobile-text)",
+          fontFamily: "Arial, Helvetica, sans-serif",
+          cursor: "pointer",
 
-        // Motion.
-        transition:
-          "transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.18s cubic-bezier(0.4, 0, 0.2, 1), background 0.18s ease",
-      }}
+          // Motion.
+          transition:
+            "transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.18s cubic-bezier(0.4, 0, 0.2, 1), background 0.18s ease",
+        } as CSSProperties
+      }
     >
       <NewspaperIcon size={22} aria-hidden />
     </button>
