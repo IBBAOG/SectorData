@@ -111,10 +111,11 @@ const MBPD_VIEWS: ReadonlySet<WellByWellView> = new Set<WellByWellView>([
  *  View continues to consume the full list. */
 const MOBILE_PERIOD_PRESETS: readonly PeriodPreset[] = ["last12m", "last24m", "ytd"];
 
-/** Cap the FPSO/UEP horizontal bar to 15 installations — beyond this, the
- *  list becomes unscanably long on a 6" phone. The full list is accessible
- *  via the section's "rows below the chart" cards (no cap there). */
-const FPSO_CHART_CAP = 15;
+/** Maximum installations to display in the Brazil aggregate view. Company
+ *  views show all installations (no cap) because any single company's FPSO
+ *  count is small. Brazil aggregates all ~60+ installations nationally, so
+ *  a top-30 cap keeps the list manageable without losing material platforms. */
+const FPSO_BRAZIL_CAP = 30;
 
 /** Display map for the 5 scope pills. Underlying state values come from
  *  `WELL_BY_WELL_VIEWS` (the canonical normalized forms used in
@@ -257,55 +258,15 @@ function buildHeroStackedSeries(
   };
 }
 
-// ─── FPSO/UEP chart (Section 3) ──────────────────────────────────────────────
-
-interface FpsoChartBuild {
-  data: PlotData[];
-  annotations: Partial<Layout>["annotations"];
-  height: number;
-}
-
-/** Horizontal bar of oil kbpd by installation, capped to FPSO_CHART_CAP. The
- *  spec calls for "stacked bar" but the underlying data is a single oil value
- *  per installation (no environment split), so the practical visualisation is
- *  a single-series horizontal bar with the value annotated at the bar end. */
-function buildFpsoChart(insts: ProductionInstallation[]): FpsoChartBuild {
-  if (!insts.length) return { data: [], annotations: [], height: 180 };
-  const sorted = [...insts].sort((a, b) => b.oil_bbl_dia - a.oil_bbl_dia).slice(0, FPSO_CHART_CAP);
-  const names = sorted.map((i) => i.instalacao);
-  const oil   = sorted.map((i) => bblDiaToKbpd(i.oil_bbl_dia));
-  return {
-    data: [
-      {
-        type: "bar",
-        orientation: "h",
-        name: "Oil",
-        x: oil,
-        y: names,
-        text: oil.map((v) =>
-          v >= MIN_SEGMENT_KBPD_LABEL ? fmtIntPtBr(v) : "",
-        ),
-        textposition: "inside",
-        insidetextanchor: "middle",
-        textfont: { color: "#ffffff", size: 10, family: "Arial" },
-        cliponaxis: false,
-        marker: { color: TOP_FIELDS_OIL_COLOR },
-        hovertemplate: "Oil: %{x:,.1f} kbpd<extra>%{y}</extra>",
-      } as PlotData,
-    ],
-    annotations: names.map((n, i) => ({
-      x: oil[i],
-      y: n,
-      text: `<b>${fmtIntPtBr(oil[i])}</b>`,
-      showarrow: false,
-      xshift: 6,
-      xanchor: "left",
-      yanchor: "middle",
-      font: { size: 10, color: "#1a1a1a", family: "Arial" },
-    })),
-    height: Math.max(220, names.length * 24),
-  };
-}
+// ─── FPSO/UEP section (Section 3) ────────────────────────────────────────────
+//
+// The horizontal bar chart that previously appeared above the platform card
+// list was removed (2026-05-28, [mobile-only] — Eduardo: chart was redundant
+// with the sorted list below it). Only the tap-to-drill card list remains.
+//
+// Caps: company views show ALL platforms (any single company has ≤ ~10 FPSOs);
+// Brazil aggregate shows top 30 by oil production (≥ 60 national platforms is
+// too long to scan usefully on a phone).
 
 // ─── Drill (Section 2 + Section 3 sheet) — monthly timeseries chart ─────────
 
@@ -1048,8 +1009,12 @@ export default function MobileView(): React.ReactElement | null {
     [aggregateRows, heroUnitIsMbpd],
   );
 
-  // ── Section 3 — FPSO/UEP horizontal bar ──────────────────────────────────
-  const fpsoChart = useMemo(() => buildFpsoChart(installations), [installations]);
+  // ── Section 3 — FPSO/UEP platform card list ──────────────────────────────
+  // Sorted desc by oil production; cap only applied for Brazil aggregate view.
+  const fpsoList = useMemo(() => {
+    const sorted = [...installations].sort((a, b) => b.oil_bbl_dia - a.oil_bbl_dia);
+    return viewIsCompany ? sorted : sorted.slice(0, FPSO_BRAZIL_CAP);
+  }, [installations, viewIsCompany]);
 
   // ── Drill chart series (reused by both field & installation BottomSheets)
   const drillFieldSeries = useMemo(
@@ -1214,112 +1179,101 @@ export default function MobileView(): React.ReactElement | null {
           />
         </SectionCard>
 
-        {/* ── SECTION 3 — FPSO/UEP horizontal bar + tap-to-drill rows ─ */}
+        {/* ── SECTION 3 — FPSO/UEP tap-to-drill card list ──────────── */}
+        {/* Bar chart removed 2026-05-28 [mobile-only]: redundant with the     */}
+        {/* sorted card list. List now shows all platforms for company views    */}
+        {/* and top-30 for Brazil aggregate.                                   */}
         <SectionCard
           title="Production by FPSO / UEP"
           subtitle={fpsoSubtitle}
           loading={installationsLoading}
         >
-          {fpsoChart.data.length > 0 ? (
-            <>
-              <MobileChart
-                data={fpsoChart.data}
-                height={fpsoChart.height}
-                layout={{
-                  margin: { l: 132, r: 44, t: 8, b: 36 },
-                  yaxis: { automargin: true, tickfont: { size: 10 } },
-                  xaxis: { title: { text: "kbpd" } },
-                  showlegend: false,
-                  annotations: fpsoChart.annotations,
-                }}
-              />
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 6,
-                  marginTop: 10,
-                }}
-              >
-                {installations.slice(0, FPSO_CHART_CAP).map((inst) => (
-                  <button
-                    key={inst.instalacao}
-                    type="button"
-                    onClick={() => openInstallationDrill(inst.instalacao)}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr auto",
-                      alignItems: "center",
-                      gap: 10,
-                      padding: "10px 12px",
-                      background: "var(--mobile-surface-elevated, #fafafc)",
-                      border: "1px solid var(--mobile-border, #e6e6ec)",
-                      borderRadius: 10,
-                      cursor: "pointer",
-                      textAlign: "left",
-                      minHeight: 44,
-                      fontFamily: "Arial, Helvetica, sans-serif",
-                    }}
-                  >
-                    <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-                      <span
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 600,
-                          color: "var(--mobile-text, #1a1a1a)",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {inst.instalacao}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          color: "var(--mobile-text-muted, #888)",
-                          marginTop: 1,
-                        }}
-                      >
-                        Hours {(inst.hours_rate * 100).toFixed(0)}% ·{" "}
-                        {fmtNumber(inst.gas_mm3_dia, 1)} Mm³/d gas
-                      </span>
+          {fpsoList.length > 0 ? (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+              }}
+            >
+              {fpsoList.map((inst) => (
+                <button
+                  key={inst.instalacao}
+                  type="button"
+                  onClick={() => openInstallationDrill(inst.instalacao)}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr auto",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "10px 12px",
+                    background: "var(--mobile-surface-elevated, #fafafc)",
+                    border: "1px solid var(--mobile-border, #e6e6ec)",
+                    borderRadius: 10,
+                    cursor: "pointer",
+                    textAlign: "left",
+                    minHeight: 44,
+                    fontFamily: "Arial, Helvetica, sans-serif",
+                  }}
+                >
+                  <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                    <span
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: "var(--mobile-text, #1a1a1a)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {inst.instalacao}
                     </span>
-                    <span style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                      <span
-                        style={{
-                          fontSize: 14,
-                          fontWeight: 700,
-                          color: "var(--mobile-text, #1a1a1a)",
-                        }}
-                      >
-                        {fmtNumber(bblDiaToKbpd(inst.oil_bbl_dia), 1)}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: 10,
-                          color: "var(--mobile-text-muted, #888)",
-                          marginLeft: 3,
-                        }}
-                      >
-                        kbpd
-                      </span>
-                      <span
-                        style={{
-                          display: "block",
-                          fontSize: 10,
-                          color: "var(--mobile-accent, #ff5000)",
-                          fontWeight: 600,
-                          marginTop: 2,
-                        }}
-                      >
-                        Tap to drill ›
-                      </span>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "var(--mobile-text-muted, #888)",
+                        marginTop: 1,
+                      }}
+                    >
+                      Hours {(inst.hours_rate * 100).toFixed(0)}% ·{" "}
+                      {fmtNumber(inst.gas_mm3_dia, 1)} Mm³/d gas
                     </span>
-                  </button>
-                ))}
-              </div>
-            </>
+                  </span>
+                  <span style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    <span
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: "var(--mobile-text, #1a1a1a)",
+                      }}
+                    >
+                      {fmtNumber(bblDiaToKbpd(inst.oil_bbl_dia), 1)}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        color: "var(--mobile-text-muted, #888)",
+                        marginLeft: 3,
+                      }}
+                    >
+                      kbpd
+                    </span>
+                    <span
+                      style={{
+                        display: "block",
+                        fontSize: 10,
+                        color: "var(--mobile-accent, #ff5000)",
+                        fontWeight: 600,
+                        marginTop: 2,
+                      }}
+                    >
+                      Tap to drill ›
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
           ) : (
             <div
               style={{
