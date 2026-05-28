@@ -2,56 +2,41 @@
 
 // ─── Mobile View — /news-hunter (≤768px) ────────────────────────────────────
 //
-// Spec: docs/app/news-hunter.md § "Dual-view structure" + § "Mobile tab
-// navigation". This file is the long-missing presentation layer for mobile
-// news-hunter — until now `page.tsx` mounted <MobileExcludedRedirect />, but
-// the shared hook (useNewsHunterData) already exposes the full mobile API
-// (`mobileTab`, `topicFilter`, `bookmarkedUrls`, `savedArticles`, etc.), so
-// this file is purely presentation.
+// Spec: docs/app/news-hunter.md § "Mobile single-page feed (2026-05-28)".
+//
+// Mobile is a single-page feed — no tabs, no search input, no saved/bookmark
+// surface, no settings/keyword CRUD. Users land directly on the feed; the only
+// in-view interaction is the horizontal chip row, which filters the feed
+// in-place by substring match across title + snippet + matched_keywords.
 //
 // Layout (top → bottom, the global mobile chrome — MobileTopBar / MobileHomePill
 // / MobileKebabMenu / MobileToastHost — is mounted by (dashboard)/layout.tsx;
 // this View only renders the content area):
 //
 //   1. Sticky in-page header        — page title "News Hunter" + scan status
-//   2. Sticky 4-tab segmented bar    — Feed / Search / Saved / Settings
-//   3. Tab body (one of):
-//        Feed     — quick-search chip row (same curated 14 terms as desktop;
-//                   tapping a chip fills the search term + jumps to Search)
-//                   + ArticleCard list. Anon visitors see an AnonCTA above
-//                   the list. We deliberately do NOT show every tracked
-//                   keyword as a pill — desktop never does that either, and
-//                   keyword CRUD lives in the Settings tab.
-//        Search   — search input + virtualized ArticleCard list
-//        Saved    — bookmarked-only ArticleCard list (localStorage source)
-//        Settings — keyword CRUD (add form with Exact match toggle, chip
-//                   list, remove ×). Anon visitors see AnonCTA + a read-only
-//                   list of default keywords.
+//   2. AnonCTA (anon visitors only) — login nudge
+//   3. Quick-search chip row         — 14 curated chips (All + 14 named).
+//                                      Tapping a chip applies that filter
+//                                      in-place; tapping the active chip clears
+//                                      it. Padrão: nenhum chip selecionado = All.
+//   4. ArticleList                   — sliced to MAX_VISIBLE most recent.
 //
-// Mobile-only divergences vs desktop/View.tsx (declared per § Dual-view
-// policy):
-//   • NO export buttons / FAB                — mobile is no-export by design
-//   • NO admin clipping flow                  — desktop-only (tagged
-//                                               [mobile-only-deferred-clipping])
-//   • NO virtualization library (`react-window`) — list is sliced to MAX_VISIBLE
-//     entries server-side from the hook's already-sorted output to keep DOM
-//     cheap; deeper paging is deferred (mobile feed is monitoring-only).
-//   • NO theme toggle                          — mobile is light-only (Mobile
-//     reform 2026-05-27).
+// Mobile-only divergences vs desktop/View.tsx (declared per § Dual-view policy):
+//   • NO tab navigation          — single-page feed
+//   • NO search input            — chip filtering only
+//   • NO bookmark / Saved tab    — feature removed on mobile
+//   • NO keyword CRUD            — read keywords from hook; CRUD desktop-only
+//   • NO export buttons / FAB    — mobile is no-export by design
+//   • NO virtualization library  — list is sliced to MAX_VISIBLE for cheap DOM
+//   • NO theme toggle             — mobile is light-only (Mobile reform
+//                                    2026-05-27).
 //
-// Binding sync rule (CLAUDE.md § Dual-view policy): meaningful changes here
-// must land in desktop/View.tsx in the SAME commit, OR the commit message
-// must declare [mobile-only] with an explicit reason.
+// Binding sync rule (CLAUDE.md § Dual-view policy): this commit is tagged
+// [mobile-only] — the simplification was a product decision specifically for
+// mobile; desktop retains the full feature set (search, saved, settings).
 
-import { useCallback } from "react";
+import { useMemo, useState } from "react";
 
-import {
-  BookmarkIcon,
-  CloseIcon,
-  PlusIcon,
-  SearchIcon,
-} from "@/components/dashboard/mobile";
-import MobileTabBar from "@/components/dashboard/mobile/MobileTabBar";
 import BarrelLoading from "@/components/dashboard/BarrelLoading";
 
 import {
@@ -59,13 +44,9 @@ import {
   humanizeAge,
   domainColor,
   domainInitial,
-  type MobileTab,
+  stripAccents,
 } from "../useNewsHunterData";
-import type {
-  KeywordEntry,
-  KeywordMatchType,
-  NewsArticle,
-} from "@/context/NewsHunterContext";
+import type { NewsArticle } from "@/context/NewsHunterContext";
 
 // Cap the number of cards in DOM at any time. The mobile feed is
 // monitoring-only; users are not expected to scroll through thousands of
@@ -73,10 +54,8 @@ import type {
 const MAX_VISIBLE = 60;
 
 // ── Quick-search chip constants ──────────────────────────────────────────────
-// Mirrors QUICK_SEARCH_CHIPS in desktop/View.tsx (sync rule). Tapping a chip
-// fills the shared `searchTerm` and switches the user to the Search tab —
-// the desktop equivalent is a single click that fills the search input
-// (the desktop has no tabs).
+// Mirrors QUICK_SEARCH_CHIPS in desktop/View.tsx for terminology parity, but on
+// mobile the chips filter the feed in-place (no separate Search surface).
 const QUICK_SEARCH_CHIPS = [
   "Petrobras",
   "PRIO",
@@ -127,21 +106,16 @@ function AnonCTA({ message }: { message: string }): React.ReactElement {
 
 // ─── ArticleCard ────────────────────────────────────────────────────────────
 //
-// One row in the feed. Tap the card body → opens the article URL in a new
-// tab. Tap the bookmark icon → toggles bookmark (handled via onClick guard
-// since the icon sits inside the same <a>).
+// One row in the feed. Tap anywhere on the card → opens the article URL in a
+// new tab. No bookmark icon on mobile.
 
 interface ArticleCardProps {
   article: NewsArticle;
-  bookmarked: boolean;
-  onToggleBookmark: (url: string) => void;
   isNew: boolean;
 }
 
 function ArticleCard({
   article,
-  bookmarked,
-  onToggleBookmark,
   isNew,
 }: ArticleCardProps): React.ReactElement {
   const initial = domainInitial(article.domain);
@@ -171,7 +145,7 @@ function ArticleCard({
         />
       )}
 
-      {/* Header row: domain badge + source/time + bookmark */}
+      {/* Header row: domain badge + source/time */}
       <div
         style={{
           display: "flex",
@@ -219,34 +193,6 @@ function ArticleCard({
             {humanizeAge(article.published_at)}
           </time>
         </span>
-        <button
-          type="button"
-          onClick={() => onToggleBookmark(article.url)}
-          aria-label={bookmarked ? "Remove bookmark" : "Save article"}
-          aria-pressed={bookmarked}
-          style={{
-            width: 32,
-            height: 32,
-            border: 0,
-            background: "transparent",
-            color: bookmarked
-              ? "var(--mobile-accent)"
-              : "var(--mobile-text-faint)",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            borderRadius: "50%",
-            cursor: "pointer",
-            flexShrink: 0,
-          }}
-        >
-          <BookmarkIcon
-            size={18}
-            // Filled when bookmarked — the shared icon is stroke-only, so
-            // we toggle the `fill` attribute via style override.
-            style={{ fill: bookmarked ? "currentColor" : "none" }}
-          />
-        </button>
       </div>
 
       {/* Title — tappable link */}
@@ -333,20 +279,22 @@ function ArticleCard({
   );
 }
 
-// ─── Quick-search chip row — desktop parity ─────────────────────────────────
-// Mirrors the desktop `.quickChips` row sitting just above the search input.
-// Tapping a chip fills the shared `searchTerm` and jumps to the Search tab so
-// the user immediately sees the filtered feed. No "All" pill, no full-keyword
-// dump — same curated 14 terms as desktop.
+// ─── Quick-search chip row — feed-filter version ────────────────────────────
+//
+// On mobile the chip row filters the feed in-place. Tapping a chip selects it
+// (background brand orange); tapping the active chip clears the filter. No
+// chip selected ≡ "All".
 function QuickSearchChipRow({
+  active,
   onPick,
 }: {
-  onPick: (term: string) => void;
+  active: string | null;
+  onPick: (term: string | null) => void;
 }): React.ReactElement {
   return (
     <div
       role="group"
-      aria-label="Quick search shortcuts"
+      aria-label="Quick filter chips"
       style={{
         display: "flex",
         gap: 8,
@@ -359,31 +307,41 @@ function QuickSearchChipRow({
         borderBottom: "1px solid var(--mobile-divider)",
       }}
     >
-      {QUICK_SEARCH_CHIPS.map((term) => (
-        <button
-          key={term}
-          type="button"
-          onClick={() => onPick(term)}
-          aria-label={`Quick search: ${term}`}
-          style={{
-            flex: "0 0 auto",
-            padding: "6px 14px",
-            minHeight: 32,
-            borderRadius: "var(--mobile-radius-full)",
-            border: "1px solid var(--mobile-divider)",
-            background: "var(--mobile-surface)",
-            color: "var(--mobile-text)",
-            fontFamily: "Arial, Helvetica, sans-serif",
-            fontSize: 13,
-            fontWeight: 600,
-            whiteSpace: "nowrap",
-            cursor: "pointer",
-            transition: "background 0.12s ease, color 0.12s ease",
-          }}
-        >
-          {term}
-        </button>
-      ))}
+      {QUICK_SEARCH_CHIPS.map((term) => {
+        const isActive = active?.toLowerCase() === term.toLowerCase();
+        return (
+          <button
+            key={term}
+            type="button"
+            onClick={() => onPick(isActive ? null : term)}
+            aria-label={
+              isActive ? `Clear filter: ${term}` : `Filter by: ${term}`
+            }
+            aria-pressed={isActive}
+            style={{
+              flex: "0 0 auto",
+              padding: "6px 14px",
+              minHeight: 32,
+              borderRadius: "var(--mobile-radius-full)",
+              border: isActive
+                ? "1px solid var(--mobile-accent)"
+                : "1px solid var(--mobile-divider)",
+              background: isActive
+                ? "var(--mobile-accent)"
+                : "var(--mobile-surface)",
+              color: isActive ? "#fff" : "var(--mobile-text)",
+              fontFamily: "Arial, Helvetica, sans-serif",
+              fontSize: 13,
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+              cursor: "pointer",
+              transition: "background 0.12s ease, color 0.12s ease",
+            }}
+          >
+            {term}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -393,15 +351,11 @@ function ArticleList({
   articles,
   loading,
   justArrivedUrls,
-  bookmarkedUrls,
-  onToggleBookmark,
   emptyMessage,
 }: {
   articles: NewsArticle[];
   loading: boolean;
   justArrivedUrls: Set<string>;
-  bookmarkedUrls: Set<string>;
-  onToggleBookmark: (url: string) => void;
   emptyMessage: string;
 }): React.ReactElement {
   if (loading && articles.length === 0) {
@@ -441,8 +395,6 @@ function ArticleList({
         <ArticleCard
           key={article.url}
           article={article}
-          bookmarked={bookmarkedUrls.has(article.url)}
-          onToggleBookmark={onToggleBookmark}
           isNew={justArrivedUrls.has(article.url)}
         />
       ))}
@@ -457,361 +409,9 @@ function ArticleList({
             fontSize: 12,
           }}
         >
-          Showing the {MAX_VISIBLE} most recent headlines. Refine your
-          filters to drill down.
+          Showing the {MAX_VISIBLE} most recent headlines. Pick a chip above to
+          drill down.
         </p>
-      )}
-    </div>
-  );
-}
-
-// ─── SearchBar ──────────────────────────────────────────────────────────────
-function SearchBar({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}): React.ReactElement {
-  return (
-    <div
-      style={{
-        position: "relative",
-        margin: "12px 16px",
-      }}
-    >
-      <span
-        aria-hidden="true"
-        style={{
-          position: "absolute",
-          left: 12,
-          top: "50%",
-          transform: "translateY(-50%)",
-          color: "var(--mobile-text-faint)",
-          display: "inline-flex",
-        }}
-      >
-        <SearchIcon size={16} />
-      </span>
-      <input
-        type="search"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="Search by title or source"
-        aria-label="Search news"
-        style={{
-          width: "100%",
-          minHeight: 44,
-          padding: "0 38px 0 38px",
-          borderRadius: "var(--mobile-radius-full)",
-          border: "1px solid var(--mobile-divider)",
-          background: "var(--mobile-surface)",
-          color: "var(--mobile-text)",
-          fontFamily: "Arial, Helvetica, sans-serif",
-          fontSize: 14,
-          outline: "none",
-        }}
-      />
-      {value && (
-        <button
-          type="button"
-          onClick={() => onChange("")}
-          aria-label="Clear search"
-          style={{
-            position: "absolute",
-            right: 8,
-            top: "50%",
-            transform: "translateY(-50%)",
-            width: 28,
-            height: 28,
-            border: 0,
-            background: "var(--mobile-divider)",
-            color: "var(--mobile-text-muted)",
-            borderRadius: "50%",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-          }}
-        >
-          <CloseIcon size={14} />
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ─── SettingsPanel — keyword CRUD ───────────────────────────────────────────
-//
-// Receives every piece of state it needs via props so that the parent
-// `MobileView` is the single call site of `useNewsHunterData()`. Mounting the
-// hook here too would spin up a second copy of every local state slice
-// (ageTick `setInterval`, visibility guard, localStorage reads, …) for as
-// long as the Settings tab is mounted — wasteful and easy to mis-read as a
-// real second source of truth. Cross-tab keyword state stays coherent via
-// `NewsHunterContext`, which the hook already wires us into.
-interface SettingsPanelProps {
-  keywordEntries: KeywordEntry[];
-  readOnly: boolean;
-  newKeyword: string;
-  setNewKeyword: (v: string) => void;
-  newKeywordMatchType: KeywordMatchType;
-  setNewKeywordMatchType: (v: KeywordMatchType) => void;
-  addKeyword: (raw: string, matchType?: KeywordMatchType) => Promise<void>;
-  removeKeyword: (kw: string) => Promise<void>;
-}
-
-function SettingsPanel({
-  keywordEntries,
-  readOnly,
-  newKeyword,
-  setNewKeyword,
-  newKeywordMatchType,
-  setNewKeywordMatchType,
-  addKeyword,
-  removeKeyword,
-}: SettingsPanelProps): React.ReactElement {
-  const handleSubmit = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault();
-      void addKeyword(newKeyword, newKeywordMatchType);
-    },
-    [addKeyword, newKeyword, newKeywordMatchType],
-  );
-
-  return (
-    <div
-      style={{
-        padding: "0 0 32px",
-        fontFamily: "Arial, Helvetica, sans-serif",
-      }}
-    >
-      {readOnly && (
-        <AnonCTA message="Log in to add your own keywords. These are the default tracked terms." />
-      )}
-
-      <section style={{ padding: "16px 16px 0" }}>
-        <h2
-          style={{
-            margin: "0 0 4px",
-            fontSize: 13,
-            fontWeight: 700,
-            color: "var(--mobile-text-muted)",
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-          }}
-        >
-          {readOnly ? "Default keywords" : "Your keywords"}
-        </h2>
-        <p
-          style={{
-            margin: "0 0 12px",
-            fontSize: 12,
-            color: "var(--mobile-text-faint)",
-            lineHeight: 1.45,
-          }}
-        >
-          {readOnly
-            ? "These keywords are tracked for all anonymous visitors. Sign in to customize."
-            : "Articles must match at least one keyword to appear in your feed."}
-        </p>
-
-        <ul
-          style={{
-            listStyle: "none",
-            margin: 0,
-            padding: 0,
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 8,
-          }}
-        >
-          {keywordEntries.map((entry) => {
-            const isExact = entry.match_type === "exact";
-            return (
-              <li
-                key={entry.keyword}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "6px 10px",
-                  borderRadius: "var(--mobile-radius-full)",
-                  background: isExact
-                    ? "var(--mobile-accent-soft)"
-                    : "var(--mobile-divider)",
-                  color: "var(--mobile-text)",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  border: isExact
-                    ? "1px solid var(--mobile-accent-glow)"
-                    : "1px solid transparent",
-                }}
-              >
-                <span>{entry.keyword}</span>
-                {isExact && (
-                  <span
-                    style={{
-                      fontSize: 9,
-                      fontWeight: 700,
-                      letterSpacing: "0.08em",
-                      color: "var(--mobile-accent)",
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    EXACT
-                  </span>
-                )}
-                {!readOnly && (
-                  <button
-                    type="button"
-                    onClick={() => void removeKeyword(entry.keyword)}
-                    aria-label={`Remove keyword ${entry.keyword}`}
-                    style={{
-                      width: 20,
-                      height: 20,
-                      border: 0,
-                      background: "transparent",
-                      color: "var(--mobile-text-muted)",
-                      borderRadius: "50%",
-                      cursor: "pointer",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <CloseIcon size={12} strokeWidth={2.5} />
-                  </button>
-                )}
-              </li>
-            );
-          })}
-          {keywordEntries.length === 0 && (
-            <li
-              style={{
-                fontSize: 13,
-                color: "var(--mobile-text-faint)",
-                fontWeight: 500,
-              }}
-            >
-              No keywords yet.
-            </li>
-          )}
-        </ul>
-      </section>
-
-      {!readOnly && (
-        <section
-          style={{
-            padding: "20px 16px 0",
-          }}
-        >
-          <h2
-            style={{
-              margin: "0 0 12px",
-              fontSize: 13,
-              fontWeight: 700,
-              color: "var(--mobile-text-muted)",
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-            }}
-          >
-            Add keyword
-          </h2>
-          <form onSubmit={handleSubmit}>
-            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-              <input
-                type="text"
-                value={newKeyword}
-                onChange={(e) => setNewKeyword(e.target.value)}
-                placeholder="e.g. petroleo"
-                aria-label="New keyword"
-                style={{
-                  flex: 1,
-                  minHeight: 44,
-                  padding: "0 14px",
-                  borderRadius: "var(--mobile-radius-md)",
-                  border: "1px solid var(--mobile-divider)",
-                  background: "var(--mobile-surface)",
-                  color: "var(--mobile-text)",
-                  fontFamily: "inherit",
-                  fontSize: 14,
-                  outline: "none",
-                }}
-              />
-              <button
-                type="submit"
-                aria-label="Add keyword"
-                disabled={!newKeyword.trim()}
-                style={{
-                  minWidth: 44,
-                  minHeight: 44,
-                  padding: "0 14px",
-                  border: 0,
-                  borderRadius: "var(--mobile-radius-md)",
-                  background: newKeyword.trim()
-                    ? "var(--mobile-accent)"
-                    : "var(--mobile-divider)",
-                  color: newKeyword.trim() ? "#fff" : "var(--mobile-text-faint)",
-                  fontFamily: "inherit",
-                  fontSize: 14,
-                  fontWeight: 700,
-                  cursor: newKeyword.trim() ? "pointer" : "default",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <PlusIcon size={18} strokeWidth={2.5} />
-              </button>
-            </div>
-
-            <label
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "8px 0",
-                fontSize: 13,
-                color: "var(--mobile-text)",
-                fontWeight: 500,
-                cursor: "pointer",
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={newKeywordMatchType === "exact"}
-                onChange={(e) =>
-                  setNewKeywordMatchType(
-                    e.target.checked ? "exact" : "substring",
-                  )
-                }
-                style={{
-                  width: 18,
-                  height: 18,
-                  accentColor: "var(--mobile-accent)",
-                  cursor: "pointer",
-                }}
-              />
-              <span>
-                Exact match
-                <span
-                  style={{
-                    display: "block",
-                    fontSize: 11,
-                    color: "var(--mobile-text-faint)",
-                    fontWeight: 400,
-                    lineHeight: 1.4,
-                    marginTop: 2,
-                  }}
-                >
-                  Match the term only as a standalone word (e.g.{" "}
-                  <code>ANS</code> won&apos;t hit <em>transporte</em>).
-                </span>
-              </span>
-            </label>
-          </form>
-        </section>
       )}
     </div>
   );
@@ -822,70 +422,34 @@ function SettingsPanel({
 export default function MobileView(): React.ReactElement {
   const {
     filteredArticles,
-    savedArticles,
     articles,
     justArrivedUrls,
-    keywordEntries,
     loading,
     error,
     visible,
     visLoading,
     readOnly,
-    searchTerm,
-    setSearchTerm,
-    bookmarkedUrls,
-    toggleBookmark,
-    mobileTab,
-    setMobileTab,
     lastScanLabel,
-    newKeyword,
-    setNewKeyword,
-    newKeywordMatchType,
-    setNewKeywordMatchType,
-    addKeyword,
-    removeKeyword,
   } = useNewsHunterData();
 
+  // Local-to-mobile chip filter state. `null` ≡ "All" (no chip filter applied).
+  const [chipFilter, setChipFilter] = useState<string | null>(null);
+
+  // Apply the chip filter on top of the hook's already-filtered list. Substring
+  // match (case + accent insensitive) against title + snippet + matched_keywords.
+  const chipFilteredArticles = useMemo(() => {
+    if (!chipFilter) return filteredArticles;
+    const needle = stripAccents(chipFilter.toLowerCase()).trim();
+    if (!needle) return filteredArticles;
+    return filteredArticles.filter((a) => {
+      const haystack = stripAccents(
+        `${a.title} ${a.snippet} ${a.matched_keywords.join(" ")}`.toLowerCase(),
+      );
+      return haystack.includes(needle);
+    });
+  }, [chipFilter, filteredArticles]);
+
   if (visLoading || !visible) return <></>;
-
-  const tabs: { key: MobileTab; label: string; badge?: number }[] = [
-    { key: "feed", label: "Feed" },
-    { key: "search", label: "Search" },
-    {
-      key: "saved",
-      label: "Saved",
-      badge: savedArticles.length > 0 ? savedArticles.length : undefined,
-    },
-    { key: "settings", label: "Settings" },
-  ];
-
-  const tabItems = tabs.map((t) => ({
-    key: t.key,
-    label: (
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-        {t.label}
-        {t.badge !== undefined && (
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              minWidth: 18,
-              height: 18,
-              padding: "0 5px",
-              borderRadius: 9,
-              background: "var(--mobile-accent)",
-              color: "#fff",
-              fontSize: 10,
-              fontWeight: 700,
-            }}
-          >
-            {t.badge}
-          </span>
-        )}
-      </span>
-    ),
-  }));
 
   return (
     <div
@@ -934,29 +498,7 @@ export default function MobileView(): React.ReactElement {
         </p>
       </header>
 
-      {/* Top tab bar — sticky under the in-page header */}
-      <div
-        style={{
-          position: "sticky",
-          // Header (paddingY 14+10 + line-height 22*1.2 + 4 + 12 ≈ ~70px).
-          // Using a calc keeps it pinned even when the header height changes.
-          top: `calc(var(--mobile-topbar-h) + 70px)`,
-          zIndex: 19,
-          background: "var(--mobile-bg)",
-          padding: "8px 16px",
-          borderBottom: "1px solid var(--mobile-divider)",
-        }}
-      >
-        <MobileTabBar
-          tabs={tabItems}
-          activeKey={mobileTab}
-          onChange={(k) => setMobileTab(k as MobileTab)}
-          variant="container"
-          ariaLabel="News Hunter sections"
-        />
-      </div>
-
-      {/* Error banner (shared across tabs) */}
+      {/* Error banner */}
       {error && (
         <div
           role="alert"
@@ -974,81 +516,27 @@ export default function MobileView(): React.ReactElement {
         </div>
       )}
 
-      {/* ── Feed tab ── */}
-      {mobileTab === "feed" && (
-        <>
-          {readOnly && (
-            <AnonCTA message="Log in to customize the keywords tracked for you." />
-          )}
-          {/* Quick-search chips — same curated 14 terms as desktop. Tapping a
-              chip fills the search input and jumps to the Search tab. We do
-              NOT expose every tracked keyword as a pill here — that lives in
-              Settings, and the desktop never shows it inline either. */}
-          <QuickSearchChipRow
-            onPick={(term) => {
-              setSearchTerm(term);
-              setMobileTab("search");
-            }}
-          />
-          <ArticleList
-            articles={filteredArticles}
-            loading={loading}
-            justArrivedUrls={justArrivedUrls}
-            bookmarkedUrls={bookmarkedUrls}
-            onToggleBookmark={toggleBookmark}
-            emptyMessage={
-              articles.length === 0
-                ? "No headlines yet. The scanner runs every ~5 min and new articles will appear here automatically."
-                : "No articles match your filters yet."
-            }
-          />
-        </>
+      {/* Anon login nudge — anon visitors can still browse but can't customize */}
+      {readOnly && (
+        <AnonCTA message="Log in on desktop to customize the keywords tracked for you." />
       )}
 
-      {/* ── Search tab ── */}
-      {mobileTab === "search" && (
-        <>
-          <SearchBar value={searchTerm} onChange={setSearchTerm} />
-          <ArticleList
-            articles={filteredArticles}
-            loading={loading}
-            justArrivedUrls={justArrivedUrls}
-            bookmarkedUrls={bookmarkedUrls}
-            onToggleBookmark={toggleBookmark}
-            emptyMessage={
-              searchTerm
-                ? `No headlines match "${searchTerm}".`
-                : "Type in the search box above to filter by title or source."
-            }
-          />
-        </>
-      )}
+      {/* Quick-search chips — tap to filter the feed in-place */}
+      <QuickSearchChipRow active={chipFilter} onPick={setChipFilter} />
 
-      {/* ── Saved tab ── */}
-      {mobileTab === "saved" && (
-        <ArticleList
-          articles={savedArticles}
-          loading={false}
-          justArrivedUrls={justArrivedUrls}
-          bookmarkedUrls={bookmarkedUrls}
-          onToggleBookmark={toggleBookmark}
-          emptyMessage="No saved articles yet. Tap the bookmark icon on any card to save it for later."
-        />
-      )}
-
-      {/* ── Settings tab ── */}
-      {mobileTab === "settings" && (
-        <SettingsPanel
-          keywordEntries={keywordEntries}
-          readOnly={readOnly}
-          newKeyword={newKeyword}
-          setNewKeyword={setNewKeyword}
-          newKeywordMatchType={newKeywordMatchType}
-          setNewKeywordMatchType={setNewKeywordMatchType}
-          addKeyword={addKeyword}
-          removeKeyword={removeKeyword}
-        />
-      )}
+      {/* Feed */}
+      <ArticleList
+        articles={chipFilteredArticles}
+        loading={loading}
+        justArrivedUrls={justArrivedUrls}
+        emptyMessage={
+          articles.length === 0
+            ? "No headlines yet. The scanner runs every ~5 min and new articles will appear here automatically."
+            : chipFilter
+              ? `No headlines match "${chipFilter}".`
+              : "No articles match your keywords yet."
+        }
+      />
     </div>
   );
 }
