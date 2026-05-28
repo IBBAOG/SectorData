@@ -29,7 +29,6 @@ import { useCallback, useMemo, useState } from "react";
 import type { Layout } from "plotly.js";
 
 import {
-  MobileTopBar,
   FilterDrawer,
   MobileChart,
   FunnelIcon,
@@ -483,32 +482,6 @@ export default function MobileView(): React.ReactElement {
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      {/* ── Top bar ──────────────────────────────────────────────────────────── */}
-      <MobileTopBar
-        title="Subsidy Tracker"
-        rightSlot={
-          <button
-            type="button"
-            aria-label="Open filters"
-            onClick={() => setDrawerOpen(true)}
-            style={{
-              width: 44,
-              height: 44,
-              border: 0,
-              background: "transparent",
-              color: "var(--mobile-text-muted)",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: "pointer",
-              borderRadius: 12,
-            }}
-          >
-            <FunnelIcon size={22} />
-          </button>
-        }
-      />
-
       {/* ── Subtitle ─────────────────────────────────────────────────────────── */}
       <div
         style={{
@@ -612,6 +585,40 @@ export default function MobileView(): React.ReactElement {
             </button>
           );
         })}
+
+        {/* Divider pip before filter button */}
+        <span
+          aria-hidden="true"
+          style={{
+            width: 1,
+            height: 20,
+            background: "var(--mobile-divider)",
+            flexShrink: 0,
+            margin: "0 2px",
+          }}
+        />
+
+        {/* Filter button — opens FilterDrawer */}
+        <button
+          type="button"
+          aria-label="Open filters"
+          onClick={() => setDrawerOpen(true)}
+          style={{
+            flexShrink: 0,
+            width: 36,
+            height: 36,
+            borderRadius: 20,
+            border: "1px solid var(--mobile-divider)",
+            background: "var(--mobile-surface)",
+            color: "var(--mobile-text-muted)",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+          }}
+        >
+          <FunnelIcon size={18} />
+        </button>
       </div>
 
       {loading ? (
