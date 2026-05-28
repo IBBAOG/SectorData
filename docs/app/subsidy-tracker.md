@@ -51,6 +51,8 @@ The legacy `anp_subsidy_history` table was **DROPPED** by the 2026-05-27 reform.
 
 ## RPC contract (locked)
 
+> **2026-05-28 update:** `get_subsidy_tracker_diesel()` was extended from 11 to **13 columns** by adding `reimb_importador` and `reimb_produtor` at the end. The mobile View previously computed reimbursement as `ref − comm`, which inflated values above the per-region cap (e.g. 1.65 when the importer cap is 1.52). Both columns are now consumed directly from the RPC. Cap values: importer 1.52 BRL/L, producer 1.12 BRL/L (from 2026-04-07; unified 0.32 before).
+
 ```sql
 public.get_subsidy_tracker_diesel() RETURNS TABLE (
   date                              DATE,
@@ -63,7 +65,9 @@ public.get_subsidy_tracker_diesel() RETURNS TABLE (
   anp_commercialization_importador  NUMERIC,
   anp_commercialization_produtor    NUMERIC,
   regions_importador                JSONB,   -- { NORTE, NORDESTE, ... } reference (importador)
-  regions_produtor                  JSONB    -- { NORTE, NORDESTE, ... } reference (produtor)
+  regions_produtor                  JSONB,   -- { NORTE, NORDESTE, ... } reference (produtor)
+  reimb_importador                  NUMERIC, -- compute_subsidy_reimbursement(date, 'importador'); NULL outside subsidy period
+  reimb_produtor                    NUMERIC  -- compute_subsidy_reimbursement(date, 'produtor');   NULL outside subsidy period
 )
 ```
 
@@ -72,6 +76,8 @@ Behavior:
 - FULL OUTER JOIN between `price_bands` (Diesel) and the daily regional averages from `anp_subsidy_diesel_reference` (one CTE per `tipo_agente`), plus a union of the period-fixed `anp_subsidy_commercialization` exploded by date.
 - `anp_commercialization_<agent>` is the regional **average** of the period-fixed commercialization price for each date inside the period — NOT a reference-minus-cap derivation.
 - `ipp_adjusted` and `petrobras_adjusted` come from `compute_subsidy_reimbursement(date, agent)` applied per row.
+- `reimb_importador` / `reimb_produtor` = `compute_subsidy_reimbursement(date, agent)` — AVG over 5 regions of `MIN(MAX(ref − comm, 0), cap)`. NULL for dates before the subsidy started.
+- The frontend **must not** recompute reimbursements as `ref − comm` — that formula skips the per-region cap.
 - `regions_<agent>` is the per-region breakdown of the reference price for the day, or NULL when no PDF was extracted yet.
 - Rows ordered ASC by `date`.
 - SECURITY DEFINER + `search_path = public, pg_temp`, granted to `authenticated` only (proprietary data — NOT anon).
@@ -91,6 +97,8 @@ export type SubsidyTrackerRow = {
   anp_commercialization_produtor: number | null;
   regions_importador: Record<string, number> | null;
   regions_produtor: Record<string, number> | null;
+  reimb_importador: number | null;   // cap-aware; NULL outside subsidy period
+  reimb_produtor: number | null;     // cap-aware; NULL outside subsidy period
 };
 ```
 
@@ -224,10 +232,10 @@ Direct download (no modal — dataset is small, one row per date). Now carries t
 
 | Action | Helper | Filename | Columns |
 |---|---|---|---|
-| Excel | `downloadGenericExcel` (`src/lib/exportExcel.ts`) | `subsidy_tracker_diesel <DD-MM-YY>.xlsx` | `Date`, `IPP`, `IPP (adjusted)`, `Petrobras`, `Petrobras (adjusted)`, `ANP Reference (Importador)`, `ANP Reference (Produtor)`, `ANP Commercialization (Importador)`, `ANP Commercialization (Produtor)` |
-| CSV   | `downloadCsv` (`src/lib/exportCsv.ts`)            | `subsidy_tracker_diesel.csv`               | `date, ipp, ipp_adjusted, petrobras, petrobras_adjusted, anp_reference_importador, anp_reference_produtor, anp_commercialization_importador, anp_commercialization_produtor` |
+| Excel | `downloadGenericExcel` (`src/lib/exportExcel.ts`) | `subsidy_tracker_diesel <DD-MM-YY>.xlsx` | `Date`, `IPP`, `IPP (adjusted)`, `Petrobras`, `Petrobras (adjusted)`, `ANP Reference (Importador)`, `ANP Reference (Produtor)`, `ANP Commercialization (Importador)`, `ANP Commercialization (Produtor)`, `Reimbursement (Importador)`, `Reimbursement (Produtor)` |
+| CSV   | `downloadCsv` (`src/lib/exportCsv.ts`)            | `subsidy_tracker_diesel.csv`               | `date, ipp, ipp_adjusted, petrobras, petrobras_adjusted, anp_reference_importador, anp_reference_produtor, anp_commercialization_importador, anp_commercialization_produtor, reimb_importador, reimb_produtor` |
 
-`regions_importador` and `regions_produtor` are intentionally excluded from export — they are UI affordances only.
+`regions_importador` and `regions_produtor` are intentionally excluded from export — they are UI affordances only. `reimb_importador` / `reimb_produtor` are included (cap-aware values from the RPC).
 
 ## Hook contract (`useSubsidyTrackerData.ts`)
 
