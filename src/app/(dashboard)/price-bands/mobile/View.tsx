@@ -11,8 +11,9 @@
 //   Hero chart         — 3 lines (Import / Export / Petrobras)
 //                        Diesel: subsidy shading on Import line by default
 //   Legend chips below — 3 colored chips, tap-to-hide/show each series
-//   Comparison table   — Latest + MoM% + YoY% per series; horizontal scroll,
-//                        first column sticky
+//   Petrobras gap table — 3 rows showing Petrobras price vs IPP, EPP, IPP w/ sub
+//                        (mirrors the badges above the desktop chart, since
+//                        mobile has no horizontal room for the badge row)
 //   MobileHomePill     — fixed floating home button (global mobile nav v2)
 //
 // Non-negotiables per plan § 3.4 + § 5.4:
@@ -41,7 +42,6 @@ import {
   COLOR_IMPORT,
   COLOR_EXPORT,
   COLOR_PETRO,
-  SUBSIDY_CUTOFF,
   GAS_SERIES,
   DSL_SERIES,
   type PriceBandsProduct,
@@ -122,89 +122,64 @@ function chipForField(field: string): SeriesKey | null {
   return null;
 }
 
-// ─── MoM / YoY computation ───────────────────────────────────────────────────
+// ─── Petrobras gap table (mirrors desktop badges) ─────────────────────────────
+//
+// Mobile substitutes the legacy Latest/MoM/YoY columns with the same gap
+// information the desktop view shows as colored badges directly above the
+// chart (Petrobras vs IPP / EPP / IPP w/ subsidy). Mobile has no room for
+// the badge row, so we render the values in a small table instead.
 
-interface CompRow {
-  label: string;
-  color: string;
-  latest: number | null;
-  mom: number | null;   // percentage
-  yoy: number | null;   // percentage
+interface GapRow {
+  label: string;      // e.g. "vs. IPP"
+  numerator: string;  // e.g. "Petrobras" or "Petr. w/ sub"
+  denominator: string; // e.g. "BBA Import Parity"
+  pct: number | null; // % difference (Petrobras / reference - 1) * 100
+  outlined: boolean;  // EPP uses outlined style on desktop
 }
 
-function addMonths(dateStr: string, n: number): string {
-  const d = new Date(dateStr + "T00:00:00Z");
-  d.setUTCMonth(d.getUTCMonth() + n);
-  return d.toISOString().slice(0, 10);
-}
+function buildGapRows(
+  product: PriceBandsProduct,
+  cv: {
+    pctVsIpp: number | null;
+    pctVsEpp: number | null;
+    pctVsIppSubsidy: number | null;
+  },
+): GapRow[] {
+  const rows: GapRow[] = [
+    {
+      label: "vs. IPP",
+      numerator: "Petrobras",
+      denominator: "BBA Import Parity",
+      pct: cv.pctVsIpp,
+      outlined: false,
+    },
+    {
+      label: "vs. EPP",
+      numerator: "Petrobras",
+      denominator: "BBA Export Parity",
+      pct: cv.pctVsEpp,
+      outlined: true,
+    },
+  ];
 
-/** Closest non-null value in rows at or before the given date for the given field. */
-function closestBefore(
-  rows: PriceBandsRow[],
-  targetDate: string,
-  field: keyof PriceBandsRow,
-): number | null {
-  // rows must be sorted ascending by date
-  let val: number | null = null;
-  for (const r of rows) {
-    if (r.date > targetDate) break;
-    const v = r[field] as number | null;
-    if (v != null) val = v;
+  // Subsidy gap: Diesel only (Gasoline has no subsidy).
+  if (product === "Diesel") {
+    rows.push({
+      label: "vs. IPP w/ sub",
+      numerator: "Petrobras",
+      denominator: "BBA Import Parity w/ subsidy",
+      pct: cv.pctVsIppSubsidy,
+      outlined: false,
+    });
   }
-  return val;
-}
 
-function pctChange(current: number | null, prior: number | null): number | null {
-  if (current == null || prior == null || prior === 0) return null;
-  return ((current / prior) - 1) * 100;
+  return rows;
 }
 
 function fmtPctCell(pct: number | null): { text: string; positive: boolean | null } {
   if (pct == null) return { text: "—", positive: null };
-  const text = `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
+  const text = `${pct >= 0 ? "+" : ""}${pct.toFixed(0)}%`;
   return { text, positive: pct >= 0 };
-}
-
-function buildCompTable(
-  rows: PriceBandsRow[],
-  product: PriceBandsProduct,
-  visibleKeys: Set<SeriesKey>,
-): CompRow[] {
-  const productRows = rows
-    .filter((r) => r.product === product)
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  if (productRows.length === 0) return [];
-
-  const latestDate = productRows[productRows.length - 1].date;
-  const mom1Date   = addMonths(latestDate, -1);
-  const yoy1Date   = addMonths(latestDate, -12);
-
-  const seriesDefs = product === "Gasoline" ? GAS_SERIES : DSL_SERIES;
-  const result: CompRow[] = [];
-
-  for (const s of seriesDefs) {
-    const chipKey = chipForField(s.field as string);
-    if (!chipKey || !visibleKeys.has(chipKey)) continue;
-
-    // Subsidy series (dashed): only show if after SUBSIDY_CUTOFF
-    if ((s.field === "bba_import_parity_w_subsidy" || s.field === "petrobras_price_w_subsidy")
-        && latestDate < SUBSIDY_CUTOFF) continue;
-
-    const current = closestBefore(productRows, latestDate, s.field);
-    const mom1    = closestBefore(productRows, mom1Date,   s.field);
-    const yoy1    = closestBefore(productRows, yoy1Date,   s.field);
-
-    result.push({
-      label:     s.label,
-      color:     s.color,
-      latest:    current,
-      mom:       pctChange(current, mom1),
-      yoy:       pctChange(current, yoy1),
-    });
-  }
-
-  return result;
 }
 
 // ─── Chart builder — mobile 3-line chart ────────────────────────────────────
@@ -401,14 +376,14 @@ export default function MobileView(): React.ReactElement {
     hovermode: "x unified" as const,
   }), []);
 
-  // ── Comparison table ──────────────────────────────────────────────────────
-  const compRows = useMemo(
-    () => buildCompTable(rows, filters.product, visibleKeys),
-    [rows, filters.product, visibleKeys],
-  );
-
-  // ── Current values (for legend chip subtitle) ─────────────────────────────
+  // ── Current values (for legend chip subtitle + Petrobras gap table) ──────
   const cv = currentValues[filters.product];
+
+  // ── Petrobras gap rows (mirrors desktop badges above the chart) ──────────
+  const gapRows = useMemo(
+    () => buildGapRows(filters.product, cv),
+    [filters.product, cv],
+  );
 
   if (visLoading || !visible) return <></>;
 
@@ -565,179 +540,99 @@ export default function MobileView(): React.ReactElement {
             </div>
           )}
 
-          {/* ── Comparison table ─────────────────────────────────────────── */}
-          {compRows.length > 0 && (
+          {/* ── Petrobras gap (mirrors desktop badges) ─────────────────── */}
+          {gapRows.some((g) => g.pct != null) && (
             <>
-              <SectionLabel>Comparison</SectionLabel>
+              <SectionLabel>Petrobras Price Gap</SectionLabel>
               <div
                 style={{
-                  overflowX: "auto",
-                  scrollbarWidth: "thin",
-                  WebkitOverflowScrolling: "touch" as React.CSSProperties["WebkitOverflowScrolling"],
-                  margin: "0 0 8px",
-                  background: "var(--mobile-surface)",
-                  borderTop: "1px solid var(--mobile-divider)",
-                  borderBottom: "1px solid var(--mobile-divider)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  padding: "0 16px 8px",
                 }}
               >
-                <table
-                  style={{
-                    width: "100%",
-                    minWidth: 340,
-                    borderCollapse: "collapse",
-                    fontFamily: "Arial, Helvetica, sans-serif",
-                    fontSize: 13,
-                  }}
-                >
-                  <thead>
-                    <tr style={{ borderBottom: "1px solid var(--mobile-divider)" }}>
-                      <th
+                {gapRows.map((row) => {
+                  const cell = fmtPctCell(row.pct);
+                  const pctColor =
+                    cell.positive === null
+                      ? "var(--mobile-text-muted)"
+                      : cell.positive
+                      ? "#c62828" // Petrobras priced ABOVE the reference → red
+                      : "#2e7d32"; // Petrobras priced BELOW the reference → green
+                  return (
+                    <div
+                      key={row.label}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        padding: "12px 14px",
+                        background: "var(--mobile-surface)",
+                        border: row.outlined
+                          ? "1px solid var(--mobile-text)"
+                          : "1px solid var(--mobile-divider)",
+                        borderLeft: row.outlined
+                          ? "1px solid var(--mobile-text)"
+                          : `4px solid ${COLOR_IMPORT}`,
+                        borderRadius: "var(--mobile-radius-md, 8px)",
+                      }}
+                    >
+                      <div
                         style={{
-                          position: "sticky",
-                          left: 0,
-                          background: "var(--mobile-surface)",
-                          padding: "8px 12px",
-                          textAlign: "left",
-                          fontWeight: 700,
-                          fontSize: 11,
-                          color: "var(--mobile-text-muted)",
-                          letterSpacing: "0.05em",
-                          textTransform: "uppercase",
-                          whiteSpace: "nowrap",
-                          boxShadow: "2px 0 4px rgba(0,0,0,0.04)",
-                          minWidth: 140,
-                          zIndex: 2,
+                          display: "flex",
+                          flexDirection: "column",
+                          minWidth: 0,
+                          flex: 1,
                         }}
                       >
-                        Series
-                      </th>
-                      {["Latest", "MoM", "YoY"].map((h) => (
-                        <th
-                          key={h}
+                        <span
                           style={{
-                            padding: "8px 12px",
-                            textAlign: "right",
                             fontWeight: 700,
-                            fontSize: 11,
-                            color: "var(--mobile-text-muted)",
-                            letterSpacing: "0.05em",
-                            textTransform: "uppercase",
+                            fontSize: 14,
+                            color: "var(--mobile-text)",
                             whiteSpace: "nowrap",
                           }}
                         >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {compRows.map((row, idx) => {
-                      const mom = fmtPctCell(row.mom);
-                      const yoy = fmtPctCell(row.yoy);
-                      return (
-                        <tr
-                          key={row.label}
+                          {row.numerator} {row.label}
+                        </span>
+                        <span
                           style={{
-                            background: idx % 2 === 0 ? "var(--mobile-surface)" : "var(--mobile-bg)",
-                            borderBottom: "1px solid var(--mobile-divider)",
+                            fontSize: 11,
+                            color: "var(--mobile-text-muted)",
+                            marginTop: 2,
                           }}
                         >
-                          {/* Sticky series label */}
-                          <td
-                            style={{
-                              position: "sticky",
-                              left: 0,
-                              background: idx % 2 === 0 ? "var(--mobile-surface)" : "var(--mobile-bg)",
-                              padding: "10px 12px",
-                              whiteSpace: "nowrap",
-                              boxShadow: "2px 0 4px rgba(0,0,0,0.04)",
-                              zIndex: 1,
-                            }}
-                          >
-                            <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
-                              <span
-                                style={{
-                                  display: "inline-block",
-                                  width: 20,
-                                  height: 3,
-                                  background: row.color,
-                                  borderRadius: 2,
-                                  marginRight: 8,
-                                  flexShrink: 0,
-                                  verticalAlign: "middle",
-                                }}
-                              />
-                              <span
-                                style={{
-                                  fontWeight: 600,
-                                  color: "var(--mobile-text)",
-                                  fontSize: 13,
-                                }}
-                              >
-                                {row.label}
-                              </span>
-                            </div>
-                          </td>
-                          {/* Latest value */}
-                          <td
-                            style={{
-                              padding: "10px 12px",
-                              textAlign: "right",
-                              fontWeight: 700,
-                              color: "var(--mobile-text)",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {row.latest != null ? `R$ ${row.latest.toFixed(2)}` : "—"}
-                          </td>
-                          {/* MoM */}
-                          <td
-                            style={{
-                              padding: "10px 12px",
-                              textAlign: "right",
-                              fontWeight: 600,
-                              color: mom.positive === null
-                                ? "var(--mobile-text-muted)"
-                                : mom.positive
-                                ? "#2e7d32"
-                                : "#c62828",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {mom.text}
-                          </td>
-                          {/* YoY */}
-                          <td
-                            style={{
-                              padding: "10px 12px",
-                              textAlign: "right",
-                              fontWeight: 600,
-                              color: yoy.positive === null
-                                ? "var(--mobile-text-muted)"
-                                : yoy.positive
-                                ? "#2e7d32"
-                                : "#c62828",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {yoy.text}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                          vs. {row.denominator}
+                        </span>
+                      </div>
+                      <span
+                        style={{
+                          fontWeight: 800,
+                          fontSize: 20,
+                          color: pctColor,
+                          whiteSpace: "nowrap",
+                          fontVariantNumeric: "tabular-nums",
+                        }}
+                      >
+                        {cell.text}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
 
-              {/* Unit footnote */}
+              {/* Footnote */}
               <div style={{ padding: "0 16px 8px", fontSize: 11, color: "var(--mobile-text-muted)" }}>
-                Values in R$/litro. MoM = 1-month change · YoY = 12-month change.
+                Gap = (Petrobras price ÷ reference − 1). Positive = priced above reference.
+                {cv.lastDate && <> Last data: {fmtDateLabel(cv.lastDate)}.</>}
               </div>
             </>
           )}
 
           {/* No-data state */}
-          {compRows.length === 0 && !loading && (
+          {!gapRows.some((g) => g.pct != null) && !loading && (
             <div
               style={{
                 padding: "32px 16px",

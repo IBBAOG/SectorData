@@ -111,7 +111,7 @@ Layout per plan § 4.4 (`o-modo-mobile-da-tranquil-giraffe.md`):
 3. **Period preset pills** (1M / 3M / 6M / 1Y / All, 6M default) — inline scroll row.
 4. **Hero chart** — 3 simultaneous lines (Import / Export / Petrobras). Diesel shows the `bba_import_parity_w_subsidy` dashed line under the Import chip by default.
 5. **Legend chips** — 3 colored chips below chart (Import / Export / Petrobras). Tap to hide/show each series (minimum 1 always visible).
-6. **Comparison table** — Latest value + MoM% + YoY% per visible series. Horizontal scroll, first column sticky.
+6. **Petrobras Price Gap section** — stacked cards mirroring the badges shown above the desktop chart. One card per gap: Petrobras vs. IPP, Petrobras vs. EPP, and (Diesel only) Petrobras vs. IPP w/ sub. Each card shows the comparison label (top), the reference series name (subtitle), and the percentage gap (right, large). Sign coloring: positive = red (priced above reference), negative = green (priced below reference).
 7. **MobileHomePill** — global floating home button (mobile reform v2).
 
 **Removed vs v1:**
@@ -119,6 +119,8 @@ Layout per plan § 4.4 (`o-modo-mobile-da-tranquil-giraffe.md`):
 - ExportFAB / export mini-menu (policy § 3.4 — no export on mobile).
 - FilterDrawer (replaced by inline period chips; no other filter needed on mobile).
 - MobileBottomTabBar (replaced by global MobileHomePill).
+
+**Mobile vs Desktop divergence (`[mobile-only]`, 2026-05-28):** the v1 mobile "Comparison" table with `Latest | MoM | YoY` columns per series was replaced by the **Petrobras Price Gap** section described above. Rationale: the desktop view already exposes those gaps as colored badges directly above each chart (via `PctBadge`), which mobile cannot fit on a single line. The mobile view consolidates the same information into stacked cards. MoM/YoY data is not currently surfaced on mobile by design — users who need historical change tables consult the desktop view. The hook already exposed `currentValues.{Gasoline,Diesel}.pctVsIpp / pctVsEpp / pctVsIppSubsidy / pctPetroSubVsIppSub`, so no hook changes were required.
 
 **Color encoding (same as desktop):**
 - Import chip → orange `#E8611A` (solid + dashed subsidy variant)
