@@ -208,6 +208,24 @@ export const BookmarkIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** Folded newspaper with masthead + column lines. Used by the global mobile
+ *  News Hunter pill (floating shortcut alongside the Home pill) and any
+ *  news-related affordances that need an at-a-glance "press / feed" glyph. */
+export const NewspaperIcon = (p: IconProps) => (
+  <Icon {...p}>
+    {/* Outer body of the folded paper — slightly taller than wide */}
+    <path d="M4 4h13a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
+    {/* Right-edge fold flap (the "second sheet" peeking out) */}
+    <path d="M19 8h2v11a2 2 0 0 1-2 2" />
+    {/* Masthead block — the thicker top headline */}
+    <line x1="7" y1="8" x2="16" y2="8" strokeWidth={2.4} />
+    {/* Column lines underneath */}
+    <line x1="7" y1="12" x2="16" y2="12" />
+    <line x1="7" y1="15" x2="16" y2="15" />
+    <line x1="7" y1="18" x2="12" y2="18" />
+  </Icon>
+);
+
 /** Pencil. Used to edit profile / inline rename. */
 export const PencilIcon = (p: IconProps) => (
   <Icon {...p}>

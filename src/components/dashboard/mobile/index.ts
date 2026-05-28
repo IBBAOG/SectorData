@@ -59,6 +59,11 @@ export type { MobileTabBarProps, MobileTabBarTab } from "./MobileTabBar";
 export { default as MobileHomePill } from "./MobileHomePill";
 export type { MobileHomePillProps } from "./MobileHomePill";
 
+// Onda 8 (2026-05-28) — second floating shortcut paired with MobileHomePill.
+// Routes to /news-hunter; auto-hides on /news-hunter itself.
+export { default as MobileNewsHunterPill } from "./MobileNewsHunterPill";
+export type { MobileNewsHunterPillProps } from "./MobileNewsHunterPill";
+
 export { default as MobileKebabMenu } from "./MobileKebabMenu";
 export type { MobileKebabMenuProps } from "./MobileKebabMenu";
 

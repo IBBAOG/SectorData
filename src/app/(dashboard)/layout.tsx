@@ -17,6 +17,7 @@ import { useTrackLastVisited } from "../../hooks/useTrackLastVisited";
 import {
   MobileTopBar,
   MobileHomePill,
+  MobileNewsHunterPill,
   MobileKebabMenu,
   MobileToastHost,
 } from "../../components/dashboard/mobile";
@@ -147,7 +148,9 @@ function DesktopShell({ children }: { children: React.ReactNode }) {
        no breadcrumb, no avatar — the kebab owns logout for logged-in users;
        anon visitors see the slot but the kebab renders nothing.
      • <main> — the active dashboard page renders here.
-     • MobileHomePill (floating, auto-hides on /home) — single primary nav.
+     • MobileHomePill (floating, auto-hides on /home) — primary nav.
+     • MobileNewsHunterPill (floating, auto-hides on /news-hunter) — paired
+       shortcut to the news feed, positioned ~78px right of the Home pill.
      • MobileToastHost — listens for `app-toast` CustomEvents and renders
        transient pill messages (used by MobileExcludedRedirect).
    No Footer, no PWAInstallPrompt — both are desktop chrome. */
@@ -206,6 +209,7 @@ function MobileShell({ children }: { children: React.ReactNode }) {
       <main>{children}</main>
 
       <MobileHomePill />
+      <MobileNewsHunterPill />
       <MobileToastHost />
     </div>
   );
