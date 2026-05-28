@@ -11,11 +11,12 @@
 // Tokens used (defined in src/app/globals.css "Mobile design system"):
 //   --mobile-glass-bg / --mobile-glass-border / --mobile-glass-blur
 //   --mobile-glass-shadow
-//   --mobile-topbar-h (56px)  --mobile-tabbar-h (64px)
+//   --mobile-topbar-h (44px)  --mobile-tabbar-h (64px)
 //   --mobile-safe-top / --mobile-safe-bottom
 //   --mobile-accent (#ff5000) for active tab + avatar
 //   --mobile-text / --mobile-text-muted
 
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 // ---------------------------------------------------------------- Top bar ---
@@ -67,6 +68,44 @@ export function MobileTopBar(props: MobileTopBarProps): React.ReactElement {
 
   const isDark = variant === "dark";
 
+  // Hide-on-scroll-down / show-on-scroll-up behavior.
+  // The header slides out upward when the user scrolls down past a small
+  // threshold (48px) and slides back in as soon as they scroll upward.
+  // A ref tracks the last known scrollY so we can diff direction each frame.
+  const lastScrollY = useRef(0);
+  const [hidden, setHidden] = useState(false);
+
+  useEffect(() => {
+    const THRESHOLD = 48; // px — dead-zone so tiny jitter never triggers the hide
+    let ticking = false;
+
+    function onScroll() {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const currentY = window.scrollY;
+        const delta = currentY - lastScrollY.current;
+
+        if (currentY < THRESHOLD) {
+          // Near the very top — always show regardless of direction.
+          setHidden(false);
+        } else if (delta > 4) {
+          // Scrolling down — hide.
+          setHidden(true);
+        } else if (delta < -4) {
+          // Scrolling up — reveal.
+          setHidden(false);
+        }
+
+        lastScrollY.current = currentY;
+        ticking = false;
+      });
+    }
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   // Dark variant: solid black panel, white text. We also override
   // `--mobile-text-muted` *within* the header so kebab / theme-toggle icons
   // (which read that variable) become readable on black without prop wiring.
@@ -102,6 +141,9 @@ export function MobileTopBar(props: MobileTopBarProps): React.ReactElement {
         borderBottom: "1px solid var(--mobile-glass-border)",
         boxShadow: "var(--mobile-glass-shadow)",
         fontFamily: "Arial, Helvetica, sans-serif",
+        // Slide out upward when scrolling down; slide back in on scroll-up.
+        transform: hidden ? "translateY(-100%)" : "translateY(0)",
+        transition: "transform 0.22s ease",
         ...(isDark ? darkStyle : null),
       }}
     >
