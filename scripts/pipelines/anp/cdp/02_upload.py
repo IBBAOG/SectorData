@@ -421,26 +421,12 @@ def _refresh_mv(sb) -> None:
         print(f"  WARN: could not refresh view: {e}")
 
 
-def _refresh_production_mv(sb) -> None:
-    """Refresh the /well-by-well dashboard MVs after a CDP upload batch.
-
-    Calls refresh_mv_production() which refreshes:
-      - mv_production_monthly
-      - mv_production_installation_monthly
-      - mv_brazil_monthly
-    These MVs cache pre-joined anp_cdp_producao x field_stakes data (Round 5 perf).
-    Granted to service_role only. Non-fatal: stale MVs are acceptable until next run.
-    """
-    print("  Refreshing well-by-well materialized views...")
-    _t0 = time.time()
-    try:
-        sb.rpc("refresh_mv_production", {}).execute()
-        _elapsed = time.time() - _t0
-        print(f"  MV refresh completed in {_elapsed:.1f}s")
-    except Exception as e:
-        # Don't fail the pipeline on MV refresh error — data is still in anp_cdp_producao;
-        # MV just stale until next run.
-        print(f"  MV refresh failed: {e}")
+# NOTE: refresh of the /well-by-well MVs (mv_production_monthly, etc.) is no
+# longer triggered from this pipeline. refresh_mv_production() takes ~10 min and
+# every PostgREST call site times out at the API gateway (HTTP 57014). It now
+# runs in the dedicated workflow `.github/workflows/refresh_mv_production.yml`
+# (every 30 min via cron + manual workflow_dispatch) which uses `supabase db
+# query` (direct Postgres connection, bypasses PostgREST).
 
 
 def _refresh_canonical_expansion(sb) -> None:
@@ -790,7 +776,7 @@ def _from_parquet(sb, path: str, ano_inicio: int = 0, allow_non_apex: bool = Fal
     print(f"  {len(rows)} rows to upsert…")
     _upsert(sb, rows)
     _refresh_mv(sb)
-    _refresh_production_mv(sb)
+    # refresh_mv_production() now runs in refresh_mv_production.yml (cron + dispatch).
     _refresh_canonical_expansion(sb)
 
 
@@ -1078,7 +1064,7 @@ def _from_csv_dir(sb, csv_dir: str, incremental: bool = True, purge: bool = Fals
     print(f"  {len(rows)} rows to upsert (as-is, no aggregation)…")
     _upsert(sb, rows)
     _refresh_mv(sb)
-    _refresh_production_mv(sb)
+    # refresh_mv_production() now runs in refresh_mv_production.yml (cron + dispatch).
     _refresh_canonical_expansion(sb)
 
     # Validation: report offshore row counts for each uploaded period
