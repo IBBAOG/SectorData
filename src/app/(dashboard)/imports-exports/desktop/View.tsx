@@ -1267,6 +1267,38 @@ export default function DesktopView(): React.ReactElement {
 
   // Exports — stacked area by destination country (value already in correct unit from RPC)
   const exportsUnit = filters.exportsYAxis === "volume" ? "mil m³" : "USD";
+
+  // Stable alphabetical entity order — mirrors the order buildStackedTraces
+  // uses internally when no orderOverride is provided (non-Others sorted
+  // alphabetically, Others last). We derive it once here so the chart and
+  // the YoY table below it share the SAME PALETTE index per country, fixing
+  // the legend-color ↔ table-dot-color mismatch.
+  const exportsEntityOrder: string[] = useMemo(() => {
+    const entitySet = new Set<string>();
+    for (const r of exportsPaisesData) entitySet.add(r.pais);
+    return [
+      ...Array.from(entitySet).filter((e) => e !== OTHERS_LABEL).sort(),
+      ...(entitySet.has(OTHERS_LABEL) ? [OTHERS_LABEL] : []),
+    ];
+  }, [exportsPaisesData]);
+
+  // Color map for exports entities — PALETTE rotation in alphabetical order,
+  // Others pinned to neutral grey. Passed to both the stacked chart and the
+  // YoY table so dot colors are guaranteed identical.
+  const exportsColorMap: Record<string, string> = useMemo(() => {
+    const nonOthers = exportsEntityOrder.filter((e) => e !== OTHERS_LABEL);
+    const map: Record<string, string> = {};
+    for (const e of exportsEntityOrder) {
+      if (e === OTHERS_LABEL) {
+        map[e] = OTHERS_COLOR;
+      } else {
+        const idx = nonOthers.indexOf(e);
+        map[e] = PALETTE[idx % PALETTE.length] ?? OTHERS_COLOR;
+      }
+    }
+    return map;
+  }, [exportsEntityOrder]);
+
   const exportsPaisesTraces = useMemo(() => {
     const rows = exportsPaisesData.map((r) => ({
       ano: r.ano,
@@ -1275,9 +1307,9 @@ export default function DesktopView(): React.ReactElement {
       value: r.value, // server already in mil m³ or USD — never divide client-side
     }));
     return isSingleMonth
-      ? buildHorizontalBarTraces(rows, exportsUnit)
-      : buildStackedTraces(rows, exportsUnit);
-  }, [exportsPaisesData, exportsUnit, isSingleMonth]);
+      ? buildHorizontalBarTraces(rows, exportsUnit, exportsEntityOrder, exportsColorMap)
+      : buildStackedTraces(rows, exportsUnit, exportsEntityOrder, exportsColorMap);
+  }, [exportsPaisesData, exportsUnit, exportsEntityOrder, exportsColorMap, isSingleMonth]);
 
   // Imports — unit price by country (Panel D): 3-series mode (top-2 + Others).
   // Both the rows and entity/color metadata come from the shared hook so the
@@ -1940,6 +1972,7 @@ export default function DesktopView(): React.ReactElement {
                     anchorAno={filters.period.end.ano}
                     anchorMes={filters.period.end.mes}
                     prevMonthByEntity={prevMonthByExportsCountry}
+                    colorMap={exportsColorMap}
                   />
 
                   <div

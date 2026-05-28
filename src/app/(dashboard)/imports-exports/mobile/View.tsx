@@ -981,8 +981,39 @@ export default function MobileView(): React.ReactElement {
   // ── Exports tab — traces + unit/label per toggle ──────────────────────────
   const exportsUnit = filters.exportsYAxis === "volume" ? "mil m³" : "USD";
 
-  // Server-returned top-N destination countries — keep raw order from rows
-  // (PALETTE rotation gives consistent colors via colourForEntity).
+  // Stable alphabetical entity order — mirrors the order buildStackedTraces
+  // uses internally when no orderOverride is provided (non-Others sorted
+  // alphabetically, Others last). Derived once so the chart and the YoY table
+  // share the SAME PALETTE index per country, fixing the legend-color ↔
+  // table-dot-color mismatch. Keep in sync with desktop/View.tsx.
+  const exportsEntityOrder: string[] = useMemo(() => {
+    const entitySet = new Set<string>();
+    for (const r of exportsPaisesData) entitySet.add(r.pais);
+    return [
+      ...Array.from(entitySet).filter((e) => e !== OTHERS_LABEL).sort(),
+      ...(entitySet.has(OTHERS_LABEL) ? [OTHERS_LABEL] : []),
+    ];
+  }, [exportsPaisesData]);
+
+  // Color map for exports entities — PALETTE rotation in alphabetical order,
+  // Others pinned to neutral grey. Passed to both the stacked chart and the
+  // YoY table so dot colors are guaranteed identical.
+  const exportsColorMap: Record<string, string> = useMemo(() => {
+    const nonOthers = exportsEntityOrder.filter((e) => e !== OTHERS_LABEL);
+    const map: Record<string, string> = {};
+    for (const e of exportsEntityOrder) {
+      if (e === OTHERS_LABEL) {
+        map[e] = OTHERS_COLOR;
+      } else {
+        const idx = nonOthers.indexOf(e);
+        map[e] = PALETTE[idx % PALETTE.length] ?? OTHERS_COLOR;
+      }
+    }
+    return map;
+  }, [exportsEntityOrder]);
+
+  // Server-returned top-N destination countries — alphabetical order via
+  // exportsEntityOrder so chart and table share the same PALETTE indices.
   const exportsPaisesTraces = useMemo(() => {
     const rows: StackedRow[] = exportsPaisesData.map((r) => ({
       ano: r.ano,
@@ -990,8 +1021,8 @@ export default function MobileView(): React.ReactElement {
       name: r.pais,
       value: r.value, // already in mil m³ or USD from RPC
     }));
-    return buildStackedTraces(rows, exportsUnit);
-  }, [exportsPaisesData, exportsUnit]);
+    return buildStackedTraces(rows, exportsUnit, exportsEntityOrder, exportsColorMap);
+  }, [exportsPaisesData, exportsUnit, exportsEntityOrder, exportsColorMap]);
 
   const exportsPaisesLayout: Partial<Layout> = useMemo(
     () => mobileAreaLayout(exportsUnit, rangeMonths),
@@ -1422,6 +1453,7 @@ export default function MobileView(): React.ReactElement {
                 anchorAno={filters.period.end.ano}
                 anchorMes={filters.period.end.mes}
                 prevMonthByEntity={prevMonthByExportsCountry}
+                colorMap={exportsColorMap}
               />
             </>
           )}
