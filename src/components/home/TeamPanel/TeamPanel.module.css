@@ -38,7 +38,7 @@
   font-family: Arial, Helvetica, sans-serif;
 }
 
-/* ── Contact entry (wraps the <a>) ───────────────────────────────────────── */
+/* ── Contact entry (wraps the row) ───────────────────────────────────────── */
 
 .entry {
   border-bottom: 1px solid var(--ds-glass-border);
@@ -48,25 +48,29 @@
   border-bottom: none;
 }
 
-/* ── Clickable row ────────────────────────────────────────────────────────── */
+/* ── Row: text block (left) + actions (right) ─────────────────────────────── */
 
 .row {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 10px 14px;
-  text-decoration: none;
-  color: inherit;
-  transition: background 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
-  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
 }
 
 .row:hover {
   background: var(--ds-glass-bg-elevated);
   transform: translateY(-1px);
-  border-radius: 0;
-  text-decoration: none;
-  color: inherit;
+}
+
+/* ── Text block (name + email — non-tappable) ─────────────────────────────── */
+
+.textBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 /* ── Name line ────────────────────────────────────────────────────────────── */
@@ -84,12 +88,6 @@
 
 /* ── Email line ───────────────────────────────────────────────────────────── */
 
-.emailLine {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
 .email {
   font-size: 12px;
   font-family: Arial, Helvetica, sans-serif;
@@ -103,16 +101,37 @@
   color: rgba(255, 255, 255, 0.5);
 }
 
-/* ── Envelope icon (hidden by default, revealed on row hover) ─────────────── */
+/* ── Action icon buttons (WhatsApp + Envelope) ────────────────────────────── */
 
-.icon {
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex-shrink: 0;
-  font-size: 12px;
-  color: var(--ds-glass-border-strong);
-  opacity: 0;
-  transition: opacity 0.15s ease;
 }
 
-.row:hover .icon {
-  opacity: 1;
+.iconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  text-decoration: none;
+  color: var(--ds-glass-border-strong);
+  font-size: 16px;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.iconBtn:hover {
+  background: rgba(0, 0, 0, 0.07);
+  opacity: 0.85;
+}
+
+:global(:root[data-theme="dark"]) .iconBtn {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+:global(:root[data-theme="dark"]) .iconBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
