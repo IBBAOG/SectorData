@@ -590,6 +590,52 @@ Articles in the clipping queue can be dragged to reorder. Implementation:
 - **State:** `reorder(fromIndex, toIndex)` action added to `useClippingSelection` hook. Order persists to `localStorage` (`nh_clipping_selection_v1`); resets when Selection Mode is exited (same as before).
 - **No DB persistence:** order is session-UI only — not saved to Supabase.
 
+## Feed scoping (2026-05-28 — privacy / anti-pollution)
+
+The scanner (in `IBBAOG/news-hunter-scanner`) writes `news_articles.matched_keywords` using the UNION of all users' `news_hunter_keywords` rows plus `news_hunter_default_keywords`. Because `news_articles` is global (one row per URL), every viewer technically receives every tag the scanner ever set on that URL. Without a client-side scope, a keyword added by user A leaks into user B's feed via the `matched_keywords` pills and via filter haystacks (`matched_keywords.join(' ')`).
+
+To prevent that, the dashboard scopes the feed by the **relevant keyword set**:
+
+| Viewer | Relevant set |
+|---|---|
+| Anon  | `news_hunter_default_keywords` (curated 27-entry list) |
+| Client / Admin | `news_hunter_default_keywords ∪ news_hunter_keywords WHERE user_id = auth.uid()` |
+
+### Two-layer enforcement
+
+1. **Article filter** — `useNewsHunterData.filteredArticles` keeps only articles whose `matched_keywords` intersects the relevant set. An article tagged exclusively with another user's keywords is dropped.
+2. **Tag display** — `useNewsHunterData.visibleTagsFor(article)` returns the subset of `matched_keywords` that are in the relevant set. Views render this — NOT `article.matched_keywords` directly.
+
+Both intersection checks are **case-insensitive + accent-insensitive** (lowercase + NFD-strip on both sides, via `stripAccents`).
+
+### Default-deny on empty set
+
+If the relevant set is empty (e.g. defaults RPC failed AND the user has no per-user keywords), the feed renders empty rather than unscoped. This guards against transient load failures leaking the global table to all viewers.
+
+### Implementation map
+
+| Concern | Owner |
+|---|---|
+| Load defaults for both anon AND authed | `NewsHunterContext` (loads `defaultKeywords` in parallel with per-user fetch) |
+| Expose `defaultKeywords` to consumers | `NewsHunterContext` context value |
+| Compute `relevantKeywordSet` (normalized `Set<string>`) | `useNewsHunterData.ts` — memoized over `(defaultKeywords, keywordEntries)` |
+| Scope `filteredArticles` | `useNewsHunterData.ts` — `matched_keywords ∩ relevantKeywordSet ≠ ∅` |
+| Scope tag pills | `useNewsHunterData.ts` — `visibleTagsFor(article)` |
+| Home `NewsHunterPanel` parity | `src/components/home/NewsHunterPanel/index.tsx` — calls `filterArticlesByRelevantSet(articles, relevantKeywordSet).slice(0, ITEM_COUNT)` |
+
+### Shared utils (exported from `useNewsHunterData.ts`)
+
+| Util | Purpose |
+|---|---|
+| `buildRelevantKeywordSet(keywords: string[]): Set<string>` | Lowercase + accent-strip + dedupe |
+| `displayedTagsFor(matchedKeywords, relevantSet): string[]` | Pure version of `visibleTagsFor` (no React) |
+| `filterArticlesByRelevantSet(articles, relevantSet): NewsArticle[]` | Tag-based article filter (used by home panel) |
+| `filterArticlesByKeywords(articles, keywordEntries)` | **Deprecated** — content-based legacy filter kept temporarily for migration |
+
+### Out of scope (follow-up)
+
+- `src/components/stocks/NewsCard.tsx` (on `/stocks`) still uses `keywords` from context for content-based filtering. It does NOT render `matched_keywords` as tags, so the pill-leak vector doesn't apply, but the article-list filter is content-based against own keywords only — same privacy posture as the pre-fix `/news-hunter`. Follow-up to migrate to `filterArticlesByRelevantSet`.
+
 ## Anonymous-visitor mode (added 2026-05-21)
 
 `/news-hunter` supports three viewer tiers — Admin, Client and Anon — sharing the same UI
@@ -605,15 +651,14 @@ shell with progressively richer affordances. Anon visitors get a read-only exper
 
 ### Data path (single source of truth)
 
-- **Anon**: `NewsHunterContext` calls `rpcGetDefaultNewsKeywords()` →
-  `get_default_news_keywords()` RPC →
-  `news_hunter_default_keywords` table (curated set, ~27 keywords) →
-  fallback to hardcoded `FALLBACK_KEYWORDS` if the RPC fails. The
-  `seed_my_news_hunter_keywords()` RPC is skipped entirely (it requires
-  `auth.uid`).
-- **Authenticated**: unchanged — selects from `news_hunter_keywords`
-  filtered by RLS to the current user, seeding via
-  `seed_my_news_hunter_keywords()` on first visit.
+`NewsHunterContext` loads two keyword lists on bootstrap:
+
+- **`defaultKeywords`** (curated, ~27 entries) — always loaded for BOTH anon and authed viewers via `rpcGetDefaultNewsKeywords()` → `get_default_news_keywords()` RPC → `news_hunter_default_keywords` table. Falls back to hardcoded `FALLBACK_KEYWORDS` if the RPC fails.
+- **`keywordEntries`** — per-viewer set:
+  - **Anon**: clones `defaultKeywords` (same list, `match_type: substring`). `seed_my_news_hunter_keywords()` is skipped (requires `auth.uid`).
+  - **Authed**: selects from `news_hunter_keywords` filtered by RLS to the current user. Seeds via `seed_my_news_hunter_keywords()` on the first visit if the table is empty.
+
+Both fetches run in parallel (`Promise.all`) so the authed path doesn't pay two serial round trips on first load. The `Feed scoping` section above explains why defaults must also be loaded for authed users.
 
 Article polling (`news_articles`) is identical for both — the table now has
 an anon `SELECT` policy (migration `20260522000001_anonymous_access.sql`

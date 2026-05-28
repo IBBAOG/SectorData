@@ -146,24 +146,70 @@ export function domainInitial(domain: string): string {
 // ── Shared filter util ───────────────────────────────────────────────────────
 
 /**
- * Filters an article list by keyword entries, honoring each entry's
- * `match_type` (substring vs exact / whole-word).
+ * Builds a normalized (lowercase + accent-stripped) set from a list of
+ * keywords. Used to scope the article feed to the viewer's relevant set
+ * (anon → defaults; authed → defaults ∪ own).
+ */
+export function buildRelevantKeywordSet(keywords: string[]): Set<string> {
+  const out = new Set<string>();
+  for (const k of keywords) {
+    const n = stripAccents(k.toLowerCase()).trim();
+    if (n) out.add(n);
+  }
+  return out;
+}
+
+/**
+ * Returns the subset of `matchedKeywords` that intersects `relevantSet`
+ * (case + accent insensitive). Empty array → article has no tag the viewer
+ * cares about; the caller should treat that as "drop this article".
+ */
+export function displayedTagsFor(
+  matchedKeywords: string[],
+  relevantSet: Set<string>,
+): string[] {
+  if (relevantSet.size === 0 || matchedKeywords.length === 0) return [];
+  return matchedKeywords.filter((k) =>
+    relevantSet.has(stripAccents(k.toLowerCase()).trim()),
+  );
+}
+
+/**
+ * Filters an article list by the viewer's relevant keyword set.
  *
- * This is the SAME first-stage filter applied inside `useNewsHunterData`'s
- * `filteredArticles` derivation — extracted so consumers that can't safely
- * mount the full hook (e.g. `/home` NewsHunterPanel, which would otherwise
- * trigger a `useModuleVisibilityGuard("news-hunter")` redirect to /home for
- * users with the module hidden) get byte-for-byte the same baseline list.
+ * Keeps an article ONLY if at least one of its `matched_keywords` (set by the
+ * scanner at scan time) is in the viewer's relevant set. This makes the feed
+ * private-by-default: a keyword added by another user does NOT pollute this
+ * viewer's feed even though `news_articles` is a global table populated by
+ * the scanner's UNION across all users' keywords.
+ *
+ * `relevantSet` MUST be pre-normalized (lowercase + accent-stripped — use
+ * `buildRelevantKeywordSet`). Empty `relevantSet` → empty result (default-deny:
+ * if the keyword load failed, show nothing rather than everything).
  *
  * Order is preserved from `articles` (the context already sorts
- * `published_at desc` on merge). When `keywordEntries` is empty, all articles
- * pass through — matching the dashboard's "no active filter" state.
+ * `published_at desc` on merge).
  *
- * NOTE: this util intentionally does NOT apply the dashboard's later search /
- * topic-pill filters — those are user-driven UI state with no equivalent on
- * the home panel. The home panel mirrors the dashboard's *default landing
- * state* (search empty, topic = "All"), which is exactly what `filteredArticles`
- * reduces to when those secondary filters are inert.
+ * Consumed by `/home NewsHunterPanel` for the same scope contract as the
+ * dashboard's default landing state.
+ */
+export function filterArticlesByRelevantSet(
+  articles: NewsArticle[],
+  relevantSet: Set<string>,
+): NewsArticle[] {
+  if (relevantSet.size === 0) return [];
+  return articles.filter((a) =>
+    a.matched_keywords.some((k) =>
+      relevantSet.has(stripAccents(k.toLowerCase()).trim()),
+    ),
+  );
+}
+
+/**
+ * @deprecated content-based filter. Kept temporarily for callers that have
+ * not migrated to `filterArticlesByRelevantSet`. New callers should use the
+ * tag-based variant — feed scoping is now defined by `matched_keywords ∩
+ * relevantSet`, not by substring-against-haystack.
  */
 export function filterArticlesByKeywords(
   articles: NewsArticle[],
@@ -239,12 +285,32 @@ export interface UseNewsHunterDataReturn {
   setMobileTab: (tab: MobileTab) => void;
 
   // Derived
-  /** Articles after keyword + search + topicFilter filtering. */
+  /**
+   * Articles after relevant-set scoping + search + topicFilter filtering.
+   *
+   * Scoping rule (privacy):
+   *   - Anon  → keep only articles whose `matched_keywords` intersects the
+   *             curated defaults (`defaultKeywords` from context).
+   *   - Authed → keep only articles whose `matched_keywords` intersects
+   *              `defaults ∪ own keywords`.
+   *   - Empty relevant set → empty feed (default-deny).
+   *
+   * This prevents keyword pollution from cross-user scanner aggregation:
+   * a keyword added by another user does NOT make their tagged articles
+   * leak into this viewer's feed.
+   */
   filteredArticles: NewsArticle[];
   /** Articles that are bookmarked (for the Saved tab). */
   savedArticles: NewsArticle[];
   /** Label: "latest headline X ago" */
   lastScanLabel: string;
+  /**
+   * Returns the subset of an article's `matched_keywords` that the viewer
+   * actually tracks (defaults ∪ own keywords, case + accent insensitive).
+   * Use this — NOT `article.matched_keywords` directly — when rendering
+   * keyword pills, so foreign-user keywords don't leak into the UI.
+   */
+  visibleTagsFor: (article: NewsArticle) => string[];
 }
 
 export function useNewsHunterData(): UseNewsHunterDataReturn {
@@ -255,6 +321,7 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
     justArrivedUrls,
     keywords,
     keywordEntries,
+    defaultKeywords,
     setKeywordEntries,
     loading,
     error,
@@ -368,9 +435,20 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
 
   // ── Derived ──────────────────────────────────────────────────────────────
 
-  // Pre-compute normalized haystacks once per articles change.
-  // Previously this work happened per-keystroke × per-article × per-keyword
-  // (≈320k normalize calls/keystroke at current scale).
+  // Relevant keyword set — union of curated defaults and the viewer's own
+  // keywords, normalized (lowercase + accent-stripped). The set scopes the
+  // feed: anon → defaults only; authed → defaults ∪ own. For matched_keyword
+  // strings stored by the scanner with original casing/diacritics, lookup
+  // happens against the normalized form on both sides.
+  const relevantKeywordSet = useMemo(() => {
+    const all: string[] = [];
+    for (const k of defaultKeywords) all.push(k);
+    for (const e of keywordEntries) all.push(e.keyword);
+    return buildRelevantKeywordSet(all);
+  }, [defaultKeywords, keywordEntries]);
+
+  // Pre-compute normalized haystacks once per articles change. Reused by the
+  // search filter and topic-pill filter below.
   const normalizedHaystacks = useMemo(() => {
     return articles.map((a) => {
       const full = `${a.title} ${a.source_name} ${a.snippet} ${a.matched_keywords.join(" ")}`;
@@ -382,34 +460,36 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
     });
   }, [articles]);
 
+  // Pre-compute the normalized matched_keywords for each article so the
+  // relevant-set intersection runs in O(matched_keywords) per article without
+  // repeated NFD work on every render.
+  const normalizedMatchedKeywords = useMemo(() => {
+    return articles.map((a) =>
+      a.matched_keywords.map((k) => stripAccents(k.toLowerCase()).trim()),
+    );
+  }, [articles]);
+
   const filteredArticles = useMemo(() => {
-    let result = articles;
     let indices = Array.from({ length: articles.length }, (_, i) => i);
 
-    // Keyword filter — honors each entry's match_type.
-    //   'substring' → case-insensitive substring (legacy behaviour).
-    //   'exact'     → case-insensitive whole-word, `\b{kw}\b`.
+    // Stage 1 — Relevant-set scoping (privacy / anti-pollution).
     //
-    // Note: scanner-side matched_keywords already reflect whatever match_type
-    // the scanner applied at scan time, so once the scanner PR lands an
-    // article only carries the user's exact-keyword hit when it actually
-    // word-bounded matched. Client-side re-check stays defensive (cheap and
-    // catches articles persisted by older scanner runs).
+    // Keep ONLY articles whose `matched_keywords` intersects the relevant set.
+    // This drops articles tagged exclusively with another user's keywords
+    // (the scanner aggregates keywords cross-user when populating
+    // `news_articles.matched_keywords`, so without this filter a foreign
+    // keyword like "ANS" would surface its hits to every viewer).
     //
-    // Semantics MUST stay aligned with `filterArticlesByKeywords` (the shared
-    // util consumed by the /home NewsHunterPanel). This branch uses
-    // pre-normalized haystacks for perf, but the underlying predicate
-    // (`keywordHitsNormalized`) is the same one filterArticlesByKeywords calls.
-    if (keywordEntries.length > 0) {
-      indices = indices.filter((idx) =>
-        keywordEntries.some((e) =>
-          keywordHitsNormalized(normalizedHaystacks[idx].full, e.keyword, e.match_type),
-        ),
-      );
+    // Default-deny: empty relevantKeywordSet → empty feed. This guards
+    // against a transient load failure leaking the unscoped table.
+    if (relevantKeywordSet.size === 0) {
+      return [];
     }
+    indices = indices.filter((idx) =>
+      normalizedMatchedKeywords[idx].some((k) => relevantKeywordSet.has(k)),
+    );
 
-    // Search filter — consumes useDeferredValue so heavy re-renders don't
-    // block the input from feeling instant.
+    // Stage 2 — Search filter (consumes useDeferredValue).
     const q = stripAccents(deferredSearch.toLowerCase().trim());
     if (q) {
       indices = indices.filter((idx) =>
@@ -417,9 +497,9 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
       );
     }
 
-    // Topic pill filter (mobile — "All" = no filter)
-    // Topic pills are derived from the user's own keyword labels, so we
-    // honor the keyword's match_type when filtering.
+    // Stage 3 — Topic-pill filter (mobile — "All" = no filter).
+    // Pills are derived from the user's own keyword labels; we honor the
+    // keyword's match_type when filtering against the full haystack.
     if (topicFilter !== "All") {
       const entry = keywordEntries.find(
         (e) => e.keyword.toLowerCase() === topicFilter.toLowerCase(),
@@ -430,9 +510,31 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
       );
     }
 
-    result = indices.map((idx) => articles[idx]);
-    return result;
-  }, [articles, normalizedHaystacks, keywordEntries, deferredSearch, topicFilter]);
+    return indices.map((idx) => articles[idx]);
+  }, [
+    articles,
+    normalizedHaystacks,
+    normalizedMatchedKeywords,
+    relevantKeywordSet,
+    keywordEntries,
+    deferredSearch,
+    topicFilter,
+  ]);
+
+  // visibleTagsFor — returns matched_keywords scoped to the relevant set.
+  // Use this instead of article.matched_keywords when rendering pills so
+  // foreign-user keywords (e.g. "ANS" from another user) don't leak.
+  const visibleTagsFor = useCallback(
+    (article: NewsArticle): string[] => {
+      if (relevantKeywordSet.size === 0 || article.matched_keywords.length === 0) {
+        return [];
+      }
+      return article.matched_keywords.filter((k) =>
+        relevantKeywordSet.has(stripAccents(k.toLowerCase()).trim()),
+      );
+    },
+    [relevantKeywordSet],
+  );
 
   const savedArticles = useMemo(
     () => articles.filter((a) => bookmarkedUrls.has(a.url)),
@@ -477,5 +579,6 @@ export function useNewsHunterData(): UseNewsHunterDataReturn {
     filteredArticles,
     savedArticles,
     lastScanLabel,
+    visibleTagsFor,
   };
 }

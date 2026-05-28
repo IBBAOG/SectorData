@@ -46,6 +46,18 @@ interface NewsHunterContextValue {
   keywords: string[];
   /** Full entries with match_type — preferred for filtering / UI badges. */
   keywordEntries: KeywordEntry[];
+  /**
+   * Curated default keyword set (from `news_hunter_default_keywords` via
+   * `get_default_news_keywords()`). Loaded for BOTH anon and authenticated
+   * viewers — for anon this is also what `keywordEntries` holds; for authed
+   * users this is separate from their per-user list and is used by the
+   * dashboard to scope the feed (relevant set = defaults ∪ own keywords).
+   *
+   * Without this scoping, articles tagged by the scanner with another user's
+   * keyword (the scanner aggregates keywords cross-user) would leak into
+   * everyone's feed. See docs/app/news-hunter.md § "Feed scoping".
+   */
+  defaultKeywords: string[];
   setKeywords: React.Dispatch<React.SetStateAction<string[]>>;
   setKeywordEntries: React.Dispatch<React.SetStateAction<KeywordEntry[]>>;
   loading: boolean;
@@ -113,6 +125,10 @@ export function NewsHunterProvider({
   const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [justArrivedUrls, setJustArrivedUrls] = useState<Set<string>>(new Set());
   const [keywordEntries, setKeywordEntries] = useState<KeywordEntry[]>([]);
+  // Curated default keyword list (mirror of news_hunter_default_keywords).
+  // Loaded for both anon and authenticated users so the dashboard can compute
+  // the relevant feed scope: anon → defaults; authed → defaults ∪ own.
+  const [defaultKeywords, setDefaultKeywords] = useState<string[]>([]);
   const [keywordsLoaded, setKeywordsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -171,24 +187,39 @@ export function NewsHunterProvider({
       const isAnon = !sessionData.session;
       setReadOnly(isAnon);
 
+      // Load curated defaults for BOTH anon and authenticated users. For anon
+      // these double as the keyword entries; for authed users they're kept
+      // separate from per-user keywords and used by the dashboard to compute
+      // the relevant feed scope (defaults ∪ own).
+      //
+      // We do this in parallel with the per-user fetch (authed path) to avoid
+      // serializing two round trips on first load.
+      const defaultsPromise = rpcGetDefaultNewsKeywords(supabase);
+
       if (isAnon) {
         // Anon path: defaults from RPC; fall back to hardcoded list on failure.
-        const defaults = await rpcGetDefaultNewsKeywords(supabase);
+        const defaults = await defaultsPromise;
         if (cancelled) return;
-        const entries: KeywordEntry[] = (
-          defaults.length > 0 ? defaults : FALLBACK_KEYWORDS
-        ).map((k) => ({ keyword: k, match_type: "substring" as const }));
+        const effective = defaults.length > 0 ? defaults : FALLBACK_KEYWORDS;
+        setDefaultKeywords(effective);
+        const entries: KeywordEntry[] = effective.map((k) => ({
+          keyword: k,
+          match_type: "substring" as const,
+        }));
         setKeywordEntries(entries);
         setKeywordsLoaded(true);
         return;
       }
 
-      // Authenticated path (unchanged).
-      const { data, error: err } = await supabase
-        .from("news_hunter_keywords")
-        .select("keyword, match_type")
-        .order("keyword");
+      // Authenticated path.
+      const [{ data, error: err }, defaults] = await Promise.all([
+        supabase.from("news_hunter_keywords").select("keyword, match_type").order("keyword"),
+        defaultsPromise,
+      ]);
       if (cancelled) return;
+      // Store defaults regardless of per-user fetch outcome — the dashboard
+      // needs them to scope the feed (anon-equivalent baseline coverage).
+      setDefaultKeywords(defaults.length > 0 ? defaults : FALLBACK_KEYWORDS);
       if (err) {
         setKeywordEntries(fallbackEntries);
         setKeywordsLoaded(true);
@@ -371,6 +402,7 @@ export function NewsHunterProvider({
         justArrivedUrls,
         keywords,
         keywordEntries,
+        defaultKeywords,
         setKeywords,
         setKeywordEntries,
         loading,

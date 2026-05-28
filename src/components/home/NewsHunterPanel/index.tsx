@@ -26,7 +26,10 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { useNewsHunter } from "../../../context/NewsHunterContext";
-import { filterArticlesByKeywords } from "../../../app/(dashboard)/news-hunter/useNewsHunterData";
+import {
+  buildRelevantKeywordSet,
+  filterArticlesByRelevantSet,
+} from "../../../app/(dashboard)/news-hunter/useNewsHunterData";
 
 import styles from "./NewsHunterPanel.module.css";
 
@@ -73,7 +76,8 @@ function ArrowRight({ size = 10 }: { size?: number }) {
 }
 
 export default function NewsHunterPanel(): React.ReactElement {
-  const { articles, keywordEntries, loading, error } = useNewsHunter();
+  const { articles, keywordEntries, defaultKeywords, loading, error } =
+    useNewsHunter();
 
   // Tick every 30s so "X m ago" labels stay current without coupling to the
   // news-hunter dashboard's ageTick state.
@@ -83,17 +87,32 @@ export default function NewsHunterPanel(): React.ReactElement {
     return () => clearInterval(id);
   }, []);
 
+  // Relevant keyword set — defaults ∪ own (authed) or defaults only (anon).
+  // Mirrors useNewsHunterData.ts so the panel and the full /news-hunter feed
+  // show the same default landing state for the same viewer.
+  const relevantKeywordSet = useMemo(() => {
+    const all: string[] = [];
+    for (const k of defaultKeywords) all.push(k);
+    for (const e of keywordEntries) all.push(e.keyword);
+    return buildRelevantKeywordSet(all);
+  }, [defaultKeywords, keywordEntries]);
+
   // Top-N most-recent — replicates the /news-hunter dashboard's default
   // landing-state feed: same articles (context-sorted published_at desc),
-  // same keyword filter (via the shared filterArticlesByKeywords util),
-  // sliced to ITEM_COUNT. No additional sort, no extra fallback ordering —
-  // we trust the context's canonical order so the first N cards here are
-  // identical (and in the same order) to the first N cards rendered at the
-  // top of /news-hunter for the same viewer.
+  // same relevant-set scoping (matched_keywords ∩ relevant set), sliced to
+  // ITEM_COUNT. No additional sort, no extra fallback ordering — we trust
+  // the context's canonical order so the first N cards here are identical
+  // (and in the same order) to the first N cards rendered at the top of
+  // /news-hunter for the same viewer.
+  //
+  // Default-deny: empty relevant set → empty list (matches dashboard).
   const topArticles = useMemo(() => {
     if (!articles || articles.length === 0) return [];
-    return filterArticlesByKeywords(articles, keywordEntries).slice(0, ITEM_COUNT);
-  }, [articles, keywordEntries]);
+    return filterArticlesByRelevantSet(articles, relevantKeywordSet).slice(
+      0,
+      ITEM_COUNT,
+    );
+  }, [articles, relevantKeywordSet]);
 
   return (
     <div className={styles.root}>

@@ -112,11 +112,20 @@ function AnonCTA({ message }: { message: string }): React.ReactElement {
 interface ArticleCardProps {
   article: NewsArticle;
   isNew: boolean;
+  /**
+   * Tags to render on the card — already scoped to the viewer's relevant
+   * keyword set (defaults ∪ own for authed; defaults for anon). Pass an empty
+   * array to omit the tag row. Use `visibleTagsFor(article)` from the hook
+   * rather than `article.matched_keywords` directly, otherwise foreign-user
+   * keywords (e.g. "ANS" from another user) leak into the UI.
+   */
+  visibleTags: string[];
 }
 
 function ArticleCard({
   article,
   isNew,
+  visibleTags,
 }: ArticleCardProps): React.ReactElement {
   const initial = domainInitial(article.domain);
   const color = domainColor(article.domain);
@@ -234,8 +243,9 @@ function ArticleCard({
         </p>
       )}
 
-      {/* Matched keyword pills */}
-      {article.matched_keywords.length > 0 && (
+      {/* Matched keyword pills — scoped to the viewer's relevant set, so a
+          keyword added by another user (e.g. "ANS") never appears here. */}
+      {visibleTags.length > 0 && (
         <div
           style={{
             display: "flex",
@@ -243,7 +253,7 @@ function ArticleCard({
             gap: 6,
           }}
         >
-          {article.matched_keywords.slice(0, 4).map((kw) => (
+          {visibleTags.slice(0, 4).map((kw) => (
             <span
               key={kw}
               style={{
@@ -261,7 +271,7 @@ function ArticleCard({
               {kw}
             </span>
           ))}
-          {article.matched_keywords.length > 4 && (
+          {visibleTags.length > 4 && (
             <span
               style={{
                 fontSize: 10,
@@ -270,7 +280,7 @@ function ArticleCard({
                 fontWeight: 600,
               }}
             >
-              +{article.matched_keywords.length - 4}
+              +{visibleTags.length - 4}
             </span>
           )}
         </div>
@@ -352,11 +362,14 @@ function ArticleList({
   loading,
   justArrivedUrls,
   emptyMessage,
+  visibleTagsFor,
 }: {
   articles: NewsArticle[];
   loading: boolean;
   justArrivedUrls: Set<string>;
   emptyMessage: string;
+  /** See ArticleCardProps.visibleTags — scopes tag pills to the viewer. */
+  visibleTagsFor: (article: NewsArticle) => string[];
 }): React.ReactElement {
   if (loading && articles.length === 0) {
     return (
@@ -396,6 +409,7 @@ function ArticleList({
           key={article.url}
           article={article}
           isNew={justArrivedUrls.has(article.url)}
+          visibleTags={visibleTagsFor(article)}
         />
       ))}
       {articles.length > MAX_VISIBLE && (
@@ -430,24 +444,28 @@ export default function MobileView(): React.ReactElement {
     visLoading,
     readOnly,
     lastScanLabel,
+    visibleTagsFor,
   } = useNewsHunterData();
 
   // Local-to-mobile chip filter state. `null` ≡ "All" (no chip filter applied).
   const [chipFilter, setChipFilter] = useState<string | null>(null);
 
   // Apply the chip filter on top of the hook's already-filtered list. Substring
-  // match (case + accent insensitive) against title + snippet + matched_keywords.
+  // match (case + accent insensitive) against title + snippet + the visible
+  // (already-scoped) tags — so foreign-user tags can't match a chip even
+  // transitively.
   const chipFilteredArticles = useMemo(() => {
     if (!chipFilter) return filteredArticles;
     const needle = stripAccents(chipFilter.toLowerCase()).trim();
     if (!needle) return filteredArticles;
     return filteredArticles.filter((a) => {
+      const tags = visibleTagsFor(a);
       const haystack = stripAccents(
-        `${a.title} ${a.snippet} ${a.matched_keywords.join(" ")}`.toLowerCase(),
+        `${a.title} ${a.snippet} ${tags.join(" ")}`.toLowerCase(),
       );
       return haystack.includes(needle);
     });
-  }, [chipFilter, filteredArticles]);
+  }, [chipFilter, filteredArticles, visibleTagsFor]);
 
   if (visLoading || !visible) return <></>;
 
@@ -529,6 +547,7 @@ export default function MobileView(): React.ReactElement {
         articles={chipFilteredArticles}
         loading={loading}
         justArrivedUrls={justArrivedUrls}
+        visibleTagsFor={visibleTagsFor}
         emptyMessage={
           articles.length === 0
             ? "No headlines yet. The scanner runs every ~5 min and new articles will appear here automatically."
