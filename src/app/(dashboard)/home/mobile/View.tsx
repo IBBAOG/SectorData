@@ -12,14 +12,14 @@
 //   ┌────────────────────────────────┐
 //   │  Team contact card             │  (mobile-only, kept above the grid)
 //   ├────────────────────────────────┤
-//   │ Oil & Gas               4  ▼   │  Collapsible section header
+//   │ Oil & Gas                       │  Static section header (orange)
 //   ├──────────────┬─────────────────┤
 //   │  ▣  icon     │  ▣  icon        │  Uniform 2-col grid of pastel cards
 //   │              │                 │  (icon top-left ~ 40% h, label
 //   │  Label       │  Label          │  bottom-left, saturated brand
 //   │              │                 │  colour). No horizontal scroll.
 //   ├──────────────┴─────────────────┤
-//   │ Fuel Distribution       6  ▼   │
+//   │ Fuel Distribution               │  Static section header (green)
 //   ├──────────────┬─────────────────┤
 //   │   …                            │
 //   └────────────────────────────────┘
@@ -39,7 +39,7 @@
 //   • MobileBottomTabBar (replaced by the global Home pill in MobileLayout).
 //   • useDataSourcesFreshness — not imported, not called.
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { MobileHomeRappiCard } from "@/components/dashboard/mobile";
 import { getModuleIcon } from "@/data/moduleIcons";
 import { useHomeData, type HomeCardDef, type HomeCategory } from "../useHomeData";
@@ -64,10 +64,11 @@ const HIDE_FROM_MOBILE_HOME = new Set<string>([
 interface SectionDef {
   id: Exclude<HomeCategory, "markets">;
   title: string;
+  color: string;
 }
 const SECTIONS: SectionDef[] = [
-  { id: "oilgas", title: "Oil & Gas" },
-  { id: "fuel", title: "Fuel Distribution" },
+  { id: "oilgas", title: "Oil & Gas", color: "#FF5000" },
+  { id: "fuel", title: "Fuel Distribution", color: "#10A065" },
 ];
 
 // ── Per-slug Rappi metadata ──────────────────────────────────────────────
@@ -148,9 +149,6 @@ const DEFAULT_META: RappiSlugMeta = {
 
 export default function MobileView(): React.ReactElement {
   const { cardsByCategory } = useHomeData();
-  const [collapsedSections, setCollapsedSections] = useState<
-    Record<SectionDef["id"], boolean>
-  >({ oilgas: false, fuel: false });
 
   const oilgasCards = useMemo<HomeCardDef[]>(
     () => cardsByCategory.oilgas.filter((c) => !HIDE_FROM_MOBILE_HOME.has(c.slug)),
@@ -160,10 +158,6 @@ export default function MobileView(): React.ReactElement {
     () => cardsByCategory.fuel.filter((c) => !HIDE_FROM_MOBILE_HOME.has(c.slug)),
     [cardsByCategory.fuel],
   );
-
-  function toggleSection(id: SectionDef["id"]) {
-    setCollapsedSections((prev) => ({ ...prev, [id]: !prev[id] }));
-  }
 
   function cardsForSection(id: SectionDef["id"]): HomeCardDef[] {
     return id === "oilgas" ? oilgasCards : fuelCards;
@@ -189,7 +183,6 @@ export default function MobileView(): React.ReactElement {
         {SECTIONS.map((section) => {
           const cards = cardsForSection(section.id);
           if (cards.length === 0) return null;
-          const collapsed = collapsedSections[section.id];
 
           return (
             <section
@@ -197,22 +190,12 @@ export default function MobileView(): React.ReactElement {
               aria-label={section.title}
               style={{ marginTop: 22 }}
             >
-              <button
-                type="button"
-                onClick={() => toggleSection(section.id)}
-                aria-expanded={!collapsed}
+              <h2
                 style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 8,
+                  margin: 0,
                   padding: "8px 4px",
-                  background: "transparent",
-                  border: 0,
                   borderBottom: "1px solid #E5E7EB",
-                  cursor: "pointer",
-                  color: "#FF5000",
+                  color: section.color,
                   fontFamily: "inherit",
                   fontSize: 17,
                   fontWeight: 700,
@@ -220,76 +203,36 @@ export default function MobileView(): React.ReactElement {
                   textAlign: "left",
                 }}
               >
-                <span>
-                  {section.title}
-                  <span
-                    style={{
-                      marginLeft: 8,
-                      fontSize: 13,
-                      fontWeight: 600,
-                      color: "var(--mobile-text-muted)",
-                      letterSpacing: 0,
-                    }}
-                  >
-                    {cards.length}
-                  </span>
-                </span>
-                <Chevron rotated={!collapsed} />
-              </button>
-              {!collapsed && (
-                <div
-                  style={{
-                    marginTop: 14,
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: 10,
-                  }}
-                >
-                  {cards.map((card) => {
-                    const meta = RAPPI_META[card.slug] ?? DEFAULT_META;
-                    const href = card.href ?? "#";
-                    return (
-                      <MobileHomeRappiCard
-                        key={card.slug}
-                        href={href}
-                        label={meta.label ?? card.title}
-                        illustration={getModuleIcon(card.slug, 26, 1.9)}
-                        bgColor={meta.bgVar}
-                        fgColor={meta.fgVar}
-                        variant="uniform"
-                      />
-                    );
-                  })}
-                </div>
-              )}
+                {section.title}
+              </h2>
+              <div
+                style={{
+                  marginTop: 14,
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 10,
+                }}
+              >
+                {cards.map((card) => {
+                  const meta = RAPPI_META[card.slug] ?? DEFAULT_META;
+                  const href = card.href ?? "#";
+                  return (
+                    <MobileHomeRappiCard
+                      key={card.slug}
+                      href={href}
+                      label={meta.label ?? card.title}
+                      illustration={getModuleIcon(card.slug, 26, 1.9)}
+                      bgColor={meta.bgVar}
+                      fgColor={meta.fgVar}
+                      variant="uniform"
+                    />
+                  );
+                })}
+              </div>
             </section>
           );
         })}
       </div>
     </div>
-  );
-}
-
-// ── Section chevron ──────────────────────────────────────────────────────
-function Chevron({ rotated }: { rotated: boolean }) {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      style={{
-        color: "var(--mobile-text-muted)",
-        transform: rotated ? "rotate(180deg)" : "rotate(0)",
-        transition: "transform 0.18s cubic-bezier(0.4, 0, 0.2, 1)",
-      }}
-    >
-      <path d="m6 9 6 6 6-6" />
-    </svg>
   );
 }
