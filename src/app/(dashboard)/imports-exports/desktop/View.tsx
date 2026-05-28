@@ -22,8 +22,10 @@
 
 import dynamic from "next/dynamic";
 import type { Layout, PlotData } from "plotly.js";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import MonthRangePicker from "../../../../components/dashboard/MonthRangePicker";
+import { ExportButton } from "@/lib/export";
+import { importsExportsExport } from "@/lib/export/dashboards/importsExports";
 
 // ─── Unit conversion constants ─────────────────────────────────────────────────
 
@@ -46,7 +48,6 @@ import NavBar from "../../../../components/NavBar";
 import BrandLogo from "../../../../components/BrandLogo";
 import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
 import ChartSection from "../../../../components/dashboard/ChartSection";
-import ExportPanel from "../../../../components/dashboard/ExportPanel";
 import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 
@@ -1221,9 +1222,6 @@ export default function DesktopView(): React.ReactElement {
     visibilityLoading,
   } = useImportsExportsData();
 
-  const [excelBusy, setExcelBusy] = useState(false);
-  const [csvBusy, setCsvBusy] = useState(false);
-
   // ── Period bounds (for MonthRangePicker) ────────────────────────────────────
   // Picker enforces clamping + ordering against (anoMin/mesMin..anoMax/mesMax).
 
@@ -1595,147 +1593,10 @@ export default function DesktopView(): React.ReactElement {
   if (visibilityLoading) return <BarrelLoading />;
   if (!visible) return <></>;
 
-  // ── Export handler (Tier 1 — direct download) ───────────────────────────────
-  async function handleExcelExport() {
-    setExcelBusy(true);
-    try {
-      const { default: ExcelJS } = await import("exceljs");
-
-      const wb = new ExcelJS.Workbook();
-
-      const wsA = wb.addWorksheet("Imports by Country (kt)");
-      wsA.addRow(["Year", "Month", "Country", "Volume (kt)"]);
-      for (const r of paisesData) {
-        wsA.addRow([r.ano, r.mes, r.pais_origem, +(r.total_kg / 1e6).toFixed(3)]);
-      }
-
-      const wsB = wb.addWorksheet("Imports by Importer (mil m3)");
-      wsB.addRow(["Year", "Month", "Importer", "Volume (mil m3)"]);
-      for (const r of importersData) {
-        wsB.addRow([r.ano, r.mes, r.unified_importer, +r.total_mil_m3.toFixed(3)]);
-      }
-
-      // Exports — unit header depends on current toggle
-      const exportsVolLabel =
-        filters.exportsYAxis === "volume" ? "Volume (mil m3)" : "Value (USD)";
-
-      const wsC = wb.addWorksheet("Exports by Country");
-      wsC.addRow(["Year", "Month", "Country", exportsVolLabel]);
-      for (const r of exportsPaisesData) {
-        wsC.addRow([r.ano, r.mes, r.pais, +r.value.toFixed(3)]);
-      }
-
-      const wsD = wb.addWorksheet("Exports YoY");
-      wsD.addRow([
-        "Entity",
-        `Last 12m (${exportsVolLabel})`,
-        `Prior 12m (${exportsVolLabel})`,
-        "YoY %",
-      ]);
-      for (const r of yoyExportsData) {
-        wsD.addRow([
-          r.entity,
-          +r.last_12m.toFixed(3),
-          +r.prev_12m.toFixed(3),
-          r.yoy_pct != null ? +r.yoy_pct.toFixed(2) : "",
-        ]);
-      }
-
-      // Apply bold header row + thin borders to all worksheets
-      for (const ws of [wsA, wsB, wsC, wsD]) {
-        const headerRow = ws.getRow(1);
-        headerRow.font = { bold: true };
-        headerRow.eachCell((cell) => {
-          cell.border = {
-            bottom: { style: "thin", color: { argb: "FFD0D0D0" } },
-          };
-        });
-      }
-
-      const buffer = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buffer], {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      const slug = filters.unifiedProduct.toLowerCase().replace(/\s+/g, "-");
-      const startMonth = `${filters.period.start.ano}-${String(filters.period.start.mes).padStart(2, "0")}`;
-      const endMonth = `${filters.period.end.ano}-${String(filters.period.end.mes).padStart(2, "0")}`;
-      a.download = `imports-exports_${slug}_${startMonth}_${endMonth}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } finally {
-      setExcelBusy(false);
-    }
-  }
-
-  async function handleCsvExport() {
-    setCsvBusy(true);
-    try {
-      const JSZip = (await import("jszip")).default;
-
-      function toCsv(header: string[], rows: (string | number)[][]): string {
-        const esc = (v: string | number) => `"${String(v).replaceAll('"', '""')}"`;
-        return [header.map(esc).join(","), ...rows.map((r) => r.map(esc).join(","))].join("\n");
-      }
-
-      const zip = new JSZip();
-
-      const csvA = toCsv(
-        ["year", "month", "country", "volume_kt"],
-        paisesData.map((r) => [r.ano, r.mes, r.pais_origem, +(r.total_kg / 1e6).toFixed(3)]),
-      );
-      const csvB = toCsv(
-        ["year", "month", "importer", "volume_mil_m3"],
-        importersData.map((r) => [r.ano, r.mes, r.unified_importer, +r.total_mil_m3.toFixed(3)]),
-      );
-
-      zip.file("imports_by_country.csv", csvA);
-      zip.file("imports_by_importer.csv", csvB);
-
-      // Exports CSVs — unit column header depends on current toggle
-      const exportsColLabel =
-        filters.exportsYAxis === "volume" ? "volume_mil_m3" : "value_usd";
-
-      const csvC = toCsv(
-        ["year", "month", "country", exportsColLabel],
-        exportsPaisesData.map((r) => [r.ano, r.mes, r.pais, +r.value.toFixed(3)]),
-      );
-      const csvD = toCsv(
-        ["entity", `last_12m_${exportsColLabel}`, `prior_12m_${exportsColLabel}`, "yoy_pct"],
-        yoyExportsData.map((r) => [
-          r.entity,
-          +r.last_12m.toFixed(3),
-          +r.prev_12m.toFixed(3),
-          r.yoy_pct != null ? +r.yoy_pct.toFixed(2) : "",
-        ]),
-      );
-
-      zip.file("exports_by_country.csv", csvC);
-      zip.file("exports_yoy.csv", csvD);
-
-      const slug = filters.unifiedProduct.toLowerCase().replace(/\s+/g, "-");
-      const startMonth = `${filters.period.start.ano}-${String(filters.period.start.mes).padStart(2, "0")}`;
-      const endMonth = `${filters.period.end.ano}-${String(filters.period.end.mes).padStart(2, "0")}`;
-
-      const blob = await zip.generateAsync({ type: "blob" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `imports-exports_${slug}_${startMonth}_${endMonth}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } finally {
-      setCsvBusy(false);
-    }
-  }
-
   // ── Render ──────────────────────────────────────────────────────────────────
+  // Export migrated to the unified library (Tier 2 modal-editable).
+  // Spec: src/lib/export/dashboards/importsExports.ts.
+  // RPCs (worker_supabase): get_imports_exports_raw_imports / ...raw_exports / ...export_count.
 
   return (
     <div>
@@ -1793,27 +1654,7 @@ export default function DesktopView(): React.ReactElement {
                   </span>
                 }
                 lang="en"
-                rightSlot={
-                  <ExportPanel
-                    actions={[
-                      {
-                        kind: "excel",
-                        label: "Excel",
-                        onClick: handleExcelExport,
-                        busy: excelBusy,
-                        disabled: excelBusy || csvBusy,
-                        loadingLabel: "Building workbook…",
-                      },
-                      {
-                        kind: "csv",
-                        label: "CSV (zip)",
-                        onClick: handleCsvExport,
-                        busy: csvBusy,
-                        disabled: excelBusy || csvBusy,
-                      },
-                    ]}
-                  />
-                }
+                rightSlot={<ExportButton spec={importsExportsExport} />}
               />
 
               {/* Control row: Product pill toggle + Imports/Exports tab selector */}
