@@ -19,12 +19,13 @@
 import NavBar from "../../../../components/NavBar";
 import PlotlyChart from "../../../../components/PlotlyChart";
 import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
-import ExportPanel from "../../../../components/dashboard/ExportPanel";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 import DataErrorBoundary from "../../../../components/dashboard/DataErrorBoundary";
 import { useModuleVisibilityGuard } from "../../../../hooks/useModuleVisibilityGuard";
 import { useSubsidyTrackerData } from "../useSubsidyTrackerData";
 import WowTable from "./WowTable";
+import { ExportButton } from "@/lib/export";
+import { subsidyTrackerExport } from "@/lib/export/dashboards/subsidyTracker";
 
 export default function DesktopView(): React.ReactElement {
   const { visible, loading: visLoading } = useModuleVisibilityGuard("subsidy-tracker");
@@ -37,10 +38,6 @@ export default function DesktopView(): React.ReactElement {
     chartProducer,
     currentValuesImporter,
     currentValuesProducer,
-    exportExcel,
-    exportCsv,
-    excelLoading,
-    csvLoading,
   } = useSubsidyTrackerData();
 
   // First-load spinner is shown while the very first fetch is in flight AND
@@ -58,28 +55,7 @@ export default function DesktopView(): React.ReactElement {
           title="Subsidy Tracker"
           sub="Diesel — ANP Reference & Commercialization Price vs IPP & Petrobras (BRL/Liter)"
           lang="en"
-          rightSlot={
-            <ExportPanel
-              actions={[
-                {
-                  kind: "excel",
-                  label: "formatted data .xl",
-                  busy: excelLoading,
-                  loadingLabel: "Generating Excel...",
-                  disabled: rows.length === 0 || initialLoading || excelLoading,
-                  onClick: exportExcel,
-                },
-                {
-                  kind: "csv",
-                  label: "all data .csv",
-                  busy: csvLoading,
-                  loadingLabel: "Downloading CSV...",
-                  disabled: rows.length === 0 || initialLoading || csvLoading,
-                  onClick: exportCsv,
-                },
-              ]}
-            />
-          }
+          rightSlot={<ExportButton spec={subsidyTrackerExport} />}
         />
 
         <DataErrorBoundary
