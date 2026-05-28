@@ -140,11 +140,13 @@ function DesktopShell({ children }: { children: React.ReactNode }) {
 }
 
 /* ── Mobile shell ──────────────────────────────────────────────────────────
-   Plan § 3.2 chrome:
-     • MobileTopBar (sticky 56px) — centered SectorData logo on the left
-       slot, MobileKebabMenu on the right slot. No NavBar, no breadcrumb,
-       no avatar — the kebab owns logout for logged-in users; anon visitors
-       see the slot but the kebab renders nothing.
+   Plan § 3.2 chrome (rebranded Onda 6, 2026-05-28):
+     • MobileTopBar (sticky 56px, variant="dark") — solid black background,
+       centered "Oil & Gas Data" wordmark in white, MobileKebabMenu on the
+       right slot (icon adapts to white via the dark-variant CSS-var
+       override on the header element). No NavBar, no breadcrumb, no avatar
+       — the kebab owns logout for logged-in users; anon visitors see the
+       slot but the kebab renders nothing.
      • <main> — the active dashboard page renders here.
      • MobileHomePill (floating, auto-hides on /home) — single primary nav.
      • MobileToastHost — listens for `app-toast` CustomEvents and renders
@@ -162,6 +164,7 @@ function MobileShell({ children }: { children: React.ReactNode }) {
       }}
     >
       <MobileTopBar
+        variant="dark"
         leftSlot={
           // The MobileTopBar grid is `1fr auto`. To get a truly centered
           // wordmark while the kebab sits in the right column, we let the
@@ -188,7 +191,8 @@ function MobileShell({ children }: { children: React.ReactNode }) {
               height={22}
               priority
               style={{
-                opacity: 0.78,
+                // Slightly stronger opacity on dark for legibility.
+                opacity: 0.92,
                 height: 22,
                 width: "auto",
                 objectFit: "contain",
@@ -198,15 +202,14 @@ function MobileShell({ children }: { children: React.ReactNode }) {
               style={{
                 fontWeight: 700,
                 fontSize: 16,
-                letterSpacing: "0.06em",
-                color: "var(--mobile-text)",
+                letterSpacing: "0.02em",
+                color: "#ffffff",
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
               }}
             >
-              SECTORDATA
-              <span style={{ color: "var(--mobile-accent)" }}>.</span>
+              Oil &amp; Gas Data
             </span>
           </div>
         }
