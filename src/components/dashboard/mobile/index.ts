@@ -90,6 +90,15 @@ export type {
 export { getTileIcon, getTileMeta, TILE_PALETTE_LEGACY } from "./mobileHomeTiles";
 export type { TileMeta, TileCategory } from "./mobileHomeTiles";
 
+// Rappi-style pastel tile (mobile /home redesign, 2026-05-28). Three layout
+// flavours (hero/secondary/quick) share one component. Used exclusively by
+// the /home mobile View — other dashboards keep MobileHomeIconTile.
+export { default as MobileHomeRappiCard } from "./MobileHomeRappiCard";
+export type {
+  MobileHomeRappiCardProps,
+  RappiCardVariant,
+} from "./MobileHomeRappiCard";
+
 // Canonical inline-SVG icon set (P2 audit cleanup, 2026-05-21).
 // Re-exported wholesale so consumers can write
 //   import { FilterIcon, CloseIcon } from "@/components/dashboard/mobile";
