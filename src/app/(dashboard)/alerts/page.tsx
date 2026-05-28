@@ -1,16 +1,24 @@
 "use client";
 
-// ─── /alerts — viewport router ───────────────────────────────────────────────
+// ─── /alerts — page entry point ──────────────────────────────────────────────
 //
-// Detects viewport via useIsMobile (single breakpoint: ≤768px) and routes to
-// the appropriate View.  Both Views consume useAlertsData — no logic lives here.
+// /alerts is desktop-only by CTO decision (mobile reform wave 2, § 3.1).
+// MobileExcludedRedirect handles the mobile redirect to /home as a no-op on
+// desktop; DesktopView renders unconditionally for all visitors.
+//
+// Transactional sub-pages are NOT affected:
+//   /alerts/confirm       — double opt-in confirmation (mobile-safe, no redirect)
+//   /alerts/unsubscribe   — one-click unsubscribe (mobile-safe, no redirect)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useIsMobile } from "@/hooks/useIsMobile";
+import MobileExcludedRedirect from "@/components/dashboard/mobile/MobileExcludedRedirect";
 import DesktopView from "./desktop/View";
-import MobileView from "./mobile/View";
 
 export default function AlertsPage(): React.ReactElement {
-  const isMobile = useIsMobile();
-  return isMobile ? <MobileView /> : <DesktopView />;
+  return (
+    <>
+      <MobileExcludedRedirect slug="alerts" displayName="Alerts" />
+      <DesktopView />
+    </>
+  );
 }
