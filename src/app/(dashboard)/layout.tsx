@@ -140,13 +140,12 @@ function DesktopShell({ children }: { children: React.ReactNode }) {
 }
 
 /* ── Mobile shell ──────────────────────────────────────────────────────────
-   Plan § 3.2 chrome (rebranded Onda 6, 2026-05-28):
+   Plan § 3.2 chrome (Onda 7 polish, 2026-05-28):
      • MobileTopBar (sticky 56px, variant="dark") — solid black background,
-       centered "Oil & Gas Data" wordmark in white, MobileKebabMenu on the
-       right slot (icon adapts to white via the dark-variant CSS-var
-       override on the header element). No NavBar, no breadcrumb, no avatar
-       — the kebab owns logout for logged-in users; anon visitors see the
-       slot but the kebab renders nothing.
+       drop logo (blood-drop-navbar.png) perfectly centered via absolute
+       positioning, MobileKebabMenu on the right slot. No wordmark, no NavBar,
+       no breadcrumb, no avatar — the kebab owns logout for logged-in users;
+       anon visitors see the slot but the kebab renders nothing.
      • <main> — the active dashboard page renders here.
      • MobileHomePill (floating, auto-hides on /home) — single primary nav.
      • MobileToastHost — listens for `app-toast` CustomEvents and renders
@@ -166,22 +165,20 @@ function MobileShell({ children }: { children: React.ReactNode }) {
       <MobileTopBar
         variant="dark"
         leftSlot={
-          // The MobileTopBar grid is `1fr auto`. To get a truly centered
-          // wordmark while the kebab sits in the right column, we let the
-          // leftSlot fill the 1fr and center its contents. The kebab takes
-          // 44px on the right, so we add a 44px right padding inside the
-          // leftSlot so the wordmark optically aligns to the viewport
-          // centerline (visual symmetry trick — without it the wordmark
-          // would lean leftwards by half the kebab width).
+          // Drop logo centered exactly on the viewport midpoint.
+          // The MobileTopBar grid is `1fr auto` — left cell is 1fr, right
+          // cell is the kebab (~44px). Using `position:absolute; left:50%;
+          // transform:translateX(-50%)` on the drop anchors it to the
+          // header's own center (the sticky header is the containing block),
+          // so the logo is equidistant from both edges regardless of what
+          // the right slot contains.
           <div
             style={{
-              display: "flex",
+              position: "absolute",
+              left: "50%",
+              transform: "translateX(-50%)",
+              display: "inline-flex",
               alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-              width: "100%",
-              minWidth: 0,
-              paddingLeft: 44,
             }}
           >
             <Image
@@ -191,26 +188,12 @@ function MobileShell({ children }: { children: React.ReactNode }) {
               height={22}
               priority
               style={{
-                // Slightly stronger opacity on dark for legibility.
                 opacity: 0.92,
                 height: 22,
                 width: "auto",
                 objectFit: "contain",
               }}
             />
-            <span
-              style={{
-                fontWeight: 700,
-                fontSize: 16,
-                letterSpacing: "0.02em",
-                color: "#ffffff",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              Oil &amp; Gas Data
-            </span>
           </div>
         }
         rightSlot={<MobileKebabMenu />}
