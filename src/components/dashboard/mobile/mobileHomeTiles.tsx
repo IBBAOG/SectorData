@@ -2,79 +2,78 @@
 //
 // Onda 5 of the mobile reform (2026-05-28). The /home mobile grid renders
 // each dashboard as a Liquid Glass tile (`MobileHomeIconTile`) with a tinted
-// squircle icon badge. To keep the palette consistent and avoid view-level
-// hex hard-coding, this module is the single source of truth for:
+// squircle icon badge.
 //
-//   • which background tint the icon badge uses (`tintBg`);
-//   • which foreground colour the glyph itself uses (`tintFg`, default white).
+// Onda 5.2 (2026-05-28, [mobile-only]): tint scheme switched from a per-slug
+// saturated background + white glyph to a per-CATEGORY soft tint background
+// + saturated category-text glyph — mirroring exactly the desktop /home
+// `ModuleGallery` `iconTile` treatment (see `ModuleGallery.module.css`:232
+// `.iconTile { background: var(--mg-accent-tile); color: var(--mg-accent-text); }`).
+// The previous per-slug palette caused a visual mismatch (white glyph on
+// solid colored badge in mobile vs. saturated glyph on soft tinted badge on
+// desktop) — Eduardo flagged "as cores estão diferentes". Now the icon's
+// fingerprint is identical across views.
 //
-// The glyph itself (the SVG inside the badge) comes from the shared
-// `@/data/moduleIcons` registry — the SAME source the desktop NavBar / Home
-// ModuleGallery consume — so a given dashboard's icon is visually identical
-// in both views. Only the tinted squircle frame is mobile-specific.
+// Category → tint mapping mirrors `ACCENTS` in
+// `src/components/home/ModuleGallery/index.tsx`:
 //
-// The /home mobile view imports `getTileMeta(slug)` and renders the resulting
-// `{ icon, tintBg, tintFg }` triplet into `MobileHomeIconTile`. No tile-level
-// styling lives in the view; if you need to tweak a colour or swap a glyph,
-// edit this file.
+//   markets → brand orange   tile rgba(255,80,0,0.10)  text #cc3d00
+//   oilgas  → blue-600       tile rgba(37,99,235,0.10) text #1d4ed8
+//   fuel    → emerald-600    tile rgba(5,150,105,0.10) text #047857
 //
-// Palette taxonomy:
-//   • Oil & Gas tiles lean petroleum/earth tones (slate, teal, indigo, navy,
-//     purple) to evoke geology/exploration depth.
-//   • Fuel Distribution tiles lean commercial tones (emerald, sky, amber,
-//     orange, rose, cyan, violet, navy) to evoke trade/markets.
-//   • Brand orange (#ff5000) is reserved for /diesel-gasoline-margins —
-//     the fuel-pump dashboard that most directly evokes our brand metaphor.
-//
-// Why not CSS variables for these tints:
-//   Each tile background is unique and one-off; introducing 13 new CSS
-//   variables (--tile-bg-anp-cdp, etc.) for values that aren't reused
-//   elsewhere is more drift surface than help. The single Record<> below
-//   is the contract.
+// The glyph itself comes from the shared `@/data/moduleIcons` registry —
+// the SAME source the desktop NavBar / Home ModuleGallery consume — so a
+// given dashboard's icon is visually identical in both views.
 
 import type { ReactNode } from "react";
 import { getModuleIcon } from "@/data/moduleIcons";
+
+export type TileCategory = "markets" | "oilgas" | "fuel";
 
 export interface TileMeta {
   /** Pre-rendered SVG glyph at the canonical 24×24 size. */
   icon: ReactNode;
   /** Compact-variant glyph rendered at 20×20 (used by Last-visited row). */
   compactIcon: ReactNode;
-  /** Icon-badge background colour (CSS color). */
+  /** Icon-badge background colour (CSS color) — category soft tint. */
   tintBg: string;
-  /** Icon foreground colour. Defaults to white. */
+  /** Icon foreground colour — saturated category-text colour. */
   tintFg: string;
 }
 
-// ── Palette: slug → { tintBg, tintFg } ──────────────────────────────────────
-//
-// Onda 5.1 (2026-05-28): the glyph itself is no longer a custom mobile-only
-// SVG — it now comes from `@/data/moduleIcons` (`getModuleIcon`), the same
-// registry used by the desktop NavBar/Home ModuleGallery, so that a given
-// dashboard's icon is visually identical across views. Only the tinted
-// squircle frame (background + foreground colour) remains mobile-specific.
+// ── Category accents (mirror desktop ModuleGallery ACCENTS) ─────────────────
 
-interface TilePaletteEntry {
-  tintBg: string;
-  tintFg?: string;
+interface CategoryTint {
+  tile: string;       // soft background (rgba 10%)
+  accentText: string; // saturated foreground (AA on white)
 }
 
-export const TILE_PALETTE: Record<string, TilePaletteEntry> = {
+const CATEGORY_TINTS: Record<TileCategory, CategoryTint> = {
+  markets: { tile: "rgba(255, 80, 0, 0.10)", accentText: "#cc3d00" },
+  oilgas: { tile: "rgba(37, 99, 235, 0.10)", accentText: "#1d4ed8" },
+  fuel:   { tile: "rgba(5, 150, 105, 0.10)", accentText: "#047857" },
+};
+
+/** Slug → category fallback used when caller doesn't pass `category`. */
+const SLUG_CATEGORY: Record<string, TileCategory> = {
+  // Markets
+  "stocks": "markets",
+  "news-hunter": "markets",
   // Oil & Gas
-  "well-by-well": { tintBg: "#0c4a6e" }, // deep petroleum blue
-  "anp-cdp": { tintBg: "#475569" }, // slate
-  "anp-cdp-bsw": { tintBg: "#0891b2" }, // teal
-  "anp-cdp-depletion": { tintBg: "#7c3aed" }, // purple
-  "anp-cdp-diaria": { tintBg: "#4f46e5" }, // indigo
+  "well-by-well": "oilgas",
+  "anp-cdp": "oilgas",
+  "anp-cdp-bsw": "oilgas",
+  "anp-cdp-depletion": "oilgas",
+  "anp-cdp-diaria": "oilgas",
   // Fuel Distribution
-  "market-share": { tintBg: "#059669" }, // emerald
-  "price-bands": { tintBg: "#0284c7" }, // sky
-  "subsidy-tracker": { tintBg: "#d97706" }, // amber
-  "diesel-gasoline-margins": { tintBg: "#ff5000" }, // brand orange (fuel)
-  "anp-prices": { tintBg: "#e11d48" }, // rose
-  "anp-glp": { tintBg: "#0e7490" }, // cyan
-  "imports-exports": { tintBg: "#9333ea" }, // violet
-  "navios-diesel": { tintBg: "#1e3a8a" }, // navy
+  "market-share": "fuel",
+  "price-bands": "fuel",
+  "subsidy-tracker": "fuel",
+  "diesel-gasoline-margins": "fuel",
+  "anp-prices": "fuel",
+  "anp-glp": "fuel",
+  "imports-exports": "fuel",
+  "navios-diesel": "fuel",
 };
 
 // ── Glyph dispatcher ─────────────────────────────────────────────────────────
@@ -82,13 +81,13 @@ export const TILE_PALETTE: Record<string, TilePaletteEntry> = {
 /**
  * Returns the SVG glyph for a given dashboard slug at the requested size.
  *
- * Onda 5.1 (2026-05-28): delegates to the shared `getModuleIcon` registry in
- * `@/data/moduleIcons` so mobile and desktop render the SAME glyph for each
- * dashboard. Stroke width is tuned to 1.75 to read well at the 22-26px sizes
- * used inside the tinted squircle badge.
+ * Delegates to the shared `getModuleIcon` registry in `@/data/moduleIcons`
+ * so mobile and desktop render the SAME glyph for each dashboard. Stroke
+ * width is tuned to 2 (matching desktop ModuleGallery's call site) to keep
+ * the visual weight identical.
  */
 export function getTileIcon(slug: string, size: number): ReactNode {
-  return getModuleIcon(slug, size, 1.75);
+  return getModuleIcon(slug, size, 2);
 }
 
 /**
@@ -97,21 +96,46 @@ export function getTileIcon(slug: string, size: number): ReactNode {
  * @param slug      Dashboard slug (matches `HomeCardDef.slug`).
  * @param variant   "default" → 26px glyph (tile is 88px tall); "compact" →
  *                  20px glyph (tile is 56px tall, used by Last-visited row).
+ * @param category  Optional category override. If omitted, falls back to
+ *                  `SLUG_CATEGORY` lookup; if that also misses, defaults to
+ *                  "fuel" so the gallery never crashes.
  *
- * Unknown slugs fall back to a neutral grey background + the generic
- * apps-grid fallback glyph from `getModuleIcon` so the gallery never crashes.
+ * The returned `tintBg` / `tintFg` mirror the desktop `iconTile` treatment
+ * exactly: soft 10% tint of the category accent as background, saturated
+ * AA-on-white category text colour as the glyph foreground.
  */
 export function getTileMeta(
   slug: string,
   variant: "default" | "compact" = "default",
+  category?: TileCategory,
 ): TileMeta {
-  const entry = TILE_PALETTE[slug];
-  const tintBg = entry?.tintBg ?? "#64748b";
-  const tintFg = entry?.tintFg ?? "#ffffff";
+  const cat: TileCategory = category ?? SLUG_CATEGORY[slug] ?? "fuel";
+  const tint = CATEGORY_TINTS[cat];
   return {
     icon: getTileIcon(slug, variant === "compact" ? 20 : 26),
     compactIcon: getTileIcon(slug, 20),
-    tintBg,
-    tintFg,
+    tintBg: tint.tile,
+    tintFg: tint.accentText,
   };
 }
+
+/**
+ * @deprecated Kept for reference; not consumed anymore. The per-slug palette
+ * was replaced by per-category tints in Onda 5.2 to match desktop parity.
+ * If you need the old saturated-square look, read from this map directly.
+ */
+export const TILE_PALETTE_LEGACY: Record<string, { tintBg: string; tintFg?: string }> = {
+  "well-by-well": { tintBg: "#0c4a6e" },
+  "anp-cdp": { tintBg: "#475569" },
+  "anp-cdp-bsw": { tintBg: "#0891b2" },
+  "anp-cdp-depletion": { tintBg: "#7c3aed" },
+  "anp-cdp-diaria": { tintBg: "#4f46e5" },
+  "market-share": { tintBg: "#059669" },
+  "price-bands": { tintBg: "#0284c7" },
+  "subsidy-tracker": { tintBg: "#d97706" },
+  "diesel-gasoline-margins": { tintBg: "#ff5000" },
+  "anp-prices": { tintBg: "#e11d48" },
+  "anp-glp": { tintBg: "#0e7490" },
+  "imports-exports": { tintBg: "#9333ea" },
+  "navios-diesel": { tintBg: "#1e3a8a" },
+};

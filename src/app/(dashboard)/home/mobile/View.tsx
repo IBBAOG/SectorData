@@ -171,7 +171,7 @@ export default function MobileView(): React.ReactElement {
                   }}
                 >
                   {cards.map((card) => {
-                    const meta = getTileMeta(card.slug, "default");
+                    const meta = getTileMeta(card.slug, "default", card.category);
                     return (
                       <MobileHomeIconTile
                         key={card.slug}

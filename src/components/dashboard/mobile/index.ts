@@ -82,8 +82,8 @@ export type {
 // Slug → tile palette + glyph dispatcher (the contract MobileHomeIconTile
 // consumes). Exposed so non-/home call-sites can render a launcher tile for a
 // dashboard without re-implementing the palette.
-export { TILE_PALETTE, getTileIcon, getTileMeta } from "./mobileHomeTiles";
-export type { TileMeta } from "./mobileHomeTiles";
+export { getTileIcon, getTileMeta, TILE_PALETTE_LEGACY } from "./mobileHomeTiles";
+export type { TileMeta, TileCategory } from "./mobileHomeTiles";
 
 // Canonical inline-SVG icon set (P2 audit cleanup, 2026-05-21).
 // Re-exported wholesale so consumers can write
