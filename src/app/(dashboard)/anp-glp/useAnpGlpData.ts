@@ -80,9 +80,6 @@ export interface UseAnpGlpData {
 
   // Stable toggle helpers (min-1 guard included)
   toggleCat: (c: string) => void;
-
-  // Export data: raw serieRows (already period-filtered by RPC)
-  exportRows: AnpGlpSerieRow[];
 }
 
 // ─── Hook ────────────────────────────────────────────────────────────────────
@@ -212,6 +209,5 @@ export function useAnpGlpData(): UseAnpGlpData {
     filters,
     setFilters,
     toggleCat,
-    exportRows: serieRows,
   };
 }

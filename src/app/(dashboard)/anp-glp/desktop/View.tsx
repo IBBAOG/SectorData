@@ -1,18 +1,20 @@
 "use client";
 
-// Desktop view for /anp-glp — verbatim move from old page.tsx, re-wired to
-// consume useAnpGlpData instead of inline state/effects.
+// Desktop view for /anp-glp. `/anp-glp` is on the mobile-excluded route list
+// (Mobile reform v2, 2026-05-27) — there is no mobile View, so the dual-view
+// binding sync rule does not apply here. Mobile visitors hit
+// <MobileExcludedRedirect slug="anp-glp" /> mounted by page.tsx.
 //
 // Charts:
 //  1. Monthly Sales — National Total (line, multi-category, kt/month)
 //  2. Top 15 Distributors for selected category (horizontal bar, kt)
 //
-// Binding sync rule: any meaningful change here (new filter, chart, export)
-// must land in mobile/View.tsx in the SAME commit, or the commit must declare
-// [desktop-only] with an explicit reason. See CLAUDE.md § "Dual-view policy".
+// Export: unified library (src/lib/export). Spec lives at
+// src/lib/export/dashboards/anpGlp.ts. Always full history; ignores
+// the dashboard's filter state by design.
 
 import type { Layout, PlotData } from "plotly.js";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import NavBar from "../../../../components/NavBar";
 import BrandLogo from "../../../../components/BrandLogo";
@@ -22,12 +24,11 @@ import MultiSelectFilter from "../../../../components/dashboard/MultiSelectFilte
 import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 import ChartSection from "../../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
-import ExportPanel from "../../../../components/dashboard/ExportPanel";
+import { ExportButton } from "@/lib/export";
+import { anpGlpExport } from "@/lib/export/dashboards/anpGlp";
 import { useModuleVisibilityGuard } from "../../../../hooks/useModuleVisibilityGuard";
 import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../../lib/plotlyDefaults";
 import { kgToMilTon, LABEL } from "../../../../lib/units";
-import { downloadGenericExcel } from "../../../../lib/exportExcel";
-import { downloadCsv } from "../../../../lib/exportCsv";
 import type { AnpGlpSerieRow } from "../../../../lib/rpc";
 
 import {
@@ -158,10 +159,7 @@ export default function DesktopView(): React.ReactElement {
     filters,
     setFilters,
     toggleCat,
-    exportRows,
   } = useAnpGlpData();
-
-  const [excelLoading, setExcelLoading] = useState(false);
 
   const trendChart = useMemo(
     () => buildTrendChart(serieRows, filters.selectedCats),
@@ -249,58 +247,7 @@ export default function DesktopView(): React.ReactElement {
                 period={
                   hasYears && yMin != null && yMax != null ? [yMin, yMax] : null
                 }
-                rightSlot={
-                  <ExportPanel
-                    actions={[
-                      {
-                        kind: "excel",
-                        label: "formatted data .xl",
-                        busy: excelLoading,
-                        loadingLabel: "Generating Excel...",
-                        disabled:
-                          loading ||
-                          exportRows.length === 0 ||
-                          excelLoading,
-                        onClick: async () => {
-                          setExcelLoading(true);
-                          try {
-                            await downloadGenericExcel<AnpGlpSerieRow>({
-                              rows: exportRows,
-                              filename: "ANP-GLP",
-                              title: "ANP — LPG Sales by Distributor",
-                              sheetName: "LPG Sales",
-                              columns: [
-                                { key: "ano",           header: "Year" },
-                                { key: "mes",           header: "Month" },
-                                { key: "distribuidora", header: "Distributor", width: 28 },
-                                { key: "categoria",     header: "Category",    width: 22 },
-                                { key: "vendas_kg",     header: "Sales (kg)",  format: "#,##0" },
-                              ],
-                            });
-                          } catch (e) {
-                            console.error("Excel export failed", e);
-                          } finally {
-                            setExcelLoading(false);
-                          }
-                        },
-                      },
-                      {
-                        kind: "csv",
-                        label: "all data .csv",
-                        disabled: loading || exportRows.length === 0,
-                        onClick: () => {
-                          downloadCsv({
-                            rows: exportRows as unknown as Record<
-                              string,
-                              unknown
-                            >[],
-                            filename: "ANP-GLP",
-                          });
-                        },
-                      },
-                    ]}
-                  />
-                }
+                rightSlot={<ExportButton spec={anpGlpExport} />}
               />
 
               {loading ? (

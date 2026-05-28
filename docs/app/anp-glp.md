@@ -96,26 +96,27 @@ Diferença vs `/anp-precos-produtores`: aqui o foco é **volume vendido** (kg) p
 
 ## Export
 
-Tier 1 — download direto via `<ExportPanel>` (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
+Tier 1 — direct download via the unified `<ExportButton>` (contract: [`docs/app/export-library-contract.md`](export-library-contract.md)).
 
-- Excel: `downloadGenericExcel<T>` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
-- CSV: `downloadCsv<T>` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
-- Filename pattern: `ANP-GLP.<xlsx|csv>`.
-- Dados exportados: linhas atualmente em estado da página (saída de `get_anp_glp_serie` aplicada com filtros de período + categorias selecionadas).
+- Spec lives at [`src/lib/export/dashboards/anpGlp.ts`](../../src/lib/export/dashboards/anpGlp.ts) (`anpGlpExport`).
+- Filename: `LPGSales_DD-MM-YY.<xlsx|csv>` (date appended by the library).
+- `tier: 1`, `filterSource: "none"` — the export always returns the **full LPG sales history** regardless of the dashboard's period slider / category checkboxes / top-distributor select. Power users want the full dataset; the on-screen filters stay exploratory.
+- Excel: 1 sheet `"LPG Sales"`, title `"ANP — LPG Sales by Distributor"` (brand orange row 1), navy header row, Arial 10 cells. Columns: Year, Month, Distributor, Category, Sales (kg) `#,##0`, Sales (thousand t) `0.000`.
+- CSV: `mode: "single"`, same column set as Excel.
+- Data source: `rpcGetAnpGlpSerie(supabase, {})` — empty params → all four `p_*` filters resolve to NULL server-side → full history.
+- `vendas_mil_ton = vendas_kg / 1e6` computed in the spec via `kgToMilTon`; the raw `vendas_kg` is kept alongside for traceability.
+- Plugged into desktop view's `DashboardHeader.rightSlot` via `<ExportButton spec={anpGlpExport} />`. No export on mobile (per Mobile reform v2).
 
 ## Dual-view structure
 
-Refatorado em 2026-05-20 para o padrão dual-view (docs/app/dual-view-pattern.md).
+Refatorado em 2026-05-20 para o padrão dual-view. Mobile foi **descontinuado** na Mobile reform v2 (2026-05-27) — `/anp-glp` está na lista de rotas mobile-excluded; em mobile, `page.tsx` monta `<MobileExcludedRedirect slug="anp-glp" />` e o usuário é redirecionado para `/home?excluded=anp-glp`.
 
 ```
 src/app/(dashboard)/anp-glp/
-├── page.tsx            — viewport router (useIsMobile → desktop or mobile)
+├── page.tsx            — desktop viewport: renders <DesktopView />; mobile: <MobileExcludedRedirect />
 ├── useAnpGlpData.ts    — THE BRAIN: RPCs, filter state, debounce, derivations
-├── desktop/
-│   └── View.tsx        — sidebar layout, line chart + horizontal bar
-└── mobile/
-    └── View.tsx        — MobileTopBar + category MobileTabBar + stacked area chart
-                          + MobileDataCard top-dist list + ExportFAB + FilterDrawer
+└── desktop/
+    └── View.tsx        — sidebar layout, line chart + horizontal bar
 ```
 
 ### Hook contract (`useAnpGlpData`)
@@ -132,20 +133,11 @@ src/app/(dashboard)/anp-glp/
   filters: AnpGlpFilters;           // yearRangeIdx, selectedCats, topDistCat
   setFilters: (next: Partial<AnpGlpFilters>) => void;
   toggleCat: (c: string) => void;   // min-1 guard included
-  exportRows: AnpGlpSerieRow[];
 }
 ```
 
-### Mobile-specific analyses
+> Note: the legacy `exportRows` field was removed when `/anp-glp` migrated to the unified export library (2026-05-28). The export now fetches full history independently of the hook's filter state — see Export section above.
 
-| Analysis | Desktop | Mobile |
-|---|---|---|
-| Monthly sales trend (all categories) | Multi-line chart | Stacked area (active tab only) |
-| Top 15 distributors | Horizontal bar chart | MobileDataCard ranked list with inline bar |
-| Category selector | Sidebar MultiSelectFilter (multi) | MobileTabBar (single active tab) |
-| Period filter | Sidebar PeriodSlider | FilterDrawer |
-| Export | ExportPanel (sidebar-header) | ExportFAB → ExportSheet (Excel + CSV) |
+### Mobile
 
-### Binding sync rule
-
-Any change to one View (new filter, chart, KPI, copy) must land in the other View in the same commit, or the commit message must declare `[desktop-only]` / `[mobile-only]` with an explicit reason.
+Dashboard is **mobile-excluded** since Mobile reform v2 (see README.md § "Mobile reform 2026-05-27"). The binding sync rule with a mobile View does not apply — there is no mobile View. Future changes only need to be reflected in `desktop/View.tsx`.
