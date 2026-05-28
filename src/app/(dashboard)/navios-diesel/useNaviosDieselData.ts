@@ -152,7 +152,26 @@ export const STATUS_LABELS: Record<string, string> = {
 
 // ─── Hook implementation ──────────────────────────────────────────────────────
 
-export function useNaviosDieselData(): UseNaviosDieselData {
+// ─── Hook options ─────────────────────────────────────────────────────────────
+
+export interface UseNaviosDieselDataOptions {
+  /**
+   * When true, the hook skips `get_nd_navios` (per-vessel rows), the
+   * previous-day diff fetch, `get_nd_volume_mensal_descarga`, and
+   * `get_nd_navios_descarregados`. Only the snapshot list, port aggregates,
+   * and monthly port summary are fetched.
+   *
+   * Mobile view uses `aggregateOnly: true` to trim the payload for narrow
+   * viewports that do not render the per-vessel line-up or AIS map.
+   * Desktop always passes `false` (default).
+   */
+  aggregateOnly?: boolean;
+}
+
+export function useNaviosDieselData(
+  options: UseNaviosDieselDataOptions = {},
+): UseNaviosDieselData {
+  const { aggregateOnly = false } = options;
   const supabase = getSupabaseClient();
 
   // ── Snapshot state ──────────────────────────────────────────────────────────
@@ -352,17 +371,27 @@ export function useNaviosDieselData(): UseNaviosDieselData {
   }, [supabase]);
 
   // ── Effect 2: load vessel data + port summary for the selected snapshot ───────
+  // In aggregateOnly mode (mobile), per-vessel rows are skipped to reduce
+  // payload. Only port aggregates and the monthly port summary are fetched.
   useEffect(() => {
     if (!supabase || !selectedColeta) return;
     const id = ++fetchIdRef.current;
     setLoading(true);
     setError(null);
 
-    Promise.all([
-      rpcGetNdNavios(supabase, selectedColeta),
-      rpcGetNdResumoPortos(supabase, selectedColeta),
-      rpcGetNdResumoMensalPortos(supabase, selectedColeta),
-    ])
+    const fetches = aggregateOnly
+      ? Promise.all([
+          Promise.resolve([] as NavioDieselRow[]),
+          rpcGetNdResumoPortos(supabase, selectedColeta),
+          rpcGetNdResumoMensalPortos(supabase, selectedColeta),
+        ])
+      : Promise.all([
+          rpcGetNdNavios(supabase, selectedColeta),
+          rpcGetNdResumoPortos(supabase, selectedColeta),
+          rpcGetNdResumoMensalPortos(supabase, selectedColeta),
+        ]);
+
+    fetches
       .then(([nav, resumo, mensal]) => {
         if (id !== fetchIdRef.current) return;
         setNavios(nav);
@@ -375,11 +404,11 @@ export function useNaviosDieselData(): UseNaviosDieselData {
         setError(err instanceof Error ? err : new Error(String(err)));
         setLoading(false);
       });
-  }, [supabase, selectedColeta]);
+  }, [supabase, selectedColeta, aggregateOnly]);
 
-  // ── Effect 3: monthly volume + discharged vessels ────────────────────────────
+  // ── Effect 3: monthly volume + discharged vessels (skipped in aggregateOnly) ──
   useEffect(() => {
-    if (!supabase || !selectedColeta) return;
+    if (aggregateOnly || !supabase || !selectedColeta) return;
     let cancelled = false;
     (async () => {
       const [monthly, discharged] = await Promise.all([
@@ -393,11 +422,11 @@ export function useNaviosDieselData(): UseNaviosDieselData {
     return () => {
       cancelled = true;
     };
-  }, [supabase, selectedColeta]);
+  }, [supabase, selectedColeta, aggregateOnly]);
 
-  // ── Effect 4: previous-day vessels for "New!" badge ──────────────────────────
+  // ── Effect 4: previous-day vessels for "New!" badge (skipped in aggregateOnly) ─
   useEffect(() => {
-    if (!supabase || !prevDaySnapshot) {
+    if (aggregateOnly || !supabase || !prevDaySnapshot) {
       setNaviosAnteriores([]);
       return;
     }
@@ -409,7 +438,7 @@ export function useNaviosDieselData(): UseNaviosDieselData {
     return () => {
       cancelled = true;
     };
-  }, [supabase, prevDaySnapshot]);
+  }, [supabase, prevDaySnapshot, aggregateOnly]);
 
   return {
     coletas,

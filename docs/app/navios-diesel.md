@@ -125,7 +125,15 @@ src/app/(dashboard)/navios-diesel/
 
 ### Hook contract (`useNaviosDieselData`)
 
-The hook is the single source of truth for all data. Both Views import from it and never call Supabase directly. Key exports:
+The hook is the single source of truth for all data. Both Views import from it and never call Supabase directly.
+
+**Options:**
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `aggregateOnly` | `boolean` | `false` | When `true`, skips `get_nd_navios`, `get_nd_volume_mensal_descarga`, `get_nd_navios_descarregados`, and the previous-day diff fetch. Desktop passes `false` (default); mobile passes `true`. |
+
+**Key exports:**
 
 | Export | Type | Description |
 |---|---|---|
@@ -138,18 +146,29 @@ The hook is the single source of truth for all data. Both Views import from it a
 | `statusToTone` | `function` | Maps status string → mobile tone token |
 | `STATUS_LABELS` | `Record` | Maps status string → English label |
 
-### Mobile view elements
+### Mobile view elements (v2, Onda 3 — radical simplification)
 
-- `MobileTopBar` — sticky glass top bar (SECTORDATA wordmark)
-- Status segmented control (Active / Recent / Expected tabs)
-- Port summary horizontal scroller — 140px snap cards with volume, vessel count, status dots
-- Sticky filter chip row — port filter chip + snapshot date chip + "Add filter" button
-- Vessel list — `MobileDataCard` with `status` prop; `expanded` variant
-- `BottomSheet` — vessel detail (IMO / MMSI / flag / origin / voyage timeline)
-- `BottomSheet` — filter pane (port selection)
-- `ExportFAB` — download Excel (falls back to CSV on error)
-- `MobileBottomTabBar` — Vessels / Ports / Map / Profile
-- Map tab: placeholder (map + AIS is [desktop-only] — desktop renders full Plotly scattergeo + AIS overlay)
+Spec: `/.claude/plans/o-modo-mobile-da-tranquil-giraffe.md` § 4.6
+
+- Title block + last-collected badge (hours ago)
+- Sticky filter chip row — Status chips (All / Expected / Active). Visual only in
+  `aggregateOnly` mode: no per-vessel data is fetched, so the chips do not actually
+  filter the bar chart or table. Provides UX context; desktop offers filtered breakdown.
+- **Hero — Plotly horizontal bar chart** (`MobileChart`) — total diesel volume (m³) per
+  port, sorted by volume DESC. Colors cycle through palette (leader port = brand orange).
+- **Port summary table** — Port (sticky col) | Volume (m³) | Next ETA | Vessels.
+  Horizontal scroll preserved; first column sticky. Next ETA shows `—` in aggregate-only
+  mode (no per-vessel ETA available without fetching `get_nd_navios`).
+
+**Removed from mobile v2 (desktop-only):**
+- Radar / AIS live map
+- Per-vessel lineup table
+- "Next vessel" hero card
+- `ExportFAB` (no export on mobile — § 3.4 policy)
+- `MobileBottomTabBar` (replaced by floating `MobileHomePill`, Onda 2 global nav)
+- `MobileTopBar` (NavBar hidden by `MobileLayout`, Onda 2)
+- Tabs: Lineup / Radar / Ports
+- Cabotage / status multi-select / country / port filters
 
 ### Desktop-only divergences
 
@@ -212,9 +231,11 @@ Anti-regression:
 
 ## Export
 
-Tier 1 — download direto via `<ExportPanel>` (desktop) / `ExportFAB` (mobile).
+Tier 1 — download direto via `<ExportPanel>` (desktop only).
 
 - Excel: `downloadGenericExcel<T>` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
 - CSV: `downloadCsv<T>` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
 - Filename pattern: `Navios-Diesel-Lineup.<xlsx|csv>`.
 - Dados exportados: linhas correspondentes ao estado `naviosDisplay` (saída de `get_nd_navios` já filtrada + `WHERE NOT is_cabotagem`).
+
+**Mobile:** export removed (§ 3.4 — no `ExportFAB` on mobile; user exports from desktop).
