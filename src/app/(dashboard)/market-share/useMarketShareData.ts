@@ -476,6 +476,42 @@ export function buildMarketShareLine(params: {
     }
   }
 
+  // Anti-overlap: when two or more end-of-line labels land at nearly the same
+  // Y, stack them with a minimum vertical separation (~3% of axis range, which
+  // corresponds to ~12-14px at the chart's 300px height). Labels stay anchored
+  // at the right of the last data point — only their Y is nudged.
+  if (annotations.length > 1) {
+    const axisSpan = yHi - yLo > 0 ? yHi - yLo : 1.0;
+    const minGap = axisSpan * 0.03;
+
+    // Sort by current y descending (top → bottom) and remember original index
+    // so we can write the adjusted y back in place.
+    const order = annotations
+      .map((a, i) => ({ i, y: a.y }))
+      .sort((a, b) => b.y - a.y);
+
+    // Top-down pass: each label must be at least minGap below the previous.
+    for (let k = 1; k < order.length; k++) {
+      const prev = order[k - 1].y;
+      if (order[k].y > prev - minGap) order[k].y = prev - minGap;
+    }
+
+    // If the bottom-most label fell below yLo, shift the whole stack up while
+    // respecting yHi as the ceiling.
+    const bottom = order[order.length - 1].y;
+    if (bottom < yLo) {
+      const shift = yLo - bottom;
+      for (const o of order) o.y = Math.min(yHi, o.y + shift);
+      // Bottom-up pass to restore minGap if the top-clamp compressed pairs.
+      for (let k = order.length - 2; k >= 0; k--) {
+        const next = order[k + 1].y;
+        if (order[k].y < next + minGap) order[k].y = next + minGap;
+      }
+    }
+
+    for (const o of order) annotations[o.i].y = o.y;
+  }
+
   const allDates = traces.flatMap((t) => (t.x as string[]) ?? []).sort();
   const dataMin = allDates[0];
   const dataMax = allDates[allDates.length - 1];

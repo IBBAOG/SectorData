@@ -102,7 +102,12 @@ Constants also exported from the hook file (consumed by `mobile/View.tsx`):
 - `CHART_KEY_MATRIX: Record<ProductKey, Partial<Record<SegmentKey, ChartKey>>>` — `(product, segment) → key in MarketShareCharts`
 
 Pure helpers also exported from the hook file:
-- `buildMarketShareLine` — builds a single Plotly line chart
+- `buildMarketShareLine` — builds a single Plotly line chart. Also runs an
+  anti-overlap pass on the right-side end-of-line annotations: when two or
+  more labels would land at nearly the same Y, they are stacked with a
+  minimum vertical separation of ~3 % of the axis range (X anchor unchanged,
+  only Y is nudged). Two passes (top-down + bottom-clamp + bottom-up) so the
+  stack stays inside `[yLo, yHi]`.
 - `buildMobileStackedArea` — builds stacked-area traces for the mobile hero chart
 - `buildComparisonData` — builds the MoM/QTD/YoY/YTD comparison rows
 - `makeOttoCycleRows` — synthesises Otto-Cycle = Gasolina C + Etanol × 0.7
