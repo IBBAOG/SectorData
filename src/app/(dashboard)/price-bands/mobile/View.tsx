@@ -568,7 +568,10 @@ export default function MobileView(): React.ReactElement {
       tickformat: "%b-%y",
       nticks: 5,
       tickangle: -30,
-      automargin: true,
+      // automargin is intentionally omitted: when true, Plotly expands the
+      // right margin beyond margin.r to fit rotated tick labels, consuming
+      // 50–100px of chart width on a 426px mobile viewport and creating the
+      // visible whitespace at the right edge of the card.
       ...(xMin && xMax ? { range: [xMin, xMax] } : {}),
     },
     yaxis: {
