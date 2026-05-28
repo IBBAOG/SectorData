@@ -189,7 +189,7 @@ function buildChartXml(
         <c:scaling><c:orientation val="minMax"/></c:scaling>
         <c:delete val="0"/>
         <c:axPos val="l"/>
-        <c:numFmt formatCode="${valAxisNumFmt.replace(/"/g, '&quot;')}" sourceLinked="0"/>
+        <c:numFmt formatCode='${valAxisNumFmt.replace(/'/g, "&apos;")}' sourceLinked="0"/>
         <c:majorTickMark val="none"/>
         <c:minorTickMark val="none"/>
         ${ARIAL10_TXPR}

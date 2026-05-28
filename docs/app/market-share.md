@@ -166,3 +166,7 @@ Tier 2 — `<ExportPanel mode="modal">` abre `<ExportModal>` com filtros + calcu
 - CSV handler: paginated fetch via `fetchVendasFiltered` (helper em `src/lib/rpc.ts`) + `downloadCsv` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts). Filename ramifica: `MarketShare_DD-MM-YY.csv` (share) ou `SalesVolumes_DD-MM-YY.csv` (volume). Rows são raw `vendas` (não dependem de unitMode).
 - Warning visual quando estimativa > 200 000 linhas.
 - `get_ms_export_count` agora é exclusivo de `/market-share` (antes era compartilhado).
+
+### Pegadinha: chart numFmt em `buildChartXml` usa atributo XML single-quoted
+
+O `<c:numFmt formatCode=...>` da Y-axis dos gráficos do export é emitido com **atributo XML single-quoted** (`formatCode='0"%"'`), permitindo `"` literal no formato sem entity escape. Tentativas anteriores (post-consolidation /sales-volumes, 2026-05-26) usaram atributo double-quoted com `&quot;` entity, o que é XML válido e funciona na maioria dos clientes — porém algumas versões antigas do Excel não decodificam `&quot;` consistentemente dentro de `formatCode`, podendo descartar silenciosamente o gráfico e retornar ao display "raw" (sem formatação visível). O atributo single-quoted é o padrão pre-consolidação, validado em produção há anos.
