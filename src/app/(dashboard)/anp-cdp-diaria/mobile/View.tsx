@@ -191,7 +191,7 @@ export default function MobileView(): React.ReactElement | null {
     selectedBacias, setSelectedBacias, toggleBacia,
     visibleRows,
     explicitDims,
-    defaultPetroleoDims, defaultGasDims,
+    defaultPetroleoDims,
     ranking,
     product,
   } = useAnpCdpDiariaData();
@@ -202,7 +202,7 @@ export default function MobileView(): React.ReactElement | null {
   }, [granularity, setGranularity]);
 
   // ── Period preset state (mobile-local) ─────────────────────────────────────
-  const [activePreset, setActivePreset] = useState<PeriodPreset>("All");
+  const [activePreset, setActivePreset] = useState<PeriodPreset>("1M");
 
   // Sync activePreset → dateRange. On first mount allDates may be [], so guard.
   useEffect(() => {
@@ -229,18 +229,11 @@ export default function MobileView(): React.ReactElement | null {
     return base.slice(0, TOP_CHART_TRACES);
   }, [explicitDims, defaultPetroleoDims]);
 
-  const gasChartDims = useMemo(() => {
-    const base = explicitDims.length > 0 ? explicitDims : defaultGasDims;
-    return base.slice(0, TOP_CHART_TRACES);
-  }, [explicitDims, defaultGasDims]);
+  // gasChartDims intentionally omitted — Gas chart removed on mobile [mobile-only].
 
   const oilTraces = useMemo(
     () => buildMobileChart(visibleRows, "oil", oilChartDims),
     [visibleRows, oilChartDims],
-  );
-  const gasTraces = useMemo(
-    () => buildMobileChart(visibleRows, "gas", gasChartDims),
-    [visibleRows, gasChartDims],
   );
 
   // ── Active filter count (for chip badge) ──────────────────────────────────
@@ -552,33 +545,8 @@ export default function MobileView(): React.ReactElement | null {
             />
           </ChartSection>
 
-          {/* ── Section 2: Gas chart ──────────────────────────────────────── */}
-          <ChartSection
-            title="Gas Production"
-            unit="Mm³/d"
-            topN={gasChartDims.length}
-            isExplicit={explicitDims.length > 0}
-            explicitCount={explicitDims.length}
-            updating={serieLoading}
-          >
-            <MobileChart
-              data={gasTraces}
-              height={260}
-              layout={{
-                xaxis: { type: "date" as const, nticks: 4 },
-                yaxis: { nticks: 4 },
-                showlegend: gasChartDims.length > 1,
-                legend: {
-                  orientation:  "h",
-                  yanchor:      "bottom",
-                  y:            1.01,
-                  xanchor:      "left",
-                  x:            0,
-                  font:         { size: 10 },
-                },
-              }}
-            />
-          </ChartSection>
+          {/* ── Section 2 (mobile-only): Gas chart omitted — screen real estate.
+               Desktop keeps both Oil + Gas charts. See commit [mobile-only]. ── */}
 
           {/* ── Section 3: Top 10 ranking ─────────────────────────────────── */}
           <section style={{ marginTop: 4 }}>

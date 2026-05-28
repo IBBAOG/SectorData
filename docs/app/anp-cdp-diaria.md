@@ -47,7 +47,7 @@ Mobile-first redesign v2 (Onda 3, 2026-05-27) — pinned to Field-level. Layout:
 - Page heading + period badge (MobileTopBar provided by MobileShell in layout.tsx — NOT imported here)
 - Sticky filter chip row — period preset pills (1M / 3M / 6M / 1Y / All) + Filters trigger chip + active Basin/Field chips with × clear.
 - Section 1 — Oil chart: `MobileChart` line chart (~260px), top 5 fields, brand orange leader.
-- Section 2 — Gas chart: same treatment stacked vertically (desktop parity — both charts always visible, no tab).
+- Section 2 — Gas chart: **omitted on mobile** (screen real estate; Oil is primary metric). Desktop retains both charts.
 - Section 3 — Top 10 ranking: `MobileDataCard` per field (top 10), rank pill (#1 orange), basin badge, avg + 14-point sparkline, latest value + date. "See all N fields" button opens `BottomSheet` (90vh) with full searchable list.
 - Production summary card: 2×3 grid — Leader / Total Oil avg / Total Gas avg / Leader Oil / Leader Gas / Fields count.
 - `FilterDrawer`: Period slider + Basin multi-select + Field chip cloud (touch-friendly, max-height 240px scroll). Reset clears all selections + restores full date range.
@@ -55,7 +55,8 @@ Mobile-first redesign v2 (Onda 3, 2026-05-27) — pinned to Field-level. Layout:
 
 NOT on mobile (intentional `[mobile-only]` decisions):
 - No `ExportFAB` / `ExportModal` — export is desktop-only (plan § 3.4)
-- No `MobileTabBar` for Oil/Gas — both charts stacked, always visible
+- No Gas Production chart — removed for screen real estate; Oil is the primary metric on mobile. Desktop keeps both charts.
+- No `MobileTabBar` for Oil/Gas — Oil chart only (Gas omitted, see above)
 - No granularity toggle — pinned to `"field"`
 - No recent-records HTML table — wrong shape for phones
 
@@ -67,10 +68,10 @@ Any new filter / chart / KPI / copy here must land in BOTH Views in the same com
 - ExportFAB / ExportModal — export is desktop-only per plan § 3.4
 
 Mobile-only:
-- Period preset pills (1M/3M/6M/1Y/All) replacing the PeriodSlider in the chip row
+- Period preset pills (1M/3M/6M/1Y/All) replacing the PeriodSlider in the chip row; **default preset is "1M"** (desktop defaults to full range)
+- Only Oil Production chart shown — Gas Production chart omitted for screen real estate; Oil is the primary metric. Desktop keeps both.
 - Top 10 ranking card list + "See all N" BottomSheet (desktop has the dense table instead)
 - Production summary card (2×3 grid) — desktop conveys this through charts and the table
-- Both Oil + Gas charts always stacked vertically — desktop also stacks them; mobile removed the MobileTabBar product switch that was in v1
 
 ## Produto
 
@@ -288,4 +289,5 @@ Os 19 campos faltantes representam ~0,3% da produção nacional (maioria são bu
 
 - `2026-05-08` — Implementação inicial (Field-only).
 - `2026-05-08` — **Adicionada granularidade Installation e Well via `SegmentedToggle`**. 4 RPC wrappers novos, 2 chaves novas em export heuristics, sub-PRD atualizado. Migration `20260508120001_anp_cdp_diaria_levels.sql` aplicada via supabase_deploy.yml.
+- `2026-05-28` — **Mobile tweaks [mobile-only]**: default period preset changed from "All" to "1M"; Gas Production chart removed on mobile (screen real estate, Oil is primary metric). Desktop untouched.
 - `2026-05-27` — **Mobile reform v2 (Onda 3)**. `mobile/View.tsx` reescrito: período preset pills (1M/3M/6M/1Y/All) no chip row sticky; dois charts (Oil + Gas) empilhados verticalmente sempre visíveis (sem tab Oil/Gas); ranking Top 10 com `MobileDataCard` + botão "See all N fields" abre `BottomSheet` (90vh) com lista completa pesquisável; production summary card 2×3; `ExportFAB`/`ExportModal` removidos (export é desktop-only); `MobileTabBar` de produto removido. Commit `b29914ff`, branch `worktree-agent-ae3d7c80602ee09fb`.
