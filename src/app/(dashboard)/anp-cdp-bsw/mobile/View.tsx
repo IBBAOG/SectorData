@@ -87,6 +87,7 @@ export default function MobileView(): React.ReactElement | null {
     visible,
     visLoading,
     filtrosLoading,
+    chartLoading: hookChartLoading,
     campos,
     selectedCampos,
     viewMode,
@@ -107,11 +108,23 @@ export default function MobileView(): React.ReactElement | null {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Field-mode loading is driven by whether fieldPoints is being fetched.
-  // We derive a simple "loading" indicator: fieldPoints is empty while a
-  // selection exists AND filtros have loaded → actively fetching.
+  // Use the hook's real fetch-state loading flag (driven by useDebouncedFetch)
+  // instead of deriving from `fieldPoints.length === 0`. A derived flag stays
+  // stuck on TRUE forever when the RPC legitimately returns `[]` (e.g. silent
+  // 42501 caught by the wrapper, or no rows for the selection) — that bug
+  // surfaced on 2026-05-28 as a never-clearing "updating…" indicator when
+  // the canonical-expansion migration (20260530000000) accidentally revoked
+  // the anon grant on these RPCs. The fix migration is
+  // 20260601400000_restore_anon_grants_cdp_canonical_rpcs.sql; this loading
+  // change is defense-in-depth so a future silent-empty regression renders
+  // the "No data" branch immediately instead of hanging on "updating…".
+  // Only mark loading while the field-aggregate fetch is the active view's
+  // fetch (the hook gates per-view internally, but during the initial
+  // viewMode!=="field" tick the hookChartLoading reflects the well fetch).
   const chartLoading =
-    selectedCampos.length > 0 && !filtrosLoading && fieldPoints.length === 0;
+    viewMode === "field"
+      ? hookChartLoading
+      : selectedCampos.length > 0 && !filtrosLoading && fieldPoints.length === 0;
 
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterSearch, setFilterSearch] = useState("");
