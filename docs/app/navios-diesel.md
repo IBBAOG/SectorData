@@ -166,6 +166,13 @@ Spec: `/.claude/plans/o-modo-mobile-da-tranquil-giraffe.md` § 4.6 (revised 2026
 - **Port summary table** — Port (sticky col) | Volume (m³) | Next ETA | Vessels.
   Horizontal scroll preserved; first column sticky. Next ETA shows `—` in aggregate-only
   mode (no per-vessel ETA available without fetching `get_nd_navios`).
+  **Scope: current month only** (the live bar of the stacked chart above), sourced from
+  `resumoMensal` (`get_nd_resumo_mensal_portos`) filtered to the month tagged
+  `is_current=true` in `volumeMensal` — so `SUM(table volumes) == SUM(live month traces)`.
+  Sub-header explicitly shows `Current month · MMM YYYY (live)`. Bug fix 2026-05-28:
+  table previously sourced from `resumoPortos` (`get_nd_resumo_portos`) which returns
+  totals over the **entire snapshot**, not the current month, making the sum 5–10×
+  larger than the chart's live bar.
 
 **Removed from mobile v2 (desktop-only):**
 - Radar / AIS live map
