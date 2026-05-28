@@ -102,15 +102,28 @@ Key derivations done in the hook (never in Views):
 - `buildCurrentValues` — Petrobras vs. IPP/EPP percentage badges per product
 - `SUBSIDY_CUTOFF = "2026-03-12"` — subsidy lines visible only from this date
 
-### Mobile specifics
+### Mobile specifics (v2 — mobile reform Onda 3, 2026-05-27)
 
-- **Product switch**: `MobileTabBar` (Diesel | Gasolina). Diesel is the default.
-- **Date chips**: 3 M / 6 M / 1 Y / 2 Y / All shortcut strip. Syncs with `filters.sliderRange`.
-- **FilterDrawer**: `PeriodSlider` + subsidy-line toggle (Diesel only). Toggle hides `bba_import_parity_w_subsidy` from chart.
-- **MobileChart**: single product at a time. Legend below chart.
-- **MobileDataCard rows**: latest value per band with % vs reference.
-- **YTD section**: same chart pattern, year pills (current / -1 / -2).
-- **ExportFAB**: tapping opens an inline mini-menu (Excel | CSV).
+Layout per plan § 4.4 (`o-modo-mobile-da-tranquil-giraffe.md`):
+
+1. **MobileTopBar** — sticky wordmark (no filter trigger).
+2. **MobileTabBar** (Diesel | Gasoline, Diesel default) — sticky below topbar.
+3. **Period preset pills** (1M / 3M / 6M / 1Y / All, 6M default) — inline scroll row.
+4. **Hero chart** — 3 simultaneous lines (Import / Export / Petrobras). Diesel shows the `bba_import_parity_w_subsidy` dashed line under the Import chip by default.
+5. **Legend chips** — 3 colored chips below chart (Import / Export / Petrobras). Tap to hide/show each series (minimum 1 always visible).
+6. **Comparison table** — Latest value + MoM% + YoY% per visible series. Horizontal scroll, first column sticky.
+7. **MobileHomePill** — global floating home button (mobile reform v2).
+
+**Removed vs v1:**
+- YTD section (removed — focus on parity, not cumulative average on mobile).
+- ExportFAB / export mini-menu (policy § 3.4 — no export on mobile).
+- FilterDrawer (replaced by inline period chips; no other filter needed on mobile).
+- MobileBottomTabBar (replaced by global MobileHomePill).
+
+**Color encoding (same as desktop):**
+- Import chip → orange `#E8611A` (solid + dashed subsidy variant)
+- Export chip → black `#1a1a1a`
+- Petrobras chip → teal `#4ECDC4`
 
 ### Series colors (shared via `usePriceBandsData`)
 
