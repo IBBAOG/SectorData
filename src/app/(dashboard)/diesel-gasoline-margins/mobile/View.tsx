@@ -76,50 +76,6 @@ function buildMobileStackedChart(
   } as PlotData));
 }
 
-// ── KPI delta helpers ─────────────────────────────────────────────────────────
-
-interface KpiCard {
-  key: keyof DgMarginsRow;
-  label: string;
-  value: number;
-  delta: number | null;
-  deltaPct: number | null;
-}
-
-function buildKpiDelta(
-  allRows: DgMarginsRow[],
-  fuelType: string,
-  latestWeek: string | null,
-  allWeeks: string[],
-): KpiCard[] {
-  if (!latestWeek) return [];
-  const byWeek = new Map(
-    allRows.filter((r) => r.fuel_type === fuelType).map((r) => [r.week, r]),
-  );
-  const latest = byWeek.get(latestWeek);
-  if (!latest) return [];
-  const latestIdx = allWeeks.indexOf(latestWeek);
-  const prev = byWeek.get(allWeeks[latestIdx - 1] ?? "") ?? null;
-
-  return TABLE_KEYS.map((key) => {
-    const value = Number(latest[key] ?? 0);
-    let delta: number | null = null;
-    let deltaPct: number | null = null;
-    if (prev) {
-      const vPrev = Number(prev[key] ?? 0);
-      delta = value - vPrev;
-      deltaPct = vPrev !== 0 ? (delta / Math.abs(vPrev)) * 100 : null;
-    }
-    return {
-      key,
-      label: key === "total" ? "Total" : compLabel(key as string, fuelType),
-      value,
-      delta,
-      deltaPct,
-    };
-  });
-}
-
 // ── Comparison table ──────────────────────────────────────────────────────────
 
 interface CompRow {
@@ -359,81 +315,6 @@ function DrawerWeekSlider({
   );
 }
 
-// ── KPI delta card ────────────────────────────────────────────────────────────
-
-function KpiDeltaCard({ card }: { card: KpiCard }) {
-  const isPos  = (card.delta ?? 0) > 0;
-  const isNeg  = (card.delta ?? 0) < 0;
-  const deltaColor = isPos ? "#15803d" : isNeg ? "#b91c1c" : "var(--mobile-text-muted, #6b6b73)";
-  const deltaBg    = isPos ? "rgba(21,128,61,0.09)" : isNeg ? "rgba(185,28,28,0.09)" : "transparent";
-  const isTotal    = card.key === "total";
-
-  return (
-    <div style={{
-      flex:         "0 0 auto",
-      minWidth:     120,
-      background:   "var(--mobile-surface, #ffffff)",
-      border:       "1px solid var(--mobile-border, #e6e6ec)",
-      borderRadius: 12,
-      padding:      "10px 14px",
-      display:      "flex",
-      flexDirection: "column",
-      gap:           4,
-      borderLeft:   isTotal ? "3px solid var(--mobile-accent, #ff5000)" : `3px solid ${STACK_COLORS[String(card.key)] ?? "#e6e6ec"}`,
-    }}>
-      <div style={{
-        fontSize:    11,
-        fontWeight:  600,
-        color:       "var(--mobile-text-muted, #6b6b73)",
-        fontFamily:  "Arial",
-        whiteSpace:  "nowrap",
-        overflow:    "hidden",
-        textOverflow: "ellipsis",
-      }}>
-        {card.label}
-      </div>
-      <div style={{
-        fontSize:           18,
-        fontWeight:         700,
-        color:              isTotal ? "var(--mobile-accent, #ff5000)" : "var(--mobile-text, #1a1a1a)",
-        fontFamily:         "Arial",
-        fontVariantNumeric: "tabular-nums",
-      }}>
-        {card.value.toFixed(2)}
-        <span style={{ fontSize: 10, fontWeight: 400, marginLeft: 3 }}>BRL/L</span>
-      </div>
-      {card.delta !== null && (
-        <div style={{
-          display:      "inline-flex",
-          alignItems:   "center",
-          gap:           4,
-          fontSize:      11,
-          fontWeight:    600,
-          color:         deltaColor,
-          background:    deltaBg,
-          borderRadius:  6,
-          padding:       "2px 6px",
-          alignSelf:    "flex-start",
-          fontFamily:   "Arial",
-          fontVariantNumeric: "tabular-nums",
-        }}>
-          {card.delta > 0 ? "▲" : card.delta < 0 ? "▼" : "●"}
-          {" "}
-          {(card.delta > 0 ? "+" : "") + card.delta.toFixed(2)}
-          {card.deltaPct !== null && (
-            <span style={{ fontWeight: 400, opacity: 0.8 }}>
-              {" "}({card.deltaPct > 0 ? "+" : ""}{card.deltaPct.toFixed(1)}%)
-            </span>
-          )}
-        </div>
-      )}
-      {card.delta === null && (
-        <div style={{ fontSize: 11, color: "#bbb", fontFamily: "Arial" }}>WoW —</div>
-      )}
-    </div>
-  );
-}
-
 // ── Comparison table ──────────────────────────────────────────────────────────
 
 function ComparisonTable({
@@ -625,12 +506,6 @@ export default function MobileView(): React.ReactElement {
     [filteredRows, selectedFuel, visibleWeeks],
   );
 
-  // KPI delta (current week vs prior)
-  const kpiCards = useMemo(
-    () => buildKpiDelta(allRows, selectedFuel, latestVisibleWeek, weeks),
-    [allRows, selectedFuel, latestVisibleWeek, weeks],
-  );
-
   // Comparison table rows
   const compRows = useMemo(
     () => buildComparisonRows(allRows, selectedFuel, latestVisibleWeek, weeks),
@@ -740,26 +615,6 @@ export default function MobileView(): React.ReactElement {
               </div>
             )}
           </div>
-
-          {/* ── KPI delta block ── */}
-          {kpiCards.length > 0 && (
-            <div style={{ marginTop: 16 }}>
-              <SectionLabel>
-                Current Week vs Prior Week
-              </SectionLabel>
-              <div style={{
-                overflowX:              "auto",
-                WebkitOverflowScrolling: "touch",
-                display:                "flex",
-                gap:                    10,
-                padding:                "0 16px 4px",
-              }}>
-                {kpiCards.map((card) => (
-                  <KpiDeltaCard key={String(card.key)} card={card} />
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* ── Comparison table ── */}
           {compRows.length > 0 && (

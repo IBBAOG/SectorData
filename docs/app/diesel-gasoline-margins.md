@@ -51,9 +51,10 @@ Wave 3 reform (2026-05-27) — full desktop content parity, re-layout mobile-fir
 - **Sticky sub-bar**: `FuelTab` segmented control (Diesel B / Gasoline C) + `FilterChip` (period → opens drawer). Sits below the global `MobileTopBar` rendered by `MobileLayout`.
 - Latest week badge
 - `MobileChart` stacked area (selected fuel only — full-width, height 260) — all 5 components
-- **KPI delta block**: horizontal scroll row of cards (one per component + total). Each card shows current week value (BRL/L) + WoW absolute delta with directional color (green = up, red = down).
 - **Comparison table** (`ComparisonTable`): WoW / −4 Wks / QTD / YoY deltas for all components, color-coded cells, horizontal scroll with first column sticky.
 - **No ExportFAB** (§ 3.4 mobile reform policy — export disabled on mobile).
+
+> **[mobile-only] 2026-05-28:** KPI delta block ("Current Week vs Prior Week" horizontal-scroll cards) removed. Mobile layout now shows only the stacked area chart + comparison table below the sticky sub-bar.
 
 Filter drawer (`FilterDrawer` + `DrawerWeekSlider`):
 - Week-range slider with year marks
@@ -65,7 +66,7 @@ Filter drawer (`FilterDrawer` + `DrawerWeekSlider`):
 |---|---|---|
 | Fuel selection | Both fuels shown simultaneously | One fuel at a time via `FuelTab` |
 | Variations table | Full WoW/−4W/QTD/YoY table | Same data — `ComparisonTable` with horizontal scroll |
-| KPI delta block | N/A (inline in table) | Dedicated horizontal-scroll card row (WoW delta only) |
+| KPI delta block | N/A (inline in table) | Removed (2026-05-28) — WoW delta visible via Variation Table |
 | Export trigger | `ExportPanel` inline in header | None (§ 3.4 policy) |
 | Period label | `WeekPeriodBadge` in sidebar | `FilterChip` in sticky sub-bar → `FilterDrawer` |
 
