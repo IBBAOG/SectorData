@@ -228,17 +228,20 @@ The stacked-area chart ("Exports — By Destination Country") ranks destination 
 
 ## Mobile Adaptation
 
-- `MobileTabBar` for Imports / Exports.
-- **Product pill row** (horizontal scroll): single-select product toggle, sits between the sub-header and the sticky filter button. Same semantics as desktop global product toggle.
-- Sidebar collapses into `FilterDrawer` (period selects only — product radio removed, replaced by the pill row).
-- Charts rendered at 280px height (Panels A/B) or 240px (Panel D) via Plotly (no `MobileChart` wrapper needed — Plotly itself is responsive).
-- YoY rows rendered as `MobileDataCard` list (title = entity, subtitle = prior 12m, rightSlot = last 12m + YoY% in color).
-- Panel D metric toggle: pill row (USD/ton · ¢/gal). Toggle state is in the shared hook (`importsUPMetric`), so changing it also updates the summary table unit.
-- Price summary tables are rendered as `MobileDataCard` stacks (one card per row) — Latest / MoM / YoY shown as a 3-row grid in the card's right slot. Same data as desktop `PriceSummaryTable`, adapted layout.
-- Exports tab: Volume/USD toggle (pill row). Stacked area chart at 280px height. YoY rows via `YoYCardList` (same MobileDataCard pattern as Imports panels). Source note below chart.
-- Exports unit price panel: rendered only when product = Crude Oil. Unit: USD/bbl. No toggle (single unit for Crude Oil exports). Followed by the Exports Price Summary `MobileDataCard` stack.
-- `ExportFAB` triggers Excel export.
-- Sticky filter button at top of scroll area opens `FilterDrawer`.
+> **Wave 3 (2026-05-27/28):** the mobile view was rewritten as a drastic simplification. The description below reflects the current implementation. Legacy references to `FilterDrawer`, `MobileDataCard`, `ExportFAB`, and `YoYCardList` are no longer accurate — those were removed in the Wave 3 rewrite.
+
+### Current mobile UI (post-Wave 3)
+
+- **No product picker** — Imports tab is hard-coded to **Diesel**; Exports tab is hard-coded to **Crude Oil**. Mobile is monitoring-only for the two highest-priority products. Switching tabs triggers `setFilters({ tab, unifiedProduct })` so the hook refetches for the correct product.
+- **Period preset pills** — 4 pills: `1Y / 3Y / 5Y / All`. **Default: 1Y** (desktop defaults to 3Y — different because mobile charts are narrow). Pills are sticky inside the tab-bar header block.
+- **No ExportFAB / no download buttons** — export is desktop-only per the mobile reform policy (2026-05-27).
+- **No FilterDrawer** — no manual date selects on mobile.
+- `MobileTabBar` for the Imports / Exports tab switch (sticky, behind glass backdrop).
+- Volume/USD toggle appears only on the Exports tab (Imports has no USD column in `anp_desembaracos`).
+- Charts rendered at 280px height via Plotly (responsive). X-axis dtick adapts to the active period: `M2` (1Y) / `M6` (3Y) / `M12` (5Y) / `M24` (All).
+- YoY data rendered as a horizontally-scrollable table (`<table>`) with sticky first column — not `MobileDataCard`. Supports separate column headers and aligned numeric cells.
+- Price summary tables rendered as a 4-column CSS grid card (Country | Latest | MoM% | YoY%) — not `MobileDataCard`.
+- The global chrome (top bar, kebab, floating Home pill) is mounted by `(dashboard)/layout.tsx`; `mobile/View.tsx` renders content only.
 
 ---
 

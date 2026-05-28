@@ -10,7 +10,7 @@
 //     tab is hard-coded to **Crude Oil**. Mobile is monitoring-only for the
 //     two highest-priority products.
 //   • NO ExportFAB / Excel / CSV downloads on mobile (Plan § 3.4 policy).
-//   • NO FilterDrawer — period is a 4-pill preset (1Y / 3Y / 5Y / All, default 3Y).
+//   • NO FilterDrawer — period is a 4-pill preset (1Y / 3Y / 5Y / All, default 1Y).
 //   • NO MobileTopBar own — DashboardLayout's MobileShell renders the global
 //     SectorData topbar + kebab + floating Home pill. Views render content only.
 //   • NO MobileBottomTabBar — replaced by the global Home pill in the shell.
@@ -858,8 +858,10 @@ export default function MobileView(): React.ReactElement {
     [anoMax, mesMax],
   );
 
-  // Default preset = 3Y. When filtros first loads, snap to 3Y window.
-  const [preset, setPreset] = useState<PeriodPreset>("3Y");
+  // Default preset = 1Y. When filtros first loads, snap to 1Y window.
+  // Desktop defaults to 3Y (more data visible on a wide screen); mobile
+  // defaults to 1Y to keep charts legible on a narrow phone viewport.
+  const [preset, setPreset] = useState<PeriodPreset>("1Y");
   const filtrosReady = filtros != null;
 
   useEffect(() => {
