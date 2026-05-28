@@ -241,7 +241,7 @@ export default function ModuleGallery(props: Props): React.ReactElement | null {
           return (
             <div
               key={cat}
-              className={`${styles.section}${cat === "markets" ? " " + styles.sectionMarkets : ""}`}
+              className={styles.section}
               style={accentStyle(cat)}
             >
               <div className={styles.sectionHeader}>
