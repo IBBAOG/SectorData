@@ -551,21 +551,28 @@ export default function MobileView(): React.ReactElement {
     return labelsToAnnotations(resolved);
   }, [endLabels, MIN_LABEL_DELTA]);
 
+  // End-of-line annotations use xanchor:"left" + xshift:6 — they are rendered
+  // OUTSIDE the plot area. We reserve space for them via margin.r (40px), which
+  // is enough for a 4-char label in Arial-10 bold (~22px) plus xshift + borderpad.
+  // We do NOT extend xaxis.range past the last data point; doing so was the
+  // root cause of the ~35–40% whitespace at the right edge of the card in every
+  // period (45 fixed days = 25% of 6M, 60% of 1M, etc.).
+
   const chartLayout = useMemo<Partial<Layout>>(() => ({
     height: 260,
-    // r=70 + xaxis.automargin lets Plotly compute the actual room needed for
-    // tick labels and reserve a fixed pixel gutter for the end-of-line
-    // annotations. We deliberately do NOT extend `xaxis.range` past the last
-    // data point — extending range in data-space was visually pushing the
-    // chart 2+ months into the future (e.g. last point = May 2026 was
-    // rendering ticks up to Jul-26). The pixel-based margin is unit-free.
-    margin: { l: 44, r: 70, t: 12, b: 36 },
+    // margin.r:40 creates the gutter for end-of-line labels without widening
+    // the x-axis range. margin.l:44 covers "R$ X.XX" y-axis tick labels.
+    margin: { l: 44, r: 40, t: 12, b: 36 },
     xaxis: {
       type: "date" as const,
       tickformat: "%b-%y",
       nticks: 5,
       tickangle: -30,
-      automargin: true,
+      // automargin is intentionally omitted: when true, Plotly expands the
+      // right margin beyond margin.r to fit rotated tick labels, consuming
+      // 50–100px of chart width on a 426px mobile viewport and creating the
+      // visible whitespace at the right edge of the card.
+      ...(xMin && xMax ? { range: [xMin, xMax] } : {}),
     },
     yaxis: {
       tickformat: ".2f",
@@ -576,7 +583,7 @@ export default function MobileView(): React.ReactElement {
     hovermode: "x unified" as const,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     annotations: annotations as any,
-  }), [annotations]);
+  }), [annotations, xMin, xMax]);
 
   // ── Current values (for legend chip subtitle + Petrobras gap table) ──────
   const cv = currentValues[filters.product];
