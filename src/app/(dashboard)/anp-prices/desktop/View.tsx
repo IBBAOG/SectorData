@@ -18,11 +18,15 @@ import MultiSelectFilter from "../../../../components/dashboard/MultiSelectFilte
 import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 import ChartSection from "../../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
-import ExportPanel from "../../../../components/dashboard/ExportPanel";
-import ExportModal from "../../../../components/dashboard/ExportModal";
 import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
 import SearchableMultiSelect from "../../../../components/SearchableMultiSelect";
 import { emptyPlot } from "../../../../lib/plotlyDefaults";
+// Unified export library — ExportButton lives at src/lib/export/ui/ExportButton
+// (owned by worker_designer in a parallel worktree). Until that worktree
+// merges, the import path will TSC-fail locally. This is expected — the
+// cross-worktree integration commit lands once both arms merge to main.
+import { ExportButton } from "../../../../lib/export/ui/ExportButton";
+import { anpPricesExport } from "../../../../lib/export/dashboards/anpPrices";
 
 import {
   useAnpPricesData,
@@ -30,8 +34,8 @@ import {
   FONTE_COLORS,
   FONTE_LABEL,
   GRANULARITY_LABEL,
-  type Product,
   type Granularity,
+  type Product,
   type Fonte,
 } from "../useAnpPricesData";
 
@@ -54,34 +58,27 @@ const SELECTION_NOUN: Record<Granularity, string> = {
 };
 
 export default function DesktopView(): React.ReactElement | null {
+  // The unified ExportButton owns its own modal state, so this View no longer
+  // pulls the export-related fields off the hook. The hook still returns them
+  // for API stability — they're inert until removed in a follow-up cleanup.
   const {
     visible, visLoading,
     loading, serieLoading,
-    filtros,
     product, setProduct,
     granularity, setGranularity,
     locais, toggleLocal, setLocais,
-    allYears, yearRange, setYearRange, hasYears, periodBadge,
+    allYears, yearRange, setYearRange, hasYears,
     availableLocais,
     needsSelection,
     fontesVisiveis, faltandoElos,
     chart, unit,
-    exportOpen, setExportOpen,
-    excelLoading, csvLoading,
-    exportProdutos, setExportProdutos,
-    exportGranularidades, setExportGranularidades,
-    exportLocais, setExportLocais,
-    exportRange, setExportRange,
-    exportFilters, exportAvailableLocais,
-    openExportModal, estimateExportRows,
-    handleExportExcel, handleExportCsv,
   } = useAnpPricesData();
 
   if (visLoading || !visible) return null;
 
   const chartLoading = loading || serieLoading;
-  const yMin = periodBadge ? periodBadge[0] : null;
-  const yMax = periodBadge ? periodBadge[1] : null;
+  const yMin = hasYears ? allYears[yearRange[0]] ?? null : null;
+  const yMax = hasYears ? allYears[yearRange[1]] ?? null : null;
 
   return (
     <div>
@@ -184,24 +181,7 @@ export default function DesktopView(): React.ReactElement | null {
                 title="ANP Prices"
                 sub="Producer, distribution and retail prices for fuels in Brazil — ANP data"
                 period={hasYears && yMin != null && yMax != null ? [yMin, yMax] : null}
-                rightSlot={
-                  <ExportPanel
-                    actions={[
-                      {
-                        kind: "excel",
-                        label: "Excel",
-                        disabled: loading || excelLoading || csvLoading,
-                        onClick: openExportModal,
-                      },
-                      {
-                        kind: "csv",
-                        label: "CSV",
-                        disabled: loading || excelLoading || csvLoading,
-                        onClick: openExportModal,
-                      },
-                    ]}
-                  />
-                }
+                rightSlot={<ExportButton spec={anpPricesExport} />}
               />
 
               {loading ? (
@@ -245,83 +225,11 @@ export default function DesktopView(): React.ReactElement | null {
         </div>
       </div>
 
-      {/* Tier 2 export modal */}
-      <ExportModal
-        open={exportOpen}
-        onClose={() => setExportOpen(false)}
-        title="Export — ANP Prices"
-        datasetKey="anp_prices"
-        currentFilters={exportFilters}
-        countFetcher={estimateExportRows}
-        excelBusy={excelLoading}
-        csvBusy={csvLoading}
-        loadingLabel={excelLoading ? "Generating Excel..." : "Downloading CSV..."}
-        onExportExcel={handleExportExcel}
-        onExportCsv={handleExportCsv}
-        filters={
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: "Arial" }}>
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Period</div>
-              {hasYears && (
-                <PeriodSlider years={allYears} value={exportRange} onChange={setExportRange} />
-              )}
-            </div>
-
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                Products <span style={{ color: "#888", fontWeight: 400 }}>({exportProdutos.length}/{PRODUCTS.length})</span>
-              </div>
-              <MultiSelectFilter
-                label="Products"
-                items={[...PRODUCTS]}
-                selected={exportProdutos}
-                onToggle={(p) =>
-                  setExportProdutos(
-                    exportProdutos.includes(p)
-                      ? exportProdutos.filter(x => x !== p)
-                      : [...exportProdutos, p]
-                  )
-                }
-                onClear={exportProdutos.length > 0 ? () => setExportProdutos([]) : undefined}
-                idPrefix="anp-prices-export-product"
-              />
-            </div>
-
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                Granularities <span style={{ color: "#888", fontWeight: 400 }}>({exportGranularidades.length}/{filtros.granularidades.length})</span>
-              </div>
-              <MultiSelectFilter
-                label="Granularities"
-                items={filtros.granularidades}
-                selected={exportGranularidades}
-                onToggle={(g) =>
-                  setExportGranularidades(
-                    exportGranularidades.includes(g)
-                      ? exportGranularidades.filter(x => x !== g)
-                      : [...exportGranularidades, g]
-                  )
-                }
-                onClear={exportGranularidades.length > 0 ? () => setExportGranularidades([]) : undefined}
-                idPrefix="anp-prices-export-gran"
-              />
-            </div>
-
-            {exportAvailableLocais.length > 0 && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                  Locations <span style={{ color: "#888", fontWeight: 400 }}>({exportLocais.length === 0 ? "all" : `${exportLocais.length}/${exportAvailableLocais.length}`})</span>
-                </div>
-                <SearchableMultiSelect
-                  options={exportAvailableLocais}
-                  value={exportLocais}
-                  onChange={setExportLocais}
-                />
-              </div>
-            )}
-          </div>
-        }
-      />
+      {/*
+        Tier 2 export modal is fully owned by the unified ExportButton imported
+        above (rightSlot). The dashboard's hook no longer manages export state
+        — see src/lib/export/dashboards/anpPrices.ts for the spec.
+      */}
     </div>
   );
 }
