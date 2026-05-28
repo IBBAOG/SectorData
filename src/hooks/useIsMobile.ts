@@ -3,20 +3,25 @@
 import { useEffect, useState } from "react";
 
 /**
- * useIsMobile — viewport detector for the dual-view (desktop + mobile) pattern.
+ * useIsMobile — device detector for the dual-view (desktop + mobile) pattern.
  *
- * Returns `true` when the viewport matches `(max-width: 768px)`. The 768px
- * threshold is the **single source of breakpoint truth for the entire app**.
- * Any dashboard that needs to branch between its desktop and mobile View must
- * consume this hook — do not roll your own media query elsewhere.
+ * Returns `true` when the current device is a phone or tablet, detected via
+ * `navigator.userAgent` (NOT viewport width). This is the **single source of
+ * device-class truth for the entire app** — any dashboard that needs to branch
+ * between its desktop and mobile View must consume this hook.
+ *
+ * Why UA-based instead of viewport-based: a desktop user narrowing their
+ * browser window must NOT be flipped into the MobileShell. Mobile is meant for
+ * phones and tablets only; viewport size is a noisy proxy for that.
  *
  * Implementation notes:
  *   - SSR-safe: returns `false` during server render and on the first client
- *     paint (before `useEffect` has run). The real value is set after mount,
- *     which avoids hydration mismatches.
- *   - Reactive: subscribes to `matchMedia.addEventListener("change", ...)` so a
- *     window resize (or device rotation) flips the value live without a reload.
- *   - Cleans up the listener on unmount.
+ *     paint (before `useEffect` has run). Real phones get a brief desktop
+ *     paint followed by a re-render — same flash behavior as before.
+ *   - One-shot detection: UA does not change in runtime, so there is no
+ *     listener and no resize/orientation reactivity (that was the bug).
+ *   - iPadOS 13+ pitfall: iPads report UA as `Macintosh`. The desktop-class
+ *     UA fallback uses `navigator.maxTouchPoints > 1` to recover them.
  *
  * Usage:
  *   const isMobile = useIsMobile();
@@ -26,26 +31,16 @@ export function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = useState<boolean>(false);
 
   useEffect(() => {
-    // Guard for non-browser environments (defensive — `useEffect` itself does
-    // not run during SSR, but this keeps TypeScript narrow and protects test
-    // environments that may stub window without matchMedia).
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return;
-    }
-
-    const mql: MediaQueryList = window.matchMedia("(max-width: 768px)");
-
-    // Set the initial value from the live media query on first effect run.
-    setIsMobile(mql.matches);
-
-    const handleChange = (event: MediaQueryListEvent): void => {
-      setIsMobile(event.matches);
-    };
-
-    mql.addEventListener("change", handleChange);
-    return () => {
-      mql.removeEventListener("change", handleChange);
-    };
+    if (typeof navigator === "undefined") return;
+    const ua = navigator.userAgent;
+    const isPhoneOrTablet =
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet|Silk|Kindle/i.test(ua);
+    // iPadOS 13+ reports UA as `Macintosh`; recover via touch-points heuristic.
+    const isIPadOSDesktopClass =
+      /Macintosh/.test(ua) &&
+      typeof navigator.maxTouchPoints === "number" &&
+      navigator.maxTouchPoints > 1;
+    setIsMobile(isPhoneOrTablet || isIPadOSDesktopClass);
   }, []);
 
   return isMobile;

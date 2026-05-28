@@ -98,7 +98,7 @@ Adicionar chave em `AVG_BYTES_PER_ROW` em [`exportSizeHeuristics.ts`](../../src/
 
 ## Dual-view foundation (Fase 1 — 2026-05)
 
-A partir de 2026-05-20, todo dashboard passa a ter **duas views** — desktop (≥769px) e mobile (≤768px) — dirigidas por um **único hook compartilhado** que detém toda a lógica de dados, filtros e derivações.
+A partir de 2026-05-20, todo dashboard passa a ter **duas views** — desktop (PC, laptop) e mobile (celular, tablet) — dirigidas por um **único hook compartilhado** que detém toda a lógica de dados, filtros e derivações. O switch entre `DesktopShell` e `MobileShell` é feito por **device class** (`navigator.userAgent` + fallback iPadOS-as-Macintosh via `navigator.maxTouchPoints > 1`), **NÃO** por largura de viewport — um browser desktop redimensionado abaixo de 768px continua em `DesktopShell`.
 
 > Mobile é **"mesma análise, roupagem adaptada"** — nunca um cérebro diferente. Se uma View precisa de um valor que a outra não tem, primeiro você adiciona ao hook; ambas as Views passam a enxergar.
 
@@ -108,7 +108,7 @@ A política completa está em [`CLAUDE.md` § Dual-view (web + mobile) policy](.
 
 ```
 src/app/(dashboard)/<slug>/
-├── page.tsx                 ← viewport router (useIsMobile → desktop ou mobile)
+├── page.tsx                 ← device router (useIsMobile → desktop ou mobile)
 ├── use<Slug>Data.ts         ← O CÉREBRO — RPCs, filtros, derivações, types
 ├── desktop/View.tsx         ← UX desktop (existente migra pra cá)
 └── mobile/View.tsx          ← UX mobile (mobile-first, redesenhada do zero)
@@ -143,7 +143,7 @@ Três camadas de enforcement:
 
 | Arquivo | Propósito |
 |---|---|
-| [`src/hooks/useIsMobile.ts`](../../src/hooks/useIsMobile.ts) | Detector de viewport (SSR-safe, threshold 768px). **Fonte única do breakpoint do app.** |
+| [`src/hooks/useIsMobile.ts`](../../src/hooks/useIsMobile.ts) | Detector de **device class** (SSR-safe, baseado em `navigator.userAgent` + fallback iPadOS-as-Macintosh via `navigator.maxTouchPoints > 1`). **Fonte única do switch `DesktopShell` ↔ `MobileShell`.** Resolve uma única vez no mount e **NÃO** escuta `resize` — desktop redimensionado abaixo de 768px continua em `DesktopShell`. Os `@media (max-width: ...)` em `globals.css` continuam servindo para responsividade *dentro* do `DesktopShell` (collapse de navbar, reflow de sidebar), mas não escolhem mais qual shell montar. |
 | [`public/manifest.json`](../../public/manifest.json) | PWA manifest — name SectorData, theme `#ff5000`, display standalone, start_url `/home`, ícones 192×192 e 512×512. |
 | [`public/sw.js`](../../public/sw.js) | Service worker mínimo — habilita Add-to-Home-Screen. **NÃO faz cache de dados de negócio** (sem offline mode por design). |
 | [`src/components/PWAInstallPrompt.tsx`](../../src/components/PWAInstallPrompt.tsx) | Banner dismissível "Install SectorData on your phone" — mobile-only, dismissal persistido em localStorage. Wired em `(dashboard)/layout.tsx`. |
@@ -183,7 +183,7 @@ Reforma cross-cutting (Onda 1 Designer + Onda 2 Shell + Onda 3 10 dashboards) qu
 
 **Layout `(dashboard)/layout.tsx` — `DesktopShell` vs `MobileShell` switcher:**
 
-A camada de chrome é selecionada por `useIsMobile()` dentro de `DashboardShell`:
+A camada de chrome é selecionada por `useIsMobile()` (device class — ver § "Dual-view foundation") dentro de `DashboardShell`:
 
 | Branch | Chrome renderizado |
 |---|---|

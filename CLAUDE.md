@@ -70,7 +70,7 @@ Aplicação:
 
 - `src/components/dashboard/mobile/` (owned by `worker_designer`) — `MobileNavBar`, `BottomSheet`, `FilterDrawer`, `MobileChart`, `MobileDataCard`, `StickyBreadcrumb`, `ExportFAB`, `MobileTabBar`
 - `src/components/dashboard/` (existing) — desktop shared components (`DashboardHeader`, `MultiSelectFilter`, etc.)
-- `src/hooks/useIsMobile.ts` — viewport detector (SSR-safe), single source of breakpoint truth (≤768px)
+- `src/hooks/useIsMobile.ts` — device detector (SSR-safe). Matches `navigator.userAgent` against phone/tablet patterns + iPadOS-as-Macintosh fallback via `navigator.maxTouchPoints>1`. **Não responde a resize** — desktop encolhido NUNCA vira mobile (fix 2026-05-28).
 
 Vide `docs/app/PRD.md` § "Dual-view foundation" para o template implementado.
 

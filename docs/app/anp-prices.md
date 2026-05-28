@@ -35,7 +35,7 @@ Excel export uses the generic helper `downloadGenericExcel` (no dedicated wrappe
 
 ## Dual-view structure
 
-`/anp-prices` is a **dual-view** dashboard: `page.tsx` is a viewport router (`useIsMobile`) that picks `desktop/View.tsx` (≥769px) or `mobile/View.tsx` (≤768px). Both views consume the same hook `useAnpPricesData`, which is the **single source of truth** for analyses, filters and derivations.
+`/anp-prices` is a **dual-view** dashboard: `page.tsx` is a device router (`useIsMobile`) that picks `desktop/View.tsx` on PCs (any window width) or `mobile/View.tsx` on real phones/tablets (UA-detected, with iPadOS touch fallback). Both views consume the same hook `useAnpPricesData`, which is the **single source of truth** for analyses, filters and derivations.
 
 ### `useAnpPricesData` (hook)
 

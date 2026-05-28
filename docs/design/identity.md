@@ -392,7 +392,7 @@ A marca da plataforma é **Oil & Gas Data House** (gota preta sobre quadrado lar
 
 ## Mobile design system (v2 — 2026-05-27, light-only)
 
-Sistema visual paralelo para a view mobile (`mobile/View.tsx` em cada dashboard). **Não substitui** a identidade desktop — adiciona uma camada de tokens `--mobile-*` ativada quando `[data-viewport="mobile"]` (set pelo PWA shell) ou via `@media (max-width: 768px)` (first paint).
+Sistema visual paralelo para a view mobile (`mobile/View.tsx` em cada dashboard). **Não substitui** a identidade desktop — adiciona uma camada de tokens `--mobile-*` ativada quando o shell switcher (`(dashboard)/layout.tsx`) detecta device mobile via UA (com fallback iPadOS touch) e monta `MobileShell`. O `@media (max-width: 768px)` que ainda existe em `globals.css` é apenas responsive interno do `DesktopShell` (reflow de sidebar/navbar em janelas estreitas de PC) e **não** participa do shell switch entre desktop e mobile.
 
 > **Reforma mobile v2 (2026-05-27).** A Fase 1 (mockup-driven, 2026-05) foi superada pela reforma "Liquid Glass refined". As mudanças centrais:
 > - **Light-only.** Os blocos `[data-theme="dark"]` do escopo mobile foram **removidos** de `globals.css`. Dark mode permanece no desktop (não-mobile). Plano: [`o-modo-mobile-da-tranquil-giraffe.md`](.claude/plans/o-modo-mobile-da-tranquil-giraffe.md) § 3.2.

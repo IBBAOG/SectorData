@@ -18,7 +18,7 @@ RPC wrappers: seção "ANP CDP" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (lin
 
 ## Dual-view structure (added 2026-05-20)
 
-A partir de 2026-05-20, o dashboard é **dual-view**: uma view desktop (PC, ≥769 px) e uma view mobile (≤768 px). Ambas consomem o mesmo hook compartilhado `useAnpCdpData.ts` — fonte única de verdade para RPCs, filtros, métrica selecionada, série temporal, KPIs (total/avg/peak/latest), navegador hierárquico e contrato do modal de export.
+A partir de 2026-05-20, o dashboard é **dual-view**: uma view desktop renderizada em PCs (qualquer largura de janela) e uma view mobile renderizada em celulares/tablets reais (detectados por UA, com fallback iPadOS touch). Ambas consomem o mesmo hook compartilhado `useAnpCdpData.ts` — fonte única de verdade para RPCs, filtros, métrica selecionada, série temporal, KPIs (total/avg/peak/latest), navegador hierárquico e contrato do modal de export.
 
 ### Hook compartilhado — `useAnpCdpData.ts`
 
