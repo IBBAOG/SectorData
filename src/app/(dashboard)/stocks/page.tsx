@@ -1,19 +1,24 @@
 "use client";
 
 /**
- * /stocks — viewport router.
+ * /stocks — Market Watch (Bloomberg-style dark trading terminal).
  *
- * Delegates to DesktopView (≥769px) or MobileView (≤768px) based on the
- * SSR-safe useIsMobile hook. All data logic lives in useStocksData.ts.
+ * Mobile is excluded by business decision — MobileExcludedRedirect detects
+ * mobile viewports and redirects to /home?excluded=stocks with a toast.
+ * Desktop renders the full Bloomberg dark trading terminal unconditionally.
  *
- * DO NOT add business logic here. This file is intentionally a 5-line router.
+ * All data logic lives in useStocksData.ts.
+ * Desktop UI (drag-drop grid, live quotes, Bloomberg theme) lives in desktop/View.tsx.
  */
 
-import { useIsMobile } from "../../../hooks/useIsMobile";
+import MobileExcludedRedirect from "@/components/dashboard/mobile/MobileExcludedRedirect";
 import DesktopView from "./desktop/View";
-import MobileView from "./mobile/View";
 
 export default function StocksPage(): React.ReactElement {
-  const isMobile = useIsMobile();
-  return isMobile ? <MobileView /> : <DesktopView />;
+  return (
+    <>
+      <MobileExcludedRedirect slug="stocks" />
+      <DesktopView />
+    </>
+  );
 }
