@@ -151,13 +151,18 @@ function buildTotalAnnotations(
 interface StackedBuildResult {
   data: PlotData[];
   annotations: Partial<Layout>["annotations"];
+  /** Sorted YYYY-MM-01 anchors matching the x-values of every trace. Used by
+   *  the MobileChart layout to pin tickvals so Plotly renders exactly one tick
+   *  per data-month — prevents duplicate labels when the window is short (e.g.
+   *  YTD with only 4 points). */
+  months: string[];
 }
 
 function buildStackedSeries(
   rows: (ProductionBrazilRow | ProductionCompanyRow)[],
   variant: "brazil" | "company",
 ): StackedBuildResult {
-  if (!rows.length) return { data: [], annotations: [] };
+  if (!rows.length) return { data: [], annotations: [], months: [] };
   const monthSet = new Set<string>();
   for (const r of rows) {
     monthSet.add(`${String(r.ano).padStart(4, "0")}-${String(r.mes).padStart(2, "0")}-01`);
@@ -208,7 +213,7 @@ function buildStackedSeries(
     } as PlotData;
   });
 
-  return { data, annotations: buildTotalAnnotations(months, ambienteYs) };
+  return { data, annotations: buildTotalAnnotations(months, ambienteYs), months };
 }
 
 function buildFieldDrillSeries(rows: ProductionFieldTimeseriesRow[]): PlotData[] {
@@ -914,7 +919,17 @@ export default function MobileView(): React.ReactElement | null {
                 layout={{
                   barmode: "stack",
                   margin: { t: 28, b: 36, l: 36, r: 8 },
-                  xaxis: { type: "date", tickformat: "%b %y" },
+                  xaxis: {
+                    type: "date",
+                    // Pin one tick per data-month (same fix as desktop). Without
+                    // tickmode:"array" Plotly auto-generates ticks at its own
+                    // interval — with ≤4 points (YTD) this yields duplicate
+                    // labels (start + end of each month). fmtMonthLabel shortens
+                    // to "Apr 26" style to fit narrow phone bars.
+                    tickmode: "array",
+                    tickvals: aggregateSeries.months,
+                    ticktext: aggregateSeries.months.map((m) => fmtMonthLabel(m)),
+                  },
                   yaxis: { title: { text: "kbpd" } },
                   showlegend: true,
                   legend: { orientation: "h", y: -0.25, x: 0 },

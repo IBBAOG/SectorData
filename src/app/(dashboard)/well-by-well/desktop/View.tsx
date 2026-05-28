@@ -204,7 +204,15 @@ function buildStackedOilBars(
       xaxis: {
         ...AXIS_LINE,
         type: "date",
-        tickformat: "%b %Y",
+        // Force exactly one tick per data-month. Without tickmode:"array" Plotly
+        // auto-generates ticks at its own time interval — with only 4 points
+        // (YTD Jan–Apr) this produces a tick at each month boundary (start AND
+        // end), which renders two labels per bar. Pinning tickvals to the exact
+        // YYYY-MM-01 anchors we plotted ensures one label per bar regardless of
+        // the date range length.
+        tickmode: "array",
+        tickvals: months,
+        ticktext: months.map((m) => fmtMonthLabel(m)),
       },
       legend: { orientation: "h", yanchor: "bottom", y: 1.01, xanchor: "left", x: 0 },
       annotations: months.map((m, i) => ({
