@@ -34,7 +34,7 @@ Painel interno de telemetria: quem usa o quê, quando, com qual frequência. Cob
 | 4 | Engajamento por dashboard | Tabela sortable. Default DESC por `page_views`. Colunas: Rota, Page views, Usuários únicos, Exports, Bytes baixados (`formatBytes`). |
 | 5 | Engajamento por usuário | Search debounced + tabela. Colunas: Nome, Role badge, Último login, Page views, Exports, Top 3 dashboards (badges). Click em row → expande timeline (até 50 linhas + "mostrar mais"). |
 | 6 | Heatmap horário | Plotly heatmap 7×24 (Dom..Sáb × 0..23h). Colorscale custom: `#fff5ee` → `#ffb088` → `#ff5000`. |
-| 7 | Views over time | Plotly bar chart, hourly buckets (`date_trunc('hour', created_at)`) of `page_view` events. Bar color `BRAND_ORANGE`. Respects the period filter. |
+| 7 | Views over time | Plotly bar chart, hourly buckets of `page_view` events bucketed in BRT (`America/Sao_Paulo`) server-side — see §10 Timezone. Bar color `BRAND_ORANGE`. Respects the period filter. |
 
 ## 4. RPCs consumidas
 
@@ -48,7 +48,7 @@ Todas SECURITY DEFINER, com check de role server-side. Wrappers em [`src/lib/rpc
 | `get_analytics_user_timeline(target_user_id uuid, period_days int)` | `rpcGetAnalyticsUserTimeline` | `{ event_type, route, payload, created_at }[]` (até 500) — só authed |
 | `get_analytics_heatmap(period_days int)` | `rpcGetAnalyticsHeatmap` | `{ dow 0..6, hour 0..23, event_count }[]` — inclui anon events |
 | `get_analytics_anon_summary(p_period_days int)` | `rpcGetAnalyticsAnonSummary` | `{ unique_visitors, total_page_views, top_routes[{route, page_views}] }` (Phase A; powers Anonymous Activity section) |
-| `get_admin_analytics_views_by_hour(p_period_days int)` | `rpcGetAdminAnalyticsViewsByHour` | `{ hour_bucket timestamptz, event_count bigint }[]` — hourly bucket aggregation of `page_view` events; Admin-only (RAISE EXCEPTION on non-Admin callers). Powers the "Views over time" section. Migration `20260602000000`. |
+| `get_admin_analytics_views_by_hour(p_period_days int)` | `rpcGetAdminAnalyticsViewsByHour` | `{ hour_bucket timestamp (BRT wall clock, without TZ), event_count bigint }[]` — hourly bucket aggregation of `page_view` events bucketed in `America/Sao_Paulo` (see §10); Admin-only (RAISE EXCEPTION on non-Admin callers). Powers the "Views over time" section. Migrations `20260602000000` (UTC, retired) + `20260602200000` (BRT rebucket, current). |
 
 RPC de escrita (write-side): `track_event(p_event_type text, p_route text, p_payload jsonb, p_visitor_id text)` — chamada via `src/lib/tracking.ts`. Phase A added the `p_visitor_id` parameter so anon visitors can be attributed via cookie. Fire-and-forget; nunca trava UI.
 
@@ -103,3 +103,42 @@ RLS:
 - `src/components/dashboard/ExportPanel.tsx` — fires export (Tier 1).
 - `src/components/dashboard/ExportModal.tsx` — fires export (Tier 2, com rows/bytes).
 - `src/app/(dashboard)/admin-panel/page.tsx` — banner "Analytics dashboard" linkando para `/admin-analytics`.
+
+## 10. Timezone (Views over time)
+
+The "Views over time" chart buckets by hour, but the bucket boundary is
+defined in BRT (`America/Sao_Paulo`, UTC-3), not UTC. All admin viewers
+of this dashboard are in Brazil, so hardcoding the TZ is acceptable.
+
+How it works end-to-end:
+
+1. **DB**: `app_events.created_at` is stored as `timestamptz` (canonical UTC).
+2. **RPC** (`get_admin_analytics_views_by_hour`, migration `20260602200000`):
+   `date_trunc('hour', (created_at AT TIME ZONE 'America/Sao_Paulo'))::timestamp`.
+   The cast to `timestamp` (without time zone) is essential — it strips the
+   TZ marker so PostgREST serializes the value as e.g. `"2026-05-28T16:00:00"`
+   with no `+00:00` suffix.
+3. **RPC wrapper** (`rpcGetAdminAnalyticsViewsByHour` in `src/lib/rpc.ts`):
+   appends `"Z"` to each `hour_bucket` so JavaScript parses the string as
+   literal UTC. Without this, V8 / SpiderMonkey parse a no-TZ ISO string
+   as **browser local time** — for an admin in Brazil that injects the
+   exact UTC→BRT shift we just compensated for, double-shifting the chart
+   by another 3h in the wrong direction.
+4. **Plotly** receives the Z-suffixed string and (with `xaxis.type:"date"`
+   + explicit `tickformat: "%a %d %b %Hh"`) renders UTC by default. The
+   chain `server BRT wall clock → strip TZ → append Z → JS UTC parse →
+   Plotly UTC render` ends up displaying the BRT hour as-is. The
+   double interpretation cancels by construction.
+5. The x-axis title and hovertemplate surface "BRT" explicitly so admins
+   know which timezone they are reading.
+
+Migration `20260602000000` (the original UTC-bucket version) is preserved
+in the migration history for auditability; `20260602200000` replaces its
+function body via `DROP FUNCTION IF EXISTS` + `CREATE` (required because
+the return type changed from `timestamptz` to `timestamp`). Per the
+DROP+CREATE caveat (Pegadinha #d in `CLAUDE.md`), `SECURITY DEFINER`,
+`SET search_path`, and grants are explicitly re-stated in `20260602200000`.
+
+If a future viewer is reading this dashboard from outside Brazil, treat
+this as a feature request — the right move is to plumb the user TZ
+through the RPC parameters, not to revert to UTC-only bucketing.

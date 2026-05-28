@@ -2095,7 +2095,12 @@ export async function rpcGetAnalyticsHeatmap(
 // try/catch contract as the other Admin Analytics wrappers — non-Admin or
 // missing RPC degrades silently to []. The page renders an empty state.
 export type AnalyticsViewsByHourPoint = {
-  hour_bucket: string;  // ISO timestamp from date_trunc('hour', created_at)
+  // ISO string of a BRT wall-clock hour bucket. Migration 20260602200000
+  // returns `timestamp without time zone` (no TZ suffix); the RPC wrapper
+  // appends "Z" so JS treats it as literal UTC. Plotly's UTC tickformatter
+  // then renders the BRT hour as-is. See /admin-analytics page.tsx for
+  // the full timezone reasoning, or §10 of docs/app/admin-analytics.md.
+  hour_bucket: string;
   event_count: number;
 };
 
@@ -2109,10 +2114,21 @@ export async function rpcGetAdminAnalyticsViewsByHour(
       { p_period_days: periodDays },
     );
     if (error) throw error;
-    return ((data ?? []) as AnalyticsViewsByHourPoint[]).map((r) => ({
-      hour_bucket: String(r.hour_bucket ?? ""),
-      event_count: Number(r.event_count ?? 0),
-    }));
+    return ((data ?? []) as AnalyticsViewsByHourPoint[]).map((r) => {
+      // Server returns a BRT wall-clock `timestamp` without TZ suffix
+      // (migration 20260602200000). To make JS parse it as literal UTC —
+      // matching Plotly's default UTC tickformatter — we append "Z".
+      // The double interpretation cancels: server BRT wall clock + JS UTC
+      // parse + Plotly UTC render = display BRT wall clock as-is.
+      const raw = String(r.hour_bucket ?? "");
+      const isoUtc = raw && !raw.endsWith("Z") && !/[+-]\d\d:?\d\d$/.test(raw)
+        ? `${raw}Z`
+        : raw;
+      return {
+        hour_bucket: isoUtc,
+        event_count: Number(r.event_count ?? 0),
+      };
+    });
   } catch (e) {
     console.warn("get_admin_analytics_views_by_hour failed", e);
     return [];

@@ -615,18 +615,28 @@ export default function AdminAnalyticsPage() {
                 data={[
                   {
                     type: "bar",
+                    // Server returns BRT wall-clock buckets without TZ
+                    // suffix (migration 20260602200000). The RPC wrapper in
+                    // src/lib/rpc.ts appends "Z" so JS parses them as
+                    // literal UTC; Plotly's UTC tickformatter then renders
+                    // the BRT hour as-is. See §10 of admin-analytics.md.
                     x: viewsByHour.map((p) => p.hour_bucket),
                     y: viewsByHour.map((p) => p.event_count),
                     marker: { color: BRAND_ORANGE },
                     hovertemplate:
-                      "<b>%{x|%a %d %b · %Hh}</b><br>Page views: %{y}<extra></extra>",
+                      "<b>%{x|%a %d %b · %Hh BRT}</b><br>Page views: %{y}<extra></extra>",
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   } as any,
                 ]}
                 layout={{
                   ...COMMON_LAYOUT,
                   margin: { t: 20, b: 50, l: 60, r: 20 },
-                  xaxis: { title: { text: "Hour" }, type: "date", fixedrange: true },
+                  xaxis: {
+                    title: { text: "Hour (BRT)" },
+                    type: "date",
+                    fixedrange: true,
+                    tickformat: "%a %d %b %Hh",
+                  },
                   yaxis: { title: { text: "Page views" }, fixedrange: true, rangemode: "tozero" },
                 }}
                 config={{ displayModeBar: false, responsive: true }}
