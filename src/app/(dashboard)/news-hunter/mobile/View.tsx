@@ -16,9 +16,12 @@
 //   1. Sticky in-page header        — page title "News Hunter" + scan status
 //   2. Sticky 4-tab segmented bar    — Feed / Search / Saved / Settings
 //   3. Tab body (one of):
-//        Feed     — topic pill row (keywords as filter pills) + virtualized
-//                   ArticleCard list. Anon visitors see an AnonCTA above the
-//                   list.
+//        Feed     — quick-search chip row (same curated 14 terms as desktop;
+//                   tapping a chip fills the search term + jumps to Search)
+//                   + ArticleCard list. Anon visitors see an AnonCTA above
+//                   the list. We deliberately do NOT show every tracked
+//                   keyword as a pill — desktop never does that either, and
+//                   keyword CRUD lives in the Settings tab.
 //        Search   — search input + virtualized ArticleCard list
 //        Saved    — bookmarked-only ArticleCard list (localStorage source)
 //        Settings — keyword CRUD (add form with Exact match toggle, chip
@@ -68,6 +71,28 @@ import type {
 // monitoring-only; users are not expected to scroll through thousands of
 // stories on a phone (export + deep paging is the desktop view's job).
 const MAX_VISIBLE = 60;
+
+// ── Quick-search chip constants ──────────────────────────────────────────────
+// Mirrors QUICK_SEARCH_CHIPS in desktop/View.tsx (sync rule). Tapping a chip
+// fills the shared `searchTerm` and switches the user to the Search tab —
+// the desktop equivalent is a single click that fills the search input
+// (the desktop has no tabs).
+const QUICK_SEARCH_CHIPS = [
+  "Petrobras",
+  "PRIO",
+  "Vibra",
+  "Ultrapar",
+  "Cosan",
+  "Petróleo",
+  "Gasolina",
+  "Diesel",
+  "PetroReconcavo",
+  "Braskem",
+  "Brava",
+  "Raízen",
+  "Compass",
+  "OceanPact",
+] as const;
 
 // ─── AnonCTA — login nudge banner ───────────────────────────────────────────
 function AnonCTA({ message }: { message: string }): React.ReactElement {
@@ -308,21 +333,20 @@ function ArticleCard({
   );
 }
 
-// ─── Topic pill row — keywords as filter pills ──────────────────────────────
-function TopicPillRow({
-  keywords,
-  active,
+// ─── Quick-search chip row — desktop parity ─────────────────────────────────
+// Mirrors the desktop `.quickChips` row sitting just above the search input.
+// Tapping a chip fills the shared `searchTerm` and jumps to the Search tab so
+// the user immediately sees the filtered feed. No "All" pill, no full-keyword
+// dump — same curated 14 terms as desktop.
+function QuickSearchChipRow({
   onPick,
 }: {
-  keywords: string[];
-  active: string;
-  onPick: (kw: string) => void;
+  onPick: (term: string) => void;
 }): React.ReactElement {
-  const all = ["All", ...keywords];
   return (
     <div
-      role="tablist"
-      aria-label="Filter by keyword"
+      role="group"
+      aria-label="Quick search shortcuts"
       style={{
         display: "flex",
         gap: 8,
@@ -335,39 +359,31 @@ function TopicPillRow({
         borderBottom: "1px solid var(--mobile-divider)",
       }}
     >
-      {all.map((kw) => {
-        const isActive = kw === active;
-        return (
-          <button
-            key={kw}
-            type="button"
-            role="tab"
-            aria-selected={isActive}
-            onClick={() => onPick(kw)}
-            style={{
-              flex: "0 0 auto",
-              padding: "6px 14px",
-              minHeight: 32,
-              borderRadius: "var(--mobile-radius-full)",
-              border: isActive
-                ? "1px solid var(--mobile-accent)"
-                : "1px solid var(--mobile-divider)",
-              background: isActive
-                ? "var(--mobile-accent)"
-                : "var(--mobile-surface)",
-              color: isActive ? "#fff" : "var(--mobile-text)",
-              fontFamily: "Arial, Helvetica, sans-serif",
-              fontSize: 13,
-              fontWeight: 600,
-              whiteSpace: "nowrap",
-              cursor: "pointer",
-              transition: "background 0.12s ease, color 0.12s ease",
-            }}
-          >
-            {kw}
-          </button>
-        );
-      })}
+      {QUICK_SEARCH_CHIPS.map((term) => (
+        <button
+          key={term}
+          type="button"
+          onClick={() => onPick(term)}
+          aria-label={`Quick search: ${term}`}
+          style={{
+            flex: "0 0 auto",
+            padding: "6px 14px",
+            minHeight: 32,
+            borderRadius: "var(--mobile-radius-full)",
+            border: "1px solid var(--mobile-divider)",
+            background: "var(--mobile-surface)",
+            color: "var(--mobile-text)",
+            fontFamily: "Arial, Helvetica, sans-serif",
+            fontSize: 13,
+            fontWeight: 600,
+            whiteSpace: "nowrap",
+            cursor: "pointer",
+            transition: "background 0.12s ease, color 0.12s ease",
+          }}
+        >
+          {term}
+        </button>
+      ))}
     </div>
   );
 }
@@ -809,7 +825,6 @@ export default function MobileView(): React.ReactElement {
     savedArticles,
     articles,
     justArrivedUrls,
-    keywords,
     keywordEntries,
     loading,
     error,
@@ -818,8 +833,6 @@ export default function MobileView(): React.ReactElement {
     readOnly,
     searchTerm,
     setSearchTerm,
-    topicFilter,
-    setTopicFilter,
     bookmarkedUrls,
     toggleBookmark,
     mobileTab,
@@ -967,13 +980,16 @@ export default function MobileView(): React.ReactElement {
           {readOnly && (
             <AnonCTA message="Log in to customize the keywords tracked for you." />
           )}
-          {keywords.length > 0 && (
-            <TopicPillRow
-              keywords={keywords}
-              active={topicFilter}
-              onPick={setTopicFilter}
-            />
-          )}
+          {/* Quick-search chips — same curated 14 terms as desktop. Tapping a
+              chip fills the search input and jumps to the Search tab. We do
+              NOT expose every tracked keyword as a pill here — that lives in
+              Settings, and the desktop never shows it inline either. */}
+          <QuickSearchChipRow
+            onPick={(term) => {
+              setSearchTerm(term);
+              setMobileTab("search");
+            }}
+          />
           <ArticleList
             articles={filteredArticles}
             loading={loading}
