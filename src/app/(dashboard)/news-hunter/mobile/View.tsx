@@ -58,7 +58,11 @@ import {
   domainInitial,
   type MobileTab,
 } from "../useNewsHunterData";
-import type { NewsArticle } from "@/context/NewsHunterContext";
+import type {
+  KeywordEntry,
+  KeywordMatchType,
+  NewsArticle,
+} from "@/context/NewsHunterContext";
 
 // Cap the number of cards in DOM at any time. The mobile feed is
 // monitoring-only; users are not expected to scroll through thousands of
@@ -522,18 +526,35 @@ function SearchBar({
 }
 
 // ─── SettingsPanel — keyword CRUD ───────────────────────────────────────────
-function SettingsPanel(): React.ReactElement {
-  const {
-    keywordEntries,
-    readOnly,
-    newKeyword,
-    setNewKeyword,
-    newKeywordMatchType,
-    setNewKeywordMatchType,
-    addKeyword,
-    removeKeyword,
-  } = useNewsHunterData();
+//
+// Receives every piece of state it needs via props so that the parent
+// `MobileView` is the single call site of `useNewsHunterData()`. Mounting the
+// hook here too would spin up a second copy of every local state slice
+// (ageTick `setInterval`, visibility guard, localStorage reads, …) for as
+// long as the Settings tab is mounted — wasteful and easy to mis-read as a
+// real second source of truth. Cross-tab keyword state stays coherent via
+// `NewsHunterContext`, which the hook already wires us into.
+interface SettingsPanelProps {
+  keywordEntries: KeywordEntry[];
+  readOnly: boolean;
+  newKeyword: string;
+  setNewKeyword: (v: string) => void;
+  newKeywordMatchType: KeywordMatchType;
+  setNewKeywordMatchType: (v: KeywordMatchType) => void;
+  addKeyword: (raw: string, matchType?: KeywordMatchType) => Promise<void>;
+  removeKeyword: (kw: string) => Promise<void>;
+}
 
+function SettingsPanel({
+  keywordEntries,
+  readOnly,
+  newKeyword,
+  setNewKeyword,
+  newKeywordMatchType,
+  setNewKeywordMatchType,
+  addKeyword,
+  removeKeyword,
+}: SettingsPanelProps): React.ReactElement {
   const handleSubmit = useCallback(
     (e: React.FormEvent) => {
       e.preventDefault();
@@ -789,6 +810,7 @@ export default function MobileView(): React.ReactElement {
     articles,
     justArrivedUrls,
     keywords,
+    keywordEntries,
     loading,
     error,
     visible,
@@ -803,6 +825,12 @@ export default function MobileView(): React.ReactElement {
     mobileTab,
     setMobileTab,
     lastScanLabel,
+    newKeyword,
+    setNewKeyword,
+    newKeywordMatchType,
+    setNewKeywordMatchType,
+    addKeyword,
+    removeKeyword,
   } = useNewsHunterData();
 
   if (visLoading || !visible) return <></>;
@@ -993,7 +1021,18 @@ export default function MobileView(): React.ReactElement {
       )}
 
       {/* ── Settings tab ── */}
-      {mobileTab === "settings" && <SettingsPanel />}
+      {mobileTab === "settings" && (
+        <SettingsPanel
+          keywordEntries={keywordEntries}
+          readOnly={readOnly}
+          newKeyword={newKeyword}
+          setNewKeyword={setNewKeyword}
+          newKeywordMatchType={newKeywordMatchType}
+          setNewKeywordMatchType={setNewKeywordMatchType}
+          addKeyword={addKeyword}
+          removeKeyword={removeKeyword}
+        />
+      )}
     </div>
   );
 }
