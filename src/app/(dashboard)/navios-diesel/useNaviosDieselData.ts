@@ -156,10 +156,11 @@ export const STATUS_LABELS: Record<string, string> = {
 
 export interface UseNaviosDieselDataOptions {
   /**
-   * When true, the hook skips `get_nd_navios` (per-vessel rows), the
-   * previous-day diff fetch, `get_nd_volume_mensal_descarga`, and
-   * `get_nd_navios_descarregados`. Only the snapshot list, port aggregates,
-   * and monthly port summary are fetched.
+   * When true, the hook skips `get_nd_navios` (per-vessel rows),
+   * the previous-day diff fetch, and `get_nd_navios_descarregados`.
+   * The snapshot list, port aggregates, monthly port summary, AND
+   * `get_nd_volume_mensal_historico` (for the Monthly Diesel Volume
+   * stacked bar chart that both Views render) are fetched.
    *
    * Mobile view uses `aggregateOnly: true` to trim the payload for narrow
    * viewports that do not render the per-vessel line-up or AIS map.
@@ -406,18 +407,23 @@ export function useNaviosDieselData(
       });
   }, [supabase, selectedColeta, aggregateOnly]);
 
-  // ── Effect 3: monthly volume + discharged vessels (skipped in aggregateOnly) ──
+  // ── Effect 3: monthly volume (both views) + discharged vessels (desktop only) ──
+  // The Monthly Diesel Volume stacked bar chart is now rendered by mobile too
+  // (mobile/View.tsx "All" tab), so volumeMensal is always fetched.
+  // naviosDescarregados powers the desktop Delivered Vessels table only.
   useEffect(() => {
-    if (aggregateOnly || !supabase || !selectedColeta) return;
+    if (!supabase || !selectedColeta) return;
     let cancelled = false;
     (async () => {
-      const [monthly, discharged] = await Promise.all([
-        rpcGetNdVolumeMensalDescarga(supabase, selectedColeta),
-        rpcGetNdNaviosDescarregados(supabase, selectedColeta),
-      ]);
+      const monthly = await rpcGetNdVolumeMensalDescarga(supabase, selectedColeta);
       if (cancelled) return;
       setVolumeMensal(monthly);
-      setNaviosDescarregados(discharged);
+
+      if (!aggregateOnly) {
+        const discharged = await rpcGetNdNaviosDescarregados(supabase, selectedColeta);
+        if (cancelled) return;
+        setNaviosDescarregados(discharged);
+      }
     })();
     return () => {
       cancelled = true;

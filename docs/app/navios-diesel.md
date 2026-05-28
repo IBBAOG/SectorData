@@ -131,7 +131,7 @@ The hook is the single source of truth for all data. Both Views import from it a
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `aggregateOnly` | `boolean` | `false` | When `true`, skips `get_nd_navios`, `get_nd_volume_mensal_descarga`, `get_nd_navios_descarregados`, and the previous-day diff fetch. Desktop passes `false` (default); mobile passes `true`. |
+| `aggregateOnly` | `boolean` | `false` | When `true`, skips `get_nd_navios`, `get_nd_navios_descarregados`, and the previous-day diff fetch. `volumeMensal` (Monthly Diesel Volume chart) IS fetched — mobile needs it for the "All" tab hero chart. Desktop passes `false` (default); mobile passes `true`. |
 
 **Key exports:**
 
@@ -146,16 +146,23 @@ The hook is the single source of truth for all data. Both Views import from it a
 | `statusToTone` | `function` | Maps status string → mobile tone token |
 | `STATUS_LABELS` | `Record` | Maps status string → English label |
 
-### Mobile view elements (v2, Onda 3 — radical simplification)
+### Mobile view elements (v3 — Monthly Diesel Volume hero, 2026-05-28)
 
-Spec: `/.claude/plans/o-modo-mobile-da-tranquil-giraffe.md` § 4.6
+Spec: `/.claude/plans/o-modo-mobile-da-tranquil-giraffe.md` § 4.6 (revised 2026-05-28)
 
 - Title block + last-collected badge (hours ago)
-- Sticky filter chip row — Status chips (All / Expected / Active). Visual only in
-  `aggregateOnly` mode: no per-vessel data is fetched, so the chips do not actually
-  filter the bar chart or table. Provides UX context; desktop offers filtered breakdown.
-- **Hero — Plotly horizontal bar chart** (`MobileChart`) — total diesel volume (m³) per
-  port, sorted by volume DESC. Colors cycle through palette (leader port = brand orange).
+- Sticky tab row — Status tabs (All / Expected / Active). The tabs filter which
+  traces of the Monthly Diesel Volume stacked chart are visible:
+  - **All** — all 3 traces stacked (Discharged + Pending + Indeterminate)
+  - **Expected** — Pending only (vessels still expected to discharge)
+  - **Active** — Discharged only (vessels that already delivered)
+- **Hero — Plotly stacked bar chart** (`MobileChart`) — **Monthly Diesel Volume (m³)**.
+  Same data shape and 3 traces as the desktop chart (Discharged / Pending / Indeterminate),
+  sourced from `volumeMensal` (`get_nd_volume_mensal_historico`). Past months are frozen,
+  current and future months are live (live months carry `(live)` suffix on the x-tick).
+  Replaced the previous v2 horizontal "Volume by Port" bar chart on 2026-05-28 — that
+  chart was redundant with the Port Summary table immediately below it and did not match
+  the desktop's monthly time-series.
 - **Port summary table** — Port (sticky col) | Volume (m³) | Next ETA | Vessels.
   Horizontal scroll preserved; first column sticky. Next ETA shows `—` in aggregate-only
   mode (no per-vessel ETA available without fetching `get_nd_navios`).
@@ -217,12 +224,13 @@ The frontend treats `is_current=true` as **live**, marking those bars with a `(l
 
 | Slot | Desktop | Mobile |
 |---|---|---|
-| Container | Plotly stacked bar (`Discharged` / `Pending` / `Indeterminate`) in Row 1 Col 2 (right of map) | CSS-only stacked bars in a glass card on the **Ports** tab, above Port Summary |
-| Range | Past + current + future months, in one row | Horizontal scroller, 48px per bar, past + current + future months |
-| Live marker | x-tick label carries `(live)` suffix; hover text reads `· live` vs. `· frozen`. No outline on the bar — was tried and rejected as visually noisy. | Month label tinted orange (`#FF5000`) + bold + `live` caption under the bar. No outline on the bar — was tried and rejected as visually noisy. |
-| Subtitle | "Past months frozen at last snapshot in the month · current and future months are live" (below title, above hr) | "Past months frozen · current and future are live · m³" (below title) |
+| Container | Plotly stacked bar (`Discharged` / `Pending` / `Indeterminate`) in Row 1 Col 2 (right of map) | Plotly stacked bar (`Discharged` / `Pending` / `Indeterminate`) via `MobileChart`, hero of the view |
+| Range | Past + current + future months, in one row | Past + current + future months, single row, x-tick labels tilted -40° to fit narrow viewport |
+| Live marker | x-tick label carries `(live)` suffix; hover text reads `· live` vs. `· frozen`. No outline on the bar — was tried and rejected as visually noisy. | x-tick label carries `(live)` suffix; hover text reads `· live` vs. `· frozen`. Same Plotly source as desktop. |
+| Subtitle | "Past months frozen at last snapshot in the month · current and future months are live" (below title, above hr) | "Past months frozen · current and future are live" (below title) |
+| Trace filtering | All 3 traces always visible (no tabs) | Tab bar All/Expected/Active toggles which traces render (see Mobile view elements above) |
 
-Mobile uses CSS bars (not Plotly) for weight and to avoid loading the Plotly bundle on a narrow viewport that already carries the desktop map elsewhere. The data shape is identical, so flipping mobile to Plotly later is a 1-file change.
+Mobile uses the same `MobileChart` (Plotly) wrapper as the rest of the mobile dashboards — the Plotly bundle is already loaded by other mobile views (`/anp-cdp-diaria`, `/market-share`, etc.), so loading cost is shared. Switched from CSS bars to Plotly on 2026-05-28 when the v2 horizontal-by-port chart was replaced (the v2 chart was already Plotly).
 
 Anti-regression:
 - If a future change ever re-introduces a single RPC that recomputes the whole series from one snapshot (the legacy `get_nd_volume_mensal_descarga` behavior), the frozen-history guarantee breaks silently — closed months will start moving again. Keep the wrapper in `rpc.ts` pointed at `get_nd_volume_mensal_historico` (with the legacy as fallback only).

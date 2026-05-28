@@ -1,33 +1,28 @@
 "use client";
 
-// ─── Mobile view — /navios-diesel (v2 radical simplification) ───────────────
-//
-// Spec: /.claude/plans/o-modo-mobile-da-tranquil-giraffe.md § 4.6
+// ─── Mobile view — /navios-diesel ───────────────────────────────────────────
 //
 // Layout:
 //   1. Title block + last-collected badge
-//   2. Top sticky filter chip row (Status display only — aggregate mode)
-//   3. Hero — Plotly horizontal bar chart: total diesel volume by port (MobileChart)
-//   4. Summary table: Port | Total volume | Next ETA | Vessels
+//   2. Top tab row — All / Expected / Active (toggles which trace(s) of the
+//      monthly stacked chart are visible; defaults to All = all 3 traces)
+//   3. Hero — Plotly stacked bar chart: Monthly Diesel Volume (m³)
+//      (mirrors desktop "Monthly Diesel Volume" chart — same 3 traces
+//      Discharged / Pending / Indeterminate, same data source, adapted to
+//      mobile viewport width via MobileChart)
+//   4. Port summary table: Port | Total volume | Next ETA | Vessels
 //
-// Explicitly REMOVED vs mobile v1 (CTO approval, § 4.6):
-//   • Radar / AIS live map       → desktop-only
-//   • Per-vessel lineup table    → desktop-only
-//   • "Next vessel" hero card    → desktop-only
-//   • ExportFAB                  → removed per § 3.4 (no export on mobile)
-//   • MobileBottomTabBar         → replaced by floating MobileHomePill (global nav, Onda 2)
-//   • MobileTopBar               → NavBar hidden by MobileLayout (Onda 2)
-//   • Tabs (Lineup / Radar / Ports) → removed
-//   • Cabotage / multi-select / country filters → not on mobile
-//   • useIsMobile()              → NOT called (mobile/View.tsx is always mobile)
+// Tab semantics (filter on the monthly chart only):
+//   • All       — all 3 stacks visible (Discharged + Pending + Indeterminate)
+//   • Expected  — Pending only (vessels still expected to discharge)
+//   • Active    — Discharged only (vessels that already delivered)
 //
-// Hook: aggregateOnly:true skips get_nd_navios, get_nd_volume_mensal_descarga,
-//   get_nd_navios_descarregados, and the previous-day diff fetch.
-//
-// Binding sync rule: this view is [mobile-only] — the radical simplification
-// is intentional and was approved by the CTO. Desktop retains full lineup /
-// AIS / monthly chart / cross-port table. Any new data-layer addition must
-// land in BOTH views in the same commit, or declare [mobile-only] / [desktop-only].
+// Explicitly REMOVED vs desktop (mobile-only divergences):
+//   • Radar / AIS live map         → desktop-only
+//   • Per-vessel lineup table      → desktop-only
+//   • Monthly Summary by Port      → desktop-only (cross-tab table)
+//   • ExportFAB / Export buttons   → no export on mobile (§ 3.4)
+//   • Sidebar calendar             → not present on mobile
 
 import { useMemo, useState } from "react";
 import type { PlotData } from "plotly.js";
@@ -38,18 +33,9 @@ import { useNaviosDieselData } from "../useNaviosDieselData";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const BRAND_ORANGE = "#ff5000";
-
-/** Colors for bar segments — first slot is always orange (leader port). */
-const BAR_COLORS = [
-  BRAND_ORANGE,
-  "#1a1a1a",
-  "#73C6A1",
-  "#5B9BD5",
-  "#E07B39",
-  "#9B59B6",
-  "#2ECC71",
-  "#E74C3C",
-];
+const DISCHARGED_COLOR = "#000000";
+const PENDING_COLOR = BRAND_ORANGE;
+const INDETERMINATE_COLOR = "#73C6A1";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -71,6 +57,14 @@ function hoursAgo(iso: string): string {
 /** Strip "Porto de " prefix for compact display. */
 function shortPort(p: string): string {
   return p.replace(/^Porto de /i, "");
+}
+
+/** "2026-05" → "May 2026" (with "(live)" suffix when current). */
+function monthLabel(ym: string, isCurrent: boolean): string {
+  const [yr, mo] = ym.split("-");
+  const base = new Date(Number(yr), Number(mo) - 1, 1)
+    .toLocaleDateString("en-US", { month: "short", year: "numeric" });
+  return isCurrent ? `${base} (live)` : base;
 }
 
 // ─── Port summary table ───────────────────────────────────────────────────────
@@ -215,22 +209,22 @@ function PortSummaryTable({
 export default function MobileView(): React.ReactElement {
   const { visible, loading: visLoading } = useModuleVisibilityGuard("navios-diesel");
 
-  // aggregateOnly:true — skip per-vessel RPCs (get_nd_navios, volume mensal,
-  // navios descarregados, prev-day diff). Mobile only needs port aggregates.
+  // aggregateOnly:true — skip per-vessel RPCs (get_nd_navios, naviosDescarregados,
+  // prev-day diff). Mobile still needs volumeMensal (Monthly Diesel Volume chart)
+  // plus port aggregates and the monthly port summary.
   const {
     resumoPortos,
+    volumeMensal,
     selectedColeta,
     loading,
     error,
   } = useNaviosDieselData({ aggregateOnly: true });
 
-  // ── Local UI state ────────────────────────────────────────────────────────────
-  // Status filter chip — visual affordance only; in aggregate-only mode there
-  // is no per-vessel data to filter. The chip communicates the "lens" to the
-  // user; desktop provides the filtered breakdown.
+  // ── Tab state: All / Expected / Active ──────────────────────────────────────
+  // The tabs filter which traces of the stacked monthly chart are visible.
   const [statusFilter, setStatusFilter] = useState<"all" | "expected" | "active">("all");
 
-  // ── Derived: sort ports by volume DESC ────────────────────────────────────────
+  // ── Derived: sort ports by volume DESC (powers the summary table) ─────────────
   const sortedPortos = useMemo(
     () => [...resumoPortos].sort((a, b) => b.total_convertida - a.total_convertida),
     [resumoPortos],
@@ -246,52 +240,101 @@ export default function MobileView(): React.ReactElement {
     [sortedPortos],
   );
 
-  // ── Plotly horizontal bar chart ───────────────────────────────────────────────
-  const chartData = useMemo((): PlotData[] => {
-    const labels = sortedPortos.map((r) => shortPort(r.porto));
-    const values = sortedPortos.map((r) => r.total_convertida);
-    const colors = sortedPortos.map(
-      (_, i) => BAR_COLORS[i % BAR_COLORS.length] ?? BRAND_ORANGE,
+  // ── Monthly stacked bar chart — same data shape as desktop ──────────────────
+  const monthlyChart = useMemo((): { data: PlotData[]; maxTotal: number } => {
+    if (volumeMensal.length === 0) {
+      return { data: [], maxTotal: 0 };
+    }
+
+    const labels = volumeMensal.map((r) => monthLabel(r.month, !!r.is_current));
+    const hoverSuffix = volumeMensal.map((r) => (r.is_current ? " · live" : " · frozen"));
+
+    const maxTotal = Math.max(
+      ...volumeMensal.map(
+        (r) => r.discharged_volume + r.pending_volume + r.indeterminate_volume,
+      ),
     );
 
-    return [
-      {
-        type: "bar",
-        orientation: "h",
-        x: values,
-        y: labels,
-        marker: {
-          color: colors,
-          opacity: 0.9,
-        },
-        hovertemplate: "%{y}: %{x:,.0f} m³<extra></extra>",
-      } as PlotData,
-    ];
-  }, [sortedPortos]);
+    // Visibility per tab. "Expected" → Pending only. "Active" → Discharged only.
+    // "All" → all three traces stacked.
+    const showDischarged = statusFilter === "all" || statusFilter === "active";
+    const showPending = statusFilter === "all" || statusFilter === "expected";
+    const showIndeterminate = statusFilter === "all";
 
-  // Dynamic height: ~44px per bar, clamped to [180, 420]
-  const chartHeight = useMemo(
-    () => Math.max(180, Math.min(sortedPortos.length * 44 + 48, 420)),
-    [sortedPortos.length],
-  );
+    const data: PlotData[] = [];
+
+    if (showDischarged) {
+      data.push({
+        type: "bar",
+        name: "Discharged",
+        x: labels,
+        y: volumeMensal.map((r) => r.discharged_volume),
+        marker: { color: DISCHARGED_COLOR, opacity: 0.85 },
+        customdata: hoverSuffix,
+        hovertemplate: "%{x}<br>Discharged: %{y:,.0f} m³%{customdata}<extra></extra>",
+      } as unknown as PlotData);
+    }
+
+    if (showPending) {
+      data.push({
+        type: "bar",
+        name: "Pending",
+        x: labels,
+        y: volumeMensal.map((r) => r.pending_volume),
+        marker: { color: PENDING_COLOR, opacity: 0.85 },
+        customdata: hoverSuffix,
+        hovertemplate: "%{x}<br>Pending: %{y:,.0f} m³%{customdata}<extra></extra>",
+      } as unknown as PlotData);
+    }
+
+    if (showIndeterminate) {
+      data.push({
+        type: "bar",
+        name: "Indeterminate",
+        x: labels,
+        y: volumeMensal.map((r) => r.indeterminate_volume),
+        marker: { color: INDETERMINATE_COLOR, opacity: 0.85 },
+        customdata: hoverSuffix,
+        hovertemplate: "%{x}<br>Indeterminate: %{y:,.0f} m³%{customdata}<extra></extra>",
+      } as unknown as PlotData);
+    }
+
+    return { data, maxTotal };
+  }, [volumeMensal, statusFilter]);
 
   const chartLayout = useMemo(
     () => ({
-      margin: { l: 90, r: 14, t: 8, b: 32 },
+      barmode: "stack" as const,
+      margin: { l: 44, r: 10, t: 8, b: 56 },
       xaxis: {
+        tickfont: { size: 10 },
+        tickangle: -40,
+        automargin: false,
+        fixedrange: true,
+      },
+      yaxis: {
         showgrid: true,
         tickformat: "~s",
         title: { text: "m³", font: { size: 10 } },
-      },
-      yaxis: {
-        automargin: false,
-        tickfont: { size: 11 },
         fixedrange: true,
+        range: monthlyChart.maxTotal > 0 ? [0, monthlyChart.maxTotal * 1.15] : undefined,
       },
-      bargap: 0.3,
+      bargap: 0.25,
+      legend: {
+        orientation: "h" as const,
+        x: 0,
+        y: 1.18,
+        xanchor: "left" as const,
+        yanchor: "bottom" as const,
+        font: { size: 10 },
+      },
+      showlegend: monthlyChart.data.length > 1,
     }),
-    [],
+    [monthlyChart.maxTotal, monthlyChart.data.length],
   );
+
+  // Slightly taller when legend visible (multi-trace "All" view).
+  const chartHeight = monthlyChart.data.length > 1 ? 280 : 240;
 
   // ── Render guard ──────────────────────────────────────────────────────────────
   if (visLoading || !visible) return <></>;
@@ -357,7 +400,7 @@ export default function MobileView(): React.ReactElement {
         )}
       </section>
 
-      {/* ── Sticky filter chip row ───────────────────────────────────────────── */}
+      {/* ── Sticky tab row (All / Expected / Active) ─────────────────────────── */}
       <div
         style={{
           position: "sticky",
@@ -375,7 +418,8 @@ export default function MobileView(): React.ReactElement {
           WebkitOverflowScrolling: "touch",
           scrollbarWidth: "none",
         } as React.CSSProperties}
-        aria-label="Status filter"
+        role="tablist"
+        aria-label="Status tabs"
       >
         {(["all", "expected", "active"] as const).map((f) => {
           const isActive = statusFilter === f;
@@ -384,8 +428,9 @@ export default function MobileView(): React.ReactElement {
             <button
               key={f}
               type="button"
+              role="tab"
               onClick={() => setStatusFilter(f)}
-              aria-pressed={isActive}
+              aria-selected={isActive}
               style={{
                 flex: "0 0 auto",
                 minHeight: 32,
@@ -414,10 +459,10 @@ export default function MobileView(): React.ReactElement {
         })}
       </div>
 
-      {/* ── Hero bar chart by port ───────────────────────────────────────────── */}
+      {/* ── Hero: Monthly Diesel Volume (stacked bars) ───────────────────────── */}
       <section
         style={{ margin: "16px 0 0", padding: "0 16px" }}
-        aria-label="Diesel volume by port"
+        aria-label="Monthly Diesel Volume"
       >
         <div
           style={{
@@ -426,16 +471,25 @@ export default function MobileView(): React.ReactElement {
             color: "var(--mobile-text-muted)",
             textTransform: "uppercase",
             letterSpacing: "0.06em",
+            marginBottom: 4,
+          }}
+        >
+          Monthly Diesel Volume (m³)
+        </div>
+        <div
+          style={{
+            fontSize: 11,
+            color: "var(--mobile-text-faint)",
             marginBottom: 8,
           }}
         >
-          Volume by port (m³)
+          Past months frozen · current and future are live
         </div>
 
         {loading ? (
           <div
             style={{
-              height: 180,
+              height: 240,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -458,9 +512,9 @@ export default function MobileView(): React.ReactElement {
               padding: "0 8px",
             }}
           >
-            Could not load port data.
+            Could not load monthly volume.
           </div>
-        ) : sortedPortos.length === 0 ? (
+        ) : volumeMensal.length === 0 ? (
           <div
             style={{
               height: 100,
@@ -483,7 +537,7 @@ export default function MobileView(): React.ReactElement {
             }}
           >
             <MobileChart
-              data={chartData}
+              data={monthlyChart.data}
               layout={chartLayout}
               height={chartHeight}
             />
