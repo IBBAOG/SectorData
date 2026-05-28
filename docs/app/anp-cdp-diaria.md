@@ -43,26 +43,34 @@ Verbatim move of the previous `page.tsx` body, now reading from the hook. Layout
 
 ### Mobile view (`mobile/View.tsx`)
 
-Mobile-first redesign — pinned to Field-level (the granularity toggle is desktop UX; mobile is a focused tool). Layout:
-- `MobileTopBar` — wordmark only
-- Page heading + period badge
-- `MobileTabBar` (Oil / Gas) — product switch, drives chart + ranking metric
-- Filter chip row — sticky, opens `FilterDrawer`. Chips for Basins / Fields with × clear actions.
-- Chart card: `MobileChart` line chart (Top 5 fields by current product avg, leader in brand orange #FF5000, followers in palette), title row "Top N fields · unit" + serie loading indicator + 3-up mini-stats (Leader / Avg per field / Field count)
-- Ranking section: `MobileDataCard` per field (top 25), rank pill (#1 leader in brand orange), basin badge, average + 14-point sparkline + latest production / latest date right-slot
-- `ExportFAB` (brand orange, label "Export") → `ExportModal` (Tier 2, identical to desktop)
-- `FilterDrawer`: Basin multi-select + Period slider + Field chip cloud (touch-friendly, max-height 240px scroll). Reset clears all selections + restores full date range.
+Mobile-first redesign v2 (Onda 3, 2026-05-27) — pinned to Field-level. Layout:
+- Page heading + period badge (MobileTopBar provided by MobileShell in layout.tsx — NOT imported here)
+- Sticky filter chip row — period preset pills (1M / 3M / 6M / 1Y / All) + Filters trigger chip + active Basin/Field chips with × clear.
+- Section 1 — Oil chart: `MobileChart` line chart (~260px), top 5 fields, brand orange leader.
+- Section 2 — Gas chart: same treatment stacked vertically (desktop parity — both charts always visible, no tab).
+- Section 3 — Top 10 ranking: `MobileDataCard` per field (top 10), rank pill (#1 orange), basin badge, avg + 14-point sparkline, latest value + date. "See all N fields" button opens `BottomSheet` (90vh) with full searchable list.
+- Production summary card: 2×3 grid — Leader / Total Oil avg / Total Gas avg / Leader Oil / Leader Gas / Fields count.
+- `FilterDrawer`: Period slider + Basin multi-select + Field chip cloud (touch-friendly, max-height 240px scroll). Reset clears all selections + restores full date range.
+- `BottomSheet` "All Fields": full `ranking[]` list, searchable input, scrollable.
+
+NOT on mobile (intentional `[mobile-only]` decisions):
+- No `ExportFAB` / `ExportModal` — export is desktop-only (plan § 3.4)
+- No `MobileTabBar` for Oil/Gas — both charts stacked, always visible
+- No granularity toggle — pinned to `"field"`
+- No recent-records HTML table — wrong shape for phones
 
 ### Binding sync
 
 Any new filter / chart / KPI / copy here must land in BOTH Views in the same commit, or the commit must declare `[desktop-only]` / `[mobile-only]` (see `CLAUDE.md` § Dual-view policy). Aspects intentionally desktop-only:
 - Granularity toggle (Field / Installation / Well) — mobile pins to Field per UX brief
 - The recent-records table (500 rows of HTML table — wrong shape for phone)
-- Two-chart layout (Oil + Gas stacked) — mobile uses one chart at a time driven by product tab
+- ExportFAB / ExportModal — export is desktop-only per plan § 3.4
 
 Mobile-only:
-- Production ranking card list (desktop already has the dense table; mobile gets a touch-friendly ranking instead)
-- Mini-stats card (Leader / Avg / Count) — desktop conveys this through the charts
+- Period preset pills (1M/3M/6M/1Y/All) replacing the PeriodSlider in the chip row
+- Top 10 ranking card list + "See all N" BottomSheet (desktop has the dense table instead)
+- Production summary card (2×3 grid) — desktop conveys this through charts and the table
+- Both Oil + Gas charts always stacked vertically — desktop also stacks them; mobile removed the MobileTabBar product switch that was in v1
 
 ## Produto
 
@@ -280,3 +288,4 @@ Os 19 campos faltantes representam ~0,3% da produção nacional (maioria são bu
 
 - `2026-05-08` — Implementação inicial (Field-only).
 - `2026-05-08` — **Adicionada granularidade Installation e Well via `SegmentedToggle`**. 4 RPC wrappers novos, 2 chaves novas em export heuristics, sub-PRD atualizado. Migration `20260508120001_anp_cdp_diaria_levels.sql` aplicada via supabase_deploy.yml.
+- `2026-05-27` — **Mobile reform v2 (Onda 3)**. `mobile/View.tsx` reescrito: período preset pills (1M/3M/6M/1Y/All) no chip row sticky; dois charts (Oil + Gas) empilhados verticalmente sempre visíveis (sem tab Oil/Gas); ranking Top 10 com `MobileDataCard` + botão "See all N fields" abre `BottomSheet` (90vh) com lista completa pesquisável; production summary card 2×3; `ExportFAB`/`ExportModal` removidos (export é desktop-only); `MobileTabBar` de produto removido. Commit `b29914ff`, branch `worktree-agent-ae3d7c80602ee09fb`.
