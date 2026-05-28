@@ -99,6 +99,10 @@ const sheetCampo: SheetSpec = {
     { key: "gas_mm3_dia",      header: "Gas (Mm3/day)",  width: 18, format: "#,##0.000", align: "right" },
   ],
   async rowsAsync(filters: Record<string, unknown>) {
+    // P1 fix: ExcelBuilder iterates all declared sheets; short-circuit when
+    // the modal's `nivel` excludes this sheet so we don't pull data we
+    // won't display. Mirrors importsExports.ts's `flow` short-circuit.
+    if (asNivel(filters.nivel) !== "campo") return [];
     const supabase = getSupabaseClient();
     if (!supabase) return [];
     const [dStart, dEnd] = pickPeriod(filters);
@@ -122,6 +126,8 @@ const sheetInstalacao: SheetSpec = {
     { key: "gas_mm3_dia",      header: "Gas (Mm3/day)",  width: 18, format: "#,##0.000", align: "right" },
   ],
   async rowsAsync(filters: Record<string, unknown>) {
+    // P1 fix: short-circuit when `nivel` excludes this sheet (see sheetCampo).
+    if (asNivel(filters.nivel) !== "instalacao") return [];
     const supabase = getSupabaseClient();
     if (!supabase) return [];
     const [dStart, dEnd] = pickPeriod(filters);
@@ -148,6 +154,9 @@ const sheetPoco: SheetSpec = {
     { key: "gas_mm3_dia",      header: "Gas (Mm3/day)",  width: 18, format: "#,##0.000", align: "right" },
   ],
   async rowsAsync(filters: Record<string, unknown>) {
+    // P1 fix: short-circuit when `nivel` excludes this sheet (see sheetCampo).
+    // Critical here — the Poço RPC can pull ~180k rows.
+    if (asNivel(filters.nivel) !== "poco") return [];
     const supabase = getSupabaseClient();
     if (!supabase) return [];
     const [dStart, dEnd] = pickPeriod(filters);
