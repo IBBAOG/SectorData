@@ -60,13 +60,13 @@ const ACCENTS: Record<HomeCategory, AccentTokens> = {
     glow:        "rgba(255, 80, 0, 0.22)",
   },
   oilgas: {
-    accent:      "#2563eb",                    // blue-600
-    accentText:  "#1d4ed8",                    // blue-700, AA on #fff
-    soft:        "rgba(37, 99, 235, 0.10)",
-    tile:        "rgba(37, 99, 235, 0.10)",
-    tileHover:   "rgba(37, 99, 235, 0.18)",
-    tileBorder:  "rgba(37, 99, 235, 0.16)",
-    glow:        "rgba(37, 99, 235, 0.20)",
+    accent:      "#c2410c",                    // orange-700 — earthy brand-orange tint (Round 7)
+    accentText:  "#9a3412",                    // orange-800, AA on #fff (~7:1)
+    soft:        "rgba(194, 65, 12, 0.10)",
+    tile:        "rgba(194, 65, 12, 0.10)",
+    tileHover:   "rgba(194, 65, 12, 0.18)",
+    tileBorder:  "rgba(194, 65, 12, 0.16)",
+    glow:        "rgba(194, 65, 12, 0.20)",
   },
   fuel: {
     accent:      "#059669",                    // emerald-600
