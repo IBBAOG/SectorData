@@ -1,24 +1,24 @@
 "use client";
 
-// ─── /news-hunter — viewport router ──────────────────────────────────────────
+// ─── /news-hunter — page ─────────────────────────────────────────────────────
 //
-// Detects viewport via useIsMobile (single breakpoint source: ≤768px) and
-// routes to the appropriate View.
+// Mobile is excluded from this dashboard (continuous feed is not suited for
+// small screens). MobileExcludedRedirect detects mobile viewports and
+// redirects to /home?excluded=news-hunter, firing an app-toast event.
+// On desktop it is a no-op (renders null).
 //
-// useIsMobile is SSR-safe: returns `false` during server render and on the
-// first client paint, then flips to the real value after mount. Desktop View
-// renders first on mobile for a single frame — acceptable (avoids hydration
-// mismatches entirely). This matches the pattern in template-module/page.tsx.
-//
-// Data lives in NewsHunterContext (mounted at dashboard layout level) and is
-// surfaced to both Views through useNewsHunterData.
+// Desktop View is rendered unconditionally; it handles its own data via
+// useNewsHunterData.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useIsMobile } from "@/hooks/useIsMobile";
+import MobileExcludedRedirect from "@/components/dashboard/mobile/MobileExcludedRedirect";
 import DesktopView from "./desktop/View";
-import MobileView from "./mobile/View";
 
 export default function NewsHunterPage(): React.ReactElement {
-  const isMobile = useIsMobile();
-  return isMobile ? <MobileView /> : <DesktopView />;
+  return (
+    <>
+      <MobileExcludedRedirect slug="news-hunter" />
+      <DesktopView />
+    </>
+  );
 }
