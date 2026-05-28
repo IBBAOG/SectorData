@@ -61,9 +61,18 @@ pure `useIsMobile()` router and the redirect was removed.
    brand orange. The Saved tab carries a numeric badge with the
    bookmark count when > 0.
 3. Tab body (one of):
-   - **Feed** — horizontal scrollable topic-pill row (keywords as
-     filter pills, "All" pinned first) + virtualized ArticleCard list.
-     Anonymous visitors see an AnonCTA banner above the list.
+   - **Feed** — quick-search chip row (mirrors the desktop
+     `QUICK_SEARCH_CHIPS` — same 14 curated terms: Petrobras, PRIO,
+     Vibra, Ultrapar, Cosan, Petróleo, Gasolina, Diesel, PetroReconcavo,
+     Braskem, Brava, Raízen, Compass, OceanPact). Tapping a chip fills
+     the shared `searchTerm` and jumps to the Search tab so the user
+     immediately sees the filtered feed. Below the chips: the
+     ArticleCard list. Anonymous visitors see an AnonCTA banner above
+     the chips. **We deliberately do NOT expose every tracked keyword
+     as a filter pill** — that would dump 27+ default keywords + any
+     user additions at the top of the feed, taking vertical space and
+     adding a competing scroll axis. The desktop never shows tracked
+     keywords inline either; keyword CRUD lives in the Settings tab.
    - **Search** — search input + ArticleCard list filtered by title /
      source. Empty state hints what the input does.
    - **Saved** — ArticleCard list of bookmarked articles only
@@ -100,10 +109,12 @@ react-window for full virtualization).
   mobile ignores both.
 - **No `react-window` virtualization** — the slice-to-60 fixed cap is
   cheaper than mounting the lib on a list users won't scroll deeply.
-- **No quick-search chip row** — desktop has a `QUICK_SEARCH_CHIPS`
-  preset row above the search input; mobile uses the topic-pill row
-  instead (driven by the user's own keywords), which is more
-  personalized.
+- _(removed 2026-05-28)_ Earlier mobile waves used a personalized
+  `TopicPillRow` listing every tracked keyword as a pill above the
+  Feed. This was replaced by the same `QUICK_SEARCH_CHIPS` row the
+  desktop uses (14 curated terms) for parity. Tapping a chip on mobile
+  fills `searchTerm` and switches the active tab to **Search** — the
+  desktop equivalent on a tabbed surface.
 
 ### Mobile tab state
 
