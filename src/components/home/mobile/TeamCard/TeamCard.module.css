@@ -1,0 +1,102 @@
+/*
+ * TeamCard.module.css
+ *
+ * Mobile-only team contacts card for /home.
+ * Light-only — no dark variants (mobile shell is light-only per reform 2026-05-27).
+ * Uses --mobile-* tokens from globals.css exclusively.
+ */
+
+/* ── Outer wrapper (mirrors section spacing of Oil & Gas / Fuel Distribution) */
+
+.root {
+  margin-top: 22px;
+}
+
+/* ── Section label — matches the "Oil & Gas" section title style */
+
+.label {
+  padding: 8px 4px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  color: var(--mobile-text);
+  line-height: 1.2;
+}
+
+/* ── Card — white surface with soft shadow, same radius/shadow language */
+/*         as the module tiles in the gallery.                            */
+
+.card {
+  background: var(--mobile-surface);
+  border-radius: var(--mobile-radius-lg);
+  box-shadow: var(--mobile-shadow-soft);
+  border: 1px solid var(--mobile-border);
+  overflow: hidden;
+}
+
+/* ── Individual tappable row */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  text-decoration: none;
+  color: inherit;
+  background: transparent;
+  transition: background 0.12s ease;
+  /* Full-width tap target — important on mobile */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.row:active {
+  background: var(--mobile-row-press);
+}
+
+/* ── Left info block */
+
+.info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0; /* allow text to truncate */
+}
+
+/* ── Name */
+
+.name {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--mobile-text);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Email (muted subtitle) */
+
+.email {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--mobile-text-muted);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Envelope icon — right-aligned, accent-tinted */
+
+.iconWrap {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mobile-accent);
+  opacity: 0.7;
+}
