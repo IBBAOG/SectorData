@@ -301,6 +301,22 @@ All in `module_visibility`, loaded once by `UserProfileContext` from RPC `get_mo
 - `track_event(event_type, route, payload, visitor_id)` accepts a 4th parameter for anonymous attribution. `app_events.user_id` is now nullable; `app_events.visitor_id` carries the anon UUID. CHECK `(user_id OR visitor_id)` ensures every row has an actor.
 - Cookie namespace: always `sd_*` (SectorData). The `sb-*` prefix is reserved by Supabase Auth (`sb-access-token`, `sb-refresh-token`) — never collide.
 
+## Mobile reform (2026-05-27)
+
+Cross-cutting reform of the mobile experience, delivered in 3 waves (Designer Liquid Glass v2 → mobile shell + `/home v2` → 10 dashboard refactors + excluded-route cleanup). Highlights:
+
+- **Mobile is light-only** — no dark mode. The `--mobile-*` token system in `src/app/globals.css` has no dark variants.
+- **Single floating Home pill** (`MobileHomePill`) replaced the legacy 4-icon bottom tab bar. Drill-up is contextual via the dashboard header chevron.
+- **Kebab menu top-right** (`MobileKebabMenu`) is the only logout surface on mobile; `/profile` is a desktop-only route (mobile redirects to `/home`).
+- **`(dashboard)/layout.tsx` is the shell switcher** — `DesktopShell` vs `MobileShell` via `useIsMobile()`. The desktop `NavBar` is hidden on mobile (`NavBar.tsx` early-returns when `isMobile`).
+- **Export is desktop-only** — no `ExportFAB`, no download buttons in any `mobile/View.tsx`.
+- **11 mobile-eligible routes:** `/home`, `/well-by-well`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/anp-cdp-diaria`, `/market-share`, `/price-bands`, `/subsidy-tracker`, `/diesel-gasoline-margins`, `/imports-exports`, `/navios-diesel`.
+- **9 desktop-only routes:** `/stocks`, `/admin-panel`, `/admin-analytics`, `/news-hunter`, `/alerts`, `/profile`, `/anp-cdp`, `/anp-prices`, `/anp-glp`. Each mounts `<MobileExcludedRedirect slug="..." />` in `page.tsx`; on mobile, it routes to `/home?excluded=<slug>` and fires an `app-toast` event picked up by the global `MobileToastHost`.
+- **Cross-component toast channel:** any client component dispatches `window.dispatchEvent(new CustomEvent("app-toast", { detail: { message, tone, source } }))` and `MobileToastHost` (mounted by `MobileShell`) renders it.
+- **Last-visited memory:** `useTrackLastVisited` (mounted once in `DashboardShell`) writes a FIFO of 4 dashboard slugs to `localStorage["sd_last_visited"]`. The `/home v2` mobile view consumes this for its "Last visited" pill row.
+
+See [`docs/app/PRD.md`](docs/app/PRD.md) § "Mobile reform 2026-05-27 — light-only paradigm" and [`docs/app/dual-view-pattern.md`](docs/app/dual-view-pattern.md) for the full pattern and migration recipe.
+
 ## Adding a New Dashboard (developer quick-start)
 
 Every dashboard ships as a **dual-view module** (desktop + mobile) — see [`docs/app/dual-view-pattern.md`](docs/app/dual-view-pattern.md) for the full template.
@@ -320,7 +336,7 @@ Every dashboard ships as a **dual-view module** (desktop + mobile) — see [`doc
 6. Use `useModuleVisibilityGuard("<slug>")` inside both Views (or in the hook)
 7. **Implement the data layer in the hook only.** Both Views consume it — they never call Supabase directly. The hook contract: `{ data, loading, error, filters, setFilters }`.
 8. **Use shared desktop components** from `src/components/dashboard/` — `DashboardHeader`, `MultiSelectFilter`, `PeriodSlider`, `ChartSection`, `ExportPanel`, `SegmentedToggle`, `BarrelLoading` — inside `desktop/View.tsx`.
-9. **Use shared mobile components** from `src/components/dashboard/mobile/` — `MobileNavBar`, `BottomSheet`, `FilterDrawer`, `MobileChart`, `MobileDataCard`, `StickyBreadcrumb`, `ExportFAB`, `MobileTabBar` — inside `mobile/View.tsx`.
+9. **Use shared mobile components** from `src/components/dashboard/mobile/` — `BottomSheet`, `FilterDrawer`, `MobileChart`, `MobileDataCard`, `StickyBreadcrumb`, `MobileHomeCardPill` — inside `mobile/View.tsx`. The global chrome (`MobileTopBar`, `MobileKebabMenu`, `MobileHomePill`, `MobileToastHost`) is mounted by `(dashboard)/layout.tsx`, NOT by individual Views. **Legacy components** (`MobileNavBar`, `MobileTabBar`, `ExportFAB`) are kept in the directory for reference but are not mounted in any post-reform dashboard — see the Mobile reform section above. If the dashboard is mobile-excluded, skip this step and mount `<MobileExcludedRedirect slug="..." />` in `page.tsx` instead.
 10. **Use shared hooks/libs** — `useIsMobile` (the only breakpoint source), `useDebouncedFetch` for RPC calls, `plotlyDefaults` for chart layout, `units.ts` for volume conversions.
 
 > **Binding sync rule:** any meaningful change to one View (new filter, chart, KPI, copy) must land in the OTHER View in the same commit, or the commit message must declare `[desktop-only]` / `[mobile-only]` with an explicit reason. See [`CLAUDE.md` § Dual-view policy](CLAUDE.md).

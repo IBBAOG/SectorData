@@ -152,14 +152,90 @@ Três camadas de enforcement:
 
 ### Infra compartilhada construída em paralelo pelo `worker_designer`
 
-`src/components/dashboard/mobile/` — 8 componentes mobile compartilhados:
-- `MobileNavBar`, `BottomSheet`, `FilterDrawer`, `MobileChart`, `MobileDataCard`, `StickyBreadcrumb`, `ExportFAB`, `MobileTabBar`.
+`src/components/dashboard/mobile/` — componentes mobile compartilhados (ownership do `worker_designer`):
 
-Esses componentes ficam no domínio do `worker_designer` e são montados pelos `worker_dash-*` quando refatoram cada dashboard na Fase 2.
+Camada original (Fase 1 — mocks aprovados): `MobileNavBar` (top bar), `BottomSheet`, `FilterDrawer`, `MobileChart`, `MobileDataCard`, `StickyBreadcrumb`, `ExportFAB`, `MobileTabBar`, `icons`.
 
-### Fase 2 — refactor por dashboard (não executar agora)
+Camada adicionada na reforma mobile (Ondas 1–3, 2026-05-27 a 2026-05-28):
+- `MobileHomePill` — capsule flutuante única de Home (substitui o tab bar de 4 ícones — ver § "Mobile reform 2026-05-27 — light-only paradigm").
+- `MobileKebabMenu` — botão 3-pontos no `rightSlot` do top bar; abre `BottomSheet` com Sign out. Auto-hide para Anon.
+- `MobileExcludedRedirect` — side-effect component montado em `page.tsx` de rotas excluídas; redireciona viewport mobile pra `/home?excluded=<slug>` + dispatcha toast.
+- `MobileToastHost` — listener global de `window` `app-toast` `CustomEvent`; renderiza pílula transient (`info`/`warning`/`error`). Single-slot (novo evento substitui o anterior).
+- `MobileHomeCardPill` — capsule launcher (variants `default` / `compact`) usada exclusivamente pelo `/home v2` mobile.
 
-Cada `worker_dash-*` é responsável por refatorar o seu próprio dashboard para o pattern dual-view. Receita em [`dual-view-pattern.md` § 8](dual-view-pattern.md#8-migration-recipe-existing-dashboard--dual-view). Ordem sugerida: priorizar primeiro os 6 dashboards com mockup mobile aprovado (`home`, `market-share`, `navios-diesel`, `news-hunter`, `stocks`, `anp-cdp`).
+`ExportFAB` permanece no diretório (legado) mas **não é montado em nenhum dashboard mobile pós-reforma** — export é desktop-only (ver § "Mobile reform 2026-05-27").
+
+### Mobile reform 2026-05-27 — light-only paradigm
+
+Reforma cross-cutting (Onda 1 Designer + Onda 2 Shell + Onda 3 10 dashboards) que redefine o paradigma mobile do app. Plano-mestre: `C:/Users/eduar/dashboard_projeto/.claude/plans/o-modo-mobile-da-tranquil-giraffe.md`. Diff range: `fac9e522..4ccca2b8` (~30 commits).
+
+**Princípios firmados:**
+
+| Princípio | Status |
+|---|---|
+| Mobile é **light-only** (sem dark mode) — tokens `--mobile-*` em `globals.css` purgados de qualquer variante dark. | Onda 1 |
+| Export é **desktop-only** — nenhum `ExportFAB` montado em mobile. Mobile = consumo, desktop = análise + download. | Onda 1 |
+| **Single floating Home pill** (`MobileHomePill`) substitui `MobileTabBar` de 4 ícones (Overview / Compare / Filters / Profile). Drill-up segue via chevron contextual no header de cada dashboard. | Onda 2 |
+| **Kebab menu top-right** (`MobileKebabMenu`) é a única superfície de logout no mobile. Não existe rota `/profile` mobile (excluída) — ações de conta moram no kebab. | Onda 2 |
+| **`NavBar` desktop é `hidden` em mobile** (`if (isMobile) return null;` em `NavBar.tsx:202`). Mobile usa apenas o top bar via `MobileShell`. | Onda 2 |
+| **Toast canal compartilhado** — qualquer componente dispara `window.dispatchEvent(new CustomEvent("app-toast", { detail: { message, tone, source } }))`; o `MobileToastHost` (mounted em `MobileShell`) renderiza. Sobrevive a `router.replace()` por estar em subtree irmã ao `<main>`. | Onda 2 |
+| **Last-visited memory** — hook `useTrackLastVisited` (montado uma vez em `DashboardShell`) escreve FIFO de 4 slugs em `localStorage["sd_last_visited"]`. Lido pela `/home v2` mobile na linha horizontal "Last visited". Namespace `sd_*` (não `sb-*`). | Onda 2 |
+
+**Layout `(dashboard)/layout.tsx` — `DesktopShell` vs `MobileShell` switcher:**
+
+A camada de chrome é selecionada por `useIsMobile()` dentro de `DashboardShell`:
+
+| Branch | Chrome renderizado |
+|---|---|
+| `DesktopShell` (`isMobile === false`) | `<div flex column min-h-100vh>` + `<children>` + `<Footer />` + `<PWAInstallPrompt />`. NavBar é renderizada pelas próprias páginas. |
+| `MobileShell` (`isMobile === true`) | `<MobileTopBar leftSlot={SectorData wordmark} rightSlot={<MobileKebabMenu />} />` + `<main>{children}</main>` + `<MobileHomePill />` + `<MobileToastHost />`. Sem Footer, sem PWAInstallPrompt — ambos são chrome desktop. |
+
+`useTrackLastVisited()` é montado uma vez no `DashboardShell` (acima do switcher) para capturar toda navegação dentro do `(dashboard)`. Rotas excluídas do FIFO: `/login`, `/profile`, `/admin-panel`, `/admin-analytics`, `/terms`, `/privacy`, `/home`, `/mobile-preview`.
+
+**Rotas elegíveis vs excluídas:**
+
+| Status | Rotas | Padrão `page.tsx` |
+|---|---|---|
+| **Mobile-eligible (11)** | `/home`, `/well-by-well`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/anp-cdp-diaria`, `/market-share`, `/price-bands`, `/subsidy-tracker`, `/diesel-gasoline-margins`, `/imports-exports`, `/navios-diesel` | Router clássico: `const isMobile = useIsMobile(); return isMobile ? <MobileView /> : <DesktopView />;` |
+| **Mobile-excluded (9)** | `/stocks`, `/admin-panel`, `/admin-analytics`, `/news-hunter`, `/alerts`, `/profile`, `/anp-cdp`, `/anp-prices`, `/anp-glp` | `mobile/View.tsx` **deletado**; `page.tsx` renderiza `<MobileExcludedRedirect slug="..." />` + `<DesktopView />`. No mobile, o `MobileExcludedRedirect` faz `router.replace("/home?excluded=<slug>")` + `dispatchEvent("app-toast")` para mostrar "<Display> is available only on desktop". |
+
+**Razões de exclusão (resumo das ondas 2.x):**
+
+- `/stocks` — Bloomberg theme desktop preservado; análise market-data densa não cabe em mobile.
+- `/admin-panel`, `/admin-analytics` — superfícies admin (CRUD pesado, tabelas largas) são desktop-only por design.
+- `/news-hunter` — UX de clipping requer multi-pane; rotas auxiliares `/news-hunter/confirm` e `/unsubscribe` permanecem acessíveis.
+- `/alerts` — mesmo princípio do `/news-hunter`; `/alerts/confirm` e `/alerts/unsubscribe` preservados (rotas anon para email opt-in).
+- `/profile` — ações de conta migraram pro `MobileKebabMenu`; visitar `/profile` no mobile redireciona pra `/home`.
+- `/anp-cdp` — explorador granular well-by-well (volume de filtros, tabela larga); `/well-by-well` cobre a view C-level no mobile.
+- `/anp-prices` — UNION ALL de 3 fontes com matriz de produto × região × unidade; densidade de filtros incompatível com mobile-first.
+- `/anp-glp` — distribuição por categoria com tabelas e séries longas; baixa demanda em mobile.
+
+**Pattern de rota excluída (template canônico):**
+
+```tsx
+// src/app/(dashboard)/<slug>/page.tsx
+"use client";
+
+import MobileExcludedRedirect from "@/components/dashboard/mobile/MobileExcludedRedirect";
+import DesktopView from "./desktop/View";
+
+export default function Page(): React.ReactElement {
+  return (
+    <>
+      <MobileExcludedRedirect slug="<slug>" />
+      <DesktopView />
+    </>
+  );
+}
+```
+
+A pasta `mobile/` é deletada. `use<Slug>Data.ts` permanece (DesktopView consome). Em mobile, `useIsMobile()` resolve `true` após mount → `MobileExcludedRedirect` dispara redirect + toast antes do `DesktopView` pintar conteúdo visível.
+
+**Reform deltas em sub-PRDs:** cada `docs/app/<slug>.md` foi atualizado pelos próprios `worker_dash-*` na Onda 3 com a declaração de cobertura mobile (eligible com nova layout v2 OU excluded com referência ao redirect). Documentador NÃO duplica essa info no PRD departamental.
+
+### Fase 2 — refactor por dashboard (concluída na Onda 3 da reforma mobile)
+
+A Fase 2 original (Phase 2 da Dual-view foundation) foi absorvida pela Onda 3 da reforma mobile 2026-05-27. Os 11 dashboards elegíveis receberam `mobile/View.tsx` reescrito do zero ("mobile reform v2") seguindo o paradigma light-only + Home pill + sem ExportFAB. Os 9 excluded receberam `MobileExcludedRedirect` no `page.tsx` e a pasta `mobile/` removida. Receita canônica em [`dual-view-pattern.md` § 8](dual-view-pattern.md#8-migration-recipe-existing-dashboard--dual-view).
 
 ## Anonymous access — login opcional, 3-tier visibility (2026-05-22)
 
