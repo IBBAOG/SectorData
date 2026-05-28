@@ -1,16 +1,24 @@
 "use client";
 
-// Mobile view for /home (Onda 2 of the mobile reform, rewrite from scratch).
+// Mobile view for /home — Onda 5 visual refresh (2026-05-28).
 //
 // Plan reference: /.claude/plans/o-modo-mobile-da-tranquil-giraffe.md § 4.1.
+//
+// Visual model: bento icon tiles (replacement for the v2 "capsule pill" layout).
+// Each tile carries:
+//   • A tinted 44×44 squircle icon badge (identity at a glance)
+//   • The dashboard title (Arial 15px / 600)
+// All other affordances (subtitle, preview thumbnail, badge) are deliberately
+// omitted to keep the gallery scannable and minimal — the icon does the
+// recognition work the thumbnail used to do.
 //
 // Layout (top → bottom):
 //   1. Sticky header           — owned by MobileLayout (not rendered here).
 //   2. Search bar (sticky)     — full-width Liquid Glass, real-time filter.
-//   3. "Last visited" row      — horizontal scroll, 4 compact pills, only
+//   3. "Last visited" row      — horizontal scroll, compact icon tiles, only
 //                                rendered when localStorage history exists.
-//   4. Oil & Gas section       — 5 pills in 2-col grid, expanded by default.
-//   5. Fuel Distribution       — 8 pills in 2-col grid, expanded by default.
+//   4. Oil & Gas section       — 5 tiles in 2-col grid.
+//   5. Fuel Distribution       — 8 tiles in 2-col grid.
 //   6. (no Markets section — /stocks, /news-hunter, /alerts excluded.)
 //
 // What we DELIBERATELY don't render here:
@@ -21,13 +29,16 @@
 //   • MobileBottomTabBar (replaced by the global Home pill in MobileLayout).
 //   • useDataSourcesFreshness — not imported, not called.
 //
-// Visibility logic comes from `useHomeData()`. We further restrict the visible
-// set to Oil & Gas + Fuel Distribution categories so excluded routes never
-// show up even if module_visibility flags them visible (defence in depth).
+// Excluded routes that still appear in the gallery (anp-cdp, anp-prices,
+// anp-glp): rendered with `excluded={true}` — the tile remains tappable, and
+// the destination `page.tsx` mounts `MobileExcludedRedirect` which bounces
+// the user back to /home with a toast. The visual "Desktop only" caption
+// inside the tile sets expectations before the tap.
 
 import { useMemo, useState } from "react";
 import {
-  MobileHomeCardPill,
+  MobileHomeIconTile,
+  getTileMeta,
   SearchIcon,
   CloseIcon,
 } from "@/components/dashboard/mobile";
@@ -37,13 +48,19 @@ import { readLastVisited } from "../../../../hooks/useTrackLastVisited";
 // Slugs that are explicitly excluded from the mobile experience (plan § 3.1).
 // We hide them from the Home gallery regardless of module_visibility — the
 // MobileExcludedRedirect handles the deep-link case.
-const EXCLUDED_FROM_MOBILE_HOME = new Set<string>([
+const HIDE_FROM_MOBILE_HOME = new Set<string>([
   "stocks",
   "news-hunter",
   "alerts",
   "admin-panel",
   "admin-analytics",
   "profile",
+]);
+
+// These dashboards are mobile-incompatible (they redirect to /home on tap via
+// MobileExcludedRedirect) but we keep them in the /home grid so the catalogue
+// is complete; the tile renders with `excluded={true}` to set expectations.
+const EXCLUDED_DESKTOP_ONLY = new Set<string>([
   "anp-cdp",
   "anp-prices",
   "anp-glp",
@@ -86,16 +103,15 @@ export default function MobileView(): React.ReactElement {
   // scrolls /home; it refreshes on the next visit to /home anyway.
   const lastVisitedSlugs = useMemo<string[]>(() => readLastVisited(), []);
 
-  // Filter excluded routes out of each section's card list. The default home
-  // hook already removes them when visibility is off, but we belt-and-suspender
-  // here to guarantee the mobile gallery cannot show excluded routes even if
-  // an admin flips module_visibility upstream.
+  // Filter hidden routes out of each section's card list (defence in depth).
+  // Excluded-but-still-shown routes (anp-cdp, anp-prices, anp-glp) stay; they
+  // render with `excluded={true}` and the destination page bounces.
   const oilgasCards = useMemo<HomeCardDef[]>(
-    () => cardsByCategory.oilgas.filter((c) => !EXCLUDED_FROM_MOBILE_HOME.has(c.slug)),
+    () => cardsByCategory.oilgas.filter((c) => !HIDE_FROM_MOBILE_HOME.has(c.slug)),
     [cardsByCategory.oilgas],
   );
   const fuelCards = useMemo<HomeCardDef[]>(
-    () => cardsByCategory.fuel.filter((c) => !EXCLUDED_FROM_MOBILE_HOME.has(c.slug)),
+    () => cardsByCategory.fuel.filter((c) => !HIDE_FROM_MOBILE_HOME.has(c.slug)),
     [cardsByCategory.fuel],
   );
 
@@ -105,7 +121,7 @@ export default function MobileView(): React.ReactElement {
       .map((slug) => findCardBySlug(visibleCards, slug))
       .filter(
         (c): c is HomeCardDef =>
-          !!c && !!c.href && !EXCLUDED_FROM_MOBILE_HOME.has(c.slug),
+          !!c && !!c.href && !HIDE_FROM_MOBILE_HOME.has(c.slug),
       );
   }, [lastVisitedSlugs, visibleCards]);
 
@@ -235,21 +251,28 @@ export default function MobileView(): React.ReactElement {
               WebkitOverflowScrolling: "touch",
             }}
           >
-            {lastVisitedCards.map((card) => (
-              <div
-                key={card.slug}
-                style={{
-                  scrollSnapAlign: "start",
-                  flex: "0 0 auto",
-                }}
-              >
-                <MobileHomeCardPill
-                  variant="compact"
-                  title={card.title}
-                  href={card.href ?? "#"}
-                />
-              </div>
-            ))}
+            {lastVisitedCards.map((card) => {
+              const meta = getTileMeta(card.slug, "compact");
+              return (
+                <div
+                  key={card.slug}
+                  style={{
+                    scrollSnapAlign: "start",
+                    flex: "0 0 auto",
+                  }}
+                >
+                  <MobileHomeIconTile
+                    variant="compact"
+                    title={card.title}
+                    href={card.href ?? "#"}
+                    icon={meta.icon}
+                    tintBg={meta.tintBg}
+                    tintFg={meta.tintFg}
+                    excluded={EXCLUDED_DESKTOP_ONLY.has(card.slug)}
+                  />
+                </div>
+              );
+            })}
           </div>
         </section>
       )}
@@ -314,13 +337,20 @@ export default function MobileView(): React.ReactElement {
                     gap: 10,
                   }}
                 >
-                  {cards.map((card) => (
-                    <MobileHomeCardPill
-                      key={card.slug}
-                      title={card.title}
-                      href={card.href ?? "#"}
-                    />
-                  ))}
+                  {cards.map((card) => {
+                    const meta = getTileMeta(card.slug, "default");
+                    return (
+                      <MobileHomeIconTile
+                        key={card.slug}
+                        title={card.title}
+                        href={card.href ?? "#"}
+                        icon={meta.icon}
+                        tintBg={meta.tintBg}
+                        tintFg={meta.tintFg}
+                        excluded={EXCLUDED_DESKTOP_ONLY.has(card.slug)}
+                      />
+                    );
+                  })}
                 </div>
               )}
             </section>

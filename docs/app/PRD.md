@@ -161,7 +161,7 @@ Camada adicionada na reforma mobile (Ondas 1–3, 2026-05-27 a 2026-05-28):
 - `MobileKebabMenu` — botão 3-pontos no `rightSlot` do top bar; abre `BottomSheet` com Sign out. Auto-hide para Anon.
 - `MobileExcludedRedirect` — side-effect component montado em `page.tsx` de rotas excluídas; redireciona viewport mobile pra `/home?excluded=<slug>` + dispatcha toast.
 - `MobileToastHost` — listener global de `window` `app-toast` `CustomEvent`; renderiza pílula transient (`info`/`warning`/`error`). Single-slot (novo evento substitui o anterior).
-- `MobileHomeCardPill` — capsule launcher (variants `default` / `compact`) usada exclusivamente pelo `/home v2` mobile.
+- `MobileHomeIconTile` — bento launcher tile (variants `default` / `compact`) usado exclusivamente pelo `/home` mobile (Onda 5 visual refresh, 2026-05-28). Tinted squircle icon badge (44×44) + título. Consumes `getTileMeta(slug)` de `mobileHomeTiles.tsx` (palette + glyph mapping, fonte única). Substitui `MobileHomeCardPill` (capsule, deletado).
 
 `ExportFAB` permanece no diretório (legado) mas **não é montado em nenhum dashboard mobile pós-reforma** — export é desktop-only (ver § "Mobile reform 2026-05-27").
 
