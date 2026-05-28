@@ -105,9 +105,17 @@ Pure helpers also exported from the hook file:
 - `buildMarketShareLine` — builds a single Plotly line chart. Also runs an
   anti-overlap pass on the right-side end-of-line annotations: when two or
   more labels would land at nearly the same Y, they are stacked with a
-  minimum vertical separation of ~3 % of the axis range (X anchor unchanged,
-  only Y is nudged). Two passes (top-down + bottom-clamp + bottom-up) so the
-  stack stays inside `[yLo, yHi]`.
+  minimum vertical separation derived from the chart's pixel geometry
+  (≈ `axisSpan * 16/210` ≈ 7.6 % of axis range — accounting for the ~210 px
+  plot area at 300 px chart height and 12 px Arial labels). A hard floor of
+  **1.6 pp** is enforced in `share` mode so wide ranges (e.g. Big-3 mode
+  with 80 pp span) still get a sane minimum gap; in `volume` mode the floor
+  is 4 % of axis span. Algorithm: sort labels by original Y ascending, then
+  iterate up to 4 passes — bottom-up greedy packing (`y = max(originalY,
+  prevY + minGap)`), and if the top exceeds `yHi`, clamp top and sweep
+  top-down. Handles 3–4 label clusters reliably. Strengthened on 2026-05-28
+  after end-of-line labels were still kissing on Retail / TRR / B2B panels
+  with the previous 3 % threshold.
 - `buildMobileStackedArea` — builds stacked-area traces for the mobile hero chart
 - `buildComparisonData` — builds the MoM/QTD/YoY/YTD comparison rows
 - `makeOttoCycleRows` — synthesises Otto-Cycle = Gasolina C + Etanol × 0.7
