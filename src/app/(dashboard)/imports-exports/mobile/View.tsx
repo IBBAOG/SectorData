@@ -1161,13 +1161,13 @@ export default function MobileView(): React.ReactElement {
       >
         <MobileTabBar
           tabs={[
-            { key: "imports", label: "Imports" },
-            { key: "exports", label: "Exports" },
+            { key: "imports", label: "Diesel Imports" },
+            { key: "exports", label: "Crude Oil Exports" },
           ]}
           activeKey={filters.tab}
           onChange={handleTabChange}
           variant="container"
-          ariaLabel="Imports / Exports tabs"
+          ariaLabel="Diesel Imports / Crude Oil Exports tabs"
         />
 
         {/* Period preset pills */}
