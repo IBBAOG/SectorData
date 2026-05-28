@@ -47,7 +47,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-export type RappiCardVariant = "hero" | "secondary" | "quick";
+export type RappiCardVariant = "hero" | "secondary" | "quick" | "uniform";
 
 export interface MobileHomeRappiCardProps {
   /** Destination route, e.g. /well-by-well. */
@@ -119,6 +119,19 @@ const VARIANT_SPEC: Record<RappiCardVariant, VariantSpec> = {
     sublabelSize: 10,
     illustrationBoxHeight: undefined,
   },
+  // Uniform variant (Round 2 — 2026-05-28, CEO feedback): one fixed footprint
+  // for every dashboard inside an Oil & Gas / Fuel Distribution section. Icon
+  // sits in a small top-left zone (~40% of card height — half of what hero
+  // used) and the label anchors the bottom-left in saturated brand colour.
+  uniform: {
+    minHeight: 108,
+    padding: "12px 12px 10px",
+    radius: 18,
+    labelSize: 13,
+    labelWeight: 700,
+    sublabelSize: 11,
+    illustrationBoxHeight: 44,
+  },
 };
 
 export default function MobileHomeRappiCard(
@@ -140,6 +153,7 @@ export default function MobileHomeRappiCard(
   const isHero = variant === "hero";
   const isSecondary = variant === "secondary";
   const isQuick = variant === "quick";
+  const isUniform = variant === "uniform";
 
   // Quick variant uses a white shell with a tinted inner badge instead of a
   // full pastel bg — fits the small "support" surface from the mood board.
@@ -202,14 +216,17 @@ export default function MobileHomeRappiCard(
           {illustration}
         </span>
       ) : (
-        // Hero/secondary: oversized illustration in the upper area, anchored
-        // to the top-right so the bottom-left is free for the label block.
+        // Hero / secondary / uniform: illustration in the upper area.
+        // Hero & secondary anchor top-right (oversized, with optional emoji
+        // backdrop); uniform anchors top-left at a smaller size so a row of
+        // cards reads tidy and consistent regardless of slug.
         <div
           aria-hidden="true"
           style={{
             position: "absolute",
             top: isHero ? 12 : 8,
-            right: isHero ? 12 : 8,
+            right: isUniform ? undefined : isHero ? 12 : 8,
+            left: isUniform ? 12 : undefined,
             height: spec.illustrationBoxHeight,
             display: "flex",
             alignItems: "center",
@@ -222,8 +239,10 @@ export default function MobileHomeRappiCard(
         >
           {/* Stack the optional emoji behind the SVG for a 3D "icon hero"
               effect inspired by Rappi's mascots. The emoji bleeds slightly
-              past the SVG and is dimmed to ~40% so it reads as a backdrop. */}
-          {emoji && (
+              past the SVG and is dimmed to ~40% so it reads as a backdrop.
+              Uniform variant skips the emoji backdrop — keeps the small
+              icon clean and the grid visually quiet. */}
+          {emoji && !isUniform && (
             <span
               style={{
                 position: "absolute",
@@ -279,7 +298,7 @@ export default function MobileHomeRappiCard(
             overflow: "hidden",
             textOverflow: "ellipsis",
             display: "-webkit-box",
-            WebkitLineClamp: isQuick ? 2 : isSecondary ? 2 : 2,
+            WebkitLineClamp: isQuick ? 2 : isSecondary || isUniform ? 2 : 2,
             WebkitBoxOrient: "vertical" as const,
             wordBreak: "normal",
             overflowWrap: "break-word",

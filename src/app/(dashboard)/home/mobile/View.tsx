@@ -1,35 +1,35 @@
 "use client";
 
-// Mobile view for /home — Rappi-inspired redesign (2026-05-28).
+// Mobile view for /home — Rappi-pastel × category sections (2026-05-28, Round 2).
 //
-// Visual model: pastel "Rappi launcher" tiles, three flavours composed in a
-// single screen-length composition.
+// CEO feedback on the first Rappi pass (commit 10a2c17f) — the curated
+// Featured / Daily picks / More tools layout dropped the canonical taxonomy.
+// This iteration restores the two category sections that vigorated before
+// the Rappi rework (commit 022f41bc) and dresses every tile in the pastel
+// Rappi card with a smaller icon so the whole catalogue fits inside each
+// section without scroll, hidden tiles or font cropping.
 //
 //   ┌────────────────────────────────┐
-//   │  Team contact card             │  (kept above the grid; mobile-only)
+//   │  Team contact card             │  (mobile-only, kept above the grid)
 //   ├────────────────────────────────┤
-//   │ Featured                       │  Section header (uppercase, faint)
+//   │ Oil & Gas               4  ▼   │  Collapsible section header
 //   ├──────────────┬─────────────────┤
-//   │              │                 │  HERO row — 2 large pastel cards
-//   │  Brazil Prod │  Market Share   │  (focal modules, biggest illos)
-//   │              │                 │
+//   │  ▣  icon     │  ▣  icon        │  Uniform 2-col grid of pastel cards
+//   │              │                 │  (icon top-left ~ 40% h, label
+//   │  Label       │  Label          │  bottom-left, saturated brand
+//   │              │                 │  colour). No horizontal scroll.
 //   ├──────────────┴─────────────────┤
-//   │ Daily Picks                    │
-//   ├───────┬───────┬───────┬────────┤
-//   │       │       │       │        │  SECONDARY — 2x2 grid of medium
-//   │ Daily │ Subsi │ Imp&  │ Diesel │  pastel cards (next-tier modules)
-//   │ Prod  │ dy    │ Exp   │ Line-Up│
-//   ├───────┴───────┴───────┴────────┤
-//   │ More                           │
-//   │ ┌───┐┌───┐┌───┐┌───┐┌───┐ →     │  QUICK row — horizontal scroll of
-//   │ │BSW││Dep││PB ││D&G││NH │       │  small neutral cards (deep-cut
-//   │ └───┘└───┘└───┘└───┘└───┘       │  modules)
+//   │ Fuel Distribution       6  ▼   │
+//   ├──────────────┬─────────────────┤
+//   │   …                            │
 //   └────────────────────────────────┘
 //
-// Curatorial layer (HERO_SLUGS / SECONDARY_SLUGS / QUICK_SLUGS) defines a
-// PREFERRED order — the actual rendering filters by `useHomeData` visibility
-// rules (Anon / Client / Admin) and only paints what the user is allowed to
-// see. A slug missing from visibility is silently dropped from its row.
+// Source of truth for category assignment: `useHomeData.cardsByCategory`
+// (Markets / Oil & Gas / Fuel). Markets is hidden from the mobile gallery —
+// its only mobile-eligible slug (news-hunter) lives behind the floating
+// MobileNewsHunterPill instead. Desktop-only slugs are filtered through
+// `HIDE_FROM_MOBILE_HOME` (defence-in-depth — `useHomeData` already drops
+// them via visibility, but the set documents the contract).
 //
 // What we DELIBERATELY don't render here:
 //   • Module thumbnails / images.
@@ -39,186 +39,135 @@
 //   • MobileBottomTabBar (replaced by the global Home pill in MobileLayout).
 //   • useDataSourcesFreshness — not imported, not called.
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { MobileHomeRappiCard } from "@/components/dashboard/mobile";
 import { getModuleIcon } from "@/data/moduleIcons";
-import { useHomeData, type HomeCardDef } from "../useHomeData";
+import { useHomeData, type HomeCardDef, type HomeCategory } from "../useHomeData";
 import TeamCard from "@/components/home/mobile/TeamCard";
 
-// ── Curatorial slot configuration ─────────────────────────────────────────
-//
-// Slugs are listed in display order. A slug present here but absent from
-// `cardsByCategory` (because the user's visibility tier excludes it) is
-// quietly skipped — no placeholder, no warning.
+// ── Hidden slugs ─────────────────────────────────────────────────────────
+// Mirrors commit 022f41bc — desktop-only + non-gallery routes.
+const HIDE_FROM_MOBILE_HOME = new Set<string>([
+  "stocks",
+  "news-hunter",
+  "alerts",
+  "admin-panel",
+  "admin-analytics",
+  "profile",
+  // Desktop-only dashboards (post-mobile-reform 2026-05-27)
+  "anp-cdp",
+  "anp-prices",
+  "anp-glp",
+]);
 
-interface RappiTileMeta {
-  /** Slug-specific pastel background CSS variable. */
+// ── Section ordering ─────────────────────────────────────────────────────
+interface SectionDef {
+  id: Exclude<HomeCategory, "markets">;
+  title: string;
+}
+const SECTIONS: SectionDef[] = [
+  { id: "oilgas", title: "Oil & Gas" },
+  { id: "fuel", title: "Fuel Distribution" },
+];
+
+// ── Per-slug Rappi metadata ──────────────────────────────────────────────
+// Each entry maps to the CSS tokens added in globals.css under the
+// "Rappi-style /home tile palette" block. `label` overrides the desktop
+// title with a punchier mobile-friendly string when the original is too
+// long for a 2-col 360px viewport. Slugs missing here fall back to
+// neutral defaults — but every slug currently surfaced in the gallery is
+// covered.
+interface RappiSlugMeta {
   bgVar: string;
-  /** Slug-specific saturated label/illustration foreground CSS variable. */
   fgVar: string;
-  /** Hero/secondary: short copy line painted above the title (uppercase). */
-  sublabel?: string;
-  /** Optional emoji adornment painted behind the SVG (3D-style backdrop). */
-  emoji?: string;
-  /** Override the desktop title with a more punchy mobile label. */
+  /** Optional mobile-friendly label override. */
   label?: string;
 }
 
-const HERO_SLUGS: { slug: string; meta: RappiTileMeta }[] = [
-  {
-    slug: "well-by-well",
-    meta: {
-      bgVar: "var(--mobile-home-tile-well-by-well-bg)",
-      fgVar: "var(--mobile-home-tile-well-by-well-fg)",
-      sublabel: "Production",
-      emoji: "🛢️",
-      label: "Brazil Production",
-    },
+const RAPPI_META: Record<string, RappiSlugMeta> = {
+  // Oil & Gas
+  "well-by-well": {
+    bgVar: "var(--mobile-home-tile-well-by-well-bg)",
+    fgVar: "var(--mobile-home-tile-well-by-well-fg)",
+    label: "Brazil Production",
   },
-  {
-    slug: "market-share",
-    meta: {
-      bgVar: "var(--mobile-home-tile-market-share-bg)",
-      fgVar: "var(--mobile-home-tile-market-share-fg)",
-      sublabel: "Distribution",
-      emoji: "⛽",
-      label: "Market Share",
-    },
+  "anp-cdp-bsw": {
+    bgVar: "var(--mobile-home-tile-anp-cdp-bsw-bg)",
+    fgVar: "var(--mobile-home-tile-anp-cdp-bsw-fg)",
+    label: "BSW by Well",
   },
-];
+  "anp-cdp-depletion": {
+    bgVar: "var(--mobile-home-tile-anp-cdp-depletion-bg)",
+    fgVar: "var(--mobile-home-tile-anp-cdp-depletion-fg)",
+    label: "Depletion",
+  },
+  "anp-cdp-diaria": {
+    bgVar: "var(--mobile-home-tile-anp-cdp-diaria-bg)",
+    fgVar: "var(--mobile-home-tile-anp-cdp-diaria-fg)",
+    label: "Daily Production",
+  },
+  // Fuel Distribution
+  "market-share": {
+    bgVar: "var(--mobile-home-tile-market-share-bg)",
+    fgVar: "var(--mobile-home-tile-market-share-fg)",
+    label: "Market Share",
+  },
+  "navios-diesel": {
+    bgVar: "var(--mobile-home-tile-navios-diesel-bg)",
+    fgVar: "var(--mobile-home-tile-navios-diesel-fg)",
+    label: "Diesel Line-Up",
+  },
+  "diesel-gasoline-margins": {
+    bgVar: "var(--mobile-home-tile-diesel-gasoline-margins-bg)",
+    fgVar: "var(--mobile-home-tile-diesel-gasoline-margins-fg)",
+    label: "D&G Margins",
+  },
+  "price-bands": {
+    bgVar: "var(--mobile-home-tile-price-bands-bg)",
+    fgVar: "var(--mobile-home-tile-price-bands-fg)",
+    label: "Price Bands",
+  },
+  "subsidy-tracker": {
+    bgVar: "var(--mobile-home-tile-subsidy-tracker-bg)",
+    fgVar: "var(--mobile-home-tile-subsidy-tracker-fg)",
+    label: "Subsidy",
+  },
+  "imports-exports": {
+    bgVar: "var(--mobile-home-tile-imports-exports-bg)",
+    fgVar: "var(--mobile-home-tile-imports-exports-fg)",
+    label: "Imports & Exports",
+  },
+};
 
-const SECONDARY_SLUGS: { slug: string; meta: RappiTileMeta }[] = [
-  {
-    slug: "anp-cdp-diaria",
-    meta: {
-      bgVar: "var(--mobile-home-tile-anp-cdp-diaria-bg)",
-      fgVar: "var(--mobile-home-tile-anp-cdp-diaria-fg)",
-      emoji: "📅",
-      label: "Daily Production",
-    },
-  },
-  {
-    slug: "subsidy-tracker",
-    meta: {
-      bgVar: "var(--mobile-home-tile-subsidy-tracker-bg)",
-      fgVar: "var(--mobile-home-tile-subsidy-tracker-fg)",
-      emoji: "💰",
-      label: "Subsidy",
-    },
-  },
-  {
-    slug: "imports-exports",
-    meta: {
-      bgVar: "var(--mobile-home-tile-imports-exports-bg)",
-      fgVar: "var(--mobile-home-tile-imports-exports-fg)",
-      emoji: "🌍",
-      label: "Imports & Exports",
-    },
-  },
-  {
-    slug: "navios-diesel",
-    meta: {
-      bgVar: "var(--mobile-home-tile-navios-diesel-bg)",
-      fgVar: "var(--mobile-home-tile-navios-diesel-fg)",
-      emoji: "🚢",
-      label: "Diesel Line-Up",
-    },
-  },
-];
-
-const QUICK_SLUGS: { slug: string; meta: RappiTileMeta }[] = [
-  {
-    slug: "anp-cdp-bsw",
-    meta: {
-      bgVar: "var(--mobile-home-tile-anp-cdp-bsw-badge-bg)",
-      fgVar: "var(--mobile-home-tile-anp-cdp-bsw-badge-fg)",
-      label: "BSW",
-    },
-  },
-  {
-    slug: "anp-cdp-depletion",
-    meta: {
-      bgVar: "var(--mobile-home-tile-anp-cdp-depletion-badge-bg)",
-      fgVar: "var(--mobile-home-tile-anp-cdp-depletion-badge-fg)",
-      label: "Depletion",
-    },
-  },
-  {
-    slug: "price-bands",
-    meta: {
-      bgVar: "var(--mobile-home-tile-price-bands-badge-bg)",
-      fgVar: "var(--mobile-home-tile-price-bands-badge-fg)",
-      label: "Price Bands",
-    },
-  },
-  {
-    slug: "diesel-gasoline-margins",
-    meta: {
-      bgVar: "var(--mobile-home-tile-diesel-gasoline-margins-badge-bg)",
-      fgVar: "var(--mobile-home-tile-diesel-gasoline-margins-badge-fg)",
-      label: "D&G Margins",
-    },
-  },
-  {
-    slug: "news-hunter",
-    meta: {
-      bgVar: "var(--mobile-home-tile-news-hunter-badge-bg)",
-      fgVar: "var(--mobile-home-tile-news-hunter-badge-fg)",
-      label: "News Hunter",
-    },
-  },
-];
-
-// ── Helpers ───────────────────────────────────────────────────────────────
-
-/** Build a flat slug → card map from the visibility-filtered catalogue. */
-function buildSlugMap(cards: HomeCardDef[]): Map<string, HomeCardDef> {
-  const m = new Map<string, HomeCardDef>();
-  for (const c of cards) m.set(c.slug, c);
-  return m;
-}
-
-interface RappiResolvedTile {
-  slug: string;
-  href: string;
-  card: HomeCardDef;
-  meta: RappiTileMeta;
-}
-
-/** Filter the curated slug list against the visibility map. */
-function resolveTiles(
-  list: { slug: string; meta: RappiTileMeta }[],
-  slugMap: Map<string, HomeCardDef>,
-): RappiResolvedTile[] {
-  const out: RappiResolvedTile[] = [];
-  for (const entry of list) {
-    const card = slugMap.get(entry.slug);
-    if (!card || !card.href) continue;
-    out.push({
-      slug: entry.slug,
-      href: card.href,
-      card,
-      meta: entry.meta,
-    });
-  }
-  return out;
-}
+const DEFAULT_META: RappiSlugMeta = {
+  bgVar: "var(--mobile-surface)",
+  fgVar: "var(--mobile-text)",
+};
 
 // ── Component ─────────────────────────────────────────────────────────────
 
 export default function MobileView(): React.ReactElement {
-  const { visibleCards } = useHomeData();
+  const { cardsByCategory } = useHomeData();
+  const [collapsedSections, setCollapsedSections] = useState<
+    Record<SectionDef["id"], boolean>
+  >({ oilgas: false, fuel: false });
 
-  const slugMap = useMemo(() => buildSlugMap(visibleCards), [visibleCards]);
-  const heroTiles = useMemo(() => resolveTiles(HERO_SLUGS, slugMap), [slugMap]);
-  const secondaryTiles = useMemo(
-    () => resolveTiles(SECONDARY_SLUGS, slugMap),
-    [slugMap],
+  const oilgasCards = useMemo<HomeCardDef[]>(
+    () => cardsByCategory.oilgas.filter((c) => !HIDE_FROM_MOBILE_HOME.has(c.slug)),
+    [cardsByCategory.oilgas],
   );
-  const quickTiles = useMemo(
-    () => resolveTiles(QUICK_SLUGS, slugMap),
-    [slugMap],
+  const fuelCards = useMemo<HomeCardDef[]>(
+    () => cardsByCategory.fuel.filter((c) => !HIDE_FROM_MOBILE_HOME.has(c.slug)),
+    [cardsByCategory.fuel],
   );
+
+  function toggleSection(id: SectionDef["id"]) {
+    setCollapsedSections((prev) => ({ ...prev, [id]: !prev[id] }));
+  }
+
+  function cardsForSection(id: SectionDef["id"]): HomeCardDef[] {
+    return id === "oilgas" ? oilgasCards : fuelCards;
+  }
 
   return (
     <div
@@ -228,134 +177,119 @@ export default function MobileView(): React.ReactElement {
         color: "var(--mobile-text)",
         fontSize: 14,
         lineHeight: 1.4,
+        // Bottom padding clears the Home pill area (pill is at calc(24px +
+        // safe-bottom), pill height 56) plus a comfy gutter.
         paddingBottom: "calc(120px + var(--mobile-safe-bottom))",
       }}
     >
-      <div style={{ padding: "16px 16px 24px" }}>
-        {/* Team contacts — kept above the grid for at-a-glance ownership. */}
+      <div style={{ padding: "20px 16px 24px" }}>
+        {/* Team contacts — compact card above module groups (mobile-only). */}
         <TeamCard />
 
-        {/* ── Featured (HERO) ─────────────────────────────────────────── */}
-        {heroTiles.length > 0 && (
-          <Section title="Featured" marginTop={22}>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: heroTiles.length === 1 ? "1fr" : "1fr 1fr",
-                gap: 12,
-              }}
-            >
-              {heroTiles.map((t) => (
-                <MobileHomeRappiCard
-                  key={t.slug}
-                  href={t.href}
-                  label={t.meta.label ?? t.card.title}
-                  sublabel={t.meta.sublabel}
-                  illustration={getModuleIcon(t.slug, 56, 1.75)}
-                  emoji={t.meta.emoji}
-                  bgColor={t.meta.bgVar}
-                  fgColor={t.meta.fgVar}
-                  variant="hero"
-                />
-              ))}
-            </div>
-          </Section>
-        )}
+        {SECTIONS.map((section) => {
+          const cards = cardsForSection(section.id);
+          if (cards.length === 0) return null;
+          const collapsed = collapsedSections[section.id];
 
-        {/* ── Daily Picks (SECONDARY 2×2) ─────────────────────────────── */}
-        {secondaryTiles.length > 0 && (
-          <Section title="Daily picks" marginTop={22}>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 10,
-              }}
+          return (
+            <section
+              key={section.id}
+              aria-label={section.title}
+              style={{ marginTop: 22 }}
             >
-              {secondaryTiles.map((t) => (
-                <MobileHomeRappiCard
-                  key={t.slug}
-                  href={t.href}
-                  label={t.meta.label ?? t.card.title}
-                  illustration={getModuleIcon(t.slug, 36, 1.8)}
-                  emoji={t.meta.emoji}
-                  bgColor={t.meta.bgVar}
-                  fgColor={t.meta.fgVar}
-                  variant="secondary"
-                />
-              ))}
-            </div>
-          </Section>
-        )}
-
-        {/* ── More (QUICK horizontal scroll) ──────────────────────────── */}
-        {quickTiles.length > 0 && (
-          <Section title="More tools" marginTop={22}>
-            <div
-              className="mobile-home-quick-row"
-              style={{
-                display: "flex",
-                gap: 10,
-                overflowX: "auto",
-                overflowY: "hidden",
-                // Pull the row to the edges so cards bleed against the
-                // viewport sides — improves the "scroll for more" cue.
-                marginLeft: -16,
-                marginRight: -16,
-                paddingLeft: 16,
-                paddingRight: 16,
-                paddingBottom: 4,
-              }}
-            >
-              {quickTiles.map((t) => (
-                <MobileHomeRappiCard
-                  key={t.slug}
-                  href={t.href}
-                  label={t.meta.label ?? t.card.title}
-                  illustration={getModuleIcon(t.slug, 22, 2)}
-                  bgColor={t.meta.bgVar}
-                  fgColor={t.meta.fgVar}
-                  variant="quick"
-                />
-              ))}
-            </div>
-          </Section>
-        )}
+              <button
+                type="button"
+                onClick={() => toggleSection(section.id)}
+                aria-expanded={!collapsed}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  padding: "8px 4px",
+                  background: "transparent",
+                  border: 0,
+                  borderBottom: "1px solid #E5E7EB",
+                  cursor: "pointer",
+                  color: "#FF5000",
+                  fontFamily: "inherit",
+                  fontSize: 17,
+                  fontWeight: 700,
+                  letterSpacing: "-0.005em",
+                  textAlign: "left",
+                }}
+              >
+                <span>
+                  {section.title}
+                  <span
+                    style={{
+                      marginLeft: 8,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "var(--mobile-text-muted)",
+                      letterSpacing: 0,
+                    }}
+                  >
+                    {cards.length}
+                  </span>
+                </span>
+                <Chevron rotated={!collapsed} />
+              </button>
+              {!collapsed && (
+                <div
+                  style={{
+                    marginTop: 14,
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 10,
+                  }}
+                >
+                  {cards.map((card) => {
+                    const meta = RAPPI_META[card.slug] ?? DEFAULT_META;
+                    const href = card.href ?? "#";
+                    return (
+                      <MobileHomeRappiCard
+                        key={card.slug}
+                        href={href}
+                        label={meta.label ?? card.title}
+                        illustration={getModuleIcon(card.slug, 26, 1.9)}
+                        bgColor={meta.bgVar}
+                        fgColor={meta.fgVar}
+                        variant="uniform"
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-// ── Section header ────────────────────────────────────────────────────────
-//
-// Uppercase faint header sits above each row. Kept minimal so the colourful
-// cards do the talking.
-
-function Section({
-  title,
-  marginTop,
-  children,
-}: {
-  title: string;
-  marginTop: number;
-  children: React.ReactNode;
-}) {
+// ── Section chevron ──────────────────────────────────────────────────────
+function Chevron({ rotated }: { rotated: boolean }) {
   return (
-    <section style={{ marginTop }} aria-label={title}>
-      <h2
-        style={{
-          margin: "0 0 10px",
-          fontSize: 12,
-          fontWeight: 700,
-          letterSpacing: "0.08em",
-          textTransform: "uppercase",
-          color: "var(--mobile-text-muted)",
-          fontFamily: "inherit",
-        }}
-      >
-        {title}
-      </h2>
-      {children}
-    </section>
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      style={{
+        color: "var(--mobile-text-muted)",
+        transform: rotated ? "rotate(180deg)" : "rotate(0)",
+        transition: "transform 0.18s cubic-bezier(0.4, 0, 0.2, 1)",
+      }}
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
   );
 }

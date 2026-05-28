@@ -2507,6 +2507,21 @@ a {
   --mobile-home-tile-diesel-gasoline-margins-badge-fg: #c2410c;
   --mobile-home-tile-news-hunter-badge-bg:   #fff4cf;
   --mobile-home-tile-news-hunter-badge-fg:   #a16207;
+
+  /* Uniform-variant pastel pairs (Round 2, 2026-05-28): every dashboard
+     surfaced in the mobile /home grid needs a full bg/fg pastel pair so it
+     can render as a Rappi tile inside its category section. Slugs already
+     covered above (well-by-well, market-share, anp-cdp-diaria,
+     subsidy-tracker, imports-exports, navios-diesel) keep their tokens; the
+     remaining 4 alias the badge tokens so the palette stays cohesive. */
+  --mobile-home-tile-anp-cdp-bsw-bg:           var(--mobile-home-tile-anp-cdp-bsw-badge-bg);
+  --mobile-home-tile-anp-cdp-bsw-fg:           var(--mobile-home-tile-anp-cdp-bsw-badge-fg);
+  --mobile-home-tile-anp-cdp-depletion-bg:     var(--mobile-home-tile-anp-cdp-depletion-badge-bg);
+  --mobile-home-tile-anp-cdp-depletion-fg:     var(--mobile-home-tile-anp-cdp-depletion-badge-fg);
+  --mobile-home-tile-price-bands-bg:           var(--mobile-home-tile-price-bands-badge-bg);
+  --mobile-home-tile-price-bands-fg:           var(--mobile-home-tile-price-bands-badge-fg);
+  --mobile-home-tile-diesel-gasoline-margins-bg: var(--mobile-home-tile-diesel-gasoline-margins-badge-bg);
+  --mobile-home-tile-diesel-gasoline-margins-fg: var(--mobile-home-tile-diesel-gasoline-margins-badge-fg);
 }
 
 /* NOTE: a `:root[data-viewport="mobile"][data-theme="dark"]` block lived here
@@ -2615,6 +2630,16 @@ a {
     --mobile-home-tile-diesel-gasoline-margins-badge-fg: #c2410c;
     --mobile-home-tile-news-hunter-badge-bg:   #fff4cf;
     --mobile-home-tile-news-hunter-badge-fg:   #a16207;
+
+    /* Uniform-variant aliases — SSR fallback mirror (Round 2, 2026-05-28) */
+    --mobile-home-tile-anp-cdp-bsw-bg:           #d6ebff;
+    --mobile-home-tile-anp-cdp-bsw-fg:           #0369a1;
+    --mobile-home-tile-anp-cdp-depletion-bg:     #ede0ff;
+    --mobile-home-tile-anp-cdp-depletion-fg:     #6d28d9;
+    --mobile-home-tile-price-bands-bg:           #d8f1e2;
+    --mobile-home-tile-price-bands-fg:           #0a6c4a;
+    --mobile-home-tile-diesel-gasoline-margins-bg: #ffe0d6;
+    --mobile-home-tile-diesel-gasoline-margins-fg: #c2410c;
   }
 
   /* NOTE: a `:root[data-theme="dark"]:not([data-viewport])` block lived here
