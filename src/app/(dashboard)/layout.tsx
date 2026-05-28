@@ -150,7 +150,11 @@ function DesktopShell({ children }: { children: React.ReactNode }) {
      • <main> — the active dashboard page renders here.
      • MobileHomePill (floating, auto-hides on /home) — primary nav.
      • MobileNewsHunterPill (floating, auto-hides on /news-hunter) — paired
-       shortcut to the news feed, positioned ~78px right of the Home pill.
+       shortcut to the news feed. Both pills are route-aware: when both are
+       visible they sit side-by-side balanced around the viewport center
+       (Home at −39px, News at +39px, inner edges 14px apart); when one
+       auto-hides, the remaining pill snaps to the viewport center. See
+       MobileHomePill.tsx / MobileNewsHunterPill.tsx § "Positioning math".
      • MobileToastHost — listens for `app-toast` CustomEvents and renders
        transient pill messages (used by MobileExcludedRedirect).
    No Footer, no PWAInstallPrompt — both are desktop chrome. */

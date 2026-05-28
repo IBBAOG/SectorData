@@ -23,6 +23,25 @@
 //   extends the hit area to ≥48px in every direction (effective 64×60 surface
 //   with a 20px outer halo of invisible padding via padding/margin trick).
 //
+// Positioning math (two modes — paired with MobileNewsHunterPill):
+//   Both pills anchor at `left: 50%` and translate by
+//   `translateX(calc(-50% + var(--pill-offset)))`. Each pill writes
+//   `--pill-offset` inline based on the current route:
+//
+//   ┌──────────────────┬─────────────────┬──────────────────────────────────┐
+//   │ Route            │ Visible pills   │ Home pill offset                 │
+//   ├──────────────────┼─────────────────┼──────────────────────────────────┤
+//   │ /home            │ News Hunter     │  hidden    (n/a)                 │
+//   │ /news-hunter     │ Home only       │  0px       (solo, centered)      │
+//   │ everywhere else  │ Home + News     │  −39px     (paired, balanced)    │
+//   └──────────────────┴─────────────────┴──────────────────────────────────┘
+//
+//   "Paired" offset = −(PILL_W + GAP) / 2 = −(64 + 14) / 2 = −39px, mirroring
+//   the News Hunter pill's +39px so the pair as a group is perfectly centered
+//   around the viewport vertical centerline (inner edges GAP px apart). When
+//   the News Hunter pill auto-hides on /news-hunter, the Home pill snaps back
+//   to the viewport center — the natural resting position of any solo FAB.
+//
 // Behaviour:
 //   • Hidden on /home (would be redundant). usePathname() drives the gate.
 //   • Z-index 1000 → sits above content, below modals/sheets (which use
@@ -33,11 +52,19 @@
 //   • SSR-safe: usePathname is a client-only hook; "use client" directive at top.
 //   • Respects safe-area-inset-bottom on iOS (notch / home indicator).
 
+import type { CSSProperties } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { HomeIcon } from "./icons";
 
 const PILL_W = 64;
 const PILL_H = 56;
+// Visual gap between the two pills' inner edges in paired layout, in pixels.
+// Must match the constant of the same name in MobileNewsHunterPill.tsx.
+const GAP = 14;
+// Paired-mode offset from the viewport center.
+// Negative because the Home pill sits to the LEFT of center in paired layout
+// (the News Hunter pill mirrors it with +PAIRED_OFFSET).
+const PAIRED_OFFSET = -(PILL_W + GAP) / 2;
 
 export interface MobileHomePillProps {
   /** Override the route target. Defaults to /home. */
@@ -61,50 +88,67 @@ export default function MobileHomePill(
     !!pathname && (pathname === "/home" || pathname.startsWith("/home/"));
   if (onHome && !forceVisible) return null;
 
+  // Mode resolution — solo on /news-hunter (News Hunter pill is hidden there),
+  // paired on every other route. The offset is exposed as a CSS custom
+  // property so the `:active` rule in globals.css can re-use it without
+  // duplicating route logic. See "Positioning math" in the header comment.
+  const onNewsHunter =
+    !!pathname &&
+    (pathname === "/news-hunter" || pathname.startsWith("/news-hunter/"));
+  const offsetPx = onNewsHunter ? 0 : PAIRED_OFFSET;
+  const positionMode = onNewsHunter ? "solo" : "paired";
+
   return (
     <button
       type="button"
       onClick={() => router.push(href)}
       aria-label={ariaLabel}
       className="mobile-home-pill"
-      style={{
-        // Positioning — fixed, centered, sitting above safe-area inset.
-        position: "fixed",
-        left: "50%",
-        bottom: `calc(24px + ${"var(--mobile-safe-bottom)"})`,
-        transform: "translateX(-50%)",
-        zIndex: 1000,
+      data-position={positionMode}
+      style={
+        {
+          // Positioning — fixed, route-aware offset, sitting above safe-area
+          // inset. `--pill-offset` is the single source of truth; the :active
+          // rule in globals.css reads the same variable to preserve the
+          // horizontal placement during the press-scale animation.
+          position: "fixed",
+          left: "50%",
+          bottom: `calc(24px + ${"var(--mobile-safe-bottom)"})`,
+          "--pill-offset": `${offsetPx}px`,
+          transform: "translateX(calc(-50% + var(--pill-offset)))",
+          zIndex: 1000,
 
-        // Box model — 64×56 visible pill with extra invisible hit-padding.
-        width: PILL_W,
-        height: PILL_H,
-        minWidth: PILL_W,
-        minHeight: PILL_H,
-        padding: 0,
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
+          // Box model — 64×56 visible pill with extra invisible hit-padding.
+          width: PILL_W,
+          height: PILL_H,
+          minWidth: PILL_W,
+          minHeight: PILL_H,
+          padding: 0,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
 
-        // Shape — full capsule.
-        borderRadius: 999,
+          // Shape — full capsule.
+          borderRadius: 999,
 
-        // Liquid Glass v2 surface.
-        background:
-          "linear-gradient(180deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0) 50%), var(--mobile-glass-bg)",
-        WebkitBackdropFilter: "var(--mobile-glass-blur)",
-        backdropFilter: "var(--mobile-glass-blur)",
-        border: "1px solid var(--mobile-glass-border)",
-        boxShadow: "var(--mobile-glass-shadow)",
+          // Liquid Glass v2 surface.
+          background:
+            "linear-gradient(180deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0) 50%), var(--mobile-glass-bg)",
+          WebkitBackdropFilter: "var(--mobile-glass-blur)",
+          backdropFilter: "var(--mobile-glass-blur)",
+          border: "1px solid var(--mobile-glass-border)",
+          boxShadow: "var(--mobile-glass-shadow)",
 
-        // Foreground.
-        color: "var(--mobile-text)",
-        fontFamily: "Arial, Helvetica, sans-serif",
-        cursor: "pointer",
+          // Foreground.
+          color: "var(--mobile-text)",
+          fontFamily: "Arial, Helvetica, sans-serif",
+          cursor: "pointer",
 
-        // Motion.
-        transition:
-          "transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.18s cubic-bezier(0.4, 0, 0.2, 1), background 0.18s ease",
-      }}
+          // Motion.
+          transition:
+            "transform 0.18s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.18s cubic-bezier(0.4, 0, 0.2, 1), background 0.18s ease",
+        } as CSSProperties
+      }
     >
       <HomeIcon size={24} aria-hidden />
     </button>
