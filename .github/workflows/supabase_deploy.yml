@@ -204,3 +204,25 @@ jobs:
         run: supabase db query --linked --file supabase/tests/migration_smoke.sql
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: 'Audit: anon grants on public RPCs (Pegadinha #18 guard)'
+        # Hard-fails the deploy when any public.get_* RPC is missing
+        # SECURITY DEFINER and/or EXECUTE grant to anon (modulo the whitelist
+        # of intentionally admin-only / authenticated-only RPCs declared in
+        # supabase/tests/audit_anon_grants.sql).
+        #
+        # Why: Pegadinha #18 (CLAUDE.md) — RPCs without SECURITY DEFINER hit
+        # RLS as the caller. Tables whose policies only allow `authenticated`
+        # silently return [] for anon. The frontend try/catch swallows the
+        # error → loading spinner forever, charts empty, dropdowns work.
+        # Pattern already re-introduced 4× in 6 weeks (typically via DROP +
+        # CREATE FUNCTION that loses grants AND attrs).
+        #
+        # Behaviour: lists every violation with function_signature +
+        # is_security_definer + has_anon_grant + has_authenticated_grant +
+        # violation_type, then RAISE EXCEPTION on count >= 1.
+        #
+        # Fix recipe: see docs/supabase/PRD.md § "Pre-deploy anon grants audit".
+        run: supabase db query --linked --file supabase/tests/audit_anon_grants.sql
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
