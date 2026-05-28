@@ -257,9 +257,13 @@ Migrated to the unified export library on 2026-05-28 (contract: [`docs/app/expor
 | `filename` | `DailyProduction` (library appends `_{nivel}_DD-MM-YY.<ext>`) |
 | `tier` | 2 (modal with size estimator) |
 | `filterSource` | `"modal-editable"` — filters drawn from zero in the modal, **not** WYSIWYG of dashboard state. The dashboard's `granularity` sidebar toggle does **not** propagate into the export; the user picks the nível inside the modal. |
-| Sheets / files | 1 sheet, name = chosen nível (`"Campo"` / `"Instalação"` / `"Poço"`) |
+| Sheets / files | Spec declares 3 candidate sheets (`"Campo"` / `"Instalação"` / `"Poço"`); only the one matching the chosen `nivel` carries rows (see "Multi-sheet behavior — P1" below). |
 | CSV mode | `single` — same row set as the active sheet |
 | Charts | None |
+
+### Multi-sheet behavior — P1 (2026-05-28)
+
+`ExcelBuilder.downloadExcel` iterates **all** declared sheets unconditionally, so every download materializes the 3 sheets. To avoid triggering the 3 RPC pulls per click (including the ~180k-row Poço one), each sheet's `rowsAsync` short-circuits with `[]` when `filters.nivel` does not match its own level. The resulting workbook contains 3 tabs — only the one matching the chosen `nivel` has rows; the other two are empty tabs. Mirrors the `flow` short-circuit pattern used by `/imports-exports`. **Phase 2** will collapse the workbook to a single sheet via an `ExcelBuilder` enhancement that honors the `segmented` sheet-selection convention documented below.
 
 ### Modal filters
 
