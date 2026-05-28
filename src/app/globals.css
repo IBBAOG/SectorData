@@ -2468,60 +2468,72 @@ a {
   /* ───────────────────────────────────────────────────────────────────────
      Rappi-style /home tile palette (mobile-only, light-only).
      Added 2026-05-28 for the Rappi-inspired /home redesign.
-     Each per-slug pair carries a soft pastel background + a saturated text
-     colour that AA-contrasts on top of it. Hero & secondary tiles use these
-     directly; quick tiles fall back to neutral glass with a category accent
-     on the icon badge only.
+
+     Round 3 (2026-05-28) — palette aligned to desktop ModuleGallery.
+     Source of truth: ACCENTS map in
+     src/components/home/ModuleGallery/index.tsx
+       oilgas → accent #2563eb (blue-600), accentText #1d4ed8 (blue-700)
+       fuel   → accent #059669 (emerald-600), accentText #047857 (emerald-700)
+     Mobile pastel bg = accent mixed with white at ~92% (matches the
+     desktop `soft`/`tile` ~10% alpha rendered on the white card surface).
+     Every slug in a category now shares the same hue — categorical
+     consistency mirrors the desktop where O&G rows are blue-tinted and
+     Fuel rows are emerald-tinted.
      ─────────────────────────────────────────────────────────────────────── */
 
-  /* Heroes (large featured tiles, 2 per row) */
-  --mobile-home-tile-well-by-well-bg:        #fff1d6;  /* warm sandstone */
-  --mobile-home-tile-well-by-well-fg:        #b04200;
-  --mobile-home-tile-market-share-bg:        #d8f1e2;  /* mint */
-  --mobile-home-tile-market-share-fg:        #0a6c4a;
+  /* Oil & Gas — blue family (desktop accent #2563eb) */
+  --mobile-home-tile-oilgas-bg:              #e9efff;  /* blue-600 ~8% on white */
+  --mobile-home-tile-oilgas-fg:              #1d4ed8;  /* desktop accentText */
 
-  /* Secondaries (2x2 grid, smaller pastel cards) */
-  --mobile-home-tile-anp-cdp-diaria-bg:      #e3edff;  /* cornflower */
-  --mobile-home-tile-anp-cdp-diaria-fg:      #1d4ed8;
-  --mobile-home-tile-subsidy-tracker-bg:     #ffe0d6;  /* peach */
-  --mobile-home-tile-subsidy-tracker-fg:     #c2410c;
-  --mobile-home-tile-imports-exports-bg:     #ede0ff;  /* lavender */
-  --mobile-home-tile-imports-exports-fg:     #6d28d9;
-  --mobile-home-tile-navios-diesel-bg:       #d6ebff;  /* sky */
-  --mobile-home-tile-navios-diesel-fg:       #0369a1;
+  /* Fuel Distribution — emerald family (desktop accent #059669) */
+  --mobile-home-tile-fuel-bg:                #e6f5ef;  /* emerald-600 ~8% on white */
+  --mobile-home-tile-fuel-fg:                #047857;  /* desktop accentText */
 
-  /* Quick tiles (horizontal scroll row) — neutral white shell, slug-specific
-     accent on the inner icon badge. Re-use the secondary backgrounds for
-     the badge to keep the palette coherent. */
+  /* Per-slug aliases (Round 3) — each slug points at its category pair so
+     all O&G tiles render blue and all Fuel tiles render emerald, matching
+     the desktop ModuleGallery accent treatment. */
+  /* Oil & Gas */
+  --mobile-home-tile-well-by-well-bg:        var(--mobile-home-tile-oilgas-bg);
+  --mobile-home-tile-well-by-well-fg:        var(--mobile-home-tile-oilgas-fg);
+  --mobile-home-tile-anp-cdp-bsw-bg:         var(--mobile-home-tile-oilgas-bg);
+  --mobile-home-tile-anp-cdp-bsw-fg:         var(--mobile-home-tile-oilgas-fg);
+  --mobile-home-tile-anp-cdp-depletion-bg:   var(--mobile-home-tile-oilgas-bg);
+  --mobile-home-tile-anp-cdp-depletion-fg:   var(--mobile-home-tile-oilgas-fg);
+  --mobile-home-tile-anp-cdp-diaria-bg:      var(--mobile-home-tile-oilgas-bg);
+  --mobile-home-tile-anp-cdp-diaria-fg:      var(--mobile-home-tile-oilgas-fg);
+  /* Fuel Distribution */
+  --mobile-home-tile-market-share-bg:        var(--mobile-home-tile-fuel-bg);
+  --mobile-home-tile-market-share-fg:        var(--mobile-home-tile-fuel-fg);
+  --mobile-home-tile-navios-diesel-bg:       var(--mobile-home-tile-fuel-bg);
+  --mobile-home-tile-navios-diesel-fg:       var(--mobile-home-tile-fuel-fg);
+  --mobile-home-tile-diesel-gasoline-margins-bg: var(--mobile-home-tile-fuel-bg);
+  --mobile-home-tile-diesel-gasoline-margins-fg: var(--mobile-home-tile-fuel-fg);
+  --mobile-home-tile-price-bands-bg:         var(--mobile-home-tile-fuel-bg);
+  --mobile-home-tile-price-bands-fg:         var(--mobile-home-tile-fuel-fg);
+  --mobile-home-tile-subsidy-tracker-bg:     var(--mobile-home-tile-fuel-bg);
+  --mobile-home-tile-subsidy-tracker-fg:     var(--mobile-home-tile-fuel-fg);
+  --mobile-home-tile-imports-exports-bg:     var(--mobile-home-tile-fuel-bg);
+  --mobile-home-tile-imports-exports-fg:     var(--mobile-home-tile-fuel-fg);
+
+  /* Quick tiles (horizontal scroll row) — neutral white shell. Kept for
+     any legacy quick-tile callers; not used by the current Rappi grid. */
   --mobile-home-quick-bg:                    #ffffff;
   --mobile-home-quick-border:                rgba(15, 23, 42, 0.08);
   --mobile-home-quick-shadow:                0 2px 8px rgba(15, 23, 42, 0.06),
                                              0 1px 2px rgba(15, 23, 42, 0.04);
-  --mobile-home-tile-anp-cdp-bsw-badge-bg:   #d6ebff;
-  --mobile-home-tile-anp-cdp-bsw-badge-fg:   #0369a1;
-  --mobile-home-tile-anp-cdp-depletion-badge-bg: #ede0ff;
-  --mobile-home-tile-anp-cdp-depletion-badge-fg: #6d28d9;
-  --mobile-home-tile-price-bands-badge-bg:   #d8f1e2;
-  --mobile-home-tile-price-bands-badge-fg:   #0a6c4a;
-  --mobile-home-tile-diesel-gasoline-margins-badge-bg: #ffe0d6;
-  --mobile-home-tile-diesel-gasoline-margins-badge-fg: #c2410c;
+  /* Legacy badge tokens (pre-Round-3 pastel set) — retained because other
+     mobile surfaces may still reference them. The active /home grid uses
+     the category aliases above. */
+  --mobile-home-tile-anp-cdp-bsw-badge-bg:   var(--mobile-home-tile-oilgas-bg);
+  --mobile-home-tile-anp-cdp-bsw-badge-fg:   var(--mobile-home-tile-oilgas-fg);
+  --mobile-home-tile-anp-cdp-depletion-badge-bg: var(--mobile-home-tile-oilgas-bg);
+  --mobile-home-tile-anp-cdp-depletion-badge-fg: var(--mobile-home-tile-oilgas-fg);
+  --mobile-home-tile-price-bands-badge-bg:   var(--mobile-home-tile-fuel-bg);
+  --mobile-home-tile-price-bands-badge-fg:   var(--mobile-home-tile-fuel-fg);
+  --mobile-home-tile-diesel-gasoline-margins-badge-bg: var(--mobile-home-tile-fuel-bg);
+  --mobile-home-tile-diesel-gasoline-margins-badge-fg: var(--mobile-home-tile-fuel-fg);
   --mobile-home-tile-news-hunter-badge-bg:   #fff4cf;
   --mobile-home-tile-news-hunter-badge-fg:   #a16207;
-
-  /* Uniform-variant pastel pairs (Round 2, 2026-05-28): every dashboard
-     surfaced in the mobile /home grid needs a full bg/fg pastel pair so it
-     can render as a Rappi tile inside its category section. Slugs already
-     covered above (well-by-well, market-share, anp-cdp-diaria,
-     subsidy-tracker, imports-exports, navios-diesel) keep their tokens; the
-     remaining 4 alias the badge tokens so the palette stays cohesive. */
-  --mobile-home-tile-anp-cdp-bsw-bg:           var(--mobile-home-tile-anp-cdp-bsw-badge-bg);
-  --mobile-home-tile-anp-cdp-bsw-fg:           var(--mobile-home-tile-anp-cdp-bsw-badge-fg);
-  --mobile-home-tile-anp-cdp-depletion-bg:     var(--mobile-home-tile-anp-cdp-depletion-badge-bg);
-  --mobile-home-tile-anp-cdp-depletion-fg:     var(--mobile-home-tile-anp-cdp-depletion-badge-fg);
-  --mobile-home-tile-price-bands-bg:           var(--mobile-home-tile-price-bands-badge-bg);
-  --mobile-home-tile-price-bands-fg:           var(--mobile-home-tile-price-bands-badge-fg);
-  --mobile-home-tile-diesel-gasoline-margins-bg: var(--mobile-home-tile-diesel-gasoline-margins-badge-bg);
-  --mobile-home-tile-diesel-gasoline-margins-fg: var(--mobile-home-tile-diesel-gasoline-margins-badge-fg);
 }
 
 /* NOTE: a `:root[data-viewport="mobile"][data-theme="dark"]` block lived here
@@ -2603,43 +2615,55 @@ a {
     --mobile-sheet-handle:  #d1d1d8;
     --mobile-scrim:         rgba(0, 0, 0, 0.36);
 
-    /* Rappi-style /home tile palette — SSR fallback mirror */
-    --mobile-home-tile-well-by-well-bg:        #fff1d6;
-    --mobile-home-tile-well-by-well-fg:        #b04200;
-    --mobile-home-tile-market-share-bg:        #d8f1e2;
-    --mobile-home-tile-market-share-fg:        #0a6c4a;
-    --mobile-home-tile-anp-cdp-diaria-bg:      #e3edff;
-    --mobile-home-tile-anp-cdp-diaria-fg:      #1d4ed8;
-    --mobile-home-tile-subsidy-tracker-bg:     #ffe0d6;
-    --mobile-home-tile-subsidy-tracker-fg:     #c2410c;
-    --mobile-home-tile-imports-exports-bg:     #ede0ff;
-    --mobile-home-tile-imports-exports-fg:     #6d28d9;
-    --mobile-home-tile-navios-diesel-bg:       #d6ebff;
-    --mobile-home-tile-navios-diesel-fg:       #0369a1;
+    /* Rappi-style /home tile palette — SSR fallback mirror.
+       Round 3 (2026-05-28) — aligned to desktop ACCENTS (see comment in the
+       primary block above). All O&G slugs share blue, all Fuel slugs share
+       emerald. Source of truth:
+       src/components/home/ModuleGallery/index.tsx (ACCENTS map). */
+    --mobile-home-tile-oilgas-bg:              #e9efff;
+    --mobile-home-tile-oilgas-fg:              #1d4ed8;
+    --mobile-home-tile-fuel-bg:                #e6f5ef;
+    --mobile-home-tile-fuel-fg:                #047857;
+
+    /* Oil & Gas slug aliases */
+    --mobile-home-tile-well-by-well-bg:        var(--mobile-home-tile-oilgas-bg);
+    --mobile-home-tile-well-by-well-fg:        var(--mobile-home-tile-oilgas-fg);
+    --mobile-home-tile-anp-cdp-bsw-bg:         var(--mobile-home-tile-oilgas-bg);
+    --mobile-home-tile-anp-cdp-bsw-fg:         var(--mobile-home-tile-oilgas-fg);
+    --mobile-home-tile-anp-cdp-depletion-bg:   var(--mobile-home-tile-oilgas-bg);
+    --mobile-home-tile-anp-cdp-depletion-fg:   var(--mobile-home-tile-oilgas-fg);
+    --mobile-home-tile-anp-cdp-diaria-bg:      var(--mobile-home-tile-oilgas-bg);
+    --mobile-home-tile-anp-cdp-diaria-fg:      var(--mobile-home-tile-oilgas-fg);
+
+    /* Fuel Distribution slug aliases */
+    --mobile-home-tile-market-share-bg:        var(--mobile-home-tile-fuel-bg);
+    --mobile-home-tile-market-share-fg:        var(--mobile-home-tile-fuel-fg);
+    --mobile-home-tile-navios-diesel-bg:       var(--mobile-home-tile-fuel-bg);
+    --mobile-home-tile-navios-diesel-fg:       var(--mobile-home-tile-fuel-fg);
+    --mobile-home-tile-diesel-gasoline-margins-bg: var(--mobile-home-tile-fuel-bg);
+    --mobile-home-tile-diesel-gasoline-margins-fg: var(--mobile-home-tile-fuel-fg);
+    --mobile-home-tile-price-bands-bg:         var(--mobile-home-tile-fuel-bg);
+    --mobile-home-tile-price-bands-fg:         var(--mobile-home-tile-fuel-fg);
+    --mobile-home-tile-subsidy-tracker-bg:     var(--mobile-home-tile-fuel-bg);
+    --mobile-home-tile-subsidy-tracker-fg:     var(--mobile-home-tile-fuel-fg);
+    --mobile-home-tile-imports-exports-bg:     var(--mobile-home-tile-fuel-bg);
+    --mobile-home-tile-imports-exports-fg:     var(--mobile-home-tile-fuel-fg);
+
+    /* Quick-tile chrome (legacy) */
     --mobile-home-quick-bg:                    #ffffff;
     --mobile-home-quick-border:                rgba(15, 23, 42, 0.08);
     --mobile-home-quick-shadow:                0 2px 8px rgba(15, 23, 42, 0.06),
                                                0 1px 2px rgba(15, 23, 42, 0.04);
-    --mobile-home-tile-anp-cdp-bsw-badge-bg:   #d6ebff;
-    --mobile-home-tile-anp-cdp-bsw-badge-fg:   #0369a1;
-    --mobile-home-tile-anp-cdp-depletion-badge-bg: #ede0ff;
-    --mobile-home-tile-anp-cdp-depletion-badge-fg: #6d28d9;
-    --mobile-home-tile-price-bands-badge-bg:   #d8f1e2;
-    --mobile-home-tile-price-bands-badge-fg:   #0a6c4a;
-    --mobile-home-tile-diesel-gasoline-margins-badge-bg: #ffe0d6;
-    --mobile-home-tile-diesel-gasoline-margins-badge-fg: #c2410c;
+    --mobile-home-tile-anp-cdp-bsw-badge-bg:   var(--mobile-home-tile-oilgas-bg);
+    --mobile-home-tile-anp-cdp-bsw-badge-fg:   var(--mobile-home-tile-oilgas-fg);
+    --mobile-home-tile-anp-cdp-depletion-badge-bg: var(--mobile-home-tile-oilgas-bg);
+    --mobile-home-tile-anp-cdp-depletion-badge-fg: var(--mobile-home-tile-oilgas-fg);
+    --mobile-home-tile-price-bands-badge-bg:   var(--mobile-home-tile-fuel-bg);
+    --mobile-home-tile-price-bands-badge-fg:   var(--mobile-home-tile-fuel-fg);
+    --mobile-home-tile-diesel-gasoline-margins-badge-bg: var(--mobile-home-tile-fuel-bg);
+    --mobile-home-tile-diesel-gasoline-margins-badge-fg: var(--mobile-home-tile-fuel-fg);
     --mobile-home-tile-news-hunter-badge-bg:   #fff4cf;
     --mobile-home-tile-news-hunter-badge-fg:   #a16207;
-
-    /* Uniform-variant aliases — SSR fallback mirror (Round 2, 2026-05-28) */
-    --mobile-home-tile-anp-cdp-bsw-bg:           #d6ebff;
-    --mobile-home-tile-anp-cdp-bsw-fg:           #0369a1;
-    --mobile-home-tile-anp-cdp-depletion-bg:     #ede0ff;
-    --mobile-home-tile-anp-cdp-depletion-fg:     #6d28d9;
-    --mobile-home-tile-price-bands-bg:           #d8f1e2;
-    --mobile-home-tile-price-bands-fg:           #0a6c4a;
-    --mobile-home-tile-diesel-gasoline-margins-bg: #ffe0d6;
-    --mobile-home-tile-diesel-gasoline-margins-fg: #c2410c;
   }
 
   /* NOTE: a `:root[data-theme="dark"]:not([data-viewport])` block lived here
