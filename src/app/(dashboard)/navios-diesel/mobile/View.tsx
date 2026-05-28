@@ -10,7 +10,11 @@
 //      (mirrors desktop "Monthly Diesel Volume" chart — same 3 traces
 //      Discharged / Pending / Indeterminate, same data source, adapted to
 //      mobile viewport width via MobileChart)
-//   4. Port summary table: Port | Total volume | Next ETA | Vessels
+//   4. Port summary table: Port | Volume (m³) | Next ETA | Vessels
+//      Scope: CURRENT MONTH ONLY (the live bar of the stacked chart above).
+//      Sourced from resumoMensal (port × month) filtered to the live month,
+//      so SUM(rows) == SUM(stacked traces of the current month bar). Never
+//      includes cabotagem (RPC enforces NOT is_cabotagem upstream).
 //
 // Tab semantics (filter on the monthly chart only):
 //   • All       — all 3 stacks visible (Discharged + Pending + Indeterminate)
@@ -213,7 +217,7 @@ export default function MobileView(): React.ReactElement {
   // prev-day diff). Mobile still needs volumeMensal (Monthly Diesel Volume chart)
   // plus port aggregates and the monthly port summary.
   const {
-    resumoPortos,
+    resumoMensal,
     volumeMensal,
     selectedColeta,
     loading,
@@ -224,21 +228,47 @@ export default function MobileView(): React.ReactElement {
   // The tabs filter which traces of the stacked monthly chart are visible.
   const [statusFilter, setStatusFilter] = useState<"all" | "expected" | "active">("all");
 
-  // ── Derived: sort ports by volume DESC (powers the summary table) ─────────────
-  const sortedPortos = useMemo(
-    () => [...resumoPortos].sort((a, b) => b.total_convertida - a.total_convertida),
-    [resumoPortos],
+  // ── Derived: current month (matches the live bar of the stacked chart) ──────
+  // Port Summary must reflect the SAME month shown live on the chart, not a
+  // historical snapshot total. We pick the row tagged is_current=true; if no
+  // row carries that flag (legacy RPC), we fall back to the last month in the
+  // sorted volumeMensal series.
+  const currentMonth = useMemo<string | null>(() => {
+    if (volumeMensal.length === 0) return null;
+    const live = volumeMensal.find((r) => r.is_current);
+    if (live) return live.month;
+    const sorted = [...volumeMensal].sort((a, b) => a.month.localeCompare(b.month));
+    return sorted[sorted.length - 1].month;
+  }, [volumeMensal]);
+
+  // ── Derived: port aggregates for the current month only ─────────────────────
+  // Source: resumoMensal (port × month) — same data structure that powers the
+  // desktop "Monthly Summary by Port" matrix. Filtering to currentMonth keeps
+  // the mobile summary aligned 1:1 with the live bar of the stacked chart.
+  const tableRows = useMemo(
+    (): PortTableRow[] => {
+      if (!currentMonth) return [];
+      return resumoMensal
+        .filter((r) => r.month === currentMonth)
+        .map((r) => ({
+          porto: r.porto,
+          totalVolume: r.volume,
+          vesselCount: r.vessels,
+        }))
+        .sort((a, b) => b.totalVolume - a.totalVolume);
+    },
+    [resumoMensal, currentMonth],
   );
 
-  const tableRows = useMemo(
-    (): PortTableRow[] =>
-      sortedPortos.map((r) => ({
-        porto: r.porto,
-        totalVolume: r.total_convertida,
-        vesselCount: r.total_navios,
-      })),
-    [sortedPortos],
-  );
+  // Human-readable label for the sub-header ("May 2026").
+  const currentMonthLabel = useMemo<string>(() => {
+    if (!currentMonth) return "";
+    const [yr, mo] = currentMonth.split("-");
+    return new Date(Number(yr), Number(mo) - 1, 1).toLocaleDateString("en-US", {
+      month: "short",
+      year: "numeric",
+    });
+  }, [currentMonth]);
 
   // ── Monthly stacked bar chart — same data shape as desktop ──────────────────
   const monthlyChart = useMemo((): { data: PlotData[]; maxTotal: number } => {
@@ -557,10 +587,21 @@ export default function MobileView(): React.ReactElement {
               color: "var(--mobile-text-muted)",
               textTransform: "uppercase",
               letterSpacing: "0.06em",
-              marginBottom: 10,
+              marginBottom: 2,
             }}
           >
             Port summary
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--mobile-text-faint)",
+              marginBottom: 10,
+            }}
+          >
+            {currentMonthLabel
+              ? `Current month · ${currentMonthLabel} (live)`
+              : "Current month (live)"}
           </div>
 
           <div
@@ -581,7 +622,7 @@ export default function MobileView(): React.ReactElement {
               color: "var(--mobile-text-faint)",
             }}
           >
-            Next ETA available on desktop (full vessel line-up).
+            Totals match the live bar of the chart above. Next ETA available on desktop (full vessel line-up).
           </div>
         </section>
       )}
