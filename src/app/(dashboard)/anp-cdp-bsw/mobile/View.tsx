@@ -6,12 +6,13 @@
  * Spec: plan § 4.7 (non-flagship).
  *
  * Layout (top → bottom):
- *   MobileTopBar + MobileKebabMenu (right slot)
  *   Page heading
  *   Filter chip row — Campo multi-select only (opens FilterDrawer)
  *   Hero MobileChart — field-aggregate ONLY (no per-well toggle on mobile)
- *   MobileHomePill — floating bottom nav
  *   FilterDrawer — campo chip-cloud + search
+ *
+ * Note: MobileTopBar and MobileHomePill are provided by MobileShell in
+ * (dashboard)/layout.tsx — do NOT render them here.
  *
  * Intentionally omitted on mobile (vs desktop):
  *   - Per-well view toggle (MobileTabBar removed — field-aggregate only)
@@ -30,11 +31,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { PlotData } from "plotly.js";
 
 import {
-  MobileTopBar,
   FilterDrawer,
   MobileChart,
-  MobileHomePill,
-  MobileKebabMenu,
   FilterIcon,
   CloseIcon,
 } from "../../../../components/dashboard/mobile";
@@ -148,12 +146,6 @@ export default function MobileView(): React.ReactElement | null {
         paddingBottom: "calc(80px + var(--mobile-safe-bottom, 0px))",
       }}
     >
-      {/* Sticky top bar */}
-      <MobileTopBar
-        title="BSW by Well"
-        rightSlot={<MobileKebabMenu />}
-      />
-
       {/* Page heading */}
       <section style={{ padding: "16px 16px 8px" }}>
         <h1
@@ -664,8 +656,6 @@ export default function MobileView(): React.ReactElement | null {
         </div>
       </FilterDrawer>
 
-      {/* Floating Home pill — always visible, routes to /home */}
-      <MobileHomePill />
     </div>
   );
 }
