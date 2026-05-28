@@ -1,6 +1,6 @@
 # Dual-view dashboard pattern (Fase 1 — 2026-05)
 
-Every dashboard ships **two Views** — desktop (PC, ≥769px) and mobile (phone, ≤768px) — driven by a **single shared hook** that owns all data, filters, and derivations.
+Every dashboard ships **two Views** — desktop (PC, laptop) and mobile (phone, tablet) — driven by a **single shared hook** that owns all data, filters, and derivations. The shell switch is **device-based** (user agent + iPadOS touch fallback), NOT viewport-width-based — a desktop browser resized down to 320px still mounts `DesktopShell`.
 
 > Mobile is **"same analysis, adapted clothing"** — never a different brain. If a View needs a value the other doesn't have yet, you add it to the hook first; both Views pick it up automatically.
 
@@ -12,7 +12,7 @@ This document is the canonical copy-paste reference for `worker_dash-*` agents r
 
 ```
 src/app/(dashboard)/<slug>/
-├── page.tsx                 ← viewport router (useIsMobile → desktop or mobile)
+├── page.tsx                 ← device router (useIsMobile → desktop or mobile)
 ├── use<Slug>Data.ts         ← THE BRAIN — RPCs, filters, derivations, types
 ├── desktop/
 │   └── View.tsx             ← desktop UX (existing layout migrates here)
@@ -24,7 +24,7 @@ All four files are owned by the dashboard's `worker_dash-<slug>`. Shared mobile 
 
 ---
 
-## 2. `page.tsx` — viewport router
+## 2. `page.tsx` — device router
 
 This file does one thing: pick the View based on `useIsMobile()`.
 
@@ -41,7 +41,7 @@ export default function Page(): React.ReactElement {
 }
 ```
 
-`useIsMobile()` is SSR-safe — returns `false` during SSR + first paint, then flips to the real value after mount.
+`useIsMobile()` is SSR-safe — returns `false` during SSR + first paint, then resolves to the real value on mount. Detection uses `navigator.userAgent` (regex covering Android, iPhone, iPad, iPod, BlackBerry, IEMobile, Opera Mini, Mobile, Tablet, Silk, Kindle) plus an iPadOS-as-Macintosh fallback via `navigator.maxTouchPoints > 1`. **It does NOT listen to `resize`** — the device class is fixed for the lifetime of the page, so a desktop browser dragged below 768px does not flip into the mobile shell.
 
 ---
 
@@ -269,7 +269,7 @@ Enforcement layers:
 
 | File | Purpose |
 |---|---|
-| [`src/hooks/useIsMobile.ts`](../../src/hooks/useIsMobile.ts) | Viewport detector (SSR-safe, 768px threshold) — single source of breakpoint truth |
+| [`src/hooks/useIsMobile.ts`](../../src/hooks/useIsMobile.ts) | Device-class detector (SSR-safe, UA-based with iPadOS touch fallback). **Single source of truth for the desktop↔mobile shell switch.** Resolves once on mount and does NOT respond to resize. The `@media (max-width: ...)` rules in `globals.css` still drive responsive reflow INSIDE `DesktopShell` (navbar collapse, sidebar stacking), but they no longer pick which shell to render. |
 | [`public/manifest.json`](../../public/manifest.json) | PWA manifest — app name SectorData, theme `#ff5000`, standalone display |
 | [`public/sw.js`](../../public/sw.js) | Minimal service worker — Add-to-Home-Screen support only, no business-data caching |
 | [`src/components/PWAInstallPrompt.tsx`](../../src/components/PWAInstallPrompt.tsx) | Dismissable install banner (desktop chrome — rendered only by `DesktopShell`) |
@@ -280,7 +280,7 @@ Enforcement layers:
 
 | File | Purpose |
 |---|---|
-| [`src/app/(dashboard)/layout.tsx`](../../src/app/(dashboard)/layout.tsx) | `DashboardShell` switcher — picks `DesktopShell` or `MobileShell` based on `useIsMobile()`. Mounts `useTrackLastVisited` once at the shell level. |
+| [`src/app/(dashboard)/layout.tsx`](../../src/app/(dashboard)/layout.tsx) | `DashboardShell` switcher — picks `DesktopShell` or `MobileShell` based on `useIsMobile()` (device class, not viewport width). Mounts `useTrackLastVisited` once at the shell level. |
 | [`src/components/dashboard/mobile/MobileHomePill.tsx`](../../src/components/dashboard/mobile/MobileHomePill.tsx) | Single floating capsule (bottom-center). Routes to `/home`. Auto-hides when already on `/home`. Replaced the legacy 4-icon tab bar. |
 | [`src/components/dashboard/mobile/MobileKebabMenu.tsx`](../../src/components/dashboard/mobile/MobileKebabMenu.tsx) | 3-dot button in top bar `rightSlot`. Opens a `BottomSheet` with Sign out. Auto-hides for Anon. |
 | [`src/components/dashboard/mobile/MobileExcludedRedirect.tsx`](../../src/components/dashboard/mobile/MobileExcludedRedirect.tsx) | Side-effect component mounted by excluded-route `page.tsx`. Fires `router.replace` + `app-toast` on mobile; `null` on desktop. |
