@@ -69,7 +69,7 @@ interface CategoryTint {
 
 const CATEGORY_TINTS: Record<TileCategory, CategoryTint> = {
   markets: { tile: "rgba(255, 80, 0, 0.10)", accentText: "#cc3d00" },
-  oilgas: { tile: "rgba(37, 99, 235, 0.10)", accentText: "#1d4ed8" },
+  oilgas: { tile: "rgba(194, 65, 12, 0.10)", accentText: "#9a3412" },
   fuel:   { tile: "rgba(5, 150, 105, 0.10)", accentText: "#047857" },
 };
 

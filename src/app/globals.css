@@ -2472,7 +2472,7 @@ a {
      Round 3 (2026-05-28) — palette aligned to desktop ModuleGallery.
      Source of truth: ACCENTS map in
      src/components/home/ModuleGallery/index.tsx
-       oilgas → accent #2563eb (blue-600), accentText #1d4ed8 (blue-700)
+       oilgas → accent #c2410c (orange-700), accentText #9a3412 (orange-800) [Round 7]
        fuel   → accent #059669 (emerald-600), accentText #047857 (emerald-700)
      Mobile pastel bg = accent mixed with white at ~92% (matches the
      desktop `soft`/`tile` ~10% alpha rendered on the white card surface).
@@ -2481,13 +2481,13 @@ a {
      Fuel rows are emerald-tinted.
      ─────────────────────────────────────────────────────────────────────── */
 
-  /* Oil & Gas — blue family (desktop accent #2563eb).
-     Round 6: softened from Round 5 (~35% sat → ~20% sat) for a more airy,
-     less candy-toned look while keeping the blue clearly perceptible.
-     fg/bg contrast ~8.5:1 (AA pass for 13px/700 body — increases vs Round 5
-     since lighter bg widens luminance gap with dark fg). */
-  --mobile-home-tile-oilgas-bg:              #dce6ff;  /* blue-100-ish, gently blue */
-  --mobile-home-tile-oilgas-fg:              #1d4ed8;  /* desktop accentText (blue-700) */
+  /* Oil & Gas — earthy brand-orange family (desktop accent #c2410c).
+     Round 7 (2026-05-28): recolored from blue to a peach/dark-orange pair
+     derived from the brand orange #FF5000 — distinct from Markets' vibrant
+     brand orange to keep categories visually separable. fg #9a3412 over
+     bg #ffe5d6 gives contrast ~7:1 (AA pass for 13px/700 body). */
+  --mobile-home-tile-oilgas-bg:              #ffe5d6;  /* peach (orange-100-ish) */
+  --mobile-home-tile-oilgas-fg:              #9a3412;  /* orange-800, AA on bg */
 
   /* Fuel Distribution — emerald family (desktop accent #059669).
      Round 6: softened from Round 5 (~35% sat → ~20% sat) for a more airy
@@ -2624,11 +2624,12 @@ a {
 
     /* Rappi-style /home tile palette — SSR fallback mirror.
        Round 3 (2026-05-28) — aligned to desktop ACCENTS (see comment in the
-       primary block above). All O&G slugs share blue, all Fuel slugs share
-       emerald. Source of truth:
+       primary block above). Round 7 (2026-05-28): O&G recolored from blue
+       to earthy brand-orange tint. All O&G slugs share peach/orange-800,
+       all Fuel slugs share emerald. Source of truth:
        src/components/home/ModuleGallery/index.tsx (ACCENTS map). */
-    --mobile-home-tile-oilgas-bg:              #dce6ff;  /* Round 6: softened ~20% sat */
-    --mobile-home-tile-oilgas-fg:              #1d4ed8;
+    --mobile-home-tile-oilgas-bg:              #ffe5d6;  /* Round 7: peach */
+    --mobile-home-tile-oilgas-fg:              #9a3412;  /* Round 7: orange-800 */
     --mobile-home-tile-fuel-bg:                #cdf0db;  /* Round 6: softened ~20% sat */
     --mobile-home-tile-fuel-fg:                #047857;
 
