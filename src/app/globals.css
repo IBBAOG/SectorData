@@ -2442,7 +2442,7 @@ a {
   --mobile-safe-right:  env(safe-area-inset-right);
 
   /* Heights */
-  --mobile-topbar-h: 56px;
+  --mobile-topbar-h: 44px;
   --mobile-tabbar-h: 64px;
 
   /* Radii scale */
@@ -2525,7 +2525,7 @@ a {
     --mobile-safe-left:   env(safe-area-inset-left);
     --mobile-safe-right:  env(safe-area-inset-right);
 
-    --mobile-topbar-h: 56px;
+    --mobile-topbar-h: 44px;
     --mobile-tabbar-h: 64px;
 
     --mobile-radius-sm:   8px;
