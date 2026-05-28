@@ -35,23 +35,15 @@
   overflow: hidden;
 }
 
-/* ── Individual tappable row */
+/* ── Individual row (div, not a link — icon buttons are the tap targets) */
 
 .row {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 13px 16px;
-  text-decoration: none;
   color: inherit;
   background: transparent;
-  transition: background 0.12s ease;
-  /* Full-width tap target — important on mobile */
-  -webkit-tap-highlight-color: transparent;
-}
-
-.row:active {
-  background: var(--mobile-row-press);
 }
 
 /* ── Left info block */
@@ -90,13 +82,28 @@
   text-overflow: ellipsis;
 }
 
-/* ── Envelope icon — right-aligned, accent-tinted */
+/* ── Icon action button group — WhatsApp + Envelope, right-aligned */
 
-.iconWrap {
+.actions {
   flex-shrink: 0;
   display: flex;
   align-items: center;
+  gap: 6px;
+}
+
+/* Each icon is its own independent tap target */
+.iconBtn {
+  display: flex;
+  align-items: center;
   justify-content: center;
-  color: var(--mobile-accent);
-  opacity: 0.7;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.12s ease;
+}
+
+.iconBtn:active {
+  background: var(--mobile-row-press);
 }
