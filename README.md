@@ -312,8 +312,8 @@ Cross-cutting reform of the mobile experience, delivered in 3 waves (Designer Li
 - **Kebab menu top-right** (`MobileKebabMenu`) is the only logout surface on mobile; `/profile` is a desktop-only route (mobile redirects to `/home`).
 - **`(dashboard)/layout.tsx` is the shell switcher** — `DesktopShell` vs `MobileShell` via `useIsMobile()`. The desktop `NavBar` is hidden on mobile (`NavBar.tsx` early-returns when `isMobile`).
 - **Export is desktop-only** — no `ExportFAB`, no download buttons in any `mobile/View.tsx`.
-- **11 mobile-eligible routes:** `/home`, `/well-by-well`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/anp-cdp-diaria`, `/market-share`, `/price-bands`, `/subsidy-tracker`, `/diesel-gasoline-margins`, `/imports-exports`, `/navios-diesel`.
-- **9 desktop-only routes:** `/stocks`, `/admin-panel`, `/admin-analytics`, `/news-hunter`, `/alerts`, `/profile`, `/anp-cdp`, `/anp-prices`, `/anp-glp`. Each mounts `<MobileExcludedRedirect slug="..." />` in `page.tsx`; on mobile, it routes to `/home?excluded=<slug>` and fires an `app-toast` event picked up by the global `MobileToastHost`.
+- **12 mobile-eligible routes:** `/home`, `/well-by-well`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/anp-cdp-diaria`, `/market-share`, `/price-bands`, `/subsidy-tracker`, `/diesel-gasoline-margins`, `/imports-exports`, `/navios-diesel`, `/news-hunter`.
+- **8 desktop-only routes:** `/stocks`, `/admin-panel`, `/admin-analytics`, `/alerts`, `/profile`, `/anp-cdp`, `/anp-prices`, `/anp-glp`. Each mounts `<MobileExcludedRedirect slug="..." />` in `page.tsx`; on mobile, it routes to `/home?excluded=<slug>` and fires an `app-toast` event picked up by the global `MobileToastHost`.
 - **Cross-component toast channel:** any client component dispatches `window.dispatchEvent(new CustomEvent("app-toast", { detail: { message, tone, source } }))` and `MobileToastHost` (mounted by `MobileShell`) renders it.
 - **Last-visited memory:** `useTrackLastVisited` (mounted once in `DashboardShell`) writes a FIFO of 4 dashboard slugs to `localStorage["sd_last_visited"]`. The `/home v2` mobile view consumes this for its "Last visited" pill row.
 

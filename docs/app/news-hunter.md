@@ -4,7 +4,7 @@ Dashboard de News Hunter (radar de notícias). Owner: [`worker_dash-news-hunter`
 
 > Único dashboard que **coordena com um repo externo** ([`IBBAOG/news-hunter-scanner`](https://github.com/IBBAOG/news-hunter-scanner)).
 
-## Dual-view structure (added 2026-05-20)
+## Dual-view structure
 
 `/news-hunter` follows the canonical dual-view pattern (CLAUDE.md § Dual-view policy):
 
@@ -17,32 +17,110 @@ src/app/(dashboard)/news-hunter/
                               calls inside View files.
   desktop/View.tsx          Desktop UX (≥769px) — verbatim body of old page.tsx
                               + admin clipping flow (Selection Mode).
-  mobile/View.tsx           Mobile UX (≤768px) — per mockups/news-hunter-mobile.html.
-                              Components: MobileTopBar, MobileBottomTabBar (Feed/Search/
-                              Saved/Settings), filter pills (keywords as topic pills),
-                              KeywordsSection (compact chip row), ArticleCard
-                              (favicon circle + headline + snippet + kw pills),
-                              BottomSheet (keyword editor), FAB (+), live status row.
+  mobile/View.tsx           Mobile UX (≤768px) — see § "Mobile View" below.
+  page.module.css           Scoped styles for the desktop view only.
+  _components/              Desktop-only: SelectionSidebar / ClippingModal /
+                              SortableClippingItem (Admin clipping flow).
+  _hooks/                   Desktop-only: useClippingSelection.
 ```
 
-### Decision: admin clipping feature is desktop-only (Phase 1 mobile)
+### Binding sync rule (cross-View)
 
-The clipping flow (SelectionSidebar + ClippingModal + POST /api/clipping/scrape) was
-intentionally NOT ported to mobile/View.tsx in this wave. It requires multi-select UX,
+Any meaningful change to one View (new filter, new tab, new copy, new
+KPI) must land in the OTHER View in the same commit, OR the commit
+message must declare `[desktop-only]` / `[mobile-only]` with an explicit
+reason (CLAUDE.md § Dual-view policy). Drift between Views is a bug.
+
+The shared hook is the only place where data shape and analyses are
+defined — Views are presentation layers over it.
+
+### Decision: admin clipping feature is desktop-only
+
+The clipping flow (SelectionSidebar + ClippingModal + POST /api/clipping/scrape) is
+intentionally NOT ported to mobile/View.tsx. It requires multi-select UX,
 a large modal, and relies on desktop real estate. Tag: `[mobile-only-deferred-clipping]`.
 When clipping lands on mobile, the hook already exposes all article data needed.
 
-### Mobile tab navigation
+### Mobile View (2026-05-28)
 
-Four tabs in `MobileBottomTabBar`:
-- **Feed** — filtered article list with topic pills and keyword section
-- **Search** — same list but focused on search (filter pills hidden)
-- **Saved** — articles bookmarked locally (localStorage `nh_bookmarks_v1`)
-- **Settings** — full keyword add/remove management
+The mobile View (`mobile/View.tsx`) was added when `/news-hunter` was moved
+from the "desktop-only" list to the "mobile-eligible" list. Until then, the
+mobile entry path mounted `<MobileExcludedRedirect slug="news-hunter" />`,
+which routed mobile visitors back to `/home?excluded=news-hunter` and
+fired an `app-toast`. With the mobile View in place, `page.tsx` is now a
+pure `useIsMobile()` router and the redirect was removed.
 
-Bookmarks are local-only (no DB column). The `toggleBookmark` callback in
-`useNewsHunterData` manages `bookmarkedUrls: Set<string>` persisted to
-`localStorage (nh_bookmarks_v1)`.
+**Layout (top → bottom — the global mobile chrome `MobileTopBar` /
+`MobileKebabMenu` / `MobileHomePill` / `MobileToastHost` is mounted by
+`(dashboard)/layout.tsx`, NOT inside the View):**
+
+1. In-page sticky header — page title "News Hunter" + scan status
+   ("latest headline X ago" / "Loading headlines…").
+2. Sticky 4-tab segmented control (`MobileTabBar`, `variant="container"`):
+   **Feed** / **Search** / **Saved** / **Settings**. Active tab uses
+   brand orange. The Saved tab carries a numeric badge with the
+   bookmark count when > 0.
+3. Tab body (one of):
+   - **Feed** — horizontal scrollable topic-pill row (keywords as
+     filter pills, "All" pinned first) + virtualized ArticleCard list.
+     Anonymous visitors see an AnonCTA banner above the list.
+   - **Search** — search input + ArticleCard list filtered by title /
+     source. Empty state hints what the input does.
+   - **Saved** — ArticleCard list of bookmarked articles only
+     (`bookmarkedUrls`, sourced from `localStorage["nh_bookmarks_v1"]`).
+   - **Settings** — keyword CRUD: chip list with × to remove + add
+     form with **Exact match** checkbox toggle. Anonymous visitors see
+     AnonCTA + a read-only list of the default keywords.
+
+**ArticleCard** is local to `mobile/View.tsx` (not extracted to the
+shared mobile components directory). Each card has:
+- Domain initial badge (color hashed from domain via `domainColor`)
+- Source name · relative time (`humanizeAge`)
+- Bookmark icon button (fill when bookmarked, stroke when not)
+- Title (line-clamp 3, tap = open URL in new tab via
+  `<a target="_blank" rel="noopener noreferrer">`)
+- Snippet (line-clamp 2)
+- Matched-keyword chips (up to 4 + "+N" overflow indicator)
+- 3px brand-orange left rail when the URL is in `justArrivedUrls`
+  (just-arrived flash for ~3.4s after the polling tick that fetched it)
+
+The list is capped at the **60 most recent matching articles** in DOM
+at any time (`MAX_VISIBLE` constant). The mobile feed is monitoring-
+only; deeper paging belongs in the desktop view (which uses
+react-window for full virtualization).
+
+### Mobile-only divergences vs desktop (declared)
+
+- **No export** — `mobile/View.tsx` has no `ExportFAB`, no Excel/CSV
+  buttons (Mobile reform 2026-05-27 § 3.4 — mobile is no-export by
+  design).
+- **No admin clipping** — `[mobile-only-deferred-clipping]` (above).
+- **No theme toggle** — mobile is light-only (Mobile reform 2026-05-27).
+  The hook still exposes `theme` / `toggleTheme` for the desktop view;
+  mobile ignores both.
+- **No `react-window` virtualization** — the slice-to-60 fixed cap is
+  cheaper than mounting the lib on a list users won't scroll deeply.
+- **No quick-search chip row** — desktop has a `QUICK_SEARCH_CHIPS`
+  preset row above the search input; mobile uses the topic-pill row
+  instead (driven by the user's own keywords), which is more
+  personalized.
+
+### Mobile tab state
+
+Tab state lives in the shared hook (`mobileTab: "feed" | "search" |
+"saved" | "settings"`) so future deep-link/back-button behaviour can
+preserve it without rewiring the View. Today it resets to `"feed"` on
+each mount; persistence is not yet implemented (deferred).
+
+### Bookmarks
+
+Bookmarks are local-only (no DB column). The `toggleBookmark` callback
+in `useNewsHunterData` manages `bookmarkedUrls: Set<string>` persisted
+to `localStorage["nh_bookmarks_v1"]`. Desktop currently does not expose
+a bookmark affordance — bookmarks are mobile-only by design (saved
+articles are a phone-context need; on the desktop view the user has
+filters + search + keyword chips). The hook keeps the state cross-View
+to avoid drift if/when the desktop adds the affordance.
 
 ## Escopo de código
 
