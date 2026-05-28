@@ -94,15 +94,15 @@ export default function MobileHomeIconTile(
   // Icon-badge dimensions — 40×40 default, 36×36 compact. The larger badge
   // gives the 30px glyph (passed from mobileHomeTiles) more breathing room
   // inside the squircle and makes icons more legible at a glance.
-  const badgeSize = isCompact ? 36 : 40;
-  const badgeRadius = isCompact ? 10 : 12;
+  const badgeSize = isCompact ? 36 : 44;
+  const badgeRadius = isCompact ? 10 : 13;
 
-  // Tile dimensions — 68px tall default (down from 84px), 56px compact.
-  // Reduced vertical footprint keeps the 2-col grid compact on short screens
+  // Tile dimensions — 56px tall default (down from 68px), 56px compact.
+  // More aggressive vertical shrink keeps the 2-col grid compact on short screens
   // while the larger badge/icon compensates for perceived visual weight.
-  const tileMinHeight = isCompact ? 56 : 68;
-  const tilePadding = isCompact ? "10px 12px" : "10px 12px";
-  const tileGap = isCompact ? 10 : 10;
+  const tileMinHeight = isCompact ? 56 : 56;
+  const tilePadding = isCompact ? "10px 12px" : "8px 10px";
+  const tileGap = isCompact ? 10 : 12;
   const titleSize = isCompact ? 13 : 15;
 
   return (
