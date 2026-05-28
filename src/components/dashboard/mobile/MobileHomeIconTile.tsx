@@ -3,36 +3,30 @@
 // MobileHomeIconTile — bento launcher used by the /home mobile gallery
 // (Onda 5 of the mobile reform — visual refresh, 2026-05-28).
 //
-// Replaces the previous capsule launcher (MobileHomeCardPill) with a
-// horizontal tile that pairs a tinted squircle icon badge with the dashboard
-// title — the layout adopted by every premium analytics app launcher in 2026
-// (Apple Stocks, Robinhood, Bloomberg). The icon establishes identity at a
-// glance; the title confirms the destination.
+// History:
+//   • Onda 5 introduced the horizontal tile (icon-left 44×44 + label right).
+//   • Onda 7.1 attempted a vertical redesign (icon-on-top + centered label,
+//     3-line clamp) to fit long titles. Eduardo rejected it: tiles too tall,
+//     icon-on-top looked odd, centered label was awkward.
+//   • Onda 7.2 (current) reverts to the horizontal layout and instead solves
+//     the truncation problem by shortening the LONG titles on mobile only
+//     via `mobileLabel` overrides in `mobileHomeTiles.tsx`. Desktop labels
+//     stay untouched.
 //
-// Visual recipe (default variant — vertical layout since Onda 7.1, 2026-05-28):
+// Visual recipe (default variant — horizontal):
 //
-//   ┌─────────────────────────┐
-//   │       ┌──────┐          │
-//   │       │ ICON │          │   ← 116px tall, full column width
-//   │       │ 40×40│          │
-//   │       └──────┘          │
-//   │  Brazil Production      │   ← Arial 13.5/600, dark
-//   │       Summary           │     up to 3 lines, centered
-//   └─────────────────────────┘
+//   ┌─────────────────────────────────────────┐
+//   │ ┌──────┐                                │
+//   │ │ ICON │   Brazil Production            │   ← ~88px tall, full column width
+//   │ │ 40×40│   (Arial 15px / 600 / dark)    │
+//   │ └──────┘                                │
+//   └─────────────────────────────────────────┘
 //      ^                ^
-//      40×40 squircle    Label below, full-width center-aligned
-//      radius 12px       Arial 13.5/600 — clamps to 3 lines
+//      40×40 squircle    14px gap
+//      radius 12px       Arial 15/600 — left-aligned, clamps to 2 lines
 //      tinted bg         No subtitle (minimalism per plan § 3.x)
-//      22px icon
+//      ~24px icon
 //      colour = tintFg
-//
-// Rationale for vertical (vs the original horizontal): at viewport 360–426px
-// in a 2-col grid, horizontal tiles only afforded ~100px for the label,
-// truncating "Brazil Production Summary", "Diesel & Gasoline Margins" and
-// "Subsidy Tracker" with ellipsis. Going vertical hands the entire tile
-// width (~150–190px) to the label, which now wraps cleanly in 2–3 lines for
-// every dashboard in the gallery. The icon stays as the primary identity
-// anchor on top.
 //
 // Layering (the tile itself):
 //   • border-radius 16px (squircle)
@@ -51,16 +45,11 @@
 //   excluded-redirect side-effect on the destination handles the UX bounce.
 //
 // Variants:
-//   • "default" — full tile (88px tall). Used inside the Oil & Gas / Fuel
+//   • "default" — full tile (~88px tall). Used inside the Oil & Gas / Fuel
 //     Distribution 2-col grid in /home mobile.
 //   • "compact" — 56px tall, 36×36 icon badge, slightly smaller title. Used
 //     by the horizontally-scrolling "Last visited" row where horizontal
 //     density matters more than fingerprint reach.
-//
-// Why a dedicated component:
-//   This shape is reused 13× in the /home grid + 4× in the Last-visited row.
-//   Centralising it (and the colour palette + icon mapping it depends on)
-//   guarantees a future palette refresh lands in exactly one place.
 
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -102,90 +91,20 @@ export default function MobileHomeIconTile(
 
   const isCompact = variant === "compact";
 
-  // Compact variant keeps the horizontal layout (used by the Last-visited row
-  // where horizontal density matters). Default variant is now vertical
-  // (icon-on-top, label below) so long titles get the full tile width.
-  if (isCompact) {
-    const badgeSize = 36;
-    const badgeRadius = 10;
-    const tileMinHeight = 56;
-    const tilePadding = "10px 12px";
-    const tileGap = 10;
-    const titleSize = 13;
+  // Icon-badge dimensions — 36×36 in both variants. Default used 40×40 in
+  // earlier iterations but the extra 4px squeezed long titles into 3-line
+  // overflow at 360px viewports (e.g. "Brazil Production", "Monthly
+  // Production"). Dropping to 36 gives the label ~10px of breathing room
+  // without visually shrinking the icon noticeably.
+  const badgeSize = 36;
+  const badgeRadius = isCompact ? 10 : 11;
 
-    return (
-      <Link
-        href={href}
-        onClick={onClick}
-        className="mobile-home-icon-tile"
-        data-excluded={excluded ? "true" : undefined}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: tileGap,
-          width: "100%",
-          minHeight: tileMinHeight,
-          padding: tilePadding,
-          borderRadius: 16,
-          border: "1px solid var(--mobile-glass-border)",
-          background:
-            "linear-gradient(180deg, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0) 55%), var(--mobile-glass-bg)",
-          WebkitBackdropFilter: "var(--mobile-glass-blur)",
-          backdropFilter: "var(--mobile-glass-blur)",
-          boxShadow: "var(--mobile-glass-shadow)",
-          color: "var(--mobile-text)",
-          fontFamily: "Arial, Helvetica, sans-serif",
-          textDecoration: "none",
-          cursor: "pointer",
-          opacity: excluded ? 0.82 : 1,
-          minWidth: 168,
-        }}
-      >
-        <span
-          aria-hidden="true"
-          style={{
-            flex: "0 0 auto",
-            width: badgeSize,
-            height: badgeSize,
-            borderRadius: badgeRadius,
-            background: tintBg,
-            color: tintFg,
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow:
-              "inset 0 1px 0 rgba(255,255,255,0.18), 0 1px 2px rgba(0,0,0,0.08)",
-          }}
-        >
-          {icon}
-        </span>
-        <span
-          style={{
-            color: "var(--mobile-text)",
-            fontSize: titleSize,
-            fontWeight: 600,
-            lineHeight: 1.2,
-            letterSpacing: "-0.005em",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            flex: "1 1 auto",
-            minWidth: 0,
-          }}
-        >
-          {title}
-        </span>
-      </Link>
-    );
-  }
-
-  // ── Default (vertical) variant ───────────────────────────────────────────
-  // Icon-badge dimensions — 40×40 squircle on top.
-  const badgeSize = 40;
-  const badgeRadius = 12;
-  // Tile dimensions — 116px tall (icon 40 + gap 10 + 3-line label headroom).
-  const tileMinHeight = 116;
-  const titleSize = 13.5;
+  // Tile dimensions — ~84px tall default, 56px compact (still meets the 48×48
+  // touch-target floor with margin).
+  const tileMinHeight = isCompact ? 56 : 84;
+  const tilePadding = isCompact ? "10px 12px" : "12px 12px";
+  const tileGap = isCompact ? 10 : 10;
+  const titleSize = isCompact ? 13 : 15;
 
   return (
     <Link
@@ -195,13 +114,11 @@ export default function MobileHomeIconTile(
       data-excluded={excluded ? "true" : undefined}
       style={{
         display: "flex",
-        flexDirection: "column",
         alignItems: "center",
-        justifyContent: "flex-start",
-        gap: 10,
+        gap: tileGap,
         width: "100%",
         minHeight: tileMinHeight,
-        padding: "14px 10px 12px",
+        padding: tilePadding,
         borderRadius: 16,
         border: "1px solid var(--mobile-glass-border)",
         background:
@@ -214,7 +131,9 @@ export default function MobileHomeIconTile(
         textDecoration: "none",
         cursor: "pointer",
         opacity: excluded ? 0.82 : 1,
-        textAlign: "center",
+        // Compact tiles in the horizontally-scrolling Last-visited row keep an
+        // intrinsic min-width so the row paints distinct, non-shrunk targets.
+        minWidth: isCompact ? 168 : undefined,
       }}
     >
       {/* ── Icon badge (tinted squircle) ─────────────────────────────────── */}
@@ -230,6 +149,8 @@ export default function MobileHomeIconTile(
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
+          // Subtle inner highlight gives the badge depth without competing
+          // with the tile's Liquid Glass body.
           boxShadow:
             "inset 0 1px 0 rgba(255,255,255,0.18), 0 1px 2px rgba(0,0,0,0.08)",
         }}
@@ -237,15 +158,15 @@ export default function MobileHomeIconTile(
         {icon}
       </span>
 
-      {/* ── Label (centered below the icon, up to 3 lines) ────────────────── */}
+      {/* ── Label column (left-aligned, 2-line clamp) ────────────────────── */}
       <span
         style={{
           display: "flex",
           flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "flex-start",
+          alignItems: "flex-start",
+          justifyContent: "center",
           minWidth: 0,
-          width: "100%",
+          flex: "1 1 auto",
           gap: 2,
         }}
       >
@@ -254,21 +175,19 @@ export default function MobileHomeIconTile(
             color: "var(--mobile-text)",
             fontSize: titleSize,
             fontWeight: 600,
-            lineHeight: 1.25,
+            lineHeight: 1.2,
             letterSpacing: "-0.005em",
-            // 3-line clamp accommodates "Brazil Production Summary",
-            // "Diesel & Gasoline Margins", "Subsidy Tracker" etc. at the
-            // narrowest viewport (360px → ~150px tile width).
+            // 2-line clamp keeps shortened titles ("D&G Margins",
+            // "Brazil Production") fitting comfortably inside the tile.
             overflow: "hidden",
+            textOverflow: "ellipsis",
             display: "-webkit-box",
-            WebkitLineClamp: 3,
+            WebkitLineClamp: isCompact ? 1 : 2,
             WebkitBoxOrient: "vertical" as const,
-            whiteSpace: "normal",
+            whiteSpace: isCompact ? "nowrap" : "normal",
             wordBreak: "normal",
             overflowWrap: "break-word",
-            hyphens: "auto",
             width: "100%",
-            textAlign: "center",
           }}
         >
           {title}

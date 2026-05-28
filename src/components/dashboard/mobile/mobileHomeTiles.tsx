@@ -39,7 +39,26 @@ export interface TileMeta {
   tintBg: string;
   /** Icon foreground colour — saturated category-text colour. */
   tintFg: string;
+  /**
+   * Mobile-only label override. When present, the /home mobile tile should
+   * render this string instead of the desktop `card.title`. Desktop labels
+   * are intentionally untouched — this only abbreviates long titles for the
+   * narrow horizontal tile (~150–190px wide at 360–426px viewport). Onda 7.2
+   * (2026-05-28).
+   */
+  mobileLabel?: string;
 }
+
+// ── Mobile label overrides ──────────────────────────────────────────────────
+//
+// Slugs not listed here fall back to the desktop title (already short enough
+// to fit two lines in the horizontal tile at 360px).
+
+const MOBILE_LABEL_OVERRIDES: Record<string, string> = {
+  "well-by-well": "Brazil Production",
+  "diesel-gasoline-margins": "D&G Margins",
+  "navios-diesel": "Diesel Line-Up",
+};
 
 // ── Category accents (mirror desktop ModuleGallery ACCENTS) ─────────────────
 
@@ -116,6 +135,7 @@ export function getTileMeta(
     compactIcon: getTileIcon(slug, 20),
     tintBg: tint.tile,
     tintFg: tint.accentText,
+    mobileLabel: MOBILE_LABEL_OVERRIDES[slug],
   };
 }
 

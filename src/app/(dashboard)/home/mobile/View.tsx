@@ -180,7 +180,7 @@ export default function MobileView(): React.ReactElement {
                     return (
                       <MobileHomeIconTile
                         key={card.slug}
-                        title={card.title}
+                        title={meta.mobileLabel ?? card.title}
                         href={card.href ?? "#"}
                         icon={meta.icon}
                         tintBg={meta.tintBg}
