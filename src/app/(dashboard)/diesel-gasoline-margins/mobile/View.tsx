@@ -27,7 +27,6 @@ import type { PlotData } from "plotly.js";
 
 import { useModuleVisibilityGuard } from "../../../../hooks/useModuleVisibilityGuard";
 import {
-  MobileTopBar,
   FilterDrawer,
   MobileChart,
   CalendarIcon,
