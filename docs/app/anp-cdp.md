@@ -651,16 +651,27 @@ Read this section. Then ask: does this change aggregate, filter, or transform pr
 
 ## Export
 
-Tier 2 — `<ExportPanel mode="modal">` abre `<ExportModal>` com filtros + calculadora live de tamanho (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
+Tier 2 — migrated to the **unified export library** (2026-05-28). The desktop `DashboardHeader.rightSlot` mounts a single `<ExportButton spec={anpCdpExport} />`; the library opens the modal, runs the size estimator, and triggers Excel / CSV downloads. Mobile has no export (dashboard is mobile-excluded).
 
-- RPC count: `get_anp_cdp_export_count` (`p_ano_inicio`, `p_ano_fim`, `p_bacoes`, `p_operadores`, `p_locais`, `p_tipos_instalacao`) → `bigint`, em `supabase/migrations/20260507000003_export_count_rpcs.sql`.
-- JS wrapper: `getAnpCdpExportCount` em [`src/lib/rpc.ts`](../../src/lib/rpc.ts).
-- datasetKey heuristic: `anp_cdp_producao` (ver [`src/lib/exportSizeHeuristics.ts`](../../src/lib/exportSizeHeuristics.ts) → `AVG_BYTES_PER_ROW.anp_cdp_producao`). Tabela é a maior do projeto (~1.8M linhas) — heurística é crítica aqui.
-- Filtros expostos no modal: período (slider de anos), bacias, operadores, ambientes (Pré-Sal/Pós-Sal/Terra), tipos de instalação.
-- Excel handler: `downloadAnpCdpExcel` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
-- CSV handler: paginated fetch direto em `anp_cdp_producao` (PostgREST 1.000 linhas/página) + `downloadCsv` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
-- Filename pattern: `AnpCdp_DD-MM-YY.<xlsx|csv>`.
-- Warning visual quando estimativa > 200 000 linhas — particularmente importante neste dashboard, dado o volume da tabela.
+- Spec file: [`src/lib/export/dashboards/anpCdp.ts`](../../src/lib/export/dashboards/anpCdp.ts). Owner: `worker_dash-anp-cdp`.
+- Contract: [`docs/app/export-library-contract.md`](export-library-contract.md) (v1).
+- `filename: "MonthlyProduction"` → final name `MonthlyProduction_DD-MM-YY.xlsx|csv`. Aggregated mode appends `_by-<groupBy.join('-')>` before the date suffix (library-level).
+- `tier: 2`, `filterSource: "modal-editable"` — modal opens with **defaults from zero**, NOT WYSIWYG. Filters in the modal are decoupled from the sidebar filters used to drive the chart.
+- Modal layout (top to bottom):
+  1. `segmented` "Mode": **Raw** (default) | **Aggregated**.
+  2. `multi-select` "Group by" (only meaningful in Aggregated mode) — options: `ano`, `mes`, `campo`, `bacia`, `operador`, `estado`, `local`, `instalacao_destino`, `tipo_instalacao`. Default `["ano", "mes", "campo"]`.
+  3. `date-range` "Period" — default last 12 months.
+  4. Six `multi-select` filters (no defaults): State, Basin, Field, Operator, Environment, Destination Facility, Facility Type. Options pulled from `get_anp_cdp_filtros` (cached, single round-trip).
+- Mode "Raw" → 1 sheet "Monthly Production", 17 columns mirroring `anp_cdp_producao` (`ano, mes, estado, bacia, campo, poco, operador, nome_poco_operador, num_contrato, instalacao_destino, tipo_instalacao, local, petroleo_bbl_dia, oleo_bbl_dia, gas_total_mm3_dia, agua_bbl_dia, tempo_prod_hs_mes`). Data source: `rpcGetAnpCdpRawExport` (currently a paginated SELECT on `anp_cdp_producao`; falls back to a server-side RPC if `worker_supabase` ships one).
+- Mode "Aggregated" → 1 sheet, columns = chosen `groupBy` dimensions + 5 metrics (`petroleo_bbl_dia`, `oleo_bbl_dia`, `gas_total_mm3_dia`, `agua_bbl_dia`, `tempo_prod_hs_mes`). Data source: `rpcGetAnpCdpAggregatedExport` (wraps the existing `get_anp_cdp_aggregated` RPC with paginated `.range()`).
+- CSV: `mode: "single"` — one CSV file with the chosen mode's columns (RFC4180, UTF-8).
+- Size estimator: `rpcGetAnpCdpExportCount` for Raw mode (live count from `get_anp_cdp_export_count`); hardcoded heuristic per `groupBy` combination for Aggregated mode (no dedicated count RPC).
+- RPC wrappers (in [`src/lib/rpc.ts`](../../src/lib/rpc.ts), section "/anp-cdp — unified export library wrappers"):
+  - `rpcGetAnpCdpRawExport(filters)` — thin alias over `fetchAnpCdpRawFiltered`.
+  - `rpcGetAnpCdpAggregatedExport(filters, groupBy)` — thin alias over `rpcGetAnpCdpAggregated`.
+  - `rpcGetAnpCdpExportCount(filters)` — thin alias over `getAnpCdpExportCount`.
+  The legacy functions remain in place so the dashboard hook (which still owns the orphan modal plumbing pre-cleanup) compiles. The cleanup of the legacy `<ExportModal>` plumbing in `useAnpCdpData.ts` (`exportFilters`, `doExportExcel`, `doExportCsv`, `openExportFromCurrentFilters`, etc.) is scheduled for the post-migration sweep documented in the export-library contract.
+- No charts in the export.
 
 ## Incidents
 
