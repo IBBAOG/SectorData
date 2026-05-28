@@ -66,6 +66,26 @@ CEO (Eduardo)
 
 A partir de 2026-05-20, todo dashboard tem 2 views (`desktop/View.tsx` + `mobile/View.tsx`) consumindo um hook compartilhado `use<Slug>Data.ts`. Mobile = mesma análise, roupagem adaptada. **Regra de sync binding**: edição em uma view exige equivalente na outra no mesmo commit, ou tag explícita `[desktop-only]` / `[mobile-only]` na mensagem. Vide `CLAUDE.md` § "Dual-view (web + mobile) policy" e `docs/app/PRD.md` § "Dual-view foundation".
 
+### Mobile reform 2026-05-27 (refinamento do princípio)
+
+Reforma cross-cutting (Ondas 1–3, range `fac9e522..4ccca2b8`, ~30 commits) que firmou as seguintes políticas, todas detalhadas em `docs/app/PRD.md` § "Mobile reform 2026-05-27 — light-only paradigm":
+
+- **Mobile é light-only** — sem dark mode; tokens `--mobile-*` em `globals.css` purgados de variantes dark.
+- **Single floating Home pill** (`MobileHomePill`) substitui o tab bar de 4 ícones original.
+- **Kebab menu top-right** (`MobileKebabMenu`) é a única superfície de logout no mobile; rota `/profile` excluída do mobile.
+- **`(dashboard)/layout.tsx` é o switcher** — `DesktopShell` vs `MobileShell` via `useIsMobile()`. NavBar desktop é `hidden` em mobile.
+- **Export é desktop-only** — `ExportFAB` não é montado em nenhum mobile View pós-reforma.
+- **`MobileExcludedRedirect` pattern** — rotas excluídas montam o componente em `page.tsx` (`MobileExcludedRedirect` + `DesktopView` lado a lado); o redirect roda só no client mobile.
+- **`app-toast` event channel** — `window.dispatchEvent(new CustomEvent("app-toast", ...))` capturado por `MobileToastHost` (global, mounted em `MobileShell`).
+- **Last-visited memory** (`useTrackLastVisited`) — FIFO localStorage `sd_last_visited` (cap 4), consumido pela `/home v2` mobile.
+
+**Cobertura mobile (estado atual):**
+
+| Status | Rotas |
+|---|---|
+| **Mobile-eligible (11)** | `/home`, `/well-by-well`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/anp-cdp-diaria`, `/market-share`, `/price-bands`, `/subsidy-tracker`, `/diesel-gasoline-margins`, `/imports-exports`, `/navios-diesel` |
+| **Mobile-excluded / desktop-only (9)** | `/stocks`, `/admin-panel`, `/admin-analytics`, `/news-hunter`, `/alerts`, `/profile`, `/anp-cdp`, `/anp-prices`, `/anp-glp` |
+
 ## Departamentos
 
 | Dept | Slug do agente | Ownership de pastas | PRD |
@@ -500,6 +520,16 @@ Workflow controlado pelo **Subgerente APP** (não pelo Gerente Geral). Ver detal
 - 4 departamentos + 3 papéis transversais.
 - 16 dashboards ativos (7 originais — `/sales-volumes` retirado em 2026-05-26 e absorvido por `/market-share` via toggle % Share ↔ thousand m³ — + 2 da Fase 3 remanescentes: `/anp-cdp`, `/anp-glp` + 7 novos: `/anp-prices` (consolida `/anp-precos-produtores` + `/anp-precos-distribuicao` + `/anp-lpc` retirados em 2026-05-26), `/imports-exports` (consolida `/anp-daie` + `/anp-desembaracos` + `/anp-painel-importacoes` retirados em 2026-05-25; absorveu `/mdic-comex` no mesmo dia — originalmente via Panel C "Import Price", removido em 2026-05-28; MDIC continua alimentando Panel D + as novas Import/Export Price Summary tables via as RPCs `get_imports_exports_imports_unit_price` / `get_imports_exports_exports_unit_price`; `mdic_comex` table e workflow ETL permanecem ativos), `/anp-cdp-diaria`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/subsidy-tracker`, `/well-by-well` (Fase 2 de Field Stakes & Production — sumário executivo stake-weighted, renomeado de `/production` em 2026-05-28 Round 4) + `/admin-analytics` (Admin-only, sem `module_visibility`)).
 - Documentação inicial criada em **2026-05-05**.
+
+### Reforma Mobile — light-only paradigm (2026-05-27)
+
+Reforma cross-cutting do modo mobile do app entregue em 3 ondas (range `fac9e522..4ccca2b8`, ~30 commits). Resumo das mudanças firmadas (detalhes em `docs/app/PRD.md` § "Mobile reform 2026-05-27 — light-only paradigm" e `docs/app/dual-view-pattern.md`):
+
+- **Onda 1 — Designer:** Liquid Glass v2 components (`MobileHomePill`, `MobileKebabMenu`, `MobileExcludedRedirect`, `MobileToastHost`, `MobileHomeCardPill`) + tokens `--mobile-*` em `globals.css` purgados de qualquer variante dark. Mobile é **light-only** definitivo.
+- **Onda 2 — Shell:** `(dashboard)/layout.tsx` ganhou `DashboardShell` switcher (`DesktopShell` vs `MobileShell`). `MobileShell` monta `MobileTopBar` + `MobileHomePill` + `MobileToastHost`; `MobileTabBar` legado descontinuado. NavBar desktop é `hidden` em mobile. `useTrackLastVisited` (FIFO 4 slugs em `localStorage["sd_last_visited"]`) montado no shell. `/home` desktop intocado (split 50/50 cards + Data Sources); `/home v2` mobile reescrito do zero com `MobileHomeCardPill`. `/anp-prices` removido da lista mobile-eligible (cleanup pré-Onda 3).
+- **Onda 3 — 10 dashboards refactored + 1 cleanup (`/anp-prices`):** Os 11 dashboards mobile-eligible (`/home`, `/well-by-well`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/anp-cdp-diaria`, `/market-share`, `/price-bands`, `/subsidy-tracker`, `/diesel-gasoline-margins`, `/imports-exports`, `/navios-diesel`) ganharam `mobile/View.tsx` v2 (mobile-first, sem `ExportFAB`, design Liquid Glass v2). Os 9 mobile-excluded (`/stocks`, `/admin-panel`, `/admin-analytics`, `/news-hunter`, `/alerts`, `/profile`, `/anp-cdp`, `/anp-prices`, `/anp-glp`) tiveram `mobile/View.tsx` deletado e `page.tsx` reescrito com `MobileExcludedRedirect` + `DesktopView`. Cada `worker_dash-*` atualizou seu próprio `docs/app/<slug>.md` para refletir cobertura mobile.
+
+**Export é desktop-only** — política dura firmada: nenhum download/export no mobile pós-reforma. Mobile é consumo; desktop é análise + download.
 
 ### Round 4 — Well by Well rename + canonical grouping + live admin field list (2026-05-28)
 
