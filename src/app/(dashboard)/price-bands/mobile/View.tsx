@@ -551,40 +551,25 @@ export default function MobileView(): React.ReactElement {
     return labelsToAnnotations(resolved);
   }, [endLabels, MIN_LABEL_DELTA]);
 
-  // Extend the x-axis range a fixed number of days past the last data point
-  // so the end-of-line annotations (xref:"x", xanchor:"left") have room to
-  // render without being clipped at the plot-area boundary.
-  // We keep margin.r small (8px) so the plot area fills the card edge-to-edge.
-  // 45 days is enough for 5 annotation characters (~28px of Arial-10 text +
-  // xshift:6) across the range widths we see at 1M–All zoom levels.
-  const xAxisRange = useMemo<[string, string] | undefined>(() => {
-    // Determine the rightmost data point in the current window.
-    const lastDate = xMax ?? rows
-      .filter((r) => r.product === filters.product)
-      .reduce<string | null>((acc, r) => (r.date > (acc ?? "") ? r.date : acc), null);
-    if (!lastDate) return undefined;
-
-    const end = new Date(lastDate + "T00:00:00Z");
-    end.setUTCDate(end.getUTCDate() + 45);
-    const endStr = end.toISOString().slice(0, 10);
-
-    // Keep xMin as the left boundary (when set by the period chip).
-    return xMin ? [xMin, endStr] : [lastDate, endStr];
-  }, [xMax, xMin, rows, filters.product]);
+  // End-of-line annotations use xanchor:"left" + xshift:6 — they are rendered
+  // OUTSIDE the plot area. We reserve space for them via margin.r (40px), which
+  // is enough for a 4-char label in Arial-10 bold (~22px) plus xshift + borderpad.
+  // We do NOT extend xaxis.range past the last data point; doing so was the
+  // root cause of the ~35–40% whitespace at the right edge of the card in every
+  // period (45 fixed days = 25% of 6M, 60% of 1M, etc.).
 
   const chartLayout = useMemo<Partial<Layout>>(() => ({
     height: 260,
-    // margin.r kept minimal (8px) so the plot area fills the full card width.
-    // Room for end-of-line annotation text is created by extending xaxis.range
-    // 45 days past the last data point (see xAxisRange above).
-    margin: { l: 44, r: 8, t: 12, b: 36 },
+    // margin.r:40 creates the gutter for end-of-line labels without widening
+    // the x-axis range. margin.l:44 covers "R$ X.XX" y-axis tick labels.
+    margin: { l: 44, r: 40, t: 12, b: 36 },
     xaxis: {
       type: "date" as const,
       tickformat: "%b-%y",
       nticks: 5,
       tickangle: -30,
       automargin: true,
-      ...(xAxisRange ? { range: xAxisRange } : {}),
+      ...(xMin && xMax ? { range: [xMin, xMax] } : {}),
     },
     yaxis: {
       tickformat: ".2f",
@@ -595,7 +580,7 @@ export default function MobileView(): React.ReactElement {
     hovermode: "x unified" as const,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     annotations: annotations as any,
-  }), [annotations, xAxisRange]);
+  }), [annotations, xMin, xMax]);
 
   // ── Current values (for legend chip subtitle + Petrobras gap table) ──────
   const cv = currentValues[filters.product];
