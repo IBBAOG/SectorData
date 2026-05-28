@@ -47,26 +47,27 @@ Verbatim migration of the previous `page.tsx` body. Layout:
 
 ### Mobile View — `mobile/View.tsx`
 
-Chart-heavy archetype (matches `mockups/market-share-mobile.html`). Layout:
-- `MobileTopBar` with title + `FilterChip` (period label → opens drawer)
-- `FuelToggle` segmented control (Diesel B / Gasoline C)
+Wave 3 reform (2026-05-27) — full desktop content parity, re-layout mobile-first. Layout:
+- **Sticky sub-bar**: `FuelTab` segmented control (Diesel B / Gasoline C) + `FilterChip` (period → opens drawer). Sits below the global `MobileTopBar` rendered by `MobileLayout`.
 - Latest week badge
-- `MobileChart` stacked area (selected fuel only — full-width, height 260)
-- `MobileDataCard` breakdown list (one card per margin component, value + % of total)
-- `ExportFAB` with expand-on-tap menu (Excel + CSV options) — Tier 1 direct
+- `MobileChart` stacked area (selected fuel only — full-width, height 260) — all 5 components
+- **KPI delta block**: horizontal scroll row of cards (one per component + total). Each card shows current week value (BRL/L) + WoW absolute delta with directional color (green = up, red = down).
+- **Comparison table** (`ComparisonTable`): WoW / −4 Wks / QTD / YoY deltas for all components, color-coded cells, horizontal scroll with first column sticky.
+- **No ExportFAB** (§ 3.4 mobile reform policy — export disabled on mobile).
 
 Filter drawer (`FilterDrawer` + `DrawerWeekSlider`):
-- Shows week-range slider with year marks
+- Week-range slider with year marks
 - Draft-then-apply pattern (changes only committed on "Apply")
 
 ### Divergences
 
 | Aspect | Desktop | Mobile |
 |---|---|---|
-| Fuel selection | Both fuels shown simultaneously | One fuel at a time via FuelToggle |
-| Variations table | Full WoW/−4W/QTD/YoY table | [mobile-only] omitted — too wide for phone; breakdown cards replace it |
-| Export trigger | `ExportPanel` inline in header | `ExportFAB` + expand menu |
-| Period label | `WeekPeriodBadge` in sidebar | `FilterChip` in top bar → `FilterDrawer` |
+| Fuel selection | Both fuels shown simultaneously | One fuel at a time via `FuelTab` |
+| Variations table | Full WoW/−4W/QTD/YoY table | Same data — `ComparisonTable` with horizontal scroll |
+| KPI delta block | N/A (inline in table) | Dedicated horizontal-scroll card row (WoW delta only) |
+| Export trigger | `ExportPanel` inline in header | None (§ 3.4 policy) |
+| Period label | `WeekPeriodBadge` in sidebar | `FilterChip` in sticky sub-bar → `FilterDrawer` |
 
 ## Produto
 

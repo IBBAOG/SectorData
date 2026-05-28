@@ -1,20 +1,25 @@
 "use client";
 
 /**
- * Mobile view — Diesel & Gasoline Margins.
- *
- * Archetype: chart-heavy + filter sheet (mirrors market-share-mobile.html).
+ * Mobile view — Diesel & Gasoline Margins (v2, Wave 3 reform).
  *
  * Layout (top → bottom):
- *   MobileTopBar  — title + filter trigger button
- *   Fuel-type segmented toggle (Diesel B / Gasoline C)
- *   MobileChart   — stacked area showing margin composition for selected fuel
- *   Component breakdown cards (MobileDataCard — one per margin component)
- *   ExportFAB     — Tier 1 direct download (expanded pill with label)
- *   FilterDrawer  — week-range slider inside BottomSheet
+ *   Sticky header  — MobileTopBar (global shell renders this; nothing extra here)
+ *   Sticky sub-bar — Tab: Diesel B / Gasoline C  +  FilterChip (Period)
+ *   Latest week badge
+ *   Stacked area chart hero (MobileChart, height 260)
+ *   KPI delta block — current vs prior week, horizontal cards
+ *   Comparison table — all components with WoW/−4W/QTD/YoY deltas, horizontal scroll
  *
- * Binding sync rule: any new filter / chart / KPI added here must also land in
- * desktop/View.tsx in the same commit, OR the commit must declare [mobile-only].
+ * Non-negotiables (§ 3.4 + task spec):
+ *   - NO ExportFAB / ExportModal
+ *   - NO MobileBottomTabBar
+ *   - NO NavBar / own MobileTopBar (MobileLayout provides those)
+ *   - NO useIsMobile() inside this View (already mobile)
+ *   - Light-only
+ *
+ * Sync rule: changes here must land in desktop/View.tsx in the same commit,
+ * or commit must declare [mobile-only].
  */
 
 import React, { useMemo, useState } from "react";
@@ -25,15 +30,9 @@ import {
   MobileTopBar,
   FilterDrawer,
   MobileChart,
-  MobileDataCard,
-  ExportFAB,
   CalendarIcon,
-  FileLinesIcon,
 } from "../../../../components/dashboard/mobile";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
-
-import { downloadDgMarginsExcel } from "../../../../lib/exportExcel";
-import { downloadCsv } from "../../../../lib/exportCsv";
 
 import {
   useDieselGasolineMarginsData,
@@ -47,7 +46,7 @@ import {
   compLabel,
 } from "../useDieselGasolineMarginsData";
 
-// ── Slider (inline — rc-slider only for filter drawer) ────────────────────────
+// rc-slider — only used inside the filter drawer
 import Slider from "rc-slider";
 import "rc-slider/assets/index.css";
 
@@ -78,26 +77,135 @@ function buildMobileStackedChart(
   } as PlotData));
 }
 
-// ── Component breakdown helper ────────────────────────────────────────────────
+// ── KPI delta helpers ─────────────────────────────────────────────────────────
 
-function getLatestComponentBreakdown(
+interface KpiCard {
+  key: keyof DgMarginsRow;
+  label: string;
+  value: number;
+  delta: number | null;
+  deltaPct: number | null;
+}
+
+function buildKpiDelta(
   allRows: DgMarginsRow[],
   fuelType: string,
   latestWeek: string | null,
-): { key: keyof DgMarginsRow; label: string; value: number; pct: number }[] {
+  allWeeks: string[],
+): KpiCard[] {
   if (!latestWeek) return [];
-  const row = allRows.find((r) => r.fuel_type === fuelType && r.week === latestWeek);
-  if (!row) return [];
-  const total = Number(row.total) || 1;
-  return TABLE_KEYS.filter((k) => k !== "total").map((key) => ({
+  const byWeek = new Map(
+    allRows.filter((r) => r.fuel_type === fuelType).map((r) => [r.week, r]),
+  );
+  const latest = byWeek.get(latestWeek);
+  if (!latest) return [];
+  const latestIdx = allWeeks.indexOf(latestWeek);
+  const prev = byWeek.get(allWeeks[latestIdx - 1] ?? "") ?? null;
+
+  return TABLE_KEYS.map((key) => {
+    const value = Number(latest[key] ?? 0);
+    let delta: number | null = null;
+    let deltaPct: number | null = null;
+    if (prev) {
+      const vPrev = Number(prev[key] ?? 0);
+      delta = value - vPrev;
+      deltaPct = vPrev !== 0 ? (delta / Math.abs(vPrev)) * 100 : null;
+    }
+    return {
+      key,
+      label: key === "total" ? "Total" : compLabel(key as string, fuelType),
+      value,
+      delta,
+      deltaPct,
+    };
+  });
+}
+
+// ── Comparison table ──────────────────────────────────────────────────────────
+
+interface CompRow {
+  key: keyof DgMarginsRow;
+  label: string;
+  current: number;
+  wow: { abs: number | null; pct: number | null };
+  prev4: { abs: number | null; pct: number | null };
+  qtd: { abs: number | null; pct: number | null };
+  yoy: { abs: number | null; pct: number | null };
+}
+
+function buildComparisonRows(
+  allRows: DgMarginsRow[],
+  fuelType: string,
+  latestWeek: string | null,
+  allWeeks: string[],
+): CompRow[] {
+  if (!latestWeek) return [];
+  const byWeek = new Map(
+    allRows.filter((r) => r.fuel_type === fuelType).map((r) => [r.week, r]),
+  );
+  const latest = byWeek.get(latestWeek);
+  if (!latest) return [];
+
+  const latestIdx = allWeeks.indexOf(latestWeek);
+  const prev1     = byWeek.get(allWeeks[latestIdx - 1] ?? "") ?? null;
+  const prev4     = byWeek.get(allWeeks[latestIdx - 4] ?? "") ?? null;
+
+  // QTD: first week of current quarter
+  let qtdRow: DgMarginsRow | null = null;
+  const latestParsed = parseWeek(latestWeek);
+  if (latestParsed) {
+    const { weekNum, year } = latestParsed;
+    const jan4 = new Date(year, 0, 4);
+    const dow  = jan4.getDay() || 7;
+    const w1Mon = new Date(year, 0, 4 - dow + 1);
+    const wkStart = new Date(w1Mon);
+    wkStart.setDate(w1Mon.getDate() + (weekNum - 1) * 7);
+    const qStartMonth = Math.floor(wkStart.getMonth() / 3) * 3;
+    const quarterStart = new Date(year, qStartMonth, 1);
+    for (const w of allWeeks) {
+      const p = parseWeek(w);
+      if (!p || p.year !== year) continue;
+      const j4 = new Date(p.year, 0, 4);
+      const d  = j4.getDay() || 7;
+      const wm = new Date(p.year, 0, 4 - d + 1);
+      const ws = new Date(wm);
+      ws.setDate(wm.getDate() + (p.weekNum - 1) * 7);
+      if (ws >= quarterStart) {
+        const row = byWeek.get(w);
+        if (row) { qtdRow = row; break; }
+      }
+    }
+  }
+
+  // YoY: same week number, prior year
+  let yoyRow: DgMarginsRow | null = null;
+  if (latestParsed) {
+    const { weekNum, year } = latestParsed;
+    yoyRow = byWeek.get(`${weekNum}/${year - 1}`) ?? null;
+  }
+
+  const diff = (a: DgMarginsRow | null, b: DgMarginsRow | null, key: keyof DgMarginsRow) => {
+    if (!a || !b) return { abs: null as number | null, pct: null as number | null };
+    const va = Number(a[key]);
+    const vb = Number(b[key]);
+    if (isNaN(va) || isNaN(vb)) return { abs: null as number | null, pct: null as number | null };
+    const abs = va - vb;
+    const pct = vb !== 0 ? (abs / Math.abs(vb)) * 100 : null;
+    return { abs, pct };
+  };
+
+  return TABLE_KEYS.map((key) => ({
     key,
-    label: compLabel(key as string, fuelType),
-    value: Number(row[key] ?? 0),
-    pct: (Number(row[key] ?? 0) / total) * 100,
+    label: key === "total" ? "Total" : compLabel(key as string, fuelType),
+    current: Number(latest[key] ?? 0),
+    wow:  diff(latest, prev1,  key),
+    prev4: diff(latest, prev4,  key),
+    qtd:  diff(latest, qtdRow, key),
+    yoy:  diff(latest, yoyRow, key),
   }));
 }
 
-// ── Filter trigger button ─────────────────────────────────────────────────────
+// ── Sub-components ────────────────────────────────────────────────────────────
 
 function FilterChip({
   weeks,
@@ -121,34 +229,30 @@ function FilterChip({
       type="button"
       onClick={onOpen}
       style={{
-        display:     "inline-flex",
-        alignItems:  "center",
-        gap:         6,
-        height:      36,
-        padding:     "0 14px",
+        display:      "inline-flex",
+        alignItems:   "center",
+        gap:          6,
+        height:       36,
+        padding:      "0 14px",
         borderRadius: 999,
-        border:      "1.5px solid var(--mobile-accent)",
-        background:  "var(--mobile-accent-fill, rgba(255,80,0,0.08))",
-        color:       "var(--mobile-accent)",
-        fontFamily:  "Arial, Helvetica, sans-serif",
-        fontSize:    13,
-        fontWeight:  600,
-        cursor:      "pointer",
-        whiteSpace:  "nowrap",
-        transition:  "background 0.12s ease",
-        minHeight:   44,
+        border:       "1.5px solid var(--mobile-accent, #ff5000)",
+        background:   "var(--mobile-accent-fill, rgba(255,80,0,0.08))",
+        color:        "var(--mobile-accent, #ff5000)",
+        fontFamily:   "Arial, Helvetica, sans-serif",
+        fontSize:     13,
+        fontWeight:   600,
+        cursor:       "pointer",
+        whiteSpace:   "nowrap",
+        minHeight:    44,
       }}
     >
-      {/* Calendar icon */}
       <CalendarIcon size={14} strokeWidth={2.2} />
       {label}
     </button>
   );
 }
 
-// ── Fuel segmented toggle ─────────────────────────────────────────────────────
-
-function FuelToggle({
+function FuelTab({
   selected,
   onChange,
 }: {
@@ -158,15 +262,15 @@ function FuelToggle({
   const fuels = ["Diesel B", "Gasoline C"];
   return (
     <div
-      role="group"
+      role="tablist"
       aria-label="Fuel type"
       style={{
-        display:       "inline-flex",
-        background:    "var(--mobile-surface-2, #fafafc)",
-        border:        "1px solid var(--mobile-border, #e6e6ec)",
-        borderRadius:  12,
-        padding:       3,
-        gap:           2,
+        display:      "flex",
+        background:   "var(--mobile-surface-2, #fafafc)",
+        border:       "1px solid var(--mobile-border, #e6e6ec)",
+        borderRadius: 12,
+        padding:      3,
+        gap:          2,
       }}
     >
       {fuels.map((fuel) => {
@@ -175,21 +279,22 @@ function FuelToggle({
           <button
             key={fuel}
             type="button"
+            role="tab"
+            aria-selected={active}
             onClick={() => onChange(fuel)}
-            aria-pressed={active}
             style={{
-              minHeight:   44,
-              padding:     "0 16px",
+              minHeight:    44,
+              padding:      "0 18px",
               borderRadius: 9,
-              border:      0,
-              background:  active ? "var(--mobile-accent)" : "transparent",
-              color:       active ? "#fff" : "var(--mobile-text-muted, #6b6b73)",
-              fontFamily:  "Arial, Helvetica, sans-serif",
-              fontSize:    14,
-              fontWeight:  active ? 700 : 500,
-              cursor:      "pointer",
-              transition:  "background 0.15s ease, color 0.15s ease",
-              whiteSpace:  "nowrap",
+              border:       0,
+              background:   active ? "var(--mobile-accent, #ff5000)" : "transparent",
+              color:        active ? "#fff" : "var(--mobile-text-muted, #6b6b73)",
+              fontFamily:   "Arial, Helvetica, sans-serif",
+              fontSize:     14,
+              fontWeight:   active ? 700 : 500,
+              cursor:       "pointer",
+              transition:   "background 0.15s ease, color 0.15s ease",
+              whiteSpace:   "nowrap",
             }}
           >
             {fuel}
@@ -199,8 +304,6 @@ function FuelToggle({
     </div>
   );
 }
-
-// ── Week range slider (inside filter drawer) ──────────────────────────────────
 
 function DrawerWeekSlider({
   weeks,
@@ -257,6 +360,233 @@ function DrawerWeekSlider({
   );
 }
 
+// ── KPI delta card ────────────────────────────────────────────────────────────
+
+function KpiDeltaCard({ card }: { card: KpiCard }) {
+  const isPos  = (card.delta ?? 0) > 0;
+  const isNeg  = (card.delta ?? 0) < 0;
+  const deltaColor = isPos ? "#15803d" : isNeg ? "#b91c1c" : "var(--mobile-text-muted, #6b6b73)";
+  const deltaBg    = isPos ? "rgba(21,128,61,0.09)" : isNeg ? "rgba(185,28,28,0.09)" : "transparent";
+  const isTotal    = card.key === "total";
+
+  return (
+    <div style={{
+      flex:         "0 0 auto",
+      minWidth:     120,
+      background:   "var(--mobile-surface, #ffffff)",
+      border:       "1px solid var(--mobile-border, #e6e6ec)",
+      borderRadius: 12,
+      padding:      "10px 14px",
+      display:      "flex",
+      flexDirection: "column",
+      gap:           4,
+      borderLeft:   isTotal ? "3px solid var(--mobile-accent, #ff5000)" : `3px solid ${STACK_COLORS[String(card.key)] ?? "#e6e6ec"}`,
+    }}>
+      <div style={{
+        fontSize:    11,
+        fontWeight:  600,
+        color:       "var(--mobile-text-muted, #6b6b73)",
+        fontFamily:  "Arial",
+        whiteSpace:  "nowrap",
+        overflow:    "hidden",
+        textOverflow: "ellipsis",
+      }}>
+        {card.label}
+      </div>
+      <div style={{
+        fontSize:           18,
+        fontWeight:         700,
+        color:              isTotal ? "var(--mobile-accent, #ff5000)" : "var(--mobile-text, #1a1a1a)",
+        fontFamily:         "Arial",
+        fontVariantNumeric: "tabular-nums",
+      }}>
+        {card.value.toFixed(2)}
+        <span style={{ fontSize: 10, fontWeight: 400, marginLeft: 3 }}>BRL/L</span>
+      </div>
+      {card.delta !== null && (
+        <div style={{
+          display:      "inline-flex",
+          alignItems:   "center",
+          gap:           4,
+          fontSize:      11,
+          fontWeight:    600,
+          color:         deltaColor,
+          background:    deltaBg,
+          borderRadius:  6,
+          padding:       "2px 6px",
+          alignSelf:    "flex-start",
+          fontFamily:   "Arial",
+          fontVariantNumeric: "tabular-nums",
+        }}>
+          {card.delta > 0 ? "▲" : card.delta < 0 ? "▼" : "●"}
+          {" "}
+          {(card.delta > 0 ? "+" : "") + card.delta.toFixed(2)}
+          {card.deltaPct !== null && (
+            <span style={{ fontWeight: 400, opacity: 0.8 }}>
+              {" "}({card.deltaPct > 0 ? "+" : ""}{card.deltaPct.toFixed(1)}%)
+            </span>
+          )}
+        </div>
+      )}
+      {card.delta === null && (
+        <div style={{ fontSize: 11, color: "#bbb", fontFamily: "Arial" }}>WoW —</div>
+      )}
+    </div>
+  );
+}
+
+// ── Comparison table ──────────────────────────────────────────────────────────
+
+function ComparisonTable({
+  rows,
+  latestWeek,
+  fuelType,
+}: {
+  rows: CompRow[];
+  latestWeek: string | null;
+  fuelType: string;
+}) {
+  if (rows.length === 0 || !latestWeek) return null;
+
+  const fmtAbs = (v: number | null) =>
+    v === null ? "—" : (v > 0 ? "+" : "") + v.toFixed(2);
+  const fmtPct = (v: number | null) =>
+    v === null ? "" : (v > 0 ? "+" : "") + v.toFixed(1) + "%";
+  const cellBg = (v: number | null) =>
+    v === null ? "transparent" : v > 0 ? "rgba(21,128,61,0.10)" : v < 0 ? "rgba(185,28,28,0.10)" : "transparent";
+
+  const thStyle: React.CSSProperties = {
+    fontFamily:      "Arial",
+    fontSize:        10,
+    fontWeight:      700,
+    color:           "#ffffff",
+    backgroundColor: "#000512",
+    textAlign:       "center",
+    padding:         "5px 8px",
+    border:          "none",
+    whiteSpace:      "nowrap",
+    position:        "sticky",
+    top:             0,
+  };
+  const thLeft: React.CSSProperties = {
+    ...thStyle,
+    textAlign: "left",
+    position:  "sticky",
+    left:      0,
+    zIndex:    2,
+    minWidth:  130,
+  };
+  const tdStyle: React.CSSProperties = {
+    textAlign:          "center",
+    padding:            "4px 8px",
+    fontSize:           10,
+    fontFamily:         "Arial",
+    color:              "#1a1a1a",
+    whiteSpace:         "nowrap",
+    border:             "none",
+    lineHeight:         1.3,
+    fontVariantNumeric: "tabular-nums",
+  };
+  const tdLeft: React.CSSProperties = {
+    fontFamily:  "Arial",
+    fontSize:    11,
+    color:       "#1a1a1a",
+    whiteSpace:  "nowrap",
+    padding:     "4px 12px 4px 8px",
+    border:      "none",
+    position:    "sticky",
+    left:        0,
+    background:  "var(--mobile-surface, #ffffff)",
+    zIndex:      1,
+  };
+
+  const COLS = [
+    { label: "WoW",      getter: (r: CompRow) => r.wow  },
+    { label: "−4 Wks",  getter: (r: CompRow) => r.prev4 },
+    { label: "QTD",     getter: (r: CompRow) => r.qtd  },
+    { label: "YoY",     getter: (r: CompRow) => r.yoy  },
+  ];
+
+  return (
+    <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+      <table style={{
+        borderCollapse: "collapse",
+        minWidth: "100%",
+        tableLayout: "auto",
+      }}>
+        <thead>
+          <tr>
+            <th style={thLeft}>
+              {fuelType} · {weekLastDay(latestWeek)}
+            </th>
+            <th style={thStyle}>BRL/L</th>
+            {COLS.map((c) => (
+              <th key={c.label} style={thStyle}>{c.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => {
+            const isTotal = row.key === "total";
+            const rowStyle: React.CSSProperties = i === rows.length - 1
+              ? { borderBottom: "2px solid #d0d0d0" }
+              : {};
+            return (
+              <tr key={String(row.key)} style={rowStyle}>
+                <td style={{
+                  ...tdLeft,
+                  fontWeight: isTotal ? 700 : 400,
+                }}>
+                  {row.label}
+                </td>
+                <td style={{ ...tdStyle, fontWeight: isTotal ? 700 : 400, fontSize: 11 }}>
+                  {row.current.toFixed(2)}
+                </td>
+                {COLS.map(({ label, getter }) => {
+                  const { abs, pct } = getter(row);
+                  return (
+                    <td key={label} style={{
+                      ...tdStyle,
+                      backgroundColor: cellBg(abs),
+                      color: abs === null ? "#bbb" : "#1a1a1a",
+                      fontWeight: isTotal ? 700 : 400,
+                    }}>
+                      {fmtAbs(abs)}
+                      {abs !== null && pct !== null && (
+                        <div style={{ fontSize: 8.5, color: "#666", lineHeight: 1.2 }}>
+                          {fmtPct(pct)}
+                        </div>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Section header ────────────────────────────────────────────────────────────
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      padding:         "12px 16px 6px",
+      fontSize:        11,
+      fontWeight:      700,
+      color:           "var(--mobile-text-muted, #6b6b73)",
+      textTransform:   "uppercase",
+      letterSpacing:   "0.06em",
+      fontFamily:      "Arial",
+    }}>
+      {children}
+    </div>
+  );
+}
+
 // ── Mobile View ───────────────────────────────────────────────────────────────
 
 export default function MobileView(): React.ReactElement {
@@ -271,17 +601,13 @@ export default function MobileView(): React.ReactElement {
     visibleWeeks,
     latestVisibleWeek,
     loading,
-    excelLoading,
-    setExcelLoading,
   } = useDieselGasolineMarginsData();
 
-  // Local mobile state
+  // Local state
   const [drawerOpen, setDrawerOpen]     = useState(false);
   const [draftRange, setDraftRange]     = useState<[number, number]>(weekRange);
   const [selectedFuel, setSelectedFuel] = useState<string>("Diesel B");
-  const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
-  // Sync draft when drawer opens
   const openDrawer = () => {
     setDraftRange(weekRange);
     setDrawerOpen(true);
@@ -291,86 +617,86 @@ export default function MobileView(): React.ReactElement {
     setDrawerOpen(false);
   };
   const resetDrawer = () => {
-    const full: [number, number] = [0, Math.max(0, weeks.length - 1)];
-    setDraftRange(full);
+    setDraftRange([0, Math.max(0, weeks.length - 1)]);
   };
 
-  // Chart data
+  // Chart
   const chartTraces = useMemo(
     () => buildMobileStackedChart(filteredRows, selectedFuel, visibleWeeks),
     [filteredRows, selectedFuel, visibleWeeks],
   );
 
-  // Component breakdown for selected fuel at latest visible week
-  const breakdown = useMemo(
-    () => getLatestComponentBreakdown(allRows, selectedFuel, latestVisibleWeek),
-    [allRows, selectedFuel, latestVisibleWeek],
+  // KPI delta (current week vs prior)
+  const kpiCards = useMemo(
+    () => buildKpiDelta(allRows, selectedFuel, latestVisibleWeek, weeks),
+    [allRows, selectedFuel, latestVisibleWeek, weeks],
+  );
+
+  // Comparison table rows
+  const compRows = useMemo(
+    () => buildComparisonRows(allRows, selectedFuel, latestVisibleWeek, weeks),
+    [allRows, selectedFuel, latestVisibleWeek, weeks],
   );
 
   if (visLoading || !visible) return <></>;
 
   return (
-    <div
-      style={{
-        minHeight: "100dvh",
-        background: "var(--mobile-bg, #f5f5f7)",
-        paddingBottom: "calc(80px + var(--mobile-safe-bottom, 0px))",
-        fontFamily: "Arial, Helvetica, sans-serif",
-        position: "relative",
-      }}
-    >
-      {/* Top bar */}
-      <MobileTopBar
-        title="D&G Margins"
-        rightSlot={
-          <FilterChip
-            weeks={weeks}
-            weekRange={weekRange}
-            onOpen={openDrawer}
-          />
-        }
-      />
+    <div style={{
+      minHeight:   "100dvh",
+      background:  "var(--mobile-bg, #f5f5f7)",
+      paddingBottom: 32,
+      fontFamily:  "Arial, Helvetica, sans-serif",
+    }}>
+      {/* ── Top sticky bar: fuel tabs + period filter chip ── */}
+      <div style={{
+        position:   "sticky",
+        top:        0,
+        zIndex:     20,
+        background: "var(--mobile-surface, #ffffff)",
+        borderBottom: "1px solid var(--mobile-border, #e6e6ec)",
+        padding:    "8px 16px",
+        display:    "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap:        12,
+      }}>
+        <FuelTab selected={selectedFuel} onChange={setSelectedFuel} />
+        <FilterChip weeks={weeks} weekRange={weekRange} onOpen={openDrawer} />
+      </div>
 
       {loading ? (
-        <div style={{ padding: 24 }}>
+        <div style={{ padding: 32, display: "flex", justifyContent: "center" }}>
           <BarrelLoading bare />
         </div>
       ) : (
         <>
-          {/* Fuel type toggle */}
-          <div style={{
-            padding: "12px 16px 0",
-            display: "flex",
-            justifyContent: "center",
-          }}>
-            <FuelToggle selected={selectedFuel} onChange={setSelectedFuel} />
-          </div>
-
           {/* Latest week badge */}
           {latestVisibleWeek && (
             <div style={{
-              padding: "8px 16px 0",
-              textAlign: "center",
-              fontSize: 12,
-              color: "var(--mobile-text-muted, #6b6b73)",
+              padding:    "10px 16px 0",
+              textAlign:  "center",
+              fontSize:   12,
+              color:      "var(--mobile-text-muted, #6b6b73)",
             }}>
-              Latest data: <strong style={{ color: "var(--mobile-accent, #ff5000)" }}>
+              Latest:{" "}
+              <strong style={{ color: "var(--mobile-accent, #ff5000)" }}>
                 {weekLastDay(latestVisibleWeek)}
               </strong>
             </div>
           )}
 
-          {/* Stacked area chart */}
+          {/* ── Stacked area chart hero ── */}
           <div style={{
-            margin: "12px 0 0",
-            background: "var(--mobile-surface, #ffffff)",
+            margin:       "12px 0 0",
+            background:   "var(--mobile-surface, #ffffff)",
             borderTop:    "1px solid var(--mobile-border, #e6e6ec)",
             borderBottom: "1px solid var(--mobile-border, #e6e6ec)",
           }}>
             <div style={{
-              padding: "10px 16px 4px",
-              fontSize: 13, fontWeight: 600,
-              color: "var(--mobile-text, #1a1a1a)",
+              padding:    "10px 16px 4px",
+              fontSize:   13,
+              fontWeight: 600,
+              color:      "var(--mobile-text, #1a1a1a)",
             }}>
               {selectedFuel} — Price Composition
             </div>
@@ -383,7 +709,7 @@ export default function MobileView(): React.ReactElement {
                   showlegend: true,
                   legend: {
                     orientation: "h",
-                    x: 0, y: -0.18,
+                    x: 0, y: -0.22,
                     font: { size: 9 },
                   },
                   xaxis: {
@@ -401,187 +727,63 @@ export default function MobileView(): React.ReactElement {
                     fixedrange: true,
                     nticks: 4,
                   },
-                  margin: { l: 44, r: 12, t: 8, b: 48 },
+                  margin: { l: 44, r: 12, t: 8, b: 52 },
                 }}
-                style={{ padding: "0 8px 12px" }}
+                style={{ padding: "0 8px 16px" }}
               />
             ) : (
               <div style={{
                 height: 160, display: "flex", alignItems: "center",
-                justifyContent: "center",
-                fontSize: 13, color: "var(--mobile-text-muted, #6b6b73)",
+                justifyContent: "center", fontSize: 13,
+                color: "var(--mobile-text-muted, #6b6b73)",
               }}>
                 No data for selected period
               </div>
             )}
           </div>
 
-          {/* Component breakdown cards */}
-          {breakdown.length > 0 && (
-            <div style={{ marginTop: 12 }}>
+          {/* ── KPI delta block ── */}
+          {kpiCards.length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <SectionLabel>
+                Current Week vs Prior Week
+              </SectionLabel>
               <div style={{
-                padding: "4px 16px 8px",
-                fontSize: 11,
-                fontWeight: 700,
-                color: "var(--mobile-text-muted, #6b6b73)",
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
+                overflowX:              "auto",
+                WebkitOverflowScrolling: "touch",
+                display:                "flex",
+                gap:                    10,
+                padding:                "0 16px 4px",
               }}>
-                Breakdown — {latestVisibleWeek ? weekLastDay(latestVisibleWeek) : ""}
-              </div>
-              <div style={{
-                background: "var(--mobile-surface, #ffffff)",
-                borderTop:    "1px solid var(--mobile-border, #e6e6ec)",
-                borderBottom: "1px solid var(--mobile-border, #e6e6ec)",
-              }}>
-                {breakdown.map(({ key, label, value, pct }) => (
-                  <MobileDataCard
-                    key={String(key)}
-                    variant="compact"
-                    leftIcon={
-                      <div style={{
-                        width:  10,
-                        height: 10,
-                        borderRadius: 3,
-                        background: STACK_COLORS[String(key)] ?? "#888",
-                        flexShrink: 0,
-                      }} />
-                    }
-                    title={label}
-                    rightSlot={
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{
-                          fontSize: 15,
-                          fontWeight: 700,
-                          color: "var(--mobile-text, #1a1a1a)",
-                          fontVariantNumeric: "tabular-nums",
-                        }}>
-                          {value.toFixed(2)}
-                          <span style={{ fontSize: 10, fontWeight: 400, marginLeft: 3 }}>BRL/L</span>
-                        </div>
-                        <div style={{
-                          fontSize: 11,
-                          color: "var(--mobile-text-muted, #6b6b73)",
-                          fontVariantNumeric: "tabular-nums",
-                        }}>
-                          {pct.toFixed(1)}%
-                        </div>
-                      </div>
-                    }
-                  />
+                {kpiCards.map((card) => (
+                  <KpiDeltaCard key={String(card.key)} card={card} />
                 ))}
               </div>
             </div>
           )}
-        </>
-      )}
 
-      {/* Export FAB — expands to show format choice */}
-      {!loading && filteredRows.length > 0 && (
-        <>
-          {exportMenuOpen && (
-            /* Scrim to dismiss export menu */
-            <div
-              onClick={() => setExportMenuOpen(false)}
-              style={{
-                position: "fixed", inset: 0, zIndex: 34,
-                background: "rgba(0,0,0,0.18)",
-              }}
-            />
-          )}
-
-          {/* Export options (visible when menu open) */}
-          {exportMenuOpen && (
-            <div
-              style={{
-                position: "fixed",
-                right: "max(16px, calc((100vw - 428px) / 2 + 16px))",
-                bottom: "calc(72px + var(--mobile-safe-bottom, 0px) + 76px)",
-                zIndex: 36,
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-                alignItems: "flex-end",
-              }}
-            >
-              {/* Excel option */}
-              <button
-                type="button"
-                disabled={excelLoading}
-                onClick={async () => {
-                  setExportMenuOpen(false);
-                  setExcelLoading(true);
-                  try {
-                    await downloadDgMarginsExcel(filteredRows);
-                  } catch (e) {
-                    console.error("Excel export failed", e);
-                  } finally {
-                    setExcelLoading(false);
-                  }
-                }}
-                style={{
-                  height: 44, padding: "0 20px",
-                  borderRadius: 22,
-                  border: 0,
-                  background: "var(--mobile-surface, #fff)",
-                  color: "var(--mobile-text, #1a1a1a)",
-                  boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
-                  fontFamily: "Arial", fontSize: 14, fontWeight: 600,
-                  cursor: excelLoading ? "default" : "pointer",
-                  opacity: excelLoading ? 0.6 : 1,
-                  whiteSpace: "nowrap",
-                  display: "inline-flex", alignItems: "center", gap: 8,
-                }}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                  aria-hidden="true">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                </svg>
-                {excelLoading ? "Generating..." : "Excel (.xlsx)"}
-              </button>
-
-              {/* CSV option */}
-              <button
-                type="button"
-                onClick={() => {
-                  setExportMenuOpen(false);
-                  downloadCsv({
-                    rows: filteredRows as unknown as Record<string, unknown>[],
-                    filename: "Diesel-Gasoline-Margins",
-                  });
-                }}
-                style={{
-                  height: 44, padding: "0 20px",
-                  borderRadius: 22,
-                  border: 0,
-                  background: "var(--mobile-surface, #fff)",
-                  color: "var(--mobile-text, #1a1a1a)",
-                  boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
-                  fontFamily: "Arial", fontSize: 14, fontWeight: 600,
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                  display: "inline-flex", alignItems: "center", gap: 8,
-                }}
-              >
-                <FileLinesIcon size={16} />
-                CSV (.csv)
-              </button>
+          {/* ── Comparison table ── */}
+          {compRows.length > 0 && (
+            <div style={{
+              marginTop:    16,
+              background:   "var(--mobile-surface, #ffffff)",
+              borderTop:    "1px solid var(--mobile-border, #e6e6ec)",
+              borderBottom: "1px solid var(--mobile-border, #e6e6ec)",
+            }}>
+              <SectionLabel>
+                Variation Table — {latestVisibleWeek ? weekLastDay(latestVisibleWeek) : ""}
+              </SectionLabel>
+              <ComparisonTable
+                rows={compRows}
+                latestWeek={latestVisibleWeek}
+                fuelType={selectedFuel}
+              />
             </div>
           )}
-
-          <ExportFAB
-            icon="download"
-            label={exportMenuOpen ? "Close" : "Export"}
-            ariaLabel="Export data"
-            disabled={excelLoading}
-            onClick={() => setExportMenuOpen((v) => !v)}
-          />
         </>
       )}
 
-      {/* Filter drawer */}
+      {/* ── Filter drawer ── */}
       <FilterDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
@@ -593,10 +795,11 @@ export default function MobileView(): React.ReactElement {
       >
         <div style={{ paddingBottom: 8 }}>
           <div style={{
-            fontSize: 13, fontWeight: 700,
-            color: "var(--mobile-text, #1a1a1a)",
+            fontSize:    13,
+            fontWeight:  700,
+            color:       "var(--mobile-text, #1a1a1a)",
             marginBottom: 16,
-            fontFamily: "Arial",
+            fontFamily:  "Arial",
           }}>
             Period
           </div>
@@ -607,12 +810,12 @@ export default function MobileView(): React.ReactElement {
           />
           {weeks.length > 0 && (
             <div style={{
-              marginTop: 4,
-              padding: "8px 12px",
+              marginTop:  4,
+              padding:    "8px 12px",
               background: "var(--mobile-surface-2, #fafafc)",
               borderRadius: 10,
-              fontSize: 12,
-              color: "var(--mobile-text-muted, #6b6b73)",
+              fontSize:   12,
+              color:      "var(--mobile-text-muted, #6b6b73)",
               fontFamily: "Arial",
               lineHeight: 1.5,
             }}>
@@ -624,12 +827,15 @@ export default function MobileView(): React.ReactElement {
                 {weeks[draftRange[1]] ? weekLastDayShort(weeks[draftRange[1]]) : ""}
               </strong>
               <span style={{ marginLeft: 4 }}>
-                ({draftRange[1] - draftRange[0] + 1} week{draftRange[1] - draftRange[0] !== 0 ? "s" : ""})
+                ({draftRange[1] - draftRange[0] + 1} week
+                {draftRange[1] - draftRange[0] !== 0 ? "s" : ""})
               </span>
             </div>
           )}
         </div>
       </FilterDrawer>
+
+      {/* MobileTopBar is rendered by the global MobileLayout — not here */}
     </div>
   );
 }
