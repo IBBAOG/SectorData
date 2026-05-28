@@ -28,7 +28,7 @@
 // stacked MobileTabBars (Product + Segment). Nothing is removed from the
 // analysis — only the navigation structure changed.
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useModuleVisibilityGuard } from "../../../../hooks/useModuleVisibilityGuard";
 import {
   FilterDrawer,
@@ -42,10 +42,7 @@ import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
 import {
   useMarketShareData,
-  buildMobileStackedArea,
   MOBILE_PALETTE,
-  ALL_PLAYERS_IND,
-  ALL_PLAYERS_BIG3,
   PRODUCT_KEYS,
   PRODUCT_LABEL,
   SEGMENTS_BY_PRODUCT,
@@ -54,7 +51,6 @@ import {
   type SegmentKey,
   type UnitMode,
 } from "../useMarketShareData";
-import type { PlotData } from "plotly.js";
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -459,33 +455,10 @@ export default function MobileView(): React.ReactElement {
     setDrawerUfs([]);
   };
 
-  // Hero chart traces for the active (product × segment)
-  const heroTraces = useMemo<PlotData[]>(() => {
-    if (ms.seriesLoading || ms.serieRows.length === 0) return [];
-    const productRows =
-      ms.selectedProduct === "Otto-Cycle"
-        ? ms.ottoCycleRows
-        : ms.serieRows;
-    const players = ms.big3 ? ALL_PLAYERS_BIG3 : ALL_PLAYERS_IND;
-    const segmentArg: string | null =
-      ms.selectedSegment === "Total" ? null : ms.selectedSegment;
-    return buildMobileStackedArea({
-      serieRows: productRows,
-      produto: ms.selectedProduct,
-      segmento: segmentArg,
-      players,
-      nMonths: 12,
-      colorsOverride: ms.chartColors,
-    });
-  }, [
-    ms.seriesLoading,
-    ms.serieRows,
-    ms.ottoCycleRows,
-    ms.selectedProduct,
-    ms.selectedSegment,
-    ms.big3,
-    ms.chartColors,
-  ]);
+  // Hero chart traces for the active (product × segment).
+  // Re-uses activeChart from the hook (built by buildMarketShareLine — same
+  // function as desktop), so both views share identical line-chart logic.
+  const heroTraces = ms.activeChart?.data ?? [];
 
   const fmtLabel = (d: string) => {
     try {
@@ -707,16 +680,12 @@ export default function MobileView(): React.ReactElement {
                 data={heroTraces}
                 height={320}
                 layout={{
-                  yaxis:
-                    ms.unitMode === "share"
-                      ? { ticksuffix: "%", range: [0, 100] }
-                      : { title: { text: "thousand m³" } },
-                  xaxis: {
-                    type: "date" as const,
-                    tickformat: "%b %y",
-                    nticks: 6,
-                  },
-                  hovermode: "x unified",
+                  ...(ms.activeChart?.layout ?? {}),
+                  height: 320,
+                  margin: { t: 10, b: 60, l: 50, r: 20 },
+                  legend: { orientation: "h" as const, y: -0.25, x: 0.5, xanchor: "center" as const },
+                  paper_bgcolor: "transparent",
+                  plot_bgcolor: "transparent",
                 }}
               />
             ) : (
