@@ -178,7 +178,10 @@ const FILTER_TOGGLES: FilterToggle[] = [
 //          Ref (Imp.) | Ref (Prod.) | Comm. (Imp.) | Comm. (Prod.) |
 //          Reimb. (Imp.) | Reimb. (Prod.)
 //
-// Reimbursement = Reference − Commercialization per agent.
+// Reimbursement is the cap-aware per-region avg from the RPC
+// (importer cap 1.52 / producer cap 1.12 from 2026-04-07).
+// The frontend does NOT recompute it — `ref − comm` would skip the per-region
+// cap and inflate values above the cap (e.g. 1.65 when the ceiling is 1.52).
 // First column (Date) is sticky. Horizontal scroll for the rest.
 
 interface TableRow {
@@ -204,29 +207,19 @@ function buildTableRows(
     .filter((r) => (!xMin || r.date >= xMin) && (!xMax || r.date <= xMax))
     .sort((a, b) => b.date.localeCompare(a.date)); // newest first
 
-  return scoped.map((r) => {
-    const reimb_importador =
-      r.anp_reference_importador != null && r.anp_commercialization_importador != null
-        ? r.anp_reference_importador - r.anp_commercialization_importador
-        : null;
-    const reimb_produtor =
-      r.anp_reference_produtor != null && r.anp_commercialization_produtor != null
-        ? r.anp_reference_produtor - r.anp_commercialization_produtor
-        : null;
-    return {
-      date: r.date,
-      ipp: r.ipp,
-      ipp_adjusted: r.ipp_adjusted,
-      petrobras: r.petrobras,
-      petrobras_adjusted: r.petrobras_adjusted,
-      anp_reference_importador: r.anp_reference_importador,
-      anp_reference_produtor: r.anp_reference_produtor,
-      anp_commercialization_importador: r.anp_commercialization_importador,
-      anp_commercialization_produtor: r.anp_commercialization_produtor,
-      reimb_importador,
-      reimb_produtor,
-    };
-  });
+  return scoped.map((r) => ({
+    date: r.date,
+    ipp: r.ipp,
+    ipp_adjusted: r.ipp_adjusted,
+    petrobras: r.petrobras,
+    petrobras_adjusted: r.petrobras_adjusted,
+    anp_reference_importador: r.anp_reference_importador,
+    anp_reference_produtor: r.anp_reference_produtor,
+    anp_commercialization_importador: r.anp_commercialization_importador,
+    anp_commercialization_produtor: r.anp_commercialization_produtor,
+    reimb_importador: r.reimb_importador,
+    reimb_produtor: r.reimb_produtor,
+  }));
 }
 
 function fmt(v: number | null): string {

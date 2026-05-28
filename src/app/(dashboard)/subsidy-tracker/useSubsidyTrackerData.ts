@@ -184,9 +184,9 @@ export interface UseSubsidyTrackerData {
   currentValuesImporter: SubsidyTrackerWowRow[];
   /** Latest non-null value + WoW snapshot per series (produtor agent, 4 rows). */
   currentValuesProducer: SubsidyTrackerWowRow[];
-  /** Active subsidy for importador agent (Reference − Commercialization). */
+  /** Most recent cap-aware reimbursement within the slider window (importador agent). */
   activeSubsidyImporter: number | null;
-  /** Active subsidy for produtor agent (Reference − Commercialization). */
+  /** Most recent cap-aware reimbursement within the slider window (produtor agent). */
   activeSubsidyProducer: number | null;
   /** Export helpers — hooks own the busy state. */
   exportExcel: () => Promise<void>;
@@ -555,19 +555,21 @@ export function useSubsidyTrackerData(): UseSubsidyTrackerData {
     [rows, xMin, xMax],
   );
 
+  // Use the cap-aware reimbursement columns from the RPC rather than recomputing
+  // `ref − comm` locally (which would skip the per-region cap and could exceed it).
   const activeSubsidyImporter = useMemo(() => {
-    const ref  = currentValuesImporter.find((c) => c.field === "anp_reference_importador")?.latestValue;
-    const comm = currentValuesImporter.find((c) => c.field === "anp_commercialization_importador")?.latestValue;
-    if (ref == null || comm == null) return null;
-    return ref - comm;
-  }, [currentValuesImporter]);
+    const scoped = rows
+      .filter((r) => (!xMin || r.date >= xMin) && (!xMax || r.date <= xMax))
+      .sort((a, b) => b.date.localeCompare(a.date));
+    return scoped.find((r) => r.reimb_importador != null)?.reimb_importador ?? null;
+  }, [rows, xMin, xMax]);
 
   const activeSubsidyProducer = useMemo(() => {
-    const ref  = currentValuesProducer.find((c) => c.field === "anp_reference_produtor")?.latestValue;
-    const comm = currentValuesProducer.find((c) => c.field === "anp_commercialization_produtor")?.latestValue;
-    if (ref == null || comm == null) return null;
-    return ref - comm;
-  }, [currentValuesProducer]);
+    const scoped = rows
+      .filter((r) => (!xMin || r.date >= xMin) && (!xMax || r.date <= xMax))
+      .sort((a, b) => b.date.localeCompare(a.date));
+    return scoped.find((r) => r.reimb_produtor != null)?.reimb_produtor ?? null;
+  }, [rows, xMin, xMax]);
 
   const exportExcel = useCallback(async () => {
     setExcelLoading(true);
@@ -588,6 +590,8 @@ export function useSubsidyTrackerData(): UseSubsidyTrackerData {
           { header: "ANP Reference (Produtor)",          key: "anp_reference_produtor",            width: 26, format: "0.00", align: "center" },
           { header: "ANP Commercialization (Importador)", key: "anp_commercialization_importador", width: 32, format: "0.00", align: "center" },
           { header: "ANP Commercialization (Produtor)",   key: "anp_commercialization_produtor",   width: 32, format: "0.00", align: "center" },
+          { header: "Reimbursement (Importador)",         key: "reimb_importador",                  width: 28, format: "0.00", align: "center" },
+          { header: "Reimbursement (Produtor)",           key: "reimb_produtor",                    width: 28, format: "0.00", align: "center" },
         ],
       });
     } catch (e) {
@@ -611,6 +615,8 @@ export function useSubsidyTrackerData(): UseSubsidyTrackerData {
           anp_reference_produtor: r.anp_reference_produtor,
           anp_commercialization_importador: r.anp_commercialization_importador,
           anp_commercialization_produtor: r.anp_commercialization_produtor,
+          reimb_importador: r.reimb_importador,
+          reimb_produtor: r.reimb_produtor,
         })) as unknown as Record<string, unknown>[],
         filename: "subsidy_tracker_diesel",
         columns: [
@@ -623,6 +629,8 @@ export function useSubsidyTrackerData(): UseSubsidyTrackerData {
           "anp_reference_produtor",
           "anp_commercialization_importador",
           "anp_commercialization_produtor",
+          "reimb_importador",
+          "reimb_produtor",
         ],
       });
     } finally {

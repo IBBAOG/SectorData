@@ -2099,8 +2099,21 @@ export async function rpcGetAnalyticsHeatmap(
 //                                    breakdown for the hover tooltip
 //
 // Adjustments (server-side, via `compute_subsidy_reimbursement(date, agent)`):
-//   - ipp_adjusted        = ipp − reimbursement_importador  (cap 1.52)
-//   - petrobras_adjusted  = petrobras + reimbursement_produtor (cap 1.12)
+//   - ipp_adjusted        = ipp − reimbursement_importador  (cap 1.52 from 2026-04-07)
+//   - petrobras_adjusted  = petrobras + reimbursement_produtor (cap 1.12 from 2026-04-07)
+//
+// Cap-aware reimbursements (returned directly by the RPC — do NOT recompute client-side):
+//   - reimb_importador    = compute_subsidy_reimbursement(date, 'importador')
+//                           = AVG over 5 regions of MIN(MAX(ref − comm, 0), cap)
+//                           cap: 0.32 before 2026-04-07; 1.52 from 2026-04-07.
+//                           NULL outside the subsidy period.
+//   - reimb_produtor      = compute_subsidy_reimbursement(date, 'produtor')
+//                           cap: 0.32 before 2026-04-07; 1.12 from 2026-04-07.
+//                           NULL outside the subsidy period.
+//
+// ⚠️  The frontend MUST NOT recompute reimbursements as `ref − comm`.
+//     That formula skips the per-region cap and inflates values above the ceiling
+//     (e.g., `ref − comm` may yield 1.56 when the cap is 1.52).
 //
 // Caps are managed in `anp_subsidy_caps` (PK `(vigente_desde, tipo_agente)`).
 // The legacy `anp_subsidy_history` table was DROPPED by the 2026-05-27 reform.
@@ -2118,6 +2131,8 @@ export type SubsidyTrackerRow = {
   anp_commercialization_produtor: number | null;       // period-fixed avg (produtor)   — scraped from HTML
   regions_importador: Record<string, number> | null;   // { NORTE, NORDESTE, ... } reference (importador)
   regions_produtor: Record<string, number> | null;     // { NORTE, NORDESTE, ... } reference (produtor)
+  reimb_importador: number | null;                     // cap-aware reimbursement (importador) — NULL outside subsidy period
+  reimb_produtor: number | null;                       // cap-aware reimbursement (produtor)   — NULL outside subsidy period
 };
 
 export async function rpcGetSubsidyTrackerDiesel(
