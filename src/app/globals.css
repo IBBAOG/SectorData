@@ -2464,6 +2464,49 @@ a {
   --mobile-sheet-bg:      #ffffff;
   --mobile-sheet-handle:  #d1d1d8;
   --mobile-scrim:         rgba(0, 0, 0, 0.36);
+
+  /* ───────────────────────────────────────────────────────────────────────
+     Rappi-style /home tile palette (mobile-only, light-only).
+     Added 2026-05-28 for the Rappi-inspired /home redesign.
+     Each per-slug pair carries a soft pastel background + a saturated text
+     colour that AA-contrasts on top of it. Hero & secondary tiles use these
+     directly; quick tiles fall back to neutral glass with a category accent
+     on the icon badge only.
+     ─────────────────────────────────────────────────────────────────────── */
+
+  /* Heroes (large featured tiles, 2 per row) */
+  --mobile-home-tile-well-by-well-bg:        #fff1d6;  /* warm sandstone */
+  --mobile-home-tile-well-by-well-fg:        #b04200;
+  --mobile-home-tile-market-share-bg:        #d8f1e2;  /* mint */
+  --mobile-home-tile-market-share-fg:        #0a6c4a;
+
+  /* Secondaries (2x2 grid, smaller pastel cards) */
+  --mobile-home-tile-anp-cdp-diaria-bg:      #e3edff;  /* cornflower */
+  --mobile-home-tile-anp-cdp-diaria-fg:      #1d4ed8;
+  --mobile-home-tile-subsidy-tracker-bg:     #ffe0d6;  /* peach */
+  --mobile-home-tile-subsidy-tracker-fg:     #c2410c;
+  --mobile-home-tile-imports-exports-bg:     #ede0ff;  /* lavender */
+  --mobile-home-tile-imports-exports-fg:     #6d28d9;
+  --mobile-home-tile-navios-diesel-bg:       #d6ebff;  /* sky */
+  --mobile-home-tile-navios-diesel-fg:       #0369a1;
+
+  /* Quick tiles (horizontal scroll row) — neutral white shell, slug-specific
+     accent on the inner icon badge. Re-use the secondary backgrounds for
+     the badge to keep the palette coherent. */
+  --mobile-home-quick-bg:                    #ffffff;
+  --mobile-home-quick-border:                rgba(15, 23, 42, 0.08);
+  --mobile-home-quick-shadow:                0 2px 8px rgba(15, 23, 42, 0.06),
+                                             0 1px 2px rgba(15, 23, 42, 0.04);
+  --mobile-home-tile-anp-cdp-bsw-badge-bg:   #d6ebff;
+  --mobile-home-tile-anp-cdp-bsw-badge-fg:   #0369a1;
+  --mobile-home-tile-anp-cdp-depletion-badge-bg: #ede0ff;
+  --mobile-home-tile-anp-cdp-depletion-badge-fg: #6d28d9;
+  --mobile-home-tile-price-bands-badge-bg:   #d8f1e2;
+  --mobile-home-tile-price-bands-badge-fg:   #0a6c4a;
+  --mobile-home-tile-diesel-gasoline-margins-badge-bg: #ffe0d6;
+  --mobile-home-tile-diesel-gasoline-margins-badge-fg: #c2410c;
+  --mobile-home-tile-news-hunter-badge-bg:   #fff4cf;
+  --mobile-home-tile-news-hunter-badge-fg:   #a16207;
 }
 
 /* NOTE: a `:root[data-viewport="mobile"][data-theme="dark"]` block lived here
@@ -2544,6 +2587,34 @@ a {
     --mobile-sheet-bg:      #ffffff;
     --mobile-sheet-handle:  #d1d1d8;
     --mobile-scrim:         rgba(0, 0, 0, 0.36);
+
+    /* Rappi-style /home tile palette — SSR fallback mirror */
+    --mobile-home-tile-well-by-well-bg:        #fff1d6;
+    --mobile-home-tile-well-by-well-fg:        #b04200;
+    --mobile-home-tile-market-share-bg:        #d8f1e2;
+    --mobile-home-tile-market-share-fg:        #0a6c4a;
+    --mobile-home-tile-anp-cdp-diaria-bg:      #e3edff;
+    --mobile-home-tile-anp-cdp-diaria-fg:      #1d4ed8;
+    --mobile-home-tile-subsidy-tracker-bg:     #ffe0d6;
+    --mobile-home-tile-subsidy-tracker-fg:     #c2410c;
+    --mobile-home-tile-imports-exports-bg:     #ede0ff;
+    --mobile-home-tile-imports-exports-fg:     #6d28d9;
+    --mobile-home-tile-navios-diesel-bg:       #d6ebff;
+    --mobile-home-tile-navios-diesel-fg:       #0369a1;
+    --mobile-home-quick-bg:                    #ffffff;
+    --mobile-home-quick-border:                rgba(15, 23, 42, 0.08);
+    --mobile-home-quick-shadow:                0 2px 8px rgba(15, 23, 42, 0.06),
+                                               0 1px 2px rgba(15, 23, 42, 0.04);
+    --mobile-home-tile-anp-cdp-bsw-badge-bg:   #d6ebff;
+    --mobile-home-tile-anp-cdp-bsw-badge-fg:   #0369a1;
+    --mobile-home-tile-anp-cdp-depletion-badge-bg: #ede0ff;
+    --mobile-home-tile-anp-cdp-depletion-badge-fg: #6d28d9;
+    --mobile-home-tile-price-bands-badge-bg:   #d8f1e2;
+    --mobile-home-tile-price-bands-badge-fg:   #0a6c4a;
+    --mobile-home-tile-diesel-gasoline-margins-badge-bg: #ffe0d6;
+    --mobile-home-tile-diesel-gasoline-margins-badge-fg: #c2410c;
+    --mobile-home-tile-news-hunter-badge-bg:   #fff4cf;
+    --mobile-home-tile-news-hunter-badge-fg:   #a16207;
   }
 
   /* NOTE: a `:root[data-theme="dark"]:not([data-viewport])` block lived here
@@ -2640,6 +2711,46 @@ a {
 .mobile-home-icon-tile:focus-visible {
   outline: 2px solid var(--mobile-accent);
   outline-offset: 2px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Rappi-style tile press/focus rules (mobile /home redesign, 2026-05-28).
+   Three flavours of card share the same class root .mobile-home-rappi-tile;
+   variants are distinguished by the data-rappi-variant attribute.
+   ───────────────────────────────────────────────────────────────────────── */
+.mobile-home-rappi-tile {
+  transition:
+    transform 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  -webkit-tap-highlight-color: transparent;
+}
+.mobile-home-rappi-tile:active {
+  transform: scale(0.97);
+}
+.mobile-home-rappi-tile[data-rappi-variant="hero"]:active,
+.mobile-home-rappi-tile[data-rappi-variant="secondary"]:active {
+  box-shadow:
+    0 1px 4px rgba(15, 23, 42, 0.08),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+}
+.mobile-home-rappi-tile[data-rappi-variant="quick"]:active {
+  box-shadow:
+    0 1px 3px rgba(15, 23, 42, 0.10),
+    inset 0 0 0 1px var(--mobile-accent-glow);
+}
+.mobile-home-rappi-tile:focus-visible {
+  outline: 2px solid var(--mobile-accent);
+  outline-offset: 3px;
+}
+
+/* Horizontal scroll row for the quick-tile strip — hide native scrollbar
+   while still allowing horizontal pan + momentum. */
+.mobile-home-quick-row {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.mobile-home-quick-row::-webkit-scrollbar {
+  display: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
