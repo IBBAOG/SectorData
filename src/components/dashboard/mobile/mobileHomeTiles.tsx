@@ -5,9 +5,13 @@
 // squircle icon badge. To keep the palette consistent and avoid view-level
 // hex hard-coding, this module is the single source of truth for:
 //
-//   • which icon glyph maps to which dashboard slug (`iconKey`);
 //   • which background tint the icon badge uses (`tintBg`);
 //   • which foreground colour the glyph itself uses (`tintFg`, default white).
+//
+// The glyph itself (the SVG inside the badge) comes from the shared
+// `@/data/moduleIcons` registry — the SAME source the desktop NavBar / Home
+// ModuleGallery consume — so a given dashboard's icon is visually identical
+// in both views. Only the tinted squircle frame is mobile-specific.
 //
 // The /home mobile view imports `getTileMeta(slug)` and renders the resulting
 // `{ icon, tintBg, tintFg }` triplet into `MobileHomeIconTile`. No tile-level
@@ -29,25 +33,9 @@
 //   is the contract.
 
 import type { ReactNode } from "react";
-import {
-  CalendarDayIcon,
-  ChartBandsIcon,
-  GasCylinderIcon,
-  GaugeIcon,
-  GlobeArrowsIcon,
-  GranularDataIcon,
-  HourglassIcon,
-  PieChartIcon,
-  PriceTagIcon,
-  PumpJackIcon,
-  ReceiptIcon,
-  ShipIcon,
-  WaterDropIcon,
-} from "./icons";
+import { getModuleIcon } from "@/data/moduleIcons";
 
 export interface TileMeta {
-  /** Identity key — used internally to swap glyphs. */
-  iconKey: string;
   /** Pre-rendered SVG glyph at the canonical 24×24 size. */
   icon: ReactNode;
   /** Compact-variant glyph rendered at 20×20 (used by Last-visited row). */
@@ -58,99 +46,71 @@ export interface TileMeta {
   tintFg: string;
 }
 
-// ── Palette: slug → { iconKey, tintBg, tintFg } ─────────────────────────────
+// ── Palette: slug → { tintBg, tintFg } ──────────────────────────────────────
+//
+// Onda 5.1 (2026-05-28): the glyph itself is no longer a custom mobile-only
+// SVG — it now comes from `@/data/moduleIcons` (`getModuleIcon`), the same
+// registry used by the desktop NavBar/Home ModuleGallery, so that a given
+// dashboard's icon is visually identical across views. Only the tinted
+// squircle frame (background + foreground colour) remains mobile-specific.
 
 interface TilePaletteEntry {
-  iconKey: string;
   tintBg: string;
   tintFg?: string;
 }
 
 export const TILE_PALETTE: Record<string, TilePaletteEntry> = {
   // Oil & Gas
-  "well-by-well": { iconKey: "pump-jack", tintBg: "#0c4a6e" }, // deep petroleum blue
-  "anp-cdp": { iconKey: "granular-data", tintBg: "#475569" }, // slate
-  "anp-cdp-bsw": { iconKey: "water-drop", tintBg: "#0891b2" }, // teal
-  "anp-cdp-depletion": { iconKey: "hourglass", tintBg: "#7c3aed" }, // purple
-  "anp-cdp-diaria": { iconKey: "calendar-day", tintBg: "#4f46e5" }, // indigo
+  "well-by-well": { tintBg: "#0c4a6e" }, // deep petroleum blue
+  "anp-cdp": { tintBg: "#475569" }, // slate
+  "anp-cdp-bsw": { tintBg: "#0891b2" }, // teal
+  "anp-cdp-depletion": { tintBg: "#7c3aed" }, // purple
+  "anp-cdp-diaria": { tintBg: "#4f46e5" }, // indigo
   // Fuel Distribution
-  "market-share": { iconKey: "pie-chart", tintBg: "#059669" }, // emerald
-  "price-bands": { iconKey: "chart-bands", tintBg: "#0284c7" }, // sky
-  "subsidy-tracker": { iconKey: "receipt", tintBg: "#d97706" }, // amber
-  "diesel-gasoline-margins": { iconKey: "gauge", tintBg: "#ff5000" }, // brand orange (fuel)
-  "anp-prices": { iconKey: "price-tag", tintBg: "#e11d48" }, // rose
-  "anp-glp": { iconKey: "gas-cylinder", tintBg: "#0e7490" }, // cyan
-  "imports-exports": { iconKey: "globe-arrows", tintBg: "#9333ea" }, // violet
-  "navios-diesel": { iconKey: "ship", tintBg: "#1e3a8a" }, // navy
+  "market-share": { tintBg: "#059669" }, // emerald
+  "price-bands": { tintBg: "#0284c7" }, // sky
+  "subsidy-tracker": { tintBg: "#d97706" }, // amber
+  "diesel-gasoline-margins": { tintBg: "#ff5000" }, // brand orange (fuel)
+  "anp-prices": { tintBg: "#e11d48" }, // rose
+  "anp-glp": { tintBg: "#0e7490" }, // cyan
+  "imports-exports": { tintBg: "#9333ea" }, // violet
+  "navios-diesel": { tintBg: "#1e3a8a" }, // navy
 };
 
 // ── Glyph dispatcher ─────────────────────────────────────────────────────────
 
 /**
- * Returns the SVG glyph component for a given iconKey at the requested size.
- * Falls back to the granular-data icon for unknown keys (defence in depth —
- * this should never happen because all 13 slugs in the /home grid are mapped
- * above, but keeps the View from crashing on a typo).
+ * Returns the SVG glyph for a given dashboard slug at the requested size.
+ *
+ * Onda 5.1 (2026-05-28): delegates to the shared `getModuleIcon` registry in
+ * `@/data/moduleIcons` so mobile and desktop render the SAME glyph for each
+ * dashboard. Stroke width is tuned to 1.75 to read well at the 22-26px sizes
+ * used inside the tinted squircle badge.
  */
-export function getTileIcon(iconKey: string, size: number): ReactNode {
-  const strokeWidth = 1.75;
-  switch (iconKey) {
-    case "pump-jack":
-      return <PumpJackIcon size={size} strokeWidth={strokeWidth} />;
-    case "granular-data":
-      return <GranularDataIcon size={size} strokeWidth={strokeWidth} />;
-    case "water-drop":
-      return <WaterDropIcon size={size} strokeWidth={strokeWidth} />;
-    case "hourglass":
-      return <HourglassIcon size={size} strokeWidth={strokeWidth} />;
-    case "calendar-day":
-      return <CalendarDayIcon size={size} strokeWidth={strokeWidth} />;
-    case "pie-chart":
-      return <PieChartIcon size={size} strokeWidth={strokeWidth} />;
-    case "chart-bands":
-      return <ChartBandsIcon size={size} strokeWidth={strokeWidth} />;
-    case "receipt":
-      return <ReceiptIcon size={size} strokeWidth={strokeWidth} />;
-    case "gauge":
-      return <GaugeIcon size={size} strokeWidth={strokeWidth} />;
-    case "price-tag":
-      return <PriceTagIcon size={size} strokeWidth={strokeWidth} />;
-    case "gas-cylinder":
-      return <GasCylinderIcon size={size} strokeWidth={strokeWidth} />;
-    case "globe-arrows":
-      return <GlobeArrowsIcon size={size} strokeWidth={strokeWidth} />;
-    case "ship":
-      return <ShipIcon size={size} strokeWidth={strokeWidth} />;
-    default:
-      // Unknown slug — fall back to the generic "data" glyph so the tile
-      // still renders rather than crashing.
-      return <GranularDataIcon size={size} strokeWidth={strokeWidth} />;
-  }
+export function getTileIcon(slug: string, size: number): ReactNode {
+  return getModuleIcon(slug, size, 1.75);
 }
 
 /**
  * Returns the full tile-meta payload for a given dashboard slug.
  *
  * @param slug      Dashboard slug (matches `HomeCardDef.slug`).
- * @param variant   "default" → 24px glyph (tile is 88px tall); "compact" →
+ * @param variant   "default" → 26px glyph (tile is 88px tall); "compact" →
  *                  20px glyph (tile is 56px tall, used by Last-visited row).
  *
- * Unknown slugs fall back to a neutral grey + the generic granular-data
- * glyph so the gallery never crashes — but in practice every slug in the
- * /home grid is in TILE_PALETTE.
+ * Unknown slugs fall back to a neutral grey background + the generic
+ * apps-grid fallback glyph from `getModuleIcon` so the gallery never crashes.
  */
 export function getTileMeta(
   slug: string,
   variant: "default" | "compact" = "default",
 ): TileMeta {
   const entry = TILE_PALETTE[slug];
-  const iconKey = entry?.iconKey ?? "granular-data";
   const tintBg = entry?.tintBg ?? "#64748b";
   const tintFg = entry?.tintFg ?? "#ffffff";
   return {
-    iconKey,
-    icon: getTileIcon(iconKey, variant === "compact" ? 20 : 26),
-    compactIcon: getTileIcon(iconKey, 20),
+    icon: getTileIcon(slug, variant === "compact" ? 20 : 26),
+    compactIcon: getTileIcon(slug, 20),
     tintBg,
     tintFg,
   };

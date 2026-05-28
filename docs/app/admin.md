@@ -178,6 +178,8 @@ Landing visual. Shows module cards (icon list, not image cards since 2026-05-26)
 
 > **Memória persistente do CEO (updated 2026-05-26)**: TODO módulo novo precisa de ícone em `src/data/moduleIcons.tsx`. O upload de imagem foi removido — home agora usa ícones SVG inline, não imagens carregadas pelo admin.
 
+> **Mobile/desktop icon parity (2026-05-28, `[mobile-only]`):** the mobile `/home` bento tiles (`MobileHomeIconTile`) now consume the SAME glyph registry (`@/data/moduleIcons` / `getModuleIcon`) as the desktop `ModuleGallery` and `NavBar`. `src/components/dashboard/mobile/mobileHomeTiles.tsx` keeps the tinted-squircle palette (`TILE_PALETTE: slug → tintBg`) but delegates the SVG itself to `getModuleIcon(slug, size, 1.75)`. Net effect: a given dashboard's icon is visually identical across views — only the colored frame is mobile-specific. **Adding a new dashboard still requires only one icon registration: in `src/data/moduleIcons.tsx`.** Mobile picks it up automatically; the tile background colour is added to `TILE_PALETTE` (mobile-only concern).
+
 #### News Hunter center panel (2026-05-28, `[desktop-only]`)
 
 Desktop layout is a **3-column grid** (cards · News Hunter · Team + Data Sources) — `1fr 2fr 1fr` (bumped from `1.4fr 1fr 1fr` on 2026-05-28 so the live news ticker becomes the visual focal point with twice the width of the side columns). The News Hunter panel sits visually centered horizontally, between the module list (left, compact icon rows) and the live Data Sources / Team stack (right). Mobile view is **unchanged** — still shows cards only.
