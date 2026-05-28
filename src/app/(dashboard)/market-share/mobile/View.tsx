@@ -31,9 +31,6 @@
 import { useState, useMemo } from "react";
 import { useModuleVisibilityGuard } from "../../../../hooks/useModuleVisibilityGuard";
 import {
-  MobileTopBar,
-  MobileKebabMenu,
-  MobileHomePill,
   FilterDrawer,
   MobileChart,
   MobileTabBar,
@@ -684,17 +681,6 @@ export default function MobileView(): React.ReactElement {
         position: "relative",
       }}
     >
-      {/* ── Top bar ─────────────────────────────────────────────────────────── */}
-      <MobileTopBar
-        title={
-          <span style={{ fontWeight: 700, letterSpacing: "0.04em" }}>
-            SECTORDATA
-            <span style={{ color: "var(--mobile-accent)" }}>.</span>
-          </span>
-        }
-        rightSlot={<MobileKebabMenu />}
-      />
-
       {/* ── Title block ─────────────────────────────────────────────────────── */}
       <section style={{ padding: "16px 16px 12px" }}>
         <h1
@@ -1300,8 +1286,6 @@ export default function MobileView(): React.ReactElement {
         </div>
       </FilterDrawer>
 
-      {/* ── MobileHomePill (floating) ────────────────────────────────────────── */}
-      <MobileHomePill />
     </div>
   );
 }
