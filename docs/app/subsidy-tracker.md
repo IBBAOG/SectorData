@@ -226,16 +226,32 @@ The FilterDrawer exposes **6 unique toggles** (IPP / IPP adjusted / Petrobras / 
 - Slug: `subsidy-tracker`.
 - NavBar entry maintained by `worker_dash-admin` (this agent does not edit `NavBar.tsx`).
 
-## Export — Tier 1
+## Export — Tier 1 (unified library)
 
-Direct download (no modal — dataset is small, one row per date). Now carries the two adjusted columns.
+Migrated to the unified export library (`src/lib/export/`) on 2026-05-28. Direct download (no modal — dataset is small, one row per date). Two sheets split by `tipo_agente`, mirroring the dual-chart layout.
 
-| Action | Helper | Filename | Columns |
-|---|---|---|---|
-| Excel | `downloadGenericExcel` (`src/lib/exportExcel.ts`) | `subsidy_tracker_diesel <DD-MM-YY>.xlsx` | `Date`, `IPP`, `IPP (adjusted)`, `Petrobras`, `Petrobras (adjusted)`, `ANP Reference (Importador)`, `ANP Reference (Produtor)`, `ANP Commercialization (Importador)`, `ANP Commercialization (Produtor)`, `Reimbursement (Importador)`, `Reimbursement (Produtor)` |
-| CSV   | `downloadCsv` (`src/lib/exportCsv.ts`)            | `subsidy_tracker_diesel.csv`               | `date, ipp, ipp_adjusted, petrobras, petrobras_adjusted, anp_reference_importador, anp_reference_produtor, anp_commercialization_importador, anp_commercialization_produtor, reimb_importador, reimb_produtor` |
+- Spec: `src/lib/export/dashboards/subsidyTracker.ts` (`subsidyTrackerExport`).
+- Component: `<ExportButton spec={subsidyTrackerExport} />` mounted in `DashboardHeader.rightSlot`.
+- `filename: "SubsidyTracker"` → `SubsidyTracker_DD-MM-YY.xlsx` / `SubsidyTracker_DD-MM-YY.csv`.
+- `tier: 1`, `filterSource: "none"` (always full history).
+- 2 buttons (Excel + CSV) per the contract's Tier 1 visual standard.
 
-`regions_importador` and `regions_produtor` are intentionally excluded from export — they are UI affordances only. `reimb_importador` / `reimb_produtor` are included (cap-aware values from the RPC).
+### Excel — 2 sheets
+
+| Sheet | Columns | Notes |
+|---|---|---|
+| **Importador** | `Date`, `IPP`, `IPP (adjusted)`, `ANP Reference`, `ANP Commercialization`, `Cap (BRL/L)` | Importer agent only (no Petrobras column) |
+| **Produtor**   | `Date`, `Petrobras`, `Petrobras (adjusted)`, `ANP Reference`, `ANP Commercialization`, `Cap (BRL/L)` | Producer agent only (no IPP column) |
+
+All price columns use `numFmt "0.0000"` (BRL/L precision matches ANP publication). Cap column is derived from `(date, tipo_agente)` against the seed timeline in `anp_subsidy_caps` (0.32 unified before 2026-04-07; 1.52 importador / 1.12 produtor from 2026-04-07; NULL before 2026-03-13).
+
+### CSV — `single-with-discriminator`
+
+One CSV file with a `tipo_agente` column splitting Importador vs Produtor rows. Schemas differ between agents (Importador has `ipp`/`ipp_adjusted`; Produtor has `petrobras`/`petrobras_adjusted`); the library handles the heterogeneous union per the contract's CSV spec.
+
+### Internal contract — `rowsAsync` + memoization
+
+The underlying RPC `rpcGetSubsidyTrackerDiesel()` already returns BOTH agents in a single call (13 columns). The spec memoizes one in-flight promise (30s TTL) so the Excel `Importador` sheet, Excel `Produtor` sheet and both CSV slices share a single network roundtrip per click. `regions_importador` / `regions_produtor` are intentionally excluded from export — they are UI affordances only. `reimb_importador` / `reimb_produtor` are also excluded (the per-row reimbursement is implicit from `ref − comm` clipped to `cap`; consumers can recompute or use the dashboard chart).
 
 ## Hook contract (`useSubsidyTrackerData.ts`)
 
