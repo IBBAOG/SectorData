@@ -27,6 +27,7 @@ import {
   weekToDateRange,
   weekLastDay,
   weekLastDayShort,
+  weekLastDayFormatted,
   compLabel,
 } from "../useDieselGasolineMarginsData";
 
@@ -216,7 +217,7 @@ function buildStackedAreaChart(
   const sorted = [...fuelRows].sort(
     (a, b) => orderedWeeks.indexOf(a.week) - orderedWeeks.indexOf(b.week),
   );
-  const xWeeks  = sorted.map((r) => weekLastDay(r.week));
+  const xWeeks  = sorted.map((r) => weekLastDayFormatted(r.week));
   const lastRow = sorted[sorted.length - 1];
   const lastX   = xWeeks[xWeeks.length - 1];
 
@@ -254,7 +255,7 @@ function buildStackedAreaChart(
       margin: { t: 40, b: 80, l: 65, r: 75 },
       hovermode: "x unified",
       yaxis: { ...YAXIS_BASE, title: { text: "BRL/litro" } },
-      xaxis: { ...XAXIS_BASE, categoryarray: orderedWeeks.map(weekLastDay) },
+      xaxis: { ...XAXIS_BASE, categoryarray: orderedWeeks.map(weekLastDayFormatted) },
       legend: { orientation: "h", yanchor: "bottom", y: 1.02, xanchor: "left", x: 0 },
       annotations: annotations as Layout["annotations"],
     },
@@ -273,7 +274,7 @@ function buildMarginComparisonChart(
     const fuelRows = [...rows.filter((r) => r.fuel_type === ft)].sort(
       (a, b) => orderedWeeks.indexOf(a.week) - orderedWeeks.indexOf(b.week),
     );
-    const xs = fuelRows.map((r) => weekLastDay(r.week));
+    const xs = fuelRows.map((r) => weekLastDayFormatted(r.week));
     const ys = fuelRows.map((r) => Number(r.distribution_and_resale_margin ?? 0));
 
     if (xs.length > 0) {
@@ -305,7 +306,7 @@ function buildMarginComparisonChart(
       margin: { t: 40, b: 80, l: 65, r: 75 },
       hovermode: "x unified",
       yaxis: { ...YAXIS_BASE, title: { text: "BRL/litro" } },
-      xaxis: { ...XAXIS_BASE, categoryarray: orderedWeeks.map(weekLastDay) },
+      xaxis: { ...XAXIS_BASE, categoryarray: orderedWeeks.map(weekLastDayFormatted) },
       legend: { orientation: "h", yanchor: "bottom", y: 1.02, xanchor: "left", x: 0 },
       annotations: annotations as Layout["annotations"],
     },
