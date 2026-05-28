@@ -46,15 +46,17 @@ import { useHomeData, type HomeCardDef, type HomeCategory } from "../useHomeData
 import TeamCard from "@/components/home/mobile/TeamCard";
 
 // ── Hidden slugs ─────────────────────────────────────────────────────────
-// Mirrors commit 022f41bc — desktop-only + non-gallery routes.
-// 2026-05-28: stocks + news-hunter restored to the gallery as the MARKETS
-// group (light-yellow tint). /stocks is mobile-excluded and will bounce via
-// MobileExcludedRedirect; /news-hunter renders fine on mobile.
+// Mirrors commit 022f41bc — desktop-only + non-gallery routes. /stocks and
+// /news-hunter are mobile-excluded routes; their entry points on mobile are
+// the floating MobileNewsHunterPill / mobile chrome — never the /home grid.
 const HIDE_FROM_MOBILE_HOME = new Set<string>([
   "alerts",
   "admin-panel",
   "admin-analytics",
   "profile",
+  // Markets — desktop-only or surfaced via floating pill, not the gallery
+  "stocks",
+  "news-hunter",
   // Desktop-only dashboards (post-mobile-reform 2026-05-27)
   "anp-cdp",
   "anp-prices",
@@ -68,7 +70,6 @@ interface SectionDef {
   color: string;
 }
 const SECTIONS: SectionDef[] = [
-  { id: "markets", title: "Markets", color: "#a16207" },
   { id: "oilgas", title: "Oil & Gas", color: "#FF5000" },
   { id: "fuel", title: "Fuel Distribution", color: "#10A065" },
 ];
@@ -88,17 +89,6 @@ interface RappiSlugMeta {
 }
 
 const RAPPI_META: Record<string, RappiSlugMeta> = {
-  // Markets (light yellow tint, 2026-05-28)
-  "stocks": {
-    bgVar: "var(--mobile-home-tile-stocks-bg)",
-    fgVar: "var(--mobile-home-tile-stocks-fg)",
-    label: "Market Watch",
-  },
-  "news-hunter": {
-    bgVar: "var(--mobile-home-tile-news-hunter-bg)",
-    fgVar: "var(--mobile-home-tile-news-hunter-fg)",
-    label: "News Hunter",
-  },
   // Oil & Gas
   "well-by-well": {
     bgVar: "var(--mobile-home-tile-well-by-well-bg)",
@@ -163,10 +153,6 @@ const DEFAULT_META: RappiSlugMeta = {
 export default function MobileView(): React.ReactElement {
   const { cardsByCategory } = useHomeData();
 
-  const marketsCards = useMemo<HomeCardDef[]>(
-    () => cardsByCategory.markets.filter((c) => !HIDE_FROM_MOBILE_HOME.has(c.slug)),
-    [cardsByCategory.markets],
-  );
   const oilgasCards = useMemo<HomeCardDef[]>(
     () => cardsByCategory.oilgas.filter((c) => !HIDE_FROM_MOBILE_HOME.has(c.slug)),
     [cardsByCategory.oilgas],
@@ -177,9 +163,9 @@ export default function MobileView(): React.ReactElement {
   );
 
   function cardsForSection(id: SectionDef["id"]): HomeCardDef[] {
-    if (id === "markets") return marketsCards;
     if (id === "oilgas") return oilgasCards;
-    return fuelCards;
+    if (id === "fuel") return fuelCards;
+    return [];
   }
 
   return (

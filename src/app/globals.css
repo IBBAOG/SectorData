@@ -2481,14 +2481,6 @@ a {
      Fuel rows are emerald-tinted.
      ─────────────────────────────────────────────────────────────────────── */
 
-  /* Markets — light yellow family. Added per user request (2026-05-28) to
-     give the MARKETS group cards a soft, low-saturation yellow tint that
-     visually separates them from O&G (peach) and Fuel (emerald). bg #fff8d6
-     is a very low-sat yellow (~yellow-50/100 range); fg #a16207 is amber-700
-     for AA-compliant label contrast (~5.6:1 on bg). */
-  --mobile-home-tile-markets-bg:             #fff8d6;  /* light yellow (yellow-100-ish, low sat) */
-  --mobile-home-tile-markets-fg:             #a16207;  /* amber-700 — AA on light yellow */
-
   /* Oil & Gas — brand-orange family (desktop accent #FF5000).
      Round 8 (2026-05-28): fg recolored from #9a3412 to brand orange #FF5000
      per user request. bg #ffe5d6 unchanged. Trade-off: contrast drops from
@@ -2507,11 +2499,6 @@ a {
   /* Per-slug aliases (Round 3) — each slug points at its category pair so
      all O&G tiles render blue and all Fuel tiles render emerald, matching
      the desktop ModuleGallery accent treatment. */
-  /* Markets */
-  --mobile-home-tile-stocks-bg:              var(--mobile-home-tile-markets-bg);
-  --mobile-home-tile-stocks-fg:              var(--mobile-home-tile-markets-fg);
-  --mobile-home-tile-news-hunter-bg:         var(--mobile-home-tile-markets-bg);
-  --mobile-home-tile-news-hunter-fg:         var(--mobile-home-tile-markets-fg);
   /* Oil & Gas */
   --mobile-home-tile-well-by-well-bg:        var(--mobile-home-tile-oilgas-bg);
   --mobile-home-tile-well-by-well-fg:        var(--mobile-home-tile-oilgas-fg);
@@ -2641,18 +2628,10 @@ a {
        to earthy brand-orange tint. All O&G slugs share peach/orange-800,
        all Fuel slugs share emerald. Source of truth:
        src/components/home/ModuleGallery/index.tsx (ACCENTS map). */
-    --mobile-home-tile-markets-bg:             #fff8d6;  /* light yellow (SSR fallback mirror) */
-    --mobile-home-tile-markets-fg:             #a16207;  /* amber-700 */
     --mobile-home-tile-oilgas-bg:              #ffe5d6;  /* Round 7: peach */
     --mobile-home-tile-oilgas-fg:              #FF5000;  /* Round 8: brand orange (borderline AA Large) */
     --mobile-home-tile-fuel-bg:                #cdf0db;  /* Round 6: softened ~20% sat */
     --mobile-home-tile-fuel-fg:                #047857;
-
-    /* Markets slug aliases */
-    --mobile-home-tile-stocks-bg:              var(--mobile-home-tile-markets-bg);
-    --mobile-home-tile-stocks-fg:              var(--mobile-home-tile-markets-fg);
-    --mobile-home-tile-news-hunter-bg:         var(--mobile-home-tile-markets-bg);
-    --mobile-home-tile-news-hunter-fg:         var(--mobile-home-tile-markets-fg);
 
     /* Oil & Gas slug aliases */
     --mobile-home-tile-well-by-well-bg:        var(--mobile-home-tile-oilgas-bg);

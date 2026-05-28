@@ -51,13 +51,17 @@ interface AccentTokens {
 
 const ACCENTS: Record<HomeCategory, AccentTokens> = {
   markets: {
-    accent:      "#ff5000",
-    accentText:  "#cc3d00",                    // matches --ds-cat-anp-distribution-text
-    soft:        "rgba(255, 80, 0, 0.10)",
-    tile:        "rgba(255, 80, 0, 0.10)",
-    tileHover:   "rgba(255, 80, 0, 0.18)",
-    tileBorder:  "rgba(255, 80, 0, 0.16)",
-    glow:        "rgba(255, 80, 0, 0.22)",
+    // Light-yellow family per user request (2026-05-28) — visually separates
+    // the MARKETS group (Market Watch, News Hunter) from O&G (peach) and
+    // Fuel (emerald). bg #fff8d6 (very low-sat yellow), fg #a16207
+    // (amber-700, AA-compliant ~5.6:1).
+    accent:      "#a16207",                    // amber-700
+    accentText:  "#a16207",
+    soft:        "#fff8d6",                    // light yellow row tint (rest + hover)
+    tile:        "rgba(161, 98, 7, 0.10)",
+    tileHover:   "rgba(161, 98, 7, 0.18)",
+    tileBorder:  "rgba(161, 98, 7, 0.16)",
+    glow:        "rgba(161, 98, 7, 0.22)",
   },
   oilgas: {
     accent:      "#FF5000",                    // brand orange pure (Round 8, per user request)
@@ -235,7 +239,7 @@ export default function ModuleGallery(props: Props): React.ReactElement | null {
           return (
             <div
               key={cat}
-              className={styles.section}
+              className={`${styles.section}${cat === "markets" ? " " + styles.sectionMarkets : ""}`}
               style={accentStyle(cat)}
             >
               <div className={styles.sectionHeader}>
