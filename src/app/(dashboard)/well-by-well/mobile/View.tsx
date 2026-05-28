@@ -270,50 +270,90 @@ function buildHeroStackedSeries(
 
 // ─── Drill (Section 2 + Section 3 sheet) — monthly timeseries chart ─────────
 
+interface DrillSeriesBuild {
+  data: PlotData[];
+  /** YYYY-MM-01 anchors, one per plotted data point. Used by the layout to
+   *  pin `xaxis.tickvals` so the date axis renders EXACTLY one tick per bar,
+   *  regardless of how many months the series covers (see comment below). */
+  months: string[];
+}
+
 /** Reused for both field drill and installation drill — same row shape
- *  (`ProductionFieldTimeseriesRow` ≡ `ProductionInstallationTimeseriesRow`). */
+ *  (`ProductionFieldTimeseriesRow` ≡ `ProductionInstallationTimeseriesRow`).
+ *  Returns both the trace data AND the sorted month anchors so the caller can
+ *  drive explicit `tickvals`/`ticktext`. */
 function buildDrillSeries(
   rows: ProductionFieldTimeseriesRow[] | ProductionInstallationTimeseriesRow[],
-): PlotData[] {
-  if (!rows.length) return [];
-  const sorted = [...rows].sort((a, b) => {
+): DrillSeriesBuild {
+  if (!rows.length) return { data: [], months: [] };
+  // Defensive consolidation: server RPC already GROUPs BY (ano, mes) so we
+  // expect one row per month, but if the canonical-expansion path ever returns
+  // duplicates we collapse them here too — sum oil/water, average hours_rate.
+  // Stops the chart from rendering two stacked bars on the same x-tick (which
+  // Plotly would draw side-by-side at the same date, looking misaligned vs the
+  // axis label).
+  const byMonth = new Map<string, {
+    ano: number; mes: number;
+    oil: number; water: number;
+    hoursSum: number; hoursCount: number;
+  }>();
+  for (const r of rows) {
+    const key = `${String(r.ano).padStart(4, "0")}-${String(r.mes).padStart(2, "0")}`;
+    const cur = byMonth.get(key);
+    if (cur) {
+      cur.oil   += r.oil_bbl_dia;
+      cur.water += r.water_bbl_dia;
+      cur.hoursSum += r.hours_rate;
+      cur.hoursCount += 1;
+    } else {
+      byMonth.set(key, {
+        ano: r.ano, mes: r.mes,
+        oil: r.oil_bbl_dia, water: r.water_bbl_dia,
+        hoursSum: r.hours_rate, hoursCount: 1,
+      });
+    }
+  }
+  const sorted = Array.from(byMonth.values()).sort((a, b) => {
     if (a.ano !== b.ano) return a.ano - b.ano;
     return a.mes - b.mes;
   });
-  const xs = sorted.map(
+  const months = sorted.map(
     (r) => `${String(r.ano).padStart(4, "0")}-${String(r.mes).padStart(2, "0")}-01`,
   );
-  return [
-    {
-      type: "bar",
-      name: "Oil",
-      x: xs,
-      y: sorted.map((r) => bblDiaToKbpd(r.oil_bbl_dia)),
-      marker: { color: TOP_FIELDS_OIL_COLOR },
-      hovertemplate: "Oil: %{y:,.1f} kbpd<extra></extra>",
-      yaxis: "y",
-    } as PlotData,
-    {
-      type: "bar",
-      name: "Water",
-      x: xs,
-      y: sorted.map((r) => bblDiaToKbpd(r.water_bbl_dia)),
-      marker: { color: TOP_FIELDS_WATER_COLOR },
-      hovertemplate: "Water: %{y:,.1f} kbpd<extra></extra>",
-      yaxis: "y",
-    } as PlotData,
-    {
-      type: "scatter",
-      mode: "lines+markers",
-      name: "Hours",
-      x: xs,
-      y: sorted.map((r) => r.hours_rate * 100),
-      line: { color: HOURS_RATE_COLOR, width: 2 },
-      marker: { color: HOURS_RATE_COLOR, size: 5 },
-      hovertemplate: "Hours: %{y:.0f}%<extra></extra>",
-      yaxis: "y2",
-    } as PlotData,
-  ];
+  return {
+    months,
+    data: [
+      {
+        type: "bar",
+        name: "Oil",
+        x: months,
+        y: sorted.map((r) => bblDiaToKbpd(r.oil)),
+        marker: { color: TOP_FIELDS_OIL_COLOR },
+        hovertemplate: "Oil: %{y:,.1f} kbpd<extra></extra>",
+        yaxis: "y",
+      } as PlotData,
+      {
+        type: "bar",
+        name: "Water",
+        x: months,
+        y: sorted.map((r) => bblDiaToKbpd(r.water)),
+        marker: { color: TOP_FIELDS_WATER_COLOR },
+        hovertemplate: "Water: %{y:,.1f} kbpd<extra></extra>",
+        yaxis: "y",
+      } as PlotData,
+      {
+        type: "scatter",
+        mode: "lines+markers",
+        name: "Hours",
+        x: months,
+        y: sorted.map((r) => (r.hoursCount > 0 ? r.hoursSum / r.hoursCount : 0) * 100),
+        line: { color: HOURS_RATE_COLOR, width: 2 },
+        marker: { color: HOURS_RATE_COLOR, size: 5 },
+        hovertemplate: "Hours: %{y:.0f}%<extra></extra>",
+        yaxis: "y2",
+      } as PlotData,
+    ],
+  };
 }
 
 // ─── Sticky top bar — Scope pills (Row A) + Period pills (Row B) ─────────────
@@ -1364,14 +1404,28 @@ export default function MobileView(): React.ReactElement | null {
             >
               Monthly production — Oil + Water (kbpd) · Hours rate (%)
             </div>
-            {drillFieldSeries.length > 0 ? (
+            {drillFieldSeries.data.length > 0 ? (
               <MobileChart
-                data={drillFieldSeries}
+                data={drillFieldSeries.data}
                 height={280}
                 layout={{
                   barmode: "stack",
-                  margin: { l: 40, r: 40, t: 8, b: 36 },
-                  xaxis: { type: "date", tickformat: "%b %y" },
+                  margin: { l: 40, r: 40, t: 8, b: 48 },
+                  // Pin one tick per data-month with explicit tickvals so a
+                  // short series (e.g. a recently-onlined well like WAHOO with
+                  // only 3–4 months of history) doesn't trigger Plotly's
+                  // auto-tick algorithm — which on a sparse date axis picks
+                  // ~4–5 evenly-spaced positions that round to the same month
+                  // label twice (visible bug 2026-05-28: "Feb 26 · Mar 26 ·
+                  // Mar 26 · Apr 26"). Same pattern as the hero chart above.
+                  xaxis: {
+                    type: "date",
+                    tickmode: "array",
+                    tickvals: drillFieldSeries.months,
+                    ticktext: drillFieldSeries.months.map((m) => fmtMonthLabelShort(m)),
+                    tickangle: -90,
+                    tickfont: { size: 10 },
+                  },
                   yaxis: { title: { text: "kbpd" } },
                   yaxis2: {
                     overlaying: "y",
@@ -1382,7 +1436,7 @@ export default function MobileView(): React.ReactElement | null {
                     fixedrange: true,
                   },
                   showlegend: true,
-                  legend: { orientation: "h", y: -0.28, x: 0 },
+                  legend: { orientation: "h", y: -0.34, x: 0 },
                 }}
               />
             ) : (
@@ -1472,14 +1526,24 @@ export default function MobileView(): React.ReactElement | null {
             >
               Monthly production — Oil + Water (kbpd) · Hours rate (%)
             </div>
-            {drillInstSeries.length > 0 ? (
+            {drillInstSeries.data.length > 0 ? (
               <MobileChart
-                data={drillInstSeries}
+                data={drillInstSeries.data}
                 height={280}
                 layout={{
                   barmode: "stack",
-                  margin: { l: 40, r: 40, t: 8, b: 36 },
-                  xaxis: { type: "date", tickformat: "%b %y" },
+                  margin: { l: 40, r: 40, t: 8, b: 48 },
+                  // Same pinned tickvals pattern as the field drill — see
+                  // comment above on why auto-tick on a 3-4 month date axis
+                  // produces duplicate "Mar 26" labels.
+                  xaxis: {
+                    type: "date",
+                    tickmode: "array",
+                    tickvals: drillInstSeries.months,
+                    ticktext: drillInstSeries.months.map((m) => fmtMonthLabelShort(m)),
+                    tickangle: -90,
+                    tickfont: { size: 10 },
+                  },
                   yaxis: { title: { text: "kbpd" } },
                   yaxis2: {
                     overlaying: "y",
@@ -1490,7 +1554,7 @@ export default function MobileView(): React.ReactElement | null {
                     fixedrange: true,
                   },
                   showlegend: true,
-                  legend: { orientation: "h", y: -0.28, x: 0 },
+                  legend: { orientation: "h", y: -0.34, x: 0 },
                 }}
               />
             ) : (
