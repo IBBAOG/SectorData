@@ -191,8 +191,12 @@ export const AMBIENTE_COLOR: Record<string, string> = {
   Terra:  WBW_COLORS.ambiente.Terra,
 };
 
-/** Brand orange — kept for the operating-hours line + active-pill highlight. */
-export const BRAND_ORANGE = WBW_COLORS.hoursRate;
+/** Brand orange (#ff5000) — active-pill highlight, modal accent bar. */
+export const BRAND_ORANGE = WBW_COLORS.currentMonth;
+
+/** Hours-rate line color (mint green #73C6A1) — distinct from brand orange so
+ *  the line does not blend with the water bars which also use #ff5000. */
+export const HOURS_RATE_COLOR = WBW_COLORS.hoursRate;
 
 // ─── Drill-down popup tab state (Phase 2 of /well-by-well drill enrichment) ───
 //
