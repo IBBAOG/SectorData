@@ -30,10 +30,8 @@ import { useCallback, useMemo, useState } from "react";
 import type { PlotData } from "plotly.js";
 
 import {
-  MobileTopBar,
   MobileTabBar,
   MobileChart,
-  MobileHomePill,
 } from "@/components/dashboard/mobile";
 import BarrelLoading from "@/components/dashboard/BarrelLoading";
 import { useModuleVisibilityGuard } from "@/hooks/useModuleVisibilityGuard";
@@ -423,9 +421,6 @@ export default function MobileView(): React.ReactElement {
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      {/* ── Top bar ──────────────────────────────────────────────────────── */}
-      <MobileTopBar title="Price Bands" />
-
       {/* ── Product tab bar (sticky below topbar) ─────────────────────── */}
       <div
         style={{
@@ -757,8 +752,6 @@ export default function MobileView(): React.ReactElement {
         </>
       )}
 
-      {/* ── Global floating Home pill (mobile reform v2) ─────────────────── */}
-      <MobileHomePill />
     </div>
   );
 }
