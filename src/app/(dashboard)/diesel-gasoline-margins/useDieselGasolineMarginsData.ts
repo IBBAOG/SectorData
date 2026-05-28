@@ -142,6 +142,25 @@ export function weekLastDayShort(weekStr: string): string {
   return `${MONTHS_SHORT[end.getMonth()]} ${end.getDate()}`;
 }
 
+/**
+ * "15/2026" → "11-Apr-26"  (dd-mmm-yy, en-US month abbreviation).
+ * Used as x-axis tick labels on all time-series charts in both views.
+ */
+export function weekLastDayFormatted(weekStr: string): string {
+  const parsed = parseWeek(weekStr);
+  if (!parsed) return weekStr;
+  const { weekNum, year } = parsed;
+  const jan4 = new Date(year, 0, 4);
+  const dow = jan4.getDay() || 7;
+  const w1Mon = new Date(year, 0, 4 - dow + 1);
+  const end = new Date(w1Mon);
+  end.setDate(w1Mon.getDate() + (weekNum - 1) * 7 + 5);
+  const dd  = String(end.getDate()).padStart(2, "0");
+  const mmm = MONTHS_SHORT[end.getMonth()];
+  const yy  = String(end.getFullYear()).slice(-2);
+  return `${dd}-${mmm}-${yy}`;
+}
+
 /** Human-readable label per component key + fuel type */
 export function compLabel(key: string, fuelType: string): string {
   if (key === "base_fuel")         return fuelType === "Diesel B" ? "Diesel A"           : "Gasoline A";

@@ -42,6 +42,7 @@ import {
   parseWeek,
   weekLastDay,
   weekLastDayShort,
+  weekLastDayFormatted,
   compLabel,
 } from "../useDieselGasolineMarginsData";
 
@@ -61,7 +62,7 @@ function buildMobileStackedChart(
   );
   if (fuelRows.length === 0) return [];
 
-  const xWeeks = fuelRows.map((r) => weekLastDayShort(r.week));
+  const xWeeks = fuelRows.map((r) => weekLastDayFormatted(r.week));
 
   return STACK_COMPONENTS.map((comp) => ({
     type: "scatter",
@@ -589,7 +590,7 @@ export default function MobileView(): React.ReactElement {
                   xaxis: {
                     type: "category",
                     categoryorder: "array",
-                    categoryarray: visibleWeeks.map(weekLastDayShort),
+                    categoryarray: visibleWeeks.map(weekLastDayFormatted),
                     nticks: 6,
                     tickangle: -45,
                     tickfont: { size: 9 },

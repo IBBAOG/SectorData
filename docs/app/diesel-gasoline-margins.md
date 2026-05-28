@@ -34,7 +34,9 @@ Single source of truth for both Views. Exports:
 | `loading / error` | — | Fetch state |
 | `excelLoading / setExcelLoading` | — | Excel export busy state (shared) |
 
-Also exports week helpers (`parseWeek`, `weekToDateRange`, `weekLastDay`, `weekLastDayShort`, `compLabel`) and constants (`STACK_COLORS`, `ANNOT_COLORS`, `MARGIN_LINE_COLORS`, `STACK_COMPONENTS`, `TABLE_KEYS`) so Views share the same logic and palette.
+Also exports week helpers (`parseWeek`, `weekToDateRange`, `weekLastDay`, `weekLastDayShort`, `weekLastDayFormatted`, `compLabel`) and constants (`STACK_COLORS`, `ANNOT_COLORS`, `MARGIN_LINE_COLORS`, `STACK_COMPONENTS`, `TABLE_KEYS`) so Views share the same logic and palette.
+
+`weekLastDayFormatted` produces `dd-mmm-yy` labels (e.g. `09-Jan-21`, `02-May-26`, en-US month abbreviation). Used exclusively for chart x-axis tick values. `weekLastDay` / `weekLastDayShort` remain for non-chart UI (badges, slider tooltips, table headers).
 
 ### Desktop View — `desktop/View.tsx`
 
