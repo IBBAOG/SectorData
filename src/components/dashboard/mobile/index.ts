@@ -65,6 +65,17 @@ export type { MobileKebabMenuProps } from "./MobileKebabMenu";
 export { default as MobileExcludedRedirect } from "./MobileExcludedRedirect";
 export type { MobileExcludedRedirectProps } from "./MobileExcludedRedirect";
 
+// Onda 2 (2026-05-27) — global toast listener mounted by MobileLayout, plus
+// the capsule launcher used by the rewritten /home mobile view.
+export { default as MobileToastHost } from "./MobileToastHost";
+export type { MobileToastHostProps, AppToastDetail } from "./MobileToastHost";
+
+export { default as MobileHomeCardPill } from "./MobileHomeCardPill";
+export type {
+  MobileHomeCardPillProps,
+  MobileHomeCardPillVariant,
+} from "./MobileHomeCardPill";
+
 // Canonical inline-SVG icon set (P2 audit cleanup, 2026-05-21).
 // Re-exported wholesale so consumers can write
 //   import { FilterIcon, CloseIcon } from "@/components/dashboard/mobile";

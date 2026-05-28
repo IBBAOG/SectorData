@@ -1,222 +1,144 @@
 "use client";
 
-// Mobile view for /home.
+// Mobile view for /home (Onda 2 of the mobile reform, rewrite from scratch).
 //
-// Redesigned 2026-05-28: gallery extracted to <ModuleGallery variant="mobile" />,
-// which carries the same category accent treatment as the desktop variant
-// (colored icon tiles + accent press states + section dot/count badges).
-// Same analysis/structure as desktop — same categories, same visibility logic.
+// Plan reference: /.claude/plans/o-modo-mobile-da-tranquil-giraffe.md § 4.1.
 //
-// Structure:
-//   MobileTopBar  — sticky glass top bar (wordmark + Sign in / avatar)
-//   Greeting      — "Good morning / afternoon / evening, <name>"
-//   Search input  — sticky below top bar, live-filters module list
-//   <ModuleGallery variant="mobile" /> — 3× collapsible sections
-//   MobileBottomTabBar — fixed bottom nav
+// Layout (top → bottom):
+//   1. Sticky header           — owned by MobileLayout (not rendered here).
+//   2. Search bar (sticky)     — full-width Liquid Glass, real-time filter.
+//   3. "Last visited" row      — horizontal scroll, 4 compact pills, only
+//                                rendered when localStorage history exists.
+//   4. Oil & Gas section       — 5 pills in 2-col grid, expanded by default.
+//   5. Fuel Distribution       — 8 pills in 2-col grid, expanded by default.
+//   6. (no Markets section — /stocks, /news-hunter, /alerts excluded.)
+//
+// What we DELIBERATELY don't render here:
+//   • Module thumbnails / images.
+//   • DataSourcesTable (desktop-only since 2026-05-26).
+//   • NewsHunterPanel / Alerts card / Profile/avatar / Stocks card.
+//   • ExportFAB / ExportModal.
+//   • MobileBottomTabBar (replaced by the global Home pill in MobileLayout).
+//   • useDataSourcesFreshness — not imported, not called.
+//
+// Visibility logic comes from `useHomeData()`. We further restrict the visible
+// set to Oil & Gas + Fuel Distribution categories so excluded routes never
+// show up even if module_visibility flags them visible (defence in depth).
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 import {
-  MobileTopBar,
-  MobileBottomTabBar,
-  type MobileBottomTab,
+  MobileHomeCardPill,
   SearchIcon,
+  CloseIcon,
 } from "@/components/dashboard/mobile";
-import { useHomeData } from "../useHomeData";
-import { useUserProfile } from "../../../../context/UserProfileContext";
-import ModuleGallery from "../../../../components/home/ModuleGallery";
+import { useHomeData, type HomeCardDef } from "../useHomeData";
+import { readLastVisited } from "../../../../hooks/useTrackLastVisited";
 
-// Sticky-top offset for category section headers — must equal
-// MobileTopBar height + the height of the sticky search row beneath it.
-// Topbar = 56 (var --mobile-topbar-h), search container = 60.
-const GALLERY_STICKY_TOP = 56 + 60;
+// Slugs that are explicitly excluded from the mobile experience (plan § 3.1).
+// We hide them from the Home gallery regardless of module_visibility — the
+// MobileExcludedRedirect handles the deep-link case.
+const EXCLUDED_FROM_MOBILE_HOME = new Set<string>([
+  "stocks",
+  "news-hunter",
+  "alerts",
+  "admin-panel",
+  "admin-analytics",
+  "profile",
+  "anp-cdp",
+  "anp-prices",
+  "anp-glp",
+]);
+
+// Section metadata in display order (Oil & Gas first per plan).
+interface SectionDef {
+  id: "oilgas" | "fuel";
+  title: string;
+}
+const SECTIONS: SectionDef[] = [
+  { id: "oilgas", title: "Oil & Gas" },
+  { id: "fuel", title: "Fuel Distribution" },
+];
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-function getGreeting(): string {
-  const h = new Date().getHours();
-  if (h < 12) return "Good morning";
-  if (h < 18) return "Good afternoon";
-  return "Good evening";
+/**
+ * Resolves a slug back to its HomeCardDef from the visible-cards list.
+ * Returns undefined when the slug is no longer visible (in which case the
+ * Last-visited row simply skips that entry).
+ */
+function findCardBySlug(
+  cards: HomeCardDef[],
+  slug: string,
+): HomeCardDef | undefined {
+  return cards.find((c) => c.slug === slug);
 }
 
-function getInitials(fullName: string | null | undefined): string {
-  if (!fullName) return "?";
-  const parts = fullName.trim().split(/\s+/);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-function getFirstName(fullName: string | null | undefined): string {
-  if (!fullName) return "there";
-  return fullName.trim().split(/\s+/)[0];
-}
-
-// ── Tab bar icons ─────────────────────────────────────────────────────────
-
-const HOME_TABS: MobileBottomTab[] = [
-  {
-    key: "home",
-    label: "Home",
-    active: true,
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 11.5 12 4l9 7.5" />
-        <path d="M5 10v10h14V10" />
-      </svg>
-    ),
-  },
-  {
-    key: "discover",
-    label: "Discover",
-    active: false,
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="9" />
-        <path d="m9 15 2-6 6-2-2 6z" />
-      </svg>
-    ),
-  },
-  {
-    key: "saved",
-    label: "Saved",
-    active: false,
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M6 4h12v17l-6-4-6 4z" />
-      </svg>
-    ),
-  },
-  {
-    key: "profile",
-    label: "Profile",
-    active: false,
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="8" r="4" />
-        <path d="M4 21a8 8 0 0 1 16 0" />
-      </svg>
-    ),
-  },
-];
-
-// ── Main component ────────────────────────────────────────────────────────
+// ── Component ─────────────────────────────────────────────────────────────
 
 export default function MobileView(): React.ReactElement {
-  const router = useRouter();
-  const { profile, role } = useUserProfile();
-  const {
-    cardsByCategory,
-    search,
-    setSearch,
-    collapsed,
-    toggleCollapsed,
-  } = useHomeData();
+  const { cardsByCategory, visibleCards, search, setSearch } = useHomeData();
+  const [collapsedSections, setCollapsedSections] = useState<
+    Record<SectionDef["id"], boolean>
+  >({ oilgas: false, fuel: false });
 
-  const isAnon = role === "Anon";
-  const initials = getInitials(profile?.full_name);
-  const firstName = isAnon ? "Guest" : getFirstName(profile?.full_name);
+  // Last-visited slugs from localStorage (newest first, capped at 4).
+  // Read once on mount via useMemo so the row stays stable while the user
+  // scrolls /home; it refreshes on the next visit to /home anyway.
+  const lastVisitedSlugs = useMemo<string[]>(() => readLastVisited(), []);
 
-  // When search is active, hide sections that have no matching cards.
+  // Filter excluded routes out of each section's card list. The default home
+  // hook already removes them when visibility is off, but we belt-and-suspender
+  // here to guarantee the mobile gallery cannot show excluded routes even if
+  // an admin flips module_visibility upstream.
+  const oilgasCards = useMemo<HomeCardDef[]>(
+    () => cardsByCategory.oilgas.filter((c) => !EXCLUDED_FROM_MOBILE_HOME.has(c.slug)),
+    [cardsByCategory.oilgas],
+  );
+  const fuelCards = useMemo<HomeCardDef[]>(
+    () => cardsByCategory.fuel.filter((c) => !EXCLUDED_FROM_MOBILE_HOME.has(c.slug)),
+    [cardsByCategory.fuel],
+  );
+
+  const lastVisitedCards = useMemo<HomeCardDef[]>(() => {
+    if (lastVisitedSlugs.length === 0) return [];
+    return lastVisitedSlugs
+      .map((slug) => findCardBySlug(visibleCards, slug))
+      .filter(
+        (c): c is HomeCardDef =>
+          !!c && !!c.href && !EXCLUDED_FROM_MOBILE_HOME.has(c.slug),
+      );
+  }, [lastVisitedSlugs, visibleCards]);
+
   const isSearching = search.trim().length > 0;
 
-  function handleTabChange(key: string) {
-    if (key === "profile") {
-      router.push(isAnon ? "/login" : "/profile");
-    }
+  function toggleSection(id: SectionDef["id"]) {
+    setCollapsedSections((prev) => ({ ...prev, [id]: !prev[id] }));
+  }
+
+  function cardsForSection(id: SectionDef["id"]): HomeCardDef[] {
+    return id === "oilgas" ? oilgasCards : fuelCards;
   }
 
   return (
     <div
       style={{
         background: "var(--mobile-bg)",
-        minHeight: "100dvh",
         fontFamily: "Arial, Helvetica, sans-serif",
         color: "var(--mobile-text)",
         fontSize: 14,
         lineHeight: 1.4,
-        WebkitFontSmoothing: "antialiased",
-        paddingBottom: "calc(var(--mobile-tabbar-h) + var(--mobile-safe-bottom))",
+        // Bottom padding clears the Home pill area (pill is at calc(24px +
+        // safe-bottom), pill height 56) plus a comfy gutter.
+        paddingBottom: "calc(120px + var(--mobile-safe-bottom))",
       }}
     >
-      {/* ── Top bar ─────────────────────────────────────────────────── */}
-      <MobileTopBar
-        leftSlot={
-          <div
-            style={{
-              fontWeight: 700,
-              fontSize: 17,
-              letterSpacing: "0.04em",
-              color: "var(--mobile-text)",
-            }}
-          >
-            SECTORDATA
-            <span style={{ color: "var(--mobile-accent)" }}>.</span>
-          </div>
-        }
-        showThemeToggle={false}
-        showAvatar={!isAnon}
-        avatarInitials={initials}
-        avatarLabel={profile?.full_name ?? "User"}
-        rightSlot={
-          isAnon ? (
-            <Link
-              href="/login"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                padding: "6px 14px",
-                background: "var(--mobile-accent)",
-                color: "#fff",
-                fontWeight: 600,
-                fontSize: 13,
-                borderRadius: 999,
-                textDecoration: "none",
-                letterSpacing: "0.02em",
-                minHeight: 32,
-              }}
-            >
-              Sign in
-            </Link>
-          ) : undefined
-        }
-      />
-
-      {/* ── Greeting ─────────────────────────────────────────────────── */}
-      <section
-        aria-label="Greeting"
-        style={{ padding: "20px 16px 8px", background: "var(--mobile-bg)" }}
-      >
-        <div
-          style={{
-            fontSize: 22,
-            fontWeight: 700,
-            color: "var(--mobile-text)",
-            letterSpacing: "-0.01em",
-            lineHeight: 1.15,
-          }}
-        >
-          {getGreeting()}, {firstName}
-        </div>
-        <div
-          style={{
-            marginTop: 4,
-            fontSize: 14,
-            color: "var(--mobile-text-muted)",
-            lineHeight: 1.4,
-          }}
-        >
-          What would you like to explore?
-        </div>
-      </section>
-
-      {/* ── Search ───────────────────────────────────────────────────── */}
+      {/* ── Search (sticky just below the MobileTopBar) ──────────────── */}
       <div
         style={{
           position: "sticky",
           top: "var(--mobile-topbar-h)",
           zIndex: 25,
-          padding: "8px 16px 12px",
+          padding: "12px 16px",
           background: "var(--mobile-glass-bg)",
           WebkitBackdropFilter: "var(--mobile-glass-blur)",
           backdropFilter: "var(--mobile-glass-blur)",
@@ -238,20 +160,20 @@ export default function MobileView(): React.ReactElement {
           </span>
           <input
             type="search"
-            placeholder="Search modules..."
-            aria-label="Search modules"
+            placeholder="Search dashboards"
+            aria-label="Search dashboards"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{
               width: "100%",
               height: 40,
-              borderRadius: 10,
+              borderRadius: 999,
               border: "1px solid var(--mobile-border)",
               background: "var(--mobile-surface)",
               color: "var(--mobile-text)",
               fontFamily: "inherit",
               fontSize: 14,
-              padding: "0 36px 0 38px",
+              padding: "0 40px 0 38px",
               outline: "none",
               transition: "border-color 0.15s ease, box-shadow 0.15s ease",
             }}
@@ -266,8 +188,8 @@ export default function MobileView(): React.ReactElement {
                 top: "50%",
                 right: 8,
                 transform: "translateY(-50%)",
-                width: 24,
-                height: 24,
+                width: 26,
+                height: 26,
                 display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -278,40 +200,174 @@ export default function MobileView(): React.ReactElement {
                 color: "var(--mobile-text-muted)",
               }}
             >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M18 6 6 18" />
-                <path d="m6 6 12 12" />
-              </svg>
+              <CloseIcon size={14} />
             </button>
           )}
         </div>
       </div>
 
-      {/* ── Module list (glass-coherent gallery) ─────────────────────── */}
-      <main>
-        <ModuleGallery
-          variant="mobile"
-          cardsByCategory={cardsByCategory}
-          onNavigate={(href) => router.push(href)}
-          collapsed={collapsed}
-          toggleCollapsed={toggleCollapsed}
-          hideEmptySections={isSearching}
-          stickyTop={GALLERY_STICKY_TOP}
-        />
-      </main>
+      {/* ── Last visited (hidden if no history or when searching) ────── */}
+      {lastVisitedCards.length > 0 && !isSearching && (
+        <section
+          aria-label="Last visited dashboards"
+          style={{ padding: "20px 0 4px" }}
+        >
+          <div
+            style={{
+              padding: "0 16px",
+              marginBottom: 10,
+              fontSize: 12,
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--mobile-text-muted)",
+            }}
+          >
+            Last visited
+          </div>
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              overflowX: "auto",
+              padding: "2px 16px 14px",
+              scrollSnapType: "x proximity",
+              WebkitOverflowScrolling: "touch",
+            }}
+          >
+            {lastVisitedCards.map((card) => (
+              <div
+                key={card.slug}
+                style={{
+                  scrollSnapAlign: "start",
+                  flex: "0 0 auto",
+                }}
+              >
+                <MobileHomeCardPill
+                  variant="compact"
+                  title={card.title}
+                  href={card.href ?? "#"}
+                />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
-      {/* ── Bottom tab bar ───────────────────────────────────────────── */}
-      <MobileBottomTabBar tabs={HOME_TABS} onChange={handleTabChange} />
+      {/* ── Section list ─────────────────────────────────────────────── */}
+      <div style={{ padding: lastVisitedCards.length > 0 ? "0 16px 24px" : "20px 16px 24px" }}>
+        {SECTIONS.map((section) => {
+          const cards = cardsForSection(section.id);
+          if (cards.length === 0) return null;
+          const collapsed = collapsedSections[section.id];
+
+          return (
+            <section
+              key={section.id}
+              aria-label={section.title}
+              style={{ marginTop: 22 }}
+            >
+              <button
+                type="button"
+                onClick={() => toggleSection(section.id)}
+                aria-expanded={!collapsed}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  padding: "8px 4px",
+                  background: "transparent",
+                  border: 0,
+                  cursor: "pointer",
+                  color: "var(--mobile-text)",
+                  fontFamily: "inherit",
+                  fontSize: 17,
+                  fontWeight: 700,
+                  letterSpacing: "-0.005em",
+                  textAlign: "left",
+                }}
+              >
+                <span>
+                  {section.title}
+                  <span
+                    style={{
+                      marginLeft: 8,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "var(--mobile-text-muted)",
+                      letterSpacing: 0,
+                    }}
+                  >
+                    {cards.length}
+                  </span>
+                </span>
+                <Chevron rotated={!collapsed} />
+              </button>
+              {!collapsed && (
+                <div
+                  style={{
+                    marginTop: 14,
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 10,
+                  }}
+                >
+                  {cards.map((card) => (
+                    <MobileHomeCardPill
+                      key={card.slug}
+                      title={card.title}
+                      href={card.href ?? "#"}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          );
+        })}
+
+        {isSearching &&
+          oilgasCards.length === 0 &&
+          fuelCards.length === 0 && (
+            <div
+              role="status"
+              style={{
+                marginTop: 40,
+                padding: "32px 16px",
+                textAlign: "center",
+                color: "var(--mobile-text-muted)",
+                fontSize: 14,
+              }}
+            >
+              No dashboards match &quot;{search.trim()}&quot;.
+            </div>
+          )}
+      </div>
     </div>
+  );
+}
+
+// ── Section chevron ──────────────────────────────────────────────────────
+function Chevron({ rotated }: { rotated: boolean }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      style={{
+        color: "var(--mobile-text-muted)",
+        transform: rotated ? "rotate(180deg)" : "rotate(0)",
+        transition: "transform 0.18s cubic-bezier(0.4, 0, 0.2, 1)",
+      }}
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
   );
 }

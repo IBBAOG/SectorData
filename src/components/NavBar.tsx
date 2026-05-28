@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import BrandLogo from "./BrandLogo";
 import { getSupabaseClient } from "../lib/supabaseClient";
 import { useUserProfile } from "../context/UserProfileContext";
+import { useIsMobile } from "../hooks/useIsMobile";
 
 
 /* ── Types ─────────────────────────────────────────────────────────────────── */
@@ -141,6 +142,7 @@ function Chevron() {
 export default function NavBar() {
   const router = useRouter();
   const supabase = getSupabaseClient();
+  const isMobile = useIsMobile();
   const {
     profile,
     role,
@@ -192,6 +194,12 @@ export default function NavBar() {
   const isAdmin = role === "Admin";
   const isAnon = role === "Anon";
   const firstName = profile?.full_name?.trim().split(/\s+/)[0] ?? null;
+
+  // Mobile reform (Onda 2, 2026-05-27): the desktop NavBar is hidden on
+  // mobile viewports — `MobileTopBar` + `MobileHomePill` + `MobileKebabMenu`
+  // (mounted by `(dashboard)/layout.tsx`) own all primary navigation. This
+  // guard sits AFTER every hook above to respect React's rules-of-hooks.
+  if (isMobile) return null;
 
   return (
     <nav id="main-navbar" className="navbar navbar-expand-lg sticky-top">
