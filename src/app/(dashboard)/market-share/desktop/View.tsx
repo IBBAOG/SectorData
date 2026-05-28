@@ -9,6 +9,15 @@ import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
 import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
 import ExportPanel from "../../../../components/dashboard/ExportPanel";
 import ExportModal from "../../../../components/dashboard/ExportModal";
+// Export migration wave (2026-05-28): /market-share intentionally keeps the
+// legacy ExportPanel + ExportModal (NOT the new <ExportButton spec={...}/>)
+// because its OOXML embedded line charts (cores fixas + single-quoted
+// numFmt) are not yet covered by the new core. Strategy declared in
+// src/lib/export/dashboards/marketShare.ts; documented in
+// docs/app/market-share.md § Export. Do NOT migrate without coordinating
+// with worker_subgerente-app.
+import { marketShareExport as _marketShareExportPlaceholder } from "../../../../lib/export/dashboards/marketShare";
+void _marketShareExportPlaceholder;
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 import CheckList from "../../../../components/CheckList";
 import SearchableMultiSelect from "../../../../components/SearchableMultiSelect";
