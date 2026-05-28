@@ -1,22 +1,22 @@
 "use client";
 
-// ─── /anp-cdp — dual-view router ─────────────────────────────────────────────
+// ─── /anp-cdp — page router ───────────────────────────────────────────────────
 //
-// Detects the viewport via useIsMobile() and routes to the matching View.
-// All business logic (RPC orchestration, filter state, derivations) lives
-// in `useAnpCdpData` — both Views consume it identically. This file is
-// presentation routing only.
-//
-// Binding sync rule (CLAUDE.md § Dual-view policy): meaningful changes to
-// one View require an equivalent change in the OTHER View in the SAME
-// commit, or the commit must declare [desktop-only] / [mobile-only] with
-// an explicit reason. See docs/app/anp-cdp.md § "Dual-view structure".
+// Mobile is excluded from this dashboard (granular well-by-well explorer is
+// too technical for mobile; /well-by-well covers the executive view instead).
+// MobileExcludedRedirect is a side-effect-only client component that fires on
+// mobile and redirects to /home?excluded=anp-cdp; on desktop it renders null.
+// DesktopView is always rendered (the redirect races it away on mobile before
+// the user sees anything).
 
-import { useIsMobile } from "@/hooks/useIsMobile";
+import MobileExcludedRedirect from "@/components/dashboard/mobile/MobileExcludedRedirect";
 import DesktopView from "./desktop/View";
-import MobileView from "./mobile/View";
 
 export default function AnpCdpPage(): React.ReactElement {
-  const isMobile = useIsMobile();
-  return isMobile ? <MobileView /> : <DesktopView />;
+  return (
+    <>
+      <MobileExcludedRedirect slug="anp-cdp" />
+      <DesktopView />
+    </>
+  );
 }
