@@ -192,7 +192,8 @@ The stacked-area chart ("Exports — By Destination Country") ranks destination 
 │              │     countries by volume + Others). NOT stacked.            │
 │              │     y=null for months with no data; Others omitted for     │
 │              │     months where Σ(vol_m3)==0 in the rest-bucket.          │
-│              │   Import Price Summary table (top-2 + Others, MoM, YoY)     │
+│              │   Import Price Summary table (top-2 + Others)               │
+│              │     6 cols: Country | <M> | <M-1> | MoM% | <Y-1> | YoY%    │
 │              │     Source: mdic_comex. Same 3 rows as chart, 1:1 colors.  │
 │              │                                                             │
 │              │ Exports tab:                                                │
@@ -206,7 +207,8 @@ The stacked-area chart ("Exports — By Destination Country") ranks destination 
 │              │   ChartSection "Export Unit Price..." (Crude Oil only)     │
 │              │     Unit: USD/bbl (1 m³ = 6.2898 bbl). Hidden for Diesel  │
 │              │     and Gasoline. Plotly multi-line, y=null for gaps.      │
-│              │   Export Price Summary table (all top-N, MoM, YoY)         │
+│              │   Export Price Summary table (all top-N)                    │
+│              │     6 cols: Country | <M> | <M-1> | MoM% | <Y-1> | YoY%   │
 │              │     Source: mdic_comex. Colors: PALETTE rotation.           │
 └──────────────┴────────────────────────────────────────────────────────────┘
 ```
@@ -433,9 +435,11 @@ Added 2026-05-28 alongside the Panel C removal. Rendered directly below the corr
 | Column   | Content |
 |----------|---------|
 | Country  | English label as rendered in the Panel D chart legend (Russia, United States, Others, etc.) |
-| Latest   | Latest non-null month value in the selected period, in the unit dictated by the Panel D toggle (USD/ton or ¢/gal) |
-| MoM %    | `(latest − prior_month) / prior_month × 100`. Cell shows `—` if the prior-month value is missing or zero. |
-| YoY %    | `(latest − same_month_year_before) / same_month_year_before × 100`. Cell shows `—` if missing or zero. |
+| `<current month>` | Latest non-null month value in the selected period, in the unit dictated by the Panel D toggle (USD/ton or ¢/gal). Header is dynamic, e.g. "Apr 2026 (USD/ton)". |
+| `<prior month>` | Value for the month immediately preceding the anchor (M-1). Header is dynamic, e.g. "Mar 2026 (USD/ton)". Shows `—` when missing. Muted color (#777). |
+| MoM %    | `(current − prior_month) / prior_month × 100`. Cell shows `—` if the prior-month value is missing or zero. |
+| `<same month prev year>` | Value for the same month one year earlier (Y-1). Header is dynamic, e.g. "Apr 2025 (USD/ton)". Shows `—` when missing. Muted color (#777). |
+| YoY %    | `(current − same_month_year_before) / same_month_year_before × 100`. Cell shows `—` if missing or zero. |
 
 Row count: **always 3** — top-2 origin countries by total `SUM(vol_m3)` in the window + an "Others" row carrying a volume-weighted-average price across the remaining countries. The "Others" monthly value is `Σ(usd_per_m3 × vol_m3) / Σ(vol_m3)`; if `Σ(vol_m3) == 0` for the anchor month, the value is `null` and the row shows `—`.
 
@@ -447,19 +451,21 @@ Unit suffix in the Latest column header follows the active toggle. Switching the
 
 ### Exports Price Summary
 
-Same shape as Imports, but:
+Same 6-column shape as Imports, but:
 
 - **No "Others" row** — every top-N destination returned by the RPC is rendered as its own row. Brazil's crude oil exports diversify across many destinations and the user wants visibility into all of them, so collapsing is intentionally suppressed.
 - **Unit is USD/bbl fixed** (1 m³ = 6.2898 bbl). No toggle.
 - **Only rendered for Crude Oil** (same gate the underlying Export Unit Price chart already uses; the panel is hidden for Diesel/Gasoline because those exports don't currently flow at meaningful volume).
+- Column headers follow the same dynamic pattern as Imports: e.g. "Apr 2026 (USD/bbl)" / "Mar 2026 (USD/bbl)" / "Apr 2025 (USD/bbl)".
 
 Color dots come from the same `PALETTE` rotation the chart uses, in the same `exportsUPEntities` order — table dot and chart legend line up 1:1.
 
 ### Math notes
 
-- Conversions (`USD/m³ → USD/ton`, `USD/m³ → ¢/gal`, `USD/m³ → USD/bbl`) are applied **before** computing MoM% / YoY%. For linear conversions this is mathematically equivalent to applying them after, but it keeps the latest cell value, MoM%, and YoY% in lockstep with the displayed unit.
+- Conversions (`USD/m³ → USD/ton`, `USD/m³ → ¢/gal`, `USD/m³ → USD/bbl`) are applied **before** computing MoM% / YoY% and also applied to the `prevMonth` / `prevYear` absolute values. For linear conversions this is mathematically equivalent to applying them after, but it keeps all five value cells in lockstep with the displayed unit.
 - Density assumptions (Diesel 832, Gasoline 745, Crude Oil 870 kg/m³) match `ncm_densidade_kg_m3` server-side. Refinement is done by updating the table — no code change.
-- The summary derivation lives in the shared hook (`useImportsExportsData.ts`) as the memoized `importsPriceSummary` / `exportsPriceSummary` outputs. Both Views consume them; neither computes anything itself.
+- The summary derivation lives in the shared hook (`useImportsExportsData.ts`) as the memoized `importsPriceSummary` / `exportsPriceSummary` outputs. `PriceSummaryRow` now carries `latest`, `prevMonth`, `momPct`, `prevYear`, `yoyPct`. Both Views consume them; neither computes anything itself.
+- Dynamic column headers (e.g. "Apr 2026", "Mar 2026", "Apr 2025") are derived in `desktop/View.tsx` from `filters.period.end` — the same anchor the hook uses for the price anchor walk-back. Mobile view is unaffected (price summary tables are desktop-only).
 
 ### Cross-source reconciliation (carried over from old Panel C section)
 

@@ -757,16 +757,20 @@ function YoYTable({
   );
 }
 
-// ─── Price summary table (Latest, MoM, YoY) ───────────────────────────────────
+// ─── Price summary table (Current, M-1, MoM%, Y-1, YoY%) ─────────────────────
 //
 // Compact summary rendered directly below the unit-price chart it summarises.
 // Mirrors the YoYTable visual conventions (Bootstrap table-sm table-striped,
-// Arial 12, tabular-nums, MoM/YoY color coding) but with a fixed 4-column
-// layout: Entity · Latest · MoM% · YoY%.
+// Arial 12, tabular-nums, MoM/YoY color coding) with a 6-column layout:
+//   Country · <current month> · <prior month> · MoM% · <same month prev year> · YoY%
+//
+// Column headers are dynamic (e.g. "Apr 2026", "Mar 2026", "Apr 2025") and carry
+// the unit in parentheses (USD/ton, ¢/gal, USD/bbl).
 //
 // Used for both Imports (3 rows: top-2 + Others) and Exports (top-N).
-// `unitLabel` is appended to the Latest column header (USD/ton, ¢/gal, USD/bbl).
-// `rows` already carries the converted `latest` value, so this component is
+// `anchorAno` / `anchorMes` drive the three month labels (period.end from the hook).
+// `unitLabel` is appended to each value column header.
+// `rows` already carries the converted values, so this component is
 // presentation-only — all math happens in the hook.
 
 function PriceSummaryTable({
@@ -774,12 +778,17 @@ function PriceSummaryTable({
   rows,
   loading,
   unitLabel,
+  anchorAno,
+  anchorMes,
   fallbackColorFor,
 }: {
   title: string;
   rows: PriceSummaryRow[];
   loading: boolean;
   unitLabel: string;
+  /** Anchor month (period.end) — drives the three dynamic column headers. */
+  anchorAno: number;
+  anchorMes: number;
   /** For destinations without a pinned palette color, derive a swatch color
    *  from the chart's entity list (PALETTE rotation). Receives the row's
    *  country label, returns a hex string. */
@@ -793,6 +802,24 @@ function PriceSummaryTable({
     );
   }
   if (!rows.length) return null;
+
+  // Dynamic column headers — mirrors YoYTable convention.
+  const currentLbl = formatMonth(anchorAno, anchorMes);
+  const prevMonthCursor =
+    anchorMes === 1
+      ? { ano: anchorAno - 1, mes: 12 }
+      : { ano: anchorAno, mes: anchorMes - 1 };
+  const prevMonthLbl = formatMonth(prevMonthCursor.ano, prevMonthCursor.mes);
+  const priorYearLbl = formatMonth(anchorAno - 1, anchorMes);
+
+  const thStyle: React.CSSProperties = {
+    textAlign: "right",
+    whiteSpace: "nowrap",
+    borderBottom: "2px solid #888",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  };
+
   return (
     <div style={{ marginTop: 12 }}>
       <div
@@ -810,7 +837,7 @@ function PriceSummaryTable({
       <div
         style={{
           overflowY: "auto",
-          overflowX: "hidden",
+          overflowX: "auto",
           border: "1px solid #ececec",
           borderRadius: 4,
         }}
@@ -822,16 +849,19 @@ function PriceSummaryTable({
             fontSize: 12,
             tableLayout: "fixed",
             width: "100%",
+            minWidth: 540,
             margin: 0,
           }}
         >
           <colgroup>
-            {/* Country: 40% — wider entity column for price tables (fewer cols).
-                Remaining 3 value cols share 60% equally (20% each). */}
-            <col style={{ width: "40%" }} />
-            <col style={{ width: "20%" }} />
-            <col style={{ width: "20%" }} />
-            <col style={{ width: "20%" }} />
+            {/* Country: 28% — matches YoYTable entity column width.
+                Five value cols share 72% equally (14.4% each). */}
+            <col style={{ width: "28%" }} />
+            <col style={{ width: "14.4%" }} />
+            <col style={{ width: "14.4%" }} />
+            <col style={{ width: "14.4%" }} />
+            <col style={{ width: "14.4%" }} />
+            <col style={{ width: "14.4%" }} />
           </colgroup>
           <thead
             style={{
@@ -845,13 +875,19 @@ function PriceSummaryTable({
               <th style={{ textAlign: "left", whiteSpace: "nowrap", borderBottom: "2px solid #888", overflow: "hidden", textOverflow: "ellipsis" }}>
                 Country
               </th>
-              <th style={{ textAlign: "right", whiteSpace: "nowrap", borderBottom: "2px solid #888", overflow: "hidden", textOverflow: "ellipsis" }}>
-                Latest ({unitLabel})
+              <th style={thStyle}>
+                {currentLbl} ({unitLabel})
               </th>
-              <th style={{ textAlign: "right", whiteSpace: "nowrap", borderBottom: "2px solid #888", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <th style={thStyle}>
+                {prevMonthLbl} ({unitLabel})
+              </th>
+              <th style={thStyle}>
                 MoM %
               </th>
-              <th style={{ textAlign: "right", whiteSpace: "nowrap", borderBottom: "2px solid #888", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <th style={thStyle}>
+                {priorYearLbl} ({unitLabel})
+              </th>
+              <th style={thStyle}>
                 YoY %
               </th>
             </tr>
@@ -893,7 +929,19 @@ function PriceSummaryTable({
                       fontVariantNumeric: "tabular-nums",
                     }}
                   >
-                    {row.latest.toLocaleString("en-US", { maximumFractionDigits: 2 })}
+                    {row.latest.toLocaleString("en-US", { maximumFractionDigits: 1 })}
+                  </td>
+                  <td
+                    style={{
+                      textAlign: "right",
+                      whiteSpace: "nowrap",
+                      fontVariantNumeric: "tabular-nums",
+                      color: "#777",
+                    }}
+                  >
+                    {row.prevMonth != null
+                      ? row.prevMonth.toLocaleString("en-US", { maximumFractionDigits: 1 })
+                      : "—"}
                   </td>
                   <td
                     style={{
@@ -905,6 +953,18 @@ function PriceSummaryTable({
                     }}
                   >
                     {mom.text}
+                  </td>
+                  <td
+                    style={{
+                      textAlign: "right",
+                      whiteSpace: "nowrap",
+                      fontVariantNumeric: "tabular-nums",
+                      color: "#777",
+                    }}
+                  >
+                    {row.prevYear != null
+                      ? row.prevYear.toLocaleString("en-US", { maximumFractionDigits: 1 })
+                      : "—"}
                   </td>
                   <td
                     style={{
@@ -1906,10 +1966,12 @@ export default function DesktopView(): React.ReactElement {
                   </ChartSection>
 
                   <PriceSummaryTable
-                    title={`Import Price Summary — Latest, MoM, YoY (${importsUPUnitLabel})`}
+                    title={`Import Price Summary — ${formatMonth(filters.period.end.ano, filters.period.end.mes)} vs Prior Periods (${importsUPUnitLabel})`}
                     rows={importsPriceSummary}
                     loading={importsUnitPriceLoading}
                     unitLabel={importsUPUnitLabel}
+                    anchorAno={filters.period.end.ano}
+                    anchorMes={filters.period.end.mes}
                   />
 
                   <div
@@ -2018,10 +2080,12 @@ export default function DesktopView(): React.ReactElement {
                       </ChartSection>
 
                       <PriceSummaryTable
-                        title="Export Price Summary — Latest, MoM, YoY (USD/bbl)"
+                        title={`Export Price Summary — ${formatMonth(filters.period.end.ano, filters.period.end.mes)} vs Prior Periods (USD/bbl)`}
                         rows={exportsPriceSummary}
                         loading={exportsUnitPriceLoading}
                         unitLabel="USD/bbl"
+                        anchorAno={filters.period.end.ano}
+                        anchorMes={filters.period.end.mes}
                         fallbackColorFor={(country) =>
                           colourForEntity(exportsUPEntities, country)
                         }

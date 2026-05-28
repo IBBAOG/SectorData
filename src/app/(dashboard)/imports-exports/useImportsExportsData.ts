@@ -130,8 +130,10 @@ export type { IEUnitPriceRow as UnitPriceRow } from "@/lib/rpc";
 export interface PriceSummaryRow {
   country: string;        // English label as rendered in the chart legend
   latest: number;
-  momPct: number | null;  // null when prior month is missing or zero
-  yoyPct: number | null;  // null when same-month-prev-year is missing or zero
+  prevMonth: number | null; // Converted value for anchor - 1 month; null when missing
+  momPct: number | null;    // null when prior month is missing or zero
+  prevYear: number | null;  // Converted value for same month prev year; null when missing
+  yoyPct: number | null;    // null when same-month-prev-year is missing or zero
   color?: string;
 }
 
@@ -872,11 +874,13 @@ export function useImportsExportsData(): UseImportsExportsData {
     );
 
     // 3. Helper — given a per-month value lookup and an anchor month cursor,
-    // compute latest / mom / yoy on the converted unit.
+    // compute latest / prevMonth / mom / prevYear / yoy on the converted unit.
     type MonthAgg = Map<string, { p: number | null; v: number }>;
     function evaluateSeries(byMonth: MonthAgg): {
       latest: number;
+      prevMonth: number | null;
       momPct: number | null;
+      prevYear: number | null;
       yoyPct: number | null;
     } | null {
       // Find latest non-null month, prefer period.end if present.
@@ -917,6 +921,8 @@ export function useImportsExportsData(): UseImportsExportsData {
       const priorAno = anchorMes === 1 ? anchorAno - 1 : anchorAno;
       const priorKey = `${priorAno}-${String(priorMes).padStart(2, "0")}`;
       const priorEntry = byMonth.get(priorKey);
+      const prevMonth =
+        priorEntry && priorEntry.p != null ? convert(priorEntry.p) : null;
       const momPct =
         priorEntry && priorEntry.p != null && priorEntry.p !== 0
           ? ((latestUsdPerM3 - priorEntry.p) / priorEntry.p) * 100
@@ -925,12 +931,14 @@ export function useImportsExportsData(): UseImportsExportsData {
       // YoY cursor (same month, 1 year back).
       const yoyKey = `${anchorAno - 1}-${String(anchorMes).padStart(2, "0")}`;
       const yoyEntry = byMonth.get(yoyKey);
+      const prevYear =
+        yoyEntry && yoyEntry.p != null ? convert(yoyEntry.p) : null;
       const yoyPct =
         yoyEntry && yoyEntry.p != null && yoyEntry.p !== 0
           ? ((latestUsdPerM3 - yoyEntry.p) / yoyEntry.p) * 100
           : null;
 
-      return { latest, momPct, yoyPct };
+      return { latest, prevMonth, momPct, prevYear, yoyPct };
     }
 
     // 4. Top-2 countries → individual rows.
@@ -943,7 +951,15 @@ export function useImportsExportsData(): UseImportsExportsData {
       if (!ev) continue;
       const englishLabel = ORIGIN_LABEL_BY_DB_DATA[pais] ?? pais;
       const color = ORIGIN_COLOR_BY_LABEL_DATA[englishLabel];
-      out.push({ country: englishLabel, latest: ev.latest, momPct: ev.momPct, yoyPct: ev.yoyPct, color });
+      out.push({
+        country: englishLabel,
+        latest: ev.latest,
+        prevMonth: ev.prevMonth,
+        momPct: ev.momPct,
+        prevYear: ev.prevYear,
+        yoyPct: ev.yoyPct,
+        color,
+      });
     }
 
     // 5. "Others" — volume-weighted monthly average of `rest`.
@@ -979,7 +995,9 @@ export function useImportsExportsData(): UseImportsExportsData {
         out.push({
           country: OTHERS_LABEL_DATA,
           latest: ev.latest,
+          prevMonth: ev.prevMonth,
           momPct: ev.momPct,
+          prevYear: ev.prevYear,
           yoyPct: ev.yoyPct,
           color: OTHERS_COLOR_DATA,
         });
@@ -1348,17 +1366,21 @@ export function useImportsExportsData(): UseImportsExportsData {
       const priorAno = anchorMes === 1 ? anchorAno - 1 : anchorAno;
       const priorKey = `${priorAno}-${String(priorMes).padStart(2, "0")}`;
       const priorEntry = agg.byMonth.get(priorKey);
+      const prevMonth =
+        priorEntry && priorEntry.p != null ? convert(priorEntry.p) : null;
       const momPct =
         priorEntry && priorEntry.p != null && priorEntry.p !== 0
           ? ((anchorEntry.p - priorEntry.p) / priorEntry.p) * 100
           : null;
       const yoyKey = `${anchorAno - 1}-${String(anchorMes).padStart(2, "0")}`;
       const yoyEntry = agg.byMonth.get(yoyKey);
+      const prevYear =
+        yoyEntry && yoyEntry.p != null ? convert(yoyEntry.p) : null;
       const yoyPct =
         yoyEntry && yoyEntry.p != null && yoyEntry.p !== 0
           ? ((anchorEntry.p - yoyEntry.p) / yoyEntry.p) * 100
           : null;
-      out.push({ country: pais, latest, momPct, yoyPct });
+      out.push({ country: pais, latest, prevMonth, momPct, prevYear, yoyPct });
     }
 
     return out;
