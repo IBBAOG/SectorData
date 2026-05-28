@@ -485,6 +485,47 @@ Os 8 componentes compartilhados consumidos por todo `mobile/View.tsx`. Barrel em
 | `StickyBreadcrumb` | Breadcrumb horizontal-scroll com pills, separador `›`, reset `✕` opcional. Sticky por default. | `anp-cdp-mobile.html` `.breadcrumb` |
 | `ExportFAB` (em remoção) | Floating action button bottom-right. **Removido em mobile** pela reforma v2 (plan § 3.4 — Export 100% desktop). Permanece exportado até cleanup workers removerem call-sites. | `market-share-mobile.html` `.fab` |
 | `MobileTabBar` | Segmented control no topo da página (não confundir com bottom nav). Variants `container` (pill cluster com bg laranja) e `underline` (mínimo, só underline). | `navios-diesel-mobile.html` `.seg`, `anp-cdp-mobile.html` `.product-tab` |
+| `MobileHomeIconTile` (NEW — Onda 5, 2026-05-28) | Bento launcher tile: tinted squircle icon badge (44×44, radius 12) + dashboard title (Arial 15/600). 88px tall default / 56px compact (Last-visited row). Liquid Glass v2 layering. Press state: scale 0.97 + orange glow. `excluded` variant dims to opacity 0.82 + "Desktop only" caption. Substitui `MobileHomeCardPill` (deletado). | — (Onda 5 visual refresh) |
+
+### Home icon tiles (Onda 5 — visual refresh, 2026-05-28)
+
+A galeria `/home` mobile usa tiles bento ([`MobileHomeIconTile`](../../src/components/dashboard/mobile/MobileHomeIconTile.tsx)) com **ícone identitário + título**. Cada dashboard recebe seu glyph e cor tint via [`mobileHomeTiles.tsx`](../../src/components/dashboard/mobile/mobileHomeTiles.tsx) — fonte única da verdade pra paleta e mapping.
+
+**Especificações do tile (default variant):**
+
+- **Tamanho:** `min-height: 88px`, full-width do grid 2-col, padding `12px 14px`, gap interno `14px`
+- **Icon badge:** 44×44 squircle (radius 12), centered icon child 24-26px, foreground `tintFg` (default `#fff`), bg `tintBg` (per palette), `box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), 0 1px 2px rgba(0,0,0,0.08)`
+- **Tile body:** `border-radius: 16`, Liquid Glass v2 (gradient shine + `--mobile-glass-bg` + blur + `--mobile-glass-border` + `--mobile-glass-shadow`)
+- **Título:** Arial 15px 600 weight, `color: var(--mobile-text)`, 2-line clamp, `letter-spacing: -0.005em`
+- **Press (`:active`):** `transform: scale(0.97)`, `border-color: var(--mobile-accent)`, `box-shadow: 0 0 0 4px var(--mobile-accent-glow), var(--mobile-glass-shadow)`, transition 150ms
+- **Focus-visible:** `outline: 2px solid var(--mobile-accent)` + `outline-offset: 2px`
+- **Excluded variant** (`excluded={true}`): opacity 0.82 + "Desktop only" sub-caption 11px / 500 weight / `var(--mobile-text-faint)`
+
+**Compact variant** (Last-visited row): `min-height: 56px`, icon 36×36 (radius 10), title 13px single-line nowrap, `min-width: 168px` para densidade visual.
+
+**Paleta `TILE_PALETTE`** (slug → tintBg):
+
+| Dashboard | Tint background | Icon |
+|---|---|---|
+| `well-by-well` | `#0c4a6e` petroleum blue | `PumpJackIcon` |
+| `anp-cdp` | `#475569` slate | `GranularDataIcon` |
+| `anp-cdp-bsw` | `#0891b2` teal | `WaterDropIcon` |
+| `anp-cdp-depletion` | `#7c3aed` purple | `HourglassIcon` |
+| `anp-cdp-diaria` | `#4f46e5` indigo | `CalendarDayIcon` |
+| `market-share` | `#059669` emerald | `PieChartIcon` |
+| `price-bands` | `#0284c7` sky | `ChartBandsIcon` |
+| `subsidy-tracker` | `#d97706` amber | `ReceiptIcon` |
+| `diesel-gasoline-margins` | `#ff5000` brand orange | `GaugeIcon` |
+| `anp-prices` | `#e11d48` rose | `PriceTagIcon` |
+| `anp-glp` | `#0e7490` cyan | `GasCylinderIcon` |
+| `imports-exports` | `#9333ea` violet | `GlobeArrowsIcon` |
+| `navios-diesel` | `#1e3a8a` navy | `ShipIcon` |
+
+> **Taxonomy:** Oil & Gas leans petroleum/earth tones (slate, teal, indigo, navy, purple) para evocar geologia/exploração. Fuel Distribution leans commercial (emerald, sky, amber, orange, rose, cyan, violet, navy) para evocar comércio/markets. Brand orange (`#ff5000`) é reservado pro `/diesel-gasoline-margins` — o dashboard de bomba de combustível que melhor evoca a metáfora da marca.
+
+**13 ícones SVG** (em [`icons.tsx`](../../src/components/dashboard/mobile/icons.tsx), seção `/home tile glyphs`): `PumpJackIcon`, `GranularDataIcon`, `WaterDropIcon`, `HourglassIcon`, `CalendarDayIcon`, `PieChartIcon`, `ChartBandsIcon`, `ReceiptIcon`, `GaugeIcon`, `PriceTagIcon`, `GasCylinderIcon`, `GlobeArrowsIcon`, `ShipIcon`. Mesmas convenções do icon set canônico (viewBox 24×24, stroke-only `currentColor`, `strokeWidth: 1.75`, `linecap/linejoin: round`). Consumed via `getTileMeta(slug, "default" | "compact")`.
+
+**Consumer único:** `/home/mobile/View.tsx`. Se outro lugar quiser renderizar um tile de dashboard, importe `getTileMeta` + `MobileHomeIconTile`. Não duplique o palette.
 
 ### Uso rápido
 

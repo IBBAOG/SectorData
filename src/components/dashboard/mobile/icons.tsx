@@ -378,3 +378,177 @@ export const ArrowsLeftRightIcon = (p: IconProps) => (
     <path d="M18 9l3 3-3 3" />
   </Icon>
 );
+
+// ─── /home tile glyphs (Onda 5 — visual refresh, 2026-05-28) ─────────────────
+//
+// One identity-recognisable glyph per dashboard tile in the mobile /home grid.
+// Conventions for this group:
+//   • viewBox 24×24, stroke-only (matches the rest of the icon set).
+//   • Slightly thicker default strokeWidth (consumers pass strokeWidth={1.75}
+//     so the glyph reads at the 24-28px tile size in front of a tinted bg).
+//   • Children render in the tile's foreground colour (white by default) via
+//     `currentColor` — no hard-coded fills/strokes inside the glyph itself.
+//
+// Mapping `slug → component` lives in MobileHomeIconTile.tsx (TILE_PALETTE).
+
+/** Pumpjack / oil derrick. Identity glyph for /well-by-well. */
+export const PumpJackIcon = (p: IconProps) => (
+  <Icon {...p}>
+    {/* Ground line + base */}
+    <line x1="3" y1="20" x2="21" y2="20" />
+    {/* Triangular A-frame (the derrick body) */}
+    <path d="M7 20 L12 8 L17 20" />
+    {/* Beam over the pivot (the walking beam) */}
+    <line x1="6" y1="9" x2="18" y2="9" />
+    {/* Counterweight on the rear, drop-rod on the front */}
+    <circle cx="6" cy="9" r="1.2" />
+    <line x1="18" y1="9" x2="18" y2="14" />
+  </Icon>
+);
+
+/** Layered horizontal bars — "granular data". Identity glyph for /anp-cdp. */
+export const GranularDataIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <line x1="4" y1="6" x2="20" y2="6" />
+    <line x1="4" y1="10" x2="15" y2="10" />
+    <line x1="4" y1="14" x2="18" y2="14" />
+    <line x1="4" y1="18" x2="12" y2="18" />
+    {/* Tick marks evoking individual well/row entries */}
+    <line x1="4" y1="4.5" x2="4" y2="19.5" />
+  </Icon>
+);
+
+/** Water droplet. Identity glyph for /anp-cdp-bsw (Basic Sediment & Water). */
+export const WaterDropIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 3 C 8 9, 5 12, 5 15.5 A 7 7 0 0 0 19 15.5 C 19 12, 16 9, 12 3 Z" />
+    {/* Tiny shine reflection */}
+    <path d="M9.5 14 C 9.5 16, 10.5 17, 12 17" />
+  </Icon>
+);
+
+/** Hourglass — depletion / decline. Identity glyph for /anp-cdp-depletion. */
+export const HourglassIcon = (p: IconProps) => (
+  <Icon {...p}>
+    {/* Top and bottom caps */}
+    <line x1="5" y1="3" x2="19" y2="3" />
+    <line x1="5" y1="21" x2="19" y2="21" />
+    {/* The two triangles meeting at the waist */}
+    <path d="M6 3 L18 3 L12 12 L18 21 L6 21 L12 12 Z" />
+    {/* Sand grain at the waist */}
+    <circle cx="12" cy="12" r="0.6" fill="currentColor" />
+  </Icon>
+);
+
+/** Calendar with a single highlighted day. Identity glyph for /anp-cdp-diaria. */
+export const CalendarDayIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="5" width="18" height="16" rx="2" ry="2" />
+    <line x1="3" y1="10" x2="21" y2="10" />
+    <line x1="8" y1="3" x2="8" y2="7" />
+    <line x1="16" y1="3" x2="16" y2="7" />
+    {/* Highlighted day cell */}
+    <rect x="10.5" y="13" width="3" height="3" fill="currentColor" stroke="none" />
+  </Icon>
+);
+
+/** Pie chart with one slice rotated out. Identity glyph for /market-share. */
+export const PieChartIcon = (p: IconProps) => (
+  <Icon {...p}>
+    {/* Outer ring */}
+    <circle cx="12" cy="12" r="9" />
+    {/* Two slice separators meeting at centre */}
+    <path d="M12 3 L12 12 L20.5 12" />
+  </Icon>
+);
+
+/** Line chart with shaded bands. Identity glyph for /price-bands. */
+export const ChartBandsIcon = (p: IconProps) => (
+  <Icon {...p}>
+    {/* Axis */}
+    <line x1="3" y1="20" x2="21" y2="20" />
+    <line x1="3" y1="20" x2="3" y2="4" />
+    {/* Upper-band envelope */}
+    <path d="M3 8 C 8 6, 12 10, 17 7 S 21 9, 21 9" />
+    {/* Mid line (price) */}
+    <path d="M3 13 C 7 11, 11 14, 15 12 S 21 14, 21 14" />
+    {/* Lower-band envelope */}
+    <path d="M3 17 C 7 15, 12 18, 17 15 S 21 17, 21 17" />
+  </Icon>
+);
+
+/** Receipt / invoice. Identity glyph for /subsidy-tracker. */
+export const ReceiptIcon = (p: IconProps) => (
+  <Icon {...p}>
+    {/* Body of the receipt with the iconic zig-zag bottom */}
+    <path d="M5 3 H 19 V 21 L 17 19.5 L 15 21 L 13 19.5 L 11 21 L 9 19.5 L 7 21 L 5 19.5 Z" />
+    {/* Lines of items */}
+    <line x1="8" y1="8" x2="16" y2="8" />
+    <line x1="8" y1="12" x2="14" y2="12" />
+    <line x1="8" y1="16" x2="13" y2="16" />
+  </Icon>
+);
+
+/** Round speed gauge with needle. Identity glyph for /diesel-gasoline-margins. */
+export const GaugeIcon = (p: IconProps) => (
+  <Icon {...p}>
+    {/* Half-circle gauge */}
+    <path d="M4 16 A 8 8 0 0 1 20 16" />
+    {/* Needle pointing top-right at "high" */}
+    <line x1="12" y1="16" x2="16.5" y2="9.5" />
+    {/* Pivot */}
+    <circle cx="12" cy="16" r="1" fill="currentColor" stroke="none" />
+    {/* Tick marks at left and right ends */}
+    <line x1="4" y1="16" x2="5.5" y2="15" />
+    <line x1="20" y1="16" x2="18.5" y2="15" />
+  </Icon>
+);
+
+/** Price tag with a $ mark. Identity glyph for /anp-prices. */
+export const PriceTagIcon = (p: IconProps) => (
+  <Icon {...p}>
+    {/* Tag body */}
+    <path d="M20 12 L 12 20 L 3 11 V 3 H 11 Z" />
+    {/* Hole */}
+    <circle cx="7" cy="7" r="1.5" />
+  </Icon>
+);
+
+/** Gas cylinder / canister. Identity glyph for /anp-glp. */
+export const GasCylinderIcon = (p: IconProps) => (
+  <Icon {...p}>
+    {/* Valve handle on top */}
+    <rect x="10" y="2.5" width="4" height="2.5" rx="0.5" />
+    {/* Cylinder body */}
+    <rect x="6" y="5" width="12" height="16" rx="2" ry="2" />
+    {/* Label band */}
+    <line x1="6" y1="11" x2="18" y2="11" />
+    <line x1="6" y1="15" x2="18" y2="15" />
+  </Icon>
+);
+
+/** Globe with horizontal arrows (import/export). Identity glyph for /imports-exports. */
+export const GlobeArrowsIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="7" />
+    {/* Meridian + equator */}
+    <ellipse cx="12" cy="12" rx="3" ry="7" />
+    <line x1="5" y1="12" x2="19" y2="12" />
+    {/* Inbound/outbound arrow heads on the equator endpoints */}
+    <polyline points="6.5 10.5 5 12 6.5 13.5" />
+    <polyline points="17.5 10.5 19 12 17.5 13.5" />
+  </Icon>
+);
+
+/** Cargo ship silhouette. Identity glyph for /navios-diesel. */
+export const ShipIcon = (p: IconProps) => (
+  <Icon {...p}>
+    {/* Wheelhouse + cargo stack on deck */}
+    <rect x="9" y="6" width="6" height="4" />
+    <line x1="12" y1="3" x2="12" y2="6" />
+    {/* Hull (trapezoid) */}
+    <path d="M3 13 L 21 13 L 18 18 L 6 18 Z" />
+    {/* Water line waves */}
+    <path d="M3 20 C 5 19, 7 21, 9 20 S 13 21, 15 20 S 19 21, 21 20" />
+  </Icon>
+);

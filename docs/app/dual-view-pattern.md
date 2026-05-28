@@ -167,7 +167,7 @@ Layout primitives (composed inside the View body):
 - `MobileChart` — viewport-aware Plotly wrapper
 - `MobileDataCard` — touch-friendly KPI card
 - `StickyBreadcrumb` — sticky context bar
-- `MobileHomeCardPill` — capsule launcher used by `/home v2` (variants `default` / `compact`)
+- `MobileHomeIconTile` — bento launcher tile used by `/home` mobile (variants `default` / `compact`); tinted squircle icon badge + title, paired with `getTileMeta(slug)` from `mobileHomeTiles.tsx` for the palette + glyph mapping
 
 Global chrome (mounted ONCE by `MobileShell`, NOT by individual Views):
 - `MobileTopBar` (centered SectorData wordmark on `leftSlot`, `MobileKebabMenu` on `rightSlot`)
@@ -285,7 +285,7 @@ Enforcement layers:
 | [`src/components/dashboard/mobile/MobileKebabMenu.tsx`](../../src/components/dashboard/mobile/MobileKebabMenu.tsx) | 3-dot button in top bar `rightSlot`. Opens a `BottomSheet` with Sign out. Auto-hides for Anon. |
 | [`src/components/dashboard/mobile/MobileExcludedRedirect.tsx`](../../src/components/dashboard/mobile/MobileExcludedRedirect.tsx) | Side-effect component mounted by excluded-route `page.tsx`. Fires `router.replace` + `app-toast` on mobile; `null` on desktop. |
 | [`src/components/dashboard/mobile/MobileToastHost.tsx`](../../src/components/dashboard/mobile/MobileToastHost.tsx) | Global listener for `window` `app-toast` `CustomEvent`. Renders a single Liquid Glass pill (`info`/`warning`/`error`). Mounted by `MobileShell`. |
-| [`src/components/dashboard/mobile/MobileHomeCardPill.tsx`](../../src/components/dashboard/mobile/MobileHomeCardPill.tsx) | Capsule launcher used exclusively by `/home v2` mobile. Variants `default` / `compact`. |
+| [`src/components/dashboard/mobile/MobileHomeIconTile.tsx`](../../src/components/dashboard/mobile/MobileHomeIconTile.tsx) | Bento launcher tile used exclusively by `/home` mobile (Onda 5 visual refresh, 2026-05-28). Tinted squircle icon badge (44×44) + dashboard title; variants `default` (88px) / `compact` (56px). Liquid Glass v2 layering. Pair with `getTileMeta(slug)` from [`mobileHomeTiles.tsx`](../../src/components/dashboard/mobile/mobileHomeTiles.tsx) — single source of truth for the 13-slug palette + icon mapping. |
 | [`src/hooks/useTrackLastVisited.ts`](../../src/hooks/useTrackLastVisited.ts) | Mounts a fire-and-forget effect that pushes the current pathname slug onto a FIFO of 4 entries in `localStorage["sd_last_visited"]`. Exports `readLastVisited()` for consumers. |
 
 Mobile design tokens (`--mobile-bg`, `--mobile-text`, `--mobile-text-muted`, `--mobile-accent`, `--mobile-accent-glow`, `--mobile-glass-bg`, `--mobile-glass-border`, `--mobile-glass-blur`, `--mobile-glass-shadow`, `--mobile-row-press`, `--mobile-safe-top`, `--mobile-safe-bottom`, `--mobile-topbar-h`, `--mobile-tabbar-h`, `--mobile-up`, `--mobile-down`) live in `src/app/globals.css` "Mobile design system" block — light-only, no dark variants.
