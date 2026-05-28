@@ -11,10 +11,9 @@ import BrandLogo from "../../../../components/BrandLogo";
 import { useModuleVisibilityGuard } from "../../../../hooks/useModuleVisibilityGuard";
 import PlotlyChart from "../../../../components/PlotlyChart";
 import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
-import ExportPanel from "../../../../components/dashboard/ExportPanel";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
-import { downloadDgMarginsExcel } from "../../../../lib/exportExcel";
-import { downloadCsv } from "../../../../lib/exportCsv";
+import { ExportButton } from "@/lib/export";
+import { dgMarginsExport } from "@/lib/export/dashboards/dgMargins";
 import {
   useDieselGasolineMarginsData,
   type DgMarginsRow,
@@ -539,7 +538,7 @@ export default function DesktopView(): React.ReactElement {
   const {
     allRows, filteredRows, weeks, weekRange, setWeekRange,
     visibleWeeks, latestVisibleWeek,
-    loading, excelLoading, setExcelLoading,
+    loading,
   } = useDieselGasolineMarginsData();
 
   const marginChart   = useMemo(() => buildMarginComparisonChart(filteredRows, visibleWeeks), [filteredRows, visibleWeeks]);
@@ -592,41 +591,7 @@ export default function DesktopView(): React.ReactElement {
                 }
                 lang="en"
                 hideDivider
-                rightSlot={
-                  <ExportPanel
-                    style={{ minWidth: 160, flexShrink: 0 }}
-                    actions={[
-                      {
-                        kind: "excel",
-                        label: "formatted data .xl",
-                        busy: excelLoading,
-                        loadingLabel: "Generating Excel...",
-                        disabled: loading || filteredRows.length === 0 || excelLoading,
-                        onClick: async () => {
-                          setExcelLoading(true);
-                          try {
-                            await downloadDgMarginsExcel(filteredRows);
-                          } catch (e) {
-                            console.error("Excel export failed", e);
-                          } finally {
-                            setExcelLoading(false);
-                          }
-                        },
-                      },
-                      {
-                        kind: "csv",
-                        label: "all data .csv",
-                        disabled: loading || filteredRows.length === 0,
-                        onClick: () => {
-                          downloadCsv({
-                            rows: filteredRows as unknown as Record<string, unknown>[],
-                            filename: "Diesel-Gasoline-Margins",
-                          });
-                        },
-                      },
-                    ]}
-                  />
-                }
+                rightSlot={<ExportButton spec={dgMarginsExport} />}
               />
 
               {loading ? (

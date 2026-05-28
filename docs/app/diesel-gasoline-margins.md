@@ -45,7 +45,7 @@ Verbatim migration of the previous `page.tsx` body. Layout:
 - Distribution & Resale Margin comparison line chart (both fuels)
 - Weekly variations tables (WoW, −4 Weeks, QTD, YoY) — Diesel B + Gasoline C side-by-side
 - Stacked area charts (Diesel B + Gasoline C price composition)
-- `ExportPanel` (Tier 1 — Excel + CSV direct download)
+- `<ExportButton spec={dgMarginsExport} />` (unified library — Tier 1, 2 sheets, no filters; see Export section below)
 
 ### Mobile View — `mobile/View.tsx`
 
@@ -149,9 +149,25 @@ Both views share `MARGIN_LINE_COLORS` via the hook — no per-view color overrid
 
 ## Export
 
-Tier 1 — download direto via `<ExportPanel>` (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
+Tier 1 — download direto via `<ExportButton spec={dgMarginsExport} />` na unified library (ver [`docs/app/export-library-contract.md`](export-library-contract.md)).
 
-- Excel: `downloadDgMarginsExcel` (handler dedicado pré-existente em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts)) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
-- CSV: `downloadCsv<T>` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) — adicionado nesta rodada (RFC4180, UTF-8).
-- Filename pattern: `DieselGasolineMargins_DD-MM-YY.<xlsx|csv>`.
-- Dados exportados: linhas atualmente em estado da página (saída de `get_dg_margins_data` aplicada com filtros de fuel_type e período de semanas).
+- **Spec file:** [`src/lib/export/dashboards/dgMargins.ts`](../../src/lib/export/dashboards/dgMargins.ts) (owner `worker_dash-margins`).
+- **`filename`:** `"DGMargins"` → `DGMargins_DD-MM-YY.<xlsx|csv>`.
+- **`tier`:** 1 (no modal — two buttons, direct download).
+- **`filterSource`:** `"none"` — sempre exporta histórico completo, ambos os fuel types, sem filtros aplicados (decidido pelo CTO).
+- **Excel:** 2 sheets — `Diesel B` e `Gasoline C`. Colunas por sheet (mesma ordem, headers per-fuel override no biofuel e base_fuel):
+
+  | key | Diesel B header | Gasoline C header | numFmt |
+  |---|---|---|---|
+  | `week` | Week | Week | (text) |
+  | `distribution_and_resale_margin` | Distribution & Resale Margin | Distribution & Resale Margin | `0.00` |
+  | `state_tax` | State Tax | State Tax | `0.00` |
+  | `federal_tax` | Federal Tax | Federal Tax | `0.00` |
+  | `biofuel_component` | **Biodiesel** | **Anhydrous Ethanol** | `0.00` |
+  | `base_fuel` | **Diesel A** | **Gasoline A** | `0.00` |
+  | `total` | Total | Total | `0.00` |
+
+  Per-sheet `rowsAsync` chama `rpcGetDgMarginsData(fuel_type)` — uma chamada por sheet, sem filtros.
+- **CSV:** `mode: "single-with-discriminator"`, `discriminatorColumn: "fuel_type"`. Um único `.csv` com a coluna `fuel_type` distinguindo Diesel B e Gasoline C (valores idênticos aos da coluna do banco).
+- **Charts (Excel):** nenhum (stacked bar descartado pelo CTO — só dados tabulares).
+- **Mobile:** export desabilitado por política da reforma mobile v2 (§ 3.4) — `ExportButton` retorna `null` em `useIsMobile()`.
