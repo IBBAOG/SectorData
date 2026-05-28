@@ -40,6 +40,7 @@ import {
   getTileMeta,
 } from "@/components/dashboard/mobile";
 import { useHomeData, type HomeCardDef } from "../useHomeData";
+import TeamCard from "@/components/home/mobile/TeamCard";
 
 // Slugs hidden from the gallery. Includes desktop-only dashboards that were
 // previously shown with `excluded={true}` (Onda 7: hidden entirely).
@@ -112,6 +113,9 @@ export default function MobileView(): React.ReactElement {
 
       {/* ── Section list ─────────────────────────────────────────────── */}
       <div style={{ padding: "20px 16px 24px" }}>
+        {/* Team contacts — compact card above module groups (mobile-only). */}
+        <TeamCard />
+
         {SECTIONS.map((section) => {
           const cards = cardsForSection(section.id);
           if (cards.length === 0) return null;
