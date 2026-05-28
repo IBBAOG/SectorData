@@ -246,11 +246,47 @@ Anti-regression:
 
 ## Export
 
-Tier 1 — download direto via `<ExportPanel>` (desktop only).
+Tier 1 — direct download via the unified export library (desktop only).
+Spec lives in [`src/lib/export/dashboards/naviosDiesel.ts`](../../src/lib/export/dashboards/naviosDiesel.ts);
+wired into `DashboardHeader.rightSlot` via `<ExportButton spec={buildNaviosDieselExport(naviosDisplay)} />`.
 
-- Excel: `downloadGenericExcel<T>` em [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) — workbook single-sheet com título brand orange, header preto, dados Arial 10.
-- CSV: `downloadCsv<T>` em [`src/lib/exportCsv.ts`](../../src/lib/exportCsv.ts) (RFC4180, UTF-8).
-- Filename pattern: `Navios-Diesel-Lineup.<xlsx|csv>`.
-- Dados exportados: linhas correspondentes ao estado `naviosDisplay` (saída de `get_nd_navios` já filtrada + `WHERE NOT is_cabotagem`).
+Spec contract (per `docs/app/export-library-contract.md`):
 
-**Mobile:** export removed (§ 3.4 — no `ExportFAB` on mobile; user exports from desktop).
+| Field | Value |
+|---|---|
+| `filename` | `DieselImportsLineUp` → `DieselImportsLineUp_DD-MM-YY.<xlsx\|csv>` |
+| `tier` | 1 (direct download, two buttons, no modal) |
+| `filterSource` | `wysiwyg` — projects the live `naviosDisplay` array (already filters out `ERRO_COLETA` and `Despachado` client-side; the RPC `get_nd_navios` filters `NOT is_cabotagem` server-side via the generated column, see `20260423000001_cabotage_filter.sql`) |
+| Sheet | 1 sheet `Vessels` — title `Diesel Imports Line-Up — Expected / Pending Discharge` |
+| CSV | `mode: "single"` (single flat CSV, same columns as Excel) |
+| Charts | none |
+
+Columns (English headers, hook keys mapped via `toExportRow`):
+
+| Excel header | Hook key | Notes |
+|---|---|---|
+| Port | `porto` | left |
+| Vessel | `navio` | left |
+| Status | `status` | left |
+| Product | `produto` | left |
+| Volume (m³) | `quantidade_m3` (← `quantidade_convertida`) | `#,##0`, right |
+| ETA | `eta` | `yyyy-mm-dd`, center |
+| Discharge Start | `inicio_descarga` | `yyyy-mm-dd`, center |
+| Discharge End | `fim_descarga` | `yyyy-mm-dd`, center |
+| Origin | `origem` | left |
+| IMO | `imo` | center |
+| MMSI | `mmsi` | center |
+| Flag | `flag` | center |
+| Days in Port | `dias_em_porto` | derived in spec — `fim - inicio` (or `now - inicio` while still berthed); `null` while only expected |
+
+Cabotage rule: `is_cabotagem` is filtered at the RPC layer
+(`get_nd_navios`), so by construction every exported row is import-only.
+The spec does NOT re-filter — the binding lives in SQL.
+
+**Mobile:** no export (§ 3.4 of the Mobile reform — `ExportButton` returns
+`null` when `useIsMobile()` is true, so the desktop slot simply doesn't render).
+
+**Legacy:** the previous wiring used `<ExportPanel>` + `downloadGenericExcel`
+from `src/lib/exportExcel.ts` and `downloadCsv` from `src/lib/exportCsv.ts`.
+Both helpers stay in the codebase until every dashboard has migrated to the
+unified library (cleanup is scheduled as a single commit after the wave).
