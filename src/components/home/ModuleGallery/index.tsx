@@ -66,21 +66,33 @@ const ACCENTS: Record<HomeCategory, AccentTokens> = {
     glow:        "rgba(202, 138, 4, 0.30)",   // yellow-600 glow
   },
   oilgas: {
-    accent:      "#FF5000",                    // brand orange pure (Round 8, per user request)
-    accentText:  "#FF5000",                    // borderline WCAG AA on #fff (~3.4:1); passes AA Large only
+    // Round 9 (2026-05-28): bump the icon tile to an OPAQUE pale orange that
+    // matches the vivacity of the Markets yellow chip. The earlier 10%-alpha
+    // brand-orange composited to a near-white wash that read as "no tint";
+    // switching to opaque orange-200 (#ffd4b8) makes the chip visibly orange
+    // at rest, hover-200 → orange-300/400 (#ffb088). The icon stroke moves
+    // from the brand #FF5000 (only ~2.5:1 on #ffd4b8 — fails AA 3:1 for
+    // graphical objects) to orange-800 #9a3412 (≈7.0:1 on #ffd4b8 — passes
+    // AA + AAA). Section dot, accent bar and glow keep the brand orange.
+    accent:      "#FF5000",                    // brand orange (section dot, accent bar)
+    accentText:  "#9a3412",                    // orange-800 — icon stroke + name-on-hover + badge text
     soft:        "rgba(255, 80, 0, 0.10)",
-    tile:        "rgba(255, 80, 0, 0.10)",
-    tileHover:   "rgba(255, 80, 0, 0.18)",
-    tileBorder:  "rgba(255, 80, 0, 0.16)",
+    tile:        "#ffd4b8",                    // OPAQUE orange-200 — readable as orange
+    tileHover:   "#ffb088",                    // orange-300/400 — clearly orange on hover
+    tileBorder:  "rgba(154, 52, 18, 0.20)",
     glow:        "rgba(255, 80, 0, 0.20)",
   },
   fuel: {
-    accent:      "#059669",                    // emerald-600
-    accentText:  "#047857",                    // matches --ds-cat-proprietary-text
+    // Round 9 (2026-05-28): same treatment as oilgas — OPAQUE pale green
+    // (green-200 #bbf7d0) at rest, green-300 (#86efac) on hover. Icon stroke
+    // stays #047857 (emerald-700), which scores ≈4.1:1 on #bbf7d0 — passes
+    // AA for graphical objects (≥3:1). Section dot and glow keep emerald-600.
+    accent:      "#059669",                    // emerald-600 (section dot, accent bar)
+    accentText:  "#047857",                    // emerald-700 — icon stroke (AA on #bbf7d0)
     soft:        "rgba(5, 150, 105, 0.10)",
-    tile:        "rgba(5, 150, 105, 0.10)",
-    tileHover:   "rgba(5, 150, 105, 0.18)",
-    tileBorder:  "rgba(5, 150, 105, 0.16)",
+    tile:        "#bbf7d0",                    // OPAQUE green-200 — readable as green
+    tileHover:   "#86efac",                    // green-300 — clearly green on hover
+    tileBorder:  "rgba(4, 120, 87, 0.20)",
     glow:        "rgba(5, 150, 105, 0.20)",
   },
 };
