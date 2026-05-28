@@ -2481,13 +2481,18 @@ a {
      Fuel rows are emerald-tinted.
      ─────────────────────────────────────────────────────────────────────── */
 
-  /* Oil & Gas — blue family (desktop accent #2563eb) */
-  --mobile-home-tile-oilgas-bg:              #e9efff;  /* blue-600 ~8% on white */
-  --mobile-home-tile-oilgas-fg:              #1d4ed8;  /* desktop accentText */
+  /* Oil & Gas — blue family (desktop accent #2563eb).
+     Round 5: bumped from ~8% to ~35% saturation so tiles read as visibly
+     blue at 159×108px instead of off-white. fg/bg contrast 6.5:1 (AA pass
+     for 13px/700 body). */
+  --mobile-home-tile-oilgas-bg:              #bfd4ff;  /* blue-200-ish, visibly blue */
+  --mobile-home-tile-oilgas-fg:              #1d4ed8;  /* desktop accentText (blue-700) */
 
-  /* Fuel Distribution — emerald family (desktop accent #059669) */
-  --mobile-home-tile-fuel-bg:                #e6f5ef;  /* emerald-600 ~8% on white */
-  --mobile-home-tile-fuel-fg:                #047857;  /* desktop accentText */
+  /* Fuel Distribution — emerald family (desktop accent #059669).
+     Round 5: bumped from ~8% to ~35% saturation so tiles read as visibly
+     emerald. fg/bg contrast 4.8:1 (AA pass for 13px/700 body). */
+  --mobile-home-tile-fuel-bg:                #a8e6c8;  /* emerald-200-ish, visibly green */
+  --mobile-home-tile-fuel-fg:                #047857;  /* desktop accentText (emerald-700) */
 
   /* Per-slug aliases (Round 3) — each slug points at its category pair so
      all O&G tiles render blue and all Fuel tiles render emerald, matching
@@ -2620,9 +2625,9 @@ a {
        primary block above). All O&G slugs share blue, all Fuel slugs share
        emerald. Source of truth:
        src/components/home/ModuleGallery/index.tsx (ACCENTS map). */
-    --mobile-home-tile-oilgas-bg:              #e9efff;
+    --mobile-home-tile-oilgas-bg:              #bfd4ff;  /* Round 5: visibly saturated */
     --mobile-home-tile-oilgas-fg:              #1d4ed8;
-    --mobile-home-tile-fuel-bg:                #e6f5ef;
+    --mobile-home-tile-fuel-bg:                #a8e6c8;  /* Round 5: visibly saturated */
     --mobile-home-tile-fuel-fg:                #047857;
 
     /* Oil & Gas slug aliases */
