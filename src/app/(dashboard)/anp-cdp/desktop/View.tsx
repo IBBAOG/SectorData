@@ -25,8 +25,8 @@ import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
 import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 import ChartSection from "../../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
-import ExportPanel from "../../../../components/dashboard/ExportPanel";
-import ExportModal from "../../../../components/dashboard/ExportModal";
+import { ExportButton } from "@/lib/export";
+import { anpCdpExport } from "@/lib/export/dashboards/anpCdp";
 import { useModuleVisibilityGuard } from "../../../../hooks/useModuleVisibilityGuard";
 import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../../lib/plotlyDefaults";
 
@@ -35,11 +35,9 @@ import {
   METRICS,
   LOCAL_LABELS,
   MONTH_ABBR,
-  ANP_CDP_GRANULARITY_OPTIONS,
   type AnpCdpMetric,
   type AnpCdpSeriePonto,
 } from "../useAnpCdpData";
-import { useState } from "react";
 
 // ─── Chart builder ───────────────────────────────────────────────────────────
 
@@ -229,24 +227,7 @@ export default function DesktopView(): React.ReactElement | null {
     selectedPocos,       setSelectedPocos,
     metric, setMetric,
     pocoOptions, serieXY, serieCustomdata,
-    exportFilters, exportRange, setExportRange,
-    exportBacoes, setExportBacoes,
-    exportOperadores, setExportOperadores,
-    exportLocais, setExportLocais,
-    exportTipos, setExportTipos,
-    exportGranularity, setExportGranularity,
-    exportRawCount, rawOverExcel, rawOverAbs,
-    excelLoading, csvLoading,
-    countFetcher, doExportExcel, doExportCsv,
-    openExportFromCurrentFilters,
   } = data;
-
-  const [exportOpen, setExportOpen] = useState(false);
-
-  function openExportModal() {
-    openExportFromCurrentFilters();
-    setExportOpen(true);
-  }
 
   const chart = useMemo(
     () => buildChart(
@@ -413,24 +394,7 @@ export default function DesktopView(): React.ReactElement | null {
                 title="Monthly Production"
                 sub="Monthly production reported to ANP by well, field, and operator"
                 period={allYears.length > 0 ? [yMin, yMax] : null}
-                rightSlot={
-                  <ExportPanel
-                    actions={[
-                      {
-                        kind: "excel",
-                        label: "Excel",
-                        disabled: loading || excelLoading || csvLoading,
-                        onClick: openExportModal,
-                      },
-                      {
-                        kind: "csv",
-                        label: "CSV",
-                        disabled: loading || excelLoading || csvLoading,
-                        onClick: openExportModal,
-                      },
-                    ]}
-                  />
-                }
+                rightSlot={<ExportButton spec={anpCdpExport} />}
               />
 
               {loading ? (
@@ -459,150 +423,6 @@ export default function DesktopView(): React.ReactElement | null {
         </div>
       </div>
 
-      <ExportModal
-        open={exportOpen}
-        onClose={() => setExportOpen(false)}
-        title="Export — Production"
-        datasetKey="anp_cdp_producao"
-        currentFilters={{ ...exportFilters, _g: exportGranularity }}
-        countFetcher={countFetcher}
-        excelBusy={excelLoading}
-        csvBusy={csvLoading}
-        loadingLabel={excelLoading ? "Generating Excel..." : "Downloading CSV..."}
-        onExportExcel={async () => {
-          await doExportExcel();
-          if (!excelLoading) setExportOpen(false);
-        }}
-        onExportCsv={async () => {
-          await doExportCsv();
-          if (!csvLoading) setExportOpen(false);
-        }}
-        filters={
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: "Arial" }}>
-            {/* Granularity */}
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                Granularity
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {ANP_CDP_GRANULARITY_OPTIONS.map((opt) => (
-                  <div key={opt.value} className="form-check" style={{ marginBottom: 0 }}>
-                    <input
-                      className="form-check-input"
-                      type="radio"
-                      id={`cdp-export-g-${opt.value}`}
-                      name="cdp-export-granularity"
-                      checked={exportGranularity === opt.value}
-                      onChange={() => setExportGranularity(opt.value)}
-                    />
-                    <label
-                      className="form-check-label"
-                      htmlFor={`cdp-export-g-${opt.value}`}
-                      style={{ fontFamily: "Arial", fontSize: 12, cursor: "pointer" }}
-                    >
-                      <strong>{opt.label}</strong>
-                      <span style={{ color: "#888", marginLeft: 6, fontSize: 11 }}>
-                        — {opt.hint}
-                      </span>
-                    </label>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Hard-limit warnings */}
-            {rawOverAbs && (
-              <div
-                style={{
-                  fontSize: 11.5,
-                  fontWeight: 600,
-                  color: "#7a1a1a",
-                  backgroundColor: "#fdecea",
-                  border: "1px solid #f5c2bc",
-                  borderRadius: 4,
-                  padding: "8px 10px",
-                  lineHeight: 1.4,
-                }}
-              >
-                Very high volume ({(exportRawCount ?? 0).toLocaleString("en-US")} rows).
-                Choose an <strong>aggregated granularity</strong> (field, basin, operator,
-                environment, state, or year/month) or apply more filters (basin, operator, period).
-              </div>
-            )}
-            {!rawOverAbs && rawOverExcel && (
-              <div
-                style={{
-                  fontSize: 11.5,
-                  fontWeight: 600,
-                  color: "#7a4a00",
-                  backgroundColor: "#fff3cd",
-                  border: "1px solid #ffe69c",
-                  borderRadius: 4,
-                  padding: "8px 10px",
-                  lineHeight: 1.4,
-                }}
-              >
-                High volume for Excel ({(exportRawCount ?? 0).toLocaleString("en-US")} rows).
-                We recommend downloading as <strong>CSV</strong> (lighter) — Excel may fail in
-                the browser.
-              </div>
-            )}
-
-            <div>
-              <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>Period</div>
-              {allYears.length > 0 && (
-                <PeriodSlider years={allYears} value={exportRange} onChange={setExportRange} />
-              )}
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                  Basins <span style={{ color: "#888", fontWeight: 400 }}>({exportBacoes.length === 0 ? filtros.bacoes.length : exportBacoes.length}/{filtros.bacoes.length})</span>
-                </div>
-                <SearchableMultiSelect
-                  options={filtros.bacoes}
-                  value={exportBacoes}
-                  onChange={setExportBacoes}
-                />
-              </div>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                  Operators <span style={{ color: "#888", fontWeight: 400 }}>({exportOperadores.length === 0 ? filtros.operadores.length : exportOperadores.length}/{filtros.operadores.length})</span>
-                </div>
-                <SearchableMultiSelect
-                  options={filtros.operadores}
-                  value={exportOperadores}
-                  onChange={setExportOperadores}
-                />
-              </div>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                  Environments (Locations)
-                </div>
-                <SearchableMultiSelect
-                  options={allLocais}
-                  value={exportLocais}
-                  onChange={setExportLocais}
-                />
-              </div>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                  Facility Type <span style={{ color: "#888", fontWeight: 400 }}>({exportTipos.length === 0 ? filtros.tipos_instalacao.length : exportTipos.length}/{filtros.tipos_instalacao.length})</span>
-                </div>
-                <SearchableMultiSelect
-                  options={filtros.tipos_instalacao}
-                  value={exportTipos}
-                  onChange={setExportTipos}
-                />
-              </div>
-            </div>
-          </div>
-        }
-      />
     </div>
   );
 }

@@ -1851,6 +1851,64 @@ export async function rpcGetAnpCdpAggregated(
   return allRows;
 }
 
+// ─── /anp-cdp — unified export library wrappers ──────────────────────────────
+//
+// Thin wrappers that align the legacy ANP CDP export RPCs with the naming
+// scheme of the unified export library (`src/lib/export/`). The legacy
+// functions above (`getAnpCdpExportCount`, `fetchAnpCdpRawFiltered`,
+// `rpcGetAnpCdpAggregated`) keep their original signatures so the dashboard
+// hook continues to compile during the cleanup phase. New consumers (the
+// `anpCdpExport` ExportSpec) MUST import the wrappers below.
+
+/**
+ * Row count for the Raw export under the given filters. Powers the size
+ * estimator in the unified ExportModal (Tier 2).
+ *
+ * Server-side RPC: `get_anp_cdp_export_count` (returns `bigint`,
+ * SECURITY DEFINER, see migration `20260507000003_export_count_rpcs.sql`).
+ */
+export async function rpcGetAnpCdpExportCount(
+  supabase: SupabaseClient,
+  filters: AnpCdpExportCountFilters,
+): Promise<number> {
+  return getAnpCdpExportCount(supabase, filters);
+}
+
+/**
+ * Raw export rows — 1 row per (poço × mês), 17 columns matching the
+ * `anp_cdp_producao` table schema exactly. Used by the "Raw" mode in the
+ * unified ExportModal.
+ *
+ * NOTE: a server-side `get_anp_cdp_raw_export` RPC was named in the export
+ * library contract but does NOT currently exist in the database. This wrapper
+ * falls back to the paginated `anp_cdp_producao` SELECT path (already proven
+ * by `fetchAnpCdpRawFiltered`). When/if worker_supabase ships the dedicated
+ * RPC, swap the body here without touching consumers.
+ */
+export async function rpcGetAnpCdpRawExport(
+  supabase: SupabaseClient,
+  filters: AnpCdpExportCountFilters,
+): Promise<AnpCdpRawRow[]> {
+  return fetchAnpCdpRawFiltered(supabase, filters);
+}
+
+/**
+ * Aggregated export rows — 1 row per distinct combination of the requested
+ * `groupBy` dimensions, with NULLs in non-requested dimension columns and
+ * SUM of the 5 metric columns. Used by the "Aggregated" mode in the unified
+ * ExportModal.
+ *
+ * Server-side RPC: `get_anp_cdp_aggregated` (paginated, see
+ * `rpcGetAnpCdpAggregated`).
+ */
+export async function rpcGetAnpCdpAggregatedExport(
+  supabase: SupabaseClient,
+  filters: AnpCdpExportCountFilters,
+  groupBy: AnpCdpGroupBy[],
+): Promise<AnpCdpAggregatedRow[]> {
+  return rpcGetAnpCdpAggregated(supabase, filters, groupBy);
+}
+
 // ─── MODULE: Admin Analytics (/admin-analytics) ──────────────────────────────
 //
 // Read-only Admin dashboard fed by the `app_events` table. All RPCs
