@@ -2086,6 +2086,39 @@ export async function rpcGetAnalyticsHeatmap(
   }
 }
 
+// Hourly bucket aggregation of page_view events for the "Views over time"
+// section of /admin-analytics. RPC returns one row per non-empty hour over
+// the requested window; the UI passes a `bar` trace through Plotly to
+// communicate discrete hourly buckets (rather than a continuous line).
+//
+// Admin-only server-side (RAISE EXCEPTION on non-Admin callers). Same
+// try/catch contract as the other Admin Analytics wrappers — non-Admin or
+// missing RPC degrades silently to []. The page renders an empty state.
+export type AnalyticsViewsByHourPoint = {
+  hour_bucket: string;  // ISO timestamp from date_trunc('hour', created_at)
+  event_count: number;
+};
+
+export async function rpcGetAdminAnalyticsViewsByHour(
+  supabase: SupabaseClient,
+  periodDays = 30,
+): Promise<AnalyticsViewsByHourPoint[]> {
+  try {
+    const { data, error } = await supabase.rpc(
+      "get_admin_analytics_views_by_hour",
+      { p_period_days: periodDays },
+    );
+    if (error) throw error;
+    return ((data ?? []) as AnalyticsViewsByHourPoint[]).map((r) => ({
+      hour_bucket: String(r.hour_bucket ?? ""),
+      event_count: Number(r.event_count ?? 0),
+    }));
+  } catch (e) {
+    console.warn("get_admin_analytics_views_by_hour failed", e);
+    return [];
+  }
+}
+
 // ============================================================
 // MODULE: Subsidy Tracker (/src/app/(dashboard)/subsidy-tracker/page.tsx)
 // ============================================================
