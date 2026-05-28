@@ -206,8 +206,12 @@ interface EndLabel {
   text: string;
 }
 
+/** Data-label format: bare number, no "R$" prefix.
+ * Currency context already lives on the Y-axis (`tickprefix: "R$ "`). Repeating
+ * the prefix on every label clutters the chart, especially when 5 labels stack
+ * at the right edge. */
 function fmtBrl(v: number): string {
-  return `R$ ${v.toFixed(2)}`;
+  return v.toFixed(2);
 }
 
 function buildEndLabels(
@@ -496,41 +500,72 @@ export default function MobileView(): React.ReactElement {
     [rows, filters.product, xMin, xMax, visibleKeys],
   );
 
-  // Deconfliction threshold in data units (R$/L). Typical price range here is
-  // ~R$ 2–7 with ~R$ 0.50 between series; R$ 0.18 keeps labels from touching
-  // while preserving most of the natural alignment.
-  const MIN_LABEL_DELTA = 0.18;
+  // Empirical chart geometry used to translate label font height (pixels) into
+  // data-space (R$/L). Plot height is `height (260) − margin.t (12) − margin.b
+  // (36) = 212px`. The annotation font is 10px Arial bold inside a bordered
+  // pill (`borderpad: 1`), which renders at ~14–16px tall on real devices.
+  // We budget 22px per label so adjacent labels never visually touch even at
+  // 1Y / All zooms where the data range is wide and 1 R$ < 50 px on screen.
+  const PLOT_HEIGHT_PX = 260 - 12 - 36;
+  const LABEL_HEIGHT_PX = 22;
 
-  // Extend the X axis a bit beyond the last data point so the annotation has
-  // room to render without being clipped. ~6% of the visible window is a good
-  // empirical value at typical mobile chart heights.
-  const xRange = useMemo<[string, string] | null>(() => {
-    if (!xMin || !xMax) return null;
-    const tMax = new Date(xMax + "T00:00:00Z").getTime();
-    const tMin = new Date(xMin + "T00:00:00Z").getTime();
-    if (!Number.isFinite(tMax) || !Number.isFinite(tMin) || tMax <= tMin) return null;
-    const padded = new Date(tMax + (tMax - tMin) * 0.18).toISOString().slice(0, 10);
-    return [xMin, padded];
-  }, [xMin, xMax]);
+  // Compute the visible Y range from the actual data inside the period window
+  // so the stacking threshold scales with the chart's current zoom (1M / 3M /
+  // 6M / 1Y / All have wildly different Y spans).
+  const yRange = useMemo<{ min: number; max: number } | null>(() => {
+    const ys: number[] = [];
+    const seriesDefs = filters.product === "Gasoline" ? GAS_SERIES : DSL_SERIES;
+    for (const r of rows) {
+      if (r.product !== filters.product) continue;
+      if (xMin && r.date < xMin) continue;
+      if (xMax && r.date > xMax) continue;
+      for (const s of seriesDefs) {
+        const v = r[s.field as keyof PriceBandsRow];
+        if (typeof v === "number" && Number.isFinite(v)) ys.push(v);
+      }
+    }
+    if (ys.length === 0) return null;
+    let min = Infinity;
+    let max = -Infinity;
+    for (const y of ys) {
+      if (y < min) min = y;
+      if (y > max) max = y;
+    }
+    return { min, max };
+  }, [rows, filters.product, xMin, xMax]);
+
+  // Deconfliction threshold in data units, derived from label font height vs
+  // plot height: `MIN_LABEL_DELTA = (yMax − yMin) × (LABEL_HEIGHT_PX /
+  // PLOT_HEIGHT_PX)`. Plotly auto-pads the Y range by ~6% on each side, so we
+  // inflate the visible span a touch to track the real screen geometry. Fall
+  // back to a conservative absolute value if we have no data.
+  const MIN_LABEL_DELTA = useMemo(() => {
+    if (!yRange) return 0.18;
+    const visibleSpan = (yRange.max - yRange.min) * 1.12; // ~6% pad each side
+    if (visibleSpan <= 0) return 0.18;
+    return visibleSpan * (LABEL_HEIGHT_PX / PLOT_HEIGHT_PX);
+  }, [yRange]);
 
   const annotations = useMemo(() => {
     const resolved = deconflictLabels(endLabels, MIN_LABEL_DELTA);
     return labelsToAnnotations(resolved);
-  }, [endLabels]);
+  }, [endLabels, MIN_LABEL_DELTA]);
 
   const chartLayout = useMemo<Partial<Layout>>(() => ({
     height: 260,
-    // Bumped r from 8 → 60 to leave room for end-of-line annotations (the
-    // labels live in plot area via x-range padding, but extra gutter ensures
-    // tail of widest label has breathing room before the y-axis line on the
-    // right of the plot frame).
-    margin: { l: 44, r: 60, t: 12, b: 36 },
+    // r=70 + xaxis.automargin lets Plotly compute the actual room needed for
+    // tick labels and reserve a fixed pixel gutter for the end-of-line
+    // annotations. We deliberately do NOT extend `xaxis.range` past the last
+    // data point — extending range in data-space was visually pushing the
+    // chart 2+ months into the future (e.g. last point = May 2026 was
+    // rendering ticks up to Jul-26). The pixel-based margin is unit-free.
+    margin: { l: 44, r: 70, t: 12, b: 36 },
     xaxis: {
       type: "date" as const,
       tickformat: "%b-%y",
       nticks: 5,
       tickangle: -30,
-      ...(xRange ? { range: xRange } : {}),
+      automargin: true,
     },
     yaxis: {
       tickformat: ".2f",
@@ -541,7 +576,7 @@ export default function MobileView(): React.ReactElement {
     hovermode: "x unified" as const,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     annotations: annotations as any,
-  }), [xRange, annotations]);
+  }), [annotations]);
 
   // ── Current values (for legend chip subtitle + Petrobras gap table) ──────
   const cv = currentValues[filters.product];
