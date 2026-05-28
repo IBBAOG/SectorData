@@ -1595,6 +1595,41 @@ export async function rpcGetAnpCdpDiariaPocoSerie(
   return allRows;
 }
 
+/**
+ * Count helper for /anp-cdp-diaria export modal.
+ *
+ * Wraps `get_anp_cdp_diaria_export_count(p_nivel, p_filtros)` shipped by
+ * worker_supabase for the unified export library. Returns count(*) for the
+ * chosen nível ("campo" | "instalacao" | "poco") + the filter payload.
+ *
+ * Filter payload (jsonb) is forwarded as-is to the SQL function. Convention:
+ *   { data_inicio, data_fim, campos, instalacoes, pocos }
+ * Any key the SQL function does not recognize is silently ignored, so callers
+ * can pass extra UI-state without breaking the RPC.
+ */
+export async function rpcGetAnpCdpDiariaExportCount(
+  nivel: string,
+  filtros: Record<string, unknown>,
+): Promise<number> {
+  const { getSupabaseClient } = await import("./supabaseClient");
+  const supabase = getSupabaseClient();
+  if (!supabase) return 0;
+  try {
+    const { data, error } = await supabase.rpc("get_anp_cdp_diaria_export_count", {
+      p_nivel:   nivel,
+      p_filtros: filtros,
+    });
+    if (error) {
+      console.error("get_anp_cdp_diaria_export_count failed", error);
+      return 0;
+    }
+    return Number(data ?? 0);
+  } catch (e) {
+    console.error("get_anp_cdp_diaria_export_count failed", e);
+    return 0;
+  }
+}
+
 // ─── MODULE: Export size calculator RPCs (Fase B) ────────────────────────────
 //
 // Each function below mirrors the filter signature of its "sister" serie RPC
