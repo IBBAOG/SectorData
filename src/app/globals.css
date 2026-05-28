@@ -2355,10 +2355,16 @@ a {
   .nd-row-full { grid-column: 1; }
 }
 
-/* ===== Mobile design system (Fase 1 — 2026-05) =====
-   Tokens powering the mobile view shipped with the dual-view rollout.
-   Sourced from mockups/{stocks,home,news-hunter,market-share,navios-diesel,anp-cdp}-mobile.html
-   and approved by Eduardo on 2026-05-20.
+/* ===== Mobile design system (v2 — 2026-05-27, light-only) =====
+   Tokens powering the mobile views (rewritten by the mobile reform — see
+   plan in /.claude/plans/o-modo-mobile-da-tranquil-giraffe.md § 3.3).
+
+   Light-only. Per plan § 3.2:
+     "Mobile is light-only. No dark mode. Simplifies design system, halves CSS
+      scope."
+   Any dark-mode tokens previously in this block (`[data-theme="dark"]`
+   overrides for mobile, plus the matching media-query fallback) were purged
+   on 2026-05-27. Dark mode lives on desktop only.
 
    Scoping strategy:
      • `:root[data-viewport="mobile"]` — explicit override (set by useIsMobile / PWA shell).
@@ -2368,6 +2374,13 @@ a {
    The mobile system is intentionally additive — it does NOT redefine the
    desktop tokens (#ff5000 stays brand orange). It only introduces new
    --mobile-* variables consumed by src/components/dashboard/mobile/*.
+
+   Liquid Glass v2 tokens (refined for the reform — values, not shorthands;
+   consumers still compose them themselves, e.g. `1px solid var(--mobile-glass-border)`):
+     --mobile-glass-blur            blur(18px) saturate(180%)  (filter value)
+     --mobile-glass-border          rgba(255,255,255,0.55)     (color — shine edge)
+     --mobile-glass-shadow          multi-layer with inset highlight
+     --mobile-glass-shine-gradient  optional white→transparent top sheen
 */
 :root[data-viewport="mobile"],
 :root[data-viewport="mobile"][data-theme="light"] {
@@ -2405,13 +2418,19 @@ a {
   --mobile-status-completed:    #6b6b73;
   --mobile-status-completed-bg: rgba(107, 107, 115, 0.10);
 
-  /* Liquid glass — sticky top/bottom bars */
+  /* Liquid Glass v2 — sticky bars, floating home pill, kebab sheet.
+     The border var holds the COLOR (not the shorthand) so existing consumers
+     that compose `1px solid var(--mobile-glass-border)` keep working. */
   --mobile-glass-bg:      rgba(255, 255, 255, 0.72);
-  --mobile-glass-border:  rgba(0, 0, 0, 0.06);
-  --mobile-glass-blur:    blur(20px) saturate(180%);
-  --mobile-glass-shadow:  0 1px 0 rgba(255, 255, 255, 0.6) inset,
-                          0 -1px 0 rgba(0, 0, 0, 0.04) inset,
-                          0 4px 16px rgba(0, 0, 0, 0.06);
+  --mobile-glass-border:  rgba(255, 255, 255, 0.55);
+  --mobile-glass-blur:    blur(18px) saturate(180%);
+  --mobile-glass-shadow:  0 8px 24px rgba(15, 23, 42, 0.08),
+                          0 2px 6px rgba(15, 23, 42, 0.06),
+                          inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --mobile-glass-shine-gradient: linear-gradient(
+                          180deg,
+                          rgba(255, 255, 255, 0.40) 0%,
+                          rgba(255, 255, 255, 0) 50%);
 
   /* Plotly tunables */
   --mobile-chart-gridline: rgba(0, 0, 0, 0.04);
@@ -2447,53 +2466,15 @@ a {
   --mobile-scrim:         rgba(0, 0, 0, 0.36);
 }
 
-/* Dark theme overrides (matches Stocks-dark palette + identity.md) */
-:root[data-viewport="mobile"][data-theme="dark"] {
-  --mobile-bg:            #030814;
-  --mobile-surface:       #070d1c;
-  --mobile-surface-elevated: #0a1124;
-  --mobile-text:          #e6edf3;
-  --mobile-text-muted:    #8b949e;
-  --mobile-text-faint:    #5e6772;
-  --mobile-border:        #131a2e;
-  --mobile-divider:       #161d33;
-  --mobile-row-press:     rgba(255, 255, 255, 0.04);
-
-  --mobile-up:            #3fb950;
-  --mobile-up-soft:       rgba(63, 185, 80, 0.12);
-  --mobile-down:          #f85149;
-  --mobile-down-soft:     rgba(248, 81, 73, 0.12);
-
-  --mobile-status-unloading:    #3fb950;
-  --mobile-status-unloading-bg: rgba(63, 185, 80, 0.14);
-  --mobile-status-anchored:     #58a6ff;
-  --mobile-status-anchored-bg:  rgba(88, 166, 255, 0.14);
-  --mobile-status-enroute:      #ff5000;
-  --mobile-status-enroute-bg:   rgba(255, 80, 0, 0.16);
-  --mobile-status-completed:    #8b949e;
-  --mobile-status-completed-bg: rgba(139, 148, 158, 0.14);
-
-  --mobile-glass-bg:      rgba(7, 13, 28, 0.72);
-  --mobile-glass-border:  rgba(255, 255, 255, 0.06);
-  --mobile-glass-shadow:  0 1px 0 rgba(255, 255, 255, 0.05) inset,
-                          0 -1px 0 rgba(0, 0, 0, 0.4) inset,
-                          0 4px 16px rgba(0, 0, 0, 0.4);
-
-  --mobile-chart-gridline: rgba(255, 255, 255, 0.05);
-
-  --mobile-shadow-soft:   0 1px 4px rgba(0, 0, 0, 0.35),
-                          0 1px 2px rgba(0, 0, 0, 0.20);
-  --mobile-shadow-strong: 0 8px 32px rgba(0, 0, 0, 0.50),
-                          0 2px 8px rgba(0, 0, 0, 0.30);
-
-  --mobile-sheet-bg:      #0a1124;
-  --mobile-sheet-handle:  #2a3144;
-  --mobile-scrim:         rgba(0, 0, 0, 0.60);
-}
+/* NOTE: a `:root[data-viewport="mobile"][data-theme="dark"]` block lived here
+   until the 2026-05-27 mobile reform. It was deleted per plan § 3.2 — mobile
+   is light-only. Do not re-introduce dark-mode tokens scoped to mobile.
+   Dark mode still works on desktop, scoped by `:root[data-theme="dark"]`
+   (without the [data-viewport="mobile"] qualifier). */
 
 /* Media-query fallback so SSR/first paint already sees the tokens
-   even before useIsMobile sets data-viewport. We replicate the light
-   variant only — dark mode kicks in once data-theme="dark" is set. */
+   even before useIsMobile sets data-viewport. Light-only (mirrors the
+   block above). */
 @media (max-width: 768px) {
   :root:not([data-viewport]) {
     --mobile-accent:        #ff5000;
@@ -2527,11 +2508,15 @@ a {
     --mobile-status-completed-bg: rgba(107, 107, 115, 0.10);
 
     --mobile-glass-bg:      rgba(255, 255, 255, 0.72);
-    --mobile-glass-border:  rgba(0, 0, 0, 0.06);
-    --mobile-glass-blur:    blur(20px) saturate(180%);
-    --mobile-glass-shadow:  0 1px 0 rgba(255, 255, 255, 0.6) inset,
-                            0 -1px 0 rgba(0, 0, 0, 0.04) inset,
-                            0 4px 16px rgba(0, 0, 0, 0.06);
+    --mobile-glass-border:  rgba(255, 255, 255, 0.55);
+    --mobile-glass-blur:    blur(18px) saturate(180%);
+    --mobile-glass-shadow:  0 8px 24px rgba(15, 23, 42, 0.08),
+                            0 2px 6px rgba(15, 23, 42, 0.06),
+                            inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    --mobile-glass-shine-gradient: linear-gradient(
+                            180deg,
+                            rgba(255, 255, 255, 0.40) 0%,
+                            rgba(255, 255, 255, 0) 50%);
 
     --mobile-chart-gridline: rgba(0, 0, 0, 0.04);
 
@@ -2561,46 +2546,60 @@ a {
     --mobile-scrim:         rgba(0, 0, 0, 0.36);
   }
 
-  :root[data-theme="dark"]:not([data-viewport]) {
-    --mobile-bg:            #030814;
-    --mobile-surface:       #070d1c;
-    --mobile-surface-elevated: #0a1124;
-    --mobile-text:          #e6edf3;
-    --mobile-text-muted:    #8b949e;
-    --mobile-text-faint:    #5e6772;
-    --mobile-border:        #131a2e;
-    --mobile-divider:       #161d33;
-    --mobile-row-press:     rgba(255, 255, 255, 0.04);
-
-    --mobile-up:            #3fb950;
-    --mobile-up-soft:       rgba(63, 185, 80, 0.12);
-    --mobile-down:          #f85149;
-    --mobile-down-soft:     rgba(248, 81, 73, 0.12);
-
-    --mobile-status-unloading:    #3fb950;
-    --mobile-status-unloading-bg: rgba(63, 185, 80, 0.14);
-    --mobile-status-anchored:     #58a6ff;
-    --mobile-status-anchored-bg:  rgba(88, 166, 255, 0.14);
-    --mobile-status-completed:    #8b949e;
-    --mobile-status-completed-bg: rgba(139, 148, 158, 0.14);
-
-    --mobile-glass-bg:      rgba(7, 13, 28, 0.72);
-    --mobile-glass-border:  rgba(255, 255, 255, 0.06);
-    --mobile-glass-shadow:  0 1px 0 rgba(255, 255, 255, 0.05) inset,
-                            0 -1px 0 rgba(0, 0, 0, 0.4) inset,
-                            0 4px 16px rgba(0, 0, 0, 0.4);
-
-    --mobile-chart-gridline: rgba(255, 255, 255, 0.05);
-
-    --mobile-sheet-bg:      #0a1124;
-    --mobile-sheet-handle:  #2a3144;
-    --mobile-scrim:         rgba(0, 0, 0, 0.60);
-  }
+  /* NOTE: a `:root[data-theme="dark"]:not([data-viewport])` block lived here
+     until the 2026-05-27 mobile reform — it gave the mobile-fallback path a
+     dark variant. Deleted per plan § 3.2 (mobile is light-only). Do not
+     re-introduce. */
 }
 
 /* Tap-highlight defaults for mobile-rendered surfaces */
 :root[data-viewport="mobile"] * {
   -webkit-tap-highlight-color: transparent;
+}
+
+/* MobileHomePill — press & focus feedback (can't be inline-styled in JSX).
+   The pill renders a Liquid Glass capsule via inline style; here we layer
+   the brand-orange halo on :active and the accessibility outline on
+   :focus-visible. Halo uses --mobile-accent-glow (rgba). */
+.mobile-home-pill:active {
+  transform: translateX(-50%) scale(0.96);
+  box-shadow:
+    0 0 0 6px var(--mobile-accent-glow),
+    0 8px 24px rgba(15, 23, 42, 0.08),
+    0 2px 6px rgba(15, 23, 42, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.mobile-home-pill:focus-visible {
+  outline: 2px solid var(--mobile-accent);
+  outline-offset: 3px;
+}
+
+/* MobileKebabMenu — trigger button hover/focus */
+.mobile-kebab-trigger:hover,
+.mobile-kebab-trigger:focus-visible {
+  background: var(--mobile-row-press);
+  color: var(--mobile-text);
+}
+.mobile-kebab-trigger:focus-visible {
+  outline: 2px solid var(--mobile-accent);
+  outline-offset: 2px;
+}
+.mobile-kebab-trigger[aria-expanded="true"] {
+  background: var(--mobile-row-press);
+  color: var(--mobile-text);
+}
+
+/* MobileKebabMenu — menu item row */
+.mobile-kebab-menu-item:hover:not(:disabled),
+.mobile-kebab-menu-item:focus-visible:not(:disabled) {
+  background: var(--mobile-row-press);
+}
+.mobile-kebab-menu-item:focus-visible {
+  outline: 2px solid var(--mobile-accent);
+  outline-offset: -2px;
+}
+.mobile-kebab-menu-item:active:not(:disabled) {
+  background: var(--mobile-accent-soft);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
