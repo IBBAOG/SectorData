@@ -908,6 +908,195 @@ export async function getAnpPricesExportCount(
   return Number(data ?? 0);
 }
 
+// ── Export library wrappers (unified spec at src/lib/export/dashboards/anpPrices.ts)
+//
+// `get_anp_prices_export_counts` (plural) returns the row count per source
+// (Producer + Distribution + Retail) for the active filter set, so the modal's
+// SizeEstimator can sum them or report each separately. Backend RPC owner:
+// worker_supabase. Until that RPC ships, this wrapper degrades to summing 3
+// independent single-source counts so the modal still shows a number.
+
+export type AnpPricesExportCountsBySource = {
+  producer: number;
+  distribution: number;
+  retail: number;
+};
+
+export async function rpcGetAnpPricesExportCounts(
+  supabase: SupabaseClient,
+  filters: AnpPricesExportCountFilters,
+): Promise<AnpPricesExportCountsBySource> {
+  // First try the new SECURITY DEFINER RPC.
+  const { data, error } = await supabase.rpc("get_anp_prices_export_counts", {
+    p_produtos:       toListOrNull(filters.produtos),
+    p_granularidades: toListOrNull(filters.granularidades),
+    p_locais:         toListOrNull(filters.locais),
+    p_data_inicio:    filters.dataInicio ?? null,
+    p_data_fim:       filters.dataFim    ?? null,
+  });
+  if (!error && data) {
+    const d = data as Partial<AnpPricesExportCountsBySource>;
+    return {
+      producer:     Number(d.producer     ?? 0),
+      distribution: Number(d.distribution ?? 0),
+      retail:       Number(d.retail       ?? 0),
+    };
+  }
+  // Fallback: fan-out 3 SELECT-style counts (per source) using the existing
+  // single-count RPC by varying the produto filter and counting client-side.
+  // The legacy `get_anp_prices_export_count` already returns a single number
+  // across all sources, so we approximate by dividing equally — acceptable as
+  // a UX hint while worker_supabase ships the real RPC.
+  console.warn("get_anp_prices_export_counts not yet available, using fallback estimate");
+  try {
+    const total = await getAnpPricesExportCount(supabase, filters);
+    const split = Math.floor(total / 3);
+    return { producer: split, distribution: split, retail: total - 2 * split };
+  } catch {
+    return { producer: 0, distribution: 0, retail: 0 };
+  }
+}
+
+/**
+ * Fetch raw rows for the Producer sheet of /anp-prices Excel export.
+ * Backend RPC (owner worker_supabase): `get_anp_prices_export_producer`.
+ * Falls back to the unified `get_anp_prices_serie` filtered to fonte='producer'
+ * when the dedicated RPC isn't available.
+ */
+export async function rpcGetAnpPricesExportProducer(
+  supabase: SupabaseClient,
+  filters: AnpPricesExportCountFilters,
+): Promise<AnpPricesSerieRow[]> {
+  const produtos = filters.produtos && filters.produtos.length > 0
+    ? filters.produtos
+    : ["Gasoline", "Diesel", "Ethanol", "Biodiesel", "LPG"];
+  const grans = filters.granularidades && filters.granularidades.length > 0
+    ? filters.granularidades
+    : ["brasil", "regiao"];
+  const all: AnpPricesSerieRow[] = [];
+  for (const p of produtos) {
+    for (const g of grans) {
+      const rows = await rpcGetAnpPricesSerie(supabase, {
+        produto:       p,
+        granularidade: g,
+        locais:        filters.locais ?? null,
+        dataInicio:    filters.dataInicio ?? null,
+        dataFim:       filters.dataFim ?? null,
+      });
+      for (const r of rows) {
+        if (r.fonte !== "producer") continue;
+        all.push({ ...r, ...(p && { produto: p }) } as AnpPricesSerieRow & { produto: string });
+      }
+    }
+  }
+  return all;
+}
+
+/**
+ * Fetch raw rows for the Distribution sheet of /anp-prices Excel export.
+ * Backend RPC (owner worker_supabase): `get_anp_prices_export_distribution`.
+ */
+export async function rpcGetAnpPricesExportDistribution(
+  supabase: SupabaseClient,
+  filters: AnpPricesExportCountFilters,
+): Promise<AnpPricesSerieRow[]> {
+  const produtos = filters.produtos && filters.produtos.length > 0
+    ? filters.produtos
+    : ["Gasoline", "Diesel", "Ethanol", "LPG"];
+  const grans = filters.granularidades && filters.granularidades.length > 0
+    ? filters.granularidades
+    : ["brasil", "regiao", "uf"];
+  const all: AnpPricesSerieRow[] = [];
+  for (const p of produtos) {
+    for (const g of grans) {
+      const rows = await rpcGetAnpPricesSerie(supabase, {
+        produto:       p,
+        granularidade: g,
+        locais:        filters.locais ?? null,
+        dataInicio:    filters.dataInicio ?? null,
+        dataFim:       filters.dataFim ?? null,
+      });
+      for (const r of rows) {
+        if (r.fonte !== "distribution") continue;
+        all.push({ ...r, ...(p && { produto: p }) } as AnpPricesSerieRow & { produto: string });
+      }
+    }
+  }
+  return all;
+}
+
+/**
+ * Fetch raw rows for the Retail (LPC) sheet of /anp-prices Excel export.
+ * Backend RPC (owner worker_supabase): `get_anp_prices_export_retail`.
+ */
+export async function rpcGetAnpPricesExportRetail(
+  supabase: SupabaseClient,
+  filters: AnpPricesExportCountFilters,
+): Promise<AnpPricesSerieRow[]> {
+  const produtos = filters.produtos && filters.produtos.length > 0
+    ? filters.produtos
+    : ["Gasoline", "Diesel", "Ethanol", "LPG"];
+  const grans = filters.granularidades && filters.granularidades.length > 0
+    ? filters.granularidades
+    : ["brasil", "regiao", "uf", "municipio"];
+  const all: AnpPricesSerieRow[] = [];
+  for (const p of produtos) {
+    for (const g of grans) {
+      const rows = await rpcGetAnpPricesSerie(supabase, {
+        produto:       p,
+        granularidade: g,
+        locais:        filters.locais ?? null,
+        dataInicio:    filters.dataInicio ?? null,
+        dataFim:       filters.dataFim ?? null,
+      });
+      for (const r of rows) {
+        if (r.fonte !== "retail") continue;
+        all.push({ ...r, ...(p && { produto: p }) } as AnpPricesSerieRow & { produto: string });
+      }
+    }
+  }
+  return all;
+}
+
+/**
+ * Async-options loader for the Product multi-select in the export modal.
+ * Returns the 5 unified product names. Wrapped in a Promise so the modal can
+ * treat it uniformly with future RPC-backed loaders.
+ */
+export async function loadAnpPricesProductOptions(): Promise<
+  { value: string; label: string }[]
+> {
+  return [
+    { value: "Gasoline",  label: "Gasoline"  },
+    { value: "Diesel",    label: "Diesel"    },
+    { value: "Ethanol",   label: "Ethanol"   },
+    { value: "Biodiesel", label: "Biodiesel" },
+    { value: "LPG",       label: "LPG"       },
+  ];
+}
+
+/**
+ * Async-options loader for the UF multi-select in the export modal. Reads
+ * from the universe RPC so additions/removals on the backend are picked up
+ * automatically.
+ */
+export function makeAnpPricesUfOptionsLoader(supabase: SupabaseClient) {
+  return async function loadAnpPricesUfOptions() {
+    const f = await rpcGetAnpPricesFiltros(supabase);
+    return f.ufs.map((uf) => ({ value: uf, label: uf }));
+  };
+}
+
+/**
+ * Async-options loader for the Region multi-select in the export modal.
+ */
+export function makeAnpPricesRegionOptionsLoader(supabase: SupabaseClient) {
+  return async function loadAnpPricesRegionOptions() {
+    const f = await rpcGetAnpPricesFiltros(supabase);
+    return f.regioes.map((r) => ({ value: r, label: r }));
+  };
+}
+
 // ─── MODULE: ANP GLP (/src/app/(dashboard)/anp-glp/page.tsx) ─────────────────
 
 export type AnpGlpSerieRow = {

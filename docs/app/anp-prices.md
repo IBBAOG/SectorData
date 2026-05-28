@@ -183,18 +183,42 @@ The 3 ETL pipelines are unchanged by the reform — they continue to populate th
 | `worker_dash-admin` | Module visibility (`module_visibility.anp-prices`) and home image upload |
 | `worker_documentador` | Audits this sub-PRD against the code; updates `docs/master.md`, `README.md`, `docs/app/PRD.md` |
 
-## Export (Tier 2)
+## Export (Tier 2 — unified library)
 
-`<ExportPanel mode="modal">` opens `<ExportModal>` with live size calculator (see [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
+`/anp-prices` is one of the first dashboards plugged into the unified export library at [`src/lib/export/`](../../src/lib/export/). See the binding contract at [`docs/app/export-library-contract.md`](export-library-contract.md) for the architecture.
 
-- RPC count: `get_anp_prices_export_count` (`p_produtos`, `p_granularidades`, `p_locais`, `p_data_inicio`, `p_data_fim`) → `bigint`.
-- JS wrapper: `getAnpPricesExportCount` in [`src/lib/rpc.ts`](../../src/lib/rpc.ts).
-- Dataset key: `anp_prices` (see [`src/lib/exportSizeHeuristics.ts`](../../src/lib/exportSizeHeuristics.ts)).
-- Filters in the modal: period (year slider), products (multi-select, opt to widen beyond current), granularities (multi-select), locations (searchable multi-select).
-- Excel: `downloadGenericExcel` with columns `Date, [Product?], Source, Location, Price, Unit`.
-- CSV: `downloadCsv` (RFC4180, UTF-8) — same columns.
-- Filename pattern: `anp-prices_<product>_<granularity>_DD-MM-YY.{xlsx,csv}`.
-- Warning visual when estimate > 200,000 rows.
+**Plug surface:** the desktop View renders `<ExportButton spec={anpPricesExport} />` inside `DashboardHeader.rightSlot`. The button opens the universal Tier 2 modal (size estimator + format toggle + Download). Mobile is excluded.
+
+**Spec file:** [`src/lib/export/dashboards/anpPrices.ts`](../../src/lib/export/dashboards/anpPrices.ts).
+
+| Field | Value |
+|---|---|
+| `filename` | `ANPPrices` (→ `ANPPrices_DD-MM-YY.xlsx` or `.zip`) |
+| `tier` | `2` |
+| `filterSource` | `modal-editable` |
+| Excel sheets | 3 — Producer prices, Distribution prices, Retail prices LPC |
+| CSV mode | `zip` (3 files, heterogeneous schemas) |
+| Modal filters | Period (date-range, default last 6 months), Products (multi-select), States/UF (multi-select), Regions (multi-select) |
+| Modal count RPC | `get_anp_prices_export_counts` (sums Producer + Distribution + Retail) |
+
+**RPC wrappers added in [`src/lib/rpc.ts`](../../src/lib/rpc.ts):**
+- `rpcGetAnpPricesExportCounts(supabase, filters)` → `{ producer, distribution, retail }` — feeds the modal SizeEstimator. Falls back to the existing single-count RPC if the new SECURITY DEFINER function is not yet deployed.
+- `rpcGetAnpPricesExportProducer(supabase, filters)` → rows for the Producer sheet.
+- `rpcGetAnpPricesExportDistribution(supabase, filters)` → rows for the Distribution sheet.
+- `rpcGetAnpPricesExportRetail(supabase, filters)` → rows for the Retail (LPC) sheet.
+- `loadAnpPricesProductOptions()` / `makeAnpPricesUfOptionsLoader` / `makeAnpPricesRegionOptionsLoader` → async loaders for the modal multi-selects.
+
+**Backend RPCs (owner [`worker_supabase`](../supabase/PRD.md)):**
+- `get_anp_prices_export_counts(p_produtos, p_granularidades, p_locais, p_data_inicio, p_data_fim)` → `(producer bigint, distribution bigint, retail bigint)` — `LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp`, granted to `anon, authenticated`.
+- `get_anp_prices_export_producer(...)` / `_distribution(...)` / `_retail(...)` (optional dedicated raw exports — until they ship, the JS wrappers fan out via the existing `get_anp_prices_serie`).
+
+The pre-existing `get_anp_prices_export_count` (singular) is preserved during the migration window for safe rollback.
+
+**Legacy export path retired here:**
+- `<ExportPanel>` + `<ExportModal>` (`src/components/dashboard/`) no longer used by this View. They remain in place until every dashboard migrates — see contract § "Deprecation of the old library".
+- `downloadGenericExcel` + `downloadCsv` (legacy `src/lib/exportExcel.ts`) replaced by the spec-driven `downloadExcel` + `downloadCsv` inside `src/lib/export/core/`.
+
+**Filename pattern (unified):** `ANPPrices_DD-MM-YY.xlsx` (Excel) or `ANPPrices_DD-MM-YY.zip` (CSV zip).
 
 ## Anti-patterns
 
