@@ -69,7 +69,6 @@ import {
   HOURS_RATE_COLOR,
   TOP_FIELDS_OIL_COLOR,
   TOP_FIELDS_WATER_COLOR,
-  PERIOD_PRESETS,
   PERIOD_PRESET_LABEL,
   computePresetRange,
   detectPeriodPreset,
@@ -104,6 +103,13 @@ const MBPD_VIEWS: ReadonlySet<WellByWellView> = new Set<WellByWellView>([
   "Brasil",
   "Petrobras",
 ]);
+
+/** Mobile-only subset of period presets (task 2026-05-28 [mobile-only]).
+ *  Desktop still exposes the full `PERIOD_PRESETS` (12M/24M/36M/All/YTD); on
+ *  phones the 36M and All ranges produced visually cluttered hero charts, so
+ *  we restrict the pill row to 3 options. The hook is untouched — desktop
+ *  View continues to consume the full list. */
+const MOBILE_PERIOD_PRESETS: readonly PeriodPreset[] = ["last12m", "last24m", "ytd"];
 
 /** Cap the FPSO/UEP horizontal bar to 15 installations — beyond this, the
  *  list becomes unscanably long on a 6" phone. The full list is accessible
@@ -443,12 +449,12 @@ function PeriodPillsRow({
       aria-label="Period preset"
       style={{
         display: "grid",
-        gridTemplateColumns: `repeat(${PERIOD_PRESETS.length}, 1fr)`,
+        gridTemplateColumns: `repeat(${MOBILE_PERIOD_PRESETS.length}, 1fr)`,
         gap: 6,
         padding: "0 12px 10px",
       }}
     >
-      {PERIOD_PRESETS.map((preset) => {
+      {MOBILE_PERIOD_PRESETS.map((preset) => {
         const isActive = preset === active;
         const isDisabled = disabled || !latestMonth;
         return (
