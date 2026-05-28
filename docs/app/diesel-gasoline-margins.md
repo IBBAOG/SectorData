@@ -116,6 +116,16 @@ GitHub Action: `.github/workflows/manual_dg_margins.yml` runs weekly (Monday).
 
 **Data owner:** `worker_dados-locais` (not an automated ETL). This dashboard is read-only.
 
+## Palette
+
+| Constant | Key | Color | Used in |
+|---|---|---|---|
+| `MARGIN_LINE_COLORS` | `"Diesel B"` | `#FF5000` (brand orange) | Dist. & Resale Margin line chart |
+| `MARGIN_LINE_COLORS` | `"Gasoline C"` | `#1a1a1a` (black) | Dist. & Resale Margin line chart |
+| `STACK_COLORS` | `distribution_and_resale_margin` | `#FF5000` | Stacked area charts (both fuels) |
+
+Both views share `MARGIN_LINE_COLORS` via the hook — no per-view color override exists.
+
 ## Dependências cross-dept
 
 | Origem | Como depende |
