@@ -16,16 +16,15 @@
 //   1. Sticky header           — owned by MobileLayout (not rendered here).
 //                                Onda 7: drop logo only (no wordmark), perfectly
 //                                centered via absolute positioning.
-//   2. "Last visited" row      — horizontal scroll, compact icon tiles, only
-//                                rendered when localStorage history exists.
-//   3. Oil & Gas section       — 4 tiles in 2-col grid (anp-cdp hidden).
-//   4. Fuel Distribution       — 6 tiles in 2-col grid (anp-prices, anp-glp hidden).
-//   5. (no Markets section — /stocks, /news-hunter, /alerts excluded.)
+//   2. Oil & Gas section       — 4 tiles in 2-col grid (anp-cdp hidden).
+//   3. Fuel Distribution       — 6 tiles in 2-col grid (anp-prices, anp-glp hidden).
+//   4. (no Markets section — /stocks, /news-hunter, /alerts excluded.)
 //
 // Onda 7 removes the three formerly "desktop-only" tiles (anp-cdp, anp-prices,
 // anp-glp) from the gallery entirely — they now live in HIDE_FROM_MOBILE_HOME.
-// Last-visited row is filtered by MOBILE_ELIGIBLE_SLUGS so stale localStorage
-// entries for those slugs are silently skipped.
+// The "Last visited" row was removed on 2026-05-28 per CEO feedback —
+// useTrackLastVisited is still mounted in DashboardShell (other code may rely
+// on the localStorage trail), but it has no UI surface on /home anymore.
 //
 // What we DELIBERATELY don't render here:
 //   • Module thumbnails / images.
@@ -41,25 +40,6 @@ import {
   getTileMeta,
 } from "@/components/dashboard/mobile";
 import { useHomeData, type HomeCardDef } from "../useHomeData";
-import { readLastVisited } from "../../../../hooks/useTrackLastVisited";
-
-// Canonical whitelist of the 10 mobile-eligible dashboards (Oil & Gas + Fuel
-// Distribution). Used to filter the Last-visited row so stale localStorage
-// entries for desktop-only slugs are silently skipped.
-const MOBILE_ELIGIBLE_SLUGS = new Set<string>([
-  // Oil & Gas (4)
-  "well-by-well",
-  "anp-cdp-bsw",
-  "anp-cdp-depletion",
-  "anp-cdp-diaria",
-  // Fuel Distribution (6)
-  "market-share",
-  "price-bands",
-  "subsidy-tracker",
-  "diesel-gasoline-margins",
-  "imports-exports",
-  "navios-diesel",
-]);
 
 // Slugs hidden from the gallery. Includes desktop-only dashboards that were
 // previously shown with `excluded={true}` (Onda 7: hidden entirely).
@@ -86,32 +66,13 @@ const SECTIONS: SectionDef[] = [
   { id: "fuel", title: "Fuel Distribution" },
 ];
 
-// ── Helpers ──────────────────────────────────────────────────────────────
-
-/**
- * Resolves a slug back to its HomeCardDef from the visible-cards list.
- * Returns undefined when the slug is no longer visible (in which case the
- * Last-visited row simply skips that entry).
- */
-function findCardBySlug(
-  cards: HomeCardDef[],
-  slug: string,
-): HomeCardDef | undefined {
-  return cards.find((c) => c.slug === slug);
-}
-
 // ── Component ─────────────────────────────────────────────────────────────
 
 export default function MobileView(): React.ReactElement {
-  const { cardsByCategory, visibleCards } = useHomeData();
+  const { cardsByCategory } = useHomeData();
   const [collapsedSections, setCollapsedSections] = useState<
     Record<SectionDef["id"], boolean>
   >({ oilgas: false, fuel: false });
-
-  // Last-visited slugs from localStorage (newest first, capped at 4).
-  // Read once on mount via useMemo so the row stays stable while the user
-  // scrolls /home; it refreshes on the next visit to /home anyway.
-  const lastVisitedSlugs = useMemo<string[]>(() => readLastVisited(), []);
 
   // Filter out hidden + desktop-only routes from each section's card list
   // (defence in depth — HIDE_FROM_MOBILE_HOME now includes the 3 former
@@ -124,16 +85,6 @@ export default function MobileView(): React.ReactElement {
     () => cardsByCategory.fuel.filter((c) => !HIDE_FROM_MOBILE_HOME.has(c.slug)),
     [cardsByCategory.fuel],
   );
-
-  const lastVisitedCards = useMemo<HomeCardDef[]>(() => {
-    if (lastVisitedSlugs.length === 0) return [];
-    return lastVisitedSlugs
-      .map((slug) => findCardBySlug(visibleCards, slug))
-      .filter(
-        (c): c is HomeCardDef =>
-          !!c && !!c.href && MOBILE_ELIGIBLE_SLUGS.has(c.slug),
-      );
-  }, [lastVisitedSlugs, visibleCards]);
 
   function toggleSection(id: SectionDef["id"]) {
     setCollapsedSections((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -157,63 +108,10 @@ export default function MobileView(): React.ReactElement {
       }}
     >
       {/* No search bar — Onda 6 removed it; Onda 7 drop-only header above. */}
-
-      {/* ── Last visited (hidden when there is no history) ───────────── */}
-      {lastVisitedCards.length > 0 && (
-        <section
-          aria-label="Last visited dashboards"
-          style={{ padding: "20px 0 4px" }}
-        >
-          <div
-            style={{
-              padding: "0 16px",
-              marginBottom: 10,
-              fontSize: 12,
-              fontWeight: 700,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "var(--mobile-text-muted)",
-            }}
-          >
-            Last visited
-          </div>
-          <div
-            style={{
-              display: "flex",
-              gap: 10,
-              overflowX: "auto",
-              padding: "2px 16px 14px",
-              scrollSnapType: "x proximity",
-              WebkitOverflowScrolling: "touch",
-            }}
-          >
-            {lastVisitedCards.map((card) => {
-              const meta = getTileMeta(card.slug, "compact");
-              return (
-                <div
-                  key={card.slug}
-                  style={{
-                    scrollSnapAlign: "start",
-                    flex: "0 0 auto",
-                  }}
-                >
-                  <MobileHomeIconTile
-                    variant="compact"
-                    title={card.title}
-                    href={card.href ?? "#"}
-                    icon={meta.icon}
-                    tintBg={meta.tintBg}
-                    tintFg={meta.tintFg}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
+      {/* Last-visited row removed 2026-05-28 (mobile-only). */}
 
       {/* ── Section list ─────────────────────────────────────────────── */}
-      <div style={{ padding: lastVisitedCards.length > 0 ? "0 16px 24px" : "20px 16px 24px" }}>
+      <div style={{ padding: "20px 16px 24px" }}>
         {SECTIONS.map((section) => {
           const cards = cardsForSection(section.id);
           if (cards.length === 0) return null;

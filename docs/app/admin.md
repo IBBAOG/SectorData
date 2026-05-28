@@ -47,6 +47,8 @@ home/
 
 **Desktop view** — redesigned 2026-05-26 (icon list). Vertical list of compact rows inside the left 70% column. One card per row: 40×40px rounded icon bubble + module name + optional badge + chevron. Icon glows orange on hover (`#ff5000`, glow shadow), row translates right 4px, left accent bar animates in. Categories (Markets / Oil & Gas / Fuel Distribution) are separated by a `SectionHeader` with a category-color bar + divider line. The former "Admin" category (Profile + Admin Panel) was removed 2026-05-26 — those tools are accessed via the NavBar.
 
+**Mobile view — "Last visited" row removed (2026-05-28, `[mobile-only]`):** the horizontal scroll of recently-visited dashboard pills at the top of `/home` mobile was removed per CEO feedback. `useTrackLastVisited` continues to be mounted in `DashboardShell` (writes the FIFO of 4 slugs to `localStorage["sd_last_visited"]`) — only the UI surface in `home/mobile/View.tsx` is gone. Desktop is unaffected.
+
 **Mobile view** — redesigned 2026-05-26 (icon list, same analysis as desktop). Components used:
 - `MobileTopBar` (wordmark + avatar initials / Sign-in pill for anon)
 - `MobileBottomTabBar` (Home / Discover / Saved / Profile; Profile tab navigates to `/profile`)
