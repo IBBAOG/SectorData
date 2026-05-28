@@ -16,8 +16,6 @@ import type { Annotations, Layout, PlotData } from "plotly.js";
 
 import { getSupabaseClient } from "@/lib/supabaseClient";
 import { rpcGetPriceBandsData, type PriceBandsRow } from "@/lib/rpc";
-import { downloadPriceBandsExcel } from "@/lib/exportExcel";
-import { downloadCsv } from "@/lib/exportCsv";
 
 // ─── Re-export the row type so Views can import from one place ────────────────
 
@@ -117,11 +115,6 @@ export interface UsePriceBandsData {
     Gasoline: PriceBandsCurrentValues;
     Diesel:   PriceBandsCurrentValues;
   };
-  /** Export helpers — Views call these, hook owns state. */
-  exportExcel: () => Promise<void>;
-  exportCsv:   () => void;
-  excelLoading: boolean;
-  csvLoading:   boolean;
   resetFilters: () => void;
 }
 
@@ -507,10 +500,8 @@ export function usePriceBandsData(): UsePriceBandsData {
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<Error | null>(null);
 
-  const [filters,       setFiltersState] = useState<PriceBandsFilters>(DEFAULT_FILTERS);
-  const [ytdYear,       setYtdYear]      = useState(currentYear);
-  const [excelLoading,  setExcelLoading] = useState(false);
-  const [csvLoading,    setCsvLoading]   = useState(false);
+  const [filters, setFiltersState] = useState<PriceBandsFilters>(DEFAULT_FILTERS);
+  const [ytdYear, setYtdYear]      = useState(currentYear);
 
   const fetchedRef = useRef(false);
 
@@ -568,26 +559,6 @@ export function usePriceBandsData(): UsePriceBandsData {
     Diesel:   buildCurrentValues(dieselRows,   xMax),
   }), [gasolineRows, dieselRows, xMax]);
 
-  const exportExcel = useCallback(async () => {
-    setExcelLoading(true);
-    try {
-      await downloadPriceBandsExcel(rows);
-    } catch (e) {
-      console.error("Excel export failed", e);
-    } finally {
-      setExcelLoading(false);
-    }
-  }, [rows]);
-
-  const exportCsv = useCallback(() => {
-    setCsvLoading(true);
-    try {
-      downloadCsv({ rows: rows as unknown as Record<string, unknown>[], filename: "price_bands" });
-    } finally {
-      setCsvLoading(false);
-    }
-  }, [rows]);
-
   return {
     rows, loading, error,
     filters, setFilters,
@@ -597,8 +568,6 @@ export function usePriceBandsData(): UsePriceBandsData {
     gasolineYtd, dieselYtd,
     ytdYears: YTD_YEARS, ytdYear, setYtdYear,
     currentValues,
-    exportExcel, exportCsv,
-    excelLoading, csvLoading,
     resetFilters,
   };
 }
