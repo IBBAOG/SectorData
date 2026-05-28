@@ -57,8 +57,9 @@ import PlotlyChart from "../../../../components/PlotlyChart";
 import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
 import ChartSection from "../../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
-import ExportPanel from "../../../../components/dashboard/ExportPanel";
 import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
+import { ExportButton } from "../../../../lib/export";
+import { wellByWellExport } from "../../../../lib/export/dashboards/wellByWell";
 import HeaderTable from "../HeaderTable";
 import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../../lib/plotlyDefaults";
 import { bblDiaToKbpd } from "../../../../lib/units";
@@ -1459,8 +1460,10 @@ export default function DesktopView(): React.ReactElement | null {
     brazilData, companyData, topFields, installations,
     headerData, headerLoading,
     brazilLoading, companyLoading, topFieldsLoading, installationsLoading,
-    excelLoading, csvLoading,
-    handleExportExcel, handleExportCsv,
+    // excelLoading / csvLoading / handleExportExcel / handleExportCsv removed —
+    // export now flows through <ExportButton spec={wellByWellExport} /> wired
+    // to the unified library at src/lib/export. The legacy hook handlers remain
+    // exported (cleanup deferred to the per-dashboard migration sweep).
     drillCampo, drillTimeseries, drillLoading, drillError, drillKpiTable,
     openFieldDrill, closeFieldDrill,
     drillInstalacao, drillInstalacaoTimeseries, drillInstalacaoLoading,
@@ -1578,28 +1581,7 @@ export default function DesktopView(): React.ReactElement | null {
                 title="Brazil Production Summary"
                 sub="Monthly oil & gas production from ANP CDP — company-attributable via field stakes"
                 period={periodBadge}
-                rightSlot={
-                  <ExportPanel
-                    actions={[
-                      {
-                        kind: "excel",
-                        label: "Excel",
-                        busy: excelLoading,
-                        disabled: excelLoading || csvLoading || bootstrapping,
-                        loadingLabel: "Building workbook…",
-                        onClick: handleExportExcel,
-                      },
-                      {
-                        kind: "csv",
-                        label: "CSV (zip)",
-                        busy: csvLoading,
-                        disabled: excelLoading || csvLoading || bootstrapping,
-                        loadingLabel: "Building zip…",
-                        onClick: handleExportCsv,
-                      },
-                    ]}
-                  />
-                }
+                rightSlot={<ExportButton spec={wellByWellExport} />}
               />
 
               {/* ── 5 view pills — Brasil + 4 companies (Round 9, 2026-05-27) ─── */}
