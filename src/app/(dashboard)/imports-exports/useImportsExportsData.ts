@@ -299,19 +299,33 @@ const ORIGIN_COLOR_BY_LABEL_DATA: Record<string, string> = ORIGIN_COUNTRY_PINS_D
 const OTHERS_COLOR_DATA = "#7F7F7F";
 const OTHERS_LABEL_DATA = "Others";
 
-// Panel B rank palette — mirrors the Panel A origin-country palette in rank
-// order. Top-1 importer (highest total_mil_m3 in window) gets the rank-1
-// color (black, Russia), top-2 gets rank-2 (brand orange, US), etc. After
-// rank-6 the rest collapse into "Others" (grey). The colors themselves are
-// rank-bound, NOT entity-bound — when the leaderboard changes period to
-// period, the colors follow the rank, not the importer name.
+// Panel B canonical importer order — fixed display order regardless of volume.
+// Colors are entity-bound (not rank-bound): Petrobras always gets rank-1 color,
+// Vibra always gets rank-2 color, etc. This ensures the legend and table remain
+// stable across periods and products.
+//
+// Importers not in this list appear before "Others" in alphabetical order,
+// each receiving the next color in IMPORTER_RANK_COLORS after the canonical slots.
+// "Others" is always last.
+const IMPORTER_CANONICAL_ORDER: ReadonlyArray<string> = [
+  "Petrobras",
+  "Vibra",
+  "Ipiranga",
+  "Raízen",
+  "Atem",
+  "Royal FIC",
+];
+
+// Colors assigned positionally to the canonical order (index 0 = Petrobras, etc.)
+// Mirrors the Panel A origin-country palette in rank order. After exhausting
+// canonical slots, non-listed importers get subsequent palette colors.
 const IMPORTER_RANK_COLORS: ReadonlyArray<string> = [
-  "#000000", // rank 1
-  "#FF5000", // rank 2
-  "#73C6A1", // rank 3
-  "#FFAE66", // rank 4
-  "#8258A0", // rank 5
-  "#D2FF00", // rank 6
+  "#000000", // Petrobras (canonical rank 1)
+  "#FF5000", // Vibra     (canonical rank 2)
+  "#73C6A1", // Ipiranga  (canonical rank 3)
+  "#FFAE66", // Raízen    (canonical rank 4)
+  "#8258A0", // Atem      (canonical rank 5)
+  "#D2FF00", // Royal FIC (canonical rank 6)
 ];
 
 const IMPORTER_TOP_N = 6;
@@ -1051,27 +1065,29 @@ export function useImportsExportsData(): UseImportsExportsData {
 
   // ── Panel B (importers) chart + YoY derivation ─────────────────────────────
   //
-  // Reduce the server-returned top-N importer list down to exactly top-6 +
-  // Others, in lockstep with Panel A's "6 named + Others" visual contract.
+  // Reduces the server-returned top-N importer list down to exactly top-6 +
+  // Others (matching Panel A's "6 named + Others" visual contract), but uses
+  // a FIXED canonical order instead of dynamic volume ranking:
+  //
+  //   Petrobras → Vibra → Ipiranga → Raízen → Atem → Royal FIC → Others
+  //
+  // Importers outside the canonical list that appear in the data are placed
+  // between Royal FIC and Others in alphabetical order, each receiving the
+  // next color in IMPORTER_RANK_COLORS. "Others" is always last.
   //
   // The server RPC already collapses everything outside its own top-10 into a
-  // row labeled 'Others'. We re-rank client-side over a different population
-  // (named importers only) and over a different metric (SUM of total_mil_m3
-  // across the selected window — the server orders by anchor month). To avoid
-  // the server's pre-aggregated 'Others' row sneaking into our rank set as a
-  // pseudo-importer (which produced two separate 'Others' entries in the
-  // legend before this fix — one from the server, one synthesized by the
-  // client), we:
-  //
+  // row labeled 'Others'. We:
   //   a) Partition `importersData` into named rows vs. server-side 'Others'
-  //      rows BEFORE ranking.
-  //   b) Rank only named importers by SUM(total_mil_m3) over the window →
-  //      top-6.
+  //      rows BEFORE ordering.
+  //   b) Order named importers per IMPORTER_CANONICAL_ORDER; non-listed
+  //      importers sort alphabetically after the canonical ones; max 6 total.
   //   c) The client-side 'Others' series sums BOTH the server-side 'Others'
-  //      rows AND the rank-≥7 named rows per (ano, mes). No data is lost.
+  //      rows AND the rank-≥7 (out-of-top-6) named rows per (ano, mes).
+  //      No volume data is lost.
   //
-  // Colors are rank-bound (not entity-bound): top-1 → rank-1 color (black),
-  // ..., top-6 → rank-6 color (lime), Others → grey.
+  // Colors are entity-bound (not rank-bound): Petrobras always gets rank-1
+  // color (#000), Vibra always gets rank-2 (#FF5000), etc., regardless of
+  // which period is selected. This keeps the legend visually stable.
   const importersTop6Derivation = useMemo(() => {
     if (!importersData.length) {
       return {
@@ -1092,39 +1108,45 @@ export function useImportsExportsData(): UseImportsExportsData {
       }
     }
 
-    // 2. Aggregate total_mil_m3 per NAMED importer over the selected window.
-    //    Server-side "Others" volume is intentionally excluded from ranking
-    //    — it is not a single importer and must not earn a top-6 slot.
-    const totalByImporter = new Map<string, number>();
-    for (const r of namedRows) {
-      totalByImporter.set(
-        r.unified_importer,
-        (totalByImporter.get(r.unified_importer) ?? 0) + r.total_mil_m3,
-      );
-    }
-    const ranked = Array.from(totalByImporter.entries()).sort(
-      ([, a], [, b]) => b - a,
-    );
-    const top = ranked.slice(0, IMPORTER_TOP_N).map(([name]) => name);
-    const topSet = new Set(top);
-    const restNamed = ranked.slice(IMPORTER_TOP_N).map(([name]) => name);
+    // 2. Discover the unique named importers present in the data.
+    const namedImporterSet = new Set<string>();
+    for (const r of namedRows) namedImporterSet.add(r.unified_importer);
 
-    // 3. Build the canonical entity order (rank desc + Others last). "Others"
-    //    appears whenever there is any non-top-6 volume to absorb (either
-    //    server-side "Others" rows OR rank-≥7 named importers).
+    // 3. Sort the discovered importers using the canonical order.
+    //    Canonical importers come first (in canonical sequence), then any
+    //    non-listed ones in alphabetical order.
+    const canonicalIdx = new Map<string, number>(
+      IMPORTER_CANONICAL_ORDER.map((name, i) => [name, i]),
+    );
+    const sortedNamedImporters = Array.from(namedImporterSet).sort((a, b) => {
+      const ia = canonicalIdx.get(a) ?? IMPORTER_CANONICAL_ORDER.length;
+      const ib = canonicalIdx.get(b) ?? IMPORTER_CANONICAL_ORDER.length;
+      if (ia !== ib) return ia - ib;
+      return a.localeCompare(b); // alphabetical tiebreaker for non-listed
+    });
+
+    // 4. Take first IMPORTER_TOP_N importers as the "top" set.
+    const top = sortedNamedImporters.slice(0, IMPORTER_TOP_N);
+    const topSet = new Set(top);
+    const restNamed = sortedNamedImporters.slice(IMPORTER_TOP_N);
+
+    // 5. Build canonical entity order + Others.
     const hasOthers = serverOthersRows.length > 0 || restNamed.length > 0;
     const entities: string[] = [...top];
     if (hasOthers) entities.push(OTHERS_LABEL_DATA);
 
-    // 4. Color map — rank-bound (top-1 → rank-1 color, ..., top-6 → rank-6
-    //    color, Others → grey).
+    // 6. Color map — entity-bound: each importer in the canonical list gets
+    //    its fixed color slot; non-listed importers that made the top-6 get
+    //    the next available color slot; Others is always grey.
     const colorMap: Record<string, string> = {};
     for (let i = 0; i < top.length; i += 1) {
-      colorMap[top[i]] = IMPORTER_RANK_COLORS[i] ?? OTHERS_COLOR_DATA;
+      const name = top[i];
+      const colorIdx = canonicalIdx.get(name) ?? i; // use canonical position when available
+      colorMap[name] = IMPORTER_RANK_COLORS[colorIdx] ?? IMPORTER_RANK_COLORS[i] ?? OTHERS_COLOR_DATA;
     }
     if (hasOthers) colorMap[OTHERS_LABEL_DATA] = OTHERS_COLOR_DATA;
 
-    // 5. Emit rows — keep top-6 verbatim, collapse rank-≥7 named rows AND
+    // 7. Emit rows — keep top-6 verbatim, collapse rank-≥7 named rows AND
     //    server-side "Others" rows into a single per-(ano, mes) "Others"
     //    bucket. Server "Others" volume is preserved, not discarded.
     const out: ImportersStackedRow[] = [];

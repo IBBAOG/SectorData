@@ -322,21 +322,25 @@ Source: `desktop/View.tsx` § `ORIGIN_COUNTRY_PINS`; `mobile/View.tsx` mirrors t
 
 ---
 
-## Panel B — Imports by Importer (top-6 + Others, palette synced with Panel A)
+## Panel B — Imports by Importer (top-6 + Others, fixed canonical order)
 
 Added 2026-05-28 per CTO directive — Panel B now shares Panel A's structural and visual contract: exactly **top-6 importer groups + Others**, with the color palette mirroring Panel A's rank order.
 
-| Rank | Color | Hex | Source |
-|---|---|---|---|
-| 1 | Black | `#000000` | Panel A rank-1 (Russia) |
-| 2 | Brand orange | `#FF5000` | Panel A rank-2 (United States) |
-| 3 | Mint | `#73C6A1` | Panel A rank-3 (UAE) |
-| 4 | Amber | `#FFAE66` | Panel A rank-4 (Netherlands) |
-| 5 | Purple | `#8258A0` | Panel A rank-5 (India) |
-| 6 | Lime | `#D2FF00` | Panel A rank-6 (Saudi Arabia) |
-| Others | Grey | `#7F7F7F` | Identical to Panel A Others |
+**Fixed canonical order (2026-05-28):** the legend, stacking order, and YoY table rows always follow this sequence regardless of volume in the selected period:
 
-**Important difference from Panel A**: this palette is **rank-bound, not entity-bound**. The top-1 importer in the selected period always gets black, the top-2 always gets orange, etc. — when the leaderboard reshuffles period-over-period, the colors follow the rank instead of the importer name. Panel A's palette is entity-bound (Russia is always black even if it drops to rank-3), because the country pin set is curated. Panel B has no equivalent curation (the importer leaderboard is dynamic by design), so rank-binding is the principled fallback.
+| Position | Importer | Color | Hex |
+|---|---|---|---|
+| 1 | Petrobras | Black | `#000000` |
+| 2 | Vibra | Brand orange | `#FF5000` |
+| 3 | Ipiranga | Mint | `#73C6A1` |
+| 4 | Raízen | Amber | `#FFAE66` |
+| 5 | Atem | Purple | `#8258A0` |
+| 6 | Royal FIC | Lime | `#D2FF00` |
+| Last | Others | Grey | `#7F7F7F` |
+
+Importers outside this canonical list that appear in the data are inserted between Royal FIC and Others in alphabetical order, each receiving the next unused color slot.
+
+**Entity-bound colors**: Petrobras is always black, Vibra is always orange, etc. — colors do not reshuffle when the volume leaderboard changes period-over-period. This matches Panel A's pin-set model (Russia always black). The canonical-order list in code is `IMPORTER_CANONICAL_ORDER` in `useImportsExportsData.ts`.
 
 Aggregation:
 
