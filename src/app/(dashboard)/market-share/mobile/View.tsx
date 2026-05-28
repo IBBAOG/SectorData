@@ -1,48 +1,45 @@
 "use client";
 
-// Mobile view — /market-share
+// Mobile view — /market-share (v2, mobile reform 2026-05-27)
 //
-// Layout (per mockups/market-share-mobile.html):
-//   MobileTopBar  (sticky, liquid glass)
-//   Title block   (h1 + subtitle + period badge)
-//   Filter chip row  (sticky, horizontal scroll — active chips + "+ Filters" button)
-//   Product + segment MobileTabBars (container variant)  — navigates the 13 charts
-//   Hero chart card  (MobileChart — stacked area for the SELECTED product/segment)
-//   2-column legend below chart
-//   Top Distributors ranking  (MobileDataCard rows with rank badge + progress bar + delta)
-//   "View all" CTA
-//   ExportFAB   (floating, above tab bar)
-//   MobileBottomTabBar  (Overview / Compare / Filters / Profile)
-//   FilterDrawer  (bottom sheet — Product / Period / Region / UF / Segment + Reset/Apply)
+// Layout (top → bottom) per plan § 4.9:
+//   1. MobileTopBar  (sticky, liquid glass) with kebab menu
+//   2. Title block   (h1 + subtitle + period badge)
+//   3. SegmentedToggle sticky  (% Share / Volume)
+//   4. Product MobileTabBar  (Diesel B / Gasoline C / Hydrous Ethanol / Otto-Cycle)
+//   5. Segment MobileTabBar  (Total / Retail / B2B / TRR — TRR only for Diesel B)
+//   6. Hero chart card  (MobileChart — stacked area for active product × segment)
+//   7. 2-column legend below chart
+//   8. Top Distributors  (PlayerCard rows — rank + value + MoM delta)
+//   9. Comparison table  (CompRow cards — MoM / QTD / YoY / YTD, horizontal scroll)
+//  10. Filter chip row  (Period, Region, UF, View Mode + "+ Filters" trigger)
+//   FilterDrawer  (bottom sheet — Period / Region / UF / View Mode + Reset/Apply)
+//   MobileHomePill  (floating, above safe area)
 //
-// Analyses preserved from desktop:
-//   - All 13 charts (Diesel B Retail/B2B/TRR/Total, Gasoline C Retail/B2B/Total,
-//     Hydrous Ethanol Retail/B2B/Total, Otto-Cycle Retail/B2B/Total)
-//     → Overview tab: product + segment selector lets the user navigate
-//        through all 13 chart variants, one at a time. Default: Diesel B / Total.
-//   - Comparison table (MoM/QTD/YoY/YTD) → Compare tab: pick up to 3 players,
-//     see side-by-side MoM/QTD/YoY/YTD cards for the selected chart variant.
-//   - Export (Tier 2, ExportModal) → FAB triggers same modal as desktop.
-//   - All 4 filter dimensions (period, region, UF, mode/competitors).
+// Removed vs v1:
+//   - MobileBottomTabBar (Overview / Compare / Filters / Profile) — replaced by
+//     the global single Home pill (MobileHomePill) + the filter chip row.
+//   - ExportFAB — policy § 3.4: no export on mobile.
+//   - ExportModal — same.
+//   - Placeholder tabs (Map / Compare as tabs) — comparison table is now always
+//     rendered inline, below the Top Distributors section.
+//
+// All 13 product × segment chart variants are still reachable via the two
+// stacked MobileTabBars (Product + Segment). Nothing is removed from the
+// analysis — only the navigation structure changed.
 
 import { useState, useMemo } from "react";
 import { useModuleVisibilityGuard } from "../../../../hooks/useModuleVisibilityGuard";
 import {
   MobileTopBar,
-  MobileBottomTabBar,
+  MobileKebabMenu,
+  MobileHomePill,
   FilterDrawer,
   MobileChart,
-  ExportFAB,
   MobileTabBar,
-  BarChartTallIcon,
-  TrendingUpIcon,
-  FunnelIcon,
-  UserIcon,
-  ChevronRightIcon,
   CloseIcon,
   PlusIcon,
 } from "../../../../components/dashboard/mobile";
-import ExportModal from "../../../../components/dashboard/ExportModal";
 import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
@@ -63,48 +60,40 @@ import {
 } from "../useMarketShareData";
 import type { PlotData } from "plotly.js";
 
+// ─── Constants ─────────────────────────────────────────────────────────────────
+
 const UNIT_OPTIONS: { value: UnitMode; label: string }[] = [
   { value: "share", label: "% Share" },
   { value: "volume", label: "thousand m³" },
 ];
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+const MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
 
-type MobileTab = "overview" | "compare" | "filters" | "profile";
+function fmtDate(d: string): string {
+  const m = parseInt(d.slice(5, 7), 10) - 1;
+  const y = d.slice(0, 4);
+  return `${MONTHS[m]} ${y}`;
+}
 
-const TABS = [
-  {
-    key: "overview",
-    label: "Overview",
-    icon: <BarChartTallIcon size={22} />,
-  },
-  {
-    key: "compare",
-    label: "Compare",
-    icon: <TrendingUpIcon size={22} />,
-  },
-  {
-    key: "filters",
-    label: "Filters",
-    icon: <FunnelIcon size={22} />,
-  },
-  {
-    key: "profile",
-    label: "Profile",
-    icon: <UserIcon size={22} />,
-  },
-] as const;
+// ─── PlayerCard ─────────────────────────────────────────────────────────────────
 
-// ─── PlayerCard ───────────────────────────────────────────────────────────────
-
-function PlayerCard({ row, unitMode = "share" }: { row: TopPlayerRow; unitMode?: UnitMode }) {
+function PlayerCard({
+  row,
+  unitMode = "share",
+}: {
+  row: TopPlayerRow;
+  unitMode?: UnitMode;
+}) {
   const deltaSign = row.deltaMoM !== null ? (row.deltaMoM > 0 ? "+" : "") : "";
   const deltaColor =
-    row.deltaMoM === null ? "var(--mobile-text-faint)"
-    : row.deltaMoM > 0 ? "var(--mobile-up)"
-    : "var(--mobile-down)";
-  // In share mode `row.pct` holds %; in volume mode it holds absolute
-  // thousand-m³. Units in the delta line follow the same axis: pp vs k m³.
+    row.deltaMoM === null
+      ? "var(--mobile-text-faint)"
+      : row.deltaMoM > 0
+        ? "var(--mobile-up)"
+        : "var(--mobile-down)";
   const valueLabel =
     unitMode === "share" ? `${row.pct.toFixed(1)}%` : row.pct.toFixed(1);
   const deltaUnit = unitMode === "share" ? "pp" : "k m³";
@@ -131,14 +120,18 @@ function PlayerCard({ row, unitMode = "share" }: { row: TopPlayerRow; unitMode?:
           width: 28,
           height: 28,
           borderRadius: 8,
-          background: row.isLeader ? "var(--mobile-accent)" : "var(--mobile-divider)",
+          background: row.isLeader
+            ? "var(--mobile-accent)"
+            : "var(--mobile-divider)",
           color: row.isLeader ? "#fff" : "var(--mobile-text-muted)",
           fontSize: 13,
           fontWeight: 700,
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
-          boxShadow: row.isLeader ? "0 2px 6px rgba(255,80,0,0.30)" : "none",
+          boxShadow: row.isLeader
+            ? "0 2px 6px rgba(255,80,0,0.30)"
+            : "none",
           flexShrink: 0,
         }}
       >
@@ -160,7 +153,7 @@ function PlayerCard({ row, unitMode = "share" }: { row: TopPlayerRow; unitMode?:
         {row.player}
       </div>
 
-      {/* Percent */}
+      {/* Value */}
       <div
         style={{
           fontSize: 18,
@@ -191,7 +184,9 @@ function PlayerCard({ row, unitMode = "share" }: { row: TopPlayerRow; unitMode?:
             left: 0,
             bottom: 0,
             width: `${row.barWidth}%`,
-            background: row.isLeader ? "var(--mobile-accent)" : "var(--mobile-text-faint)",
+            background: row.isLeader
+              ? "var(--mobile-accent)"
+              : "var(--mobile-text-faint)",
             borderRadius: 2,
             opacity: row.isLeader ? 1 : 0.55,
           }}
@@ -216,369 +211,7 @@ function PlayerCard({ row, unitMode = "share" }: { row: TopPlayerRow; unitMode?:
   );
 }
 
-// ─── FilterDrawer contents ────────────────────────────────────────────────────
-
-interface DrawerFilterState {
-  product: string;
-  regioes: string[];
-  mode: string;
-  ufs: string[];
-}
-
-function CheckPills({
-  options,
-  value,
-  onChange,
-  radio = false,
-}: {
-  options: string[];
-  value: string | string[];
-  onChange: (v: string | string[]) => void;
-  radio?: boolean;
-}) {
-  const isOn = (opt: string) =>
-    radio ? value === opt : (value as string[]).includes(opt);
-
-  const toggle = (opt: string) => {
-    if (radio) {
-      onChange(opt);
-      return;
-    }
-    const arr = value as string[];
-    if (arr.includes(opt)) onChange(arr.filter((v) => v !== opt));
-    else onChange([...arr, opt]);
-  };
-
-  return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-      {options.map((opt) => (
-        <button
-          key={opt}
-          type="button"
-          onClick={() => toggle(opt)}
-          style={{
-            minHeight: 36,
-            padding: "0 14px",
-            borderRadius: 999,
-            border: `1px solid ${isOn(opt) ? "var(--mobile-accent)" : "var(--mobile-border)"}`,
-            background: isOn(opt) ? "var(--mobile-accent)" : "var(--mobile-surface)",
-            color: isOn(opt) ? "#fff" : "var(--mobile-text)",
-            fontFamily: "inherit",
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: "pointer",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            boxShadow: isOn(opt) ? "0 2px 6px rgba(255,80,0,0.25)" : "none",
-            transition: "background 0.15s, border-color 0.15s, color 0.15s",
-          }}
-        >
-          {opt}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-// ─── Overview tab ─────────────────────────────────────────────────────────────
-
-function OverviewTab({
-  loading,
-  heroTraces,
-  topPlayers,
-  latestDate,
-  chartColors,
-  onViewAll,
-  selectedProduct,
-  selectedSegment,
-  onSelectProduct,
-  onSelectSegment,
-  unitMode,
-}: {
-  loading: boolean;
-  heroTraces: PlotData[];
-  topPlayers: TopPlayerRow[];
-  latestDate: string | null;
-  chartColors: Record<string, string>;
-  onViewAll: () => void;
-  selectedProduct: ProductKey;
-  selectedSegment: SegmentKey;
-  onSelectProduct: (p: ProductKey) => void;
-  onSelectSegment: (s: SegmentKey) => void;
-  unitMode: UnitMode;
-}) {
-  const productTabs = PRODUCT_KEYS.map((p) => ({
-    key: p,
-    label: PRODUCT_LABEL[p],
-  }));
-  const segmentOptions = SEGMENTS_BY_PRODUCT[selectedProduct];
-  const segmentTabs = segmentOptions.map((s) => ({ key: s, label: s }));
-
-  if (loading) {
-    return (
-      <div style={{ padding: "24px 16px" }}>
-        <BarrelLoading bare />
-      </div>
-    );
-  }
-
-  const latestLabel = latestDate
-    ? (() => {
-        const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-        const m = parseInt(latestDate.slice(5, 7), 10) - 1;
-        const y = latestDate.slice(0, 4);
-        return `${MONTHS[m]} ${y}`;
-      })()
-    : null;
-
-  // 2-column legend entries
-  const legendEntries = topPlayers.map((p, i) => ({
-    name: p.player,
-    color: p.color ?? chartColors[p.player] ?? MOBILE_PALETTE[i % MOBILE_PALETTE.length],
-    isLeader: p.isLeader,
-  }));
-
-  const chartHeading = `${PRODUCT_LABEL[selectedProduct]} — ${selectedSegment}`;
-
-  return (
-    <div style={{ paddingBottom: 16 }}>
-      {/* Product selector (4 products) */}
-      <div style={{ padding: "12px 0 8px" }}>
-        <MobileTabBar
-          tabs={productTabs}
-          activeKey={selectedProduct}
-          onChange={(k) => onSelectProduct(k as ProductKey)}
-          variant="container"
-          ariaLabel="Product"
-        />
-      </div>
-
-      {/* Segment selector (Total / Retail / B2B / TRR — TRR only for Diesel B) */}
-      <div style={{ padding: "0 0 4px" }}>
-        <MobileTabBar
-          tabs={segmentTabs}
-          activeKey={selectedSegment}
-          onChange={(k) => onSelectSegment(k as SegmentKey)}
-          variant="underline"
-          ariaLabel="Segment"
-        />
-      </div>
-
-      {/* Hero chart card */}
-      <div style={{ padding: "16px 16px 0" }}>
-        <div
-          style={{
-            background: "var(--mobile-surface)",
-            border: "1px solid var(--mobile-divider)",
-            borderRadius: 16,
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              padding: "14px 14px 6px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 10,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 15,
-                fontWeight: 700,
-                color: "var(--mobile-text)",
-                fontFamily: "Arial, Helvetica, sans-serif",
-              }}
-            >
-              {chartHeading}
-            </div>
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 600,
-                color: "var(--mobile-text-muted)",
-                letterSpacing: "0.04em",
-                textTransform: "uppercase",
-                fontFamily: "Arial, Helvetica, sans-serif",
-              }}
-            >
-              12M Rolling
-            </div>
-          </div>
-
-          {heroTraces.length > 0 ? (
-            <MobileChart
-              data={heroTraces}
-              height={320}
-              layout={{
-                // In share mode the stacked area is bounded [0, 100] %; in
-                // volume mode we let Plotly auto-scale (no ticksuffix, no
-                // fixed range).
-                yaxis:
-                  unitMode === "share"
-                    ? { ticksuffix: "%", range: [0, 100] }
-                    : { title: { text: "thousand m³" } },
-                xaxis: { type: "date" as const, tickformat: "%b %y", nticks: 6 },
-                hovermode: "x unified",
-              }}
-            />
-          ) : (
-            <div
-              style={{
-                height: 320,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "var(--mobile-text-muted)",
-                fontSize: 13,
-                fontFamily: "Arial, Helvetica, sans-serif",
-              }}
-            >
-              No data for the selected filters.
-            </div>
-          )}
-
-          {/* 2-column legend */}
-          {legendEntries.length > 0 && (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, 1fr)",
-                gap: "4px 12px",
-                padding: "8px 14px 14px",
-              }}
-            >
-              {legendEntries.map((e) => (
-                <div
-                  key={e.name}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 8,
-                    fontSize: 12,
-                    color: e.isLeader ? "var(--mobile-text)" : "var(--mobile-text-muted)",
-                    fontWeight: e.isLeader ? 700 : 400,
-                    minHeight: 22,
-                    fontFamily: "Arial, Helvetica, sans-serif",
-                  }}
-                >
-                  <span
-                    style={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: 2,
-                      background: e.color,
-                      flexShrink: 0,
-                    }}
-                  />
-                  {e.name}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Top players ranking */}
-      <div style={{ padding: "16px 16px 0" }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "baseline",
-            justifyContent: "space-between",
-            paddingBottom: 10,
-          }}
-        >
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 17,
-              fontWeight: 700,
-              color: "var(--mobile-text)",
-              fontFamily: "Arial, Helvetica, sans-serif",
-            }}
-          >
-            Top Distributors
-          </h2>
-          {latestLabel && (
-            <span
-              style={{
-                fontSize: 12,
-                color: "var(--mobile-text-muted)",
-                fontFamily: "Arial, Helvetica, sans-serif",
-              }}
-            >
-              {latestLabel}
-            </span>
-          )}
-        </div>
-
-        {topPlayers.length > 0 ? (
-          <div
-            style={{
-              background: "var(--mobile-surface)",
-              border: "1px solid var(--mobile-divider)",
-              borderRadius: 16,
-              overflow: "hidden",
-            }}
-          >
-            {topPlayers.map((row) => (
-              <PlayerCard key={row.player} row={row} unitMode={unitMode} />
-            ))}
-          </div>
-        ) : (
-          <div
-            style={{
-              padding: 16,
-              color: "var(--mobile-text-muted)",
-              fontSize: 13,
-              fontFamily: "Arial, Helvetica, sans-serif",
-            }}
-          >
-            No data available.
-          </div>
-        )}
-
-        {topPlayers.length > 0 && (
-          <button
-            type="button"
-            onClick={onViewAll}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 6,
-              width: "100%",
-              minHeight: 48,
-              marginTop: 12,
-              background: "transparent",
-              border: 0,
-              color: "var(--mobile-accent)",
-              fontFamily: "Arial, Helvetica, sans-serif",
-              fontSize: 14,
-              fontWeight: 700,
-              cursor: "pointer",
-              borderRadius: 12,
-            }}
-          >
-            View all distributors
-            <ChevronRightIcon size={14} strokeWidth={2.5} />
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Compare tab (full implementation) ────────────────────────────────────────
-//
-// Mobile equivalent of desktop's ComparisonTable. The user picks up to 3
-// players from the chart's player set, and we surface MoM / QTD / YoY / YTD
-// side-by-side as cards. Reuses the hook's `activeCompRows` so the analysis
-// matches whatever (product, segment) is currently selected on the Overview
-// tab — keeping a single source of truth across both tabs.
+// ─── CompareMetric (inline cell) ────────────────────────────────────────────────
 
 function CompareMetric({
   label,
@@ -645,6 +278,8 @@ function CompareMetric({
   );
 }
 
+// ─── CompareRowCard ──────────────────────────────────────────────────────────────
+
 function CompareRowCard({
   row,
   color,
@@ -707,205 +342,93 @@ function CompareRowCard({
   );
 }
 
-function CompareTab({
-  loading,
-  compRows,
-  compareSet,
-  toggleCompareMember,
-  selectedProduct,
-  selectedSegment,
-  chartColors,
-  unitMode,
+// ─── CheckPills (filter drawer) ──────────────────────────────────────────────────
+
+function CheckPills({
+  options,
+  value,
+  onChange,
+  radio = false,
 }: {
-  loading: boolean;
-  compRows: CompRow[];
-  compareSet: string[];
-  toggleCompareMember: (player: string) => void;
-  selectedProduct: ProductKey;
-  selectedSegment: SegmentKey;
-  chartColors: Record<string, string>;
-  unitMode: UnitMode;
+  options: string[];
+  value: string | string[];
+  onChange: (v: string | string[]) => void;
+  radio?: boolean;
 }) {
-  if (loading) {
-    return (
-      <div style={{ padding: "24px 16px" }}>
-        <BarrelLoading bare />
-      </div>
-    );
-  }
+  const isOn = (opt: string) =>
+    radio ? value === opt : (value as string[]).includes(opt);
 
-  // Pool of players available in the current chart context.
-  const availablePlayers = compRows.map((r) => r.player);
-  const visibleRows = compRows.filter((r) => compareSet.includes(r.player));
-
-  const headerLabel = `${PRODUCT_LABEL[selectedProduct]} — ${selectedSegment}`;
+  const toggle = (opt: string) => {
+    if (radio) {
+      onChange(opt);
+      return;
+    }
+    const arr = value as string[];
+    if (arr.includes(opt)) onChange(arr.filter((v) => v !== opt));
+    else onChange([...arr, opt]);
+  };
 
   return (
-    <div style={{ paddingBottom: 16 }}>
-      {/* Context banner */}
-      <div style={{ padding: "12px 16px 0" }}>
-        <div
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+      {options.map((opt) => (
+        <button
+          key={opt}
+          type="button"
+          onClick={() => toggle(opt)}
           style={{
-            fontSize: 11,
-            fontWeight: 700,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            color: "var(--mobile-text-muted)",
-            fontFamily: "Arial, Helvetica, sans-serif",
-            marginBottom: 4,
-          }}
-        >
-          {unitMode === "share"
-            ? "Compare market-share variation"
-            : "Compare volume variation"}
-        </div>
-        <div
-          style={{
-            fontSize: 15,
-            fontWeight: 700,
-            color: "var(--mobile-text)",
-            fontFamily: "Arial, Helvetica, sans-serif",
-          }}
-        >
-          {headerLabel}
-        </div>
-        <div
-          style={{
-            fontSize: 12,
-            color: "var(--mobile-text-muted)",
-            marginTop: 2,
-            fontFamily: "Arial, Helvetica, sans-serif",
-          }}
-        >
-          {unitMode === "share"
-            ? "Percentage-point delta vs MoM, QTD, YoY, YTD. Pick up to 3 distributors."
-            : "Thousand-m³ delta vs MoM, QTD, YoY, YTD. Pick up to 3 distributors."}
-        </div>
-      </div>
-
-      {/* Player picker pills */}
-      <div style={{ padding: "14px 16px 0" }}>
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
+            minHeight: 36,
+            padding: "0 14px",
+            borderRadius: 999,
+            border: `1px solid ${isOn(opt) ? "var(--mobile-accent)" : "var(--mobile-border)"}`,
+            background: isOn(opt)
+              ? "var(--mobile-accent)"
+              : "var(--mobile-surface)",
+            color: isOn(opt) ? "#fff" : "var(--mobile-text)",
+            fontFamily: "inherit",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
             gap: 6,
+            boxShadow: isOn(opt)
+              ? "0 2px 6px rgba(255,80,0,0.25)"
+              : "none",
+            transition:
+              "background 0.15s, border-color 0.15s, color 0.15s",
           }}
         >
-          {availablePlayers.length === 0 ? (
-            <div
-              style={{
-                fontSize: 13,
-                color: "var(--mobile-text-muted)",
-                fontFamily: "Arial, Helvetica, sans-serif",
-              }}
-            >
-              No players available for this chart.
-            </div>
-          ) : (
-            availablePlayers.map((p) => {
-              const on = compareSet.includes(p);
-              const disabled = !on && compareSet.length >= 3;
-              return (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => toggleCompareMember(p)}
-                  disabled={disabled}
-                  style={{
-                    minHeight: 32,
-                    padding: "0 12px",
-                    borderRadius: 999,
-                    border: `1px solid ${on ? "var(--mobile-accent)" : "var(--mobile-border)"}`,
-                    background: on ? "var(--mobile-accent)" : "var(--mobile-surface)",
-                    color: on ? "#fff" : "var(--mobile-text)",
-                    opacity: disabled ? 0.4 : 1,
-                    fontFamily: "Arial, Helvetica, sans-serif",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: disabled ? "not-allowed" : "pointer",
-                    boxShadow: on ? "0 2px 6px rgba(255,80,0,0.25)" : "none",
-                    transition: "all 0.15s ease",
-                  }}
-                >
-                  {p}
-                </button>
-              );
-            })
-          )}
-        </div>
-      </div>
-
-      {/* Comparison cards */}
-      <div style={{ padding: "16px 16px 0" }}>
-        {visibleRows.length === 0 ? (
-          <div
-            style={{
-              padding: 18,
-              textAlign: "center",
-              color: "var(--mobile-text-muted)",
-              fontSize: 13,
-              fontFamily: "Arial, Helvetica, sans-serif",
-              border: "1px dashed var(--mobile-border)",
-              borderRadius: 12,
-            }}
-          >
-            Select up to 3 distributors above to compare their share variation.
-          </div>
-        ) : (
-          <div
-            style={{
-              background: "var(--mobile-surface)",
-              border: "1px solid var(--mobile-divider)",
-              borderRadius: 16,
-              overflow: "hidden",
-            }}
-          >
-            {visibleRows.map((row, idx) => (
-              <CompareRowCard
-                key={row.player}
-                row={row}
-                color={
-                  chartColors[row.player] ??
-                  MOBILE_PALETTE[idx % MOBILE_PALETTE.length]
-                }
-              />
-            ))}
-          </div>
-        )}
-      </div>
+          {opt}
+        </button>
+      ))}
     </div>
   );
 }
 
-// ─── Active chips ─────────────────────────────────────────────────────────────
+// ─── ActiveChipRow ───────────────────────────────────────────────────────────────
+// Sticky chip row below title block: Period info chip + Region/UF active chips
+// + "+ Filters" trigger. The SegmentedToggle (unit) is pinned ABOVE this row.
 
-function ActiveChips({
-  product,
+function ActiveChipRow({
   regioes,
   ufs,
   latestDate,
-  unitMode,
-  onUnitChange,
   onOpenFilters,
-  onRemoveProduct,
   onRemoveRegiao,
   onRemoveUf,
 }: {
-  product: string;
   regioes: string[];
   ufs: string[];
   latestDate: string | null;
-  unitMode: UnitMode;
-  onUnitChange: (u: UnitMode) => void;
   onOpenFilters: () => void;
-  onRemoveProduct: () => void;
   onRemoveRegiao: (r: string) => void;
   onRemoveUf: (u: string) => void;
 }) {
   const X = <CloseIcon size={10} strokeWidth={2.5} />;
 
-  const chipStyle = (remove: () => void): React.CSSProperties => ({
+  const periodLabel = latestDate ? `to ${fmtDate(latestDate)}` : null;
+
+  const chipStyle: React.CSSProperties = {
     flexShrink: 0,
     minHeight: 32,
     padding: "0 8px 0 12px",
@@ -918,15 +441,18 @@ function ActiveChips({
     display: "inline-flex",
     alignItems: "center",
     gap: 6,
-    whiteSpace: "nowrap",
+    whiteSpace: "nowrap" as const,
     cursor: "pointer",
     fontFamily: "Arial, Helvetica, sans-serif",
-  });
+  };
 
   const removeBtn = (onRemove: () => void) => (
     <button
       type="button"
-      onClick={(e) => { e.stopPropagation(); onRemove(); }}
+      onClick={(e) => {
+        e.stopPropagation();
+        onRemove();
+      }}
       style={{
         width: 18,
         height: 18,
@@ -946,27 +472,14 @@ function ActiveChips({
     </button>
   );
 
-  const periodLabel = latestDate
-    ? (() => {
-        const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-        const y = latestDate.slice(0, 4);
-        const m = parseInt(latestDate.slice(5, 7), 10) - 1;
-        return `to ${MONTHS[m]} ${y}`;
-      })()
-    : null;
+  const hasDynamicChips = regioes.length > 0 || ufs.length > 0;
 
   return (
     <nav
       aria-label="Active filters"
       style={{
-        position: "sticky",
-        top: "var(--mobile-topbar-h)",
-        zIndex: 25,
         height: 52,
-        background: "var(--mobile-glass-bg)",
-        WebkitBackdropFilter: "var(--mobile-glass-blur)",
-        backdropFilter: "var(--mobile-glass-blur)",
-        borderBottom: "1px solid var(--mobile-glass-border)",
+        background: "var(--mobile-bg)",
         display: "flex",
         alignItems: "center",
         overflowX: "auto",
@@ -975,39 +488,16 @@ function ActiveChips({
         padding: "0 16px",
         WebkitOverflowScrolling: "touch",
         scrollbarWidth: "none",
+        borderBottom: hasDynamicChips
+          ? "1px solid var(--mobile-divider)"
+          : "none",
       }}
     >
-      {/* Unit toggle — top-level switch between % Share and thousand m³.
-          Sits at the head of the chip row so it stays visible alongside
-          the other active-filter chips. Stops auto-scroll inheritance via
-          flexShrink: 0 (matches chipStyle). */}
-      <div
-        style={{
-          flexShrink: 0,
-          display: "inline-flex",
-          alignItems: "center",
-        }}
-      >
-        <SegmentedToggle
-          options={UNIT_OPTIONS}
-          value={unitMode}
-          onChange={onUnitChange}
-          variant="compact"
-          fontSize={11}
-        />
-      </div>
-
-      {/* Product chip */}
-      <div style={chipStyle(onRemoveProduct)}>
-        {product}
-        {removeBtn(onRemoveProduct)}
-      </div>
-
-      {/* Period chip */}
+      {/* Period chip (info-only, no remove) */}
       {periodLabel && (
         <div
           style={{
-            ...chipStyle(() => {}),
+            ...chipStyle,
             color: "var(--mobile-text-muted)",
             cursor: "default",
             paddingRight: 12,
@@ -1019,7 +509,7 @@ function ActiveChips({
 
       {/* Region chips */}
       {regioes.map((r) => (
-        <div key={r} style={chipStyle(() => onRemoveRegiao(r))}>
+        <div key={r} style={chipStyle}>
           {r}
           {removeBtn(() => onRemoveRegiao(r))}
         </div>
@@ -1027,13 +517,13 @@ function ActiveChips({
 
       {/* UF chips */}
       {ufs.map((u) => (
-        <div key={u} style={chipStyle(() => onRemoveUf(u))}>
+        <div key={u} style={chipStyle}>
           {u}
           {removeBtn(() => onRemoveUf(u))}
         </div>
       ))}
 
-      {/* + Filters button */}
+      {/* + Filters trigger */}
       <button
         type="button"
         onClick={onOpenFilters}
@@ -1062,33 +552,28 @@ function ActiveChips({
   );
 }
 
-// ─── Mobile View ──────────────────────────────────────────────────────────────
+// ─── Mobile View ──────────────────────────────────────────────────────────────────
 
 export default function MobileView(): React.ReactElement {
-  const { visible, loading: visLoading } = useModuleVisibilityGuard("market-share");
+  const { visible, loading: visLoading } = useModuleVisibilityGuard(
+    "market-share",
+  );
 
   const ms = useMarketShareData();
 
-  // Local mobile state
-  const [activeTab, setActiveTab] = useState<MobileTab>("overview");
+  // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // Drawer-local filter state (committed to hook on Apply). `drawerProduct`
-  // mirrors `ms.selectedProduct` — the picker UI inside the drawer is a
-  // legacy shortcut; the canonical selector now lives in OverviewTab.
-  const [drawerProduct, setDrawerProduct] = useState<ProductKey>("Diesel B");
+  // Drawer-local filter state (committed to hook on Apply)
   const [drawerRegioes, setDrawerRegioes] = useState<string[]>([]);
   const [drawerMode, setDrawerMode] = useState<string>("Individual");
   const [drawerUfs, setDrawerUfs] = useState<string[]>([]);
 
-  // Active chip state (reflects last apply) for region/UF only.
-  // The product chip mirrors `ms.selectedProduct` so the chart selector
-  // and the chip stay in sync.
+  // Active chip state (reflects last Apply) for Region / UF only
   const [chipRegioes, setChipRegioes] = useState<string[]>([]);
   const [chipUfs, setChipUfs] = useState<string[]>([]);
 
   const openDrawer = () => {
-    setDrawerProduct(ms.selectedProduct);
     setDrawerRegioes([...chipRegioes]);
     setDrawerMode(ms.mode);
     setDrawerUfs([...chipUfs]);
@@ -1096,7 +581,6 @@ export default function MobileView(): React.ReactElement {
   };
 
   const handleDrawerApply = () => {
-    ms.setSelectedProduct(drawerProduct);
     setChipRegioes([...drawerRegioes]);
     setChipUfs([...drawerUfs]);
     ms.setMode(drawerMode as typeof ms.mode);
@@ -1107,20 +591,19 @@ export default function MobileView(): React.ReactElement {
   };
 
   const handleDrawerReset = () => {
-    setDrawerProduct("Diesel B");
     setDrawerRegioes([]);
     setDrawerMode("Individual");
     setDrawerUfs([]);
   };
 
-  // Hero chart traces — reflects the currently selected (product, segment)
-  // from the OverviewTab MobileTabBar selectors.
+  // Hero chart traces for the active (product × segment)
   const heroTraces = useMemo<PlotData[]>(() => {
     if (ms.seriesLoading || ms.serieRows.length === 0) return [];
     const productRows =
-      ms.selectedProduct === "Otto-Cycle" ? ms.ottoCycleRows : ms.serieRows;
+      ms.selectedProduct === "Otto-Cycle"
+        ? ms.ottoCycleRows
+        : ms.serieRows;
     const players = ms.big3 ? ALL_PLAYERS_BIG3 : ALL_PLAYERS_IND;
-    // SegmentKey "Total" maps to no segment filter (whole product).
     const segmentArg: string | null =
       ms.selectedSegment === "Total" ? null : ms.selectedSegment;
     return buildMobileStackedArea({
@@ -1141,44 +624,53 @@ export default function MobileView(): React.ReactElement {
     ms.chartColors,
   ]);
 
-  const tabItems = TABS.map((t) => ({
-    key: t.key,
-    label: t.label,
-    icon: t.icon,
-    active: activeTab === t.key,
-  }));
-
-  const onTabChange = (key: string) => {
-    if (key === "filters") {
-      openDrawer();
-      return;
-    }
-    setActiveTab(key as MobileTab);
-  };
-
   const fmtLabel = (d: string) => {
     try {
-      const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-      return `${MONTHS[parseInt(d.slice(5,7),10)-1]}, ${d.slice(0,4)}`;
-    } catch { return d; }
+      return `${MONTHS[parseInt(d.slice(5, 7), 10) - 1]}, ${d.slice(0, 4)}`;
+    } catch {
+      return d;
+    }
   };
 
   if (visLoading || !visible) return <></>;
 
-  // Period badge text
+  // Period badge text (based on slider range)
   const periodBadge = (() => {
     if (ms.datas.length === 0) return null;
     const [a, b] = ms.sliderRange;
     const start = ms.datas[a];
     const end = ms.datas[b];
     if (!start || !end) return null;
-    const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    const fmt = (d: string) => {
-      const m = parseInt(d.slice(5, 7), 10) - 1;
-      return `${MONTHS[m]} ${d.slice(0, 4)}`;
-    };
-    return `${fmt(start)} – ${fmt(end)}`;
+    return `${fmtDate(start)} – ${fmtDate(end)}`;
   })();
+
+  // Chart heading label
+  const chartHeading = `${PRODUCT_LABEL[ms.selectedProduct]} — ${ms.selectedSegment}`;
+
+  // Legend entries for the hero chart
+  const legendEntries = ms.topPlayersForSelected.map((p, i) => ({
+    name: p.player,
+    color:
+      p.color ??
+      ms.chartColors[p.player] ??
+      MOBILE_PALETTE[i % MOBILE_PALETTE.length],
+    isLeader: p.isLeader,
+  }));
+
+  // Comparison rows for the active chart variant
+  const visibleCompRows = ms.activeCompRows.filter((r) =>
+    ms.compareSet.includes(r.player),
+  );
+
+  // Product / segment tab definitions
+  const productTabs = PRODUCT_KEYS.map((p) => ({
+    key: p,
+    label: PRODUCT_LABEL[p],
+  }));
+  const segmentTabs = SEGMENTS_BY_PRODUCT[ms.selectedProduct].map((s) => ({
+    key: s,
+    label: s,
+  }));
 
   return (
     <div
@@ -1187,11 +679,12 @@ export default function MobileView(): React.ReactElement {
         margin: "0 auto",
         minHeight: "100dvh",
         background: "var(--mobile-bg)",
-        paddingBottom: "calc(72px + var(--mobile-safe-bottom))",
+        // Bottom padding: Home pill (56px) + 24px gap + safe-area
+        paddingBottom: "calc(80px + var(--mobile-safe-bottom))",
         position: "relative",
       }}
     >
-      {/* Top bar */}
+      {/* ── Top bar ─────────────────────────────────────────────────────────── */}
       <MobileTopBar
         title={
           <span style={{ fontWeight: 700, letterSpacing: "0.04em" }}>
@@ -1199,12 +692,10 @@ export default function MobileView(): React.ReactElement {
             <span style={{ color: "var(--mobile-accent)" }}>.</span>
           </span>
         }
-        showAvatar
-        avatarInitials="SB"
-        avatarLabel="SectorData user"
+        rightSlot={<MobileKebabMenu />}
       />
 
-      {/* Title block */}
+      {/* ── Title block ─────────────────────────────────────────────────────── */}
       <section style={{ padding: "16px 16px 12px" }}>
         <h1
           style={{
@@ -1264,74 +755,398 @@ export default function MobileView(): React.ReactElement {
         )}
       </section>
 
-      {/* Filter chip row */}
-      <ActiveChips
-        product={PRODUCT_LABEL[ms.selectedProduct]}
-        regioes={chipRegioes}
-        ufs={chipUfs}
-        latestDate={ms.latestDate}
-        unitMode={ms.unitMode}
-        onUnitChange={ms.setUnitMode}
-        onOpenFilters={openDrawer}
-        onRemoveProduct={() => { ms.setSelectedProduct("Diesel B"); }}
-        onRemoveRegiao={(r) => {
-          const next = chipRegioes.filter((x) => x !== r);
-          setChipRegioes(next);
-          ms.setRegioesSelected(next);
-          ms.applyFilters();
+      {/* ── 1. Sticky SegmentedToggle (% Share / Volume) ─────────────────────
+            Sits above everything else as the top-level unit switch.
+            Sticky top accounts for the MobileTopBar height (56px). */}
+      <div
+        style={{
+          position: "sticky",
+          top: "var(--mobile-topbar-h)",
+          zIndex: 25,
+          background: "var(--mobile-glass-bg)",
+          WebkitBackdropFilter: "var(--mobile-glass-blur)",
+          backdropFilter: "var(--mobile-glass-blur)",
+          borderBottom: "1px solid var(--mobile-glass-border)",
+          padding: "8px 16px",
         }}
-        onRemoveUf={(u) => {
-          const next = chipUfs.filter((x) => x !== u);
-          setChipUfs(next);
-          ms.setUfsSelected(next);
-          ms.applyFilters();
-        }}
-      />
+      >
+        <SegmentedToggle
+          options={UNIT_OPTIONS}
+          value={ms.unitMode}
+          onChange={ms.setUnitMode}
+          variant="full"
+          fontSize={13}
+        />
+      </div>
 
-      {/* Tab content */}
-      {activeTab === "overview" && (
-        <OverviewTab
-          loading={ms.seriesLoading}
-          heroTraces={heroTraces}
-          topPlayers={ms.topPlayersForSelected}
+      {/* ── 2. Product MobileTabBar ──────────────────────────────────────────── */}
+      <div style={{ padding: "12px 0 4px" }}>
+        <MobileTabBar
+          tabs={productTabs}
+          activeKey={ms.selectedProduct}
+          onChange={(k) => ms.setSelectedProduct(k as ProductKey)}
+          variant="container"
+          ariaLabel="Product"
+        />
+      </div>
+
+      {/* ── 3. Segment MobileTabBar ──────────────────────────────────────────── */}
+      <div style={{ padding: "0 0 4px" }}>
+        <MobileTabBar
+          tabs={segmentTabs}
+          activeKey={ms.selectedSegment}
+          onChange={(k) => ms.setSelectedSegment(k as SegmentKey)}
+          variant="underline"
+          ariaLabel="Segment"
+        />
+      </div>
+
+      {/* ── 4. Hero chart card ───────────────────────────────────────────────── */}
+      {ms.seriesLoading ? (
+        <div style={{ padding: "24px 16px" }}>
+          <BarrelLoading bare />
+        </div>
+      ) : (
+        <div style={{ padding: "16px 16px 0" }}>
+          <div
+            style={{
+              background: "var(--mobile-surface)",
+              border: "1px solid var(--mobile-divider)",
+              borderRadius: 16,
+              overflow: "hidden",
+            }}
+          >
+            {/* Chart header */}
+            <div
+              style={{
+                padding: "14px 14px 6px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 15,
+                  fontWeight: 700,
+                  color: "var(--mobile-text)",
+                  fontFamily: "Arial, Helvetica, sans-serif",
+                }}
+              >
+                {chartHeading}
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: "var(--mobile-text-muted)",
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                  fontFamily: "Arial, Helvetica, sans-serif",
+                }}
+              >
+                12M Rolling
+              </div>
+            </div>
+
+            {heroTraces.length > 0 ? (
+              <MobileChart
+                data={heroTraces}
+                height={320}
+                layout={{
+                  yaxis:
+                    ms.unitMode === "share"
+                      ? { ticksuffix: "%", range: [0, 100] }
+                      : { title: { text: "thousand m³" } },
+                  xaxis: {
+                    type: "date" as const,
+                    tickformat: "%b %y",
+                    nticks: 6,
+                  },
+                  hovermode: "x unified",
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  height: 320,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "var(--mobile-text-muted)",
+                  fontSize: 13,
+                  fontFamily: "Arial, Helvetica, sans-serif",
+                }}
+              >
+                No data for the selected filters.
+              </div>
+            )}
+
+            {/* 2-column legend */}
+            {legendEntries.length > 0 && (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, 1fr)",
+                  gap: "4px 12px",
+                  padding: "8px 14px 14px",
+                }}
+              >
+                {legendEntries.map((e) => (
+                  <div
+                    key={e.name}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      fontSize: 12,
+                      color: e.isLeader
+                        ? "var(--mobile-text)"
+                        : "var(--mobile-text-muted)",
+                      fontWeight: e.isLeader ? 700 : 400,
+                      minHeight: 22,
+                      fontFamily: "Arial, Helvetica, sans-serif",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 2,
+                        background: e.color,
+                        flexShrink: 0,
+                      }}
+                    />
+                    {e.name}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── 5. Top Distributors list ─────────────────────────────────────────── */}
+      <div style={{ padding: "20px 16px 0" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            justifyContent: "space-between",
+            paddingBottom: 10,
+          }}
+        >
+          <h2
+            style={{
+              margin: 0,
+              fontSize: 17,
+              fontWeight: 700,
+              color: "var(--mobile-text)",
+              fontFamily: "Arial, Helvetica, sans-serif",
+            }}
+          >
+            Top Distributors
+          </h2>
+          {ms.latestDate && (
+            <span
+              style={{
+                fontSize: 12,
+                color: "var(--mobile-text-muted)",
+                fontFamily: "Arial, Helvetica, sans-serif",
+              }}
+            >
+              {fmtDate(ms.latestDate)}
+            </span>
+          )}
+        </div>
+
+        {ms.topPlayersForSelected.length > 0 ? (
+          <div
+            style={{
+              background: "var(--mobile-surface)",
+              border: "1px solid var(--mobile-divider)",
+              borderRadius: 16,
+              overflow: "hidden",
+            }}
+          >
+            {ms.topPlayersForSelected.map((row) => (
+              <PlayerCard key={row.player} row={row} unitMode={ms.unitMode} />
+            ))}
+          </div>
+        ) : (
+          !ms.seriesLoading && (
+            <div
+              style={{
+                padding: 16,
+                color: "var(--mobile-text-muted)",
+                fontSize: 13,
+                fontFamily: "Arial, Helvetica, sans-serif",
+              }}
+            >
+              No data available.
+            </div>
+          )
+        )}
+      </div>
+
+      {/* ── 6. Comparison table (inline, always visible) ─────────────────────
+            Replaces the old Compare tab. Players from compareSet (seeded with
+            top-3 on data load) are shown side-by-side.
+            The player picker pills below let the user swap the comparison set. */}
+      {ms.activeCompRows.length > 0 && (
+        <div style={{ padding: "20px 16px 0" }}>
+          {/* Section header */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              justifyContent: "space-between",
+              paddingBottom: 10,
+            }}
+          >
+            <h2
+              style={{
+                margin: 0,
+                fontSize: 17,
+                fontWeight: 700,
+                color: "var(--mobile-text)",
+                fontFamily: "Arial, Helvetica, sans-serif",
+              }}
+            >
+              Comparison
+            </h2>
+            <span
+              style={{
+                fontSize: 12,
+                color: "var(--mobile-text-muted)",
+                fontFamily: "Arial, Helvetica, sans-serif",
+              }}
+            >
+              {ms.unitMode === "share"
+                ? "p.p. variation"
+                : "thousand m³ variation"}
+            </span>
+          </div>
+
+          {/* Context label */}
+          <div
+            style={{
+              fontSize: 13,
+              color: "var(--mobile-text-muted)",
+              fontFamily: "Arial, Helvetica, sans-serif",
+              marginBottom: 10,
+            }}
+          >
+            {PRODUCT_LABEL[ms.selectedProduct]} — {ms.selectedSegment}
+          </div>
+
+          {/* Player picker pills (pick up to 3 for side-by-side) */}
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 6,
+              marginBottom: 12,
+            }}
+          >
+            {ms.activeCompRows.map((r) => {
+              const on = ms.compareSet.includes(r.player);
+              const disabled = !on && ms.compareSet.length >= 3;
+              return (
+                <button
+                  key={r.player}
+                  type="button"
+                  onClick={() => ms.toggleCompareMember(r.player)}
+                  disabled={disabled}
+                  style={{
+                    minHeight: 32,
+                    padding: "0 12px",
+                    borderRadius: 999,
+                    border: `1px solid ${on ? "var(--mobile-accent)" : "var(--mobile-border)"}`,
+                    background: on
+                      ? "var(--mobile-accent)"
+                      : "var(--mobile-surface)",
+                    color: on ? "#fff" : "var(--mobile-text)",
+                    opacity: disabled ? 0.4 : 1,
+                    fontFamily: "Arial, Helvetica, sans-serif",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: disabled ? "not-allowed" : "pointer",
+                    boxShadow: on
+                      ? "0 2px 6px rgba(255,80,0,0.25)"
+                      : "none",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  {r.player}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Comparison cards */}
+          {visibleCompRows.length === 0 ? (
+            <div
+              style={{
+                padding: 18,
+                textAlign: "center",
+                color: "var(--mobile-text-muted)",
+                fontSize: 13,
+                fontFamily: "Arial, Helvetica, sans-serif",
+                border: "1px dashed var(--mobile-border)",
+                borderRadius: 12,
+              }}
+            >
+              Select up to 3 distributors above to compare their variation.
+            </div>
+          ) : (
+            <div
+              style={{
+                background: "var(--mobile-surface)",
+                border: "1px solid var(--mobile-divider)",
+                borderRadius: 16,
+                overflow: "hidden",
+              }}
+            >
+              {visibleCompRows.map((row, idx) => (
+                <CompareRowCard
+                  key={row.player}
+                  row={row}
+                  color={
+                    ms.chartColors[row.player] ??
+                    MOBILE_PALETTE[idx % MOBILE_PALETTE.length]
+                  }
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── 7. Filter chip row (Period / Region / UF / "+ Filters") ─────────── */}
+      <div style={{ paddingTop: 16 }}>
+        <ActiveChipRow
+          regioes={chipRegioes}
+          ufs={chipUfs}
           latestDate={ms.latestDate}
-          chartColors={ms.chartColors}
-          onViewAll={openDrawer}
-          selectedProduct={ms.selectedProduct}
-          selectedSegment={ms.selectedSegment}
-          onSelectProduct={ms.setSelectedProduct}
-          onSelectSegment={ms.setSelectedSegment}
-          unitMode={ms.unitMode}
+          onOpenFilters={openDrawer}
+          onRemoveRegiao={(r) => {
+            const next = chipRegioes.filter((x) => x !== r);
+            setChipRegioes(next);
+            ms.setRegioesSelected(next);
+            ms.applyFilters();
+          }}
+          onRemoveUf={(u) => {
+            const next = chipUfs.filter((x) => x !== u);
+            setChipUfs(next);
+            ms.setUfsSelected(next);
+            ms.applyFilters();
+          }}
         />
-      )}
-      {activeTab === "compare" && (
-        <CompareTab
-          loading={ms.seriesLoading}
-          compRows={ms.activeCompRows}
-          compareSet={ms.compareSet}
-          toggleCompareMember={ms.toggleCompareMember}
-          selectedProduct={ms.selectedProduct}
-          selectedSegment={ms.selectedSegment}
-          chartColors={ms.chartColors}
-          unitMode={ms.unitMode}
-        />
-      )}
+      </div>
 
-      {/* Export FAB */}
-      <ExportFAB
-        icon="download"
-        onClick={ms.openExportModal}
-        disabled={ms.seriesLoading || ms.excelLoading || ms.csvLoading}
-        ariaLabel="Export data"
-      />
-
-      {/* Bottom tab bar */}
-      <MobileBottomTabBar
-        tabs={tabItems}
-        onChange={onTabChange}
-      />
-
-      {/* Filter drawer */}
+      {/* ── FilterDrawer ────────────────────────────────────────────────────── */}
       <FilterDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
@@ -1341,33 +1156,6 @@ export default function MobileView(): React.ReactElement {
         applyLabel="Apply filters"
         resetLabel="Reset"
       >
-        {/* Product */}
-        <div style={{ marginBottom: 22 }}>
-          <div
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: "var(--mobile-text-muted)",
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-              marginBottom: 10,
-              fontFamily: "Arial, Helvetica, sans-serif",
-            }}
-          >
-            Product
-          </div>
-          <CheckPills
-            options={PRODUCT_KEYS.map((p) => PRODUCT_LABEL[p])}
-            value={PRODUCT_LABEL[drawerProduct]}
-            onChange={(v) => {
-              const label = v as string;
-              const found = PRODUCT_KEYS.find((p) => PRODUCT_LABEL[p] === label);
-              if (found) setDrawerProduct(found);
-            }}
-            radio
-          />
-        </div>
-
         {/* Period */}
         <div style={{ marginBottom: 22 }}>
           <div
@@ -1427,8 +1215,18 @@ export default function MobileView(): React.ReactElement {
               }}
             >
               <span>Region</span>
-              <span style={{ fontSize: 11, fontWeight: 600, color: "var(--mobile-text-faint)", textTransform: "none", letterSpacing: 0 }}>
-                {drawerRegioes.length > 0 ? `${drawerRegioes.length} of ${ms.regioesAll.length}` : "All"}
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: "var(--mobile-text-faint)",
+                  textTransform: "none",
+                  letterSpacing: 0,
+                }}
+              >
+                {drawerRegioes.length > 0
+                  ? `${drawerRegioes.length} of ${ms.regioesAll.length}`
+                  : "All"}
               </span>
             </div>
             <CheckPills
@@ -1456,8 +1254,18 @@ export default function MobileView(): React.ReactElement {
               }}
             >
               <span>UF</span>
-              <span style={{ fontSize: 11, fontWeight: 600, color: "var(--mobile-text-faint)", textTransform: "none", letterSpacing: 0 }}>
-                {drawerUfs.length > 0 ? `${drawerUfs.length} selected` : "All"}
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: "var(--mobile-text-faint)",
+                  textTransform: "none",
+                  letterSpacing: 0,
+                }}
+              >
+                {drawerUfs.length > 0
+                  ? `${drawerUfs.length} selected`
+                  : "All"}
               </span>
             </div>
             <CheckPills
@@ -1468,7 +1276,7 @@ export default function MobileView(): React.ReactElement {
           </div>
         )}
 
-        {/* Segment / Mode */}
+        {/* View Mode */}
         <div style={{ marginBottom: 22 }}>
           <div
             style={{
@@ -1492,25 +1300,8 @@ export default function MobileView(): React.ReactElement {
         </div>
       </FilterDrawer>
 
-      {/* Export Modal (same Tier 2 as desktop) */}
-      <ExportModal
-        open={ms.exportOpen}
-        onClose={ms.closeExportModal}
-        title="Export — Market Share"
-        datasetKey="vendas"
-        currentFilters={ms.exportFilters}
-        countFetcher={ms.fetchExportCount}
-        excelBusy={ms.excelLoading}
-        csvBusy={ms.csvLoading}
-        loadingLabel={ms.excelLoading ? "Generating Excel..." : "Downloading CSV..."}
-        onExportExcel={ms.onExportExcel}
-        onExportCsv={ms.onExportCsv}
-        filters={
-          <div style={{ fontFamily: "Arial, Helvetica, sans-serif", fontSize: 13, color: "var(--mobile-text-muted)" }}>
-            Period and region filters from main view apply to this export.
-          </div>
-        }
-      />
+      {/* ── MobileHomePill (floating) ────────────────────────────────────────── */}
+      <MobileHomePill />
     </div>
   );
 }
