@@ -122,6 +122,12 @@ Layout per plan § 4.4 (`o-modo-mobile-da-tranquil-giraffe.md`):
 
 **Mobile vs Desktop divergence (`[mobile-only]`, 2026-05-28):** the v1 mobile "Comparison" table with `Latest | MoM | YoY` columns per series was replaced by the **Petrobras Price Gap** section described above. Rationale: the desktop view already exposes those gaps as colored badges directly above each chart (via `PctBadge`), which mobile cannot fit on a single line. The mobile view consolidates the same information into stacked cards. MoM/YoY data is not currently surfaced on mobile by design — users who need historical change tables consult the desktop view. The hook already exposed `currentValues.{Gasoline,Diesel}.pctVsIpp / pctVsEpp / pctVsIppSubsidy / pctPetroSubVsIppSub`, so no hook changes were required.
 
+**End-of-line data labels on mobile chart (`[mobile-only]`, 2026-05-28):** the desktop view surfaces the latest R$ value of each series through the `PctBadge` row above each chart; mobile lacks that horizontal room. To preserve the "price-on-the-tip" information that briefly lived in a mobile comparison table, the mobile chart now renders a small annotation per visible series anchored to the last non-null point (`R$ X.XX`, colored to match the trace).
+- Implementation: Plotly annotations (Option A) — `xref:"x"`, `yref:"y"`, `xanchor:"left"`, `xshift: 6`, no arrow. Color matches the trace; white-with-alpha background for readability over gridlines.
+- Stacking: helper `deconflictLabels` sorts labels by raw y and walks the list pushing any neighbour within `MIN_LABEL_DELTA = R$ 0.18` upward just enough to maintain separation. We do not balance symmetrically — pushing only upward keeps each label close to its true value.
+- Layout adjustments: right margin bumped from 8 → 60 px; X axis range padded by 18 % beyond the last data point so labels never get clipped; traces set `cliponaxis: false` defensively.
+- Mobile/desktop pattern summary: **mobile = end-of-line data labels on chart + Petrobras Price Gap cards below**; **desktop = `PctBadge` row above chart + MoM/YoY comparison table**. Both carry the same underlying information (`currentValues.*`).
+
 **Color encoding (same as desktop):**
 - Import chip → orange `#E8611A` (solid + dashed subsidy variant)
 - Export chip → black `#1a1a1a`

@@ -28,7 +28,7 @@
 // must declare [mobile-only] with an explicit reason.
 
 import { useCallback, useMemo, useState } from "react";
-import type { PlotData } from "plotly.js";
+import type { PlotData, Layout } from "plotly.js";
 
 import {
   MobileTabBar,
@@ -182,6 +182,135 @@ function fmtPctCell(pct: number | null): { text: string; positive: boolean | nul
   return { text, positive: pct >= 0 };
 }
 
+// ─── End-of-line data labels (Petrobras-on-the-tip values) ──────────────────
+//
+// For each visible trace in the chart, draw a small annotation anchored to the
+// LAST non-null point showing the latest R$ value. The Plotly layer doesn't
+// stack annotations automatically — when two final values are very close in
+// price space, the labels overlap. We deconflict in two passes:
+//
+//   1. Compute one annotation per series (date + value + color).
+//   2. Sort by y (asc) and walk the list: if two adjacent labels are within
+//      MIN_LABEL_SPACING (in data-units), shift the upper one up just enough.
+//
+// We work in data-units instead of pixels because annotations with `xref:"x"`
+// and `yref:"y"` use data coordinates; converting to pixels would require
+// reading the rendered plot dimensions. Data-space deconfliction is good
+// enough for the typical R$ 2.50–7.00 range in this chart.
+
+interface EndLabel {
+  trace: string;
+  x: string;
+  y: number;
+  color: string;
+  text: string;
+}
+
+function fmtBrl(v: number): string {
+  return `R$ ${v.toFixed(2)}`;
+}
+
+function buildEndLabels(
+  rows: PriceBandsRow[],
+  product: PriceBandsProduct,
+  xMin: string | null,
+  xMax: string | null,
+  visibleKeys: Set<SeriesKey>,
+): EndLabel[] {
+  const seriesDefs = product === "Gasoline" ? GAS_SERIES : DSL_SERIES;
+
+  const filtered = rows
+    .filter((r) => r.product === product)
+    .filter((r) => (!xMin || r.date >= xMin) && (!xMax || r.date <= xMax))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (filtered.length === 0) return [];
+
+  const labels: EndLabel[] = [];
+
+  for (const s of seriesDefs) {
+    const chipKey = chipForField(s.field as string);
+    if (!chipKey || !visibleKeys.has(chipKey)) continue;
+
+    // Find last non-null point for this series within the window.
+    let lastIdx = -1;
+    for (let i = filtered.length - 1; i >= 0; i--) {
+      const v = filtered[i][s.field as keyof PriceBandsRow];
+      if (typeof v === "number" && Number.isFinite(v)) {
+        lastIdx = i;
+        break;
+      }
+    }
+    if (lastIdx < 0) continue;
+
+    const last = filtered[lastIdx];
+    const value = last[s.field as keyof PriceBandsRow] as number;
+    labels.push({
+      trace: s.label,
+      x: last.date,
+      y: value,
+      color: s.color,
+      text: fmtBrl(value),
+    });
+  }
+
+  return labels;
+}
+
+/**
+ * Deconflict label y-positions in data space. Returns annotations[] with a
+ * `_yShift` field consumed downstream to convert to Plotly's `yshift` (pixels).
+ *
+ * Algorithm: sort labels by raw y ascending; walk the list; if neighbour i+1
+ * is within minDelta of neighbour i, push i+1 upwards just enough to maintain
+ * minDelta. We do not "balance" symmetrically — pushing only upward keeps
+ * labels closer to their true y (the bottom-most stays anchored) which reads
+ * more naturally than centering.
+ */
+function deconflictLabels(
+  labels: EndLabel[],
+  minDelta: number,
+): Array<EndLabel & { displayY: number }> {
+  if (labels.length === 0) return [];
+  const sorted = [...labels].sort((a, b) => a.y - b.y);
+  const out: Array<EndLabel & { displayY: number }> = [];
+  let prevDisplayY = -Infinity;
+  for (const lab of sorted) {
+    const displayY = Math.max(lab.y, prevDisplayY + minDelta);
+    out.push({ ...lab, displayY });
+    prevDisplayY = displayY;
+  }
+  return out;
+}
+
+/** Convert EndLabel[] to Plotly annotation objects.
+ *
+ * Returns an unstructured shape that we cast through `any` at the call site —
+ * Plotly's Annotation type is exposed via `Layout["annotations"]` but
+ * importing the concrete type is awkward (it's a non-exported union member).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function labelsToAnnotations(labels: Array<EndLabel & { displayY: number }>): any[] {
+  return labels.map((lab) => ({
+    xref: "x",
+    yref: "y",
+    x: lab.x,
+    y: lab.displayY,
+    xanchor: "left",
+    yanchor: "middle",
+    xshift: 6,
+    text: `<b>${lab.text}</b>`,
+    showarrow: false,
+    font: {
+      family: "Arial, Helvetica, sans-serif",
+      size: 10,
+      color: lab.color,
+    },
+    bgcolor: "rgba(255,255,255,0.85)",
+    borderpad: 1,
+  }));
+}
+
 // ─── Chart builder — mobile 3-line chart ────────────────────────────────────
 //
 // Builds filtered traces from the pre-built chart data returned by the hook,
@@ -225,6 +354,7 @@ function buildMobileTraces(
       y: filtered.map((r) => r[s.field as keyof PriceBandsRow] as number | null),
       line: { color: s.color, dash: s.dash, shape: s.shape, width: s.width },
       hovertemplate: `%{fullData.name}: R$ %{y:.2f}<extra></extra>`,
+      cliponaxis: false,
     } as unknown as PlotData);
   }
 
@@ -358,14 +488,49 @@ export default function MobileView(): React.ReactElement {
     [rows, filters.product, xMin, xMax, visibleKeys],
   );
 
-  const chartLayout = useMemo(() => ({
+  // End-of-line data labels (preserves the "price-on-the-tip" info that used
+  // to live in the comparison table — see Mobile vs Desktop divergence note
+  // in docs/app/price-bands.md).
+  const endLabels = useMemo(
+    () => buildEndLabels(rows, filters.product, xMin, xMax, visibleKeys),
+    [rows, filters.product, xMin, xMax, visibleKeys],
+  );
+
+  // Deconfliction threshold in data units (R$/L). Typical price range here is
+  // ~R$ 2–7 with ~R$ 0.50 between series; R$ 0.18 keeps labels from touching
+  // while preserving most of the natural alignment.
+  const MIN_LABEL_DELTA = 0.18;
+
+  // Extend the X axis a bit beyond the last data point so the annotation has
+  // room to render without being clipped. ~6% of the visible window is a good
+  // empirical value at typical mobile chart heights.
+  const xRange = useMemo<[string, string] | null>(() => {
+    if (!xMin || !xMax) return null;
+    const tMax = new Date(xMax + "T00:00:00Z").getTime();
+    const tMin = new Date(xMin + "T00:00:00Z").getTime();
+    if (!Number.isFinite(tMax) || !Number.isFinite(tMin) || tMax <= tMin) return null;
+    const padded = new Date(tMax + (tMax - tMin) * 0.18).toISOString().slice(0, 10);
+    return [xMin, padded];
+  }, [xMin, xMax]);
+
+  const annotations = useMemo(() => {
+    const resolved = deconflictLabels(endLabels, MIN_LABEL_DELTA);
+    return labelsToAnnotations(resolved);
+  }, [endLabels]);
+
+  const chartLayout = useMemo<Partial<Layout>>(() => ({
     height: 260,
-    margin: { l: 44, r: 8, t: 12, b: 36 },
+    // Bumped r from 8 → 60 to leave room for end-of-line annotations (the
+    // labels live in plot area via x-range padding, but extra gutter ensures
+    // tail of widest label has breathing room before the y-axis line on the
+    // right of the plot frame).
+    margin: { l: 44, r: 60, t: 12, b: 36 },
     xaxis: {
       type: "date" as const,
       tickformat: "%b-%y",
       nticks: 5,
       tickangle: -30,
+      ...(xRange ? { range: xRange } : {}),
     },
     yaxis: {
       tickformat: ".2f",
@@ -374,7 +539,9 @@ export default function MobileView(): React.ReactElement {
     },
     showlegend: false,
     hovermode: "x unified" as const,
-  }), []);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    annotations: annotations as any,
+  }), [xRange, annotations]);
 
   // ── Current values (for legend chip subtitle + Petrobras gap table) ──────
   const cv = currentValues[filters.product];
