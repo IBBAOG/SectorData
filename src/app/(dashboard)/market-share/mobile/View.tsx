@@ -682,7 +682,7 @@ export default function MobileView(): React.ReactElement {
                 layout={{
                   ...(ms.activeChart?.layout ?? {}),
                   height: 320,
-                  margin: { t: 10, b: 60, l: 50, r: 20 },
+                  margin: { t: 10, b: 60, l: 50, r: 50 },
                   legend: { orientation: "h" as const, y: -0.25, x: 0.5, xanchor: "center" as const },
                   paper_bgcolor: "transparent",
                   plot_bgcolor: "transparent",
