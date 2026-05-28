@@ -187,6 +187,28 @@ ETL: `vendas_watch` → `vendas` → MV `mv_ms_serie_fast` (refresh via `classif
 
 ## Export
 
+### Migration strategy (2026-05-28) — **fallback / legacy preserved**
+
+The unified export library wave (`src/lib/export/`, owners `worker_subgerente-app` + `worker_designer`) ships a declarative `ExportSpec` + a single `<ExportButton spec={...}/>` entry point. Most dashboards plug straight into it.
+
+**`/market-share` is the deliberate exception.** Strategy chosen for Phase 1 of the wave: **fallback** (see [`src/lib/export/dashboards/marketShare.ts`](../../src/lib/export/dashboards/marketShare.ts) for the in-code anchor).
+
+Why:
+
+- The Excel workbook embeds OOXML line charts (4 sheets × 3–4 segment blocks, cores fixas Vibra `#f26522` / Raizen `#1a1a1a` / Ipiranga `#73C6A1` / Big-3 `#FF5000` / Others `#A9A9A9`).
+- The `<c:numFmt formatCode='0"%"'>` single-quoted-attribute trick (see Pegadinha at the bottom of this section) has been validated in production for years; the new core's chart support has not yet been verified end-to-end against this corner case.
+- The OOXML showcase is too valuable to risk during the migration wave — recovering from a regression would mean re-implementing the chart builder under time pressure.
+
+What actually changed in this commit:
+
+- New tiny placeholder file `src/lib/export/dashboards/marketShare.ts` declares `marketShareExportStrategy = "fallback"` + a structured `marketShareExport` object pointing at the legacy handlers. It is **not** a real `ExportSpec` and is **not** consumed by `<ExportButton>`.
+- `desktop/View.tsx` keeps the existing `<ExportPanel actions={...} />` in `<DashboardHeader rightSlot={...}>` and the existing `<ExportModal ...>` mounted at the page root. A header comment + a `void`-discarded import of the placeholder make the deliberate choice discoverable to the next reader and to lint/dead-code tooling.
+- Legacy handlers `downloadMarketShareExcel` and `downloadSalesVolumesExcel` in [`src/lib/exportExcel.ts`](../../src/lib/exportExcel.ts) are untouched. **Do not delete them.**
+
+Phase 2 of the export wave (post-migration) will swap the placeholder for a full `ExportSpec` once the new ExcelBuilder demonstrably round-trips an OOXML chart with cores fixas + the single-quoted `numFmt` attribute. At that point `desktop/View.tsx` flips to `<ExportButton spec={marketShareExport}/>` in a single commit and the legacy ExportPanel/ExportModal can be removed alongside the cleanup of other dashboards.
+
+### Legacy (still active) export behavior
+
 Tier 2 — `<ExportPanel mode="modal">` abre `<ExportModal>` com filtros + calculadora live de tamanho (ver [`docs/app/PRD.md`](PRD.md) → "Export padronizado").
 
 - RPC count: `get_ms_export_count` (`p_data_inicio`, `p_data_fim`, `p_regioes`, `p_ufs`, `p_mercados`) → `bigint`, em `supabase/migrations/20260507000003_export_count_rpcs.sql`.
