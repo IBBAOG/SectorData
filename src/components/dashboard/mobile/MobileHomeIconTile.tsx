@@ -17,15 +17,15 @@
 //
 //   ┌─────────────────────────────────────────┐
 //   │ ┌──────┐                                │
-//   │ │ ICON │   Brazil Production            │   ← ~88px tall, full column width
+//   │ │ ICON │   Brazil Production            │   ← ~68px tall, full column width
 //   │ │ 40×40│   (Arial 15px / 600 / dark)    │
 //   │ └──────┘                                │
 //   └─────────────────────────────────────────┘
 //      ^                ^
-//      40×40 squircle    14px gap
+//      40×40 squircle    10px gap
 //      radius 12px       Arial 15/600 — left-aligned, clamps to 2 lines
 //      tinted bg         No subtitle (minimalism per plan § 3.x)
-//      ~24px icon
+//      ~30px icon
 //      colour = tintFg
 //
 // Layering (the tile itself):
@@ -91,18 +91,17 @@ export default function MobileHomeIconTile(
 
   const isCompact = variant === "compact";
 
-  // Icon-badge dimensions — 36×36 in both variants. Default used 40×40 in
-  // earlier iterations but the extra 4px squeezed long titles into 3-line
-  // overflow at 360px viewports (e.g. "Brazil Production", "Monthly
-  // Production"). Dropping to 36 gives the label ~10px of breathing room
-  // without visually shrinking the icon noticeably.
-  const badgeSize = 36;
-  const badgeRadius = isCompact ? 10 : 11;
+  // Icon-badge dimensions — 40×40 default, 36×36 compact. The larger badge
+  // gives the 30px glyph (passed from mobileHomeTiles) more breathing room
+  // inside the squircle and makes icons more legible at a glance.
+  const badgeSize = isCompact ? 36 : 40;
+  const badgeRadius = isCompact ? 10 : 12;
 
-  // Tile dimensions — ~84px tall default, 56px compact (still meets the 48×48
-  // touch-target floor with margin).
-  const tileMinHeight = isCompact ? 56 : 84;
-  const tilePadding = isCompact ? "10px 12px" : "12px 12px";
+  // Tile dimensions — 68px tall default (down from 84px), 56px compact.
+  // Reduced vertical footprint keeps the 2-col grid compact on short screens
+  // while the larger badge/icon compensates for perceived visual weight.
+  const tileMinHeight = isCompact ? 56 : 68;
+  const tilePadding = isCompact ? "10px 12px" : "10px 12px";
   const tileGap = isCompact ? 10 : 10;
   const titleSize = isCompact ? 13 : 15;
 

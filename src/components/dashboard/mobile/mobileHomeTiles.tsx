@@ -131,7 +131,7 @@ export function getTileMeta(
   const cat: TileCategory = category ?? SLUG_CATEGORY[slug] ?? "fuel";
   const tint = CATEGORY_TINTS[cat];
   return {
-    icon: getTileIcon(slug, variant === "compact" ? 20 : 26),
+    icon: getTileIcon(slug, variant === "compact" ? 20 : 30),
     compactIcon: getTileIcon(slug, 20),
     tintBg: tint.tile,
     tintFg: tint.accentText,
