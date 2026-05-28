@@ -551,21 +551,40 @@ export default function MobileView(): React.ReactElement {
     return labelsToAnnotations(resolved);
   }, [endLabels, MIN_LABEL_DELTA]);
 
+  // Extend the x-axis range a fixed number of days past the last data point
+  // so the end-of-line annotations (xref:"x", xanchor:"left") have room to
+  // render without being clipped at the plot-area boundary.
+  // We keep margin.r small (8px) so the plot area fills the card edge-to-edge.
+  // 45 days is enough for 5 annotation characters (~28px of Arial-10 text +
+  // xshift:6) across the range widths we see at 1M–All zoom levels.
+  const xAxisRange = useMemo<[string, string] | undefined>(() => {
+    // Determine the rightmost data point in the current window.
+    const lastDate = xMax ?? rows
+      .filter((r) => r.product === filters.product)
+      .reduce<string | null>((acc, r) => (r.date > (acc ?? "") ? r.date : acc), null);
+    if (!lastDate) return undefined;
+
+    const end = new Date(lastDate + "T00:00:00Z");
+    end.setUTCDate(end.getUTCDate() + 45);
+    const endStr = end.toISOString().slice(0, 10);
+
+    // Keep xMin as the left boundary (when set by the period chip).
+    return xMin ? [xMin, endStr] : [lastDate, endStr];
+  }, [xMax, xMin, rows, filters.product]);
+
   const chartLayout = useMemo<Partial<Layout>>(() => ({
     height: 260,
-    // r=70 + xaxis.automargin lets Plotly compute the actual room needed for
-    // tick labels and reserve a fixed pixel gutter for the end-of-line
-    // annotations. We deliberately do NOT extend `xaxis.range` past the last
-    // data point — extending range in data-space was visually pushing the
-    // chart 2+ months into the future (e.g. last point = May 2026 was
-    // rendering ticks up to Jul-26). The pixel-based margin is unit-free.
-    margin: { l: 44, r: 70, t: 12, b: 36 },
+    // margin.r kept minimal (8px) so the plot area fills the full card width.
+    // Room for end-of-line annotation text is created by extending xaxis.range
+    // 45 days past the last data point (see xAxisRange above).
+    margin: { l: 44, r: 8, t: 12, b: 36 },
     xaxis: {
       type: "date" as const,
       tickformat: "%b-%y",
       nticks: 5,
       tickangle: -30,
       automargin: true,
+      ...(xAxisRange ? { range: xAxisRange } : {}),
     },
     yaxis: {
       tickformat: ".2f",
@@ -576,7 +595,7 @@ export default function MobileView(): React.ReactElement {
     hovermode: "x unified" as const,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     annotations: annotations as any,
-  }), [annotations]);
+  }), [annotations, xAxisRange]);
 
   // ── Current values (for legend chip subtitle + Petrobras gap table) ──────
   const cv = currentValues[filters.product];
