@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import Image from "next/image";
 import { getSupabaseClient } from "../../lib/supabaseClient";
 import { UserProfileProvider } from "../../context/UserProfileContext";
 import { useUserProfile } from "../../context/UserProfileContext";
@@ -11,6 +12,14 @@ import { trackEvent } from "../../lib/tracking";
 import { ROUTE_TITLES } from "../../components/NavBar";
 import Footer from "../../components/Footer";
 import PWAInstallPrompt from "../../components/PWAInstallPrompt";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { useTrackLastVisited } from "../../hooks/useTrackLastVisited";
+import {
+  MobileTopBar,
+  MobileHomePill,
+  MobileKebabMenu,
+  MobileToastHost,
+} from "../../components/dashboard/mobile";
 
 // Routes excluded from page_view tracking — meta/admin pages should not
 // pollute the dashboard engagement metrics they themselves report on.
@@ -89,14 +98,126 @@ export default function DashboardLayout({
     <UserProfileProvider supabase={supabase}>
       <NewsHunterProvider supabase={supabase}>
         <AuthSideEffects pathname={pathname} router={router} />
-        <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
-          <FirstLoginGate />
-          <div style={{ flex: 1 }}>{children}</div>
-          <Footer />
-          <PWAInstallPrompt />
-        </div>
+        <FirstLoginGate />
+        <DashboardShell>{children}</DashboardShell>
       </NewsHunterProvider>
     </UserProfileProvider>
+  );
+}
+
+/* ── Shell switcher ────────────────────────────────────────────────────────
+   Picks between desktop and mobile chrome based on viewport. Both shells
+   render the same `children` (the active dashboard page); only the chrome
+   around it differs. */
+function DashboardShell({ children }: { children: React.ReactNode }) {
+  const isMobile = useIsMobile();
+
+  // Mount the last-visited tracker once at the shell level so it captures
+  // every route change inside the dashboard. Tracking is mobile-only for now
+  // (consumed by /home v2 horizontal "Last visited" row) — keeping the hook
+  // unconditional avoids the rules-of-hooks footgun and is cheap (one
+  // localStorage write per nav).
+  useTrackLastVisited();
+
+  if (isMobile) {
+    return <MobileShell>{children}</MobileShell>;
+  }
+  return <DesktopShell>{children}</DesktopShell>;
+}
+
+/* ── Desktop shell ─────────────────────────────────────────────────────────
+   The historical layout: full-height flex column, content + Footer, plus the
+   PWA install prompt. NavBar is rendered by individual dashboard pages, not
+   here. */
+function DesktopShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      <div style={{ flex: 1 }}>{children}</div>
+      <Footer />
+      <PWAInstallPrompt />
+    </div>
+  );
+}
+
+/* ── Mobile shell ──────────────────────────────────────────────────────────
+   Plan § 3.2 chrome:
+     • MobileTopBar (sticky 56px) — centered SectorData logo on the left
+       slot, MobileKebabMenu on the right slot. No NavBar, no breadcrumb,
+       no avatar — the kebab owns logout for logged-in users; anon visitors
+       see the slot but the kebab renders nothing.
+     • <main> — the active dashboard page renders here.
+     • MobileHomePill (floating, auto-hides on /home) — single primary nav.
+     • MobileToastHost — listens for `app-toast` CustomEvents and renders
+       transient pill messages (used by MobileExcludedRedirect).
+   No Footer, no PWAInstallPrompt — both are desktop chrome. */
+function MobileShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        background: "var(--mobile-bg)",
+        minHeight: "100dvh",
+        fontFamily: "Arial, Helvetica, sans-serif",
+        color: "var(--mobile-text)",
+        WebkitFontSmoothing: "antialiased",
+      }}
+    >
+      <MobileTopBar
+        leftSlot={
+          // The MobileTopBar grid is `1fr auto`. To get a truly centered
+          // wordmark while the kebab sits in the right column, we let the
+          // leftSlot fill the 1fr and center its contents. The kebab takes
+          // 44px on the right, so we add a 44px right padding inside the
+          // leftSlot so the wordmark optically aligns to the viewport
+          // centerline (visual symmetry trick — without it the wordmark
+          // would lean leftwards by half the kebab width).
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              width: "100%",
+              minWidth: 0,
+              paddingLeft: 44,
+            }}
+          >
+            <Image
+              src="/blood-drop-navbar.png"
+              alt=""
+              width={22}
+              height={22}
+              priority
+              style={{
+                opacity: 0.78,
+                height: 22,
+                width: "auto",
+                objectFit: "contain",
+              }}
+            />
+            <span
+              style={{
+                fontWeight: 700,
+                fontSize: 16,
+                letterSpacing: "0.06em",
+                color: "var(--mobile-text)",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              SECTORDATA
+              <span style={{ color: "var(--mobile-accent)" }}>.</span>
+            </span>
+          </div>
+        }
+        rightSlot={<MobileKebabMenu />}
+      />
+
+      <main>{children}</main>
+
+      <MobileHomePill />
+      <MobileToastHost />
+    </div>
   );
 }
 

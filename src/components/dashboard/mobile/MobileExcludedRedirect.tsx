@@ -47,11 +47,12 @@ export default function MobileExcludedRedirect(
   useEffect(() => {
     if (!isMobile) return;
 
-    // Fire a global "app-toast" event so any future toast container can render
-    // a transient message. TODO(worker_subgerente-app): mount a global
-    // ToastHost in (dashboard)/layout.tsx (or root layout) that listens for
-    // window.addEventListener("app-toast", ...) and renders a 3s-auto-dismiss
-    // pill at the top of the mobile screen.
+    // Fire a global "app-toast" event picked up by `<MobileToastHost />`
+    // (mounted by `(dashboard)/layout.tsx` in the MobileShell branch). The
+    // host listens on `window` and survives the `router.replace()` below
+    // because it lives in a sibling subtree to <main>, so the toast renders
+    // on the destination (/home) — not on this excluded page we are about
+    // to unmount.
     if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
       const message = `${displayName ?? slug} is available only on desktop.`;
       try {
