@@ -14,8 +14,9 @@ import PlotlyChart from "../../../../components/PlotlyChart";
 import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
 import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
-import ExportPanel from "../../../../components/dashboard/ExportPanel";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
+import { ExportButton } from "@/lib/export";
+import { priceBandsExport } from "@/lib/export/dashboards/priceBands";
 import { useModuleVisibilityGuard } from "../../../../hooks/useModuleVisibilityGuard";
 import {
   usePriceBandsData,
@@ -75,7 +76,7 @@ function ChartHeader({ product, cv, rows, xMax }: { product: "Gasoline" | "Diese
 export default function DesktopView(): React.ReactElement {
   const { visible, loading: visLoading } = useModuleVisibilityGuard("price-bands");
   const {
-    rows, loading,
+    loading,
     filters, setFilters,
     datas, xMin, xMax,
     gasolineRows, dieselRows,
@@ -83,8 +84,6 @@ export default function DesktopView(): React.ReactElement {
     gasolineYtd, dieselYtd,
     ytdYears, ytdYear, setYtdYear,
     currentValues,
-    exportExcel, exportCsv,
-    excelLoading, csvLoading,
     resetFilters,
   } = usePriceBandsData();
 
@@ -150,28 +149,7 @@ export default function DesktopView(): React.ReactElement {
                 sub="BBA Import/Export Parity vs. Petrobras reference price (R$/L)"
                 lang="en"
                 hideDivider
-                rightSlot={
-                  <ExportPanel
-                    actions={[
-                      {
-                        kind: "excel",
-                        label: "formated data .xl",
-                        busy: excelLoading,
-                        loadingLabel: "Generating Excel...",
-                        disabled: rows.length === 0 || loading || excelLoading,
-                        onClick: exportExcel,
-                      },
-                      {
-                        kind: "csv",
-                        label: "all data .csv",
-                        busy: csvLoading,
-                        loadingLabel: "Downloading CSV...",
-                        disabled: rows.length === 0 || loading || csvLoading,
-                        onClick: exportCsv,
-                      },
-                    ]}
-                  />
-                }
+                rightSlot={<ExportButton spec={priceBandsExport} />}
               />
 
               {/* Section 1: Price Bands */}

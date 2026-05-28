@@ -94,7 +94,9 @@ Run locally. **Data owner:** `worker_dados-locais`.
 
 ### Hook contract (`usePriceBandsData`)
 
-Returns: `{ rows, loading, error, filters, setFilters, datas, xMin, xMax, gasolineRows, dieselRows, gasolineChart, dieselChart, gasolineYtd, dieselYtd, ytdYears, ytdYear, setYtdYear, currentValues, exportExcel, exportCsv, excelLoading, csvLoading, resetFilters }`.
+Returns: `{ rows, loading, error, filters, setFilters, datas, xMin, xMax, gasolineRows, dieselRows, gasolineChart, dieselChart, gasolineYtd, dieselYtd, ytdYears, ytdYear, setYtdYear, currentValues, resetFilters }`.
+
+> Export helpers are no longer part of the hook contract — the desktop View plugs `<ExportButton spec={priceBandsExport} />` from `src/lib/export/dashboards/priceBands.ts` directly into `DashboardHeader.rightSlot`. See the "Export" section below.
 
 Key derivations done in the hook (never in Views):
 - `buildPriceBandsChart` — price bands multi-trace with end-of-line annotations + deconfliction
@@ -147,6 +149,26 @@ Layout per plan § 4.4 (`o-modo-mobile-da-tranquil-giraffe.md`):
 ### Binding sync rule
 
 Any filter, chart, or KPI change in one View must land in the other in the **same commit**, or the commit must declare `[desktop-only]` / `[mobile-only]` with explicit justification.
+
+## Export
+
+Migrated to the unified export library (`src/lib/export/`) on 2026-05-28. Spec lives at [`src/lib/export/dashboards/priceBands.ts`](../../src/lib/export/dashboards/priceBands.ts) and is plugged into `DashboardHeader.rightSlot` via `<ExportButton spec={priceBandsExport} />`.
+
+| Field | Value |
+|---|---|
+| `filename` | `"PriceBands"` (→ `PriceBands_DD-MM-YY.xlsx` / `.csv`) |
+| `tier` | `1` (direct download, no modal) |
+| `filterSource` | `"none"` — exports always carry full history of both products, regardless of the in-dashboard slider |
+| Excel | 2 sheets: **Diesel** (date + 5 numeric columns) and **Gasoline** (date + 3 numeric columns). All numerics formatted `"0.00"`, English headers |
+| CSV | `single-with-discriminator`, `discriminatorColumn: "product"` — 1 file with a `product` column (`Diesel` / `Gasoline`) |
+| Charts | None |
+| Modal | None (Tier 1) |
+
+Diesel-only columns `bba_import_parity_w_subsidy` and `petrobras_price_w_subsidy` are auto-populated by triggers (subsidy reform); they are included verbatim in the Diesel sheet and dropped at projection time from the Gasoline sheet (Gasoline has no subsidy).
+
+`rowsAsync` fetches via the existing `rpcGetPriceBandsData(supabase, product)` wrapper — one RPC call per sheet, filtered by product. No new RPC was added.
+
+Mobile View has no export surface by policy (mobile reform v2, 2026-05-27).
 
 ## Anti-padrões
 
