@@ -44,11 +44,13 @@
 //
 // Behaviour:
 //   • Hidden on /home (would be redundant). usePathname() drives the gate.
-//   • Z-index 1000 → sits above content, below modals/sheets (which use
-//     z-index 45/50 in BottomSheet). The pill is intentionally "below" any
-//     modal scrim so users can't accidentally double-tap into a hidden /home.
-//     Modals/sheets are interactive; the pill should yield to them.
-//     (If a future bottom sheet uses z-index higher than 1000, it still wins.)
+//   • Z-index 1000 → sits above content, below modals/sheets. BottomSheet
+//     scrim/aside use z-index 1010/1020 (bumped 2026-05-28 to stop the pill
+//     from obscuring sheet footer buttons like Apply/Reset on /anp-cdp-depletion
+//     and other dashboards using FilterDrawer). The pill is intentionally
+//     "below" any modal scrim so users can't accidentally double-tap into a
+//     hidden /home. Modals/sheets are interactive; the pill should yield to
+//     them. MobileToastHost (z-index 1100) still surfaces above active sheets.
 //   • SSR-safe: usePathname is a client-only hook; "use client" directive at top.
 //   • Respects safe-area-inset-bottom on iOS (notch / home indicator).
 

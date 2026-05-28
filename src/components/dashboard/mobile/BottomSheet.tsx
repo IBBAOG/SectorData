@@ -86,7 +86,10 @@ export default function BottomSheet(
             position: "fixed",
             inset: 0,
             background: "var(--mobile-scrim)",
-            zIndex: 45,
+            // Above MobileHomePill (z-index 1000) so the floating pill cannot
+            // overlap the sheet's Apply/Reset buttons. Below MobileToastHost
+            // (z-index 1100) so toasts still surface above active sheets.
+            zIndex: 1010,
             opacity: 1,
             transition: "opacity 0.2s ease",
           }}
@@ -102,7 +105,9 @@ export default function BottomSheet(
           left: 0,
           right: 0,
           bottom: 0,
-          zIndex: 50,
+          // Paired with the scrim above MobileHomePill (z-index 1000). See
+          // the scrim's zIndex note for the full stacking rationale.
+          zIndex: 1020,
           maxWidth,
           margin: "0 auto",
           background: "var(--mobile-sheet-bg)",
