@@ -14,7 +14,6 @@ import NavBar from "../../../../components/NavBar";
 import BrandLogo from "../../../../components/BrandLogo";
 import PlotlyChart from "../../../../components/PlotlyChart";
 import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
-import MultiSelectFilter from "../../../../components/dashboard/MultiSelectFilter";
 import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 import ChartSection from "../../../../components/dashboard/ChartSection";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
@@ -36,10 +35,9 @@ export default function DesktopView(): React.ReactElement | null {
     visible, visLoading,
     loading, serieLoading,
     granularity, setGranularity,
-    campos, bacias, instalacoes, pocos,
+    campos, instalacoes, pocos,
     allDates, dateRange, setDateRange, hasDates, periodBadge,
     selectedCampos, setSelectedCampos,
-    selectedBacias, setSelectedBacias, toggleBacia,
     selectedInstalacoes, setSelectedInstalacoes,
     selectedPocos, setSelectedPocos,
     serieRows, visibleRows,
@@ -51,7 +49,6 @@ export default function DesktopView(): React.ReactElement | null {
     exportOpen, setExportOpen,
     excelLoading, csvLoading,
     exportCampos, setExportCampos,
-    exportBacias, setExportBacias,
     exportInstalacoes, setExportInstalacoes,
     exportPocos, setExportPocos,
     exportRange, setExportRange,
@@ -91,20 +88,6 @@ export default function DesktopView(): React.ReactElement | null {
               </div>
 
               <div className="sidebar-section-label">Filters</div>
-
-              {/* Basin (Field & Well only) */}
-              {(granularity === "field" || granularity === "well") && (
-                <MultiSelectFilter
-                  label={`Basin (${selectedBacias.length || bacias.length}/${bacias.length})`}
-                  items={bacias}
-                  selected={selectedBacias}
-                  onToggle={toggleBacia}
-                  onClear={selectedBacias.length > 0 ? () => setSelectedBacias([]) : undefined}
-                  idPrefix="cdpd-bacia"
-                  emptyMeansAll
-                  counterTotal={bacias.length}
-                />
-              )}
 
               {/* Field (all levels) */}
               <div className="sidebar-filter-section">
@@ -363,28 +346,6 @@ export default function DesktopView(): React.ReactElement | null {
                 <PeriodSlider dates={allDates} value={exportRange} onChange={setExportRange} />
               )}
             </div>
-
-            {(granularity === "field" || granularity === "well") && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>
-                  Basins <span style={{ color: "#888", fontWeight: 400 }}>({exportBacias.length === 0 ? bacias.length : exportBacias.length}/{bacias.length})</span>
-                </div>
-                <MultiSelectFilter
-                  label="Basins"
-                  items={bacias}
-                  selected={exportBacias}
-                  onToggle={(b) =>
-                    setExportBacias(
-                      exportBacias.includes(b)
-                        ? exportBacias.filter(x => x !== b)
-                        : [...exportBacias, b],
-                    )
-                  }
-                  onClear={exportBacias.length > 0 ? () => setExportBacias([]) : undefined}
-                  idPrefix="cdpd-export-bacia"
-                />
-              </div>
-            )}
 
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 6, color: "#1a1a1a", textTransform: "uppercase", letterSpacing: "0.4px" }}>

@@ -1375,7 +1375,6 @@ export async function rpcGetAnpCdpDepletionFieldAggregateCanonical(
 
 export type AnpCdpDiariaFiltros = {
   campos: string[];
-  bacias: string[];
   data_min: string | null;
   data_max: string | null;
 };
@@ -1383,19 +1382,21 @@ export type AnpCdpDiariaFiltros = {
 export async function rpcGetAnpCdpDiariaFiltros(
   supabase: SupabaseClient,
 ): Promise<AnpCdpDiariaFiltros> {
+  // Backend RPC still returns `bacias[]` (and accepts `p_bacias`), but the
+  // frontend no longer exposes a Basin filter — we drop the field from the
+  // typed response to keep callers narrow.
   try {
     const { data, error } = await supabase.rpc("get_anp_cdp_diaria_filtros");
     if (error) throw error;
     const d = (data ?? {}) as Partial<AnpCdpDiariaFiltros>;
     return {
       campos:   d.campos   ?? [],
-      bacias:   d.bacias   ?? [],
       data_min: d.data_min ?? null,
       data_max: d.data_max ?? null,
     };
   } catch (e) {
     console.error("get_anp_cdp_diaria_filtros failed", e);
-    return { campos: [], bacias: [], data_min: null, data_max: null };
+    return { campos: [], data_min: null, data_max: null };
   }
 }
 
@@ -1411,7 +1412,6 @@ export async function rpcGetAnpCdpDiariaSerie(
   supabase: SupabaseClient,
   params?: {
     campos?: string[] | null;
-    bacias?: string[] | null;
     dataInicio?: string | null;
     dataFim?: string | null;
   },
@@ -1419,12 +1419,14 @@ export async function rpcGetAnpCdpDiariaSerie(
   // Daily granularity × ~94 campos × ~8 bacias × ~365 days ≈ tens of thousands
   // of rows for full-history requests. Page through PostgREST 1000-row windows
   // to avoid silent truncation when no filters are set.
+  // `p_bacias` is intentionally pinned to NULL — the Basin filter was removed
+  // from the UI; the backend signature still accepts the param.
   const PAGE = 1000;
   let offset = 0;
   const allRows: AnpCdpDiariaPonto[] = [];
   const rpcParams = {
     p_campos:      params?.campos     ?? null,
-    p_bacias:      params?.bacias     ?? null,
+    p_bacias:      null,
     p_data_inicio: params?.dataInicio ?? null,
     p_data_fim:    params?.dataFim    ?? null,
   };
@@ -1522,7 +1524,6 @@ export async function rpcGetAnpCdpDiariaInstalacaoSerie(
 
 export type AnpCdpDiariaPocoFiltros = {
   campos: string[];
-  bacias: string[];
   pocos: string[];
   data_min: string | null;
   data_max: string | null;
@@ -1531,20 +1532,21 @@ export type AnpCdpDiariaPocoFiltros = {
 export async function rpcGetAnpCdpDiariaPocoFiltros(
   supabase: SupabaseClient,
 ): Promise<AnpCdpDiariaPocoFiltros> {
+  // Backend RPC still returns `bacias[]`, but the Basin filter was removed
+  // from the UI; we drop the field from the typed response.
   try {
     const { data, error } = await supabase.rpc("get_anp_cdp_diaria_poco_filtros");
     if (error) throw error;
     const d = (data ?? {}) as Partial<AnpCdpDiariaPocoFiltros>;
     return {
       campos:   d.campos   ?? [],
-      bacias:   d.bacias   ?? [],
       pocos:    d.pocos    ?? [],
       data_min: d.data_min ?? null,
       data_max: d.data_max ?? null,
     };
   } catch (e) {
     console.error("get_anp_cdp_diaria_poco_filtros failed", e);
-    return { campos: [], bacias: [], pocos: [], data_min: null, data_max: null };
+    return { campos: [], pocos: [], data_min: null, data_max: null };
   }
 }
 
@@ -1561,19 +1563,20 @@ export async function rpcGetAnpCdpDiariaPocoSerie(
   supabase: SupabaseClient,
   params?: {
     campos?: string[] | null;
-    bacias?: string[] | null;
     pocos?: string[] | null;
     dataInicio?: string | null;
     dataFim?: string | null;
   },
 ): Promise<AnpCdpDiariaPocoPonto[]> {
   // Deepest level — many more rows per (campo, day). Paginate aggressively.
+  // `p_bacias` is intentionally pinned to NULL — the Basin filter was removed
+  // from the UI; the backend signature still accepts the param.
   const PAGE = 1000;
   let offset = 0;
   const allRows: AnpCdpDiariaPocoPonto[] = [];
   const rpcParams = {
     p_campos:      params?.campos     ?? null,
-    p_bacias:      params?.bacias     ?? null,
+    p_bacias:      null,
     p_pocos:       params?.pocos      ?? null,
     p_data_inicio: params?.dataInicio ?? null,
     p_data_fim:    params?.dataFim    ?? null,

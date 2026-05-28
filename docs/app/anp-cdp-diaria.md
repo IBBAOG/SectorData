@@ -26,7 +26,7 @@ Both Views consume the shared hook `useAnpCdpDiariaData`. Views are pure present
 
 `useAnpCdpDiariaData()` returns:
 - All 3 RPCs already wired (`rpcGetAnpCdpDiariaSerie` + Installation + Well wrappers)
-- Filter state for every dimension (campos, bacias, instalacoes, pocos, dateRange)
+- Filter state for every dimension (campos, instalacoes, pocos, dateRange) — Basin filter was removed from the UI on 2026-05-28; the per-row `bacia` field is still displayed in tables and badges
 - Granularity toggle (`granularity` + `setGranularity`) — desktop-only knob, mobile pins to `"field"` via effect
 - Product toggle (`product` + `setProduct`) — `"oil" | "gas"`, drives mobile chart/ranking
 - Derived: `petroleoChart`, `gasChart` (full multi-trace, kbpd / Mm³/d), `defaultPetroleoDims`, `defaultGasDims`, `ranking` (DimensionAggregate[] sorted by avg of current product)
@@ -37,7 +37,7 @@ Both Views consume the shared hook `useAnpCdpDiariaData`. Views are pure present
 ### Desktop view (`desktop/View.tsx`)
 
 Verbatim move of the previous `page.tsx` body, now reading from the hook. Layout:
-- Sidebar: granularity toggle (Field / Installation / Well), Filters section (Basin · Field · Installation · Well · Period — visibility per level)
+- Sidebar: granularity toggle (Field / Installation / Well), Filters section (Field · Installation · Well · Period — visibility per level; Basin filter removed 2026-05-28)
 - Main: `DashboardHeader` + 2 line charts (Oil kbpd, Gas Mm³/day) + "Production by Level" table (sticky thead, max 500 rows)
 - `ExportModal` Tier 2
 
@@ -45,12 +45,12 @@ Verbatim move of the previous `page.tsx` body, now reading from the hook. Layout
 
 Mobile-first redesign v2 (Onda 3, 2026-05-27) — pinned to Field-level. Layout:
 - Page heading + period badge (MobileTopBar provided by MobileShell in layout.tsx — NOT imported here)
-- Sticky filter chip row — period preset pills (1M / 3M / 6M / 1Y / All) + Filters trigger chip + active Basin/Field chips with × clear.
+- Sticky filter chip row — period preset pills (1M / 3M / 6M / 1Y / All) + Filters trigger chip + active Field chip with × clear.
 - Section 1 — Oil chart: `MobileChart` line chart (~260px), top 5 fields, brand orange leader.
 - Section 2 — Gas chart: same treatment stacked vertically (desktop parity — both charts always visible, no tab).
 - Section 3 — Top 10 ranking: `MobileDataCard` per field (top 10), rank pill (#1 orange), basin badge, avg + 14-point sparkline, latest value + date. "See all N fields" button opens `BottomSheet` (90vh) with full searchable list.
 - Production summary card: 2×3 grid — Leader / Total Oil avg / Total Gas avg / Leader Oil / Leader Gas / Fields count.
-- `FilterDrawer`: Period slider + Basin multi-select + Field chip cloud (touch-friendly, max-height 240px scroll). Reset clears all selections + restores full date range.
+- `FilterDrawer`: Period slider + Field chip cloud (touch-friendly, max-height 240px scroll). Reset clears all selections + restores full date range.
 - `BottomSheet` "All Fields": full `ranking[]` list, searchable input, scrollable.
 
 NOT on mobile (intentional `[mobile-only]` decisions):
@@ -84,7 +84,6 @@ Visualização da **produção diária de petróleo e gás natural** declarada n
 
 Por nível, o usuário pode:
 
-- Selecionar **bacias** (apenas Field/Well — installation não tem bacia) via `MultiSelectFilter` (server-side via `p_bacias`).
 - Selecionar **campos** via `SearchableMultiSelect`.
 - Selecionar **instalações** (apenas Installation) via `SearchableMultiSelect`.
 - Selecionar **poços** (apenas Well) via `SearchableMultiSelect`.
@@ -111,22 +110,24 @@ Os filtros visíveis na sidebar dependem do `granularity`:
 
 | Nível | Filtros visíveis |
 |---|---|
-| **Field** | Bacia (server), Campo (client), Período (server) |
+| **Field** | Campo (client), Período (server) |
 | **Installation** | Campo (server, push se selecionado), Instalação (client), Período (server) |
-| **Well** | Bacia (server), Campo (client), Poço (client), Período (server) |
+| **Well** | Campo (client), Poço (client), Período (server) |
 
 A troca de nível (`onChange` do `SegmentedToggle`) **reseta todas as seleções de filtros** para evitar carregar termos estranhos entre vocabulários (ex: poço selecionado quando ainda estava no nível Field).
+
+> **Basin filter removed (2026-05-28)** — not relevant for the analyst workflow. The backend RPCs `get_anp_cdp_diaria_serie` and `get_anp_cdp_diaria_poco_serie` still accept `p_bacias` for compatibility, but the frontend wrapper now pins it to `NULL`. The per-row `bacia` column remains in chart hovertemplates, the desktop recent-records table, the mobile ranking card badge, and Excel/CSV exports — only the input filter is gone.
 
 ## RPCs consumidas
 
 | Wrapper TS | RPC PostgreSQL | Retorno |
 |---|---|---|
-| `rpcGetAnpCdpDiariaFiltros` | `get_anp_cdp_diaria_filtros()` | `{ campos[], bacias[], data_min, data_max }` |
-| `rpcGetAnpCdpDiariaSerie` | `get_anp_cdp_diaria_serie(p_campos, p_bacias, p_data_inicio, p_data_fim)` | `Array<{ data, campo, bacia, petroleo_bbl_dia, gas_mm3_dia }>` |
+| `rpcGetAnpCdpDiariaFiltros` | `get_anp_cdp_diaria_filtros()` | `{ campos[], data_min, data_max }` (backend also returns `bacias[]`; dropped by wrapper since 2026-05-28) |
+| `rpcGetAnpCdpDiariaSerie` | `get_anp_cdp_diaria_serie(p_campos, p_bacias, p_data_inicio, p_data_fim)` | `Array<{ data, campo, bacia, petroleo_bbl_dia, gas_mm3_dia }>` — wrapper pins `p_bacias = NULL` since 2026-05-28 |
 | `rpcGetAnpCdpDiariaInstalacaoFiltros` | `get_anp_cdp_diaria_instalacao_filtros()` | `{ campos[], instalacoes[], data_min, data_max }` |
 | `rpcGetAnpCdpDiariaInstalacaoSerie` | `get_anp_cdp_diaria_instalacao_serie(p_campos, p_instalacoes, p_data_inicio, p_data_fim)` | `Array<{ data, campo, instalacao, petroleo_bbl_dia, gas_mm3_dia }>` |
-| `rpcGetAnpCdpDiariaPocoFiltros` | `get_anp_cdp_diaria_poco_filtros()` | `{ campos[], bacias[], pocos[], data_min, data_max }` |
-| `rpcGetAnpCdpDiariaPocoSerie` | `get_anp_cdp_diaria_poco_serie(p_campos, p_bacias, p_pocos, p_data_inicio, p_data_fim)` | `Array<{ data, campo, bacia, poco, petroleo_bbl_dia, gas_mm3_dia }>` |
+| `rpcGetAnpCdpDiariaPocoFiltros` | `get_anp_cdp_diaria_poco_filtros()` | `{ campos[], pocos[], data_min, data_max }` (backend also returns `bacias[]`; dropped by wrapper since 2026-05-28) |
+| `rpcGetAnpCdpDiariaPocoSerie` | `get_anp_cdp_diaria_poco_serie(p_campos, p_bacias, p_pocos, p_data_inicio, p_data_fim)` | `Array<{ data, campo, bacia, poco, petroleo_bbl_dia, gas_mm3_dia }>` — wrapper pins `p_bacias = NULL` since 2026-05-28 |
 
 Tabelas e RPCs dos níveis Installation e Well foram criadas pela migration `20260508120001_anp_cdp_diaria_levels.sql`.
 
@@ -214,10 +215,10 @@ The petroleum trace, the table column "Petróleo", and the chart Y-axis label ar
 
 - [x] Header: `<DashboardHeader title sub period>` com `<hr>` separator
 - [x] Period badge: condicional ao `hasDates` (`[string, string] | null`)
-- [x] Push período + bacia (Field/Well) ou campos (Installation) para RPC server-side
+- [x] Push período (Field/Well) ou período + campos (Installation) para RPC server-side
 - [x] Debounce 400ms via `useDebouncedFetch`
 - [x] Loading: `<BarrelLoading>` no init; `<ChartSection loading>` inline durante refetch
-- [x] Filtros: `<MultiSelectFilter>` (Bacia) + `<SearchableMultiSelect>` (Campo, Instalação, Poço) com counter `(N/total)`
+- [x] Filtros: `<SearchableMultiSelect>` (Campo, Instalação, Poço) com counter `(N/total)`
 - [x] **`<SegmentedToggle>` (Field/Installation/Well) no topo dos filtros**, abaixo do "TBD" e acima da seção "Filtros"
 - [x] Empty state amigável (chart e tabela) quando filtros sem dados, e mensagem específica quando o ETL ainda não populou Installation/Well
 - [x] Identidade visual: `#FF5000` first color, Arial, padrão `COMMON_LAYOUT` + `AXIS_LINE`, pill desliza laranja
@@ -241,9 +242,10 @@ The petroleum trace, the table column "Petróleo", and the chart Y-axis label ar
 ## Anti-padrões / decisões técnicas
 
 - **Sem RPC dedicada `get_anp_cdp_diaria_*_export_count`**: para a primeira versão usamos heurística (refetch + length) por nível. TODO: virar RPC se export pesado virar gargalo.
-- **Filtro de "dimensão" não é empurrado pra RPC do chart no nível Field e Well**: queremos buscar todos os campos/poços no período/bacia para que a Top-N (defaults) seja estável — só o slider de período e o filtro de bacia disparam refetch debounced. Filtro de dimensão é client-side.
+- **Filtro de "dimensão" não é empurrado pra RPC do chart no nível Field e Well**: queremos buscar todos os campos/poços no período para que a Top-N (defaults) seja estável — só o slider de período dispara refetch debounced. Filtro de dimensão é client-side.
 - **No nível Installation, push de campos para RPC**: como instalação não pertence a uma bacia explícita e o universo de instalações pode ser denso, o filtro de campos é empurrado server-side para reduzir payload. Filtro de instalação é client-side.
-- **Reset de filtros ao trocar nível**: vocabulários diferentes (bacia só existe em Field/Well, instalação só em Installation, poço só em Well) — manter seleções antigas após troca causaria filtros vazios silenciosos.
+- **Reset de filtros ao trocar nível**: vocabulários diferentes (instalação só existe em Installation, poço só em Well) — manter seleções antigas após troca causaria filtros vazios silenciosos.
+- **Basin filter removido (2026-05-28)**: o filtro de bacia foi removido da sidebar (desktop) e do FilterDrawer (mobile) por não ser relevante para a análise diária. Os wrappers TS continuam aceitando o parâmetro internamente (pinned a NULL) e o backend não foi tocado.
 - **Linha unificada (`UnifiedRow`) para chart/table**: cada nível projeta seu shape específico para `{ data, campo, bacia, dimension, ... }` antes de alimentar `pickTopDimensions` e `buildSerieChart`, mantendo o downstream level-agnostic.
 
 ## Performance
