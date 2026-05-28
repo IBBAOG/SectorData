@@ -1,14 +1,15 @@
-"use client";
-
-import { useIsMobile } from "@/hooks/useIsMobile";
+import MobileExcludedRedirect from "@/components/dashboard/mobile/MobileExcludedRedirect";
 import DesktopView from "./desktop/View";
-import MobileView from "./mobile/View";
 
 /**
- * Viewport router for /anp-glp.
- * useIsMobile is SSR-safe: returns false on server/first paint, then flips.
+ * /anp-glp — desktop-only by CTO decision (reference data, sporadic use).
+ * Mobile visitors are redirected to /home via MobileExcludedRedirect.
  */
 export default function AnpGlpPage(): React.ReactElement {
-  const isMobile = useIsMobile();
-  return isMobile ? <MobileView /> : <DesktopView />;
+  return (
+    <>
+      <MobileExcludedRedirect slug="anp-glp" />
+      <DesktopView />
+    </>
+  );
 }
