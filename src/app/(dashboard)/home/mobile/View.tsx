@@ -1,6 +1,6 @@
 "use client";
 
-// Mobile view for /home — Onda 5 visual refresh (2026-05-28).
+// Mobile view for /home — Onda 7 polish (2026-05-28).
 //
 // Plan reference: /.claude/plans/o-modo-mobile-da-tranquil-giraffe.md § 4.1.
 //
@@ -12,22 +12,20 @@
 // omitted to keep the gallery scannable and minimal — the icon does the
 // recognition work the thumbnail used to do.
 //
-// Layout (top → bottom) — Onda 6 (2026-05-28):
+// Layout (top → bottom) — Onda 7 polish (2026-05-28):
 //   1. Sticky header           — owned by MobileLayout (not rendered here).
-//                                Onda 6: solid black background, "Oil & Gas
-//                                Data" white wordmark + kebab.
+//                                Onda 7: drop logo only (no wordmark), perfectly
+//                                centered via absolute positioning.
 //   2. "Last visited" row      — horizontal scroll, compact icon tiles, only
 //                                rendered when localStorage history exists.
-//   3. Oil & Gas section       — 5 tiles in 2-col grid.
-//   4. Fuel Distribution       — 8 tiles in 2-col grid.
+//   3. Oil & Gas section       — 4 tiles in 2-col grid (anp-cdp hidden).
+//   4. Fuel Distribution       — 6 tiles in 2-col grid (anp-prices, anp-glp hidden).
 //   5. (no Markets section — /stocks, /news-hunter, /alerts excluded.)
 //
-// Onda 6 removed the sticky search bar that previously sat between the header
-// and the Last-visited row — it added clutter without saving steps (the
-// catalogue is short and tiles are already discoverable at a glance). The
-// `search` state still exists in `useHomeData` (other consumers may yet wire
-// it up); we simply never read or write it from this View, so the filter is a
-// no-op and the gallery shows every visible card.
+// Onda 7 removes the three formerly "desktop-only" tiles (anp-cdp, anp-prices,
+// anp-glp) from the gallery entirely — they now live in HIDE_FROM_MOBILE_HOME.
+// Last-visited row is filtered by MOBILE_ELIGIBLE_SLUGS so stale localStorage
+// entries for those slugs are silently skipped.
 //
 // What we DELIBERATELY don't render here:
 //   • Module thumbnails / images.
@@ -36,12 +34,6 @@
 //   • ExportFAB / ExportModal.
 //   • MobileBottomTabBar (replaced by the global Home pill in MobileLayout).
 //   • useDataSourcesFreshness — not imported, not called.
-//
-// Excluded routes that still appear in the gallery (anp-cdp, anp-prices,
-// anp-glp): rendered with `excluded={true}` — the tile remains tappable, and
-// the destination `page.tsx` mounts `MobileExcludedRedirect` which bounces
-// the user back to /home with a toast. The visual "Desktop only" caption
-// inside the tile sets expectations before the tap.
 
 import { useMemo, useState } from "react";
 import {
@@ -51,9 +43,26 @@ import {
 import { useHomeData, type HomeCardDef } from "../useHomeData";
 import { readLastVisited } from "../../../../hooks/useTrackLastVisited";
 
-// Slugs that are explicitly excluded from the mobile experience (plan § 3.1).
-// We hide them from the Home gallery regardless of module_visibility — the
-// MobileExcludedRedirect handles the deep-link case.
+// Canonical whitelist of the 10 mobile-eligible dashboards (Oil & Gas + Fuel
+// Distribution). Used to filter the Last-visited row so stale localStorage
+// entries for desktop-only slugs are silently skipped.
+const MOBILE_ELIGIBLE_SLUGS = new Set<string>([
+  // Oil & Gas (4)
+  "well-by-well",
+  "anp-cdp-bsw",
+  "anp-cdp-depletion",
+  "anp-cdp-diaria",
+  // Fuel Distribution (6)
+  "market-share",
+  "price-bands",
+  "subsidy-tracker",
+  "diesel-gasoline-margins",
+  "imports-exports",
+  "navios-diesel",
+]);
+
+// Slugs hidden from the gallery. Includes desktop-only dashboards that were
+// previously shown with `excluded={true}` (Onda 7: hidden entirely).
 const HIDE_FROM_MOBILE_HOME = new Set<string>([
   "stocks",
   "news-hunter",
@@ -61,12 +70,7 @@ const HIDE_FROM_MOBILE_HOME = new Set<string>([
   "admin-panel",
   "admin-analytics",
   "profile",
-]);
-
-// These dashboards are mobile-incompatible (they redirect to /home on tap via
-// MobileExcludedRedirect) but we keep them in the /home grid so the catalogue
-// is complete; the tile renders with `excluded={true}` to set expectations.
-const EXCLUDED_DESKTOP_ONLY = new Set<string>([
+  // Desktop-only — hidden entirely (Onda 7, replaces the former excluded tiles)
   "anp-cdp",
   "anp-prices",
   "anp-glp",
@@ -109,9 +113,9 @@ export default function MobileView(): React.ReactElement {
   // scrolls /home; it refreshes on the next visit to /home anyway.
   const lastVisitedSlugs = useMemo<string[]>(() => readLastVisited(), []);
 
-  // Filter hidden routes out of each section's card list (defence in depth).
-  // Excluded-but-still-shown routes (anp-cdp, anp-prices, anp-glp) stay; they
-  // render with `excluded={true}` and the destination page bounces.
+  // Filter out hidden + desktop-only routes from each section's card list
+  // (defence in depth — HIDE_FROM_MOBILE_HOME now includes the 3 former
+  // excluded-but-shown slugs, so oilgasCards and fuelCards are clean).
   const oilgasCards = useMemo<HomeCardDef[]>(
     () => cardsByCategory.oilgas.filter((c) => !HIDE_FROM_MOBILE_HOME.has(c.slug)),
     [cardsByCategory.oilgas],
@@ -127,7 +131,7 @@ export default function MobileView(): React.ReactElement {
       .map((slug) => findCardBySlug(visibleCards, slug))
       .filter(
         (c): c is HomeCardDef =>
-          !!c && !!c.href && !HIDE_FROM_MOBILE_HOME.has(c.slug),
+          !!c && !!c.href && MOBILE_ELIGIBLE_SLUGS.has(c.slug),
       );
   }, [lastVisitedSlugs, visibleCards]);
 
@@ -152,9 +156,7 @@ export default function MobileView(): React.ReactElement {
         paddingBottom: "calc(120px + var(--mobile-safe-bottom))",
       }}
     >
-      {/* Onda 6 (2026-05-28): the sticky search bar that lived here was
-          removed — the catalogue is short and tiles are scannable on their
-          own. Tile gallery follows the dark header directly. */}
+      {/* No search bar — Onda 6 removed it; Onda 7 drop-only header above. */}
 
       {/* ── Last visited (hidden when there is no history) ───────────── */}
       {lastVisitedCards.length > 0 && (
@@ -202,7 +204,6 @@ export default function MobileView(): React.ReactElement {
                     icon={meta.icon}
                     tintBg={meta.tintBg}
                     tintFg={meta.tintFg}
-                    excluded={EXCLUDED_DESKTOP_ONLY.has(card.slug)}
                   />
                 </div>
               );
@@ -281,7 +282,6 @@ export default function MobileView(): React.ReactElement {
                         icon={meta.icon}
                         tintBg={meta.tintBg}
                         tintFg={meta.tintFg}
-                        excluded={EXCLUDED_DESKTOP_ONLY.has(card.slug)}
                       />
                     );
                   })}
