@@ -916,6 +916,101 @@ IF NOT FOUND THEN RAISE EXCEPTION 'Missing function: <nome_funcao>'; END IF;
 
 Atualize também o `RAISE NOTICE` no final do script com os novos totais.
 
+## Pre-deploy anon grants audit
+
+Gate complementar ao smoke test, focado em **Pegadinha #18** (RPC `public.get_*` sem `SECURITY DEFINER` OU sem GRANT EXECUTE para `anon`, em dashboards com `is_visible_for_public=true`). Já ocorreu 4 vezes em 6 semanas — o mais recente foi `20260530000000_cdp_rpcs_canonical_expansion.sql` (fix em `20260601400000_restore_anon_grants_cdp_canonical_rpcs.sql`). Esse gate roda DEPOIS do `supabase db push` no `supabase_deploy.yml` e DEVE falhar o workflow se encontrar violação.
+
+### Modelo de detecção
+
+Auditoria genérica (Opção A — sem dependência de mapping "dashboard → RPCs"): toda função `public.get_*` deve ter `prosecdef=true` E `has_function_privilege('anon', oid, 'EXECUTE')=true`. Funções fora desse contrato têm que estar em uma das listas abaixo:
+
+- **Exclusões por prefixo:** `admin_*` (mutations administrativas — escopo `is_admin()` guarded). Note que **apenas funções `get_*` são auditadas**; `set_*`, `upsert_*`, `delete_*` ficam de fora do filtro de cara.
+- **Whitelist explícita** (admin-only / internal RPCs `get_*` que legítimamente não precisam de anon):
+  - `get_analytics_anon_summary`, `get_analytics_by_dashboard`, `get_analytics_by_user`, `get_analytics_heatmap`, `get_analytics_kpis`, `get_analytics_user_timeline` — todos backam `/admin-analytics` (Admin tier only).
+  - `get_candidate_trail` — debug interno AIS, sem surface público.
+  - `get_nd_unresolved` — debug interno AIS, sem surface público.
+
+Para adicionar item à whitelist: **só** adicione se a função NÃO backa nenhum dashboard `is_visible_for_public=true`. Anote a justificativa inline (comentário no `VALUES`).
+
+### Query SQL canônica
+
+```sql
+-- ============================================================================
+-- PRE-DEPLOY ANON GRANTS AUDIT
+-- 0 rows  → pass (deploy continues)
+-- ≥1 row  → fail (workflow aborts; investigate violation_type)
+-- ============================================================================
+WITH whitelist(proname) AS (
+  -- Admin-only / internal RPCs that legitimately do NOT need anon EXECUTE.
+  -- Each entry must have a comment justifying inclusion.
+  VALUES
+    ('get_analytics_anon_summary'),   -- /admin-analytics only
+    ('get_analytics_by_dashboard'),   -- /admin-analytics only
+    ('get_analytics_by_user'),        -- /admin-analytics only
+    ('get_analytics_heatmap'),        -- /admin-analytics only
+    ('get_analytics_kpis'),           -- /admin-analytics only
+    ('get_analytics_user_timeline'),  -- /admin-analytics only
+    ('get_candidate_trail'),          -- internal AIS debug, no public surface
+    ('get_nd_unresolved')             -- internal AIS debug, no public surface
+)
+SELECT
+  p.oid::regprocedure::text AS function_signature,
+  p.prosecdef AS is_security_definer,
+  has_function_privilege('anon', p.oid, 'EXECUTE') AS has_anon_grant,
+  has_function_privilege('authenticated', p.oid, 'EXECUTE') AS has_authenticated_grant,
+  CASE
+    WHEN NOT p.prosecdef AND NOT has_function_privilege('anon', p.oid, 'EXECUTE')
+      THEN 'missing_security_definer_and_anon_grant'
+    WHEN NOT p.prosecdef
+      THEN 'missing_security_definer'
+    WHEN NOT has_function_privilege('anon', p.oid, 'EXECUTE')
+      THEN 'missing_anon_grant'
+  END AS violation_type
+FROM pg_proc p
+JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = 'public'
+  AND p.proname LIKE 'get\_%' ESCAPE '\'
+  AND p.proname NOT LIKE 'admin\_%' ESCAPE '\'
+  AND p.proname NOT IN (SELECT proname FROM whitelist)
+  AND (
+    p.prosecdef = false
+    OR NOT has_function_privilege('anon', p.oid, 'EXECUTE')
+  )
+ORDER BY p.proname;
+```
+
+Notas técnicas:
+
+- `has_function_privilege(role, oid, 'EXECUTE')` resolve overloads corretamente (chave é `oid`, não `proname`), então cobre todas as assinaturas (ex: `get_anp_cdp_bsw_scatter(text[])` vs `get_anp_cdp_bsw_scatter(text[], boolean)`).
+- `oid::regprocedure::text` rende a assinatura completa (`get_anp_cdp_bsw_scatter(text[],boolean)`) — útil para o GRANT corretivo.
+- `LIKE 'get\_%' ESCAPE '\'` evita falso-match (`_` é wildcard em LIKE).
+
+### Procedimento de fix quando o gate falhar
+
+1. **Identifique a assinatura exata** das funções listadas (coluna `function_signature`).
+2. **Decida se é violação real ou false-positive**:
+   - Se a função backa dashboard com `is_visible_for_public=true` (a maioria dos casos) → violação real, fix.
+   - Se a função é admin-only / interna → adicionar à whitelist neste documento E na query do `supabase_deploy.yml`, com justificativa inline.
+3. **Para violação real**, criar migration nova `supabase/migrations/<timestamp>_restore_anon_grants_<scope>.sql`:
+   ```sql
+   BEGIN;
+   -- Para cada violação, com a assinatura exata da coluna function_signature:
+   GRANT EXECUTE ON FUNCTION public.<func>(<arg_types>) TO anon, authenticated;
+   -- Se for missing_security_definer, também: ALTER FUNCTION ... SECURITY DEFINER;
+   COMMIT;
+   ```
+4. **Investigue a migration que causou drift** — quase sempre é `DROP FUNCTION` + `CREATE FUNCTION` sem re-aplicar GRANT/SECURITY DEFINER (vide § "d) DROP FUNCTION + CREATE FUNCTION apaga grants E atributos"). Adicione `GRANT EXECUTE ... TO anon, authenticated;` E `SECURITY DEFINER` ao final da migration original num próximo refactor pra prevenir regressão.
+
+### Integração CI
+
+Próxima etapa (owner: `worker_etl-pipelines`): adicionar step ao `.github/workflows/supabase_deploy.yml` após o `supabase db push`, rodando esta query via `supabase db query` (ou MCP via service token) e abortando o workflow se houver linhas no resultado. Não-blocking até a 1ª execução verde; depois flip para hard fail.
+
+### Última auditoria local (2026-05-28)
+
+- Total de funções `get_*` no schema `public`: ~100
+- Whitelisted: 8
+- Violations atuais: 4 (todas em `_field_aggregate` / `_scatter` das famílias `bsw` e `depletion`) — cobertas pelo `20260601400000_restore_anon_grants_cdp_canonical_rpcs.sql`, pendente de aplicar no remote. Pós-deploy: esperado 0 violations.
+
 ## Pegadinhas do `supabase_deploy.yml` e CLI
 
 ### a) `supabase db execute` removido; `db query` sem `--linked` falha no CI
