@@ -38,12 +38,14 @@ import {
   rpcGetAnalyticsUserTimeline,
   rpcGetAnalyticsHeatmap,
   rpcGetAnalyticsAnonSummary,
+  rpcGetAdminAnalyticsViewsByHour,
   type AnalyticsKpis,
   type AnalyticsByDashboardRow,
   type AnalyticsByUserRow,
   type AnalyticsTimelineEvent,
   type AnalyticsHeatmapCell,
   type AnalyticsAnonSummary,
+  type AnalyticsViewsByHourPoint,
 } from "@/lib/rpc";
 
 const ORANGE = "#ff5000";
@@ -112,6 +114,10 @@ export default function AdminAnalyticsPage() {
   const [heatmap, setHeatmap] = useState<AnalyticsHeatmapCell[]>([]);
   const [heatmapLoading, setHeatmapLoading] = useState(true);
 
+  // Hourly views time-series (migration 20260602000000).
+  const [viewsByHour, setViewsByHour] = useState<AnalyticsViewsByHourPoint[]>([]);
+  const [viewsByHourLoading, setViewsByHourLoading] = useState(true);
+
   // Anonymous-visitor summary (Phase A migration 20260522000001).
   const [anonSummary, setAnonSummary] = useState<AnalyticsAnonSummary | null>(null);
   const [anonLoading, setAnonLoading] = useState(true);
@@ -168,6 +174,14 @@ export default function AdminAnalyticsPage() {
     setHeatmapLoading(false);
   }, [supabase, periodDays]);
 
+  const loadViewsByHour = useCallback(async () => {
+    if (!supabase) return;
+    setViewsByHourLoading(true);
+    const data = await rpcGetAdminAnalyticsViewsByHour(supabase, periodDays);
+    setViewsByHour(data);
+    setViewsByHourLoading(false);
+  }, [supabase, periodDays]);
+
   const loadAnonSummary = useCallback(async () => {
     if (!supabase) return;
     setAnonLoading(true);
@@ -187,6 +201,7 @@ export default function AdminAnalyticsPage() {
   useEffect(() => { if (allowed) loadByDashboard(); }, [allowed, loadByDashboard]);
   useEffect(() => { if (allowed) loadByUser(); }, [allowed, loadByUser]);
   useEffect(() => { if (allowed) loadHeatmap(); }, [allowed, loadHeatmap]);
+  useEffect(() => { if (allowed) loadViewsByHour(); }, [allowed, loadViewsByHour]);
   useEffect(() => { if (allowed) loadAnonSummary(); }, [allowed, loadAnonSummary]);
 
   // ── Timeline: fire when expandedUserId changes ────────────────────────────
@@ -548,7 +563,7 @@ export default function AdminAnalyticsPage() {
         </section>
 
         {/* ── Section 5: Heatmap ──────────────────────────────────────────── */}
-        <section style={{ marginBottom: 64 }}>
+        <section style={{ marginBottom: 32 }}>
           <SectionTitle text="Hourly heatmap" />
           <div className="settings-card" style={{ padding: 16 }}>
             {heatmapLoading ? (
@@ -579,6 +594,40 @@ export default function AdminAnalyticsPage() {
                   margin: { t: 20, b: 40, l: 60, r: 40 },
                   xaxis: { title: { text: "Hour" }, side: "bottom", fixedrange: true },
                   yaxis: { title: { text: "Day of week" }, autorange: "reversed", fixedrange: true },
+                }}
+                config={{ displayModeBar: false, responsive: true }}
+              />
+            )}
+          </div>
+        </section>
+
+        {/* ── Section 6: Views over time ──────────────────────────────────── */}
+        <section style={{ marginBottom: 64 }}>
+          <SectionTitle text="Views over time" />
+          <div className="settings-card" style={{ padding: 16 }}>
+            {viewsByHourLoading ? (
+              <BarrelLoading />
+            ) : viewsByHour.length === 0 ? (
+              <EmptyMessage text="No page views in the selected period." padded />
+            ) : (
+              <PlotlyChart
+                style={{ width: "100%", height: 320 }}
+                data={[
+                  {
+                    type: "bar",
+                    x: viewsByHour.map((p) => p.hour_bucket),
+                    y: viewsByHour.map((p) => p.event_count),
+                    marker: { color: BRAND_ORANGE },
+                    hovertemplate:
+                      "<b>%{x|%a %d %b · %Hh}</b><br>Page views: %{y}<extra></extra>",
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  } as any,
+                ]}
+                layout={{
+                  ...COMMON_LAYOUT,
+                  margin: { t: 20, b: 50, l: 60, r: 20 },
+                  xaxis: { title: { text: "Hour" }, type: "date", fixedrange: true },
+                  yaxis: { title: { text: "Page views" }, fixedrange: true, rangemode: "tozero" },
                 }}
                 config={{ displayModeBar: false, responsive: true }}
               />

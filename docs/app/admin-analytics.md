@@ -34,6 +34,7 @@ Painel interno de telemetria: quem usa o quê, quando, com qual frequência. Cob
 | 4 | Engajamento por dashboard | Tabela sortable. Default DESC por `page_views`. Colunas: Rota, Page views, Usuários únicos, Exports, Bytes baixados (`formatBytes`). |
 | 5 | Engajamento por usuário | Search debounced + tabela. Colunas: Nome, Role badge, Último login, Page views, Exports, Top 3 dashboards (badges). Click em row → expande timeline (até 50 linhas + "mostrar mais"). |
 | 6 | Heatmap horário | Plotly heatmap 7×24 (Dom..Sáb × 0..23h). Colorscale custom: `#fff5ee` → `#ffb088` → `#ff5000`. |
+| 7 | Views over time | Plotly bar chart, hourly buckets (`date_trunc('hour', created_at)`) of `page_view` events. Bar color `BRAND_ORANGE`. Respects the period filter. |
 
 ## 4. RPCs consumidas
 
@@ -47,6 +48,7 @@ Todas SECURITY DEFINER, com check de role server-side. Wrappers em [`src/lib/rpc
 | `get_analytics_user_timeline(target_user_id uuid, period_days int)` | `rpcGetAnalyticsUserTimeline` | `{ event_type, route, payload, created_at }[]` (até 500) — só authed |
 | `get_analytics_heatmap(period_days int)` | `rpcGetAnalyticsHeatmap` | `{ dow 0..6, hour 0..23, event_count }[]` — inclui anon events |
 | `get_analytics_anon_summary(p_period_days int)` | `rpcGetAnalyticsAnonSummary` | `{ unique_visitors, total_page_views, top_routes[{route, page_views}] }` (Phase A; powers Anonymous Activity section) |
+| `get_admin_analytics_views_by_hour(p_period_days int)` | `rpcGetAdminAnalyticsViewsByHour` | `{ hour_bucket timestamptz, event_count bigint }[]` — hourly bucket aggregation of `page_view` events; Admin-only (RAISE EXCEPTION on non-Admin callers). Powers the "Views over time" section. Migration `20260602000000`. |
 
 RPC de escrita (write-side): `track_event(p_event_type text, p_route text, p_payload jsonb, p_visitor_id text)` — chamada via `src/lib/tracking.ts`. Phase A added the `p_visitor_id` parameter so anon visitors can be attributed via cookie. Fire-and-forget; nunca trava UI.
 
@@ -96,7 +98,7 @@ RLS:
 
 - `src/app/(dashboard)/admin-analytics/page.tsx` — página completa (sem `page.module.css`).
 - `src/lib/tracking.ts` — helper `trackEvent(type, route?, payload?)`.
-- `src/lib/rpc.ts` — seção "MODULE: Admin Analytics" com 5 wrappers.
+- `src/lib/rpc.ts` — seção "MODULE: Admin Analytics" com 5 wrappers (+ `rpcGetAdminAnalyticsViewsByHour` near the other 6 in MODULE: Admin Analytics).
 - `src/app/(dashboard)/layout.tsx` — fires login + page_view.
 - `src/components/dashboard/ExportPanel.tsx` — fires export (Tier 1).
 - `src/components/dashboard/ExportModal.tsx` — fires export (Tier 2, com rows/bytes).
