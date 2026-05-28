@@ -12,14 +12,22 @@
 // omitted to keep the gallery scannable and minimal — the icon does the
 // recognition work the thumbnail used to do.
 //
-// Layout (top → bottom):
+// Layout (top → bottom) — Onda 6 (2026-05-28):
 //   1. Sticky header           — owned by MobileLayout (not rendered here).
-//   2. Search bar (sticky)     — full-width Liquid Glass, real-time filter.
-//   3. "Last visited" row      — horizontal scroll, compact icon tiles, only
+//                                Onda 6: solid black background, "Oil & Gas
+//                                Data" white wordmark + kebab.
+//   2. "Last visited" row      — horizontal scroll, compact icon tiles, only
 //                                rendered when localStorage history exists.
-//   4. Oil & Gas section       — 5 tiles in 2-col grid.
-//   5. Fuel Distribution       — 8 tiles in 2-col grid.
-//   6. (no Markets section — /stocks, /news-hunter, /alerts excluded.)
+//   3. Oil & Gas section       — 5 tiles in 2-col grid.
+//   4. Fuel Distribution       — 8 tiles in 2-col grid.
+//   5. (no Markets section — /stocks, /news-hunter, /alerts excluded.)
+//
+// Onda 6 removed the sticky search bar that previously sat between the header
+// and the Last-visited row — it added clutter without saving steps (the
+// catalogue is short and tiles are already discoverable at a glance). The
+// `search` state still exists in `useHomeData` (other consumers may yet wire
+// it up); we simply never read or write it from this View, so the filter is a
+// no-op and the gallery shows every visible card.
 //
 // What we DELIBERATELY don't render here:
 //   • Module thumbnails / images.
@@ -39,8 +47,6 @@ import { useMemo, useState } from "react";
 import {
   MobileHomeIconTile,
   getTileMeta,
-  SearchIcon,
-  CloseIcon,
 } from "@/components/dashboard/mobile";
 import { useHomeData, type HomeCardDef } from "../useHomeData";
 import { readLastVisited } from "../../../../hooks/useTrackLastVisited";
@@ -93,7 +99,7 @@ function findCardBySlug(
 // ── Component ─────────────────────────────────────────────────────────────
 
 export default function MobileView(): React.ReactElement {
-  const { cardsByCategory, visibleCards, search, setSearch } = useHomeData();
+  const { cardsByCategory, visibleCards } = useHomeData();
   const [collapsedSections, setCollapsedSections] = useState<
     Record<SectionDef["id"], boolean>
   >({ oilgas: false, fuel: false });
@@ -125,8 +131,6 @@ export default function MobileView(): React.ReactElement {
       );
   }, [lastVisitedSlugs, visibleCards]);
 
-  const isSearching = search.trim().length > 0;
-
   function toggleSection(id: SectionDef["id"]) {
     setCollapsedSections((prev) => ({ ...prev, [id]: !prev[id] }));
   }
@@ -148,82 +152,12 @@ export default function MobileView(): React.ReactElement {
         paddingBottom: "calc(120px + var(--mobile-safe-bottom))",
       }}
     >
-      {/* ── Search (sticky just below the MobileTopBar) ──────────────── */}
-      <div
-        style={{
-          position: "sticky",
-          top: "var(--mobile-topbar-h)",
-          zIndex: 25,
-          padding: "12px 16px",
-          background: "var(--mobile-glass-bg)",
-          WebkitBackdropFilter: "var(--mobile-glass-blur)",
-          backdropFilter: "var(--mobile-glass-blur)",
-          borderBottom: "1px solid var(--mobile-glass-border)",
-        }}
-      >
-        <div style={{ position: "relative", height: 40 }}>
-          <span
-            style={{
-              position: "absolute",
-              top: "50%",
-              left: 12,
-              transform: "translateY(-50%)",
-              color: "var(--mobile-text-faint)",
-              pointerEvents: "none",
-            }}
-          >
-            <SearchIcon size={18} />
-          </span>
-          <input
-            type="search"
-            placeholder="Search dashboards"
-            aria-label="Search dashboards"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{
-              width: "100%",
-              height: 40,
-              borderRadius: 999,
-              border: "1px solid var(--mobile-border)",
-              background: "var(--mobile-surface)",
-              color: "var(--mobile-text)",
-              fontFamily: "inherit",
-              fontSize: 14,
-              padding: "0 40px 0 38px",
-              outline: "none",
-              transition: "border-color 0.15s ease, box-shadow 0.15s ease",
-            }}
-          />
-          {search && (
-            <button
-              type="button"
-              aria-label="Clear search"
-              onClick={() => setSearch("")}
-              style={{
-                position: "absolute",
-                top: "50%",
-                right: 8,
-                transform: "translateY(-50%)",
-                width: 26,
-                height: 26,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                borderRadius: "50%",
-                background: "rgba(0,0,0,0.08)",
-                border: 0,
-                cursor: "pointer",
-                color: "var(--mobile-text-muted)",
-              }}
-            >
-              <CloseIcon size={14} />
-            </button>
-          )}
-        </div>
-      </div>
+      {/* Onda 6 (2026-05-28): the sticky search bar that lived here was
+          removed — the catalogue is short and tiles are scannable on their
+          own. Tile gallery follows the dark header directly. */}
 
-      {/* ── Last visited (hidden if no history or when searching) ────── */}
-      {lastVisitedCards.length > 0 && !isSearching && (
+      {/* ── Last visited (hidden when there is no history) ───────────── */}
+      {lastVisitedCards.length > 0 && (
         <section
           aria-label="Last visited dashboards"
           style={{ padding: "20px 0 4px" }}
@@ -357,22 +291,6 @@ export default function MobileView(): React.ReactElement {
           );
         })}
 
-        {isSearching &&
-          oilgasCards.length === 0 &&
-          fuelCards.length === 0 && (
-            <div
-              role="status"
-              style={{
-                marginTop: 40,
-                padding: "32px 16px",
-                textAlign: "center",
-                color: "var(--mobile-text-muted)",
-                fontSize: 14,
-              }}
-            >
-              No dashboards match &quot;{search.trim()}&quot;.
-            </div>
-          )}
       </div>
     </div>
   );

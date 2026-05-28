@@ -37,6 +37,19 @@ export interface MobileTopBarProps {
   avatarInitials?: string;
   /** Accessibility label for the avatar (e.g. user's full name). */
   avatarLabel?: string;
+  /**
+   * Visual variant.
+   *   • "default" — Liquid Glass (translucent white over content, dark text).
+   *   • "dark"    — solid black background, white text/icon. Used by the
+   *                 dashboard MobileShell since Onda 6 (2026-05-28) to host
+   *                 the "Oil & Gas Data" wordmark.
+   *
+   * Minimal non-breaking addition required for the shell rebrand. When set
+   * to "dark", a `--mobile-text-muted` override is published on the header
+   * element itself so child components (e.g. MobileKebabMenu) that read the
+   * CSS variable for their icon color adapt without any prop wiring.
+   */
+  variant?: "default" | "dark";
 }
 
 export function MobileTopBar(props: MobileTopBarProps): React.ReactElement {
@@ -49,7 +62,27 @@ export function MobileTopBar(props: MobileTopBarProps): React.ReactElement {
     showAvatar = false,
     avatarInitials,
     avatarLabel,
+    variant = "default",
   } = props;
+
+  const isDark = variant === "dark";
+
+  // Dark variant: solid black panel, white text. We also override
+  // `--mobile-text-muted` *within* the header so kebab / theme-toggle icons
+  // (which read that variable) become readable on black without prop wiring.
+  const darkStyle: React.CSSProperties = {
+    background: "#000000",
+    backdropFilter: "none",
+    WebkitBackdropFilter: "none",
+    borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
+    boxShadow: "none",
+    color: "#ffffff",
+    // CSS variable scoping — children that consume these vars get the dark
+    // palette for free (kebab dots, theme-toggle stroke, focus rings).
+    ["--mobile-text" as string]: "#ffffff",
+    ["--mobile-text-muted" as string]: "rgba(255, 255, 255, 0.92)",
+    ["--mobile-text-faint" as string]: "rgba(255, 255, 255, 0.65)",
+  };
 
   return (
     <header
@@ -69,6 +102,7 @@ export function MobileTopBar(props: MobileTopBarProps): React.ReactElement {
         borderBottom: "1px solid var(--mobile-glass-border)",
         boxShadow: "var(--mobile-glass-shadow)",
         fontFamily: "Arial, Helvetica, sans-serif",
+        ...(isDark ? darkStyle : null),
       }}
     >
       <div style={{ minWidth: 0 }}>
