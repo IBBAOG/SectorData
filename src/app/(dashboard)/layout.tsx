@@ -175,6 +175,8 @@ function MobileShell({ children }: { children: React.ReactNode }) {
           <div
             style={{
               position: "absolute",
+              top: 0,
+              bottom: 0,
               left: "50%",
               transform: "translateX(-50%)",
               display: "inline-flex",
@@ -188,10 +190,12 @@ function MobileShell({ children }: { children: React.ReactNode }) {
               height={22}
               priority
               style={{
-                opacity: 0.92,
                 height: 22,
                 width: "auto",
                 objectFit: "contain",
+                // Recolor the white PNG to brand orange #FF5000.
+                filter:
+                  "brightness(0) saturate(100%) invert(35%) sepia(96%) saturate(2100%) hue-rotate(7deg) brightness(105%)",
               }}
             />
           </div>
