@@ -29,8 +29,8 @@ import { useCallback, useState, type CSSProperties, type JSX, type ReactNode } f
 import { usePathname } from "next/navigation";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { trackEvent } from "@/lib/tracking";
-import { downloadExcel, downloadCsv } from "@/lib/export/core";
-import { ExportModal } from "@/lib/export/modal/ExportModal";
+import { downloadExcel, downloadCsv } from "@/lib/export";
+import ExportModal from "@/lib/export/modal/ExportModal";
 import type { ExportSpec } from "@/lib/export/types";
 import { ExcelIcon, CsvIcon, DownloadIcon } from "./icons";
 
