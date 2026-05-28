@@ -819,29 +819,19 @@ export default function MobileView(): React.ReactElement {
   // ── Tab state — switching tabs also pins the product per the mobile spec ──
   //
   // Imports tab → Diesel; Exports tab → Crude Oil. The product picker is
-  // intentionally absent from the mobile UI (plan § 4.5). We mutate the
-  // hook's `unifiedProduct` so the existing fetch effects (which key on it)
-  // refresh data automatically. The tab + product change land in the same
-  // `setFilters` call → one render, one refetch cycle.
+  // intentionally absent from the mobile UI (plan § 4.5). The hook's
+  // `setFilters` now self-corrects `unifiedProduct` whenever the (tab,
+  // product) pair would be invalid (see ALLOWED_PRODUCTS_BY_TAB in
+  // useImportsExportsData.ts, 2026-05-28), so the View just patches the tab
+  // and trusts the hook to snap the product to the canonical one in the
+  // same render. A defensive mount-time effect there also corrects any stale
+  // state inherited from a previous session.
   const handleTabChange = useCallback(
     (key: string) => {
-      const tab = key as "imports" | "exports";
-      setFilters({
-        tab,
-        unifiedProduct: tab === "imports" ? "Diesel" : "Crude Oil",
-      });
+      setFilters({ tab: key as "imports" | "exports" });
     },
     [setFilters],
   );
-
-  // On first mount + whenever filtros (re)loads, force the product to match
-  // the active tab — protects against stale state from a previous session.
-  useEffect(() => {
-    const expected = filters.tab === "imports" ? "Diesel" : "Crude Oil";
-    if (filters.unifiedProduct !== expected) {
-      setFilters({ unifiedProduct: expected });
-    }
-  }, [filters.tab, filters.unifiedProduct, setFilters]);
 
   // ── Bounds + presets ────────────────────────────────────────────────────────
 

@@ -1015,16 +1015,21 @@ function ImporterEmptyState() {
 
 // ─── Products ──────────────────────────────────────────────────────────────────
 
-const PRODUCTS: UnifiedProduct[] = ["Diesel", "Gasoline", "Crude Oil"];
-
 // Product pill toggle — content-sized pills with brand-orange active state.
 // Uses simple buttons (not SegmentedToggle) so each pill sizes to its label.
+// `products` is the tab-restricted list provided by the hook
+// (`useImportsExportsData().allowedProducts`) — Imports tab shows only Diesel,
+// Exports tab shows only Crude Oil. When the list collapses to a single
+// product the toggle still renders (as a visual lock indicator) but offers no
+// alternative to switch to.
 function ProductPillToggle({
   value,
   onChange,
+  products,
 }: {
   value: UnifiedProduct;
   onChange: (v: UnifiedProduct) => void;
+  products: readonly UnifiedProduct[];
 }) {
   return (
     <div
@@ -1036,7 +1041,7 @@ function ProductPillToggle({
         padding: "3px 4px",
       }}
     >
-      {PRODUCTS.map((p) => {
+      {products.map((p) => {
         const active = p === value;
         return (
           <button
@@ -1148,6 +1153,7 @@ export default function DesktopView(): React.ReactElement {
     exportsUnitPriceLoading,
     importsUPMetric,
     setImportsUPMetric,
+    allowedProducts,
     importsPriceSummary,
     exportsPriceSummary,
     periodBadge,
@@ -1731,6 +1737,7 @@ export default function DesktopView(): React.ReactElement {
                 <ProductPillToggle
                   value={filters.unifiedProduct}
                   onChange={(v) => setFilters({ unifiedProduct: v })}
+                  products={allowedProducts}
                 />
                 <div style={{ maxWidth: 200 }}>
                   <SegmentedToggle

@@ -15,7 +15,7 @@
 | Page title | Imports & Exports |
 | Subtitle | Brazilian fuel trade flows — by origin country and importer group |
 | Period badge | Month range derived from slider (`MMM YYYY – MMM YYYY`); collapses to `MMM YYYY` when `start === end` (single-month view) |
-| Products | Diesel, Gasoline, Crude Oil (global pill toggle — single-select, brand orange active state, content-sized pills) |
+| Products | Diesel, Gasoline, Crude Oil — but the picker is **tab-restricted** (since 2026-05-28): the Imports tab exposes only **Diesel** and the Exports tab exposes only **Crude Oil**. Switching tabs auto-snaps the active product to the canonical one (e.g. selecting Exports while on Gasoline forces Crude Oil). The rule lives in the shared hook (`ALLOWED_PRODUCTS_BY_TAB` + self-correcting `setFilters`) so desktop and mobile stay in lockstep — the desktop pill toggle renders a single inert pill on each tab, and the mobile view (which never showed a picker) inherits the same enforcement. |
 | Tabs | Imports (default) / Exports |
 
 This dashboard **consolidates** the 4 deprecated dashboards:

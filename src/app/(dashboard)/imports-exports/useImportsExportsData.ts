@@ -218,6 +218,18 @@ export interface UseImportsExportsData {
   importsUPMetric: ImportsUnitPriceMetric;
   setImportsUPMetric: (next: ImportsUnitPriceMetric) => void;
 
+  /**
+   * Tab-restricted list of products the user is allowed to pick from.
+   * Imports tab → ['Diesel']; Exports tab → ['Crude Oil'].
+   *
+   * The hook also self-corrects `filters.unifiedProduct` whenever the tab
+   * changes (or the product is otherwise out of the allowed set) so that
+   * downstream RPC fetches always operate on a tab-valid product. Views
+   * should render only these options in their product picker (or hide the
+   * picker entirely when there is just one).
+   */
+  allowedProducts: UnifiedProduct[];
+
   // Imports / Exports price summary tables (derived client-side from
   // importsUnitPriceData / exportsUnitPriceData and the active unit toggle).
   // Imports: exactly 3 rows — top-2 origin countries by total vol_m3 in the
@@ -246,6 +258,16 @@ export interface UseImportsExportsData {
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 const TOP_N = 10;
+
+// Per-tab product allow-lists. The Imports tab tracks Diesel only and the
+// Exports tab tracks Crude Oil only — the two highest-priority products for
+// each flow direction. Mirrors the mobile UX (which never showed a picker)
+// and is now enforced on desktop too (2026-05-28). Adding products to either
+// list is the single point of change if the scope ever widens.
+const ALLOWED_PRODUCTS_BY_TAB: Record<ImportsExportsTab, UnifiedProduct[]> = {
+  imports: ["Diesel"],
+  exports: ["Crude Oil"],
+};
 
 const MONTH_LABELS_SHORT = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -455,10 +477,35 @@ export function useImportsExportsData(): UseImportsExportsData {
   // Imports unit price view toggle (shared across views + summary table).
   const [importsUPMetric, setImportsUPMetric] = useState<ImportsUnitPriceMetric>("usd_per_ton");
 
-  // Stable setter merging partial filter updates
+  // Stable setter merging partial filter updates. Self-corrects the product
+  // when the incoming patch changes the tab (or the product) into an invalid
+  // (tab, product) combination — Imports must be Diesel, Exports must be
+  // Crude Oil. The correction is folded into the SAME state update so views
+  // never observe a transient mismatch and downstream RPC fetches always
+  // key on a valid pair.
   const setFilters = useCallback((next: Partial<ImportsExportsFilters>) => {
-    setFiltersState((prev) => ({ ...prev, ...next }));
+    setFiltersState((prev) => {
+      const merged = { ...prev, ...next };
+      const allowed = ALLOWED_PRODUCTS_BY_TAB[merged.tab];
+      if (!allowed.includes(merged.unifiedProduct)) {
+        merged.unifiedProduct = allowed[0];
+      }
+      return merged;
+    });
   }, []);
+
+  // Defensive sweep — if the initial DEFAULT_FILTERS or some external source
+  // ever leaves `unifiedProduct` out of sync with `tab`, snap it back. The
+  // `setFilters` callback above already enforces this on every mutation, so
+  // this effect mostly covers the mount path.
+  useEffect(() => {
+    const allowed = ALLOWED_PRODUCTS_BY_TAB[filters.tab];
+    if (!allowed.includes(filters.unifiedProduct)) {
+      setFiltersState((prev) => ({ ...prev, unifiedProduct: allowed[0] }));
+    }
+  }, [filters.tab, filters.unifiedProduct]);
+
+  const allowedProducts = ALLOWED_PRODUCTS_BY_TAB[filters.tab];
 
   // ── 1. Fetch filtros once on mount ──────────────────────────────────────────
   useEffect(() => {
@@ -1367,6 +1414,7 @@ export function useImportsExportsData(): UseImportsExportsData {
     exportsUnitPriceLoading,
     importsUPMetric,
     setImportsUPMetric,
+    allowedProducts,
     importsPriceSummary,
     exportsPriceSummary,
     monthList,
