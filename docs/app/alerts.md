@@ -16,7 +16,7 @@ Files created:
 - `src/app/(dashboard)/alerts/page.tsx` — viewport router (useIsMobile)
 - `src/app/(dashboard)/alerts/useAlertsData.ts` — shared hook (all RPC calls, state, types)
 - `src/app/(dashboard)/alerts/desktop/View.tsx` — desktop layout (two-column: catalog + mgmt panel)
-- `src/app/(dashboard)/alerts/mobile/View.tsx` — mobile layout (tabs + BottomSheet catalog + sticky CTA)
+- `src/app/(dashboard)/alerts/mobile/View.tsx` — mobile layout (tabs + BottomSheet catalog + sticky CTA) — **deleted 2026-05-27** (mobile reform wave 2; module is desktop-only)
 - `src/app/(dashboard)/alerts/confirm/page.tsx` — double opt-in confirmation landing
 - `src/app/(dashboard)/alerts/unsubscribe/page.tsx` — one-click unsubscribe landing
 - `src/app/(dashboard)/alerts/page.module.css` — scoped styles
@@ -24,30 +24,35 @@ Files created:
 - `src/lib/rpc.ts` — 9 alert RPC wrappers added (Alerts RPCs section)
 - `src/components/NavBar.tsx` — "Alerts" top-level entry added (between Market Watch and News Hunter)
 
-## Dual-view structure
+## View structure (desktop-only — mobile excluded)
 
-`/alerts` segue o pattern canônico de dual-view (CLAUDE.md § Dual-view policy):
+`/alerts` is **desktop-only** by CTO decision (mobile reform wave 2, § 3.1). Mobile visitors are
+redirected to `/home?excluded=alerts` with an informational toast via `MobileExcludedRedirect`.
+
+Transactional sub-pages (`/alerts/confirm`, `/alerts/unsubscribe`) are explicitly exempted from
+the mobile redirect — users must be able to confirm subscriptions or unsubscribe from a mobile
+device clicking an email link.
 
 ```
 src/app/(dashboard)/alerts/
-├── page.tsx                  Viewport router — useIsMobile() → DesktopView | MobileView
+├── page.tsx                  Mounts MobileExcludedRedirect (redirect on mobile, no-op on
+│                               desktop) + renders DesktopView unconditionally.
 ├── useAlertsData.ts          SINGLE BRAIN: source catalog fetch, subscription CRUD,
 │                               confirmation/unsubscribe handlers, recent alerts feed.
-│                               Both Views consume this hook; no direct supabase-js calls
+│                               DesktopView consumes this hook; no direct supabase-js calls
 │                               inside View files.
 ├── desktop/View.tsx          Desktop UX (≥769px) — expandable category cards,
 │                               side-by-side Active Subs panel + Recent Feed.
-├── mobile/View.tsx           Mobile UX (≤768px) — BottomSheet for catalog,
-│                               FilterDrawer chips for selected sources,
-│                               sticky Subscribe button at bottom.
+│                               (mobile/View.tsx deleted — wave 2 mobile reform 2026-05-27)
 ├── confirm/
-│   └── page.tsx              /alerts/confirm?token=... — double opt-in landing
+│   └── page.tsx              /alerts/confirm?token=... — double opt-in landing (mobile-safe)
 ├── unsubscribe/
-│   └── page.tsx              /alerts/unsubscribe?token=... — one-click unsubscribe
+│   └── page.tsx              /alerts/unsubscribe?token=... — one-click unsubscribe (mobile-safe)
 └── page.module.css           Scoped styles
 ```
 
-Confirmation and unsubscribe pages are **single-view** (centered card, no dual-view divergence needed) — they're transactional landing pages, not interactive dashboards.
+Confirmation and unsubscribe pages are **single-view** (centered card, no dual-view divergence
+needed) — they are transactional landing pages that must work on all devices.
 
 ## Tiers de acesso
 
@@ -255,13 +260,14 @@ Após seed de `alert_sources`, a UI carrega via `list_alert_sources()`. Categori
 - Misturar estilos em `globals.css` em vez de `page.module.css`.
 - Não usar dual-view template (CTO-policy mandatory).
 
-## Mobile-specific notes
+## Mobile notes
 
-- `BottomSheet` para source catalog (full-screen drawer com 4 collapsable categorias)
-- `FilterDrawer` chips para visualizar sources já selecionadas + remoção rápida
-- Sticky `Subscribe` button at bottom of viewport (always visible, badge "(N selected)")
-- Tab bar no bottom para alternar entre "Subscribe" / "Active" / "Feed" (logged users only)
-- Confirmation/unsubscribe pages são same desktop+mobile (centered card)
+`/alerts` is **desktop-only** (CTO decision, mobile reform wave 2, 2026-05-27). Mobile visitors
+are redirected to `/home` via `MobileExcludedRedirect`.
+
+Exceptions (intentional, no redirect):
+- `/alerts/confirm` — user clicks email link from a phone and must be able to confirm
+- `/alerts/unsubscribe` — user clicks email link from a phone and must be able to unsubscribe
 
 ## Roadmap (post-MVP)
 
