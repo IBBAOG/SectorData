@@ -173,6 +173,13 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Markets-only resting tint — light yellow background under the MARKETS
+   group rows (Market Watch, News Hunter) per user request 2026-05-28.
+   Applied via inline class on `.section` only when the category === 'markets'. */
+.sectionMarkets .row:not(.rowDisabled) {
+  background: var(--mg-accent-soft);
+}
+
 /* Left accent bar (hover/focus) — vertical pill */
 .row::before {
   content: "";

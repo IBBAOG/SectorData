@@ -46,14 +46,17 @@ import { useHomeData, type HomeCardDef, type HomeCategory } from "../useHomeData
 import TeamCard from "@/components/home/mobile/TeamCard";
 
 // ── Hidden slugs ─────────────────────────────────────────────────────────
-// Mirrors commit 022f41bc — desktop-only + non-gallery routes.
+// Mirrors commit 022f41bc — desktop-only + non-gallery routes. /stocks and
+// /news-hunter are mobile-excluded routes; their entry points on mobile are
+// the floating MobileNewsHunterPill / mobile chrome — never the /home grid.
 const HIDE_FROM_MOBILE_HOME = new Set<string>([
-  "stocks",
-  "news-hunter",
   "alerts",
   "admin-panel",
   "admin-analytics",
   "profile",
+  // Markets — desktop-only or surfaced via floating pill, not the gallery
+  "stocks",
+  "news-hunter",
   // Desktop-only dashboards (post-mobile-reform 2026-05-27)
   "anp-cdp",
   "anp-prices",
@@ -62,7 +65,7 @@ const HIDE_FROM_MOBILE_HOME = new Set<string>([
 
 // ── Section ordering ─────────────────────────────────────────────────────
 interface SectionDef {
-  id: Exclude<HomeCategory, "markets">;
+  id: HomeCategory;
   title: string;
   color: string;
 }
@@ -160,7 +163,9 @@ export default function MobileView(): React.ReactElement {
   );
 
   function cardsForSection(id: SectionDef["id"]): HomeCardDef[] {
-    return id === "oilgas" ? oilgasCards : fuelCards;
+    if (id === "oilgas") return oilgasCards;
+    if (id === "fuel") return fuelCards;
+    return [];
   }
 
   return (
