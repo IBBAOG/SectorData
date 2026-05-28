@@ -91,6 +91,20 @@ import type {
  *  total annotation above each bar carries the leader number anyway. */
 const MIN_SEGMENT_KBPD_LABEL = 80;
 
+/** Equivalent threshold in Mbpd (kbpd / 1000). Brazil/Petrobras top out around
+ *  3.7 Mbpd so we use a small fraction (0.08 Mbpd = 80 kbpd) to keep the same
+ *  visual heuristic. */
+const MIN_SEGMENT_MBPD_LABEL = 0.08;
+
+/** Scope pills whose absolute production warrants Mbpd (million bpd) units
+ *  instead of kbpd: Brazil aggregate (~3.7 Mbpd) and Petrobras stake-weighted
+ *  (~2.3 Mbpd). The smaller scopes (PRIO, PetroReconcavo, Brava) stay in kbpd
+ *  because their totals are under 100 kbpd. */
+const MBPD_VIEWS: ReadonlySet<WellByWellView> = new Set<WellByWellView>([
+  "Brasil",
+  "Petrobras",
+]);
+
 /** Cap the FPSO/UEP horizontal bar to 15 installations — beyond this, the
  *  list becomes unscanably long on a 6" phone. The full list is accessible
  *  via the section's "rows below the chart" cards (no cap there). */
@@ -118,6 +132,27 @@ function fmtIntPtBr(n: number): string {
   return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(n);
 }
 
+/** Short month label "May-25" used by the hero chart's rotated x-axis ticks.
+ *  `fmtMonthLabel` (from the hook) returns "May 2025" — too wide for vertical
+ *  ticks on a phone, hence this local variant. Input is an ISO date anchor
+ *  ("YYYY-MM-DD"). */
+function fmtMonthLabelShort(anchor: string): string {
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const m = parseInt(anchor.slice(5, 7), 10);
+  const yy = anchor.slice(2, 4);
+  return `${months[m - 1]}-${yy}`;
+}
+
+/** Mbpd values are small (0–4 range) so we render with 2 decimals to keep the
+ *  precision a kbpd integer would otherwise convey. en-US locale matches the
+ *  rest of the dashboard (period separator). */
+function fmtMbpd(n: number): string {
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n);
+}
+
 function deltaColor(p: number | null | undefined): string {
   if (p == null || !Number.isFinite(p)) return KPI_NEUTRAL_COLOR;
   if (p > 0) return KPI_POS_COLOR;
@@ -136,6 +171,7 @@ interface StackedBuildResult {
 function buildTotalAnnotations(
   months: string[],
   ambienteYs: Record<string, number[]>,
+  unitIsMbpd: boolean,
 ): Partial<Layout>["annotations"] {
   const totals = months.map((_, i) =>
     AMBIENTES.reduce((s, amb) => s + (ambienteYs[amb]?.[i] ?? 0), 0),
@@ -143,7 +179,7 @@ function buildTotalAnnotations(
   return months.map((m, i) => ({
     x: m,
     y: totals[i],
-    text: `<b>${fmtIntPtBr(totals[i])}</b>`,
+    text: `<b>${unitIsMbpd ? fmtMbpd(totals[i]) : fmtIntPtBr(totals[i])}</b>`,
     showarrow: false,
     yshift: 10,
     xanchor: "center",
@@ -153,6 +189,7 @@ function buildTotalAnnotations(
 
 function buildHeroStackedSeries(
   rows: (ProductionBrazilRow | ProductionCompanyRow)[],
+  unitIsMbpd: boolean,
 ): StackedBuildResult {
   if (!rows.length) return { data: [], annotations: [], months: [] };
 
@@ -170,10 +207,20 @@ function buildHeroStackedSeries(
     pivot[r.ambiente][key] = (pivot[r.ambiente][key] ?? 0) + r.oil_bbl_dia;
   }
 
+  // y values: always start from kbpd, then divide by 1000 when the active view
+  // calls for Mbpd. Keeping the conversion centralised here means the totals
+  // annotation and hovertemplate stay in sync with the bar heights.
   const ambienteYs: Record<string, number[]> = {};
   for (const amb of AMBIENTES) {
-    ambienteYs[amb] = months.map((m) => bblDiaToKbpd(pivot[amb]?.[m] ?? 0));
+    ambienteYs[amb] = months.map((m) => {
+      const kbpd = bblDiaToKbpd(pivot[amb]?.[m] ?? 0);
+      return unitIsMbpd ? kbpd / 1000 : kbpd;
+    });
   }
+
+  const labelThreshold = unitIsMbpd ? MIN_SEGMENT_MBPD_LABEL : MIN_SEGMENT_KBPD_LABEL;
+  const unitSuffix = unitIsMbpd ? "Mbpd" : "kbpd";
+  const hoverFmt = unitIsMbpd ? ",.2f" : ",.1f";
 
   const data: PlotData[] = AMBIENTES.map((amb) => {
     const baseColor = AMBIENTE_COLOR[amb] ?? "#aaaaaa";
@@ -186,18 +233,22 @@ function buildHeroStackedSeries(
       x: months,
       y: ys,
       text: ys.map((v) =>
-        v >= MIN_SEGMENT_KBPD_LABEL ? fmtIntPtBr(v) : "",
+        v >= labelThreshold ? (unitIsMbpd ? fmtMbpd(v) : fmtIntPtBr(v)) : "",
       ),
       textposition: "inside",
       insidetextanchor: "middle",
       textfont: { color: labelColor, size: 10, family: "Arial" },
       cliponaxis: false,
       marker: { color: baseColor },
-      hovertemplate: `${displayName}: %{y:,.1f} kbpd<extra></extra>`,
+      hovertemplate: `${displayName}: %{y:${hoverFmt}} ${unitSuffix}<extra></extra>`,
     } as PlotData;
   });
 
-  return { data, annotations: buildTotalAnnotations(months, ambienteYs), months };
+  return {
+    data,
+    annotations: buildTotalAnnotations(months, ambienteYs, unitIsMbpd),
+    months,
+  };
 }
 
 // ─── FPSO/UEP chart (Section 3) ──────────────────────────────────────────────
@@ -984,9 +1035,11 @@ export default function MobileView(): React.ReactElement | null {
     ? companyData
     : brazilData;
   const aggregateLoading = viewIsCompany ? companyLoading : brazilLoading;
+  const heroUnitIsMbpd = MBPD_VIEWS.has(view);
+  const heroUnitLabel = heroUnitIsMbpd ? "Mbpd" : "kbpd";
   const aggregateSeries = useMemo(
-    () => buildHeroStackedSeries(aggregateRows),
-    [aggregateRows],
+    () => buildHeroStackedSeries(aggregateRows, heroUnitIsMbpd),
+    [aggregateRows, heroUnitIsMbpd],
   );
 
   // ── Section 3 — FPSO/UEP horizontal bar ──────────────────────────────────
@@ -1091,8 +1144,13 @@ export default function MobileView(): React.ReactElement | null {
         }}
       >
         {/* ── SECTION 1 — Hero stacked bar ─────────────────────────── */}
+        {/* Y-axis intentionally hidden: the per-bar total annotation and the
+            in-segment labels already carry the magnitude, and the unit lives
+            in the section title ("(Mbpd)" / "(kbpd)"). Removes redundant
+            chrome on a narrow viewport. X-axis ticks are rotated -90° so the
+            month labels (e.g. "May-25") read top-down without clipping. */}
         <SectionCard
-          title="Production by environment"
+          title={`Production by environment (${heroUnitLabel})`}
           subtitle={heroSubtitle}
           loading={aggregateLoading}
         >
@@ -1102,16 +1160,23 @@ export default function MobileView(): React.ReactElement | null {
               height={280}
               layout={{
                 barmode: "stack",
-                margin: { t: 28, b: 40, l: 40, r: 8 },
+                margin: { t: 28, b: 56, l: 8, r: 8 },
                 xaxis: {
                   type: "date",
                   tickmode: "array",
                   tickvals: aggregateSeries.months,
-                  ticktext: aggregateSeries.months.map((m) => fmtMonthLabel(m)),
+                  ticktext: aggregateSeries.months.map((m) => fmtMonthLabelShort(m)),
+                  tickangle: -90,
+                  tickfont: { size: 10 },
                 },
-                yaxis: { title: { text: "kbpd" } },
+                yaxis: {
+                  visible: false,
+                  showticklabels: false,
+                  showgrid: false,
+                  zeroline: false,
+                },
                 showlegend: true,
-                legend: { orientation: "h", y: -0.28, x: 0 },
+                legend: { orientation: "h", y: -0.34, x: 0 },
                 annotations: aggregateSeries.annotations,
               }}
             />
