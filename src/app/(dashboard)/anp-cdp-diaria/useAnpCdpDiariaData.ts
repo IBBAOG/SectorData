@@ -297,7 +297,6 @@ export interface UseAnpCdpDiariaData {
 
   // Filter universes
   campos: string[];
-  bacias: string[];
   instalacoes: string[];
   pocos: string[];
 
@@ -311,9 +310,6 @@ export interface UseAnpCdpDiariaData {
   // User filter selections
   selectedCampos: string[];
   setSelectedCampos: (v: string[]) => void;
-  selectedBacias: string[];
-  setSelectedBacias: (v: string[]) => void;
-  toggleBacia: (b: string) => void;
   selectedInstalacoes: string[];
   setSelectedInstalacoes: (v: string[]) => void;
   selectedPocos: string[];
@@ -355,8 +351,6 @@ export interface UseAnpCdpDiariaData {
   csvLoading: boolean;
   exportCampos: string[];
   setExportCampos: (v: string[]) => void;
-  exportBacias: string[];
-  setExportBacias: (v: string[]) => void;
   exportInstalacoes: string[];
   setExportInstalacoes: (v: string[]) => void;
   exportPocos: string[];
@@ -365,7 +359,6 @@ export interface UseAnpCdpDiariaData {
   setExportRange: (v: [number, number]) => void;
   exportFilters: {
     campos: string[] | null;
-    bacias: string[] | null;
     instalacoes: string[] | null;
     pocos: string[] | null;
     dataInicio: string | null;
@@ -391,7 +384,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
 
   // ── Filter universes ──────────────────────────────────────────────────────
   const [campos, setCampos]             = useState<string[]>([]);
-  const [bacias, setBacias]             = useState<string[]>([]);
   const [instalacoes, setInstalacoes]   = useState<string[]>([]);
   const [pocos, setPocos]               = useState<string[]>([]);
 
@@ -404,7 +396,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
 
   // ── Selections ────────────────────────────────────────────────────────────
   const [selectedCampos, setSelectedCampos]           = useState<string[]>([]);
-  const [selectedBacias, setSelectedBacias]           = useState<string[]>([]);
   const [selectedInstalacoes, setSelectedInstalacoes] = useState<string[]>([]);
   const [selectedPocos, setSelectedPocos]             = useState<string[]>([]);
 
@@ -416,7 +407,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
   const [excelLoading, setExcelLoading]           = useState(false);
   const [csvLoading, setCsvLoading]               = useState(false);
   const [exportCampos, setExportCampos]           = useState<string[]>([]);
-  const [exportBacias, setExportBacias]           = useState<string[]>([]);
   const [exportInstalacoes, setExportInstalacoes] = useState<string[]>([]);
   const [exportPocos, setExportPocos]             = useState<string[]>([]);
   const [exportRange, setExportRange]             = useState<[number, number]>([0, 0]);
@@ -440,7 +430,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
     // Reset selections when switching levels (vocabularies differ).
     if (!initialMountRef.current) {
       setSelectedCampos([]);
-      setSelectedBacias([]);
       setSelectedInstalacoes([]);
       setSelectedPocos([]);
       setSerieRows([]);
@@ -452,7 +441,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
           const f = await rpcGetAnpCdpDiariaFiltros(supabase);
           if (cancelled) return;
           setCampos(f.campos);
-          setBacias(f.bacias);
           setInstalacoes([]);
           setPocos([]);
           const dates = (f.data_min && f.data_max) ? buildDateRange(f.data_min, f.data_max) : [];
@@ -469,7 +457,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
           const f = await rpcGetAnpCdpDiariaInstalacaoFiltros(supabase);
           if (cancelled) return;
           setCampos(f.campos);
-          setBacias([]);
           setInstalacoes(f.instalacoes);
           setPocos([]);
           const dates = (f.data_min && f.data_max) ? buildDateRange(f.data_min, f.data_max) : [];
@@ -486,7 +473,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
           const f = await rpcGetAnpCdpDiariaPocoFiltros(supabase);
           if (cancelled) return;
           setCampos(f.campos);
-          setBacias(f.bacias);
           setInstalacoes([]);
           setPocos(f.pocos);
           const dates = (f.data_min && f.data_max) ? buildDateRange(f.data_min, f.data_max) : [];
@@ -513,7 +499,8 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
   }, [supabase, granularity]);
 
   // ── Reactive serie fetch (debounced 400ms) ────────────────────────────────
-  // Only period + the "non-dimension" RPC filter trigger refetch. Dimension
+  // Only period triggers refetch at Field/Well levels (Basin filter removed).
+  // At Installation level, campo selection also triggers refetch. Dimension
   // filter (campo at Field, instalacao at Install, poco at Well) stays
   // client-side so Top-N defaults remain stable.
   const { data: refetched, loading: serieLoading } = useDebouncedFetch<UnifiedRow[] | null>(
@@ -522,11 +509,7 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
       const dStart = allDates[dateRange[0]] ?? null;
       const dEnd   = allDates[dateRange[1]] ?? null;
       if (granularity === "field") {
-        const baciasParam = selectedBacias.length > 0 && selectedBacias.length < bacias.length
-          ? selectedBacias
-          : null;
         const rows = await rpcGetAnpCdpDiariaSerie(supabase, {
-          bacias: baciasParam,
           dataInicio: dStart,
           dataFim:    dEnd,
         });
@@ -542,11 +525,7 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
         });
         return projectInstallation(rows);
       } else {
-        const baciasParam = selectedBacias.length > 0 && selectedBacias.length < bacias.length
-          ? selectedBacias
-          : null;
         const rows = await rpcGetAnpCdpDiariaPocoSerie(supabase, {
-          bacias:     baciasParam,
           dataInicio: dStart,
           dataFim:    dEnd,
         });
@@ -556,7 +535,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
     [
       supabase, loading, granularity,
       dateRange[0], dateRange[1], allDates,
-      selectedBacias, bacias.length,
       selectedCampos, campos.length,
     ],
     { ms: 400, skipInitial: true },
@@ -632,13 +610,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
   // ── Ranking (mobile data cards) ───────────────────────────────────────────
   const ranking = useMemo(() => buildRanking(visibleRows, product), [visibleRows, product]);
 
-  // ── Bacia toggle helper ───────────────────────────────────────────────────
-  const toggleBacia = useCallback((b: string) => {
-    setSelectedBacias(prev =>
-      prev.includes(b) ? prev.filter(x => x !== b) : [...prev, b]
-    );
-  }, []);
-
   // ── Labels per level ──────────────────────────────────────────────────────
   const dimLabel = useMemo(() => {
     if (granularity === "field")        return { singular: "Campo",       plural: "campo(s)",       en: "Field" };
@@ -671,7 +642,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
   // ── Export helpers ────────────────────────────────────────────────────────
   const openExportModal = useCallback(() => {
     setExportCampos([]);
-    setExportBacias([]);
     setExportInstalacoes([]);
     setExportPocos([]);
     setExportRange(dateRange);
@@ -683,13 +653,12 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
     const eEnd   = allDates[exportRange[1]] ?? null;
     return {
       campos:      exportCampos.length      > 0 ? exportCampos      : null,
-      bacias:      exportBacias.length      > 0 ? exportBacias      : null,
       instalacoes: exportInstalacoes.length > 0 ? exportInstalacoes : null,
       pocos:       exportPocos.length       > 0 ? exportPocos       : null,
       dataInicio:  eStart,
       dataFim:     eEnd,
     };
-  }, [exportCampos, exportBacias, exportInstalacoes, exportPocos, exportRange, allDates]);
+  }, [exportCampos, exportInstalacoes, exportPocos, exportRange, allDates]);
 
   const estimateExportRows = useCallback(async (): Promise<number> => {
     if (!supabase) return 0;
@@ -697,7 +666,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
       if (granularity === "field") {
         const rows = await rpcGetAnpCdpDiariaSerie(supabase, {
           campos:     exportFilters.campos,
-          bacias:     exportFilters.bacias,
           dataInicio: exportFilters.dataInicio,
           dataFim:    exportFilters.dataFim,
         });
@@ -713,7 +681,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
       } else {
         const rows = await rpcGetAnpCdpDiariaPocoSerie(supabase, {
           campos:     exportFilters.campos,
-          bacias:     exportFilters.bacias,
           pocos:      exportFilters.pocos,
           dataInicio: exportFilters.dataInicio,
           dataFim:    exportFilters.dataFim,
@@ -733,7 +700,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
       if (granularity === "field") {
         const rows = await rpcGetAnpCdpDiariaSerie(supabase, {
           campos:     exportFilters.campos,
-          bacias:     exportFilters.bacias,
           dataInicio: exportFilters.dataInicio,
           dataFim:    exportFilters.dataFim,
         });
@@ -773,7 +739,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
       } else {
         const rows = await rpcGetAnpCdpDiariaPocoSerie(supabase, {
           campos:     exportFilters.campos,
-          bacias:     exportFilters.bacias,
           pocos:      exportFilters.pocos,
           dataInicio: exportFilters.dataInicio,
           dataFim:    exportFilters.dataFim,
@@ -813,7 +778,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
       if (granularity === "field") {
         const rows = await rpcGetAnpCdpDiariaSerie(supabase, {
           campos:     exportFilters.campos,
-          bacias:     exportFilters.bacias,
           dataInicio: exportFilters.dataInicio,
           dataFim:    exportFilters.dataFim,
         });
@@ -835,7 +799,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
       } else {
         const rows = await rpcGetAnpCdpDiariaPocoSerie(supabase, {
           campos:     exportFilters.campos,
-          bacias:     exportFilters.bacias,
           pocos:      exportFilters.pocos,
           dataInicio: exportFilters.dataInicio,
           dataFim:    exportFilters.dataFim,
@@ -863,7 +826,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
     setGranularity,
 
     campos,
-    bacias,
     instalacoes,
     pocos,
 
@@ -875,9 +837,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
 
     selectedCampos,
     setSelectedCampos,
-    selectedBacias,
-    setSelectedBacias,
-    toggleBacia,
     selectedInstalacoes,
     setSelectedInstalacoes,
     selectedPocos,
@@ -911,8 +870,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
     csvLoading,
     exportCampos,
     setExportCampos,
-    exportBacias,
-    setExportBacias,
     exportInstalacoes,
     setExportInstalacoes,
     exportPocos,

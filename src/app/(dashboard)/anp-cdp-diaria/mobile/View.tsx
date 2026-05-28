@@ -5,7 +5,7 @@
 // Flagship #2 — v2 reform (Onda 3, 2026-05-27).
 //
 // Layout (top → bottom):
-//   Sticky filter chip row  — Period preset + Basin multi-select + Field search trigger
+//   Sticky filter chip row  — Period preset + Field search trigger
 //   Section 1 — Oil chart   — daily series, top 5 fields, brand orange leader, ~260px
 //   Section 2 — Gas chart   — same treatment stacked vertically (desktop parity, CTO decision)
 //   Section 3 — Top 10 ranking  — MobileDataCard pills + "See all N fields" BottomSheet
@@ -39,7 +39,6 @@ import {
   CloseIcon,
 } from "../../../../components/dashboard/mobile";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
-import MultiSelectFilter from "../../../../components/dashboard/MultiSelectFilter";
 import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 
 import {
@@ -185,10 +184,9 @@ export default function MobileView(): React.ReactElement | null {
     visible, visLoading,
     loading, serieLoading,
     granularity, setGranularity,
-    campos, bacias,
+    campos,
     allDates, dateRange, setDateRange, hasDates,
     selectedCampos, setSelectedCampos,
-    selectedBacias, setSelectedBacias, toggleBacia,
     visibleRows,
     explicitDims,
     defaultPetroleoDims, defaultGasDims,
@@ -245,7 +243,6 @@ export default function MobileView(): React.ReactElement | null {
 
   // ── Active filter count (for chip badge) ──────────────────────────────────
   const activeFilterCount =
-    (selectedBacias.length > 0 && selectedBacias.length < bacias.length ? 1 : 0) +
     (selectedCampos.length > 0 ? 1 : 0) +
     (allDates.length > 0 && (dateRange[0] !== 0 || dateRange[1] !== allDates.length - 1) ? 1 : 0);
 
@@ -278,7 +275,6 @@ export default function MobileView(): React.ReactElement | null {
   // ── Filter drawer reset ────────────────────────────────────────────────────
   function handleReset() {
     setSelectedCampos([]);
-    setSelectedBacias([]);
     if (allDates.length > 0) {
       setDateRange([0, allDates.length - 1]);
     }
@@ -442,32 +438,6 @@ export default function MobileView(): React.ReactElement | null {
               </span>
             )}
           </button>
-
-          {/* Active basin chip */}
-          {selectedBacias.length > 0 && selectedBacias.length < bacias.length && (
-            <span style={chipActive}>
-              Basin: {selectedBacias.length}
-              <button
-                type="button"
-                onClick={() => setSelectedBacias([])}
-                aria-label="Clear basin filter"
-                style={{
-                  width:   18,
-                  height:  18,
-                  border:  0,
-                  background: "transparent",
-                  color:   BRAND_ORANGE,
-                  cursor:  "pointer",
-                  padding: 0,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <CloseIcon size={9} strokeWidth={2.5} />
-              </button>
-            </span>
-          )}
 
           {/* Active field chip */}
           {selectedCampos.length > 0 && (
@@ -764,26 +734,6 @@ export default function MobileView(): React.ReactElement | null {
             />
           </div>
         )}
-
-        {/* Basin filter */}
-        <div style={{ marginBottom: 18 }}>
-          <div style={drawerSectionLabel}>
-            Basin
-            <span style={{ fontWeight: 400, marginLeft: 4, color: "var(--mobile-text-muted, #6b6b73)" }}>
-              ({selectedBacias.length === 0 ? bacias.length : selectedBacias.length}/{bacias.length})
-            </span>
-          </div>
-          <MultiSelectFilter
-            label="Basin"
-            items={bacias}
-            selected={selectedBacias}
-            onToggle={toggleBacia}
-            onClear={selectedBacias.length > 0 ? () => setSelectedBacias([]) : undefined}
-            idPrefix="cdpd-mobile-bacia"
-            emptyMeansAll
-            counterTotal={bacias.length}
-          />
-        </div>
 
         {/* Field chip cloud */}
         <div>
