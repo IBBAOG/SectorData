@@ -76,7 +76,7 @@ export const DATA_SOURCES: DataSource[] = [
     cronDescription: "Monthly on day 5 at 08:00 UTC (+ incremental every ~2h via external cron-job.org)",
     sourceFrequency: "Monthly",
     dashboards: [
-      { slug: "anp-cdp", title: "Production" },
+      { slug: "anp-cdp", title: "Monthly Production" },
       { slug: "anp-cdp-bsw", title: "BSW by Well" },
       { slug: "anp-cdp-depletion", title: "Depletion" },
     ],

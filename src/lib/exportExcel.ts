@@ -1270,7 +1270,7 @@ export async function downloadAnpCdpExcel(rows: AnpCdpSeriePonto[]): Promise<voi
   await downloadGenericExcel<AnpCdpSeriePonto>({
     rows,
     sheetName: "ANP CDP",
-    title: "ANP CDP — Production by Well",
+    title: "ANP CDP — Monthly Production",
     filename: "ANP CDP",
     columns: [
       { key: "ano",                          header: "Year",                     width: 8 },
@@ -1296,7 +1296,7 @@ export async function downloadAnpCdpRawExcel(rows: AnpCdpRawRow[]): Promise<void
   await downloadGenericExcel<AnpCdpRawRow>({
     rows,
     sheetName: "ANP CDP — Raw",
-    title: "ANP CDP — Production by Well (raw)",
+    title: "ANP CDP — Monthly Production (raw)",
     filename: "ANP CDP raw",
     columns: [
       { key: "ano",                          header: "Year",                     width: 8 },

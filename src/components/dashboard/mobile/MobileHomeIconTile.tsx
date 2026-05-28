@@ -11,12 +11,12 @@
 //
 // Visual recipe (default variant):
 //
-//   ┌─────────────────────────────────────┐
-//   │ ┌──────┐                            │
-//   │ │ ICON │   Well by Well             │   ← 88px tall, full column width
-//   │ │ 44×44│   (Arial 15px / 600 / dark)│
-//   │ └──────┘                            │
-//   └─────────────────────────────────────┘
+//   ┌─────────────────────────────────────────┐
+//   │ ┌──────┐                                │
+//   │ │ ICON │   Brazil Production Summary    │   ← 88px tall, full column width
+//   │ │ 44×44│   (Arial 15px / 600 / dark)    │
+//   │ └──────┘                                │
+//   └─────────────────────────────────────────┘
 //      ^                ^
 //      44×44 squircle    14px gap
 //      radius 12px       Arial 15/600 — single line, clamps to 2

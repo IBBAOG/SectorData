@@ -26,7 +26,7 @@ RPC wrappers: [`src/lib/profileRpc.ts`](../../src/lib/profileRpc.ts) (perfil) + 
 
 ## Recent changes
 
-- **2026-05-28 (Round 2 — `/production` registration)**: added `production` slug to the hardcoded `MODULE_LABELS` array in `useAdminPanelData.ts` (placed FIRST in the Oil & Gas group, matching NavBar order) and to `CARDS` + `SLUG_CATEGORY` in `home/useHomeData.ts` (also FIRST in Oil & Gas). The `module_visibility` row was already seeded by migration `20260528000000_production_rpcs.sql` with `is_visible_for_public=false`, `is_visible_for_clients=true`, `is_visible_on_home=true`. Companion rename: the legacy `anp-cdp` label flipped from "Production" to "Production by Well" in both the Permissions tab and the Home gallery, so the two slugs co-exist without label collision. No `moduleIcons.tsx` entry added yet — the slot falls back to the generic grid icon until an SVG is contributed.
+- **2026-05-28 (Round 2 — `/production` registration)**: added `production` slug to the hardcoded `MODULE_LABELS` array in `useAdminPanelData.ts` (placed FIRST in the Oil & Gas group, matching NavBar order) and to `CARDS` + `SLUG_CATEGORY` in `home/useHomeData.ts` (also FIRST in Oil & Gas). The `module_visibility` row was already seeded by migration `20260528000000_production_rpcs.sql` with `is_visible_for_public=false`, `is_visible_for_clients=true`, `is_visible_on_home=true`. Companion rename: the legacy `anp-cdp` label flipped from "Production" to "Monthly Production" in both the Permissions tab and the Home gallery, so the two slugs co-exist without label collision. No `moduleIcons.tsx` entry added yet — the slot falls back to the generic grid icon until an SVG is contributed.
 
 ## Dual-view structure
 
@@ -330,8 +330,8 @@ Lista completa dos slugs atualmente registrados na tabela `module_visibility` (t
 | `anp-glp` | Estatísticas / Fuel Distribution | ANP GLP |
 | `imports-exports` | Estatísticas / Fuel Distribution | Imports & Exports |
 | `anp-lpc` | Estatísticas / Fuel Distribution | ANP LPC Preços |
-| `production` | Estatísticas / Oil & Gas | Production (Anon-hidden: `is_visible_for_public=false`) |
-| `anp-cdp` | Estatísticas / Oil & Gas | Production by Well |
+| `well-by-well` | Estatísticas / Oil & Gas | Brazil Production Summary (Anon-hidden: `is_visible_for_public=false`) |
+| `anp-cdp` | Estatísticas / Oil & Gas | Monthly Production |
 | `anp-cdp-diaria` | Estatísticas / Oil & Gas | Daily Production |
 | `anp-cdp-bsw` | Estatísticas / Oil & Gas | BSW by Well |
 | `anp-cdp-depletion` | Estatísticas / Oil & Gas | Depletion |

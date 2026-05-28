@@ -1,4 +1,4 @@
-# /well-by-well — Executive Production Summary
+# /well-by-well — Brazil Production Summary
 
 > Monthly oil & gas production with company-level attribution via curated field stakes. The executive companion to `/anp-cdp` (granular well-by-well explorer).
 >
@@ -49,7 +49,7 @@ All math is done **server-side** in SECURITY DEFINER RPCs (migration `supabase/m
 | `get_production_brazil_installation_timeseries` *(Round 9)* | `(p_instalacao text, p_date_start date, p_date_end date)` | Same as above but Brazil-wide. Powers the Installation drill-down in **Brasil** view. |
 | `get_well_by_well_header` | `(p_empresa text, p_year int, p_month int)` | PDF-style page-2 header table (Round 8). Always returns BOTH a Brazil section AND a company section (24 rows total since Round 12 — 12 BRAZIL rows + 12 empresa rows with Oil + Gas + Main fields per empresa). The HeaderTable component renders ONLY the rows for the active pill's section: Brasil → `section === 'BRAZIL'`, empresa pill → `section === UPPER(p_empresa)`. In **Brasil** view the wrapper still passes a fallback empresa (`Petrobras`) to satisfy the non-null param; the company rows from the response are discarded by the filter. |
 
-All return `LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp` (Pegadinha #18) and are granted to `anon, authenticated`. Frontend wrappers live in `src/lib/rpc.ts` under the "MODULE: Well by Well" section.
+All return `LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp` (Pegadinha #18) and are granted to `anon, authenticated`. Frontend wrappers live in `src/lib/rpc.ts` under the "MODULE: Brazil Production Summary" section.
 
 ### Drill-down popup RPC wrappers (Phase 2, 2026-05-30)
 

@@ -81,7 +81,7 @@ const CARDS: Omit<HomeCardDef, "category">[] = [
   {
     slug: "well-by-well",
     preview: null,
-    title: "Well by Well",
+    title: "Brazil Production Summary",
     description: "Executive monthly oil & gas production summary (stake-weighted, 4 panels + YoY)",
     badge: "Available",
     href: "/well-by-well",
@@ -90,7 +90,7 @@ const CARDS: Omit<HomeCardDef, "category">[] = [
   {
     slug: "anp-cdp",
     preview: null,
-    title: "Production by Well",
+    title: "Monthly Production",
     description: "Monthly oil and gas production by well and field (ANP CDP)",
     badge: "Available",
     href: "/anp-cdp",

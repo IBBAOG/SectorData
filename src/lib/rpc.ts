@@ -2790,7 +2790,7 @@ export async function rpcAdminDeleteFieldStakes(
   if (error) throw error;
 }
 
-// ─── MODULE: Well by Well (/src/app/(dashboard)/well-by-well/) ──────────────
+// ─── MODULE: Brazil Production Summary (/src/app/(dashboard)/well-by-well/) ──
 //
 // Executive monthly oil & gas production summary. Replicates the structure of
 // the Well-by-Well PDF: Brazil aggregate (3 ambientes), Company aggregate

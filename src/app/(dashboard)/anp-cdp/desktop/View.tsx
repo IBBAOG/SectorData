@@ -410,7 +410,7 @@ export default function DesktopView(): React.ReactElement | null {
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
               <DashboardHeader
-                title="Production by Well"
+                title="Monthly Production"
                 sub="Monthly production reported to ANP by well, field, and operator"
                 period={allYears.length > 0 ? [yMin, yMax] : null}
                 rightSlot={

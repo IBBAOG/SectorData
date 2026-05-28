@@ -1541,7 +1541,7 @@ export default function DesktopView(): React.ReactElement | null {
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
               <DashboardHeader
-                title="Well by Well"
+                title="Brazil Production Summary"
                 sub="Monthly oil & gas production from ANP CDP — company-attributable via field stakes"
                 period={periodBadge}
                 rightSlot={
