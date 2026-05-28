@@ -64,6 +64,33 @@ const Icon = ({
 
 // ─── Navigation / Chevrons ──────────────────────────────────────────────────
 
+/** House silhouette. Used by the global mobile Home pill (single floating
+ *  primary nav action — see MobileHomePill). */
+export const HomeIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1z" />
+  </Icon>
+);
+
+/** Three vertical dots (⋮). Used by the mobile kebab menu trigger in the
+ *  header right slot — see MobileKebabMenu. */
+export const MoreVerticalIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="5" r="1.2" />
+    <circle cx="12" cy="12" r="1.2" />
+    <circle cx="12" cy="19" r="1.2" />
+  </Icon>
+);
+
+/** Door with arrow pointing right. Used inside the kebab menu's Logout row. */
+export const LogOutIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+    <polyline points="16 17 21 12 16 7" />
+    <line x1="21" y1="12" x2="9" y2="12" />
+  </Icon>
+);
+
 /** Chevron pointing right ( > ). Used for "next", drill-in affordances. */
 export const ChevronRightIcon = (p: IconProps) => (
   <Icon {...p}>

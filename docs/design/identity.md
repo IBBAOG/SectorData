@@ -390,30 +390,82 @@ A marca da plataforma é **Oil & Gas Data House** (gota preta sobre quadrado lar
 2. Use a CSS var ou hex direto no `globals.css` (atualmente o projeto não usa CSS vars — todos os hex são inline; mantenha consistente, mas pode ser convertido para `:root { --primary: #ff5000; }` num refactor futuro).
 3. **Não invente cor sem justificar** — passe pelo CTO se for nova variante.
 
-## Mobile design system (Fase 1 — 2026-05)
+## Mobile design system (v2 — 2026-05-27, light-only)
 
 Sistema visual paralelo para a view mobile (`mobile/View.tsx` em cada dashboard). **Não substitui** a identidade desktop — adiciona uma camada de tokens `--mobile-*` ativada quando `[data-viewport="mobile"]` (set pelo PWA shell) ou via `@media (max-width: 768px)` (first paint).
 
-**Fonte da verdade visual:** os 6 mockups em [`mockups/`](../../mockups/) (`stocks-mobile.html`, `home-mobile.html`, `news-hunter-mobile.html`, `market-share-mobile.html`, `navios-diesel-mobile.html`, `anp-cdp-mobile.html`) aprovados em 2026-05-20.
+> **Reforma mobile v2 (2026-05-27).** A Fase 1 (mockup-driven, 2026-05) foi superada pela reforma "Liquid Glass refined". As mudanças centrais:
+> - **Light-only.** Os blocos `[data-theme="dark"]` do escopo mobile foram **removidos** de `globals.css`. Dark mode permanece no desktop (não-mobile). Plano: [`o-modo-mobile-da-tranquil-giraffe.md`](.claude/plans/o-modo-mobile-da-tranquil-giraffe.md) § 3.2.
+> - **Liquid Glass refinado.** Blur 18px, border `rgba(255,255,255,0.55)` (shine edge), shadow multi-camada com inset highlight. Novo token `--mobile-glass-shine-gradient` para sheen opcional em pills/hero.
+> - **Single Home pill flutuante** substitui o `MobileBottomTabBar` (4 ícones). Detalhes em `MobileHomePill.tsx`.
+> - **Kebab menu (⋮)** no header right-slot expõe Logout. Detalhes em `MobileKebabMenu.tsx`.
+> - **Rotas excluídas do mobile** redirecionam para `/home?excluded=<slug>` via `MobileExcludedRedirect.tsx`.
+
+**Fonte da verdade visual:** os 6 mockups em [`mockups/`](../../mockups/) (`stocks-mobile.html`, `home-mobile.html`, `news-hunter-mobile.html`, `market-share-mobile.html`, `navios-diesel-mobile.html`, `anp-cdp-mobile.html`) aprovados em 2026-05-20 + reforma v2 aprovada em 2026-05-27.
+
+### Mobile Liquid Glass — receita canônica
+
+Aplique em qualquer superfície "glass" no mobile (top bar, bottom sheet, floating pill, kebab dropdown, FAB). **Não simplifique** — cada camada tem propósito (profundidade, shine, halo).
+
+```tsx
+// Inline JSX style — exemplo do MobileHomePill / superfície glass
+background:
+  "linear-gradient(180deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0) 50%), var(--mobile-glass-bg)",
+WebkitBackdropFilter: "var(--mobile-glass-blur)",
+backdropFilter: "var(--mobile-glass-blur)",
+border: "1px solid var(--mobile-glass-border)",
+boxShadow: "var(--mobile-glass-shadow)",
+```
+
+Equivalente em CSS:
+
+```css
+.surface-glass-mobile {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0) 50%),
+    var(--mobile-glass-bg);
+  backdrop-filter: var(--mobile-glass-blur);
+  -webkit-backdrop-filter: var(--mobile-glass-blur);
+  border: 1px solid var(--mobile-glass-border);
+  box-shadow: var(--mobile-glass-shadow);
+}
+```
+
+**Componente de referência:** [`src/components/dashboard/mobile/MobileHomePill.tsx`](../../src/components/dashboard/mobile/MobileHomePill.tsx). Use-o como template ao introduzir nova superfície glass — mesma composição (gradient shine + glass-bg base + blur + border + shadow).
+
+**Antipattern:**
+- `box-shadow: 0 2px 4px rgba(0,0,0,0.1)` (drop-shadow simples) — não dá a profundidade glass. Use `--mobile-glass-shadow`.
+- `border: 1px solid #e6e6ec` — perde o "shine edge". Use `var(--mobile-glass-border)`.
+- Dark-mode override para mobile (`[data-theme="dark"]` dentro de `[data-viewport="mobile"]`) — **proibido** post-reform.
+
+### Onde usar
+
+| Componente | Token-set | Notas |
+|---|---|---|
+| `MobileHomePill` (NEW — Onda 1) | glass-bg + blur + border + shadow + shine-gradient | Fixed bottom-center, z-index 1000, sized 64×56 |
+| `MobileKebabMenu` BottomSheet | glass-bg + blur (sheet body usa `--mobile-sheet-bg` opaco) | Sheet inherits BottomSheet padrão |
+| `MobileTopBar` (existente) | glass-bg + blur + border + shadow | Sticky top, 56px |
+| `MobileBottomTabBar` (legado) | glass-bg + blur + border | Sendo descomissionado — substituído pelo MobileHomePill |
+| Card hero / FAB | glass-bg + blur + shadow | Use shine-gradient se houver área >100px de altura |
 
 ### Tokens (em `globals.css`)
 
-Bloco demarcado por `/* ===== Mobile design system (Fase 1 — 2026-05) ===== */`. Light + dark variants. Apenas o subset relevante — para a lista completa abra `globals.css`.
+Bloco demarcado por `/* ===== Mobile design system (v2 — 2026-05-27, light-only) ===== */`. **Light-only**. Para a lista completa abra `globals.css`.
 
-| Categoria | Tokens |
+| Categoria | Tokens (light-only) |
 |---|---|
-| Brand | `--mobile-accent` `#ff5000`, `--mobile-accent-hover` `#d4561a`, `--mobile-accent-soft` `rgba(255,80,0,0.10)`, `--mobile-accent-glow` `rgba(255,80,0,0.30)` |
-| Backgrounds | `--mobile-bg` `#f5f5f7` (light) / `#030814` (dark), `--mobile-surface` `#ffffff` / `#070d1c`, `--mobile-surface-elevated` `#fafafc` / `#0a1124` |
-| Text | `--mobile-text` `#1a1a1a` / `#e6edf3`, `--mobile-text-muted` `#6b6b73` / `#8b949e`, `--mobile-text-faint` `#9a9aa3` / `#5e6772` |
-| Borders | `--mobile-border` `#e6e6ec` / `#131a2e`, `--mobile-divider` `#f0f0f5` / `#161d33`, `--mobile-row-press` `rgba(0,0,0,0.04)` / `rgba(255,255,255,0.04)` |
-| Semantic | `--mobile-up` `#16a34a` / `#3fb950`, `--mobile-down` `#dc2626` / `#f85149` |
+| Brand | `--mobile-accent` `#ff5000`, `--mobile-accent-hover` `#d4561a`, `--mobile-accent-soft` `rgba(255,80,0,0.10)`, `--mobile-accent-fill` `rgba(255,80,0,0.08)`, `--mobile-accent-glow` `rgba(255,80,0,0.30)` |
+| Backgrounds | `--mobile-bg` `#f5f5f7`, `--mobile-surface` `#ffffff`, `--mobile-surface-elevated` `#fafafc` |
+| Text | `--mobile-text` `#1a1a1a`, `--mobile-text-muted` `#6b6b73`, `--mobile-text-faint` `#9a9aa3` |
+| Borders | `--mobile-border` `#e6e6ec`, `--mobile-divider` `#f0f0f5`, `--mobile-row-press` `rgba(0,0,0,0.04)` |
+| Semantic | `--mobile-up` `#16a34a`, `--mobile-down` `#dc2626` (+ `-soft` variants) |
 | Status (navios) | `--mobile-status-{unloading\|anchored\|enroute\|completed}` + `-bg` variants |
-| Glass | `--mobile-glass-bg`, `--mobile-glass-border`, `--mobile-glass-blur` `blur(20px) saturate(180%)`, `--mobile-glass-shadow` |
+| **Liquid Glass v2** | `--mobile-glass-bg` `rgba(255,255,255,0.72)`, `--mobile-glass-border` `rgba(255,255,255,0.55)` *(color, compose com `1px solid`)*, `--mobile-glass-blur` `blur(18px) saturate(180%)`, `--mobile-glass-shadow` multi-camada com inset highlight, `--mobile-glass-shine-gradient` linear-gradient top-to-mid white→transparent |
 | Safe area | `--mobile-safe-top` `env(safe-area-inset-top)`, `--mobile-safe-bottom`, `--mobile-safe-left`, `--mobile-safe-right` |
 | Heights | `--mobile-topbar-h` `56px`, `--mobile-tabbar-h` `64px` |
 | Radii | `--mobile-radius-sm` `8px`, `-md` `12px`, `-lg` `14px`, `-xl` `20px`, `-full` `999px` |
 | Shadows | `--mobile-shadow-soft`, `--mobile-shadow-strong`, `--mobile-shadow-fab` |
-| Sheet | `--mobile-sheet-bg`, `--mobile-sheet-handle`, `--mobile-scrim` |
+| Sheet | `--mobile-sheet-bg` `#ffffff`, `--mobile-sheet-handle` `#d1d1d8`, `--mobile-scrim` `rgba(0,0,0,0.36)` |
 
 ### Componentes (em `src/components/dashboard/mobile/`)
 
@@ -421,23 +473,27 @@ Os 8 componentes compartilhados consumidos por todo `mobile/View.tsx`. Barrel em
 
 | Componente | Função | Mockup de referência |
 |---|---|---|
-| `MobileTopBar` + `MobileBottomTabBar` (named exports de `MobileNavBar`) | Chrome sticky superior (56px liquid glass) + inferior (64px tabs com safe-area-inset-bottom). | `stocks-mobile.html` `.topbar` / `.tabbar` |
+| `MobileTopBar` (named export de `MobileNavBar`) | Chrome sticky superior (56px liquid glass). `rightSlot` recebe o `MobileKebabMenu` (v2). | `stocks-mobile.html` `.topbar` |
+| `MobileBottomTabBar` (legado — em descomissionamento) | Chrome inferior antigo (64px, 4 tabs). **Substituído pelo `MobileHomePill`** na reforma v2. Permanece exportado apenas pra compat até cleanup workers removerem os call-sites. | `stocks-mobile.html` `.tabbar` |
+| `MobileHomePill` (NEW — Onda 1) | Single floating Home button, Liquid Glass v2, fixed bottom-center (`bottom: 24px + env(safe-area-inset-bottom)`). Esconde em `/home`. Z-index 1000. | — (novo no plan v2) |
+| `MobileKebabMenu` (NEW — Onda 1) | Botão ⋮ no `rightSlot` do `MobileTopBar` abre `BottomSheet` com ações de conta (Logout). Esconde para anon. | — (novo no plan v2) |
+| `MobileExcludedRedirect` (NEW — Onda 1) | Side-effect client component. Mount no top de dashboards excluídos do mobile (`/stocks`, `/admin-*`, `/news-hunter`, `/alerts`, `/profile`, `/anp-cdp`, `/anp-prices`, `/anp-glp`). Detecta `useIsMobile()` → `router.replace('/home?excluded=<slug>')` + dispara `CustomEvent('app-toast')`. | — (novo no plan v2 § 5.5) |
 | `BottomSheet` | Primitivo slide-up com scrim, handle tap-to-close, body scroll, footer sticky opcional. `height: auto \| 70vh \| 90vh`. | `market-share-mobile.html` `.sheet` |
 | `FilterDrawer` | Sheet especializado p/ filtros: header com Reset · Title · Close ×, footer sticky com Reset/Apply. | `market-share-mobile.html` (open state) |
 | `MobileChart` | Plotly wrapper mobile: sem modebar, `scrollZoom:false`, `fixedrange:true`, hover `closest`, margins enxutas. Mesmo padrão dynamic-import + tooltip rounded do `PlotlyChart.tsx` desktop. | `stocks-mobile.html` chart, `market-share-mobile.html` hero |
 | `MobileDataCard` | Row atômica (~88-96px): leftIcon · title+subtitle · rightSlot + sparkline inline SVG + status pill opcional + variants `default \| compact \| expanded`. | `stocks-mobile.html` `.card`, `home-mobile.html` `.module-card`, `navios-diesel-mobile.html` `.vessel` |
 | `StickyBreadcrumb` | Breadcrumb horizontal-scroll com pills, separador `›`, reset `✕` opcional. Sticky por default. | `anp-cdp-mobile.html` `.breadcrumb` |
-| `ExportFAB` | Floating action button bottom-right, brand orange, glow. Ancora ao 428px column edge (`right: max(16px, calc((100vw - 428px) / 2 + 16px))`). | `market-share-mobile.html` `.fab` |
+| `ExportFAB` (em remoção) | Floating action button bottom-right. **Removido em mobile** pela reforma v2 (plan § 3.4 — Export 100% desktop). Permanece exportado até cleanup workers removerem call-sites. | `market-share-mobile.html` `.fab` |
 | `MobileTabBar` | Segmented control no topo da página (não confundir com bottom nav). Variants `container` (pill cluster com bg laranja) e `underline` (mínimo, só underline). | `navios-diesel-mobile.html` `.seg`, `anp-cdp-mobile.html` `.product-tab` |
 
 ### Uso rápido
 
 ```tsx
 import {
-  MobileTopBar, MobileBottomTabBar,
+  MobileTopBar, MobileHomePill, MobileKebabMenu,
   BottomSheet, FilterDrawer,
   MobileChart, MobileDataCard,
-  StickyBreadcrumb, ExportFAB, MobileTabBar,
+  StickyBreadcrumb, MobileTabBar,
 } from "@/components/dashboard/mobile";
 
 export default function View({ data }: Props) {
@@ -448,9 +504,7 @@ export default function View({ data }: Props) {
     <>
       <MobileTopBar
         title="Diesel Vessels"
-        showThemeToggle
-        showAvatar
-        avatarInitials="EM"
+        rightSlot={<MobileKebabMenu />}
       />
       <MobileTabBar
         tabs={[
@@ -470,7 +524,7 @@ export default function View({ data }: Props) {
           onClick={() => openDetail(row.id)}
         />
       ))}
-      <ExportFAB onClick={() => downloadCsv(data)} />
+      {/* NO ExportFAB on mobile (v2 — plan § 3.4) */}
       <FilterDrawer
         open={filtersOpen}
         onClose={() => setFiltersOpen(false)}
@@ -479,7 +533,26 @@ export default function View({ data }: Props) {
       >
         {/* filter sections */}
       </FilterDrawer>
-      <MobileBottomTabBar tabs={navTabs} />
+      {/* Global floating Home pill — usually mounted by MobileLayout once,
+          not per-dashboard. Shown here for completeness. */}
+      <MobileHomePill />
+    </>
+  );
+}
+```
+
+Para dashboards explicitamente excluídos do mobile (`/stocks`, `/admin-panel`, `/admin-analytics`, `/news-hunter`, `/alerts`, `/profile`, `/anp-cdp`, `/anp-prices`, `/anp-glp`), monte `MobileExcludedRedirect` no topo do `page.tsx`:
+
+```tsx
+import MobileExcludedRedirect from "@/components/dashboard/mobile/MobileExcludedRedirect";
+
+export default function Page() {
+  return (
+    <>
+      <MobileExcludedRedirect slug="stocks" displayName="Market Watch" />
+      {/* desktop page content — render unconditionally; the redirect only
+          fires on mobile viewport. */}
+      <DesktopView />
     </>
   );
 }
@@ -497,4 +570,8 @@ Página developer-only em [`/mobile-preview`](../../src/app/(dashboard)/mobile-p
 4. **`safe-area-inset-*`** é obrigatório em qualquer surface fixed top/bottom — iOS notch / Android nav vão comer pixels sem isso.
 5. **PlotlyChart desktop ↔ MobileChart**: mesmo dynamic-import pattern, mesma estratégia de tooltip rounded. Não use `react-plotly.js` direto em nenhum componente novo.
 6. **428px** é o max-width do phone shell. Componentes que se expandem além disso (BottomSheet, BottomTabBar) já trazem `maxWidth: 428` no default — só override se houver razão clara.
-7. **Stocks (`/stocks`) mantém tema próprio** (`stocks-dark` / `stocks-light`) — o mobile system **não** o substitui. Se o `worker_dash-stocks` for fazer mobile, faz adaptado ao tema Bloomberg, não ao mobile padrão.
+7. **Stocks (`/stocks`) mantém tema próprio** (`stocks-dark` / `stocks-light`) — o mobile system **não** o substitui. Stocks é desktop-only pós-reforma v2 (mobile é redirecionado via `MobileExcludedRedirect`).
+8. **Light-only no mobile (v2 — 2026-05-27).** Não re-introduza blocos `[data-theme="dark"]` no escopo `[data-viewport="mobile"]` em `globals.css`. Dark mode permanece no desktop. Se um worker quiser adicionar uma "variante escura" para um componente mobile, **pare e converse com o Designer** — provavelmente é o caso de simplificar a paleta, não criar variante.
+9. **Liquid Glass v2** é a linguagem visual. Toda superfície "elevada" (top bar, sheet, pill, FAB removido) usa o stack `glass-bg + blur(18px) + border(shine) + shadow(multi-layer)`. Drop-shadow simples (`box-shadow: 0 2px 4px rgba(0,0,0,0.1)`) NÃO é aceitável para essas superfícies.
+10. **Não use `MobileBottomTabBar` em código novo.** Substituído por `MobileHomePill` (single floating). O legado fica exportado durante o descomissionamento; cleanup workers vão removê-lo.
+11. **Sem `ExportFAB` em mobile (v2).** Plan § 3.4: export 100% desktop. Não importe o componente em `mobile/View.tsx` novo.
