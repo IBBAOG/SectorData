@@ -30,7 +30,7 @@ Em 2026-05-26 a rota `/sales-volumes` foi retirada e redireciona (301) para `/ma
 
 A entrada "Sales Volumes" do NavBar e o card de `/home` foram removidos em frentes paralelas. Esta tela passa a ser a única superfície para ambas as métricas.
 
-## Dual-view structure (added 2026-05-20)
+## Dual-view structure (added 2026-05-20; v2 mobile reform 2026-05-27)
 
 Follows the canonical dual-view pattern (`docs/app/dual-view-pattern.md`). Shared hook is the single brain; both Views are pure presentation layers.
 
@@ -41,18 +41,38 @@ src/app/(dashboard)/market-share/
   desktop/
     View.tsx                   ← desktop UX (sidebar + multi-column grid + ExportModal)
   mobile/
-    View.tsx                   ← mobile UX (MobileTopBar + chips + hero chart + TopPlayers + FAB)
+    View.tsx                   ← mobile UX v2 (thumb-scroll layout per Onda 3 reform)
 ```
+
+### Mobile layout v2 (Onda 3, 2026-05-27) — top → bottom
+
+1. `MobileTopBar` + `MobileKebabMenu` (account actions)
+2. Title block (h1 + subtitle + period badge)
+3. Sticky `SegmentedToggle` (% Share / Volume) — top-level unit switch
+4. Product `MobileTabBar` — container variant (Diesel B / Gasoline C / Hydrous Ethanol / Otto-Cycle)
+5. Segment `MobileTabBar` — underline variant (Total / Retail / B2B / TRR; TRR only for Diesel B)
+6. Hero stacked-area chart card (active product × segment, 12M rolling, `MobileChart`)
+7. 2-column legend below chart
+8. Top Distributors list (rank badge + value + MoM delta cards, 5 players)
+9. Comparison table inline (player picker pills capped at 3 + MoM/QTD/YoY/YTD cards)
+10. Filter chip row (Period info chip + Region/UF active chips + `+ Filters` trigger)
+    `FilterDrawer` (Period slider + Region multi-select + UF multi-select + View Mode)
+    `MobileHomePill` (floating, replaces old bottom tab bar)
+
+**Removed from mobile in v2:**
+- `MobileBottomTabBar` (Overview/Compare/Filters/Profile) — replaced by single `MobileHomePill` + filter chip row
+- `ExportFAB` + `ExportModal` — policy § 3.4: no export on mobile
+- Placeholder tabs (Map/Compare as isolated screens)
 
 ### Analyses preserved in both Views
 
 | Analysis | Desktop | Mobile |
 |---|---|---|
-| 13 product×segment charts (Diesel B Retail/B2B/TRR/Total, Gasoline C Retail/B2B/Total, Ethanol Retail/B2B/Total, Otto-Cycle Retail/B2B/Total) | Full (all 13 rendered as a 2-column grid) | Overview tab — product `MobileTabBar` (container, 4 products) + segment `MobileTabBar` (underline, Total/Retail/B2B/TRR; TRR only for Diesel B) navigates the same 13 chart variants, one at a time |
-| Comparison table (MoM/QTD/YoY/YTD p.p. delta) | Yes (inline table under each chart) | Compare tab — pick up to 3 distributors; shows side-by-side MoM/QTD/YoY/YTD cards for the SAME `(product, segment)` selected on Overview |
-| Top players ranking with MoM delta | Implicit via chart | MobileDataCard rows; the top-5 list reflects the currently selected product |
-| Export (Tier 2 ExportModal) | Yes | Yes (via ExportFAB) |
-| Period / Region / UF / Mode / Competitors filters | Yes (sidebar) | Yes (FilterDrawer bottom sheet) |
+| 13 product×segment charts (Diesel B Retail/B2B/TRR/Total, Gasoline C Retail/B2B/Total, Ethanol Retail/B2B/Total, Otto-Cycle Retail/B2B/Total) | Full (all 13 rendered as a 2-column grid) | Product `MobileTabBar` + Segment `MobileTabBar` navigates the same 13 chart variants, one at a time. Hero stacked-area chart reflects active combination. |
+| Comparison table (MoM/QTD/YoY/YTD p.p. delta) | Yes (inline table under each chart) | Inline section (always visible) below Top Distributors — player picker pills (up to 3) + MoM/QTD/YoY/YTD metric cards |
+| Top players ranking with MoM delta | Implicit via chart | Dedicated section above Comparison — rank badge + progress bar + MoM delta per player |
+| Export (Tier 2 ExportModal) | Yes | No — policy § 3.4 |
+| Period / Region / UF / Mode filters | Yes (sidebar) | Yes (FilterDrawer bottom sheet triggered from chip row) |
 
 ### Hook export contract
 
