@@ -42,12 +42,23 @@ const NAV_ENTRIES: NavEntry[] = [
   { label: "Home", href: "/home" },
   {
     label: "Oil & Gas",
-    items: [
-      { href: "/well-by-well", label: "Well by Well" },
-      { href: "/anp-cdp", label: "Production by Well" },
-      { href: "/anp-cdp-diaria", label: "Daily Production" },
-      { href: "/anp-cdp-bsw", label: "BSW by Well" },
-      { href: "/anp-cdp-depletion", label: "Depletion" },
+    items: [], // populated via groups (mega-menu)
+    groups: [
+      {
+        heading: "Production",
+        items: [
+          { href: "/well-by-well", label: "Well by Well" },
+          { href: "/anp-cdp", label: "Production by Well" },
+          { href: "/anp-cdp-diaria", label: "Daily Production" },
+        ],
+      },
+      {
+        heading: "Analytics",
+        items: [
+          { href: "/anp-cdp-bsw", label: "BSW by Well" },
+          { href: "/anp-cdp-depletion", label: "Depletion" },
+        ],
+      },
     ],
   },
   {
