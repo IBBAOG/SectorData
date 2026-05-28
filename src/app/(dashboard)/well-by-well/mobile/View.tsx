@@ -1062,7 +1062,7 @@ export default function MobileView(): React.ReactElement | null {
           // MobileTopBar (from MobileShell) is sticky at top:0, height 56px.
           // Adding a translucent backing here means the pills stay legible
           // while scrolling — visual continuity with the top bar's glass.
-          top: "var(--mobile-topbar-height, 56px)",
+          top: "var(--mobile-topbar-h, 56px)",
           zIndex: 30,
           background: "var(--mobile-glass-bg, rgba(255,255,255,0.94))",
           backdropFilter: "var(--mobile-glass-blur, blur(18px) saturate(180%))",
