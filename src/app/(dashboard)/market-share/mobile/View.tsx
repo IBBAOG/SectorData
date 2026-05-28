@@ -10,9 +10,8 @@
 //   5. Segment MobileTabBar  (Total / Retail / B2B / TRR — TRR only for Diesel B)
 //   6. Hero chart card  (MobileChart — stacked area for active product × segment)
 //   7. 2-column legend below chart
-//   8. Top Distributors  (PlayerCard rows — rank + value + MoM delta)
-//   9. Comparison table  (CompRow cards — MoM / QTD / YoY / YTD, horizontal scroll)
-//  10. Filter chip row  (Period, Region, UF, View Mode + "+ Filters" trigger)
+//   8. Comparison table  (CompRow cards — MoM / QTD / YoY / YTD, horizontal scroll)
+//   9. Filter chip row  (Period, Region, UF, View Mode + "+ Filters" trigger)
 //   FilterDrawer  (bottom sheet — Period / Region / UF / View Mode + Reset/Apply)
 //   MobileHomePill  (floating, above safe area)
 //
@@ -22,7 +21,8 @@
 //   - ExportFAB — policy § 3.4: no export on mobile.
 //   - ExportModal — same.
 //   - Placeholder tabs (Map / Compare as tabs) — comparison table is now always
-//     rendered inline, below the Top Distributors section.
+//     rendered inline, below the hero chart.
+//   - Top Distributors section — removed [mobile-only] 2026-05-28.
 //
 // All 13 product × segment chart variants are still reachable via the two
 // stacked MobileTabBars (Product + Segment). Nothing is removed from the
@@ -49,7 +49,6 @@ import {
   PRODUCT_KEYS,
   PRODUCT_LABEL,
   SEGMENTS_BY_PRODUCT,
-  type TopPlayerRow,
   type CompRow,
   type ProductKey,
   type SegmentKey,
@@ -73,139 +72,6 @@ function fmtDate(d: string): string {
   const m = parseInt(d.slice(5, 7), 10) - 1;
   const y = d.slice(0, 4);
   return `${MONTHS[m]} ${y}`;
-}
-
-// ─── PlayerCard ─────────────────────────────────────────────────────────────────
-
-function PlayerCard({
-  row,
-  unitMode = "share",
-}: {
-  row: TopPlayerRow;
-  unitMode?: UnitMode;
-}) {
-  const deltaSign = row.deltaMoM !== null ? (row.deltaMoM > 0 ? "+" : "") : "";
-  const deltaColor =
-    row.deltaMoM === null
-      ? "var(--mobile-text-faint)"
-      : row.deltaMoM > 0
-        ? "var(--mobile-up)"
-        : "var(--mobile-down)";
-  const valueLabel =
-    unitMode === "share" ? `${row.pct.toFixed(1)}%` : row.pct.toFixed(1);
-  const deltaUnit = unitMode === "share" ? "pp" : "k m³";
-
-  return (
-    <div
-      style={{
-        minHeight: 72,
-        padding: "12px 14px",
-        display: "grid",
-        gridTemplateColumns: "32px 1fr auto",
-        gridTemplateRows: "auto auto",
-        columnGap: 12,
-        rowGap: 4,
-        alignItems: "center",
-        borderBottom: "1px solid var(--mobile-divider)",
-        fontFamily: "Arial, Helvetica, sans-serif",
-      }}
-    >
-      {/* Rank badge */}
-      <div
-        style={{
-          gridRow: "1 / 3",
-          width: 28,
-          height: 28,
-          borderRadius: 8,
-          background: row.isLeader
-            ? "var(--mobile-accent)"
-            : "var(--mobile-divider)",
-          color: row.isLeader ? "#fff" : "var(--mobile-text-muted)",
-          fontSize: 13,
-          fontWeight: 700,
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: row.isLeader
-            ? "0 2px 6px rgba(255,80,0,0.30)"
-            : "none",
-          flexShrink: 0,
-        }}
-      >
-        {row.rank}
-      </div>
-
-      {/* Name */}
-      <div
-        style={{
-          fontSize: 16,
-          fontWeight: 600,
-          color: "var(--mobile-text)",
-          lineHeight: 1.1,
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-        }}
-      >
-        {row.player}
-      </div>
-
-      {/* Value */}
-      <div
-        style={{
-          fontSize: 18,
-          fontWeight: 700,
-          color: "var(--mobile-text)",
-          lineHeight: 1.1,
-          fontVariantNumeric: "tabular-nums",
-          textAlign: "right",
-        }}
-      >
-        {valueLabel}
-      </div>
-
-      {/* Progress bar */}
-      <div
-        style={{
-          height: 4,
-          borderRadius: 2,
-          background: "var(--mobile-divider)",
-          overflow: "hidden",
-          position: "relative",
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            bottom: 0,
-            width: `${row.barWidth}%`,
-            background: row.isLeader
-              ? "var(--mobile-accent)"
-              : "var(--mobile-text-faint)",
-            borderRadius: 2,
-            opacity: row.isLeader ? 1 : 0.55,
-          }}
-        />
-      </div>
-
-      {/* Delta */}
-      <div
-        style={{
-          fontSize: 12,
-          fontWeight: 600,
-          fontVariantNumeric: "tabular-nums",
-          textAlign: "right",
-          color: deltaColor,
-        }}
-      >
-        {row.deltaMoM === null
-          ? "—"
-          : `${deltaSign}${row.deltaMoM.toFixed(1)} ${deltaUnit}`}
-      </div>
-    </div>
-  );
 }
 
 // ─── CompareMetric (inline cell) ────────────────────────────────────────────────
@@ -913,70 +779,7 @@ export default function MobileView(): React.ReactElement {
         </div>
       )}
 
-      {/* ── 5. Top Distributors list ─────────────────────────────────────────── */}
-      <div style={{ padding: "20px 16px 0" }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "baseline",
-            justifyContent: "space-between",
-            paddingBottom: 10,
-          }}
-        >
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 17,
-              fontWeight: 700,
-              color: "var(--mobile-text)",
-              fontFamily: "Arial, Helvetica, sans-serif",
-            }}
-          >
-            Top Distributors
-          </h2>
-          {ms.latestDate && (
-            <span
-              style={{
-                fontSize: 12,
-                color: "var(--mobile-text-muted)",
-                fontFamily: "Arial, Helvetica, sans-serif",
-              }}
-            >
-              {fmtDate(ms.latestDate)}
-            </span>
-          )}
-        </div>
-
-        {ms.topPlayersForSelected.length > 0 ? (
-          <div
-            style={{
-              background: "var(--mobile-surface)",
-              border: "1px solid var(--mobile-divider)",
-              borderRadius: 16,
-              overflow: "hidden",
-            }}
-          >
-            {ms.topPlayersForSelected.map((row) => (
-              <PlayerCard key={row.player} row={row} unitMode={ms.unitMode} />
-            ))}
-          </div>
-        ) : (
-          !ms.seriesLoading && (
-            <div
-              style={{
-                padding: 16,
-                color: "var(--mobile-text-muted)",
-                fontSize: 13,
-                fontFamily: "Arial, Helvetica, sans-serif",
-              }}
-            >
-              No data available.
-            </div>
-          )
-        )}
-      </div>
-
-      {/* ── 6. Comparison table (inline, always visible) ─────────────────────
+      {/* ── 5. Comparison table (inline, always visible) ─────────────────────
             Replaces the old Compare tab. Players from compareSet (seeded with
             top-3 on data load) are shown side-by-side.
             The player picker pills below let the user swap the comparison set. */}
