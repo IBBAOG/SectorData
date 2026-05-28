@@ -1,20 +1,21 @@
 "use client";
 
-// Viewport-aware entry point for /admin-panel (Wave 5 dual-view).
+// /admin-panel — desktop-only. Mobile users are redirected to /home.
+// Role guard (Admin) and MFA enforcement live inside DesktopView via
+// useAdminPanelData / useRoleGuard("Admin").
 //
-// useIsMobile is SSR-safe: returns `false` during server render and the first
-// client paint, then flips to the real value after mount. This means desktop
-// is the default first frame on mobile devices, then the mobile View takes
-// over. Acceptable trade-off — avoids hydration mismatches.
-//
-// All RPC plumbing, role-guard logic, and state live in `useAdminPanelData`.
-// Both Views consume that single hook.
+// MobileExcludedRedirect is a side-effect-only client component — on mobile it
+// redirects to /home?excluded=admin-panel and fires an app-toast event; on
+// desktop it renders null.
 
-import { useIsMobile } from "@/hooks/useIsMobile";
+import MobileExcludedRedirect from "@/components/dashboard/mobile/MobileExcludedRedirect";
 import DesktopView from "./desktop/View";
-import MobileView from "./mobile/View";
 
 export default function AdminPanelPage(): React.ReactElement {
-  const isMobile = useIsMobile();
-  return isMobile ? <MobileView /> : <DesktopView />;
+  return (
+    <>
+      <MobileExcludedRedirect slug="admin-panel" />
+      <DesktopView />
+    </>
+  );
 }
