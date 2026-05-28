@@ -1,37 +1,29 @@
 "use client";
 
-// ─── Mobile view for /subsidy-tracker ─────────────────────────────────────────
+// ─── Mobile view for /subsidy-tracker (v2 — Onda 3 mobile reform) ─────────────
 //
-// Dual-agent layout: two chart blocks stacked vertically, separated by a
-// divider and section headers ("Importer" / "Producer"). Each block contains:
+// Re-layout from the original 1034-LOC dual-agent-block view to:
 //
-//   MobileTopBar           — title + filter trigger button (top of page)
-//   Date chip strip        — 30 D / 90 D / 6 M / 1 Y / All shortcuts
-//   Block 1: Importer Reference Prices
-//     MobileChart          — 4 traces, brand colours
-//     Active subsidy badge — Reference − Commercialization (importer)
-//     Latest values cards  — with WoW % chip per series
-//     Regional breakdown   — tap-to-show importer regions
-//   Divider
-//   Block 2: Producer Reference Prices
-//     MobileChart          — 4 traces, brand colours
-//     Active subsidy badge — Reference − Commercialization (producer)
-//     Latest values cards  — with WoW % chip per series
-//     Regional breakdown   — tap-to-show producer regions
-//   ExportFAB              — Excel + CSV (Tier 1)
-//   FilterDrawer           — period slider + per-trace visibility toggles
-//                            (governs BOTH charts uniformly)
+//   1. Top sticky filter chips: Period (30D/90D/6M/1Y/All) +
+//      Agent toggle (Importador / Produtor)
+//   2. Hero multi-line chart for the active agent (4 traces, brand colours)
+//      + color-key legend chips below
+//   3. 11-column horizontal-scroll data table — first column (Date) sticky
+//      Columns: Date | IPP | IPP adj. | Petrobras | Petrobras adj. |
+//               Ref (Imp.) | Ref (Prod.) | Comm. (Imp.) | Comm. (Prod.) |
+//               Reimb. (Imp.) | Reimb. (Prod.)
 //
-// [mobile-only] divergences vs. desktop:
-//   • Regional ANP Reference breakdown is exposed as a TAP-TO-SHOW card under
-//     the "Latest values" section instead of a hover tooltip — touch
-//     devices have no hover.
-//   • End-of-line value annotations are dropped; replaced by "Latest values"
-//     cards below each chart.
-//   • Per-trace visibility via toggle switches in FilterDrawer (not Plotly legend).
+// [mobile-only] divergences vs. desktop (preserved from v1 + additions):
+//   • Agent toggle chip selects which chart is shown (desktop shows both
+//     side-by-side; mobile stacks but defaults to one at a time).
+//   • Regional ANP Reference breakdown is NOT a hover tooltip here — touch
+//     devices have no hover; the full table row exposes per-region detail.
+//   • End-of-line value annotations dropped (overflow on narrow viewports).
+//   • ExportFAB removed (§ 3.4 policy — export desktop-only).
+//   • FilterDrawer with per-trace toggles kept for series visibility.
 //
-// Binding sync rule: any new filter / chart / KPI added here must also land in
-// desktop/View.tsx in the same commit, or declare [mobile-only] with reason.
+// Binding sync rule: any new filter / chart / KPI added here must also land
+// in desktop/View.tsx in the same commit, or declare [mobile-only] with reason.
 
 import { useCallback, useMemo, useState } from "react";
 import type { Layout } from "plotly.js";
@@ -40,10 +32,7 @@ import {
   MobileTopBar,
   FilterDrawer,
   MobileChart,
-  MobileDataCard,
-  ExportFAB,
   FunnelIcon,
-  ChevronDownIcon,
 } from "@/components/dashboard/mobile";
 import BarrelLoading from "@/components/dashboard/BarrelLoading";
 import PeriodSlider from "@/components/dashboard/PeriodSlider";
@@ -53,14 +42,12 @@ import {
   fmtDateLabel,
   SERIES_IMPORTADOR,
   SERIES_PRODUTOR,
-  REGION_ORDER,
   type SeriesField,
   type SeriesDef,
   type SubsidyTrackerRow,
-  type SubsidyTrackerWowRow,
 } from "../useSubsidyTrackerData";
 
-// ─── Date-range chip helpers ──────────────────────────────────────────────────
+// ─── Period chip helpers ──────────────────────────────────────────────────────
 
 interface DateChip {
   label: string;
@@ -69,11 +56,11 @@ interface DateChip {
 }
 
 const DATE_CHIPS: DateChip[] = [
-  { label: "30 D", days: 30 },
-  { label: "90 D", days: 90 },
-  { label: "6 M",  days: 180 },
-  { label: "1 Y",  days: 365 },
-  { label: "All",  days: null },
+  { label: "30D", days: 30 },
+  { label: "90D", days: 90 },
+  { label: "6M",  days: 180 },
+  { label: "1Y",  days: 365 },
+  { label: "All", days: null },
 ];
 
 function chipSliderRange(
@@ -103,26 +90,12 @@ function activeChipDays(
   return "none";
 }
 
-// ─── Color-dot helper ─────────────────────────────────────────────────────────
+// ─── Agent types ──────────────────────────────────────────────────────────────
 
-function ColorDot({ color }: { color: string }): React.ReactElement {
-  return (
-    <span
-      aria-hidden="true"
-      style={{
-        display: "inline-block",
-        width: 10,
-        height: 10,
-        borderRadius: "50%",
-        background: color,
-        flexShrink: 0,
-      }}
-    />
-  );
-}
+type AgentType = "importador" | "produtor";
 
-// Small line glyph for the mobile legend so dashed-vs-solid distinction is
-// readable next to the *_adjusted traces (which share their parent's color).
+// ─── Color-line glyph (solid or dashed) ──────────────────────────────────────
+
 function ColorLine({
   color,
   dashed,
@@ -144,448 +117,34 @@ function ColorLine({
   );
 }
 
-// ─── Thin mobile-chart layout override ───────────────────────────────────────
+// ─── Mobile chart layout override ────────────────────────────────────────────
 
-function mobileChartLayout(height: number): Partial<Layout> {
+function mobileChartLayout(): Partial<Layout> {
   return {
-    height,
+    height: 280,
     showlegend: false,
     hovermode: "x unified",
-    legend: {
-      orientation: "h",
-      x: 0,
-      y: -0.22,
-      font: { size: 10 },
-    },
     margin: { l: 44, r: 12, t: 8, b: 40 },
     xaxis: {
       type: "date",
       tickformat: "%b %d",
       hoverformat: "%b %d, %Y",
-      nticks: 4,
+      nticks: 5,
       tickangle: 0,
       tickfont: { size: 10 },
     },
     yaxis: {
       title: { text: "BRL/L", font: { size: 10 } },
       tickformat: ".2f",
-      nticks: 4,
+      nticks: 5,
       tickfont: { size: 10 },
     },
+    // Remove desktop end-of-line annotations (overflow on narrow viewports)
+    annotations: [],
   };
 }
 
-// ─── Section label ───────────────────────────────────────────────────────────
-
-function SectionLabel({
-  children,
-}: {
-  children: React.ReactNode;
-}): React.ReactElement {
-  return (
-    <div
-      style={{
-        padding: "12px 16px 6px",
-        fontSize: 11,
-        fontWeight: 700,
-        letterSpacing: "0.07em",
-        textTransform: "uppercase",
-        color: "var(--mobile-text-muted)",
-        fontFamily: "Arial, Helvetica, sans-serif",
-        background: "var(--mobile-bg)",
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-// ─── Agent block divider ─────────────────────────────────────────────────────
-
-function AgentDivider({ label }: { label: string }): React.ReactElement {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "20px 16px 4px",
-      }}
-    >
-      <div style={{ flex: 1, height: 1, background: "var(--mobile-divider)" }} />
-      <span
-        style={{
-          fontSize: 12,
-          fontWeight: 700,
-          color: "var(--mobile-text-muted)",
-          fontFamily: "Arial",
-          letterSpacing: "0.04em",
-          textTransform: "uppercase",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {label}
-      </span>
-      <div style={{ flex: 1, height: 1, background: "var(--mobile-divider)" }} />
-    </div>
-  );
-}
-
-// ─── WoW chip ────────────────────────────────────────────────────────────────
-
-function WowChip({ pct }: { pct: number | null }): React.ReactElement | null {
-  if (pct == null) return null;
-  const positive = pct > 0;
-  const bg = positive ? "rgba(21,128,61,0.10)" : pct < 0 ? "rgba(185,28,28,0.10)" : "rgba(0,0,0,0.05)";
-  const color = positive ? "#15803d" : pct < 0 ? "#b91c1c" : "#555";
-  const sign = positive ? "+" : "";
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "2px 7px",
-        borderRadius: 10,
-        background: bg,
-        color,
-        fontSize: 11,
-        fontWeight: 700,
-        fontFamily: "Arial",
-        fontVariantNumeric: "tabular-nums",
-        marginTop: 2,
-      }}
-    >
-      {sign}{pct.toFixed(2)}%
-    </span>
-  );
-}
-
-// ─── Regional breakdown card ─────────────────────────────────────────────────
-// Replaces the desktop hover tooltip ([mobile-only] divergence).
-
-function RegionalBreakdownCard({
-  rows,
-  xMax,
-  regionsField,
-  label,
-}: {
-  rows: SubsidyTrackerRow[];
-  xMax: string | null;
-  regionsField: "regions_importador" | "regions_produtor";
-  label: string;
-}): React.ReactElement | null {
-  const latestWithRegions = useMemo(() => {
-    const scoped = xMax ? rows.filter((r) => r.date <= xMax) : rows;
-    const sorted = [...scoped].sort((a, b) => b.date.localeCompare(a.date));
-    return sorted.find((r) => r[regionsField] != null) ?? null;
-  }, [rows, xMax, regionsField]);
-
-  if (!latestWithRegions) return null;
-  const regionData = latestWithRegions[regionsField] as Record<string, number> | null;
-  if (!regionData) return null;
-
-  return (
-    <>
-      <SectionLabel>
-        {label} — regional breakdown
-        <span style={{ fontWeight: 400, marginLeft: 6, textTransform: "none", letterSpacing: 0 }}>
-          · {fmtDateLabel(latestWithRegions.date)}
-        </span>
-      </SectionLabel>
-      <div
-        style={{
-          background: "var(--mobile-surface)",
-          borderTop: "1px solid var(--mobile-divider)",
-        }}
-      >
-        {REGION_ORDER.map((region) => {
-          const value = regionData[region];
-          return (
-            <MobileDataCard
-              key={region}
-              variant="compact"
-              title={region}
-              rightSlot={
-                <div
-                  style={{
-                    fontSize: 15,
-                    fontWeight: 700,
-                    color: "var(--mobile-text)",
-                    fontFamily: "Arial",
-                    fontVariantNumeric: "tabular-nums",
-                  }}
-                >
-                  {value != null && Number.isFinite(value)
-                    ? `R$ ${value.toFixed(2)}`
-                    : "—"}
-                </div>
-              }
-            />
-          );
-        })}
-      </div>
-    </>
-  );
-}
-
-// ─── Agent block (chart + badge + latest values + regional breakdown) ─────────
-
-interface AgentBlockProps {
-  label: string;
-  chartData: ReturnType<typeof useSubsidyTrackerData>["chartImporter"];
-  currentValues: SubsidyTrackerWowRow[];
-  activeSubsidy: number | null;
-  rows: SubsidyTrackerRow[];
-  xMax: string | null;
-  regionsField: "regions_importador" | "regions_produtor";
-  traceFilter: (field: SeriesField) => boolean;
-  seriesColorKey: SeriesDef[];
-}
-
-function AgentBlock({
-  label,
-  chartData,
-  currentValues,
-  activeSubsidy,
-  rows,
-  xMax,
-  regionsField,
-  traceFilter,
-  seriesColorKey,
-}: AgentBlockProps): React.ReactElement {
-  const [showRegional, setShowRegional] = useState(false);
-
-  const hasRegions = useMemo(
-    () => rows.some((r) => r[regionsField] != null),
-    [rows, regionsField],
-  );
-
-  const chartLayout = useMemo<Partial<Layout>>(() => {
-    const base = mobileChartLayout(280);
-    return { ...base, annotations: [] };
-  }, []);
-
-  return (
-    <>
-      {/* ── Chart ─────────────────────────────────────────────────────────── */}
-      <SectionLabel>{label} — subsidy timeline</SectionLabel>
-      <div
-        style={{
-          background: "var(--mobile-surface)",
-          borderTop: "1px solid var(--mobile-divider)",
-          borderBottom: "1px solid var(--mobile-divider)",
-          padding: "0 8px 12px",
-        }}
-      >
-        <MobileChart
-          data={chartData.data}
-          layout={chartLayout}
-          height={280}
-        />
-        {/* Color-key legend (4 traces) */}
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "4px 12px",
-            padding: "4px 8px 0",
-          }}
-        >
-          {seriesColorKey.filter((s) => traceFilter(s.field)).map((s) => (
-            <div
-              key={s.field}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                fontSize: 11,
-                color: "var(--mobile-text-muted)",
-                minHeight: 22,
-              }}
-            >
-              {s.dash === "dash" ? (
-                <ColorLine color={s.color} dashed />
-              ) : (
-                <ColorDot color={s.color} />
-              )}
-              {s.label}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Active subsidy badge ───────────────────────────────────────────── */}
-      {activeSubsidy != null && (
-        <div style={{ padding: "12px 16px 0" }}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "10px 14px",
-              borderRadius: 12,
-              background: "rgba(255, 80, 0, 0.08)",
-              border: "1px solid rgba(255, 80, 0, 0.3)",
-            }}
-          >
-            <div>
-              <div
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: "var(--mobile-accent)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                }}
-              >
-                Active subsidy
-              </div>
-              <div
-                style={{
-                  fontSize: 11,
-                  color: "var(--mobile-text-muted)",
-                  marginTop: 2,
-                }}
-              >
-                Reference − Commercialization
-              </div>
-            </div>
-            <div
-              style={{
-                fontSize: 22,
-                fontWeight: 700,
-                color: "var(--mobile-accent)",
-                fontFamily: "Arial",
-                fontVariantNumeric: "tabular-nums",
-              }}
-            >
-              R$ {activeSubsidy.toFixed(2)}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Latest values ─────────────────────────────────────────────────── */}
-      <SectionLabel>
-        Latest values
-        {(() => {
-          const anyDate = currentValues.find((c) => c.date)?.date;
-          return anyDate ? (
-            <span
-              style={{
-                fontWeight: 400,
-                marginLeft: 6,
-                textTransform: "none",
-                letterSpacing: 0,
-              }}
-            >
-              · {fmtDateLabel(anyDate)}
-            </span>
-          ) : null;
-        })()}
-      </SectionLabel>
-
-      <div
-        style={{
-          background: "var(--mobile-surface)",
-          borderTop: "1px solid var(--mobile-divider)",
-        }}
-      >
-        {currentValues.map((cv) => {
-          const hidden = !traceFilter(cv.field);
-          return (
-            <MobileDataCard
-              key={cv.field}
-              variant="compact"
-              leftIcon={<ColorDot color={cv.color} />}
-              title={cv.label}
-              rightSlot={
-                <div style={{ textAlign: "right" }}>
-                  <div
-                    style={{
-                      fontSize: 15,
-                      fontWeight: 700,
-                      color: hidden
-                        ? "var(--mobile-text-faint)"
-                        : "var(--mobile-text)",
-                      fontFamily: "Arial",
-                      fontVariantNumeric: "tabular-nums",
-                    }}
-                  >
-                    {cv.value != null
-                      ? `R$ ${cv.value.toFixed(2)}`
-                      : "—"}
-                  </div>
-                  <WowChip pct={cv.wowPct} />
-                  {hidden && (
-                    <div
-                      style={{
-                        fontSize: 10,
-                        color: "var(--mobile-text-faint)",
-                        fontFamily: "Arial",
-                      }}
-                    >
-                      Hidden
-                    </div>
-                  )}
-                </div>
-              }
-            />
-          );
-        })}
-      </div>
-
-      {/* ── Tap to show regional breakdown (mobile-only divergence) ──────── */}
-      {hasRegions && (
-        <>
-          <div style={{ padding: "12px 16px 0" }}>
-            <button
-              type="button"
-              onClick={() => setShowRegional((v) => !v)}
-              style={{
-                width: "100%",
-                minHeight: 44,
-                padding: "0 16px",
-                borderRadius: 12,
-                border: "1px solid var(--mobile-divider)",
-                background: "var(--mobile-surface)",
-                color: "var(--mobile-text)",
-                fontFamily: "Arial",
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-              }}
-            >
-              <span>ANP Reference — regional breakdown</span>
-              <ChevronDownIcon
-                size={16}
-                style={{
-                  transition: "transform 0.15s ease",
-                  transform: showRegional ? "rotate(180deg)" : "rotate(0deg)",
-                }}
-              />
-            </button>
-          </div>
-          {showRegional && (
-            <RegionalBreakdownCard
-              rows={rows}
-              xMax={xMax}
-              regionsField={regionsField}
-              label={label}
-            />
-          )}
-        </>
-      )}
-    </>
-  );
-}
-
 // ─── Mirror map: ANP series keys that must move in lockstep ──────────────────
-// When a toggle fires on an importador key, the produtor key must follow
-// (and vice-versa) so that both agent charts stay in sync.  IPP / Petrobras
-// (raw + adjusted) are agent-exclusive and NOT in this map.
 
 const MIRROR_MAP: Partial<Record<SeriesField, SeriesField>> = {
   anp_reference_importador:         "anp_reference_produtor",
@@ -595,10 +154,8 @@ const MIRROR_MAP: Partial<Record<SeriesField, SeriesField>> = {
 };
 
 // ─── Filter-drawer toggle list ────────────────────────────────────────────────
-// 6 unique concepts the user can toggle. ANP Reference / Commercialization
-// each get ONE toggle (keyed on the importador field) — MIRROR_MAP propagates
-// to the produtor key on click. IPP / IPP_adjusted (importador-only) and
-// Petrobras / Petrobras_adjusted (produtor-only) are agent-exclusive.
+// 6 unique concepts. ANP Reference / Commercialization get ONE toggle each
+// (keyed on the importador field); MIRROR_MAP propagates to the produtor key.
 
 interface FilterToggle {
   field: SeriesField;
@@ -616,6 +173,234 @@ const FILTER_TOGGLES: FilterToggle[] = [
   { field: "anp_commercialization_importador", label: "ANP Commercialization", color: "#B91C1C" },
 ];
 
+// ─── 11-column horizontal-scroll data table ───────────────────────────────────
+//
+// Columns: Date | IPP | IPP adj. | Petrobras | Petrobras adj. |
+//          Ref (Imp.) | Ref (Prod.) | Comm. (Imp.) | Comm. (Prod.) |
+//          Reimb. (Imp.) | Reimb. (Prod.)
+//
+// Reimbursement = Reference − Commercialization per agent.
+// First column (Date) is sticky. Horizontal scroll for the rest.
+
+interface TableRow {
+  date: string;
+  ipp: number | null;
+  ipp_adjusted: number | null;
+  petrobras: number | null;
+  petrobras_adjusted: number | null;
+  anp_reference_importador: number | null;
+  anp_reference_produtor: number | null;
+  anp_commercialization_importador: number | null;
+  anp_commercialization_produtor: number | null;
+  reimb_importador: number | null;
+  reimb_produtor: number | null;
+}
+
+function buildTableRows(
+  rows: SubsidyTrackerRow[],
+  xMin: string | null,
+  xMax: string | null,
+): TableRow[] {
+  const scoped = rows
+    .filter((r) => (!xMin || r.date >= xMin) && (!xMax || r.date <= xMax))
+    .sort((a, b) => b.date.localeCompare(a.date)); // newest first
+
+  return scoped.map((r) => {
+    const reimb_importador =
+      r.anp_reference_importador != null && r.anp_commercialization_importador != null
+        ? r.anp_reference_importador - r.anp_commercialization_importador
+        : null;
+    const reimb_produtor =
+      r.anp_reference_produtor != null && r.anp_commercialization_produtor != null
+        ? r.anp_reference_produtor - r.anp_commercialization_produtor
+        : null;
+    return {
+      date: r.date,
+      ipp: r.ipp,
+      ipp_adjusted: r.ipp_adjusted,
+      petrobras: r.petrobras,
+      petrobras_adjusted: r.petrobras_adjusted,
+      anp_reference_importador: r.anp_reference_importador,
+      anp_reference_produtor: r.anp_reference_produtor,
+      anp_commercialization_importador: r.anp_commercialization_importador,
+      anp_commercialization_produtor: r.anp_commercialization_produtor,
+      reimb_importador,
+      reimb_produtor,
+    };
+  });
+}
+
+function fmt(v: number | null): string {
+  return v != null && Number.isFinite(v) ? v.toFixed(2) : "—";
+}
+
+interface ColDef {
+  header: string;
+  key: keyof TableRow;
+  color?: string;
+}
+
+const TABLE_COLS: ColDef[] = [
+  { header: "IPP",            key: "ipp",                              color: "#111111" },
+  { header: "IPP adj.",       key: "ipp_adjusted",                     color: "#111111" },
+  { header: "Petrobras",      key: "petrobras",                        color: "#0F766E" },
+  { header: "PB adj.",        key: "petrobras_adjusted",               color: "#0F766E" },
+  { header: "Ref. (Imp.)",    key: "anp_reference_importador",         color: "#F59E0B" },
+  { header: "Ref. (Prod.)",   key: "anp_reference_produtor",           color: "#F59E0B" },
+  { header: "Comm. (Imp.)",   key: "anp_commercialization_importador", color: "#B91C1C" },
+  { header: "Comm. (Prod.)",  key: "anp_commercialization_produtor",   color: "#B91C1C" },
+  { header: "Reimb. (Imp.)",  key: "reimb_importador",                 color: "#6D28D9" },
+  { header: "Reimb. (Prod.)", key: "reimb_produtor",                   color: "#6D28D9" },
+];
+
+const CELL_WIDTH = 84; // px per data column
+const DATE_COL_WIDTH = 82; // px — sticky first column
+
+function DataTable({
+  tableRows,
+}: {
+  tableRows: TableRow[];
+}): React.ReactElement {
+  // Cap visible rows at 120 to keep render fast; table still scrolls vertically
+  const visible = tableRows.slice(0, 120);
+
+  return (
+    <div
+      style={{
+        overflowX: "auto",
+        overflowY: "auto",
+        maxHeight: 340,
+        WebkitOverflowScrolling: "touch",
+        borderTop: "1px solid var(--mobile-divider)",
+        borderBottom: "1px solid var(--mobile-divider)",
+      }}
+    >
+      <table
+        style={{
+          borderCollapse: "collapse",
+          fontSize: 11,
+          fontFamily: "Arial, Helvetica, sans-serif",
+          tableLayout: "fixed",
+          width: DATE_COL_WIDTH + TABLE_COLS.length * CELL_WIDTH,
+          minWidth: DATE_COL_WIDTH + TABLE_COLS.length * CELL_WIDTH,
+        }}
+      >
+        <thead>
+          <tr
+            style={{
+              background: "var(--mobile-surface)",
+              borderBottom: "1px solid var(--mobile-divider)",
+            }}
+          >
+            {/* Sticky date header */}
+            <th
+              style={{
+                position: "sticky",
+                left: 0,
+                zIndex: 3,
+                background: "var(--mobile-surface)",
+                width: DATE_COL_WIDTH,
+                minWidth: DATE_COL_WIDTH,
+                padding: "6px 8px",
+                textAlign: "left",
+                fontWeight: 700,
+                color: "var(--mobile-text)",
+                borderRight: "1px solid var(--mobile-divider)",
+                fontSize: 10,
+              }}
+            >
+              Date
+            </th>
+            {TABLE_COLS.map((col) => (
+              <th
+                key={col.key}
+                style={{
+                  width: CELL_WIDTH,
+                  minWidth: CELL_WIDTH,
+                  padding: "6px 6px",
+                  textAlign: "right",
+                  fontWeight: 700,
+                  color: col.color ?? "var(--mobile-text)",
+                  fontSize: 10,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {col.header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {visible.length === 0 ? (
+            <tr>
+              <td
+                colSpan={TABLE_COLS.length + 1}
+                style={{
+                  padding: "20px 8px",
+                  textAlign: "center",
+                  color: "var(--mobile-text-muted)",
+                  fontSize: 12,
+                }}
+              >
+                No data in selected period
+              </td>
+            </tr>
+          ) : (
+            visible.map((row, i) => (
+              <tr
+                key={row.date}
+                style={{
+                  background:
+                    i % 2 === 0
+                      ? "var(--mobile-surface)"
+                      : "var(--mobile-bg)",
+                  borderBottom: "1px solid var(--mobile-divider)",
+                }}
+              >
+                {/* Sticky date cell */}
+                <td
+                  style={{
+                    position: "sticky",
+                    left: 0,
+                    zIndex: 2,
+                    background: i % 2 === 0
+                      ? "var(--mobile-surface)"
+                      : "var(--mobile-bg)",
+                    width: DATE_COL_WIDTH,
+                    minWidth: DATE_COL_WIDTH,
+                    padding: "5px 8px",
+                    fontWeight: 600,
+                    color: "var(--mobile-text)",
+                    borderRight: "1px solid var(--mobile-divider)",
+                    fontSize: 11,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {fmtDateLabel(row.date)}
+                </td>
+                {TABLE_COLS.map((col) => (
+                  <td
+                    key={col.key}
+                    style={{
+                      padding: "5px 6px",
+                      textAlign: "right",
+                      fontVariantNumeric: "tabular-nums",
+                      color: "var(--mobile-text)",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {fmt(row[col.key] as number | null)}
+                  </td>
+                ))}
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ─── Mobile View ──────────────────────────────────────────────────────────────
 
 export default function MobileView(): React.ReactElement {
@@ -631,20 +416,13 @@ export default function MobileView(): React.ReactElement {
     xMax,
     chartImporter,
     chartProducer,
-    currentValuesImporter,
-    currentValuesProducer,
-    activeSubsidyImporter,
-    activeSubsidyProducer,
-    exportExcel,
-    exportCsv,
-    excelLoading,
-    csvLoading,
   } = useSubsidyTrackerData();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  // Agent toggle: which agent chart / series key is shown in the hero chart
+  const [agent, setAgent] = useState<AgentType>("importador");
 
-  // Active date chip
+  // Active period chip
   const activeDays = useMemo(
     () => activeChipDays(datas, filters.sliderRange),
     [datas, filters.sliderRange],
@@ -672,15 +450,26 @@ export default function MobileView(): React.ReactElement {
     [filters.traces, setFilters],
   );
 
-  // Trace filter helper: any visibility check goes through filters.traces.
-  // ANP Reference / Commercialization are mirrored across agents by toggleTrace
-  // (writes both importador + produtor keys at once via MIRROR_MAP), so a
-  // simple direct lookup is enough here.
   const traceVisible = useCallback(
-    (field: SeriesField): boolean => {
-      return filters.traces[field] !== false;
-    },
+    (field: SeriesField): boolean => filters.traces[field] !== false,
     [filters.traces],
+  );
+
+  // Hero chart: pick based on active agent
+  const heroChart = agent === "importador" ? chartImporter : chartProducer;
+  const heroLayout = useMemo<Partial<Layout>>(
+    () => ({ ...mobileChartLayout(), annotations: [] }),
+    [],
+  );
+
+  // Series color-key for the active agent
+  const activeSeries: SeriesDef[] =
+    agent === "importador" ? SERIES_IMPORTADOR : SERIES_PRODUTOR;
+
+  // 11-column table rows (all data, both agents, newest first)
+  const tableRows = useMemo(
+    () => buildTableRows(rows, xMin, xMax),
+    [rows, xMin, xMax],
   );
 
   if (visLoading || !visible) return <></>;
@@ -690,11 +479,11 @@ export default function MobileView(): React.ReactElement {
       style={{
         minHeight: "100dvh",
         background: "var(--mobile-bg)",
-        paddingBottom: "calc(80px + var(--mobile-safe-bottom))",
+        paddingBottom: "calc(24px + var(--mobile-safe-bottom))",
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
     >
-      {/* ── Top bar ──────────────────────────────────────────────────────── */}
+      {/* ── Top bar ──────────────────────────────────────────────────────────── */}
       <MobileTopBar
         title="Subsidy Tracker"
         rightSlot={
@@ -720,29 +509,32 @@ export default function MobileView(): React.ReactElement {
         }
       />
 
-      {/* ── Subtitle ──────────────────────────────────────────────────────── */}
+      {/* ── Subtitle ─────────────────────────────────────────────────────────── */}
       <div
         style={{
           padding: "10px 16px 0",
           fontSize: 12,
           color: "var(--mobile-text-muted)",
-          fontFamily: "Arial",
           lineHeight: 1.3,
         }}
       >
-        Diesel — ANP Reference & Commercialization vs IPP & Petrobras (BRL/L)
+        Diesel — ANP Reference &amp; Commercialization vs IPP &amp; Petrobras
+        (BRL/L)
       </div>
 
-      {/* ── Date chip strip ───────────────────────────────────────────────── */}
+      {/* ── Filter chip row: Period + Agent toggle ────────────────────────── */}
       <div
         style={{
           display: "flex",
           gap: 8,
-          padding: "12px 16px",
+          padding: "12px 16px 0",
           overflowX: "auto",
           scrollbarWidth: "none",
+          alignItems: "center",
+          flexWrap: "nowrap",
         }}
       >
+        {/* Period chips */}
         {DATE_CHIPS.map((chip) => {
           const isActive = activeDays === chip.days;
           return (
@@ -752,7 +544,7 @@ export default function MobileView(): React.ReactElement {
               onClick={() => handleChip(chip.days)}
               style={{
                 flexShrink: 0,
-                padding: "6px 14px",
+                padding: "6px 13px",
                 borderRadius: 20,
                 border: "1px solid",
                 borderColor: isActive
@@ -774,45 +566,165 @@ export default function MobileView(): React.ReactElement {
             </button>
           );
         })}
+
+        {/* Divider pip */}
+        <span
+          aria-hidden="true"
+          style={{
+            width: 1,
+            height: 20,
+            background: "var(--mobile-divider)",
+            flexShrink: 0,
+            margin: "0 2px",
+          }}
+        />
+
+        {/* Agent toggle: Importador / Produtor */}
+        {(["importador", "produtor"] as AgentType[]).map((a) => {
+          const isActive = agent === a;
+          return (
+            <button
+              key={a}
+              type="button"
+              onClick={() => setAgent(a)}
+              style={{
+                flexShrink: 0,
+                padding: "6px 13px",
+                borderRadius: 20,
+                border: "1px solid",
+                borderColor: isActive
+                  ? "var(--mobile-accent)"
+                  : "var(--mobile-divider)",
+                background: isActive
+                  ? "var(--mobile-accent)"
+                  : "var(--mobile-surface)",
+                color: isActive ? "#fff" : "var(--mobile-text-muted)",
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+                minHeight: 36,
+                fontFamily: "inherit",
+                textTransform: "capitalize",
+                transition: "background 0.15s ease, color 0.15s ease",
+              }}
+            >
+              {a.charAt(0).toUpperCase() + a.slice(1)}
+            </button>
+          );
+        })}
       </div>
 
       {loading ? (
-        <div style={{ padding: "32px 0" }}>
+        <div style={{ padding: "40px 0" }}>
           <BarrelLoading bare />
         </div>
       ) : (
         <>
-          {/* ── Agent block 1: Importador ─────────────────────────────────── */}
-          <AgentDivider label="Importador Reference Prices" />
-          <AgentBlock
-            label="Importador"
-            chartData={chartImporter}
-            currentValues={currentValuesImporter}
-            activeSubsidy={activeSubsidyImporter}
-            rows={rows}
-            xMax={xMax}
-            regionsField="regions_importador"
-            traceFilter={traceVisible}
-            seriesColorKey={SERIES_IMPORTADOR}
-          />
+          {/* ── Hero chart ───────────────────────────────────────────────────── */}
+          <div
+            style={{
+              marginTop: 16,
+              background: "var(--mobile-surface)",
+              borderTop: "1px solid var(--mobile-divider)",
+              borderBottom: "1px solid var(--mobile-divider)",
+              padding: "0 8px 8px",
+            }}
+          >
+            {/* Section header */}
+            <div
+              style={{
+                padding: "10px 8px 2px",
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: "0.07em",
+                textTransform: "uppercase",
+                color: "var(--mobile-text-muted)",
+              }}
+            >
+              {agent === "importador"
+                ? "Importador Reference Prices"
+                : "Produtor Reference Prices"}
+            </div>
 
-          {/* ── Agent block 2: Produtor ───────────────────────────────────── */}
-          <AgentDivider label="Produtor Reference Prices" />
-          <AgentBlock
-            label="Produtor"
-            chartData={chartProducer}
-            currentValues={currentValuesProducer}
-            activeSubsidy={activeSubsidyProducer}
-            rows={rows}
-            xMax={xMax}
-            regionsField="regions_produtor"
-            traceFilter={traceVisible}
-            seriesColorKey={SERIES_PRODUTOR}
-          />
+            <MobileChart
+              data={heroChart.data}
+              layout={heroLayout}
+              height={280}
+            />
+
+            {/* Color-key legend — 4 traces, 2-col grid */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "4px 12px",
+                padding: "4px 8px 0",
+              }}
+            >
+              {activeSeries
+                .filter((s) => traceVisible(s.field))
+                .map((s) => (
+                  <div
+                    key={s.field}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontSize: 11,
+                      color: "var(--mobile-text-muted)",
+                      minHeight: 22,
+                    }}
+                  >
+                    <ColorLine color={s.color} dashed={s.dash === "dash"} />
+                    <span style={{ lineHeight: 1.2 }}>{s.label}</span>
+                  </div>
+                ))}
+            </div>
+          </div>
+
+          {/* ── 11-column data table ─────────────────────────────────────────── */}
+          <div style={{ marginTop: 20 }}>
+            <div
+              style={{
+                padding: "0 16px 8px",
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: "0.07em",
+                textTransform: "uppercase",
+                color: "var(--mobile-text-muted)",
+              }}
+            >
+              Data table — all series
+              <span
+                style={{
+                  fontWeight: 400,
+                  textTransform: "none",
+                  letterSpacing: 0,
+                  marginLeft: 6,
+                }}
+              >
+                (BRL/L · scroll right →)
+              </span>
+            </div>
+            <DataTable tableRows={tableRows} />
+          </div>
+
+          {/* ── Date range footer ─────────────────────────────────────────────── */}
+          {xMin && xMax && (
+            <div
+              style={{
+                padding: "10px 16px 0",
+                fontSize: 12,
+                color: "var(--mobile-text-muted)",
+              }}
+            >
+              {fmtDateLabel(xMin)} – {fmtDateLabel(xMax)}
+            </div>
+          )}
         </>
       )}
 
-      {/* ── Filter drawer ────────────────────────────────────────────────── */}
+      {/* ── Filter drawer ─────────────────────────────────────────────────────── */}
       <FilterDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
@@ -858,9 +770,7 @@ export default function MobileView(): React.ReactElement {
           )}
         </div>
 
-        {/* Trace visibility toggles — uses importer-side labels as display names.
-            Toggling a key governs the corresponding producer series as well
-            (via traceVisible() mapping above). */}
+        {/* Trace visibility toggles */}
         <div
           style={{
             paddingTop: 12,
@@ -898,11 +808,10 @@ export default function MobileView(): React.ReactElement {
                     gap: 10,
                   }}
                 >
-                  {s.dash === "dash" ? (
-                    <ColorLine color={s.color} dashed />
-                  ) : (
-                    <ColorDot color={s.color} />
-                  )}
+                  <ColorLine
+                    color={s.color}
+                    dashed={s.dash === "dash"}
+                  />
                   <span
                     style={{
                       fontSize: 14,
@@ -952,83 +861,6 @@ export default function MobileView(): React.ReactElement {
           })}
         </div>
       </FilterDrawer>
-
-      {/* ── Export FAB with mini-menu ─────────────────────────────────────── */}
-      {exportMenuOpen && (
-        <div
-          onClick={() => setExportMenuOpen(false)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 34,
-            background: "rgba(0,0,0,0.18)",
-          }}
-        />
-      )}
-      {exportMenuOpen && (
-        <div
-          style={{
-            position: "fixed",
-            right: "max(16px, calc((100vw - 428px) / 2 + 16px))",
-            bottom: "calc(72px + var(--mobile-safe-bottom) + 72px)",
-            zIndex: 36,
-            display: "flex",
-            flexDirection: "column",
-            gap: 10,
-            alignItems: "flex-end",
-          }}
-        >
-          {[
-            {
-              label: "Excel",
-              busy: excelLoading,
-              onClick: () => {
-                exportExcel();
-                setExportMenuOpen(false);
-              },
-            },
-            {
-              label: "CSV",
-              busy: csvLoading,
-              onClick: () => {
-                exportCsv();
-                setExportMenuOpen(false);
-              },
-            },
-          ].map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              onClick={item.onClick}
-              disabled={item.busy || rows.length === 0 || loading}
-              style={{
-                minHeight: 44,
-                padding: "0 20px",
-                borderRadius: 22,
-                border: 0,
-                background: "var(--mobile-surface)",
-                color: "var(--mobile-text)",
-                fontFamily: "Arial",
-                fontSize: 14,
-                fontWeight: 700,
-                cursor: item.busy ? "default" : "pointer",
-                boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
-                opacity:
-                  item.busy || rows.length === 0 || loading ? 0.6 : 1,
-              }}
-            >
-              {item.busy ? "..." : item.label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <ExportFAB
-        icon="download"
-        ariaLabel={exportMenuOpen ? "Close export menu" : "Export data"}
-        onClick={() => setExportMenuOpen((v) => !v)}
-        disabled={rows.length === 0 || loading}
-      />
     </div>
   );
 }
