@@ -43,7 +43,7 @@ Exports:
 | Viewport router (`useIsMobile`) | `page.tsx` |
 | Data fetching, filters, view/style state, chart traces, 12-month table model, format helpers | `useAnpCdpBswData.ts` |
 | Desktop UX — Bootstrap sidebar (`#sidebar`) with `SearchableMultiSelect`, two `SegmentedToggle`s (View, Plot style), chart via `PlotlyChart`, history table | `desktop/View.tsx` |
-| Mobile UX — `MobileTopBar` + page heading + `MobileTabBar` (underline variant — View toggle) + sticky filter chips + hero `MobileChart` (leader-trace BRAND_ORANGE) + 12-month BSW table card; `FilterDrawer` with chip-cloud field picker + plot-style pills | `mobile/View.tsx` |
+| Mobile UX — `MobileTopBar` + `MobileKebabMenu` + page heading + sticky Campo filter chip row + hero `MobileChart` (field-aggregate only) + `MobileHomePill`; `FilterDrawer` with campo chip-cloud + search | `mobile/View.tsx` |
 
 Both Views consume `useAnpCdpBswData()` exclusively — neither touches Supabase or `rpc.ts`. The hook is the single source of truth:
 
@@ -53,15 +53,20 @@ Both Views consume `useAnpCdpBswData()` exclusively — neither touches Supabase
 
 **Binding sync rule**: any meaningful change to one View (new filter, chart, KPI, copy) lands in the OTHER View in the SAME commit, OR the commit message declares `[desktop-only]` / `[mobile-only]` with an explicit reason.
 
-### Mobile-specific adaptations (mobile is "same analysis, adapted clothing")
+### Mobile-specific adaptations — Onda 3 reform (2026-05-27)
+
+Mobile is "same analysis, adapted clothing" per plan § 4.7 (non-flagship).
 
 | Adaptation | Reason |
 |---|---|
-| 12-well cap in `Per well` mode trace count | Mobile chart is ~340px wide — beyond 12 traces the legend collapses and the curves become indistinguishable |
-| Leader trace gets `BRAND_ORANGE` (instead of palette index 0) | Mobile mockup parity (`mockups/anp-cdp-mobile.html`); the desktop sidebar already uses palette index for swatches, so this is a mobile-only visual emphasis |
-| Chip-cloud field picker (instead of `SearchableMultiSelect` dropdown) | Touch-friendly; chip swatches double as color legend |
-| Plot-style toggle moves into the `FilterDrawer` | Mobile viewport doesn't have room for two visible toggles |
-| Per-well legend hint ("N wells in this field") rendered below chart instead of in the sidebar | Sidebar doesn't exist on mobile |
+| **Field-aggregate only** — per-well view toggle removed | Plan § 4.7 explicit: "field-aggregate view ONLY, no well-level toggle on mobile" |
+| `viewMode` pinned to `"field"` on mount via `useEffect` | Hook owns mode state; mobile forces field-fetch without modifying the hook contract |
+| Field traces built locally from `fieldPoints` (not from `mobileChartTraces`) | Avoids dependency on hook's `viewMode` state during the mount cycle |
+| 12-month BSW history table removed | Plan § 4.7: no drill-down, no secondary data table on mobile |
+| Plot-style toggle removed from `FilterDrawer` | Defaults to `markers+lines`; one fewer decision for mobile user |
+| `MobileHomePill` always visible | Global nav for the Onda 3 reform — routes back to /home |
+| `MobileKebabMenu` in `MobileTopBar` rightSlot | Account actions (logout) via bottom-sheet, per Onda 1 pattern |
+| Chip-cloud campo picker with search in `FilterDrawer` | Touch-friendly; chip swatches double as color legend |
 | No `ExportFAB` | Same as desktop — this dashboard has no export by design |
 
 ## Product
