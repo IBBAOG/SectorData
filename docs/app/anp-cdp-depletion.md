@@ -44,20 +44,19 @@ Owns all the analysis state and derivations that previously lived inline in the 
 
 Migrated verbatim from the original `page.tsx`. Composes shared desktop components (`DashboardHeader`, `SegmentedToggle`, `SearchableMultiSelect`, `ChartSection`, `BarrelLoading`) and the chart builders `buildPerWellChart` / `buildFieldAverageChart` (which use `scattergl` for per-well and `scatter` for field-avg). The chart spans `col-xxl-10 col-md-9`; sidebar is `col-xxl-2 col-md-3`.
 
-### `mobile/View.tsx` (touch layout)
+### `mobile/View.tsx` (touch layout — v2, 2026-05-27)
 
-Single-chart archetype adapted from `mockups/anp-cdp-mobile.html`. Composition (top → bottom):
+Non-flagship mobile reform per § 4.8 of the mobile reform plan. **Field-aggregate view only** — no Per-well toggle, no Plot-style toggle. Composition (top → bottom):
 
-1. `MobileTopBar` — title "Depletion" + filter-trigger chip (count of selected fields).
-2. View `MobileTabBar` (container variant) — Per well / Field avg.
-3. X-axis `MobileTabBar` (underline variant) — Calendar / % VOIP.
-4. Active-chip row — colored chips of selected campos, or instructional empty-state copy.
-5. Chart card with `MobileChart` — same scatter traces but rendered as SVG `scatter` (not `scattergl`) because mobile selections are smaller and tooltips render cleaner.
-6. Period-comparison card — touch-sized Recent / Prior `number` inputs with helper labels + clipping warning.
-7. `MobileDataCard` rows (one per item) for "Depletion comparison" — title is item name + colored swatch; subtitle compacts the three NP averages (Last / Recent / Prior); right slot stacks Depletion % (bold) over YoY %.
-8. `FilterDrawer` — `SearchableMultiSelect` for campos + Plot style `SegmentedToggle`. Draft state with Apply/Clear buttons.
+1. **Sticky top block** — title "Depletion" + campo chip (opens `FilterDrawer`) on row 1; Recent (m) / Prior (m) inputs with helper labels on row 2; clipping warning below if applicable.
+2. **X-axis `MobileTabBar`** (underline variant) — Calendar / % VOIP recovered.
+3. **Active-campo chip row** — colored swatches of selected campos or instructional empty-state copy.
+4. **Hero chart card** with `MobileChart` — field-aggregate `scatter` (SVG), `markers+lines` fixed mode; adapts X axis layout per toggle.
+5. **Depletion comparison `<table>`** — real HTML table with `overflow-x: auto`, first column sticky (field name + color swatch); columns: NP last | Recent Nm | Prior Mm | Depletion % | YoY %. Horizontal scroll preserved for narrow screens.
+6. **`FilterDrawer`** — `SearchableMultiSelect` for campos (multi-select up to `MAX_FIELDS_IN_FIELD_MODE = 20`). No Plot-style toggle. Draft state with Apply / Clear all buttons.
 
 No `ExportFAB` — by product design (consistent with `/anp-cdp-bsw`).
+No `MobileBottomTabBar`, no NavBar (provided by MobileShell at layout level).
 
 ### Binding sync rule
 
