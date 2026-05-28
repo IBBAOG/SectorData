@@ -191,47 +191,31 @@ Cada worker tem um `tools:` declarado no frontmatter de `.claude/agents/worker_*
 
 Se um worker reportar "MCP tool não disponível" ou similar — **a falha é do CTO** que não atualizou o frontmatter. Edite o `worker_*.md` correspondente e dispare de novo.
 
-### Responsabilidade do CTO: escolher o modelo certo para cada worker
+### Política de modelos — TODOS os workers rodam em Opus 4.7 1M (MAX)
 
-O CTO **escolhe o modelo** com que cada worker roda, passando o parâmetro `model: "opus"` ou `model: "sonnet"` (ou `"haiku"`, raro) na chamada do `Agent` tool. Esse parâmetro tem precedência sobre o `model:` declarado no frontmatter do worker — ou seja, o CTO pode promover qualquer worker para Opus 4.7 1M quando a tarefa exigir, independentemente do default.
+**Decisão do CTO em 2026-05-28: 100% dos workers do projeto rodam em Opus 4.7 1M, sem exceção.**
 
-**Política de modelos (binding):**
+Não existe mais a categoria "base à discrição do CTO" — toda invocação `Agent({ subagent_type: "worker_*", ... })` usa Opus 4.7 1M. O delta de custo/latência é aceito em troca de: (a) decisões consistentes em todos os domínios, (b) eliminação do julgamento "essa tarefa é complexa o bastante?", (c) menos retrabalho por causa-raiz que Sonnet não pega.
 
-| Categoria | Workers | Modelo |
-|---|---|---|
-| **Principais — sempre Opus 4.7 1M** | `worker_gerente-geral`, `worker_subgerente-app`, `worker_alerts-product`, `worker_designer`, `worker_revisor-qa`, `worker_documentador`, `worker_orquestrador` | **`model: "opus"` sempre** — sem exceção |
-| **Base — CTO escolhe** | `worker_supabase`, `worker_etl-pipelines`, `worker_dados-locais`, `worker_alertas`, todos os `worker_dash-*` | Default `sonnet`; promover para `opus` quando a tarefa for complexa |
+**Como aplicar:**
 
-**Por que principais sempre Opus:** gerentes (roteamento, decisões cross-dept), criativos (design system, UX que escala pra 10+ dashboards), e segurança/revisão (audit de diff antes de commit, integração de N worktrees, sync de docs/contratos) carregam decisões de alto custo de reversão. O delta de latência/custo é desprezível comparado ao custo de uma decisão ruim que se propaga.
-
-**Quando promover um worker de base para Opus** (use seu julgamento; estes são gatilhos típicos):
-
-- Schema/RLS com impacto em múltiplas tabelas ou policies (`worker_supabase`)
-- Migration que muda PK ou colunas em tabela com 100k+ rows
-- Pipeline novo do zero ou refactor de pipeline com 3+ stages (`worker_etl-pipelines`)
-- Dashboard novo do zero ou refactor estrutural (consolidação tipo `/imports-exports`, dual-view full) (`worker_dash-*`)
-- Bug com causa-raiz não-óbvia depois de uma rodada Sonnet falhar
-- Qualquer tarefa que toque contratos cross-dept (mesmo no worker base) — apesar de o gerente já estar em Opus
-
-**Quando manter Sonnet para workers de base:**
-
-- Mudanças localizadas em UI (label, copy, ajuste de filtro existente)
-- Bug fix com causa-raiz clara e escopo de 1 arquivo
-- Upload manual rotineiro (`worker_dados-locais`)
-- Ajuste de cron schedule, env var, ou config de workflow simples
-
-**Sintaxe:**
+1. **Frontmatter de TODOS os 33+ workers em `.claude/agents/worker_*.md`** declara `model: opus`. Se algum estiver com `sonnet` ou `haiku`, **corrija imediatamente**.
+2. **Toda invocação do CTO** passa `model: "opus"` explicitamente (defesa em profundidade contra frontmatter dessincronizado):
 
 ```javascript
 Agent({
   subagent_type: "worker_dash-anp-cdp",
-  model: "opus",  // ← promove pra Opus 4.7 1M nesta invocação
-  description: "Refactor /anp-cdp dual-view",
+  model: "opus",  // SEMPRE, mesmo se o frontmatter já declara
+  description: "Refactor /anp-cdp",
   prompt: "..."
 })
 ```
 
-Omitir `model` faz o agent usar o default do frontmatter dele. Para os 7 principais, mesmo omitindo o CTO espera que o frontmatter declare `model: opus` — se um deles estiver com Sonnet no frontmatter, **corrija o frontmatter** (você pode editar `.claude/agents/worker_*.md`).
+3. **Workers que orquestram sub-workers** (gerente-geral, subgerente-app, alerts-product) também passam `model: "opus"` em suas próprias chamadas Agent — propagar a regra na hierarquia.
+
+**Por que abandonar Sonnet:** mesmo tarefas "simples" (label rename, bug fix de 1 arquivo) tinham casos onde Sonnet pulava sutilezas (contratos cross-dept implícitos, regressão em outra view, RLS desalinhada). O custo evitado de 1 incidente paga semanas de upgrade de modelo para todos.
+
+**Haiku é proibido neste projeto.** Sem exceção.
 
 ### Workflow obrigatório para qualquer tarefa não-trivial
 
