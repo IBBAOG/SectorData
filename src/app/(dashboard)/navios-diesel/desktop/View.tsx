@@ -21,10 +21,9 @@ import PlotlyChart from "../../../../components/PlotlyChart";
 import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
 import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
-import ExportPanel from "../../../../components/dashboard/ExportPanel";
+import { ExportButton } from "../../../../lib/export";
+import { buildNaviosDieselExport } from "../../../../lib/export/dashboards/naviosDiesel";
 import { getSupabaseClient } from "../../../../lib/supabaseClient";
-import { downloadGenericExcel } from "../../../../lib/exportExcel";
-import { downloadCsv } from "../../../../lib/exportCsv";
 import {
   rpcGetAisPositionsLatest,
   rpcGetAisPositionsAllRecent,
@@ -146,9 +145,6 @@ export default function DesktopView(): React.ReactElement {
   const [aisAllRecent, setAisAllRecent] = useState<AisPositionRow[]>([]);
   const [portPolygons, setPortPolygons] = useState<PortPolygonRow[]>([]);
   const [arrivalsOpen, setArrivalsOpen] = useState<PortArrivalRow[]>([]);
-
-  // Export state
-  const [excelLoading, setExcelLoading] = useState(false);
 
   // When hook updates selected day → sync the calendar month/year display
   useEffect(() => {
@@ -687,57 +683,7 @@ export default function DesktopView(): React.ReactElement {
                   )
                 }
                 rightSlot={
-                  <ExportPanel
-                    actions={[
-                      {
-                        kind: "excel",
-                        label: "formatted data .xl",
-                        busy: excelLoading,
-                        loadingLabel: "Generating Excel...",
-                        disabled: loading || naviosDisplay.length === 0 || excelLoading,
-                        onClick: async () => {
-                          setExcelLoading(true);
-                          try {
-                            await downloadGenericExcel<NavioDieselRow>({
-                              rows: naviosDisplay,
-                              filename: "Navios-Diesel-Lineup",
-                              title: "Diesel Imports Line-Up — Expected / Pending Discharge",
-                              sheetName: "Line-Up",
-                              columns: [
-                                { key: "porto",                 header: "Port", width: 22 },
-                                { key: "status",                header: "Status", width: 14 },
-                                { key: "navio",                 header: "Vessel", width: 26 },
-                                { key: "produto",               header: "Product", width: 18 },
-                                { key: "quantidade_convertida", header: "Volume (m³)", format: "#,##0" },
-                                { key: "eta",                   header: "ETA" },
-                                { key: "inicio_descarga",       header: "Unload Start" },
-                                { key: "fim_descarga",          header: "Unload End" },
-                                { key: "origem",                header: "Origin", width: 18 },
-                                { key: "imo",                   header: "IMO" },
-                                { key: "mmsi",                  header: "MMSI" },
-                                { key: "flag",                  header: "Flag" },
-                              ],
-                            });
-                          } catch (e) {
-                            console.error("Excel export failed", e);
-                          } finally {
-                            setExcelLoading(false);
-                          }
-                        },
-                      },
-                      {
-                        kind: "csv",
-                        label: "all data .csv",
-                        disabled: loading || naviosDisplay.length === 0,
-                        onClick: () => {
-                          downloadCsv({
-                            rows: naviosDisplay as unknown as Record<string, unknown>[],
-                            filename: "Navios-Diesel-Lineup",
-                          });
-                        },
-                      },
-                    ]}
-                  />
+                  <ExportButton spec={buildNaviosDieselExport(naviosDisplay)} />
                 }
               />
               <div className="mb-2">
