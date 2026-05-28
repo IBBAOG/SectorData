@@ -247,17 +247,75 @@ The stacked-area chart ("Exports — By Destination Country") ranks destination 
 
 ---
 
-## Export — Tier 1 (direct download, no modal)
+## Export — Tier 2 (unified library, modal-editable filters)
 
-Decision: Tier 1 chosen because payload is aggregated (top-10 + Others), not raw rows. Even a 10-year window produces at most ~1 200 rows per panel. Upgrade to Tier 2 if use patterns show users exporting raw `anp_desembaracos` dumps.
+Migrated to `src/lib/export/` on 2026-05-28. The dashboard now exposes a
+single `ExportButton` in `DashboardHeader.rightSlot` whose behaviour is
+spec-driven (`src/lib/export/dashboards/importsExports.ts`).
 
-| File | Content | Format |
+### Why Tier 2 (was Tier 1)
+
+The pre-migration export aggregated 4 chart/table series into 4 sheets — fine
+when payload was top-10 + Others. The migration shifts the contract to **raw
+rows** (one row per `(ano, mes, pais, importador, cnpj, ncm)` for Imports;
+one row per `(ano, mes, pais, ncm)` for Exports). Even a single-product /
+3-year window can exceed 50k rows. Tier 2 modal with size estimator is
+mandatory at this volume.
+
+### Filters (modal-editable — `filterSource: "modal-editable"`)
+
+The modal opens with editable controls; the dashboard's current sidebar
+filters are **not** consumed for export (filters from scratch). Active state
+persists across modal openings during the session.
+
+| Control | Type | Default |
 |---|---|---|
-| Excel sheet 1 | Panel A — imports by country (year, month, country, volume_kt) | `.xlsx` |
-| Excel sheet 2 | Panel B — imports by importer (year, month, importer, volume_mil_m3) | `.xlsx` |
-| CSV zip | Same 2 sheets as separate `.csv` files | `.zip` |
+| Period | date-range | Last 2 years (rolling) |
+| Product | multi-select (Diesel, Gasoline, Crude Oil) | All 3 |
+| Flow | segmented (Imports / Exports / Both) | Both |
+| Country (optional) | multi-select (free-form, empty = all) | empty |
 
-Filename pattern: `Imports-Exports_DD-MM-YY.xlsx` / `.zip`.
+The Flow toggle suppresses the unused sheet/file when set to a single side.
+`Both` materialises both sheets/files even when one is empty.
+
+### Output
+
+| Format | Layout |
+|---|---|
+| Excel (`.xlsx`) | 2 sheets — `Imports` (13 columns) + `Exports` (10 columns). Header row navy `#000512`/white Arial 10 bold; title row brand orange `#FF5000` Arial 13 bold; no grid lines; per-column `numFmt` (`#,##0`, `#,##0.00`, etc.). |
+| CSV (`.zip`) | `mode: "zip"` — 2 separate `.csv` files in one archive (`imports.csv` + `exports.csv`). Heterogeneous schemas: Exports has no `importador` / `cnpj` / `uf_cnpj` columns (MDIC does not carry importer identity). |
+
+**Imports columns** (13): `ano, mes, pais_origem, importador, cnpj, uf_cnpj, ncm_codigo, descricao_ncm, unified_product, quantidade_kg, volume_m3, valor_usd, unit_price_usd_ton`.
+
+**Exports columns** (10): `ano, mes, pais_destino, ncm_codigo, descricao_ncm, unified_product, quantidade_kg, volume_m3, valor_usd, unit_price_usd_bbl`.
+
+Filename pattern (set by the library):
+
+```
+ImportsExports_DD-MM-YY.xlsx
+ImportsExports_DD-MM-YY.zip
+```
+
+### Backend
+
+Three RPCs (owned by `worker_supabase`, see contract `docs/app/export-library-contract.md` § "Backend RPCs"):
+
+- `get_imports_exports_raw_imports(p_filtros jsonb)` — joins
+  `anp_desembaracos` × `mdic_comex` × `ncm_densidade_kg_m3` for the Imports sheet.
+- `get_imports_exports_raw_exports(p_filtros jsonb)` — `mdic_comex` (flow=`export`) for the Exports sheet.
+- `get_imports_exports_export_count(p_filtros jsonb)` — returns 2 rows
+  (`{ flow: 'imports', n }`, `{ flow: 'exports', n }`) for the modal's
+  size estimator.
+
+All 3: `LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp`, granted to `anon` + `authenticated`.
+
+Wrappers in `src/lib/rpc.ts` § "Imports & Exports — Unified export library RPCs":
+`rpcGetImportsExportsRawImports`, `rpcGetImportsExportsRawExports`,
+`rpcGetImportsExportsExportCount`.
+
+### Mobile
+
+No export on mobile (Mobile reform 2026-05-27 policy). `ExportButton` returns `null` when `useIsMobile()` is `true`.
 
 ---
 

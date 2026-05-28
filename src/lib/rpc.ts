@@ -2624,6 +2624,93 @@ export async function rpcGetImportsExportsExportsUnitPrice(
   }
 }
 
+// ─── Imports & Exports — Unified export library RPCs ─────────────────────────
+//
+// These wrappers feed `src/lib/export/dashboards/importsExports.ts`. The 3
+// RPCs they call are shipped by worker_supabase as part of the export library
+// migration wave (see docs/app/export-library-contract.md § "Backend RPCs").
+//
+// All 3 RPCs:
+//   • LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp
+//   • Granted to anon + authenticated (Pegadinha #18)
+//   • Accept a single jsonb param `p_filtros` (mirrors the modal filter state)
+//
+// Filter contract (p_filtros JSON keys, all optional except `produtos`):
+//   • ano_inicio int, mes_inicio int, ano_fim int, mes_fim int — period bounds
+//   • produtos text[] — unified products ('Diesel','Gasoline','Crude Oil')
+//   • paises text[] | null — origin (imports) or destination (exports) filter
+
+/**
+ * Raw rows for the "Imports" sheet of the unified export.
+ * One row per (ano, mes, pais_origem, importador, cnpj, ncm_codigo).
+ * Joins anp_desembaracos with mdic_comex (valor_usd) and ncm_densidade_kg_m3
+ * (volume_m3 + unit_price_usd_ton) — all done server-side.
+ */
+export async function rpcGetImportsExportsRawImports(
+  supabase: SupabaseClient,
+  filtros: Record<string, unknown>,
+): Promise<Record<string, unknown>[]> {
+  try {
+    const { data, error } = await supabase.rpc(
+      "get_imports_exports_raw_imports",
+      { p_filtros: filtros },
+    );
+    if (error) throw error;
+    return (data ?? []) as Record<string, unknown>[];
+  } catch (e) {
+    console.error("get_imports_exports_raw_imports failed", e);
+    return [];
+  }
+}
+
+/**
+ * Raw rows for the "Exports" sheet of the unified export.
+ * One row per (ano, mes, pais_destino, ncm_codigo).
+ * Sourced from mdic_comex (flow='export'). MDIC does not carry importer
+ * identity, so the Exports sheet has no importador / cnpj / uf_cnpj columns.
+ */
+export async function rpcGetImportsExportsRawExports(
+  supabase: SupabaseClient,
+  filtros: Record<string, unknown>,
+): Promise<Record<string, unknown>[]> {
+  try {
+    const { data, error } = await supabase.rpc(
+      "get_imports_exports_raw_exports",
+      { p_filtros: filtros },
+    );
+    if (error) throw error;
+    return (data ?? []) as Record<string, unknown>[];
+  } catch (e) {
+    console.error("get_imports_exports_raw_exports failed", e);
+    return [];
+  }
+}
+
+/**
+ * Row counts for the size estimator. Returns 2 rows: imports + exports.
+ * Shape: [{ flow: 'imports' | 'exports', n: number }, ...].
+ * The export spec's countRpc sums the rows that match the active Flow toggle.
+ */
+export async function rpcGetImportsExportsExportCount(
+  supabase: SupabaseClient,
+  filtros: Record<string, unknown>,
+): Promise<{ flow: string; n: number }[]> {
+  try {
+    const { data, error } = await supabase.rpc(
+      "get_imports_exports_export_count",
+      { p_filtros: filtros },
+    );
+    if (error) throw error;
+    return ((data ?? []) as { flow?: string; n?: number }[]).map((r) => ({
+      flow: String(r.flow ?? ""),
+      n: Number(r.n ?? 0),
+    }));
+  } catch (e) {
+    console.error("get_imports_exports_export_count failed", e);
+    return [];
+  }
+}
+
 // ─── MODULE: Admin — Default News Keywords ────────────────────────────────────
 //
 // Admin-only RPCs for managing the `news_hunter_default_keywords` table.
