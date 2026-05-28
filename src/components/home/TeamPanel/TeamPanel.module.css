@@ -118,8 +118,8 @@
   height: 28px;
   border-radius: 6px;
   text-decoration: none;
-  color: var(--ds-glass-border-strong);
-  font-size: 16px;
+  color: #ff5000;
+  font-size: 18px;
   transition: background 0.15s ease, opacity 0.15s ease;
 }
 
@@ -129,7 +129,7 @@
 }
 
 :global(:root[data-theme="dark"]) .iconBtn {
-  color: rgba(255, 255, 255, 0.6);
+  color: #ff5000;
 }
 
 :global(:root[data-theme="dark"]) .iconBtn:hover {
