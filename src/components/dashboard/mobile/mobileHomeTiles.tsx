@@ -18,7 +18,7 @@
 // `src/components/home/ModuleGallery/index.tsx`:
 //
 //   markets → brand orange   tile rgba(255,80,0,0.10)  text #cc3d00
-//   oilgas  → blue-600       tile rgba(37,99,235,0.10) text #1d4ed8
+//   oilgas  → brand orange   tile rgba(255,80,0,0.10)  text #FF5000 [Round 8]
 //   fuel    → emerald-600    tile rgba(5,150,105,0.10) text #047857
 //
 // The glyph itself comes from the shared `@/data/moduleIcons` registry —
@@ -69,7 +69,7 @@ interface CategoryTint {
 
 const CATEGORY_TINTS: Record<TileCategory, CategoryTint> = {
   markets: { tile: "rgba(255, 80, 0, 0.10)", accentText: "#cc3d00" },
-  oilgas: { tile: "rgba(194, 65, 12, 0.10)", accentText: "#9a3412" },
+  oilgas: { tile: "rgba(255, 80, 0, 0.10)", accentText: "#FF5000" },
   fuel:   { tile: "rgba(5, 150, 105, 0.10)", accentText: "#047857" },
 };
 

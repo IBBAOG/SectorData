@@ -2472,7 +2472,7 @@ a {
      Round 3 (2026-05-28) — palette aligned to desktop ModuleGallery.
      Source of truth: ACCENTS map in
      src/components/home/ModuleGallery/index.tsx
-       oilgas → accent #c2410c (orange-700), accentText #9a3412 (orange-800) [Round 7]
+       oilgas → accent #FF5000 (brand orange pure), accentText #FF5000 [Round 8]
        fuel   → accent #059669 (emerald-600), accentText #047857 (emerald-700)
      Mobile pastel bg = accent mixed with white at ~92% (matches the
      desktop `soft`/`tile` ~10% alpha rendered on the white card surface).
@@ -2481,13 +2481,13 @@ a {
      Fuel rows are emerald-tinted.
      ─────────────────────────────────────────────────────────────────────── */
 
-  /* Oil & Gas — earthy brand-orange family (desktop accent #c2410c).
-     Round 7 (2026-05-28): recolored from blue to a peach/dark-orange pair
-     derived from the brand orange #FF5000 — distinct from Markets' vibrant
-     brand orange to keep categories visually separable. fg #9a3412 over
-     bg #ffe5d6 gives contrast ~7:1 (AA pass for 13px/700 body). */
+  /* Oil & Gas — brand-orange family (desktop accent #FF5000).
+     Round 8 (2026-05-28): fg recolored from #9a3412 to brand orange #FF5000
+     per user request. bg #ffe5d6 unchanged. Trade-off: contrast drops from
+     ~7:1 to ~3.0:1 — fails WCAG AA 4.5:1 for body text but passes AA Large
+     (3:1) for the 13px/700 tile labels (borderline). */
   --mobile-home-tile-oilgas-bg:              #ffe5d6;  /* peach (orange-100-ish) */
-  --mobile-home-tile-oilgas-fg:              #9a3412;  /* orange-800, AA on bg */
+  --mobile-home-tile-oilgas-fg:              #FF5000;  /* Round 8: brand orange (~3.0:1 on bg — borderline AA Large only) */
 
   /* Fuel Distribution — emerald family (desktop accent #059669).
      Round 6: softened from Round 5 (~35% sat → ~20% sat) for a more airy
@@ -2629,7 +2629,7 @@ a {
        all Fuel slugs share emerald. Source of truth:
        src/components/home/ModuleGallery/index.tsx (ACCENTS map). */
     --mobile-home-tile-oilgas-bg:              #ffe5d6;  /* Round 7: peach */
-    --mobile-home-tile-oilgas-fg:              #9a3412;  /* Round 7: orange-800 */
+    --mobile-home-tile-oilgas-fg:              #FF5000;  /* Round 8: brand orange (borderline AA Large) */
     --mobile-home-tile-fuel-bg:                #cdf0db;  /* Round 6: softened ~20% sat */
     --mobile-home-tile-fuel-fg:                #047857;
 
