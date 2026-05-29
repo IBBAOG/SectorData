@@ -13,19 +13,34 @@
 // rows are stake-weighted server-side; Brasil rows are 100% WI.
 //
 // Backend RPCs (owned by worker_supabase, shipped in parallel):
-//   • get_production_brazil_well_full_history()  → Brasil sheet
-//   • get_production_well_full_history(p_empresa) → one of the four company sheets
+//   • get_production_brazil_well_full_history(p_offset, p_limit)
+//   • get_production_well_full_history(p_empresa, p_offset, p_limit)
+//   • get_production_brazil_well_count()           ← size estimator
+//   • get_production_well_count(p_empresa)         ← size estimator
 //
-// Modal countRpc: there is no server-side count helper for these RPCs, so the
-// estimator calls all 5 row-fetching RPCs in parallel and sums the resulting
-// lengths. `SizeEstimator` debounces this to 300ms and only fires on modal
-// open + format toggle changes, so the cost is bounded.
+// Pagination. PostgREST defaults `max-rows = 1000`, which silently truncated
+// the full-history SETOF return. We now loop in chunks of PAGE_SIZE (5000),
+// stopping as soon as a chunk shorter than PAGE_SIZE arrives. A hard offset
+// safety cap (MAX_OFFSET_SAFETY) prevents an infinite loop in case the RPC
+// ever misbehaves and returns full pages forever.
+//
+// Resilience. Each sheet's rowsAsync is wrapped in try/catch so a single
+// sheet failure (e.g. one company RPC errors out) does not blank the entire
+// workbook — the failing sheet emits an empty rowset and the others render.
+//
+// Size estimator. The previous implementation fetched all 5 row-RPCs in
+// parallel and summed `.length` — that was both slow (full payloads pulled
+// just to count) and broken (truncated to 1000 per RPC, undercounting the
+// real export by 5–6×). We now call 5 dedicated lightweight COUNT RPCs.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { ExportSpec, ColumnDef, SheetSpec } from "@/lib/export";
 import { getSupabaseClient } from "@/lib/supabaseClient";
 import {
+  type ProductionWellFullHistoryRow,
+  rpcGetProductionBrazilWellCount,
   rpcGetProductionBrazilWellFullHistory,
+  rpcGetProductionWellCount,
   rpcGetProductionWellFullHistory,
 } from "@/lib/rpc";
 
@@ -35,6 +50,16 @@ import {
 // double as the values of the CSV `view` discriminator column.
 const BRASIL_VIEW = "Brasil";
 const COMPANY_VIEWS = ["Petrobras", "PRIO", "PetroReconcavo", "Brava Energia"] as const;
+
+// ── Pagination constants ────────────────────────────────────────────────────
+// PAGE_SIZE matches the server-side default on both RPCs (5000). Bumping it
+// must be coordinated with worker_supabase since the RPC body bounds the
+// LIMIT clause; raising client-side without raising server-side has no effect.
+// MAX_OFFSET_SAFETY guards against runaway loops — at 5_000_000 rows the
+// largest sheet (Brasil) would still finish in ~1000 round-trips, well past
+// any realistic dataset size.
+const PAGE_SIZE = 5000;
+const MAX_OFFSET_SAFETY = 5_000_000;
 
 // ── Column definitions ──────────────────────────────────────────────────────
 // Shared base columns. The company sheets append `stake_pct`; the Brasil sheet
@@ -71,49 +96,100 @@ const COMPANY_COLUMNS: ColumnDef[] = [...BASE_COLUMNS, COMPANY_STAKE_COLUMN];
 // the dashboard's Period and Reference Month selectors do NOT scope the
 // export. Always full history at well granularity.
 
-async function fetchBrasilRows(): Promise<Record<string, unknown>[]> {
+async function fetchAllPagesBrasil(): Promise<Record<string, unknown>[]> {
   const sb = getSupabaseClient();
   if (!sb) return [];
-  const rows = await rpcGetProductionBrazilWellFullHistory(sb);
-  return rows as unknown as Record<string, unknown>[];
+  const all: ProductionWellFullHistoryRow[] = [];
+  let offset = 0;
+  for (;;) {
+    let chunk: ProductionWellFullHistoryRow[] = [];
+    try {
+      chunk = await rpcGetProductionBrazilWellFullHistory(sb, offset, PAGE_SIZE);
+    } catch (e) {
+      console.error("[wellByWell] Brasil page failed at offset", offset, e);
+      break;
+    }
+    if (chunk.length === 0) break;
+    all.push(...chunk);
+    if (chunk.length < PAGE_SIZE) break; // last page
+    offset += PAGE_SIZE;
+    if (offset > MAX_OFFSET_SAFETY) {
+      console.warn("[wellByWell] Brasil offset cap reached", offset);
+      break;
+    }
+  }
+  return all as unknown as Record<string, unknown>[];
 }
 
-async function fetchCompanyRows(empresa: string): Promise<Record<string, unknown>[]> {
+async function fetchAllPagesCompany(empresa: string): Promise<Record<string, unknown>[]> {
   const sb = getSupabaseClient();
   if (!sb) return [];
-  const rows = await rpcGetProductionWellFullHistory(sb, empresa);
-  return rows as unknown as Record<string, unknown>[];
+  const all: ProductionWellFullHistoryRow[] = [];
+  let offset = 0;
+  for (;;) {
+    let chunk: ProductionWellFullHistoryRow[] = [];
+    try {
+      chunk = await rpcGetProductionWellFullHistory(sb, empresa, offset, PAGE_SIZE);
+    } catch (e) {
+      console.error(`[wellByWell] Company '${empresa}' page failed at offset`, offset, e);
+      break;
+    }
+    if (chunk.length === 0) break;
+    all.push(...chunk);
+    if (chunk.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+    if (offset > MAX_OFFSET_SAFETY) {
+      console.warn(`[wellByWell] Company '${empresa}' offset cap reached`, offset);
+      break;
+    }
+  }
+  return all as unknown as Record<string, unknown>[];
 }
 
 // ── Sheets ──────────────────────────────────────────────────────────────────
+// Each rowsAsync is wrapped in try/catch so a single sheet failure does not
+// blank the workbook — failed sheets return [] and the workbook still ships.
 const sheets: SheetSpec[] = [
   {
     name: BRASIL_VIEW,
     title: "Brazil — Monthly production by well (full history)",
     columns: BRASIL_COLUMNS,
-    rowsAsync: () => fetchBrasilRows(),
+    rowsAsync: async () => {
+      try {
+        return await fetchAllPagesBrasil();
+      } catch (e) {
+        console.error("[wellByWell] Brasil sheet failed", e);
+        return [];
+      }
+    },
   },
   ...COMPANY_VIEWS.map<SheetSpec>((empresa) => ({
     name: empresa,
     title: `${empresa} — Monthly production by well (stake-weighted, full history)`,
     columns: COMPANY_COLUMNS,
-    rowsAsync: () => fetchCompanyRows(empresa),
+    rowsAsync: async () => {
+      try {
+        return await fetchAllPagesCompany(empresa);
+      } catch (e) {
+        console.error(`[wellByWell] Company sheet '${empresa}' failed`, e);
+        return [];
+      }
+    },
   })),
 ];
 
 // ── Modal size estimator ────────────────────────────────────────────────────
-// No dedicated count RPC exists — call all 5 row-fetching RPCs in parallel
-// and sum lengths. SizeEstimator debounces this to 300ms; under typical use
-// the estimator fires once on modal open and once again only if the user
-// flips between Excel / CSV.
+// Lightweight dedicated COUNT RPCs — see header comment for the rationale of
+// the change. SizeEstimator debounces this to 300ms; under typical use it
+// fires once on modal open and once again only if the user flips Excel ↔ CSV.
 async function countAllRows(): Promise<number> {
   const sb = getSupabaseClient();
   if (!sb) return 0;
-  const results = await Promise.all([
-    rpcGetProductionBrazilWellFullHistory(sb),
-    ...COMPANY_VIEWS.map((empresa) => rpcGetProductionWellFullHistory(sb, empresa)),
+  const counts = await Promise.all([
+    rpcGetProductionBrazilWellCount(sb),
+    ...COMPANY_VIEWS.map((empresa) => rpcGetProductionWellCount(sb, empresa)),
   ]);
-  return results.reduce((sum, arr) => sum + arr.length, 0);
+  return counts.reduce((sum, n) => sum + n, 0);
 }
 
 // ── Spec ────────────────────────────────────────────────────────────────────

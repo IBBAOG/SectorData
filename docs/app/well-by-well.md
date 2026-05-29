@@ -385,12 +385,16 @@ Spec: `src/lib/export/dashboards/wellByWell.ts` (`wellByWellExport`).
 
 **Backend RPCs** (owned by `worker_supabase`, shipped in parallel):
 
-- `get_production_brazil_well_full_history()` — Brasil sheet (no stake math).
-- `get_production_well_full_history(p_empresa text)` — one call per company sheet, stake-weighted.
+- `get_production_brazil_well_full_history(p_offset bigint DEFAULT 0, p_limit bigint DEFAULT 5000)` — Brasil sheet (no stake math), paginated.
+- `get_production_well_full_history(p_empresa text, p_offset bigint DEFAULT 0, p_limit bigint DEFAULT 5000)` — one call per company sheet, stake-weighted, paginated.
+- `get_production_brazil_well_count()` — Brasil sheet row count for the size estimator.
+- `get_production_well_count(p_empresa text)` — per-company row count for the size estimator.
 
-Both RPCs are `SECURITY DEFINER` granted to `anon + authenticated` (Pegadinha #18). They ignore the dashboard filters by design.
+All four RPCs are `SECURITY DEFINER` granted to `anon + authenticated` (Pegadinha #18). They ignore the dashboard filters by design.
 
-**Modal size estimator.** There is no dedicated count helper RPC; the estimator calls all 5 row-fetching RPCs in parallel and sums the resulting lengths. `SizeEstimator` debounces this to 300ms and only fires on modal open / format toggle, so the cost is bounded. Wrapper: `countAllRows()` in `src/lib/export/dashboards/wellByWell.ts`.
+**Pagination (P0 fix, 2026-05-29).** The full-history RPCs were rewired to accept `p_offset` + `p_limit` (default 5000) and the export spec now loops in 5000-row chunks until a short chunk arrives. Before the fix, PostgREST's default `max-rows = 1000` silently truncated the SETOF return — users were receiving an Excel file with only ~1000 rows total (and the Brasil sheet came out empty in production because its truncated chunk landed on a stale auth session). A hard offset safety cap (`MAX_OFFSET_SAFETY = 5_000_000`) guards against runaway loops. Each sheet's `rowsAsync` is wrapped in try/catch so a single sheet failure (e.g. one company RPC errors out) emits an empty rowset instead of blanking the entire workbook.
+
+**Modal size estimator (P0 fix, 2026-05-29).** Replaced the legacy implementation — which fetched all 5 row-RPCs in parallel just to read `.length` (slow, and itself capped at 1000 per RPC by PostgREST, so the estimate was 5–6× too low) — with 5 dedicated lightweight COUNT RPCs called in parallel. `SizeEstimator` still debounces to 300ms and only fires on modal open / format toggle, so the cost is bounded. Wrapper: `countAllRows()` in `src/lib/export/dashboards/wellByWell.ts`.
 
 **No charts in Excel.** Pure tabular export.
 
