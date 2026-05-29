@@ -18,11 +18,18 @@
 //   • get_production_brazil_well_count()           ← size estimator
 //   • get_production_well_count(p_empresa)         ← size estimator
 //
-// Pagination. PostgREST defaults `max-rows = 1000`, which silently truncated
-// the full-history SETOF return. We now loop in chunks of PAGE_SIZE (5000),
-// stopping as soon as a chunk shorter than PAGE_SIZE arrives. A hard offset
-// safety cap (MAX_OFFSET_SAFETY) prevents an infinite loop in case the RPC
-// ever misbehaves and returns full pages forever.
+// Pagination. PostgREST's `db-max-rows` cap (now raised to 50000 server-side
+// by worker_supabase, up from the default 1000) bounds every SETOF response.
+// We loop in chunks of PAGE_SIZE (50000, matching the cap) and stop ONLY on
+// an empty chunk — a partial chunk is NOT a reliable end-of-data signal,
+// because exactly-PAGE_SIZE rows remaining would still come back as a "full"
+// page and the next call would be the one that returns empty. Trusting
+// `chunk.length < PAGE_SIZE` (the old heuristic) misfired catastrophically
+// while the server cap was 1000: every chunk was capped at 1000, so the
+// short-chunk check tripped after page 1 and the export shipped with only
+// 1000 rows per sheet. A hard offset safety cap (MAX_OFFSET_SAFETY) prevents
+// an infinite loop in case the RPC ever misbehaves and returns full pages
+// forever.
 //
 // Resilience. Each sheet's rowsAsync is wrapped in try/catch so a single
 // sheet failure (e.g. one company RPC errors out) does not blank the entire
@@ -52,13 +59,16 @@ const BRASIL_VIEW = "Brasil";
 const COMPANY_VIEWS = ["Petrobras", "PRIO", "PetroReconcavo", "Brava Energia"] as const;
 
 // ── Pagination constants ────────────────────────────────────────────────────
-// PAGE_SIZE matches the server-side default on both RPCs (5000). Bumping it
-// must be coordinated with worker_supabase since the RPC body bounds the
-// LIMIT clause; raising client-side without raising server-side has no effect.
+// PAGE_SIZE matches the PostgREST `db-max-rows` cap (50000, raised from the
+// default 1000 by worker_supabase). Going above the cap has no effect — the
+// server will still truncate to the cap silently. Going below leaves perf on
+// the table (more round-trips than necessary). With ~2.2M Brasil rows this
+// is ~45 round-trips at ~500ms each ≈ ~22s for a full-history Brasil export,
+// which is acceptable for a Tier 2 modal-gated download.
 // MAX_OFFSET_SAFETY guards against runaway loops — at 5_000_000 rows the
-// largest sheet (Brasil) would still finish in ~1000 round-trips, well past
+// largest sheet (Brasil) would still finish in ~100 round-trips, well past
 // any realistic dataset size.
-const PAGE_SIZE = 5000;
+const PAGE_SIZE = 50000;
 const MAX_OFFSET_SAFETY = 5_000_000;
 
 // ── Column definitions ──────────────────────────────────────────────────────
@@ -109,9 +119,8 @@ async function fetchAllPagesBrasil(): Promise<Record<string, unknown>[]> {
       console.error("[wellByWell] Brasil page failed at offset", offset, e);
       break;
     }
-    if (chunk.length === 0) break;
+    if (chunk.length === 0) break; // end-of-data — partial chunks are NOT a reliable signal
     all.push(...chunk);
-    if (chunk.length < PAGE_SIZE) break; // last page
     offset += PAGE_SIZE;
     if (offset > MAX_OFFSET_SAFETY) {
       console.warn("[wellByWell] Brasil offset cap reached", offset);
@@ -134,9 +143,8 @@ async function fetchAllPagesCompany(empresa: string): Promise<Record<string, unk
       console.error(`[wellByWell] Company '${empresa}' page failed at offset`, offset, e);
       break;
     }
-    if (chunk.length === 0) break;
+    if (chunk.length === 0) break; // end-of-data — partial chunks are NOT a reliable signal
     all.push(...chunk);
-    if (chunk.length < PAGE_SIZE) break;
     offset += PAGE_SIZE;
     if (offset > MAX_OFFSET_SAFETY) {
       console.warn(`[wellByWell] Company '${empresa}' offset cap reached`, offset);
