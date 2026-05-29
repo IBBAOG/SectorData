@@ -3833,17 +3833,26 @@ export interface ProductionWellFullHistoryRow {
 }
 
 /**
- * Stake-weighted full history at well level for one company.
+ * Stake-weighted full history at well level for one company, paginated.
  * Returns one row per (ano, mes, campo, poço); values are scaled by the
  * company's stake in the field for that period. Used by the four company
  * sheets of the /well-by-well unified export.
+ *
+ * Pagination: the underlying RPC takes `p_offset` + `p_limit` to bypass
+ * PostgREST's default `max-rows=1000` truncation. Callers loop until a
+ * chunk shorter than `limit` arrives. See `fetchAllPagesCompany` in
+ * `src/lib/export/dashboards/wellByWell.ts`.
  */
 export async function rpcGetProductionWellFullHistory(
   supabase: SupabaseClient,
   empresa: string,
+  offset: number = 0,
+  limit: number = 5000,
 ): Promise<ProductionWellFullHistoryRow[]> {
   const { data, error } = await supabase.rpc("get_production_well_full_history", {
     p_empresa: empresa,
+    p_offset: offset,
+    p_limit: limit,
   });
   if (error) {
     console.error("get_production_well_full_history failed", error);
@@ -3884,16 +3893,24 @@ export async function rpcGetProductionWellFullHistory(
 }
 
 /**
- * Brazil-wide (100% WI) full history at well level. Returns one row per
- * (ano, mes, campo, poço) without stake math. Used by the Brasil sheet of
- * the /well-by-well unified export. `stake_pct` always coerces to 100.
+ * Brazil-wide (100% WI) full history at well level, paginated. Returns one
+ * row per (ano, mes, campo, poço) without stake math. Used by the Brasil
+ * sheet of the /well-by-well unified export. `stake_pct` always coerces to
+ * 100.
+ *
+ * Pagination: same scheme as `rpcGetProductionWellFullHistory` — `p_offset`
+ * + `p_limit` to bypass PostgREST `max-rows=1000` truncation. Callers loop
+ * until a chunk shorter than `limit` arrives. See `fetchAllPagesBrasil` in
+ * `src/lib/export/dashboards/wellByWell.ts`.
  */
 export async function rpcGetProductionBrazilWellFullHistory(
   supabase: SupabaseClient,
+  offset: number = 0,
+  limit: number = 5000,
 ): Promise<ProductionWellFullHistoryRow[]> {
   const { data, error } = await supabase.rpc(
     "get_production_brazil_well_full_history",
-    {},
+    { p_offset: offset, p_limit: limit },
   );
   if (error) {
     console.error("get_production_brazil_well_full_history failed", error);
@@ -3931,6 +3948,45 @@ export async function rpcGetProductionBrazilWellFullHistory(
     uptime_hs_mes: Number(r.uptime_hs_mes ?? 0),
     stake_pct:     Number(r.stake_pct ?? 100),
   }));
+}
+
+/**
+ * Lightweight count of stake-weighted well rows for one company. Used by the
+ * `/well-by-well` export modal's size estimator instead of pulling the full
+ * dataset just to read `.length` (which was both slow and truncated to 1000
+ * by PostgREST). Returns 0 on RPC error so the estimator degrades gracefully.
+ */
+export async function rpcGetProductionWellCount(
+  supabase: SupabaseClient,
+  empresa: string,
+): Promise<number> {
+  const { data, error } = await supabase.rpc("get_production_well_count", {
+    p_empresa: empresa,
+  });
+  if (error) {
+    console.error("get_production_well_count failed", error);
+    return 0;
+  }
+  return Number(data) || 0;
+}
+
+/**
+ * Lightweight count of Brazil-wide (100% WI) well rows. Companion to
+ * `rpcGetProductionWellCount`; used by the same size estimator for the
+ * Brasil sheet.
+ */
+export async function rpcGetProductionBrazilWellCount(
+  supabase: SupabaseClient,
+): Promise<number> {
+  const { data, error } = await supabase.rpc(
+    "get_production_brazil_well_count",
+    {},
+  );
+  if (error) {
+    console.error("get_production_brazil_well_count failed", error);
+    return 0;
+  }
+  return Number(data) || 0;
 }
 
 // ─── MODULE: Alerts (/alerts) ─────────────────────────────────────────────────
