@@ -18,6 +18,13 @@ import JSZip from "jszip";
 
 import type { CsvSpec, ColumnDef } from "../types";
 
+// UTF-8 BOM (U+FEFF). Excel on Windows opens CSV files as ANSI/CP1252 by
+// default; without the BOM, accented characters (ã, ç, ô, etc.) render as
+// mojibake. Prepending the BOM forces Excel to treat the file as UTF-8.
+// Applied to every CSV blob produced by this builder, including each entry
+// inside the zip-mode archive.
+const UTF8_BOM = "﻿";
+
 function nowDdMmYy(): string {
   const now = new Date();
   const dd = String(now.getDate()).padStart(2, "0");
@@ -74,7 +81,7 @@ export async function downloadCsv(
     const rows = await spec.rowsAsync(filters);
     if (rows.length === 0) return;
     const text = buildCsvText(spec.columns, rows);
-    const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob([UTF8_BOM + text], { type: "text/csv;charset=utf-8" });
     triggerDownload(blob, `${filename}_${dateStamp}.csv`);
     return;
   }
@@ -105,7 +112,7 @@ export async function downloadCsv(
     const columns: ColumnDef[] = [discCol, ...firstSheet.columns];
 
     const text = buildCsvText(columns, mergedRows);
-    const blob = new Blob([text], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob([UTF8_BOM + text], { type: "text/csv;charset=utf-8" });
     triggerDownload(blob, `${filename}_${dateStamp}.csv`);
     return;
   }
@@ -118,7 +125,7 @@ export async function downloadCsv(
     totalRows += rows.length;
     const text = buildCsvText(f.columns, rows);
     const safeName = f.name.endsWith(".csv") ? f.name : `${f.name}.csv`;
-    zip.file(safeName, text);
+    zip.file(safeName, UTF8_BOM + text);
   }
   if (totalRows === 0) return;
 
