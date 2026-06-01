@@ -654,10 +654,9 @@ export function useAnpGlpData(): UseAnpGlpData {
     if (!opcoes || !supabase || rankedPlayers.length > 0) return;
     let cancelled = false;
     (async () => {
-      try {
-        const ranked = await rpcGetAnpGlpMsOthersPlayers(supabase);
-        if (!cancelled) setRankedPlayers(ranked.map((r) => r.distribuidora));
-      } catch { /* silent */ }
+      // Wrapper already returns [] on error, so no try/catch is needed.
+      const ranked = await rpcGetAnpGlpMsOthersPlayers(supabase);
+      if (!cancelled) setRankedPlayers(ranked.map((r) => r.distribuidora));
     })();
     return () => { cancelled = true; };
   }, [opcoes, supabase, rankedPlayers.length]);
@@ -741,7 +740,9 @@ export function useAnpGlpData(): UseAnpGlpData {
     const ano_inicio = datas[a] ?? null;
     const ano_fim = datas[b] ?? null;
     const playersFinal =
-      competidoresSelected.length ? competidoresSelected : playersOptions;
+      competidoresSelected.length
+        ? competidoresSelected
+        : (mode === "Individual" ? individualDefaults : playersOptions);
     setAppliedFilters({
       ano_inicio,
       ano_fim,
@@ -751,7 +752,7 @@ export function useAnpGlpData(): UseAnpGlpData {
     });
     setShowToast(true);
     window.setTimeout(() => setShowToast(false), 2500);
-  }, [datas, sliderRange, competidoresSelected, playersOptions, mode]);
+  }, [datas, sliderRange, competidoresSelected, playersOptions, mode, individualDefaults]);
 
   const clearFilters = useCallback(() => {
     setAppliedFilters({});
