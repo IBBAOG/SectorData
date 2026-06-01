@@ -8,10 +8,10 @@ Owner: `worker_dash-stock-guide`. Reports to `worker_subgerente-app`.
 
 Equities-research module for the Brazilian Oil & Gas + Fuel Distribution coverage universe. Two analyses, one shared brain:
 
-1. **Comps table** — one row per covered company with the headline research numbers: target price, recommendation (OP/MP/UP), and six forward multiple pairs (EV/EBITDA, P/E, FCFE Yield, Div Yield, EBITDA, Volumes), each split into two forward years (`config.y1_label` / `config.y2_label`, e.g. 2026E / 2027E). **Market cap** and **upside** are computed LIVE (never stored).
+1. **Comps table** — one row per covered company with the headline research numbers: target price, recommendation (OP/MP/UP), and six forward column pairs (EV/EBITDA, P/E, FCFE Yield, Div Yield, EBITDA, Volumes), each split into two forward years (`config.y1_label` / `config.y2_label`, e.g. 2026E / 2027E). **Market cap**, **upside**, and the **four price-sensitive multiples (EV/EBITDA, P/E, FCFE Yield, Div Yield)** are computed LIVE (never stored) — see below. Only EBITDA and Volumes are direct data.
 2. **Per-company sensitivity** — a freeform 2D matrix (admin-defined axes/labels/cells) for the selected company, opened below the table (desktop) or in a BottomSheet (mobile).
 
-All multiples, targets, shares, sensitivities and config are **admin-only inputs** maintained in the Admin Panel → Stock Guide section (separate pass). Any company can be **hidden** (regulatory restriction); hidden companies are removed from the table and listed only by name in a "Currently restricted" footnote — their financials never reach a non-admin browser.
+Targets, shares, the **fundamentals** (net debt, EBITDA, net income, FCFE, dividends), volumes, sensitivities and config are **admin-only inputs** maintained in the Admin Panel → Stock Guide section. The four price-sensitive multiples are **NOT stored** — they are always derived live from the price + fundamentals (no admin override). Any company can be **hidden** (regulatory restriction); hidden companies are removed from the table and listed only by name in a "Currently restricted" footnote — their financials never reach a non-admin browser.
 
 Audience: **Client + Admin**, hidden from anonymous public (`is_visible_for_public=false`). One-click reconfigurable in Admin Panel → Permissions.
 
@@ -19,15 +19,22 @@ Slug / URL: `stock-guide` → `/stock-guide`. NavBar placement: **standalone top
 
 ## Live derivations (frontend, in the hook)
 
-Computed per visible row from the batched Yahoo quote — **not** stored server-side:
+Computed per visible row from the batched Yahoo quote + the admin-input fundamentals — **not** stored server-side. **All monetary inputs are BRL million**, so EV/EBITDA and P/E are dimensionless and the yields are ×100 for percent points.
 
 | Field | Formula | Null-safety |
 |---|---|---|
 | `livePrice` | `quote.regularMarketPrice` matched on `yahoo_symbol` (fallback `ticker`) | `null` if the quote is missing |
-| `marketCapBrlMn` | `shares_outstanding × livePrice / 1e6` (BRL million) | `null` if either input is `null` |
+| `marketCapBrlMn` | `shares_outstanding × livePrice / 1e6` (BRL mn) | `null` if either input is `null` |
 | `upsidePct` | `target_price / livePrice − 1` | `null` unless `livePrice > 0` and `target_price` present |
+| `evBrlMn` | `marketCapBrlMn + net_debt` (BRL mn). **Single, current** net debt used for both years; may be negative (net cash → lowers EV). | `null` if either input is `null` |
+| `evEbitdaY1` / `evEbitdaY2` | `evBrlMn / ebitda_yN` | `null` unless `ebitda_yN > 0` (EBITDA ≤ 0 → not meaningful → `—`) |
+| `peY1` / `peY2` | `marketCapBrlMn / net_income_yN` | `null` unless `net_income_yN > 0` (non-positive earnings → P/E not meaningful → `—`) |
+| `fcfeYieldY1` / `fcfeYieldY2` | `(fcfe_yN / marketCapBrlMn) × 100` percent | `null` unless `marketCapBrlMn > 0`; FCFE may be negative → negative yield shown |
+| `divYieldY1` / `divYieldY2` | `(dividends_yN / marketCapBrlMn) × 100` percent | `null` unless `marketCapBrlMn > 0` |
 
-All three render `—` (never `NaN`) when null. Market cap lands in BRL because `shares_outstanding` is the absolute share count from the valuation model and the live price is in BRL.
+Everything renders `—` (never `NaN`) when null. Every divide-by-zero / non-positive denominator is guarded. Market cap and EV land in BRL because `shares_outstanding` is the absolute share count and the live price is in BRL; net debt and the per-year fundamentals are all BRL mn. **EV convention:** `EV = Market cap + Net Debt` using the single current net-debt value for both forward years (the valuation model does not project a separate net-debt path). **No override:** the four multiples are *always* computed — there is no admin-stored fallback.
+
+The 4 live multiples render `—` while `quotesLoading` (they depend on the live price); EBITDA and Volumes are direct data and never gate on the quote.
 
 ### Live-quote wiring & cadence
 
@@ -37,11 +44,11 @@ All three render `—` (never `NaN`) when null. Market cap lands in BRL because 
 
 ## Data model — 3 tables
 
-Source-of-truth migration: `supabase/migrations/20260603200000_stock_guide.sql` (owner: `worker_supabase`, already applied live). Pattern cloned from `field_stakes` (admin-curated, RLS-enabled, reads via SECURITY DEFINER RPCs, writes gated by `is_admin()`).
+Source-of-truth migrations: `supabase/migrations/20260603200000_stock_guide.sql` (initial) + `supabase/migrations/20260603300000_stock_guide_fundamentals.sql` (2026-06-01 rework: stored multiples → fundamentals; owner: `worker_supabase`, both applied live). Pattern cloned from `field_stakes` (admin-curated, RLS-enabled, reads via SECURITY DEFINER RPCs, writes gated by `is_admin()`).
 
 | Table | PK | Key columns |
 |---|---|---|
-| `stock_guide_companies` | `ticker text` | `company_name`, `yahoo_symbol`, `sector` (`oil_gas`/`fuel_distribution`), `volume_unit` (`kbpd`/`thousand_m3`), `shares_outstanding numeric`, `last_update date`, `target_price numeric`, `recommendation` (`OP`/`MP`/`UP`/NULL), the six forward pairs `*_y1`/`*_y2` (ev_ebitda, pe, fcfe_yield, div_yield, ebitda, volumes), `is_visible boolean DEFAULT true`, `display_order int`, `updated_at`, `updated_by uuid` |
+| `stock_guide_companies` | `ticker text` | `company_name`, `yahoo_symbol`, `sector` (`oil_gas`/`fuel_distribution`), `volume_unit` (`kbpd`/`thousand_m3`), `shares_outstanding numeric`, `net_debt numeric` (single current value, BRL mn, may be negative = net cash), `last_update date`, `target_price numeric`, `recommendation` (`OP`/`MP`/`UP`/NULL), the FUNDAMENTALS `ebitda_y1/y2`, `net_income_y1/y2`, `fcfe_y1/y2` (FCFE value, not a yield), `dividends_y1/y2` (total dividends BRL mn), `volumes_y1/y2`, `is_visible boolean DEFAULT true`, `display_order int`, `updated_at`, `updated_by uuid`. **Dropped 2026-06-01:** the stored multiple pairs `ev_ebitda_*`, `pe_*`, `fcfe_yield_*`, `div_yield_*` (now derived live). |
 | `stock_guide_sensitivity` | `ticker text` (FK → companies, `ON DELETE CASCADE`) | `grid jsonb` of shape `{ row_axis_title, col_axis_title, value_label, row_labels[], col_labels[], cells[][] }` (`cells[r][c]`) |
 | `stock_guide_config` | `id int DEFAULT 1 CHECK (id=1)` (singleton) | `y1_label` (default `2026E`), `y2_label` (default `2027E`), `assumptions_note text`, `updated_at`, `updated_by` |
 
@@ -61,7 +68,7 @@ All reads are `SECURITY DEFINER SET search_path = public, pg_temp`; admin functi
 
 | RPC | Returns |
 |---|---|
-| `get_stock_guide_comps()` | `TABLE(ticker text, company_name text, is_visible boolean, display_order int, sector text, volume_unit text, yahoo_symbol text, shares_outstanding numeric, last_update date, target_price numeric, recommendation text, ev_ebitda_y1 numeric, ev_ebitda_y2 numeric, pe_y1 numeric, pe_y2 numeric, fcfe_yield_y1 numeric, fcfe_yield_y2 numeric, div_yield_y1 numeric, div_yield_y2 numeric, ebitda_y1 numeric, ebitda_y2 numeric, volumes_y1 numeric, volumes_y2 numeric)` |
+| `get_stock_guide_comps()` | `TABLE(ticker text, company_name text, is_visible boolean, display_order int, sector text, volume_unit text, yahoo_symbol text, shares_outstanding numeric, net_debt numeric, last_update date, target_price numeric, recommendation text, ebitda_y1 numeric, ebitda_y2 numeric, net_income_y1 numeric, net_income_y2 numeric, fcfe_y1 numeric, fcfe_y2 numeric, dividends_y1 numeric, dividends_y2 numeric, volumes_y1 numeric, volumes_y2 numeric)` |
 | `get_stock_guide_sensitivity(p_ticker text)` | `jsonb` grid (`{}` if hidden/non-admin) |
 | `get_stock_guide_config()` | `TABLE(y1_label text, y2_label text, assumptions_note text)` |
 
@@ -86,7 +93,7 @@ Single-writer section. All 10 wrappers coerce Postgres `numeric` (arrives as a s
 | `rpcAdminUpsertStockGuideConfig` | `Promise<void>` |
 | `rpcAdminDeleteStockGuideCompany` | `Promise<void>` |
 
-Types live in `src/types/stockGuide.ts`: `StockGuideCompany`, `StockGuideComputedRow` (adds `livePrice` / `marketCapBrlMn` / `upsidePct`), `SensitivityGrid`, `StockGuideConfig`, `StockGuideAdminCompany`, plus the enums `StockGuideSector` / `StockGuideVolumeUnit` / `StockGuideRecommendation`.
+Types live in `src/types/stockGuide.ts`: `StockGuideCompany` (raw comps row, now carrying the fundamentals `net_debt` / `net_income_y1/y2` / `fcfe_y1/y2` / `dividends_y1/y2` instead of the dropped stored multiples), `StockGuideComputedRow` (adds `livePrice` / `marketCapBrlMn` / `upsidePct` / `evBrlMn` / `evEbitdaY1/Y2` / `peY1/Y2` / `fcfeYieldY1/Y2` / `divYieldY1/Y2`), `SensitivityGrid`, `StockGuideConfig`, `StockGuideAdminCompany`, plus the enums `StockGuideSector` / `StockGuideVolumeUnit` / `StockGuideRecommendation`.
 
 ## UI
 
@@ -136,3 +143,4 @@ src/lib/rpc.ts                # § "MODULE: Stock Guide" — all 10 wrappers (si
 
 - **2026-06-01** — Dashboard frontend created (this PRD). `worker_subgerente-app` authored the rpc.ts wrappers + types + the dual-view dashboard + NavBar "Equities" group; DB layer (3 tables + 10 RPCs + seed) was pre-built and applied live by `worker_supabase` (`20260603200000_stock_guide.sql`). The Admin Panel → Stock Guide CRUD section is a separate follow-up pass that consumes the admin wrappers + types defined here. Audience: Client + Admin, public-hidden. Live market cap/upside via the existing Yahoo proxy (one-shot fetch + manual refresh, no polling).
 - **2026-06-01** — NavBar promotion: `/stock-guide` moved out of the "Oil & Gas" mega-menu (the "Equities" group was removed) and is now a **standalone top-level NavBar entry** ("Stock Guide"), placed immediately before "Market Watch" — coverage spans fuel distributors too, so it isn't exclusive to Oil & Gas. Plain text `nav-link` like Market Watch / News Hunter (no glyph). Per-slug visibility gating unchanged (`is_visible_for_public=false`, Client + Admin).
+- **2026-06-01** — **Derived-multiples rework.** The 4 price-sensitive multiples (EV/EBITDA, P/E, FCFE Yield, Div Yield) are no longer admin-typed numbers — they are now **derived LIVE in the browser** (`useStockGuideData.ts`) from the Yahoo price + admin-input **fundamentals**. DB layer reworked by `worker_supabase` (`supabase/migrations/20260603300000_stock_guide_fundamentals.sql`, applied live): `stock_guide_companies` dropped `ev_ebitda_*` / `pe_*` / `fcfe_yield_*` / `div_yield_*` and added `net_debt` (single current value, BRL mn, may be negative) + `net_income_y1/y2` + `fcfe_y1/y2` (FCFE value) + `dividends_y1/y2` (all BRL mn); `get_stock_guide_comps()` / `admin_get_stock_guide_companies()` / `admin_upsert_stock_guide_company()` re-signed accordingly. Frontend: `src/types/stockGuide.ts` (raw row swaps multiples→fundamentals; `StockGuideComputedRow` gains `evBrlMn` + the 8 multiple fields), `src/lib/rpc.ts` § Stock Guide (mapper + upsert docstring), the hook's per-row derivation (`EV = Market cap + Net Debt`, dimensionless multiples, ×100 yields, all null-safe with guarded denominators), both `desktop/View.tsx` + `mobile/View.tsx` (the EV/EBITDA · P/E · FCFE Yield · Div Yield cells now read the computed values + show `—` while quotes load; columns otherwise unchanged), and the Admin Panel editor (`useAdminPanelData.ts` + `admin-panel/desktop/View.tsx`): the 4 stored-multiple input groups were replaced by a single Net Debt input + per-year Net Income / FCFE / Dividends inputs, with a hint that the 4 multiples are computed live. Dual-view binding honored (same change in both views). Audience/visibility unchanged.

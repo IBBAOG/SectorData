@@ -120,24 +120,28 @@ interface MiniRow {
   y1: number | null;
   y2: number | null;
   fmt: (v: number | null) => string;
+  /** True for the 4 live-derived multiples → render "—" while quotes load. */
+  live?: boolean;
 }
 
 function MiniMultiples({
   row,
   y1Label,
   y2Label,
+  quotesLoading,
 }: {
   row: StockGuideComputedRow;
   y1Label: string;
   y2Label: string;
+  quotesLoading: boolean;
 }): React.ReactElement {
   const miniRows: MiniRow[] = [
-    { label: "EV/EBITDA",  y1: row.ev_ebitda_y1,  y2: row.ev_ebitda_y2,  fmt: (v) => fmtNum(v, 1) },
-    { label: "P/E",        y1: row.pe_y1,         y2: row.pe_y2,         fmt: (v) => fmtNum(v, 1) },
-    { label: "FCFE Yield", y1: row.fcfe_yield_y1, y2: row.fcfe_yield_y2, fmt: (v) => fmtPct(v, 1) },
-    { label: "Div Yield",  y1: row.div_yield_y1,  y2: row.div_yield_y2,  fmt: (v) => fmtPct(v, 1) },
-    { label: "EBITDA",     y1: row.ebitda_y1,     y2: row.ebitda_y2,     fmt: (v) => fmtMn(v) },
-    { label: "Volumes",    y1: row.volumes_y1,    y2: row.volumes_y2,    fmt: (v) => fmtMn(v) },
+    { label: "EV/EBITDA",  y1: row.evEbitdaY1,  y2: row.evEbitdaY2,  fmt: (v) => fmtNum(v, 1), live: true },
+    { label: "P/E",        y1: row.peY1,        y2: row.peY2,        fmt: (v) => fmtNum(v, 1), live: true },
+    { label: "FCFE Yield", y1: row.fcfeYieldY1, y2: row.fcfeYieldY2, fmt: (v) => fmtPct(v, 1), live: true },
+    { label: "Div Yield",  y1: row.divYieldY1,  y2: row.divYieldY2,  fmt: (v) => fmtPct(v, 1), live: true },
+    { label: "EBITDA",     y1: row.ebitda_y1,   y2: row.ebitda_y2,   fmt: (v) => fmtMn(v) },
+    { label: "Volumes",    y1: row.volumes_y1,  y2: row.volumes_y2,  fmt: (v) => fmtMn(v) },
   ];
   return (
     <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", marginTop: 10 }}>
@@ -183,20 +187,25 @@ function MiniMultiples({
               >
                 {yl}
               </td>
-              {miniRows.map((m) => (
-                <td
-                  key={m.label}
-                  style={{
-                    textAlign: "right",
-                    padding: "3px 8px",
-                    fontVariantNumeric: "tabular-nums",
-                    color: "var(--mobile-text)",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {m.fmt(idx === 0 ? m.y1 : m.y2)}
-                </td>
-              ))}
+              {miniRows.map((m) => {
+                const v = idx === 0 ? m.y1 : m.y2;
+                // Live-derived multiples show "—" while quotes load.
+                const gate = m.live === true && quotesLoading;
+                return (
+                  <td
+                    key={m.label}
+                    style={{
+                      textAlign: "right",
+                      padding: "3px 8px",
+                      fontVariantNumeric: "tabular-nums",
+                      color: "var(--mobile-text)",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {gate && v == null ? "—" : m.fmt(v)}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>
@@ -289,7 +298,7 @@ function CompsCard({
       </div>
 
       {/* Y1/Y2 multiples mini-table */}
-      <MiniMultiples row={row} y1Label={y1Label} y2Label={y2Label} />
+      <MiniMultiples row={row} y1Label={y1Label} y2Label={y2Label} quotesLoading={quotesLoading} />
 
       <div style={{ marginTop: 8, fontSize: 11, color: "var(--mobile-accent)", fontWeight: 600 }}>
         Tap for sensitivity →
@@ -610,7 +619,9 @@ export default function MobileView(): React.ReactElement {
             )}
             <div>{VOLUME_UNIT_NOTE}</div>
             <div style={{ marginTop: 4 }}>
-              Market cap and upside are computed live from the latest available price (BRL).
+              Market cap, upside, EV/EBITDA, P/E, FCFE Yield and Div Yield are
+              computed live from the latest available price (BRL) and the research
+              fundamentals.
             </div>
             {restrictedNames.length > 0 && (
               <div style={{ marginTop: 6 }}>

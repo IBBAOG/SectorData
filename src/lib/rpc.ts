@@ -4045,16 +4045,15 @@ function mapStockGuideCompany(r: Record<string, unknown>): StockGuideCompany {
     target_price: toNumOrNull(r.target_price),
     recommendation:
       (r.recommendation as StockGuideCompany["recommendation"]) ?? null,
-    ev_ebitda_y1: toNumOrNull(r.ev_ebitda_y1),
-    ev_ebitda_y2: toNumOrNull(r.ev_ebitda_y2),
-    pe_y1: toNumOrNull(r.pe_y1),
-    pe_y2: toNumOrNull(r.pe_y2),
-    fcfe_yield_y1: toNumOrNull(r.fcfe_yield_y1),
-    fcfe_yield_y2: toNumOrNull(r.fcfe_yield_y2),
-    div_yield_y1: toNumOrNull(r.div_yield_y1),
-    div_yield_y2: toNumOrNull(r.div_yield_y2),
+    net_debt: toNumOrNull(r.net_debt),
     ebitda_y1: toNumOrNull(r.ebitda_y1),
     ebitda_y2: toNumOrNull(r.ebitda_y2),
+    net_income_y1: toNumOrNull(r.net_income_y1),
+    net_income_y2: toNumOrNull(r.net_income_y2),
+    fcfe_y1: toNumOrNull(r.fcfe_y1),
+    fcfe_y2: toNumOrNull(r.fcfe_y2),
+    dividends_y1: toNumOrNull(r.dividends_y1),
+    dividends_y2: toNumOrNull(r.dividends_y2),
     volumes_y1: toNumOrNull(r.volumes_y1),
     volumes_y2: toNumOrNull(r.volumes_y2),
   };
@@ -4190,10 +4189,14 @@ export async function rpcAdminGetStockGuideSensitivity(
 
 /**
  * Per-company upsert (`ON CONFLICT (ticker) DO UPDATE`). `data` is a plain JS
- * object whose keys mirror the comps columns (company_name, yahoo_symbol,
+ * object whose keys mirror the comps columns: company_name, yahoo_symbol,
  * sector, volume_unit, shares_outstanding, last_update, target_price,
- * recommendation, the Y1/Y2 pairs, display_order, is_visible). Passed as JSONB.
- * The server coerces numerics and sets `updated_by = auth.uid()`.
+ * recommendation, display_order, and the FUNDAMENTALS — `net_debt` (single,
+ * current), `ebitda_y1/y2`, `net_income_y1/y2`, `fcfe_y1/y2`, `dividends_y1/y2`,
+ * `volumes_y1/y2`. The 4 price-sensitive multiples (EV/EBITDA, P/E, FCFE Yield,
+ * Div Yield) are NOT stored — they are derived live in the dashboard from the
+ * Yahoo price + these inputs. Never send `is_visible` (separate toggle RPC).
+ * Passed as JSONB; the server coerces numerics and sets `updated_by = auth.uid()`.
  *
  * Backed by SECURITY DEFINER RPC `admin_upsert_stock_guide_company`.
  */

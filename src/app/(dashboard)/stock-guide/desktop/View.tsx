@@ -116,15 +116,21 @@ interface PairGroup {
   y2: keyof StockGuideComputedRow;
   /** Renderer for a single value of this group. */
   fmt: (v: number | null) => string;
+  /**
+   * True for the 4 price-sensitive multiples (EV/EBITDA, P/E, FCFE Yield,
+   * Div Yield) — derived live from the Yahoo price, so they render "—" while
+   * quotes load. EBITDA / Volumes are direct data → never gated on the quote.
+   */
+  live?: boolean;
 }
 
 const PAIR_GROUPS: PairGroup[] = [
-  { label: "EV/EBITDA",  y1: "ev_ebitda_y1",  y2: "ev_ebitda_y2",  fmt: (v) => fmtNum(v, 1) },
-  { label: "P/E",        y1: "pe_y1",         y2: "pe_y2",         fmt: (v) => fmtNum(v, 1) },
-  { label: "FCFE Yield", y1: "fcfe_yield_y1", y2: "fcfe_yield_y2", fmt: (v) => fmtPct(v, 1) },
-  { label: "Div Yield",  y1: "div_yield_y1",  y2: "div_yield_y2",  fmt: (v) => fmtPct(v, 1) },
-  { label: "EBITDA",     y1: "ebitda_y1",     y2: "ebitda_y2",     fmt: (v) => fmtMn(v) },
-  { label: "Volumes",    y1: "volumes_y1",    y2: "volumes_y2",    fmt: (v) => fmtMn(v) },
+  { label: "EV/EBITDA",  y1: "evEbitdaY1",  y2: "evEbitdaY2",  fmt: (v) => fmtNum(v, 1), live: true },
+  { label: "P/E",        y1: "peY1",        y2: "peY2",        fmt: (v) => fmtNum(v, 1), live: true },
+  { label: "FCFE Yield", y1: "fcfeYieldY1", y2: "fcfeYieldY2", fmt: (v) => fmtPct(v, 1), live: true },
+  { label: "Div Yield",  y1: "divYieldY1",  y2: "divYieldY2",  fmt: (v) => fmtPct(v, 1), live: true },
+  { label: "EBITDA",     y1: "ebitda_y1",   y2: "ebitda_y2",   fmt: (v) => fmtMn(v) },
+  { label: "Volumes",    y1: "volumes_y1",  y2: "volumes_y2",  fmt: (v) => fmtMn(v) },
 ];
 
 // Single (non-paired) leading columns, after the sticky Company column.
@@ -315,17 +321,24 @@ function CompsTable({
                   <td style={TD_BASE}>
                     {quotesLoading && r.marketCapBrlMn == null ? "—" : fmtMn(r.marketCapBrlMn)}
                   </td>
-                  {PAIR_GROUPS.map((g) => [
-                    <td
-                      key={`${g.label}-y1`}
-                      style={{ ...TD_BASE, borderLeft: GROUP_RULE }}
-                    >
-                      {g.fmt(r[g.y1] as number | null)}
-                    </td>,
-                    <td key={`${g.label}-y2`} style={TD_BASE}>
-                      {g.fmt(r[g.y2] as number | null)}
-                    </td>,
-                  ])}
+                  {PAIR_GROUPS.map((g) => {
+                    // Live-derived multiples show "—" while quotes load (they
+                    // depend on the live price); direct-data groups never gate.
+                    const gate = g.live === true && quotesLoading;
+                    const v1 = r[g.y1] as number | null;
+                    const v2 = r[g.y2] as number | null;
+                    return [
+                      <td
+                        key={`${g.label}-y1`}
+                        style={{ ...TD_BASE, borderLeft: GROUP_RULE }}
+                      >
+                        {gate && v1 == null ? "—" : g.fmt(v1)}
+                      </td>,
+                      <td key={`${g.label}-y2`} style={TD_BASE}>
+                        {gate && v2 == null ? "—" : g.fmt(v2)}
+                      </td>,
+                    ];
+                  })}
                 </tr>
               );
             })
@@ -683,8 +696,10 @@ export default function DesktopView(): React.ReactElement {
                 )}
                 <div>{VOLUME_UNIT_NOTE}</div>
                 <div>
-                  Market cap and upside are computed live from the latest available
-                  price (BRL). Multiples and targets are research inputs.
+                  Market cap, upside, EV/EBITDA, P/E, FCFE Yield and Div Yield are
+                  computed live from the latest available price (BRL) and the
+                  research fundamentals (net debt, EBITDA, net income, FCFE,
+                  dividends). EBITDA, volumes and the target price are research inputs.
                 </div>
                 {restrictedNames.length > 0 && (
                   <div style={{ marginTop: 4 }}>

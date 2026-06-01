@@ -308,6 +308,7 @@ export function useStockGuideData(): UseStockGuideData {
 
     return scoped.map((r) => {
       const livePrice = livePriceFor(r);
+      // Market cap (BRL mn) = absolute share count × live BRL price / 1e6.
       const marketCapBrlMn =
         r.shares_outstanding != null && livePrice != null
           ? (r.shares_outstanding * livePrice) / 1e6
@@ -316,7 +317,75 @@ export function useStockGuideData(): UseStockGuideData {
         r.target_price != null && livePrice != null && livePrice > 0
           ? r.target_price / livePrice - 1
           : null;
-      return { ...r, livePrice, marketCapBrlMn, upsidePct };
+
+      // ── Live derivation of the 4 price-sensitive multiples ────────────────
+      // All monetary inputs are BRL mn → EV/EBITDA and P/E are dimensionless;
+      // the yields are ×100 for percent points. Every denominator is guarded:
+      // EBITDA≤0 and Net income≤0 → null (multiple not meaningful); market cap
+      // must be > 0 for the yields. Null-safe throughout → renders "—", no NaN.
+
+      // EV = market cap + (single, current) net debt. Net debt may be negative
+      // (net cash), which legitimately lowers EV.
+      const evBrlMn =
+        marketCapBrlMn != null && r.net_debt != null
+          ? marketCapBrlMn + r.net_debt
+          : null;
+
+      const evEbitdaY1 =
+        evBrlMn != null && r.ebitda_y1 != null && r.ebitda_y1 > 0
+          ? evBrlMn / r.ebitda_y1
+          : null;
+      const evEbitdaY2 =
+        evBrlMn != null && r.ebitda_y2 != null && r.ebitda_y2 > 0
+          ? evBrlMn / r.ebitda_y2
+          : null;
+
+      // P/E is not meaningful for non-positive earnings → null.
+      const peY1 =
+        marketCapBrlMn != null && r.net_income_y1 != null && r.net_income_y1 > 0
+          ? marketCapBrlMn / r.net_income_y1
+          : null;
+      const peY2 =
+        marketCapBrlMn != null && r.net_income_y2 != null && r.net_income_y2 > 0
+          ? marketCapBrlMn / r.net_income_y2
+          : null;
+
+      // FCFE yield = FCFE / market cap × 100. FCFE may be negative → negative
+      // yield is fine to show; only require market cap > 0.
+      const fcfeYieldY1 =
+        r.fcfe_y1 != null && marketCapBrlMn != null && marketCapBrlMn > 0
+          ? (r.fcfe_y1 / marketCapBrlMn) * 100
+          : null;
+      const fcfeYieldY2 =
+        r.fcfe_y2 != null && marketCapBrlMn != null && marketCapBrlMn > 0
+          ? (r.fcfe_y2 / marketCapBrlMn) * 100
+          : null;
+
+      // Dividend yield = total dividends / market cap × 100.
+      const divYieldY1 =
+        r.dividends_y1 != null && marketCapBrlMn != null && marketCapBrlMn > 0
+          ? (r.dividends_y1 / marketCapBrlMn) * 100
+          : null;
+      const divYieldY2 =
+        r.dividends_y2 != null && marketCapBrlMn != null && marketCapBrlMn > 0
+          ? (r.dividends_y2 / marketCapBrlMn) * 100
+          : null;
+
+      return {
+        ...r,
+        livePrice,
+        marketCapBrlMn,
+        upsidePct,
+        evBrlMn,
+        evEbitdaY1,
+        evEbitdaY2,
+        peY1,
+        peY2,
+        fcfeYieldY1,
+        fcfeYieldY2,
+        divYieldY1,
+        divYieldY2,
+      };
     });
     // priceByKey captures the quote dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -390,14 +459,14 @@ export function useStockGuideData(): UseStockGuideData {
           { header: "Live price",         key: "livePrice",     width: 12, format: "0.00", align: "center" },
           { header: "Upside %",           value: (r) => (r.upsidePct as number | null) != null ? (r.upsidePct as number) * 100 : null, width: 11, format: "0.0", align: "center" },
           { header: "Market cap (BRL mn)", key: "marketCapBrlMn", width: 18, format: "#,##0", align: "center" },
-          { header: `EV/EBITDA ${y1}`,    key: "ev_ebitda_y1",  width: 14, format: "0.0", align: "center" },
-          { header: `EV/EBITDA ${y2}`,    key: "ev_ebitda_y2",  width: 14, format: "0.0", align: "center" },
-          { header: `P/E ${y1}`,          key: "pe_y1",         width: 11, format: "0.0", align: "center" },
-          { header: `P/E ${y2}`,          key: "pe_y2",         width: 11, format: "0.0", align: "center" },
-          { header: `FCFE Yield ${y1} %`, key: "fcfe_yield_y1", width: 16, format: "0.0", align: "center" },
-          { header: `FCFE Yield ${y2} %`, key: "fcfe_yield_y2", width: 16, format: "0.0", align: "center" },
-          { header: `Div Yield ${y1} %`,  key: "div_yield_y1",  width: 15, format: "0.0", align: "center" },
-          { header: `Div Yield ${y2} %`,  key: "div_yield_y2",  width: 15, format: "0.0", align: "center" },
+          { header: `EV/EBITDA ${y1}`,    key: "evEbitdaY1",    width: 14, format: "0.0", align: "center" },
+          { header: `EV/EBITDA ${y2}`,    key: "evEbitdaY2",    width: 14, format: "0.0", align: "center" },
+          { header: `P/E ${y1}`,          key: "peY1",          width: 11, format: "0.0", align: "center" },
+          { header: `P/E ${y2}`,          key: "peY2",          width: 11, format: "0.0", align: "center" },
+          { header: `FCFE Yield ${y1} %`, key: "fcfeYieldY1",   width: 16, format: "0.0", align: "center" },
+          { header: `FCFE Yield ${y2} %`, key: "fcfeYieldY2",   width: 16, format: "0.0", align: "center" },
+          { header: `Div Yield ${y1} %`,  key: "divYieldY1",    width: 15, format: "0.0", align: "center" },
+          { header: `Div Yield ${y2} %`,  key: "divYieldY2",    width: 15, format: "0.0", align: "center" },
           { header: `EBITDA ${y1} (mn)`,  key: "ebitda_y1",     width: 16, format: "#,##0", align: "center" },
           { header: `EBITDA ${y2} (mn)`,  key: "ebitda_y2",     width: 16, format: "#,##0", align: "center" },
           { header: `Volumes ${y1}`,      key: "volumes_y1",    width: 13, format: "#,##0", align: "center" },
@@ -427,14 +496,15 @@ export function useStockGuideData(): UseStockGuideData {
           live_price: r.livePrice,
           upside_pct: r.upsidePct != null ? r.upsidePct * 100 : null,
           market_cap_brl_mn: r.marketCapBrlMn,
-          [`ev_ebitda_${y1}`]: r.ev_ebitda_y1,
-          [`ev_ebitda_${y2}`]: r.ev_ebitda_y2,
-          [`pe_${y1}`]: r.pe_y1,
-          [`pe_${y2}`]: r.pe_y2,
-          [`fcfe_yield_${y1}`]: r.fcfe_yield_y1,
-          [`fcfe_yield_${y2}`]: r.fcfe_yield_y2,
-          [`div_yield_${y1}`]: r.div_yield_y1,
-          [`div_yield_${y2}`]: r.div_yield_y2,
+          ev_brl_mn: r.evBrlMn,
+          [`ev_ebitda_${y1}`]: r.evEbitdaY1,
+          [`ev_ebitda_${y2}`]: r.evEbitdaY2,
+          [`pe_${y1}`]: r.peY1,
+          [`pe_${y2}`]: r.peY2,
+          [`fcfe_yield_${y1}`]: r.fcfeYieldY1,
+          [`fcfe_yield_${y2}`]: r.fcfeYieldY2,
+          [`div_yield_${y1}`]: r.divYieldY1,
+          [`div_yield_${y2}`]: r.divYieldY2,
           [`ebitda_${y1}`]: r.ebitda_y1,
           [`ebitda_${y2}`]: r.ebitda_y2,
           [`volumes_${y1}`]: r.volumes_y1,

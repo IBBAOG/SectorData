@@ -119,6 +119,11 @@ export type {
 // `p_data` payload at save time. `ticker` doubles as the upsert key — it is set
 // when a row is loaded and stays read-only for existing companies. `is_visible`
 // is NOT part of this shape (it is the separate toggle RPC).
+//
+// FUNDAMENTALS, not multiples: the admin enters net debt (single, current),
+// EBITDA, net income, FCFE and dividends per forward year. The 4 price-sensitive
+// multiples (EV/EBITDA, P/E, FCFE Yield, Div Yield) are derived LIVE in the
+// /stock-guide dashboard from the Yahoo price + these inputs — never entered here.
 export interface SgEditorRow {
   ticker: string;
   company_name: string;
@@ -126,19 +131,19 @@ export interface SgEditorRow {
   sector: StockGuideSector;
   volume_unit: "kbpd" | "thousand_m3";
   shares_outstanding: string;
+  /** Current net debt (BRL mn); single value used for both years. May be < 0. */
+  net_debt: string;
   last_update: string;
   target_price: string;
   recommendation: "" | "OP" | "MP" | "UP";
-  ev_ebitda_y1: string;
-  ev_ebitda_y2: string;
-  pe_y1: string;
-  pe_y2: string;
-  fcfe_yield_y1: string;
-  fcfe_yield_y2: string;
-  div_yield_y1: string;
-  div_yield_y2: string;
   ebitda_y1: string;
   ebitda_y2: string;
+  net_income_y1: string;
+  net_income_y2: string;
+  fcfe_y1: string;
+  fcfe_y2: string;
+  dividends_y1: string;
+  dividends_y2: string;
   volumes_y1: string;
   volumes_y2: string;
   display_order: string;
@@ -178,19 +183,18 @@ function adminCompanyToEditorRow(c: StockGuideAdminCompany): SgEditorRow {
     sector: (c.sector ?? "oil_gas") as StockGuideSector,
     volume_unit: (c.volume_unit ?? "kbpd") as "kbpd" | "thousand_m3",
     shares_outstanding: numToStr(c.shares_outstanding),
+    net_debt: numToStr(c.net_debt),
     last_update: c.last_update ?? "",
     target_price: numToStr(c.target_price),
     recommendation: c.recommendation ?? "",
-    ev_ebitda_y1: numToStr(c.ev_ebitda_y1),
-    ev_ebitda_y2: numToStr(c.ev_ebitda_y2),
-    pe_y1: numToStr(c.pe_y1),
-    pe_y2: numToStr(c.pe_y2),
-    fcfe_yield_y1: numToStr(c.fcfe_yield_y1),
-    fcfe_yield_y2: numToStr(c.fcfe_yield_y2),
-    div_yield_y1: numToStr(c.div_yield_y1),
-    div_yield_y2: numToStr(c.div_yield_y2),
     ebitda_y1: numToStr(c.ebitda_y1),
     ebitda_y2: numToStr(c.ebitda_y2),
+    net_income_y1: numToStr(c.net_income_y1),
+    net_income_y2: numToStr(c.net_income_y2),
+    fcfe_y1: numToStr(c.fcfe_y1),
+    fcfe_y2: numToStr(c.fcfe_y2),
+    dividends_y1: numToStr(c.dividends_y1),
+    dividends_y2: numToStr(c.dividends_y2),
     volumes_y1: numToStr(c.volumes_y1),
     volumes_y2: numToStr(c.volumes_y2),
     display_order: numToStr(c.display_order),
@@ -1447,19 +1451,18 @@ export function useAdminPanelData(): UseAdminPanelData {
         sector: r.sector,
         volume_unit: r.volume_unit,
         shares_outstanding: strToNum(r.shares_outstanding),
+        net_debt: strToNum(r.net_debt),
         last_update: r.last_update.trim() === "" ? null : r.last_update,
         target_price: strToNum(r.target_price),
         recommendation: r.recommendation === "" ? null : r.recommendation,
-        ev_ebitda_y1: strToNum(r.ev_ebitda_y1),
-        ev_ebitda_y2: strToNum(r.ev_ebitda_y2),
-        pe_y1: strToNum(r.pe_y1),
-        pe_y2: strToNum(r.pe_y2),
-        fcfe_yield_y1: strToNum(r.fcfe_yield_y1),
-        fcfe_yield_y2: strToNum(r.fcfe_yield_y2),
-        div_yield_y1: strToNum(r.div_yield_y1),
-        div_yield_y2: strToNum(r.div_yield_y2),
         ebitda_y1: strToNum(r.ebitda_y1),
         ebitda_y2: strToNum(r.ebitda_y2),
+        net_income_y1: strToNum(r.net_income_y1),
+        net_income_y2: strToNum(r.net_income_y2),
+        fcfe_y1: strToNum(r.fcfe_y1),
+        fcfe_y2: strToNum(r.fcfe_y2),
+        dividends_y1: strToNum(r.dividends_y1),
+        dividends_y2: strToNum(r.dividends_y2),
         volumes_y1: strToNum(r.volumes_y1),
         volumes_y2: strToNum(r.volumes_y2),
         display_order: strToNum(r.display_order) ?? 0,

@@ -269,10 +269,10 @@ export default function DesktopView(): React.ReactElement | null {
     outline: "none", boxSizing: "border-box",
   };
   type SgNumericField =
-    | "shares_outstanding" | "target_price" | "display_order"
-    | "ev_ebitda_y1" | "ev_ebitda_y2" | "pe_y1" | "pe_y2"
-    | "fcfe_yield_y1" | "fcfe_yield_y2" | "div_yield_y1" | "div_yield_y2"
-    | "ebitda_y1" | "ebitda_y2" | "volumes_y1" | "volumes_y2";
+    | "shares_outstanding" | "net_debt" | "target_price" | "display_order"
+    | "ebitda_y1" | "ebitda_y2" | "net_income_y1" | "net_income_y2"
+    | "fcfe_y1" | "fcfe_y2" | "dividends_y1" | "dividends_y2"
+    | "volumes_y1" | "volumes_y2";
   const renderSgNumField = (
     field: SgNumericField,
     label: string,
@@ -2226,22 +2226,34 @@ export default function DesktopView(): React.ReactElement | null {
                           </label>
                           {renderSgNumField("target_price", "Target price")}
                           {renderSgNumField("display_order", "Display order", { step: 1, placeholder: "0" })}
-                          <div style={{ gridColumn: "1 / -1" }}>
-                            {renderSgNumField("shares_outstanding", "Shares outstanding (absolute)", {
-                              hint: "used for Market cap = shares × live price",
-                            })}
-                          </div>
+                          {renderSgNumField("shares_outstanding", "Shares outstanding (absolute)", {
+                            hint: "used for Market cap = shares × live price",
+                          })}
+                          {renderSgNumField("net_debt", "Net Debt (BRL mn, current; negative = net cash)", {
+                            hint: "single value, used for both years — EV = Market cap + Net Debt",
+                          })}
                         </div>
 
-                        {/* Forward-pair groups */}
+                        {/* Live-derivation hint */}
+                        <div style={{
+                          marginTop: 14, padding: "9px 12px", borderRadius: 8,
+                          background: "rgba(255,80,0,0.06)", border: "1px solid rgba(255,80,0,0.18)",
+                          color: "#9a4a23", fontSize: 11.5, lineHeight: 1.5,
+                        }}>
+                          EV/EBITDA, P/E, FCFE Yield and Div Yield are computed <strong>live</strong>{" "}
+                          in the dashboard from the live price + these fundamentals — they are{" "}
+                          <strong>not</strong> entered here. Enter EBITDA, Net Income, FCFE and
+                          Dividends per year (all BRL mn) below.
+                        </div>
+
+                        {/* Forward-pair groups (fundamentals) */}
                         <div style={{ marginTop: 18 }}>
                           {([
-                            { label: "EV/EBITDA",       y1: "ev_ebitda_y1" as const,  y2: "ev_ebitda_y2" as const },
-                            { label: "P/E",             y1: "pe_y1" as const,         y2: "pe_y2" as const },
-                            { label: "FCFE Yield (%)",  y1: "fcfe_yield_y1" as const, y2: "fcfe_yield_y2" as const },
-                            { label: "Div Yield (%)",   y1: "div_yield_y1" as const,  y2: "div_yield_y2" as const },
-                            { label: "EBITDA (BRL mn)", y1: "ebitda_y1" as const,     y2: "ebitda_y2" as const },
-                            { label: "Volumes",         y1: "volumes_y1" as const,    y2: "volumes_y2" as const },
+                            { label: "EBITDA (BRL mn)",     y1: "ebitda_y1" as const,     y2: "ebitda_y2" as const },
+                            { label: "Net Income (BRL mn)", y1: "net_income_y1" as const, y2: "net_income_y2" as const },
+                            { label: "FCFE (BRL mn)",       y1: "fcfe_y1" as const,       y2: "fcfe_y2" as const },
+                            { label: "Dividends (BRL mn)",  y1: "dividends_y1" as const,  y2: "dividends_y2" as const },
+                            { label: "Volumes",             y1: "volumes_y1" as const,    y2: "volumes_y2" as const },
                           ]).map((grp, idx) => (
                             <div
                               key={grp.label}

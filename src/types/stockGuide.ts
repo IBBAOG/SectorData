@@ -51,27 +51,34 @@ export interface StockGuideCompany {
   last_update: string | null;
   target_price: number | null;
   recommendation: StockGuideRecommendation | null;
-  ev_ebitda_y1: number | null;
-  ev_ebitda_y2: number | null;
-  pe_y1: number | null;
-  pe_y2: number | null;
-  /** FCFE yield as percent points (e.g. 12.5 → 12.5%). */
-  fcfe_yield_y1: number | null;
-  fcfe_yield_y2: number | null;
-  /** Dividend yield as percent points. */
-  div_yield_y1: number | null;
-  div_yield_y2: number | null;
-  /** Forward EBITDA in BRL million. */
+  /**
+   * Current net debt in BRL million — a SINGLE value used for BOTH forward years
+   * (EV = market cap + net debt). May be negative (net cash). NULL for
+   * hidden→non-admin.
+   */
+  net_debt: number | null;
+  /** Forward EBITDA in BRL million. Denominator of the live EV/EBITDA. */
   ebitda_y1: number | null;
   ebitda_y2: number | null;
+  /** Forward net income in BRL million. Denominator of the live P/E. */
+  net_income_y1: number | null;
+  net_income_y2: number | null;
+  /** Forward FCFE in BRL million (the VALUE, not a yield). Drives FCFE yield. */
+  fcfe_y1: number | null;
+  fcfe_y2: number | null;
+  /** Forward total dividends in BRL million. Drives the dividend yield. */
+  dividends_y1: number | null;
+  dividends_y2: number | null;
   /** Forward volumes in `volume_unit` (kbpd or thousand m³). */
   volumes_y1: number | null;
   volumes_y2: number | null;
 }
 
 /**
- * A visible comps row augmented with the three LIVE-derived fields. Computed in
- * the hook from the batched Yahoo quote — never stored server-side.
+ * A visible comps row augmented with the LIVE-derived fields. Computed in the
+ * hook from the batched Yahoo price + the admin-input fundamentals — never
+ * stored server-side. All monetary inputs are BRL million, so EV/EBITDA and P/E
+ * are dimensionless and the yields are ×100 for percent points.
  */
 export interface StockGuideComputedRow extends StockGuideCompany {
   /** `quote.regularMarketPrice` matched on `yahoo_symbol` (fallback `ticker`). */
@@ -80,6 +87,20 @@ export interface StockGuideComputedRow extends StockGuideCompany {
   marketCapBrlMn: number | null;
   /** `target_price / livePrice − 1`. Null unless `livePrice > 0` and TP present. */
   upsidePct: number | null;
+  /** `marketCapBrlMn + net_debt` (BRL million). Null if either input is null. */
+  evBrlMn: number | null;
+  /** `evBrlMn / ebitda_y1` — null unless `ebitda_y1 > 0` (same for Y2). */
+  evEbitdaY1: number | null;
+  evEbitdaY2: number | null;
+  /** `marketCapBrlMn / net_income_y1` — null unless `net_income_y1 > 0` (same for Y2). */
+  peY1: number | null;
+  peY2: number | null;
+  /** `(fcfe_y1 / marketCapBrlMn) × 100` percent points — may be negative (same for Y2). */
+  fcfeYieldY1: number | null;
+  fcfeYieldY2: number | null;
+  /** `(dividends_y1 / marketCapBrlMn) × 100` percent points (same for Y2). */
+  divYieldY1: number | null;
+  divYieldY2: number | null;
 }
 
 /**
