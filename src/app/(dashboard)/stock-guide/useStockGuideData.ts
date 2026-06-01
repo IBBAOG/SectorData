@@ -54,6 +54,11 @@ import {
 } from "@/lib/rpc";
 import { downloadGenericExcel } from "@/lib/exportExcel";
 import { downloadCsv } from "@/lib/exportCsv";
+import {
+  computeSensitivityCellValue,
+  formatSensitivityValue,
+  unitForValueMode,
+} from "@/lib/stockGuideSensitivity";
 import type {
   StockGuideCompany,
   StockGuideComputedRow,
@@ -246,42 +251,12 @@ const EMPTY_CONFIG: StockGuideConfig = {
 };
 
 /**
- * Display unit per value_mode. 'absolute' has no fixed unit (uses table.unit),
- * so it is intentionally absent and the helper falls back to `table.unit`.
+ * Format a computed sensitivity-cell value by its unit. Re-exported from the
+ * shared `@/lib/stockGuideSensitivity` single source of truth so desktop,
+ * mobile and the admin builder preview render identically. Kept exported under
+ * this name to preserve the hook's public API (both Views import it from here).
  */
-const VALUE_MODE_UNIT: Record<SensitivityTable["value_mode"], string> = {
-  absolute: "",
-  yield: "%",
-  pe: "×",
-  ev_ebitda: "×",
-  upside: "%",
-};
-
-/**
- * Format a computed sensitivity-cell value by its unit. Shared by both Views to
- * keep desktop/mobile rendering identical (dual-view binding). The value is
- * already display-ready (computeSensitivityCell scales 'yield' and 'upside' to
- * percent points):
- *   • '%' → one-decimal percent (value is already in percent points).
- *   • '×' → one-decimal multiple with a "×" suffix.
- *   • else (absolute) → thousands-grouped value + the unit suffix.
- * Null → "—".
- */
-export function formatSensitivityCell(
-  value: number | null,
-  unit: string,
-): string {
-  if (value == null || !Number.isFinite(value)) return "—";
-  if (unit === "%") return `${value.toFixed(1)}%`;
-  if (unit === "×") return `${value.toFixed(1)}×`;
-  // absolute: thousands-grouped (1 decimal if non-integer), + unit suffix.
-  const isInt = Number.isInteger(value);
-  const num = value.toLocaleString("en-US", {
-    minimumFractionDigits: isInt ? 0 : 1,
-    maximumFractionDigits: isInt ? 0 : 1,
-  });
-  return unit ? `${num} ${unit}` : num;
-}
+export const formatSensitivityCell = formatSensitivityValue;
 
 export function useStockGuideData(): UseStockGuideData {
   const supabase = getSupabaseClient();
@@ -607,8 +582,8 @@ export function useStockGuideData(): UseStockGuideData {
       const def = table.definition;
       const mode = table.value_mode;
       // 'absolute' has no fixed unit → use the table's own unit; the other modes
-      // have a fixed display unit ('%', '×').
-      const unitFor = mode === "absolute" ? table.unit : VALUE_MODE_UNIT[mode];
+      // have a fixed display unit ('%', '×'). Shared single source of truth.
+      const unitFor = unitForValueMode(mode, table.unit);
 
       // 1. Resolve the cell's company.
       //    row company axis → companies[rowIdx];
@@ -632,47 +607,16 @@ export function useStockGuideData(): UseStockGuideData {
       const primary = def.cells?.[rowIdx]?.[colIdx] ?? null;
       const secondary = def.cells_secondary?.[rowIdx]?.[colIdx] ?? null;
 
-      // 4. Apply value_mode (every denominator guarded; null-safe → "—").
-      let value: number | null = null;
-      switch (mode) {
-        case "absolute":
-          value = primary;
-          break;
-        case "yield":
-          value =
-            primary != null && marketCapBrlMn != null && marketCapBrlMn > 0
-              ? (primary / marketCapBrlMn) * 100
-              : null;
-          break;
-        case "pe":
-          value =
-            marketCapBrlMn != null && primary != null && primary > 0
-              ? marketCapBrlMn / primary
-              : null;
-          break;
-        case "ev_ebitda":
-          value =
-            primary != null &&
-            primary > 0 &&
-            secondary != null &&
-            marketCapBrlMn != null
-              ? (marketCapBrlMn + secondary) / primary
-              : null;
-          break;
-        case "upside":
-          // Spec computation is `primary / livePrice − 1` (a RATIO). We scale to
-          // percent points here so the returned value is display-ready and the
-          // single '%' formatting rule (percent points) applies uniformly with
-          // the 'yield' mode. (i.e. the "value*100 when formatting" step is
-          // folded into the helper.)
-          value =
-            primary != null && livePrice != null && livePrice > 0
-              ? (primary / livePrice - 1) * 100
-              : null;
-          break;
-        default:
-          value = null;
-      }
+      // 4. Apply value_mode via the shared compute helper (every denominator
+      //    guarded; null-safe → "—"). This is the SAME function the admin
+      //    builder's live preview calls, so the two render byte-for-byte.
+      const value = computeSensitivityCellValue({
+        valueMode: mode,
+        primary,
+        secondary,
+        marketCapBrlMn,
+        livePrice,
+      });
 
       return { value, unit: unitFor };
     },

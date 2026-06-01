@@ -32,6 +32,15 @@ import {
   type DriverCatalogEntry,
 } from "../../../hooks/useMarketDrivers";
 import { useUserProfile } from "../../../context/UserProfileContext";
+import { useStockQuote } from "../../../hooks/useStockQuote";
+import {
+  computeSensitivityCellValue,
+  formatSensitivityValue,
+  unitForValueMode,
+  baseInputMeta,
+  type SensitivityValueMode,
+  type BaseInputMeta,
+} from "../../../lib/stockGuideSensitivity";
 import {
   rpcSetModuleVisibility,
   rpcSetModuleHomeVisibility,
@@ -769,6 +778,20 @@ export interface UseAdminPanelData {
   /** Item labels for the row/col axes (drives the matrix headers). */
   sgTableRowLabels: string[];
   sgTableColLabels: string[];
+  /**
+   * Per-mode base-input metadata for the builder: the hint banner copy + the
+   * matrix labels that make the derived value_mode transform obvious at input
+   * time. Null when no draft is open.
+   */
+  sgTableBaseInputMeta: BaseInputMeta | null;
+  /**
+   * Live "Dashboard preview" cell: the exact DISPLAY value /stock-guide would
+   * render for (rowIdx, colIdx) of the draft, using the SAME shared compute +
+   * format helpers. "—" when the quote / shares_outstanding are missing.
+   */
+  sgPreviewCell: (rowIdx: number, colIdx: number) => string;
+  /** True while the preview's live quotes are loading. */
+  sgPreviewQuotesLoading: boolean;
   handleSelectSgTable: (id: number) => void;
   handleNewSgTable: () => void;
   handleCancelSgTableEdit: () => void;
@@ -2289,6 +2312,136 @@ export function useAdminPanelData(): UseAdminPanelData {
     [sgTableDraft, sgConfig, sgDrivers],
   );
 
+  // ── Live "Dashboard preview" for the builder ───────────────────────────────
+  // Mirror, byte-for-byte, what the /stock-guide dashboard renders for the draft
+  // table — using the SAME shared compute + format helpers — so the admin sees,
+  // at input time, exactly what a derived value_mode will produce from the typed
+  // BASE values. (For 'absolute' there is no transform; the View may echo or hide.)
+  //
+  // The cell's company is resolved with the dashboard's rule: row-company axis →
+  // companies[rowIdx]; else col-company axis → companies[colIdx]; else the table's
+  // single membership company (companies[0]).
+
+  // Index admin companies by ticker — gives shares_outstanding + yahoo_symbol.
+  const sgCompaniesByTicker = useMemo(() => {
+    const m = new Map<string, StockGuideAdminCompany>();
+    for (const c of sgCompanies) m.set(c.ticker, c);
+    return m;
+  }, [sgCompanies]);
+
+  // The companies involved in the current draft (company axis tickers, else the
+  // single-company membership). Drives which quotes we fetch for the preview.
+  const sgPreviewCompanies = useMemo(
+    () => (sgTableDraft ? deriveTableCompanies(sgTableDraft) : []),
+    [sgTableDraft],
+  );
+
+  // Quote symbols = yahoo_symbol (fallback ticker), de-duplicated. Same convention
+  // as the dashboard's `quoteSymbols`.
+  const sgPreviewQuoteSymbols = useMemo(() => {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const ticker of sgPreviewCompanies) {
+      const c = sgCompaniesByTicker.get(ticker);
+      const sym = (c?.yahoo_symbol ?? ticker) || "";
+      if (sym && !seen.has(sym)) {
+        seen.add(sym);
+        out.push(sym);
+      }
+    }
+    return out;
+  }, [sgPreviewCompanies, sgCompaniesByTicker]);
+
+  const {
+    data: sgPreviewQuotes,
+    isLoading: sgPreviewQuotesLoading,
+  } = useStockQuote(sgPreviewQuoteSymbols);
+
+  // Index quotes by stripped symbol — proxy returns `symbol` with `.SA` removed.
+  // Match identically to the dashboard's `priceByKey` lookup.
+  const sgPreviewPriceByKey = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const q of sgPreviewQuotes) {
+      if (q?.symbol != null && Number.isFinite(q.regularMarketPrice)) {
+        m.set(q.symbol.toUpperCase(), q.regularMarketPrice);
+      }
+    }
+    return m;
+  }, [sgPreviewQuotes]);
+
+  // Live { livePrice, marketCapBrlMn } per draft ticker — marketCap = shares ×
+  // livePrice / 1e6, exactly like the dashboard. Null when the quote or
+  // shares_outstanding is missing.
+  const sgPreviewLiveByTicker = useMemo(() => {
+    const m = new Map<
+      string,
+      { livePrice: number | null; marketCapBrlMn: number | null }
+    >();
+    for (const ticker of sgPreviewCompanies) {
+      const c = sgCompaniesByTicker.get(ticker);
+      const sym = (c?.yahoo_symbol ?? ticker).toUpperCase();
+      const stripped = sym.replace(/\.SA$/, "");
+      const p = sgPreviewPriceByKey.get(stripped) ?? sgPreviewPriceByKey.get(sym);
+      const livePrice = p != null && Number.isFinite(p) ? p : null;
+      const shares = c?.shares_outstanding ?? null;
+      const marketCapBrlMn =
+        shares != null && livePrice != null ? (shares * livePrice) / 1e6 : null;
+      m.set(ticker, { livePrice, marketCapBrlMn });
+    }
+    return m;
+  }, [sgPreviewCompanies, sgCompaniesByTicker, sgPreviewPriceByKey]);
+
+  // Pure helper: the live DISPLAY value the dashboard would show for cell
+  // (rowIdx, colIdx) of the draft. Reuses the SAME shared compute + format
+  // helpers as /stock-guide, so the preview is exact. Returns "—" when the
+  // quote / shares are missing or a guard fails.
+  const sgPreviewCell = useCallback(
+    (rowIdx: number, colIdx: number): string => {
+      const d = sgTableDraft;
+      if (!d) return "—";
+      const mode = d.value_mode as SensitivityValueMode;
+
+      // Resolve the cell's company (dashboard rule).
+      let company: string | null = null;
+      if (d.rowAxis.kind === "company") {
+        company = d.rowAxis.companies[rowIdx] ?? null;
+      } else if (d.colAxis.kind === "company") {
+        company = d.colAxis.companies[colIdx] ?? null;
+      } else {
+        company = deriveTableCompanies(d)[0] ?? null;
+      }
+
+      const live = company != null ? sgPreviewLiveByTicker.get(company) : undefined;
+      const livePrice = live?.livePrice ?? null;
+      const marketCapBrlMn = live?.marketCapBrlMn ?? null;
+
+      const primary = strToNum(d.cells[rowIdx]?.[colIdx] ?? "");
+      const secondary = strToNum(d.cellsSecondary[rowIdx]?.[colIdx] ?? "");
+
+      const value = computeSensitivityCellValue({
+        valueMode: mode,
+        primary,
+        secondary,
+        marketCapBrlMn,
+        livePrice,
+      });
+      return formatSensitivityValue(value, unitForValueMode(mode, d.unit));
+    },
+    [sgTableDraft, sgPreviewLiveByTicker],
+  );
+
+  // Per-mode base-input metadata (hint banner + matrix labels) for the builder.
+  const sgTableBaseInputMeta = useMemo(
+    () =>
+      sgTableDraft
+        ? baseInputMeta(
+            sgTableDraft.value_mode as SensitivityValueMode,
+            sgTableDraft.metric_label,
+          )
+        : null,
+    [sgTableDraft],
+  );
+
   const handleSaveSgTable = useCallback(async () => {
     if (!supabase || !sgTableDraft || sgTableSaving) return;
     if (sgTableValidationError) {
@@ -2547,6 +2700,9 @@ export function useAdminPanelData(): UseAdminPanelData {
     sgTableValidationError,
     sgTableRowLabels,
     sgTableColLabels,
+    sgTableBaseInputMeta,
+    sgPreviewCell,
+    sgPreviewQuotesLoading,
     handleSelectSgTable,
     handleNewSgTable,
     handleCancelSgTableEdit,

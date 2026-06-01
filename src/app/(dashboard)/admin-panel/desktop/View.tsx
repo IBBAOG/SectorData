@@ -34,6 +34,7 @@ import type {
   StockGuideDriver,
 } from "../../../../types/stockGuide";
 import { isDynamicSource } from "../../../../hooks/useMarketDrivers";
+import type { BaseInputMeta } from "../../../../lib/stockGuideSensitivity";
 
 const ORANGE = "#FF5000";
 const BG = "#f5f5f5";
@@ -277,6 +278,9 @@ export default function DesktopView(): React.ReactElement | null {
     sgTableValidationError,
     sgTableRowLabels,
     sgTableColLabels,
+    sgTableBaseInputMeta,
+    sgPreviewCell,
+    sgPreviewQuotesLoading,
     handleSelectSgTable,
     handleNewSgTable,
     handleCancelSgTableEdit,
@@ -2758,6 +2762,9 @@ export default function DesktopView(): React.ReactElement | null {
                   deleteConfirm={sgTableDeleteConfirm}
                   rowLabels={sgTableRowLabels}
                   colLabels={sgTableColLabels}
+                  baseInputMeta={sgTableBaseInputMeta}
+                  previewCell={sgPreviewCell}
+                  previewQuotesLoading={sgPreviewQuotesLoading}
                   companyTickers={sgCompanyTickers}
                   drivers={sgDrivers}
                   inputStyle={SG_INPUT_STYLE}
@@ -2823,6 +2830,12 @@ interface SensitivityBuilderProps {
   deleteConfirm: number | null;
   rowLabels: string[];
   colLabels: string[];
+  /** Per-mode hint + matrix labels (null when no draft is open). */
+  baseInputMeta: BaseInputMeta | null;
+  /** Live "Dashboard preview" value for (rowIdx, colIdx) of the draft. */
+  previewCell: (rowIdx: number, colIdx: number) => string;
+  /** True while the preview's live quotes are loading. */
+  previewQuotesLoading: boolean;
   companyTickers: string[];
   drivers: StockGuideDriver[];
   inputStyle: React.CSSProperties;
@@ -2849,7 +2862,8 @@ interface SensitivityBuilderProps {
 function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement {
   const {
     tables, tablesLoading, tablesError, draft, saving, saveError, pendingChanges,
-    validationError, deleteConfirm, rowLabels, colLabels, companyTickers, drivers,
+    validationError, deleteConfirm, rowLabels, colLabels, baseInputMeta,
+    previewCell, previewQuotesLoading, companyTickers, drivers,
     inputStyle, onSelect, onNew, onCancelEdit, onChangeField, onChangeValueMode,
     onChangeSingleCompany, onChangeAxisKind, onChangeAxisDriver, onToggleAxisCompany,
     onAddScenario, onChangeScenario, onRemoveScenario, onChangeCell,
@@ -3036,6 +3050,65 @@ function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement 
       )}
     </div>
   );
+
+  // ── Live "Dashboard preview" — read-only mirror of the typed matrix ──────────
+  // Shows the EXACT value /stock-guide will render for each cell, using the same
+  // shared compute + format helpers. Hidden for 'absolute' (no transform).
+  const renderPreviewGrid = (): React.ReactElement | null => {
+    if (!draft || draft.value_mode === "absolute") return null;
+    if (rowLabels.length === 0 || colLabels.length === 0) return null;
+    return (
+      <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px dashed #e0e0e0" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#555" }}>
+            Dashboard preview (live prices)
+          </div>
+          <span style={{ fontSize: 11, color: "#aaa" }}>
+            {previewQuotesLoading
+              ? "loading live prices…"
+              : "needs live price + shares outstanding"}
+          </span>
+        </div>
+        <div style={{ overflowX: "auto", paddingBottom: 4 }}>
+          <table style={{ borderCollapse: "separate", borderSpacing: 6 }}>
+            <thead>
+              <tr>
+                <th style={{ width: 130 }} />
+                {colLabels.map((lbl, c) => (
+                  <th key={c} style={{ minWidth: 100, fontSize: 11, fontWeight: 700, color: "#999", padding: "0 4px" }}>
+                    {lbl || `Col ${c + 1}`}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rowLabels.map((rLbl, r) => (
+                <tr key={r}>
+                  <th style={{ width: 130, textAlign: "right", fontSize: 11, fontWeight: 700, color: "#999", paddingRight: 6 }}>
+                    {rLbl || `Row ${r + 1}`}
+                  </th>
+                  {colLabels.map((_, c) => (
+                    <td key={c}>
+                      <div
+                        style={{
+                          minWidth: 90, padding: "6px 8px", textAlign: "right",
+                          fontSize: 12, fontWeight: 700, color: "#1a1a1a",
+                          background: "#fafafa", border: "1px solid #ececec", borderRadius: 6,
+                          fontFamily: "Arial, sans-serif",
+                        }}
+                      >
+                        {previewQuotesLoading ? "—" : previewCell(r, c)}
+                      </div>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="settings-card" style={{ padding: 0, overflow: "hidden" }}>
@@ -3224,11 +3297,34 @@ function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement 
 
               {/* Cell matrix / matrices */}
               <div style={{ paddingTop: 8, borderTop: "1px solid #ececec" }}>
-                {draft.value_mode === "ev_ebitda"
-                  ? renderMatrix(draft.cells, onChangeCell, "EBITDA (BRL mn)")
-                  : renderMatrix(draft.cells, onChangeCell, draft.metric_label || "Values")}
+                {/* Hint banner — makes the derived value_mode transform obvious
+                    at input time (you type the BASE value → dashboard shows …). */}
+                {baseInputMeta && (
+                  <div style={{
+                    display: "flex", alignItems: "flex-start", gap: 10,
+                    margin: "4px 0 14px", padding: "10px 14px", borderRadius: 8,
+                    background: "rgba(255,80,0,0.06)",
+                    border: `1px solid rgba(255,80,0,0.28)`,
+                    borderLeft: `4px solid ${ORANGE}`,
+                  }}>
+                    <span style={{ fontSize: 14, lineHeight: "18px" }} aria-hidden>💡</span>
+                    <span style={{ fontSize: 12, lineHeight: 1.5, color: "#7a3300", fontWeight: 600 }}>
+                      {baseInputMeta.hint}
+                    </span>
+                  </div>
+                )}
+                {renderMatrix(
+                  draft.cells,
+                  onChangeCell,
+                  baseInputMeta?.primaryLabel ?? (draft.metric_label || "Values"),
+                )}
                 {draft.value_mode === "ev_ebitda" &&
-                  renderMatrix(draft.cellsSecondary, onChangeCellSecondary, "Net Debt (BRL mn)")}
+                  renderMatrix(
+                    draft.cellsSecondary,
+                    onChangeCellSecondary,
+                    baseInputMeta?.secondaryLabel ?? "Net Debt (BRL mn)",
+                  )}
+                {renderPreviewGrid()}
               </div>
 
               {/* Validation / save error */}
