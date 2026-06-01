@@ -367,7 +367,7 @@ export const DATA_SOURCES: DataSource[] = [
       "Live oil & gas news articles matched against user keyword sets, scanned across ~60 sources every ~5 minutes via the external News Hunter scanner service.",
     category: "news",
     source: "News Hunter scanner",
-    sourceUrl: "https://github.com/IBBAOG/news-hunter-scanner",
+    sourceUrl: null,
     cronUtc: null,
     cronDescription: "Continuous — external scanner runs every ~5 minutes via cron-job.org",
     sourceFrequency: "Real-time",
