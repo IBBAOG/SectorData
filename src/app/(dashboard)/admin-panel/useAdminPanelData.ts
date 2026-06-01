@@ -151,6 +151,8 @@ export const MODULE_LABELS: ModuleLabel[] = [
   { slug: "anp-cdp-diaria",          label: "Daily Production",             description: "Daily oil and gas production by field from ANP Power BI" },
   { slug: "anp-cdp-bsw",             label: "BSW by Well",                  description: "Water cut vs months since first production, by well" },
   { slug: "anp-cdp-depletion",       label: "Depletion",                    description: "Uptime-normalized oil production and decline analysis by field" },
+  // Equities
+  { slug: "stock-guide",             label: "Stock Guide",                  description: "Equities-research comps table with live market cap/upside and per-company sensitivity drill-down" },
   // Other
   { slug: "stocks",                  label: "Market Watch",                 description: "Real-time stock quotes, historical charts, and market overview" },
   { slug: "news-hunter",             label: "News Hunter",                  description: "Live oil & gas news feed with incremental polling across ~60 sources" },
