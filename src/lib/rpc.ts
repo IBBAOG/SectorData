@@ -4062,6 +4062,313 @@ export async function rpcGetProductionBrazilWellCount(
   return Number(data) || 0;
 }
 
+// ─── MODULE: Stock Guide (/src/app/(dashboard)/stock-guide/) ─────────────────
+//
+// Equities-research comps table + per-company freeform 2D sensitivity grid.
+// Public reads are hide-aware (hidden companies' financials never leave the
+// server for a non-admin); admin reads/writes are guarded by `is_admin()`
+// server-side and additionally GRANTed to `authenticated` only.
+//
+// SINGLE WRITER of this section is the Stock Guide dashboard owner — the
+// /admin-panel pass only CONSUMES the admin wrappers below (no further rpc.ts
+// edits for this feature).
+//
+// Numeric coercion: Postgres `numeric` serializes to a STRING over PostgREST.
+// Every numeric field is coerced to `number | null` via `toNumOrNull` so the
+// UI's `.toFixed()` / arithmetic don't blow up or silently string-concatenate.
+//
+// JSONB params (sensitivity grid, comps upsert payload, config) are passed as
+// plain JS objects — supabase-js serializes them as JSONB automatically; no
+// manual JSON.stringify.
+//
+// Source-of-truth migration: `supabase/migrations/20260603200000_stock_guide.sql`
+// (owner: worker_supabase).
+// ──────────────────────────────────────────────────────────────────────────────
+
+import type {
+  StockGuideCompany,
+  StockGuideAdminCompany,
+  SensitivityGrid,
+  StockGuideConfig,
+} from "../types/stockGuide";
+
+/** Coerce a PostgREST numeric (string | number | null | undefined) → number | null. */
+function toNumOrNull(v: unknown): number | null {
+  if (v == null || v === "") return null;
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Maps a raw comps row (from either `get_stock_guide_comps` or
+ * `admin_get_stock_guide_companies`) into a typed `StockGuideCompany`, coercing
+ * all numeric fields. `display_order` falls back to 0; everything else nullable.
+ */
+function mapStockGuideCompany(r: Record<string, unknown>): StockGuideCompany {
+  return {
+    ticker: String(r.ticker),
+    company_name: String(r.company_name ?? ""),
+    is_visible: Boolean(r.is_visible),
+    display_order: Number(r.display_order ?? 0),
+    sector: (r.sector as StockGuideCompany["sector"]) ?? null,
+    volume_unit: (r.volume_unit as StockGuideCompany["volume_unit"]) ?? null,
+    yahoo_symbol: r.yahoo_symbol != null ? String(r.yahoo_symbol) : null,
+    shares_outstanding: toNumOrNull(r.shares_outstanding),
+    last_update: r.last_update != null ? String(r.last_update) : null,
+    target_price: toNumOrNull(r.target_price),
+    recommendation:
+      (r.recommendation as StockGuideCompany["recommendation"]) ?? null,
+    net_debt_y1: toNumOrNull(r.net_debt_y1),
+    net_debt_y2: toNumOrNull(r.net_debt_y2),
+    ebitda_y1: toNumOrNull(r.ebitda_y1),
+    ebitda_y2: toNumOrNull(r.ebitda_y2),
+    net_income_y1: toNumOrNull(r.net_income_y1),
+    net_income_y2: toNumOrNull(r.net_income_y2),
+    fcfe_y1: toNumOrNull(r.fcfe_y1),
+    fcfe_y2: toNumOrNull(r.fcfe_y2),
+    dividends_y1: toNumOrNull(r.dividends_y1),
+    dividends_y2: toNumOrNull(r.dividends_y2),
+    volumes_y1: toNumOrNull(r.volumes_y1),
+    volumes_y2: toNumOrNull(r.volumes_y2),
+  };
+}
+
+/**
+ * Normalizes the raw JSONB grid from `get_stock_guide_sensitivity` /
+ * `admin_get_stock_guide_sensitivity` into a `SensitivityGrid`, coercing every
+ * cell to `number | null`. Returns null when the payload is empty `{}` (hidden
+ * company seen by non-admin, or no grid defined yet) or structurally invalid.
+ */
+function mapSensitivityGrid(raw: unknown): SensitivityGrid | null {
+  if (raw == null || typeof raw !== "object") return null;
+  const g = raw as Record<string, unknown>;
+  const rowLabels = Array.isArray(g.row_labels) ? (g.row_labels as unknown[]) : [];
+  const colLabels = Array.isArray(g.col_labels) ? (g.col_labels as unknown[]) : [];
+  // Empty grid (no axes defined) → treat as "no sensitivity" so the UI shows
+  // its empty state rather than an axis-less 0×0 matrix.
+  if (rowLabels.length === 0 && colLabels.length === 0) return null;
+  const rawCells = Array.isArray(g.cells) ? (g.cells as unknown[]) : [];
+  const cells: (number | null)[][] = rawCells.map((row) =>
+    Array.isArray(row) ? (row as unknown[]).map((c) => toNumOrNull(c)) : [],
+  );
+  return {
+    row_axis_title: String(g.row_axis_title ?? ""),
+    col_axis_title: String(g.col_axis_title ?? ""),
+    value_label: String(g.value_label ?? ""),
+    row_labels: rowLabels.map((l) => String(l)),
+    col_labels: colLabels.map((l) => String(l)),
+    cells,
+  };
+}
+
+// ── Public reads (GRANT anon, authenticated) ──────────────────────────────────
+
+/**
+ * Hide-aware comps for every company in `display_order`. Visible rows carry
+ * full comps + `shares_outstanding` + `yahoo_symbol`; hidden rows seen by a
+ * non-admin carry ONLY ticker / company_name / is_visible / display_order
+ * (everything else NULL — including yahoo_symbol, so the browser cannot fetch a
+ * restricted company's price). Admins receive every field through the same call.
+ *
+ * Backed by SECURITY DEFINER RPC `get_stock_guide_comps`.
+ */
+export async function rpcGetStockGuideComps(
+  supabase: SupabaseClient,
+): Promise<StockGuideCompany[]> {
+  const { data, error } = await supabase.rpc("get_stock_guide_comps");
+  if (error) throw error;
+  const rows = (data ?? []) as Record<string, unknown>[];
+  return rows.map(mapStockGuideCompany);
+}
+
+/**
+ * Freeform 2D sensitivity grid for one ticker, returned only when that company
+ * is visible OR the caller is_admin (else the RPC yields `{}` → null here).
+ * Cells coerced to `number | null`.
+ *
+ * Backed by SECURITY DEFINER RPC `get_stock_guide_sensitivity`.
+ */
+export async function rpcGetStockGuideSensitivity(
+  supabase: SupabaseClient,
+  ticker: string,
+): Promise<SensitivityGrid | null> {
+  const { data, error } = await supabase.rpc("get_stock_guide_sensitivity", {
+    p_ticker: ticker,
+  });
+  if (error) throw error;
+  return mapSensitivityGrid(data);
+}
+
+/**
+ * Global singleton config: forward-year labels + assumptions note. Always one
+ * row.
+ *
+ * Backed by SECURITY DEFINER RPC `get_stock_guide_config`.
+ */
+export async function rpcGetStockGuideConfig(
+  supabase: SupabaseClient,
+): Promise<StockGuideConfig> {
+  const { data, error } = await supabase.rpc("get_stock_guide_config");
+  if (error) throw error;
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | Record<string, unknown>
+    | undefined;
+  return {
+    y1_label: String(row?.y1_label ?? "Y1"),
+    y2_label: String(row?.y2_label ?? "Y2"),
+    assumptions_note: String(row?.assumptions_note ?? ""),
+  };
+}
+
+// ── Admin reads (GRANT authenticated; is_admin()-guarded server-side) ─────────
+
+/**
+ * Full company list INCLUDING hidden companies' financials + audit columns
+ * (`updated_at`, `updated_by`). For the admin editor list only — never call
+ * from a non-admin surface (the RPC raises `forbidden` (42501) for non-admins).
+ *
+ * Backed by SECURITY DEFINER RPC `admin_get_stock_guide_companies`.
+ */
+export async function rpcAdminGetStockGuideCompanies(
+  supabase: SupabaseClient,
+): Promise<StockGuideAdminCompany[]> {
+  const { data, error } = await supabase.rpc("admin_get_stock_guide_companies");
+  if (error) throw error;
+  const rows = (data ?? []) as Record<string, unknown>[];
+  return rows.map((r) => ({
+    ...mapStockGuideCompany(r),
+    updated_at: r.updated_at != null ? String(r.updated_at) : null,
+    updated_by: r.updated_by != null ? String(r.updated_by) : null,
+  }));
+}
+
+/**
+ * Sensitivity grid for one ticker regardless of visibility (admin editor).
+ * Returns null when no grid is defined yet.
+ *
+ * Backed by SECURITY DEFINER RPC `admin_get_stock_guide_sensitivity`.
+ */
+export async function rpcAdminGetStockGuideSensitivity(
+  supabase: SupabaseClient,
+  ticker: string,
+): Promise<SensitivityGrid | null> {
+  const { data, error } = await supabase.rpc("admin_get_stock_guide_sensitivity", {
+    p_ticker: ticker,
+  });
+  if (error) throw error;
+  return mapSensitivityGrid(data);
+}
+
+// ── Admin writes (GRANT authenticated; is_admin()-guarded server-side) ────────
+
+/**
+ * Per-company upsert (`ON CONFLICT (ticker) DO UPDATE`). `data` is a plain JS
+ * object whose keys mirror the comps columns: company_name, yahoo_symbol,
+ * sector, volume_unit, shares_outstanding, last_update, target_price,
+ * recommendation, display_order, and the FUNDAMENTALS — `net_debt_y1/y2`
+ * (forward per year), `ebitda_y1/y2`, `net_income_y1/y2`, `fcfe_y1/y2`, `dividends_y1/y2`,
+ * `volumes_y1/y2`. The 4 price-sensitive multiples (EV/EBITDA, P/E, FCFE Yield,
+ * Div Yield) are NOT stored — they are derived live in the dashboard from the
+ * Yahoo price + these inputs. Never send `is_visible` (separate toggle RPC).
+ * Passed as JSONB; the server coerces numerics and sets `updated_by = auth.uid()`.
+ *
+ * Backed by SECURITY DEFINER RPC `admin_upsert_stock_guide_company`.
+ */
+export async function rpcAdminUpsertStockGuideCompany(
+  supabase: SupabaseClient,
+  ticker: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  const { error } = await supabase.rpc("admin_upsert_stock_guide_company", {
+    p_ticker: ticker,
+    p_data: data,
+  });
+  if (error) throw error;
+}
+
+/**
+ * Whole-grid replace for one company. `grid` is a plain JS object of shape
+ * `{ row_axis_title, col_axis_title, value_label, row_labels[], col_labels[],
+ * cells[][] }`, passed as JSONB. The server validates dimensions
+ * (`cells.length === row_labels.length`, each row length === col_labels.length)
+ * before writing and raises on mismatch.
+ *
+ * Backed by SECURITY DEFINER RPC `admin_upsert_stock_guide_sensitivity`.
+ */
+export async function rpcAdminUpsertStockGuideSensitivity(
+  supabase: SupabaseClient,
+  ticker: string,
+  grid: SensitivityGrid,
+): Promise<void> {
+  const { error } = await supabase.rpc("admin_upsert_stock_guide_sensitivity", {
+    p_ticker: ticker,
+    p_grid: grid,
+  });
+  if (error) throw error;
+}
+
+/**
+ * Hide/show toggle for one company. Returns the updated row (mapped); callers
+ * doing optimistic UI can ignore the return and roll back on throw.
+ *
+ * Backed by SECURITY DEFINER RPC `admin_set_stock_guide_visibility`.
+ */
+export async function rpcAdminSetStockGuideVisibility(
+  supabase: SupabaseClient,
+  ticker: string,
+  isVisible: boolean,
+): Promise<StockGuideAdminCompany | null> {
+  const { data, error } = await supabase.rpc("admin_set_stock_guide_visibility", {
+    p_ticker: ticker,
+    p_is_visible: isVisible,
+  });
+  if (error) throw error;
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | Record<string, unknown>
+    | undefined;
+  if (!row) return null;
+  return {
+    ...mapStockGuideCompany(row),
+    updated_at: row.updated_at != null ? String(row.updated_at) : null,
+    updated_by: row.updated_by != null ? String(row.updated_by) : null,
+  };
+}
+
+/**
+ * Updates the global singleton config (forward-year labels + assumptions note).
+ *
+ * Backed by SECURITY DEFINER RPC `admin_upsert_stock_guide_config`.
+ */
+export async function rpcAdminUpsertStockGuideConfig(
+  supabase: SupabaseClient,
+  y1Label: string,
+  y2Label: string,
+  assumptionsNote: string,
+): Promise<void> {
+  const { error } = await supabase.rpc("admin_upsert_stock_guide_config", {
+    p_y1: y1Label,
+    p_y2: y2Label,
+    p_note: assumptionsNote,
+  });
+  if (error) throw error;
+}
+
+/**
+ * Deletes one company (its sensitivity grid cascades via the FK ON DELETE
+ * CASCADE). Used by the editor's Delete action behind a confirm modal.
+ *
+ * Backed by SECURITY DEFINER RPC `admin_delete_stock_guide_company`.
+ */
+export async function rpcAdminDeleteStockGuideCompany(
+  supabase: SupabaseClient,
+  ticker: string,
+): Promise<void> {
+  const { error } = await supabase.rpc("admin_delete_stock_guide_company", {
+    p_ticker: ticker,
+  });
+  if (error) throw error;
+}
+
 // ─── MODULE: Alerts (/alerts) ─────────────────────────────────────────────────
 //
 // User-facing subscription management. All wrappers here are callable by both

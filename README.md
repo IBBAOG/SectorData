@@ -46,11 +46,12 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/admin-panel` | Visibility / role / Field Stakes / default news keywords / home images RPCs |
 | `/admin-analytics` | `get_admin_analytics_views_by_hour` (BRT) + other analytics RPCs |
 
-### Statistics (Fase 3 onwards — 10 dashboards)
+### Statistics (Fase 3 onwards — 11 dashboards)
 
 | Route | Category | Key RPCs |
 |-------|----------|----------|
 | `/well-by-well` (Brazil Production Summary) | Oil & Gas | `get_production_brazil_aggregate`, `get_production_company_aggregate`, `get_production_top_fields`, `get_production_by_installation`, `get_production_yoy_table` + paginated helpers |
+| `/stock-guide` | Equities | `get_stock_guide_comps` (hide-aware), `get_stock_guide_sensitivity`, `get_stock_guide_config` + 7 admin RPCs + Yahoo proxy (live market cap / upside / multiples) |
 | `/anp-cdp` (Monthly Production) | Oil & Gas | `get_anp_cdp_poco_serie`, `get_anp_cdp_pocos_json`, `get_anp_cdp_filtros` (canonical-field aware) |
 | `/anp-cdp-bsw` | Oil & Gas | `get_anp_cdp_bsw_scatter`, `get_anp_cdp_bsw_field_aggregate` (X axis: `pct_voip`), `get_anp_cdp_bsw_campos` |
 | `/anp-cdp-depletion` | Oil & Gas | `get_anp_cdp_depletion_campos`, `get_anp_cdp_depletion_scatter`, `get_anp_cdp_depletion_field_aggregate` |
@@ -83,7 +84,7 @@ dashboard_projeto/
 ├── docs/                     internal collaboration docs (start at master.md)
 ├── scripts/                  pipelines/ (auto), manual/ (human upload), utils/
 ├── src/                      Next.js app (see below)
-├── supabase/migrations/      182 SQL migrations (as of 2026-06-01)
+├── supabase/migrations/      183 SQL migrations (as of 2026-06-01)
 ├── sql/                      tech debt — 3 DDL files applied via Dashboard, NOT migrations
 ├── alertas/                  local-only — alert subsystem (PRD_ALERTAS.md)
 ├── DADOS/  data/  output/    local-only — parquet/csv/Excel
@@ -121,6 +122,7 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | `field_canonical_names` | field_raw | Override map for `canonical_field_name(text)` — consolidates well-name variants |
 | `field_canonical_expansion_cache` | — | Cached expansion of canonical → variants (refresh via pg_cron) |
 | `stock_portfolios` | uuid | `is_public` flag opens anon SELECT for system-owned public rows |
+| `stock_guide_companies`, `stock_guide_sensitivity`, `stock_guide_config` | ticker / ticker / id=1 | `/stock-guide` equities comps (price-independent fundamentals in BRL mn — `net_debt_y1`/`net_debt_y2` (per forward year), `net_income_y1/y2`, `fcfe_y1/y2`, `dividends_y1/y2`, `ebitda_y1/y2`, `volumes_y1/y2`; the 4 multiples EV/EBITDA · P/E · FCFE Yield · Div Yield are derived live in the browser from the Yahoo price, never stored — EV is forward per year: `EV(year) = Market cap + Net Debt(year)`) + freeform 2D sensitivity grids + global config; RLS-enabled with **no policies** (all reads via hide-aware SECURITY DEFINER RPCs) |
 | `module_visibility` | module_slug | 3 visibility axes (public / clients / home) |
 | `news_articles` | url | Scanned news feed (filled by the external News Hunter scanner repo) |
 | `news_hunter_keywords` | (user_id, keyword) | Per-user, RLS-scoped |
@@ -201,7 +203,7 @@ Mobile is **light-only** and ships per dashboard via a viewport router (`page.ts
 
 Global mobile chrome (`MobileTopBar`, `MobileKebabMenu`, `MobileHomePill`, `MobileToastHost`) is mounted by `(dashboard)/layout.tsx`. Export is desktop-only.
 
-14 mobile-eligible routes as of 2026-06-01: `/home`, `/well-by-well`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/anp-cdp-diaria`, `/market-share`, `/anp-glp`, `/price-bands`, `/subsidy-tracker`, `/diesel-gasoline-margins`, `/imports-exports`, `/navios-diesel`, `/news-hunter`. Desktop-only routes (`/stocks`, `/admin-panel`, `/admin-analytics`, `/alerts`, `/profile`, `/anp-cdp`, `/anp-prices`) mount `<MobileExcludedRedirect slug="..." />` in `page.tsx` and route to `/home?excluded=<slug>` with a toast on mobile.
+14 mobile-eligible routes as of 2026-06-01: `/home`, `/well-by-well`, `/stock-guide`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/anp-cdp-diaria`, `/market-share`, `/anp-glp`, `/price-bands`, `/subsidy-tracker`, `/diesel-gasoline-margins`, `/imports-exports`, `/navios-diesel`, `/news-hunter`. Desktop-only routes (`/stocks`, `/admin-panel`, `/admin-analytics`, `/alerts`, `/profile`, `/anp-cdp`, `/anp-prices`) mount `<MobileExcludedRedirect slug="..." />` in `page.tsx` and route to `/home?excluded=<slug>` with a toast on mobile.
 
 Full pattern: [`docs/app/dual-view-pattern.md`](docs/app/dual-view-pattern.md). Reform narrative: [`docs/changelog.md`](docs/changelog.md) (2026-05-27).
 

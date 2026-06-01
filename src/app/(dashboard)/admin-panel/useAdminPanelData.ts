@@ -42,6 +42,14 @@ import {
   rpcGetFieldStakesEmpresas,
   rpcAdminUpsertFieldStakes,
   rpcAdminDeleteFieldStakes,
+  rpcAdminGetStockGuideCompanies,
+  rpcAdminGetStockGuideSensitivity,
+  rpcAdminUpsertStockGuideCompany,
+  rpcAdminUpsertStockGuideSensitivity,
+  rpcAdminSetStockGuideVisibility,
+  rpcGetStockGuideConfig,
+  rpcAdminUpsertStockGuideConfig,
+  rpcAdminDeleteStockGuideCompany,
   type DefaultNewsKeyword,
 } from "../../../lib/rpc";
 import type {
@@ -49,6 +57,12 @@ import type {
   FieldStakeEmpresa,
   FieldStakeInput,
 } from "../../../types/fieldStakes";
+import type {
+  StockGuideAdminCompany,
+  StockGuideConfig,
+  SensitivityGrid,
+  StockGuideSector,
+} from "../../../types/stockGuide";
 
 // ── Field Stakes — canonical grouping (Round 4) ───────────────────────────────
 //
@@ -97,6 +111,98 @@ export type {
   AlertOutboxRow,
 };
 
+// ── Stock Guide — editable comps row ──────────────────────────────────────────
+//
+// The subset of `stock_guide_companies` an admin edits in the comps form. Every
+// numeric field is held as a STRING while typing (so the input can be cleared /
+// hold a partial value); they are coerced to number|null only when building the
+// `p_data` payload at save time. `ticker` doubles as the upsert key — it is set
+// when a row is loaded and stays read-only for existing companies. `is_visible`
+// is NOT part of this shape (it is the separate toggle RPC).
+//
+// FUNDAMENTALS, not multiples: the admin enters net debt per forward year,
+// EBITDA, net income, FCFE and dividends per forward year. The 4 price-sensitive
+// multiples (EV/EBITDA, P/E, FCFE Yield, Div Yield) are derived LIVE in the
+// /stock-guide dashboard from the Yahoo price + these inputs — never entered here.
+export interface SgEditorRow {
+  ticker: string;
+  company_name: string;
+  yahoo_symbol: string;
+  sector: StockGuideSector;
+  volume_unit: "kbpd" | "thousand_m3";
+  shares_outstanding: string;
+  /** Forward net debt per year (BRL mn); EV(year) = market cap + net debt(year). May be < 0. */
+  net_debt_y1: string;
+  net_debt_y2: string;
+  last_update: string;
+  target_price: string;
+  recommendation: "" | "OP" | "MP" | "UP";
+  ebitda_y1: string;
+  ebitda_y2: string;
+  net_income_y1: string;
+  net_income_y2: string;
+  fcfe_y1: string;
+  fcfe_y2: string;
+  dividends_y1: string;
+  dividends_y2: string;
+  volumes_y1: string;
+  volumes_y2: string;
+  display_order: string;
+}
+
+/** A pristine, empty (but buildable) sensitivity grid. */
+function blankSgGrid(): SensitivityGrid {
+  return {
+    row_axis_title: "",
+    col_axis_title: "",
+    value_label: "",
+    row_labels: [],
+    col_labels: [],
+    cells: [],
+  };
+}
+
+/** Stringify a number|null for an `<input>`'s value (null → empty string). */
+function numToStr(n: number | null | undefined): string {
+  return n == null ? "" : String(n);
+}
+
+/** Parse an input string back to number|null (empty/blank/NaN → null). */
+function strToNum(s: string): number | null {
+  const t = s.trim();
+  if (t === "") return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Project a full admin company row into the editable string-based editor row. */
+function adminCompanyToEditorRow(c: StockGuideAdminCompany): SgEditorRow {
+  return {
+    ticker: c.ticker,
+    company_name: c.company_name,
+    yahoo_symbol: c.yahoo_symbol ?? "",
+    sector: (c.sector ?? "oil_gas") as StockGuideSector,
+    volume_unit: (c.volume_unit ?? "kbpd") as "kbpd" | "thousand_m3",
+    shares_outstanding: numToStr(c.shares_outstanding),
+    net_debt_y1: numToStr(c.net_debt_y1),
+    net_debt_y2: numToStr(c.net_debt_y2),
+    last_update: c.last_update ?? "",
+    target_price: numToStr(c.target_price),
+    recommendation: c.recommendation ?? "",
+    ebitda_y1: numToStr(c.ebitda_y1),
+    ebitda_y2: numToStr(c.ebitda_y2),
+    net_income_y1: numToStr(c.net_income_y1),
+    net_income_y2: numToStr(c.net_income_y2),
+    fcfe_y1: numToStr(c.fcfe_y1),
+    fcfe_y2: numToStr(c.fcfe_y2),
+    dividends_y1: numToStr(c.dividends_y1),
+    dividends_y2: numToStr(c.dividends_y2),
+    volumes_y1: numToStr(c.volumes_y1),
+    volumes_y2: numToStr(c.volumes_y2),
+    display_order: numToStr(c.display_order),
+  };
+}
+
 // ── Section metadata ──────────────────────────────────────────────────────────
 
 export type SectionId =
@@ -106,7 +212,8 @@ export type SectionId =
   | "alerts-product"
   | "default-news"
   | "data-input"
-  | "field-stakes";
+  | "field-stakes"
+  | "stock-guide";
 
 export interface SectionMeta {
   id: SectionId;
@@ -123,6 +230,7 @@ export const SECTIONS: SectionMeta[] = [
   { id: "default-news",     label: "Default News Keywords", shortLabel: "News Defaults", description: "Keywords used by anonymous News Hunter visitors" },
   { id: "data-input",       label: "Data Input",            shortLabel: "Tables",       description: "Edit reference tables" },
   { id: "field-stakes",     label: "Field Stakes",          shortLabel: "Stakes",       description: "Working-interest per oil field (company × stake %)" },
+  { id: "stock-guide",      label: "Stock Guide",           shortLabel: "Stocks",       description: "Comps multiples, sensitivity grids, and global config" },
 ];
 
 // ── Module catalog ─────────────────────────────────────────────────────────────
@@ -151,6 +259,8 @@ export const MODULE_LABELS: ModuleLabel[] = [
   { slug: "anp-cdp-diaria",          label: "Daily Production",             description: "Daily oil and gas production by field from ANP Power BI" },
   { slug: "anp-cdp-bsw",             label: "BSW by Well",                  description: "Water cut vs months since first production, by well" },
   { slug: "anp-cdp-depletion",       label: "Depletion",                    description: "Uptime-normalized oil production and decline analysis by field" },
+  // Equities
+  { slug: "stock-guide",             label: "Stock Guide",                  description: "Equities-research comps table with live market cap/upside and per-company sensitivity drill-down" },
   // Other
   { slug: "stocks",                  label: "Market Watch",                 description: "Real-time stock quotes, historical charts, and market overview" },
   { slug: "news-hunter",             label: "News Hunter",                  description: "Live oil & gas news feed with incremental polling across ~60 sources" },
@@ -331,6 +441,65 @@ export interface UseAdminPanelData {
   handleDeleteCampo: (campo: string) => void;
   handleConfirmDeleteCampo: () => Promise<void>;
   handleCancelDeleteCampo: () => void;
+
+  // Stock Guide
+  /** All companies incl. hidden (use `is_visible` for the Restricted badge). */
+  sgCompanies: StockGuideAdminCompany[];
+  sgLoading: boolean;
+  /** Global singleton config (forward-year labels + assumptions note). */
+  sgConfig: StockGuideConfig;
+  /** Editable mirror of `sgConfig` (saved via handleSaveSgConfig). */
+  sgConfigDraft: StockGuideConfig;
+  setSgConfigDraft: (c: StockGuideConfig) => void;
+  sgConfigSaving: boolean;
+  sgConfigSaved: boolean;
+  sgConfigError: string | null;
+  /** Ticker of the currently selected company (or null). */
+  sgSelectedTicker: string | null;
+  /** Editable comps fields for the selected company (string-typed). */
+  sgEditorRow: SgEditorRow | null;
+  sgEditorLoading: boolean;
+  /** Editable sensitivity grid for the selected company. */
+  sgGrid: SensitivityGrid;
+  sgSaving: boolean;
+  sgGridSaving: boolean;
+  sgError: string | null;
+  sgGridError: string | null;
+  sgDeleteConfirm: string | null;
+  /** Visibility toggle currently in-flight (ticker), for spinner/disable. */
+  sgTogglingVisibility: string | null;
+  // Left-pane filters
+  sgSearchQuery: string;
+  setSgSearchQuery: (v: string) => void;
+  sgSectorFilter: "all" | StockGuideSector;
+  setSgSectorFilter: (v: "all" | StockGuideSector) => void;
+  /** Companies filtered by sgSearchQuery + sgSectorFilter. */
+  sgFilteredCompanies: StockGuideAdminCompany[];
+  /** True when sgEditorRow differs from the last server snapshot. */
+  sgPendingChanges: boolean;
+  /** True when sgGrid differs from the last server snapshot. */
+  sgGridPendingChanges: boolean;
+  // Handlers
+  handleSelectStockGuideCompany: (ticker: string) => Promise<void>;
+  handleChangeSgField: (field: keyof SgEditorRow, value: string) => void;
+  handleSaveSgCompany: () => Promise<void>;
+  handleToggleSgVisibility: (ticker: string, isVisible: boolean) => Promise<void>;
+  handleAddSgRow: () => void;
+  handleAddSgCol: () => void;
+  handleRemoveSgRow: (i: number) => void;
+  handleRemoveSgCol: (j: number) => void;
+  handleChangeSgRowLabel: (i: number, value: string) => void;
+  handleChangeSgColLabel: (j: number, value: string) => void;
+  handleChangeSgCell: (i: number, j: number, value: string) => void;
+  handleChangeSgAxis: (
+    field: "row_axis_title" | "col_axis_title" | "value_label",
+    value: string,
+  ) => void;
+  handleSaveSgGrid: () => Promise<void>;
+  handleSaveSgConfig: () => Promise<void>;
+  handleDeleteSgCompany: (ticker: string) => void;
+  handleConfirmDeleteSgCompany: () => Promise<void>;
+  handleCancelDeleteSgCompany: () => void;
 
   // Pure helpers (re-exported for both views)
   isValidEmail: (email: string) => boolean;
@@ -1164,6 +1333,355 @@ export function useAdminPanelData(): UseAdminPanelData {
     return groups;
   }, [filteredOverview]);
 
+  // ── Stock Guide ────────────────────────────────────────────────────────────
+  const [sgCompanies, setSgCompanies] = useState<StockGuideAdminCompany[]>([]);
+  const [sgLoading, setSgLoading] = useState(false);
+  const [sgConfig, setSgConfig] = useState<StockGuideConfig>({
+    y1_label: "",
+    y2_label: "",
+    assumptions_note: "",
+  });
+  const [sgConfigDraft, setSgConfigDraft] = useState<StockGuideConfig>({
+    y1_label: "",
+    y2_label: "",
+    assumptions_note: "",
+  });
+  const [sgConfigSaving, setSgConfigSaving] = useState(false);
+  const [sgConfigSaved, setSgConfigSaved] = useState(false);
+  const [sgConfigError, setSgConfigError] = useState<string | null>(null);
+  const [sgSelectedTicker, setSgSelectedTicker] = useState<string | null>(null);
+  const [sgEditorRow, setSgEditorRow] = useState<SgEditorRow | null>(null);
+  const [sgEditorLoading, setSgEditorLoading] = useState(false);
+  const [sgGrid, setSgGrid] = useState<SensitivityGrid>(blankSgGrid());
+  const [sgSaving, setSgSaving] = useState(false);
+  const [sgGridSaving, setSgGridSaving] = useState(false);
+  const [sgError, setSgError] = useState<string | null>(null);
+  const [sgGridError, setSgGridError] = useState<string | null>(null);
+  const [sgDeleteConfirm, setSgDeleteConfirm] = useState<string | null>(null);
+  const [sgTogglingVisibility, setSgTogglingVisibility] = useState<string | null>(null);
+  const [sgSearchQuery, setSgSearchQuery] = useState("");
+  const [sgSectorFilter, setSgSectorFilter] = useState<"all" | StockGuideSector>("all");
+
+  // Last-saved JSON snapshots for change-detection (refs — no re-render needed;
+  // compared inside the pendingChanges useMemos below). Mirrors Field Stakes.
+  const sgEditorSnapshotRef = useRef<string>("null");
+  const sgGridSnapshotRef = useRef<string>(JSON.stringify(blankSgGrid()));
+
+  const loadStockGuide = useCallback(async () => {
+    if (!supabase) return;
+    setSgLoading(true);
+    setSgError(null);
+    try {
+      const [companies, config] = await Promise.all([
+        rpcAdminGetStockGuideCompanies(supabase),
+        rpcGetStockGuideConfig(supabase),
+      ]);
+      setSgCompanies(companies);
+      setSgConfig(config);
+      setSgConfigDraft(config);
+    } catch (e) {
+      console.error("Failed to load Stock Guide admin data", e);
+      setSgError("Could not load Stock Guide data. Please try again.");
+      setTimeout(
+        () => setSgError((err) => (err?.startsWith("Could not load") ? null : err)),
+        4000,
+      );
+    }
+    setSgLoading(false);
+  }, [supabase]);
+
+  // Lazy-load: only fetch when the section becomes active for the first time.
+  useEffect(() => {
+    if (allowed && activeSection === "stock-guide") loadStockGuide();
+  }, [allowed, activeSection, loadStockGuide]);
+
+  const handleSelectStockGuideCompany = useCallback(
+    async (ticker: string) => {
+      if (!supabase) return;
+      setSgSelectedTicker(ticker);
+      setSgError(null);
+      setSgGridError(null);
+      setSgEditorLoading(true);
+      // Project the already-loaded company row into the editable form.
+      const company = sgCompanies.find((c) => c.ticker === ticker);
+      if (company) {
+        const editorRow = adminCompanyToEditorRow(company);
+        setSgEditorRow(editorRow);
+        sgEditorSnapshotRef.current = JSON.stringify(editorRow);
+      } else {
+        setSgEditorRow(null);
+        sgEditorSnapshotRef.current = "null";
+      }
+      // Load the sensitivity grid (null → a blank, buildable grid).
+      try {
+        const grid = await rpcAdminGetStockGuideSensitivity(supabase, ticker);
+        const resolved = grid ?? blankSgGrid();
+        setSgGrid(resolved);
+        sgGridSnapshotRef.current = JSON.stringify(resolved);
+      } catch (e) {
+        console.error("Failed to load sensitivity grid", e);
+        const blank = blankSgGrid();
+        setSgGrid(blank);
+        sgGridSnapshotRef.current = JSON.stringify(blank);
+        setSgGridError("Could not load the sensitivity grid for this company.");
+      }
+      setSgEditorLoading(false);
+    },
+    [supabase, sgCompanies],
+  );
+
+  const handleChangeSgField = useCallback(
+    (field: keyof SgEditorRow, value: string) => {
+      setSgEditorRow((prev) => (prev ? { ...prev, [field]: value } : prev));
+    },
+    [],
+  );
+
+  const handleSaveSgCompany = useCallback(async () => {
+    if (!supabase || !sgSelectedTicker || !sgEditorRow || sgSaving) return;
+    setSgSaving(true);
+    setSgError(null);
+    try {
+      // Build the `p_data` object — keys MUST match the migration's
+      // admin_upsert_stock_guide_company p_data reads. `is_visible` is
+      // deliberately omitted (separate toggle RPC). Numerics → number|null;
+      // text fields trimmed; recommendation "" → null.
+      const r = sgEditorRow;
+      const data: Record<string, unknown> = {
+        company_name: r.company_name.trim(),
+        yahoo_symbol: r.yahoo_symbol.trim(),
+        sector: r.sector,
+        volume_unit: r.volume_unit,
+        shares_outstanding: strToNum(r.shares_outstanding),
+        net_debt_y1: strToNum(r.net_debt_y1),
+        net_debt_y2: strToNum(r.net_debt_y2),
+        last_update: r.last_update.trim() === "" ? null : r.last_update,
+        target_price: strToNum(r.target_price),
+        recommendation: r.recommendation === "" ? null : r.recommendation,
+        ebitda_y1: strToNum(r.ebitda_y1),
+        ebitda_y2: strToNum(r.ebitda_y2),
+        net_income_y1: strToNum(r.net_income_y1),
+        net_income_y2: strToNum(r.net_income_y2),
+        fcfe_y1: strToNum(r.fcfe_y1),
+        fcfe_y2: strToNum(r.fcfe_y2),
+        dividends_y1: strToNum(r.dividends_y1),
+        dividends_y2: strToNum(r.dividends_y2),
+        volumes_y1: strToNum(r.volumes_y1),
+        volumes_y2: strToNum(r.volumes_y2),
+        display_order: strToNum(r.display_order) ?? 0,
+      };
+      await rpcAdminUpsertStockGuideCompany(supabase, sgSelectedTicker, data);
+      // Snapshot the saved editor state so pendingChanges resets to false.
+      sgEditorSnapshotRef.current = JSON.stringify(sgEditorRow);
+      await loadStockGuide();
+    } catch (e: unknown) {
+      const msg =
+        e && typeof e === "object" && "message" in e
+          ? String((e as { message?: unknown }).message ?? "Save failed.")
+          : "Save failed.";
+      setSgError(msg);
+    }
+    setSgSaving(false);
+  }, [supabase, sgSelectedTicker, sgEditorRow, sgSaving, loadStockGuide]);
+
+  const handleToggleSgVisibility = useCallback(
+    async (ticker: string, isVisible: boolean) => {
+      if (!supabase || sgTogglingVisibility) return;
+      const prev = sgCompanies.find((c) => c.ticker === ticker)?.is_visible ?? true;
+      // Optimistic flip in the list.
+      setSgCompanies((list) =>
+        list.map((c) => (c.ticker === ticker ? { ...c, is_visible: isVisible } : c)),
+      );
+      setSgTogglingVisibility(ticker);
+      setSgError(null);
+      try {
+        await rpcAdminSetStockGuideVisibility(supabase, ticker, isVisible);
+      } catch (e: unknown) {
+        // Rollback on throw.
+        setSgCompanies((list) =>
+          list.map((c) => (c.ticker === ticker ? { ...c, is_visible: prev } : c)),
+        );
+        const msg =
+          e && typeof e === "object" && "message" in e
+            ? String((e as { message?: unknown }).message ?? "Could not update visibility.")
+            : "Could not update visibility.";
+        setSgError(msg);
+        setTimeout(() => setSgError((err) => (err === msg ? null : err)), 4000);
+      }
+      setSgTogglingVisibility(null);
+    },
+    [supabase, sgTogglingVisibility, sgCompanies],
+  );
+
+  // ── Sensitivity grid editors ───────────────────────────────────────────────
+  // Keep `cells` dims in sync with row/col labels on every structural mutation.
+
+  const handleAddSgRow = useCallback(() => {
+    setSgGrid((g) => ({
+      ...g,
+      row_labels: [...g.row_labels, ""],
+      // New row gets one null cell per existing column.
+      cells: [...g.cells, g.col_labels.map(() => null)],
+    }));
+  }, []);
+
+  const handleAddSgCol = useCallback(() => {
+    setSgGrid((g) => ({
+      ...g,
+      col_labels: [...g.col_labels, ""],
+      // Append a null to every existing row so each row length === col count.
+      cells: g.cells.map((row) => [...row, null]),
+    }));
+  }, []);
+
+  const handleRemoveSgRow = useCallback((i: number) => {
+    setSgGrid((g) => ({
+      ...g,
+      row_labels: g.row_labels.filter((_, idx) => idx !== i),
+      cells: g.cells.filter((_, idx) => idx !== i),
+    }));
+  }, []);
+
+  const handleRemoveSgCol = useCallback((j: number) => {
+    setSgGrid((g) => ({
+      ...g,
+      col_labels: g.col_labels.filter((_, idx) => idx !== j),
+      cells: g.cells.map((row) => row.filter((_, idx) => idx !== j)),
+    }));
+  }, []);
+
+  const handleChangeSgRowLabel = useCallback((i: number, value: string) => {
+    setSgGrid((g) => ({
+      ...g,
+      row_labels: g.row_labels.map((lbl, idx) => (idx === i ? value : lbl)),
+    }));
+  }, []);
+
+  const handleChangeSgColLabel = useCallback((j: number, value: string) => {
+    setSgGrid((g) => ({
+      ...g,
+      col_labels: g.col_labels.map((lbl, idx) => (idx === j ? value : lbl)),
+    }));
+  }, []);
+
+  const handleChangeSgCell = useCallback((i: number, j: number, value: string) => {
+    setSgGrid((g) => ({
+      ...g,
+      cells: g.cells.map((row, ri) =>
+        ri === i ? row.map((cell, ci) => (ci === j ? strToNum(value) : cell)) : row,
+      ),
+    }));
+  }, []);
+
+  const handleChangeSgAxis = useCallback(
+    (field: "row_axis_title" | "col_axis_title" | "value_label", value: string) => {
+      setSgGrid((g) => ({ ...g, [field]: value }));
+    },
+    [],
+  );
+
+  const handleSaveSgGrid = useCallback(async () => {
+    if (!supabase || !sgSelectedTicker || sgGridSaving) return;
+    setSgGridSaving(true);
+    setSgGridError(null);
+    try {
+      await rpcAdminUpsertStockGuideSensitivity(supabase, sgSelectedTicker, sgGrid);
+      sgGridSnapshotRef.current = JSON.stringify(sgGrid);
+    } catch (e: unknown) {
+      // Surface the server's thrown message verbatim (e.g. grid_dims_mismatch).
+      const msg =
+        e && typeof e === "object" && "message" in e
+          ? String((e as { message?: unknown }).message ?? "Could not save the grid.")
+          : "Could not save the grid.";
+      setSgGridError(msg);
+    }
+    setSgGridSaving(false);
+  }, [supabase, sgSelectedTicker, sgGrid, sgGridSaving]);
+
+  const handleSaveSgConfig = useCallback(async () => {
+    if (!supabase || sgConfigSaving) return;
+    setSgConfigSaving(true);
+    setSgConfigError(null);
+    try {
+      await rpcAdminUpsertStockGuideConfig(
+        supabase,
+        sgConfigDraft.y1_label.trim(),
+        sgConfigDraft.y2_label.trim(),
+        sgConfigDraft.assumptions_note,
+      );
+      setSgConfig(sgConfigDraft);
+      setSgConfigSaved(true);
+      setTimeout(() => setSgConfigSaved(false), 2000);
+    } catch (e: unknown) {
+      const msg =
+        e && typeof e === "object" && "message" in e
+          ? String((e as { message?: unknown }).message ?? "Could not save config.")
+          : "Could not save config.";
+      setSgConfigError(msg);
+      setTimeout(() => setSgConfigError((err) => (err === msg ? null : err)), 4000);
+    }
+    setSgConfigSaving(false);
+  }, [supabase, sgConfigSaving, sgConfigDraft]);
+
+  const handleDeleteSgCompany = useCallback((ticker: string) => {
+    setSgDeleteConfirm(ticker);
+  }, []);
+
+  const handleConfirmDeleteSgCompany = useCallback(async () => {
+    if (!supabase || !sgDeleteConfirm) return;
+    const ticker = sgDeleteConfirm;
+    setSgSaving(true);
+    setSgError(null);
+    try {
+      await rpcAdminDeleteStockGuideCompany(supabase, ticker);
+      await loadStockGuide();
+      if (sgSelectedTicker === ticker) {
+        setSgSelectedTicker(null);
+        setSgEditorRow(null);
+        sgEditorSnapshotRef.current = "null";
+        const blank = blankSgGrid();
+        setSgGrid(blank);
+        sgGridSnapshotRef.current = JSON.stringify(blank);
+      }
+      setSgDeleteConfirm(null);
+    } catch (e: unknown) {
+      const msg =
+        e && typeof e === "object" && "message" in e
+          ? String((e as { message?: unknown }).message ?? "Delete failed.")
+          : "Delete failed.";
+      setSgError(msg);
+    }
+    setSgSaving(false);
+  }, [supabase, sgDeleteConfirm, sgSelectedTicker, loadStockGuide]);
+
+  const handleCancelDeleteSgCompany = useCallback(() => {
+    setSgDeleteConfirm(null);
+  }, []);
+
+  // Derived: filtered company list + pending-change flags.
+  const sgFilteredCompanies = useMemo(() => {
+    const q = sgSearchQuery.trim().toLowerCase();
+    return sgCompanies.filter((c) => {
+      if (sgSectorFilter !== "all" && c.sector !== sgSectorFilter) return false;
+      if (q) {
+        const inTicker = c.ticker.toLowerCase().includes(q);
+        const inName = c.company_name.toLowerCase().includes(q);
+        if (!inTicker && !inName) return false;
+      }
+      return true;
+    });
+  }, [sgCompanies, sgSearchQuery, sgSectorFilter]);
+
+  const sgPendingChanges = useMemo(
+    () => JSON.stringify(sgEditorRow) !== sgEditorSnapshotRef.current,
+    [sgEditorRow],
+  );
+
+  const sgGridPendingChanges = useMemo(
+    () => JSON.stringify(sgGrid) !== sgGridSnapshotRef.current,
+    [sgGrid],
+  );
+
   return {
     allowed,
     roleLoading,
@@ -1288,6 +1806,49 @@ export function useAdminPanelData(): UseAdminPanelData {
     handleDeleteCampo,
     handleConfirmDeleteCampo,
     handleCancelDeleteCampo,
+
+    sgCompanies,
+    sgLoading,
+    sgConfig,
+    sgConfigDraft,
+    setSgConfigDraft,
+    sgConfigSaving,
+    sgConfigSaved,
+    sgConfigError,
+    sgSelectedTicker,
+    sgEditorRow,
+    sgEditorLoading,
+    sgGrid,
+    sgSaving,
+    sgGridSaving,
+    sgError,
+    sgGridError,
+    sgDeleteConfirm,
+    sgTogglingVisibility,
+    sgSearchQuery,
+    setSgSearchQuery,
+    sgSectorFilter,
+    setSgSectorFilter,
+    sgFilteredCompanies,
+    sgPendingChanges,
+    sgGridPendingChanges,
+    handleSelectStockGuideCompany,
+    handleChangeSgField,
+    handleSaveSgCompany,
+    handleToggleSgVisibility,
+    handleAddSgRow,
+    handleAddSgCol,
+    handleRemoveSgRow,
+    handleRemoveSgCol,
+    handleChangeSgRowLabel,
+    handleChangeSgColLabel,
+    handleChangeSgCell,
+    handleChangeSgAxis,
+    handleSaveSgGrid,
+    handleSaveSgConfig,
+    handleDeleteSgCompany,
+    handleConfirmDeleteSgCompany,
+    handleCancelDeleteSgCompany,
 
     isValidEmail,
     formatDateBR,

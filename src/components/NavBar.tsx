@@ -86,6 +86,7 @@ const NAV_ENTRIES: NavEntry[] = [
       },
     ],
   },
+  { label: "Stock Guide", href: "/stock-guide" },
   { label: "Market Watch", href: "/stocks" },
   { label: "Alerts", href: "/alerts" },
   { label: "News Hunter", href: "/news-hunter" },

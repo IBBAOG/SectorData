@@ -79,6 +79,12 @@ const SECTION_ICONS: Record<SectionId, React.ReactNode> = {
       <line x1="12" y1="22.08" x2="12" y2="12" />
     </svg>
   ),
+  "stock-guide": (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+      <polyline points="17 6 23 6 23 12" />
+    </svg>
+  ),
 };
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -205,6 +211,47 @@ export default function DesktopView(): React.ReactElement | null {
     handleConfirmDeleteCampo,
     handleCancelDeleteCampo,
 
+    sgLoading,
+    sgConfigDraft,
+    setSgConfigDraft,
+    sgConfigSaving,
+    sgConfigSaved,
+    sgConfigError,
+    sgSelectedTicker,
+    sgEditorRow,
+    sgEditorLoading,
+    sgGrid,
+    sgSaving,
+    sgGridSaving,
+    sgError,
+    sgGridError,
+    sgDeleteConfirm,
+    sgTogglingVisibility,
+    sgSearchQuery,
+    setSgSearchQuery,
+    sgSectorFilter,
+    setSgSectorFilter,
+    sgFilteredCompanies,
+    sgPendingChanges,
+    sgGridPendingChanges,
+    handleSelectStockGuideCompany,
+    handleChangeSgField,
+    handleSaveSgCompany,
+    handleToggleSgVisibility,
+    handleAddSgRow,
+    handleAddSgCol,
+    handleRemoveSgRow,
+    handleRemoveSgCol,
+    handleChangeSgRowLabel,
+    handleChangeSgColLabel,
+    handleChangeSgCell,
+    handleChangeSgAxis,
+    handleSaveSgGrid,
+    handleSaveSgConfig,
+    handleDeleteSgCompany,
+    handleConfirmDeleteSgCompany,
+    handleCancelDeleteSgCompany,
+
     isValidEmail,
     formatDateBR,
   } = useAdminPanelData();
@@ -212,6 +259,43 @@ export default function DesktopView(): React.ReactElement | null {
   if (roleLoading || !allowed) return null;
 
   const currentSection = SECTIONS.find((s) => s.id === activeSection)!;
+
+  // ── Stock Guide comps-field rendering helper (local; keeps the 16 numeric
+  //    inputs DRY). Each field is a labeled text/number input bound to
+  //    sgEditorRow via handleChangeSgField. ────────────────────────────────────
+  const SG_INPUT_STYLE: React.CSSProperties = {
+    width: "100%", padding: "6px 10px", borderRadius: 6,
+    border: "1px solid #e0e0e0", fontSize: 13, fontFamily: "Arial, sans-serif",
+    outline: "none", boxSizing: "border-box",
+  };
+  type SgNumericField =
+    | "shares_outstanding" | "target_price" | "display_order"
+    | "net_debt_y1" | "net_debt_y2"
+    | "ebitda_y1" | "ebitda_y2" | "net_income_y1" | "net_income_y2"
+    | "fcfe_y1" | "fcfe_y2" | "dividends_y1" | "dividends_y2"
+    | "volumes_y1" | "volumes_y2";
+  const renderSgNumField = (
+    field: SgNumericField,
+    label: string,
+    opts?: { hint?: string; placeholder?: string; step?: number },
+  ): React.ReactElement => (
+    <label style={{ display: "block" }}>
+      <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#888", marginBottom: 4, letterSpacing: "0.02em" }}>
+        {label}
+      </span>
+      <input
+        type="number"
+        step={opts?.step ?? "any"}
+        value={sgEditorRow ? sgEditorRow[field] : ""}
+        onChange={(e) => handleChangeSgField(field, e.target.value)}
+        placeholder={opts?.placeholder ?? ""}
+        style={{ ...SG_INPUT_STYLE, textAlign: "right" }}
+      />
+      {opts?.hint && (
+        <span style={{ display: "block", fontSize: 10, color: "#aaa", marginTop: 3 }}>{opts.hint}</span>
+      )}
+    </label>
+  );
 
   return (
     <main style={{ background: BG, minHeight: "100vh", fontFamily: "Arial, sans-serif" }}>
@@ -1836,6 +1920,664 @@ export default function DesktopView(): React.ReactElement | null {
                 </div>
               )}
             </div>
+          )}
+
+          {/* ── Stock Guide ──────────────────────────────────────────────────── */}
+          {activeSection === "stock-guide" && (
+            <>
+              {/* ── Global config sub-panel ───────────────────────────────────── */}
+              <div className="settings-card" style={{ marginBottom: 18 }}>
+                <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>
+                  Forward-year labels &amp; assumptions
+                </h2>
+                <p style={{ fontSize: 13, color: "#888", margin: "0 0 16px" }}>
+                  Column headers shown over the Y1/Y2 multiples, plus the assumptions footnote on the public dashboard.
+                </p>
+                <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+                  <label style={{ display: "block", width: 140 }}>
+                    <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#888", marginBottom: 4 }}>
+                      Year 1 label
+                    </span>
+                    <input
+                      type="text"
+                      value={sgConfigDraft.y1_label}
+                      onChange={(e) => setSgConfigDraft({ ...sgConfigDraft, y1_label: e.target.value })}
+                      placeholder="2026E"
+                      style={{ ...SG_INPUT_STYLE }}
+                    />
+                  </label>
+                  <label style={{ display: "block", width: 140 }}>
+                    <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#888", marginBottom: 4 }}>
+                      Year 2 label
+                    </span>
+                    <input
+                      type="text"
+                      value={sgConfigDraft.y2_label}
+                      onChange={(e) => setSgConfigDraft({ ...sgConfigDraft, y2_label: e.target.value })}
+                      placeholder="2027E"
+                      style={{ ...SG_INPUT_STYLE }}
+                    />
+                  </label>
+                  <label style={{ display: "block", flex: 1, minWidth: 240 }}>
+                    <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#888", marginBottom: 4 }}>
+                      Assumptions note
+                    </span>
+                    <textarea
+                      value={sgConfigDraft.assumptions_note}
+                      onChange={(e) => setSgConfigDraft({ ...sgConfigDraft, assumptions_note: e.target.value })}
+                      placeholder="e.g. Brent USD 80/bbl 2026, BRL 5.20/USD"
+                      rows={2}
+                      style={{ ...SG_INPUT_STYLE, resize: "vertical", minHeight: 56 }}
+                    />
+                  </label>
+                </div>
+                {sgConfigError && (
+                  <div style={{
+                    marginTop: 12, padding: "10px 12px", borderRadius: 8,
+                    background: "#fff5f5", border: "1px solid rgba(229,62,62,0.3)",
+                    color: "#c0392b", fontSize: 12, lineHeight: 1.4,
+                  }}>
+                    {sgConfigError}
+                  </div>
+                )}
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16 }}>
+                  <button
+                    onClick={handleSaveSgConfig}
+                    disabled={sgConfigSaving}
+                    style={{
+                      padding: "8px 22px", borderRadius: 8, border: "none",
+                      background: sgConfigSaving ? "#e0e0e0" : ORANGE,
+                      color: sgConfigSaving ? "#aaa" : "#fff",
+                      fontSize: 13, fontWeight: 700,
+                      cursor: sgConfigSaving ? "not-allowed" : "pointer",
+                      fontFamily: "Arial, sans-serif", transition: "background 0.15s",
+                    }}
+                  >
+                    {sgConfigSaving ? "Saving…" : "Save config"}
+                  </button>
+                  {sgConfigSaved && (
+                    <span style={{ fontSize: 12, color: "#38a169", fontWeight: 600 }}>Saved ✓</span>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Two-pane: company list + editor ───────────────────────────── */}
+              <div className="settings-card" style={{ padding: 0, overflow: "hidden" }}>
+                <div style={{ display: "flex", minHeight: 560, alignItems: "stretch" }}>
+
+                  {/* ── Left pane: company list ─────────────────────────────── */}
+                  <div style={{ width: 320, flexShrink: 0, borderRight: "1px solid #ececec", display: "flex", flexDirection: "column", background: "#fafafa" }}>
+                    <div style={{ padding: "20px 16px 12px", borderBottom: "1px solid #ececec", background: "#fff" }}>
+                      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+                        <h2 style={{ fontSize: "0.95rem", fontWeight: 700, color: "#1a1a1a", margin: 0 }}>
+                          Companies
+                        </h2>
+                        <span style={{ fontSize: 11, color: "#aaa", fontWeight: 600 }}>
+                          {sgFilteredCompanies.length} shown
+                        </span>
+                      </div>
+                      <input
+                        type="search"
+                        value={sgSearchQuery}
+                        onChange={(e) => setSgSearchQuery(e.target.value)}
+                        placeholder="Search ticker or name…"
+                        style={{
+                          width: "100%", padding: "7px 10px", borderRadius: 8,
+                          border: "1px solid #e0e0e0", fontSize: 13, fontFamily: "Arial, sans-serif",
+                          outline: "none", boxSizing: "border-box",
+                        }}
+                      />
+                      <div style={{ display: "flex", gap: 4, marginTop: 10 }}>
+                        {([
+                          { id: "all" as const,               label: "All" },
+                          { id: "oil_gas" as const,           label: "Oil & Gas" },
+                          { id: "fuel_distribution" as const, label: "Fuel Dist." },
+                        ]).map(({ id, label }) => {
+                          const isActive = sgSectorFilter === id;
+                          return (
+                            <button
+                              key={id}
+                              onClick={() => setSgSectorFilter(id)}
+                              style={{
+                                flex: 1, padding: "5px 6px", borderRadius: 6,
+                                border: isActive ? `1px solid ${ORANGE}` : "1px solid transparent",
+                                background: isActive ? "rgba(255,80,0,0.10)" : "#f5f5f5",
+                                color: isActive ? ORANGE : "#888",
+                                fontSize: 11, fontWeight: 700, cursor: "pointer",
+                                fontFamily: "Arial, sans-serif", textAlign: "center",
+                                transition: "background 0.15s, border-color 0.15s",
+                              }}
+                              aria-pressed={isActive}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div style={{ flex: 1, overflowY: "auto", maxHeight: 520 }}>
+                      {sgLoading ? (
+                        <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>
+                          Loading companies…
+                        </div>
+                      ) : sgFilteredCompanies.length === 0 ? (
+                        <div style={{ padding: "24px 16px", textAlign: "center", color: "#bbb", fontSize: 12 }}>
+                          No companies match the current filters.
+                        </div>
+                      ) : (
+                        sgFilteredCompanies.map((c) => {
+                          const isSelected = sgSelectedTicker === c.ticker;
+                          const toggling = sgTogglingVisibility === c.ticker;
+                          return (
+                            <div
+                              key={c.ticker}
+                              style={{
+                                borderLeft: isSelected ? `3px solid ${ORANGE}` : "3px solid transparent",
+                                background: isSelected ? "#fff" : "transparent",
+                                borderBottom: "1px solid #f0f0f0",
+                                display: "flex", alignItems: "center", gap: 8,
+                                padding: "8px 12px 8px 14px",
+                                transition: "background 0.1s",
+                              }}
+                              onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = "#f0f0f0"; }}
+                              onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                            >
+                              <button
+                                onClick={() => handleSelectStockGuideCompany(c.ticker)}
+                                style={{
+                                  flex: 1, minWidth: 0, textAlign: "left", border: "none",
+                                  background: "transparent", cursor: "pointer", padding: 0,
+                                  fontFamily: "Arial, sans-serif",
+                                }}
+                              >
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a" }}>
+                                    {c.ticker}
+                                  </span>
+                                  {!c.is_visible && (
+                                    <span style={{
+                                      fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 8,
+                                      background: "rgba(160,160,160,0.18)", color: "#888", whiteSpace: "nowrap",
+                                      textTransform: "uppercase", letterSpacing: "0.04em",
+                                    }}>
+                                      Restricted
+                                    </span>
+                                  )}
+                                </div>
+                                <div style={{ fontSize: 11, color: "#999", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {c.company_name}
+                                </div>
+                              </button>
+                              {/* Hide/show toggle (optimistic) */}
+                              <button
+                                onClick={() => handleToggleSgVisibility(c.ticker, !c.is_visible)}
+                                disabled={toggling}
+                                role="switch"
+                                aria-checked={c.is_visible}
+                                aria-label={c.is_visible ? `Hide ${c.ticker}` : `Show ${c.ticker}`}
+                                title={c.is_visible ? "Visible — click to restrict" : "Restricted — click to make visible"}
+                                style={{
+                                  flexShrink: 0, width: 38, height: 22, borderRadius: 11, border: "none",
+                                  background: c.is_visible ? ORANGE : "#ccc",
+                                  cursor: toggling ? "wait" : "pointer", position: "relative",
+                                  transition: "background 0.15s", opacity: toggling ? 0.6 : 1, padding: 0,
+                                }}
+                              >
+                                <span style={{
+                                  position: "absolute", top: 2, left: c.is_visible ? 18 : 2,
+                                  width: 18, height: 18, borderRadius: "50%", background: "#fff",
+                                  transition: "left 0.15s", boxShadow: "0 1px 2px rgba(0,0,0,0.2)",
+                                }} />
+                              </button>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ── Right pane: comps editor + grid editor ──────────────── */}
+                  <div style={{ flex: 1, padding: "20px 24px", display: "flex", flexDirection: "column", minWidth: 0, overflowY: "auto", maxHeight: 700 }}>
+                    {!sgSelectedTicker ? (
+                      <div style={{
+                        flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+                        color: "#bbb", fontSize: 13, textAlign: "center", padding: 32,
+                      }}>
+                        Select a company on the left to edit its comps and sensitivity grid.
+                      </div>
+                    ) : sgEditorLoading || !sgEditorRow ? (
+                      <div style={{ padding: "32px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>
+                        Loading company…
+                      </div>
+                    ) : (
+                      <>
+                        {/* Header */}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
+                          <h3 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#1a1a1a", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {sgSelectedTicker}
+                          </h3>
+                        </div>
+
+                        {/* ── Comps editor ──────────────────────────────────── */}
+                        {/* Identity fields */}
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14, marginBottom: 4 }}>
+                          <label style={{ display: "block" }}>
+                            <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#888", marginBottom: 4 }}>Company name</span>
+                            <input
+                              type="text"
+                              value={sgEditorRow.company_name}
+                              onChange={(e) => handleChangeSgField("company_name", e.target.value)}
+                              placeholder="Company name"
+                              style={{ ...SG_INPUT_STYLE }}
+                            />
+                          </label>
+                          <label style={{ display: "block" }}>
+                            <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#888", marginBottom: 4 }}>Yahoo symbol</span>
+                            <input
+                              type="text"
+                              value={sgEditorRow.yahoo_symbol}
+                              onChange={(e) => handleChangeSgField("yahoo_symbol", e.target.value)}
+                              placeholder="e.g. PETR4"
+                              style={{ ...SG_INPUT_STYLE }}
+                            />
+                          </label>
+                          <label style={{ display: "block" }}>
+                            <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#888", marginBottom: 4 }}>Sector</span>
+                            <select
+                              value={sgEditorRow.sector}
+                              onChange={(e) => handleChangeSgField("sector", e.target.value)}
+                              style={{ ...SG_INPUT_STYLE, cursor: "pointer" }}
+                            >
+                              <option value="oil_gas">Oil &amp; Gas</option>
+                              <option value="fuel_distribution">Fuel Distribution</option>
+                            </select>
+                          </label>
+                          <label style={{ display: "block" }}>
+                            <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#888", marginBottom: 4 }}>Volume unit</span>
+                            <select
+                              value={sgEditorRow.volume_unit}
+                              onChange={(e) => handleChangeSgField("volume_unit", e.target.value)}
+                              style={{ ...SG_INPUT_STYLE, cursor: "pointer" }}
+                            >
+                              <option value="kbpd">kbpd</option>
+                              <option value="thousand_m3">thousand m³</option>
+                            </select>
+                          </label>
+                          <label style={{ display: "block" }}>
+                            <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#888", marginBottom: 4 }}>Recommendation</span>
+                            <select
+                              value={sgEditorRow.recommendation}
+                              onChange={(e) => handleChangeSgField("recommendation", e.target.value)}
+                              style={{ ...SG_INPUT_STYLE, cursor: "pointer" }}
+                            >
+                              <option value="">—</option>
+                              <option value="OP">OP — Outperform</option>
+                              <option value="MP">MP — Marketperform</option>
+                              <option value="UP">UP — Underperform</option>
+                            </select>
+                          </label>
+                          <label style={{ display: "block" }}>
+                            <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#888", marginBottom: 4 }}>Last update</span>
+                            <input
+                              type="date"
+                              value={sgEditorRow.last_update}
+                              onChange={(e) => handleChangeSgField("last_update", e.target.value)}
+                              style={{ ...SG_INPUT_STYLE }}
+                            />
+                          </label>
+                          {renderSgNumField("target_price", "Target price")}
+                          {renderSgNumField("display_order", "Display order", { step: 1, placeholder: "0" })}
+                          {renderSgNumField("shares_outstanding", "Shares outstanding (absolute)", {
+                            hint: "used for Market cap = shares × live price",
+                          })}
+                        </div>
+
+                        {/* Live-derivation hint */}
+                        <div style={{
+                          marginTop: 14, padding: "9px 12px", borderRadius: 8,
+                          background: "rgba(255,80,0,0.06)", border: "1px solid rgba(255,80,0,0.18)",
+                          color: "#9a4a23", fontSize: 11.5, lineHeight: 1.5,
+                        }}>
+                          EV/EBITDA, P/E, FCFE Yield and Div Yield are computed <strong>live</strong>{" "}
+                          in the dashboard from the live price + these fundamentals — they are{" "}
+                          <strong>not</strong> entered here. Enter Net Debt, EBITDA, Net Income,
+                          FCFE and Dividends per year (all BRL mn) below. EV(year) = Market cap +
+                          Net Debt(year); a negative Net Debt means net cash.
+                        </div>
+
+                        {/* Forward-pair groups (fundamentals) */}
+                        <div style={{ marginTop: 18 }}>
+                          {([
+                            { label: "Net Debt (BRL mn, < 0 = net cash)", y1: "net_debt_y1" as const, y2: "net_debt_y2" as const },
+                            { label: "EBITDA (BRL mn)",     y1: "ebitda_y1" as const,     y2: "ebitda_y2" as const },
+                            { label: "Net Income (BRL mn)", y1: "net_income_y1" as const, y2: "net_income_y2" as const },
+                            { label: "FCFE (BRL mn)",       y1: "fcfe_y1" as const,       y2: "fcfe_y2" as const },
+                            { label: "Dividends (BRL mn)",  y1: "dividends_y1" as const,  y2: "dividends_y2" as const },
+                            { label: "Volumes",             y1: "volumes_y1" as const,    y2: "volumes_y2" as const },
+                          ]).map((grp, idx) => (
+                            <div
+                              key={grp.label}
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "minmax(120px, 1.2fr) minmax(0, 1fr) minmax(0, 1fr)",
+                                gap: 12, alignItems: "center",
+                                padding: "8px 0",
+                                borderTop: idx === 0 ? "1px solid #ececec" : "1px solid #f5f5f5",
+                              }}
+                            >
+                              <div style={{ fontSize: 12, fontWeight: 700, color: "#555" }}>{grp.label}</div>
+                              <label style={{ display: "block" }}>
+                                <span style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#aaa", marginBottom: 3 }}>
+                                  {sgConfigDraft.y1_label || "Y1"}
+                                </span>
+                                <input
+                                  type="number"
+                                  step="any"
+                                  value={sgEditorRow[grp.y1]}
+                                  onChange={(e) => handleChangeSgField(grp.y1, e.target.value)}
+                                  style={{ ...SG_INPUT_STYLE, textAlign: "right" }}
+                                />
+                              </label>
+                              <label style={{ display: "block" }}>
+                                <span style={{ display: "block", fontSize: 10, fontWeight: 600, color: "#aaa", marginBottom: 3 }}>
+                                  {sgConfigDraft.y2_label || "Y2"}
+                                </span>
+                                <input
+                                  type="number"
+                                  step="any"
+                                  value={sgEditorRow[grp.y2]}
+                                  onChange={(e) => handleChangeSgField(grp.y2, e.target.value)}
+                                  style={{ ...SG_INPUT_STYLE, textAlign: "right" }}
+                                />
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Comps error banner */}
+                        {sgError && (
+                          <div style={{
+                            marginTop: 12, padding: "10px 12px", borderRadius: 8,
+                            background: "#fff5f5", border: "1px solid rgba(229,62,62,0.3)",
+                            color: "#c0392b", fontSize: 12, lineHeight: 1.4,
+                          }}>
+                            {sgError}
+                          </div>
+                        )}
+
+                        {/* Comps footer actions */}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 18, paddingTop: 14, borderTop: "1px solid #ececec" }}>
+                          <button
+                            onClick={handleSaveSgCompany}
+                            disabled={sgSaving || !sgPendingChanges}
+                            title={!sgPendingChanges ? "No changes to save" : undefined}
+                            style={{
+                              padding: "8px 22px", borderRadius: 8, border: "none",
+                              background: (sgSaving || !sgPendingChanges) ? "#e0e0e0" : ORANGE,
+                              color: (sgSaving || !sgPendingChanges) ? "#aaa" : "#fff",
+                              fontSize: 13, fontWeight: 700,
+                              cursor: (sgSaving || !sgPendingChanges) ? "not-allowed" : "pointer",
+                              fontFamily: "Arial, sans-serif", transition: "background 0.15s",
+                            }}
+                          >
+                            {sgSaving ? "Saving…" : "Save"}
+                          </button>
+                          <button
+                            onClick={() => handleDeleteSgCompany(sgSelectedTicker)}
+                            disabled={sgSaving}
+                            style={{
+                              background: "none", border: "none", color: "#e53e3e",
+                              fontSize: 12, fontWeight: 600, cursor: sgSaving ? "not-allowed" : "pointer",
+                              fontFamily: "Arial, sans-serif", padding: "4px 6px",
+                              opacity: sgSaving ? 0.5 : 1, textDecoration: "underline",
+                            }}
+                          >
+                            Delete company
+                          </button>
+                        </div>
+
+                        {/* ── 2D sensitivity grid editor ────────────────────── */}
+                        <div style={{ marginTop: 28, paddingTop: 20, borderTop: "2px solid #ececec" }}>
+                          <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>
+                            Sensitivity grid
+                          </h3>
+                          <p style={{ fontSize: 12, color: "#888", margin: "0 0 14px" }}>
+                            A freeform 2D table (e.g. Brent × FX → target price). Add rows and columns, label each, then fill the cells.
+                          </p>
+
+                          {/* Axis titles + value label */}
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12, marginBottom: 16 }}>
+                            <label style={{ display: "block" }}>
+                              <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#888", marginBottom: 4 }}>Row axis title</span>
+                              <input
+                                type="text"
+                                value={sgGrid.row_axis_title}
+                                onChange={(e) => handleChangeSgAxis("row_axis_title", e.target.value)}
+                                placeholder="e.g. Brent (USD/bbl)"
+                                style={{ ...SG_INPUT_STYLE }}
+                              />
+                            </label>
+                            <label style={{ display: "block" }}>
+                              <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#888", marginBottom: 4 }}>Column axis title</span>
+                              <input
+                                type="text"
+                                value={sgGrid.col_axis_title}
+                                onChange={(e) => handleChangeSgAxis("col_axis_title", e.target.value)}
+                                placeholder="e.g. FX (BRL/USD)"
+                                style={{ ...SG_INPUT_STYLE }}
+                              />
+                            </label>
+                            <label style={{ display: "block" }}>
+                              <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#888", marginBottom: 4 }}>Value label</span>
+                              <input
+                                type="text"
+                                value={sgGrid.value_label}
+                                onChange={(e) => handleChangeSgAxis("value_label", e.target.value)}
+                                placeholder="e.g. Target price (BRL)"
+                                style={{ ...SG_INPUT_STYLE }}
+                              />
+                            </label>
+                          </div>
+
+                          {/* Add row / add column controls */}
+                          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                            <button
+                              onClick={handleAddSgRow}
+                              style={{
+                                padding: "6px 14px", borderRadius: 7, border: `1px solid ${ORANGE}`,
+                                background: "rgba(255,80,0,0.08)", color: ORANGE,
+                                fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "Arial, sans-serif",
+                              }}
+                            >
+                              + Row
+                            </button>
+                            <button
+                              onClick={handleAddSgCol}
+                              style={{
+                                padding: "6px 14px", borderRadius: 7, border: `1px solid ${ORANGE}`,
+                                background: "rgba(255,80,0,0.08)", color: ORANGE,
+                                fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "Arial, sans-serif",
+                              }}
+                            >
+                              + Column
+                            </button>
+                          </div>
+
+                          {/* Matrix */}
+                          {sgGrid.row_labels.length === 0 && sgGrid.col_labels.length === 0 ? (
+                            <div style={{
+                              padding: "24px 16px", textAlign: "center", color: "#bbb", fontSize: 12,
+                              border: "1px dashed #e0e0e0", borderRadius: 8,
+                            }}>
+                              No grid yet. Use “+ Row” and “+ Column” to start building the sensitivity table.
+                            </div>
+                          ) : (
+                            <div style={{ overflowX: "auto", paddingBottom: 4 }}>
+                              <table style={{ borderCollapse: "separate", borderSpacing: 6 }}>
+                                <thead>
+                                  <tr>
+                                    {/* top-left corner cell */}
+                                    <th style={{ width: 130 }} />
+                                    {sgGrid.col_labels.map((lbl, j) => (
+                                      <th key={j} style={{ minWidth: 110 }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                          <input
+                                            type="text"
+                                            value={lbl}
+                                            onChange={(e) => handleChangeSgColLabel(j, e.target.value)}
+                                            placeholder={`Col ${j + 1}`}
+                                            style={{ ...SG_INPUT_STYLE, fontWeight: 700, textAlign: "center", fontSize: 12 }}
+                                          />
+                                          <button
+                                            onClick={() => handleRemoveSgCol(j)}
+                                            aria-label={`Remove column ${lbl || j + 1}`}
+                                            title="Remove column"
+                                            style={{
+                                              flexShrink: 0, width: 22, height: 22, borderRadius: 6,
+                                              border: "1px solid #e0e0e0", background: "#fff", color: "#e53e3e",
+                                              cursor: "pointer", fontFamily: "Arial, sans-serif", fontSize: 13, lineHeight: 1, padding: 0,
+                                            }}
+                                          >
+                                            ×
+                                          </button>
+                                        </div>
+                                      </th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {sgGrid.row_labels.map((rLbl, i) => (
+                                    <tr key={i}>
+                                      <th style={{ width: 130 }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                          <input
+                                            type="text"
+                                            value={rLbl}
+                                            onChange={(e) => handleChangeSgRowLabel(i, e.target.value)}
+                                            placeholder={`Row ${i + 1}`}
+                                            style={{ ...SG_INPUT_STYLE, fontWeight: 700, fontSize: 12 }}
+                                          />
+                                          <button
+                                            onClick={() => handleRemoveSgRow(i)}
+                                            aria-label={`Remove row ${rLbl || i + 1}`}
+                                            title="Remove row"
+                                            style={{
+                                              flexShrink: 0, width: 22, height: 22, borderRadius: 6,
+                                              border: "1px solid #e0e0e0", background: "#fff", color: "#e53e3e",
+                                              cursor: "pointer", fontFamily: "Arial, sans-serif", fontSize: 13, lineHeight: 1, padding: 0,
+                                            }}
+                                          >
+                                            ×
+                                          </button>
+                                        </div>
+                                      </th>
+                                      {sgGrid.col_labels.map((_, j) => (
+                                        <td key={j}>
+                                          <input
+                                            type="number"
+                                            step="any"
+                                            value={sgGrid.cells[i]?.[j] ?? ""}
+                                            onChange={(e) => handleChangeSgCell(i, j, e.target.value)}
+                                            style={{ ...SG_INPUT_STYLE, textAlign: "right", fontSize: 12 }}
+                                          />
+                                        </td>
+                                      ))}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+
+                          {/* Grid error banner (surfaces server dim-mismatch verbatim) */}
+                          {sgGridError && (
+                            <div style={{
+                              marginTop: 12, padding: "10px 12px", borderRadius: 8,
+                              background: "#fff5f5", border: "1px solid rgba(229,62,62,0.3)",
+                              color: "#c0392b", fontSize: 12, lineHeight: 1.4,
+                            }}>
+                              {sgGridError}
+                            </div>
+                          )}
+
+                          {/* Grid save */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16 }}>
+                            <button
+                              onClick={handleSaveSgGrid}
+                              disabled={sgGridSaving || !sgGridPendingChanges}
+                              title={!sgGridPendingChanges ? "No changes to save" : undefined}
+                              style={{
+                                padding: "8px 22px", borderRadius: 8, border: "none",
+                                background: (sgGridSaving || !sgGridPendingChanges) ? "#e0e0e0" : ORANGE,
+                                color: (sgGridSaving || !sgGridPendingChanges) ? "#aaa" : "#fff",
+                                fontSize: 13, fontWeight: 700,
+                                cursor: (sgGridSaving || !sgGridPendingChanges) ? "not-allowed" : "pointer",
+                                fontFamily: "Arial, sans-serif", transition: "background 0.15s",
+                              }}
+                            >
+                              {sgGridSaving ? "Saving…" : "Save grid"}
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Delete-confirm modal overlay */}
+                {sgDeleteConfirm && (
+                  <div
+                    style={{
+                      position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      zIndex: 1050, fontFamily: "Arial, sans-serif",
+                    }}
+                    onClick={handleCancelDeleteSgCompany}
+                  >
+                    <div
+                      style={{
+                        background: "#fff", borderRadius: 10, padding: 24, maxWidth: 420,
+                        boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 8px" }}>
+                        Delete company
+                      </h3>
+                      <p style={{ fontSize: 13, color: "#555", margin: "0 0 18px", lineHeight: 1.5 }}>
+                        Delete <strong>«{sgDeleteConfirm}»</strong> and its sensitivity grid?
+                        This cannot be undone.
+                      </p>
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                        <button
+                          onClick={handleCancelDeleteSgCompany}
+                          disabled={sgSaving}
+                          style={{
+                            padding: "8px 16px", borderRadius: 8, border: "1px solid #e0e0e0",
+                            background: "#fff", color: "#555", fontSize: 13, fontWeight: 600,
+                            cursor: sgSaving ? "not-allowed" : "pointer", fontFamily: "Arial, sans-serif",
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleConfirmDeleteSgCompany}
+                          disabled={sgSaving}
+                          style={{
+                            padding: "8px 16px", borderRadius: 8, border: "none",
+                            background: "#e53e3e", color: "#fff", fontSize: 13, fontWeight: 700,
+                            cursor: sgSaving ? "wait" : "pointer", fontFamily: "Arial, sans-serif",
+                            opacity: sgSaving ? 0.6 : 1,
+                          }}
+                        >
+                          {sgSaving ? "Deleting…" : "Confirm"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
           )}
 
         </div>
