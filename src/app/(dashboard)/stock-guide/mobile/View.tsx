@@ -212,12 +212,14 @@ function CompsCard({
   y1Label,
   y2Label,
   quotesLoading,
+  selected,
   onTap,
 }: {
   row: StockGuideComputedRow;
   y1Label: string;
   y2Label: string;
   quotesLoading: boolean;
+  selected: boolean;
   onTap: () => void;
 }): React.ReactElement {
   const upsideColor =
@@ -230,10 +232,14 @@ function CompsCard({
           : "var(--mobile-text-muted)";
   return (
     <div
+      className="sg-comps-card"
       onClick={onTap}
       style={{
-        background: "var(--mobile-surface)",
+        background: selected ? "var(--mobile-accent-fill)" : "var(--mobile-surface)",
         borderBottom: "1px solid var(--mobile-divider)",
+        borderLeft: selected
+          ? "3px solid var(--mobile-accent)"
+          : "3px solid transparent",
         padding: "14px 16px",
         cursor: "pointer",
         fontFamily: "Arial, Helvetica, sans-serif",
@@ -324,10 +330,13 @@ function MobileSensitivity({
   }
   return (
     <div>
+      {/* Column-axis caption above the header row */}
       <div
         style={{
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: 700,
+          letterSpacing: "0.04em",
+          textTransform: "uppercase",
           color: "var(--mobile-accent)",
           marginBottom: 8,
           textAlign: "center",
@@ -342,20 +351,25 @@ function MobileSensitivity({
             fontSize: 11.5,
             fontFamily: "Arial, Helvetica, sans-serif",
             margin: "0 auto",
+            border: "1px solid var(--mobile-border)",
+            borderRadius: "var(--mobile-radius-md, 12px)",
+            overflow: "hidden",
           }}
         >
           <thead>
             <tr>
+              {/* Top-left corner = value label */}
               <th
                 style={{
                   textAlign: "left",
-                  padding: "6px 10px",
-                  background: "var(--mobile-surface)",
+                  padding: "7px 11px",
+                  background: "var(--mobile-surface-elevated)",
                   color: "var(--mobile-text)",
                   fontWeight: 700,
                   fontSize: 10,
                   whiteSpace: "nowrap",
-                  borderBottom: "1px solid var(--mobile-divider)",
+                  borderRight: "1px solid var(--mobile-border)",
+                  borderBottom: "1px solid var(--mobile-border)",
                 }}
               >
                 {grid.value_label || "Value"}
@@ -365,12 +379,14 @@ function MobileSensitivity({
                   key={ci}
                   style={{
                     textAlign: "right",
-                    padding: "6px 10px",
+                    padding: "7px 11px",
                     color: "var(--mobile-text-muted)",
                     fontWeight: 700,
                     fontSize: 10,
                     whiteSpace: "nowrap",
-                    borderBottom: "1px solid var(--mobile-divider)",
+                    background: "var(--mobile-surface-elevated)",
+                    borderRight: "1px solid var(--mobile-divider)",
+                    borderBottom: "1px solid var(--mobile-border)",
                   }}
                 >
                   {c}
@@ -384,12 +400,13 @@ function MobileSensitivity({
                 <th
                   scope="row"
                   style={{
-                    textAlign: "left",
-                    padding: "6px 10px",
+                    textAlign: "right",
+                    padding: "7px 11px",
                     fontWeight: 700,
                     color: "var(--mobile-text)",
                     whiteSpace: "nowrap",
-                    background: "var(--mobile-surface)",
+                    background: "var(--mobile-surface-elevated)",
+                    borderRight: "1px solid var(--mobile-border)",
                     borderBottom: "1px solid var(--mobile-divider)",
                   }}
                 >
@@ -400,9 +417,11 @@ function MobileSensitivity({
                     key={ci}
                     style={{
                       textAlign: "right",
-                      padding: "6px 10px",
+                      padding: "7px 11px",
                       fontVariantNumeric: "tabular-nums",
                       color: "var(--mobile-text)",
+                      background: ri % 2 === 0 ? "var(--mobile-surface)" : "var(--mobile-surface-elevated)",
+                      borderRight: "1px solid var(--mobile-divider)",
                       borderBottom: "1px solid var(--mobile-divider)",
                       whiteSpace: "nowrap",
                     }}
@@ -416,7 +435,7 @@ function MobileSensitivity({
         </table>
       </div>
       <div style={{ marginTop: 10, fontSize: 11, color: "var(--mobile-text-muted)", textAlign: "center" }}>
-        Rows: {grid.row_axis_title}
+        Rows: <strong style={{ color: "var(--mobile-text)" }}>{grid.row_axis_title}</strong>
       </div>
     </div>
   );
@@ -539,6 +558,10 @@ export default function MobileView(): React.ReactElement {
       ) : (
         <>
           {/* ── Comps cards ──────────────────────────────────────────────────── */}
+          <style>{`
+            .sg-comps-card { transition: background 0.12s ease; }
+            .sg-comps-card:active { background: var(--mobile-row-press) !important; }
+          `}</style>
           <div style={{ marginTop: 16, borderTop: "1px solid var(--mobile-divider)" }}>
             {computedRows.length === 0 ? (
               <div
@@ -559,6 +582,7 @@ export default function MobileView(): React.ReactElement {
                   y1Label={config.y1_label}
                   y2Label={config.y2_label}
                   quotesLoading={quotesLoading}
+                  selected={row.ticker === selectedTicker}
                   onTap={() => handleTap(row.ticker)}
                 />
               ))

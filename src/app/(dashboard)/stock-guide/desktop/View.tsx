@@ -91,14 +91,23 @@ const TD_BASE: React.CSSProperties = {
   fontFamily: "Arial, Helvetica, sans-serif",
   fontSize: 12.5,
   color: "#1a1a1a",
-  padding: "8px 10px",
+  padding: "8px 12px",
   whiteSpace: "nowrap",
   textAlign: "right",
   fontVariantNumeric: "tabular-nums",
+  fontFeatureSettings: '"tnum" 1, "lnum" 1',
   borderBottom: "1px solid #efefef",
 };
 
-const STICKY_COL_WIDTH = 168;
+const STICKY_COL_WIDTH = 176;
+
+// Vertical rule that separates each metric group (EV/EBITDA | P/E | …). Slightly
+// stronger than the inner #efefef row rules so the eye reads the groups as units.
+const GROUP_RULE = "1px solid #dcdcdc";
+
+// Right-edge shadow on the sticky Company column — makes it read as floating
+// above the horizontally-scrolled body. Kept subtle (matches dropdown depth).
+const STICKY_SHADOW = "6px 0 8px -6px rgba(0,0,0,0.16)";
 
 interface PairGroup {
   label: string;
@@ -138,14 +147,22 @@ function CompsTable({
 }): React.ReactElement {
   return (
     <div
+      className="sg-comps-wrap"
       style={{
         overflowX: "auto",
         border: "1px solid #e6e6e6",
         borderRadius: 10,
         background: "#fff",
-        boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
       }}
     >
+      {/* Hover affordance — overrides the inline zebra background on non-selected
+          rows only. Scoped to this table via the .sg-comps-wrap wrapper. */}
+      <style>{`
+        .sg-comps-wrap tbody tr:not([data-sel="1"]):hover > td {
+          background: #f3f6fb !important;
+        }
+      `}</style>
       <table style={{ borderCollapse: "separate", borderSpacing: 0, width: "100%" }}>
         <thead>
           {/* ── Level 1: group headers ─────────────────────────────────────── */}
@@ -160,8 +177,11 @@ function CompsTable({
                 textAlign: "left",
                 width: STICKY_COL_WIDTH,
                 minWidth: STICKY_COL_WIDTH,
-                borderRight: "1px solid #e0e0e0",
-                background: "#f0f0f0",
+                borderRight: "1px solid #d6d6d6",
+                background: "#ececec",
+                boxShadow: STICKY_SHADOW,
+                letterSpacing: "0.02em",
+                textTransform: "uppercase",
               }}
             >
               Company
@@ -174,6 +194,7 @@ function CompsTable({
                   ...TH_BASE,
                   textAlign: c === "Ticker" ? "left" : "right",
                   verticalAlign: "bottom",
+                  color: "#4b5563",
                 }}
               >
                 {c}
@@ -186,8 +207,9 @@ function CompsTable({
                 style={{
                   ...TH_BASE,
                   textAlign: "center",
-                  borderLeft: "1px solid #e8e8e8",
+                  borderLeft: GROUP_RULE,
                   color: "#111",
+                  letterSpacing: "0.02em",
                 }}
               >
                 {g.label}
@@ -203,9 +225,9 @@ function CompsTable({
                   ...TH_BASE,
                   fontWeight: 600,
                   fontSize: 10,
-                  color: "#6b7280",
+                  color: "#9095a0",
                   textAlign: "right",
-                  borderLeft: "1px solid #e8e8e8",
+                  borderLeft: GROUP_RULE,
                 }}
               >
                 {y1Label}
@@ -216,7 +238,7 @@ function CompsTable({
                   ...TH_BASE,
                   fontWeight: 600,
                   fontSize: 10,
-                  color: "#6b7280",
+                  color: "#9095a0",
                   textAlign: "right",
                 }}
               >
@@ -255,6 +277,7 @@ function CompsTable({
               return (
                 <tr
                   key={r.ticker}
+                  data-sel={isSel ? "1" : "0"}
                   onClick={() => onSelect(r.ticker)}
                   style={{ cursor: "pointer", background: rowBg }}
                 >
@@ -266,12 +289,14 @@ function CompsTable({
                       left: 0,
                       zIndex: 2,
                       textAlign: "left",
-                      fontWeight: 600,
+                      fontWeight: 700,
+                      color: "#111827",
                       width: STICKY_COL_WIDTH,
                       minWidth: STICKY_COL_WIDTH,
                       background: rowBg,
-                      borderRight: "1px solid #e6e6e6",
+                      borderRight: "1px solid #e0e0e0",
                       borderLeft: isSel ? `3px solid ${BRAND_ORANGE}` : "3px solid transparent",
+                      boxShadow: STICKY_SHADOW,
                     }}
                   >
                     {r.company_name}
@@ -279,12 +304,12 @@ function CompsTable({
                   <td style={{ ...TD_BASE, textAlign: "left", color: "#6b7280", fontWeight: 600 }}>
                     {r.ticker}
                   </td>
-                  <td style={{ ...TD_BASE, color: "#6b7280" }}>{r.last_update ?? "—"}</td>
+                  <td style={{ ...TD_BASE, color: "#9ca3af" }}>{r.last_update ?? "—"}</td>
                   <td style={TD_BASE}>{fmtNum(r.target_price, 2)}</td>
                   <td style={{ ...TD_BASE, textAlign: "right" }}>
                     <RecommendationChip code={r.recommendation} />
                   </td>
-                  <td style={{ ...TD_BASE, color: upsideColor, fontWeight: 600 }}>
+                  <td style={{ ...TD_BASE, color: upsideColor, fontWeight: 700 }}>
                     {quotesLoading && r.upsidePct == null ? "—" : fmtSignedPct(r.upsidePct)}
                   </td>
                   <td style={TD_BASE}>
@@ -293,7 +318,7 @@ function CompsTable({
                   {PAIR_GROUPS.map((g) => [
                     <td
                       key={`${g.label}-y1`}
-                      style={{ ...TD_BASE, borderLeft: "1px solid #f0f0f0" }}
+                      style={{ ...TD_BASE, borderLeft: GROUP_RULE }}
                     >
                       {g.fmt(r[g.y1] as number | null)}
                     </td>,
@@ -312,6 +337,26 @@ function CompsTable({
 }
 
 // ─── Sensitivity matrix ────────────────────────────────────────────────────────
+
+/** Small 3×3 grid glyph for the sensitivity empty-state. */
+function GridGlyph(): React.ReactElement {
+  return (
+    <svg
+      width={34}
+      height={34}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#cbcbcb"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x={3} y={3} width={18} height={18} rx={2.5} />
+      <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
+    </svg>
+  );
+}
 
 function SensitivityPanel({
   grid,
@@ -334,75 +379,115 @@ function SensitivityPanel({
     return (
       <div
         style={{
-          padding: "28px 16px",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 10,
+          padding: "36px 16px",
           textAlign: "center",
           color: "#9ca3af",
           fontFamily: "Arial, Helvetica, sans-serif",
           fontSize: 13,
-          border: "1px dashed #e0e0e0",
-          borderRadius: 10,
+          border: "1px dashed #d8d8d8",
+          borderRadius: 12,
           background: "#fafafa",
         }}
       >
-        No sensitivity table has been published for{" "}
-        <strong>{companyName ?? "this company"}</strong> yet.
+        <GridGlyph />
+        <div>
+          No sensitivity table has been published for{" "}
+          <strong style={{ color: "#6b7280" }}>{companyName ?? "this company"}</strong> yet.
+        </div>
       </div>
     );
   }
+
+  const nCols = grid.col_labels.length;
+  const nRows = grid.row_labels.length;
+  const valueLabel = grid.value_label || "Value";
+
+  // Cell styling for the matrix body. Light grid lines on all sides so it reads
+  // as a true 2-way table rather than a list.
+  const cellBase: React.CSSProperties = {
+    ...TD_BASE,
+    padding: "8px 14px",
+    borderRight: "1px solid #ededed",
+    borderBottom: "1px solid #ededed",
+    color: "#1f2937",
+    minWidth: 64,
+  };
 
   return (
     <div
       style={{
         overflowX: "auto",
-        border: "1px solid #e6e6e6",
-        borderRadius: 10,
+        border: "1px solid #e0e0e0",
+        borderRadius: 12,
         background: "#fff",
         display: "inline-block",
         maxWidth: "100%",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
       }}
     >
-      <table style={{ borderCollapse: "collapse", fontFamily: "Arial, Helvetica, sans-serif" }}>
+      <table
+        style={{
+          borderCollapse: "collapse",
+          fontFamily: "Arial, Helvetica, sans-serif",
+        }}
+      >
         <thead>
           <tr>
-            {/* Top-left = value label */}
+            {/* Top-left corner = the value being tabulated. Spans the rotated
+                row-axis column + the row-label column, and both header rows. */}
             <th
+              colSpan={2}
+              rowSpan={2}
               style={{
                 ...TH_BASE,
                 textAlign: "left",
-                background: "#f0f0f0",
+                verticalAlign: "bottom",
+                background: "#ececec",
                 color: "#111",
-                position: "sticky",
-                left: 0,
-                zIndex: 2,
+                borderRight: "1px solid #d6d6d6",
+                borderBottom: "1px solid #d6d6d6",
+                fontSize: 11,
+                letterSpacing: "0.02em",
+                whiteSpace: "normal",
+                maxWidth: 150,
               }}
             >
-              {grid.value_label || "Value"}
+              {valueLabel}
             </th>
-            {/* col_axis_title spans all col_labels */}
+            {/* col_axis_title centered above all column headers. */}
             <th
-              colSpan={grid.col_labels.length}
-              style={{ ...TH_BASE, textAlign: "center", color: BRAND_ORANGE }}
+              colSpan={nCols}
+              style={{
+                ...TH_BASE,
+                textAlign: "center",
+                color: BRAND_ORANGE,
+                background: "#fbf3ef",
+                borderBottom: "1px solid #e0e0e0",
+                letterSpacing: "0.03em",
+                textTransform: "uppercase",
+                fontSize: 10.5,
+              }}
             >
               {grid.col_axis_title}
             </th>
           </tr>
           <tr>
-            {/* row_axis_title sits above the row-label column */}
-            <th
-              style={{
-                ...TH_BASE,
-                textAlign: "left",
-                color: BRAND_ORANGE,
-                position: "sticky",
-                left: 0,
-                zIndex: 2,
-                background: "#f5f5f5",
-              }}
-            >
-              {grid.row_axis_title}
-            </th>
             {grid.col_labels.map((c, ci) => (
-              <th key={ci} style={{ ...TH_BASE, textAlign: "right" }}>
+              <th
+                key={ci}
+                style={{
+                  ...TH_BASE,
+                  textAlign: "right",
+                  background: "#f5f5f5",
+                  borderRight: "1px solid #ededed",
+                  borderBottom: "1px solid #d6d6d6",
+                  color: "#374151",
+                }}
+              >
                 {c}
               </th>
             ))}
@@ -410,25 +495,58 @@ function SensitivityPanel({
         </thead>
         <tbody>
           {grid.row_labels.map((rl, ri) => (
-            <tr key={ri} style={{ background: ri % 2 === 0 ? "#fff" : "#fbfbfb" }}>
+            <tr key={ri}>
+              {/* Rotated row-axis title — written once, spanning every data row,
+                  the classic vertical caption of a 2-way sensitivity table. */}
+              {ri === 0 && (
+                <th
+                  rowSpan={nRows}
+                  style={{
+                    ...TH_BASE,
+                    width: 30,
+                    minWidth: 30,
+                    padding: "6px 2px",
+                    background: "#fbf3ef",
+                    borderRight: "1px solid #ededed",
+                    borderBottom: "1px solid #e0e0e0",
+                    color: BRAND_ORANGE,
+                    letterSpacing: "0.03em",
+                    textTransform: "uppercase",
+                    fontSize: 10.5,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  <span
+                    style={{
+                      display: "inline-block",
+                      transform: "rotate(180deg)",
+                      writingMode: "vertical-rl",
+                    }}
+                  >
+                    {grid.row_axis_title}
+                  </span>
+                </th>
+              )}
               <th
                 scope="row"
                 style={{
                   ...TD_BASE,
-                  textAlign: "left",
+                  textAlign: "right",
                   fontWeight: 700,
                   color: "#374151",
-                  background: "#f5f5f5",
-                  position: "sticky",
-                  left: 0,
-                  zIndex: 1,
-                  borderRight: "1px solid #e6e6e6",
+                  background: ri % 2 === 0 ? "#f5f5f5" : "#f1f1f1",
+                  borderRight: "1px solid #d6d6d6",
+                  borderBottom: "1px solid #ededed",
+                  padding: "8px 14px",
                 }}
               >
                 {rl}
               </th>
               {grid.col_labels.map((_, ci) => (
-                <td key={ci} style={TD_BASE}>
+                <td
+                  key={ci}
+                  style={{ ...cellBase, background: ri % 2 === 0 ? "#fff" : "#fbfbfb" }}
+                >
                   {fmtNum(grid.cells[ri]?.[ci] ?? null, 2)}
                 </td>
               ))}
@@ -549,15 +667,17 @@ export default function DesktopView(): React.ReactElement {
               <div
                 style={{
                   marginTop: 12,
+                  paddingTop: 10,
+                  borderTop: "1px solid #f0f0f0",
                   fontFamily: "Arial, Helvetica, sans-serif",
-                  fontSize: 11.5,
-                  color: "#6b7280",
-                  lineHeight: 1.6,
+                  fontSize: 11,
+                  color: "#9095a0",
+                  lineHeight: 1.65,
                 }}
               >
                 {config.assumptions_note && (
                   <div>
-                    <strong style={{ color: "#374151" }}>Assumptions:</strong>{" "}
+                    <strong style={{ color: "#6b7280" }}>Assumptions:</strong>{" "}
                     {config.assumptions_note}
                   </div>
                 )}
@@ -567,7 +687,7 @@ export default function DesktopView(): React.ReactElement {
                   price (BRL). Multiples and targets are research inputs.
                 </div>
                 {restrictedNames.length > 0 && (
-                  <div style={{ marginTop: 4, color: "#9ca3af" }}>
+                  <div style={{ marginTop: 4 }}>
                     <strong style={{ color: "#6b7280" }}>Currently restricted:</strong>{" "}
                     {restrictedNames.join(", ")}.
                   </div>
@@ -575,21 +695,16 @@ export default function DesktopView(): React.ReactElement {
               </div>
 
               {/* ── Sensitivity panel ───────────────────────────────────────── */}
-              <div style={{ marginTop: 28 }}>
-                <div
-                  style={{
-                    fontFamily: "Arial, Helvetica, sans-serif",
-                    fontSize: 15,
-                    fontWeight: 700,
-                    color: "#1a1a1a",
-                    marginBottom: 4,
-                  }}
-                >
+              <div style={{ marginTop: 32 }}>
+                <div className="section-title">
                   Sensitivity
                   {selectedCompanyName && (
-                    <span style={{ color: BRAND_ORANGE }}> — {selectedCompanyName}</span>
+                    <span style={{ color: "#1a1a1a", fontWeight: 600 }}>
+                      {" "}— {selectedCompanyName}
+                    </span>
                   )}
                 </div>
+                <hr className="section-hr" style={{ borderTopColor: "#e0e0e0", margin: "4px 0 10px" }} />
                 <div
                   style={{
                     fontFamily: "Arial, Helvetica, sans-serif",
