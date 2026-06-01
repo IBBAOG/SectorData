@@ -29,6 +29,7 @@ import DataErrorBoundary from "../../../../components/dashboard/DataErrorBoundar
 import { useModuleVisibilityGuard } from "../../../../hooks/useModuleVisibilityGuard";
 import {
   useStockGuideData,
+  formatSensitivityCell,
   fmtNum,
   fmtPct,
   fmtSignedPct,
@@ -37,9 +38,11 @@ import {
   recommendationColors,
   VOLUME_UNIT_NOTE,
 } from "../useStockGuideData";
+import type { UseStockGuideData } from "../useStockGuideData";
 import type {
   StockGuideComputedRow,
-  SensitivityGrid,
+  SensitivityTable,
+  SensitivityAxis,
   StockGuideRecommendation,
 } from "@/types/stockGuide";
 
@@ -381,14 +384,432 @@ function GridGlyph(): React.ReactElement {
   );
 }
 
-function SensitivityPanel({
-  grid,
+// ── Axis model: resolve labels + the current-value highlight/interpolation ────
+//
+// For each axis we compute its display labels and a "current-value marker":
+//   • company axis → labels = company names; highlightIdx = the selectedTicker.
+//   • driver axis  → labels = scenario + unit; highlightIdx if current_value
+//     equals a scenario, else interp = { afterIdx, frac } if it falls strictly
+//     between two adjacent (display-order) scenarios.
+//   • year axis    → labels = y1Label / y2Label.
+
+interface AxisMarker {
+  /** Exact-hit index (scenario === current_value, or selectedTicker column). */
+  highlightIdx: number | null;
+  /** Interpolated position: between display index `afterIdx` and `afterIdx+1`,
+   *  `frac` ∈ (0,1) of the way from afterIdx → afterIdx+1. */
+  interp: { afterIdx: number; frac: number } | null;
+}
+
+interface ResolvedAxis {
+  labels: string[];
+  marker: AxisMarker;
+  /** Caption under the matrix (driver current-value note), or null. */
+  caption: string | null;
+}
+
+const NO_MARKER: AxisMarker = { highlightIdx: null, interp: null };
+
+/**
+ * Compute the current-value marker for a driver axis: an exact hit if
+ * current_value equals a scenario, else an interpolated position between the
+ * two adjacent (display-order) scenarios it falls strictly between.
+ */
+function driverMarker(scenarios: number[], current: number | null): AxisMarker {
+  if (current == null || scenarios.length === 0) return NO_MARKER;
+  // exact hit
+  for (let i = 0; i < scenarios.length; i++) {
+    if (scenarios[i] === current) return { highlightIdx: i, interp: null };
+  }
+  // strictly between two adjacent (in display order) scenarios
+  for (let i = 0; i < scenarios.length - 1; i++) {
+    const a = scenarios[i];
+    const b = scenarios[i + 1];
+    const lo = Math.min(a, b);
+    const hi = Math.max(a, b);
+    if (current > lo && current < hi) {
+      // fraction of the way from a → b (respects display direction)
+      const frac = (current - a) / (b - a);
+      if (frac > 0 && frac < 1) return { highlightIdx: null, interp: { afterIdx: i, frac } };
+    }
+  }
+  return NO_MARKER;
+}
+
+function resolveAxis(
+  axis: SensitivityAxis,
+  ctx: {
+    selectedTicker: string | null;
+    y1Label: string;
+    y2Label: string;
+    resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
+  },
+): ResolvedAxis {
+  if (axis.kind === "company") {
+    const labels = axis.companies ?? [];
+    const idx = labels.findIndex((c) => c === ctx.selectedTicker);
+    return {
+      labels,
+      marker: { highlightIdx: idx >= 0 ? idx : null, interp: null },
+      caption: null,
+    };
+  }
+  if (axis.kind === "year") {
+    const labels = (axis.years ?? []).map((y) =>
+      y === "y1" ? ctx.y1Label : y === "y2" ? ctx.y2Label : y,
+    );
+    return { labels, marker: NO_MARKER, caption: null };
+  }
+  // driver
+  const { driver, scenarios } = ctx.resolveDriverAxis(axis);
+  const unit = driver?.unit ?? "";
+  const labels = scenarios.map((s) =>
+    unit ? `${formatScenario(s)} ${unit}` : formatScenario(s),
+  );
+  const marker = driverMarker(scenarios, driver?.current_value ?? null);
+  const caption =
+    driver != null && driver.current_value != null
+      ? `Current: ${driver.name} = ${formatScenario(driver.current_value)}${unit ? ` ${unit}` : ""}`
+      : null;
+  return { labels, marker, caption };
+}
+
+/** Scenario value formatter — integers stay bare, decimals show as typed. */
+function formatScenario(v: number): string {
+  return Number.isInteger(v) ? String(v) : String(v);
+}
+
+// ── The orange interpolation triangle drawn between two header cells ──────────
+
+// Max pixel budget the marker can slide back from the cell boundary toward the
+// previous scenario's cell, to convey the PROPORTIONAL position of the current
+// value between the two bracketing scenarios.
+const INTERP_GAP_PX = 34;
+
+function InterpMarker({
+  orientation,
+  frac,
+}: {
+  orientation: "horizontal" | "vertical";
+  /** Proportional position 0..1 from the previous scenario → this boundary. */
+  frac: number;
+}): React.ReactElement {
+  // The marker is anchored at the boundary (left/top edge of cell afterIdx+1).
+  // frac=1 → current value sits at the boundary; frac→0 → near the previous
+  // scenario, so we slide the line back by (1−frac)·GAP into the previous cell.
+  const slide = -(1 - Math.min(Math.max(frac, 0), 1)) * INTERP_GAP_PX;
+  // A thin orange line + a small triangle pointing into the matrix.
+  const tri =
+    orientation === "horizontal"
+      ? { borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: `6px solid ${BRAND_ORANGE}` }
+      : { borderTop: "5px solid transparent", borderBottom: "5px solid transparent", borderLeft: `6px solid ${BRAND_ORANGE}` };
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        position: "absolute",
+        ...(orientation === "horizontal"
+          ? { top: 0, bottom: 0, width: 2, transform: `translateX(${slide - 1}px)` }
+          : { left: 0, right: 0, height: 2, transform: `translateY(${slide - 1}px)` }),
+        background: BRAND_ORANGE,
+        zIndex: 1,
+      }}
+    >
+      <span
+        style={{
+          position: "absolute",
+          ...(orientation === "horizontal" ? { top: -1, left: -4 } : { left: -1, top: -4 }),
+          width: 0,
+          height: 0,
+          ...tri,
+        }}
+      />
+    </span>
+  );
+}
+
+// ── One sensitivity table (matrix) ────────────────────────────────────────────
+
+const VALUE_MODE_BADGE: Record<SensitivityTable["value_mode"], string> = {
+  absolute: "Absolute",
+  yield: "Yield",
+  pe: "P/E",
+  ev_ebitda: "EV/EBITDA",
+  upside: "Upside",
+};
+
+function SensitivityTableView({
+  table,
+  selectedTicker,
+  y1Label,
+  y2Label,
+  resolveDriverAxis,
+  computeSensitivityCell,
+  quotesLoading,
+}: {
+  table: SensitivityTable;
+  selectedTicker: string | null;
+  y1Label: string;
+  y2Label: string;
+  resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
+  computeSensitivityCell: UseStockGuideData["computeSensitivityCell"];
+  quotesLoading: boolean;
+}): React.ReactElement {
+  const ctx = { selectedTicker, y1Label, y2Label, resolveDriverAxis };
+  const rowAxis = resolveAxis(table.definition.row_axis, ctx);
+  const colAxis = resolveAxis(table.definition.col_axis, ctx);
+  const nCols = colAxis.labels.length;
+  const nRows = rowAxis.labels.length;
+
+  // Derived modes are "live": render "—" while quotes load.
+  const isLive = table.value_mode !== "absolute";
+
+  // Badge text: "FCFE · BRL mn" or "EV/EBITDA · ×" or "FCFE Yield · %".
+  const unitForBadge =
+    table.value_mode === "absolute"
+      ? table.unit
+      : table.value_mode === "yield" || table.value_mode === "upside"
+        ? "%"
+        : "×";
+  const badge = `${table.metric_label || VALUE_MODE_BADGE[table.value_mode]}${
+    unitForBadge ? ` · ${unitForBadge}` : ""
+  }`;
+
+  const cellBase: React.CSSProperties = {
+    ...TD_BASE,
+    padding: "8px 14px",
+    borderRight: "1px solid #ededed",
+    borderBottom: "1px solid #ededed",
+    color: "#1f2937",
+    minWidth: 72,
+    position: "relative",
+  };
+
+  return (
+    <div style={{ marginBottom: 28 }}>
+      {/* Table header: title + badge */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          gap: 10,
+          marginBottom: 8,
+          flexWrap: "wrap",
+        }}
+      >
+        <span
+          style={{
+            fontFamily: "Arial, Helvetica, sans-serif",
+            fontSize: 14,
+            fontWeight: 700,
+            color: "#1a1a1a",
+          }}
+        >
+          {table.title}
+        </span>
+        <span
+          style={{
+            display: "inline-block",
+            padding: "2px 9px",
+            borderRadius: 4,
+            background: "rgba(255,80,0,0.10)",
+            color: BRAND_ORANGE,
+            fontSize: 10.5,
+            fontWeight: 700,
+            letterSpacing: "0.03em",
+            textTransform: "uppercase",
+            fontFamily: "Arial, Helvetica, sans-serif",
+          }}
+        >
+          {badge}
+        </span>
+      </div>
+
+      {nCols === 0 || nRows === 0 ? (
+        <div
+          style={{
+            padding: "20px 16px",
+            color: "#9ca3af",
+            fontFamily: "Arial, Helvetica, sans-serif",
+            fontSize: 12.5,
+            border: "1px dashed #e0e0e0",
+            borderRadius: 10,
+            background: "#fafafa",
+          }}
+        >
+          This table has no rows or columns to display.
+        </div>
+      ) : (
+        <div
+          style={{
+            overflowX: "auto",
+            border: "1px solid #e0e0e0",
+            borderRadius: 12,
+            background: "#fff",
+            display: "inline-block",
+            maxWidth: "100%",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+          }}
+        >
+          <table style={{ borderCollapse: "collapse", fontFamily: "Arial, Helvetica, sans-serif" }}>
+            <thead>
+              <tr>
+                {/* Top-left corner = the metric label. */}
+                <th
+                  style={{
+                    ...TH_BASE,
+                    textAlign: "left",
+                    verticalAlign: "bottom",
+                    background: HEADER_BG,
+                    color: HEADER_FG,
+                    borderRight: "1px solid rgba(255,255,255,0.18)",
+                    borderBottom: "1px solid rgba(255,255,255,0.18)",
+                    fontSize: 11,
+                    letterSpacing: "0.02em",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {table.metric_label || "Value"}
+                </th>
+                {colAxis.labels.map((c, ci) => {
+                  const hit = colAxis.marker.highlightIdx === ci;
+                  const interpLeft =
+                    colAxis.marker.interp != null && colAxis.marker.interp.afterIdx + 1 === ci;
+                  return (
+                    <th
+                      key={ci}
+                      style={{
+                        ...TH_BASE,
+                        textAlign: "right",
+                        background: hit ? "#2a1206" : HEADER_BG,
+                        borderRight: "1px solid rgba(255,255,255,0.12)",
+                        borderBottom: "1px solid rgba(255,255,255,0.18)",
+                        borderLeft: interpLeft ? `2px solid ${BRAND_ORANGE}` : undefined,
+                        color: hit ? BRAND_ORANGE : HEADER_FG,
+                        position: "relative",
+                      }}
+                    >
+                      {c}
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {rowAxis.labels.map((rl, ri) => {
+                const rowHit = rowAxis.marker.highlightIdx === ri;
+                const rowInterpTop =
+                  rowAxis.marker.interp != null && rowAxis.marker.interp.afterIdx + 1 === ri;
+                return (
+                  <tr key={ri}>
+                    <th
+                      scope="row"
+                      style={{
+                        ...TD_BASE,
+                        textAlign: "right",
+                        fontWeight: 700,
+                        color: rowHit ? BRAND_ORANGE : "#374151",
+                        background: rowHit
+                          ? "rgba(255,80,0,0.10)"
+                          : ri % 2 === 0
+                            ? "#f5f5f5"
+                            : "#f1f1f1",
+                        borderRight: "1px solid #d6d6d6",
+                        borderBottom: "1px solid #ededed",
+                        borderTop: rowInterpTop ? `2px solid ${BRAND_ORANGE}` : undefined,
+                        padding: "8px 14px",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {rl}
+                    </th>
+                    {colAxis.labels.map((_, ci) => {
+                      const colHit = colAxis.marker.highlightIdx === ci;
+                      const colInterpLeft =
+                        colAxis.marker.interp != null &&
+                        colAxis.marker.interp.afterIdx + 1 === ci;
+                      const inHighlightedLine = rowHit || colHit;
+                      const { value, unit } = computeSensitivityCell(table, ri, ci);
+                      const text =
+                        isLive && quotesLoading ? "—" : formatSensitivityCell(value, unit);
+                      return (
+                        <td
+                          key={ci}
+                          style={{
+                            ...cellBase,
+                            background: inHighlightedLine
+                              ? "rgba(255,80,0,0.06)"
+                              : ri % 2 === 0
+                                ? "#fff"
+                                : "#fbfbfb",
+                            borderLeft: colInterpLeft ? `2px solid ${BRAND_ORANGE}` : undefined,
+                            borderTop: rowInterpTop ? `2px solid ${BRAND_ORANGE}` : undefined,
+                            fontWeight: inHighlightedLine ? 700 : 400,
+                          }}
+                        >
+                          {/* Interpolation markers anchored on the boundary cell,
+                              slid back proportionally by the driver's frac. */}
+                          {colInterpLeft && colAxis.marker.interp && (
+                            <InterpMarker orientation="horizontal" frac={colAxis.marker.interp.frac} />
+                          )}
+                          {rowInterpTop && rowAxis.marker.interp && (
+                            <InterpMarker orientation="vertical" frac={rowAxis.marker.interp.frac} />
+                          )}
+                          {text}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Current-value captions (driver axes) */}
+      {(rowAxis.caption || colAxis.caption) && (
+        <div
+          style={{
+            marginTop: 8,
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+            fontFamily: "Arial, Helvetica, sans-serif",
+            fontSize: 11,
+            color: "#9095a0",
+          }}
+        >
+          {colAxis.caption && <div>{colAxis.caption}</div>}
+          {rowAxis.caption && <div>{rowAxis.caption}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── The whole sensitivity section for the selected company ────────────────────
+
+function SensitivitySection({
+  tables,
   loading,
   companyName,
+  selectedTicker,
+  y1Label,
+  y2Label,
+  resolveDriverAxis,
+  computeSensitivityCell,
+  quotesLoading,
 }: {
-  grid: SensitivityGrid | null;
+  tables: SensitivityTable[];
   loading: boolean;
   companyName: string | null;
+  selectedTicker: string | null;
+  y1Label: string;
+  y2Label: string;
+  resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
+  computeSensitivityCell: UseStockGuideData["computeSensitivityCell"];
+  quotesLoading: boolean;
 }): React.ReactElement {
   if (loading) {
     return (
@@ -398,7 +819,7 @@ function SensitivityPanel({
     );
   }
 
-  if (!grid || grid.row_labels.length === 0 || grid.col_labels.length === 0) {
+  if (tables.length === 0) {
     return (
       <div
         style={{
@@ -418,165 +839,27 @@ function SensitivityPanel({
       >
         <GridGlyph />
         <div>
-          No sensitivity table has been published for{" "}
+          No sensitivity tables for{" "}
           <strong style={{ color: "#6b7280" }}>{companyName ?? "this company"}</strong> yet.
         </div>
       </div>
     );
   }
 
-  const nCols = grid.col_labels.length;
-  const nRows = grid.row_labels.length;
-  const valueLabel = grid.value_label || "Value";
-
-  // Cell styling for the matrix body. Light grid lines on all sides so it reads
-  // as a true 2-way table rather than a list.
-  const cellBase: React.CSSProperties = {
-    ...TD_BASE,
-    padding: "8px 14px",
-    borderRight: "1px solid #ededed",
-    borderBottom: "1px solid #ededed",
-    color: "#1f2937",
-    minWidth: 64,
-  };
-
   return (
-    <div
-      style={{
-        overflowX: "auto",
-        border: "1px solid #e0e0e0",
-        borderRadius: 12,
-        background: "#fff",
-        display: "inline-block",
-        maxWidth: "100%",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-      }}
-    >
-      <table
-        style={{
-          borderCollapse: "collapse",
-          fontFamily: "Arial, Helvetica, sans-serif",
-        }}
-      >
-        <thead>
-          <tr>
-            {/* Top-left corner = the value being tabulated. Spans the rotated
-                row-axis column + the row-label column, and both header rows. */}
-            <th
-              colSpan={2}
-              rowSpan={2}
-              style={{
-                ...TH_BASE,
-                textAlign: "left",
-                verticalAlign: "bottom",
-                background: HEADER_BG,
-                color: HEADER_FG,
-                borderRight: "1px solid rgba(255,255,255,0.18)",
-                borderBottom: "1px solid rgba(255,255,255,0.18)",
-                fontSize: 11,
-                letterSpacing: "0.02em",
-                whiteSpace: "normal",
-                maxWidth: 150,
-              }}
-            >
-              {valueLabel}
-            </th>
-            {/* col_axis_title centered above all column headers. */}
-            <th
-              colSpan={nCols}
-              style={{
-                ...TH_BASE,
-                textAlign: "center",
-                color: BRAND_ORANGE,
-                background: HEADER_BG,
-                borderBottom: "1px solid rgba(255,255,255,0.18)",
-                letterSpacing: "0.03em",
-                textTransform: "uppercase",
-                fontSize: 10.5,
-              }}
-            >
-              {grid.col_axis_title}
-            </th>
-          </tr>
-          <tr>
-            {grid.col_labels.map((c, ci) => (
-              <th
-                key={ci}
-                style={{
-                  ...TH_BASE,
-                  textAlign: "right",
-                  background: HEADER_BG,
-                  borderRight: "1px solid rgba(255,255,255,0.12)",
-                  borderBottom: "1px solid rgba(255,255,255,0.18)",
-                  color: HEADER_FG,
-                }}
-              >
-                {c}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {grid.row_labels.map((rl, ri) => (
-            <tr key={ri}>
-              {/* Rotated row-axis title — written once, spanning every data row,
-                  the classic vertical caption of a 2-way sensitivity table. */}
-              {ri === 0 && (
-                <th
-                  rowSpan={nRows}
-                  style={{
-                    ...TH_BASE,
-                    width: 30,
-                    minWidth: 30,
-                    padding: "6px 2px",
-                    background: "#fbf3ef",
-                    borderRight: "1px solid #ededed",
-                    borderBottom: "1px solid #e0e0e0",
-                    color: BRAND_ORANGE,
-                    letterSpacing: "0.03em",
-                    textTransform: "uppercase",
-                    fontSize: 10.5,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  <span
-                    style={{
-                      display: "inline-block",
-                      transform: "rotate(180deg)",
-                      writingMode: "vertical-rl",
-                    }}
-                  >
-                    {grid.row_axis_title}
-                  </span>
-                </th>
-              )}
-              <th
-                scope="row"
-                style={{
-                  ...TD_BASE,
-                  textAlign: "right",
-                  fontWeight: 700,
-                  color: "#374151",
-                  background: ri % 2 === 0 ? "#f5f5f5" : "#f1f1f1",
-                  borderRight: "1px solid #d6d6d6",
-                  borderBottom: "1px solid #ededed",
-                  padding: "8px 14px",
-                }}
-              >
-                {rl}
-              </th>
-              {grid.col_labels.map((_, ci) => (
-                <td
-                  key={ci}
-                  style={{ ...cellBase, background: ri % 2 === 0 ? "#fff" : "#fbfbfb" }}
-                >
-                  {fmtNum(grid.cells[ri]?.[ci] ?? null, 2)}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div>
+      {tables.map((t) => (
+        <SensitivityTableView
+          key={t.id}
+          table={t}
+          selectedTicker={selectedTicker}
+          y1Label={y1Label}
+          y2Label={y2Label}
+          resolveDriverAxis={resolveDriverAxis}
+          computeSensitivityCell={computeSensitivityCell}
+          quotesLoading={quotesLoading}
+        />
+      ))}
     </div>
   );
 }
@@ -619,9 +902,10 @@ export default function DesktopView(): React.ReactElement {
     quotesLoading,
     refreshQuotes,
     selectedTicker,
-    selectedGrid,
-    selectedGridLoading,
     selectTicker,
+    selectedTables,
+    resolveDriverAxis,
+    computeSensitivityCell,
     exportExcel,
     exportCsv,
     excelLoading,
@@ -719,7 +1003,7 @@ export default function DesktopView(): React.ReactElement {
                 )}
               </div>
 
-              {/* ── Sensitivity panel ───────────────────────────────────────── */}
+              {/* ── Sensitivity tables ──────────────────────────────────────── */}
               <div style={{ marginTop: 32 }}>
                 <div className="section-title">
                   Sensitivity
@@ -735,15 +1019,23 @@ export default function DesktopView(): React.ReactElement {
                     fontFamily: "Arial, Helvetica, sans-serif",
                     fontSize: 11.5,
                     color: "#9ca3af",
-                    marginBottom: 12,
+                    marginBottom: 16,
                   }}
                 >
-                  Click a company row above to load its sensitivity grid.
+                  Click a company row above to see the sensitivity tables it
+                  appears in. The row/column matching the driver&rsquo;s current
+                  value is highlighted (orange).
                 </div>
-                <SensitivityPanel
-                  grid={selectedGrid}
-                  loading={selectedGridLoading}
+                <SensitivitySection
+                  tables={selectedTables}
+                  loading={rpcLoading && rows.length === 0}
                   companyName={selectedCompanyName}
+                  selectedTicker={selectedTicker}
+                  y1Label={config.y1_label}
+                  y2Label={config.y2_label}
+                  resolveDriverAxis={resolveDriverAxis}
+                  computeSensitivityCell={computeSensitivityCell}
+                  quotesLoading={quotesLoading}
                 />
               </div>
             </>

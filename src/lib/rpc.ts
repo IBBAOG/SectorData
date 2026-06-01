@@ -4090,6 +4090,10 @@ import type {
   StockGuideAdminCompany,
   SensitivityGrid,
   StockGuideConfig,
+  StockGuideDriver,
+  SensitivityAxis,
+  SensitivityTable,
+  SensitivityTableAdmin,
 } from "../types/stockGuide";
 
 /** Coerce a PostgREST numeric (string | number | null | undefined) → number | null. */
@@ -4366,6 +4370,237 @@ export async function rpcAdminDeleteStockGuideCompany(
   const { error } = await supabase.rpc("admin_delete_stock_guide_company", {
     p_ticker: ticker,
   });
+  if (error) throw error;
+}
+
+// ─── Stock Guide — redesigned sensitivity model (drivers + first-class tables) ─
+//
+// New READ-side wrappers for the redesigned model (migration
+// 20260606000000_stock_guide_sensitivity_model.sql, commit 0e1947c6). These
+// REPLACE the per-company single-grid wrappers above (which stay defined but
+// unused until the cleanup pass).
+//
+// Numeric coercion: jsonb numbers come back as JS numbers over PostgREST, but to
+// be safe against numeric-as-string we recursively coerce every cell of the
+// `definition` matrices (and `current_value` / `scenarios`) via `toNumOrNull`.
+// JSONB params are passed as plain JS objects (no manual JSON.stringify).
+
+/** Recursively coerce a jsonb matrix value into `(number | null)[][]`. */
+function coerceMatrix(raw: unknown): (number | null)[][] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((row) =>
+    Array.isArray(row) ? (row as unknown[]).map((c) => toNumOrNull(c)) : [],
+  );
+}
+
+/** Coerce a jsonb axis into a typed `SensitivityAxis` (numbers normalized). */
+function mapSensitivityAxis(raw: unknown): SensitivityAxis {
+  const a = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const kind =
+    a.kind === "company" || a.kind === "driver" || a.kind === "year"
+      ? (a.kind as SensitivityAxis["kind"])
+      : "company";
+  const axis: SensitivityAxis = { kind };
+  if (a.driver_id != null) {
+    const did = toNumOrNull(a.driver_id);
+    if (did != null) axis.driver_id = did;
+  }
+  if (Array.isArray(a.scenarios)) {
+    axis.scenarios = (a.scenarios as unknown[])
+      .map((s) => toNumOrNull(s))
+      .filter((n): n is number => n != null);
+  }
+  if (Array.isArray(a.companies)) {
+    axis.companies = (a.companies as unknown[]).map((c) => String(c));
+  }
+  if (Array.isArray(a.years)) {
+    axis.years = (a.years as unknown[]).map((y) => String(y));
+  }
+  return axis;
+}
+
+const SENSITIVITY_VALUE_MODES = [
+  "absolute",
+  "yield",
+  "pe",
+  "ev_ebitda",
+  "upside",
+] as const;
+
+/** Map one raw sensitivity-table row into a typed `SensitivityTable`. */
+function mapSensitivityTable(r: Record<string, unknown>): SensitivityTable {
+  const def = (r.definition && typeof r.definition === "object"
+    ? r.definition
+    : {}) as Record<string, unknown>;
+  const mode = SENSITIVITY_VALUE_MODES.includes(
+    r.value_mode as (typeof SENSITIVITY_VALUE_MODES)[number],
+  )
+    ? (r.value_mode as SensitivityTable["value_mode"])
+    : "absolute";
+  const out: SensitivityTable = {
+    id: Number(r.id),
+    title: String(r.title ?? ""),
+    value_mode: mode,
+    metric_label: String(r.metric_label ?? ""),
+    unit: String(r.unit ?? ""),
+    companies: Array.isArray(r.companies)
+      ? (r.companies as unknown[]).map((c) => String(c))
+      : [],
+    definition: {
+      row_axis: mapSensitivityAxis(def.row_axis),
+      col_axis: mapSensitivityAxis(def.col_axis),
+      cells: coerceMatrix(def.cells),
+    },
+    display_order: Number(r.display_order ?? 0),
+  };
+  if (Array.isArray(def.cells_secondary)) {
+    out.definition.cells_secondary = coerceMatrix(def.cells_secondary);
+  }
+  return out;
+}
+
+// ── Public reads (GRANT anon, authenticated) ──────────────────────────────────
+
+/**
+ * Central driver registry (macro/assumption variables — Brent, USD/BRL, …).
+ * Not company-sensitive, so returned in full to everyone. `current_value`
+ * coerced to `number | null`.
+ *
+ * Backed by SECURITY DEFINER RPC `get_stock_guide_drivers`.
+ */
+export async function rpcGetStockGuideDrivers(
+  supabase: SupabaseClient,
+): Promise<StockGuideDriver[]> {
+  const { data, error } = await supabase.rpc("get_stock_guide_drivers");
+  if (error) throw error;
+  const rows = (data ?? []) as Record<string, unknown>[];
+  return rows.map((r) => ({
+    id: Number(r.id),
+    name: String(r.name ?? ""),
+    unit: String(r.unit ?? ""),
+    current_value: toNumOrNull(r.current_value),
+    display_order: Number(r.display_order ?? 0),
+  }));
+}
+
+/**
+ * Hide-aware first-class sensitivity tables, in `display_order`. The RPC has
+ * ALREADY stripped restricted companies' axis entries + their matching cell
+ * rows/cols server-side and omitted any table with no visible company — the
+ * frontend just consumes the result. Every cell coerced to `number | null`.
+ *
+ * Backed by SECURITY DEFINER RPC `get_stock_guide_sensitivity_tables`.
+ */
+export async function rpcGetStockGuideSensitivityTables(
+  supabase: SupabaseClient,
+): Promise<SensitivityTable[]> {
+  const { data, error } = await supabase.rpc(
+    "get_stock_guide_sensitivity_tables",
+  );
+  if (error) throw error;
+  const rows = (data ?? []) as Record<string, unknown>[];
+  return rows.map(mapSensitivityTable);
+}
+
+// ── Admin reads (GRANT authenticated; is_admin()-guarded server-side) ─────────
+
+/**
+ * ALL sensitivity tables UNFILTERED (full definition incl. hidden companies) +
+ * audit columns (`updated_at`, `updated_by`). For the admin-panel builder only;
+ * the RPC raises `forbidden` (42501) for non-admins.
+ *
+ * Backed by SECURITY DEFINER RPC `admin_get_stock_guide_sensitivity_tables`.
+ */
+export async function rpcAdminGetStockGuideSensitivityTables(
+  supabase: SupabaseClient,
+): Promise<SensitivityTableAdmin[]> {
+  const { data, error } = await supabase.rpc(
+    "admin_get_stock_guide_sensitivity_tables",
+  );
+  if (error) throw error;
+  const rows = (data ?? []) as Record<string, unknown>[];
+  return rows.map((r) => ({
+    ...mapSensitivityTable(r),
+    updated_at: r.updated_at != null ? String(r.updated_at) : null,
+    updated_by: r.updated_by != null ? String(r.updated_by) : null,
+  }));
+}
+
+// ── Admin writes (GRANT authenticated; is_admin()-guarded server-side) ────────
+// Consumed by the future admin-panel builder pass (drivers CRUD + table builder).
+
+/**
+ * Upsert a driver. `id === null` → INSERT, else UPDATE that id. `data` keys:
+ * `name` (required), `unit`, `current_value`, `display_order`. Passed as JSONB;
+ * the server coerces numerics and sets `updated_by = auth.uid()`. Returns the
+ * driver's id.
+ *
+ * Backed by SECURITY DEFINER RPC `admin_upsert_stock_guide_driver`.
+ */
+export async function rpcAdminUpsertStockGuideDriver(
+  supabase: SupabaseClient,
+  id: number | null,
+  data: Record<string, unknown>,
+): Promise<number> {
+  const { data: out, error } = await supabase.rpc(
+    "admin_upsert_stock_guide_driver",
+    { p_id: id, p_data: data },
+  );
+  if (error) throw error;
+  return Number(out);
+}
+
+/**
+ * Delete a driver by id.
+ *
+ * Backed by SECURITY DEFINER RPC `admin_delete_stock_guide_driver`.
+ */
+export async function rpcAdminDeleteStockGuideDriver(
+  supabase: SupabaseClient,
+  id: number,
+): Promise<void> {
+  const { error } = await supabase.rpc("admin_delete_stock_guide_driver", {
+    p_id: id,
+  });
+  if (error) throw error;
+}
+
+/**
+ * Upsert a sensitivity table. `id === null` → INSERT, else UPDATE that id.
+ * `data` keys: `title` (required), `value_mode`, `metric_label`, `unit`,
+ * `companies` (string[] → text[]), `definition` (jsonb: `{ row_axis, col_axis,
+ * cells, cells_secondary? }`), `display_order`. Passed as JSONB; the server
+ * validates `value_mode`/object shape and sets `updated_by = auth.uid()`.
+ * Returns the table's id.
+ *
+ * Backed by SECURITY DEFINER RPC `admin_upsert_stock_guide_sensitivity_table`.
+ */
+export async function rpcAdminUpsertStockGuideSensitivityTable(
+  supabase: SupabaseClient,
+  id: number | null,
+  data: Record<string, unknown>,
+): Promise<number> {
+  const { data: out, error } = await supabase.rpc(
+    "admin_upsert_stock_guide_sensitivity_table",
+    { p_id: id, p_data: data },
+  );
+  if (error) throw error;
+  return Number(out);
+}
+
+/**
+ * Delete a sensitivity table by id.
+ *
+ * Backed by SECURITY DEFINER RPC `admin_delete_stock_guide_sensitivity_table`.
+ */
+export async function rpcAdminDeleteStockGuideSensitivityTable(
+  supabase: SupabaseClient,
+  id: number,
+): Promise<void> {
+  const { error } = await supabase.rpc(
+    "admin_delete_stock_guide_sensitivity_table",
+    { p_id: id },
+  );
   if (error) throw error;
 }
 

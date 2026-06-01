@@ -108,8 +108,10 @@ export interface StockGuideComputedRow extends StockGuideCompany {
 }
 
 /**
- * Freeform 2D sensitivity grid for one company, returned by
- * `get_stock_guide_sensitivity(p_ticker)`. `cells[r][c]` is indexed by
+ * DORMANT (kept for the cleanup pass): the OLD freeform 2D sensitivity grid for
+ * one company, returned by `get_stock_guide_sensitivity(p_ticker)`. Superseded
+ * by the first-class `SensitivityTable` model above; the rpc wrappers remain
+ * defined but UNUSED by the hook/views. `cells[r][c]` is indexed by
  * `row_labels[r]` × `col_labels[c]`. Returns `{}` (→ all-empty after the wrapper
  * normalizes) when the company is hidden and the caller is not an admin.
  */
@@ -121,6 +123,108 @@ export interface SensitivityGrid {
   col_labels: string[];
   /** `cells[r][c]` — outer index follows row_labels, inner follows col_labels. */
   cells: (number | null)[][];
+}
+
+// ─── Redesigned sensitivity model (drivers registry + first-class tables) ─────
+//
+// REPLACES the old per-company single grid (`SensitivityGrid` above +
+// `get_stock_guide_sensitivity`). Source of truth:
+//   supabase/migrations/20260606000000_stock_guide_sensitivity_model.sql
+//   (commit 0e1947c6, owner: worker_supabase).
+//
+// Two new tables, read via SECURITY DEFINER RPCs:
+//   • stock_guide_drivers       — central macro registry (Brent, USD/BRL, …).
+//   • stock_guide_sensitivities — first-class, cross-company sensitivity tables
+//     with live-derived value modes + a self-describing jsonb `definition`.
+//
+// get_stock_guide_sensitivity_tables() is already HIDE-AWARE: restricted
+// companies' axis entries + their matching cell rows/cols are stripped
+// server-side, and tables with no surviving visible company are omitted. The
+// frontend consumes the result as-is.
+
+/**
+ * A central macro/assumption driver (Brent average, USD/BRL, etc.) — NOT
+ * company-sensitive, so returned in full to everyone. `current_value` is the
+ * live "today" value used to highlight / interpolate the matching scenario
+ * column/row in a sensitivity table whose axis references this driver.
+ *
+ * Returned by `get_stock_guide_drivers()`; numeric `current_value` already
+ * coerced to `number | null` by the rpc.ts wrapper.
+ */
+export interface StockGuideDriver {
+  id: number;
+  name: string;
+  unit: string;
+  /** "Today" value of the driver (e.g. 80 for Brent USD/bbl). Null if unset. */
+  current_value: number | null;
+  display_order: number;
+}
+
+/**
+ * One axis of a sensitivity table's `definition`. The `kind` selects which of
+ * the optional shape fields is meaningful:
+ *   • `company` → `companies` holds the tickers along this axis.
+ *   • `driver`  → `driver_id` references a `StockGuideDriver`; `scenarios` holds
+ *     the per-table scenario values along this axis (e.g. [70,80,90]).
+ *   • `year`    → `years` holds the forward-year keys (e.g. ["y1","y2"]).
+ */
+export interface SensitivityAxis {
+  kind: "company" | "driver" | "year";
+  /** Present when kind === 'driver' — references stock_guide_drivers.id. */
+  driver_id?: number;
+  /** Present when kind === 'driver' — the scenario values along this axis. */
+  scenarios?: number[];
+  /** Present when kind === 'company' — tickers along this axis. */
+  companies?: string[];
+  /** Present when kind === 'year' — forward-year keys/labels along this axis. */
+  years?: string[];
+}
+
+/**
+ * A first-class sensitivity table. `value_mode` tells the browser how to turn a
+ * typed cell into a DISPLAY value (most modes are live-derived from the Yahoo
+ * price + the company's live market cap):
+ *   • `absolute`  — raw typed value in `unit`.
+ *   • `yield`     — typed ÷ live market cap × 100 (%).
+ *   • `pe`        — live market cap ÷ typed (×).
+ *   • `ev_ebitda` — (market cap + net debt) ÷ EBITDA (×). Here the PRIMARY
+ *     `cells` carry EBITDA and `cells_secondary` carry the matching net debt.
+ *   • `upside`    — typed (target price) ÷ live price − 1 (%, ×100 on format).
+ *
+ * `companies` is the visible-subset ticker set this table involves (drives the
+ * drill-down filter). `cells[rowIndex][colIndex]`.
+ *
+ * Returned (hide-aware) by `get_stock_guide_sensitivity_tables()`; every numeric
+ * cell already coerced to `number | null` by the rpc.ts wrapper.
+ */
+export interface SensitivityTable {
+  id: number;
+  title: string;
+  value_mode: "absolute" | "yield" | "pe" | "ev_ebitda" | "upside";
+  metric_label: string;
+  unit: string;
+  companies: string[];
+  definition: {
+    row_axis: SensitivityAxis;
+    col_axis: SensitivityAxis;
+    /** `cells[rowIndex][colIndex]` — primary typed value. */
+    cells: (number | null)[][];
+    /** ONLY for value_mode 'ev_ebitda' — the matching net debt per cell. */
+    cells_secondary?: (number | null)[][];
+  };
+  display_order: number;
+}
+
+/**
+ * Admin variant of `SensitivityTable` from
+ * `admin_get_stock_guide_sensitivity_tables()` — UNFILTERED (full definition
+ * including hidden companies) + audit columns. Consumed by the future
+ * admin-panel builder pass.
+ */
+export interface SensitivityTableAdmin extends SensitivityTable {
+  updated_at: string | null;
+  /** auth.users id of the last editor (uuid string) or null. */
+  updated_by: string | null;
 }
 
 /** Global Stock Guide settings (singleton row from `get_stock_guide_config()`). */

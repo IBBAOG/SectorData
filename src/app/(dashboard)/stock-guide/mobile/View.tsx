@@ -32,6 +32,7 @@ import BarrelLoading from "@/components/dashboard/BarrelLoading";
 import { useModuleVisibilityGuard } from "@/hooks/useModuleVisibilityGuard";
 import {
   useStockGuideData,
+  formatSensitivityCell,
   fmtNum,
   fmtPct,
   fmtSignedPct,
@@ -39,12 +40,16 @@ import {
   recommendationColors,
   VOLUME_UNIT_NOTE,
 } from "../useStockGuideData";
+import type { UseStockGuideData } from "../useStockGuideData";
 import type {
   StockGuideComputedRow,
   StockGuideSector,
   StockGuideRecommendation,
-  SensitivityGrid,
+  SensitivityTable,
+  SensitivityAxis,
 } from "@/types/stockGuide";
+
+const MOBILE_ACCENT = "#ff5000";
 
 const SECTOR_LABEL: Record<StockGuideSector, string> = {
   oil_gas: "Oil & Gas",
@@ -310,14 +315,309 @@ function CompsCard({
   );
 }
 
-// ─── Sensitivity matrix (inside the BottomSheet) ──────────────────────────────
+// ─── Axis resolution (mobile — mirrors desktop semantics) ─────────────────────
+//
+// Same analysis as desktop: labels per axis kind + a current-value marker.
+// [mobile-only] simplification: the interpolated marker (current value strictly
+// between two driver scenarios) is rendered as a highlight on the NEARER line
+// rather than a thin orange triangle between cells (no room on a phone).
+
+interface MobileAxisMarker {
+  /** Index to highlight (exact scenario hit, selectedTicker, or nearer line). */
+  highlightIdx: number | null;
+  /** True when the highlight is an interpolated (between-scenarios) approximation. */
+  interpolated: boolean;
+}
+
+interface MobileResolvedAxis {
+  labels: string[];
+  marker: MobileAxisMarker;
+  caption: string | null;
+}
+
+const MOBILE_NO_MARKER: MobileAxisMarker = { highlightIdx: null, interpolated: false };
+
+/** Driver marker for mobile: exact hit, else the nearer of the two bracketing scenarios. */
+function mobileDriverMarker(
+  scenarios: number[],
+  current: number | null,
+): MobileAxisMarker {
+  if (current == null || scenarios.length === 0) return MOBILE_NO_MARKER;
+  for (let i = 0; i < scenarios.length; i++) {
+    if (scenarios[i] === current) return { highlightIdx: i, interpolated: false };
+  }
+  for (let i = 0; i < scenarios.length - 1; i++) {
+    const a = scenarios[i];
+    const b = scenarios[i + 1];
+    const lo = Math.min(a, b);
+    const hi = Math.max(a, b);
+    if (current > lo && current < hi) {
+      const frac = (current - a) / (b - a); // 0..1 from a→b
+      const nearer = frac < 0.5 ? i : i + 1;
+      return { highlightIdx: nearer, interpolated: true };
+    }
+  }
+  return MOBILE_NO_MARKER;
+}
+
+function mobileFormatScenario(v: number): string {
+  return Number.isInteger(v) ? String(v) : String(v);
+}
+
+function mobileResolveAxis(
+  axis: SensitivityAxis,
+  ctx: {
+    selectedTicker: string | null;
+    y1Label: string;
+    y2Label: string;
+    resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
+  },
+): MobileResolvedAxis {
+  if (axis.kind === "company") {
+    const labels = axis.companies ?? [];
+    const idx = labels.findIndex((c) => c === ctx.selectedTicker);
+    return {
+      labels,
+      marker: { highlightIdx: idx >= 0 ? idx : null, interpolated: false },
+      caption: null,
+    };
+  }
+  if (axis.kind === "year") {
+    const labels = (axis.years ?? []).map((y) =>
+      y === "y1" ? ctx.y1Label : y === "y2" ? ctx.y2Label : y,
+    );
+    return { labels, marker: MOBILE_NO_MARKER, caption: null };
+  }
+  const { driver, scenarios } = ctx.resolveDriverAxis(axis);
+  const unit = driver?.unit ?? "";
+  const labels = scenarios.map((s) =>
+    unit ? `${mobileFormatScenario(s)} ${unit}` : mobileFormatScenario(s),
+  );
+  const marker = mobileDriverMarker(scenarios, driver?.current_value ?? null);
+  const caption =
+    driver != null && driver.current_value != null
+      ? `Current: ${driver.name} = ${mobileFormatScenario(driver.current_value)}${unit ? ` ${unit}` : ""}`
+      : null;
+  return { labels, marker, caption };
+}
+
+const MOBILE_VALUE_MODE_BADGE: Record<SensitivityTable["value_mode"], string> = {
+  absolute: "Absolute",
+  yield: "Yield",
+  pe: "P/E",
+  ev_ebitda: "EV/EBITDA",
+  upside: "Upside",
+};
+
+// ─── One sensitivity table (mobile card) ──────────────────────────────────────
+
+function MobileSensitivityTable({
+  table,
+  selectedTicker,
+  y1Label,
+  y2Label,
+  resolveDriverAxis,
+  computeSensitivityCell,
+  quotesLoading,
+}: {
+  table: SensitivityTable;
+  selectedTicker: string | null;
+  y1Label: string;
+  y2Label: string;
+  resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
+  computeSensitivityCell: UseStockGuideData["computeSensitivityCell"];
+  quotesLoading: boolean;
+}): React.ReactElement {
+  const ctx = { selectedTicker, y1Label, y2Label, resolveDriverAxis };
+  const rowAxis = mobileResolveAxis(table.definition.row_axis, ctx);
+  const colAxis = mobileResolveAxis(table.definition.col_axis, ctx);
+  const isLive = table.value_mode !== "absolute";
+
+  const unitForBadge =
+    table.value_mode === "absolute"
+      ? table.unit
+      : table.value_mode === "yield" || table.value_mode === "upside"
+        ? "%"
+        : "×";
+  const badge = `${table.metric_label || MOBILE_VALUE_MODE_BADGE[table.value_mode]}${
+    unitForBadge ? ` · ${unitForBadge}` : ""
+  }`;
+
+  return (
+    <div style={{ marginBottom: 22 }}>
+      {/* Title + badge */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: "var(--mobile-text)" }}>{table.title}</span>
+        <span
+          style={{
+            display: "inline-block",
+            padding: "2px 8px",
+            borderRadius: 4,
+            background: "rgba(255,80,0,0.10)",
+            color: MOBILE_ACCENT,
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.03em",
+            textTransform: "uppercase",
+          }}
+        >
+          {badge}
+        </span>
+      </div>
+
+      {colAxis.labels.length === 0 || rowAxis.labels.length === 0 ? (
+        <div style={{ padding: "16px 4px", color: "var(--mobile-text-muted)", fontSize: 12.5 }}>
+          This table has no rows or columns to display.
+        </div>
+      ) : (
+        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <table
+            style={{
+              borderCollapse: "collapse",
+              fontSize: 11.5,
+              fontFamily: "Arial, Helvetica, sans-serif",
+              border: "1px solid var(--mobile-border)",
+              borderRadius: "var(--mobile-radius-md, 12px)",
+              overflow: "hidden",
+              minWidth: "100%",
+            }}
+          >
+            <thead>
+              <tr>
+                <th
+                  style={{
+                    textAlign: "left",
+                    padding: "7px 11px",
+                    background: "var(--mobile-surface-elevated)",
+                    color: "var(--mobile-text)",
+                    fontWeight: 700,
+                    fontSize: 10,
+                    whiteSpace: "nowrap",
+                    borderRight: "1px solid var(--mobile-border)",
+                    borderBottom: "1px solid var(--mobile-border)",
+                  }}
+                >
+                  {table.metric_label || "Value"}
+                </th>
+                {colAxis.labels.map((c, ci) => {
+                  const hit = colAxis.marker.highlightIdx === ci;
+                  return (
+                    <th
+                      key={ci}
+                      style={{
+                        textAlign: "right",
+                        padding: "7px 11px",
+                        color: hit ? MOBILE_ACCENT : "var(--mobile-text-muted)",
+                        fontWeight: 700,
+                        fontSize: 10,
+                        whiteSpace: "nowrap",
+                        background: hit ? "rgba(255,80,0,0.10)" : "var(--mobile-surface-elevated)",
+                        borderRight: "1px solid var(--mobile-divider)",
+                        borderBottom: "1px solid var(--mobile-border)",
+                      }}
+                    >
+                      {c}
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {rowAxis.labels.map((rl, ri) => {
+                const rowHit = rowAxis.marker.highlightIdx === ri;
+                return (
+                  <tr key={ri}>
+                    <th
+                      scope="row"
+                      style={{
+                        textAlign: "right",
+                        padding: "7px 11px",
+                        fontWeight: 700,
+                        color: rowHit ? MOBILE_ACCENT : "var(--mobile-text)",
+                        whiteSpace: "nowrap",
+                        background: rowHit ? "rgba(255,80,0,0.10)" : "var(--mobile-surface-elevated)",
+                        borderRight: "1px solid var(--mobile-border)",
+                        borderBottom: "1px solid var(--mobile-divider)",
+                      }}
+                    >
+                      {rl}
+                    </th>
+                    {colAxis.labels.map((_, ci) => {
+                      const colHit = colAxis.marker.highlightIdx === ci;
+                      const inHighlightedLine = rowHit || colHit;
+                      const { value, unit } = computeSensitivityCell(table, ri, ci);
+                      const text =
+                        isLive && quotesLoading ? "—" : formatSensitivityCell(value, unit);
+                      return (
+                        <td
+                          key={ci}
+                          style={{
+                            textAlign: "right",
+                            padding: "7px 11px",
+                            fontVariantNumeric: "tabular-nums",
+                            color: "var(--mobile-text)",
+                            fontWeight: inHighlightedLine ? 700 : 400,
+                            background: inHighlightedLine
+                              ? "rgba(255,80,0,0.06)"
+                              : ri % 2 === 0
+                                ? "var(--mobile-surface)"
+                                : "var(--mobile-surface-elevated)",
+                            borderRight: "1px solid var(--mobile-divider)",
+                            borderBottom: "1px solid var(--mobile-divider)",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {text}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {(colAxis.caption || rowAxis.caption) && (
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 10.5,
+            color: "var(--mobile-text-muted)",
+            lineHeight: 1.5,
+          }}
+        >
+          {colAxis.caption && <div>{colAxis.caption}</div>}
+          {rowAxis.caption && <div>{rowAxis.caption}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Sensitivity tables (inside the BottomSheet) ──────────────────────────────
 
 function MobileSensitivity({
-  grid,
+  tables,
   loading,
+  companyName,
+  selectedTicker,
+  y1Label,
+  y2Label,
+  resolveDriverAxis,
+  computeSensitivityCell,
+  quotesLoading,
 }: {
-  grid: SensitivityGrid | null;
+  tables: SensitivityTable[];
   loading: boolean;
+  companyName: string | null;
+  selectedTicker: string | null;
+  y1Label: string;
+  y2Label: string;
+  resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
+  computeSensitivityCell: UseStockGuideData["computeSensitivityCell"];
+  quotesLoading: boolean;
 }): React.ReactElement {
   if (loading) {
     return (
@@ -326,7 +626,7 @@ function MobileSensitivity({
       </div>
     );
   }
-  if (!grid || grid.row_labels.length === 0 || grid.col_labels.length === 0) {
+  if (tables.length === 0) {
     return (
       <div
         style={{
@@ -336,119 +636,24 @@ function MobileSensitivity({
           fontSize: 13,
         }}
       >
-        No sensitivity table has been published yet.
+        No sensitivity tables for {companyName ?? "this company"} yet.
       </div>
     );
   }
   return (
     <div>
-      {/* Column-axis caption above the header row */}
-      <div
-        style={{
-          fontSize: 10,
-          fontWeight: 700,
-          letterSpacing: "0.04em",
-          textTransform: "uppercase",
-          color: "var(--mobile-accent)",
-          marginBottom: 8,
-          textAlign: "center",
-        }}
-      >
-        {grid.col_axis_title}
-      </div>
-      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-        <table
-          style={{
-            borderCollapse: "collapse",
-            fontSize: 11.5,
-            fontFamily: "Arial, Helvetica, sans-serif",
-            margin: "0 auto",
-            border: "1px solid var(--mobile-border)",
-            borderRadius: "var(--mobile-radius-md, 12px)",
-            overflow: "hidden",
-          }}
-        >
-          <thead>
-            <tr>
-              {/* Top-left corner = value label */}
-              <th
-                style={{
-                  textAlign: "left",
-                  padding: "7px 11px",
-                  background: "var(--mobile-surface-elevated)",
-                  color: "var(--mobile-text)",
-                  fontWeight: 700,
-                  fontSize: 10,
-                  whiteSpace: "nowrap",
-                  borderRight: "1px solid var(--mobile-border)",
-                  borderBottom: "1px solid var(--mobile-border)",
-                }}
-              >
-                {grid.value_label || "Value"}
-              </th>
-              {grid.col_labels.map((c, ci) => (
-                <th
-                  key={ci}
-                  style={{
-                    textAlign: "right",
-                    padding: "7px 11px",
-                    color: "var(--mobile-text-muted)",
-                    fontWeight: 700,
-                    fontSize: 10,
-                    whiteSpace: "nowrap",
-                    background: "var(--mobile-surface-elevated)",
-                    borderRight: "1px solid var(--mobile-divider)",
-                    borderBottom: "1px solid var(--mobile-border)",
-                  }}
-                >
-                  {c}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {grid.row_labels.map((rl, ri) => (
-              <tr key={ri}>
-                <th
-                  scope="row"
-                  style={{
-                    textAlign: "right",
-                    padding: "7px 11px",
-                    fontWeight: 700,
-                    color: "var(--mobile-text)",
-                    whiteSpace: "nowrap",
-                    background: "var(--mobile-surface-elevated)",
-                    borderRight: "1px solid var(--mobile-border)",
-                    borderBottom: "1px solid var(--mobile-divider)",
-                  }}
-                >
-                  {rl}
-                </th>
-                {grid.col_labels.map((_, ci) => (
-                  <td
-                    key={ci}
-                    style={{
-                      textAlign: "right",
-                      padding: "7px 11px",
-                      fontVariantNumeric: "tabular-nums",
-                      color: "var(--mobile-text)",
-                      background: ri % 2 === 0 ? "var(--mobile-surface)" : "var(--mobile-surface-elevated)",
-                      borderRight: "1px solid var(--mobile-divider)",
-                      borderBottom: "1px solid var(--mobile-divider)",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {fmtNum(grid.cells[ri]?.[ci] ?? null, 2)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div style={{ marginTop: 10, fontSize: 11, color: "var(--mobile-text-muted)", textAlign: "center" }}>
-        Rows: <strong style={{ color: "var(--mobile-text)" }}>{grid.row_axis_title}</strong>
-      </div>
+      {tables.map((t) => (
+        <MobileSensitivityTable
+          key={t.id}
+          table={t}
+          selectedTicker={selectedTicker}
+          y1Label={y1Label}
+          y2Label={y2Label}
+          resolveDriverAxis={resolveDriverAxis}
+          computeSensitivityCell={computeSensitivityCell}
+          quotesLoading={quotesLoading}
+        />
+      ))}
     </div>
   );
 }
@@ -467,9 +672,10 @@ export default function MobileView(): React.ReactElement {
     setFilters,
     quotesLoading,
     selectedTicker,
-    selectedGrid,
-    selectedGridLoading,
     selectTicker,
+    selectedTables,
+    resolveDriverAxis,
+    computeSensitivityCell,
   } = useStockGuideData();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -642,7 +848,17 @@ export default function MobileView(): React.ReactElement {
         onClose={() => setSheetOpen(false)}
         title={selectedCompanyName ? `Sensitivity — ${selectedCompanyName}` : "Sensitivity"}
       >
-        <MobileSensitivity grid={selectedGrid} loading={selectedGridLoading} />
+        <MobileSensitivity
+          tables={selectedTables}
+          loading={loading}
+          companyName={selectedCompanyName}
+          selectedTicker={selectedTicker}
+          y1Label={config.y1_label}
+          y2Label={config.y2_label}
+          resolveDriverAxis={resolveDriverAxis}
+          computeSensitivityCell={computeSensitivityCell}
+          quotesLoading={quotesLoading}
+        />
       </BottomSheet>
 
       {/* ── Filter drawer (sector) ───────────────────────────────────────────── */}

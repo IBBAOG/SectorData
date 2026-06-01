@@ -10,17 +10,26 @@
 //
 // What this hook owns
 // ───────────────────
-//   a. Fetch comps + config on mount (fetch-id guard — subsidy-tracker pattern).
+//   a. Fetch comps + config + drivers + sensitivity tables on mount (one
+//      batched Promise.all, fetch-id guard — subsidy-tracker pattern).
 //   b. Partition: `visibleRows` (full comps) vs `restrictedNames` (hidden →
 //      company_name only). The restricted footnote is built from `restrictedNames`.
 //   c. LIVE QUOTES via the existing Yahoo proxy (`useStockQuote` →
 //      `/api/stocks/quote?tickers=`). Collect `yahoo_symbol` (fallback ticker)
 //      of VISIBLE rows → ONE batched fetch on load + a manual `refreshQuotes()`.
 //      No polling ticker — comps are snapshots; respect the proxy rate limit.
-//   d. Derive per visible row: livePrice / marketCapBrlMn / upsidePct (null-safe).
-//   e. Drill-down: selectedTicker / selectedGrid / selectedGridLoading;
-//      `selectTicker()` lazily calls rpcGetStockGuideSensitivity. Default = first
-//      visible row.
+//      (Hidden tickers are stripped server-side from the sensitivity tables too,
+//      so the visible-comps quote list already covers every ticker that can
+//      appear in any table.)
+//   d. Derive per visible row: livePrice / marketCapBrlMn / upsidePct + the 4
+//      live multiples (null-safe). A `liveByTicker` index exposes livePrice +
+//      marketCapBrlMn per ticker for the sensitivity-cell helper.
+//   e. Sensitivity drill-down (REDESIGNED): expose `drivers` + `sensitivityTables`
+//      and a derived `selectedTables` = tables where `selectedTicker ∈ companies`,
+//      sorted by display_order. `selectedTicker`/`selectTicker` default = first
+//      visible company (NO per-table fetch — tables arrive in the initial batch).
+//      `computeSensitivityCell()` turns a (table,row,col) into a DISPLAY value;
+//      `resolveDriverAxis()` maps a driver axis → { driver, scenarios }.
 //   f. Optional sectorFilter; `setFilters` merges partials.
 //   g. Desktop-only export (Excel + CSV) of the computed VISIBLE table.
 //
@@ -39,7 +48,8 @@ import { useStockQuote } from "@/hooks/useStockQuote";
 import {
   rpcGetStockGuideComps,
   rpcGetStockGuideConfig,
-  rpcGetStockGuideSensitivity,
+  rpcGetStockGuideDrivers,
+  rpcGetStockGuideSensitivityTables,
 } from "@/lib/rpc";
 import { downloadGenericExcel } from "@/lib/exportExcel";
 import { downloadCsv } from "@/lib/exportCsv";
@@ -48,7 +58,9 @@ import type {
   StockGuideComputedRow,
   StockGuideConfig,
   StockGuideSector,
-  SensitivityGrid,
+  StockGuideDriver,
+  SensitivityAxis,
+  SensitivityTable,
 } from "@/types/stockGuide";
 
 // ─── Filters ───────────────────────────────────────────────────────────────
@@ -91,18 +103,58 @@ export interface UseStockGuideData {
   /** Manual one-shot re-fetch of all visible tickers' quotes. */
   refreshQuotes: () => void;
 
-  // Drill-down
+  // ── Redesigned sensitivity model ──────────────────────────────────────────
+  /** Central driver registry (Brent, USD/BRL, …) — drives axis highlighting. */
+  drivers: StockGuideDriver[];
+  /** All hide-aware sensitivity tables (display_order), straight from the RPC. */
+  sensitivityTables: SensitivityTable[];
+
+  // Drill-down: which company's tables are shown.
   selectedTicker: string | null;
-  selectedGrid: SensitivityGrid | null;
-  selectedGridLoading: boolean;
-  selectedGridError: Error | null;
   selectTicker: (ticker: string) => void;
+  /** Tables involving `selectedTicker`, sorted by display_order. */
+  selectedTables: SensitivityTable[];
+
+  /**
+   * Pure helper: compute a cell's DISPLAY value for (table, rowIdx, colIdx)
+   * given the live numbers. Returns `null` (→ render "—") when missing data or
+   * a guarded divide-by-zero / non-positive denominator. Stable identity.
+   */
+  computeSensitivityCell: (
+    table: SensitivityTable,
+    rowIdx: number,
+    colIdx: number,
+  ) => SensitivityCellValue;
+
+  /**
+   * Pure helper: resolve a driver axis → its `StockGuideDriver` (or null if the
+   * axis isn't a driver / the id is unknown) + the per-table scenario values.
+   * Stable identity.
+   */
+  resolveDriverAxis: (axis: SensitivityAxis) => ResolvedDriverAxis;
 
   // Desktop-only export — hook owns the busy state.
   exportExcel: () => Promise<void>;
   exportCsv: () => void;
   excelLoading: boolean;
   csvLoading: boolean;
+}
+
+/** Result of `computeSensitivityCell`: the display value + the unit to format with. */
+export interface SensitivityCellValue {
+  /** The DISPLAY value, or null to render "—". */
+  value: number | null;
+  /**
+   * The unit the View should format with: 'absolute' → the table.unit; 'yield'
+   * & 'upside' → '%'; 'pe' & 'ev_ebitda' → '×'. (Mirrors value_mode → unit.)
+   */
+  unit: string;
+}
+
+/** Result of `resolveDriverAxis`. */
+export interface ResolvedDriverAxis {
+  driver: StockGuideDriver | null;
+  scenarios: number[];
 }
 
 // ─── Formatting helpers (shared by both Views) ───────────────────────────────
@@ -174,11 +226,53 @@ const EMPTY_CONFIG: StockGuideConfig = {
   assumptions_note: "",
 };
 
+/**
+ * Display unit per value_mode. 'absolute' has no fixed unit (uses table.unit),
+ * so it is intentionally absent and the helper falls back to `table.unit`.
+ */
+const VALUE_MODE_UNIT: Record<SensitivityTable["value_mode"], string> = {
+  absolute: "",
+  yield: "%",
+  pe: "×",
+  ev_ebitda: "×",
+  upside: "%",
+};
+
+/**
+ * Format a computed sensitivity-cell value by its unit. Shared by both Views to
+ * keep desktop/mobile rendering identical (dual-view binding). The value is
+ * already display-ready (computeSensitivityCell scales 'yield' and 'upside' to
+ * percent points):
+ *   • '%' → one-decimal percent (value is already in percent points).
+ *   • '×' → one-decimal multiple with a "×" suffix.
+ *   • else (absolute) → thousands-grouped value + the unit suffix.
+ * Null → "—".
+ */
+export function formatSensitivityCell(
+  value: number | null,
+  unit: string,
+): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  if (unit === "%") return `${value.toFixed(1)}%`;
+  if (unit === "×") return `${value.toFixed(1)}×`;
+  // absolute: thousands-grouped (1 decimal if non-integer), + unit suffix.
+  const isInt = Number.isInteger(value);
+  const num = value.toLocaleString("en-US", {
+    minimumFractionDigits: isInt ? 0 : 1,
+    maximumFractionDigits: isInt ? 0 : 1,
+  });
+  return unit ? `${num} ${unit}` : num;
+}
+
 export function useStockGuideData(): UseStockGuideData {
   const supabase = getSupabaseClient();
 
   const [rows, setRows] = useState<StockGuideCompany[]>([]);
   const [config, setConfig] = useState<StockGuideConfig>(EMPTY_CONFIG);
+  const [drivers, setDrivers] = useState<StockGuideDriver[]>([]);
+  const [sensitivityTables, setSensitivityTables] = useState<SensitivityTable[]>(
+    [],
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
@@ -189,7 +283,7 @@ export function useStockGuideData(): UseStockGuideData {
   const fetchIdRef = useRef(0);
   const fetchedRef = useRef(false);
 
-  // ── a. Fetch comps + config (fetch-id guard) ──────────────────────────────
+  // ── a. Fetch comps + config + drivers + sensitivity tables (fetch-id guard) ─
   const fetchData = useCallback(() => {
     if (!supabase) return;
     const myId = ++fetchIdRef.current;
@@ -198,11 +292,15 @@ export function useStockGuideData(): UseStockGuideData {
     Promise.all([
       rpcGetStockGuideComps(supabase),
       rpcGetStockGuideConfig(supabase),
+      rpcGetStockGuideDrivers(supabase),
+      rpcGetStockGuideSensitivityTables(supabase),
     ])
-      .then(([compsData, configData]) => {
+      .then(([compsData, configData, driversData, tablesData]) => {
         if (myId !== fetchIdRef.current) return;
         setRows(compsData);
         setConfig(configData);
+        setDrivers(driversData);
+        setSensitivityTables(tablesData);
         setLoading(false);
       })
       .catch((err: unknown) => {
@@ -397,51 +495,159 @@ export function useStockGuideData(): UseStockGuideData {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleRows, filters.sectorFilter, priceByKey]);
 
-  // ── e. Drill-down state ────────────────────────────────────────────────────
+  // Live numbers per ticker for the sensitivity-cell helper. Built from
+  // visibleRows (NOT the sector-filtered computedRows) so a table cell can
+  // always resolve its company's live price / market cap even when the sector
+  // filter would have hidden that company from the comps view. Hidden companies
+  // are absent from visibleRows AND stripped from the tables server-side.
+  const liveByTicker = useMemo(() => {
+    const m = new Map<
+      string,
+      { livePrice: number | null; marketCapBrlMn: number | null }
+    >();
+    for (const r of visibleRows) {
+      const livePrice = livePriceFor(r);
+      const marketCapBrlMn =
+        r.shares_outstanding != null && livePrice != null
+          ? (r.shares_outstanding * livePrice) / 1e6
+          : null;
+      m.set(r.ticker, { livePrice, marketCapBrlMn });
+    }
+    return m;
+    // priceByKey captures the quote dependency (livePriceFor reads it).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleRows, priceByKey]);
+
+  // ── e. Sensitivity drill-down (redesigned: first-class tables) ─────────────
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
-  const [selectedGrid, setSelectedGrid] = useState<SensitivityGrid | null>(null);
-  const [selectedGridLoading, setSelectedGridLoading] = useState(false);
-  const [selectedGridError, setSelectedGridError] = useState<Error | null>(null);
-  const gridFetchIdRef = useRef(0);
 
-  const selectTicker = useCallback(
-    (ticker: string) => {
-      setSelectedTicker(ticker);
-      if (!supabase) return;
-      const myId = ++gridFetchIdRef.current;
-      setSelectedGridLoading(true);
-      setSelectedGridError(null);
-      setSelectedGrid(null);
-      rpcGetStockGuideSensitivity(supabase, ticker)
-        .then((grid) => {
-          if (myId !== gridFetchIdRef.current) return;
-          setSelectedGrid(grid);
-          setSelectedGridLoading(false);
-        })
-        .catch((err: unknown) => {
-          if (myId !== gridFetchIdRef.current) return;
-          setSelectedGridError(
-            err instanceof Error ? err : new Error(String(err)),
-          );
-          setSelectedGridLoading(false);
-        });
-    },
-    [supabase],
-  );
+  const selectTicker = useCallback((ticker: string) => {
+    setSelectedTicker(ticker);
+  }, []);
 
-  // Default selection = first visible row, once comps land. Re-selects only if
-  // the current selection is gone (e.g. the company was hidden between fetches).
+  // Default selection = first visible company, once comps land. Re-selects only
+  // if the current selection is gone (e.g. the company was hidden between fetches).
   useEffect(() => {
     if (visibleRows.length === 0) return;
     const stillVisible =
       selectedTicker != null &&
       visibleRows.some((r) => r.ticker === selectedTicker);
     if (!stillVisible) {
-      selectTicker(visibleRows[0].ticker);
+      setSelectedTicker(visibleRows[0].ticker);
     }
-    // selectTicker is stable; we intentionally key on the visible-row identity.
+    // we intentionally key on the visible-row identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleRows]);
+
+  // Tables involving the selected company, in display_order. The RPC already
+  // sorts by display_order; we re-sort defensively.
+  const selectedTables = useMemo<SensitivityTable[]>(() => {
+    if (selectedTicker == null) return [];
+    return sensitivityTables
+      .filter((t) => t.companies.includes(selectedTicker))
+      .sort((a, b) => a.display_order - b.display_order);
+  }, [sensitivityTables, selectedTicker]);
+
+  // Driver index for resolveDriverAxis (by id).
+  const driversById = useMemo(() => {
+    const m = new Map<number, StockGuideDriver>();
+    for (const d of drivers) m.set(d.id, d);
+    return m;
+  }, [drivers]);
+
+  // Pure helper: resolve a driver axis → { driver, scenarios }.
+  const resolveDriverAxis = useCallback(
+    (axis: SensitivityAxis): ResolvedDriverAxis => {
+      const driver =
+        axis.kind === "driver" && axis.driver_id != null
+          ? (driversById.get(axis.driver_id) ?? null)
+          : null;
+      return { driver, scenarios: axis.scenarios ?? [] };
+    },
+    [driversById],
+  );
+
+  // Pure helper: compute a cell's DISPLAY value for (table, rowIdx, colIdx).
+  const computeSensitivityCell = useCallback(
+    (
+      table: SensitivityTable,
+      rowIdx: number,
+      colIdx: number,
+    ): SensitivityCellValue => {
+      const def = table.definition;
+      const mode = table.value_mode;
+      // 'absolute' has no fixed unit → use the table's own unit; the other modes
+      // have a fixed display unit ('%', '×').
+      const unitFor = mode === "absolute" ? table.unit : VALUE_MODE_UNIT[mode];
+
+      // 1. Resolve the cell's company.
+      //    row company axis → companies[rowIdx];
+      //    else col company axis → companies[colIdx];
+      //    else single-company table → table.companies[0].
+      let company: string | null = null;
+      if (def.row_axis.kind === "company") {
+        company = def.row_axis.companies?.[rowIdx] ?? null;
+      } else if (def.col_axis.kind === "company") {
+        company = def.col_axis.companies?.[colIdx] ?? null;
+      } else {
+        company = table.companies[0] ?? null;
+      }
+
+      // 2. Live numbers for that company (null if unknown / no quote yet).
+      const live = company != null ? liveByTicker.get(company) : undefined;
+      const livePrice = live?.livePrice ?? null;
+      const marketCapBrlMn = live?.marketCapBrlMn ?? null;
+
+      // 3. Typed cell value(s).
+      const primary = def.cells?.[rowIdx]?.[colIdx] ?? null;
+      const secondary = def.cells_secondary?.[rowIdx]?.[colIdx] ?? null;
+
+      // 4. Apply value_mode (every denominator guarded; null-safe → "—").
+      let value: number | null = null;
+      switch (mode) {
+        case "absolute":
+          value = primary;
+          break;
+        case "yield":
+          value =
+            primary != null && marketCapBrlMn != null && marketCapBrlMn > 0
+              ? (primary / marketCapBrlMn) * 100
+              : null;
+          break;
+        case "pe":
+          value =
+            marketCapBrlMn != null && primary != null && primary > 0
+              ? marketCapBrlMn / primary
+              : null;
+          break;
+        case "ev_ebitda":
+          value =
+            primary != null &&
+            primary > 0 &&
+            secondary != null &&
+            marketCapBrlMn != null
+              ? (marketCapBrlMn + secondary) / primary
+              : null;
+          break;
+        case "upside":
+          // Spec computation is `primary / livePrice − 1` (a RATIO). We scale to
+          // percent points here so the returned value is display-ready and the
+          // single '%' formatting rule (percent points) applies uniformly with
+          // the 'yield' mode. (i.e. the "value*100 when formatting" step is
+          // folded into the helper.)
+          value =
+            primary != null && livePrice != null && livePrice > 0
+              ? (primary / livePrice - 1) * 100
+              : null;
+          break;
+        default:
+          value = null;
+      }
+
+      return { value, unit: unitFor };
+    },
+    [liveByTicker],
+  );
 
   // ── g. Desktop-only export of the computed visible table ──────────────────
   const exportExcel = useCallback(async () => {
@@ -539,11 +745,13 @@ export function useStockGuideData(): UseStockGuideData {
     quotesLoading,
     quotesError,
     refreshQuotes,
+    drivers,
+    sensitivityTables,
     selectedTicker,
-    selectedGrid,
-    selectedGridLoading,
-    selectedGridError,
     selectTicker,
+    selectedTables,
+    computeSensitivityCell,
+    resolveDriverAxis,
     exportExcel,
     exportCsv,
     excelLoading,
