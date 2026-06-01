@@ -2193,6 +2193,13 @@ export function useAdminPanelData(): UseAdminPanelData {
       return "Select a driver for the row axis.";
     if (d.colAxis.kind === "driver" && !d.colAxis.driverId)
       return "Select a driver for the column axis.";
+    // Every driver scenario must parse to a number; blank/garbage entries are
+    // dropped by draftToAxis (.filter), which would desync the saved
+    // scenarios.length from the matrix dims sized by axisItemCount.
+    if (d.rowAxis.kind === "driver" && !d.rowAxis.scenarios.every((s) => strToNum(s) != null))
+      return "Every driver scenario must be a number (no blank cells).";
+    if (d.colAxis.kind === "driver" && !d.colAxis.scenarios.every((s) => strToNum(s) != null))
+      return "Every driver scenario must be a number (no blank cells).";
     if (deriveTableCompanies(d).length === 0)
       return "Select the company this table belongs to.";
     return null;

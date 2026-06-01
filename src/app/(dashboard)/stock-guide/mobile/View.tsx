@@ -361,7 +361,7 @@ function mobileDriverMarker(
 }
 
 function mobileFormatScenario(v: number): string {
-  return Number.isInteger(v) ? String(v) : String(v);
+  return String(v);
 }
 
 function mobileResolveAxis(

@@ -474,9 +474,9 @@ function resolveAxis(
   return { labels, marker, caption };
 }
 
-/** Scenario value formatter — integers stay bare, decimals show as typed. */
+/** Scenario value formatter. */
 function formatScenario(v: number): string {
-  return Number.isInteger(v) ? String(v) : String(v);
+  return String(v);
 }
 
 // ── The orange interpolation triangle drawn between two header cells ──────────
