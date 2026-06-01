@@ -331,6 +331,10 @@ export function buildYtdChart(
   const yearEnd = `${year}-12-31`;
 
   const traces: PlotData[] = [];
+  // Union of every plotted y-value (actual cumulative averages + projections)
+  // across all series — feeds deconflictAnnotations' px-per-unit mapping so the
+  // year-end label spacing matches the chart's real y-range.
+  const allDataY: number[] = [];
 
   for (const s of seriesDefs) {
     let cumSum = 0;
@@ -356,6 +360,8 @@ export function buildYtdChart(
     }
 
     if (actualDates.length === 0) continue;
+
+    allDataY.push(...actualAvgs);
 
     const isPetrobras = s.field === "petrobras_price";
     let ytdCustomdata: [string, string][] | undefined;
@@ -409,6 +415,8 @@ export function buildYtdChart(
         projY.push(projSum / projCount);
       }
 
+      allDataY.push(...projY);
+
       traces.push({
         type: "scatter",
         mode: "lines",
@@ -422,7 +430,7 @@ export function buildYtdChart(
     }
   }
 
-  const annotations: Partial<Annotations>[] = seriesDefs.flatMap((s) => {
+  const rawAnnotations: Partial<Annotations>[] = seriesDefs.flatMap((s) => {
     const yearRowsForS = yearRows.filter((r) => (r[s.field] as number | null) != null);
     if (yearRowsForS.length === 0) return [];
     // Use this series' own last non-null value/date for the year-end label, so
@@ -446,6 +454,11 @@ export function buildYtdChart(
       xshift: 6,
     }];
   });
+
+  // Match the YTD layout geometry below (height 360, margin t:20 / b:100) so the
+  // pixel math lines up; without this the year-end labels collide when two
+  // series end near the same value (e.g. Diesel "4.02" vs "3.91").
+  const annotations = deconflictAnnotations(rawAnnotations, allDataY, 360, 20, 100);
 
   return {
     data: traces,
