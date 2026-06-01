@@ -196,7 +196,7 @@ A camada de chrome é selecionada por `useIsMobile()` (device class — ver § "
 
 | Status | Rotas | Padrão `page.tsx` |
 |---|---|---|
-| **Mobile-eligible (11)** | `/home`, `/well-by-well`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/anp-cdp-diaria`, `/market-share`, `/price-bands`, `/subsidy-tracker`, `/diesel-gasoline-margins`, `/imports-exports`, `/navios-diesel` | Router clássico: `const isMobile = useIsMobile(); return isMobile ? <MobileView /> : <DesktopView />;` |
+| **Mobile-eligible (12)** | `/home`, `/well-by-well`, `/stock-guide`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/anp-cdp-diaria`, `/market-share`, `/price-bands`, `/subsidy-tracker`, `/diesel-gasoline-margins`, `/imports-exports`, `/navios-diesel` | Router clássico: `const isMobile = useIsMobile(); return isMobile ? <MobileView /> : <DesktopView />;` |
 | **Mobile-excluded (9)** | `/stocks`, `/admin-panel`, `/admin-analytics`, `/news-hunter`, `/alerts`, `/profile`, `/anp-cdp`, `/anp-prices`, `/anp-glp` | `mobile/View.tsx` **deletado**; `page.tsx` renderiza `<MobileExcludedRedirect slug="..." />` + `<DesktopView />`. No mobile, o `MobileExcludedRedirect` faz `router.replace("/home?excluded=<slug>")` + `dispatchEvent("app-toast")` para mostrar "<Display> is available only on desktop". |
 
 **Razões de exclusão (resumo das ondas 2.x):**
@@ -303,6 +303,7 @@ Para qualquer mudança em código de um dashboard específico, delegue ao agente
 | `/anp-prices` | `worker_dash-anp-prices` (substitui os 3 retirados em 2026-05-26: `/anp-precos-produtores`, `/anp-precos-distribuicao`, `/anp-lpc`) | [anp-prices.md](anp-prices.md) |
 | `/imports-exports` | `worker_dash-imports-exports` (substitui os 3 retirados em 2026-05-25: `/anp-daie`, `/anp-desembaracos`, `/anp-painel-importacoes`) | [imports-exports.md](imports-exports.md) |
 | `/anp-cdp-diaria` | `worker_dash-anp-cdp-diaria` | [anp-cdp-diaria.md](anp-cdp-diaria.md) |
+| `/stock-guide` | `worker_dash-stock-guide` (Oil & Gas / Equities — comps + sensibilidade 2D; mkt cap/upside live via Yahoo proxy `/api/stocks/quote`; admin-curated, hide-aware; Client + Admin, mobile-eligible) | [stock-guide.md](stock-guide.md) |
 
 ### Dashboards adicionados na Fase 3 (categoria NavBar / tabela alvo)
 

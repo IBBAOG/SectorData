@@ -43,6 +43,7 @@ CEO (Eduardo)
      │   ├─ dash-imports-exports          (/imports-exports — Fuel Distribution; substitui /anp-daie + /anp-desembaracos + /anp-painel-importacoes; absorveu /mdic-comex em 2026-05-25 — originalmente via Panel C "Import Price", removido em 2026-05-28; MDIC agora alimenta Panel D + Import/Export Price Summary)
      │   ├─ dash-anp-cdp-diaria          (/anp-cdp-diaria — Oil & Gas)
      │   ├─ dash-subsidy-tracker          (/subsidy-tracker — Fuel Distribution, dados proprietários)
+     │   ├─ dash-stock-guide              (/stock-guide — Oil & Gas / Equities; comps + sensibilidade, mkt cap/upside live via Yahoo proxy; Client+Admin)
      │   ├─ dash-admin-analytics          (/admin-analytics — Admin-only, sem module_visibility)
      │   └─ dash-alerts                   (/alerts — User-Facing Email Subscriptions, anon+client+admin)
      │
@@ -83,7 +84,7 @@ Reforma cross-cutting (Ondas 1–3, range `fac9e522..4ccca2b8`, ~30 commits) que
 
 | Status | Rotas |
 |---|---|
-| **Mobile-eligible (11)** | `/home`, `/well-by-well`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/anp-cdp-diaria`, `/market-share`, `/price-bands`, `/subsidy-tracker`, `/diesel-gasoline-margins`, `/imports-exports`, `/navios-diesel` |
+| **Mobile-eligible (12)** | `/home`, `/well-by-well`, `/stock-guide`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/anp-cdp-diaria`, `/market-share`, `/price-bands`, `/subsidy-tracker`, `/diesel-gasoline-margins`, `/imports-exports`, `/navios-diesel` |
 | **Mobile-excluded / desktop-only (9)** | `/stocks`, `/admin-panel`, `/admin-analytics`, `/news-hunter`, `/alerts`, `/profile`, `/anp-cdp`, `/anp-prices`, `/anp-glp` |
 
 ## Departamentos
@@ -119,6 +120,7 @@ Cada um possui um módulo (ou bundle, no caso de admin). Cada um auto-documenta 
 | [`worker_dash-imports-exports`](../.claude/agents/worker_dash-imports-exports.md) | `/imports-exports` (substitui `/anp-daie` + `/anp-desembaracos` + `/anp-painel-importacoes`; consolida importações por país e por importador a partir da `anp_desembaracos` enriquecida + exportações via `anp_daie`) | [`docs/app/imports-exports.md`](app/imports-exports.md) |
 | [`worker_dash-anp-cdp-diaria`](../.claude/agents/worker_dash-anp-cdp-diaria.md) | `/anp-cdp-diaria` | [`docs/app/anp-cdp-diaria.md`](app/anp-cdp-diaria.md) |
 | [`worker_dash-subsidy-tracker`](../.claude/agents/worker_dash-subsidy-tracker.md) | `/subsidy-tracker` (Fuel Distribution — dados proprietários) | [`docs/app/subsidy-tracker.md`](app/subsidy-tracker.md) |
+| [`worker_dash-stock-guide`](../.claude/agents/worker_dash-stock-guide.md) | `/stock-guide` (Oil & Gas / Equities — comps + sensibilidade 2D por empresa; mkt cap/upside computados live via Yahoo proxy; admin-curated, hide-aware; Client + Admin) | [`docs/app/stock-guide.md`](app/stock-guide.md) |
 | [`worker_dash-admin-analytics`](../.claude/agents/worker_dash-admin-analytics.md) | `/admin-analytics` (Admin-only — sem `module_visibility`; backed por `app_events`) | [`docs/app/admin-analytics.md`](app/admin-analytics.md) |
 | [`worker_dash-alerts`](../.claude/agents/worker_dash-alerts.md) | `/alerts` (User-Facing Email Subscriptions — anon double opt-in, hybrid per-source granularity, instant cadence, Resend delivery via `worker_alerts-product`) | [`docs/app/alerts.md`](app/alerts.md) |
 
@@ -252,6 +254,42 @@ Todas as 5 RPCs são `LANGUAGE sql STABLE SECURITY DEFINER` + `SET search_path =
 **Dependência crítica:** `get_production_company_aggregate` e `get_production_top_fields` retornam dados consistentes **apenas se `field_stakes` está completo** (SUM=100 por campo). Em 2026-05-26, 304 campos foram seeded pela Fase 1; 240 lacunas (mais 2 nomes não-matchados, `Mariqui` e `Xisto São Mateus do Sul`) restam para o Admin (Eduardo) preencher manualmente via `/admin-panel → Field Stakes`. A lista completa está em `docs/dados-locais/field_stakes_lacunas.md` (mantida pelo `worker_documentador`). Até que o Admin complete o preenchimento, a produção atribuível subestima a real — preferimos subestimar do que inflar (decisão de design Fase 2).
 
 **Visibilidade:** `INSERT INTO module_visibility VALUES ('well-by-well', is_visible_for_clients=true, is_visible_on_home=true, is_visible_for_public=false)` — Client + Admin enxergam; Anon não. Decisão: dados de produção stake-weighted são proprietary insight do produto, não material público.
+
+**Contrato `/stock-guide` (APP ↔ Supabase ↔ Yahoo proxy, 2026-06-01):**
+
+Dashboard `/stock-guide` (Label "Stock Guide") é o módulo de equities research da cobertura O&G + Distribuição de Combustíveis. Duas análises sobre um hook único (`useStockGuideData.ts`): (1) tabela de **comps** (uma linha por empresa coberta — target price, recomendação OP/MP/UP, e 6 pares de múltiplos forward EV/EBITDA · P/E · FCFE Yield · Div Yield · EBITDA · Volumes, cada um split em `config.y1_label`/`config.y2_label`, ex.: 2026E/2027E) e (2) **grade de sensibilidade 2D freeform** por empresa. **Market cap e upside são computados live no browser** a partir do Yahoo proxy existente (`/api/stocks/quote`, reusando o hook `useStockQuote`) — nunca armazenados — via 1 quote batched para os tickers visíveis (fetch-once-on-load + refresh manual, sem polling). Todos os números de comps, as grades de sensibilidade, o toggle de hide por empresa e o config global são **inputs admin-only** numa nova seção do `/admin-panel` (Stock Guide). Migration: `supabase/migrations/20260603200000_stock_guide.sql` (dono: `worker_supabase`, já aplicada live). Owner UI: `worker_subgerente-app` → `worker_dash-stock-guide` (contratado nesta rodada; despachável na próxima sessão). Dual-view (desktop: tabela sticky larga + painel de sensibilidade; mobile: cards + BottomSheet), Tier 1 export (Excel + CSV da tabela visível computada, **desktop-only**). NavBar: novo grupo "Equities" sob o módulo "Oil & Gas".
+
+| Objeto | Mudança |
+|---|---|
+| `stock_guide_companies` | Tabela nova. PK `ticker text`. Colunas: `company_name`, `yahoo_symbol`, `sector` (`oil_gas`/`fuel_distribution`), `volume_unit` (`kbpd`/`thousand_m3`), `shares_outstanding numeric`, `last_update date`, `target_price numeric`, `recommendation` (`OP`/`MP`/`UP`/NULL), 6 pares forward `{ev_ebitda,pe,fcfe_yield,div_yield,ebitda,volumes}_{y1,y2}`, `is_visible boolean DEFAULT true`, `display_order int`, `updated_at`, `updated_by uuid`. **RLS habilitada com ZERO policies** (mais estrita que `field_stakes`) — PostgREST direto retorna `[]`; todo acesso atravessa RPCs SECURITY DEFINER. Seed: 10 empresas (6 visíveis PETR4/PRIO3/RECV3/OPCT3/VBBR3/UGPA3 + 4 restritas BRAV3/RAIZ4/CSAN3/BRKM4, `is_visible=false`); campos financeiros vazios no seed (preenchidos pelo Admin Panel). |
+| `stock_guide_sensitivity` | Tabela nova. PK `ticker text` FK→`stock_guide_companies` `ON DELETE CASCADE`. Coluna `grid jsonb` shape `{row_axis_title, col_axis_title, value_label, row_labels[], col_labels[], cells[][]}` (matriz 2D freeform). RLS habilitada, zero policies. |
+| `stock_guide_config` | Tabela nova singleton. PK `id int DEFAULT 1 CHECK (id=1)`. Colunas: `y1_label` (default `2026E`), `y2_label` (default `2027E`), `assumptions_note text`, `updated_at`, `updated_by`. RLS habilitada, zero policies. |
+
+Todas as 10 RPCs são `SECURITY DEFINER SET search_path = public, pg_temp`; as admin começam com guard `is_admin()` (`RAISE EXCEPTION 'forbidden' USING ERRCODE='42501'`).
+
+| RPC | Assinatura / Comportamento | Acesso |
+|---|---|---|
+| `get_stock_guide_comps` | `() → TABLE(ticker, company_name, is_visible, display_order, sector, volume_unit, yahoo_symbol, shares_outstanding, last_update, target_price, recommendation, ev_ebitda_y1/y2, pe_y1/y2, fcfe_yield_y1/y2, div_yield_y1/y2, ebitda_y1/y2, volumes_y1/y2)`. **Hide-aware:** para linha oculta vista por não-admin, força a NULL todos os campos exceto `ticker`/`company_name`/`is_visible`/`display_order` (inclui `yahoo_symbol` — restrito nunca chega ao browser). Admin recebe tudo. | anon + authenticated |
+| `get_stock_guide_sensitivity` | `(p_ticker text) → jsonb` grid (`{}` se oculto e caller não-admin) | anon + authenticated |
+| `get_stock_guide_config` | `() → TABLE(y1_label, y2_label, assumptions_note)` | anon + authenticated |
+| `admin_get_stock_guide_companies` | `() → TABLE(todas as colunas incl. ocultas + shares_outstanding + updated_at + updated_by)` | authenticated, `is_admin()` |
+| `admin_get_stock_guide_sensitivity` | `(p_ticker text) → jsonb` | authenticated, `is_admin()` |
+| `admin_upsert_stock_guide_company` | `(p_ticker text, p_data jsonb) → void` | authenticated, `is_admin()` |
+| `admin_upsert_stock_guide_sensitivity` | `(p_ticker text, p_grid jsonb) → void` (valida dimensões da grade) | authenticated, `is_admin()` |
+| `admin_set_stock_guide_visibility` | `(p_ticker text, p_is_visible boolean) → row atualizada` | authenticated, `is_admin()` |
+| `admin_upsert_stock_guide_config` | `(p_y1 text, p_y2 text, p_note text) → void` | authenticated, `is_admin()` |
+| `admin_delete_stock_guide_company` | `(p_ticker text) → void` (sensibilidade cascateia) | authenticated, `is_admin()` |
+
+**Quem consome o quê:**
+
+| Dashboard | RPC / Dependência | Comportamento |
+|---|---|---|
+| `/stock-guide` | `get_stock_guide_comps`, `get_stock_guide_sensitivity`, `get_stock_guide_config` (via wrappers em `src/lib/rpc.ts` § "MODULE: Stock Guide") | Comps + sensibilidade + config. Market cap = `shares_outstanding × live price (BRL)`; upside = `target_price / live price − 1` — ambos computados no hook a partir do Yahoo proxy (`/api/stocks/quote`), nunca no SQL. Ocultas saem da tabela e viram footnote "Currently restricted". |
+| `/admin-panel` → seção Stock Guide | 7 RPCs admin (`admin_*_stock_guide_*`) | CRUD de comps, grades de sensibilidade, toggle de hide e config global (Y1/Y2 labels + assumptions note). Owner: `worker_dash-admin` (pass separado). |
+
+**Dependência cross-módulo (Yahoo proxy):** `/stock-guide` reusa o proxy `/api/stocks/quote` e o hook `useStockQuote` (ambos owned por `worker_dash-stocks` / `worker_subgerente-app`). É a única coisa que `/stock-guide` empresta do Market Watch — **não** usa o tema scoped `.stocks-dark`/`.stocks-light`; usa a identidade padrão dos dashboards (laranja `#ff5000`, Arial, liquid glass). Sem polling: 1 fetch on-load + botão "Refresh quotes" (desktop-only).
+
+**Visibilidade:** `INSERT INTO module_visibility VALUES ('stock-guide', is_visible_for_clients=true, is_visible_for_public=false, is_visible_on_home=true)` — Client + Admin enxergam; Anon não. Decisão: comps proprietárias de equities research não são material público.
 
 ### 3-tier visibility (Anon / Client / Admin) — adicionado 2026-05-22
 
@@ -518,8 +556,12 @@ Workflow controlado pelo **Subgerente APP** (não pelo Gerente Geral). Ver detal
 ## Estado atual (snapshot)
 
 - 4 departamentos + 3 papéis transversais.
-- 16 dashboards ativos (7 originais — `/sales-volumes` retirado em 2026-05-26 e absorvido por `/market-share` via toggle % Share ↔ thousand m³ — + 2 da Fase 3 remanescentes: `/anp-cdp`, `/anp-glp` + 7 novos: `/anp-prices` (consolida `/anp-precos-produtores` + `/anp-precos-distribuicao` + `/anp-lpc` retirados em 2026-05-26), `/imports-exports` (consolida `/anp-daie` + `/anp-desembaracos` + `/anp-painel-importacoes` retirados em 2026-05-25; absorveu `/mdic-comex` no mesmo dia — originalmente via Panel C "Import Price", removido em 2026-05-28; MDIC continua alimentando Panel D + as novas Import/Export Price Summary tables via as RPCs `get_imports_exports_imports_unit_price` / `get_imports_exports_exports_unit_price`; `mdic_comex` table e workflow ETL permanecem ativos), `/anp-cdp-diaria`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/subsidy-tracker`, `/well-by-well` (Fase 2 de Field Stakes & Production — sumário executivo stake-weighted, Label "Brazil Production Summary" desde 2026-05-28 Round 5; renomeado de `/production` em 2026-05-28 Round 4) + `/admin-analytics` (Admin-only, sem `module_visibility`)).
+- 17 dashboards ativos (7 originais — `/sales-volumes` retirado em 2026-05-26 e absorvido por `/market-share` via toggle % Share ↔ thousand m³ — + 2 da Fase 3 remanescentes: `/anp-cdp`, `/anp-glp` + 8 novos: `/anp-prices` (consolida `/anp-precos-produtores` + `/anp-precos-distribuicao` + `/anp-lpc` retirados em 2026-05-26), `/imports-exports` (consolida `/anp-daie` + `/anp-desembaracos` + `/anp-painel-importacoes` retirados em 2026-05-25; absorveu `/mdic-comex` no mesmo dia — originalmente via Panel C "Import Price", removido em 2026-05-28; MDIC continua alimentando Panel D + as novas Import/Export Price Summary tables via as RPCs `get_imports_exports_imports_unit_price` / `get_imports_exports_exports_unit_price`; `mdic_comex` table e workflow ETL permanecem ativos), `/anp-cdp-diaria`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/subsidy-tracker`, `/well-by-well` (Fase 2 de Field Stakes & Production — sumário executivo stake-weighted, Label "Brazil Production Summary" desde 2026-05-28 Round 5; renomeado de `/production` em 2026-05-28 Round 4), `/stock-guide` (Oil & Gas / Equities — comps + sensibilidade, mkt cap/upside live via Yahoo proxy; 2026-06-01) + `/admin-analytics` (Admin-only, sem `module_visibility`)).
 - Documentação inicial criada em **2026-05-05**.
+
+### Stock Guide — equities research dashboard (2026-06-01)
+
+Novo dashboard `/stock-guide` (Oil & Gas / Equities): tabela de comps da cobertura O&G + Distribuição (target price, recomendação OP/MP/UP, 6 pares de múltiplos forward Y1/Y2) + grade de sensibilidade 2D freeform por empresa. **Market cap e upside computados live no browser** via Yahoo proxy (`/api/stocks/quote` + hook `useStockQuote`), nunca armazenados (fetch on-load + refresh manual, sem polling). Backend: migration `supabase/migrations/20260603200000_stock_guide.sql` — 3 tabelas (`stock_guide_companies`, `stock_guide_sensitivity`, `stock_guide_config`, todas **RLS habilitada com zero policies** → acesso só via RPCs SECURITY DEFINER) + 10 RPCs (3 públicas + 7 admin). `get_stock_guide_comps()` é **hide-aware** — empresas ocultas têm financials + `yahoo_symbol` nulados para não-admins, restando só o nome para o footnote "Currently restricted". Seed: 10 empresas (6 visíveis PETR4/PRIO3/RECV3/OPCT3/VBBR3/UGPA3 + 4 restritas BRAV3/RAIZ4/CSAN3/BRKM4). Comps/sensibilidade/hide/config são inputs admin-only numa nova seção do `/admin-panel` (Stock Guide — pass do `worker_dash-admin`). Dual-view (desktop tabela sticky + painel; mobile cards + BottomSheet), Tier 1 export desktop-only. NavBar: novo grupo "Equities" sob "Oil & Gas". Visibilidade: Client + Admin (`is_visible_for_public=false`). Owner UI: `worker_subgerente-app` → `worker_dash-stock-guide` (contratado nesta rodada; despachável na próxima sessão). DB layer pré-construído e aplicado live por `worker_supabase`. Contrato completo em § "Contrato `/stock-guide`" acima; sub-PRD em [`docs/app/stock-guide.md`](app/stock-guide.md).
 
 ### Reforma Mobile — light-only paradigm (2026-05-27)
 
