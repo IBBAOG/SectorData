@@ -588,20 +588,40 @@ export function usePriceBandsData(): UsePriceBandsData {
     setLoading(true);
     rpcGetPriceBandsData(supabase)
       .then((data) => {
-        // Synthesize the fixed Gasoline "Petrobras Price w/ subsidy" series.
+        // Normalize both products' "w/ subsidy" series at read time so no
+        // w/ subsidy line shows before the subsidy actually took effect.
+        //
+        // Gasoline: synthesize the fixed "Petrobras Price w/ subsidy" series.
         // Gasoline's subsidy is a locked constant (GAS_PETRO_SUBSIDY_PRICE)
-        // starting GAS_PETRO_SUBSIDY_START, NOT real DB data. Map to new
-        // objects (no in-place mutation); leave Diesel rows untouched — their
-        // petrobras_price_w_subsidy is real trigger-filled DB data.
-        const synthesized = data.map((r) =>
-          r.product === "Gasoline"
-            ? {
-                ...r,
-                petrobras_price_w_subsidy:
-                  r.date >= GAS_PETRO_SUBSIDY_START ? GAS_PETRO_SUBSIDY_PRICE : null,
-              }
-            : r,
-        );
+        // starting GAS_PETRO_SUBSIDY_START, NOT real DB data.
+        //
+        // Diesel: the DB columns bba_import_parity_w_subsidy /
+        // petrobras_price_w_subsidy are NON-NULL for the entire history (back
+        // to 2021) — before the real subsidy they simply equal the base price
+        // (zero reimbursement). The subsidy only diverges from the base on/after
+        // SUBSIDY_CUTOFF (2026-03-12). Null out both columns before the cutoff
+        // so no w/ subsidy line appears pre-subsidy in any chart (mirrors the
+        // Gasoline client-side synthesis). Rows on/after the cutoff carry real
+        // subsidy data and are left untouched.
+        //
+        // Map to new objects (no in-place mutation) in both branches.
+        const synthesized = data.map((r) => {
+          if (r.product === "Gasoline") {
+            return {
+              ...r,
+              petrobras_price_w_subsidy:
+                r.date >= GAS_PETRO_SUBSIDY_START ? GAS_PETRO_SUBSIDY_PRICE : null,
+            };
+          }
+          if (r.product === "Diesel" && r.date < SUBSIDY_CUTOFF) {
+            return {
+              ...r,
+              bba_import_parity_w_subsidy: null,
+              petrobras_price_w_subsidy: null,
+            };
+          }
+          return r;
+        });
         setRows(synthesized);
         setLoading(false);
       })

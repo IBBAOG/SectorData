@@ -64,6 +64,8 @@ Both `bba_import_parity_w_subsidy` and `petrobras_price_w_subsidy` are **no long
 
 **User workflow change:** the admin form (Data Input → Price Bands) and the Excel upload script no longer accept `bba_import_parity_w_subsidy` / `petrobras_price_w_subsidy`. Users enter only: Date, Product, Import Parity (IPP), Export Parity (EPP), Petrobras Price. The subsidy adjustment is applied automatically and refreshed daily as ANP reference prices are updated by `etl_anp_subsidy_diesel.yml`.
 
+**Historical zero-reimbursement values (client-side null-gate, fix 2026-06-01):** the Diesel `bba_import_parity_w_subsidy` / `petrobras_price_w_subsidy` columns are **NON-NULL for the entire history** (back to 2021) — before the subsidy took effect they simply equal the base price (zero reimbursement, since the cap/commercialization logic yields a 0 reimbursement and `MIN(MAX(ref − comm, 0), cap)` collapses to base). The subsidy only diverges from the base on/after `SUBSIDY_CUTOFF` (`2026-03-12`). To prevent a flat "w/ subsidy" line overlapping the base line in pre-subsidy periods (which previously leaked into the YTD 2025/2024 Diesel charts), the hook **nulls both Diesel `*_w_subsidy` columns at read time when `date < SUBSIDY_CUTOFF`** — mirroring the Gasoline client-side synthesis. This is a **presentation-layer fix only**; the historical DB values are legitimate zero-reimbursement data and are left untouched in the database. Rows on/after the cutoff carry real subsidy data and pass through unchanged.
+
 ## Como o dado chega
 
 **Two paths — both use the same upsert conflict key `(product, date)` and are fully interchangeable.**
