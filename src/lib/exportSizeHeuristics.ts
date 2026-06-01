@@ -36,6 +36,8 @@ export const AVG_BYTES_PER_ROW: Record<string, { xlsx: number; csv: number }> = 
   // ANP Prices (consolidated supply-chain survey) — 5 cols:
   // data + fonte + local + preco + unidade. Producer/Distribution/Retail merged.
   anp_prices: { xlsx: 200, csv: 100 },
+  // ANP GLP (LPG sales) — 5 narrow cols: ano, mes, distribuidora, categoria, vendas_kg
+  anp_glp: { xlsx: 90, csv: 55 },
   // Vessel positions — compact (mmsi, lat, lon, timestamp)
   vessel_positions: { xlsx: 180, csv: 90 },
   // Fallback — used whenever no specific entry exists

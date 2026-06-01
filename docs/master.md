@@ -84,8 +84,8 @@ Reforma cross-cutting (Ondas 1–3, range `fac9e522..4ccca2b8`, ~30 commits) que
 
 | Status | Rotas |
 |---|---|
-| **Mobile-eligible (12)** | `/home`, `/well-by-well`, `/stock-guide`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/anp-cdp-diaria`, `/market-share`, `/price-bands`, `/subsidy-tracker`, `/diesel-gasoline-margins`, `/imports-exports`, `/navios-diesel` |
-| **Mobile-excluded / desktop-only (9)** | `/stocks`, `/admin-panel`, `/admin-analytics`, `/news-hunter`, `/alerts`, `/profile`, `/anp-cdp`, `/anp-prices`, `/anp-glp` |
+| **Mobile-eligible (13)** | `/home`, `/well-by-well`, `/stock-guide`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/anp-cdp-diaria`, `/market-share`, `/anp-glp`, `/price-bands`, `/subsidy-tracker`, `/diesel-gasoline-margins`, `/imports-exports`, `/navios-diesel` |
+| **Mobile-excluded / desktop-only (8)** | `/stocks`, `/admin-panel`, `/admin-analytics`, `/news-hunter`, `/alerts`, `/profile`, `/anp-cdp`, `/anp-prices` |
 
 ## Departamentos
 

@@ -2,27 +2,35 @@
 //
 // Contract: docs/app/export-library-contract.md.
 //
+// /anp-glp was rebuilt (2026-06-05) as "LPG Market Share" — a faithful clone
+// of /market-share over the anp_glp table. The export mirrors that dashboard's
+// content: per-(month, distributor, category) LPG sales, with both a raw kg
+// column and a thousand-tons (kt) convenience column.
+//
 // Tier 1, filterSource "none" — the export always returns the full LPG sales
-// history regardless of what the user has selected on the dashboard (period
-// slider, category checkboxes, top-distributor select). Power users want the
-// full dataset; the dashboard's filters are exploratory only.
+// history regardless of dashboard selection (period slider, view mode,
+// competitors). Power users want the full dataset; on-screen filters are
+// exploratory only. The desktop header shows a live size estimate
+// (get_anp_glp_ms_export_count via useExportSize) so the user knows the
+// download footprint before clicking.
 //
-// Single Excel sheet "LPG Sales" with English headers and two volume columns:
-//   - vendas_kg     (raw kg, "#,##0")
-//   - vendas_mil_ton (kg / 1e6, "0.000") — kt convenience column
+// Filenames mirror the /market-share convention for the LPG product:
+//   Excel → "LPG Market Share DD-MM-YY.xlsx"   (date suffix added by core)
+//   CSV   → "LPGMarketShare_DD-MM-YY.csv"
 //
-// CSV is the same column set, single-mode.
+// Single Excel sheet "LPG Market Share" with English headers:
+//   - vendas_kg      (raw kg, "#,##0")
+//   - vendas_mil_ton (kg / 1e6, "0.000") — thousand-tons convenience column
 
 import type { ExportSpec } from "@/lib/export/types";
 import { getSupabaseClient } from "@/lib/supabaseClient";
-import { rpcGetAnpGlpSerie, type AnpGlpSerieRow } from "@/lib/rpc";
+import { rpcGetAnpGlpMsSerieFast, type MsSerieRow } from "@/lib/rpc";
 import { kgToMilTon } from "@/lib/units";
 
 // ─── Row shape returned by rowsAsync ─────────────────────────────────────────
 
-type AnpGlpExportRow = {
-  ano: number;
-  mes: number;
+type LpgMarketShareExportRow = {
+  date: string;
   distribuidora: string;
   categoria: string;
   vendas_kg: number;
@@ -30,29 +38,35 @@ type AnpGlpExportRow = {
 };
 
 // ─── Data fetcher (full history, no filters) ─────────────────────────────────
+// Uses the market-share series RPC (column shape date / classificacao /
+// nome_produto / quantidade) so the export and the on-screen charts share a
+// single source of truth.
 
-async function fetchAllAnpGlpRows(): Promise<AnpGlpExportRow[]> {
+async function fetchAllLpgRows(): Promise<LpgMarketShareExportRow[]> {
   const supabase = getSupabaseClient();
   if (!supabase) return [];
 
-  // Empty params → RPC receives all-NULL filters → full history.
-  const rows: AnpGlpSerieRow[] = await rpcGetAnpGlpSerie(supabase, {});
+  // All-NULL filters → full history.
+  const rows: MsSerieRow[] = await rpcGetAnpGlpMsSerieFast(supabase, {
+    distribuidoras: null,
+    categorias: null,
+    anoInicio: null,
+    anoFim: null,
+  });
 
   return rows.map((r) => ({
-    ano: r.ano,
-    mes: r.mes,
-    distribuidora: r.distribuidora,
-    categoria: r.categoria,
-    vendas_kg: r.vendas_kg ?? 0,
-    vendas_mil_ton: kgToMilTon(r.vendas_kg ?? 0),
+    date: r.date,
+    distribuidora: r.classificacao,
+    categoria: r.nome_produto,
+    vendas_kg: r.quantidade ?? 0,
+    vendas_mil_ton: kgToMilTon(r.quantidade ?? 0),
   }));
 }
 
 // ─── Column definitions (shared by Excel + CSV) ──────────────────────────────
 
 const COLUMNS = [
-  { key: "ano",            header: "Year",                 align: "center" as const, width: 8  },
-  { key: "mes",            header: "Month",                align: "center" as const, width: 8  },
+  { key: "date",           header: "Month",                align: "center" as const, width: 12 },
   { key: "distribuidora",  header: "Distributor",          align: "left"   as const, width: 28 },
   { key: "categoria",      header: "Category",             align: "left"   as const, width: 22 },
   { key: "vendas_kg",      header: "Sales (kg)",           align: "right"  as const, width: 16, format: "#,##0" },
@@ -62,22 +76,22 @@ const COLUMNS = [
 // ─── Spec ────────────────────────────────────────────────────────────────────
 
 export const anpGlpExport: ExportSpec = {
-  filename: "LPGSales",
+  filename: "LPGMarketShare",
   tier: 1,
   filterSource: "none",
   excel: {
     sheets: [
       {
-        name: "LPG Sales",
-        title: "ANP — LPG Sales by Distributor",
+        name: "LPG Market Share",
+        title: "ANP — LPG Market Share by Distributor",
         columns: COLUMNS,
-        rowsAsync: () => fetchAllAnpGlpRows() as unknown as Promise<Record<string, unknown>[]>,
+        rowsAsync: () => fetchAllLpgRows() as unknown as Promise<Record<string, unknown>[]>,
       },
     ],
   },
   csv: {
     mode: "single",
     columns: COLUMNS,
-    rowsAsync: () => fetchAllAnpGlpRows() as unknown as Promise<Record<string, unknown>[]>,
+    rowsAsync: () => fetchAllLpgRows() as unknown as Promise<Record<string, unknown>[]>,
   },
 };

@@ -5,7 +5,9 @@
 // reform plan § 3.1 / § 5.5:
 //
 //   /stocks, /admin-panel, /admin-analytics, /news-hunter, /alerts,
-//   /profile, /anp-cdp, /anp-prices, /anp-glp
+//   /profile, /anp-cdp, /anp-prices
+//   (/anp-glp was removed from this list on 2026-06-05 when it became a
+//    dual-view LPG Market Share dashboard.)
 //
 // When the viewport is mobile, the visitor is routed to /home with a query
 // string flag (?excluded=<slug>) so the home page can show a one-time toast

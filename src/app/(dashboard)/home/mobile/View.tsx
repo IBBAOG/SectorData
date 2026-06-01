@@ -60,7 +60,7 @@ const HIDE_FROM_MOBILE_HOME = new Set<string>([
   // Desktop-only dashboards (post-mobile-reform 2026-05-27)
   "anp-cdp",
   "anp-prices",
-  "anp-glp",
+  // (anp-glp promoted to dual-view 2026-06-05 — now shown on mobile home)
 ]);
 
 // ── Section ordering ─────────────────────────────────────────────────────
