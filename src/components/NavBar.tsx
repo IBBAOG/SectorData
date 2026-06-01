@@ -80,7 +80,7 @@ const NAV_ENTRIES: NavEntry[] = [
         items: [
           { href: "/market-share", label: "Market Share" },
           { href: "/anp-prices", label: "ANP Prices" },
-          { href: "/anp-glp", label: "LPG" },
+          { href: "/anp-glp", label: "LPG Market Share" },
           { href: "/imports-exports", label: "Imports & Exports" },
         ],
       },

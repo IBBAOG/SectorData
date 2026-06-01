@@ -1165,6 +1165,147 @@ export async function rpcGetAnpGlpFiltros(
   }
 }
 
+// ─── MODULE: ANP GLP — LPG Market Share (get_anp_glp_ms_*) ───────────────────
+//
+// Phase-2 RPC surface for the rebuilt /anp-glp dashboard (LPG Market Share),
+// a faithful clone of /market-share over the anp_glp table. These wrappers
+// mirror the rpcGetMs* family so useAnpGlpData can reuse the
+// useMarketShareData hook shape. The returned column NAMES are identical to
+// MsSerieRow (date / nome_produto / segmento / classificacao /
+// [agente_regulado] / quantidade) — see
+// supabase/migrations/20260605000000_anp_glp_market_share_rpcs.sql.
+//
+// Domain mapping (decided by CTO):
+//   classificacao  → distribuidora (LPG player)
+//   nome_produto   → categoria (P13 / Outros - GLP / Outros - Especiais)
+//   segmento       → constant 'GLP'
+//   quantidade     → vendas_kg RAW (client divides by 1e6 → thousand tons)
+
+/** Filters accepted by the LPG market-share series RPCs (no geo dimension). */
+export type AnpGlpMsFilters = {
+  distribuidoras?: string[] | null;
+  categorias?: string[] | null;
+  anoInicio?: number | null;
+  anoFim?: number | null;
+};
+
+/** Options for the LPG market-share filters (distributors / categories / year bounds). */
+export type AnpGlpMsFiltros = {
+  distribuidoras: string[];
+  categorias: string[];
+  ano_min: number | null;
+  ano_max: number | null;
+};
+
+/** Analogue of rpcGetMsOpcoesFiltros — distributors, categories, year bounds. */
+export async function rpcGetAnpGlpMsFiltros(
+  supabase: SupabaseClient,
+): Promise<AnpGlpMsFiltros> {
+  try {
+    const { data, error } = await supabase.rpc("get_anp_glp_ms_filtros", {});
+    if (error) throw error;
+    const d = (data ?? {}) as Partial<AnpGlpMsFiltros>;
+    return {
+      distribuidoras: d.distribuidoras ?? [],
+      categorias:     d.categorias     ?? [],
+      ano_min:        d.ano_min        ?? null,
+      ano_max:        d.ano_max        ?? null,
+    };
+  } catch (e) {
+    console.error("get_anp_glp_ms_filtros failed", e);
+    return { distribuidoras: [], categorias: [], ano_min: null, ano_max: null };
+  }
+}
+
+/** Analogue of rpcGetMsSerieFast — monthly LPG series by (date, distribuidora, categoria). */
+export async function rpcGetAnpGlpMsSerieFast(
+  supabase: SupabaseClient,
+  filters: AnpGlpMsFilters,
+): Promise<MsSerieRow[]> {
+  const PAGE = 1000;
+  let offset = 0;
+  const allRows: MsSerieRow[] = [];
+  const params = {
+    p_distribuidoras: toListOrNull(filters.distribuidoras),
+    p_categorias:     toListOrNull(filters.categorias),
+    p_ano_inicio:     filters.anoInicio ?? null,
+    p_ano_fim:        filters.anoFim    ?? null,
+  };
+  while (true) {
+    const { data, error } = await supabase
+      .rpc("get_anp_glp_ms_serie_fast", params)
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as MsSerieRow[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
+  }
+  return allRows;
+}
+
+/** Analogue of rpcGetMsSerieOthers — distributors OUTSIDE the excluded (top-N) set. */
+export async function rpcGetAnpGlpMsSerieOthers(
+  supabase: SupabaseClient,
+  filters: AnpGlpMsFilters & { excluirDistribuidoras?: string[] | null },
+): Promise<MsSerieRow[]> {
+  const PAGE = 1000;
+  let offset = 0;
+  const allRows: MsSerieRow[] = [];
+  const params = {
+    p_distribuidoras:         toListOrNull(filters.distribuidoras),
+    p_categorias:             toListOrNull(filters.categorias),
+    p_ano_inicio:             filters.anoInicio ?? null,
+    p_ano_fim:                filters.anoFim    ?? null,
+    p_excluir_distribuidoras: toListOrNull(filters.excluirDistribuidoras),
+  };
+  while (true) {
+    const { data, error } = await supabase
+      .rpc("get_anp_glp_ms_serie_others", params)
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as MsSerieRow[];
+    if (!rows.length) break;
+    allRows.push(...rows);
+    if (rows.length < PAGE) break;
+    offset += PAGE;
+  }
+  return allRows;
+}
+
+/** Analogue of rpcGetOthersPlayers — full distributor list ranked by LPG volume DESC. */
+export async function rpcGetAnpGlpMsOthersPlayers(
+  supabase: SupabaseClient,
+): Promise<{ distribuidora: string; total_kg: number }[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_anp_glp_ms_others_players", {});
+    if (error) throw error;
+    return ((data ?? []) as { distribuidora: string; total_kg: number }[]);
+  } catch (e) {
+    console.error("get_anp_glp_ms_others_players failed", e);
+    return [];
+  }
+}
+
+/** Analogue of getMsExportCount — LPG export size calculator. */
+export async function getAnpGlpMsExportCount(
+  supabase: SupabaseClient,
+  filters: AnpGlpMsFilters,
+): Promise<number> {
+  const { data, error } = await supabase.rpc("get_anp_glp_ms_export_count", {
+    p_distribuidoras: toListOrNull(filters.distribuidoras),
+    p_categorias:     toListOrNull(filters.categorias),
+    p_ano_inicio:     filters.anoInicio ?? null,
+    p_ano_fim:        filters.anoFim    ?? null,
+  });
+  if (error) {
+    console.error("get_anp_glp_ms_export_count failed", error);
+    throw error;
+  }
+  return Number(data ?? 0);
+}
+
 // ─── MODULE: ANP CDP (/src/app/(dashboard)/anp-cdp/page.tsx) ─────────────────
 
 export type AnpCdpSeriePonto = {

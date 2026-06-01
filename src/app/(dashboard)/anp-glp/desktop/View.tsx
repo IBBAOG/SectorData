@@ -1,188 +1,194 @@
 "use client";
 
-// Desktop view for /anp-glp. `/anp-glp` is on the mobile-excluded route list
-// (Mobile reform v2, 2026-05-27) — there is no mobile View, so the dual-view
-// binding sync rule does not apply here. Mobile visitors hit
-// <MobileExcludedRedirect slug="anp-glp" /> mounted by page.tsx.
+// Desktop view for /anp-glp — LPG Market Share.
 //
-// Charts:
-//  1. Monthly Sales — National Total (line, multi-category, kt/month)
-//  2. Top 15 Distributors for selected category (horizontal bar, kt)
-//
-// Export: unified library (src/lib/export). Spec lives at
-// src/lib/export/dashboards/anpGlp.ts. Always full history; ignores
-// the dashboard's filter state by design.
-
-import type { Layout, PlotData } from "plotly.js";
-import { useMemo } from "react";
+// Faithful clone of /market-share/desktop/View.tsx retargeted at LPG:
+//   - products = categories (Total (All LPG) first, then P13 / Other - LPG /
+//     Other - Special), one line chart per product (distributors as lines).
+//   - NO segment sub-charts (LPG segment is constant) — a single chart per
+//     product instead of the Retail/B2B/TRR grid.
+//   - NO region/UF sidebar filters.
+//   - Big-3 = dynamic top-3 distributors by LPG volume.
+//   - Unit toggle: % Share / thousand t.
+//   - Export: unified <ExportButton> (Tier 1, full history) with a live size
+//     estimate shown next to it. Desktop-only.
 
 import NavBar from "../../../../components/NavBar";
 import BrandLogo from "../../../../components/BrandLogo";
-import PlotlyChart from "../../../../components/PlotlyChart";
-import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
-import MultiSelectFilter from "../../../../components/dashboard/MultiSelectFilter";
-import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
-import ChartSection from "../../../../components/dashboard/ChartSection";
-import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
-import { ExportButton } from "@/lib/export";
-import { anpGlpExport } from "@/lib/export/dashboards/anpGlp";
 import { useModuleVisibilityGuard } from "../../../../hooks/useModuleVisibilityGuard";
-import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../../lib/plotlyDefaults";
-import { kgToMilTon, LABEL } from "../../../../lib/units";
-import type { AnpGlpSerieRow } from "../../../../lib/rpc";
-
+import PlotlyChart from "../../../../components/PlotlyChart";
+import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
+import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
+import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
+import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
+import CheckList from "../../../../components/CheckList";
+import SearchableMultiSelect from "../../../../components/SearchableMultiSelect";
+import { ExportButton } from "../../../../lib/export/ui/ExportButton";
+import { anpGlpExport } from "../../../../lib/export/dashboards/anpGlp";
+import { formatBytes } from "../../../../lib/exportSizeHeuristics";
 import {
   useAnpGlpData,
-  CATEGORIA_INFO,
-  MAIN_CATEGORIAS,
+  categoryLabel,
+  MODE_OPTIONS,
+  type CompRow,
+  type UnitMode,
 } from "../useAnpGlpData";
 
-// ─── Chart builders ───────────────────────────────────────────────────────────
+const UNIT_OPTIONS: { value: UnitMode; label: string }[] = [
+  { value: "share", label: "% Share" },
+  { value: "volume", label: "thousand t" },
+];
 
-function buildTrendChart(
-  rows: AnpGlpSerieRow[],
-  categorias: string[],
-): { data: PlotData[]; layout: Partial<Layout> } {
-  const filtered = rows.filter((r) => categorias.includes(r.categoria));
-  if (!filtered.length) return emptyPlot(300);
+// ─── ComparisonTable ──────────────────────────────────────────────────────────
 
-  const agg: Record<string, Record<string, number>> = {};
-  for (const r of filtered) {
-    const key = `${r.ano}-${String(r.mes).padStart(2, "0")}`;
-    if (!agg[r.categoria]) agg[r.categoria] = {};
-    agg[r.categoria][key] = (agg[r.categoria][key] ?? 0) + (r.vendas_kg ?? 0);
-  }
-
-  const allKeys = Array.from(
-    new Set(filtered.map((r) => `${r.ano}-${String(r.mes).padStart(2, "0")}`)),
-  ).sort();
-
-  const traces: PlotData[] = categorias
-    .filter((c) => agg[c])
-    .map((c) => {
-      const info = CATEGORIA_INFO[c];
-      return {
-        type: "scatter",
-        mode: "lines",
-        name: info?.label ?? c,
-        x: allKeys,
-        y: allKeys.map((k) => kgToMilTon(agg[c][k] ?? 0)),
-        line: { width: 2, color: info?.color ?? "#999" },
-        hovertemplate: `${info?.label ?? c}: %{y:.1f} ${LABEL.MIL_T}<extra></extra>`,
-      } as PlotData;
-    });
-
-  return {
-    data: traces,
-    layout: {
-      ...COMMON_LAYOUT,
-      height: 300,
-      margin: { t: 10, b: 50, l: 80, r: 30 },
-      hovermode: "x unified",
-      yaxis: { ...AXIS_LINE, title: { text: `${LABEL.MIL_T} / month` } },
-      xaxis: { ...AXIS_LINE, type: "date" as const },
-      legend: {
-        orientation: "h",
-        yanchor: "bottom",
-        y: 1.01,
-        xanchor: "left",
-        x: 0,
-      },
-    },
+function ComparisonTable({ rows, unitMode = "share" }: { rows: CompRow[]; unitMode?: UnitMode }) {
+  const fmt = (v: number | null) =>
+    v === null ? "—" : (v > 0 ? "+" : "") + v.toFixed(1);
+  const headerLabel =
+    unitMode === "share"
+      ? "Market Share Var. (p.p.)"
+      : "Volume Var. (thousand t)";
+  const cellStyle = (v: number | null): React.CSSProperties => ({
+    backgroundColor:
+      v === null ? "transparent" : v > 0 ? "#C6E8D9" : v < 0 ? "#FFDDCC" : "transparent",
+    color: v === null ? "#bbb" : "#1a1a1a",
+    textAlign: "center",
+    padding: "2px 10px",
+    fontSize: 11,
+    fontFamily: "Arial",
+    whiteSpace: "nowrap",
+    fontWeight: 400,
+    border: "none",
+  });
+  const thStyle: React.CSSProperties = {
+    fontFamily: "Arial",
+    fontSize: 10,
+    fontWeight: 700,
+    color: "#ffffff",
+    backgroundColor: "#000512",
+    textAlign: "center",
+    padding: "4px 10px",
+    border: "none",
   };
+  return (
+    <table
+      style={{
+        borderCollapse: "collapse",
+        width: "100%",
+        margin: "6px 0 0 0",
+        tableLayout: "fixed",
+      }}
+    >
+      <colgroup>
+        <col style={{ width: "30%" }} />
+        <col style={{ width: "17.5%" }} />
+        <col style={{ width: "17.5%" }} />
+        <col style={{ width: "17.5%" }} />
+        <col style={{ width: "17.5%" }} />
+      </colgroup>
+      <thead>
+        <tr>
+          <th style={{ ...thStyle, textAlign: "left", paddingLeft: 8 }}>
+            {headerLabel}
+          </th>
+          <th style={thStyle}>MoM</th>
+          <th style={thStyle}>QTD</th>
+          <th style={thStyle}>YoY</th>
+          <th style={thStyle}>YTD</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row, i) => (
+          <tr
+            key={row.player}
+            style={i === rows.length - 1 ? { borderBottom: "2px solid #d0d0d0" } : {}}
+          >
+            <td
+              style={{
+                fontFamily: "Arial",
+                fontSize: 11,
+                color: "#1a1a1a",
+                fontWeight: 400,
+                padding: "2px 12px 2px 8px",
+                whiteSpace: "nowrap",
+                border: "none",
+              }}
+            >
+              {row.player}
+            </td>
+            <td style={cellStyle(row.mom)}>{fmt(row.mom)}</td>
+            <td style={cellStyle(row.q3m)}>{fmt(row.q3m)}</td>
+            <td style={cellStyle(row.yoy)}>{fmt(row.yoy)}</td>
+            <td style={cellStyle(row.ytd)}>{fmt(row.ytd)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 }
 
-function buildTopDistChart(
-  rows: AnpGlpSerieRow[],
-  categoria: string,
-): { data: PlotData[]; layout: Partial<Layout> } {
-  const filtered = rows.filter((r) => r.categoria === categoria);
-  if (!filtered.length) return emptyPlot(360);
-
-  const byDist: Record<string, number> = {};
-  for (const r of filtered) {
-    byDist[r.distribuidora] =
-      (byDist[r.distribuidora] ?? 0) + (r.vendas_kg ?? 0);
-  }
-
-  const sorted = Object.entries(byDist)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 15);
-
-  const color = CATEGORIA_INFO[categoria]?.color ?? "#2196F3";
-
-  return {
-    data: [
-      {
-        type: "bar",
-        orientation: "h",
-        x: sorted.map(([, v]) => kgToMilTon(v)),
-        y: sorted.map(([k]) => k),
-        marker: { color },
-        hovertemplate: `%{y}: %{x:.1f} ${LABEL.MIL_T}<extra></extra>`,
-      } as PlotData,
-    ],
-    layout: {
-      ...COMMON_LAYOUT,
-      height: 420,
-      margin: { t: 36, b: 40, l: 160, r: 20 },
-      xaxis: { ...AXIS_LINE, title: { text: LABEL.MIL_T } },
-      yaxis: {
-        autorange: "reversed" as const,
-        showgrid: false,
-        zeroline: false,
-        tickfont: { size: 10 },
-      },
-      title: {
-        text: `Top 15 Distributors — ${CATEGORIA_INFO[categoria]?.label ?? categoria}`,
-        font: { size: 13, family: "Arial" },
-        x: 0,
-        xanchor: "left",
-        pad: { l: 0 },
-      },
-    },
-  };
-}
-
-// ─── View ─────────────────────────────────────────────────────────────────────
+// ─── Desktop View ─────────────────────────────────────────────────────────────
 
 export default function DesktopView(): React.ReactElement {
   const { visible, loading: visLoading } = useModuleVisibilityGuard("anp-glp");
 
   const {
-    serieRows,
-    allYears,
-    yMin,
-    yMax,
-    loading,
-    serieLoading,
-    filters,
-    setFilters,
-    toggleCat,
+    seriesLoading,
+    opcoes,
+    datas,
+    unitMode,
+    setUnitMode,
+    mode,
+    setMode,
+    sliderRange,
+    setSliderRange,
+    competidoresSelected,
+    setCompetidoresSelected,
+    playersOptions,
+    applyFilters,
+    clearFilters,
+    showToast,
+    productKeys,
+    charts,
+    compData,
+    exportSizeEstimate,
   } = useAnpGlpData();
 
-  const trendChart = useMemo(
-    () => buildTrendChart(serieRows, filters.selectedCats),
-    [serieRows, filters.selectedCats],
-  );
-
-  const topDistChart = useMemo(
-    () => buildTopDistChart(serieRows, filters.topDistCat),
-    [serieRows, filters.topDistCat],
-  );
-
+  if (!opcoes) return <></>;
   if (visLoading || !visible) return <></>;
 
-  const hasYears = allYears.length > 0;
+  const estXlsx = exportSizeEstimate.estimate
+    ? formatBytes(exportSizeEstimate.estimate.bytesXlsx)
+    : null;
 
   return (
     <div>
       <NavBar />
+
+      {showToast && (
+        <div
+          id="toast-filters"
+          className="alert alert-success"
+          role="alert"
+          style={{
+            fontFamily: "Arial",
+            fontSize: 13,
+            padding: "10px 14px",
+            border: "none",
+            boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
+          }}
+        >
+          Filters applied!
+        </div>
+      )}
+
       <div className="container-fluid g-0">
         <div className="row g-0">
-
-          {/* ── Sidebar ───────────────────────────────────────────────── */}
-          <div className="col-xxl-2 col-md-3 p-0">
+          {/* Sidebar */}
+          <div
+            className="col-xxl-2 col-md-3 p-0"
+            style={{ display: "flex", flexDirection: "column" }}
+          >
             <div id="sidebar">
               <div style={{ textAlign: "center" }}>
                 <BrandLogo variant="sidebar" />
@@ -191,110 +197,157 @@ export default function DesktopView(): React.ReactElement {
 
               <div className="sidebar-section-label">Filters</div>
 
-              <MultiSelectFilter
-                label="Category"
-                items={MAIN_CATEGORIAS}
-                selected={filters.selectedCats}
-                onToggle={toggleCat}
-                onClear={
-                  filters.selectedCats.length < MAIN_CATEGORIAS.length
-                    ? () => setFilters({ selectedCats: [...MAIN_CATEGORIAS] })
-                    : undefined
-                }
-                swatch={(c) => CATEGORIA_INFO[c]?.color ?? "#999"}
-                itemLabel={(c) => CATEGORIA_INFO[c]?.label ?? c}
-                idPrefix="cat"
-                counterTotal={MAIN_CATEGORIAS.length}
-              />
-
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Period</div>
-                {!loading && hasYears && (
-                  <PeriodSlider
-                    years={allYears}
-                    value={filters.yearRangeIdx}
-                    onChange={(v) => setFilters({ yearRangeIdx: v as [number, number] })}
+                <PeriodSlider
+                  years={datas}
+                  value={sliderRange}
+                  onChange={setSliderRange}
+                />
+              </div>
+
+              <div className="sidebar-filter-section">
+                <div className="sidebar-filter-label">View Mode</div>
+                <SegmentedToggle
+                  options={MODE_OPTIONS.map((m) => ({ value: m, label: m }))}
+                  value={mode}
+                  onChange={setMode}
+                />
+              </div>
+
+              <div className="sidebar-filter-section">
+                <div className="sidebar-filter-label">Competitors</div>
+                {mode === "Others" ? (
+                  <SearchableMultiSelect
+                    options={playersOptions}
+                    value={competidoresSelected}
+                    onChange={setCompetidoresSelected}
+                  />
+                ) : (
+                  <CheckList
+                    label="Competitors"
+                    options={playersOptions}
+                    value={competidoresSelected}
+                    onChange={setCompetidoresSelected}
+                    allLabel="All"
+                    clearLabel="Clear"
                   />
                 )}
               </div>
 
-              <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">
-                  Top Distributors — Category
+              <div className="row g-1 mt-1">
+                <div className="col-6">
+                  <button type="button" className="btn btn-apply" onClick={applyFilters}>
+                    Apply
+                  </button>
                 </div>
-                <select
-                  className="form-select form-select-sm"
-                  value={filters.topDistCat}
-                  onChange={(e) => setFilters({ topDistCat: e.target.value })}
-                  style={{ fontFamily: "Arial", fontSize: 12 }}
-                >
-                  {MAIN_CATEGORIAS.map((c) => (
-                    <option key={c} value={c}>
-                      {CATEGORIA_INFO[c]?.label ?? c}
-                    </option>
-                  ))}
-                </select>
+                <div className="col-6">
+                  <button type="button" className="btn btn-clear" onClick={clearFilters}>
+                    Clear
+                  </button>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* ── Main content ──────────────────────────────────────────── */}
+          {/* Main content */}
           <div className="col-xxl-10 col-md-9">
             <div id="page-content">
               <DashboardHeader
-                title="ANP — LPG Sales by Container"
-                sub="Monthly LPG sales by distributor and container category (P13, Other - LPG, Other - Special)"
-                period={
-                  hasYears && yMin != null && yMax != null ? [yMin, yMax] : null
+                title="LPG Market Share"
+                sub={
+                  unitMode === "share"
+                    ? "Distributor market share of Brazilian LPG (GLP) sales by container category (%)"
+                    : "Distributor sales volume of Brazilian LPG (GLP) by container category (thousand t)"
                 }
-                rightSlot={<ExportButton spec={anpGlpExport} />}
+                lang="en"
+                hideDivider
+                rightSlot={
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    {estXlsx && (
+                      <span
+                        style={{
+                          fontFamily: "Arial",
+                          fontSize: 11,
+                          color: "#888",
+                          whiteSpace: "nowrap",
+                        }}
+                        title="Estimated full-history export size"
+                      >
+                        ~{estXlsx}
+                      </span>
+                    )}
+                    <ExportButton spec={anpGlpExport} />
+                  </div>
+                }
               />
 
-              {loading ? (
+              {/* Unit toggle — % Share / thousand t. */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "flex-end",
+                  alignItems: "center",
+                  gap: 10,
+                  margin: "4px 0 14px",
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: "Arial",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: "#555",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.4px",
+                  }}
+                >
+                  Unit
+                </span>
+                <SegmentedToggle
+                  options={UNIT_OPTIONS}
+                  value={unitMode}
+                  onChange={setUnitMode}
+                  variant="compact"
+                />
+              </div>
+
+              {seriesLoading ? (
                 <BarrelLoading />
               ) : (
                 <>
-                  <div className="row mb-2">
-                    <div className="col-12">
-                      <ChartSection
-                        title={`Monthly Sales — National Total (${LABEL.MIL_T})`}
-                        loading={serieLoading}
-                        height={300}
-                      >
-                        <PlotlyChart
-                          data={trendChart.data}
-                          layout={trendChart.layout}
-                          config={{ responsive: true, displayModeBar: false }}
-                          style={{ width: "100%", height: 300 }}
-                        />
-                      </ChartSection>
-                    </div>
-                  </div>
-
-                  <div className="row mb-2">
-                    <div className="col-12">
-                      <div
-                        className="chart-container"
-                        style={{
-                          minHeight: 460,
-                          position: "relative",
-                          opacity: serieLoading ? 0.5 : 1,
-                        }}
-                      >
-                        <PlotlyChart
-                          data={topDistChart.data}
-                          layout={topDistChart.layout}
-                          config={{ responsive: true, displayModeBar: false }}
-                          style={{ width: "100%", height: 420 }}
-                        />
+                  {productKeys.map((p, idx) => (
+                    <div key={p}>
+                      {idx > 0 && (
+                        <hr style={{ borderTop: "1px solid #e0e0e0", margin: "20px 0" }} />
+                      )}
+                      <div style={{ marginBottom: 10 }}>
+                        <div className="section-title" style={{ color: "#1a1a1a" }}>
+                          {categoryLabel(p)}
+                        </div>
+                        <hr className="section-hr" />
+                      </div>
+                      <div className="row g-3">
+                        <div className="col-md-6">
+                          <div className="chart-container">
+                            <PlotlyChart
+                              data={charts?.[p]?.data ?? []}
+                              layout={charts?.[p]?.layout ?? {}}
+                              config={{ displayModeBar: false }}
+                              style={{ width: "100%", height: 300 }}
+                            />
+                            {compData && compData[p] && (
+                              <ComparisonTable rows={compData[p]} unitMode={unitMode} />
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  ))}
                 </>
               )}
             </div>
           </div>
-
         </div>
       </div>
     </div>
