@@ -43,13 +43,17 @@ import {
   rpcAdminUpsertFieldStakes,
   rpcAdminDeleteFieldStakes,
   rpcAdminGetStockGuideCompanies,
-  rpcAdminGetStockGuideSensitivity,
   rpcAdminUpsertStockGuideCompany,
-  rpcAdminUpsertStockGuideSensitivity,
   rpcAdminSetStockGuideVisibility,
   rpcGetStockGuideConfig,
   rpcAdminUpsertStockGuideConfig,
   rpcAdminDeleteStockGuideCompany,
+  rpcGetStockGuideDrivers,
+  rpcAdminUpsertStockGuideDriver,
+  rpcAdminDeleteStockGuideDriver,
+  rpcAdminGetStockGuideSensitivityTables,
+  rpcAdminUpsertStockGuideSensitivityTable,
+  rpcAdminDeleteStockGuideSensitivityTable,
   type DefaultNewsKeyword,
 } from "../../../lib/rpc";
 import type {
@@ -60,8 +64,10 @@ import type {
 import type {
   StockGuideAdminCompany,
   StockGuideConfig,
-  SensitivityGrid,
   StockGuideSector,
+  StockGuideDriver,
+  SensitivityAxis,
+  SensitivityTableAdmin,
 } from "../../../types/stockGuide";
 
 // ── Field Stakes — canonical grouping (Round 4) ───────────────────────────────
@@ -150,18 +156,6 @@ export interface SgEditorRow {
   display_order: string;
 }
 
-/** A pristine, empty (but buildable) sensitivity grid. */
-function blankSgGrid(): SensitivityGrid {
-  return {
-    row_axis_title: "",
-    col_axis_title: "",
-    value_label: "",
-    row_labels: [],
-    col_labels: [],
-    cells: [],
-  };
-}
-
 /** Stringify a number|null for an `<input>`'s value (null → empty string). */
 function numToStr(n: number | null | undefined): string {
   return n == null ? "" : String(n);
@@ -203,6 +197,226 @@ function adminCompanyToEditorRow(c: StockGuideAdminCompany): SgEditorRow {
   };
 }
 
+// ── Stock Guide — redesigned sensitivity model (drivers + table builder) ──────
+//
+// The admin section now exposes three sub-tabs (Companies / Drivers /
+// Sensitivities). The first keeps the existing comps editor + global config
+// untouched; the latter two drive the new first-class model (drivers registry +
+// cross-company sensitivity tables) backed by the `*_stock_guide_driver` /
+// `*_stock_guide_sensitivity_table` admin RPCs.
+
+/** Sub-navigation of the Stock Guide admin section. */
+export type SgSubTab = "companies" | "drivers" | "sensitivities";
+
+/** Value modes a sensitivity table can render in (mirrors `SensitivityTable`). */
+export type SgValueMode =
+  | "absolute"
+  | "yield"
+  | "pe"
+  | "ev_ebitda"
+  | "upside";
+
+/**
+ * A driver row in the inline registry editor. `id === null` for the unsaved
+ * "Add driver" row; numeric fields are held as strings while typing.
+ */
+export interface SgDriverEditorRow {
+  id: number | null;
+  name: string;
+  unit: string;
+  current_value: string;
+  display_order: string;
+}
+
+/**
+ * Editable mirror of one `SensitivityAxis`. All shape fields are kept populated
+ * (companies, scenarios as strings, driver id as a string) so the editor can
+ * hold a partial/intermediate value regardless of the selected `kind`. The
+ * unused fields are simply ignored when the draft is serialized to a real axis.
+ */
+export interface SgAxisDraft {
+  kind: SensitivityAxis["kind"];
+  /** Stringified driver id ("" = none) — used when kind === 'driver'. */
+  driverId: string;
+  /** Scenario values as strings (so partial typing is allowed) — kind 'driver'. */
+  scenarios: string[];
+  /** Tickers along this axis — used when kind === 'company'. */
+  companies: string[];
+  /** Forward-year keys (fixed ['y1','y2']) — used when kind === 'year'. */
+  years: string[];
+}
+
+/**
+ * Full builder draft for one sensitivity table. `id === null` → new table.
+ * `cells` / `cellsSecondary` are string matrices (one entry per axis item) so
+ * inputs can hold partial values; they are coerced to `number | null` only at
+ * save time.
+ */
+export interface SgTableDraft {
+  id: number | null;
+  title: string;
+  value_mode: SgValueMode;
+  metric_label: string;
+  unit: string;
+  display_order: string;
+  rowAxis: SgAxisDraft;
+  colAxis: SgAxisDraft;
+  /** Single-company membership when NEITHER axis is 'company' ("" = unset). */
+  singleCompany: string;
+  /** `cells[r][c]` as strings (rows = row-axis items, cols = col-axis items). */
+  cells: string[][];
+  /** ONLY for value_mode 'ev_ebitda' — the matching net-debt matrix. */
+  cellsSecondary: string[][];
+}
+
+/** A pristine driver "Add" row (id null). */
+function blankDriverRow(): SgDriverEditorRow {
+  return { id: null, name: "", unit: "", current_value: "", display_order: "" };
+}
+
+/** A pristine axis draft (defaults to a 'company' axis with no tickers). */
+function blankAxisDraft(): SgAxisDraft {
+  return { kind: "company", driverId: "", scenarios: [], companies: [], years: [] };
+}
+
+/** A pristine table builder draft (a brand-new, empty table). */
+function blankTableDraft(): SgTableDraft {
+  return {
+    id: null,
+    title: "",
+    value_mode: "absolute",
+    metric_label: "",
+    unit: "",
+    display_order: "",
+    rowAxis: blankAxisDraft(),
+    colAxis: { ...blankAxisDraft(), kind: "driver" },
+    singleCompany: "",
+    cells: [],
+    cellsSecondary: [],
+  };
+}
+
+/** Number of items an axis draft contributes (rows or columns of the matrix). */
+function axisItemCount(a: SgAxisDraft): number {
+  if (a.kind === "company") return a.companies.length;
+  if (a.kind === "year") return a.years.length;
+  return a.scenarios.length; // driver
+}
+
+/** Human-readable label for each item position of an axis (for matrix headers). */
+function axisItemLabels(
+  a: SgAxisDraft,
+  cfg: StockGuideConfig,
+  drivers: StockGuideDriver[],
+): string[] {
+  if (a.kind === "company") return a.companies;
+  if (a.kind === "year") {
+    return a.years.map((y) =>
+      y === "y1" ? cfg.y1_label || "Y1" : y === "y2" ? cfg.y2_label || "Y2" : y,
+    );
+  }
+  // driver — show the scenario value, prefixed with the driver name if known.
+  const drv = drivers.find((d) => String(d.id) === a.driverId);
+  const prefix = drv ? `${drv.name} ` : "";
+  return a.scenarios.map((s) => `${prefix}${s}`.trim());
+}
+
+/**
+ * Resize a string matrix to `rows × cols`, preserving existing values where the
+ * indices still exist (pad new cells with "", truncate extras).
+ */
+function resizeStrMatrix(
+  m: string[][],
+  rows: number,
+  cols: number,
+): string[][] {
+  const out: string[][] = [];
+  for (let r = 0; r < rows; r++) {
+    const src = m[r] ?? [];
+    const row: string[] = [];
+    for (let c = 0; c < cols; c++) row.push(src[c] ?? "");
+    out.push(row);
+  }
+  return out;
+}
+
+/** Coerce a string matrix into a `(number | null)[][]` for the RPC payload. */
+function strMatrixToNum(m: string[][]): (number | null)[][] {
+  return m.map((row) => row.map((c) => strToNum(c)));
+}
+
+/** Coerce a `(number | null)[][]` matrix into the string matrix the editor uses. */
+function numMatrixToStr(m: (number | null)[][] | undefined): string[][] {
+  if (!Array.isArray(m)) return [];
+  return m.map((row) =>
+    Array.isArray(row) ? row.map((c) => (c == null ? "" : String(c))) : [],
+  );
+}
+
+/** Project a real `SensitivityAxis` into an editable draft (all fields filled). */
+function axisToDraft(a: SensitivityAxis): SgAxisDraft {
+  return {
+    kind: a.kind,
+    driverId: a.driver_id != null ? String(a.driver_id) : "",
+    scenarios: Array.isArray(a.scenarios) ? a.scenarios.map((n) => String(n)) : [],
+    companies: Array.isArray(a.companies) ? [...a.companies] : [],
+    years: Array.isArray(a.years) ? [...a.years] : [],
+  };
+}
+
+/** Serialize an axis draft into a real `SensitivityAxis` (only the meaningful keys). */
+function draftToAxis(a: SgAxisDraft): SensitivityAxis {
+  if (a.kind === "company") return { kind: "company", companies: [...a.companies] };
+  if (a.kind === "year") return { kind: "year", years: [...a.years] };
+  // driver
+  const axis: SensitivityAxis = {
+    kind: "driver",
+    scenarios: a.scenarios.map((s) => strToNum(s)).filter((n): n is number => n != null),
+  };
+  const did = strToNum(a.driverId);
+  if (did != null) axis.driver_id = did;
+  return axis;
+}
+
+/** Project a full admin sensitivity table into the editable builder draft. */
+function tableAdminToDraft(t: SensitivityTableAdmin): SgTableDraft {
+  const rowAxis = axisToDraft(t.definition.row_axis);
+  const colAxis = axisToDraft(t.definition.col_axis);
+  const rows = axisItemCount(rowAxis);
+  const cols = axisItemCount(colAxis);
+  // When neither axis is company, the membership is a single ticker.
+  const singleCompany =
+    rowAxis.kind !== "company" && colAxis.kind !== "company"
+      ? t.companies[0] ?? ""
+      : "";
+  return {
+    id: t.id,
+    title: t.title,
+    value_mode: t.value_mode,
+    metric_label: t.metric_label,
+    unit: t.unit,
+    display_order: numToStr(t.display_order),
+    rowAxis,
+    colAxis,
+    singleCompany,
+    cells: resizeStrMatrix(numMatrixToStr(t.definition.cells), rows, cols),
+    cellsSecondary:
+      t.value_mode === "ev_ebitda"
+        ? resizeStrMatrix(numMatrixToStr(t.definition.cells_secondary), rows, cols)
+        : [],
+  };
+}
+
+/**
+ * Derive the table-membership `companies[]` from the draft: the company axis's
+ * tickers if either axis is 'company', else the single-company select.
+ */
+function deriveTableCompanies(d: SgTableDraft): string[] {
+  if (d.rowAxis.kind === "company") return [...d.rowAxis.companies];
+  if (d.colAxis.kind === "company") return [...d.colAxis.companies];
+  return d.singleCompany ? [d.singleCompany] : [];
+}
+
 // ── Section metadata ──────────────────────────────────────────────────────────
 
 export type SectionId =
@@ -230,7 +444,7 @@ export const SECTIONS: SectionMeta[] = [
   { id: "default-news",     label: "Default News Keywords", shortLabel: "News Defaults", description: "Keywords used by anonymous News Hunter visitors" },
   { id: "data-input",       label: "Data Input",            shortLabel: "Tables",       description: "Edit reference tables" },
   { id: "field-stakes",     label: "Field Stakes",          shortLabel: "Stakes",       description: "Working-interest per oil field (company × stake %)" },
-  { id: "stock-guide",      label: "Stock Guide",           shortLabel: "Stocks",       description: "Comps multiples, sensitivity grids, and global config" },
+  { id: "stock-guide",      label: "Stock Guide",           shortLabel: "Stocks",       description: "Comps, drivers registry, and sensitivity tables" },
 ];
 
 // ── Module catalog ─────────────────────────────────────────────────────────────
@@ -443,6 +657,9 @@ export interface UseAdminPanelData {
   handleCancelDeleteCampo: () => void;
 
   // Stock Guide
+  /** Active sub-tab of the Stock Guide section. */
+  sgSubTab: SgSubTab;
+  setSgSubTab: (t: SgSubTab) => void;
   /** All companies incl. hidden (use `is_visible` for the Restricted badge). */
   sgCompanies: StockGuideAdminCompany[];
   sgLoading: boolean;
@@ -459,12 +676,8 @@ export interface UseAdminPanelData {
   /** Editable comps fields for the selected company (string-typed). */
   sgEditorRow: SgEditorRow | null;
   sgEditorLoading: boolean;
-  /** Editable sensitivity grid for the selected company. */
-  sgGrid: SensitivityGrid;
   sgSaving: boolean;
-  sgGridSaving: boolean;
   sgError: string | null;
-  sgGridError: string | null;
   sgDeleteConfirm: string | null;
   /** Visibility toggle currently in-flight (ticker), for spinner/disable. */
   sgTogglingVisibility: string | null;
@@ -475,31 +688,76 @@ export interface UseAdminPanelData {
   setSgSectorFilter: (v: "all" | StockGuideSector) => void;
   /** Companies filtered by sgSearchQuery + sgSectorFilter. */
   sgFilteredCompanies: StockGuideAdminCompany[];
+  /** Visible-only tickers (for the company multi-selects in the table builder). */
+  sgCompanyTickers: string[];
   /** True when sgEditorRow differs from the last server snapshot. */
   sgPendingChanges: boolean;
-  /** True when sgGrid differs from the last server snapshot. */
-  sgGridPendingChanges: boolean;
-  // Handlers
+  // Comps handlers (Companies sub-tab — unchanged)
   handleSelectStockGuideCompany: (ticker: string) => Promise<void>;
   handleChangeSgField: (field: keyof SgEditorRow, value: string) => void;
   handleSaveSgCompany: () => Promise<void>;
   handleToggleSgVisibility: (ticker: string, isVisible: boolean) => Promise<void>;
-  handleAddSgRow: () => void;
-  handleAddSgCol: () => void;
-  handleRemoveSgRow: (i: number) => void;
-  handleRemoveSgCol: (j: number) => void;
-  handleChangeSgRowLabel: (i: number, value: string) => void;
-  handleChangeSgColLabel: (j: number, value: string) => void;
-  handleChangeSgCell: (i: number, j: number, value: string) => void;
-  handleChangeSgAxis: (
-    field: "row_axis_title" | "col_axis_title" | "value_label",
-    value: string,
-  ) => void;
-  handleSaveSgGrid: () => Promise<void>;
   handleSaveSgConfig: () => Promise<void>;
   handleDeleteSgCompany: (ticker: string) => void;
   handleConfirmDeleteSgCompany: () => Promise<void>;
   handleCancelDeleteSgCompany: () => void;
+
+  // ── Drivers registry (Drivers sub-tab) ──────────────────────────────────────
+  /** Saved drivers (rows in display_order) + one trailing "Add" row. */
+  sgDrivers: StockGuideDriver[];
+  sgDriverRows: SgDriverEditorRow[];
+  sgDriversLoading: boolean;
+  sgDriversError: string | null;
+  /** Driver row id (or "new") currently saving, for spinner/disable. */
+  sgDriverSavingKey: string | null;
+  sgDriverDeleteConfirm: number | null;
+  handleChangeSgDriverField: (
+    index: number,
+    field: keyof Omit<SgDriverEditorRow, "id">,
+    value: string,
+  ) => void;
+  handleSaveSgDriver: (index: number) => Promise<void>;
+  handleDeleteSgDriver: (id: number) => void;
+  handleConfirmDeleteSgDriver: () => Promise<void>;
+  handleCancelDeleteSgDriver: () => void;
+
+  // ── Sensitivity-table builder (Sensitivities sub-tab) ───────────────────────
+  /** All tables (unfiltered, incl. hidden companies) for the left list. */
+  sgTables: SensitivityTableAdmin[];
+  sgTablesLoading: boolean;
+  sgTablesError: string | null;
+  /** The selected/new table builder draft (null = nothing selected). */
+  sgTableDraft: SgTableDraft | null;
+  sgTableSaving: boolean;
+  sgTableSaveError: string | null;
+  sgTablePendingChanges: boolean;
+  sgTableDeleteConfirm: number | null;
+  /** Client-side validation message blocking save (null = valid). */
+  sgTableValidationError: string | null;
+  /** Item labels for the row/col axes (drives the matrix headers). */
+  sgTableRowLabels: string[];
+  sgTableColLabels: string[];
+  handleSelectSgTable: (id: number) => void;
+  handleNewSgTable: () => void;
+  handleCancelSgTableEdit: () => void;
+  handleChangeSgTableField: (
+    field: "title" | "metric_label" | "unit" | "display_order",
+    value: string,
+  ) => void;
+  handleChangeSgTableValueMode: (mode: SgValueMode) => void;
+  handleChangeSgTableSingleCompany: (ticker: string) => void;
+  handleChangeSgAxisKind: (axis: "row" | "col", kind: SensitivityAxis["kind"]) => void;
+  handleChangeSgAxisDriver: (axis: "row" | "col", driverId: string) => void;
+  handleToggleSgAxisCompany: (axis: "row" | "col", ticker: string) => void;
+  handleAddSgAxisScenario: (axis: "row" | "col") => void;
+  handleChangeSgAxisScenario: (axis: "row" | "col", i: number, value: string) => void;
+  handleRemoveSgAxisScenario: (axis: "row" | "col", i: number) => void;
+  handleChangeSgTableCell: (r: number, c: number, value: string) => void;
+  handleChangeSgTableCellSecondary: (r: number, c: number, value: string) => void;
+  handleSaveSgTable: () => Promise<void>;
+  handleDeleteSgTable: (id: number) => void;
+  handleConfirmDeleteSgTable: () => Promise<void>;
+  handleCancelDeleteSgTable: () => void;
 
   // Pure helpers (re-exported for both views)
   isValidEmail: (email: string) => boolean;
@@ -1334,6 +1592,7 @@ export function useAdminPanelData(): UseAdminPanelData {
   }, [filteredOverview]);
 
   // ── Stock Guide ────────────────────────────────────────────────────────────
+  const [sgSubTab, setSgSubTab] = useState<SgSubTab>("companies");
   const [sgCompanies, setSgCompanies] = useState<StockGuideAdminCompany[]>([]);
   const [sgLoading, setSgLoading] = useState(false);
   const [sgConfig, setSgConfig] = useState<StockGuideConfig>({
@@ -1352,20 +1611,16 @@ export function useAdminPanelData(): UseAdminPanelData {
   const [sgSelectedTicker, setSgSelectedTicker] = useState<string | null>(null);
   const [sgEditorRow, setSgEditorRow] = useState<SgEditorRow | null>(null);
   const [sgEditorLoading, setSgEditorLoading] = useState(false);
-  const [sgGrid, setSgGrid] = useState<SensitivityGrid>(blankSgGrid());
   const [sgSaving, setSgSaving] = useState(false);
-  const [sgGridSaving, setSgGridSaving] = useState(false);
   const [sgError, setSgError] = useState<string | null>(null);
-  const [sgGridError, setSgGridError] = useState<string | null>(null);
   const [sgDeleteConfirm, setSgDeleteConfirm] = useState<string | null>(null);
   const [sgTogglingVisibility, setSgTogglingVisibility] = useState<string | null>(null);
   const [sgSearchQuery, setSgSearchQuery] = useState("");
   const [sgSectorFilter, setSgSectorFilter] = useState<"all" | StockGuideSector>("all");
 
-  // Last-saved JSON snapshots for change-detection (refs — no re-render needed;
-  // compared inside the pendingChanges useMemos below). Mirrors Field Stakes.
+  // Last-saved JSON snapshot for the comps editor (ref — no re-render needed;
+  // compared inside the pendingChanges useMemo below). Mirrors Field Stakes.
   const sgEditorSnapshotRef = useRef<string>("null");
-  const sgGridSnapshotRef = useRef<string>(JSON.stringify(blankSgGrid()));
 
   const loadStockGuide = useCallback(async () => {
     if (!supabase) return;
@@ -1400,7 +1655,6 @@ export function useAdminPanelData(): UseAdminPanelData {
       if (!supabase) return;
       setSgSelectedTicker(ticker);
       setSgError(null);
-      setSgGridError(null);
       setSgEditorLoading(true);
       // Project the already-loaded company row into the editable form.
       const company = sgCompanies.find((c) => c.ticker === ticker);
@@ -1411,19 +1665,6 @@ export function useAdminPanelData(): UseAdminPanelData {
       } else {
         setSgEditorRow(null);
         sgEditorSnapshotRef.current = "null";
-      }
-      // Load the sensitivity grid (null → a blank, buildable grid).
-      try {
-        const grid = await rpcAdminGetStockGuideSensitivity(supabase, ticker);
-        const resolved = grid ?? blankSgGrid();
-        setSgGrid(resolved);
-        sgGridSnapshotRef.current = JSON.stringify(resolved);
-      } catch (e) {
-        console.error("Failed to load sensitivity grid", e);
-        const blank = blankSgGrid();
-        setSgGrid(blank);
-        sgGridSnapshotRef.current = JSON.stringify(blank);
-        setSgGridError("Could not load the sensitivity grid for this company.");
       }
       setSgEditorLoading(false);
     },
@@ -1513,91 +1754,6 @@ export function useAdminPanelData(): UseAdminPanelData {
     [supabase, sgTogglingVisibility, sgCompanies],
   );
 
-  // ── Sensitivity grid editors ───────────────────────────────────────────────
-  // Keep `cells` dims in sync with row/col labels on every structural mutation.
-
-  const handleAddSgRow = useCallback(() => {
-    setSgGrid((g) => ({
-      ...g,
-      row_labels: [...g.row_labels, ""],
-      // New row gets one null cell per existing column.
-      cells: [...g.cells, g.col_labels.map(() => null)],
-    }));
-  }, []);
-
-  const handleAddSgCol = useCallback(() => {
-    setSgGrid((g) => ({
-      ...g,
-      col_labels: [...g.col_labels, ""],
-      // Append a null to every existing row so each row length === col count.
-      cells: g.cells.map((row) => [...row, null]),
-    }));
-  }, []);
-
-  const handleRemoveSgRow = useCallback((i: number) => {
-    setSgGrid((g) => ({
-      ...g,
-      row_labels: g.row_labels.filter((_, idx) => idx !== i),
-      cells: g.cells.filter((_, idx) => idx !== i),
-    }));
-  }, []);
-
-  const handleRemoveSgCol = useCallback((j: number) => {
-    setSgGrid((g) => ({
-      ...g,
-      col_labels: g.col_labels.filter((_, idx) => idx !== j),
-      cells: g.cells.map((row) => row.filter((_, idx) => idx !== j)),
-    }));
-  }, []);
-
-  const handleChangeSgRowLabel = useCallback((i: number, value: string) => {
-    setSgGrid((g) => ({
-      ...g,
-      row_labels: g.row_labels.map((lbl, idx) => (idx === i ? value : lbl)),
-    }));
-  }, []);
-
-  const handleChangeSgColLabel = useCallback((j: number, value: string) => {
-    setSgGrid((g) => ({
-      ...g,
-      col_labels: g.col_labels.map((lbl, idx) => (idx === j ? value : lbl)),
-    }));
-  }, []);
-
-  const handleChangeSgCell = useCallback((i: number, j: number, value: string) => {
-    setSgGrid((g) => ({
-      ...g,
-      cells: g.cells.map((row, ri) =>
-        ri === i ? row.map((cell, ci) => (ci === j ? strToNum(value) : cell)) : row,
-      ),
-    }));
-  }, []);
-
-  const handleChangeSgAxis = useCallback(
-    (field: "row_axis_title" | "col_axis_title" | "value_label", value: string) => {
-      setSgGrid((g) => ({ ...g, [field]: value }));
-    },
-    [],
-  );
-
-  const handleSaveSgGrid = useCallback(async () => {
-    if (!supabase || !sgSelectedTicker || sgGridSaving) return;
-    setSgGridSaving(true);
-    setSgGridError(null);
-    try {
-      await rpcAdminUpsertStockGuideSensitivity(supabase, sgSelectedTicker, sgGrid);
-      sgGridSnapshotRef.current = JSON.stringify(sgGrid);
-    } catch (e: unknown) {
-      // Surface the server's thrown message verbatim (e.g. grid_dims_mismatch).
-      const msg =
-        e && typeof e === "object" && "message" in e
-          ? String((e as { message?: unknown }).message ?? "Could not save the grid.")
-          : "Could not save the grid.";
-      setSgGridError(msg);
-    }
-    setSgGridSaving(false);
-  }, [supabase, sgSelectedTicker, sgGrid, sgGridSaving]);
-
   const handleSaveSgConfig = useCallback(async () => {
     if (!supabase || sgConfigSaving) return;
     setSgConfigSaving(true);
@@ -1639,9 +1795,6 @@ export function useAdminPanelData(): UseAdminPanelData {
         setSgSelectedTicker(null);
         setSgEditorRow(null);
         sgEditorSnapshotRef.current = "null";
-        const blank = blankSgGrid();
-        setSgGrid(blank);
-        sgGridSnapshotRef.current = JSON.stringify(blank);
       }
       setSgDeleteConfirm(null);
     } catch (e: unknown) {
@@ -1658,7 +1811,7 @@ export function useAdminPanelData(): UseAdminPanelData {
     setSgDeleteConfirm(null);
   }, []);
 
-  // Derived: filtered company list + pending-change flags.
+  // Derived: filtered company list + pending-change flag for the comps editor.
   const sgFilteredCompanies = useMemo(() => {
     const q = sgSearchQuery.trim().toLowerCase();
     return sgCompanies.filter((c) => {
@@ -1677,10 +1830,461 @@ export function useAdminPanelData(): UseAdminPanelData {
     [sgEditorRow],
   );
 
-  const sgGridPendingChanges = useMemo(
-    () => JSON.stringify(sgGrid) !== sgGridSnapshotRef.current,
-    [sgGrid],
+  // Visible-only tickers for the company multi-selects in the table builder
+  // (display_order, ascending — same order as the dashboard).
+  const sgCompanyTickers = useMemo(
+    () =>
+      [...sgCompanies]
+        .sort((a, b) => a.display_order - b.display_order)
+        .map((c) => c.ticker),
+    [sgCompanies],
   );
+
+  // ── Drivers registry (Drivers sub-tab) ──────────────────────────────────────
+  const [sgDrivers, setSgDrivers] = useState<StockGuideDriver[]>([]);
+  const [sgDriverRows, setSgDriverRows] = useState<SgDriverEditorRow[]>([
+    blankDriverRow(),
+  ]);
+  const [sgDriversLoading, setSgDriversLoading] = useState(false);
+  const [sgDriversError, setSgDriversError] = useState<string | null>(null);
+  const [sgDriverSavingKey, setSgDriverSavingKey] = useState<string | null>(null);
+  const [sgDriverDeleteConfirm, setSgDriverDeleteConfirm] = useState<number | null>(
+    null,
+  );
+  const sgDriversLoadedRef = useRef(false);
+
+  // Project saved drivers into editable rows + a trailing blank "Add" row.
+  const driversToRows = useCallback(
+    (list: StockGuideDriver[]): SgDriverEditorRow[] => [
+      ...list.map((d) => ({
+        id: d.id,
+        name: d.name,
+        unit: d.unit,
+        current_value: numToStr(d.current_value),
+        display_order: numToStr(d.display_order),
+      })),
+      blankDriverRow(),
+    ],
+    [],
+  );
+
+  const loadSgDrivers = useCallback(async () => {
+    if (!supabase) return;
+    setSgDriversLoading(true);
+    setSgDriversError(null);
+    try {
+      const list = await rpcGetStockGuideDrivers(supabase);
+      setSgDrivers(list);
+      setSgDriverRows(driversToRows(list));
+    } catch (e) {
+      console.error("Failed to load Stock Guide drivers", e);
+      setSgDriversError("Could not load drivers. Please try again.");
+    }
+    setSgDriversLoading(false);
+  }, [supabase, driversToRows]);
+
+  // Lazy-load drivers when the Drivers OR Sensitivities sub-tab opens (the
+  // builder's driver axis needs the registry too). Reloads at most once.
+  useEffect(() => {
+    if (
+      allowed &&
+      activeSection === "stock-guide" &&
+      (sgSubTab === "drivers" || sgSubTab === "sensitivities") &&
+      !sgDriversLoadedRef.current
+    ) {
+      sgDriversLoadedRef.current = true;
+      loadSgDrivers();
+    }
+  }, [allowed, activeSection, sgSubTab, loadSgDrivers]);
+
+  const handleChangeSgDriverField = useCallback(
+    (index: number, field: keyof Omit<SgDriverEditorRow, "id">, value: string) => {
+      setSgDriverRows((rows) =>
+        rows.map((r, i) => (i === index ? { ...r, [field]: value } : r)),
+      );
+    },
+    [],
+  );
+
+  const handleSaveSgDriver = useCallback(
+    async (index: number) => {
+      if (!supabase) return;
+      const row = sgDriverRows[index];
+      if (!row || !row.name.trim()) {
+        setSgDriversError("Driver name is required.");
+        setTimeout(
+          () => setSgDriversError((e) => (e === "Driver name is required." ? null : e)),
+          3000,
+        );
+        return;
+      }
+      const key = row.id == null ? "new" : String(row.id);
+      setSgDriverSavingKey(key);
+      setSgDriversError(null);
+      try {
+        await rpcAdminUpsertStockGuideDriver(supabase, row.id, {
+          name: row.name.trim(),
+          unit: row.unit.trim(),
+          current_value: strToNum(row.current_value),
+          display_order: strToNum(row.display_order) ?? 0,
+        });
+        await loadSgDrivers();
+      } catch (e: unknown) {
+        const msg =
+          e && typeof e === "object" && "message" in e
+            ? String((e as { message?: unknown }).message ?? "Could not save driver.")
+            : "Could not save driver.";
+        setSgDriversError(msg);
+      }
+      setSgDriverSavingKey(null);
+    },
+    [supabase, sgDriverRows, loadSgDrivers],
+  );
+
+  const handleDeleteSgDriver = useCallback((id: number) => {
+    setSgDriverDeleteConfirm(id);
+  }, []);
+
+  const handleConfirmDeleteSgDriver = useCallback(async () => {
+    if (!supabase || sgDriverDeleteConfirm == null) return;
+    const id = sgDriverDeleteConfirm;
+    setSgDriverSavingKey(String(id));
+    setSgDriversError(null);
+    try {
+      await rpcAdminDeleteStockGuideDriver(supabase, id);
+      await loadSgDrivers();
+      setSgDriverDeleteConfirm(null);
+    } catch (e: unknown) {
+      const msg =
+        e && typeof e === "object" && "message" in e
+          ? String((e as { message?: unknown }).message ?? "Could not delete driver.")
+          : "Could not delete driver.";
+      setSgDriversError(msg);
+    }
+    setSgDriverSavingKey(null);
+  }, [supabase, sgDriverDeleteConfirm, loadSgDrivers]);
+
+  const handleCancelDeleteSgDriver = useCallback(() => {
+    setSgDriverDeleteConfirm(null);
+  }, []);
+
+  // ── Sensitivity-table builder (Sensitivities sub-tab) ───────────────────────
+  const [sgTables, setSgTables] = useState<SensitivityTableAdmin[]>([]);
+  const [sgTablesLoading, setSgTablesLoading] = useState(false);
+  const [sgTablesError, setSgTablesError] = useState<string | null>(null);
+  const [sgTableDraft, setSgTableDraft] = useState<SgTableDraft | null>(null);
+  const [sgTableSaving, setSgTableSaving] = useState(false);
+  const [sgTableSaveError, setSgTableSaveError] = useState<string | null>(null);
+  const [sgTableDeleteConfirm, setSgTableDeleteConfirm] = useState<number | null>(
+    null,
+  );
+  const sgTableSnapshotRef = useRef<string>("null");
+  const sgTablesLoadedRef = useRef(false);
+
+  const loadSgTables = useCallback(async () => {
+    if (!supabase) return;
+    setSgTablesLoading(true);
+    setSgTablesError(null);
+    try {
+      const list = await rpcAdminGetStockGuideSensitivityTables(supabase);
+      setSgTables(list);
+    } catch (e) {
+      console.error("Failed to load Stock Guide sensitivity tables", e);
+      setSgTablesError("Could not load sensitivity tables. Please try again.");
+    }
+    setSgTablesLoading(false);
+  }, [supabase]);
+
+  // Lazy-load tables when the Sensitivities sub-tab opens (once).
+  useEffect(() => {
+    if (
+      allowed &&
+      activeSection === "stock-guide" &&
+      sgSubTab === "sensitivities" &&
+      !sgTablesLoadedRef.current
+    ) {
+      sgTablesLoadedRef.current = true;
+      loadSgTables();
+    }
+  }, [allowed, activeSection, sgSubTab, loadSgTables]);
+
+  // Whenever the axes change item count, keep the cell matrices sized to match
+  // (preserving existing values). Centralized so every axis mutation is correct.
+  const syncDraftMatrices = useCallback((d: SgTableDraft): SgTableDraft => {
+    const rows = axisItemCount(d.rowAxis);
+    const cols = axisItemCount(d.colAxis);
+    return {
+      ...d,
+      cells: resizeStrMatrix(d.cells, rows, cols),
+      cellsSecondary:
+        d.value_mode === "ev_ebitda" ? resizeStrMatrix(d.cellsSecondary, rows, cols) : [],
+    };
+  }, []);
+
+  const handleSelectSgTable = useCallback(
+    (id: number) => {
+      const t = sgTables.find((x) => x.id === id);
+      if (!t) return;
+      const draft = tableAdminToDraft(t);
+      setSgTableDraft(draft);
+      sgTableSnapshotRef.current = JSON.stringify(draft);
+      setSgTableSaveError(null);
+    },
+    [sgTables],
+  );
+
+  const handleNewSgTable = useCallback(() => {
+    const draft = blankTableDraft();
+    setSgTableDraft(draft);
+    sgTableSnapshotRef.current = JSON.stringify(draft);
+    setSgTableSaveError(null);
+  }, []);
+
+  const handleCancelSgTableEdit = useCallback(() => {
+    setSgTableDraft(null);
+    sgTableSnapshotRef.current = "null";
+    setSgTableSaveError(null);
+  }, []);
+
+  const handleChangeSgTableField = useCallback(
+    (field: "title" | "metric_label" | "unit" | "display_order", value: string) => {
+      setSgTableDraft((d) => (d ? { ...d, [field]: value } : d));
+    },
+    [],
+  );
+
+  const handleChangeSgTableValueMode = useCallback(
+    (mode: SgValueMode) => {
+      setSgTableDraft((d) => (d ? syncDraftMatrices({ ...d, value_mode: mode }) : d));
+    },
+    [syncDraftMatrices],
+  );
+
+  const handleChangeSgTableSingleCompany = useCallback((ticker: string) => {
+    setSgTableDraft((d) => (d ? { ...d, singleCompany: ticker } : d));
+  }, []);
+
+  const handleChangeSgAxisKind = useCallback(
+    (axis: "row" | "col", kind: SensitivityAxis["kind"]) => {
+      setSgTableDraft((d) => {
+        if (!d) return d;
+        const key = axis === "row" ? "rowAxis" : "colAxis";
+        // Reset the axis to a clean draft of the new kind; preselect both
+        // forward years for a 'year' axis.
+        const next: SgAxisDraft = { ...blankAxisDraft(), kind };
+        if (kind === "year") next.years = ["y1", "y2"];
+        return syncDraftMatrices({ ...d, [key]: next });
+      });
+    },
+    [syncDraftMatrices],
+  );
+
+  const handleChangeSgAxisDriver = useCallback((axis: "row" | "col", driverId: string) => {
+    setSgTableDraft((d) => {
+      if (!d) return d;
+      const key = axis === "row" ? "rowAxis" : "colAxis";
+      return { ...d, [key]: { ...d[key], driverId } };
+    });
+  }, []);
+
+  const handleToggleSgAxisCompany = useCallback(
+    (axis: "row" | "col", ticker: string) => {
+      setSgTableDraft((d) => {
+        if (!d) return d;
+        const key = axis === "row" ? "rowAxis" : "colAxis";
+        const cur = d[key].companies;
+        const companies = cur.includes(ticker)
+          ? cur.filter((t) => t !== ticker)
+          : [...cur, ticker];
+        return syncDraftMatrices({ ...d, [key]: { ...d[key], companies } });
+      });
+    },
+    [syncDraftMatrices],
+  );
+
+  const handleAddSgAxisScenario = useCallback(
+    (axis: "row" | "col") => {
+      setSgTableDraft((d) => {
+        if (!d) return d;
+        const key = axis === "row" ? "rowAxis" : "colAxis";
+        return syncDraftMatrices({
+          ...d,
+          [key]: { ...d[key], scenarios: [...d[key].scenarios, ""] },
+        });
+      });
+    },
+    [syncDraftMatrices],
+  );
+
+  const handleChangeSgAxisScenario = useCallback(
+    (axis: "row" | "col", i: number, value: string) => {
+      setSgTableDraft((d) => {
+        if (!d) return d;
+        const key = axis === "row" ? "rowAxis" : "colAxis";
+        return {
+          ...d,
+          [key]: {
+            ...d[key],
+            scenarios: d[key].scenarios.map((s, idx) => (idx === i ? value : s)),
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  const handleRemoveSgAxisScenario = useCallback(
+    (axis: "row" | "col", i: number) => {
+      setSgTableDraft((d) => {
+        if (!d) return d;
+        const key = axis === "row" ? "rowAxis" : "colAxis";
+        return syncDraftMatrices({
+          ...d,
+          [key]: {
+            ...d[key],
+            scenarios: d[key].scenarios.filter((_, idx) => idx !== i),
+          },
+        });
+      });
+    },
+    [syncDraftMatrices],
+  );
+
+  const handleChangeSgTableCell = useCallback((r: number, c: number, value: string) => {
+    setSgTableDraft((d) => {
+      if (!d) return d;
+      return {
+        ...d,
+        cells: d.cells.map((row, ri) =>
+          ri === r ? row.map((cell, ci) => (ci === c ? value : cell)) : row,
+        ),
+      };
+    });
+  }, []);
+
+  const handleChangeSgTableCellSecondary = useCallback(
+    (r: number, c: number, value: string) => {
+      setSgTableDraft((d) => {
+        if (!d) return d;
+        return {
+          ...d,
+          cellsSecondary: d.cellsSecondary.map((row, ri) =>
+            ri === r ? row.map((cell, ci) => (ci === c ? value : cell)) : row,
+          ),
+        };
+      });
+    },
+    [],
+  );
+
+  // Client-side validation (mirrors the server guards): not both-company, axes
+  // non-empty, matrix dims match. Returns a user-facing message or null.
+  const sgTableValidationError = useMemo(() => {
+    const d = sgTableDraft;
+    if (!d) return null;
+    if (!d.title.trim()) return "Title is required.";
+    if (d.rowAxis.kind === "company" && d.colAxis.kind === "company")
+      return "Both axes cannot be Company — at least one axis must be a Driver or Year.";
+    const rows = axisItemCount(d.rowAxis);
+    const cols = axisItemCount(d.colAxis);
+    if (rows < 1) return "The row axis must have at least one item.";
+    if (cols < 1) return "The column axis must have at least one item.";
+    if (d.rowAxis.kind === "driver" && !d.rowAxis.driverId)
+      return "Select a driver for the row axis.";
+    if (d.colAxis.kind === "driver" && !d.colAxis.driverId)
+      return "Select a driver for the column axis.";
+    if (deriveTableCompanies(d).length === 0)
+      return "Select the company this table belongs to.";
+    return null;
+  }, [sgTableDraft]);
+
+  const sgTablePendingChanges = useMemo(
+    () => JSON.stringify(sgTableDraft) !== sgTableSnapshotRef.current,
+    [sgTableDraft],
+  );
+
+  // Item labels for the matrix headers (depend on config + drivers).
+  const sgTableRowLabels = useMemo(
+    () => (sgTableDraft ? axisItemLabels(sgTableDraft.rowAxis, sgConfig, sgDrivers) : []),
+    [sgTableDraft, sgConfig, sgDrivers],
+  );
+  const sgTableColLabels = useMemo(
+    () => (sgTableDraft ? axisItemLabels(sgTableDraft.colAxis, sgConfig, sgDrivers) : []),
+    [sgTableDraft, sgConfig, sgDrivers],
+  );
+
+  const handleSaveSgTable = useCallback(async () => {
+    if (!supabase || !sgTableDraft || sgTableSaving) return;
+    if (sgTableValidationError) {
+      setSgTableSaveError(sgTableValidationError);
+      return;
+    }
+    setSgTableSaving(true);
+    setSgTableSaveError(null);
+    try {
+      const d = sgTableDraft;
+      const definition: Record<string, unknown> = {
+        row_axis: draftToAxis(d.rowAxis),
+        col_axis: draftToAxis(d.colAxis),
+        cells: strMatrixToNum(d.cells),
+      };
+      if (d.value_mode === "ev_ebitda") {
+        definition.cells_secondary = strMatrixToNum(d.cellsSecondary);
+      }
+      const newId = await rpcAdminUpsertStockGuideSensitivityTable(supabase, d.id, {
+        title: d.title.trim(),
+        value_mode: d.value_mode,
+        metric_label: d.metric_label.trim(),
+        unit: d.unit.trim(),
+        companies: deriveTableCompanies(d),
+        definition,
+        display_order: strToNum(d.display_order) ?? 0,
+      });
+      await loadSgTables();
+      // Re-snapshot from the saved draft (with the resolved id) so pending resets.
+      const saved: SgTableDraft = { ...d, id: newId };
+      setSgTableDraft(saved);
+      sgTableSnapshotRef.current = JSON.stringify(saved);
+    } catch (e: unknown) {
+      const msg =
+        e && typeof e === "object" && "message" in e
+          ? String((e as { message?: unknown }).message ?? "Could not save the table.")
+          : "Could not save the table.";
+      setSgTableSaveError(msg);
+    }
+    setSgTableSaving(false);
+  }, [supabase, sgTableDraft, sgTableSaving, sgTableValidationError, loadSgTables]);
+
+  const handleDeleteSgTable = useCallback((id: number) => {
+    setSgTableDeleteConfirm(id);
+  }, []);
+
+  const handleConfirmDeleteSgTable = useCallback(async () => {
+    if (!supabase || sgTableDeleteConfirm == null) return;
+    const id = sgTableDeleteConfirm;
+    setSgTableSaving(true);
+    setSgTableSaveError(null);
+    try {
+      await rpcAdminDeleteStockGuideSensitivityTable(supabase, id);
+      await loadSgTables();
+      if (sgTableDraft?.id === id) {
+        setSgTableDraft(null);
+        sgTableSnapshotRef.current = "null";
+      }
+      setSgTableDeleteConfirm(null);
+    } catch (e: unknown) {
+      const msg =
+        e && typeof e === "object" && "message" in e
+          ? String((e as { message?: unknown }).message ?? "Could not delete the table.")
+          : "Could not delete the table.";
+      setSgTableSaveError(msg);
+    }
+    setSgTableSaving(false);
+  }, [supabase, sgTableDeleteConfirm, sgTableDraft, loadSgTables]);
+
+  const handleCancelDeleteSgTable = useCallback(() => {
+    setSgTableDeleteConfirm(null);
+  }, []);
 
   return {
     allowed,
@@ -1807,6 +2411,8 @@ export function useAdminPanelData(): UseAdminPanelData {
     handleConfirmDeleteCampo,
     handleCancelDeleteCampo,
 
+    sgSubTab,
+    setSgSubTab,
     sgCompanies,
     sgLoading,
     sgConfig,
@@ -1818,11 +2424,8 @@ export function useAdminPanelData(): UseAdminPanelData {
     sgSelectedTicker,
     sgEditorRow,
     sgEditorLoading,
-    sgGrid,
     sgSaving,
-    sgGridSaving,
     sgError,
-    sgGridError,
     sgDeleteConfirm,
     sgTogglingVisibility,
     sgSearchQuery,
@@ -1830,25 +2433,58 @@ export function useAdminPanelData(): UseAdminPanelData {
     sgSectorFilter,
     setSgSectorFilter,
     sgFilteredCompanies,
+    sgCompanyTickers,
     sgPendingChanges,
-    sgGridPendingChanges,
     handleSelectStockGuideCompany,
     handleChangeSgField,
     handleSaveSgCompany,
     handleToggleSgVisibility,
-    handleAddSgRow,
-    handleAddSgCol,
-    handleRemoveSgRow,
-    handleRemoveSgCol,
-    handleChangeSgRowLabel,
-    handleChangeSgColLabel,
-    handleChangeSgCell,
-    handleChangeSgAxis,
-    handleSaveSgGrid,
     handleSaveSgConfig,
     handleDeleteSgCompany,
     handleConfirmDeleteSgCompany,
     handleCancelDeleteSgCompany,
+
+    sgDrivers,
+    sgDriverRows,
+    sgDriversLoading,
+    sgDriversError,
+    sgDriverSavingKey,
+    sgDriverDeleteConfirm,
+    handleChangeSgDriverField,
+    handleSaveSgDriver,
+    handleDeleteSgDriver,
+    handleConfirmDeleteSgDriver,
+    handleCancelDeleteSgDriver,
+
+    sgTables,
+    sgTablesLoading,
+    sgTablesError,
+    sgTableDraft,
+    sgTableSaving,
+    sgTableSaveError,
+    sgTablePendingChanges,
+    sgTableDeleteConfirm,
+    sgTableValidationError,
+    sgTableRowLabels,
+    sgTableColLabels,
+    handleSelectSgTable,
+    handleNewSgTable,
+    handleCancelSgTableEdit,
+    handleChangeSgTableField,
+    handleChangeSgTableValueMode,
+    handleChangeSgTableSingleCompany,
+    handleChangeSgAxisKind,
+    handleChangeSgAxisDriver,
+    handleToggleSgAxisCompany,
+    handleAddSgAxisScenario,
+    handleChangeSgAxisScenario,
+    handleRemoveSgAxisScenario,
+    handleChangeSgTableCell,
+    handleChangeSgTableCellSecondary,
+    handleSaveSgTable,
+    handleDeleteSgTable,
+    handleConfirmDeleteSgTable,
+    handleCancelDeleteSgTable,
 
     isValidEmail,
     formatDateBR,

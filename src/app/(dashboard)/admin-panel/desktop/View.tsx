@@ -24,7 +24,15 @@ import {
   MODULE_LABELS,
   SECTIONS,
   type SectionId,
+  type SgSubTab,
+  type SgValueMode,
+  type SgTableDraft,
 } from "../useAdminPanelData";
+import type {
+  SensitivityAxis,
+  SensitivityTableAdmin,
+  StockGuideDriver,
+} from "../../../../types/stockGuide";
 
 const ORANGE = "#FF5000";
 const BG = "#f5f5f5";
@@ -211,6 +219,8 @@ export default function DesktopView(): React.ReactElement | null {
     handleConfirmDeleteCampo,
     handleCancelDeleteCampo,
 
+    sgSubTab,
+    setSgSubTab,
     sgLoading,
     sgConfigDraft,
     setSgConfigDraft,
@@ -220,11 +230,8 @@ export default function DesktopView(): React.ReactElement | null {
     sgSelectedTicker,
     sgEditorRow,
     sgEditorLoading,
-    sgGrid,
     sgSaving,
-    sgGridSaving,
     sgError,
-    sgGridError,
     sgDeleteConfirm,
     sgTogglingVisibility,
     sgSearchQuery,
@@ -232,25 +239,58 @@ export default function DesktopView(): React.ReactElement | null {
     sgSectorFilter,
     setSgSectorFilter,
     sgFilteredCompanies,
+    sgCompanyTickers,
     sgPendingChanges,
-    sgGridPendingChanges,
     handleSelectStockGuideCompany,
     handleChangeSgField,
     handleSaveSgCompany,
     handleToggleSgVisibility,
-    handleAddSgRow,
-    handleAddSgCol,
-    handleRemoveSgRow,
-    handleRemoveSgCol,
-    handleChangeSgRowLabel,
-    handleChangeSgColLabel,
-    handleChangeSgCell,
-    handleChangeSgAxis,
-    handleSaveSgGrid,
     handleSaveSgConfig,
     handleDeleteSgCompany,
     handleConfirmDeleteSgCompany,
     handleCancelDeleteSgCompany,
+
+    sgDrivers,
+    sgDriverRows,
+    sgDriversLoading,
+    sgDriversError,
+    sgDriverSavingKey,
+    sgDriverDeleteConfirm,
+    handleChangeSgDriverField,
+    handleSaveSgDriver,
+    handleDeleteSgDriver,
+    handleConfirmDeleteSgDriver,
+    handleCancelDeleteSgDriver,
+
+    sgTables,
+    sgTablesLoading,
+    sgTablesError,
+    sgTableDraft,
+    sgTableSaving,
+    sgTableSaveError,
+    sgTablePendingChanges,
+    sgTableDeleteConfirm,
+    sgTableValidationError,
+    sgTableRowLabels,
+    sgTableColLabels,
+    handleSelectSgTable,
+    handleNewSgTable,
+    handleCancelSgTableEdit,
+    handleChangeSgTableField,
+    handleChangeSgTableValueMode,
+    handleChangeSgTableSingleCompany,
+    handleChangeSgAxisKind,
+    handleChangeSgAxisDriver,
+    handleToggleSgAxisCompany,
+    handleAddSgAxisScenario,
+    handleChangeSgAxisScenario,
+    handleRemoveSgAxisScenario,
+    handleChangeSgTableCell,
+    handleChangeSgTableCellSecondary,
+    handleSaveSgTable,
+    handleDeleteSgTable,
+    handleConfirmDeleteSgTable,
+    handleCancelDeleteSgTable,
 
     isValidEmail,
     formatDateBR,
@@ -1925,6 +1965,43 @@ export default function DesktopView(): React.ReactElement | null {
           {/* ── Stock Guide ──────────────────────────────────────────────────── */}
           {activeSection === "stock-guide" && (
             <>
+              {/* ── Sub-navigation: Companies / Drivers / Sensitivities ───────── */}
+              <div
+                style={{
+                  display: "flex", gap: 4, marginBottom: 18, padding: 4,
+                  background: "#ececec", borderRadius: 10, width: "fit-content",
+                }}
+              >
+                {([
+                  { id: "companies" as const,     label: "Companies" },
+                  { id: "drivers" as const,       label: "Drivers" },
+                  { id: "sensitivities" as const, label: "Sensitivities" },
+                ]).map(({ id, label }) => {
+                  const isActive = sgSubTab === id;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => setSgSubTab(id as SgSubTab)}
+                      aria-pressed={isActive}
+                      style={{
+                        padding: "7px 18px", borderRadius: 7, border: "none",
+                        background: isActive ? "#fff" : "transparent",
+                        color: isActive ? ORANGE : "#777",
+                        fontSize: 13, fontWeight: 700, cursor: "pointer",
+                        fontFamily: "Arial, sans-serif",
+                        boxShadow: isActive ? "0 1px 3px rgba(0,0,0,0.12)" : "none",
+                        transition: "background 0.15s, color 0.15s",
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* ════════════════════════ COMPANIES sub-tab ═══════════════════ */}
+              {sgSubTab === "companies" && (
+              <>
               {/* ── Global config sub-panel ───────────────────────────────────── */}
               <div className="settings-card" style={{ marginBottom: 18 }}>
                 <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>
@@ -2335,190 +2412,6 @@ export default function DesktopView(): React.ReactElement | null {
                             Delete company
                           </button>
                         </div>
-
-                        {/* ── 2D sensitivity grid editor ────────────────────── */}
-                        <div style={{ marginTop: 28, paddingTop: 20, borderTop: "2px solid #ececec" }}>
-                          <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>
-                            Sensitivity grid
-                          </h3>
-                          <p style={{ fontSize: 12, color: "#888", margin: "0 0 14px" }}>
-                            A freeform 2D table (e.g. Brent × FX → target price). Add rows and columns, label each, then fill the cells.
-                          </p>
-
-                          {/* Axis titles + value label */}
-                          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12, marginBottom: 16 }}>
-                            <label style={{ display: "block" }}>
-                              <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#888", marginBottom: 4 }}>Row axis title</span>
-                              <input
-                                type="text"
-                                value={sgGrid.row_axis_title}
-                                onChange={(e) => handleChangeSgAxis("row_axis_title", e.target.value)}
-                                placeholder="e.g. Brent (USD/bbl)"
-                                style={{ ...SG_INPUT_STYLE }}
-                              />
-                            </label>
-                            <label style={{ display: "block" }}>
-                              <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#888", marginBottom: 4 }}>Column axis title</span>
-                              <input
-                                type="text"
-                                value={sgGrid.col_axis_title}
-                                onChange={(e) => handleChangeSgAxis("col_axis_title", e.target.value)}
-                                placeholder="e.g. FX (BRL/USD)"
-                                style={{ ...SG_INPUT_STYLE }}
-                              />
-                            </label>
-                            <label style={{ display: "block" }}>
-                              <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#888", marginBottom: 4 }}>Value label</span>
-                              <input
-                                type="text"
-                                value={sgGrid.value_label}
-                                onChange={(e) => handleChangeSgAxis("value_label", e.target.value)}
-                                placeholder="e.g. Target price (BRL)"
-                                style={{ ...SG_INPUT_STYLE }}
-                              />
-                            </label>
-                          </div>
-
-                          {/* Add row / add column controls */}
-                          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                            <button
-                              onClick={handleAddSgRow}
-                              style={{
-                                padding: "6px 14px", borderRadius: 7, border: `1px solid ${ORANGE}`,
-                                background: "rgba(255,80,0,0.08)", color: ORANGE,
-                                fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "Arial, sans-serif",
-                              }}
-                            >
-                              + Row
-                            </button>
-                            <button
-                              onClick={handleAddSgCol}
-                              style={{
-                                padding: "6px 14px", borderRadius: 7, border: `1px solid ${ORANGE}`,
-                                background: "rgba(255,80,0,0.08)", color: ORANGE,
-                                fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "Arial, sans-serif",
-                              }}
-                            >
-                              + Column
-                            </button>
-                          </div>
-
-                          {/* Matrix */}
-                          {sgGrid.row_labels.length === 0 && sgGrid.col_labels.length === 0 ? (
-                            <div style={{
-                              padding: "24px 16px", textAlign: "center", color: "#bbb", fontSize: 12,
-                              border: "1px dashed #e0e0e0", borderRadius: 8,
-                            }}>
-                              No grid yet. Use “+ Row” and “+ Column” to start building the sensitivity table.
-                            </div>
-                          ) : (
-                            <div style={{ overflowX: "auto", paddingBottom: 4 }}>
-                              <table style={{ borderCollapse: "separate", borderSpacing: 6 }}>
-                                <thead>
-                                  <tr>
-                                    {/* top-left corner cell */}
-                                    <th style={{ width: 130 }} />
-                                    {sgGrid.col_labels.map((lbl, j) => (
-                                      <th key={j} style={{ minWidth: 110 }}>
-                                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                          <input
-                                            type="text"
-                                            value={lbl}
-                                            onChange={(e) => handleChangeSgColLabel(j, e.target.value)}
-                                            placeholder={`Col ${j + 1}`}
-                                            style={{ ...SG_INPUT_STYLE, fontWeight: 700, textAlign: "center", fontSize: 12 }}
-                                          />
-                                          <button
-                                            onClick={() => handleRemoveSgCol(j)}
-                                            aria-label={`Remove column ${lbl || j + 1}`}
-                                            title="Remove column"
-                                            style={{
-                                              flexShrink: 0, width: 22, height: 22, borderRadius: 6,
-                                              border: "1px solid #e0e0e0", background: "#fff", color: "#e53e3e",
-                                              cursor: "pointer", fontFamily: "Arial, sans-serif", fontSize: 13, lineHeight: 1, padding: 0,
-                                            }}
-                                          >
-                                            ×
-                                          </button>
-                                        </div>
-                                      </th>
-                                    ))}
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {sgGrid.row_labels.map((rLbl, i) => (
-                                    <tr key={i}>
-                                      <th style={{ width: 130 }}>
-                                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                          <input
-                                            type="text"
-                                            value={rLbl}
-                                            onChange={(e) => handleChangeSgRowLabel(i, e.target.value)}
-                                            placeholder={`Row ${i + 1}`}
-                                            style={{ ...SG_INPUT_STYLE, fontWeight: 700, fontSize: 12 }}
-                                          />
-                                          <button
-                                            onClick={() => handleRemoveSgRow(i)}
-                                            aria-label={`Remove row ${rLbl || i + 1}`}
-                                            title="Remove row"
-                                            style={{
-                                              flexShrink: 0, width: 22, height: 22, borderRadius: 6,
-                                              border: "1px solid #e0e0e0", background: "#fff", color: "#e53e3e",
-                                              cursor: "pointer", fontFamily: "Arial, sans-serif", fontSize: 13, lineHeight: 1, padding: 0,
-                                            }}
-                                          >
-                                            ×
-                                          </button>
-                                        </div>
-                                      </th>
-                                      {sgGrid.col_labels.map((_, j) => (
-                                        <td key={j}>
-                                          <input
-                                            type="number"
-                                            step="any"
-                                            value={sgGrid.cells[i]?.[j] ?? ""}
-                                            onChange={(e) => handleChangeSgCell(i, j, e.target.value)}
-                                            style={{ ...SG_INPUT_STYLE, textAlign: "right", fontSize: 12 }}
-                                          />
-                                        </td>
-                                      ))}
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-
-                          {/* Grid error banner (surfaces server dim-mismatch verbatim) */}
-                          {sgGridError && (
-                            <div style={{
-                              marginTop: 12, padding: "10px 12px", borderRadius: 8,
-                              background: "#fff5f5", border: "1px solid rgba(229,62,62,0.3)",
-                              color: "#c0392b", fontSize: 12, lineHeight: 1.4,
-                            }}>
-                              {sgGridError}
-                            </div>
-                          )}
-
-                          {/* Grid save */}
-                          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 16 }}>
-                            <button
-                              onClick={handleSaveSgGrid}
-                              disabled={sgGridSaving || !sgGridPendingChanges}
-                              title={!sgGridPendingChanges ? "No changes to save" : undefined}
-                              style={{
-                                padding: "8px 22px", borderRadius: 8, border: "none",
-                                background: (sgGridSaving || !sgGridPendingChanges) ? "#e0e0e0" : ORANGE,
-                                color: (sgGridSaving || !sgGridPendingChanges) ? "#aaa" : "#fff",
-                                fontSize: 13, fontWeight: 700,
-                                cursor: (sgGridSaving || !sgGridPendingChanges) ? "not-allowed" : "pointer",
-                                fontFamily: "Arial, sans-serif", transition: "background 0.15s",
-                              }}
-                            >
-                              {sgGridSaving ? "Saving…" : "Save grid"}
-                            </button>
-                          </div>
-                        </div>
                       </>
                     )}
                   </div>
@@ -2577,11 +2470,795 @@ export default function DesktopView(): React.ReactElement | null {
                   </div>
                 )}
               </div>
+              </>
+              )}
+
+              {/* ════════════════════════ DRIVERS sub-tab ═════════════════════ */}
+              {sgSubTab === "drivers" && (
+                <div className="settings-card">
+                  <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>
+                    Drivers registry
+                  </h2>
+                  <p style={{ fontSize: 13, color: "#888", margin: "0 0 16px" }}>
+                    Central macro/assumption variables (Brent, USD/BRL, …) referenced by
+                    sensitivity tables. <strong>Current value</strong> is the &ldquo;today&rdquo;
+                    base value used to highlight the matching scenario in a sensitivity table.
+                  </p>
+
+                  {sgDriversError && (
+                    <div style={{
+                      marginBottom: 14, padding: "10px 12px", borderRadius: 8,
+                      background: "#fff5f5", border: "1px solid rgba(229,62,62,0.3)",
+                      color: "#c0392b", fontSize: 12, lineHeight: 1.4,
+                    }}>
+                      {sgDriversError}
+                    </div>
+                  )}
+
+                  {sgDriversLoading ? (
+                    <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>
+                      Loading drivers…
+                    </div>
+                  ) : (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ borderBottom: "2px solid #ececec" }}>
+                            {["Name", "Unit", "Current value", "Display order", ""].map((h, i) => (
+                              <th
+                                key={h || i}
+                                style={{
+                                  textAlign: i === 2 || i === 3 ? "right" : "left",
+                                  padding: "8px 10px", fontSize: 11, fontWeight: 700,
+                                  color: "#888", letterSpacing: "0.02em",
+                                  width: i === 4 ? 90 : undefined,
+                                }}
+                              >
+                                {h}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sgDriverRows.map((row, index) => {
+                            const isNew = row.id == null;
+                            const key = isNew ? "new" : String(row.id);
+                            const saving = sgDriverSavingKey === key;
+                            return (
+                              <tr
+                                key={key}
+                                style={{
+                                  borderBottom: "1px solid #f0f0f0",
+                                  background: isNew ? "rgba(255,80,0,0.04)" : "transparent",
+                                }}
+                              >
+                                <td style={{ padding: "6px 10px" }}>
+                                  <input
+                                    type="text"
+                                    value={row.name}
+                                    onChange={(e) => handleChangeSgDriverField(index, "name", e.target.value)}
+                                    placeholder={isNew ? "e.g. Brent" : ""}
+                                    style={{ ...SG_INPUT_STYLE }}
+                                  />
+                                </td>
+                                <td style={{ padding: "6px 10px" }}>
+                                  <input
+                                    type="text"
+                                    value={row.unit}
+                                    onChange={(e) => handleChangeSgDriverField(index, "unit", e.target.value)}
+                                    placeholder={isNew ? "e.g. USD/bbl" : ""}
+                                    style={{ ...SG_INPUT_STYLE }}
+                                  />
+                                </td>
+                                <td style={{ padding: "6px 10px" }}>
+                                  <input
+                                    type="number"
+                                    step="any"
+                                    value={row.current_value}
+                                    onChange={(e) => handleChangeSgDriverField(index, "current_value", e.target.value)}
+                                    style={{ ...SG_INPUT_STYLE, textAlign: "right" }}
+                                  />
+                                </td>
+                                <td style={{ padding: "6px 10px" }}>
+                                  <input
+                                    type="number"
+                                    step={1}
+                                    value={row.display_order}
+                                    onChange={(e) => handleChangeSgDriverField(index, "display_order", e.target.value)}
+                                    placeholder="0"
+                                    style={{ ...SG_INPUT_STYLE, textAlign: "right", width: 90 }}
+                                  />
+                                </td>
+                                <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
+                                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                    <button
+                                      onClick={() => handleSaveSgDriver(index)}
+                                      disabled={saving || !row.name.trim()}
+                                      title={!row.name.trim() ? "Name is required" : undefined}
+                                      style={{
+                                        padding: "5px 12px", borderRadius: 6, border: "none",
+                                        background: (saving || !row.name.trim()) ? "#e0e0e0" : ORANGE,
+                                        color: (saving || !row.name.trim()) ? "#aaa" : "#fff",
+                                        fontSize: 12, fontWeight: 700,
+                                        cursor: (saving || !row.name.trim()) ? "not-allowed" : "pointer",
+                                        fontFamily: "Arial, sans-serif",
+                                      }}
+                                    >
+                                      {saving ? "…" : isNew ? "Add" : "Save"}
+                                    </button>
+                                    {!isNew && row.id != null && (
+                                      <button
+                                        onClick={() => handleDeleteSgDriver(row.id as number)}
+                                        disabled={saving}
+                                        aria-label={`Delete driver ${row.name}`}
+                                        title="Delete driver"
+                                        style={{
+                                          width: 28, height: 28, borderRadius: 6,
+                                          border: "1px solid #e0e0e0", background: "#fff", color: "#e53e3e",
+                                          cursor: saving ? "not-allowed" : "pointer", fontSize: 15, lineHeight: 1, padding: 0,
+                                          fontFamily: "Arial, sans-serif",
+                                        }}
+                                      >
+                                        ×
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Driver delete-confirm modal */}
+                  {sgDriverDeleteConfirm != null && (
+                    <div
+                      style={{
+                        position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        zIndex: 1050, fontFamily: "Arial, sans-serif",
+                      }}
+                      onClick={handleCancelDeleteSgDriver}
+                    >
+                      <div
+                        style={{
+                          background: "#fff", borderRadius: 10, padding: 24, maxWidth: 420,
+                          boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 8px" }}>
+                          Delete driver
+                        </h3>
+                        <p style={{ fontSize: 13, color: "#555", margin: "0 0 18px", lineHeight: 1.5 }}>
+                          Delete{" "}
+                          <strong>
+                            «{sgDrivers.find((d) => d.id === sgDriverDeleteConfirm)?.name ?? sgDriverDeleteConfirm}»
+                          </strong>
+                          ? Sensitivity tables that reference it will keep their stored scenarios but
+                          lose the driver name/highlight. This cannot be undone.
+                        </p>
+                        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                          <button
+                            onClick={handleCancelDeleteSgDriver}
+                            style={{
+                              padding: "8px 16px", borderRadius: 8, border: "1px solid #e0e0e0",
+                              background: "#fff", color: "#555", fontSize: 13, fontWeight: 600,
+                              cursor: "pointer", fontFamily: "Arial, sans-serif",
+                            }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleConfirmDeleteSgDriver}
+                            style={{
+                              padding: "8px 16px", borderRadius: 8, border: "none",
+                              background: "#e53e3e", color: "#fff", fontSize: 13, fontWeight: 700,
+                              cursor: "pointer", fontFamily: "Arial, sans-serif",
+                            }}
+                          >
+                            Confirm
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ════════════════════════ SENSITIVITIES sub-tab ═══════════════ */}
+              {sgSubTab === "sensitivities" && (
+                <SensitivityBuilder
+                  tables={sgTables}
+                  tablesLoading={sgTablesLoading}
+                  tablesError={sgTablesError}
+                  draft={sgTableDraft}
+                  saving={sgTableSaving}
+                  saveError={sgTableSaveError}
+                  pendingChanges={sgTablePendingChanges}
+                  validationError={sgTableValidationError}
+                  deleteConfirm={sgTableDeleteConfirm}
+                  rowLabels={sgTableRowLabels}
+                  colLabels={sgTableColLabels}
+                  companyTickers={sgCompanyTickers}
+                  drivers={sgDrivers}
+                  inputStyle={SG_INPUT_STYLE}
+                  onSelect={handleSelectSgTable}
+                  onNew={handleNewSgTable}
+                  onCancelEdit={handleCancelSgTableEdit}
+                  onChangeField={handleChangeSgTableField}
+                  onChangeValueMode={handleChangeSgTableValueMode}
+                  onChangeSingleCompany={handleChangeSgTableSingleCompany}
+                  onChangeAxisKind={handleChangeSgAxisKind}
+                  onChangeAxisDriver={handleChangeSgAxisDriver}
+                  onToggleAxisCompany={handleToggleSgAxisCompany}
+                  onAddScenario={handleAddSgAxisScenario}
+                  onChangeScenario={handleChangeSgAxisScenario}
+                  onRemoveScenario={handleRemoveSgAxisScenario}
+                  onChangeCell={handleChangeSgTableCell}
+                  onChangeCellSecondary={handleChangeSgTableCellSecondary}
+                  onSave={handleSaveSgTable}
+                  onDelete={handleDeleteSgTable}
+                  onConfirmDelete={handleConfirmDeleteSgTable}
+                  onCancelDelete={handleCancelDeleteSgTable}
+                />
+              )}
             </>
           )}
 
         </div>
       </div>
     </main>
+  );
+}
+
+// ── Sensitivity-table builder (Sensitivities sub-tab) ─────────────────────────
+//
+// Two-pane: LEFT = list of all tables (incl. hidden companies) with a "New
+// table" button; RIGHT = the builder form (basics + two axis editors + the cell
+// matrix, plus a second Net-Debt matrix when value_mode === 'ev_ebitda'). All
+// state lives in the hook; this is pure presentation.
+
+const VALUE_MODE_OPTIONS: { id: SgValueMode; label: string }[] = [
+  { id: "absolute",  label: "Absolute" },
+  { id: "yield",     label: "Yield (÷ mkt cap)" },
+  { id: "pe",        label: "P/E (mkt cap ÷)" },
+  { id: "ev_ebitda", label: "EV/EBITDA" },
+  { id: "upside",    label: "Upside" },
+];
+
+const AXIS_KIND_OPTIONS: { id: SensitivityAxis["kind"]; label: string }[] = [
+  { id: "company", label: "Company" },
+  { id: "driver",  label: "Driver" },
+  { id: "year",    label: "Year" },
+];
+
+interface SensitivityBuilderProps {
+  tables: SensitivityTableAdmin[];
+  tablesLoading: boolean;
+  tablesError: string | null;
+  draft: SgTableDraft | null;
+  saving: boolean;
+  saveError: string | null;
+  pendingChanges: boolean;
+  validationError: string | null;
+  deleteConfirm: number | null;
+  rowLabels: string[];
+  colLabels: string[];
+  companyTickers: string[];
+  drivers: StockGuideDriver[];
+  inputStyle: React.CSSProperties;
+  onSelect: (id: number) => void;
+  onNew: () => void;
+  onCancelEdit: () => void;
+  onChangeField: (field: "title" | "metric_label" | "unit" | "display_order", value: string) => void;
+  onChangeValueMode: (mode: SgValueMode) => void;
+  onChangeSingleCompany: (ticker: string) => void;
+  onChangeAxisKind: (axis: "row" | "col", kind: SensitivityAxis["kind"]) => void;
+  onChangeAxisDriver: (axis: "row" | "col", driverId: string) => void;
+  onToggleAxisCompany: (axis: "row" | "col", ticker: string) => void;
+  onAddScenario: (axis: "row" | "col") => void;
+  onChangeScenario: (axis: "row" | "col", i: number, value: string) => void;
+  onRemoveScenario: (axis: "row" | "col", i: number) => void;
+  onChangeCell: (r: number, c: number, value: string) => void;
+  onChangeCellSecondary: (r: number, c: number, value: string) => void;
+  onSave: () => void;
+  onDelete: (id: number) => void;
+  onConfirmDelete: () => void;
+  onCancelDelete: () => void;
+}
+
+function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement {
+  const {
+    tables, tablesLoading, tablesError, draft, saving, saveError, pendingChanges,
+    validationError, deleteConfirm, rowLabels, colLabels, companyTickers, drivers,
+    inputStyle, onSelect, onNew, onCancelEdit, onChangeField, onChangeValueMode,
+    onChangeSingleCompany, onChangeAxisKind, onChangeAxisDriver, onToggleAxisCompany,
+    onAddScenario, onChangeScenario, onRemoveScenario, onChangeCell,
+    onChangeCellSecondary, onSave, onDelete, onConfirmDelete, onCancelDelete,
+  } = props;
+
+  const labelSpan: React.CSSProperties = {
+    display: "block", fontSize: 11, fontWeight: 700, color: "#888",
+    marginBottom: 4, letterSpacing: "0.02em",
+  };
+  const neitherAxisCompany =
+    draft != null && draft.rowAxis.kind !== "company" && draft.colAxis.kind !== "company";
+
+  // ── Axis editor (kind picker + per-kind body) ───────────────────────────────
+  const renderAxisEditor = (which: "row" | "col"): React.ReactElement => {
+    const axis = which === "row" ? draft!.rowAxis : draft!.colAxis;
+    const title = which === "row" ? "Row axis" : "Column axis";
+    return (
+      <div style={{ border: "1px solid #ececec", borderRadius: 10, padding: 16 }}>
+        <h4 style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", margin: "0 0 12px" }}>
+          {title}
+        </h4>
+        <label style={{ display: "block", marginBottom: 12 }}>
+          <span style={labelSpan}>Kind</span>
+          <select
+            value={axis.kind}
+            onChange={(e) => onChangeAxisKind(which, e.target.value as SensitivityAxis["kind"])}
+            style={{ ...inputStyle, cursor: "pointer" }}
+          >
+            {AXIS_KIND_OPTIONS.map((o) => (
+              <option key={o.id} value={o.id}>{o.label}</option>
+            ))}
+          </select>
+        </label>
+
+        {axis.kind === "company" && (
+          <div>
+            <span style={labelSpan}>Tickers on this axis</span>
+            {companyTickers.length === 0 ? (
+              <div style={{ fontSize: 12, color: "#bbb" }}>No companies available.</div>
+            ) : (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {companyTickers.map((t) => {
+                  const on = axis.companies.includes(t);
+                  return (
+                    <button
+                      key={t}
+                      onClick={() => onToggleAxisCompany(which, t)}
+                      aria-pressed={on}
+                      style={{
+                        padding: "4px 10px", borderRadius: 14, cursor: "pointer",
+                        border: on ? `1px solid ${ORANGE}` : "1px solid #e0e0e0",
+                        background: on ? "rgba(255,80,0,0.10)" : "#fff",
+                        color: on ? ORANGE : "#666", fontSize: 12, fontWeight: 700,
+                        fontFamily: "Arial, sans-serif",
+                      }}
+                    >
+                      {t}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {axis.kind === "driver" && (
+          <div>
+            <label style={{ display: "block", marginBottom: 12 }}>
+              <span style={labelSpan}>Driver</span>
+              <select
+                value={axis.driverId}
+                onChange={(e) => onChangeAxisDriver(which, e.target.value)}
+                style={{ ...inputStyle, cursor: "pointer" }}
+              >
+                <option value="">— select a driver —</option>
+                {drivers.map((d) => (
+                  <option key={d.id} value={String(d.id)}>
+                    {d.name}{d.unit ? ` (${d.unit})` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span style={labelSpan}>Scenarios</span>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {axis.scenarios.map((s, i) => (
+                <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input
+                    type="number"
+                    step="any"
+                    value={s}
+                    onChange={(e) => onChangeScenario(which, i, e.target.value)}
+                    placeholder={`Scenario ${i + 1}`}
+                    style={{ ...inputStyle, textAlign: "right", maxWidth: 160 }}
+                  />
+                  <button
+                    onClick={() => onRemoveScenario(which, i)}
+                    aria-label={`Remove scenario ${i + 1}`}
+                    title="Remove scenario"
+                    style={{
+                      width: 28, height: 28, borderRadius: 6, border: "1px solid #e0e0e0",
+                      background: "#fff", color: "#e53e3e", cursor: "pointer",
+                      fontSize: 15, lineHeight: 1, padding: 0, fontFamily: "Arial, sans-serif",
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              <button
+                onClick={() => onAddScenario(which)}
+                style={{
+                  alignSelf: "flex-start", padding: "5px 12px", borderRadius: 7,
+                  border: `1px solid ${ORANGE}`, background: "rgba(255,80,0,0.08)",
+                  color: ORANGE, fontSize: 12, fontWeight: 700, cursor: "pointer",
+                  fontFamily: "Arial, sans-serif",
+                }}
+              >
+                + Scenario
+              </button>
+            </div>
+          </div>
+        )}
+
+        {axis.kind === "year" && (
+          <div style={{ fontSize: 12, color: "#888", lineHeight: 1.5 }}>
+            Fixed to both forward years (Y1 &amp; Y2), using the global config labels.
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ── Cell matrix (primary or secondary) ──────────────────────────────────────
+  const renderMatrix = (
+    matrix: string[][],
+    onChange: (r: number, c: number, value: string) => void,
+    label: string,
+  ): React.ReactElement => (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: "#555", marginBottom: 8 }}>{label}</div>
+      {rowLabels.length === 0 || colLabels.length === 0 ? (
+        <div style={{
+          padding: "20px 16px", textAlign: "center", color: "#bbb", fontSize: 12,
+          border: "1px dashed #e0e0e0", borderRadius: 8,
+        }}>
+          Define at least one item on each axis to build the matrix.
+        </div>
+      ) : (
+        <div style={{ overflowX: "auto", paddingBottom: 4 }}>
+          <table style={{ borderCollapse: "separate", borderSpacing: 6 }}>
+            <thead>
+              <tr>
+                <th style={{ width: 130 }} />
+                {colLabels.map((lbl, c) => (
+                  <th key={c} style={{ minWidth: 100, fontSize: 11, fontWeight: 700, color: "#555", padding: "0 4px" }}>
+                    {lbl || `Col ${c + 1}`}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rowLabels.map((rLbl, r) => (
+                <tr key={r}>
+                  <th style={{ width: 130, textAlign: "right", fontSize: 11, fontWeight: 700, color: "#555", paddingRight: 6 }}>
+                    {rLbl || `Row ${r + 1}`}
+                  </th>
+                  {colLabels.map((_, c) => (
+                    <td key={c}>
+                      <input
+                        type="number"
+                        step="any"
+                        value={matrix[r]?.[c] ?? ""}
+                        onChange={(e) => onChange(r, c, e.target.value)}
+                        style={{ ...inputStyle, textAlign: "right", fontSize: 12, minWidth: 90 }}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="settings-card" style={{ padding: 0, overflow: "hidden" }}>
+      <div style={{ display: "flex", minHeight: 560, alignItems: "stretch" }}>
+
+        {/* ── Left pane: table list ─────────────────────────────────────────── */}
+        <div style={{ width: 300, flexShrink: 0, borderRight: "1px solid #ececec", display: "flex", flexDirection: "column", background: "#fafafa" }}>
+          <div style={{ padding: "18px 16px 12px", borderBottom: "1px solid #ececec", background: "#fff", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <h2 style={{ fontSize: "0.95rem", fontWeight: 700, color: "#1a1a1a", margin: 0 }}>
+              Sensitivity tables
+            </h2>
+            <button
+              onClick={onNew}
+              style={{
+                padding: "6px 12px", borderRadius: 7, border: "none", background: ORANGE,
+                color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "Arial, sans-serif",
+              }}
+            >
+              + New table
+            </button>
+          </div>
+          <div style={{ flex: 1, overflowY: "auto", maxHeight: 600 }}>
+            {tablesLoading ? (
+              <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>
+                Loading tables…
+              </div>
+            ) : tables.length === 0 ? (
+              <div style={{ padding: "24px 16px", textAlign: "center", color: "#bbb", fontSize: 12 }}>
+                No sensitivity tables yet. Click &ldquo;+ New table&rdquo; to create one.
+              </div>
+            ) : (
+              tables.map((t) => {
+                const isSelected = draft?.id === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => onSelect(t.id)}
+                    style={{
+                      display: "block", width: "100%", textAlign: "left",
+                      borderLeft: isSelected ? `3px solid ${ORANGE}` : "3px solid transparent",
+                      background: isSelected ? "#fff" : "transparent",
+                      borderBottom: "1px solid #f0f0f0", border: "none",
+                      borderBottomColor: "#f0f0f0", padding: "10px 14px",
+                      cursor: "pointer", fontFamily: "Arial, sans-serif",
+                    }}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", marginBottom: 4 }}>
+                      {t.title || "(untitled)"}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <span style={{
+                        fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 8,
+                        background: "rgba(255,80,0,0.12)", color: ORANGE, textTransform: "uppercase",
+                        letterSpacing: "0.04em",
+                      }}>
+                        {VALUE_MODE_OPTIONS.find((m) => m.id === t.value_mode)?.label ?? t.value_mode}
+                      </span>
+                      <span style={{ fontSize: 11, color: "#999", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {t.companies.join(", ") || "—"}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* ── Right pane: builder form ──────────────────────────────────────── */}
+        <div style={{ flex: 1, padding: "20px 24px", minWidth: 0, overflowY: "auto", maxHeight: 720 }}>
+          {tablesError && (
+            <div style={{
+              marginBottom: 14, padding: "10px 12px", borderRadius: 8,
+              background: "#fff5f5", border: "1px solid rgba(229,62,62,0.3)",
+              color: "#c0392b", fontSize: 12, lineHeight: 1.4,
+            }}>
+              {tablesError}
+            </div>
+          )}
+
+          {!draft ? (
+            <div style={{
+              flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
+              color: "#bbb", fontSize: 13, textAlign: "center", padding: 32, minHeight: 400,
+            }}>
+              Select a table on the left to edit, or click &ldquo;+ New table&rdquo; to create one.
+            </div>
+          ) : (
+            <>
+              {/* Header */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16 }}>
+                <h3 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#1a1a1a", margin: 0 }}>
+                  {draft.id == null ? "New table" : `Edit: ${draft.title || "(untitled)"}`}
+                </h3>
+                <button
+                  onClick={onCancelEdit}
+                  style={{
+                    background: "none", border: "none", color: "#888", fontSize: 12,
+                    fontWeight: 600, cursor: "pointer", fontFamily: "Arial, sans-serif",
+                    textDecoration: "underline", padding: "4px 6px",
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+
+              {/* Basics */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14, marginBottom: 18 }}>
+                <label style={{ display: "block", gridColumn: "1 / -1" }}>
+                  <span style={labelSpan}>Title</span>
+                  <input
+                    type="text"
+                    value={draft.title}
+                    onChange={(e) => onChangeField("title", e.target.value)}
+                    placeholder="e.g. FCFE yield by Brent scenario"
+                    style={{ ...inputStyle }}
+                  />
+                </label>
+                <label style={{ display: "block" }}>
+                  <span style={labelSpan}>Value mode</span>
+                  <select
+                    value={draft.value_mode}
+                    onChange={(e) => onChangeValueMode(e.target.value as SgValueMode)}
+                    style={{ ...inputStyle, cursor: "pointer" }}
+                  >
+                    {VALUE_MODE_OPTIONS.map((o) => (
+                      <option key={o.id} value={o.id}>{o.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ display: "block" }}>
+                  <span style={labelSpan}>Display order</span>
+                  <input
+                    type="number"
+                    step={1}
+                    value={draft.display_order}
+                    onChange={(e) => onChangeField("display_order", e.target.value)}
+                    placeholder="0"
+                    style={{ ...inputStyle, textAlign: "right" }}
+                  />
+                </label>
+                <label style={{ display: "block" }}>
+                  <span style={labelSpan}>Metric label</span>
+                  <input
+                    type="text"
+                    value={draft.metric_label}
+                    onChange={(e) => onChangeField("metric_label", e.target.value)}
+                    placeholder="e.g. FCFE"
+                    style={{ ...inputStyle }}
+                  />
+                </label>
+                <label style={{ display: "block" }}>
+                  <span style={labelSpan}>Unit</span>
+                  <input
+                    type="text"
+                    value={draft.unit}
+                    onChange={(e) => onChangeField("unit", e.target.value)}
+                    placeholder="e.g. BRL mn"
+                    style={{ ...inputStyle }}
+                  />
+                </label>
+              </div>
+
+              {/* Axis editors */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 16, marginBottom: 18 }}>
+                {renderAxisEditor("row")}
+                {renderAxisEditor("col")}
+              </div>
+
+              {/* Single-company select (only when NEITHER axis is company) */}
+              {neitherAxisCompany && (
+                <label style={{ display: "block", marginBottom: 18, maxWidth: 280 }}>
+                  <span style={labelSpan}>Company (table membership)</span>
+                  <select
+                    value={draft.singleCompany}
+                    onChange={(e) => onChangeSingleCompany(e.target.value)}
+                    style={{ ...inputStyle, cursor: "pointer" }}
+                  >
+                    <option value="">— select a company —</option>
+                    {companyTickers.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {/* Cell matrix / matrices */}
+              <div style={{ paddingTop: 8, borderTop: "1px solid #ececec" }}>
+                {draft.value_mode === "ev_ebitda"
+                  ? renderMatrix(draft.cells, onChangeCell, "EBITDA (BRL mn)")
+                  : renderMatrix(draft.cells, onChangeCell, draft.metric_label || "Values")}
+                {draft.value_mode === "ev_ebitda" &&
+                  renderMatrix(draft.cellsSecondary, onChangeCellSecondary, "Net Debt (BRL mn)")}
+              </div>
+
+              {/* Validation / save error */}
+              {(validationError || saveError) && (
+                <div style={{
+                  marginTop: 14, padding: "10px 12px", borderRadius: 8,
+                  background: "#fff5f5", border: "1px solid rgba(229,62,62,0.3)",
+                  color: "#c0392b", fontSize: 12, lineHeight: 1.4,
+                }}>
+                  {saveError || validationError}
+                </div>
+              )}
+
+              {/* Footer actions */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginTop: 18, paddingTop: 14, borderTop: "1px solid #ececec" }}>
+                <button
+                  onClick={onSave}
+                  disabled={saving || !pendingChanges || validationError != null}
+                  title={
+                    validationError != null ? validationError
+                      : !pendingChanges ? "No changes to save"
+                      : undefined
+                  }
+                  style={{
+                    padding: "8px 22px", borderRadius: 8, border: "none",
+                    background: (saving || !pendingChanges || validationError != null) ? "#e0e0e0" : ORANGE,
+                    color: (saving || !pendingChanges || validationError != null) ? "#aaa" : "#fff",
+                    fontSize: 13, fontWeight: 700,
+                    cursor: (saving || !pendingChanges || validationError != null) ? "not-allowed" : "pointer",
+                    fontFamily: "Arial, sans-serif", transition: "background 0.15s",
+                  }}
+                >
+                  {saving ? "Saving…" : "Save table"}
+                </button>
+                {draft.id != null && (
+                  <button
+                    onClick={() => onDelete(draft.id as number)}
+                    disabled={saving}
+                    style={{
+                      background: "none", border: "none", color: "#e53e3e", fontSize: 12,
+                      fontWeight: 600, cursor: saving ? "not-allowed" : "pointer",
+                      fontFamily: "Arial, sans-serif", padding: "4px 6px",
+                      opacity: saving ? 0.5 : 1, textDecoration: "underline",
+                    }}
+                  >
+                    Delete table
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Table delete-confirm modal */}
+      {deleteConfirm != null && (
+        <div
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            zIndex: 1050, fontFamily: "Arial, sans-serif",
+          }}
+          onClick={onCancelDelete}
+        >
+          <div
+            style={{
+              background: "#fff", borderRadius: 10, padding: 24, maxWidth: 420,
+              boxShadow: "0 12px 40px rgba(0,0,0,0.25)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 8px" }}>
+              Delete table
+            </h3>
+            <p style={{ fontSize: 13, color: "#555", margin: "0 0 18px", lineHeight: 1.5 }}>
+              Delete{" "}
+              <strong>
+                «{tables.find((t) => t.id === deleteConfirm)?.title ?? deleteConfirm}»
+              </strong>
+              ? This cannot be undone.
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button
+                onClick={onCancelDelete}
+                style={{
+                  padding: "8px 16px", borderRadius: 8, border: "1px solid #e0e0e0",
+                  background: "#fff", color: "#555", fontSize: 13, fontWeight: 600,
+                  cursor: "pointer", fontFamily: "Arial, sans-serif",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={onConfirmDelete}
+                style={{
+                  padding: "8px 16px", borderRadius: 8, border: "none",
+                  background: "#e53e3e", color: "#fff", fontSize: 13, fontWeight: 700,
+                  cursor: "pointer", fontFamily: "Arial, sans-serif",
+                }}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
