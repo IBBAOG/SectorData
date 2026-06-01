@@ -35,6 +35,30 @@ export const DEFAULT_START  = "2023-06-01";
 export const GAS_PETRO_SUBSIDY_PRICE = 3.05;          // BRL/L
 export const GAS_PETRO_SUBSIDY_START = "2026-05-29";  // ISO date
 
+// ─── YTD subsidy→base field mapping (YTD chart only) ──────────────────────────
+//
+// Maps each "w/ subsidy" series field to its non-subsidy base field. Used ONLY
+// by buildYtdChart to blend the pre-subsidy base price into the w/ subsidy line
+// until the subsidy takes effect (see effectiveYtdValue). The main Price Bands
+// chart does NOT use this — there the w/ subsidy line still only appears from
+// its subsidy effective date.
+const YTD_SUBSIDY_BASE_FIELD: Partial<Record<keyof PriceBandsRow, keyof PriceBandsRow>> = {
+  petrobras_price_w_subsidy:   "petrobras_price",
+  bba_import_parity_w_subsidy: "bba_import_parity",
+};
+
+// YTD average blends the pre-subsidy base price into the w/ subsidy line until
+// the subsidy takes effect, so the line starts on Jan 1 like the others.
+// Returns r[field] when present; otherwise, for a subsidy field with a mapped
+// base, falls back to the base field's value; else null.
+function effectiveYtdValue(r: PriceBandsRow, field: keyof PriceBandsRow): number | null {
+  const own = r[field] as number | null;
+  if (own != null) return own;
+  const baseField = YTD_SUBSIDY_BASE_FIELD[field];
+  if (baseField) return (r[baseField] as number | null) ?? null;
+  return null;
+}
+
 // ─── Colors (single source of truth for both Views) ──────────────────────────
 
 export const COLOR_IMPORT = "#E8611A";  // orange — Import Parity
@@ -359,7 +383,7 @@ export function buildYtdChart(
     let lastActualDate:  string | null = null;
 
     for (const r of yearRows) {
-      const val = r[s.field] as number | null;
+      const val = effectiveYtdValue(r, s.field);
       if (val == null) continue;
       cumSum += val;
       count++;
@@ -441,13 +465,15 @@ export function buildYtdChart(
   }
 
   const rawAnnotations: Partial<Annotations>[] = seriesDefs.flatMap((s) => {
-    const yearRowsForS = yearRows.filter((r) => (r[s.field] as number | null) != null);
+    const yearRowsForS = yearRows.filter((r) => effectiveYtdValue(r, s.field) != null);
     if (yearRowsForS.length === 0) return [];
     // Use this series' own last non-null value/date for the year-end label, so
     // the subsidy lines (which trail off with NULLs) still get a projection.
+    // effectiveYtdValue blends in the base price before the subsidy date so the
+    // year-end label matches the blended line.
     const lastRowForS = yearRowsForS[yearRowsForS.length - 1];
-    const lastPrice   = lastRowForS[s.field] as number;
-    const cumSum = yearRowsForS.reduce((acc, r) => acc + (r[s.field] as number), 0);
+    const lastPrice   = effectiveYtdValue(lastRowForS, s.field) as number;
+    const cumSum = yearRowsForS.reduce((acc, r) => acc + (effectiveYtdValue(r, s.field) as number), 0);
     const count  = yearRowsForS.length;
     const remainingDays = generateDailyDates(addDays(lastRowForS.date, 1), yearEnd).length;
     const finalAvg = (cumSum + remainingDays * lastPrice) / (count + remainingDays);
