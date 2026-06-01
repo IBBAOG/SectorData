@@ -6,6 +6,16 @@ Entries newest first.
 
 ---
 
+## 2026-06-01 — `/anp-glp` rebuilt as LPG Market Share
+
+- The `/anp-glp` route was repurposed (same URL/slug) from "Vendas de GLP por Recipiente" (volume-only, desktop-only reference dashboard) into **"LPG Market Share"** — a faithful dual-view clone of `/market-share` over the `anp_glp` table.
+- **Domain mapping**: player = `distribuidora`; product = `categoria` (P13 / Outros - GLP / Outros - Especiais) + synthetic **Total (All LPG)**. Unit toggle **% Share / thousand t** (`vendas_kg / 1e6`). View modes Individual / Big-3 (dynamic top-3 distributors by volume, NOT hardcoded) / Others. MoM/QTD/YoY/YTD comparison table.
+- **Dropped vs `/market-share`**: no region/UF filters (table has no geo), no Retail/B2B/TRR segments (constant segment `'GLP'`), no hardcoded fuel Big-3.
+- **Promoted to dual-view** — was mobile-excluded; the `MobileExcludedRedirect` was removed, `mobile/View.tsx` added, and the slug dropped from the mobile-excluded lists. Mobile-eligible routes now 14 (was 13).
+- **New RPCs** (`20260605000000_anp_glp_market_share_rpcs.sql`, all SECURITY DEFINER over `anp_glp`): `get_anp_glp_ms_filtros`, `get_anp_glp_ms_serie_fast`, `get_anp_glp_ms_serie_others`, `get_anp_glp_ms_others_players`, `get_anp_glp_ms_export_count`. No materialized view (`anp_glp` is ~3k rows). The legacy `get_anp_glp_serie` / `get_anp_glp_filtros` remain in the DB but are no longer used by the dashboard.
+- **Export**: unified `<ExportButton>` (Tier 1, `filterSource: "none"`) — full history, filename `LPGMarketShare_DD-MM-YY`, sheet "LPG Market Share", thousand-tons column. Desktop-only.
+- Commits `696be79a` (migration) + `b16a9388` (frontend). See `docs/app/anp-glp.md`.
+
 ## 2026-06 — `/well-by-well` server pagination
 
 - New paginated RPCs + count helpers (`20260603000000_well_by_well_pagination.sql`).

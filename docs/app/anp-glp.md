@@ -1,50 +1,101 @@
-# Sub-PRD — `/anp-glp`
+# Sub-PRD — `/anp-glp` (LPG Market Share)
 
-Dashboard ANP — Vendas de GLP por Recipiente (Fuel Distribution). Owner: [`worker_dash-anp-glp`](../../.claude/agents/worker_dash-anp-glp.md).
+Dashboard de **LPG Market Share (% de participação)** e **volume absoluto (thousand t)** por distribuidora, sobre a tabela `anp_glp`. Owner: [`worker_dash-anp-glp`](../../.claude/agents/worker_dash-anp-glp.md).
 
-> Item do dropdown "Fuel Distribution" da NavBar.
+> Item do dropdown "Fuel Distribution" da NavBar. Rota mobile-eligible (dual-view).
 
-## Escopo de código
+> **Reconstruído em 2026-06-01** (commits `696be79a` migration + `b16a9388` frontend). O slug/rota `/anp-glp` foi reaproveitado — antes era "Vendas de GLP por Recipiente" (volume simples, desktop-only). Ver "Superseded" no fim deste arquivo.
+
+Faithful clone de [`/market-share`](market-share.md): mesmo SHAPE de hook, mesma estrutura dual-view. Espelha aquele sub-PRD; diferenças de domínio listadas abaixo.
+
+## Mapeamento de domínio (decidido pelo CTO — não mudar)
+
+| `/market-share` | `/anp-glp` (LPG) |
+|---|---|
+| player (`classificacao` / `distribuidora`) | `distribuidora` |
+| produto (`nome_produto`: Diesel B / Gasolina C / …) | `categoria` (P13 / Outros - GLP / Outros - Especiais) |
+| sintético "Total (All Fuels)" | sintético **"Total (All LPG)"** (soma de todas as categorias) |
+| Otto-Cycle | **não existe** |
+| segmento Retail / B2B / TRR | **não existe** — segmento constante `'GLP'` |
+| filtros Região / UF | **não existem** — `anp_glp` não tem dimensão geográfica |
+| Big-3 (players de combustível hardcoded) | **Big-3 dinâmico** = top-3 distribuidoras por volume LPG |
+| unidade "thousand m³" | **"thousand t"** (`vendas_kg / 1e6` → milhares de toneladas) |
+
+## Dual-view structure
+
+Promovido a dual-view em 2026-06-01 (antes era mobile-excluded). Segue o padrão canônico ([`docs/app/dual-view-pattern.md`](dual-view-pattern.md)): o hook compartilhado é o único cérebro; ambas as Views são camadas de apresentação.
 
 ```
 src/app/(dashboard)/anp-glp/
-  page.tsx
+  page.tsx                 ← viewport router (useIsMobile)
+  useAnpGlpData.ts         ← THE BRAIN — RPCs, filtros, derivações, types
+  desktop/
+    View.tsx               ← UX desktop (sidebar + grid de charts por categoria)
+  mobile/
+    View.tsx               ← UX mobile (thumb-scroll layout, molde market-share v2)
 ```
 
-RPC wrappers: seção "ANP GLP" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (linhas ~1024–1090).
+RPC wrappers: seção "ANP GLP — LPG Market Share (`get_anp_glp_ms_*`)" em [`src/lib/rpc.ts`](../../src/lib/rpc.ts) (linhas ~1168–1305).
 
 ## Produto
 
-Visualização das **vendas mensais de GLP** por distribuidora e por categoria de recipiente publicadas pela ANP. Permite ao usuário:
+Visualização das duas narrativas clássicas de market share aplicadas ao GLP brasileiro:
 
-- Selecionar via checkbox quais **categorias** de recipiente comparar no chart Total Nacional (P13, Outros - GLP, Outros - Especiais) — ao menos 1 sempre marcada.
-- Restringir o **período** via range slider (default: últimos 10 anos), aplicado server-side via RPC.
-- Escolher uma **categoria** (select único) e ver o ranking **Top 15 Distribuidoras** acumulado no período em chart de barras horizontais.
+- **% Share** (default): participação relativa por distribuidora ao longo do tempo.
+- **thousand t**: volume absoluto vendido (`vendas_kg / 1e6`).
 
-Header: `ANP — Vendas de GLP por Recipiente` + sub `Vendas mensais de GLP por distribuidora e categoria de recipiente (P13, Outros - GLP, Outros - Especiais)` + badge de período quando dados existem.
-
-Diferença vs `/anp-precos-produtores`: aqui o foco é **volume vendido** (kg) por recipiente, não preço. P13 (Botijão 13 kg) é o produto âncora do GLP residencial brasileiro.
+Toggle de unidade no topo chaveia entre os dois modos sem refetch — mesma RPC, derivação client-side em `buildAnpGlpLine`. Para cada **categoria** (incl. o sintético Total) há um line chart com as distribuidoras como linhas + tabela de comparação MoM/QTD/YoY/YTD.
 
 ## RPCs
 
 | RPC | Tipo | Função |
 |---|---|---|
-| `get_anp_glp_filtros` | próprio | `distribuidoras`, `categorias`, `ano_min`, `ano_max` |
-| `get_anp_glp_serie` | próprio | Série mensal por distribuidora/categoria. Aceita `p_distribuidoras`, `p_categorias`, `p_ano_inicio`, `p_ano_fim` (todos opcionais) |
+| `get_anp_glp_ms_filtros` | próprio | `distribuidoras`, `categorias`, `ano_min`, `ano_max` |
+| `get_anp_glp_ms_serie_fast` | próprio | Série mensal agregada por `(date, distribuidora, categoria)`. Colunas IDÊNTICAS a `get_ms_serie_fast` (`date`, `nome_produto`, `segmento='GLP'`, `classificacao`, `quantidade=SUM(vendas_kg)`) |
+| `get_anp_glp_ms_serie_others` | próprio | Como acima + `agente_regulado` (= distribuidora). Aceita `p_excluir_distribuidoras` (exclui o top-N → tail = "Others") |
+| `get_anp_glp_ms_others_players` | próprio | Lista completa de distribuidoras ranqueada por volume total DESC (`distribuidora`, `total_kg`) — fonte do Big-3 dinâmico e dos players de "Others" |
+| `get_anp_glp_ms_export_count` | próprio | Calculadora live de tamanho do export (count de rows de `anp_glp`) |
+
+Definidas em [`20260605000000_anp_glp_market_share_rpcs.sql`](../../supabase/migrations/20260605000000_anp_glp_market_share_rpcs.sql). **Todas SECURITY DEFINER + `SET search_path = public, pg_temp`** (Pegadinha #18 — `anp_glp` tem RLS `authenticated`-only; sem DEFINER, anon obtém `[]`). GRANT EXECUTE a `anon, authenticated`.
+
+As colunas retornadas reusam o shape de `get_ms_*` de propósito, para que o tipo frontend `MsSerieRow` seja reaproveitado sem alteração. O sintético "Total (All LPG)" **não** é emitido pelas RPCs — é construído client-side em `makeTotalRows` (análogo ao `/market-share`).
+
+> As RPCs legadas `get_anp_glp_serie` / `get_anp_glp_filtros` continuam no banco, mas o dashboard não as usa mais (ver "Superseded").
+
+## Hook contract (`useAnpGlpData`)
+
+Mesmo SHAPE do `useMarketShareData`, sem o eixo segmento e sem geo. Superfície consumida pelas duas Views:
+
+- Raw: `serieRows`, `seriesLoading`, `seriesError`
+- Options: `opcoes` (`distribuidoras`/`categorias`/`ano_min`/`ano_max`), `datas` (lista de anos do slider)
+- Unit toggle: `unitMode` (`'share' | 'volume'`, default `'share'`), `setUnitMode`
+- Filter state: `mode` (Individual / Big-3 / Others), `sliderRange`, `competidoresSelected`, `playersOptions`
+- Applied: `appliedFilters`, `applyFilters()`, `clearFilters()`, `showToast`
+- Derived: `big3`, `appliedMode`, `players`, `big3Members` (top-3 dinâmico), `latestDate`, `chartColors`, `othersPlayers`
+- `productKeys` — Total primeiro, depois categorias reais em ordem `CATEGORY_ORDER` (`P13`, `Outros - GLP`, `Outros - Especiais`), extras no fim
+- `charts: Record<string, ChartResult>` — 1 line chart por categoria (incl. Total)
+- `compData: Record<string, CompRow[]>` — rows MoM/QTD/YoY/YTD por categoria
+- `topPlayers: TopPlayerRow[]` — ranking top-5 (sobre Total)
+- Mobile selector (additive): `selectedProduct` / `setSelectedProduct`, `activeChart`, `activeCompRows`, `topPlayersForSelected`
+- Mobile Compare set (additive): `compareSet`, `setCompareSet`, `toggleCompareMember` (cap 3, seed com top-3)
+- Export: `exportFilters` (`AnpGlpMsFilters`), `exportSizeEstimate` (via `useExportSize` + `getAnpGlpMsExportCount`)
+
+Pure helpers exportados do arquivo do hook:
+- `buildAnpGlpLine` — line chart por categoria (distribuidoras como linhas). Inclui anti-overlap pass nos labels end-of-line (mesmo algoritmo do MS; floor 1.6 pp em `share`, 4 % do span em `volume`). Ramifica eixo Y por `unitMode` (`Market Share (%)` ↔ `Volume (thousand t)`).
+- `makeTotalRows` — sintetiza Total (All LPG) = soma de todas as categorias (1 cópia por row com `nome_produto:"Total"`).
+- `buildComparisonData` — rows de comparação MoM/QTD/YoY/YTD, parametrizado por `unitMode`.
+
+Constantes exportadas: `BIG3_LABEL`, `COLORS_BIG3`, `MODE_OPTIONS`, `GLP_SEGMENT`, `TOTAL_KEY`, `CATEGORY_LABEL` (English labels: `Total → "Total (All LPG)"`, `P13 → "P13 (13 kg cylinder)"`, `Outros - GLP → "Other - LPG"`, `Outros - Especiais → "Other - Special"`), `dynColor`, `MOBILE_PALETTE`.
 
 ## Tabelas
 
 | Objeto | Volume | Populado por |
 |---|---|---|
-| `anp_glp` | ~3.106 linhas | ETL `scripts/pipelines/anp/glp_sync.py` (download XLS da ANP, parse + upsert) |
+| `anp_glp` | ~3.1k linhas | ETL `scripts/pipelines/anp/glp_sync.py` (download XLS da ANP, parse + upsert) |
 
-### Colunas de `anp_glp`
+Colunas: `ano (smallint), mes (smallint), distribuidora (text), categoria (text), vendas_kg (float8)`. PK: `(ano, mes, distribuidora, categoria)`.
 
-`ano (smallint), mes (smallint), distribuidora (text), categoria (text), vendas_kg (float8)`. PK: `(ano, mes, distribuidora, categoria)`.
-
-### Migration relevante
-
-- `20260504000002_anp_precos.sql` — schema + RLS + RPCs + INSERT em `module_visibility` (compartilhada com `/anp-precos-produtores`).
+**Sem materialized view** — `anp_glp` é pequena, agregação direta por request é rápida (diferente de `/market-share`, que usa `mv_ms_serie_fast` por `vendas` ser grande).
 
 ## Pipeline de origem
 
@@ -56,88 +107,48 @@ Diferença vs `/anp-precos-produtores`: aqui o foco é **volume vendido** (kg) p
 
 | Filtro | Componente | Comportamento |
 |---|---|---|
-| Categoria (chart Total) | checkboxes c/ swatch de cor (3 fixas) | client-side; mínimo 1 sempre selecionada; botão "Limpar" restaura todas; counter `(N/3)` |
-| Período | `rc-slider` range | server-side em `get_anp_glp_serie` (debounced 400ms) |
-| Top Distribuidoras — Categoria | select único | client-side (recálculo do ranking via `useMemo` sobre `serieRows`) |
+| Unit | `SegmentedToggle` top-level | % Share / thousand t — derivação client-side, sem refetch |
+| Período | range slider (anos) | server-side via `p_ano_inicio`/`p_ano_fim` |
+| View Mode | Individual / Big-3 / Others | Big-3 = top-3 dinâmico; Others = tail fora do top-3 |
+| Competidores (distribuidoras) | multi-select | Individual default = top-8 por volume; usuário escolhe quaisquer |
 
-## Componentes consumidos
+**Sem** Região / UF / segmento / mercado.
 
-- `PlotlyChart` — 2 charts (linha múltipla mensal + barras horizontais Top 15).
-- `rc-slider` — slider de período.
-- `NavBar`.
-- `useModuleVisibilityGuard("anp-glp")` — guard de role.
+## Export
+
+Tier 1 — direct download via o `<ExportButton>` unificado (contrato: [`docs/app/export-library-contract.md`](export-library-contract.md)).
+
+- Spec em [`src/lib/export/dashboards/anpGlp.ts`](../../src/lib/export/dashboards/anpGlp.ts) (`anpGlpExport`).
+- `tier: 1`, `filterSource: "none"` — sempre retorna o **histórico completo** de LPG, ignorando os filtros on-screen. Power users querem o dataset inteiro; filtros são exploratórios.
+- Fonte: `rpcGetAnpGlpMsSerieFast` com filtros all-NULL → histórico completo.
+- Filename: Excel `LPG Market Share DD-MM-YY.xlsx` / CSV `LPGMarketShare_DD-MM-YY.csv` (data adicionada pela lib).
+- 1 sheet `"LPG Market Share"`, título `"ANP — LPG Market Share by Distributor"`. Colunas: Month, Distributor, Category, Sales (kg) `#,##0`, Sales (thousand t) `0.000` (`kgToMilTon`).
+- Plugado no `DashboardHeader.rightSlot` da desktop View. **Desktop-only** (sem export em mobile, por política).
 
 ## Dependências cross-dept
 
 | Origem | Como depende |
 |---|---|
-| ETL (`anp_precos_sync`) | Popula `anp_glp` semanalmente |
-| Subgerente APP | Schema/migration de `anp_glp` e RPCs |
-| Designer | Cores por categoria fixas client-side, Arial, padrão de chart de linha + barra horizontal |
-| Supabase | RLS habilitado em `anp_glp` (read-only via anon authenticated) |
-
-## Performance
-
-- **`anp_glp` é pequena (~3k)** — `get_anp_glp_serie` com `p_ano_inicio/p_ano_fim` filtra a ~1k–2k linhas (10 anos × 12 meses × ~20 distribuidoras × 3 categorias) num único request, gzipped.
-- **Filtragem por categoria** no chart Total é client-side via `useMemo` — sem refetch (3 opções fixas).
-- **Top Distribuidoras** é agregado client-side via `useMemo` sobre `serieRows` (filtragem por `categoria === topDistCat`, `reduce` por distribuidora, sort desc, slice top 15).
-- **Debounce 400ms** no fetch ao mudar slider de período — evita rajadas durante drag.
+| ETL (`etl_anp_precos`) | Popula `anp_glp` semanalmente |
+| Subgerente APP | Schema/migration de `anp_glp` + as RPCs `get_anp_glp_ms_*` |
+| Designer | Paleta discreta por rank (Individual), `COLORS_BIG3`, padrão de line chart |
+| Supabase | RLS em `anp_glp` (`authenticated`-only) — RPCs SECURITY DEFINER para servir anon |
 
 ## Anti-padrões
 
 - Query direta em `anp_glp` do front — sempre via RPC.
-- Refetch sem debounce — usar 400ms.
-- Filtrar série inteira client-side por período — empurrar para RPC via `p_ano_inicio/p_ano_fim`.
-- Permitir `selectedCats.length === 0` — sempre manter ao menos 1.
-- Resetar `yearRange` em mudança de categoria — slider é setado uma vez no mount a partir de `filtros.ano_min/ano_max`.
-- Mostrar nome de categoria com label diferente da config (consistência: usar `CATEGORIA_INFO[c].label`).
-- Bloquear página inteira com barrel em `serieLoading` — barrel é só pro `loading` inicial; subsequentes usam indicador inline + opacity 0.5.
+- Mudar `get_anp_glp_ms_*` sem revisar os derivados (`charts`, `compData`, `topPlayers`, export) — todos dependem de `unitMode`.
+- Esquecer `unitMode` nas deps dos `useMemo` — leva a stale render no toggle.
+- Hardcodar `ticksuffix: "%"` sem ramificar por `unitMode`.
+- Hardcodar Big-3 com nomes de combustível (Vibra/Raizen/Ipiranga) — o Big-3 de LPG é dinâmico (top-3 por volume).
+- Editar uma View sem refletir a outra no mesmo commit (regra de sync dual-view) — ou declarar `[desktop-only]`/`[mobile-only]` com justificativa.
+- Recriar RPC com DROP+CREATE perdendo SECURITY DEFINER / search_path (Pegadinha #18).
 - Mexer em `scripts/pipelines/anp/glp_sync.py` — pertence ao ETL.
 
-## Export
+---
 
-Tier 1 — direct download via the unified `<ExportButton>` (contract: [`docs/app/export-library-contract.md`](export-library-contract.md)).
+## Superseded — "Vendas de GLP por Recipiente" (até 2026-06-01)
 
-- Spec lives at [`src/lib/export/dashboards/anpGlp.ts`](../../src/lib/export/dashboards/anpGlp.ts) (`anpGlpExport`).
-- Filename: `LPGSales_DD-MM-YY.<xlsx|csv>` (date appended by the library).
-- `tier: 1`, `filterSource: "none"` — the export always returns the **full LPG sales history** regardless of the dashboard's period slider / category checkboxes / top-distributor select. Power users want the full dataset; the on-screen filters stay exploratory.
-- Excel: 1 sheet `"LPG Sales"`, title `"ANP — LPG Sales by Distributor"` (brand orange row 1), navy header row, Arial 10 cells. Columns: Year, Month, Distributor, Category, Sales (kg) `#,##0`, Sales (thousand t) `0.000`.
-- CSV: `mode: "single"`, same column set as Excel.
-- Data source: `rpcGetAnpGlpSerie(supabase, {})` — empty params → all four `p_*` filters resolve to NULL server-side → full history.
-- `vendas_mil_ton = vendas_kg / 1e6` computed in the spec via `kgToMilTon`; the raw `vendas_kg` is kept alongside for traceability.
-- Plugged into desktop view's `DashboardHeader.rightSlot` via `<ExportButton spec={anpGlpExport} />`. No export on mobile (per Mobile reform v2).
+Até 2026-06-01 o `/anp-glp` era um dashboard de **volume simples, desktop-only**: charts de linha de vendas mensais por categoria (Total Nacional) + barras horizontais Top 15 distribuidoras, sobre as RPCs `get_anp_glp_filtros` / `get_anp_glp_serie` e a spec de export `LPGSales`. Era mobile-excluded.
 
-## Dual-view structure
-
-Refatorado em 2026-05-20 para o padrão dual-view. Mobile foi **descontinuado** na Mobile reform v2 (2026-05-27) — `/anp-glp` está na lista de rotas mobile-excluded; em mobile, `page.tsx` monta `<MobileExcludedRedirect slug="anp-glp" />` e o usuário é redirecionado para `/home?excluded=anp-glp`.
-
-```
-src/app/(dashboard)/anp-glp/
-├── page.tsx            — desktop viewport: renders <DesktopView />; mobile: <MobileExcludedRedirect />
-├── useAnpGlpData.ts    — THE BRAIN: RPCs, filter state, debounce, derivations
-└── desktop/
-    └── View.tsx        — sidebar layout, line chart + horizontal bar
-```
-
-### Hook contract (`useAnpGlpData`)
-
-```ts
-{
-  serieRows: AnpGlpSerieRow[];
-  allYears: number[];
-  yMin: number | null;
-  yMax: number | null;
-  topDist: TopDistEntry[];          // Top 15 for filters.topDistCat, already in kt
-  loading: boolean;                 // initial barrel
-  serieLoading: boolean;            // debounced refetch indicator
-  filters: AnpGlpFilters;           // yearRangeIdx, selectedCats, topDistCat
-  setFilters: (next: Partial<AnpGlpFilters>) => void;
-  toggleCat: (c: string) => void;   // min-1 guard included
-}
-```
-
-> Note: the legacy `exportRows` field was removed when `/anp-glp` migrated to the unified export library (2026-05-28). The export now fetches full history independently of the hook's filter state — see Export section above.
-
-### Mobile
-
-Dashboard is **mobile-excluded** since Mobile reform v2 (see README.md § "Mobile reform 2026-05-27"). The binding sync rule with a mobile View does not apply — there is no mobile View. Future changes only need to be reflected in `desktop/View.tsx`.
+Foi reconstruído como LPG Market Share (clone dual-view de `/market-share`) — ver topo deste arquivo. As RPCs antigas seguem no banco mas não são mais consumidas; podem ser dropadas num follow-up.
