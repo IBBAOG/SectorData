@@ -26,6 +26,74 @@ export type { PriceBandsRow };
 export const SUBSIDY_CUTOFF = "2026-03-12";
 export const DEFAULT_START  = "2023-06-01";
 
+// Fixed/locked Gasoline subsidy reference. Unlike the Diesel `*_w_subsidy`
+// columns (which come from DB triggers and ANP daily reference prices), this
+// is a manually-maintained constant — NOT auto-calculated from ANP. The
+// Gasoline "Petrobras Price w/ subsidy" line is synthesized client-side at
+// fetch time from these values. To change it, edit the constant here (this is
+// the supported way to change it).
+export const GAS_PETRO_SUBSIDY_PRICE = 3.05;          // BRL/L
+export const GAS_PETRO_SUBSIDY_START = "2026-05-29";  // ISO date
+
+// ─── YTD subsidy→base field mapping (YTD chart only) ──────────────────────────
+//
+// Maps each "w/ subsidy" series field to its non-subsidy base field. Used ONLY
+// by buildYtdChart to blend the pre-subsidy base price into the w/ subsidy line
+// until the subsidy takes effect (see effectiveYtdValue). The main Price Bands
+// chart does NOT use this — there the w/ subsidy line still only appears from
+// its subsidy effective date.
+const YTD_SUBSIDY_BASE_FIELD: Partial<Record<keyof PriceBandsRow, keyof PriceBandsRow>> = {
+  petrobras_price_w_subsidy:   "petrobras_price",
+  bba_import_parity_w_subsidy: "bba_import_parity",
+};
+
+// Resolves the subsidy start date for a (field, product) pair. The same field
+// `petrobras_price_w_subsidy` starts on a DIFFERENT date per product (Gasoline
+// vs Diesel), so the row's product is needed to disambiguate. Returns null for
+// non-subsidy fields (which are never base-blended anyway).
+function subsidyStartDate(field: keyof PriceBandsRow, product: PriceBandsProduct): string | null {
+  if (field === "petrobras_price_w_subsidy") return product === "Gasoline" ? GAS_PETRO_SUBSIDY_START : SUBSIDY_CUTOFF;
+  if (field === "bba_import_parity_w_subsidy") return SUBSIDY_CUTOFF; // diesel only
+  return null;
+}
+
+// YTD average blends the pre-subsidy base price into the w/ subsidy line for the
+// LEADING gap only — Jan 1 of the subsidy's effective year up to (but not
+// including) the effective date — so the line starts on Jan 1 like the others.
+//
+// The base-price blend is intentionally scoped to that leading pre-vigência
+// window. On/after the effective date the series uses ONLY its own subsidy
+// value: a trailing NULL there (the subsidy publishing lag — the DB trigger
+// fills `*_w_subsidy` only once matching anp_subsidy_commercialization data
+// exists, which lags price_bands) yields null and the row is excluded, so the
+// projection correctly holds the LAST REAL subsidy value instead of reverting
+// to the low non-subsidy base price.
+//
+// For years entirely before the subsidy existed (2025, 2024) every row is
+// before the effective year, so this returns null and the w/ subsidy series
+// stays empty (no line / legend entry / year-end label).
+function effectiveYtdValue(r: PriceBandsRow, field: keyof PriceBandsRow): number | null {
+  const baseField = YTD_SUBSIDY_BASE_FIELD[field];
+  // Non-subsidy field (no mapped base) → just the own value.
+  if (!baseField) return (r[field] as number | null) ?? null;
+
+  const start = subsidyStartDate(field, r.product as PriceBandsProduct);
+  // Defensive: mapped subsidy field with no resolvable start date → own value.
+  if (start == null) return (r[field] as number | null) ?? null;
+
+  // Row predates the subsidy's effective year → no line at all.
+  if (r.date < `${start.slice(0, 4)}-01-01`) return null;
+
+  // Leading pre-vigência window (effective year, before the effective date) →
+  // blend in the non-subsidy base price.
+  if (r.date < start) return (r[baseField] as number | null) ?? null;
+
+  // On/after the effective date → own subsidy value only; do NOT fall back to
+  // base. A trailing null here is left null so the row is excluded and the
+  // projection holds the last real subsidy value.
+  return (r[field] as number | null) ?? null;
+}
+
 // ─── Colors (single source of truth for both Views) ──────────────────────────
 
 export const COLOR_IMPORT = "#E8611A";  // orange — Import Parity
@@ -48,6 +116,7 @@ export const GAS_SERIES: SeriesDef[] = [
   { label: "Import Parity",  field: "bba_import_parity", color: COLOR_IMPORT, dash: "solid", shape: "linear", width: 1.5 },
   { label: "Export Parity",  field: "bba_export_parity", color: COLOR_EXPORT, dash: "solid", shape: "linear", width: 1.5 },
   { label: "Petrobras Price", field: "petrobras_price",   color: COLOR_PETRO,  dash: "solid", shape: "hv",     width: 2   },
+  { label: "Petrobras Price w/ subsidy", field: "petrobras_price_w_subsidy", color: COLOR_PETRO, dash: "dash", shape: "hv", width: 2 },
 ];
 
 export const DSL_SERIES: SeriesDef[] = [
@@ -331,6 +400,10 @@ export function buildYtdChart(
   const yearEnd = `${year}-12-31`;
 
   const traces: PlotData[] = [];
+  // Union of every plotted y-value (actual cumulative averages + projections)
+  // across all series — feeds deconflictAnnotations' px-per-unit mapping so the
+  // year-end label spacing matches the chart's real y-range.
+  const allDataY: number[] = [];
 
   for (const s of seriesDefs) {
     let cumSum = 0;
@@ -345,7 +418,7 @@ export function buildYtdChart(
     let lastActualDate:  string | null = null;
 
     for (const r of yearRows) {
-      const val = r[s.field] as number | null;
+      const val = effectiveYtdValue(r, s.field);
       if (val == null) continue;
       cumSum += val;
       count++;
@@ -356,6 +429,8 @@ export function buildYtdChart(
     }
 
     if (actualDates.length === 0) continue;
+
+    allDataY.push(...actualAvgs);
 
     const isPetrobras = s.field === "petrobras_price";
     let ytdCustomdata: [string, string][] | undefined;
@@ -409,6 +484,8 @@ export function buildYtdChart(
         projY.push(projSum / projCount);
       }
 
+      allDataY.push(...projY);
+
       traces.push({
         type: "scatter",
         mode: "lines",
@@ -422,14 +499,16 @@ export function buildYtdChart(
     }
   }
 
-  const annotations: Partial<Annotations>[] = seriesDefs.flatMap((s) => {
-    const yearRowsForS = yearRows.filter((r) => (r[s.field] as number | null) != null);
+  const rawAnnotations: Partial<Annotations>[] = seriesDefs.flatMap((s) => {
+    const yearRowsForS = yearRows.filter((r) => effectiveYtdValue(r, s.field) != null);
     if (yearRowsForS.length === 0) return [];
     // Use this series' own last non-null value/date for the year-end label, so
     // the subsidy lines (which trail off with NULLs) still get a projection.
+    // effectiveYtdValue blends in the base price before the subsidy date so the
+    // year-end label matches the blended line.
     const lastRowForS = yearRowsForS[yearRowsForS.length - 1];
-    const lastPrice   = lastRowForS[s.field] as number;
-    const cumSum = yearRowsForS.reduce((acc, r) => acc + (r[s.field] as number), 0);
+    const lastPrice   = effectiveYtdValue(lastRowForS, s.field) as number;
+    const cumSum = yearRowsForS.reduce((acc, r) => acc + (effectiveYtdValue(r, s.field) as number), 0);
     const count  = yearRowsForS.length;
     const remainingDays = generateDailyDates(addDays(lastRowForS.date, 1), yearEnd).length;
     const finalAvg = (cumSum + remainingDays * lastPrice) / (count + remainingDays);
@@ -446,6 +525,11 @@ export function buildYtdChart(
       xshift: 6,
     }];
   });
+
+  // Match the YTD layout geometry below (height 360, margin t:20 / b:100) so the
+  // pixel math lines up; without this the year-end labels collide when two
+  // series end near the same value (e.g. Diesel "4.02" vs "3.91").
+  const annotations = deconflictAnnotations(rawAnnotations, allDataY, 360, 20, 100);
 
   return {
     data: traces,
@@ -522,7 +606,44 @@ export function usePriceBandsData(): UsePriceBandsData {
     fetchedRef.current = true;
     setLoading(true);
     rpcGetPriceBandsData(supabase)
-      .then((data) => { setRows(data); setLoading(false); })
+      .then((data) => {
+        // Normalize both products' "w/ subsidy" series at read time so no
+        // w/ subsidy line shows before the subsidy actually took effect.
+        //
+        // Gasoline: synthesize the fixed "Petrobras Price w/ subsidy" series.
+        // Gasoline's subsidy is a locked constant (GAS_PETRO_SUBSIDY_PRICE)
+        // starting GAS_PETRO_SUBSIDY_START, NOT real DB data.
+        //
+        // Diesel: the DB columns bba_import_parity_w_subsidy /
+        // petrobras_price_w_subsidy are NON-NULL for the entire history (back
+        // to 2021) — before the real subsidy they simply equal the base price
+        // (zero reimbursement). The subsidy only diverges from the base on/after
+        // SUBSIDY_CUTOFF (2026-03-12). Null out both columns before the cutoff
+        // so no w/ subsidy line appears pre-subsidy in any chart (mirrors the
+        // Gasoline client-side synthesis). Rows on/after the cutoff carry real
+        // subsidy data and are left untouched.
+        //
+        // Map to new objects (no in-place mutation) in both branches.
+        const synthesized = data.map((r) => {
+          if (r.product === "Gasoline") {
+            return {
+              ...r,
+              petrobras_price_w_subsidy:
+                r.date >= GAS_PETRO_SUBSIDY_START ? GAS_PETRO_SUBSIDY_PRICE : null,
+            };
+          }
+          if (r.product === "Diesel" && r.date < SUBSIDY_CUTOFF) {
+            return {
+              ...r,
+              bba_import_parity_w_subsidy: null,
+              petrobras_price_w_subsidy: null,
+            };
+          }
+          return r;
+        });
+        setRows(synthesized);
+        setLoading(false);
+      })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err : new Error(String(err)));
         setLoading(false);

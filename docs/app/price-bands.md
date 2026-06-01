@@ -64,6 +64,8 @@ Both `bba_import_parity_w_subsidy` and `petrobras_price_w_subsidy` are **no long
 
 **User workflow change:** the admin form (Data Input → Price Bands) and the Excel upload script no longer accept `bba_import_parity_w_subsidy` / `petrobras_price_w_subsidy`. Users enter only: Date, Product, Import Parity (IPP), Export Parity (EPP), Petrobras Price. The subsidy adjustment is applied automatically and refreshed daily as ANP reference prices are updated by `etl_anp_subsidy_diesel.yml`.
 
+**Historical zero-reimbursement values (client-side null-gate, fix 2026-06-01):** the Diesel `bba_import_parity_w_subsidy` / `petrobras_price_w_subsidy` columns are **NON-NULL for the entire history** (back to 2021) — before the subsidy took effect they simply equal the base price (zero reimbursement, since the cap/commercialization logic yields a 0 reimbursement and `MIN(MAX(ref − comm, 0), cap)` collapses to base). The subsidy only diverges from the base on/after `SUBSIDY_CUTOFF` (`2026-03-12`). To prevent a flat "w/ subsidy" line overlapping the base line in pre-subsidy periods (which previously leaked into the YTD 2025/2024 Diesel charts), the hook **nulls both Diesel `*_w_subsidy` columns at read time when `date < SUBSIDY_CUTOFF`** — mirroring the Gasoline client-side synthesis. This is a **presentation-layer fix only**; the historical DB values are legitimate zero-reimbursement data and are left untouched in the database. Rows on/after the cutoff carry real subsidy data and pass through unchanged.
+
 ## Como o dado chega
 
 **Two paths — both use the same upsert conflict key `(product, date)` and are fully interchangeable.**
@@ -101,6 +103,11 @@ Returns: `{ rows, loading, error, filters, setFilters, datas, xMin, xMax, gasoli
 Key derivations done in the hook (never in Views):
 - `buildPriceBandsChart` — price bands multi-trace with end-of-line annotations + deconfliction
 - `buildYtdChart` — cumulative YTD average + dotted year-end projection. The projection is computed **per series**: it holds each series' own last non-null value constant from that series' own last non-null date through Dec 31. This matters for the Diesel `_w_subsidy` lines, whose most recent rows are often NULL (the trigger only fills them once matching `anp_subsidy_commercialization` data exists, which lags `price_bands`) — they still project to year-end from where their real line ends, instead of being dropped.
+  - **Pre-subsidy base blend (YTD-only, both products, 2026-06-01):** the YTD "w/ subsidy" lines no longer start their cumulative average on the subsidy effective date — they start on Jan 1, **overlapping** their non-subsidy counterpart, and only diverge once the subsidy takes effect. This is done via the `effectiveYtdValue(row, field)` helper + `YTD_SUBSIDY_BASE_FIELD` mapping (`petrobras_price_w_subsidy` → `petrobras_price`, `bba_import_parity_w_subsidy` → `bba_import_parity`). So the Gasoline "Petrobras Price w/ subsidy" YTD line starts in January equal to "Petrobras Price", then bends toward 3.05 from `2026-05-29`; the Diesel "w/ subsidy" YTD lines likewise start in January and diverge from ~`2026-03-12`. The year-end label reflects the blended full-year average (so the Gasoline label is **not** 3.05 — it sits between the YTD non-subsidy average and 3.05). This blend is **YTD-only** — the main `buildPriceBandsChart` still draws the w/ subsidy line only from its subsidy effective date (Gasoline `2026-05-29`, Diesel from its DB-populated dates).
+    - **The base-price blend is scoped to the LEADING pre-vigência window ONLY (fix 2026-06-01):** `effectiveYtdValue` resolves the subsidy effective date for the (field, product) pair via `subsidyStartDate(field, product)` (`petrobras_price_w_subsidy` → `2026-05-29` for Gasoline / `2026-03-12` for Diesel; `bba_import_parity_w_subsidy` → `2026-03-12`) and branches on the row date:
+      - Row before the subsidy's effective YEAR (e.g. **2025, 2024**) → `null`. The w/ subsidy series yields all-null, so `buildYtdChart` draws **no line, no legend entry and no year-end label** for it.
+      - Row in the effective year but **before** the effective date (the leading Jan 1 → vigência gap) → the **base** (non-subsidy) field's value. This is the only window where the base price is blended in.
+      - Row **on/after** the effective date → the series' **own** subsidy value only — it does **NOT** fall back to base. A **trailing NULL** here (the subsidy publishing lag — the most recent row, e.g. `2026-06-01`, has `*_w_subsidy = NULL` because the commercialization data isn't out yet) is left null, so that row is excluded and the projection correctly **holds the LAST REAL subsidy value** (e.g. `2026-05-31 ≈ 4.26`) instead of reverting to the low non-subsidy base price (e.g. `3.30`). Before this fix the trailing lag null wrongly fell back to base, dragging the projected line **down** when it should trend **up**. Note: the same field `petrobras_price_w_subsidy` has a different start per product, so the row's `product` disambiguates.
 - `buildCurrentValues` — Petrobras vs. IPP/EPP percentage badges per product
 - `SUBSIDY_CUTOFF = "2026-03-12"` — subsidy lines visible only from this date
 
@@ -145,6 +152,23 @@ Layout per plan § 4.4 (`o-modo-mobile-da-tranquil-giraffe.md`):
 | `COLOR_PETRO`  | `#4ECDC4` teal   | Petrobras Price (solid) + Petrobras Price w/ subsidy (dashed) |
 
 `DSL_SERIES` (Diesel) renders 5 traces: Import Parity, Import Parity w/ subsidy, Export Parity, Petrobras Price, **Petrobras Price w/ subsidy**. The last two are drawn from March 2026 onwards (SUBSIDY_CUTOFF). Both `_w_subsidy` traces are auto-filled by trigger and will show as gaps (NULL) for dates where `anp_subsidy_commercialization` has no data yet.
+
+`GAS_SERIES` (Gasoline) renders 4 traces: Import Parity, Export Parity, Petrobras Price, **Petrobras Price w/ subsidy** (added 2026-05-29).
+
+### Gasoline "Petrobras Price w/ subsidy" — fixed constant (2026-05-29)
+
+Unlike the Diesel `_w_subsidy` columns (which are auto-calculated server-side by triggers from ANP daily reference prices — see "Auto-filled subsidy columns" above), the Gasoline **Petrobras Price w/ subsidy** line is a **manually-maintained fixed value**, synthesized client-side in the hook:
+
+| Constant (in `usePriceBandsData.ts`) | Value | Meaning |
+|---|---|---|
+| `GAS_PETRO_SUBSIDY_PRICE` | `3.05` | Locked Gasoline subsidy reference, BRL/L |
+| `GAS_PETRO_SUBSIDY_START` | `"2026-05-29"` | ISO date the line starts |
+
+At fetch time, the hook maps over the RPC result and, for every `product === "Gasoline"` row, sets `petrobras_price_w_subsidy` to `GAS_PETRO_SUBSIDY_PRICE` when `date >= GAS_PETRO_SUBSIDY_START`, else `null` (Diesel rows are left untouched — their value is real DB data). The series then flows through the same `buildPriceBandsChart` / `buildYtdChart` code paths as Diesel, so it appears as a **teal dashed step line** (same `COLOR_PETRO`, `dash: "dash"`, `shape: "hv"`) in both the main Price Bands chart and the YTD Average chart, with a flat 3.05 cumulative average / year-end projection.
+
+There is **no Gasoline badge** for this value: `buildCurrentValues`' `lastSubPetro` find requires both `petrobras_price_w_subsidy` and `bba_import_parity_w_subsidy` to be non-null, and Gasoline has no `bba_import_parity_w_subsidy` — so the find stays undefined and no badge is rendered. This is by design (chart line only).
+
+**To change the value or start date, edit `GAS_PETRO_SUBSIDY_PRICE` / `GAS_PETRO_SUBSIDY_START` in `src/app/(dashboard)/price-bands/usePriceBandsData.ts`** — this is a frontend-only constant by design (no DB column, no migration, no trigger).
 
 ### Binding sync rule
 
