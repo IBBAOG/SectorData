@@ -146,6 +146,23 @@ Layout per plan § 4.4 (`o-modo-mobile-da-tranquil-giraffe.md`):
 
 `DSL_SERIES` (Diesel) renders 5 traces: Import Parity, Import Parity w/ subsidy, Export Parity, Petrobras Price, **Petrobras Price w/ subsidy**. The last two are drawn from March 2026 onwards (SUBSIDY_CUTOFF). Both `_w_subsidy` traces are auto-filled by trigger and will show as gaps (NULL) for dates where `anp_subsidy_commercialization` has no data yet.
 
+`GAS_SERIES` (Gasoline) renders 4 traces: Import Parity, Export Parity, Petrobras Price, **Petrobras Price w/ subsidy** (added 2026-05-29).
+
+### Gasoline "Petrobras Price w/ subsidy" — fixed constant (2026-05-29)
+
+Unlike the Diesel `_w_subsidy` columns (which are auto-calculated server-side by triggers from ANP daily reference prices — see "Auto-filled subsidy columns" above), the Gasoline **Petrobras Price w/ subsidy** line is a **manually-maintained fixed value**, synthesized client-side in the hook:
+
+| Constant (in `usePriceBandsData.ts`) | Value | Meaning |
+|---|---|---|
+| `GAS_PETRO_SUBSIDY_PRICE` | `3.05` | Locked Gasoline subsidy reference, BRL/L |
+| `GAS_PETRO_SUBSIDY_START` | `"2026-05-29"` | ISO date the line starts |
+
+At fetch time, the hook maps over the RPC result and, for every `product === "Gasoline"` row, sets `petrobras_price_w_subsidy` to `GAS_PETRO_SUBSIDY_PRICE` when `date >= GAS_PETRO_SUBSIDY_START`, else `null` (Diesel rows are left untouched — their value is real DB data). The series then flows through the same `buildPriceBandsChart` / `buildYtdChart` code paths as Diesel, so it appears as a **teal dashed step line** (same `COLOR_PETRO`, `dash: "dash"`, `shape: "hv"`) in both the main Price Bands chart and the YTD Average chart, with a flat 3.05 cumulative average / year-end projection.
+
+There is **no Gasoline badge** for this value: `buildCurrentValues`' `lastSubPetro` find requires both `petrobras_price_w_subsidy` and `bba_import_parity_w_subsidy` to be non-null, and Gasoline has no `bba_import_parity_w_subsidy` — so the find stays undefined and no badge is rendered. This is by design (chart line only).
+
+**To change the value or start date, edit `GAS_PETRO_SUBSIDY_PRICE` / `GAS_PETRO_SUBSIDY_START` in `src/app/(dashboard)/price-bands/usePriceBandsData.ts`** — this is a frontend-only constant by design (no DB column, no migration, no trigger).
+
 ### Binding sync rule
 
 Any filter, chart, or KPI change in one View must land in the other in the **same commit**, or the commit must declare `[desktop-only]` / `[mobile-only]` with explicit justification.

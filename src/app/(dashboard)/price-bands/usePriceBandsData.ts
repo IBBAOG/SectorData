@@ -26,6 +26,15 @@ export type { PriceBandsRow };
 export const SUBSIDY_CUTOFF = "2026-03-12";
 export const DEFAULT_START  = "2023-06-01";
 
+// Fixed/locked Gasoline subsidy reference. Unlike the Diesel `*_w_subsidy`
+// columns (which come from DB triggers and ANP daily reference prices), this
+// is a manually-maintained constant — NOT auto-calculated from ANP. The
+// Gasoline "Petrobras Price w/ subsidy" line is synthesized client-side at
+// fetch time from these values. To change it, edit the constant here (this is
+// the supported way to change it).
+export const GAS_PETRO_SUBSIDY_PRICE = 3.05;          // BRL/L
+export const GAS_PETRO_SUBSIDY_START = "2026-05-29";  // ISO date
+
 // ─── Colors (single source of truth for both Views) ──────────────────────────
 
 export const COLOR_IMPORT = "#E8611A";  // orange — Import Parity
@@ -48,6 +57,7 @@ export const GAS_SERIES: SeriesDef[] = [
   { label: "Import Parity",  field: "bba_import_parity", color: COLOR_IMPORT, dash: "solid", shape: "linear", width: 1.5 },
   { label: "Export Parity",  field: "bba_export_parity", color: COLOR_EXPORT, dash: "solid", shape: "linear", width: 1.5 },
   { label: "Petrobras Price", field: "petrobras_price",   color: COLOR_PETRO,  dash: "solid", shape: "hv",     width: 2   },
+  { label: "Petrobras Price w/ subsidy", field: "petrobras_price_w_subsidy", color: COLOR_PETRO, dash: "dash", shape: "hv", width: 2 },
 ];
 
 export const DSL_SERIES: SeriesDef[] = [
@@ -535,7 +545,24 @@ export function usePriceBandsData(): UsePriceBandsData {
     fetchedRef.current = true;
     setLoading(true);
     rpcGetPriceBandsData(supabase)
-      .then((data) => { setRows(data); setLoading(false); })
+      .then((data) => {
+        // Synthesize the fixed Gasoline "Petrobras Price w/ subsidy" series.
+        // Gasoline's subsidy is a locked constant (GAS_PETRO_SUBSIDY_PRICE)
+        // starting GAS_PETRO_SUBSIDY_START, NOT real DB data. Map to new
+        // objects (no in-place mutation); leave Diesel rows untouched — their
+        // petrobras_price_w_subsidy is real trigger-filled DB data.
+        const synthesized = data.map((r) =>
+          r.product === "Gasoline"
+            ? {
+                ...r,
+                petrobras_price_w_subsidy:
+                  r.date >= GAS_PETRO_SUBSIDY_START ? GAS_PETRO_SUBSIDY_PRICE : null,
+              }
+            : r,
+        );
+        setRows(synthesized);
+        setLoading(false);
+      })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err : new Error(String(err)));
         setLoading(false);
