@@ -269,7 +269,8 @@ export default function DesktopView(): React.ReactElement | null {
     outline: "none", boxSizing: "border-box",
   };
   type SgNumericField =
-    | "shares_outstanding" | "net_debt" | "target_price" | "display_order"
+    | "shares_outstanding" | "target_price" | "display_order"
+    | "net_debt_y1" | "net_debt_y2"
     | "ebitda_y1" | "ebitda_y2" | "net_income_y1" | "net_income_y2"
     | "fcfe_y1" | "fcfe_y2" | "dividends_y1" | "dividends_y2"
     | "volumes_y1" | "volumes_y2";
@@ -2229,9 +2230,6 @@ export default function DesktopView(): React.ReactElement | null {
                           {renderSgNumField("shares_outstanding", "Shares outstanding (absolute)", {
                             hint: "used for Market cap = shares × live price",
                           })}
-                          {renderSgNumField("net_debt", "Net Debt (BRL mn, current; negative = net cash)", {
-                            hint: "single value, used for both years — EV = Market cap + Net Debt",
-                          })}
                         </div>
 
                         {/* Live-derivation hint */}
@@ -2242,13 +2240,15 @@ export default function DesktopView(): React.ReactElement | null {
                         }}>
                           EV/EBITDA, P/E, FCFE Yield and Div Yield are computed <strong>live</strong>{" "}
                           in the dashboard from the live price + these fundamentals — they are{" "}
-                          <strong>not</strong> entered here. Enter EBITDA, Net Income, FCFE and
-                          Dividends per year (all BRL mn) below.
+                          <strong>not</strong> entered here. Enter Net Debt, EBITDA, Net Income,
+                          FCFE and Dividends per year (all BRL mn) below. EV(year) = Market cap +
+                          Net Debt(year); a negative Net Debt means net cash.
                         </div>
 
                         {/* Forward-pair groups (fundamentals) */}
                         <div style={{ marginTop: 18 }}>
                           {([
+                            { label: "Net Debt (BRL mn, < 0 = net cash)", y1: "net_debt_y1" as const, y2: "net_debt_y2" as const },
                             { label: "EBITDA (BRL mn)",     y1: "ebitda_y1" as const,     y2: "ebitda_y2" as const },
                             { label: "Net Income (BRL mn)", y1: "net_income_y1" as const, y2: "net_income_y2" as const },
                             { label: "FCFE (BRL mn)",       y1: "fcfe_y1" as const,       y2: "fcfe_y2" as const },

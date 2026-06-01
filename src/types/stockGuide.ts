@@ -52,11 +52,12 @@ export interface StockGuideCompany {
   target_price: number | null;
   recommendation: StockGuideRecommendation | null;
   /**
-   * Current net debt in BRL million — a SINGLE value used for BOTH forward years
-   * (EV = market cap + net debt). May be negative (net cash). NULL for
-   * hidden→non-admin.
+   * Forward net debt in BRL million, PER YEAR — `net_debt_y1` drives the year-1
+   * EV, `net_debt_y2` the year-2 EV (EV(year) = market cap + net debt(year)).
+   * Either may be negative (net cash → lowers EV). NULL for hidden→non-admin.
    */
-  net_debt: number | null;
+  net_debt_y1: number | null;
+  net_debt_y2: number | null;
   /** Forward EBITDA in BRL million. Denominator of the live EV/EBITDA. */
   ebitda_y1: number | null;
   ebitda_y2: number | null;
@@ -87,10 +88,13 @@ export interface StockGuideComputedRow extends StockGuideCompany {
   marketCapBrlMn: number | null;
   /** `target_price / livePrice − 1`. Null unless `livePrice > 0` and TP present. */
   upsidePct: number | null;
-  /** `marketCapBrlMn + net_debt` (BRL million). Null if either input is null. */
-  evBrlMn: number | null;
-  /** `evBrlMn / ebitda_y1` — null unless `ebitda_y1 > 0` (same for Y2). */
+  /** `marketCapBrlMn + net_debt_y1` (BRL million). Null if either input is null. */
+  evBrlMnY1: number | null;
+  /** `marketCapBrlMn + net_debt_y2` (BRL million). Null if either input is null. */
+  evBrlMnY2: number | null;
+  /** `evBrlMnY1 / ebitda_y1` — null unless `ebitda_y1 > 0` (same for Y2). */
   evEbitdaY1: number | null;
+  /** `evBrlMnY2 / ebitda_y2` — null unless `ebitda_y2 > 0`. */
   evEbitdaY2: number | null;
   /** `marketCapBrlMn / net_income_y1` — null unless `net_income_y1 > 0` (same for Y2). */
   peY1: number | null;

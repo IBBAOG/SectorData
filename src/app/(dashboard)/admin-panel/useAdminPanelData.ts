@@ -120,7 +120,7 @@ export type {
 // when a row is loaded and stays read-only for existing companies. `is_visible`
 // is NOT part of this shape (it is the separate toggle RPC).
 //
-// FUNDAMENTALS, not multiples: the admin enters net debt (single, current),
+// FUNDAMENTALS, not multiples: the admin enters net debt per forward year,
 // EBITDA, net income, FCFE and dividends per forward year. The 4 price-sensitive
 // multiples (EV/EBITDA, P/E, FCFE Yield, Div Yield) are derived LIVE in the
 // /stock-guide dashboard from the Yahoo price + these inputs — never entered here.
@@ -131,8 +131,9 @@ export interface SgEditorRow {
   sector: StockGuideSector;
   volume_unit: "kbpd" | "thousand_m3";
   shares_outstanding: string;
-  /** Current net debt (BRL mn); single value used for both years. May be < 0. */
-  net_debt: string;
+  /** Forward net debt per year (BRL mn); EV(year) = market cap + net debt(year). May be < 0. */
+  net_debt_y1: string;
+  net_debt_y2: string;
   last_update: string;
   target_price: string;
   recommendation: "" | "OP" | "MP" | "UP";
@@ -183,7 +184,8 @@ function adminCompanyToEditorRow(c: StockGuideAdminCompany): SgEditorRow {
     sector: (c.sector ?? "oil_gas") as StockGuideSector,
     volume_unit: (c.volume_unit ?? "kbpd") as "kbpd" | "thousand_m3",
     shares_outstanding: numToStr(c.shares_outstanding),
-    net_debt: numToStr(c.net_debt),
+    net_debt_y1: numToStr(c.net_debt_y1),
+    net_debt_y2: numToStr(c.net_debt_y2),
     last_update: c.last_update ?? "",
     target_price: numToStr(c.target_price),
     recommendation: c.recommendation ?? "",
@@ -1451,7 +1453,8 @@ export function useAdminPanelData(): UseAdminPanelData {
         sector: r.sector,
         volume_unit: r.volume_unit,
         shares_outstanding: strToNum(r.shares_outstanding),
-        net_debt: strToNum(r.net_debt),
+        net_debt_y1: strToNum(r.net_debt_y1),
+        net_debt_y2: strToNum(r.net_debt_y2),
         last_update: r.last_update.trim() === "" ? null : r.last_update,
         target_price: strToNum(r.target_price),
         recommendation: r.recommendation === "" ? null : r.recommendation,

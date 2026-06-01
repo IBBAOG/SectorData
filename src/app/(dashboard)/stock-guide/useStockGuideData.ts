@@ -324,20 +324,25 @@ export function useStockGuideData(): UseStockGuideData {
       // EBITDA≤0 and Net income≤0 → null (multiple not meaningful); market cap
       // must be > 0 for the yields. Null-safe throughout → renders "—", no NaN.
 
-      // EV = market cap + (single, current) net debt. Net debt may be negative
-      // (net cash), which legitimately lowers EV.
-      const evBrlMn =
-        marketCapBrlMn != null && r.net_debt != null
-          ? marketCapBrlMn + r.net_debt
+      // EV is FORWARD PER YEAR: market cap (single current value) + the net debt
+      // of that forward year. Net debt may be negative (net cash), which
+      // legitimately lowers EV.
+      const evBrlMnY1 =
+        marketCapBrlMn != null && r.net_debt_y1 != null
+          ? marketCapBrlMn + r.net_debt_y1
+          : null;
+      const evBrlMnY2 =
+        marketCapBrlMn != null && r.net_debt_y2 != null
+          ? marketCapBrlMn + r.net_debt_y2
           : null;
 
       const evEbitdaY1 =
-        evBrlMn != null && r.ebitda_y1 != null && r.ebitda_y1 > 0
-          ? evBrlMn / r.ebitda_y1
+        evBrlMnY1 != null && r.ebitda_y1 != null && r.ebitda_y1 > 0
+          ? evBrlMnY1 / r.ebitda_y1
           : null;
       const evEbitdaY2 =
-        evBrlMn != null && r.ebitda_y2 != null && r.ebitda_y2 > 0
-          ? evBrlMn / r.ebitda_y2
+        evBrlMnY2 != null && r.ebitda_y2 != null && r.ebitda_y2 > 0
+          ? evBrlMnY2 / r.ebitda_y2
           : null;
 
       // P/E is not meaningful for non-positive earnings → null.
@@ -376,7 +381,8 @@ export function useStockGuideData(): UseStockGuideData {
         livePrice,
         marketCapBrlMn,
         upsidePct,
-        evBrlMn,
+        evBrlMnY1,
+        evBrlMnY2,
         evEbitdaY1,
         evEbitdaY2,
         peY1,
@@ -496,7 +502,8 @@ export function useStockGuideData(): UseStockGuideData {
           live_price: r.livePrice,
           upside_pct: r.upsidePct != null ? r.upsidePct * 100 : null,
           market_cap_brl_mn: r.marketCapBrlMn,
-          ev_brl_mn: r.evBrlMn,
+          [`ev_brl_mn_${y1}`]: r.evBrlMnY1,
+          [`ev_brl_mn_${y2}`]: r.evBrlMnY2,
           [`ev_ebitda_${y1}`]: r.evEbitdaY1,
           [`ev_ebitda_${y2}`]: r.evEbitdaY2,
           [`pe_${y1}`]: r.peY1,

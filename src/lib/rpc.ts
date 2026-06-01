@@ -4045,7 +4045,8 @@ function mapStockGuideCompany(r: Record<string, unknown>): StockGuideCompany {
     target_price: toNumOrNull(r.target_price),
     recommendation:
       (r.recommendation as StockGuideCompany["recommendation"]) ?? null,
-    net_debt: toNumOrNull(r.net_debt),
+    net_debt_y1: toNumOrNull(r.net_debt_y1),
+    net_debt_y2: toNumOrNull(r.net_debt_y2),
     ebitda_y1: toNumOrNull(r.ebitda_y1),
     ebitda_y2: toNumOrNull(r.ebitda_y2),
     net_income_y1: toNumOrNull(r.net_income_y1),
@@ -4191,8 +4192,8 @@ export async function rpcAdminGetStockGuideSensitivity(
  * Per-company upsert (`ON CONFLICT (ticker) DO UPDATE`). `data` is a plain JS
  * object whose keys mirror the comps columns: company_name, yahoo_symbol,
  * sector, volume_unit, shares_outstanding, last_update, target_price,
- * recommendation, display_order, and the FUNDAMENTALS — `net_debt` (single,
- * current), `ebitda_y1/y2`, `net_income_y1/y2`, `fcfe_y1/y2`, `dividends_y1/y2`,
+ * recommendation, display_order, and the FUNDAMENTALS — `net_debt_y1/y2`
+ * (forward per year), `ebitda_y1/y2`, `net_income_y1/y2`, `fcfe_y1/y2`, `dividends_y1/y2`,
  * `volumes_y1/y2`. The 4 price-sensitive multiples (EV/EBITDA, P/E, FCFE Yield,
  * Div Yield) are NOT stored — they are derived live in the dashboard from the
  * Yahoo price + these inputs. Never send `is_visible` (separate toggle RPC).
