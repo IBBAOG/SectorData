@@ -57,22 +57,41 @@ function subsidyStartDate(field: keyof PriceBandsRow, product: PriceBandsProduct
   return null;
 }
 
-// YTD average blends the pre-subsidy base price into the w/ subsidy line until
-// the subsidy takes effect, so the line starts on Jan 1 like the others.
-// Returns r[field] when present; otherwise, for a subsidy field with a mapped
-// base, falls back to the base field's value — but ONLY within the subsidy's
-// effective year or later. For years entirely before the subsidy existed
-// (2025, 2024), the fallback is suppressed (returns null) so the w/ subsidy
-// series stays empty and renders no line / legend entry / year-end label.
+// YTD average blends the pre-subsidy base price into the w/ subsidy line for the
+// LEADING gap only — Jan 1 of the subsidy's effective year up to (but not
+// including) the effective date — so the line starts on Jan 1 like the others.
+//
+// The base-price blend is intentionally scoped to that leading pre-vigência
+// window. On/after the effective date the series uses ONLY its own subsidy
+// value: a trailing NULL there (the subsidy publishing lag — the DB trigger
+// fills `*_w_subsidy` only once matching anp_subsidy_commercialization data
+// exists, which lags price_bands) yields null and the row is excluded, so the
+// projection correctly holds the LAST REAL subsidy value instead of reverting
+// to the low non-subsidy base price.
+//
+// For years entirely before the subsidy existed (2025, 2024) every row is
+// before the effective year, so this returns null and the w/ subsidy series
+// stays empty (no line / legend entry / year-end label).
 function effectiveYtdValue(r: PriceBandsRow, field: keyof PriceBandsRow): number | null {
-  const own = r[field] as number | null;
-  if (own != null) return own;
   const baseField = YTD_SUBSIDY_BASE_FIELD[field];
-  if (!baseField) return null;
+  // Non-subsidy field (no mapped base) → just the own value.
+  if (!baseField) return (r[field] as number | null) ?? null;
+
   const start = subsidyStartDate(field, r.product as PriceBandsProduct);
-  // No subsidy ever, or the row predates the subsidy's effective year → no blend.
-  if (start == null || r.date < `${start.slice(0, 4)}-01-01`) return null;
-  return (r[baseField] as number | null) ?? null;
+  // Defensive: mapped subsidy field with no resolvable start date → own value.
+  if (start == null) return (r[field] as number | null) ?? null;
+
+  // Row predates the subsidy's effective year → no line at all.
+  if (r.date < `${start.slice(0, 4)}-01-01`) return null;
+
+  // Leading pre-vigência window (effective year, before the effective date) →
+  // blend in the non-subsidy base price.
+  if (r.date < start) return (r[baseField] as number | null) ?? null;
+
+  // On/after the effective date → own subsidy value only; do NOT fall back to
+  // base. A trailing null here is left null so the row is excluded and the
+  // projection holds the last real subsidy value.
+  return (r[field] as number | null) ?? null;
 }
 
 // ─── Colors (single source of truth for both Views) ──────────────────────────
