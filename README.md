@@ -51,7 +51,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | Route | Category | Key RPCs |
 |-------|----------|----------|
 | `/well-by-well` (Brazil Production Summary) | Oil & Gas | `get_production_brazil_aggregate`, `get_production_company_aggregate`, `get_production_top_fields`, `get_production_by_installation`, `get_production_yoy_table` + paginated helpers |
-| `/stock-guide` | Oil & Gas (Equities) | `get_stock_guide_comps` (hide-aware), `get_stock_guide_sensitivity`, `get_stock_guide_config` + 7 admin RPCs + Yahoo proxy (live market cap / upside) |
+| `/stock-guide` | Equities | `get_stock_guide_comps` (hide-aware), `get_stock_guide_sensitivity`, `get_stock_guide_config` + 7 admin RPCs + Yahoo proxy (live market cap / upside) |
 | `/anp-cdp` (Monthly Production) | Oil & Gas | `get_anp_cdp_poco_serie`, `get_anp_cdp_pocos_json`, `get_anp_cdp_filtros` (canonical-field aware) |
 | `/anp-cdp-bsw` | Oil & Gas | `get_anp_cdp_bsw_scatter`, `get_anp_cdp_bsw_field_aggregate` (X axis: `pct_voip`), `get_anp_cdp_bsw_campos` |
 | `/anp-cdp-depletion` | Oil & Gas | `get_anp_cdp_depletion_campos`, `get_anp_cdp_depletion_scatter`, `get_anp_cdp_depletion_field_aggregate` |

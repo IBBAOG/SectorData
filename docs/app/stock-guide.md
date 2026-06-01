@@ -15,7 +15,7 @@ All multiples, targets, shares, sensitivities and config are **admin-only inputs
 
 Audience: **Client + Admin**, hidden from anonymous public (`is_visible_for_public=false`). One-click reconfigurable in Admin Panel → Permissions.
 
-Slug / URL: `stock-guide` → `/stock-guide`. NavBar placement: **"Equities"** group under the **"Oil & Gas"** mega-menu module.
+Slug / URL: `stock-guide` → `/stock-guide`. NavBar placement: **standalone top-level NavBar entry** ("Stock Guide", alongside Market Watch / News Hunter), not under any dropdown.
 
 ## Live derivations (frontend, in the hook)
 
@@ -135,3 +135,4 @@ src/lib/rpc.ts                # § "MODULE: Stock Guide" — all 10 wrappers (si
 ## History
 
 - **2026-06-01** — Dashboard frontend created (this PRD). `worker_subgerente-app` authored the rpc.ts wrappers + types + the dual-view dashboard + NavBar "Equities" group; DB layer (3 tables + 10 RPCs + seed) was pre-built and applied live by `worker_supabase` (`20260603200000_stock_guide.sql`). The Admin Panel → Stock Guide CRUD section is a separate follow-up pass that consumes the admin wrappers + types defined here. Audience: Client + Admin, public-hidden. Live market cap/upside via the existing Yahoo proxy (one-shot fetch + manual refresh, no polling).
+- **2026-06-01** — NavBar promotion: `/stock-guide` moved out of the "Oil & Gas" mega-menu (the "Equities" group was removed) and is now a **standalone top-level NavBar entry** ("Stock Guide"), placed immediately before "Market Watch" — coverage spans fuel distributors too, so it isn't exclusive to Oil & Gas. Plain text `nav-link` like Market Watch / News Hunter (no glyph). Per-slug visibility gating unchanged (`is_visible_for_public=false`, Client + Admin).

@@ -60,12 +60,6 @@ const NAV_ENTRIES: NavEntry[] = [
           { href: "/anp-cdp-depletion", label: "Depletion" },
         ],
       },
-      {
-        heading: "Equities",
-        items: [
-          { href: "/stock-guide", label: "Stock Guide" },
-        ],
-      },
     ],
   },
   {
@@ -92,6 +86,7 @@ const NAV_ENTRIES: NavEntry[] = [
       },
     ],
   },
+  { label: "Stock Guide", href: "/stock-guide" },
   { label: "Market Watch", href: "/stocks" },
   { label: "Alerts", href: "/alerts" },
   { label: "News Hunter", href: "/news-hunter" },
