@@ -24,6 +24,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useRoleGuard } from "../../../hooks/useRoleGuard";
+import {
+  useMarketDrivers,
+  resolveDriverValue,
+  MARKET_DRIVER_CATALOG_BY_KEY,
+  isDynamicSource,
+  type DriverCatalogEntry,
+} from "../../../hooks/useMarketDrivers";
 import { useUserProfile } from "../../../context/UserProfileContext";
 import {
   rpcSetModuleVisibility,
@@ -225,6 +232,12 @@ export interface SgDriverEditorRow {
   name: string;
   unit: string;
   current_value: string;
+  /**
+   * Dynamic-driver binding: '' = STATIC (admin types `current_value`); a
+   * market-driver catalog key (e.g. 'avg_brent_2026') = DYNAMIC (value computed
+   * live in the browser; `current_value` ignored / sent null).
+   */
+  source: string;
   display_order: string;
 }
 
@@ -269,9 +282,16 @@ export interface SgTableDraft {
   cellsSecondary: string[][];
 }
 
-/** A pristine driver "Add" row (id null). */
+/** A pristine driver "Add" row (id null). Defaults to STATIC (`source=''`). */
 function blankDriverRow(): SgDriverEditorRow {
-  return { id: null, name: "", unit: "", current_value: "", display_order: "" };
+  return {
+    id: null,
+    name: "",
+    unit: "",
+    current_value: "",
+    source: "",
+    display_order: "",
+  };
 }
 
 /** A pristine axis draft (defaults to a 'company' axis with no tickers). */
@@ -708,6 +728,18 @@ export interface UseAdminPanelData {
   sgDriverRows: SgDriverEditorRow[];
   sgDriversLoading: boolean;
   sgDriversError: string | null;
+  /** Market-driver catalog (Source picker options for DYNAMIC drivers). */
+  sgMarketCatalog: DriverCatalogEntry[];
+  /** Live computed values for the catalog metrics (key → number | null). */
+  sgMarketValues: Record<string, number | null>;
+  /** True while the live market-data fetch backing the catalog is in flight. */
+  sgMarketLoading: boolean;
+  /**
+   * Resolve a driver-editor row's effective today value: the live computed
+   * catalog value for a DYNAMIC row, else its typed `current_value`. Used by the
+   * editor to show "Computed: …" and the dynamic-row badge value.
+   */
+  sgResolveDriverRowValue: (row: SgDriverEditorRow) => number | null;
   /** Driver row id (or "new") currently saving, for spinner/disable. */
   sgDriverSavingKey: string | null;
   sgDriverDeleteConfirm: number | null;
@@ -1841,6 +1873,25 @@ export function useAdminPanelData(): UseAdminPanelData {
   );
 
   // ── Drivers registry (Drivers sub-tab) ──────────────────────────────────────
+  // Live market-data catalog backing the DYNAMIC drivers (same hook the
+  // dashboard uses) — lets the editor show the live "Computed: …" value.
+  const {
+    values: sgMarketValues,
+    loading: sgMarketLoading,
+    catalog: sgMarketCatalog,
+  } = useMarketDrivers();
+
+  // Resolve a driver-editor row's effective today value (live catalog value for
+  // a dynamic row, else its typed current_value).
+  const sgResolveDriverRowValue = useCallback(
+    (row: SgDriverEditorRow): number | null =>
+      resolveDriverValue(
+        { current_value: strToNum(row.current_value), source: row.source },
+        sgMarketValues,
+      ),
+    [sgMarketValues],
+  );
+
   const [sgDrivers, setSgDrivers] = useState<StockGuideDriver[]>([]);
   const [sgDriverRows, setSgDriverRows] = useState<SgDriverEditorRow[]>([
     blankDriverRow(),
@@ -1861,6 +1912,7 @@ export function useAdminPanelData(): UseAdminPanelData {
         name: d.name,
         unit: d.unit,
         current_value: numToStr(d.current_value),
+        source: d.source ?? "",
         display_order: numToStr(d.display_order),
       })),
       blankDriverRow(),
@@ -1900,7 +1952,16 @@ export function useAdminPanelData(): UseAdminPanelData {
   const handleChangeSgDriverField = useCallback(
     (index: number, field: keyof Omit<SgDriverEditorRow, "id">, value: string) => {
       setSgDriverRows((rows) =>
-        rows.map((r, i) => (i === index ? { ...r, [field]: value } : r)),
+        rows.map((r, i) => {
+          if (i !== index) return r;
+          // Switching to a DYNAMIC source auto-fills the unit from the catalog
+          // (the unit input is disabled for dynamic drivers).
+          if (field === "source") {
+            const cat = MARKET_DRIVER_CATALOG_BY_KEY[value];
+            return { ...r, source: value, unit: cat ? cat.unit : r.unit };
+          }
+          return { ...r, [field]: value };
+        }),
       );
     },
     [],
@@ -1922,10 +1983,18 @@ export function useAdminPanelData(): UseAdminPanelData {
       setSgDriverSavingKey(key);
       setSgDriversError(null);
       try {
+        // DYNAMIC driver (source bound to a catalog metric): unit is the
+        // catalog's unit and current_value is null (computed live in the
+        // browser). STATIC driver: admin-typed unit + current_value.
+        const dynamic = isDynamicSource(row.source);
+        const catalogUnit = dynamic
+          ? (MARKET_DRIVER_CATALOG_BY_KEY[row.source]?.unit ?? row.unit.trim())
+          : null;
         await rpcAdminUpsertStockGuideDriver(supabase, row.id, {
           name: row.name.trim(),
-          unit: row.unit.trim(),
-          current_value: strToNum(row.current_value),
+          unit: dynamic ? catalogUnit : row.unit.trim(),
+          current_value: dynamic ? null : strToNum(row.current_value),
+          source: dynamic ? row.source : "",
           display_order: strToNum(row.display_order) ?? 0,
         });
         await loadSgDrivers();
@@ -2455,6 +2524,10 @@ export function useAdminPanelData(): UseAdminPanelData {
     sgDriverRows,
     sgDriversLoading,
     sgDriversError,
+    sgMarketCatalog,
+    sgMarketValues,
+    sgMarketLoading,
+    sgResolveDriverRowValue,
     sgDriverSavingKey,
     sgDriverDeleteConfirm,
     handleChangeSgDriverField,

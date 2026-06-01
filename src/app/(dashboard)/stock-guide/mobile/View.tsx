@@ -361,7 +361,9 @@ function mobileDriverMarker(
 }
 
 function mobileFormatScenario(v: number): string {
-  return String(v);
+  // Integers print as-is; non-integers (e.g. a live dynamic driver value) round
+  // to 1 decimal so the caption stays tidy.
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
 
 function mobileResolveAxis(
@@ -388,15 +390,17 @@ function mobileResolveAxis(
     );
     return { labels, marker: MOBILE_NO_MARKER, caption: null };
   }
-  const { driver, scenarios } = ctx.resolveDriverAxis(axis);
+  // `currentValue` is the EFFECTIVE today value (live for a dynamic driver bound
+  // to a market metric, else the static `current_value`).
+  const { driver, scenarios, currentValue } = ctx.resolveDriverAxis(axis);
   const unit = driver?.unit ?? "";
   const labels = scenarios.map((s) =>
     unit ? `${mobileFormatScenario(s)} ${unit}` : mobileFormatScenario(s),
   );
-  const marker = mobileDriverMarker(scenarios, driver?.current_value ?? null);
+  const marker = mobileDriverMarker(scenarios, currentValue);
   const caption =
-    driver != null && driver.current_value != null
-      ? `Current: ${driver.name} = ${mobileFormatScenario(driver.current_value)}${unit ? ` ${unit}` : ""}`
+    driver != null && currentValue != null
+      ? `Current: ${driver.name} = ${mobileFormatScenario(currentValue)}${unit ? ` ${unit}` : ""}`
       : null;
   return { labels, marker, caption };
 }

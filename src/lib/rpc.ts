@@ -4479,6 +4479,8 @@ export async function rpcGetStockGuideDrivers(
     name: String(r.name ?? ""),
     unit: String(r.unit ?? ""),
     current_value: toNumOrNull(r.current_value),
+    // Dynamic-driver binding to a market-data catalog key (null/'' = static).
+    source: r.source != null && r.source !== "" ? String(r.source) : null,
     display_order: Number(r.display_order ?? 0),
   }));
 }
@@ -4531,7 +4533,11 @@ export async function rpcAdminGetStockGuideSensitivityTables(
 
 /**
  * Upsert a driver. `id === null` → INSERT, else UPDATE that id. `data` keys:
- * `name` (required), `unit`, `current_value`, `display_order`. Passed as JSONB;
+ * `name` (required), `unit`, `current_value`, `source` (dynamic-driver binding —
+ * '' / null = static, else a market-driver catalog key like `'avg_brent_2026'`),
+ * `display_order`. For a DYNAMIC driver `current_value` may be null (the value is
+ * computed live in the browser). The wrapper is generic — it forwards whatever
+ * keys the editor sets, so `source` is passed through untouched. Passed as JSONB;
  * the server coerces numerics and sets `updated_by = auth.uid()`. Returns the
  * driver's id.
  *

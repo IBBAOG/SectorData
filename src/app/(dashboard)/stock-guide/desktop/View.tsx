@@ -460,23 +460,28 @@ function resolveAxis(
     );
     return { labels, marker: NO_MARKER, caption: null };
   }
-  // driver
-  const { driver, scenarios } = ctx.resolveDriverAxis(axis);
+  // driver — `currentValue` is the EFFECTIVE today value (live for a dynamic
+  // driver bound to a market metric, else the static `current_value`).
+  const { driver, scenarios, currentValue } = ctx.resolveDriverAxis(axis);
   const unit = driver?.unit ?? "";
   const labels = scenarios.map((s) =>
     unit ? `${formatScenario(s)} ${unit}` : formatScenario(s),
   );
-  const marker = driverMarker(scenarios, driver?.current_value ?? null);
+  const marker = driverMarker(scenarios, currentValue);
   const caption =
-    driver != null && driver.current_value != null
-      ? `Current: ${driver.name} = ${formatScenario(driver.current_value)}${unit ? ` ${unit}` : ""}`
+    driver != null && currentValue != null
+      ? `Current: ${driver.name} = ${formatScenario(currentValue)}${unit ? ` ${unit}` : ""}`
       : null;
   return { labels, marker, caption };
 }
 
-/** Scenario value formatter. */
+/**
+ * Scenario / current-value formatter. Integers print as-is; non-integers (e.g. a
+ * live-computed dynamic driver value like 81.34) round to 1 decimal so the
+ * caption / interpolated marker stay tidy.
+ */
 function formatScenario(v: number): string {
-  return String(v);
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
 
 // ── The orange interpolation triangle drawn between two header cells ──────────

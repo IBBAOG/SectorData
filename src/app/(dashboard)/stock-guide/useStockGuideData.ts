@@ -45,6 +45,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getSupabaseClient } from "@/lib/supabaseClient";
 import { useStockQuote } from "@/hooks/useStockQuote";
+import { useMarketDrivers, resolveDriverValue } from "@/hooks/useMarketDrivers";
 import {
   rpcGetStockGuideComps,
   rpcGetStockGuideConfig,
@@ -106,6 +107,15 @@ export interface UseStockGuideData {
   // ── Redesigned sensitivity model ──────────────────────────────────────────
   /** Central driver registry (Brent, USD/BRL, …) — drives axis highlighting. */
   drivers: StockGuideDriver[];
+  /**
+   * Live-computed values for the DYNAMIC drivers (catalog key → number | null).
+   * Static drivers are absent here; resolve any driver's effective value via the
+   * `resolveDriverAxis` helper (which already folds this in). Exposed for callers
+   * that want the raw map.
+   */
+  marketValues: Record<string, number | null>;
+  /** True while the market-data fetch backing the dynamic drivers is in flight. */
+  marketDriversLoading: boolean;
   /** All hide-aware sensitivity tables (display_order), straight from the RPC. */
   sensitivityTables: SensitivityTable[];
 
@@ -155,6 +165,15 @@ export interface SensitivityCellValue {
 export interface ResolvedDriverAxis {
   driver: StockGuideDriver | null;
   scenarios: number[];
+  /**
+   * The driver's EFFECTIVE "today" value, already resolved through
+   * `resolveDriverValue`: the live market value for a DYNAMIC driver (its
+   * `source` is a catalog key) or the admin-typed `current_value` for a STATIC
+   * one. `null` → no highlight / "—". Views must use THIS, not
+   * `driver.current_value`, so dynamic drivers drive the highlight from the live
+   * computed value.
+   */
+  currentValue: number | null;
 }
 
 // ─── Formatting helpers (shared by both Views) ───────────────────────────────
@@ -282,6 +301,11 @@ export function useStockGuideData(): UseStockGuideData {
 
   const fetchIdRef = useRef(0);
   const fetchedRef = useRef(false);
+
+  // Live market values backing the DYNAMIC drivers (computed in the browser from
+  // the Yahoo proxy). Reused as-is by `resolveDriverAxis` below.
+  const { values: marketValues, loading: marketDriversLoading } =
+    useMarketDrivers();
 
   // ── a. Fetch comps + config + drivers + sensitivity tables (fetch-id guard) ─
   const fetchData = useCallback(() => {
@@ -555,16 +579,22 @@ export function useStockGuideData(): UseStockGuideData {
     return m;
   }, [drivers]);
 
-  // Pure helper: resolve a driver axis → { driver, scenarios }.
+  // Pure helper: resolve a driver axis → { driver, scenarios, currentValue }.
+  // `currentValue` is the driver's EFFECTIVE today value — live-computed for a
+  // dynamic driver (its `source` is a catalog key), else the static
+  // `current_value` — via `resolveDriverValue`. Views highlight/interpolate on
+  // this, never on `driver.current_value`, so dynamic drivers track the market.
   const resolveDriverAxis = useCallback(
     (axis: SensitivityAxis): ResolvedDriverAxis => {
       const driver =
         axis.kind === "driver" && axis.driver_id != null
           ? (driversById.get(axis.driver_id) ?? null)
           : null;
-      return { driver, scenarios: axis.scenarios ?? [] };
+      const currentValue =
+        driver != null ? resolveDriverValue(driver, marketValues) : null;
+      return { driver, scenarios: axis.scenarios ?? [], currentValue };
     },
-    [driversById],
+    [driversById, marketValues],
   );
 
   // Pure helper: compute a cell's DISPLAY value for (table, rowIdx, colIdx).
@@ -746,6 +776,8 @@ export function useStockGuideData(): UseStockGuideData {
     quotesError,
     refreshQuotes,
     drivers,
+    marketValues,
+    marketDriversLoading,
     sensitivityTables,
     selectedTicker,
     selectTicker,

@@ -33,6 +33,7 @@ import type {
   SensitivityTableAdmin,
   StockGuideDriver,
 } from "../../../../types/stockGuide";
+import { isDynamicSource } from "../../../../hooks/useMarketDrivers";
 
 const ORANGE = "#FF5000";
 const BG = "#f5f5f5";
@@ -254,6 +255,9 @@ export default function DesktopView(): React.ReactElement | null {
     sgDriverRows,
     sgDriversLoading,
     sgDriversError,
+    sgMarketCatalog,
+    sgMarketLoading,
+    sgResolveDriverRowValue,
     sgDriverSavingKey,
     sgDriverDeleteConfirm,
     handleChangeSgDriverField,
@@ -2483,6 +2487,9 @@ export default function DesktopView(): React.ReactElement | null {
                     Central macro/assumption variables (Brent, USD/BRL, …) referenced by
                     sensitivity tables. <strong>Current value</strong> is the &ldquo;today&rdquo;
                     base value used to highlight the matching scenario in a sensitivity table.
+                    A driver can be <strong>Static</strong> (you type the value) or{" "}
+                    <strong>Dynamic</strong> (bound to a live market metric, computed in the
+                    browser from the Yahoo proxy).
                   </p>
 
                   {sgDriversError && (
@@ -2504,14 +2511,14 @@ export default function DesktopView(): React.ReactElement | null {
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                         <thead>
                           <tr style={{ borderBottom: "2px solid #ececec" }}>
-                            {["Name", "Unit", "Current value", "Display order", ""].map((h, i) => (
+                            {["Name", "Source", "Unit", "Current value", "Display order", ""].map((h, i) => (
                               <th
                                 key={h || i}
                                 style={{
-                                  textAlign: i === 2 || i === 3 ? "right" : "left",
+                                  textAlign: i === 3 || i === 4 ? "right" : "left",
                                   padding: "8px 10px", fontSize: 11, fontWeight: 700,
                                   color: "#888", letterSpacing: "0.02em",
-                                  width: i === 4 ? 90 : undefined,
+                                  width: i === 5 ? 90 : undefined,
                                 }}
                               >
                                 {h}
@@ -2524,6 +2531,18 @@ export default function DesktopView(): React.ReactElement | null {
                             const isNew = row.id == null;
                             const key = isNew ? "new" : String(row.id);
                             const saving = sgDriverSavingKey === key;
+                            const dynamic = isDynamicSource(row.source);
+                            // FX metrics are a spot-flat approximation (no FX forward).
+                            const isFxSource = row.source.startsWith("avg_fx_");
+                            const computed = dynamic
+                              ? sgResolveDriverRowValue(row)
+                              : null;
+                            const computedLabel =
+                              computed != null && Number.isFinite(computed)
+                                ? `${computed.toFixed(2)}${row.unit ? ` ${row.unit}` : ""}`
+                                : sgMarketLoading
+                                  ? "computing…"
+                                  : "—";
                             return (
                               <tr
                                 key={key}
@@ -2540,6 +2559,43 @@ export default function DesktopView(): React.ReactElement | null {
                                     placeholder={isNew ? "e.g. Brent" : ""}
                                     style={{ ...SG_INPUT_STYLE }}
                                   />
+                                  {dynamic && (
+                                    <span
+                                      style={{
+                                        display: "inline-block",
+                                        marginTop: 4,
+                                        padding: "1px 7px",
+                                        borderRadius: 4,
+                                        background: "rgba(255,80,0,0.10)",
+                                        color: ORANGE,
+                                        fontSize: 9.5,
+                                        fontWeight: 700,
+                                        letterSpacing: "0.04em",
+                                        textTransform: "uppercase",
+                                      }}
+                                    >
+                                      dynamic · {computedLabel}
+                                    </span>
+                                  )}
+                                </td>
+                                <td style={{ padding: "6px 10px" }}>
+                                  <select
+                                    value={row.source}
+                                    onChange={(e) => handleChangeSgDriverField(index, "source", e.target.value)}
+                                    style={{ ...SG_INPUT_STYLE, cursor: "pointer" }}
+                                  >
+                                    <option value="">Static</option>
+                                    {sgMarketCatalog.map((c) => (
+                                      <option key={c.key} value={c.key}>
+                                        {c.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {dynamic && isFxSource && (
+                                    <div style={{ fontSize: 9.5, color: "#aaa", marginTop: 3, lineHeight: 1.3 }}>
+                                      (spot-based approximation — no FX forward)
+                                    </div>
+                                  )}
                                 </td>
                                 <td style={{ padding: "6px 10px" }}>
                                   <input
@@ -2547,17 +2603,37 @@ export default function DesktopView(): React.ReactElement | null {
                                     value={row.unit}
                                     onChange={(e) => handleChangeSgDriverField(index, "unit", e.target.value)}
                                     placeholder={isNew ? "e.g. USD/bbl" : ""}
-                                    style={{ ...SG_INPUT_STYLE }}
+                                    disabled={dynamic}
+                                    title={dynamic ? "Unit is set by the bound market metric" : undefined}
+                                    style={{
+                                      ...SG_INPUT_STYLE,
+                                      ...(dynamic ? { background: "#f5f5f5", color: "#999", cursor: "not-allowed" } : {}),
+                                    }}
                                   />
                                 </td>
                                 <td style={{ padding: "6px 10px" }}>
-                                  <input
-                                    type="number"
-                                    step="any"
-                                    value={row.current_value}
-                                    onChange={(e) => handleChangeSgDriverField(index, "current_value", e.target.value)}
-                                    style={{ ...SG_INPUT_STYLE, textAlign: "right" }}
-                                  />
+                                  {dynamic ? (
+                                    <div
+                                      style={{
+                                        textAlign: "right",
+                                        fontSize: 12,
+                                        color: "#555",
+                                        fontWeight: 600,
+                                        whiteSpace: "nowrap",
+                                      }}
+                                      title="Computed live from the Yahoo proxy"
+                                    >
+                                      Computed: {computedLabel}
+                                    </div>
+                                  ) : (
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      value={row.current_value}
+                                      onChange={(e) => handleChangeSgDriverField(index, "current_value", e.target.value)}
+                                      style={{ ...SG_INPUT_STYLE, textAlign: "right" }}
+                                    />
+                                  )}
                                 </td>
                                 <td style={{ padding: "6px 10px" }}>
                                   <input

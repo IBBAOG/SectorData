@@ -144,8 +144,18 @@ export interface SensitivityGrid {
 
 /**
  * A central macro/assumption driver (Brent average, USD/BRL, etc.) — NOT
- * company-sensitive, so returned in full to everyone. `current_value` is the
- * live "today" value used to highlight / interpolate the matching scenario
+ * company-sensitive, so returned in full to everyone.
+ *
+ * A driver is either:
+ *   • STATIC  — `source` is null/'' and the admin types `current_value`; the
+ *     "today" value is `current_value`.
+ *   • DYNAMIC — `source` is a key in the market-driver catalog
+ *     (`MARKET_DRIVER_CATALOG` in `src/hooks/useMarketDrivers.ts`); the "today"
+ *     value is computed LIVE in the browser from the Yahoo proxy and `current_value`
+ *     may be null. Resolve the effective value with `resolveDriverValue(driver,
+ *     marketValues)` — never read `current_value` directly when `source` is set.
+ *
+ * The effective "today" value highlights / interpolates the matching scenario
  * column/row in a sensitivity table whose axis references this driver.
  *
  * Returned by `get_stock_guide_drivers()`; numeric `current_value` already
@@ -155,8 +165,17 @@ export interface StockGuideDriver {
   id: number;
   name: string;
   unit: string;
-  /** "Today" value of the driver (e.g. 80 for Brent USD/bbl). Null if unset. */
+  /**
+   * Static "today" value of the driver (e.g. 80 for Brent USD/bbl). Null when
+   * unset OR when the driver is DYNAMIC (value comes from `source` instead).
+   */
   current_value: number | null;
+  /**
+   * Binding to a live market metric. `null`/`''` → STATIC (use `current_value`);
+   * a catalog key (e.g. `'avg_brent_2026'`) → DYNAMIC (computed live, see
+   * `resolveDriverValue` / `useMarketDrivers`).
+   */
+  source: string | null;
   display_order: number;
 }
 
