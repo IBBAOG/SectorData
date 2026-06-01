@@ -155,17 +155,20 @@ function MiniMultiples({
       >
         <thead>
           <tr>
-            <th style={{ textAlign: "left", padding: "3px 8px 3px 0", color: "var(--mobile-text-muted)", fontWeight: 700, fontSize: 10 }} />
-            {miniRows.map((m) => (
+            <th style={{ textAlign: "left", padding: "3px 8px 3px 0", color: "#f5f5f5", fontWeight: 700, fontSize: 10, background: "#0a0a0a", borderTopLeftRadius: 4, borderBottomLeftRadius: 4 }} />
+            {miniRows.map((m, mi) => (
               <th
                 key={m.label}
                 style={{
                   textAlign: "right",
                   padding: "3px 8px",
-                  color: "var(--mobile-text-muted)",
+                  color: "#f5f5f5",
                   fontWeight: 700,
                   fontSize: 10,
                   whiteSpace: "nowrap",
+                  background: "#0a0a0a",
+                  borderTopRightRadius: mi === miniRows.length - 1 ? 4 : undefined,
+                  borderBottomRightRadius: mi === miniRows.length - 1 ? 4 : undefined,
                 }}
               >
                 {m.label}

@@ -76,15 +76,21 @@ function RecommendationChip({
 
 // ─── Comps table ──────────────────────────────────────────────────────────────
 
+// Comps table header is a solid near-black band with white text, matching the
+// source Itaú BBA comps sheet. Applied across both header levels + the sticky
+// Company corner cell.
+const HEADER_BG = "#0a0a0a";
+const HEADER_FG = "#f5f5f5";
+
 const TH_BASE: React.CSSProperties = {
   fontFamily: "Arial, Helvetica, sans-serif",
   fontSize: 11,
   fontWeight: 700,
-  color: "#374151",
-  background: "#f5f5f5",
+  color: HEADER_FG,
+  background: HEADER_BG,
   padding: "7px 10px",
   whiteSpace: "nowrap",
-  borderBottom: "1px solid #e0e0e0",
+  borderBottom: "1px solid rgba(255,255,255,0.18)",
 };
 
 const TD_BASE: React.CSSProperties = {
@@ -104,6 +110,9 @@ const STICKY_COL_WIDTH = 176;
 // Vertical rule that separates each metric group (EV/EBITDA | P/E | …). Slightly
 // stronger than the inner #efefef row rules so the eye reads the groups as units.
 const GROUP_RULE = "1px solid #dcdcdc";
+// Same group separator, but tuned to read on the black header band — a faint
+// light rule instead of the dark #dcdcdc (which would vanish on black).
+const GROUP_RULE_HEADER = "1px solid rgba(255,255,255,0.22)";
 
 // Right-edge shadow on the sticky Company column — makes it read as floating
 // above the horizontally-scrolled body. Kept subtle (matches dropdown depth).
@@ -183,8 +192,9 @@ function CompsTable({
                 textAlign: "left",
                 width: STICKY_COL_WIDTH,
                 minWidth: STICKY_COL_WIDTH,
-                borderRight: "1px solid #d6d6d6",
-                background: "#ececec",
+                borderRight: "1px solid rgba(255,255,255,0.18)",
+                background: HEADER_BG,
+                color: HEADER_FG,
                 boxShadow: STICKY_SHADOW,
                 letterSpacing: "0.02em",
                 textTransform: "uppercase",
@@ -200,7 +210,7 @@ function CompsTable({
                   ...TH_BASE,
                   textAlign: c === "Ticker" ? "left" : "right",
                   verticalAlign: "bottom",
-                  color: "#4b5563",
+                  color: HEADER_FG,
                 }}
               >
                 {c}
@@ -213,8 +223,8 @@ function CompsTable({
                 style={{
                   ...TH_BASE,
                   textAlign: "center",
-                  borderLeft: GROUP_RULE,
-                  color: "#111",
+                  borderLeft: GROUP_RULE_HEADER,
+                  color: HEADER_FG,
                   letterSpacing: "0.02em",
                 }}
               >
@@ -231,9 +241,9 @@ function CompsTable({
                   ...TH_BASE,
                   fontWeight: 600,
                   fontSize: 10,
-                  color: "#9095a0",
+                  color: "rgba(245,245,245,0.62)",
                   textAlign: "right",
-                  borderLeft: GROUP_RULE,
+                  borderLeft: GROUP_RULE_HEADER,
                 }}
               >
                 {y1Label}
@@ -244,7 +254,7 @@ function CompsTable({
                   ...TH_BASE,
                   fontWeight: 600,
                   fontSize: 10,
-                  color: "#9095a0",
+                  color: "rgba(245,245,245,0.62)",
                   textAlign: "right",
                 }}
               >
@@ -459,10 +469,10 @@ function SensitivityPanel({
                 ...TH_BASE,
                 textAlign: "left",
                 verticalAlign: "bottom",
-                background: "#ececec",
-                color: "#111",
-                borderRight: "1px solid #d6d6d6",
-                borderBottom: "1px solid #d6d6d6",
+                background: HEADER_BG,
+                color: HEADER_FG,
+                borderRight: "1px solid rgba(255,255,255,0.18)",
+                borderBottom: "1px solid rgba(255,255,255,0.18)",
                 fontSize: 11,
                 letterSpacing: "0.02em",
                 whiteSpace: "normal",
@@ -478,8 +488,8 @@ function SensitivityPanel({
                 ...TH_BASE,
                 textAlign: "center",
                 color: BRAND_ORANGE,
-                background: "#fbf3ef",
-                borderBottom: "1px solid #e0e0e0",
+                background: HEADER_BG,
+                borderBottom: "1px solid rgba(255,255,255,0.18)",
                 letterSpacing: "0.03em",
                 textTransform: "uppercase",
                 fontSize: 10.5,
@@ -495,10 +505,10 @@ function SensitivityPanel({
                 style={{
                   ...TH_BASE,
                   textAlign: "right",
-                  background: "#f5f5f5",
-                  borderRight: "1px solid #ededed",
-                  borderBottom: "1px solid #d6d6d6",
-                  color: "#374151",
+                  background: HEADER_BG,
+                  borderRight: "1px solid rgba(255,255,255,0.12)",
+                  borderBottom: "1px solid rgba(255,255,255,0.18)",
+                  color: HEADER_FG,
                 }}
               >
                 {c}
