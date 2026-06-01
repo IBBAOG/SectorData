@@ -355,6 +355,57 @@ export default function DesktopView(): React.ReactElement {
                 <BarrelLoading />
               ) : (
                 <>
+                  {/* ─ Total (All Fuels) ─ */}
+                  <div style={{ marginBottom: 10 }}>
+                    <div className="section-title" style={{ color: "#1a1a1a" }}>Total (All Fuels)</div>
+                    <hr className="section-hr" />
+                  </div>
+                  <div className="row g-3">
+                    <div className="col-md-6">
+                      <div className="chart-container">
+                        <div className="section-title" style={{ fontSize: 15 }}>Retail</div>
+                        <hr className="section-hr" />
+                        <PlotlyChart
+                          data={charts?.totalRetail.data ?? []}
+                          layout={charts?.totalRetail.layout ?? {}}
+                          config={{ displayModeBar: false }}
+                          style={{ width: "100%", height: 300 }}
+                        />
+                        {compData && <ComparisonTable rows={compData.totalRetail} unitMode={unitMode} />}
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="chart-container">
+                        <div className="section-title" style={{ fontSize: 15 }}>B2B</div>
+                        <hr className="section-hr" />
+                        <PlotlyChart
+                          data={charts?.totalB2B.data ?? []}
+                          layout={charts?.totalB2B.layout ?? {}}
+                          config={{ displayModeBar: false }}
+                          style={{ width: "100%", height: 300 }}
+                        />
+                        {compData && <ComparisonTable rows={compData.totalB2B} unitMode={unitMode} />}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="row g-3">
+                    <div className="col-md-6">
+                      <div className="chart-container">
+                        <div className="section-title" style={{ fontSize: 15 }}>Total</div>
+                        <hr className="section-hr" />
+                        <PlotlyChart
+                          data={charts?.totalTotal.data ?? []}
+                          layout={charts?.totalTotal.layout ?? {}}
+                          config={{ displayModeBar: false }}
+                          style={{ width: "100%", height: 300 }}
+                        />
+                        {compData && <ComparisonTable rows={compData.totalTotal} unitMode={unitMode} />}
+                      </div>
+                    </div>
+                  </div>
+
+                  <hr style={{ borderTop: "1px solid #e0e0e0", margin: "20px 0" }} />
+
                   {/* ─ Diesel B ─ */}
                   <div style={{ marginBottom: 10 }}>
                     <div className="section-title" style={{ color: "#1a1a1a" }}>Diesel B</div>

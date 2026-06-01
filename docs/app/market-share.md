@@ -2,6 +2,20 @@
 
 Dashboard consolidado de **Market Share (% de participação)** e **Sales Volumes (volume absoluto em mil m³)**. Owner: [`worker_dash-market-share`](../../.claude/agents/worker_dash-market-share.md).
 
+## "Total" aggregate product (2026-06-01)
+
+Um quinto produto **sintético** — `Total` (label de UI: **"Total (All Fuels)"**) — agrega a soma de todos os combustíveis **reais** retornados pela RPC (Diesel B + Gasolina C + Etanol Hidratado + quaisquer outros).
+
+- Helper `makeTotalRows(rows)` no hook, análogo a `makeOttoCycleRows`: para cada row crua de `serieRows`, emite uma cópia com `nome_produto:"Total"`, mantendo `quantidade`, `segmento`, `date`, `classificacao`, `agente_regulado`. A soma por chave `(date, player, segmento)` acontece downstream em `buildMarketShareLine` / `getMsAtDate` (`groupMap.set(key, prev + qty)`).
+- **Otto-Cycle é excluído da soma** — é sintético (Gasolina C + Etanol×0.7) e somá-lo causaria double-counting. `serieRows` nunca contém Otto-Cycle, mas `makeTotalRows` filtra defensivamente mesmo assim.
+- **TRR é excluído** — TRR só existe para Diesel B; somar TRR entre produtos não faz sentido. Segmentos do Total: `Total`, `Retail`, `B2B`.
+- Funciona automaticamente nos dois `unitMode`: **% Share** (`player_total / market_total × 100`) e **thousand m³** (soma absoluta), porque `buildMarketShareLine` / `buildComparisonData` já ramificam por `unitMode` — nenhuma lógica de unidade adicional.
+- Sem impacto em RPC / migration / schema / RLS — mudança puramente frontend no hook + nas duas Views.
+- Ordem: `Total` é o **primeiro** item de `PRODUCT_KEYS` (visão executiva agregada antes do detalhe por produto). Tipos estendidos: `ProductKey` ganha `"Total"`; `MarketShareCharts` / `MarketShareCompData` / `ChartKey` / `CHART_KEY_MATRIX` / `SEGMENTS_BY_PRODUCT` ganham as chaves `totalTotal` / `totalRetail` / `totalB2B`.
+- **Desktop**: novo bloco "Total (All Fuels)" como primeira seção do grid de charts (Retail + B2B + Total, cada um com `ComparisonTable`).
+- **Mobile**: aparece automaticamente como primeira aba do Product `MobileTabBar` (deriva de `PRODUCT_KEYS`); o segment selector mostra Total/Retail/B2B (deriva de `SEGMENTS_BY_PRODUCT`); hero chart e comparison table refletem a seleção.
+- **Export Excel** (workbook 4-sheet legacy) **não** inclui o Total — é uma config estática de 4 produtos sobre `serieRows` cru e não foi tocada. Total é uma análise on-screen; um follow-up pode adicionar a sheet se desejado.
+
 ## Unit Toggle (2026-05-26)
 
 A partir de 2026-05-26 o dashboard serve **dois modos** controlados por um `SegmentedToggle` top-level:
@@ -49,7 +63,7 @@ src/app/(dashboard)/market-share/
 1. `MobileTopBar` + `MobileKebabMenu` (account actions)
 2. Title block (h1 + subtitle + period badge)
 3. Sticky `SegmentedToggle` (% Share / Volume) — top-level unit switch
-4. Product `MobileTabBar` — container variant (Diesel B / Gasoline C / Hydrous Ethanol / Otto-Cycle)
+4. Product `MobileTabBar` — container variant (Total (All Fuels) / Diesel B / Gasoline C / Hydrous Ethanol / Otto-Cycle)
 5. Segment `MobileTabBar` — underline variant (Total / Retail / B2B / TRR; TRR only for Diesel B)
 6. Hero stacked-area chart card (active product × segment, 12M rolling, `MobileChart`)
 7. 2-column legend below chart
@@ -68,7 +82,7 @@ src/app/(dashboard)/market-share/
 
 | Analysis | Desktop | Mobile |
 |---|---|---|
-| 13 product×segment charts (Diesel B Retail/B2B/TRR/Total, Gasoline C Retail/B2B/Total, Ethanol Retail/B2B/Total, Otto-Cycle Retail/B2B/Total) | Full (all 13 rendered as a 2-column grid) | Product `MobileTabBar` + Segment `MobileTabBar` navigates the same 13 chart variants, one at a time. Hero stacked-area chart reflects active combination. |
+| 16 product×segment charts (Total Retail/B2B/Total, Diesel B Retail/B2B/TRR/Total, Gasoline C Retail/B2B/Total, Ethanol Retail/B2B/Total, Otto-Cycle Retail/B2B/Total) | Full (all 16 rendered as a 2-column grid; Total is the first section) | Product `MobileTabBar` + Segment `MobileTabBar` navigates the same 16 chart variants, one at a time. Hero stacked-area chart reflects active combination. |
 | Comparison table (MoM/QTD/YoY/YTD p.p. delta) | Yes (inline table under each chart) | Inline section (always visible) below Top Distributors — player picker pills (up to 3) + MoM/QTD/YoY/YTD metric cards |
 | Top players ranking with MoM delta | Implicit via chart | Removed from mobile [mobile-only] 2026-05-28 — chart legend still shows players |
 | Export (Tier 2 ExportModal) | Yes | No — policy § 3.4 |
@@ -81,7 +95,7 @@ src/app/(dashboard)/market-share/
 - `opcoes`, `datas`, `regioesAll`, `ufsAll`, `mercadosAll`
 - Filter state + setters: `mode`, `sliderRange`, `regioesSelected`, `ufsSelected`, `competidoresSelected`
 - `applyFilters()`, `clearFilters()`
-- Derived: `charts` (all 13), `compData`, `topPlayers`, `chartColors`, `players`, `big3`, `latestDate`
+- Derived: `charts` (all 16), `compData`, `topPlayers`, `chartColors`, `players`, `big3`, `latestDate`
 - Mobile chart-selector state (additive, used by `mobile/View.tsx` only):
   - `selectedProduct: ProductKey` + `setSelectedProduct(p)`
   - `selectedSegment: SegmentKey` + `setSelectedSegment(s)` (auto-falls-back to `Total` when the segment doesn't exist for the chosen product, e.g. TRR + Gasolina C)
@@ -96,8 +110,8 @@ src/app/(dashboard)/market-share/
 - Export state + handlers: `exportOpen`, `openExportModal`, `closeExportModal`, `exportFilters`, `exportSizeEstimate`
 
 Constants also exported from the hook file (consumed by `mobile/View.tsx`):
-- `PRODUCT_KEYS: ProductKey[]` — `["Diesel B", "Gasolina C", "Etanol Hidratado", "Otto-Cycle"]`
-- `PRODUCT_LABEL: Record<ProductKey, string>` — English display labels (`"Gasolina C" → "Gasoline C"`, `"Etanol Hidratado" → "Hydrous Ethanol"`)
+- `PRODUCT_KEYS: ProductKey[]` — `["Total", "Diesel B", "Gasolina C", "Etanol Hidratado", "Otto-Cycle"]`
+- `PRODUCT_LABEL: Record<ProductKey, string>` — English display labels (`"Total" → "Total (All Fuels)"`, `"Gasolina C" → "Gasoline C"`, `"Etanol Hidratado" → "Hydrous Ethanol"`)
 - `SEGMENTS_BY_PRODUCT: Record<ProductKey, SegmentKey[]>` — drives the segment selector (TRR only for Diesel B)
 - `CHART_KEY_MATRIX: Record<ProductKey, Partial<Record<SegmentKey, ChartKey>>>` — `(product, segment) → key in MarketShareCharts`
 
@@ -119,6 +133,7 @@ Pure helpers also exported from the hook file:
 - `buildMobileStackedArea` — builds stacked-area traces for the mobile hero chart
 - `buildComparisonData` — builds the MoM/QTD/YoY/YTD comparison rows
 - `makeOttoCycleRows` — synthesises Otto-Cycle = Gasolina C + Etanol × 0.7
+- `makeTotalRows` — synthesises Total = sum of all raw fuels (Diesel B + Gasoline C + Ethanol + …), excluding Otto-Cycle (double-count) and TRR rows (Diesel-B-only). Segments: Total/Retail/B2B.
 
 ### RPC ownership note
 

@@ -141,6 +141,9 @@ export interface TopPlayerRow {
 export type ChartResult = { data: PlotData[]; layout: Partial<Layout> };
 
 export interface MarketShareCharts {
+  totalTotal: ChartResult;
+  totalRetail: ChartResult;
+  totalB2B: ChartResult;
   dieselRetail: ChartResult;
   dieselB2B: ChartResult;
   dieselTrR: ChartResult;
@@ -158,11 +161,16 @@ export interface MarketShareCharts {
 
 export type ChartKey = keyof MarketShareCharts;
 
-export type ProductKey = "Diesel B" | "Gasolina C" | "Etanol Hidratado" | "Otto-Cycle";
+export type ProductKey = "Total" | "Diesel B" | "Gasolina C" | "Etanol Hidratado" | "Otto-Cycle";
 export type SegmentKey = "Total" | "Retail" | "B2B" | "TRR";
 
 /** Maps (product, segment) → chart key. TRR only exists for Diesel B. */
 export const CHART_KEY_MATRIX: Record<ProductKey, Partial<Record<SegmentKey, ChartKey>>> = {
+  "Total": {
+    Total: "totalTotal",
+    Retail: "totalRetail",
+    B2B: "totalB2B",
+  },
   "Diesel B": {
     Total: "dieselTotal",
     Retail: "dieselRetail",
@@ -188,16 +196,19 @@ export const CHART_KEY_MATRIX: Record<ProductKey, Partial<Record<SegmentKey, Cha
 
 /** Segments available per product (drives the segment selector UI). */
 export const SEGMENTS_BY_PRODUCT: Record<ProductKey, SegmentKey[]> = {
+  "Total": ["Total", "Retail", "B2B"],
   "Diesel B": ["Total", "Retail", "B2B", "TRR"],
   "Gasolina C": ["Total", "Retail", "B2B"],
   "Etanol Hidratado": ["Total", "Retail", "B2B"],
   "Otto-Cycle": ["Total", "Retail", "B2B"],
 };
 
-export const PRODUCT_KEYS: ProductKey[] = ["Diesel B", "Gasolina C", "Etanol Hidratado", "Otto-Cycle"];
+// "Total" first: executive aggregated view ahead of the per-product detail.
+export const PRODUCT_KEYS: ProductKey[] = ["Total", "Diesel B", "Gasolina C", "Etanol Hidratado", "Otto-Cycle"];
 
 /** English display label for a product (used in mobile selectors). */
 export const PRODUCT_LABEL: Record<ProductKey, string> = {
+  "Total": "Total (All Fuels)",
   "Diesel B": "Diesel B",
   "Gasolina C": "Gasoline C",
   "Etanol Hidratado": "Hydrous Ethanol",
@@ -205,6 +216,9 @@ export const PRODUCT_LABEL: Record<ProductKey, string> = {
 };
 
 export interface MarketShareCompData {
+  totalTotal: CompRow[];
+  totalRetail: CompRow[];
+  totalB2B: CompRow[];
   dieselRetail: CompRow[];
   dieselB2B: CompRow[];
   dieselTrR: CompRow[];
@@ -685,6 +699,36 @@ export function makeOttoCycleRows(rows: MsSerieRow[]): MsSerieRow[] {
   return result;
 }
 
+/**
+ * Synthetic "Total" product = sum of all REAL fuels returned by the RPC
+ * (Diesel B + Gasoline C + Hydrous Ethanol + any other raw product), grouped
+ * downstream by (date, classificacao/agente_regulado, segmento).
+ *
+ * It emits one copy per raw row with nome_produto:"Total", keeping quantidade,
+ * segmento, date, classificacao and agente_regulado intact. The per-key
+ * summation is done downstream (buildMarketShareLine / getMsAtDate both do
+ * `groupMap.set(key, prev + qty)`), so duplicate (date, player, segmento)
+ * rows are naturally aggregated.
+ *
+ * Otto-Cycle is intentionally NOT summed — it is itself a synthetic product
+ * (Gasoline C + Ethanol × 0.7) derived from the same raw rows, so including it
+ * would double-count. We only ever receive raw rows here (serieRows never
+ * contains Otto-Cycle), but we filter defensively anyway.
+ *
+ * TRR rows are dropped: TRR only exists for Diesel B, and summing TRR across
+ * products is not meaningful. The "Total" product therefore carries only the
+ * Total / Retail / B2B segments.
+ */
+export function makeTotalRows(rows: MsSerieRow[]): MsSerieRow[] {
+  const result: MsSerieRow[] = [];
+  for (const r of rows) {
+    if (r.nome_produto === "Otto-Cycle") continue; // defensive — never present
+    if (r.segmento === "TRR") continue;            // TRR is Diesel-B-only
+    result.push({ ...r, nome_produto: "Total" });
+  }
+  return result;
+}
+
 function shiftMonth(dateStr: string, n: number): string {
   const y = parseInt(dateStr.slice(0, 4), 10);
   const m = parseInt(dateStr.slice(5, 7), 10) - 1 + n;
@@ -1079,11 +1123,15 @@ export function useMarketShareData(): UseMarketShareData {
   }, [big3, appliedMode, players]);
 
   const ottoCycleRows = useMemo(() => makeOttoCycleRows(serieRows), [serieRows]);
+  const totalRows = useMemo(() => makeTotalRows(serieRows), [serieRows]);
 
   const charts = useMemo<MarketShareCharts | null>(() => {
     if (seriesLoading) return null;
     const common = { players, big3, xMin, xMax, groupBy, colorsOverride: chartColors, unitMode };
     return {
+      totalTotal:   buildMarketShareLine({ serieRows: totalRows, produto: "Total", segmento: null,     ...common }),
+      totalRetail:  buildMarketShareLine({ serieRows: totalRows, produto: "Total", segmento: "Retail", ...common }),
+      totalB2B:     buildMarketShareLine({ serieRows: totalRows, produto: "Total", segmento: "B2B",    ...common }),
       dieselRetail: buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "Retail", ...common }),
       dieselB2B:    buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "B2B",    ...common }),
       dieselTrR:    buildMarketShareLine({ serieRows, produto: "Diesel B",         segmento: "TRR",    ...common }),
@@ -1098,11 +1146,14 @@ export function useMarketShareData(): UseMarketShareData {
       ottoB2B:      buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: "B2B",    ...common }),
       ottoTotal:    buildMarketShareLine({ serieRows: ottoCycleRows, produto: "Otto-Cycle", segmento: null,     ...common }),
     };
-  }, [serieRows, ottoCycleRows, players, big3, xMin, xMax, groupBy, chartColors, seriesLoading, unitMode]);
+  }, [serieRows, ottoCycleRows, totalRows, players, big3, xMin, xMax, groupBy, chartColors, seriesLoading, unitMode]);
 
   const compData = useMemo<MarketShareCompData | null>(() => {
     if (!latestDate || seriesLoading) return null;
     return {
+      totalTotal:   buildComparisonData(totalRows, "Total", null, players, big3, latestDate, groupBy, unitMode),
+      totalRetail:  buildComparisonData(totalRows, "Total", "Retail", players, big3, latestDate, groupBy, unitMode),
+      totalB2B:     buildComparisonData(totalRows, "Total", "B2B", players, big3, latestDate, groupBy, unitMode),
       dieselRetail: buildComparisonData(serieRows, "Diesel B", "Retail", players, big3, latestDate, groupBy, unitMode),
       dieselB2B:    buildComparisonData(serieRows, "Diesel B", "B2B", players, big3, latestDate, groupBy, unitMode),
       dieselTrR:    buildComparisonData(serieRows, "Diesel B", "TRR", players, big3, latestDate, groupBy, unitMode),
@@ -1117,7 +1168,7 @@ export function useMarketShareData(): UseMarketShareData {
       ottoB2B:      buildComparisonData(ottoCycleRows, "Otto-Cycle", "B2B", players, big3, latestDate, groupBy, unitMode),
       ottoTotal:    buildComparisonData(ottoCycleRows, "Otto-Cycle", null, players, big3, latestDate, groupBy, unitMode),
     };
-  }, [serieRows, ottoCycleRows, players, big3, latestDate, groupBy, seriesLoading, unitMode]);
+  }, [serieRows, ottoCycleRows, totalRows, players, big3, latestDate, groupBy, seriesLoading, unitMode]);
 
   const topPlayers = useMemo<TopPlayerRow[]>(() => {
     if (!latestDate || serieRows.length === 0) return [];
@@ -1152,9 +1203,12 @@ export function useMarketShareData(): UseMarketShareData {
   // Top players for the currently selected product (mobile overview cards).
   const topPlayersForSelected = useMemo<TopPlayerRow[]>(() => {
     if (!latestDate || serieRows.length === 0) return [];
-    const sourceRows = selectedProduct === "Otto-Cycle" ? ottoCycleRows : serieRows;
+    const sourceRows =
+      selectedProduct === "Otto-Cycle" ? ottoCycleRows :
+      selectedProduct === "Total" ? totalRows :
+      serieRows;
     return buildTopPlayers(sourceRows, selectedProduct, latestDate, big3, groupBy, chartColors, 5, unitMode);
-  }, [serieRows, ottoCycleRows, selectedProduct, latestDate, big3, groupBy, chartColors, unitMode]);
+  }, [serieRows, ottoCycleRows, totalRows, selectedProduct, latestDate, big3, groupBy, chartColors, unitMode]);
 
   // ─── Mobile Compare toggle ────────────────────────────────────────────────
   const toggleCompareMember = useCallback((player: string) => {
