@@ -689,11 +689,15 @@ function SensitivityTableView({
                         background: hit ? "#2a1206" : HEADER_BG,
                         borderRight: "1px solid rgba(255,255,255,0.12)",
                         borderBottom: "1px solid rgba(255,255,255,0.18)",
-                        borderLeft: interpLeft ? `2px solid ${BRAND_ORANGE}` : undefined,
                         color: hit ? BRAND_ORANGE : HEADER_FG,
                         position: "relative",
                       }}
                     >
+                      {/* Interpolation marker continues from the header into the
+                          body at the proportional position (single line). */}
+                      {interpLeft && colAxis.marker.interp && (
+                        <InterpMarker orientation="horizontal" frac={colAxis.marker.interp.frac} />
+                      )}
                       {c}
                     </th>
                   );
@@ -721,11 +725,16 @@ function SensitivityTableView({
                             : "#f1f1f1",
                         borderRight: "1px solid #d6d6d6",
                         borderBottom: "1px solid #ededed",
-                        borderTop: rowInterpTop ? `2px solid ${BRAND_ORANGE}` : undefined,
                         padding: "8px 14px",
                         whiteSpace: "nowrap",
+                        position: "relative",
                       }}
                     >
+                      {/* Row-axis interpolation marker continues from the row label
+                          into the body at the proportional position (single line). */}
+                      {rowInterpTop && rowAxis.marker.interp && (
+                        <InterpMarker orientation="vertical" frac={rowAxis.marker.interp.frac} />
+                      )}
                       {rl}
                     </th>
                     {colAxis.labels.map((_, ci) => {
@@ -747,8 +756,6 @@ function SensitivityTableView({
                               : ri % 2 === 0
                                 ? "#fff"
                                 : "#fbfbfb",
-                            borderLeft: colInterpLeft ? `2px solid ${BRAND_ORANGE}` : undefined,
-                            borderTop: rowInterpTop ? `2px solid ${BRAND_ORANGE}` : undefined,
                             fontWeight: inHighlightedLine ? 700 : 400,
                           }}
                         >
