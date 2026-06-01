@@ -47,16 +47,32 @@ const YTD_SUBSIDY_BASE_FIELD: Partial<Record<keyof PriceBandsRow, keyof PriceBan
   bba_import_parity_w_subsidy: "bba_import_parity",
 };
 
+// Resolves the subsidy start date for a (field, product) pair. The same field
+// `petrobras_price_w_subsidy` starts on a DIFFERENT date per product (Gasoline
+// vs Diesel), so the row's product is needed to disambiguate. Returns null for
+// non-subsidy fields (which are never base-blended anyway).
+function subsidyStartDate(field: keyof PriceBandsRow, product: PriceBandsProduct): string | null {
+  if (field === "petrobras_price_w_subsidy") return product === "Gasoline" ? GAS_PETRO_SUBSIDY_START : SUBSIDY_CUTOFF;
+  if (field === "bba_import_parity_w_subsidy") return SUBSIDY_CUTOFF; // diesel only
+  return null;
+}
+
 // YTD average blends the pre-subsidy base price into the w/ subsidy line until
 // the subsidy takes effect, so the line starts on Jan 1 like the others.
 // Returns r[field] when present; otherwise, for a subsidy field with a mapped
-// base, falls back to the base field's value; else null.
+// base, falls back to the base field's value — but ONLY within the subsidy's
+// effective year or later. For years entirely before the subsidy existed
+// (2025, 2024), the fallback is suppressed (returns null) so the w/ subsidy
+// series stays empty and renders no line / legend entry / year-end label.
 function effectiveYtdValue(r: PriceBandsRow, field: keyof PriceBandsRow): number | null {
   const own = r[field] as number | null;
   if (own != null) return own;
   const baseField = YTD_SUBSIDY_BASE_FIELD[field];
-  if (baseField) return (r[baseField] as number | null) ?? null;
-  return null;
+  if (!baseField) return null;
+  const start = subsidyStartDate(field, r.product as PriceBandsProduct);
+  // No subsidy ever, or the row predates the subsidy's effective year → no blend.
+  if (start == null || r.date < `${start.slice(0, 4)}-01-01`) return null;
+  return (r[baseField] as number | null) ?? null;
 }
 
 // ─── Colors (single source of truth for both Views) ──────────────────────────
