@@ -51,7 +51,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | Route | Category | Key RPCs |
 |-------|----------|----------|
 | `/well-by-well` (Brazil Production Summary) | Oil & Gas | `get_production_brazil_aggregate`, `get_production_company_aggregate`, `get_production_top_fields`, `get_production_by_installation`, `get_production_yoy_table` + paginated helpers |
-| `/stock-guide` | Equities | `get_stock_guide_comps` (hide-aware), `get_stock_guide_sensitivity`, `get_stock_guide_config` + 7 admin RPCs + Yahoo proxy (live market cap / upside) |
+| `/stock-guide` | Equities | `get_stock_guide_comps` (hide-aware), `get_stock_guide_sensitivity`, `get_stock_guide_config` + 7 admin RPCs + Yahoo proxy (live market cap / upside / multiples) |
 | `/anp-cdp` (Monthly Production) | Oil & Gas | `get_anp_cdp_poco_serie`, `get_anp_cdp_pocos_json`, `get_anp_cdp_filtros` (canonical-field aware) |
 | `/anp-cdp-bsw` | Oil & Gas | `get_anp_cdp_bsw_scatter`, `get_anp_cdp_bsw_field_aggregate` (X axis: `pct_voip`), `get_anp_cdp_bsw_campos` |
 | `/anp-cdp-depletion` | Oil & Gas | `get_anp_cdp_depletion_campos`, `get_anp_cdp_depletion_scatter`, `get_anp_cdp_depletion_field_aggregate` |
@@ -122,7 +122,7 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | `field_canonical_names` | field_raw | Override map for `canonical_field_name(text)` — consolidates well-name variants |
 | `field_canonical_expansion_cache` | — | Cached expansion of canonical → variants (refresh via pg_cron) |
 | `stock_portfolios` | uuid | `is_public` flag opens anon SELECT for system-owned public rows |
-| `stock_guide_companies`, `stock_guide_sensitivity`, `stock_guide_config` | ticker / ticker / id=1 | `/stock-guide` equities comps + freeform 2D sensitivity grids + global config; RLS-enabled with **no policies** (all reads via hide-aware SECURITY DEFINER RPCs) |
+| `stock_guide_companies`, `stock_guide_sensitivity`, `stock_guide_config` | ticker / ticker / id=1 | `/stock-guide` equities comps (price-independent fundamentals in BRL mn — `net_debt`, `net_income_y1/y2`, `fcfe_y1/y2`, `dividends_y1/y2`, `ebitda_y1/y2`, `volumes_y1/y2`; the 4 multiples EV/EBITDA · P/E · FCFE Yield · Div Yield are derived live in the browser from the Yahoo price, never stored) + freeform 2D sensitivity grids + global config; RLS-enabled with **no policies** (all reads via hide-aware SECURITY DEFINER RPCs) |
 | `module_visibility` | module_slug | 3 visibility axes (public / clients / home) |
 | `news_articles` | url | Scanned news feed (filled by the external News Hunter scanner repo) |
 | `news_hunter_keywords` | (user_id, keyword) | Per-user, RLS-scoped |
