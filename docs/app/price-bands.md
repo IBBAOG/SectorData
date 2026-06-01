@@ -100,7 +100,7 @@ Returns: `{ rows, loading, error, filters, setFilters, datas, xMin, xMax, gasoli
 
 Key derivations done in the hook (never in Views):
 - `buildPriceBandsChart` — price bands multi-trace with end-of-line annotations + deconfliction
-- `buildYtdChart` — cumulative YTD average + dotted year-end projection
+- `buildYtdChart` — cumulative YTD average + dotted year-end projection. The projection is computed **per series**: it holds each series' own last non-null value constant from that series' own last non-null date through Dec 31. This matters for the Diesel `_w_subsidy` lines, whose most recent rows are often NULL (the trigger only fills them once matching `anp_subsidy_commercialization` data exists, which lags `price_bands`) — they still project to year-end from where their real line ends, instead of being dropped.
 - `buildCurrentValues` — Petrobras vs. IPP/EPP percentage badges per product
 - `SUBSIDY_CUTOFF = "2026-03-12"` — subsidy lines visible only from this date
 

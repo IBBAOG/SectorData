@@ -328,10 +328,7 @@ export function buildYtdChart(
     return { data: [], layout: { ...COMMON_LAYOUT_BASE, height: 360 } };
   }
 
-  const lastRow   = yearRows[yearRows.length - 1];
-  const lastDate  = lastRow.date;
-  const yearEnd   = `${year}-12-31`;
-  const projDates = generateDailyDates(addDays(lastDate, 1), yearEnd);
+  const yearEnd = `${year}-12-31`;
 
   const traces: PlotData[] = [];
 
@@ -340,6 +337,12 @@ export function buildYtdChart(
     let count  = 0;
     const actualDates: string[] = [];
     const actualAvgs:  number[] = [];
+    // Track this series' own last non-null value/date — the subsidy series
+    // (bba_import_parity_w_subsidy / petrobras_price_w_subsidy) trail off with
+    // NULLs because the DB trigger only fills them once matching
+    // anp_subsidy_commercialization data exists, which lags price_bands.
+    let lastActualValue: number | null = null;
+    let lastActualDate:  string | null = null;
 
     for (const r of yearRows) {
       const val = r[s.field] as number | null;
@@ -348,6 +351,8 @@ export function buildYtdChart(
       count++;
       actualDates.push(r.date);
       actualAvgs.push(cumSum / count);
+      lastActualValue = val;
+      lastActualDate  = r.date;
     }
 
     if (actualDates.length === 0) continue;
@@ -384,16 +389,20 @@ export function buildYtdChart(
         : { hovertemplate: `%{fullData.name}: %{y:.2f}<extra></extra>` }),
     } as unknown as PlotData);
 
-    if (projDates.length > 0) {
-      const lastPrice = lastRow[s.field] as number | null;
-      if (lastPrice == null) continue;
+    // Project from THIS series' own last non-null point, holding its last
+    // actual price constant — not the global lastRow, whose subsidy fields may
+    // be NULL. projDates starts the day after this series ended, so there is no
+    // gap between the real line and its dotted projection.
+    const seriesProjDates = generateDailyDates(addDays(lastActualDate!, 1), yearEnd);
+    if (seriesProjDates.length > 0 && lastActualValue != null) {
+      const lastPrice = lastActualValue;
 
       let projSum   = cumSum;
       let projCount = count;
       const projX: string[] = [];
       const projY: number[] = [];
 
-      for (const d of projDates) {
+      for (const d of seriesProjDates) {
         projSum   += lastPrice;
         projCount += 1;
         projX.push(d);
@@ -414,13 +423,15 @@ export function buildYtdChart(
   }
 
   const annotations: Partial<Annotations>[] = seriesDefs.flatMap((s) => {
-    const lastPrice = lastRow[s.field] as number | null;
-    if (lastPrice == null) return [];
     const yearRowsForS = yearRows.filter((r) => (r[s.field] as number | null) != null);
     if (yearRowsForS.length === 0) return [];
+    // Use this series' own last non-null value/date for the year-end label, so
+    // the subsidy lines (which trail off with NULLs) still get a projection.
+    const lastRowForS = yearRowsForS[yearRowsForS.length - 1];
+    const lastPrice   = lastRowForS[s.field] as number;
     const cumSum = yearRowsForS.reduce((acc, r) => acc + (r[s.field] as number), 0);
     const count  = yearRowsForS.length;
-    const remainingDays = projDates.length;
+    const remainingDays = generateDailyDates(addDays(lastRowForS.date, 1), yearEnd).length;
     const finalAvg = (cumSum + remainingDays * lastPrice) / (count + remainingDays);
     return [{
       x: yearEnd,
