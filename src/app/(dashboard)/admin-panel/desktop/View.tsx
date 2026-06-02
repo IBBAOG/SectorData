@@ -2486,14 +2486,14 @@ export default function DesktopView(): React.ReactElement | null {
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                         <thead>
                           <tr style={{ borderBottom: "2px solid #ececec" }}>
-                            {["Name", "Source", "Unit", "Current value", "Display order", ""].map((h, i) => (
+                            {["Name", "Source", "Unit", "Current value", ""].map((h, i) => (
                               <th
                                 key={h || i}
                                 style={{
-                                  textAlign: i === 3 || i === 4 ? "right" : "left",
+                                  textAlign: i === 3 ? "right" : "left",
                                   padding: "8px 10px", fontSize: 11, fontWeight: 700,
                                   color: "#888", letterSpacing: "0.02em",
-                                  width: i === 5 ? 90 : undefined,
+                                  width: i === 4 ? 90 : undefined,
                                 }}
                               >
                                 {h}
@@ -2609,16 +2609,6 @@ export default function DesktopView(): React.ReactElement | null {
                                       style={{ ...SG_INPUT_STYLE, textAlign: "right" }}
                                     />
                                   )}
-                                </td>
-                                <td style={{ padding: "6px 10px" }}>
-                                  <input
-                                    type="number"
-                                    step={1}
-                                    value={row.display_order}
-                                    onChange={(e) => handleChangeSgDriverField(index, "display_order", e.target.value)}
-                                    placeholder="0"
-                                    style={{ ...SG_INPUT_STYLE, textAlign: "right", width: 90 }}
-                                  />
                                 </td>
                                 <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
                                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
