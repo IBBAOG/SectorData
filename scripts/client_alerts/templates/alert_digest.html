@@ -1,0 +1,49 @@
+{% extends "_layout.html" %}
+
+{% block title %}SectorData Alerts — Daily Digest ({{ event_count }} updates){% endblock %}
+
+{% block body %}
+<h2>Your daily alerts digest</h2>
+<p>
+  <strong>{{ event_count }} update{{ "s" if event_count != 1 else "" }}</strong>
+  across <strong>{{ groups | length }}</strong>
+  base{{ "s" if (groups | length) != 1 else "" }} you subscribe to.
+</p>
+
+{% for g in groups %}
+<h3>{{ g.display_name }}</h3>
+<table style="width:100%; border-collapse:collapse; font-size:13px; margin: 6px 0 14px;">
+  <thead>
+    <tr style="background:#f5f5f5;">
+      <th style="text-align:left; padding:6px 8px; border-bottom:2px solid #eeeeee;">Update</th>
+      <th style="text-align:left; padding:6px 8px; border-bottom:2px solid #eeeeee;">Detected (UTC)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for evt in g.events %}
+    <tr style="border-bottom:1px solid #eeeeee;">
+      <td style="padding:6px 8px;">
+        {% set p = evt.payload %}
+        {% if p.period %}Period {{ p.period }}{% elif p.message %}{{ p.message }}{% else %}{{ evt.event_key }}{% endif %}
+      </td>
+      <td style="padding:6px 8px; color:#666; white-space:nowrap;">
+        {{ evt.detected_at[:19] if evt.detected_at else "—" }}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if g.frontend_route %}
+<a class="cta" href="{{ frontend_url }}{{ g.frontend_route }}">View {{ g.display_name }}</a>
+{% endif %}
+{% endfor %}
+{% endblock %}
+
+{% block footer %}
+<p>
+  You're receiving this daily digest because you subscribed to alerts on
+  <a href="{{ frontend_url }}/alerts">SectorData</a>.
+  Manage your subscriptions or switch to instant emails on the
+  <a href="{{ frontend_url }}/alerts">Alerts page</a>.
+</p>
+{% endblock %}

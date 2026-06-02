@@ -197,6 +197,45 @@ def main() -> None:
 
     print(f"\nDone! {inserted} rows upserted into price_bands.")
 
+    _maybe_fire_client_alert()
+
+
+def _maybe_fire_client_alert() -> None:
+    """
+    Optionally notify Client Alerts subscribers that price_bands changed.
+
+    price_bands has no dedicated GitHub Actions workflow (it's a manual upload),
+    so the alert hook lives here instead of in a workflow's final step. It fires
+    ONLY when the Resend + Supabase env is present; otherwise it skips silently,
+    so local/dry uploads stay side-effect free.
+    """
+    required = ("SUPABASE_URL", "RESEND_API_KEY")
+    have_service_key = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ.get(
+        "SUPABASE_SERVICE_ROLE_KEY"
+    )
+    if not all(os.environ.get(k) for k in required) or not have_service_key:
+        print(
+            "INFO: Client Alerts hook skipped (SUPABASE_URL / service key / "
+            "RESEND_API_KEY not all set). Upload succeeded regardless."
+        )
+        return
+
+    try:
+        # Ensure the repo root is importable even if this script is launched as
+        # `python scripts/manual/price_bands_upload.py` from an unexpected cwd.
+        repo_root = Path(__file__).resolve().parents[2]
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+
+        # Imported lazily so the upload script has no hard dependency on the
+        # alerts engine (and its deps) when alerts aren't configured.
+        from scripts.client_alerts.run_base import run_one
+
+        print("INFO: firing Client Alerts hook for 'price_bands'…")
+        run_one("price_bands")
+    except Exception as exc:  # never fail the upload because of the alert hook
+        print(f"WARNING: Client Alerts hook for 'price_bands' failed: {exc}")
+
 
 if __name__ == "__main__":
     main()

@@ -25,3 +25,15 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           DG_MARGINS_XLSX: data/d_g_margins.xlsx
+
+      # Client Alerts hook — emit + (immediate) deliver for the base this upload updates.
+      - name: Client Alerts — notify subscribers (d_g_margins)
+        if: success()
+        run: python -m scripts.client_alerts.run_base --source d_g_margins
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY:      ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          RESEND_API_KEY:            ${{ secrets.RESEND_API_KEY }}
+          ALERTS_SENDER_EMAIL:       ${{ vars.ALERTS_SENDER_EMAIL || 'SectorData Alerts <onboarding@resend.dev>' }}
+          ALERTS_FRONTEND_URL:       ${{ vars.ALERTS_FRONTEND_URL || 'https://sectordata-dashboard.vercel.app' }}

@@ -1,0 +1,29 @@
+{% extends "_layout.html" %}
+
+{% block title %}{{ source.display_name }} — New Data Available{% endblock %}
+
+{% block body %}
+<h2>{{ source.display_name }}</h2>
+<p>New data is available for <strong>{{ source.display_name }}</strong>.</p>
+
+{% set payload = event.payload %}
+{% if payload.message %}
+<p>{{ payload.message }}</p>
+{% endif %}
+
+{% if payload.period %}
+<p><strong>Period:</strong> {{ payload.period }}</p>
+{% endif %}
+
+{% set route = payload.frontend_route or source.metadata.frontend_route %}
+{% if route %}
+<a class="cta" href="{{ frontend_url }}{{ route }}">View source data</a>
+{% else %}
+<a class="cta" href="{{ frontend_url }}/alerts">View data</a>
+{% endif %}
+
+<hr class="divider" />
+<p style="font-size:12px; color:#666;">
+  Detected: {{ event.detected_at[:19] if event.detected_at else "—" }} UTC
+</p>
+{% endblock %}
