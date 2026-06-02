@@ -9,6 +9,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type {
+  SubscribableBase,
+  MySubscription,
+  RecentAlert,
+  UnsubscribeResult,
+} from "@/types/alerts";
 
 export type SalesMetricas = {
   total_registros: number;
@@ -4633,4 +4639,98 @@ export async function rpcGetDataSourcesFreshness(
   const { data, error } = await supabase.rpc("get_data_sources_freshness");
   if (error) throw error;
   return (data ?? []) as DataSourceFreshnessRow[];
+}
+
+// ─── MODULE: Alerts (/src/app/(dashboard)/alerts) ────────────────────────────
+//
+// Rebuilt logged-in-only email subscription product (Phase 4). The subscriber's
+// email is implicit (their auth email). All functions below are SECURITY
+// DEFINER and deployed in
+// supabase/migrations/20260608100000_alerts_rebuild_new_schema.sql.
+//
+// Six wrappers — the client/anon surface:
+//   list_subscribable_bases   [authenticated]  catalog + the user's flags
+//   set_my_subscription       [authenticated]  toggle one base
+//   set_my_subscriptions      [authenticated]  bulk toggle (per-category)
+//   list_my_subscriptions     [authenticated]  the user's active/paused subs
+//   list_my_recent_alerts     [authenticated]  read-only recent feed
+//   unsubscribe_by_token      [anon + auth]    email-footer landing page
+//
+// These wrappers intentionally let RPC errors propagate (no silent try/catch +
+// return []), so the dashboard hook can surface failures via DataErrorBoundary
+// and optimistic toggles can revert. The legacy double-opt-in wrappers
+// (subscribe_to_alerts / confirm_subscription / ...) were deleted with the old
+// product and must NOT be reintroduced.
+
+/** Catalog of subscribable bases joined with the current user's flags.
+ *  authenticated-only — anon callers get an empty set (RLS via auth.uid()). */
+export async function rpcListSubscribableBases(
+  supabase: SupabaseClient,
+): Promise<SubscribableBase[]> {
+  const { data, error } = await supabase.rpc("list_subscribable_bases");
+  if (error) throw error;
+  return (data ?? []) as SubscribableBase[];
+}
+
+/** Subscribe / unsubscribe one base. Returns the resulting active flag. */
+export async function rpcSetMySubscription(
+  supabase: SupabaseClient,
+  sourceSlug: string,
+  active: boolean,
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("set_my_subscription", {
+    p_source_slug: sourceSlug,
+    p_active: active,
+  });
+  if (error) throw error;
+  return Boolean(data);
+}
+
+/** Bulk subscribe / unsubscribe (e.g. per-category Select all / Clear).
+ *  Returns the number of subscriptions affected. */
+export async function rpcSetMySubscriptions(
+  supabase: SupabaseClient,
+  sourceSlugs: string[],
+  active: boolean,
+): Promise<number> {
+  const { data, error } = await supabase.rpc("set_my_subscriptions", {
+    p_source_slugs: sourceSlugs,
+    p_active: active,
+  });
+  if (error) throw error;
+  return Number(data ?? 0);
+}
+
+/** The current user's subscriptions (active and paused). */
+export async function rpcListMySubscriptions(
+  supabase: SupabaseClient,
+): Promise<MySubscription[]> {
+  const { data, error } = await supabase.rpc("list_my_subscriptions");
+  if (error) throw error;
+  return (data ?? []) as MySubscription[];
+}
+
+/** Read-only feed of the user's most recent sent alerts (default 20). */
+export async function rpcListMyRecentAlerts(
+  supabase: SupabaseClient,
+  limit = 20,
+): Promise<RecentAlert[]> {
+  const { data, error } = await supabase.rpc("list_my_recent_alerts", {
+    p_limit: limit,
+  });
+  if (error) throw error;
+  return (data ?? []) as RecentAlert[];
+}
+
+/** One-click unsubscribe via the token embedded in the email footer.
+ *  anon + authenticated. Idempotent server-side. */
+export async function rpcUnsubscribeByToken(
+  supabase: SupabaseClient,
+  token: string,
+): Promise<UnsubscribeResult> {
+  const { data, error } = await supabase.rpc("unsubscribe_by_token", {
+    p_token: token,
+  });
+  if (error) throw error;
+  return (data ?? { success: false }) as UnsubscribeResult;
 }
