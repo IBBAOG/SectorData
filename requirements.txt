@@ -20,7 +20,7 @@ pdfplumber
 # --enable-ocr-fallback flag in subsidy_diesel_sync.py and require a system
 # Tesseract binary. Install them manually if needed: pip install pdf2image pytesseract
 
-# ── Alerts Product (scripts/alerts/) ──────────────────────────────────────────
-jinja2>=3.1          # email template rendering
+# ── Client Alerts (scripts/client_alerts/) ────────────────────────────────────
+jinja2>=3.1          # email template rendering (immediate + digest)
 # resend SDK not used — we call the Resend REST API directly via `requests`
 # (avoids SDK version coupling; requests is already listed above)

@@ -1,13 +1,25 @@
-name: ANP LPC — Sync (preços semanais de combustíveis)
+name: Client Alerts — Daily Digest
+
+# Delivers the once-a-day digest for every base whose effective cadence is
+# 'digest' (vessels, daily production, or any subscription overridden to digest).
+# Immediate bases are delivered by the per-ETL hook as data lands; this only
+# sweeps the digest cadence.
 
 on:
-  schedule:
-    - cron: '30 14 * * 3'   # Wednesdays at 14:30 UTC (11:30 BRT) — ANP publishes weekly
   workflow_dispatch:
+  schedule:
+    - cron: '30 23 * * *'   # daily at 23:30 UTC (20:30 BRT) — after the day's ETLs
+
+# Own group so a slow digest never collides with the next dispatch, and never
+# shares a queue with the ETL workflows.
+concurrency:
+  group: client-alerts-digest
+  cancel-in-progress: false
 
 jobs:
-  sync:
+  digest:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -15,20 +27,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: pip
 
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Sync ANP LPC → Supabase
-        run: python scripts/pipelines/anp/lpc_sync.py
-        env:
-          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-
-      # Client Alerts hook — emit + (immediate) deliver for the bases this ETL updates.
-      - name: Client Alerts — notify subscribers (anp_lpc)
-        if: success()
-        run: python -m scripts.client_alerts.run_base --source anp_lpc
+      - name: Sweep and send daily digest
+        run: python -m scripts.client_alerts.run_base --digest --batch-limit 200
         env:
           SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY:      ${{ secrets.SUPABASE_SERVICE_KEY }}

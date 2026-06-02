@@ -1,0 +1,18 @@
+SectorData Alerts — Daily Digest
+================================
+
+{{ event_count }} update{{ "s" if event_count != 1 else "" }} across {{ groups | length }} base{{ "s" if (groups | length) != 1 else "" }} you subscribe to.
+
+{% for g in groups %}
+{{ g.display_name }}
+{{ "-" * (g.display_name | length) }}
+{% for evt in g.events %}{% set p = evt.payload %}  - {% if p.period %}Period {{ p.period }}{% elif p.message %}{{ p.message }}{% else %}{{ evt.event_key }}{% endif %} (detected {{ evt.detected_at[:19] if evt.detected_at else "—" }} UTC)
+{% endfor %}
+{% if g.frontend_route %}  View: {{ frontend_url }}{{ g.frontend_route }}
+{% endif %}
+{% endfor %}
+
+
+---
+You're receiving this daily digest because you subscribed to alerts on SectorData ({{ frontend_url }}/alerts).
+Manage your subscriptions or switch to instant emails on the Alerts page: {{ frontend_url }}/alerts
