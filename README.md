@@ -39,7 +39,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/market-share` | `get_ms_opcoes_filtros`, `get_ms_serie_fast`, `get_ms_serie_others`, `get_others_players` (% Share ↔ thousand m³ toggle) |
 | `/navios-diesel` | `get_nd_ultima_coleta`, `get_nd_coletas_distintas`, `get_nd_navios`, `get_nd_resumo_portos` |
 | `/diesel-gasoline-margins` | `get_dg_margins_data`, `get_dg_margins_filters` |
-| `/price-bands` | `get_price_bands_data` (Gasoline-with-subsidy fixed at BRL 3.05/L since 2026-05-29) |
+| `/price-bands` | `get_price_bands_data` (Gasoline-with-subsidy: fixed BRL 0.44/L delta since 2026-06-01 — Petrobras +0.44, import parity −0.44; the BRL 3.05/L flat line is preserved only for the 2026-05-29 → 2026-05-31 historical window) |
 | `/stocks` | `stock_portfolios` (direct PostgREST) + Yahoo Finance proxy |
 | `/news-hunter` | `seed_my_news_hunter_keywords` (default keyword seeding for new users) |
 | `/profile` | `get_my_profile`, `upsert_my_profile` |
@@ -59,7 +59,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/anp-glp` (LPG Market Share) | Fuel Distribution | `get_anp_glp_ms_filtros`, `get_anp_glp_ms_serie_fast`, `get_anp_glp_ms_serie_others`, `get_anp_glp_ms_others_players`, `get_anp_glp_ms_export_count` (% Share ↔ thousand t toggle; clone of `/market-share` over `anp_glp`) |
 | `/anp-prices` | Fuel Distribution | `get_anp_prices_filtros`, `get_anp_prices_serie`, `get_anp_prices_export_count` (consolidates 3 retired ANP price dashboards) |
 | `/imports-exports` | Fuel Distribution | `get_imports_exports_filtros`, `get_imports_exports_paises_stacked`, `get_imports_exports_importers_stacked`, `get_imports_exports_yoy_table`, `get_imports_exports_exports_*`, `get_imports_exports_imports_unit_price`, `get_imports_exports_exports_unit_price` |
-| `/subsidy-tracker` | Fuel Distribution (Proprietary) | `get_subsidy_tracker_diesel` (11 columns, dual-agent `_importador` / `_produtor`, regime-aware NULL fallback) |
+| `/subsidy-tracker` | Fuel Distribution (Proprietary) | `get_subsidy_tracker_diesel` (11 columns, dual-agent `_importador` / `_produtor`, regime-aware NULL fallback; reimbursement is a flat BRL 1.12/L from 2026-06-01, cap/commercialization formula applies only to history before that) |
 
 `template-module/` is a starter template, not a deployed module. RPC wrappers: [`src/lib/rpc.ts`](src/lib/rpc.ts) (by module) and [`src/lib/profileRpc.ts`](src/lib/profileRpc.ts).
 
@@ -139,7 +139,7 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | `anp_voip` | (ano_publicacao, campo) | Volumes originally in-place / recovered fraction / situacao |
 | `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco` | varies | Daily production at field / installation / well level (since 2025-11-09) |
 | `anp_subsidy_diesel_reference` | (data_referencia, regiao, tipo_agente) | Per-region reference price; triggers maintain `price_bands._w_subsidy` columns |
-| `anp_subsidy_caps` | (vigente_desde, tipo_agente) | Ceiling of per-region reimbursement (replaces `anp_subsidy_history` since Subsidy Reform) |
+| `anp_subsidy_caps` | (vigente_desde, tipo_agente) | Ceiling of per-region reimbursement (replaces `anp_subsidy_history` since Subsidy Reform). Drives `compute_subsidy_reimbursement` only for dates before 2026-06-01; from 2026-06-01 the diesel reimbursement is a flat BRL 1.12/L for both agents |
 | `anp_subsidy_commercialization` | (data_inicio, regiao, tipo_agente) | Period × region × agent commercialization prices (HTML scrape stage of `subsidy_diesel_sync.py`) |
 
 **Materialized views:** `mv_ms_serie`, `mv_ms_serie_fast` (Market Share), plus the `/well-by-well` production MV (auto-refreshed via `pg_cron`).

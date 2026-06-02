@@ -6,6 +6,13 @@ Entries newest first.
 
 ---
 
+## 2026-06-01 — Fixed fuel subsidy regime (diesel 1.12 / gasoline 0.44)
+
+- Regulatory change effective **2026-06-01**: the fuel subsidy became a **flat value** for both agents (`importador` and `produtor`). History before 2026-06-01 is untouched.
+- **Diesel — DB side**: `compute_subsidy_reimbursement(date, tipo_agente)` now returns a fixed **1.12 BRL/L** for dates ≥ 2026-06-01 (both agents); earlier dates keep the historical AVG-over-5-regions of `MIN(MAX(ref − comm, 0), cap)` formula. Migration `20260608200000_subsidy_fixed_diesel_1_12.sql` (applied in production). The flat value flows automatically into `price_bands._w_subsidy` (via `_pb_refresh_w_subsidy_from_date`) and therefore into `/price-bands` and `/subsidy-tracker`. `anp_subsidy_caps` / `anp_subsidy_commercialization` now only drive the < 2026-06-01 leg.
+- **Gasoline — client side** in `/price-bands`: fixed **0.44 BRL/L** delta since 2026-06-01 (Petrobras +0.44, import parity −0.44, new import-parity series). The historical flat **3.05 BRL/L** line is preserved for the 2026-05-29 → 2026-05-31 window only.
+- Commits `a1b81c74` (diesel) + `b9b7356b` (gasoline). See `docs/supabase/PRD.md` § "Fixed subsidy regime since 2026-06-01" and `docs/app/price-bands.md`.
+
 ## 2026-06-01 — `/anp-glp` rebuilt as LPG Market Share
 
 - The `/anp-glp` route was repurposed (same URL/slug) from "Vendas de GLP por Recipiente" (volume-only, desktop-only reference dashboard) into **"LPG Market Share"** — a faithful dual-view clone of `/market-share` over the `anp_glp` table.

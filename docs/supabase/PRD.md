@@ -721,7 +721,7 @@ e a métrica usada nos dashboards é a média das 5 regiões. Duas trilhas de ag
 
 | Function | Assinatura | Notas |
 |---|---|---|
-| `compute_subsidy_reimbursement` | `(p_date DATE, p_tipo_agente TEXT) RETURNS NUMERIC` | `LANGUAGE sql STABLE SECURITY DEFINER` + `SET search_path = public, pg_temp`. Joins `anp_subsidy_diesel_reference` × `anp_subsidy_commercialization` por `(regiao, tipo_agente)` com `p_date BETWEEN c.data_inicio AND c.data_fim`, aplica `LEAST(GREATEST(ref − comm, 0), cap)` por região (cap é o vigente em `p_date` para o `tipo_agente`), e retorna `AVG(...)`. NULL se faltar dado. `GRANT EXECUTE TO anon, authenticated`. SECURITY DEFINER é obrigatório porque as tabelas têm RLS authed-only no caso da `anp_subsidy_diesel_reference` (Pegadinha #18). |
+| `compute_subsidy_reimbursement` | `(p_date DATE, p_tipo_agente TEXT) RETURNS NUMERIC` | `LANGUAGE sql STABLE SECURITY DEFINER` + `SET search_path = public, pg_temp`. **Regulatory regime split (since `20260608200000`, see below): for `p_date >= 2026-06-01` returns a flat `1.12` BRL/L for both agents; for earlier dates falls back to the historical formula** — joins `anp_subsidy_diesel_reference` × `anp_subsidy_commercialization` por `(regiao, tipo_agente)` com `p_date BETWEEN c.data_inicio AND c.data_fim`, aplica `LEAST(GREATEST(ref − comm, 0), cap)` por região (cap é o vigente em `p_date` para o `tipo_agente`), e retorna `AVG(...)`. NULL se faltar dado. `GRANT EXECUTE TO anon, authenticated`. SECURITY DEFINER é obrigatório porque as tabelas têm RLS authed-only no caso da `anp_subsidy_diesel_reference` (Pegadinha #18). |
 
 **Triggers** (todos em SECURITY DEFINER + `search_path = public, pg_temp`):
 
@@ -771,6 +771,23 @@ Total: 23 sources (era 22). Atributos preservados na recriação: `LANGUAGE sql 
 - **Não use `CREATE OR REPLACE`** numa migration que altera a estrutura interna de tabelas referenciadas pela função se uma das tabelas referenciadas foi DROPADA — o body sempre é re-parseado. Use `DROP FUNCTION IF EXISTS ... ; CREATE FUNCTION ...`. Foi exatamente o bug que motivou o hotfix do `get_data_sources_freshness` (a reforma DROPOU `anp_subsidy_history` mas a função ainda tinha branch lendo ela).
 - **Triggers AFTER em 3 tabelas distintas (`reference`, `commercialization`, `caps`) fazem self-UPDATE no `price_bands`**, que re-dispara a BEFORE trigger. Esse padrão funciona porque a BEFORE trigger é idempotente (recalcula a partir de inputs vivos), mas significa que um INSERT pesado em `anp_subsidy_diesel_reference` pode tocar muitos rows em `price_bands` em cascata. Acompanhar perf via `pg_stat_user_tables` se a ingestão crescer (atualmente ~1 row/dia × 5 regiões × 2 agentes ≈ 10 rows/dia em `reference`, trivial).
 - **`anp_subsidy_history` está realmente DROPADA.** Qualquer migration nova que referencie esse nome quebra silenciosamente (table not found) — checar com `\dt anp_subsidy_*` antes de qualquer SQL.
+
+### Fixed subsidy regime since 2026-06-01
+
+Migration: `supabase/migrations/20260608200000_subsidy_fixed_diesel_1_12.sql` (applied in production).
+
+A regulatory change effective **2026-06-01** turned the fuel subsidy into a **flat value** for both agents:
+
+| Product | Fixed value (≥ 2026-06-01) | Where it lives |
+|---|---|---|
+| Diesel | **1.12 BRL/L** (`importador` and `produtor`) | DB — `compute_subsidy_reimbursement` |
+| Gasoline | **0.44 BRL/L** delta (Petrobras +0.44, import parity −0.44) | client-side in `/price-bands` (`use<PriceBands>Data` hook) — see `docs/app/price-bands.md` |
+
+**Diesel mechanics:** `compute_subsidy_reimbursement(p_date, p_tipo_agente)` was `CREATE OR REPLACE`d with a leading `CASE WHEN p_date >= DATE '2026-06-01' THEN 1.12 ELSE (<historical AVG-over-5-regions-of-MIN(MAX(ref−comm,0),cap) formula>) END`. The historical branch is byte-for-byte the prior formula wrapped as a scalar subquery, so dates before 2026-06-01 are **untouched** and still depend on `anp_subsidy_caps` + `anp_subsidy_commercialization` + `anp_subsidy_diesel_reference`. SECURITY DEFINER + `search_path` + `GRANT EXECUTE TO anon, authenticated` re-applied (Pegadinha #18). The migration finishes by calling `_pb_refresh_w_subsidy_from_date(DATE '2026-06-01')` so the `price_bands._w_subsidy` columns (and therefore `/price-bands` Petrobras-w/subsidy and `/subsidy-tracker` `petrobras_adjusted` / `ipp_adjusted`) pick up the flat value automatically.
+
+**Implication:** `anp_subsidy_caps` and `anp_subsidy_commercialization` no longer affect any date on/after 2026-06-01 — they only drive the historical (< 2026-06-01) leg. Their ETL (`etl_anp_subsidy_diesel.yml`) keeps running and remains the freshness signal for those sources, but new caps/commercialization rows have no effect on current-regime reimbursement.
+
+**Gasoline mechanics:** entirely client-side in `/price-bands`; the DB has no gasoline subsidy column. From 2026-06-01 a fixed 0.44 delta is applied to a new import-parity series. The pre-existing flat **3.05 BRL/L** line is preserved for the 2026-05-29 → 2026-05-31 window only. Owned by `docs/app/price-bands.md`.
 
 ### Trigger: cross-local guard em `anp_cdp_producao`
 
