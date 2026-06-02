@@ -42,8 +42,6 @@ import BarrelLoading from "@/components/dashboard/BarrelLoading";
 import {
   useNewsHunterData,
   humanizeAge,
-  domainColor,
-  domainInitial,
   stripAccents,
 } from "../useNewsHunterData";
 import type { NewsArticle } from "@/context/NewsHunterContext";
@@ -127,8 +125,6 @@ function ArticleCard({
   isNew,
   visibleTags,
 }: ArticleCardProps): React.ReactElement {
-  const initial = domainInitial(article.domain);
-  const color = domainColor(article.domain);
   return (
     <article
       style={{
@@ -154,54 +150,24 @@ function ArticleCard({
         />
       )}
 
-      {/* Header row: domain badge + source/time */}
+      {/* Header row: source name + time */}
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
           marginBottom: 6,
+          fontSize: 12,
+          color: "var(--mobile-text-muted)",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
         }}
       >
-        <span
-          aria-hidden="true"
-          style={{
-            width: 24,
-            height: 24,
-            borderRadius: "50%",
-            background: color,
-            color: "#fff",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 12,
-            fontWeight: 700,
-            flexShrink: 0,
-          }}
-        >
-          {initial}
-        </span>
-        <span
-          style={{
-            flex: 1,
-            minWidth: 0,
-            fontSize: 12,
-            color: "var(--mobile-text-muted)",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
-          <strong
-            style={{ color: "var(--mobile-text)", fontWeight: 600 }}
-          >
-            {article.source_name}
-          </strong>
-          <span style={{ margin: "0 6px", opacity: 0.5 }}>·</span>
-          <time dateTime={article.published_at}>
-            {humanizeAge(article.published_at)}
-          </time>
-        </span>
+        <strong style={{ color: "var(--mobile-text)", fontWeight: 600 }}>
+          {article.source_name}
+        </strong>
+        <span style={{ margin: "0 6px", opacity: 0.5 }}>·</span>
+        <time dateTime={article.published_at}>
+          {humanizeAge(article.published_at)}
+        </time>
       </div>
 
       {/* Title — tappable link */}
