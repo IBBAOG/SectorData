@@ -165,6 +165,9 @@ export default function DesktopView(): React.ReactElement {
                     <div className="col-6">
                       <ChartHeader product="Gasoline" cv={currentValues.Gasoline} rows={gasolineRows} xMax={xMax} />
                       <PlotlyChart data={gasolineChart.data} layout={gasolineChart.layout} config={{ displayModeBar: false }} />
+                      <small style={{ color: "#aaa", fontFamily: "Arial", fontSize: 10, display: "block", marginTop: 2 }}>
+                        w/ subsidy lines = fixed R$ 0.44/L delta (Petrobras +0.44 / Import Parity −0.44) since Jun 2026; R$ 3.05/L fixed for May 29–31, 2026
+                      </small>
                     </div>
                     <div className="col-6">
                       <ChartHeader product="Diesel" cv={currentValues.Diesel} rows={dieselRows} xMax={xMax} />
