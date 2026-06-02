@@ -26,14 +26,31 @@ export type { PriceBandsRow };
 export const SUBSIDY_CUTOFF = "2026-03-12";
 export const DEFAULT_START  = "2023-06-01";
 
-// Fixed/locked Gasoline subsidy reference. Unlike the Diesel `*_w_subsidy`
-// columns (which come from DB triggers and ANP daily reference prices), this
-// is a manually-maintained constant — NOT auto-calculated from ANP. The
-// Gasoline "Petrobras Price w/ subsidy" line is synthesized client-side at
-// fetch time from these values. To change it, edit the constant here (this is
-// the supported way to change it).
-export const GAS_PETRO_SUBSIDY_PRICE = 3.05;          // BRL/L
-export const GAS_PETRO_SUBSIDY_START = "2026-05-29";  // ISO date
+// ─── Gasoline subsidy — two regimes (synthesized client-side) ────────────────
+//
+// The Gasoline "w/ subsidy" series are NOT real DB data (unlike the Diesel
+// `*_w_subsidy` columns, which come from triggers + ANP daily reference prices).
+// They are synthesized client-side at fetch time. There have been TWO regimes:
+//
+//   1. FIXED PRICE (2026-05-29 → 2026-05-31, a 3-day window):
+//      "Petrobras Price w/ subsidy" was locked at a flat 3.05 BRL/L. Import
+//      parity had no subsidy variant in this window. This is HISTORICAL and is
+//      preserved verbatim — do NOT change these 3 days.
+//
+//   2. FIXED DELTA (from 2026-06-01 onward, regulatory change):
+//      The subsidy became a fixed 0.44 BRL/L delta applied per litre to BOTH
+//      agents — exactly the same delta mechanism Diesel uses:
+//        · Producer / Petrobras line: petrobras_price + 0.44
+//        · Importer / import parity line: bba_import_parity − 0.44
+//      So from this date Gasoline also gets a "BBA - Import Parity w/ subsidy"
+//      line (mirroring Diesel), since the change applies to importer + producer.
+//
+// To change either regime, edit the constants here (frontend-only by design —
+// no DB column, no migration, no trigger).
+export const GAS_PETRO_SUBSIDY_PRICE = 3.05;          // BRL/L — fixed-price regime (2026-05-29 → 2026-05-31)
+export const GAS_PETRO_SUBSIDY_START = "2026-05-29";  // ISO date — fixed-price regime start
+export const GAS_SUBSIDY_DELTA       = 0.44;          // BRL/L — fixed-delta regime (from 2026-06-01)
+export const GAS_SUBSIDY_DELTA_START = "2026-06-01";  // ISO date — fixed-delta regime start
 
 // ─── YTD subsidy→base field mapping (YTD chart only) ──────────────────────────
 //
@@ -52,8 +69,12 @@ const YTD_SUBSIDY_BASE_FIELD: Partial<Record<keyof PriceBandsRow, keyof PriceBan
 // vs Diesel), so the row's product is needed to disambiguate. Returns null for
 // non-subsidy fields (which are never base-blended anyway).
 function subsidyStartDate(field: keyof PriceBandsRow, product: PriceBandsProduct): string | null {
+  // Gasoline "Petrobras Price w/ subsidy" exists from the fixed-price regime
+  // start (2026-05-29); Diesel's starts at SUBSIDY_CUTOFF.
   if (field === "petrobras_price_w_subsidy") return product === "Gasoline" ? GAS_PETRO_SUBSIDY_START : SUBSIDY_CUTOFF;
-  if (field === "bba_import_parity_w_subsidy") return SUBSIDY_CUTOFF; // diesel only
+  // Import parity w/ subsidy: Gasoline only got it with the fixed-delta regime
+  // (2026-06-01); Diesel has had it since SUBSIDY_CUTOFF.
+  if (field === "bba_import_parity_w_subsidy") return product === "Gasoline" ? GAS_SUBSIDY_DELTA_START : SUBSIDY_CUTOFF;
   return null;
 }
 
@@ -114,6 +135,9 @@ export interface SeriesDef {
 
 export const GAS_SERIES: SeriesDef[] = [
   { label: "Import Parity",  field: "bba_import_parity", color: COLOR_IMPORT, dash: "solid", shape: "linear", width: 1.5 },
+  // BBA - Import Parity w/ subsidy: import parity − 0.44 delta, from 2026-06-01
+  // (fixed-delta regime). Mirrors the Diesel importer subsidy line.
+  { label: "BBA - Import Parity w/ subsidy", field: "bba_import_parity_w_subsidy", color: COLOR_IMPORT, dash: "dash", shape: "linear", width: 1.5 },
   { label: "Export Parity",  field: "bba_export_parity", color: COLOR_EXPORT, dash: "solid", shape: "linear", width: 1.5 },
   { label: "Petrobras Price", field: "petrobras_price",   color: COLOR_PETRO,  dash: "solid", shape: "hv",     width: 2   },
   { label: "Petrobras Price w/ subsidy", field: "petrobras_price_w_subsidy", color: COLOR_PETRO, dash: "dash", shape: "hv", width: 2 },
@@ -610,9 +634,17 @@ export function usePriceBandsData(): UsePriceBandsData {
         // Normalize both products' "w/ subsidy" series at read time so no
         // w/ subsidy line shows before the subsidy actually took effect.
         //
-        // Gasoline: synthesize the fixed "Petrobras Price w/ subsidy" series.
-        // Gasoline's subsidy is a locked constant (GAS_PETRO_SUBSIDY_PRICE)
-        // starting GAS_PETRO_SUBSIDY_START, NOT real DB data.
+        // Gasoline: the "w/ subsidy" series are synthesized client-side (NOT
+        // real DB data) across two regimes (see the GAS_* constants above):
+        //   · 2026-05-29 → 2026-05-31 (fixed-price regime): only the producer
+        //     line existed, locked at a flat 3.05 (GAS_PETRO_SUBSIDY_PRICE).
+        //     Import parity had no subsidy variant in this window.
+        //   · from 2026-06-01 (fixed-delta regime): a 0.44 BRL/L delta applies
+        //     to BOTH agents — petrobras_price + 0.44 (producer) and
+        //     bba_import_parity − 0.44 (importer). Historical 3-day window above
+        //     is preserved verbatim.
+        //   · before 2026-05-29: both null (no subsidy line).
+        // The delta lines are synthesized only when the base price is non-null.
         //
         // Diesel: the DB columns bba_import_parity_w_subsidy /
         // petrobras_price_w_subsidy are NON-NULL for the entire history (back
@@ -626,10 +658,31 @@ export function usePriceBandsData(): UsePriceBandsData {
         // Map to new objects (no in-place mutation) in both branches.
         const synthesized = data.map((r) => {
           if (r.product === "Gasoline") {
+            const basePetro  = r.petrobras_price as number | null;
+            const baseImport = r.bba_import_parity as number | null;
+            if (r.date >= GAS_SUBSIDY_DELTA_START) {
+              // Fixed-delta regime (importer + producer).
+              return {
+                ...r,
+                petrobras_price_w_subsidy:
+                  basePetro != null ? basePetro + GAS_SUBSIDY_DELTA : null,
+                bba_import_parity_w_subsidy:
+                  baseImport != null ? baseImport - GAS_SUBSIDY_DELTA : null,
+              };
+            }
+            if (r.date >= GAS_PETRO_SUBSIDY_START) {
+              // Historical fixed-price regime (producer only, locked 3.05).
+              return {
+                ...r,
+                petrobras_price_w_subsidy: GAS_PETRO_SUBSIDY_PRICE,
+                bba_import_parity_w_subsidy: null,
+              };
+            }
+            // Pre-subsidy.
             return {
               ...r,
-              petrobras_price_w_subsidy:
-                r.date >= GAS_PETRO_SUBSIDY_START ? GAS_PETRO_SUBSIDY_PRICE : null,
+              petrobras_price_w_subsidy: null,
+              bba_import_parity_w_subsidy: null,
             };
           }
           if (r.product === "Diesel" && r.date < SUBSIDY_CUTOFF) {
