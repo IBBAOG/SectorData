@@ -116,33 +116,6 @@ export function keywordHitsNormalized(normalizedHaystack: string, kw: string, mo
   }
 }
 
-/** Deterministic hex color for a domain initial circle. */
-export function domainColor(domain: string): string {
-  const PALETTE = [
-    "#1a73e8",
-    "#0b8f5a",
-    "#b45309",
-    "#1f2937",
-    "#cf2e2e",
-    "#5b21b6",
-    "#0369a1",
-    "#7c3aed",
-    "#be185d",
-    "#065f46",
-  ];
-  let hash = 0;
-  const clean = domain.replace(/^www\./, "");
-  for (let i = 0; i < clean.length; i++) {
-    hash = clean.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return PALETTE[Math.abs(hash) % PALETTE.length];
-}
-
-/** First letter of domain (stripped of www.). */
-export function domainInitial(domain: string): string {
-  return domain.replace(/^www\./, "").charAt(0).toUpperCase();
-}
-
 // ── Shared filter util ───────────────────────────────────────────────────────
 
 /**
