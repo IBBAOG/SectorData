@@ -73,30 +73,120 @@ interface NewsHunterContextValue {
 
 const POLL_INTERVAL_MS = 60_000;
 const FLASH_DURATION_MS = 3_400;
-const PAGE_SIZE = 1000; // Supabase PostgREST max por request
+const PAGE_SIZE = 1000; // Supabase PostgREST max per request
 
-// Cache em localStorage — artigos históricos são estáticos, não precisam ser
-// re-buscados a cada visita. Versão no key invalida cache quando o schema muda.
-const CACHE_KEY = "nh_articles_v1";
-const WATERMARK_KEY = "nh_watermark_v1";
+// ── Local cache (IndexedDB) ───────────────────────────────────────────────────
+//
+// Historical articles are effectively static, so we persist them locally and
+// only fetch rows newer than the stored watermark on each visit.
+//
+// Why IndexedDB (not localStorage): the feed already holds ~16,700 rows and
+// grows ~491/day. Serializing the full set as JSON overflows the localStorage
+// ~5 MB quota; the old implementation swallowed the QuotaExceededError, which
+// froze the cache (and therefore the watermark) at the last save that fit —
+// weeks in the past — silently widening the fetch gap forever. IndexedDB has
+// no practical size limit, so we can persist the COMPLETE history and keep the
+// watermark advancing. We store everything in a single record (one object
+// store, one key) to keep the wrapper tiny — there is no per-row query need.
+//
+// The bump from v1 → v2 in the names also invalidates the stale, possibly
+// truncated localStorage cache written by the previous implementation.
+const DB_NAME = "nh_cache";
+const DB_VERSION = 1;
+const STORE_NAME = "feed";
+const CACHE_RECORD_KEY = "articles_v2";
 
-function cacheLoad(): { articles: NewsArticle[]; watermark: string | null } {
-  try {
-    const raw = localStorage.getItem(CACHE_KEY);
-    const watermark = localStorage.getItem(WATERMARK_KEY);
-    return { articles: raw ? (JSON.parse(raw) as NewsArticle[]) : [], watermark };
-  } catch {
-    return { articles: [], watermark: null };
-  }
+// Legacy localStorage keys (pre-IndexedDB). Removed on first load so the old,
+// quota-overflowing blob stops occupying space. See migration in cacheLoad().
+const LEGACY_CACHE_KEY = "nh_articles_v1";
+const LEGACY_WATERMARK_KEY = "nh_watermark_v1";
+
+type CacheRecord = { articles: NewsArticle[]; watermark: string };
+
+let dbPromise: Promise<IDBDatabase | null> | null = null;
+
+/**
+ * Opens (and memoizes) the IndexedDB connection. Resolves to null when
+ * IndexedDB is unavailable (SSR, private-mode quirks, very old browsers) so
+ * callers can degrade gracefully — a null DB simply means "no local cache",
+ * which the always-paginating fetch logic handles by doing a full reload.
+ */
+function openDb(): Promise<IDBDatabase | null> {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise<IDBDatabase | null>((resolve) => {
+    try {
+      if (typeof indexedDB === "undefined") {
+        resolve(null);
+        return;
+      }
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME);
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+      req.onblocked = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+  return dbPromise;
 }
 
-function cacheSave(articles: NewsArticle[], watermark: string): void {
+async function cacheLoad(): Promise<{
+  articles: NewsArticle[];
+  watermark: string | null;
+}> {
+  // One-time cleanup of the legacy localStorage cache (best-effort).
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(articles));
-    localStorage.setItem(WATERMARK_KEY, watermark);
+    localStorage.removeItem(LEGACY_CACHE_KEY);
+    localStorage.removeItem(LEGACY_WATERMARK_KEY);
   } catch {
-    // QuotaExceededError — ignora; na próxima visita faz fetch completo
+    /* no localStorage — ignore */
   }
+
+  const db = await openDb();
+  if (!db) return { articles: [], watermark: null };
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const req = tx.objectStore(STORE_NAME).get(CACHE_RECORD_KEY);
+      req.onsuccess = () => {
+        const rec = req.result as CacheRecord | undefined;
+        if (rec && Array.isArray(rec.articles) && typeof rec.watermark === "string") {
+          resolve({ articles: rec.articles, watermark: rec.watermark });
+        } else {
+          resolve({ articles: [], watermark: null });
+        }
+      };
+      req.onerror = () => resolve({ articles: [], watermark: null });
+    } catch {
+      resolve({ articles: [], watermark: null });
+    }
+  });
+}
+
+async function cacheSave(articles: NewsArticle[], watermark: string): Promise<void> {
+  const db = await openDb();
+  if (!db) return; // No cache backend — Fix #1's always-paginate path re-fetches the gap next visit.
+  await new Promise<void>((resolve) => {
+    try {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      tx.oncomplete = () => resolve();
+      // IndexedDB has no practical quota for this payload size, but never let a
+      // write error freeze the caller — on failure we simply skip persisting
+      // this round; the gap is re-paginated on the next load (Fix #1).
+      tx.onerror = () => resolve();
+      tx.onabort = () => resolve();
+      const rec: CacheRecord = { articles, watermark };
+      tx.objectStore(STORE_NAME).put(rec, CACHE_RECORD_KEY);
+    } catch {
+      resolve();
+    }
+  });
 }
 
 export const FALLBACK_KEYWORDS: string[] = [
@@ -263,36 +353,60 @@ export function NewsHunterProvider({
     setLoading(true);
     setError(null);
 
-    // 1. Carrega cache local imediatamente — histórico aparece sem nenhum request.
-    const { articles: cached, watermark: cachedWatermark } = cacheLoad();
+    // 1. Load the local cache immediately — history shows with no request.
+    const { articles: cached, watermark: cachedWatermark } = await cacheLoad();
     if (cached.length > 0) {
       setArticles(cached);
       seenUrlsRef.current = new Set(cached.map((r) => r.url));
     }
 
     if (cachedWatermark && cached.length > 0) {
-      // 2a. Cache existe: busca apenas artigos mais novos que o watermark.
-      // Initialize watermark immediately so polling works even if the query below
-      // fails due to a transient error (without this, the ref stays null forever).
+      // 2a. Cache exists: fetch ONLY rows newer than the watermark — but
+      // paginate to exhaustion. The previous implementation capped this at a
+      // single PAGE_SIZE page, so whenever more than PAGE_SIZE articles had
+      // been ingested since the watermark (~every 2 days), the middle rows
+      // fell into a hole: not in the old cache and beyond the single page, so
+      // they never reached the browser. We now loop until a short page.
+      //
+      // We page with .range() ordered by `found_at DESC` rather than a
+      // `found_at > cursor` keyset. A single scan writes many rows with an
+      // IDENTICAL found_at (e.g. 2026-06-02T21:35:43.088307+00:00), so a naive
+      // `gt(cursor)` keyset would SKIP rows tied with the cursor. Offset
+      // paging cannot skip ties; combined with mergeArticles' url-dedup,
+      // overlap across pages is harmless. We keep the `> cachedWatermark`
+      // server-side filter constant across all pages so the result window is
+      // stable while we walk it.
+      //
+      // Initialize the watermark immediately so polling works even if the
+      // query below fails on a transient error (without this the ref stays
+      // null forever).
       lastFoundAtRef.current = cachedWatermark;
-      const { data, error: err } = await supabase
-        .from("news_articles")
-        .select("*")
-        .gt("found_at", cachedWatermark)
-        .order("found_at", { ascending: false })
-        .limit(PAGE_SIZE);
-      if (err) { setError(err.message); setLoading(false); return; }
-      const rows = (data as NewsArticle[]) ?? [];
-      const merged = mergeArticles(cached, rows);
+      const newRows: NewsArticle[] = [];
+      let offset = 0;
+      for (;;) {
+        const { data, error: err } = await supabase
+          .from("news_articles")
+          .select("*")
+          .gt("found_at", cachedWatermark)
+          .order("found_at", { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1);
+        if (err) { setError(err.message); setLoading(false); return; }
+        const rows = (data as NewsArticle[]) ?? [];
+        if (rows.length === 0) break;
+        for (const r of rows) newRows.push(r);
+        if (rows.length < PAGE_SIZE) break;
+        offset += PAGE_SIZE;
+      }
+      const merged = mergeArticles(cached, newRows);
       const newWatermark = merged.reduce(
         (max, r) => (r.found_at > max ? r.found_at : max), cachedWatermark,
       );
       setArticles(merged);
       seenUrlsRef.current = new Set(merged.map((r) => r.url));
       lastFoundAtRef.current = newWatermark;
-      cacheSave(merged, newWatermark);
+      await cacheSave(merged, newWatermark);
     } else {
-      // 2b. Sem cache: busca histórico completo paginando (só ocorre na 1ª visita).
+      // 2b. No cache: fetch the full history by paging (first visit only).
       const allRows: NewsArticle[] = [];
       let offset = 0;
       for (;;) {
@@ -321,7 +435,7 @@ export function NewsHunterProvider({
         : new Date().toISOString();
       lastFoundAtRef.current = watermark;
       seenUrlsRef.current = new Set(allRows.map((r) => r.url));
-      cacheSave(allRows, watermark);
+      await cacheSave(allRows, watermark);
     }
 
     setLoading(false);
@@ -329,20 +443,35 @@ export function NewsHunterProvider({
 
   const fetchIncremental = useCallback(async () => {
     if (!supabase || !lastFoundAtRef.current) return;
-    const { data, error: err } = await supabase
-      .from("news_articles")
-      .select("*")
-      .gt("found_at", lastFoundAtRef.current)
-      .order("found_at", { ascending: false })
-      .limit(PAGE_SIZE);
-    if (err) { setError(err.message); return; }
-    const rows = (data as NewsArticle[]) ?? [];
+    // Hold the watermark constant while paging so the server-side window is
+    // stable as we walk it (we advance lastFoundAtRef only after draining).
+    const startWatermark = lastFoundAtRef.current;
+    const rows: NewsArticle[] = [];
+    let offset = 0;
+    for (;;) {
+      const { data, error: err } = await supabase
+        .from("news_articles")
+        .select("*")
+        .gt("found_at", startWatermark)
+        .order("found_at", { ascending: false })
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (err) { setError(err.message); return; }
+      const batch = (data as NewsArticle[]) ?? [];
+      if (batch.length === 0) break;
+      for (const r of batch) rows.push(r);
+      // If a tick returns a FULL page, keep paging until a short page — a tab
+      // resuming from background suspension can have >PAGE_SIZE rows queued,
+      // and stopping at one page would re-open the same data-loss hole as
+      // fetchInitial. Offset paging + url-dedup tolerates found_at ties.
+      if (batch.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
+    }
     setError(null);
     if (rows.length === 0) return;
 
     lastFoundAtRef.current = rows.reduce(
       (max, r) => (r.found_at > max ? r.found_at : max),
-      lastFoundAtRef.current!,
+      startWatermark,
     );
 
     const trulyNew = rows.filter((r) => !seenUrlsRef.current.has(r.url));
@@ -369,11 +498,15 @@ export function NewsHunterProvider({
       });
     }
 
+    // Merge into state, then persist the merged snapshot. We capture the
+    // merged array out of the (pure) updater and save it afterwards so the
+    // updater has no async side effect and the unhandled promise is awaited.
+    let mergedSnapshot: NewsArticle[] = rows;
     setArticles((prev) => {
-      const merged = mergeArticles(prev, rows);
-      cacheSave(merged, lastFoundAtRef.current!);
-      return merged;
+      mergedSnapshot = mergeArticles(prev, rows);
+      return mergedSnapshot;
     });
+    await cacheSave(mergedSnapshot, lastFoundAtRef.current!);
   }, [supabase, mergeArticles]);
 
   useEffect(() => {
