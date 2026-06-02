@@ -713,9 +713,7 @@ export interface UseAdminPanelData {
   // Left-pane filters
   sgSearchQuery: string;
   setSgSearchQuery: (v: string) => void;
-  sgSectorFilter: "all" | StockGuideSector;
-  setSgSectorFilter: (v: "all" | StockGuideSector) => void;
-  /** Companies filtered by sgSearchQuery + sgSectorFilter. */
+  /** Companies filtered by sgSearchQuery. */
   sgFilteredCompanies: StockGuideAdminCompany[];
   /** Visible-only tickers (for the company multi-selects in the table builder). */
   sgCompanyTickers: string[];
@@ -1671,7 +1669,6 @@ export function useAdminPanelData(): UseAdminPanelData {
   const [sgDeleteConfirm, setSgDeleteConfirm] = useState<string | null>(null);
   const [sgTogglingVisibility, setSgTogglingVisibility] = useState<string | null>(null);
   const [sgSearchQuery, setSgSearchQuery] = useState("");
-  const [sgSectorFilter, setSgSectorFilter] = useState<"all" | StockGuideSector>("all");
 
   // Last-saved JSON snapshot for the comps editor (ref — no re-render needed;
   // compared inside the pendingChanges useMemo below). Mirrors Field Stakes.
@@ -1870,7 +1867,6 @@ export function useAdminPanelData(): UseAdminPanelData {
   const sgFilteredCompanies = useMemo(() => {
     const q = sgSearchQuery.trim().toLowerCase();
     return sgCompanies.filter((c) => {
-      if (sgSectorFilter !== "all" && c.sector !== sgSectorFilter) return false;
       if (q) {
         const inTicker = c.ticker.toLowerCase().includes(q);
         const inName = c.company_name.toLowerCase().includes(q);
@@ -1878,7 +1874,7 @@ export function useAdminPanelData(): UseAdminPanelData {
       }
       return true;
     });
-  }, [sgCompanies, sgSearchQuery, sgSectorFilter]);
+  }, [sgCompanies, sgSearchQuery]);
 
   const sgPendingChanges = useMemo(
     () => JSON.stringify(sgEditorRow) !== sgEditorSnapshotRef.current,
@@ -2659,8 +2655,6 @@ export function useAdminPanelData(): UseAdminPanelData {
     sgTogglingVisibility,
     sgSearchQuery,
     setSgSearchQuery,
-    sgSectorFilter,
-    setSgSectorFilter,
     sgFilteredCompanies,
     sgCompanyTickers,
     sgPendingChanges,

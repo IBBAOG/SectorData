@@ -238,8 +238,6 @@ export default function DesktopView(): React.ReactElement | null {
     sgTogglingVisibility,
     sgSearchQuery,
     setSgSearchQuery,
-    sgSectorFilter,
-    setSgSectorFilter,
     sgFilteredCompanies,
     sgCompanyTickers,
     sgPendingChanges,
@@ -2112,33 +2110,6 @@ export default function DesktopView(): React.ReactElement | null {
                           outline: "none", boxSizing: "border-box",
                         }}
                       />
-                      <div style={{ display: "flex", gap: 4, marginTop: 10 }}>
-                        {([
-                          { id: "all" as const,               label: "All" },
-                          { id: "oil_gas" as const,           label: "Oil & Gas" },
-                          { id: "fuel_distribution" as const, label: "Fuel Dist." },
-                        ]).map(({ id, label }) => {
-                          const isActive = sgSectorFilter === id;
-                          return (
-                            <button
-                              key={id}
-                              onClick={() => setSgSectorFilter(id)}
-                              style={{
-                                flex: 1, padding: "5px 6px", borderRadius: 6,
-                                border: isActive ? `1px solid ${ORANGE}` : "1px solid transparent",
-                                background: isActive ? "rgba(255,80,0,0.10)" : "#f5f5f5",
-                                color: isActive ? ORANGE : "#888",
-                                fontSize: 11, fontWeight: 700, cursor: "pointer",
-                                fontFamily: "Arial, sans-serif", textAlign: "center",
-                                transition: "background 0.15s, border-color 0.15s",
-                              }}
-                              aria-pressed={isActive}
-                            >
-                              {label}
-                            </button>
-                          );
-                        })}
-                      </div>
                     </div>
                     <div style={{ flex: 1, overflowY: "auto", maxHeight: 520 }}>
                       {sgLoading ? (
@@ -2147,7 +2118,7 @@ export default function DesktopView(): React.ReactElement | null {
                         </div>
                       ) : sgFilteredCompanies.length === 0 ? (
                         <div style={{ padding: "24px 16px", textAlign: "center", color: "#bbb", fontSize: 12 }}>
-                          No companies match the current filters.
+                          No companies match the search.
                         </div>
                       ) : (
                         sgFilteredCompanies.map((c) => {
