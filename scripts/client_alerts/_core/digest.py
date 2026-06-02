@@ -21,8 +21,9 @@ Algorithm:
 Idempotency:
   - An event already represented by an outbox row for a subscription is never
     re-queued (UNIQUE(subscription_id,event_id) + ignore_duplicates).
-  - Idempotency-Key on the send is the anchor outbox id; a re-run with the same
-    anchor is deduped by Resend.
+  - Once every grouped outbox row is marked 'sent', a re-run finds no queued rows
+    for that subscriber and sends nothing (the Gmail backend has no idempotency
+    key; the anchor outbox id is passed but ignored).
   - Empty digest for a subscriber => no email.
 
 Returns counts: {events_considered, outbox_created, subscribers, sent,
@@ -36,7 +37,7 @@ from zoneinfo import ZoneInfo
 
 from scripts.client_alerts._core.config import DIGEST_TIMEZONE
 from scripts.client_alerts._core.supabase_client import get_client
-from scripts.client_alerts._core.resend_client import (
+from scripts.client_alerts._core.gmail_client import (
     send_email,
     list_suppressions,
     validate_api_key,
@@ -298,7 +299,7 @@ def sweep_digests(batch_limit: int = 200) -> dict[str, int]:
             subject=subject,
             html=html,
             text=text,
-            idempotency_key=anchor_outbox_id,  # anchor outbox id — Resend dedupes
+            idempotency_key=anchor_outbox_id,  # accepted but unused (Gmail has no key)
         )
         now_utc = datetime.now(timezone.utc).isoformat()
         status_code = result.get("status_code", 0)

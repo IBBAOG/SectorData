@@ -7,5 +7,6 @@
 #   fanout.py           fanout_event(slug, event_id) -> int
 #   deliver.py          send_pending_outbox(batch_limit) -> counts
 #   digest.py           sweep_digests() -> counts
-#   resend_client.py    Resend REST wrapper (idempotency, suppression, key check)
+#   gmail_client.py     Gmail API sender (ACTIVE backend) — send/validate/suppress
+#   resend_client.py    Resend REST wrapper (DORMANT — future verified-domain switch)
 #   render.py           Jinja2 immediate/digest rendering

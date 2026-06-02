@@ -1,5 +1,5 @@
 """
-Delivery worker: read alert_outbox WHERE status='queued' and send via Resend.
+Delivery worker: read alert_outbox WHERE status='queued' and send via Gmail API.
 
 Email resolution (logged-in product): the outbox row references a subscription,
 NOT an email. Emails are resolved fresh from auth.users via the service-only RPC
@@ -11,7 +11,8 @@ Idempotency / failure contract:
   - status='sent'    is terminal — re-runs never reprocess.
   - status='failed'  is terminal (permanent 4xx).
   - status='skipped' is terminal (suppressed / unresolved subscriber).
-  - Resend Idempotency-Key = outbox.id (UUID) — Resend dedupes retries.
+  - The terminal 'sent' state is what prevents duplicate sends across runs (the
+    Gmail backend has no idempotency key; idempotency_key is passed but ignored).
   - Transient (5xx/timeout/0): send_attempts++, stays 'queued', retried next run.
 
 Returns counts: {sent, skipped, failed, transient}.
@@ -22,7 +23,7 @@ import logging
 from datetime import datetime, timezone
 
 from scripts.client_alerts._core.supabase_client import get_client
-from scripts.client_alerts._core.resend_client import (
+from scripts.client_alerts._core.gmail_client import (
     send_email,
     list_suppressions,
     validate_api_key,
@@ -139,7 +140,7 @@ def send_pending_outbox(batch_limit: int = 100) -> dict[str, int]:
             subject=subject,
             html=html,
             text=text,
-            idempotency_key=outbox_id,  # UUID — Resend dedupes
+            idempotency_key=outbox_id,  # accepted but unused (Gmail has no key)
         )
 
         now_utc = datetime.now(timezone.utc).isoformat()

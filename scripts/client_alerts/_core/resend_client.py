@@ -1,4 +1,10 @@
 """
+DORMANT — Resend backend kept for a future verified-domain switch; the active
+sender is gmail_client.py. Nothing imports this module at runtime anymore
+(deliver.py / digest.py import from gmail_client). Do not delete: if a verified
+domain is set up later, switch the imports back here and make RESEND_API_KEY
+required again in config.validate().
+
 Resend API client wrapper.
 
 Calls the Resend REST API directly via `requests` (avoids SDK version coupling).

@@ -22,5 +22,10 @@ pdfplumber
 
 # ── Client Alerts (scripts/client_alerts/) ────────────────────────────────────
 jinja2>=3.1          # email template rendering (immediate + digest)
-# resend SDK not used — we call the Resend REST API directly via `requests`
-# (avoids SDK version coupling; requests is already listed above)
+# Active email backend = Gmail API (gmail_client.py). These reuse the legacy
+# OAuth mechanism from alertas/notificador.py (token self-refreshes in CI).
+google-auth-oauthlib
+google-api-python-client
+google-auth-httplib2
+# resend SDK not used — the dormant resend_client.py calls the Resend REST API
+# directly via `requests` (kept for a future verified-domain switch).
