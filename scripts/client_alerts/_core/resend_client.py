@@ -31,17 +31,22 @@ Suppression endpoint permission note:
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 import requests
 
 from scripts.client_alerts._core.config import (
-    RESEND_API_KEY,
     ALERTS_SENDER_EMAIL,
     ALERTS_REPLY_TO_EMAIL,
 )
 
 logger = logging.getLogger(__name__)
+
+# DORMANT backend: RESEND_API_KEY is no longer a config field (the active backend
+# is Gmail SMTP). Read it straight from the env so this module stays importable
+# if a future verified-domain switch revives it.
+RESEND_API_KEY: str = os.environ.get("RESEND_API_KEY", "")
 
 RESEND_BASE_URL = "https://api.resend.com"
 _TIMEOUT = 15  # seconds

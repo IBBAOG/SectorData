@@ -26,17 +26,18 @@ SUPABASE_SERVICE_KEY: str = (
     or ""
 )
 
-# ── Gmail (active email backend) ──────────────────────────────────────────────
-# The full token.json content (JSON string) with token / refresh_token /
-# client_id / client_secret / token_uri / scopes. gmail_client.py builds
-# credentials in-memory from this and self-refreshes — no files on disk.
-GMAIL_TOKEN_JSON: str = os.environ.get("GMAIL_TOKEN_JSON", "")
+# ── Gmail (active email backend — SMTP + App Password) ────────────────────────
+# gmail_client.py logs into smtp.gmail.com:587 (STARTTLS) with GMAIL_ADDRESS +
+# GMAIL_APP_PASSWORD. An App Password never expires (unlike the old OAuth refresh
+# token, which kept getting revoked in the Testing-mode app).
+#
+# GMAIL_ADDRESS is the SMTP login user AND the account the From must match
+# (Gmail rewrites a mismatched From). GMAIL_APP_PASSWORD is a 16-char Google App
+# Password generated at https://myaccount.google.com/apppasswords.
+GMAIL_ADDRESS: str = os.environ.get("GMAIL_ADDRESS", "ibbaogproject@gmail.com")
+GMAIL_APP_PASSWORD: str = os.environ.get("GMAIL_APP_PASSWORD", "")
 
-# ── Resend (DORMANT) ──────────────────────────────────────────────────────────
-# Kept for a future verified-domain switch; no longer required (see gmail_client.py).
-RESEND_API_KEY: str = os.environ.get("RESEND_API_KEY", "")
-
-# Email sender. Must be the Gmail account that owns GMAIL_TOKEN_JSON
+# Email sender. Must be the Gmail account that owns GMAIL_APP_PASSWORD
 # (ibbaogproject@gmail.com) — Gmail overrides a mismatched From.
 ALERTS_SENDER_EMAIL: str = os.environ.get(
     "ALERTS_SENDER_EMAIL", "SectorData Alerts <ibbaogproject@gmail.com>"
@@ -65,7 +66,8 @@ def validate() -> list[str]:
     Required for any send-capable run:
       - SUPABASE_URL
       - SUPABASE_SERVICE_KEY (or SUPABASE_SERVICE_ROLE_KEY)
-      - GMAIL_TOKEN_JSON   (the active Gmail backend; RESEND_API_KEY is dormant)
+      - GMAIL_APP_PASSWORD   (the active Gmail SMTP backend; GMAIL_ADDRESS has a
+                             safe default)
 
     The CLI prints these clearly and exits non-zero rather than crashing with a
     stack trace when a hook runs in an environment that lacks the Gmail secret.
@@ -75,6 +77,6 @@ def validate() -> list[str]:
         missing.append("SUPABASE_URL")
     if not SUPABASE_SERVICE_KEY:
         missing.append("SUPABASE_SERVICE_KEY (or SUPABASE_SERVICE_ROLE_KEY)")
-    if not GMAIL_TOKEN_JSON:
-        missing.append("GMAIL_TOKEN_JSON")
+    if not GMAIL_APP_PASSWORD:
+        missing.append("GMAIL_APP_PASSWORD")
     return missing

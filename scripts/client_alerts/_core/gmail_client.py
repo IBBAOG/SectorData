@@ -1,151 +1,127 @@
 """
-Gmail API sender — the ACTIVE email backend for the Client Alerts product.
+Gmail SMTP sender — the ACTIVE email backend for the Client Alerts product.
 
-Why Gmail (not Resend): the project has no verified custom domain, and the
-Resend sandbox only delivers to its own account. The legacy ANP alert system
-(`alertas/notificador.py`) already sends reliably through the Gmail API with a
-self-refreshing OAuth token, so we reuse that exact mechanism here.
+Why SMTP + an App Password (not the OAuth Gmail API): the OAuth refresh token
+kept expiring (the Google Cloud app is in Testing mode, so refresh tokens are
+short-lived and were getting revoked → `invalid_grant`). An App Password over
+plain SMTP (smtp.gmail.com:587, STARTTLS) NEVER expires and needs no token
+plumbing — just two env vars: the login address and the app password.
 
 Credentials come from the environment (NOT disk):
-  GMAIL_TOKEN_JSON       — the full `token.json` content (a JSON string with
-                           token / refresh_token / client_id / client_secret /
-                           token_uri / scopes). Because client_id + client_secret
-                           + refresh_token are all present, the token can refresh
-                           itself in CI without any browser flow.
-  GMAIL_CREDENTIALS_JSON  — the OAuth client secrets (kept in the workflow env for
-                           parity with the legacy job; not strictly required here
-                           because the token already embeds client_id/secret).
+  GMAIL_ADDRESS       — the Gmail account used as the SMTP login user. Must match
+                        the From address (Gmail rewrites a mismatched From).
+                        Defaults to ibbaogproject@gmail.com.
+  GMAIL_APP_PASSWORD  — a 16-character Google App Password (generated at
+                        https://myaccount.google.com/apppasswords). Never expires.
 
-Reading creds from the env (instead of writing files to disk) means the ETL hook
-steps need no extra "write token.json" step — just the env var.
-
-Drop-in contract (same symbols deliver.py / digest.py already import from the
-old resend_client):
-  - validate_api_key() -> bool         build the service once; True if creds are
-                                       valid or refreshable, else False (logged).
-  - list_suppressions() -> set[str]    Gmail has no suppression API → empty set.
+Drop-in contract (same symbols deliver.py / digest.py already import — this file
+replaces the OAuth implementation with no interface change):
+  - validate_api_key() -> bool         open+login+quit an SMTP session once; True
+                                       if the login succeeds, else False (logged
+                                       ERROR with a regenerate hint).
+  - list_suppressions() -> set[str]    SMTP has no suppression API → empty set.
   - send_email(...) -> dict            {success, provider_message_id, error,
                                        status_code} with the SAME failure-mode
                                        semantics deliver.py relies on:
                                          success=True            -> 'sent'
                                          4xx (400..499)          -> permanent 'failed'
                                          5xx / network (code 0)  -> transient, retry
+                                       Auth / recipient / sender refusals map to
+                                       550 (a 4xx-range "permanent" for deliver.py).
 
-Sender identity: `From` MUST be the Gmail account that owns the token
-(ibbaogproject@gmail.com); Gmail ignores/overrides a mismatched From. Daily
-send quota for a free Gmail account is ~500 messages/day.
+Sender identity: `From` MUST be the Gmail account that owns the app password
+(GMAIL_ADDRESS, default ibbaogproject@gmail.com); Gmail ignores/overrides a
+mismatched From. Daily send quota for a free Gmail account is ~500 messages/day.
 """
 from __future__ import annotations
 
-import base64
-import json
 import logging
-import os
+import smtplib
+import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import make_msgid
 from typing import Any
-
-from google.auth.exceptions import GoogleAuthError, RefreshError
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 
 from scripts.client_alerts._core.config import (
     ALERTS_SENDER_EMAIL,
     ALERTS_REPLY_TO_EMAIL,
+    GMAIL_ADDRESS,
+    GMAIL_APP_PASSWORD,
 )
 
 logger = logging.getLogger(__name__)
 
-SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
+SMTP_HOST = "smtp.gmail.com"
+SMTP_PORT = 587
+SMTP_TIMEOUT = 30  # seconds — never hang a CI step on a stuck connection
 
-# Build the Gmail service ONCE per process (token refresh + discovery is costly).
-_service: Any | None = None
-_service_failed: bool = False  # remember a hard auth failure; don't retry per email
+# Remember the validated-login result so we only open a probe connection once
+# per process. None = not yet checked.
+_login_ok: bool | None = None
 
 _REGEN_HINT = (
-    "Gmail OAuth token is missing/expired/revoked and cannot be refreshed in a "
-    "headless environment. Regenerate the token locally (e.g. "
-    "`python alertas/auth_gmail.py`) and update the GMAIL_TOKEN_JSON secret at "
-    "https://github.com/IBBAOG/SectorData/settings/secrets/actions"
+    "set/refresh the GMAIL_APP_PASSWORD secret; generate at "
+    "https://myaccount.google.com/apppasswords (and confirm GMAIL_ADDRESS matches "
+    "the account that owns the app password)"
 )
 
 
-def _build_credentials() -> Credentials:
-    """Build OAuth credentials from GMAIL_TOKEN_JSON (env), refreshing if stale."""
-    raw = os.environ.get("GMAIL_TOKEN_JSON", "").strip()
-    if not raw:
-        raise RuntimeError(
-            "GMAIL_TOKEN_JSON is not set — Gmail sends will fail. " + _REGEN_HINT
-        )
-    try:
-        info = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(
-            f"GMAIL_TOKEN_JSON is not valid JSON ({exc}). " + _REGEN_HINT
-        ) from exc
-
-    creds = Credentials.from_authorized_user_info(info, SCOPES)
-
-    if not creds.valid:
-        if creds.expired and creds.refresh_token:
-            try:
-                creds.refresh(Request())
-                logger.info("gmail: access token refreshed from refresh_token")
-            except RefreshError as exc:
-                raise RuntimeError(
-                    f"Gmail refresh token revoked/invalid ({exc}). " + _REGEN_HINT
-                ) from exc
-        else:
-            raise RuntimeError(
-                "Gmail credentials invalid and not refreshable "
-                "(no refresh_token in GMAIL_TOKEN_JSON). " + _REGEN_HINT
-            )
-    return creds
-
-
-def _get_service() -> Any:
-    """Return the cached Gmail API service, building (and refreshing creds) once."""
-    global _service
-    if _service is None:
-        creds = _build_credentials()
-        _service = build("gmail", "v1", credentials=creds, cache_discovery=False)
-    return _service
+def _new_connection() -> smtplib.SMTP:
+    """Open a fresh STARTTLS-secured, logged-in SMTP connection (caller closes it)."""
+    smtp = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT)
+    smtp.starttls(context=ssl.create_default_context())
+    smtp.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
+    return smtp
 
 
 def validate_api_key() -> bool:
     """
-    Verify the Gmail credentials build/refresh successfully.
+    Verify the SMTP credentials by opening a connection, STARTTLS, login, quit.
 
-    Returns True if the service is ready; False (logged ERROR, not WARNING) on any
-    auth failure so the caller can `raise SystemExit(1)` and fail the GitHub
-    Actions step visibly instead of silently sending zero emails. The name is kept
-    (`validate_api_key`) for a drop-in swap with the old Resend client.
+    Returns True if the login succeeds; False (logged ERROR, not WARNING) on
+    SMTPAuthenticationError or any failure, so the caller can `raise SystemExit(1)`
+    and fail the GitHub Actions step visibly instead of silently sending zero
+    emails. The result is cached — checked once per process. The name is kept
+    (`validate_api_key`) for a drop-in swap with the previous backends.
     """
-    global _service_failed
-    if _service_failed:
+    global _login_ok
+    if _login_ok is not None:
+        return _login_ok
+
+    if not GMAIL_APP_PASSWORD:
+        _login_ok = False
+        logger.error("gmail: GMAIL_APP_PASSWORD is not set — %s", _REGEN_HINT)
         return False
+
     try:
-        _get_service()
-        logger.info("gmail: credentials OK (service ready)")
+        smtp = _new_connection()
+        try:
+            smtp.quit()
+        except Exception:  # noqa: BLE001 — quit failure after a good login is harmless
+            pass
+        _login_ok = True
+        logger.info("gmail: SMTP login OK (%s @ %s)", GMAIL_ADDRESS, SMTP_HOST)
         return True
-    except (RuntimeError, GoogleAuthError, HttpError) as exc:
-        _service_failed = True
-        logger.error("gmail: credential validation FAILED: %s", exc)
+    except smtplib.SMTPAuthenticationError as exc:
+        _login_ok = False
+        logger.error("gmail: SMTP authentication FAILED: %s — %s", exc, _REGEN_HINT)
         return False
     except Exception as exc:  # noqa: BLE001 — last-resort: never crash the step here
-        _service_failed = True
-        logger.error("gmail: unexpected credential error: %s", exc, exc_info=True)
+        _login_ok = False
+        logger.error(
+            "gmail: SMTP credential validation FAILED: %s — %s",
+            exc, _REGEN_HINT, exc_info=True,
+        )
         return False
 
 
 def list_suppressions() -> set[str]:
     """
-    Gmail has no suppression-list API. Return an empty set (fail-open), so the
+    SMTP has no suppression-list API. Return an empty set (fail-open), so the
     existing pre-send suppression check in deliver.py/digest.py is a no-op.
     """
-    logger.info("gmail: no suppression list (Gmail) — proceeding without check")
+    logger.info("gmail: no suppression list (SMTP) — proceeding without check")
     return set()
 
 
@@ -155,32 +131,26 @@ def send_email(
     subject: str,
     html: str,
     text: str,
-    idempotency_key: str | None = None,  # accepted but unused — Gmail has no key
+    idempotency_key: str | None = None,  # accepted but unused — SMTP has no key
     reply_to: str | None = None,
     from_addr: str | None = None,
 ) -> dict[str, Any]:
     """
-    Send a multipart (plain + HTML) email via the Gmail API.
+    Send a multipart (plain + HTML) email via Gmail SMTP.
 
-    `idempotency_key` is accepted for interface parity but ignored — Gmail offers
-    no idempotency key. (The outbox 'sent'/'failed'/'skipped' terminal states in
-    deliver.py already prevent re-sends across runs.)
+    A fresh SMTP connection is opened per send (simpler and more robust than a
+    pooled connection; only the validated-login flag is reused). `idempotency_key`
+    is accepted for interface parity but ignored — SMTP offers no idempotency key.
+    (The outbox 'sent'/'failed'/'skipped' terminal states in deliver.py already
+    prevent re-sends across runs.)
 
     Returns:
         {success: bool, provider_message_id: str|None, error: str|None,
-         status_code: int}   (status_code 0 = no HTTP response, i.e. transient)
+         status_code: int}
+          - success                          -> status_code 200
+          - auth / recipient / sender refusal -> status_code 550 (permanent 'failed')
+          - other SMTP / network / timeout    -> status_code 0   (transient, retry)
     """
-    try:
-        service = _get_service()
-    except Exception as exc:  # noqa: BLE001 — surface as a transient-ish failure
-        logger.error("gmail: cannot build service for send: %s", exc)
-        return {
-            "success": False,
-            "provider_message_id": None,
-            "error": str(exc),
-            "status_code": 0,
-        }
-
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = from_addr or ALERTS_SENDER_EMAIL
@@ -188,30 +158,40 @@ def send_email(
     effective_reply_to = reply_to or ALERTS_REPLY_TO_EMAIL
     if effective_reply_to:
         msg["Reply-To"] = effective_reply_to
+    # Stamp a Message-ID before sending so we always have something to log even
+    # though SMTP returns no provider id.
+    message_id = make_msgid()
+    msg["Message-ID"] = message_id
     # Order matters for multipart/alternative: plain first, HTML last (preferred).
     msg.attach(MIMEText(text or "", "plain", "utf-8"))
     msg.attach(MIMEText(html or "", "html", "utf-8"))
 
-    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-
     try:
-        resp = (
-            service.users()
-            .messages()
-            .send(userId="me", body={"raw": raw})
-            .execute()
-        )
-    except HttpError as exc:
-        status = getattr(getattr(exc, "resp", None), "status", 0) or 0
-        logger.warning("gmail: send failed (HTTP %s) for to=%s: %s", status, to, exc)
+        smtp = _new_connection()
+        try:
+            smtp.send_message(msg)
+        finally:
+            try:
+                smtp.quit()
+            except Exception:  # noqa: BLE001 — quit failure after a good send is harmless
+                pass
+    except (
+        smtplib.SMTPAuthenticationError,
+        smtplib.SMTPRecipientsRefused,
+        smtplib.SMTPSenderRefused,
+    ) as exc:
+        # Permanent: bad credentials or a rejected recipient/sender won't fix
+        # itself on retry. Map to a 4xx-range code so deliver.py marks 'failed'.
+        logger.warning("gmail: permanent send failure for to=%s: %s", to, exc)
         return {
             "success": False,
             "provider_message_id": None,
             "error": str(exc),
-            "status_code": int(status),
+            "status_code": 550,
         }
-    except Exception as exc:  # noqa: BLE001 — network/transport → transient (code 0)
-        logger.warning("gmail: send network/transport error for to=%s: %s", to, exc)
+    except (smtplib.SMTPException, OSError) as exc:
+        # Transient: transport/timeout/temporary server error → retry next run.
+        logger.warning("gmail: transient send error for to=%s: %s", to, exc)
         return {
             "success": False,
             "provider_message_id": None,
@@ -221,7 +201,7 @@ def send_email(
 
     return {
         "success": True,
-        "provider_message_id": resp.get("id"),
+        "provider_message_id": msg["Message-ID"] or None,
         "error": None,
         "status_code": 200,
     }
