@@ -39,6 +39,7 @@ jobs:
       # Client Alerts hook — emit + (immediate) deliver for both bases this ETL updates.
       # Gated per source step so a failure in one sync still alerts the other.
       - name: Client Alerts — notify subscribers (anp_precos_produtores)
+        continue-on-error: true   # non-critical side-effect — never fail the data pipeline
         if: steps.produtores.conclusion == 'success'
         run: python -m scripts.client_alerts.run_base --source anp_precos_produtores
         env:
@@ -50,6 +51,7 @@ jobs:
           ALERTS_FRONTEND_URL:       ${{ vars.ALERTS_FRONTEND_URL || 'https://sectordata-dashboard.vercel.app' }}
 
       - name: Client Alerts — notify subscribers (anp_glp)
+        continue-on-error: true   # non-critical side-effect — never fail the data pipeline
         if: steps.glp.conclusion == 'success'
         run: python -m scripts.client_alerts.run_base --source anp_glp
         env:

@@ -43,6 +43,7 @@ jobs:
       # Client Alerts hook — these 3 bases are 'digest' cadence, so this only
       # records new-period events; the daily digest workflow delivers them.
       - name: Client Alerts — record events (daily production)
+        continue-on-error: true   # non-critical side-effect — never fail the data pipeline
         if: success()
         run: python -m scripts.client_alerts.run_base --source anp_cdp_diaria --source anp_cdp_diaria_instalacao --source anp_cdp_diaria_poco
         env:

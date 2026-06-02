@@ -28,6 +28,7 @@ jobs:
 
       # Client Alerts hook — emit + (immediate) deliver for the bases this ETL updates.
       - name: Client Alerts — notify subscribers (anp_precos_distribuicao)
+        continue-on-error: true   # non-critical side-effect — never fail the data pipeline
         if: success()
         run: python -m scripts.client_alerts.run_base --source anp_precos_distribuicao
         env:

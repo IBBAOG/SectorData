@@ -32,6 +32,7 @@ jobs:
       # Client Alerts hook — these bases are 'digest' cadence, so this only
       # records new-period events; the daily digest workflow delivers them.
       - name: Client Alerts — record events (vessel_positions + port_arrivals)
+        continue-on-error: true   # non-critical side-effect — never fail the data pipeline
         if: success()
         run: python -m scripts.client_alerts.run_base --source vessel_positions --source port_arrivals
         env:

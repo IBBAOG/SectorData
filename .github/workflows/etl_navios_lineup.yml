@@ -62,6 +62,7 @@ jobs:
       # final watchdog step below intentionally exits 1 when a port scrape failed.
       # 'navios_diesel' is 'digest' cadence, so this only records new-period events.
       - name: Client Alerts — record events (navios_diesel)
+        continue-on-error: true   # non-critical side-effect — never fail the data pipeline
         if: steps.import.conclusion == 'success'
         run: python -m scripts.client_alerts.run_base --source navios_diesel
         env:

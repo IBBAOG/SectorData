@@ -28,6 +28,7 @@ jobs:
 
       # Client Alerts hook — emit + (immediate) deliver for the base this upload updates.
       - name: Client Alerts — notify subscribers (d_g_margins)
+        continue-on-error: true   # non-critical side-effect — never fail the data pipeline
         if: success()
         run: python -m scripts.client_alerts.run_base --source d_g_margins
         env:

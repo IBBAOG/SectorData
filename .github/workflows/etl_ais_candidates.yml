@@ -31,6 +31,7 @@ jobs:
       # Client Alerts hook — 'import_candidates' is 'digest' cadence, so this only
       # records new-period events; the daily digest workflow delivers them.
       - name: Client Alerts — record events (import_candidates)
+        continue-on-error: true   # non-critical side-effect — never fail the data pipeline
         if: success()
         run: python -m scripts.client_alerts.run_base --source import_candidates
         env:
