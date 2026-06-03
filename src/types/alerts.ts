@@ -113,3 +113,52 @@ export interface UnsubscribeResult {
   already_unsubscribed?: boolean | null;
   error?: string | null;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin-only shapes for the /admin-panel "Alerts" tab.
+//
+// These mirror the SECURITY DEFINER, is_admin()-guarded RPCs `admin_alerts_*`
+// deployed for the rebuilt client-alerts product. They are consumed ONLY by
+// the admin panel — never by the Client-facing /alerts dashboard.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Aggregate counters returned by `admin_alerts_stats()`. */
+export interface AdminAlertsStats {
+  totals: {
+    subscriptions_total: number;
+    subscriptions_active: number;
+    unique_users: number;
+  };
+  per_source: AdminAlertsPerSource[];
+  sent_7d: number;
+  bounced_7d: number;
+}
+
+/** One row of the `per_source` array inside `admin_alerts_stats()`. */
+export interface AdminAlertsPerSource {
+  source_slug: string;
+  subscriptions_total: number;
+  subscriptions_active: number;
+}
+
+/** One row of `admin_alerts_list_subscribers(p_source_slug, p_limit)`. */
+export interface AdminAlertsSubscriber {
+  subscription_id: string;
+  user_id: string;
+  email: string;
+  source_slug: string;
+  is_active: boolean;
+  cadence_override: string | null;
+  created_at: string;
+}
+
+/** One row of `admin_alerts_email_log_recent(p_limit)`. */
+export interface AdminAlertsEmailLogRow {
+  id: string;
+  outbox_id: string | null;
+  email: string;
+  subject: string;
+  status: AlertStatus;
+  provider_message_id: string | null;
+  recorded_at: string;
+}

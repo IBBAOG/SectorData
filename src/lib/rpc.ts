@@ -14,6 +14,9 @@ import type {
   MySubscription,
   RecentAlert,
   UnsubscribeResult,
+  AdminAlertsStats,
+  AdminAlertsSubscriber,
+  AdminAlertsEmailLogRow,
 } from "@/types/alerts";
 
 export type SalesMetricas = {
@@ -4733,4 +4736,80 @@ export async function rpcUnsubscribeByToken(
   });
   if (error) throw error;
   return (data ?? { success: false }) as UnsubscribeResult;
+}
+
+// ─── MODULE: Alerts admin (/src/app/(dashboard)/admin-panel — "Alerts" tab) ───
+//
+// Admin-only operations for the rebuilt client-alerts product. All five RPCs
+// are SECURITY DEFINER and guard their body with `is_admin()`, so a non-admin
+// caller gets a raised exception (surfaced as a thrown error here). They are
+// consumed ONLY by the admin panel — never by the Client-facing /alerts page.
+// The source list/names are read via the existing `rpcListSubscribableBases`.
+//
+// Errors propagate (no silent try/catch + []), so the admin panel can show a
+// friendly inline message and optimistic toggles can revert.
+
+/** Aggregate alert counters: totals, per-source counts, sent/bounced (7d). */
+export async function rpcAdminAlertsStats(
+  supabase: SupabaseClient,
+): Promise<AdminAlertsStats> {
+  const { data, error } = await supabase.rpc("admin_alerts_stats");
+  if (error) throw error;
+  return data as AdminAlertsStats;
+}
+
+/** List subscribers, optionally filtered to one source slug (default all). */
+export async function rpcAdminAlertsListSubscribers(
+  supabase: SupabaseClient,
+  sourceSlug: string | null = null,
+  limit = 200,
+): Promise<AdminAlertsSubscriber[]> {
+  const { data, error } = await supabase.rpc("admin_alerts_list_subscribers", {
+    p_source_slug: sourceSlug,
+    p_limit: limit,
+  });
+  if (error) throw error;
+  return (data ?? []) as AdminAlertsSubscriber[];
+}
+
+/** Most recent rows of the alert email-delivery log (default 100). */
+export async function rpcAdminAlertsEmailLogRecent(
+  supabase: SupabaseClient,
+  limit = 100,
+): Promise<AdminAlertsEmailLogRow[]> {
+  const { data, error } = await supabase.rpc("admin_alerts_email_log_recent", {
+    p_limit: limit,
+  });
+  if (error) throw error;
+  return (data ?? []) as AdminAlertsEmailLogRow[];
+}
+
+/** Enable / disable a source in the catalog. Returns the resulting flag. */
+export async function rpcAdminAlertsToggleSource(
+  supabase: SupabaseClient,
+  sourceSlug: string,
+  isActive: boolean,
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("admin_alerts_toggle_source", {
+    p_source_slug: sourceSlug,
+    p_is_active: isActive,
+  });
+  if (error) throw error;
+  return Boolean(data);
+}
+
+/** Inject a synthetic test event for a source. Does NOT send immediately —
+ *  the event is delivered on the next alert hook / digest run. Returns the
+ *  created event id. `email` optionally targets a single recipient. */
+export async function rpcAdminAlertsSendTest(
+  supabase: SupabaseClient,
+  sourceSlug: string,
+  email: string | null = null,
+): Promise<string> {
+  const { data, error } = await supabase.rpc("admin_alerts_send_test", {
+    p_source_slug: sourceSlug,
+    p_email: email,
+  });
+  if (error) throw error;
+  return data as string;
 }
