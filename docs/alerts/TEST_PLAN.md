@@ -1,0 +1,132 @@
+# Client Alerts — Per-Base Test Plan (Test PRD)
+
+> Goal: **guarantee that every one of the 22 subscribable bases delivers a correct alert email, end to end.** This is a test-only PRD; execution is base-by-base. Owner: CTO + worker_etl-pipelines (harness) + worker_supabase (probes/fixes).
+
+## 1. Why this exists — the `price_bands` incident (2026-06-03)
+
+A real client (`eduardo.mendes@itaubba.com`) subscribed to **Price Bands**, updated the `price_bands` data, and received **nothing**. DB forensics:
+
+| Link | State | Verdict |
+|---|---|---|
+| Subscription exists & active | ✅ `eduardo.mendes@itaubba.com → price_bands` | OK |
+| Data updated | ✅ `MAX(date)=2026-06-03` | OK |
+| **Event emitted** | ❌ `alert_events(price_bands)=0`, watermark `null` | **BROKE HERE** |
+| Outbox / email_log | ❌ 0 / 0 | (downstream of the break) |
+
+**Root cause:** `price_bands` has **no CI ETL workflow** (it's a manual Excel upload). Its alert hook lives in the local `scripts/manual/price_bands_upload.py`, guarded to fire only if Supabase + mail creds are present in the **local** environment — and `GMAIL_APP_PASSWORD` is a GitHub secret, not on the operator's machine. So the trigger **never ran**.
+
+**The systemic lesson:** the rebuild validated the **send path** (Gmail SMTP) and the **digest path** (navios), but **never verified, per base, that a real update fires the hook → emits an event → sends an email.** This plan closes that gap for all 22 bases.
+
+## 2. Definition of "working" — the 6-link chain (must hold for every base)
+
+1. **Subscribe** — a logged-in client toggles base X on → `alert_subscriptions` row (active).
+2. **Trigger** — when X gets new data, the alert hook actually **runs in an environment that has the secrets** (CI).
+3. **Detect** — `alerts_current_period(X)` returns a period **strictly greater than the watermark**; `emit_event_if_new` inserts one `alert_events` row.
+4. **Fanout** — `alerts_active_recipients(X)` resolves the subscriber's email; an `alert_outbox` row is created.
+5. **Deliver** — the Gmail-SMTP send succeeds; `alert_email_log.status='sent'` with a provider Message-ID.
+6. **Receive** — the email lands in the inbox (not spam), correctly rendered (display name, period, deep link, unsubscribe).
+
+A base **PASSES** only when all 6 links are verified by a controlled test.
+
+## 3. Failure modes the tests must distinguish
+
+| ID | Failure | Where | Notes |
+|----|---------|-------|-------|
+| **F1** | Trigger never runs | Link 2 | No workflow (price_bands, anp_subsidy_caps), hook misplaced in a YAML, or local-env guard skips. **← the price_bands bug.** |
+| **F2** | Period doesn't advance | Link 3 | The "update" edited values for the **same** latest period, so `MAX(period)` is unchanged → `emit` no-ops. **Alerts fire on a NEW period, not on value changes** — an expectation gap to document and test for. |
+| **F3** | `alerts_current_period` wrong/null | Link 3 | Wrong column, smallint cast, empty table, or non-sortable key. |
+| **F4** | Fanout finds no recipient | Link 4 | Email unresolved from `auth.users`, subscription inactive, or `alerts_active_recipients` grant/logic. |
+| **F5** | Send fails | Link 5 | SMTP auth, recipient refused, **or lands in spam** (corporate inboxes vs a gmail.com sender). |
+| **F6** | Wrong cadence routing | Links 3–5 | Immediate base deferred to digest, or a digest base trying to send immediately. |
+| **F7** | Watermark already current | Link 3 | A prior emit consumed the period; re-tests must reset the watermark. |
+
+## 4. Test harness to build (Phase A)
+
+1. **`/.github/workflows/client_alerts_test.yml`** — `workflow_dispatch` with inputs:
+   - `source` (slug, required), `reset_watermark` (bool, default true), `deliver_digest` (bool, default false).
+   - Steps: (optional) `DELETE FROM alert_source_state WHERE source_slug=<source>` via a tiny `--reset-watermark` flag on `run_base`; then `python -m scripts.client_alerts.run_base --source <source>`; if `deliver_digest`, also `--digest`. Runs in CI (secrets present). This exercises **emit → fanout → render → SMTP → log** for any base on demand, repeatably, **without a real scrape**.
+   - Add a `--reset-watermark <slug>` option to `scripts/client_alerts/run_base.py` (service-role delete of the watermark row) so the harness needs no separate SQL step.
+2. **SQL verification probe** (one parametrized query) — for a given source + email, returns: latest event, outbox status, email_log status + provider id, watermark. Used as the per-base assertion.
+3. **Test recipient** — a deliverable inbox. `eduardo.mendes@itaubba.com` works (Gmail SMTP is not sandbox-restricted); also test `ibbaogproject@gmail.com`. **Explicitly check the spam folder** (F5).
+
+> The harness tests the engine + send for each base directly. Hook **wiring** (the step being present and correctly gated in each ETL YAML) is verified separately by a **static check** (§6 column "hook present?") plus, for a few representative bases, a real `workflow_dispatch` of the actual ETL.
+
+## 5. Per-base test procedure (repeatable)
+
+For each base **X**:
+1. Ensure a test subscription (test email → X) exists and is **active**.
+2. Note X's **cadence** (immediate/digest) and **period_kind**.
+3. Dispatch `client_alerts_test.yml` with `source=X`, `reset_watermark=true` (and `deliver_digest=true` if X is **digest**).
+4. **Assert (SQL probe):** a new `alert_events(X)` row exists → `alert_outbox` row → `alert_email_log.status='sent'` with a provider Message-ID.
+5. **Assert (human):** the email arrived in the test inbox (check spam), and content is correct — display name, period, `frontend_route` deep link, unsubscribe link, immediate vs digest template.
+6. Record **PASS/FAIL** + (if FAIL) the failure-mode ID from §3.
+7. Cleanup: optionally delete the test event/subscription; leave the watermark at the current period.
+
+## 6. The 22-base test matrix
+
+Legend — Cadence: I = immediate, D = digest. "What advances the period" = what an operator must change for the watermark to move (and thus for an alert to fire).
+
+| # | Base (slug) | Cad | period_kind | What advances the period | Hooked in workflow | Trigger reliable? |
+|---|-------------|-----|-------------|--------------------------|--------------------|-------------------|
+| 1 | vendas | I | date | new `MAX(date)` (new month) | etl_anp_vendas | ✅ CI |
+| 2 | anp_glp | I | month | new `MAX(ano,mes)` | etl_anp_precos | ✅ CI |
+| 3 | anp_precos_produtores | I | window_end | new `MAX(data_fim)` (new week) | etl_anp_precos | ✅ CI |
+| 4 | anp_lpc | I | window_end | new `MAX(data_fim)` | etl_anp_lpc | ✅ CI |
+| 5 | anp_precos_distribuicao | I | date | new `MAX(data_referencia)` | etl_anp_precos_distribuicao | ✅ CI |
+| 6 | anp_daie | I | month | new `MAX(ano,mes)` | etl_anp_fase3 | ✅ CI |
+| 7 | anp_desembaracos | I | month | new `MAX(ano,mes)` | etl_anp_fase3 | ✅ CI |
+| 8 | mdic_comex | I | month | new `MAX(ano,mes)` | etl_mdic_comex | ✅ CI |
+| 9 | anp_cdp_producao | I | month | new `MAX(ano,mes)` | etl_anp_cdp | ✅ CI |
+| 10 | anp_cdp_diaria | D | date | new `MAX(data)` | etl_anp_cdp_diaria | ✅ CI |
+| 11 | anp_cdp_diaria_instalacao | D | date | new `MAX(data)` | etl_anp_cdp_diaria | ✅ CI |
+| 12 | anp_cdp_diaria_poco | D | date | new `MAX(data)` | etl_anp_cdp_diaria | ✅ CI |
+| 13 | anp_voip | I | year | new `MAX(ano_publicacao)` | etl_anp_voip | ✅ CI (annual) |
+| 14 | navios_diesel | D | timestamp | new `MAX(collected_at)` | etl_navios_lineup | ✅ CI |
+| 15 | vessel_positions | D | timestamp | new `MAX(ts)` | etl_navios_positions + etl_ais_positions | ✅ CI |
+| 16 | port_arrivals | D | timestamp | new `MAX(detected_at)` | etl_navios_positions + etl_ais_positions | ✅ CI |
+| 17 | import_candidates | D | timestamp | new `MAX(last_seen_at)` | etl_ais_candidates | ✅ CI |
+| 18 | d_g_margins | I | iso_week | new `MAX(to_date(week))` | manual_dg_margins (weekly cron) | ⚠️ weekly only |
+| 19 | **price_bands** | I | date | new `MAX(date)` | **none (local upload script)** | ❌ **NO reliable trigger — the bug** |
+| 20 | anp_subsidy_diesel_reference | I | date | new `MAX(data_referencia)` | etl_anp_subsidy_diesel | ✅ CI |
+| 21 | anp_subsidy_commercialization | I | date | new `MAX(data_inicio)` | etl_anp_subsidy_diesel | ✅ CI |
+| 22 | **anp_subsidy_caps** | I (inactive) | timestamp | admin edit | **none (admin-edit)** | ❌ **NO trigger; currently `is_active=false`** |
+
+## 7. Trigger-reliability fixes (must land before a base can pass)
+
+The matrix exposes that **F1** is a design gap for the no-workflow bases. Fix:
+
+- **`/.github/workflows/client_alerts_poll.yml`** — a scheduled **safety-net poll** (e.g. every 2 h) that runs `python -m scripts.client_alerts.run_base --source <every immediate base>`. Because `emit_event_if_new` is idempotent (watermark + `UNIQUE(source_slug,event_key)`), polling is **safe** — it emits only when a NEW period actually landed. Effect:
+  - `price_bands` / `anp_subsidy_caps` (no CI hook) now fire **within the poll interval** of any manual update — reliable, even though not "instant".
+  - Every other base gets a **backstop**: if an ETL hook ever fails or is skipped, the poll catches the missed period. The immediate ETL hooks still give instant alerts; the poll only fills gaps.
+- **`d_g_margins`**: covered by `manual_dg_margins.yml` (weekly) + the poll backstop.
+- **`anp_subsidy_caps`**: decide whether to keep it `is_active=false` (then it needs no trigger) or activate it and rely on the poll.
+- **Optional hardening**: drop the brittle local hook in `price_bands_upload.py` (replaced by the poll), or keep it but make it best-effort only.
+
+> This makes the architecture: **ETL hooks = instant alerts; poll = guaranteed safety net.** It directly prevents the `price_bands` class of silent miss.
+
+## 8. Cross-cutting checks (run once, not per base)
+
+- **Immediate-path email template** renders correctly (only the *digest* template was visually verified). Test via any immediate base (e.g. vendas) in the harness.
+- **Cadence routing** is correct per base (immediate sends now; digest waits for `client_alerts_digest.yml`).
+- **Deliverability to corporate inboxes** (`@itaubba.com`) from a `gmail.com` sender — verify it isn't spam-filtered; if it is, that's a flag toward a verified sending domain (SPF/DKIM) later.
+- **Dashboard flows**: subscribe, pause/resume, unsubscribe-by-token (from an email link, logged out).
+- **Admin tab** reflects the test sends (stats, subscribers, email log).
+
+## 9. Acceptance criteria
+
+- Per base: a controlled harness run delivers a correctly-rendered email to the test inbox, with all 6 links (§2) verified. Record PASS + the provider Message-ID.
+- Product-level "guaranteed": **all 22 bases PASS** (or are explicitly N/A, e.g. an intentionally-inactive `anp_subsidy_caps`) **and** the trigger-reliability fixes (§7) are merged.
+
+## 10. Execution order
+
+- **Phase A** — Build the harness: `run_base --reset-watermark`, `client_alerts_test.yml`, the SQL probe. (worker_etl-pipelines)
+- **Phase B** — Trigger fixes: `client_alerts_poll.yml` (safety net) + decide price_bands/anp_subsidy_caps. (worker_etl-pipelines)
+- **Phase C** — Run the 22-base matrix (§5/§6), recording PASS/FAIL + failure mode. Start with **price_bands** (the reported failure) and **vendas** (immediate-template check). (CTO orchestrates)
+- **Phase D** — Fix every FAIL, re-test until all PASS. (per owner)
+- **Phase E** — Sign-off: a results table (base · PASS/FAIL · Message-ID · notes) appended to this file.
+
+## 11. Results log (filled during Phase C/D)
+
+| Base | Date | Result | Message-ID / failure mode | Notes |
+|------|------|--------|---------------------------|-------|
+| _(to be filled per base)_ | | | | |
