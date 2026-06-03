@@ -473,6 +473,7 @@ function YoYTable({
   orderOverride,
   prevMonthByEntity,
   colorMap,
+  showTotalRow,
 }: {
   rows: YoyTableRow[];
   loading: boolean;
@@ -498,6 +499,14 @@ function YoYTable({
    *  / Exports PALETTE rotation). Used by Panel B to inject the rank-bound
    *  importer palette. */
   colorMap?: Record<string, string>;
+  /** When true, append a bold "Total" footer row that sums the volume columns
+   *  (current month, prior month, prior year) across ALL displayed rows and
+   *  RECOMPUTES MoM% / YoY% from those summed totals (never sums the per-row
+   *  percentages). Divide-by-zero / missing baselines mirror the per-row guard
+   *  (null → "—"). Used only by the Imports "By Origin Country" table — the
+   *  displayed rows already include "Others" (the tail), so summing them yields
+   *  the correct grand total without double-counting. */
+  showTotalRow?: boolean;
 }) {
   if (loading) {
     return (
@@ -545,6 +554,39 @@ function YoYTable({
   const orderedRows: YoyTableRow[] = tableEntities
     .map((e) => rowByEntity.get(e))
     .filter((r): r is YoyTableRow => r != null);
+
+  // Optional "Total" footer row — sum the three volume columns across ALL
+  // displayed rows (including "Others", which already captures the tail, so
+  // summing the displayed rows gives the correct grand total without
+  // double-counting). The percentage columns are RECOMPUTED from the summed
+  // totals (never summed from per-row percentages); divide-by-zero / missing
+  // baselines mirror the per-row guard (computeMoMPct / null → "—").
+  let totalRow:
+    | { current: number; prevMonth: number | null; momPct: number | null; prevYear: number; yoyPct: number | null }
+    | null = null;
+  if (showTotalRow && orderedRows.length) {
+    let current = 0;
+    let prevYear = 0;
+    let prevMonthSum = 0;
+    let prevMonthSeen = false;
+    for (const row of orderedRows) {
+      current += row.last_12m;
+      prevYear += row.prev_12m;
+      const pm = prevMonthByEntity.get(row.entity) ?? null;
+      if (pm != null) {
+        prevMonthSum += pm;
+        prevMonthSeen = true;
+      }
+    }
+    const prevMonth = prevMonthSeen ? prevMonthSum : null;
+    totalRow = {
+      current,
+      prevMonth,
+      momPct: computeMoMPct(current, prevMonth),
+      prevYear,
+      yoyPct: prevYear === 0 ? null : ((current - prevYear) / prevYear) * 100,
+    };
+  }
 
   return (
     <div style={{ marginTop: 12 }}>
@@ -752,6 +794,38 @@ function YoYTable({
                 </tr>
               );
             })}
+            {totalRow ? (() => {
+              const totMom = fmtDelta(totalRow.momPct);
+              const totYoy = fmtDelta(totalRow.yoyPct);
+              const tdBase = {
+                textAlign: "right" as const,
+                whiteSpace: "nowrap" as const,
+                fontVariantNumeric: "tabular-nums" as const,
+                fontWeight: 700 as const,
+                borderTop: "2px solid #888",
+                background: "#fff",
+              };
+              return (
+                <tr key="__total__">
+                  <td style={{ fontWeight: 700, borderTop: "2px solid #888", background: "#fff" }}>
+                    Total
+                  </td>
+                  <td style={tdBase}>
+                    {totalRow.current.toLocaleString("en-US", { maximumFractionDigits: 1 })}
+                  </td>
+                  <td style={{ ...tdBase, color: "#555" }}>
+                    {totalRow.prevMonth != null
+                      ? totalRow.prevMonth.toLocaleString("en-US", { maximumFractionDigits: 1 })
+                      : "—"}
+                  </td>
+                  <td style={{ ...tdBase, color: totMom.color }}>{totMom.text}</td>
+                  <td style={{ ...tdBase, color: "#555" }}>
+                    {totalRow.prevYear.toLocaleString("en-US", { maximumFractionDigits: 1 })}
+                  </td>
+                  <td style={{ ...tdBase, color: totYoy.color }}>{totYoy.text}</td>
+                </tr>
+              );
+            })() : null}
           </tbody>
         </table>
       </div>
@@ -1748,6 +1822,7 @@ export default function DesktopView(): React.ReactElement {
                     anchorMes={filters.period.end.mes}
                     orderOverride={ORIGIN_ORDER}
                     prevMonthByEntity={prevMonthByCountry}
+                    showTotalRow
                   />
 
                   <div style={{ height: 24 }} />
