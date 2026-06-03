@@ -49,7 +49,7 @@ ALERTS_REPLY_TO_EMAIL: str = os.environ.get("ALERTS_REPLY_TO_EMAIL", "")
 # Frontend URL used in email links (unsubscribe + "view data"). Defaults to the
 # project's production deployment.
 ALERTS_FRONTEND_URL: str = os.environ.get(
-    "ALERTS_FRONTEND_URL", "https://sectordata-dashboard.vercel.app"
+    "ALERTS_FRONTEND_URL", "https://oilandgasdata.vercel.app"
 ).rstrip("/")
 
 # Default delivery batch size (overridable on the digest CLI via --batch-limit).
