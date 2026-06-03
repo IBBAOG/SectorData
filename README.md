@@ -171,13 +171,23 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | 18 | `client_alerts_digest.yml` | Daily 23:30 UTC | Client Alerts daily digest — sweeps `digest`-cadence bases into 1 email/subscriber/day (Gmail SMTP) |
 | ext | News Hunter scanner | Every ~5min via cron-job.org | `news_articles` (separate repo `IBBAOG/news-hunter-scanner`) |
 
+**Monitoring & test workflows** (ops coverage + Client Alerts harness — see [`docs/etl-pipelines/PRD.md`](docs/etl-pipelines/PRD.md) § "Monitoring & testing"):
+
+| Workflow | Schedule | Role |
+|----------|----------|------|
+| `freshness_monitor.yml` | Daily 12:00 UTC | **Freshness guardian** — emails ops if any base's data is overdue vs a per-source cadence threshold (catches a *silent* stall: green workflow, stale data) |
+| `workflow_failure_monitor.yml` | Every 6h | **Failure pager** — pages ops on ≥3 consecutive non-cancelled failures of 16 critical workflows (catches a *loud* failure); re-homes the retired `etl_workflow_stuck` |
+| `client_alerts_poll.yml` | Every 20 min | **Safety-net poll** — `run_base --all-active`; fires alerts for hook-less Data Input bases (`price_bands`, `d_g_margins`) and backstops every ETL hook |
+| `client_alerts_test.yml` | `workflow_dispatch` | **Test harness** — `run_base --test --source <slug>`; simulates a base update → SMTP send without touching the data table or watermark. Per-base plan: [`docs/alerts/TEST_PLAN.md`](docs/alerts/TEST_PLAN.md) |
+| `alertas_monitor.yml` | **DISABLED** | Legacy local-only Gmail monitor — retired (subsumed by the freshness guardian + failure pager); workflow disabled (reversible), 3 internal recipients migrated to Client Alerts |
+
 > **Client Alerts hook:** workflows #1–#12, #14–#17 (the 15 data ETLs incl. `manual_dg_margins`) each end with a `continue-on-error` step `python -m scripts.client_alerts.run_base --source <slug>` that emails subscribers the moment a base gets new data (immediate bases) or queues a digest event. Logged-in-only product; delivery via Gmail SMTP + App Password (`GMAIL_APP_PASSWORD`). Engine: `scripts/client_alerts/`. See [`docs/etl-pipelines/PRD.md`](docs/etl-pipelines/PRD.md) § "Client Alerts" and [`docs/app/alerts.md`](docs/app/alerts.md).
 
 Workflow internals (scripts, retries, self-healing, pegadinhas) in [`docs/etl-pipelines/PRD.md`](docs/etl-pipelines/PRD.md).
 
 **Manual data** (`data/`): `data/d_g_margins.xlsx` and `data/price_bands.xlsx` edited by hand and uploaded via `scripts/manual/*.py`. Both gitignored.
 
-**Alert subsystem** (`alertas/`): local-only (gitignored), self-contained. 12 detection bases over Supabase tables/parquet, sends notifications via Gmail API. See `alertas/PRD_ALERTAS.md`.
+**Alert subsystem** (`alertas/`): legacy local-only (gitignored), self-contained. 12 detection bases over Supabase tables/parquet, Gmail-based. **Retired** — its `alertas_monitor.yml` workflow is disabled (reversible); the stale-canary is subsumed by `freshness_monitor.yml` and its `etl_workflow_stuck` pager re-homed into `workflow_failure_monitor.yml`. See `alertas/PRD_ALERTAS.md` and [`docs/etl-pipelines/PRD.md`](docs/etl-pipelines/PRD.md) § "Legacy `alertas/` monitor retirement".
 
 ## Shared Dashboard Components
 

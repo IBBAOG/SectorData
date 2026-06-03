@@ -547,7 +547,7 @@ jobs:
 1. ✅ **Create Resend account** at https://resend.com (free tier, no credit card needed). — DONE
 2. ✅ **Generate API key:** Resend dashboard → API Keys → Create. Scope: **Full Access** (or at minimum "Send" + "Read Suppressions"). — DONE, but **verify scope**: if GHA log shows "Resend suppressions fetch failed: 401", the key was created with Sending-only scope. Regenerate with Full Access at https://resend.com/api-keys and update GHA secret.
 3. ✅ **Add `RESEND_API_KEY` to GHA secrets** (`IBBAOG/SectorData` repo). — DONE
-4. ⬜ **Confirm production URL** for `ALERTS_FRONTEND_URL` — needed for unsubscribe/confirm links in email body. Default candidate: `https://sectordata-dashboard.vercel.app`.
+4. ⬜ **Confirm production URL** for `ALERTS_FRONTEND_URL` — needed for unsubscribe/confirm links in email body. Default candidate: `https://oilandgasdata.vercel.app`.
 5. ⬜ **Set webhook URL** (DEFERRED to post-deploy) — `https://<production-url>/api/alerts/resend-webhook` in Resend dashboard → Webhooks. Generate signing secret → add as `RESEND_WEBHOOK_SECRET`. Without this, bounce/complaint tracking is manual but core sending still works.
 6. ⬜ **Invoke `worker_alerts-product`** in new session — picks up from `Initialization checklist` in its `.md` file.
 
