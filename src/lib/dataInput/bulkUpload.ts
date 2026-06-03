@@ -25,19 +25,26 @@ import type {
 // ── Cell helpers ────────────────────────────────────────────────────────────
 
 /**
+ * Format a JS `Date` as `YYYY-MM-DD` using its UTC parts. ExcelJS stores Excel
+ * serial dates as UTC midnight, so reading UTC parts avoids a timezone-induced
+ * off-by-one day. supabase-js may also hand back DB date columns as `Date`.
+ */
+function toUtcYmd(date: Date): string {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(date.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+/**
  * Convert an ExcelJS Date cell to an ISO `YYYY-MM-DD` string.
  * Returns null for anything that isn't a valid date.
  *
- * ExcelJS yields JS `Date` objects for date-formatted cells. We read the UTC
- * parts (ExcelJS stores Excel serial dates as UTC midnight) to avoid a
- * timezone-induced off-by-one day.
+ * ExcelJS yields JS `Date` objects for date-formatted cells.
  */
 function toIsoDate(value: unknown): string | null {
   if (value instanceof Date && !isNaN(value.getTime())) {
-    const y = value.getUTCFullYear();
-    const m = String(value.getUTCMonth() + 1).padStart(2, "0");
-    const d = String(value.getUTCDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
+    return toUtcYmd(value);
   }
   // Some templates store the date as text already — accept a clean ISO string.
   if (typeof value === "string") {
@@ -45,6 +52,14 @@ function toIsoDate(value: unknown): string | null {
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
   }
   return null;
+}
+
+/**
+ * Whether a normalized raw cell value is "empty" (null/undefined/blank string).
+ * Empty non-key cells are lenient (→ null); non-empty malformed cells hard-error.
+ */
+function isBlank(value: unknown): boolean {
+  return value === null || value === undefined || (typeof value === "string" && value.trim() === "");
 }
 
 /**
@@ -66,11 +81,6 @@ function normalizeCell(value: unknown): unknown {
   }
   if (typeof value === "string" && value.trim() === "") return null;
   return value;
-}
-
-/** Look up the registry column config for a given key. */
-function colFor(config: EditableTableConfig, key: string): ColumnConfig | undefined {
-  return config.columns.find((c) => c.key === key);
 }
 
 // ── Parse ─────────────────────────────────────────────────────────────────────
@@ -99,6 +109,10 @@ export async function parseWorkbook(
     return { rows, errors, warnings: ["This table does not support bulk upload."], sheetsFound: [] };
   }
   const { partitionColumn, sheets } = config.bulkUpload;
+
+  // Column-config lookup built once (avoids a per-row, per-key linear scan).
+  const colByKey = new Map<string, ColumnConfig>();
+  for (const col of config.columns) colByKey.set(col.key, col);
 
   // Dynamic import keeps ExcelJS out of the admin-panel initial bundle.
   const ExcelJS = (await import("exceljs")).default;
@@ -150,7 +164,7 @@ export async function parseWorkbook(
     if (missingKeyCols.length > 0) {
       warnings.push(
         `Sheet "${sheetSpec.sheetName}" is missing required column(s): ${missingKeyCols
-          .map((k) => colFor(config, k)?.label ?? k)
+          .map((k) => colByKey.get(k)?.label ?? k)
           .join(", ")} — its rows were skipped.`
       );
       continue;
@@ -166,10 +180,22 @@ export async function parseWorkbook(
 
       for (const [colNumber, key] of headerToCol) {
         const raw = normalizeCell(excelRow.getCell(colNumber).value);
-        const col = colFor(config, key);
+        const col = colByKey.get(key);
         if (col?.type === "date") {
           parsed[key] = toIsoDate(raw);
         } else if (col?.type === "number") {
+          // Hard-fail a non-empty cell that isn't a finite number BEFORE coercing
+          // (coerceValue would silently turn "N/A" into null, and the lenient
+          // non-key path would then treat it as empty → data silently dropped).
+          // Empty/blank stays lenient (→ null) for non-key columns; missing
+          // conflict-key cells are caught by the skip/validate logic below.
+          if (!isBlank(raw) && !Number.isFinite(Number(raw))) {
+            errors.push({
+              sheet: sheetSpec.sheetName,
+              rowNumber,
+              message: `Column "${col?.label ?? key}": "${String(raw).trim()}" is not a number`,
+            });
+          }
           parsed[key] = coerceValue(raw, "number");
         } else {
           // text / select / partition column
@@ -242,12 +268,10 @@ function conflictKey(row: Record<string, unknown>, conflictColumns: string[]): s
     .map((k) => {
       const v = row[k];
       if (v === null || v === undefined) return "";
-      if (v instanceof Date) {
-        const y = v.getUTCFullYear();
-        const m = String(v.getUTCMonth() + 1).padStart(2, "0");
-        const d = String(v.getUTCDate()).padStart(2, "0");
-        return `${y}-${m}-${d}`;
-      }
+      // Parsed rows already carry ISO date strings (toIsoDate), so this `Date`
+      // branch only fires for `existingRows` — supabase-js can hand DB date
+      // columns back as `Date` objects. Normalize both sides to `YYYY-MM-DD`.
+      if (v instanceof Date) return toUtcYmd(v);
       return String(v).trim();
     })
     .join(" ");
@@ -303,11 +327,15 @@ export async function bulkUpsert(
   for (const col of config.columns) allowedKeys.add(col.key);
   for (const col of config.conflictColumns) allowedKeys.add(col);
 
+  // Column-config lookup built once (avoids a per-row, per-key linear scan).
+  const colByKey = new Map<string, ColumnConfig>();
+  for (const col of config.columns) colByKey.set(col.key, col);
+
   const payload: Record<string, unknown>[] = parsedRows.map((row) => {
     const out: Record<string, unknown> = {};
     for (const key of allowedKeys) {
       if (!(key in row)) continue;
-      const col = config.columns.find((c) => c.key === key);
+      const col = colByKey.get(key);
       out[key] = col ? coerceValue(row[key], col.type) : row[key];
     }
     return out;
