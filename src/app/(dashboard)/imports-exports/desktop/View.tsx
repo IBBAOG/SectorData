@@ -17,7 +17,8 @@
 // Units — CRITICAL: never drift label from divisor.
 //   Panel A: total_kg / 1e6 = kt. Label "kt".
 //   Panel B: total_mil_m3 already from RPC. Label "mil m³".
-//   Exports (metric=volume): server returns mil m³ — DO NOT divide. Label "mil m³".
+//   Exports (metric=volume): server returns thousand tonnes (ComexStat net weight)
+//     directly — DO NOT divide. Label "mil t" (2026-06-03).
 //   Exports (metric=usd): server returns raw USD. Label "USD".
 
 import dynamic from "next/dynamic";
@@ -1323,8 +1324,10 @@ export default function DesktopView(): React.ReactElement {
       : buildStackedTraces(rows, "mil m³", importersTop6Entities, importersTop6ColorMap);
   }, [importersTop6Data, importersTop6Entities, importersTop6ColorMap, isSingleMonth]);
 
-  // Exports — stacked area by destination country (value already in correct unit from RPC)
-  const exportsUnit = filters.exportsYAxis === "volume" ? "mil m³" : "USD";
+  // Exports — stacked area by destination country (value already in correct unit from RPC).
+  // Volume is now reported in thousand tonnes ("mil t") — the RPC returns ComexStat
+  // net weight directly (2026-06-03). USD label unchanged.
+  const exportsUnit = filters.exportsYAxis === "volume" ? "mil t" : "USD";
 
   // Stable alphabetical entity order — mirrors the order buildStackedTraces
   // uses internally when no orderOverride is provided (non-Others sorted
@@ -1835,7 +1838,7 @@ export default function DesktopView(): React.ReactElement {
                   <div style={{ marginBottom: 12, maxWidth: 220 }}>
                     <SegmentedToggle
                       options={[
-                        { value: "volume" as const, label: "Volume (mil m³)" },
+                        { value: "volume" as const, label: "Volume (mil t)" },
                         { value: "usd" as const, label: "Value (USD)" },
                       ]}
                       value={filters.exportsYAxis}
@@ -1887,7 +1890,7 @@ export default function DesktopView(): React.ReactElement {
                     }}
                   >
                     Source: MDIC Comex — monthly customs-declared exports by destination country
-                    (NCM 27090010 / 27101259 / 27101921; kg→m³ via ANP standard densities).
+                    (NCM 27090010 / 27101259 / 27101921; net weight in thousand tonnes as declared to customs).
                   </div>
 
                   {/* Export unit price by destination country — Crude Oil only */}

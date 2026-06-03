@@ -116,7 +116,7 @@ Returns `(entity text, last_12m numeric, prev_12m numeric, yoy_pct numeric)`.
 Returns `(ano int, mes int, pais text, value numeric)`.
 
 - Source: `mdic_comex` (flow='export'). Migration `20260525000110_imports_exports_exports_by_country.sql`.
-- `p_metric='volume'`: `value` is already in **mil m³** (server-side `kg / densidade_kg_m3 / 1000`). **Never divide client-side.**
+- `p_metric='volume'`: `value` is already in **thousand tonnes (mil t)** — ComexStat net weight as declared to customs, returned directly by the RPC (changed 2026-06-03; previously mil m³ via `kg / densidade_kg_m3 / 1000`). **Never divide client-side.** Label must be **"mil t"**.
 - `p_metric='usd'`: `value` is raw FOB USD.
 - Server ranks destination countries by total value over the period. Non-top-N rows collapsed into `pais='Others'`.
 - Replaced the dropped `get_imports_exports_exports_serie` (migration 20260525000110).
@@ -126,7 +126,7 @@ Returns `(ano int, mes int, pais text, value numeric)`.
 Returns `(entity text, last_12m numeric, prev_12m numeric, yoy_pct numeric)`.
 
 - **Single-month semantics (since migration `20260527000000`):** identical pattern to the imports YoY RPC above — `last_12m` is the value at `(p_ano_fim, p_mes_fim)`, `prev_12m` at `(p_ano_fim - 1, p_mes_fim)`. Anchor is `period.end`; UI labels the columns as `"<Month YYYY>"` / `"<Month YYYY-1>"`.
-- `last_12m` / `prev_12m` in mil m³ (`metric=volume`) or USD (`metric=usd`).
+- `last_12m` / `prev_12m` in thousand tonnes — mil t (`metric=volume`, ComexStat net weight, since 2026-06-03) or USD (`metric=usd`). YoY table column headers carry the `(mil t)` unit suffix for the exports table.
 - `yoy_pct` is `NULL` when `prev_12m = 0`. UI renders "n/a" in neutral color.
 - `yoy_pct` color: green for positive, red for negative, neutral for null.
 
@@ -158,6 +158,25 @@ Returns `(ano int, mes int, pais text, usd_per_m3 numeric, vol_m3 numeric)`.
 ## Exports tab — ranking divergence note
 
 The stacked-area chart ("Exports — By Destination Country") ranks destination countries by **total value over the full selected period** `[p_ano_inicio, p_ano_fim]`, while the YoY table ranks countries by **last-12m only**. A country that was historically dominant but has dropped off recently can therefore appear in the chart's top-10 but be absent from the YoY table's top-10 (and vice versa). This is intentional — each artifact ranks by its own dominant axis. Both panels share the same `metric` filter (volume or USD).
+
+---
+
+## Exports — By Destination Country: volume unit = thousand tonnes (2026-06-03)
+
+As of 2026-06-03 the **Exports — By Destination Country** panel (the stacked-area / single-month horizontal-bar chart + its YoY table) reports volume in **thousand tonnes ("mil t")** — the ComexStat **net weight** as declared to customs. `get_imports_exports_exports_paises_stacked(p_metric='volume')` and `get_imports_exports_exports_yoy_table(p_metric='volume')` now return net weight directly (no density conversion); the frontend renders the value as-is — never divides.
+
+Scope of the relabel:
+- Y-axis title `mil m³ → mil t` (volume metric only; the USD toggle label is unchanged).
+- Exports YoY table column headers carry `(mil t)`.
+- The Volume/USD `SegmentedToggle` label is "Volume (mil t)".
+- The exports-panel source footnote now reads mass-appropriate copy ("net weight in thousand tonnes as declared to customs") instead of the old "kg→m³ via ANP standard densities". The footnote is **per-panel, not shared** with the imports/unit-price panels — each panel renders its own source line. The mobile exports footnote is a single combined line covering both the volume chart and the USD/bbl unit-price panel; only its volume clause was switched to tonnes, the `1 m³ = 6.2898 bbl` clause for the price panel is preserved.
+
+Everything else stays **m³-based**:
+- Imports tab — Panel A (origin countries, `kt`), Panel B (importers, `mil m³`), imports YoY.
+- Unit-price panels (USD/m³ → USD/ton, ¢/gal, USD/bbl) — unchanged per the user's decision.
+- The unified **export library** (`src/lib/export/dashboards/importsExports.ts`) is a **raw-row** dump, not the aggregated panel. Its Exports sheet keeps `Quantity (kg)` (true net weight) + `Volume (m³)` (true `kg / densidade`) columns — these are genuine physical quantities, independent of the panel's display unit, and were intentionally left untouched (relabeling them to tonnes would be factually wrong).
+
+Single source of truth in code: the `exportsUnit` constant (`filters.exportsYAxis === "volume" ? "mil t" : "USD"`) declared identically in `desktop/View.tsx` and `mobile/View.tsx`. It feeds the chart layout (`areaLayout` / `mobileAreaLayout` / `horizontalBarLayout`), the trace builders (hover unit), and the YoY table `volumeLabel`/`unitLabel`, so a single edit flips every artifact in that view.
 
 ---
 
@@ -197,10 +216,10 @@ The stacked-area chart ("Exports — By Destination Country") ranks destination 
 │              │     Source: mdic_comex. Same 3 rows as chart, 1:1 colors.  │
 │              │                                                             │
 │              │ Exports tab:                                                │
-│              │   SegmentedToggle: Volume (mil m³) / Value (USD)           │
+│              │   SegmentedToggle: Volume (mil t) / Value (USD)            │
 │              │   ChartSection "Exports — By Destination Country"          │
 │              │     Plotly stacked area — x: YYYY-MM, stack: countries     │
-│              │     Top-10 + Others. Unit: mil m³ (metric=volume) or USD   │
+│              │     Top-10 + Others. Unit: mil t (metric=volume) or USD    │
 │              │   YoY table (entity | last 12m | prior 12m | YoY%)         │
 │              │   Source note: MDIC Comex                                  │
 │              │                                                             │

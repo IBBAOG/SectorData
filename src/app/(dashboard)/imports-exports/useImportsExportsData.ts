@@ -34,7 +34,8 @@
 // Units:
 //   Panel A → quantidade_kg / 1e6 = kt. Label "kt".
 //   Panel B → total_mil_m3 from RPC (server converts kg→m³ via density). Label "mil m³".
-//   Exports (metric=volume) → server returns mil m³ directly — DO NOT divide client-side. Label "mil m³".
+//   Exports (metric=volume) → server returns thousand tonnes (ComexStat net weight)
+//                             directly — DO NOT divide client-side. Label "mil t" (2026-06-03).
 //   Exports (metric=usd)    → server returns raw USD. Label "USD".
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -113,7 +114,7 @@ export interface YoyTableRow {
   yoy_pct: number | null;
 }
 
-// Exports stacked row — value already in mil m³ (metric=volume) or USD (metric=usd) from RPC
+// Exports stacked row — value already in mil t (metric=volume) or USD (metric=usd) from RPC
 export type { IEExportsPaisesStackedRow as ExportsPaisesStackedRow } from "@/lib/rpc";
 export type { IEExportsYoyRow as ExportsYoyRow } from "@/lib/rpc";
 
