@@ -9,6 +9,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type {
+  SubscribableBase,
+  MySubscription,
+  RecentAlert,
+  UnsubscribeResult,
+  AdminAlertsStats,
+  AdminAlertsSubscriber,
+  AdminAlertsEmailLogRow,
+} from "@/types/alerts";
 
 export type SalesMetricas = {
   total_registros: number;
@@ -4610,234 +4619,6 @@ export async function rpcAdminDeleteStockGuideSensitivityTable(
   if (error) throw error;
 }
 
-// ─── MODULE: Alerts (/alerts) ─────────────────────────────────────────────────
-//
-// User-facing subscription management. All wrappers here are callable by both
-// anon and authenticated users EXCEPT list_my_subscriptions, list_my_recent_alerts
-// and update_subscription_active which require a valid auth.uid() (RLS-gated).
-//
-// Admin-only RPCs (admin_list_subscribers, admin_force_unsubscribe, etc.) live
-// in src/lib/alertsAdminRpc.ts (owned by worker_dash-admin).
-//
-// Anti-patterns to avoid:
-//   - Never call these in a loop. subscribe_to_alerts takes TEXT[] — 1 call max.
-//   - Never render confirmation_token or unsubscribe_token in the DOM.
-// ─────────────────────────────────────────────────────────────────────────────
-
-import type {
-  AlertSource,
-  MySubscription,
-  RecentAlertItem,
-  SubscribeResult,
-  ConfirmResult,
-  ResendConfirmResult,
-  UnsubscribeResult,
-  UnsubscribeAllResult,
-} from "../types/alerts";
-
-/**
- * Extracts a human-readable string from a Supabase / PostgrestError / Error / unknown.
- * Avoids the "[object Object]" bug when an error object lacks a proper toString.
- * PostgrestError shape: { message, details, hint, code }
- */
-function extractErrorMessage(e: unknown): string {
-  if (typeof e === "string") return e;
-  if (e instanceof Error) return e.message;
-  if (e && typeof e === "object") {
-    const obj = e as Record<string, unknown>;
-    if (typeof obj.message === "string") return obj.message;
-    if (typeof obj.details === "string") return obj.details;
-    try {
-      return JSON.stringify(obj);
-    } catch {
-      return "Unknown error";
-    }
-  }
-  return String(e);
-}
-
-/**
- * Returns the active alert source catalog (is_active=true only).
- * Callable by anon + authenticated. Strips detection_module (view-level).
- */
-export async function rpcListAlertSources(
-  supabase: SupabaseClient,
-): Promise<AlertSource[]> {
-  try {
-    const { data, error } = await supabase.rpc("list_alert_sources");
-    if (error) throw error;
-    return (data as AlertSource[]) ?? [];
-  } catch (e) {
-    console.error("list_alert_sources failed", e);
-    return [];
-  }
-}
-
-/**
- * Atomic subscription upsert.
- * - If authenticated AND p_email matches auth.users.email: insta-confirm (is_confirmed=true).
- * - Otherwise: creates row with is_confirmed=false + triggers confirmation email via outbox.
- * Rate-limited server-side (10/IP/hour). Always send the full slug array — never loop.
- */
-export async function rpcSubscribeToAlerts(
-  supabase: SupabaseClient,
-  email: string,
-  sourceSlugs: string[],
-): Promise<SubscribeResult> {
-  try {
-    const { data, error } = await supabase.rpc("subscribe_to_alerts", {
-      p_email: email,
-      p_source_slugs: sourceSlugs,
-    });
-    if (error) throw error;
-    return (data as SubscribeResult) ?? { subscribed: 0, confirmation_sent: false, rate_limited: false };
-  } catch (e) {
-    console.error("subscribe_to_alerts failed", e);
-    return { subscribed: 0, confirmation_sent: false, rate_limited: false, error: extractErrorMessage(e) };
-  }
-}
-
-/**
- * Confirms a subscription via the double opt-in token sent by email.
- * Sets is_confirmed=true, nulls confirmation_token.
- */
-export async function rpcConfirmSubscription(
-  supabase: SupabaseClient,
-  token: string,
-): Promise<ConfirmResult> {
-  try {
-    const { data, error } = await supabase.rpc("confirm_subscription", {
-      p_token: token,
-    });
-    if (error) throw error;
-    return (data as ConfirmResult) ?? { success: false, subscribed_count: 0 };
-  } catch (e) {
-    console.error("confirm_subscription failed", e);
-    return { success: false, subscribed_count: 0, error: extractErrorMessage(e) };
-  }
-}
-
-/**
- * Re-sends the confirmation email. Rate-limited: max 1×/10min per email.
- * Returns retry_after_seconds when rate-limited.
- */
-export async function rpcResendConfirmation(
-  supabase: SupabaseClient,
-  email: string,
-  sourceSlugs: string[],
-): Promise<ResendConfirmResult> {
-  try {
-    const { data, error } = await supabase.rpc("resend_confirmation", {
-      p_email: email,
-      p_source_slugs: sourceSlugs,
-    });
-    if (error) throw error;
-    return (data as ResendConfirmResult) ?? { sent: false };
-  } catch (e) {
-    console.error("resend_confirmation failed", e);
-    return { sent: false, error: extractErrorMessage(e) };
-  }
-}
-
-/**
- * Unsubscribes a single source via the unsubscribe_token from email footer.
- * Idempotent — repeated calls return success.
- */
-export async function rpcUnsubscribe(
-  supabase: SupabaseClient,
-  token: string,
-): Promise<UnsubscribeResult> {
-  try {
-    const { data, error } = await supabase.rpc("unsubscribe", {
-      p_token: token,
-    });
-    if (error) throw error;
-    return (data as UnsubscribeResult) ?? { success: false };
-  } catch (e) {
-    console.error("unsubscribe failed", e);
-    return { success: false, error: extractErrorMessage(e) };
-  }
-}
-
-/**
- * Unsubscribes from ALL sources for the email associated with the token.
- * Used by the "Unsubscribe from all" link in email footer.
- */
-export async function rpcUnsubscribeAll(
-  supabase: SupabaseClient,
-  token: string,
-): Promise<UnsubscribeAllResult> {
-  try {
-    const { data, error } = await supabase.rpc("unsubscribe_all", {
-      p_token: token,
-    });
-    if (error) throw error;
-    return (data as UnsubscribeAllResult) ?? { success: false, count: 0 };
-  } catch (e) {
-    console.error("unsubscribe_all failed", e);
-    return { success: false, count: 0, error: extractErrorMessage(e) };
-  }
-}
-
-/**
- * Returns the authenticated user's active subscriptions.
- * RLS-gated: user_id = auth.uid(). Returns [] for anon.
- */
-export async function rpcListMySubscriptions(
-  supabase: SupabaseClient,
-): Promise<MySubscription[]> {
-  try {
-    const { data, error } = await supabase.rpc("list_my_subscriptions");
-    if (error) throw error;
-    return (data as MySubscription[]) ?? [];
-  } catch (e) {
-    console.error("list_my_subscriptions failed", e);
-    return [];
-  }
-}
-
-/**
- * Returns the last N alert events delivered to the authenticated user.
- * RLS-gated. Returns [] for anon.
- */
-export async function rpcListMyRecentAlerts(
-  supabase: SupabaseClient,
-  limit = 20,
-): Promise<RecentAlertItem[]> {
-  try {
-    const { data, error } = await supabase.rpc("list_my_recent_alerts", {
-      p_limit: limit,
-    });
-    if (error) throw error;
-    return (data as RecentAlertItem[]) ?? [];
-  } catch (e) {
-    console.error("list_my_recent_alerts failed", e);
-    return [];
-  }
-}
-
-/**
- * Pauses or resumes a single subscription (pause = is_active=false).
- * RLS-gated: user_id = auth.uid().
- */
-export async function rpcUpdateSubscriptionActive(
-  supabase: SupabaseClient,
-  sourceSlug: string,
-  isActive: boolean,
-): Promise<boolean> {
-  try {
-    const { data, error } = await supabase.rpc("update_subscription_active", {
-      p_source_slug: sourceSlug,
-      p_is_active: isActive,
-    });
-    if (error) throw error;
-    return (data as boolean) ?? false;
-  } catch (e) {
-    console.error("update_subscription_active failed", e);
-    return false;
-  }
-}
-
 // ─── MODULE: Home — Data Sources freshness ────────────────────────────────────
 //
 // Single aggregated RPC returning MAX(temporal_col) + count(*) for every
@@ -4861,4 +4642,174 @@ export async function rpcGetDataSourcesFreshness(
   const { data, error } = await supabase.rpc("get_data_sources_freshness");
   if (error) throw error;
   return (data ?? []) as DataSourceFreshnessRow[];
+}
+
+// ─── MODULE: Alerts (/src/app/(dashboard)/alerts) ────────────────────────────
+//
+// Rebuilt logged-in-only email subscription product (Phase 4). The subscriber's
+// email is implicit (their auth email). All functions below are SECURITY
+// DEFINER and deployed in
+// supabase/migrations/20260608100000_alerts_rebuild_new_schema.sql.
+//
+// Six wrappers — the client/anon surface:
+//   list_subscribable_bases   [authenticated]  catalog + the user's flags
+//   set_my_subscription       [authenticated]  toggle one base
+//   set_my_subscriptions      [authenticated]  bulk toggle (per-category)
+//   list_my_subscriptions     [authenticated]  the user's active/paused subs
+//   list_my_recent_alerts     [authenticated]  read-only recent feed
+//   unsubscribe_by_token      [anon + auth]    email-footer landing page
+//
+// These wrappers intentionally let RPC errors propagate (no silent try/catch +
+// return []), so the dashboard hook can surface failures via DataErrorBoundary
+// and optimistic toggles can revert. The legacy double-opt-in wrappers
+// (subscribe_to_alerts / confirm_subscription / ...) were deleted with the old
+// product and must NOT be reintroduced.
+
+/** Catalog of subscribable bases joined with the current user's flags.
+ *  authenticated-only — anon callers get an empty set (RLS via auth.uid()). */
+export async function rpcListSubscribableBases(
+  supabase: SupabaseClient,
+): Promise<SubscribableBase[]> {
+  const { data, error } = await supabase.rpc("list_subscribable_bases");
+  if (error) throw error;
+  return (data ?? []) as SubscribableBase[];
+}
+
+/** Subscribe / unsubscribe one base. Returns the resulting active flag. */
+export async function rpcSetMySubscription(
+  supabase: SupabaseClient,
+  sourceSlug: string,
+  active: boolean,
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("set_my_subscription", {
+    p_source_slug: sourceSlug,
+    p_active: active,
+  });
+  if (error) throw error;
+  return Boolean(data);
+}
+
+/** Bulk subscribe / unsubscribe (e.g. per-category Select all / Clear).
+ *  Returns the number of subscriptions affected. */
+export async function rpcSetMySubscriptions(
+  supabase: SupabaseClient,
+  sourceSlugs: string[],
+  active: boolean,
+): Promise<number> {
+  const { data, error } = await supabase.rpc("set_my_subscriptions", {
+    p_source_slugs: sourceSlugs,
+    p_active: active,
+  });
+  if (error) throw error;
+  return Number(data ?? 0);
+}
+
+/** The current user's subscriptions (active and paused). */
+export async function rpcListMySubscriptions(
+  supabase: SupabaseClient,
+): Promise<MySubscription[]> {
+  const { data, error } = await supabase.rpc("list_my_subscriptions");
+  if (error) throw error;
+  return (data ?? []) as MySubscription[];
+}
+
+/** Read-only feed of the user's most recent sent alerts (default 20). */
+export async function rpcListMyRecentAlerts(
+  supabase: SupabaseClient,
+  limit = 20,
+): Promise<RecentAlert[]> {
+  const { data, error } = await supabase.rpc("list_my_recent_alerts", {
+    p_limit: limit,
+  });
+  if (error) throw error;
+  return (data ?? []) as RecentAlert[];
+}
+
+/** One-click unsubscribe via the token embedded in the email footer.
+ *  anon + authenticated. Idempotent server-side. */
+export async function rpcUnsubscribeByToken(
+  supabase: SupabaseClient,
+  token: string,
+): Promise<UnsubscribeResult> {
+  const { data, error } = await supabase.rpc("unsubscribe_by_token", {
+    p_token: token,
+  });
+  if (error) throw error;
+  return (data ?? { success: false }) as UnsubscribeResult;
+}
+
+// ─── MODULE: Alerts admin (/src/app/(dashboard)/admin-panel — "Alerts" tab) ───
+//
+// Admin-only operations for the rebuilt client-alerts product. All five RPCs
+// are SECURITY DEFINER and guard their body with `is_admin()`, so a non-admin
+// caller gets a raised exception (surfaced as a thrown error here). They are
+// consumed ONLY by the admin panel — never by the Client-facing /alerts page.
+// The source list/names are read via the existing `rpcListSubscribableBases`.
+//
+// Errors propagate (no silent try/catch + []), so the admin panel can show a
+// friendly inline message and optimistic toggles can revert.
+
+/** Aggregate alert counters: totals, per-source counts, sent/bounced (7d). */
+export async function rpcAdminAlertsStats(
+  supabase: SupabaseClient,
+): Promise<AdminAlertsStats> {
+  const { data, error } = await supabase.rpc("admin_alerts_stats");
+  if (error) throw error;
+  return data as AdminAlertsStats;
+}
+
+/** List subscribers, optionally filtered to one source slug (default all). */
+export async function rpcAdminAlertsListSubscribers(
+  supabase: SupabaseClient,
+  sourceSlug: string | null = null,
+  limit = 200,
+): Promise<AdminAlertsSubscriber[]> {
+  const { data, error } = await supabase.rpc("admin_alerts_list_subscribers", {
+    p_source_slug: sourceSlug,
+    p_limit: limit,
+  });
+  if (error) throw error;
+  return (data ?? []) as AdminAlertsSubscriber[];
+}
+
+/** Most recent rows of the alert email-delivery log (default 100). */
+export async function rpcAdminAlertsEmailLogRecent(
+  supabase: SupabaseClient,
+  limit = 100,
+): Promise<AdminAlertsEmailLogRow[]> {
+  const { data, error } = await supabase.rpc("admin_alerts_email_log_recent", {
+    p_limit: limit,
+  });
+  if (error) throw error;
+  return (data ?? []) as AdminAlertsEmailLogRow[];
+}
+
+/** Enable / disable a source in the catalog. Returns the resulting flag. */
+export async function rpcAdminAlertsToggleSource(
+  supabase: SupabaseClient,
+  sourceSlug: string,
+  isActive: boolean,
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("admin_alerts_toggle_source", {
+    p_source_slug: sourceSlug,
+    p_is_active: isActive,
+  });
+  if (error) throw error;
+  return Boolean(data);
+}
+
+/** Inject a synthetic test event for a source. Does NOT send immediately —
+ *  the event is delivered on the next alert hook / digest run. Returns the
+ *  created event id. `email` optionally targets a single recipient. */
+export async function rpcAdminAlertsSendTest(
+  supabase: SupabaseClient,
+  sourceSlug: string,
+  email: string | null = null,
+): Promise<string> {
+  const { data, error } = await supabase.rpc("admin_alerts_send_test", {
+    p_source_slug: sourceSlug,
+    p_email: email,
+  });
+  if (error) throw error;
+  return data as string;
 }

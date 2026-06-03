@@ -39,12 +39,13 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/market-share` | `get_ms_opcoes_filtros`, `get_ms_serie_fast`, `get_ms_serie_others`, `get_others_players` (% Share ↔ thousand m³ toggle) |
 | `/navios-diesel` | `get_nd_ultima_coleta`, `get_nd_coletas_distintas`, `get_nd_navios`, `get_nd_resumo_portos` |
 | `/diesel-gasoline-margins` | `get_dg_margins_data`, `get_dg_margins_filters` |
-| `/price-bands` | `get_price_bands_data` (Gasoline-with-subsidy fixed at BRL 3.05/L since 2026-05-29) |
+| `/price-bands` | `get_price_bands_data` (Gasoline-with-subsidy: fixed BRL 0.44/L delta since 2026-06-01 — Petrobras +0.44, import parity −0.44; the BRL 3.05/L flat line is preserved only for the 2026-05-29 → 2026-05-31 historical window) |
 | `/stocks` | `stock_portfolios` (direct PostgREST) + Yahoo Finance proxy |
 | `/news-hunter` | `seed_my_news_hunter_keywords` (default keyword seeding for new users) |
 | `/profile` | `get_my_profile`, `upsert_my_profile` |
 | `/admin-panel` | Visibility / role / Field Stakes / default news keywords / home images RPCs |
 | `/admin-analytics` | `get_admin_analytics_views_by_hour` (BRT) + other analytics RPCs |
+| `/alerts` | Logged-in-only email subscriptions (rebuilt 2026-06-02): `list_subscribable_bases`, `set_my_subscription[s]`, `list_my_subscriptions`, `list_my_recent_alerts`, `unsubscribe_by_token` (the only anon-callable write). Event-driven by end-of-ETL hooks; delivered via Gmail SMTP. See [`docs/app/alerts.md`](docs/app/alerts.md). |
 
 ### Statistics (Fase 3 onwards — 11 dashboards)
 
@@ -59,7 +60,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/anp-glp` (LPG Market Share) | Fuel Distribution | `get_anp_glp_ms_filtros`, `get_anp_glp_ms_serie_fast`, `get_anp_glp_ms_serie_others`, `get_anp_glp_ms_others_players`, `get_anp_glp_ms_export_count` (% Share ↔ thousand t toggle; clone of `/market-share` over `anp_glp`) |
 | `/anp-prices` | Fuel Distribution | `get_anp_prices_filtros`, `get_anp_prices_serie`, `get_anp_prices_export_count` (consolidates 3 retired ANP price dashboards) |
 | `/imports-exports` | Fuel Distribution | `get_imports_exports_filtros`, `get_imports_exports_paises_stacked`, `get_imports_exports_importers_stacked`, `get_imports_exports_yoy_table`, `get_imports_exports_exports_*`, `get_imports_exports_imports_unit_price`, `get_imports_exports_exports_unit_price` |
-| `/subsidy-tracker` | Fuel Distribution (Proprietary) | `get_subsidy_tracker_diesel` (11 columns, dual-agent `_importador` / `_produtor`, regime-aware NULL fallback) |
+| `/subsidy-tracker` | Fuel Distribution (Proprietary) | `get_subsidy_tracker_diesel` (11 columns, dual-agent `_importador` / `_produtor`, regime-aware NULL fallback; reimbursement is a flat BRL 1.12/L from 2026-06-01, cap/commercialization formula applies only to history before that) |
 
 `template-module/` is a starter template, not a deployed module. RPC wrappers: [`src/lib/rpc.ts`](src/lib/rpc.ts) (by module) and [`src/lib/profileRpc.ts`](src/lib/profileRpc.ts).
 
@@ -80,11 +81,11 @@ Tech debt: `/market-share` still uses the legacy `ExportPanel` / `ExportModal` i
 ```
 dashboard_projeto/
 ├── .claude/                  local-only — agent definitions and worktrees
-├── .github/workflows/        17 workflows (ETL scrapers + supabase deploy)
+├── .github/workflows/        18 workflows (ETL scrapers + client-alerts digest + supabase deploy)
 ├── docs/                     internal collaboration docs (start at master.md)
 ├── scripts/                  pipelines/ (auto), manual/ (human upload), utils/
 ├── src/                      Next.js app (see below)
-├── supabase/migrations/      183 SQL migrations (as of 2026-06-01)
+├── supabase/migrations/      191 SQL migrations (as of 2026-06-02)
 ├── sql/                      tech debt — 3 DDL files applied via Dashboard, NOT migrations
 ├── alertas/                  local-only — alert subsystem (PRD_ALERTAS.md)
 ├── DADOS/  data/  output/    local-only — parquet/csv/Excel
@@ -139,14 +140,14 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | `anp_voip` | (ano_publicacao, campo) | Volumes originally in-place / recovered fraction / situacao |
 | `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco` | varies | Daily production at field / installation / well level (since 2025-11-09) |
 | `anp_subsidy_diesel_reference` | (data_referencia, regiao, tipo_agente) | Per-region reference price; triggers maintain `price_bands._w_subsidy` columns |
-| `anp_subsidy_caps` | (vigente_desde, tipo_agente) | Ceiling of per-region reimbursement (replaces `anp_subsidy_history` since Subsidy Reform) |
+| `anp_subsidy_caps` | (vigente_desde, tipo_agente) | Ceiling of per-region reimbursement (replaces `anp_subsidy_history` since Subsidy Reform). Drives `compute_subsidy_reimbursement` only for dates before 2026-06-01; from 2026-06-01 the diesel reimbursement is a flat BRL 1.12/L for both agents |
 | `anp_subsidy_commercialization` | (data_inicio, regiao, tipo_agente) | Period × region × agent commercialization prices (HTML scrape stage of `subsidy_diesel_sync.py`) |
 
 **Materialized views:** `mv_ms_serie`, `mv_ms_serie_fast` (Market Share), plus the `/well-by-well` production MV (auto-refreshed via `pg_cron`).
 
 > Tech debt: `price_bands`, `profiles`, `module_visibility` were originally created via DDL in [`sql/`](sql/) applied directly to the Supabase Dashboard rather than versioned migrations. Conversion plan in [`docs/supabase/PRD.md`](docs/supabase/PRD.md).
 
-## Data Pipelines (17 workflows + 1 external)
+## Data Pipelines (18 workflows + 1 external)
 
 | # | Workflow | Schedule | Target |
 |---|----------|----------|--------|
@@ -167,7 +168,10 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | 15 | `etl_anp_cdp_diaria.yml` | 3×/day | `anp_cdp_diaria{_instalacao,_poco}` (Power BI public API) |
 | 16 | `etl_anp_voip.yml` | Annual (May 1st) | `anp_voip` |
 | 17 | `etl_anp_subsidy_diesel.yml` | Daily 11:30 UTC | `anp_subsidy_diesel_reference` + `anp_subsidy_commercialization` (PDF + HTML stages) |
+| 18 | `client_alerts_digest.yml` | Daily 23:30 UTC | Client Alerts daily digest — sweeps `digest`-cadence bases into 1 email/subscriber/day (Gmail SMTP) |
 | ext | News Hunter scanner | Every ~5min via cron-job.org | `news_articles` (separate repo `IBBAOG/news-hunter-scanner`) |
+
+> **Client Alerts hook:** workflows #1–#12, #14–#17 (the 15 data ETLs incl. `manual_dg_margins`) each end with a `continue-on-error` step `python -m scripts.client_alerts.run_base --source <slug>` that emails subscribers the moment a base gets new data (immediate bases) or queues a digest event. Logged-in-only product; delivery via Gmail SMTP + App Password (`GMAIL_APP_PASSWORD`). Engine: `scripts/client_alerts/`. See [`docs/etl-pipelines/PRD.md`](docs/etl-pipelines/PRD.md) § "Client Alerts" and [`docs/app/alerts.md`](docs/app/alerts.md).
 
 Workflow internals (scripts, retries, self-healing, pegadinhas) in [`docs/etl-pipelines/PRD.md`](docs/etl-pipelines/PRD.md).
 
@@ -204,7 +208,7 @@ Mobile is **light-only** and ships per dashboard via a viewport router (`page.ts
 
 Global mobile chrome (`MobileTopBar`, `MobileKebabMenu`, `MobileHomePill`, `MobileToastHost`) is mounted by `(dashboard)/layout.tsx`. Export is desktop-only.
 
-14 mobile-eligible routes as of 2026-06-01: `/home`, `/well-by-well`, `/stock-guide`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/anp-cdp-diaria`, `/market-share`, `/anp-glp`, `/price-bands`, `/subsidy-tracker`, `/diesel-gasoline-margins`, `/imports-exports`, `/navios-diesel`, `/news-hunter`. Desktop-only routes (`/stocks`, `/admin-panel`, `/admin-analytics`, `/alerts`, `/profile`, `/anp-cdp`, `/anp-prices`) mount `<MobileExcludedRedirect slug="..." />` in `page.tsx` and route to `/home?excluded=<slug>` with a toast on mobile.
+15 mobile-eligible routes as of 2026-06-02: `/home`, `/well-by-well`, `/stock-guide`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/anp-cdp-diaria`, `/market-share`, `/anp-glp`, `/price-bands`, `/subsidy-tracker`, `/diesel-gasoline-margins`, `/imports-exports`, `/navios-diesel`, `/news-hunter`, `/alerts` (dual-view since the 2026-06-02 rebuild). Desktop-only routes (`/stocks`, `/admin-panel`, `/admin-analytics`, `/profile`, `/anp-cdp`, `/anp-prices`) mount `<MobileExcludedRedirect slug="..." />` in `page.tsx` and route to `/home?excluded=<slug>` with a toast on mobile.
 
 Full pattern: [`docs/app/dual-view-pattern.md`](docs/app/dual-view-pattern.md). Reform narrative: [`docs/changelog.md`](docs/changelog.md) (2026-05-27).
 
@@ -225,4 +229,5 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 SUPABASE_URL / SUPABASE_SERVICE_KEY              # pipelines
 SUPABASE_PROJECT_REF / SUPABASE_ACCESS_TOKEN     # migration deploy (supabase_deploy.yml)
 AISSTREAM_API_KEY                                # AIS sync
+GMAIL_APP_PASSWORD                               # Client Alerts email sender (Gmail SMTP; ibbaogproject@gmail.com)
 ```

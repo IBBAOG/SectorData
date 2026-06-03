@@ -1,548 +1,323 @@
 "use client";
 
-// ─── /alerts — Desktop View (≥769px) ─────────────────────────────────────────
+// Desktop View — /alerts (≥769px).
 //
-// Layout:
-//   Left column  — Source catalog (expandable category cards) + email + subscribe
-//   Right column — Active Subscriptions panel + Recent Alerts feed (auth only)
+// Consumes useAlertsData exclusively — no direct Supabase calls here.
+// Layout: two columns — catalog (left: category cards + per-base toggles) and
+// the management panel (right: My Subscriptions + Recent Alerts feed).
 //
-// This View is a pure presentation layer over useAlertsData.
-// No Supabase calls here.
-// ─────────────────────────────────────────────────────────────────────────────
+// Logged-in-only: Anon visitors are redirected to /home by
+// useModuleVisibilityGuard("alerts"). There is NO email field, NO signup, NO
+// double opt-in — toggling a base IS the subscribe. Cadence is a READ-ONLY
+// badge.
+//
+// Binding sync rule (CLAUDE.md § Dual-view policy): any meaningful change here
+// (new analysis, new control, copy change) must land in mobile/View.tsx in the
+// SAME commit, or the commit message must declare [desktop-only] with a reason.
 
-import { useState } from "react";
-import Link from "next/link";
-
+import NavBar from "@/components/NavBar";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import BarrelLoading from "@/components/dashboard/BarrelLoading";
-
-import { useAlertsData } from "../useAlertsData";
-import type { AlertSource, AlertSourceCategory, MySubscription, RecentAlertItem } from "@/types/alerts";
-
+import DataErrorBoundary from "@/components/dashboard/DataErrorBoundary";
+import { useModuleVisibilityGuard } from "@/hooks/useModuleVisibilityGuard";
+import {
+  useAlertsData,
+  isBaseOn,
+  type CategoryGroup,
+} from "../useAlertsData";
+import {
+  CadenceBadge,
+  StatusPill,
+  ToggleSwitch,
+  formatRelative,
+  formatPeriod,
+} from "../shared";
+import type {
+  SubscribableBase,
+  MySubscription,
+  RecentAlert,
+} from "@/types/alerts";
 import styles from "../page.module.css";
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatSentAt(iso: string | null): string {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
-}
-
-function StatusPill({ status }: { status: string }) {
-  const cls = {
-    sent: styles.pillSent,
-    failed: styles.pillFailed,
-    queued: styles.pillQueued,
-    skipped: styles.pillSkipped,
-    sending: styles.pillQueued,
-  }[status] ?? styles.pillQueued;
-
-  return (
-    <span className={`${styles.statusPill} ${cls}`} aria-label={`Status: ${status}`}>
-      {status}
-    </span>
-  );
-}
-
-// ─── Category Card ────────────────────────────────────────────────────────────
+// ─── Category card ────────────────────────────────────────────────────────────
 
 function CategoryCard({
-  category,
-  sources,
-  selectedSlugs,
-  subscribedSlugs,
-  onToggle,
-  onSelectAll,
-  onDeselectAll,
+  group,
+  onToggleBase,
+  onToggleCategory,
+  isPending,
 }: {
-  category: AlertSourceCategory;
-  sources: AlertSource[];
-  selectedSlugs: Set<string>;
-  subscribedSlugs: Set<string>;
-  onToggle: (slug: string) => void;
-  onSelectAll: (cat: AlertSourceCategory) => void;
-  onDeselectAll: (cat: AlertSourceCategory) => void;
-}) {
-  const [expanded, setExpanded] = useState(true);
-  const selectedInCat = sources.filter((s) => selectedSlugs.has(s.source_slug)).length;
-
+  group: CategoryGroup;
+  onToggleBase: (slug: string, next: boolean) => void;
+  onToggleCategory: (category: CategoryGroup["category"], next: boolean) => void;
+  isPending: (slug: string) => boolean;
+}): React.ReactElement {
   return (
-    <div className={styles.categoryCard}>
-      <div
-        className={styles.categoryHeader}
-        onClick={() => setExpanded((p) => !p)}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setExpanded((p) => !p); }}
-        aria-expanded={expanded}
-      >
-        <span className={styles.categoryTitle}>
-          {category}
-          {selectedInCat > 0 && (
-            <span className={styles.categoryBadge}>{selectedInCat} selected</span>
-          )}
-        </span>
-        <span className={styles.categoryActions} onClick={(e) => e.stopPropagation()}>
+    <div className={styles.catCard}>
+      <div className={styles.catHeader}>
+        <div className={styles.catTitleWrap}>
+          <span className={styles.catTitle}>{group.category}</span>
+          <span className={styles.catMeta}>
+            {group.subscribedCount}/{group.bases.length} on
+          </span>
+        </div>
+        <div className={styles.catActions}>
           <button
             type="button"
-            className={styles.selectAllBtn}
-            onClick={() => onSelectAll(category)}
+            className={styles.linkBtn}
+            disabled={group.allSubscribed}
+            onClick={() => onToggleCategory(group.category, true)}
           >
             Select all
           </button>
           <button
             type="button"
-            className={styles.selectAllBtn}
-            onClick={() => onDeselectAll(category)}
+            className={styles.linkBtn}
+            disabled={group.noneSubscribed}
+            onClick={() => onToggleCategory(group.category, false)}
           >
             Clear
           </button>
-          <span className={`${styles.chevron} ${expanded ? styles.chevronOpen : ""}`}>
-            ▾
-          </span>
-        </span>
+        </div>
       </div>
 
-      {expanded && (
-        <div className={styles.sourceList}>
-          {sources.map((src) => {
-            const checked = selectedSlugs.has(src.source_slug);
-            const alreadySub = subscribedSlugs.has(src.source_slug);
-            return (
-              <label
-                key={src.source_slug}
-                className={styles.sourceRow}
-                style={{ cursor: "pointer" }}
-              >
-                <input
-                  type="checkbox"
-                  className={styles.sourceCheckbox}
-                  checked={checked}
-                  onChange={() => onToggle(src.source_slug)}
-                  aria-label={src.display_name}
-                />
-                <div className={styles.sourceInfo}>
-                  <div className={styles.sourceName}>
-                    {src.display_name}
-                    {alreadySub && (
-                      <span
-                        style={{ marginLeft: 6, fontSize: 10, color: "#22c55e", fontWeight: 700 }}
-                      >
-                        ✓ subscribed
-                      </span>
-                    )}
-                  </div>
-                  {src.frequency_hint && (
-                    <div className={styles.sourceFrequency}>{src.frequency_hint}</div>
-                  )}
-                  {src.description && (
-                    <div className={styles.sourceDescription}>{src.description}</div>
-                  )}
-                </div>
-              </label>
-            );
-          })}
-        </div>
-      )}
+      {group.bases.map((base) => (
+        <BaseRow
+          key={base.source_slug}
+          base={base}
+          onToggle={onToggleBase}
+          pending={isPending(base.source_slug)}
+        />
+      ))}
     </div>
   );
 }
 
-// ─── Active Subscriptions Panel ───────────────────────────────────────────────
+// ─── Base row ─────────────────────────────────────────────────────────────────
 
-function ActiveSubsPanel({
-  loading,
-  subscriptions,
-  allSources,
-  onToggleActive,
+function BaseRow({
+  base,
+  onToggle,
+  pending,
 }: {
-  loading: boolean;
-  subscriptions: MySubscription[];
-  allSources: AlertSource[];
-  onToggleActive: (slug: string, current: boolean) => Promise<void>;
-}) {
-  const sourceMap = Object.fromEntries(allSources.map((s) => [s.source_slug, s]));
-
+  base: SubscribableBase;
+  onToggle: (slug: string, next: boolean) => void;
+  pending: boolean;
+}): React.ReactElement {
+  const on = isBaseOn(base);
   return (
-    <div className={styles.subsPanel}>
-      <div className={styles.subsPanelHeader}>
-        <span className={styles.subsPanelTitle}>Active Subscriptions</span>
-        <span style={{ fontSize: 12, color: "#8c8c96" }}>{subscriptions.length} source{subscriptions.length !== 1 ? "s" : ""}</span>
-      </div>
-
-      {loading ? (
-        <div style={{ padding: 20, textAlign: "center" }}>
-          <BarrelLoading bare />
+    <div className={styles.baseRow}>
+      <div className={styles.baseInfo}>
+        <div className={styles.baseNameLine}>
+          <span className={styles.baseName}>{base.display_name}</span>
+          <CadenceBadge cadence={base.cadence} />
+          {base.frequency_hint && (
+            <span className={styles.freqHint}>{base.frequency_hint}</span>
+          )}
         </div>
-      ) : subscriptions.length === 0 ? (
-        <div className={styles.emptyState}>No active subscriptions yet.</div>
-      ) : (
-        subscriptions.map((sub) => {
-          const src = sourceMap[sub.source_slug];
-          return (
-            <div key={sub.source_slug} className={styles.subRow}>
-              <div style={{ flex: 1 }}>
-                <div className={styles.subName}>
-                  {src?.display_name ?? sub.source_slug}
+        {base.description && (
+          <div className={styles.baseDesc}>{base.description}</div>
+        )}
+      </div>
+      <ToggleSwitch
+        on={on}
+        disabled={pending}
+        ariaLabel={`${on ? "Unsubscribe from" : "Subscribe to"} ${base.display_name}`}
+        onChange={(next) => onToggle(base.source_slug, next)}
+      />
+    </div>
+  );
+}
+
+// ─── My Subscriptions panel ──────────────────────────────────────────────────
+
+function SubscriptionsPanel({
+  subs,
+  onUnsubscribe,
+  isPending,
+}: {
+  subs: MySubscription[];
+  onUnsubscribe: (slug: string) => void;
+  isPending: (slug: string) => boolean;
+}): React.ReactElement {
+  return (
+    <div className={styles.panel}>
+      <div className={styles.panelHead}>
+        <span className={styles.panelTitle}>My Subscriptions</span>
+        <span className={styles.sectionCount}>{subs.length}</span>
+      </div>
+      <div className={styles.panelBody}>
+        {subs.length === 0 ? (
+          <div className={styles.empty}>
+            You&apos;re not subscribed to any alerts yet — pick some above.
+          </div>
+        ) : (
+          subs.map((s) => (
+            <div className={styles.subRow} key={s.source_slug}>
+              <div className={styles.subInfo}>
+                <div className={styles.subName}>{s.display_name}</div>
+                <div className={styles.subSub}>
+                  <span>{s.category}</span>
+                  <CadenceBadge cadence={s.effective_cadence} />
                 </div>
-                {src?.frequency_hint && (
-                  <div className={styles.subFrequency}>{src.frequency_hint}</div>
-                )}
-                {!sub.is_confirmed && (
-                  <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 2 }}>
-                    Awaiting confirmation
-                  </div>
-                )}
               </div>
               <button
                 type="button"
-                className={`${styles.toggleBtn} ${sub.is_active ? styles.active : styles.paused}`}
-                onClick={() => onToggleActive(sub.source_slug, sub.is_active)}
-                aria-label={sub.is_active ? "Pause alerts for this source" : "Resume alerts for this source"}
+                className={styles.removeBtn}
+                disabled={isPending(s.source_slug)}
+                onClick={() => onUnsubscribe(s.source_slug)}
               >
-                {sub.is_active ? "Pause" : "Resume"}
+                Unsubscribe
               </button>
             </div>
-          );
-        })
-      )}
+          ))
+        )}
+      </div>
     </div>
   );
 }
 
-// ─── Recent Alerts Feed ───────────────────────────────────────────────────────
+// ─── Recent Alerts panel ─────────────────────────────────────────────────────
 
-function RecentAlertsFeed({
-  loading,
-  alerts,
-  allSources,
-}: {
-  loading: boolean;
-  alerts: RecentAlertItem[];
-  allSources: AlertSource[];
-}) {
-  const sourceMap = Object.fromEntries(allSources.map((s) => [s.source_slug, s]));
-
+function RecentPanel({ recent }: { recent: RecentAlert[] }): React.ReactElement {
   return (
-    <div className={styles.subsPanel} style={{ marginTop: 16 }}>
-      <div className={styles.subsPanelHeader}>
-        <span className={styles.subsPanelTitle}>Recent Activity</span>
-        <span style={{ fontSize: 12, color: "#8c8c96" }}>last 20</span>
+    <div className={styles.panel}>
+      <div className={styles.panelHead}>
+        <span className={styles.panelTitle}>Recent Alerts</span>
+        {recent.length > 0 && (
+          <span className={styles.sectionCount}>Last {recent.length}</span>
+        )}
       </div>
-
-      {loading ? (
-        <div style={{ padding: 20, textAlign: "center" }}>
-          <BarrelLoading bare />
-        </div>
-      ) : alerts.length === 0 ? (
-        <div className={styles.emptyState}>No alerts received yet.</div>
-      ) : (
-        alerts.map((item, i) => {
-          const src = sourceMap[item.source_slug];
-          return (
-            <div key={i} className={styles.feedItem}>
-              <div className={styles.feedDot} aria-hidden="true" />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className={styles.feedSource}>
-                  {src?.display_name ?? item.display_name ?? item.source_slug}
+      <div className={styles.panelBody}>
+        {recent.length === 0 ? (
+          <div className={styles.empty}>No alerts sent yet.</div>
+        ) : (
+          recent.map((a) => {
+            const period = formatPeriod(a.payload?.period);
+            const route = a.payload?.frontend_route;
+            return (
+              <div className={styles.feedRow} key={a.outbox_id}>
+                <div className={styles.feedMain}>
+                  <div className={styles.feedTop}>
+                    <span className={styles.feedName}>{a.display_name}</span>
+                    {period && <span className={styles.feedPeriod}>{period}</span>}
+                  </div>
+                  <div className={styles.feedTime}>
+                    {formatRelative(a.sent_at ?? a.detected_at)}
+                  </div>
+                  {route && (
+                    <a className={styles.feedLink} href={route}>
+                      View data &rarr;
+                    </a>
+                  )}
                 </div>
-                <div className={styles.feedMeta}>
-                  {formatSentAt(item.sent_at)}
-                </div>
+                <StatusPill status={a.status} />
               </div>
-              <StatusPill status={item.status} />
-            </div>
-          );
-        })
-      )}
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
 
-// ─── Subscribe flow feedback ──────────────────────────────────────────────────
-
-function SubscribeStatusCard({
-  state,
-  resend,
-  resendCooldown,
-  onReset,
-}: {
-  state: ReturnType<typeof useAlertsData>["subscribeState"];
-  resend: () => Promise<void>;
-  resendCooldown: number;
-  onReset: () => void;
-}) {
-  if (state.kind === "idle" || state.kind === "submitting") return null;
-
-  if (state.kind === "needs_confirmation") {
-    return (
-      <div className={`${styles.statusCard} ${styles.pending}`}>
-        <div className={styles.statusTitle}>Check your inbox to confirm</div>
-        <div className={styles.statusBody}>
-          We&apos;ve sent a confirmation link to your email address.<br />
-          Click the link in the email to activate your subscriptions.
-        </div>
-        <button
-          type="button"
-          className={styles.resendBtn}
-          onClick={resend}
-          disabled={resendCooldown > 0}
-        >
-          {resendCooldown > 0
-            ? `Resend in ${resendCooldown}s`
-            : "Resend confirmation email"}
-        </button>
-      </div>
-    );
-  }
-
-  if (state.kind === "activated") {
-    return (
-      <div className={`${styles.statusCard} ${styles.success}`}>
-        <div className={styles.statusTitle}>
-          Subscribed! {state.count} source{state.count !== 1 ? "s" : ""} activated.
-        </div>
-        <div className={styles.statusBody}>
-          You&apos;ll receive an email whenever new data is published.
-        </div>
-      </div>
-    );
-  }
-
-  if (state.kind === "error") {
-    return (
-      <div className={`${styles.statusCard} ${styles.error}`}>
-        <div className={styles.statusTitle}>Something went wrong</div>
-        <div className={styles.statusBody}>{state.message}</div>
-        <button type="button" className={styles.resendBtn} onClick={onReset}>
-          Try again
-        </button>
-      </div>
-    );
-  }
-
-  return null;
-}
-
-// ─── Main Desktop View ────────────────────────────────────────────────────────
+// ─── Desktop View ─────────────────────────────────────────────────────────────
 
 export default function DesktopView(): React.ReactElement {
+  const { visible, loading: visLoading } = useModuleVisibilityGuard("alerts");
   const {
-    guardLoading,
-    guardVisible,
-    isAuthenticated,
-    sourcesLoading,
-    sourceGroups,
-    selectedSlugs,
-    toggleSource,
-    selectAllInCategory,
-    deselectAllInCategory,
-    selectAll,
-    deselectAll,
-    email,
-    setEmail,
-    emailError,
-    subscribeState,
-    submit,
-    resend,
-    resendCooldown,
-    subscriptionsLoading,
-    mySubscriptions,
-    toggleSubscriptionActive,
-    feedLoading,
-    recentAlerts,
-    allSources,
-    subscribedSlugs,
+    role,
+    profileLoading,
+    groups,
+    subscriptions,
+    recent,
+    totalSubscribed,
+    loading,
+    error,
+    refetch,
+    toggleBase,
+    toggleCategory,
+    isPending,
   } = useAlertsData();
 
-  // Local state to allow resetting subscribe flow
-  const [, forceRender] = useState(0);
-  const handleReset = () => {
-    // The hook state is managed internally; we rely on re-render from parent
-    // For simplicity, we reload the page to reset (the hook state is local)
-    window.location.reload();
-  };
-
-  if (guardLoading) {
+  // Guard: hide everything until visibility resolves; Anon is redirected by the
+  // guard hook (alerts is clients-only). Render nothing in the meantime.
+  if (visLoading || !visible) return <></>;
+  if (profileLoading) {
     return (
-      <div style={{ padding: 40, textAlign: "center" }}>
-        <BarrelLoading bare />
+      <div>
+        <NavBar />
+        <div id="page-content" className={styles.page}>
+          <BarrelLoading />
+        </div>
       </div>
     );
   }
-
-  if (!guardVisible) return <></>;
-
-  const isSubmitting = subscribeState.kind === "submitting";
-  const hasFlowResult =
-    subscribeState.kind !== "idle" && subscribeState.kind !== "submitting";
-  const noneSelected = selectedSlugs.size === 0;
+  // Defensive: if the profile resolved to Anon (race with the guard redirect),
+  // render nothing rather than an empty logged-out catalog.
+  if (role === "Anon") return <></>;
 
   return (
-    <div style={{ padding: "24px 32px", fontFamily: "Arial, sans-serif", maxWidth: 1280, margin: "0 auto" }}>
-      <DashboardHeader
-        title="Alerts"
-        sub="Stay informed — receive email notifications when new data is published"
-        lang="en"
-        hideDivider={false}
-      />
+    <div>
+      <NavBar />
+      <div id="page-content" className={styles.page}>
+        <DashboardHeader
+          title="Alerts"
+          sub="Get an email the moment a data source you follow updates."
+          lang="en"
+        />
 
-      <div className={styles.desktopLayout}>
-        {/* ── Left: catalog + subscribe form ── */}
-        <div>
-          {/* Global selection toolbar */}
-          <div className={styles.toolbar}>
-            <button type="button" className={styles.toolbarBtn} onClick={selectAll}>
-              Select all sources
-            </button>
-            <button type="button" className={styles.toolbarBtnGhost} onClick={deselectAll}>
-              Clear all
-            </button>
-            <span className={styles.selectionCount}>
-              {selectedSlugs.size > 0
-                ? `${selectedSlugs.size} source${selectedSlugs.size !== 1 ? "s" : ""} selected`
-                : "No sources selected"}
-            </span>
-          </div>
+        <p className={styles.note}>
+          Toggle a data source on to start receiving email alerts at the address
+          on your account. Alerts marked <strong>Immediate</strong> are sent as
+          soon as new data lands; <strong>Daily digest</strong> sources are
+          bundled into one daily email.
+        </p>
 
-          {/* Source catalog */}
-          {sourcesLoading ? (
-            <div style={{ padding: 20, textAlign: "center" }}>
-              <BarrelLoading bare />
-            </div>
+        <DataErrorBoundary error={error} loading={loading} retry={refetch}>
+          {loading ? (
+            <BarrelLoading />
           ) : (
-            sourceGroups.map((group) => (
-              <CategoryCard
-                key={group.category}
-                category={group.category}
-                sources={group.sources}
-                selectedSlugs={selectedSlugs}
-                subscribedSlugs={subscribedSlugs}
-                onToggle={toggleSource}
-                onSelectAll={selectAllInCategory}
-                onDeselectAll={deselectAllInCategory}
-              />
-            ))
-          )}
-
-          {/* Email + submit */}
-          <div style={{ marginTop: 20 }}>
-            <div className={styles.emailSection}>
-              <label htmlFor="alert-email" className={styles.emailLabel}>
-                Your email address
-              </label>
-              <input
-                id="alert-email"
-                type="email"
-                className={`${styles.emailInput}${emailError ? ` ${styles.hasError}` : ""}`}
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                aria-describedby={emailError ? "alert-email-error" : "alert-email-hint"}
-                autoComplete="email"
-              />
-              {emailError ? (
-                <div id="alert-email-error" className={styles.emailError} role="alert">
-                  {emailError}
+            <div className={styles.layout}>
+              {/* ── Left: catalog ──────────────────────────────────────── */}
+              <div className={styles.colLeft}>
+                <div className={styles.sectionTitle}>
+                  Browse &amp; subscribe
+                  <span className={styles.sectionCount}>
+                    {totalSubscribed} active
+                  </span>
                 </div>
-              ) : (
-                <div id="alert-email-hint" className={styles.emailHint}>
-                  {isAuthenticated
-                    ? "Pre-filled with your account email. You can use a different address — confirmation email will be sent."
-                    : "We'll send a confirmation link to verify your email."}
-                </div>
-              )}
-            </div>
+                <hr className={styles.sectionHr} />
 
-            {!hasFlowResult && (
-              <button
-                type="button"
-                className={styles.subscribeBtn}
-                onClick={submit}
-                disabled={isSubmitting || noneSelected}
-                aria-live="polite"
-              >
-                {isSubmitting
-                  ? "Subscribing…"
-                  : noneSelected
-                  ? "Select sources above to subscribe"
-                  : `Subscribe to ${selectedSlugs.size} selected source${selectedSlugs.size !== 1 ? "s" : ""}`}
-              </button>
-            )}
-
-            <SubscribeStatusCard
-              state={subscribeState}
-              resend={resend}
-              resendCooldown={resendCooldown}
-              onReset={handleReset}
-            />
-
-            <p className={styles.legalText}>
-              We send 1 email per data update. Each email includes a one-click unsubscribe link.
-              Subscriptions are per-source — you can pause or cancel any source independently.
-            </p>
-          </div>
-        </div>
-
-        {/* ── Right: management panel (auth only) ── */}
-        <div>
-          {isAuthenticated ? (
-            <>
-              <ActiveSubsPanel
-                loading={subscriptionsLoading}
-                subscriptions={mySubscriptions}
-                allSources={allSources}
-                onToggleActive={toggleSubscriptionActive}
-              />
-              <RecentAlertsFeed
-                loading={feedLoading}
-                alerts={recentAlerts}
-                allSources={allSources}
-              />
-            </>
-          ) : (
-            <div
-              style={{
-                background: "#fafafa",
-                border: "1px solid #e6e6ec",
-                borderRadius: 10,
-                padding: 20,
-                textAlign: "center",
-              }}
-            >
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#1a1a1a", marginBottom: 8 }}>
-                Manage your subscriptions
+                {groups.length === 0 ? (
+                  <div className={styles.empty}>
+                    No subscribable data sources are available right now.
+                  </div>
+                ) : (
+                  groups.map((group) => (
+                    <CategoryCard
+                      key={group.category}
+                      group={group}
+                      onToggleBase={toggleBase}
+                      onToggleCategory={toggleCategory}
+                      isPending={isPending}
+                    />
+                  ))
+                )}
               </div>
-              <div style={{ fontSize: 13, color: "#6b6b73", marginBottom: 16 }}>
-                Sign in to view and manage your active subscriptions and recent alert history.
+
+              {/* ── Right: management panel ────────────────────────────── */}
+              <div className={styles.colRight}>
+                <SubscriptionsPanel
+                  subs={subscriptions}
+                  onUnsubscribe={(slug) => toggleBase(slug, false)}
+                  isPending={isPending}
+                />
+                <RecentPanel recent={recent} />
               </div>
-              <Link
-                href="/login"
-                style={{
-                  display: "inline-block",
-                  padding: "9px 18px",
-                  background: "#ff5000",
-                  color: "#fff",
-                  borderRadius: 7,
-                  fontWeight: 700,
-                  fontSize: 13,
-                  textDecoration: "none",
-                }}
-              >
-                Sign in
-              </Link>
             </div>
           )}
-        </div>
+        </DataErrorBoundary>
       </div>
     </div>
   );

@@ -118,7 +118,7 @@ Layout per plan § 4.4 (`o-modo-mobile-da-tranquil-giraffe.md`):
 1. **MobileTopBar** — sticky wordmark (no filter trigger).
 2. **MobileTabBar** (Diesel | Gasoline, Diesel default) — sticky below topbar.
 3. **Period preset pills** (1M / 3M / 6M / 1Y / All, 6M default) — inline scroll row.
-4. **Hero chart** — 3 simultaneous lines (Import / Export / Petrobras). Diesel shows the `bba_import_parity_w_subsidy` dashed line under the Import chip by default.
+4. **Hero chart** — 3 simultaneous lines (Import / Export / Petrobras). Diesel shows the `bba_import_parity_w_subsidy` dashed line under the Import chip by default. Gasoline shows its `bba_import_parity_w_subsidy` (Import chip) and `petrobras_price_w_subsidy` (Petrobras chip) dashed lines from the fixed-delta regime (2026-06-01); a small note below the chart explains the 0.44 delta.
 5. **Legend chips** — 3 colored chips below chart (Import / Export / Petrobras). Tap to hide/show each series (minimum 1 always visible).
 6. **Petrobras Price Gap section** — stacked cards mirroring the badges shown above the desktop chart. One card per gap: Petrobras vs. IPP, Petrobras vs. EPP, and (Diesel only) Petrobras vs. IPP w/ sub. Each card shows the comparison label (top), the reference series name (subtitle), and the percentage gap (right, large). Sign coloring: positive = red (priced above reference), negative = green (priced below reference).
 7. **MobileHomePill** — global floating home button (mobile reform v2).
@@ -153,22 +153,39 @@ Layout per plan § 4.4 (`o-modo-mobile-da-tranquil-giraffe.md`):
 
 `DSL_SERIES` (Diesel) renders 5 traces: Import Parity, Import Parity w/ subsidy, Export Parity, Petrobras Price, **Petrobras Price w/ subsidy**. The last two are drawn from March 2026 onwards (SUBSIDY_CUTOFF). Both `_w_subsidy` traces are auto-filled by trigger and will show as gaps (NULL) for dates where `anp_subsidy_commercialization` has no data yet.
 
-`GAS_SERIES` (Gasoline) renders 4 traces: Import Parity, Export Parity, Petrobras Price, **Petrobras Price w/ subsidy** (added 2026-05-29).
+`GAS_SERIES` (Gasoline) renders 5 traces: Import Parity, **BBA - Import Parity w/ subsidy** (added 2026-06-01, fixed-delta regime), Export Parity, Petrobras Price, **Petrobras Price w/ subsidy**. See "Gasoline subsidy — two regimes" below.
 
-### Gasoline "Petrobras Price w/ subsidy" — fixed constant (2026-05-29)
+### Gasoline subsidy — two regimes (fixed price → fixed 0.44 delta)
 
-Unlike the Diesel `_w_subsidy` columns (which are auto-calculated server-side by triggers from ANP daily reference prices — see "Auto-filled subsidy columns" above), the Gasoline **Petrobras Price w/ subsidy** line is a **manually-maintained fixed value**, synthesized client-side in the hook:
+Unlike the Diesel `_w_subsidy` columns (which are auto-calculated server-side by triggers from ANP daily reference prices — see "Auto-filled subsidy columns" above), the Gasoline **w/ subsidy** series are **synthesized client-side in the hook** (no DB column, no migration, no trigger). There have been **two regimes**, both driven by dated constants in `usePriceBandsData.ts`:
 
-| Constant (in `usePriceBandsData.ts`) | Value | Meaning |
+| Constant | Value | Meaning |
 |---|---|---|
-| `GAS_PETRO_SUBSIDY_PRICE` | `3.05` | Locked Gasoline subsidy reference, BRL/L |
-| `GAS_PETRO_SUBSIDY_START` | `"2026-05-29"` | ISO date the line starts |
+| `GAS_PETRO_SUBSIDY_PRICE` | `3.05` | Locked Gasoline subsidy price, BRL/L (fixed-price regime) |
+| `GAS_PETRO_SUBSIDY_START` | `"2026-05-29"` | Fixed-price regime start |
+| `GAS_SUBSIDY_DELTA` | `0.44` | Fixed per-litre subsidy delta, BRL/L (fixed-delta regime) |
+| `GAS_SUBSIDY_DELTA_START` | `"2026-06-01"` | Fixed-delta regime start |
 
-At fetch time, the hook maps over the RPC result and, for every `product === "Gasoline"` row, sets `petrobras_price_w_subsidy` to `GAS_PETRO_SUBSIDY_PRICE` when `date >= GAS_PETRO_SUBSIDY_START`, else `null` (Diesel rows are left untouched — their value is real DB data). The series then flows through the same `buildPriceBandsChart` / `buildYtdChart` code paths as Diesel, so it appears as a **teal dashed step line** (same `COLOR_PETRO`, `dash: "dash"`, `shape: "hv"`) in both the main Price Bands chart and the YTD Average chart, with a flat 3.05 cumulative average / year-end projection.
+**Regime 1 — fixed price (2026-05-29 → 2026-05-31, a 3-day window):** only the producer line existed, locked at a flat `3.05` BRL/L. Import parity had no subsidy variant in this window. **This is historical and is preserved verbatim** — the 3 days remain exactly `3.05`.
 
-There is **no Gasoline badge** for this value: `buildCurrentValues`' `lastSubPetro` find requires both `petrobras_price_w_subsidy` and `bba_import_parity_w_subsidy` to be non-null, and Gasoline has no `bba_import_parity_w_subsidy` — so the find stays undefined and no badge is rendered. This is by design (chart line only).
+**Regime 2 — fixed 0.44 delta (from 2026-06-01, regulatory change):** the subsidy became a **fixed 0.44 BRL/L delta applied per litre to BOTH agents** (importer + producer/exporter), exactly the same delta mechanism Diesel uses:
+- Producer / Petrobras line: `petrobras_price_w_subsidy = petrobras_price + 0.44`
+- Importer / import parity line: `bba_import_parity_w_subsidy = bba_import_parity − 0.44`
 
-**To change the value or start date, edit `GAS_PETRO_SUBSIDY_PRICE` / `GAS_PETRO_SUBSIDY_START` in `src/app/(dashboard)/price-bands/usePriceBandsData.ts`** — this is a frontend-only constant by design (no DB column, no migration, no trigger).
+Because the change applies to importer + producer, Gasoline now also gets a **"BBA - Import Parity w/ subsidy"** line (orange dashed, `COLOR_IMPORT`, `dash: "dash"`), mirroring the Diesel importer subsidy line. The delta lines are synthesized only when the corresponding base price is non-null.
+
+**Synthesis at fetch time** (hook `useEffect`, for every `product === "Gasoline"` row):
+- `date >= 2026-06-01` → `petrobras_price + 0.44` and `bba_import_parity − 0.44`.
+- `2026-05-29 ≤ date < 2026-06-01` → `petrobras_price_w_subsidy = 3.05`, `bba_import_parity_w_subsidy = null` (historical fixed-price window).
+- `date < 2026-05-29` → both `null` (no subsidy line).
+
+Diesel rows are left untouched (real DB data). Both Gasoline series then flow through the same `buildPriceBandsChart` / `buildYtdChart` paths as Diesel: the Petrobras line is a **teal dashed step line** (`COLOR_PETRO`, `dash: "dash"`, `shape: "hv"`), the import parity line is an **orange dashed line** (`COLOR_IMPORT`, `dash: "dash"`, `shape: "linear"`).
+
+**YTD blend dates:** `subsidyStartDate` resolves the effective date per (field, product). For Gasoline, `petrobras_price_w_subsidy` starts at `2026-05-29` and `bba_import_parity_w_subsidy` at `2026-06-01` (vs Diesel's `2026-03-12` for both). So in the YTD chart the Gasoline import-parity-w/-subsidy line starts Jan 1 equal to the base import parity and only diverges from `2026-06-01`.
+
+There are still **no Gasoline badges/cards** for these values: the desktop `ChartHeader` gates subsidy badges with `product === "Diesel"`, and the mobile `buildGapRows` adds the subsidy gap row for Diesel only. This is by design (chart lines only on Gasoline).
+
+**To change either regime, edit the `GAS_*` constants in `src/app/(dashboard)/price-bands/usePriceBandsData.ts`** — frontend-only by design (no DB column, no migration, no trigger).
 
 ### Binding sync rule
 

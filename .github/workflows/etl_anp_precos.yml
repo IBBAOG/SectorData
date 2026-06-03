@@ -35,3 +35,31 @@ jobs:
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      # Client Alerts hook — emit + (immediate) deliver for both bases this ETL updates.
+      # Gated per source step so a failure in one sync still alerts the other.
+      - name: Client Alerts — notify subscribers (anp_precos_produtores)
+        continue-on-error: true   # non-critical side-effect — never fail the data pipeline
+        if: steps.produtores.conclusion == 'success'
+        run: python -m scripts.client_alerts.run_base --source anp_precos_produtores
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY:      ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GMAIL_ADDRESS:      ${{ vars.GMAIL_ADDRESS || 'ibbaogproject@gmail.com' }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERTS_SENDER_EMAIL:       ${{ vars.ALERTS_SENDER_EMAIL || 'SectorData Alerts <ibbaogproject@gmail.com>' }}
+          ALERTS_FRONTEND_URL:       ${{ vars.ALERTS_FRONTEND_URL || 'https://oilandgasdata.vercel.app' }}
+
+      - name: Client Alerts — notify subscribers (anp_glp)
+        continue-on-error: true   # non-critical side-effect — never fail the data pipeline
+        if: steps.glp.conclusion == 'success'
+        run: python -m scripts.client_alerts.run_base --source anp_glp
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY:      ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GMAIL_ADDRESS:      ${{ vars.GMAIL_ADDRESS || 'ibbaogproject@gmail.com' }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERTS_SENDER_EMAIL:       ${{ vars.ALERTS_SENDER_EMAIL || 'SectorData Alerts <ibbaogproject@gmail.com>' }}
+          ALERTS_FRONTEND_URL:       ${{ vars.ALERTS_FRONTEND_URL || 'https://oilandgasdata.vercel.app' }}

@@ -70,8 +70,20 @@ import {
   rpcAdminGetStockGuideSensitivityTables,
   rpcAdminUpsertStockGuideSensitivityTable,
   rpcAdminDeleteStockGuideSensitivityTable,
+  rpcListSubscribableBases,
+  rpcAdminAlertsStats,
+  rpcAdminAlertsListSubscribers,
+  rpcAdminAlertsEmailLogRecent,
+  rpcAdminAlertsToggleSource,
+  rpcAdminAlertsSendTest,
   type DefaultNewsKeyword,
 } from "../../../lib/rpc";
+import type {
+  SubscribableBase,
+  AdminAlertsStats,
+  AdminAlertsSubscriber,
+  AdminAlertsEmailLogRow,
+} from "../../../types/alerts";
 import type {
   FieldStakeOverview,
   FieldStakeEmpresa,
@@ -107,31 +119,6 @@ export interface FieldStakeCanonicalGroup {
 import { getSupabaseClient } from "../../../lib/supabaseClient";
 import type { UserWithRole, UserProfile } from "../../../types/profile";
 import { EDITABLE_TABLES } from "@/lib/dataInput/registry";
-import {
-  rpcAdminListSubscribers,
-  rpcAdminForceUnsubscribe,
-  rpcAdminRequeueOutbox,
-  rpcAdminSendTestEvent,
-  rpcAdminEmailLogRecent,
-  rpcAdminSubscriberStats,
-  rpcAdminToggleSourceActive,
-  fetchAlertSources,
-  fetchFailedOutboxRows,
-  type AlertSubscriber,
-  type AlertSubscriberStats,
-  type AlertSource,
-  type AlertEmailLogEntry,
-  type AlertOutboxRow,
-} from "../../../lib/alertsAdminRpc";
-
-// Re-export Alerts types so both Views can import from a single location
-export type {
-  AlertSubscriber,
-  AlertSubscriberStats,
-  AlertSource,
-  AlertEmailLogEntry,
-  AlertOutboxRow,
-};
 
 // ── Stock Guide — editable comps row ──────────────────────────────────────────
 //
@@ -452,7 +439,7 @@ export type SectionId =
   | "members"
   | "permissions"
   | "alert-recipients"
-  | "alerts-product"
+  | "client-alerts"
   | "default-news"
   | "data-input"
   | "field-stakes"
@@ -469,7 +456,7 @@ export const SECTIONS: SectionMeta[] = [
   { id: "members",          label: "Members",               shortLabel: "Members",      description: "User roles & access" },
   { id: "permissions",      label: "Permissions",           shortLabel: "Access",       description: "Module visibility — Public, Clients, and Home" },
   { id: "alert-recipients", label: "Alert Emails",          shortLabel: "Alert Emails", description: "Notification recipients" },
-  { id: "alerts-product",   label: "Alerts",                shortLabel: "Alerts",       description: "Alerts product management" },
+  { id: "client-alerts",    label: "Alerts",                shortLabel: "Alerts",       description: "Client email alerts — subscribers, sources, and delivery log" },
   { id: "default-news",     label: "Default News Keywords", shortLabel: "News Defaults", description: "Keywords used by anonymous News Hunter visitors" },
   { id: "data-input",       label: "Data Input",            shortLabel: "Tables",       description: "Edit reference tables" },
   { id: "field-stakes",     label: "Field Stakes",          shortLabel: "Stakes",       description: "Working-interest per oil field (company × stake %)" },
@@ -585,29 +572,44 @@ export interface UseAdminPanelData {
   handleToggleRecipient: (id: string, currentActive: boolean) => Promise<void>;
   handleRemoveRecipient: (id: string) => Promise<void>;
 
-  // Alerts product management (alerts-product section)
-  alertsStats: AlertSubscriberStats | null;
-  alertsStatsLoading: boolean;
-  alertsSubscribers: AlertSubscriber[];
-  alertsSubscribersLoading: boolean;
-  alertsSubscriberSourceFilter: string;
-  setAlertsSubscriberSourceFilter: (v: string) => void;
-  alertsSources: AlertSource[];
-  alertsSourcesLoading: boolean;
-  alertsEmailLog: AlertEmailLogEntry[];
-  alertsEmailLogLoading: boolean;
-  alertsEmailLogStatusFilter: string;
-  setAlertsEmailLogStatusFilter: (v: string) => void;
-  alertsOutbox: AlertOutboxRow[];
-  alertsOutboxLoading: boolean;
-  requeueingOutboxId: string | null;
-  sendingTestSlug: string | null;
-  togglingSourceSlug: string | null;
-  unsubscribingId: string | null;
-  handleAlertsForceUnsubscribe: (id: string) => Promise<void>;
-  handleAlertsRequeueOutbox: (id: string) => Promise<void>;
-  handleAlertsSendTestEvent: (sourceSlug: string) => Promise<void>;
-  handleAlertsToggleSource: (sourceSlug: string, isActive: boolean) => Promise<void>;
+  // Client Alerts (the rebuilt client-alerts product — "Alerts" tab).
+  // A read-mostly admin console: stats overview, the source catalog with an
+  // is_active toggle + a "queue test event" action, the subscribers table
+  // (optionally filtered by source), and the recent email-delivery log.
+  caStats: AdminAlertsStats | null;
+  caBases: SubscribableBase[];
+  caSubscribers: AdminAlertsSubscriber[];
+  caEmailLog: AdminAlertsEmailLogRow[];
+  /** Loading flags per data block (overview/sources share one fetch). */
+  caOverviewLoading: boolean;
+  caSubscribersLoading: boolean;
+  caEmailLogLoading: boolean;
+  /** Friendly inline error for the whole tab (overview/sources fetch). */
+  caError: string | null;
+  caSubscribersError: string | null;
+  caEmailLogError: string | null;
+  /** Per-source `is_active` map, mirrored locally for optimistic toggles. */
+  caSourceActive: Record<string, boolean>;
+  /** Source slug whose toggle is currently in-flight (spinner/disable). */
+  caTogglingSource: string | null;
+  /** Subscribers-table source filter (slug, or "" = all sources). */
+  caSubscriberFilter: string;
+  setCaSubscriberFilter: (slug: string) => void;
+  /** Optional recipient email for the "Queue test" action, per source slug. */
+  caTestEmail: Record<string, string>;
+  setCaTestEmail: (slug: string, email: string) => void;
+  /** Source slug whose test event is currently being queued. */
+  caSendingTest: string | null;
+  /** Last "Queue test" result (the returned event id + source), for the inline
+   *  confirmation note. Cleared after a few seconds. */
+  caTestResult: { slug: string; eventId: string } | null;
+  caTestError: { slug: string; message: string } | null;
+  /** Per-source subscriber counts (active/total), keyed by source slug, derived
+   *  from caStats.per_source for the Sources table. */
+  caCountsBySource: Record<string, { total: number; active: number }>;
+  handleToggleCaSource: (sourceSlug: string, isActive: boolean) => Promise<void>;
+  handleQueueCaTest: (sourceSlug: string) => Promise<void>;
+  handleRefreshCaSubscribers: () => Promise<void>;
 
   // Default News Keywords
   defaultKeywords: DefaultNewsKeyword[];
@@ -713,9 +715,7 @@ export interface UseAdminPanelData {
   // Left-pane filters
   sgSearchQuery: string;
   setSgSearchQuery: (v: string) => void;
-  sgSectorFilter: "all" | StockGuideSector;
-  setSgSectorFilter: (v: "all" | StockGuideSector) => void;
-  /** Companies filtered by sgSearchQuery + sgSectorFilter. */
+  /** Companies filtered by sgSearchQuery. */
   sgFilteredCompanies: StockGuideAdminCompany[];
   /** Visible-only tickers (for the company multi-selects in the table builder). */
   sgCompanyTickers: string[];
@@ -1117,118 +1117,174 @@ export function useAdminPanelData(): UseAdminPanelData {
     [supabase, removingId, loadRecipients],
   );
 
-  // ── Alerts Product Management ──────────────────────────────────────────────
-  const [alertsStats, setAlertsStats] = useState<AlertSubscriberStats | null>(null);
-  const [alertsStatsLoading, setAlertsStatsLoading] = useState(false);
-  const [alertsSubscribers, setAlertsSubscribers] = useState<AlertSubscriber[]>([]);
-  const [alertsSubscribersLoading, setAlertsSubscribersLoading] = useState(false);
-  const [alertsSubscriberSourceFilter, setAlertsSubscriberSourceFilter] = useState("");
-  const [alertsSources, setAlertsSources] = useState<AlertSource[]>([]);
-  const [alertsSourcesLoading, setAlertsSourcesLoading] = useState(false);
-  const [alertsEmailLog, setAlertsEmailLog] = useState<AlertEmailLogEntry[]>([]);
-  const [alertsEmailLogLoading, setAlertsEmailLogLoading] = useState(false);
-  const [alertsEmailLogStatusFilter, setAlertsEmailLogStatusFilter] = useState("");
-  const [alertsOutbox, setAlertsOutbox] = useState<AlertOutboxRow[]>([]);
-  const [alertsOutboxLoading, setAlertsOutboxLoading] = useState(false);
-  const [requeueingOutboxId, setRequeuingOutboxId] = useState<string | null>(null);
-  const [sendingTestSlug, setSendingTestSlug] = useState<string | null>(null);
-  const [togglingSourceSlug, setTogglingSourceSlug] = useState<string | null>(null);
-  const [unsubscribingId, setUnsubscribingId] = useState<string | null>(null);
+  // ── Client Alerts (the rebuilt client-alerts product — "Alerts" tab) ────────
+  //
+  // A read-mostly admin console over the new `admin_alerts_*` SECURITY DEFINER
+  // RPCs (NOT the legacy alert_recipients table above). Two fetch groups:
+  //   • Overview  — stats + the source catalog (admin_alerts_stats +
+  //                 list_subscribable_bases), loaded together on first open.
+  //   • Subscribers / Email log — loaded alongside, refreshable on demand.
+  const [caStats, setCaStats] = useState<AdminAlertsStats | null>(null);
+  const [caBases, setCaBases] = useState<SubscribableBase[]>([]);
+  const [caSubscribers, setCaSubscribers] = useState<AdminAlertsSubscriber[]>([]);
+  const [caEmailLog, setCaEmailLog] = useState<AdminAlertsEmailLogRow[]>([]);
+  const [caOverviewLoading, setCaOverviewLoading] = useState(false);
+  const [caSubscribersLoading, setCaSubscribersLoading] = useState(false);
+  const [caEmailLogLoading, setCaEmailLogLoading] = useState(false);
+  const [caError, setCaError] = useState<string | null>(null);
+  const [caSubscribersError, setCaSubscribersError] = useState<string | null>(null);
+  const [caEmailLogError, setCaEmailLogError] = useState<string | null>(null);
+  const [caSourceActive, setCaSourceActive] = useState<Record<string, boolean>>({});
+  const [caTogglingSource, setCaTogglingSource] = useState<string | null>(null);
+  const [caSubscriberFilter, setCaSubscriberFilter] = useState<string>("");
+  const [caTestEmail, setCaTestEmailState] = useState<Record<string, string>>({});
+  const [caSendingTest, setCaSendingTest] = useState<string | null>(null);
+  const [caTestResult, setCaTestResult] = useState<{ slug: string; eventId: string } | null>(null);
+  const [caTestError, setCaTestError] = useState<{ slug: string; message: string } | null>(null);
 
-  const loadAlertsData = useCallback(async () => {
+  const setCaTestEmail = useCallback((slug: string, email: string) => {
+    setCaTestEmailState((prev) => ({ ...prev, [slug]: email }));
+  }, []);
+
+  // Per-source subscriber counts (active/total) derived from caStats.per_source.
+  const caCountsBySource = useMemo(() => {
+    const m: Record<string, { total: number; active: number }> = {};
+    for (const ps of caStats?.per_source ?? []) {
+      m[ps.source_slug] = {
+        total: ps.subscriptions_total,
+        active: ps.subscriptions_active,
+      };
+    }
+    return m;
+  }, [caStats]);
+
+  // Overview = stats + the source catalog (names/categories/cadence + the
+  // source-level is_active mirror for the Sources toggle).
+  const loadCaOverview = useCallback(async () => {
     if (!supabase) return;
-    // Load all 5 sub-sections in parallel
-    setAlertsStatsLoading(true);
-    setAlertsSubscribersLoading(true);
-    setAlertsSourcesLoading(true);
-    setAlertsEmailLogLoading(true);
-    setAlertsOutboxLoading(true);
-    const [stats, subs, sources, log, outbox] = await Promise.all([
-      rpcAdminSubscriberStats(),
-      rpcAdminListSubscribers(),
-      fetchAlertSources(),
-      rpcAdminEmailLogRecent(200),
-      fetchFailedOutboxRows(),
-    ]);
-    setAlertsStats(stats);
-    setAlertsStatsLoading(false);
-    setAlertsSubscribers(subs);
-    setAlertsSubscribersLoading(false);
-    setAlertsSources(sources);
-    setAlertsSourcesLoading(false);
-    setAlertsEmailLog(log);
-    setAlertsEmailLogLoading(false);
-    setAlertsOutbox(outbox);
-    setAlertsOutboxLoading(false);
+    setCaOverviewLoading(true);
+    setCaError(null);
+    try {
+      const [stats, bases] = await Promise.all([
+        rpcAdminAlertsStats(supabase),
+        rpcListSubscribableBases(supabase),
+      ]);
+      setCaStats(stats);
+      setCaBases(bases);
+      // Seed the local is_active mirror from the catalog. `sub_is_active` on a
+      // SubscribableBase is per-user; the source-level enabled flag is what the
+      // toggle writes, so we mirror it from the catalog's source state. The
+      // catalog list_subscribable_bases only returns ENABLED sources, so any
+      // base present here is active; disabled ones are surfaced via the toggle
+      // round-trip. Seed true for every returned base.
+      setCaSourceActive((prev) => {
+        const next: Record<string, boolean> = { ...prev };
+        for (const b of bases) {
+          if (next[b.source_slug] === undefined) next[b.source_slug] = true;
+        }
+        return next;
+      });
+    } catch {
+      setCaError("Could not load alert stats and sources. Please try again.");
+    }
+    setCaOverviewLoading(false);
   }, [supabase]);
 
-  useEffect(() => {
-    if (allowed && activeSection === "alerts-product") loadAlertsData();
-  }, [allowed, activeSection, loadAlertsData]);
-
-  const handleAlertsForceUnsubscribe = useCallback(
-    async (id: string) => {
-      if (unsubscribingId) return;
-      setUnsubscribingId(id);
-      await rpcAdminForceUnsubscribe(id);
-      setUnsubscribingId(null);
-      // Refresh subscribers and stats
-      const [subs, stats] = await Promise.all([
-        rpcAdminListSubscribers(alertsSubscriberSourceFilter || undefined),
-        rpcAdminSubscriberStats(),
-      ]);
-      setAlertsSubscribers(subs);
-      setAlertsStats(stats);
-    },
-    [unsubscribingId, alertsSubscriberSourceFilter],
-  );
-
-  const handleAlertsRequeueOutbox = useCallback(
-    async (id: string) => {
-      if (requeueingOutboxId) return;
-      setRequeuingOutboxId(id);
-      await rpcAdminRequeueOutbox(id);
-      setRequeuingOutboxId(null);
-      // Refresh outbox list
-      const outbox = await fetchFailedOutboxRows();
-      setAlertsOutbox(outbox);
-    },
-    [requeueingOutboxId],
-  );
-
-  const handleAlertsSendTestEvent = useCallback(
-    async (sourceSlug: string) => {
-      if (sendingTestSlug) return;
-      setSendingTestSlug(sourceSlug);
-      await rpcAdminSendTestEvent(sourceSlug);
-      setSendingTestSlug(null);
-    },
-    [sendingTestSlug],
-  );
-
-  const handleAlertsToggleSource = useCallback(
-    async (sourceSlug: string, isActive: boolean) => {
-      if (togglingSourceSlug) return;
-      setTogglingSourceSlug(sourceSlug);
-      // Optimistic update
-      setAlertsSources((prev) =>
-        prev.map((s) =>
-          s.source_slug === sourceSlug ? { ...s, is_active: isActive } : s,
-        ),
+  const loadCaSubscribers = useCallback(async () => {
+    if (!supabase) return;
+    setCaSubscribersLoading(true);
+    setCaSubscribersError(null);
+    try {
+      const rows = await rpcAdminAlertsListSubscribers(
+        supabase,
+        caSubscriberFilter || null,
+        200,
       );
-      const ok = await rpcAdminToggleSourceActive(sourceSlug, isActive);
-      if (!ok) {
-        // Rollback on failure
-        setAlertsSources((prev) =>
-          prev.map((s) =>
-            s.source_slug === sourceSlug ? { ...s, is_active: !isActive } : s,
-          ),
-        );
+      setCaSubscribers(rows);
+    } catch {
+      setCaSubscribersError("Could not load subscribers. Please try again.");
+    }
+    setCaSubscribersLoading(false);
+  }, [supabase, caSubscriberFilter]);
+
+  const loadCaEmailLog = useCallback(async () => {
+    if (!supabase) return;
+    setCaEmailLogLoading(true);
+    setCaEmailLogError(null);
+    try {
+      const rows = await rpcAdminAlertsEmailLogRecent(supabase, 100);
+      setCaEmailLog(rows);
+    } catch {
+      setCaEmailLogError("Could not load the email log. Please try again.");
+    }
+    setCaEmailLogLoading(false);
+  }, [supabase]);
+
+  // Lazy-load: fetch the three blocks the first time the section becomes active.
+  useEffect(() => {
+    if (allowed && activeSection === "client-alerts") {
+      loadCaOverview();
+      loadCaEmailLog();
+    }
+  }, [allowed, activeSection, loadCaOverview, loadCaEmailLog]);
+
+  // Re-fetch subscribers whenever the section is active and the source filter
+  // changes (also covers the initial load when the tab opens).
+  useEffect(() => {
+    if (allowed && activeSection === "client-alerts") loadCaSubscribers();
+  }, [allowed, activeSection, loadCaSubscribers]);
+
+  const handleToggleCaSource = useCallback(
+    async (sourceSlug: string, isActive: boolean) => {
+      if (!supabase || caTogglingSource) return;
+      const prev = caSourceActive[sourceSlug] ?? true;
+      // Optimistic flip.
+      setCaSourceActive((m) => ({ ...m, [sourceSlug]: isActive }));
+      setCaTogglingSource(sourceSlug);
+      try {
+        const result = await rpcAdminAlertsToggleSource(supabase, sourceSlug, isActive);
+        setCaSourceActive((m) => ({ ...m, [sourceSlug]: result }));
+      } catch {
+        // Rollback on error.
+        setCaSourceActive((m) => ({ ...m, [sourceSlug]: prev }));
+        setCaError("Could not update the source. Please try again.");
+        setTimeout(() => setCaError((e) => (e?.startsWith("Could not update the source") ? null : e)), 4000);
       }
-      setTogglingSourceSlug(null);
+      setCaTogglingSource(null);
     },
-    [togglingSourceSlug],
+    [supabase, caTogglingSource, caSourceActive],
   );
+
+  const handleQueueCaTest = useCallback(
+    async (sourceSlug: string) => {
+      if (!supabase || caSendingTest) return;
+      setCaSendingTest(sourceSlug);
+      setCaTestError(null);
+      setCaTestResult(null);
+      try {
+        const email = (caTestEmail[sourceSlug] ?? "").trim();
+        // Validate the optional email (empty = broadcast to all subscribers).
+        if (email && !isValidEmail(email)) {
+          setCaTestError({ slug: sourceSlug, message: "Enter a valid email or leave it blank." });
+          setTimeout(() => setCaTestError((e) => (e?.slug === sourceSlug ? null : e)), 4000);
+          setCaSendingTest(null);
+          return;
+        }
+        const eventId = await rpcAdminAlertsSendTest(supabase, sourceSlug, email || null);
+        setCaTestResult({ slug: sourceSlug, eventId });
+        setTimeout(() => setCaTestResult((r) => (r?.slug === sourceSlug ? null : r)), 8000);
+      } catch {
+        setCaTestError({ slug: sourceSlug, message: "Could not queue the test event. Please try again." });
+        setTimeout(() => setCaTestError((e) => (e?.slug === sourceSlug ? null : e)), 4000);
+      }
+      setCaSendingTest(null);
+    },
+    [supabase, caSendingTest, caTestEmail],
+  );
+
+  const handleRefreshCaSubscribers = useCallback(async () => {
+    await loadCaSubscribers();
+  }, [loadCaSubscribers]);
 
   // ── Default News Keywords ──────────────────────────────────────────────────
   const [defaultKeywords, setDefaultKeywords] = useState<DefaultNewsKeyword[]>([]);
@@ -1671,7 +1727,6 @@ export function useAdminPanelData(): UseAdminPanelData {
   const [sgDeleteConfirm, setSgDeleteConfirm] = useState<string | null>(null);
   const [sgTogglingVisibility, setSgTogglingVisibility] = useState<string | null>(null);
   const [sgSearchQuery, setSgSearchQuery] = useState("");
-  const [sgSectorFilter, setSgSectorFilter] = useState<"all" | StockGuideSector>("all");
 
   // Last-saved JSON snapshot for the comps editor (ref — no re-render needed;
   // compared inside the pendingChanges useMemo below). Mirrors Field Stakes.
@@ -1870,7 +1925,6 @@ export function useAdminPanelData(): UseAdminPanelData {
   const sgFilteredCompanies = useMemo(() => {
     const q = sgSearchQuery.trim().toLowerCase();
     return sgCompanies.filter((c) => {
-      if (sgSectorFilter !== "all" && c.sector !== sgSectorFilter) return false;
       if (q) {
         const inTicker = c.ticker.toLowerCase().includes(q);
         const inName = c.company_name.toLowerCase().includes(q);
@@ -1878,7 +1932,7 @@ export function useAdminPanelData(): UseAdminPanelData {
       }
       return true;
     });
-  }, [sgCompanies, sgSearchQuery, sgSectorFilter]);
+  }, [sgCompanies, sgSearchQuery]);
 
   const sgPendingChanges = useMemo(
     () => JSON.stringify(sgEditorRow) !== sgEditorSnapshotRef.current,
@@ -2565,28 +2619,29 @@ export function useAdminPanelData(): UseAdminPanelData {
     handleToggleRecipient,
     handleRemoveRecipient,
 
-    alertsStats,
-    alertsStatsLoading,
-    alertsSubscribers,
-    alertsSubscribersLoading,
-    alertsSubscriberSourceFilter,
-    setAlertsSubscriberSourceFilter,
-    alertsSources,
-    alertsSourcesLoading,
-    alertsEmailLog,
-    alertsEmailLogLoading,
-    alertsEmailLogStatusFilter,
-    setAlertsEmailLogStatusFilter,
-    alertsOutbox,
-    alertsOutboxLoading,
-    requeueingOutboxId,
-    sendingTestSlug,
-    togglingSourceSlug,
-    unsubscribingId,
-    handleAlertsForceUnsubscribe,
-    handleAlertsRequeueOutbox,
-    handleAlertsSendTestEvent,
-    handleAlertsToggleSource,
+    caStats,
+    caBases,
+    caSubscribers,
+    caEmailLog,
+    caOverviewLoading,
+    caSubscribersLoading,
+    caEmailLogLoading,
+    caError,
+    caSubscribersError,
+    caEmailLogError,
+    caSourceActive,
+    caTogglingSource,
+    caSubscriberFilter,
+    setCaSubscriberFilter,
+    caTestEmail,
+    setCaTestEmail,
+    caSendingTest,
+    caTestResult,
+    caTestError,
+    caCountsBySource,
+    handleToggleCaSource,
+    handleQueueCaTest,
+    handleRefreshCaSubscribers,
 
     defaultKeywords,
     defaultKeywordsLoading,
@@ -2659,8 +2714,6 @@ export function useAdminPanelData(): UseAdminPanelData {
     sgTogglingVisibility,
     sgSearchQuery,
     setSgSearchQuery,
-    sgSectorFilter,
-    setSgSectorFilter,
     sgFilteredCompanies,
     sgCompanyTickers,
     sgPendingChanges,

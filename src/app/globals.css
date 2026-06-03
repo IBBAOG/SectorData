@@ -2685,18 +2685,19 @@ a {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* MobileHomePill + MobileNewsHunterPill — press & focus feedback.
-   Both pills render a Liquid Glass capsule via inline style and write the
-   horizontal offset to the CSS custom property `--pill-offset` so the layout
-   adapts to the active route (solo when its sibling auto-hides, paired
-   otherwise). The :active rule reads the SAME variable so the press-scale
-   animation stays horizontally locked at any offset, without us duplicating
-   route logic in CSS. Halo uses --mobile-accent-glow (rgba).
+/* Floating pill dock (Home + News Hunter + Stock Guide) — press & focus
+   feedback. Each pill renders a Liquid Glass capsule via inline style and
+   writes its horizontal offset to the CSS custom property `--pill-offset` so
+   the dock re-centers as pills auto-hide on their own route. The :active rule
+   reads the SAME variable so the press-scale animation stays horizontally
+   locked at any offset, without us duplicating route logic in CSS. Halo uses
+   --mobile-accent-glow (rgba).
 
-   See MobileHomePill.tsx / MobileNewsHunterPill.tsx § "Positioning math" for
-   the offset values and the route → mode mapping. */
+   See pillDock.ts § "Geometry" for the offset formula and the per-route
+   offset table. */
 .mobile-home-pill:active,
-.mobile-news-hunter-pill:active {
+.mobile-news-hunter-pill:active,
+.mobile-stock-guide-pill:active {
   transform: translateX(calc(-50% + var(--pill-offset, 0px))) scale(0.96);
   box-shadow:
     0 0 0 6px var(--mobile-accent-glow),
@@ -2705,7 +2706,8 @@ a {
     inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 .mobile-home-pill:focus-visible,
-.mobile-news-hunter-pill:focus-visible {
+.mobile-news-hunter-pill:focus-visible,
+.mobile-stock-guide-pill:focus-visible {
   outline: 2px solid var(--mobile-accent);
   outline-offset: 3px;
 }

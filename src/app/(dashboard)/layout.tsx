@@ -18,6 +18,7 @@ import {
   MobileTopBar,
   MobileHomePill,
   MobileNewsHunterPill,
+  MobileStockGuidePill,
   MobileKebabMenu,
   MobileToastHost,
 } from "../../components/dashboard/mobile";
@@ -148,13 +149,13 @@ function DesktopShell({ children }: { children: React.ReactNode }) {
        no breadcrumb, no avatar — the kebab owns logout for logged-in users;
        anon visitors see the slot but the kebab renders nothing.
      • <main> — the active dashboard page renders here.
-     • MobileHomePill (floating, auto-hides on /home) — primary nav.
-     • MobileNewsHunterPill (floating, auto-hides on /news-hunter) — paired
-       shortcut to the news feed. Both pills are route-aware: when both are
-       visible they sit side-by-side balanced around the viewport center
-       (Home at −39px, News at +39px, inner edges 14px apart); when one
-       auto-hides, the remaining pill snaps to the viewport center. See
-       MobileHomePill.tsx / MobileNewsHunterPill.tsx § "Positioning math".
+     • Floating pill dock — three Liquid Glass shortcuts at the bottom:
+       MobileHomePill (→ /home), MobileNewsHunterPill (→ /news-hunter) and
+       MobileStockGuidePill (→ /stock-guide). Each auto-hides on its own route,
+       so 2 or 3 pills show at a time. Geometry is owned by pillDock.ts: the
+       visible pills are centered as a group on the viewport centerline
+       (3 pills → −78 / 0 / +78; 2 pills → −39 / +39, inner edges 14px apart).
+       See pillDock.ts § "Geometry" for the per-route offset table.
      • MobileToastHost — listens for `app-toast` CustomEvents and renders
        transient pill messages (used by MobileExcludedRedirect).
    No Footer, no PWAInstallPrompt — both are desktop chrome. */
@@ -214,6 +215,7 @@ function MobileShell({ children }: { children: React.ReactNode }) {
 
       <MobileHomePill />
       <MobileNewsHunterPill />
+      <MobileStockGuidePill />
       <MobileToastHost />
     </div>
   );

@@ -1,521 +1,500 @@
-/* ─── /alerts — scoped styles ────────────────────────────────────────────────
- * Keep all alerts-specific styles here. DO NOT add to globals.css.
- * Brand color reference: #ff5000 (BRAND_ORANGE), #1a1a1a (text), #6b6b73 (muted)
- * ─────────────────────────────────────────────────────────────────────────── */
+/* /alerts — scoped styles for the rebuilt logged-in-only email subscription
+   dashboard (Phase 4). Light-only, Arial, brand orange #ff5000. Scoped via CSS
+   module so it never collides with the global Bootstrap sheet. */
 
-/* ── Category card ─────────────────────────────────────────────────────────── */
-.categoryCard {
-  border: 1px solid #e6e6ec;
-  border-radius: 10px;
-  overflow: hidden;
-  background: #fff;
-  margin-bottom: 12px;
+.page {
+  --al-bg: #ffffff;
+  --al-text: #1a1a1a;
+  --al-muted: #666666;
+  --al-muted-strong: #888888;
+  --al-border: #e6e6e6;
+  --al-border-strong: #cccccc;
+  --al-panel: #ffffff;
+  --al-panel-tint: #fff6f1;
+  --al-accent: #ff5000;
+  --al-accent-soft: rgba(255, 80, 0, 0.12);
+  --al-accent-hover: #d4561a;
+  --al-green: #2e7d32;
+  --al-red: #c62828;
+  --al-amber: #b76e00;
+  --al-radius: 10px;
+  --al-radius-sm: 7px;
+
+  color: var(--al-text);
+  font-family: Arial, Helvetica, sans-serif;
 }
 
-.categoryHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  cursor: pointer;
-  background: #fafafa;
-  border-bottom: 1px solid #e6e6ec;
-  user-select: none;
-}
-
-.categoryHeader:hover {
-  background: #f5f5f7;
-}
-
-.categoryTitle {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1a1a1a;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.categoryBadge {
-  font-size: 11px;
-  font-weight: 600;
-  color: #ff5000;
-  background: #fff0eb;
-  border-radius: 10px;
-  padding: 2px 7px;
-}
-
-.categoryActions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.selectAllBtn {
-  font-size: 12px;
-  color: #ff5000;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 4px;
-  font-family: inherit;
-}
-
-.selectAllBtn:hover {
-  background: #fff0eb;
-}
-
-.chevron {
-  font-size: 12px;
-  color: #6b6b73;
-  transition: transform 0.18s ease;
-}
-
-.chevronOpen {
-  transform: rotate(180deg);
-}
-
-/* ── Source list ───────────────────────────────────────────────────────────── */
-.sourceList {
-  padding: 4px 0;
-}
-
-.sourceRow {
-  display: flex;
-  align-items: flex-start;
-  padding: 10px 16px;
-  border-bottom: 1px solid #f0f0f5;
-  gap: 10px;
-  cursor: pointer;
-  transition: background 0.1s ease;
-}
-
-.sourceRow:last-child {
-  border-bottom: none;
-}
-
-.sourceRow:hover {
-  background: #fafafa;
-}
-
-.sourceCheckbox {
-  margin-top: 2px;
-  accent-color: #ff5000;
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  cursor: pointer;
-}
-
-.sourceInfo {
-  flex: 1;
-  min-width: 0;
-}
-
-.sourceName {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1a1a1a;
-  line-height: 1.3;
-}
-
-.sourceFrequency {
-  font-size: 11px;
-  color: #8c8c96;
-  margin-top: 2px;
-}
-
-.sourceDescription {
-  font-size: 11px;
-  color: #8c8c96;
-  margin-top: 2px;
-  font-style: italic;
-}
-
-/* ── Email input ───────────────────────────────────────────────────────────── */
-.emailSection {
-  margin-bottom: 16px;
-}
-
-.emailLabel {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1a1a1a;
-  margin-bottom: 6px;
-  display: block;
-}
-
-.emailInput {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #d1d1d9;
-  border-radius: 8px;
-  font-size: 14px;
-  font-family: Arial, sans-serif;
-  color: #1a1a1a;
-  background: #fff;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-  box-sizing: border-box;
-}
-
-.emailInput:focus {
-  outline: none;
-  border-color: #ff5000;
-  box-shadow: 0 0 0 3px rgba(255, 80, 0, 0.12);
-}
-
-.emailInput.hasError {
-  border-color: #dc2626;
-}
-
-.emailError {
-  font-size: 12px;
-  color: #dc2626;
-  margin-top: 4px;
-}
-
-.emailHint {
-  font-size: 12px;
-  color: #8c8c96;
-  margin-top: 4px;
-}
-
-/* ── Subscribe button ──────────────────────────────────────────────────────── */
-.subscribeBtn {
-  width: 100%;
-  padding: 12px 20px;
-  background: #ff5000;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 700;
-  font-family: Arial, sans-serif;
-  cursor: pointer;
-  transition: background 0.15s ease, opacity 0.15s ease;
-}
-
-.subscribeBtn:hover:not(:disabled) {
-  background: #e64700;
-}
-
-.subscribeBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* ── Status cards ──────────────────────────────────────────────────────────── */
-.statusCard {
-  border-radius: 10px;
-  padding: 20px;
-  margin-top: 16px;
-}
-
-.statusCard.success {
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
-}
-
-.statusCard.pending {
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-}
-
-.statusCard.error {
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-}
-
-.statusCard.info {
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-}
-
-.statusTitle {
-  font-size: 15px;
-  font-weight: 700;
-  color: #1a1a1a;
-  margin-bottom: 6px;
-}
-
-.statusBody {
-  font-size: 13px;
-  color: #4b5563;
-  line-height: 1.5;
-}
-
-.resendBtn {
-  margin-top: 12px;
-  background: none;
-  border: 1px solid #d1d1d9;
-  border-radius: 6px;
-  padding: 7px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  font-family: Arial, sans-serif;
-  cursor: pointer;
-  color: #1a1a1a;
-  transition: background 0.15s ease;
-}
-
-.resendBtn:hover:not(:disabled) {
-  background: #f5f5f7;
-}
-
-.resendBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* ── Active subscriptions panel ────────────────────────────────────────────── */
-.subsPanel {
-  background: #fff;
-  border: 1px solid #e6e6ec;
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.subsPanelHeader {
-  padding: 14px 16px;
-  border-bottom: 1px solid #e6e6ec;
-  background: #fafafa;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.subsPanelTitle {
-  font-size: 14px;
-  font-weight: 700;
-  color: #1a1a1a;
-}
-
-.subRow {
-  display: flex;
-  align-items: center;
-  padding: 10px 16px;
-  border-bottom: 1px solid #f0f0f5;
-  gap: 10px;
-}
-
-.subRow:last-child {
-  border-bottom: none;
-}
-
-.subName {
-  flex: 1;
-  font-size: 13px;
-  font-weight: 600;
-  color: #1a1a1a;
-}
-
-.subFrequency {
-  font-size: 11px;
-  color: #8c8c96;
-}
-
-.toggleBtn {
-  padding: 5px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  font-family: Arial, sans-serif;
-  cursor: pointer;
-  border: 1px solid;
-  transition: background 0.15s ease;
-}
-
-.toggleBtn.active {
-  background: #fff0eb;
-  border-color: #ff5000;
-  color: #ff5000;
-}
-
-.toggleBtn.paused {
-  background: #f5f5f7;
-  border-color: #d1d1d9;
-  color: #6b6b73;
-}
-
-.statusPill {
-  font-size: 11px;
-  font-weight: 600;
-  border-radius: 10px;
-  padding: 3px 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.pillSent { background: #d1fae5; color: #065f46; }
-.pillFailed { background: #fee2e2; color: #991b1b; }
-.pillQueued { background: #fef3c7; color: #92400e; }
-.pillSkipped { background: #f3f4f6; color: #6b7280; }
-
-/* ── Recent alerts feed ────────────────────────────────────────────────────── */
-.feedItem {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px 16px;
-  border-bottom: 1px solid #f0f0f5;
-}
-
-.feedItem:last-child {
-  border-bottom: none;
-}
-
-.feedDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #ff5000;
-  margin-top: 4px;
-  flex-shrink: 0;
-}
-
-.feedSource {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1a1a1a;
-}
-
-.feedMeta {
-  font-size: 11px;
-  color: #8c8c96;
-  margin-top: 2px;
-}
-
-/* ── Toolbar (global select / deselect) ────────────────────────────────────── */
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  flex-wrap: wrap;
-}
-
-.toolbarBtn {
-  font-size: 12px;
-  font-weight: 600;
-  color: #ff5000;
-  background: none;
-  border: 1px solid #ff5000;
-  border-radius: 6px;
-  padding: 5px 12px;
-  cursor: pointer;
-  font-family: Arial, sans-serif;
-  transition: background 0.12s ease;
-}
-
-.toolbarBtn:hover {
-  background: #fff0eb;
-}
-
-.toolbarBtnGhost {
-  font-size: 12px;
-  font-weight: 600;
-  color: #6b6b73;
-  background: none;
-  border: 1px solid #d1d1d9;
-  border-radius: 6px;
-  padding: 5px 12px;
-  cursor: pointer;
-  font-family: Arial, sans-serif;
-  transition: background 0.12s ease;
-}
-
-.toolbarBtnGhost:hover {
-  background: #f5f5f7;
-}
-
-.selectionCount {
-  font-size: 12px;
-  color: #6b6b73;
-  margin-left: 4px;
-}
-
-/* ── Desktop two-column layout ──────────────────────────────────────────────── */
-.desktopLayout {
+/* ── Two-column desktop layout ───────────────────────────────────────── */
+.layout {
   display: grid;
-  grid-template-columns: 1fr 380px;
-  gap: 24px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 28px;
   align-items: start;
 }
-
-@media (max-width: 1024px) {
-  .desktopLayout {
+@media (max-width: 1100px) {
+  .layout {
     grid-template-columns: 1fr;
+    gap: 20px;
   }
 }
 
-/* ── Legal footer ───────────────────────────────────────────────────────────── */
-.legalText {
-  font-size: 11px;
-  color: #8c8c96;
-  margin-top: 12px;
-  line-height: 1.5;
+.colLeft,
+.colRight {
+  min-width: 0;
 }
 
-/* ── Mobile sticky bar ─────────────────────────────────────────────────────── */
-.stickyBar {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: #fff;
-  border-top: 1px solid #e6e6ec;
-  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
-  z-index: 40;
+.colRight {
+  position: sticky;
+  top: 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 24px;
+}
+@media (max-width: 1100px) {
+  .colRight {
+    position: static;
+  }
 }
 
-/* ── Mobile chip strip ─────────────────────────────────────────────────────── */
-.chipStrip {
+/* ── Section titles ──────────────────────────────────────────────────── */
+.sectionTitle {
   display: flex;
-  gap: 6px;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: none;
-  padding-bottom: 2px;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--al-text);
+}
+.sectionCount {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--al-muted);
+}
+.sectionHr {
+  border: 0;
+  border-top: 2px solid var(--al-border);
+  margin: 6px 0 14px;
 }
 
-.chipStrip::-webkit-scrollbar {
-  display: none;
+/* ── Category card ───────────────────────────────────────────────────── */
+.catCard {
+  border: 1px solid var(--al-border);
+  border-radius: var(--al-radius);
+  background: var(--al-panel);
+  margin-bottom: 16px;
+  overflow: hidden;
 }
-
-.chip {
-  display: inline-flex;
+.catHeader {
+  display: flex;
   align-items: center;
-  gap: 5px;
-  background: #fff0eb;
-  border: 1px solid #ffd4c2;
-  border-radius: 16px;
-  padding: 4px 10px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--al-panel-tint);
+  border-bottom: 1px solid var(--al-border);
+}
+.catTitleWrap {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.catTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--al-accent);
+  letter-spacing: 0.2px;
+}
+.catMeta {
   font-size: 11px;
   font-weight: 600;
-  color: #ff5000;
+  color: var(--al-muted);
   white-space: nowrap;
+}
+.catActions {
+  display: flex;
+  gap: 6px;
   flex-shrink: 0;
 }
-
-.chipClose {
-  background: none;
-  border: none;
+.linkBtn {
+  background: transparent;
+  border: 1px solid var(--al-border-strong);
+  color: var(--al-muted);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
   cursor: pointer;
-  font-size: 13px;
-  color: #ff5000;
-  padding: 0;
-  line-height: 1;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+.linkBtn:hover:not(:disabled) {
+  border-color: var(--al-accent);
+  color: var(--al-accent);
+  background: var(--al-accent-soft);
+}
+.linkBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-/* ── Empty state ───────────────────────────────────────────────────────────── */
-.emptyState {
-  text-align: center;
-  padding: 32px 16px;
-  color: #8c8c96;
+/* ── Base row (one subscribable source) ──────────────────────────────── */
+.baseRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--al-border);
+}
+.baseRow:last-child {
+  border-bottom: none;
+}
+.baseInfo {
+  min-width: 0;
+  flex: 1;
+}
+.baseNameLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.baseName {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--al-text);
+}
+.baseDesc {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--al-muted);
+}
+
+/* ── Cadence / frequency badges (read-only) ──────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 8px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+.badgeImmediate {
+  background: var(--al-accent-soft);
+  color: var(--al-accent);
+}
+.badgeDigest {
+  background: #eef1f5;
+  color: #4a5568;
+}
+.freqHint {
+  font-size: 11px;
+  color: var(--al-muted-strong);
+  white-space: nowrap;
+}
+
+/* ── Toggle switch ───────────────────────────────────────────────────── */
+.toggle {
+  position: relative;
+  flex-shrink: 0;
+  width: 46px;
+  height: 26px;
+  border-radius: 999px;
+  border: none;
+  background: #d2d6dc;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.18s ease;
+}
+.toggle:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+.toggleOn {
+  background: var(--al-accent);
+}
+.toggleKnob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: left 0.18s ease;
+}
+.toggleOn .toggleKnob {
+  left: 23px;
+}
+.toggle:focus-visible {
+  outline: 2px solid var(--al-accent);
+  outline-offset: 2px;
+}
+
+/* ── Side panel (My Subscriptions / Recent Alerts) ───────────────────── */
+.panel {
+  border: 1px solid var(--al-border);
+  border-radius: var(--al-radius);
+  background: var(--al-panel);
+  overflow: hidden;
+}
+.panelHead {
+  padding: 12px 16px;
+  background: var(--al-panel-tint);
+  border-bottom: 1px solid var(--al-border);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.panelTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--al-accent);
+}
+.panelBody {
+  padding: 4px 0;
+}
+
+/* ── My Subscriptions row ────────────────────────────────────────────── */
+.subRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--al-border);
+}
+.subRow:last-child {
+  border-bottom: none;
+}
+.subInfo {
+  min-width: 0;
+  flex: 1;
+}
+.subName {
   font-size: 13px;
+  font-weight: 700;
+  color: var(--al-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.subSub {
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--al-muted);
+}
+.removeBtn {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--al-border-strong);
+  color: var(--al-muted);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+.removeBtn:hover:not(:disabled) {
+  border-color: var(--al-red);
+  color: var(--al-red);
+  background: rgba(198, 40, 40, 0.07);
+}
+.removeBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Recent Alerts feed ──────────────────────────────────────────────── */
+.feedRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--al-border);
+}
+.feedRow:last-child {
+  border-bottom: none;
+}
+.feedMain {
+  min-width: 0;
+  flex: 1;
+}
+.feedTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.feedName {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--al-text);
+}
+.feedPeriod {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--al-muted);
+  font-variant-numeric: tabular-nums;
+}
+.feedTime {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--al-muted-strong);
+  font-variant-numeric: tabular-nums;
+}
+.feedLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--al-accent);
+  text-decoration: none;
+}
+.feedLink:hover {
+  color: var(--al-accent-hover);
+  text-decoration: underline;
+}
+
+/* ── Status pill ─────────────────────────────────────────────────────── */
+.pill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.pillSent {
+  background: var(--al-accent-soft);
+  color: var(--al-accent);
+}
+.pillDelivered {
+  background: rgba(46, 125, 50, 0.12);
+  color: var(--al-green);
+}
+.pillBounced,
+.pillFailed {
+  background: rgba(198, 40, 40, 0.12);
+  color: var(--al-red);
+}
+.pillPending {
+  background: #eef1f5;
+  color: #4a5568;
+}
+
+/* ── Empty states ────────────────────────────────────────────────────── */
+.empty {
+  padding: 28px 20px;
+  text-align: center;
+  color: var(--al-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.empty strong {
+  color: var(--al-text);
+}
+
+/* ── Helper text ─────────────────────────────────────────────────────── */
+.note {
+  font-size: 11.5px;
+  color: var(--al-muted);
+  line-height: 1.5;
+  margin: 0 0 14px;
+}
+
+/* ── Unsubscribe landing page (single centered card) ─────────────────── */
+.unsubWrap {
+  min-height: 70vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 16px;
+  background: var(--al-bg);
+}
+.unsubCard {
+  width: 100%;
+  max-width: 460px;
+  border: 1px solid var(--al-border);
+  border-radius: 14px;
+  background: var(--al-panel);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.06);
+  padding: 32px 28px;
+  text-align: center;
+}
+.unsubIcon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 700;
+}
+.unsubIconOk {
+  background: var(--al-accent-soft);
+  color: var(--al-accent);
+}
+.unsubIconErr {
+  background: rgba(198, 40, 40, 0.12);
+  color: var(--al-red);
+}
+.unsubTitle {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--al-text);
+  margin: 0 0 8px;
+}
+.unsubBody {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--al-muted);
+  margin: 0 0 22px;
+}
+.unsubBody strong {
+  color: var(--al-text);
+}
+.unsubCta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 22px;
+  border-radius: 999px;
+  background: var(--al-accent);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease;
+}
+.unsubCta:hover {
+  background: var(--al-accent-hover);
+  color: #ffffff;
 }

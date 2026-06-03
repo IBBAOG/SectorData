@@ -1,24 +1,37 @@
-import base64
 import os
+import smtplib
+import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from pathlib import Path
 
 import requests as _requests
 
-from google.auth.exceptions import RefreshError
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-
-SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
-
-_DIR = Path(__file__).parent
-_CREDENTIALS = _DIR / "credentials.json"
-_TOKEN = _DIR / "token.json"
-
 _FALLBACK_EMAIL = os.environ.get("ALERTAS_DEST_EMAIL", "eduardo.mendes@itaubba.com")
+
+# Gmail SMTP + App Password — the ACTIVE email backend for the legacy ANP alerts.
+#
+# Why SMTP + an App Password (not the OAuth Gmail API): the OAuth refresh token
+# kept expiring/getting revoked (the Google Cloud app is in Testing mode, so its
+# refresh tokens are short-lived → `invalid_grant`). An App Password over plain
+# SMTP (smtp.gmail.com:587, STARTTLS) never expires and needs no token plumbing —
+# just two env vars: the login address and the app password.
+#
+#   GMAIL_ADDRESS       — the Gmail account used as the SMTP login user. Must match
+#                         the From address (Gmail rewrites a mismatched From).
+#                         Defaults to ibbaogproject@gmail.com.
+#   GMAIL_APP_PASSWORD  — a 16-character Google App Password (generated at
+#                         https://myaccount.google.com/apppasswords). Never expires.
+#   ALERTAS_SENDER_EMAIL — the From header. Must be the account that owns the app
+#                         password. Defaults to "Alertas ANP <ibbaogproject@gmail.com>".
+_GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS", "ibbaogproject@gmail.com")
+_GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
+_SENDER_EMAIL = os.environ.get(
+    "ALERTAS_SENDER_EMAIL", "Alertas ANP <ibbaogproject@gmail.com>"
+)
+
+_SMTP_HOST = "smtp.gmail.com"
+_SMTP_PORT = 587
+_SMTP_TIMEOUT = 30  # seconds — never hang a CI step on a stuck connection
 
 # Configure no ambiente local ou no .env do alertas:
 #   SUPABASE_URL=https://<ref>.supabase.co
@@ -74,42 +87,15 @@ def get_alert_recipients() -> list[str]:
         return fallback
 
 
-def _get_service():
-    """Build an authenticated Gmail API service.
-
-    In GitHub Actions the credentials and token are written to disk from
-    secrets (GMAIL_CREDENTIALS_JSON / GMAIL_TOKEN_JSON) before this runs.
-    Locally they live in alertas/credentials.json and alertas/token.json.
-    """
-    creds = None
-    if _TOKEN.exists():
-        creds = Credentials.from_authorized_user_file(str(_TOKEN), SCOPES)
-    if not creds or not creds.valid:
-        refreshed = False
-        if creds and creds.expired and creds.refresh_token:
-            try:
-                creds.refresh(Request())
-                refreshed = True
-            except RefreshError as e:
-                print(f"  [auth] Refresh token revogado ({e}). Iniciando fluxo OAuth interativo...")
-                creds = None
-        if not refreshed:
-            if os.environ.get("GITHUB_ACTIONS") == "true" or not os.environ.get("DISPLAY"):
-                raise RuntimeError(
-                    "Gmail OAuth token expired/revoked and cannot be refreshed in a "
-                    "headless environment. Regenerate alertas/token.json locally "
-                    "(python alertas/auth_gmail.py) and update the GMAIL_TOKEN_JSON "
-                    "secret at https://github.com/IBBAOG/SectorData/settings/secrets/actions"
-                )
-            flow = InstalledAppFlow.from_client_secrets_file(str(_CREDENTIALS), SCOPES)
-            creds = flow.run_local_server(port=0)
-        _TOKEN.write_text(creds.to_json())
-    return build("gmail", "v1", credentials=creds)
-
-
 def enviar_alerta(nome_base: str, mensagem: str, link: str = "", arquivo: str = ""):
-    """Envia email de alerta para nova publicação de base de dados."""
-    service = _get_service()
+    """Envia email de alerta para nova publicação de base de dados via Gmail SMTP."""
+    if not _GMAIL_APP_PASSWORD:
+        raise RuntimeError(
+            "GMAIL_APP_PASSWORD não configurado. Gere um App Password em "
+            "https://myaccount.google.com/apppasswords e configure o secret "
+            "GMAIL_APP_PASSWORD (confirme que GMAIL_ADDRESS bate com a conta dona "
+            "do app password)."
+        )
 
     destinatarios = get_alert_recipients()
     to_header = ", ".join(destinatarios)
@@ -124,9 +110,15 @@ def enviar_alerta(nome_base: str, mensagem: str, link: str = "", arquivo: str = 
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = assunto
+    msg["From"] = _SENDER_EMAIL
     msg["To"] = to_header
     msg.attach(MIMEText(corpo, "html"))
 
-    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-    service.users().messages().send(userId="me", body={"raw": raw}).execute()
+    # smtp.gmail.com:587 + STARTTLS + login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD).
+    # A fresh connection per send is simpler and robust enough for this low-volume
+    # monitor. The From must equal GMAIL_ADDRESS or Gmail rewrites it.
+    with smtplib.SMTP(_SMTP_HOST, _SMTP_PORT, timeout=_SMTP_TIMEOUT) as smtp:
+        smtp.starttls(context=ssl.create_default_context())
+        smtp.login(_GMAIL_ADDRESS, _GMAIL_APP_PASSWORD)
+        smtp.send_message(msg)
     print(f"  [email] Enviado → {to_header} | {assunto}")

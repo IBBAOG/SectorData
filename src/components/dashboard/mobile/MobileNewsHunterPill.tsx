@@ -1,48 +1,32 @@
 "use client";
 
-// MobileNewsHunterPill — second floating shortcut, paired with MobileHomePill.
+// MobileNewsHunterPill — middle floating shortcut in the bottom pill dock.
 // Routes the visitor to /news-hunter from anywhere in the mobile app.
 //
 // Why this exists:
 //   /news-hunter became mobile-eligible (commit 26fffd40 on main). Eduardo
 //   asked for a persistent shortcut to the news feed — a sibling of the Home
 //   pill rather than a buried tile in /home. It sits on the same floating row
-//   so the two primary affordances (Home, News) are equally tappable.
+//   so the primary affordances are equally tappable. As of 2026-06-02 the row
+//   holds three pills: Home, News Hunter, Stock Guide.
 //
 // Visual recipe (Liquid Glass v2):
-//   Identical to MobileHomePill — same diameter (64×56 capsule), same blur,
-//   same border, same shadow stack. The only divergence is the icon
+//   Identical to MobileHomePill / MobileStockGuidePill — same 64×56 capsule,
+//   same blur, border and shadow stack. The only divergence is the icon
 //   (NewspaperIcon) and the horizontal offset relative to the viewport center.
 //
-// Positioning math (two modes — see "Why two modes" below):
-//   Both pills are anchored at `left: 50%` and translated by
-//   `translateX(calc(-50% + var(--pill-offset)))`. The `--pill-offset` CSS
-//   custom property is set inline by each pill based on the active route:
-//
-//   ┌──────────────────┬─────────────────┬──────────────────────────────────┐
-//   │ Route            │ Visible pills   │ News Hunter pill offset          │
-//   ├──────────────────┼─────────────────┼──────────────────────────────────┤
-//   │ /home            │ News Hunter     │  0px      (solo, centered)       │
-//   │ /news-hunter     │ Home only       │  hidden   (n/a)                  │
-//   │ everywhere else  │ Home + News     │  +39px    (paired, balanced)     │
-//   └──────────────────┴─────────────────┴──────────────────────────────────┘
-//
-//   "Paired" offset = (PILL_W + GAP) / 2 = (64 + 14) / 2 = 39px, so that the
-//   pair as a group is centered around the viewport vertical centerline with
-//   GAP px between their inner edges. Home pill mirrors this with −39px.
-//
-// Why two modes:
-//   On /home the Home pill auto-hides (would be a no-op). Before this change
-//   the News Hunter pill stayed at its paired offset (+78px), which made the
-//   only visible pill look off-center on /home. Switching to a route-aware
-//   offset keeps the solo pill on the viewport centerline (the natural
-//   resting position of any single floating action), while the paired layout
-//   stays balanced as a group on every other route.
+// Positioning:
+//   Geometry is owned by `pillDock.ts` (single source of truth). All pills
+//   anchor at `left: 50%` and translate by
+//   `translateX(calc(-50% + var(--pill-offset)))`. The offset comes from
+//   `pillOffset(pathname, "news")`; `null` means "hide on this route" (we are
+//   on /news-hunter). See pillDock.ts § "Geometry" for the formula and the
+//   per-route offset table.
 //
 // Behaviour:
 //   • Hidden on /news-hunter (would be redundant) — same pattern Home uses
-//     for /home. Tolerates trailing slashes and nested children.
-//   • Z-index 1000 (matches Home pill, sits below modals/sheets).
+//     for /home. Trailing slashes / nested children tolerated by pillDock.
+//   • Z-index 1000 (matches the other pills, sits below modals/sheets).
 //   • SSR-safe: usePathname/useRouter are client-only; "use client" at top.
 //   • Respects safe-area-inset-bottom on iOS.
 //   • Visibility-by-role is NOT applied here — the module visibility guard
@@ -54,15 +38,7 @@
 import type { CSSProperties } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { NewspaperIcon } from "./icons";
-
-const PILL_W = 64;
-const PILL_H = 56;
-// Visual gap between the two pills' inner edges in paired layout, in pixels.
-const GAP = 14;
-// Paired-mode offset from the viewport center.
-// (PILL_W + GAP) / 2 keeps the inner edges GAP px apart AND centers the pair
-// as a group around the viewport's vertical centerline.
-const PAIRED_OFFSET = (PILL_W + GAP) / 2;
+import { PILL_W, PILL_H, pillOffset } from "./pillDock";
 
 export interface MobileNewsHunterPillProps {
   /** Override the route target. Defaults to /news-hunter. */
@@ -84,20 +60,12 @@ export default function MobileNewsHunterPill(
   const pathname = usePathname();
   const router = useRouter();
 
-  // Hide when already on /news-hunter — the pill would just be a no-op.
-  const onNewsHunter =
-    !!pathname &&
-    (pathname === "/news-hunter" || pathname.startsWith("/news-hunter/"));
-  if (onNewsHunter && !forceVisible) return null;
-
-  // Mode resolution — solo on /home (Home pill is hidden there), paired on
-  // every other route. The offset is exposed as a CSS custom property so the
-  // `:active` rule in globals.css can re-use it without duplicating route
-  // logic. See "Positioning math" in the header comment.
-  const onHome =
-    !!pathname && (pathname === "/home" || pathname.startsWith("/home/"));
-  const offsetPx = onHome ? 0 : PAIRED_OFFSET;
-  const positionMode = onHome ? "solo" : "paired";
+  // Geometry comes from pillDock — null means "hide on this route" (we are on
+  // /news-hunter). The offset is exposed as the `--pill-offset` CSS custom
+  // property so the `:active` rule in globals.css can re-use it without
+  // duplicating route logic. See pillDock.ts § "Geometry".
+  const offsetPx = pillOffset(pathname, "news", forceVisible);
+  if (offsetPx === null) return null;
 
   return (
     <button
@@ -105,7 +73,6 @@ export default function MobileNewsHunterPill(
       onClick={() => router.push(href)}
       aria-label={ariaLabel}
       className="mobile-news-hunter-pill"
-      data-position={positionMode}
       style={
         {
           // Positioning — fixed, route-aware offset, sitting above safe-area

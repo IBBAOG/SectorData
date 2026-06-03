@@ -1,0 +1,24 @@
+SectorData Alerts — {{ source.display_name }}
+=============================================
+
+New data is available for {{ source.display_name }}.
+
+{% set payload = event.payload %}
+{% if payload.message %}{{ payload.message }}
+
+{% endif %}
+{% if payload.period %}Period: {{ payload.period }}
+
+{% endif %}
+{% set route = payload.frontend_route or source.metadata.frontend_route %}
+{% if route %}View data: {{ frontend_url }}{{ route }}
+{% else %}View data: {{ frontend_url }}/alerts
+{% endif %}
+
+Detected: {{ event.detected_at[:19] if event.detected_at else "—" }} UTC
+
+---
+You're receiving this because you subscribed to {{ source.display_name }} alerts on SectorData ({{ frontend_url }}/alerts).
+{% if unsubscribe_url is defined %}
+Unsubscribe from this alert: {{ unsubscribe_url }}
+{% endif %}

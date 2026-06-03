@@ -1,0 +1,44 @@
+name: Client Alerts — Daily Digest
+
+# Delivers the once-a-day digest for every base whose effective cadence is
+# 'digest' (vessels, daily production, or any subscription overridden to digest).
+# Immediate bases are delivered by the per-ETL hook as data lands; this only
+# sweeps the digest cadence.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 23 * * *'   # daily at 23:30 UTC (20:30 BRT) — after the day's ETLs
+
+# Own group so a slow digest never collides with the next dispatch, and never
+# shares a queue with the ETL workflows.
+concurrency:
+  group: client-alerts-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Sweep and send daily digest
+        run: python -m scripts.client_alerts.run_base --digest --batch-limit 200
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY:      ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GMAIL_ADDRESS:      ${{ vars.GMAIL_ADDRESS || 'ibbaogproject@gmail.com' }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERTS_SENDER_EMAIL:       ${{ vars.ALERTS_SENDER_EMAIL || 'SectorData Alerts <ibbaogproject@gmail.com>' }}
+          ALERTS_FRONTEND_URL:       ${{ vars.ALERTS_FRONTEND_URL || 'https://oilandgasdata.vercel.app' }}

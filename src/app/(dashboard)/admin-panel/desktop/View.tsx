@@ -64,7 +64,7 @@ const SECTION_ICONS: Record<SectionId, React.ReactNode> = {
       <polyline points="22,6 12,13 2,6" />
     </svg>
   ),
-  "alerts-product": (
+  "client-alerts": (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
       <path d="M13.73 21a2 2 0 0 1-3.46 0" />
@@ -147,28 +147,29 @@ export default function DesktopView(): React.ReactElement | null {
     handleToggleRecipient,
     handleRemoveRecipient,
 
-    alertsStats,
-    alertsStatsLoading,
-    alertsSubscribers,
-    alertsSubscribersLoading,
-    alertsSubscriberSourceFilter,
-    setAlertsSubscriberSourceFilter,
-    alertsSources,
-    alertsSourcesLoading,
-    alertsEmailLog,
-    alertsEmailLogLoading,
-    alertsEmailLogStatusFilter,
-    setAlertsEmailLogStatusFilter,
-    alertsOutbox,
-    alertsOutboxLoading,
-    requeueingOutboxId,
-    sendingTestSlug,
-    togglingSourceSlug,
-    unsubscribingId,
-    handleAlertsForceUnsubscribe,
-    handleAlertsRequeueOutbox,
-    handleAlertsSendTestEvent,
-    handleAlertsToggleSource,
+    caStats,
+    caBases,
+    caSubscribers,
+    caEmailLog,
+    caOverviewLoading,
+    caSubscribersLoading,
+    caEmailLogLoading,
+    caError,
+    caSubscribersError,
+    caEmailLogError,
+    caSourceActive,
+    caTogglingSource,
+    caSubscriberFilter,
+    setCaSubscriberFilter,
+    caTestEmail,
+    setCaTestEmail,
+    caSendingTest,
+    caTestResult,
+    caTestError,
+    caCountsBySource,
+    handleToggleCaSource,
+    handleQueueCaTest,
+    handleRefreshCaSubscribers,
 
     defaultKeywords,
     defaultKeywordsLoading,
@@ -238,8 +239,6 @@ export default function DesktopView(): React.ReactElement | null {
     sgTogglingVisibility,
     sgSearchQuery,
     setSgSearchQuery,
-    sgSectorFilter,
-    setSgSectorFilter,
     sgFilteredCompanies,
     sgCompanyTickers,
     sgPendingChanges,
@@ -845,411 +844,327 @@ export default function DesktopView(): React.ReactElement | null {
             </div>
           )}
 
-          {/* ── Alerts Product ───────────────────────────────────────────────── */}
-          {activeSection === "alerts-product" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          {/* ── Client Alerts (the rebuilt client-alerts product) ────────────── */}
+          {activeSection === "client-alerts" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
-              {/* Sub-section A — Subscriber stats */}
+              {/* 1 — Stats overview */}
               <div className="settings-card">
                 <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>
-                  Subscriber Stats
+                  Overview
                 </h2>
-                <p style={{ fontSize: 13, color: "#888", margin: "0 0 16px" }}>
-                  Overview of the opt-in subscriber base across all alert sources.
+                <p style={{ fontSize: 13, color: "#888", margin: "0 0 20px" }}>
+                  Live subscription and delivery figures for the client email alerts product.
                 </p>
-                {alertsStatsLoading ? (
-                  <div style={{ padding: "16px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>Loading…</div>
-                ) : !alertsStats ? (
-                  <div style={{ fontSize: 13, color: "#bbb" }}>No stats available.</div>
+
+                {caError && (
+                  <div style={{ padding: "10px 14px", background: "#fff5f5", borderRadius: 8, color: "#e53e3e", fontSize: 13, marginBottom: 16 }}>
+                    {caError}
+                  </div>
+                )}
+
+                {caOverviewLoading ? (
+                  <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>Loading…</div>
                 ) : (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 16 }}>
-                    {[
-                      { label: "Total", value: alertsStats.totals.subscribers_total },
-                      { label: "Active", value: alertsStats.totals.subscribers_active },
-                      {
-                        label: "Unconfirmed",
-                        value: alertsStats.totals.subscribers_total - alertsStats.totals.subscribers_confirmed,
-                      },
-                      { label: "Sent (7d)", value: alertsStats.sent_7d },
-                      { label: "Bounced (7d)", value: alertsStats.bounced_7d },
-                      {
-                        label: "Bounce rate (7d)",
-                        value: `${alertsStats.bounce_rate_7d_pct.toFixed(2)}%`,
-                      },
-                    ].map(({ label, value }) => (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
+                    {([
+                      { label: "Total subscriptions",  value: caStats?.totals.subscriptions_total ?? 0,  tone: "#1a1a1a" },
+                      { label: "Active subscriptions", value: caStats?.totals.subscriptions_active ?? 0, tone: "#38a169" },
+                      { label: "Unique users",         value: caStats?.totals.unique_users ?? 0,         tone: "#1a1a1a" },
+                      { label: "Sent (7d)",            value: caStats?.sent_7d ?? 0,                     tone: ORANGE },
+                      { label: "Bounced (7d)",         value: caStats?.bounced_7d ?? 0,                  tone: (caStats?.bounced_7d ?? 0) > 0 ? "#e53e3e" : "#999" },
+                    ] as const).map((card) => (
                       <div
-                        key={label}
+                        key={card.label}
                         style={{
-                          minWidth: 120,
-                          padding: "12px 16px",
-                          borderRadius: 10,
-                          background: "#f8f8f8",
-                          border: "1px solid #ececec",
+                          padding: "16px 18px", borderRadius: 10,
+                          border: "1px solid #eee", background: "#fafafa",
                         }}
                       >
-                        <div style={{ fontSize: 11, color: "#aaa", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                          {label}
+                        <div style={{ fontSize: "1.6rem", fontWeight: 700, color: card.tone, lineHeight: 1.1 }}>
+                          {card.value.toLocaleString("en-US")}
                         </div>
-                        <div style={{ fontSize: 22, fontWeight: 700, color: "#1a1a1a", marginTop: 4 }}>
-                          {value}
+                        <div style={{ fontSize: 11, color: "#888", marginTop: 4, fontWeight: 600, letterSpacing: "0.02em" }}>
+                          {card.label}
                         </div>
                       </div>
                     ))}
                   </div>
                 )}
-                {alertsStats && alertsStats.per_source.length > 0 && (
-                  <div style={{ marginTop: 16 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#888", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                      Active per source
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      {alertsStats.per_source.map(({ source_slug, subscribers_active }) => (
-                        <span
-                          key={source_slug}
-                          style={{
-                            fontSize: 12,
-                            padding: "3px 10px",
-                            borderRadius: 12,
-                            background: "rgba(255,80,0,0.07)",
-                            border: "1px solid rgba(255,80,0,0.2)",
-                            color: "#1a1a1a",
-                          }}
-                        >
-                          {source_slug} <strong>{subscribers_active}</strong>
-                        </span>
-                      ))}
-                    </div>
+              </div>
+
+              {/* 2 — Sources */}
+              <div className="settings-card">
+                <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>
+                  Sources
+                </h2>
+                <p style={{ fontSize: 13, color: "#888", margin: "0 0 20px" }}>
+                  The subscribable data sources. Toggle a source on/off, and queue a synthetic test
+                  event (delivered on the next alert run, not immediately).
+                </p>
+
+                {caOverviewLoading ? (
+                  <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>Loading…</div>
+                ) : caBases.length === 0 ? (
+                  <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>No subscribable sources.</div>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ textAlign: "left", color: "#999", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                          <th style={{ padding: "8px 10px", fontWeight: 700 }}>Source</th>
+                          <th style={{ padding: "8px 10px", fontWeight: 700 }}>Category</th>
+                          <th style={{ padding: "8px 10px", fontWeight: 700 }}>Cadence</th>
+                          <th style={{ padding: "8px 10px", fontWeight: 700, textAlign: "center" }}>Subscribers</th>
+                          <th style={{ padding: "8px 10px", fontWeight: 700, textAlign: "center" }}>Enabled</th>
+                          <th style={{ padding: "8px 10px", fontWeight: 700 }}>Test event</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {caBases.map((b) => {
+                          const counts = caCountsBySource[b.source_slug] ?? { total: 0, active: 0 };
+                          const isActive = caSourceActive[b.source_slug] ?? true;
+                          const isTogglingThis = caTogglingSource === b.source_slug;
+                          const isSendingThis = caSendingTest === b.source_slug;
+                          const testResult = caTestResult?.slug === b.source_slug ? caTestResult : null;
+                          const testError = caTestError?.slug === b.source_slug ? caTestError : null;
+                          return (
+                            <tr key={b.source_slug} style={{ borderTop: "1px solid #f0f0f0" }}>
+                              <td style={{ padding: "10px", verticalAlign: "top" }}>
+                                <div style={{ fontWeight: 600, color: "#1a1a1a" }}>{b.display_name}</div>
+                                <div style={{ fontSize: 11, color: "#bbb", marginTop: 2 }}>{b.source_slug}</div>
+                              </td>
+                              <td style={{ padding: "10px", color: "#666", verticalAlign: "top" }}>{b.category}</td>
+                              <td style={{ padding: "10px", verticalAlign: "top" }}>
+                                <span style={{
+                                  fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 12,
+                                  background: b.cadence === "immediate" ? "rgba(255,80,0,0.10)" : "rgba(100,100,100,0.10)",
+                                  color: b.cadence === "immediate" ? ORANGE : "#777",
+                                  textTransform: "capitalize", whiteSpace: "nowrap",
+                                }}>
+                                  {b.cadence}
+                                </span>
+                              </td>
+                              <td style={{ padding: "10px", textAlign: "center", color: "#444", verticalAlign: "top", whiteSpace: "nowrap" }}>
+                                <span style={{ fontWeight: 700, color: "#38a169" }}>{counts.active}</span>
+                                <span style={{ color: "#bbb" }}> / {counts.total}</span>
+                              </td>
+                              <td style={{ padding: "10px", textAlign: "center", verticalAlign: "top" }}>
+                                <button
+                                  onClick={() => handleToggleCaSource(b.source_slug, !isActive)}
+                                  disabled={isTogglingThis}
+                                  role="switch"
+                                  aria-checked={isActive}
+                                  aria-label={`Toggle source ${b.display_name}`}
+                                  style={{
+                                    width: 38, height: 22, borderRadius: 11, border: "none",
+                                    position: "relative", cursor: isTogglingThis ? "wait" : "pointer",
+                                    background: isActive ? ORANGE : "#ccc",
+                                    opacity: isTogglingThis ? 0.6 : 1, transition: "background 0.15s",
+                                    padding: 0, verticalAlign: "middle",
+                                  }}
+                                >
+                                  <span style={{
+                                    position: "absolute", top: 2, left: isActive ? 18 : 2,
+                                    width: 18, height: 18, borderRadius: "50%", background: "#fff",
+                                    transition: "left 0.15s",
+                                  }} />
+                                </button>
+                              </td>
+                              <td style={{ padding: "10px", verticalAlign: "top", minWidth: 250 }}>
+                                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                  <input
+                                    type="email"
+                                    value={caTestEmail[b.source_slug] ?? ""}
+                                    onChange={(e) => setCaTestEmail(b.source_slug, e.target.value)}
+                                    placeholder="email (optional)"
+                                    disabled={isSendingThis}
+                                    style={{
+                                      flex: 1, minWidth: 0, padding: "5px 8px", borderRadius: 6,
+                                      border: `1px solid ${testError ? "#e53e3e" : "#e0e0e0"}`,
+                                      fontSize: 12, fontFamily: "Arial, sans-serif", outline: "none",
+                                      boxSizing: "border-box",
+                                    }}
+                                  />
+                                  <button
+                                    onClick={() => handleQueueCaTest(b.source_slug)}
+                                    disabled={isSendingThis}
+                                    style={{
+                                      padding: "5px 12px", borderRadius: 6, border: `1px solid ${ORANGE}`,
+                                      background: "#fff", color: ORANGE, fontSize: 12, fontWeight: 600,
+                                      cursor: isSendingThis ? "wait" : "pointer", fontFamily: "Arial, sans-serif",
+                                      whiteSpace: "nowrap", opacity: isSendingThis ? 0.6 : 1,
+                                    }}
+                                  >
+                                    {isSendingThis ? "Queuing…" : "Queue test"}
+                                  </button>
+                                </div>
+                                {testResult && (
+                                  <div style={{ fontSize: 11, color: "#38a169", marginTop: 4, lineHeight: 1.4 }}>
+                                    ✓ Test event queued (id {testResult.eventId.slice(0, 8)}…). Delivered on the next alert run.
+                                  </div>
+                                )}
+                                {testError && (
+                                  <div style={{ fontSize: 11, color: "#e53e3e", marginTop: 4 }}>{testError.message}</div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>
 
-              {/* Sub-section B — Subscribers table */}
+              {/* 3 — Subscribers */}
               <div className="settings-card">
-                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
-                  <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: 0 }}>Subscribers</h2>
-                  {!alertsSubscribersLoading && (
-                    <span style={{ fontSize: 12, color: "#aaa" }}>{alertsSubscribers.length} total</span>
-                  )}
-                </div>
-                <p style={{ fontSize: 13, color: "#888", margin: "0 0 12px" }}>
-                  All opt-in subscribers. Use Force Unsubscribe to immediately deactivate a subscriber.
-                </p>
-
-                {/* Source filter */}
-                <div style={{ marginBottom: 12 }}>
-                  <select
-                    value={alertsSubscriberSourceFilter}
-                    onChange={(e) => setAlertsSubscriberSourceFilter(e.target.value)}
-                    style={{
-                      fontSize: 13, padding: "5px 10px", borderRadius: 8,
-                      border: "1px solid #e0e0e0", background: "#fff",
-                      fontFamily: "Arial, sans-serif", outline: "none",
-                    }}
-                  >
-                    <option value="">All sources</option>
-                    {alertsSources.map((s) => (
-                      <option key={s.source_slug} value={s.source_slug}>
-                        {s.display_name || s.source_slug}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {alertsSubscribersLoading ? (
-                  <div style={{ padding: "16px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>Loading…</div>
-                ) : alertsSubscribers.length === 0 ? (
-                  <div style={{ padding: "16px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>
-                    No subscribers yet. The first opt-in will appear here.
+                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 4, flexWrap: "wrap" }}>
+                  <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: 0 }}>
+                    Subscribers
+                  </h2>
+                  {/* Source filter dropdown */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <select
+                      value={caSubscriberFilter}
+                      onChange={(e) => setCaSubscriberFilter(e.target.value)}
+                      style={{
+                        padding: "6px 10px", borderRadius: 6, border: "1px solid #e0e0e0",
+                        fontSize: 12, fontFamily: "Arial, sans-serif", color: "#555",
+                        background: "#fff", cursor: "pointer", outline: "none",
+                      }}
+                    >
+                      <option value="">All sources</option>
+                      {caBases.map((b) => (
+                        <option key={b.source_slug} value={b.source_slug}>{b.display_name}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={handleRefreshCaSubscribers}
+                      disabled={caSubscribersLoading}
+                      style={{
+                        padding: "6px 12px", borderRadius: 6, border: "1px solid #e0e0e0",
+                        background: "#fff", color: "#555", fontSize: 12, fontWeight: 600,
+                        cursor: caSubscribersLoading ? "wait" : "pointer", fontFamily: "Arial, sans-serif",
+                      }}
+                    >
+                      {caSubscribersLoading ? "…" : "Refresh"}
+                    </button>
                   </div>
-                ) : (
-                  <>
-                    {/* Column headers */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 140px 90px 70px 100px 100px", gap: 8, padding: "6px 0", borderBottom: "1px solid #f0f0f0", marginBottom: 4 }}>
-                      {["Email", "Source", "Confirmed", "Active", "Joined", "Actions"].map((col) => (
-                        <div key={col} style={{ fontSize: 11, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: "0.06em" }}>{col}</div>
-                      ))}
-                    </div>
-                    {alertsSubscribers
-                      .filter((s) => !alertsSubscriberSourceFilter || s.source_slug === alertsSubscriberSourceFilter)
-                      .map((sub) => {
-                        const isUnsubscribing = unsubscribingId === sub.id;
-                        return (
-                          <div
-                            key={sub.id}
-                            className="settings-module-row"
-                            style={{ display: "grid", gridTemplateColumns: "1fr 140px 90px 70px 100px 100px", gap: 8, alignItems: "center" }}
-                          >
-                            <div style={{ fontSize: 13, color: "#1a1a1a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {sub.email}
-                            </div>
-                            <div style={{ fontSize: 12, color: "#888" }}>{sub.source_slug}</div>
-                            <div>
-                              <span style={{
-                                fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
-                                background: sub.is_confirmed ? "rgba(72,187,120,0.15)" : "rgba(237,137,54,0.15)",
-                                color: sub.is_confirmed ? "#38a169" : "#c05621",
-                              }}>
-                                {sub.is_confirmed ? "Yes" : "Pending"}
-                              </span>
-                            </div>
-                            <div>
-                              <span style={{
-                                fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
-                                background: sub.is_active ? "rgba(72,187,120,0.15)" : "rgba(160,160,160,0.15)",
-                                color: sub.is_active ? "#38a169" : "#999",
-                              }}>
-                                {sub.is_active ? "Yes" : "No"}
-                              </span>
-                            </div>
-                            <div style={{ fontSize: 12, color: "#aaa" }}>{formatDateBR(sub.created_at)}</div>
-                            <div>
-                              <button
-                                onClick={() => handleAlertsForceUnsubscribe(sub.id)}
-                                disabled={isUnsubscribing || !sub.is_active}
-                                style={{
-                                  fontSize: 11, padding: "4px 8px", borderRadius: 6,
-                                  border: "1px solid #e53e3e", background: "#fff",
-                                  color: sub.is_active ? "#e53e3e" : "#ccc",
-                                  cursor: isUnsubscribing || !sub.is_active ? "not-allowed" : "pointer",
-                                  opacity: isUnsubscribing ? 0.6 : 1,
-                                  fontFamily: "Arial, sans-serif",
-                                }}
-                              >
-                                {isUnsubscribing ? "…" : "Force unsub"}
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </>
-                )}
-              </div>
-
-              {/* Sub-section C — Sources management */}
-              <div className="settings-card">
-                <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>Sources</h2>
-                <p style={{ fontSize: 13, color: "#888", margin: "0 0 12px" }}>
-                  Toggle sources on/off. Send a test event to verify the pipeline.
-                </p>
-                {alertsSourcesLoading ? (
-                  <div style={{ padding: "16px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>Loading…</div>
-                ) : alertsSources.length === 0 ? (
-                  <div style={{ padding: "16px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>No sources registered.</div>
-                ) : (
-                  <>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 140px 90px 130px 120px", gap: 8, padding: "6px 0", borderBottom: "1px solid #f0f0f0", marginBottom: 4 }}>
-                      {["Source", "Category", "Active", "Toggle", "Test event"].map((col) => (
-                        <div key={col} style={{ fontSize: 11, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: "0.06em" }}>{col}</div>
-                      ))}
-                    </div>
-                    {alertsSources.map((src) => {
-                      const isToggling = togglingSourceSlug === src.source_slug;
-                      const isSending = sendingTestSlug === src.source_slug;
-                      return (
-                        <div
-                          key={src.source_slug}
-                          className="settings-module-row"
-                          style={{ display: "grid", gridTemplateColumns: "1fr 140px 90px 130px 120px", gap: 8, alignItems: "center" }}
-                        >
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a1a" }}>
-                              {src.display_name || src.source_slug}
-                            </div>
-                            <div style={{ fontSize: 11, color: "#aaa", fontFamily: "monospace" }}>{src.source_slug}</div>
-                          </div>
-                          <div style={{ fontSize: 12, color: "#888" }}>{src.category}</div>
-                          <div>
-                            <span style={{
-                              fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
-                              background: src.is_active ? "rgba(72,187,120,0.15)" : "rgba(160,160,160,0.15)",
-                              color: src.is_active ? "#38a169" : "#999",
-                            }}>
-                              {src.is_active ? "Active" : "Off"}
-                            </span>
-                          </div>
-                          <div className="form-check form-switch" style={{ margin: 0 }}>
-                            <input
-                              className="form-check-input"
-                              type="checkbox"
-                              role="switch"
-                              aria-label={`Toggle source ${src.source_slug}`}
-                              checked={src.is_active}
-                              disabled={isToggling}
-                              onChange={(e) => handleAlertsToggleSource(src.source_slug, e.target.checked)}
-                              style={{ width: "2.5em", height: "1.25em", cursor: isToggling ? "wait" : "pointer", opacity: isToggling ? 0.6 : 1 }}
-                            />
-                          </div>
-                          <div>
-                            <button
-                              onClick={() => handleAlertsSendTestEvent(src.source_slug)}
-                              disabled={!!sendingTestSlug}
-                              style={{
-                                fontSize: 12, padding: "5px 10px", borderRadius: 6,
-                                border: `1px solid ${ORANGE}`, background: "#fff", color: ORANGE,
-                                cursor: isSending ? "wait" : "pointer",
-                                opacity: isSending || (!!sendingTestSlug && !isSending) ? 0.6 : 1,
-                                fontFamily: "Arial, sans-serif", whiteSpace: "nowrap",
-                              }}
-                            >
-                              {isSending ? "Sending…" : "Send test"}
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </>
-                )}
-              </div>
-
-              {/* Sub-section D — Email log */}
-              <div className="settings-card">
-                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
-                  <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: 0 }}>Email Log</h2>
-                  {!alertsEmailLogLoading && (
-                    <span style={{ fontSize: 12, color: "#aaa" }}>{alertsEmailLog.length} recent entries</span>
-                  )}
                 </div>
-                <p style={{ fontSize: 13, color: "#888", margin: "0 0 12px" }}>
-                  Recent email delivery events. Filter by status to find bounces or failures.
+                <p style={{ fontSize: 13, color: "#888", margin: "0 0 20px" }}>
+                  Per-user subscriptions (active and paused), up to the 200 most recent.
                 </p>
 
-                {/* Status filter */}
-                <div style={{ marginBottom: 12 }}>
-                  <select
-                    value={alertsEmailLogStatusFilter}
-                    onChange={(e) => setAlertsEmailLogStatusFilter(e.target.value)}
-                    style={{
-                      fontSize: 13, padding: "5px 10px", borderRadius: 8,
-                      border: "1px solid #e0e0e0", background: "#fff",
-                      fontFamily: "Arial, sans-serif", outline: "none",
-                    }}
-                  >
-                    <option value="">All statuses</option>
-                    <option value="sent">Sent</option>
-                    <option value="delivered">Delivered</option>
-                    <option value="opened">Opened</option>
-                    <option value="clicked">Clicked</option>
-                    <option value="bounced">Bounced</option>
-                    <option value="complained">Complained</option>
-                    <option value="failed">Failed</option>
-                  </select>
-                </div>
-
-                {alertsEmailLogLoading ? (
-                  <div style={{ padding: "16px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>Loading…</div>
-                ) : alertsEmailLog.length === 0 ? (
-                  <div style={{ padding: "16px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>No email log entries yet.</div>
-                ) : (
-                  <>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 90px 1fr 140px", gap: 8, padding: "6px 0", borderBottom: "1px solid #f0f0f0", marginBottom: 4 }}>
-                      {["Email", "Subject", "Status", "Provider ID", "Recorded"].map((col) => (
-                        <div key={col} style={{ fontSize: 11, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: "0.06em" }}>{col}</div>
-                      ))}
-                    </div>
-                    {alertsEmailLog
-                      .filter((e) => !alertsEmailLogStatusFilter || e.status === alertsEmailLogStatusFilter)
-                      .slice(0, 100)
-                      .map((entry) => {
-                        const statusColor: Record<string, string> = {
-                          sent: "#c05621",       // yellow-ish — pending delivery
-                          delivered: "#38a169",  // green — confirmed
-                          opened: "#38a169",
-                          clicked: "#38a169",
-                          bounced: "#e53e3e",    // red — problem
-                          complained: "#e53e3e",
-                          failed: "#c0392b",
-                        };
-                        return (
-                          <div
-                            key={entry.id}
-                            className="settings-module-row"
-                            style={{ display: "grid", gridTemplateColumns: "1fr 1fr 90px 1fr 140px", gap: 8, alignItems: "center" }}
-                          >
-                            <div style={{ fontSize: 12, color: "#1a1a1a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {entry.email}
-                            </div>
-                            <div style={{ fontSize: 12, color: "#555", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {entry.subject ?? "—"}
-                            </div>
-                            <div>
-                              <span style={{
-                                fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 10,
-                                background: `${statusColor[entry.status] ?? "#999"}22`,
-                                color: statusColor[entry.status] ?? "#999",
-                              }}>
-                                {entry.status}
-                              </span>
-                            </div>
-                            <div style={{ fontSize: 11, color: "#aaa", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {entry.provider_message_id ?? "—"}
-                            </div>
-                            <div style={{ fontSize: 12, color: "#aaa" }}>{formatDateBR(entry.recorded_at)}</div>
-                          </div>
-                        );
-                      })}
-                  </>
-                )}
-              </div>
-
-              {/* Sub-section E — Outbox repair */}
-              <div className="settings-card">
-                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
-                  <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: 0 }}>Outbox Repair</h2>
-                  {!alertsOutboxLoading && (
-                    <span style={{ fontSize: 12, color: "#aaa" }}>{alertsOutbox.length} failed</span>
-                  )}
-                </div>
-                <p style={{ fontSize: 13, color: "#888", margin: "0 0 12px" }}>
-                  Failed outbox rows. Use Requeue to reset their status and retry delivery.
-                </p>
-                {alertsOutboxLoading ? (
-                  <div style={{ padding: "16px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>Loading…</div>
-                ) : alertsOutbox.length === 0 ? (
-                  <div style={{ padding: "16px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>
-                    No failed outbox entries. Everything is healthy.
+                {caSubscribersError ? (
+                  <div style={{ padding: "16px", background: "#fff5f5", borderRadius: 8, color: "#e53e3e", fontSize: 13 }}>
+                    {caSubscribersError}
                   </div>
+                ) : caSubscribersLoading ? (
+                  <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>Loading…</div>
+                ) : caSubscribers.length === 0 ? (
+                  <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>No subscribers found.</div>
                 ) : (
-                  <>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 70px 110px 100px", gap: 8, padding: "6px 0", borderBottom: "1px solid #f0f0f0", marginBottom: 4 }}>
-                      {["Email", "Source", "Attempts", "Last attempt", "Actions"].map((col) => (
-                        <div key={col} style={{ fontSize: 11, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: "0.06em" }}>{col}</div>
-                      ))}
-                    </div>
-                    {alertsOutbox.map((row) => {
-                      const isRequeuing = requeueingOutboxId === row.id;
-                      return (
-                        <div
-                          key={row.id}
-                          className="settings-module-row"
-                          style={{ display: "grid", gridTemplateColumns: "1fr 120px 70px 110px 100px", gap: 8, alignItems: "center" }}
-                        >
-                          <div style={{ fontSize: 13, color: "#1a1a1a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {row.subscriber?.email ?? "—"}
-                          </div>
-                          <div style={{ fontSize: 12, color: "#888" }}>{row.event?.source_slug ?? "—"}</div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: "#e53e3e" }}>{row.send_attempts}</div>
-                          <div style={{ fontSize: 12, color: "#aaa" }}>
-                            {row.last_attempt_at ? formatDateBR(row.last_attempt_at) : "—"}
-                          </div>
-                          <div>
-                            <button
-                              onClick={() => handleAlertsRequeueOutbox(row.id)}
-                              disabled={!!requeueingOutboxId}
-                              style={{
-                                fontSize: 12, padding: "5px 10px", borderRadius: 6,
-                                border: `1px solid ${ORANGE}`, background: "#fff", color: ORANGE,
-                                cursor: isRequeuing ? "wait" : "pointer",
-                                opacity: isRequeuing || (!!requeueingOutboxId && !isRequeuing) ? 0.6 : 1,
-                                fontFamily: "Arial, sans-serif", whiteSpace: "nowrap",
-                              }}
-                            >
-                              {isRequeuing ? "…" : "Requeue"}
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </>
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ textAlign: "left", color: "#999", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                          <th style={{ padding: "8px 10px", fontWeight: 700 }}>Email</th>
+                          <th style={{ padding: "8px 10px", fontWeight: 700 }}>Source</th>
+                          <th style={{ padding: "8px 10px", fontWeight: 700, textAlign: "center" }}>Active</th>
+                          <th style={{ padding: "8px 10px", fontWeight: 700 }}>Cadence override</th>
+                          <th style={{ padding: "8px 10px", fontWeight: 700 }}>Created</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {caSubscribers.map((s) => (
+                          <tr key={s.subscription_id} style={{ borderTop: "1px solid #f0f0f0" }}>
+                            <td style={{ padding: "10px", fontWeight: 600, color: "#1a1a1a", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {s.email}
+                            </td>
+                            <td style={{ padding: "10px", color: "#666", whiteSpace: "nowrap" }}>{s.source_slug}</td>
+                            <td style={{ padding: "10px", textAlign: "center" }}>
+                              <span style={{
+                                fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 12,
+                                background: s.is_active ? "rgba(72,187,120,0.15)" : "rgba(160,160,160,0.15)",
+                                color: s.is_active ? "#38a169" : "#999",
+                              }}>
+                                {s.is_active ? "Active" : "Paused"}
+                              </span>
+                            </td>
+                            <td style={{ padding: "10px", color: s.cadence_override ? "#444" : "#bbb" }}>
+                              {s.cadence_override ?? "—"}
+                            </td>
+                            <td style={{ padding: "10px", color: "#888", whiteSpace: "nowrap" }}>{formatDateBR(s.created_at)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* 4 — Recent email log */}
+              <div className="settings-card">
+                <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>
+                  Recent email log
+                </h2>
+                <p style={{ fontSize: 13, color: "#888", margin: "0 0 20px" }}>
+                  The 100 most recent alert email-delivery records.
+                </p>
+
+                {caEmailLogError ? (
+                  <div style={{ padding: "16px", background: "#fff5f5", borderRadius: 8, color: "#e53e3e", fontSize: 13 }}>
+                    {caEmailLogError}
+                  </div>
+                ) : caEmailLogLoading ? (
+                  <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>Loading…</div>
+                ) : caEmailLog.length === 0 ? (
+                  <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>No emails sent yet.</div>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                      <thead>
+                        <tr style={{ textAlign: "left", color: "#999", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                          <th style={{ padding: "8px 10px", fontWeight: 700 }}>Time</th>
+                          <th style={{ padding: "8px 10px", fontWeight: 700 }}>Email</th>
+                          <th style={{ padding: "8px 10px", fontWeight: 700 }}>Subject</th>
+                          <th style={{ padding: "8px 10px", fontWeight: 700, textAlign: "center" }}>Status</th>
+                          <th style={{ padding: "8px 10px", fontWeight: 700 }}>Provider id</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {caEmailLog.map((row) => {
+                          const ok = row.status === "sent" || row.status === "delivered";
+                          const bad = row.status === "bounced" || row.status === "failed" || row.status === "complained";
+                          const pillBg = ok ? "rgba(72,187,120,0.15)" : bad ? "rgba(229,62,62,0.12)" : "rgba(160,160,160,0.15)";
+                          const pillColor = ok ? "#38a169" : bad ? "#e53e3e" : "#999";
+                          return (
+                            <tr key={row.id} style={{ borderTop: "1px solid #f0f0f0" }}>
+                              <td style={{ padding: "10px", color: "#888", whiteSpace: "nowrap" }}>{formatDateBR(row.recorded_at)}</td>
+                              <td style={{ padding: "10px", fontWeight: 600, color: "#1a1a1a", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {row.email}
+                              </td>
+                              <td style={{ padding: "10px", color: "#555", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {row.subject}
+                              </td>
+                              <td style={{ padding: "10px", textAlign: "center" }}>
+                                <span style={{
+                                  fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 12,
+                                  background: pillBg, color: pillColor, textTransform: "capitalize", whiteSpace: "nowrap",
+                                }}>
+                                  {row.status}
+                                </span>
+                              </td>
+                              <td style={{ padding: "10px", color: "#bbb", fontFamily: "monospace", fontSize: 11, whiteSpace: "nowrap" }}>
+                                {row.provider_message_id ? `${row.provider_message_id.slice(0, 14)}…` : "—"}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </div>
 
@@ -2112,33 +2027,6 @@ export default function DesktopView(): React.ReactElement | null {
                           outline: "none", boxSizing: "border-box",
                         }}
                       />
-                      <div style={{ display: "flex", gap: 4, marginTop: 10 }}>
-                        {([
-                          { id: "all" as const,               label: "All" },
-                          { id: "oil_gas" as const,           label: "Oil & Gas" },
-                          { id: "fuel_distribution" as const, label: "Fuel Dist." },
-                        ]).map(({ id, label }) => {
-                          const isActive = sgSectorFilter === id;
-                          return (
-                            <button
-                              key={id}
-                              onClick={() => setSgSectorFilter(id)}
-                              style={{
-                                flex: 1, padding: "5px 6px", borderRadius: 6,
-                                border: isActive ? `1px solid ${ORANGE}` : "1px solid transparent",
-                                background: isActive ? "rgba(255,80,0,0.10)" : "#f5f5f5",
-                                color: isActive ? ORANGE : "#888",
-                                fontSize: 11, fontWeight: 700, cursor: "pointer",
-                                fontFamily: "Arial, sans-serif", textAlign: "center",
-                                transition: "background 0.15s, border-color 0.15s",
-                              }}
-                              aria-pressed={isActive}
-                            >
-                              {label}
-                            </button>
-                          );
-                        })}
-                      </div>
                     </div>
                     <div style={{ flex: 1, overflowY: "auto", maxHeight: 520 }}>
                       {sgLoading ? (
@@ -2147,7 +2035,7 @@ export default function DesktopView(): React.ReactElement | null {
                         </div>
                       ) : sgFilteredCompanies.length === 0 ? (
                         <div style={{ padding: "24px 16px", textAlign: "center", color: "#bbb", fontSize: 12 }}>
-                          No companies match the current filters.
+                          No companies match the search.
                         </div>
                       ) : (
                         sgFilteredCompanies.map((c) => {
@@ -2515,14 +2403,14 @@ export default function DesktopView(): React.ReactElement | null {
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                         <thead>
                           <tr style={{ borderBottom: "2px solid #ececec" }}>
-                            {["Name", "Source", "Unit", "Current value", "Display order", ""].map((h, i) => (
+                            {["Name", "Source", "Unit", "Current value", ""].map((h, i) => (
                               <th
                                 key={h || i}
                                 style={{
-                                  textAlign: i === 3 || i === 4 ? "right" : "left",
+                                  textAlign: i === 3 ? "right" : "left",
                                   padding: "8px 10px", fontSize: 11, fontWeight: 700,
                                   color: "#888", letterSpacing: "0.02em",
-                                  width: i === 5 ? 90 : undefined,
+                                  width: i === 4 ? 90 : undefined,
                                 }}
                               >
                                 {h}
@@ -2638,16 +2526,6 @@ export default function DesktopView(): React.ReactElement | null {
                                       style={{ ...SG_INPUT_STYLE, textAlign: "right" }}
                                     />
                                   )}
-                                </td>
-                                <td style={{ padding: "6px 10px" }}>
-                                  <input
-                                    type="number"
-                                    step={1}
-                                    value={row.display_order}
-                                    onChange={(e) => handleChangeSgDriverField(index, "display_order", e.target.value)}
-                                    placeholder="0"
-                                    style={{ ...SG_INPUT_STYLE, textAlign: "right", width: 90 }}
-                                  />
                                 </td>
                                 <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
                                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>

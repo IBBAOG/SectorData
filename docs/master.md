@@ -53,9 +53,11 @@ CEO (Eduardo)
      ├─ ETL / Pipelines  (scrapers automáticos + GitHub Actions)
      ├─ Alertas          (subsistema autocontido em alertas/ — LOCAL-ONLY,
      │                    single-recipient Eduardo via Gmail API; coexiste com
-     │                    Alerts Product durante cutover)
-     ├─ Alerts Product   (cloud, multi-recipient — scripts/alerts/, detection +
-     │                    fanout + delivery via Resend, consumido por /alerts)
+     │                    Client Alerts)
+     ├─ Client Alerts    (cloud, só-logado — REBUILD 2026-06-02; scripts/client_alerts/,
+     │                    event-driven via hook no fim de cada ETL + digest diário,
+     │                    delivery via Gmail SMTP, consumido por /alerts. Substituiu
+     │                    o produto antigo anon/double-opt-in/Resend, deletado)
      │
      ├─ Designer         (transversal — identidade visual + boas práticas;
      │                    consultado pelos dash-* antes de mudança visual)
@@ -84,8 +86,8 @@ Reforma cross-cutting (Ondas 1–3, range `fac9e522..4ccca2b8`, ~30 commits) que
 
 | Status | Rotas |
 |---|---|
-| **Mobile-eligible (13)** | `/home`, `/well-by-well`, `/stock-guide`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/anp-cdp-diaria`, `/market-share`, `/anp-glp`, `/price-bands`, `/subsidy-tracker`, `/diesel-gasoline-margins`, `/imports-exports`, `/navios-diesel` |
-| **Mobile-excluded / desktop-only (8)** | `/stocks`, `/admin-panel`, `/admin-analytics`, `/news-hunter`, `/alerts`, `/profile`, `/anp-cdp`, `/anp-prices` |
+| **Mobile-eligible (14)** | `/home`, `/well-by-well`, `/stock-guide`, `/anp-cdp-bsw`, `/anp-cdp-depletion`, `/anp-cdp-diaria`, `/market-share`, `/anp-glp`, `/price-bands`, `/subsidy-tracker`, `/diesel-gasoline-margins`, `/imports-exports`, `/navios-diesel`, `/alerts` (dual-view desde o rebuild 2026-06-02) |
+| **Mobile-excluded / desktop-only (7)** | `/stocks`, `/admin-panel`, `/admin-analytics`, `/news-hunter`, `/profile`, `/anp-cdp`, `/anp-prices` |
 
 ## Departamentos
 
@@ -96,7 +98,7 @@ Reforma cross-cutting (Ondas 1–3, range `fac9e522..4ccca2b8`, ~30 commits) que
 | Dados Locais | [`worker_dados-locais`](../.claude/agents/worker_dados-locais.md) | `data/`, `scripts/manual/dg_margins_upload.py`, `scripts/manual/price_bands_upload.py` | [`docs/dados-locais/PRD.md`](dados-locais/PRD.md) |
 | ETL / Pipelines | [`worker_etl-pipelines`](../.claude/agents/worker_etl-pipelines.md) | `DADOS/`, `output/`, `scripts/pipelines/` (todos os scrapers), `.github/workflows/` dos scrapers | [`docs/etl-pipelines/PRD.md`](etl-pipelines/PRD.md) |
 | Alertas (legado, local-only) | [`worker_alertas`](../.claude/agents/worker_alertas.md) | `alertas/` (autocontido, gitignored) | [`docs/alertas/PRD.md`](alertas/PRD.md) |
-| Alerts Product (cloud, multi-recipient) | [`worker_alerts-product`](../.claude/agents/worker_alerts-product.md) | `scripts/alerts/`, `src/app/api/alerts/`, `.github/workflows/alerts_*.yml`, email templates | [`docs/alerts/PRD.md`](alerts/PRD.md) |
+| Client Alerts (cloud, só-logado — rebuild 2026-06-02) | [`worker_alerts-product`](../.claude/agents/worker_alerts-product.md) | `scripts/client_alerts/`, `.github/workflows/client_alerts_digest.yml` + hook step nos ~15 ETLs, email templates. (Produto antigo `scripts/alerts/` + `alerts_*.yml` deletado.) Delivery via Gmail SMTP (`GMAIL_APP_PASSWORD`). | [`docs/app/alerts.md`](app/alerts.md) + [`docs/etl-pipelines/PRD.md`](etl-pipelines/PRD.md) § "Client Alerts" |
 | Security | [`worker_pen-test`](../.claude/agents/worker_pen-test.md) (a contratar) | `docs/security/` — threat model, incident response, secret rotation, pen-test reports | [`docs/security/README.md`](security/README.md) |
 
 ## Sub-agentes do APP (donos de dashboard)
@@ -122,7 +124,7 @@ Cada um possui um módulo (ou bundle, no caso de admin). Cada um auto-documenta 
 | [`worker_dash-subsidy-tracker`](../.claude/agents/worker_dash-subsidy-tracker.md) | `/subsidy-tracker` (Fuel Distribution — dados proprietários) | [`docs/app/subsidy-tracker.md`](app/subsidy-tracker.md) |
 | [`worker_dash-stock-guide`](../.claude/agents/worker_dash-stock-guide.md) | `/stock-guide` (Oil & Gas / Equities — comps + sensibilidade 2D por empresa; mkt cap/upside/múltiplos computados live via Yahoo proxy a partir de fundamentos armazenados; admin-curated, hide-aware; Client + Admin) | [`docs/app/stock-guide.md`](app/stock-guide.md) |
 | [`worker_dash-admin-analytics`](../.claude/agents/worker_dash-admin-analytics.md) | `/admin-analytics` (Admin-only — sem `module_visibility`; backed por `app_events`) | [`docs/app/admin-analytics.md`](app/admin-analytics.md) |
-| [`worker_dash-alerts`](../.claude/agents/worker_dash-alerts.md) | `/alerts` (User-Facing Email Subscriptions — anon double opt-in, hybrid per-source granularity, instant cadence, Resend delivery via `worker_alerts-product`) | [`docs/app/alerts.md`](app/alerts.md) |
+| [`worker_dash-alerts`](../.claude/agents/worker_dash-alerts.md) | `/alerts` (Email Subscriptions — **só-logado** desde o rebuild 2026-06-02; toggle de base = inscrição, sem anon/double-opt-in; cadência read-only por source; dual-view; backend event-driven via `worker_alerts-product` + Gmail SMTP) | [`docs/app/alerts.md`](app/alerts.md) |
 
 ## Papéis transversais (não donos de pasta)
 
@@ -192,7 +194,7 @@ Migration `supabase/migrations/20260527200000_subsidy_reform.sql` (+ hotfix `202
 | `anp_subsidy_history` | **DROPADA** (`DROP TABLE ... CASCADE`). |
 | `anp_subsidy_caps` | Tabela nova. PK `(vigente_desde, tipo_agente)`. Colunas: `cap_brl_l NUMERIC(10,4)`, `observacao`, `inserted_at`. Seed: 4 rows (2026-03-13 unificado em 0.32 + 2026-04-07 split `importador=1.52`/`produtor=1.12`). Mantida manualmente. |
 | `anp_subsidy_commercialization` | Tabela nova. PK `(data_inicio, regiao, tipo_agente)`. Colunas: `data_fim`, `preco_comercializacao`, `ordinal`, `pdf_url`, `inserted_at`. Populada pelo stage HTML novo de `scripts/pipelines/anp/subsidy_diesel_sync.py`. RLS read-open para anon/authenticated; writes via service-role. |
-| `compute_subsidy_reimbursement(date, tipo_agente)` | RPC interna `LANGUAGE sql STABLE SECURITY DEFINER` + `SET search_path = public, pg_temp`. Retorna AVG das 5 regiões de `MIN(MAX(ref − comm, 0), cap)`, ou NULL se faltar input. Granted to anon + authenticated. |
+| `compute_subsidy_reimbursement(date, tipo_agente)` | RPC interna `LANGUAGE sql STABLE SECURITY DEFINER` + `SET search_path = public, pg_temp`. **Desde 2026-06-01 (migration `20260608200000`) retorna valor FIXO `1.12` BRL/L para ambos os agentes; para datas anteriores cai na fórmula histórica** AVG das 5 regiões de `MIN(MAX(ref − comm, 0), cap)`, ou NULL se faltar input. Granted to anon + authenticated. |
 | 4 triggers em `price_bands` | (a) `populate_pb_w_subsidy_on_insert` BEFORE INSERT/UPDATE OF (date, product, bba_import_parity, petrobras_price) em `price_bands` para rows de Diesel — preenche `bba_import_parity_w_subsidy` e `petrobras_price_w_subsidy`. (b) `recompute_pb_on_reference_change` AFTER em `anp_subsidy_diesel_reference`. (c) `recompute_pb_on_comm_change` AFTER em `anp_subsidy_commercialization`. (d) `recompute_pb_on_caps_change` AFTER em `anp_subsidy_caps`. Os 3 AFTER refrescam os rows afetados em `price_bands` via self-UPDATE para re-disparar a BEFORE. |
 | `get_subsidy_tracker_diesel()` | **REWRITE** (DROP+CREATE). Nova signature retorna 11 colunas: `date`, `ipp`, `ipp_adjusted`, `petrobras`, `petrobras_adjusted`, `anp_reference_importador`, `anp_reference_produtor`, `anp_commercialization_importador`, `anp_commercialization_produtor`, `regions_importador JSONB`, `regions_produtor JSONB`. Sufixos `_importador`/`_produtor` carregam as duas trilhas. `ipp_adjusted = ipp − reimb_importador`; `petrobras_adjusted = petrobras + reimb_produtor`. SECURITY DEFINER + `search_path = public, pg_temp` + GRANT anon + authenticated. |
 | `get_data_sources_freshness()` | **Hotfix** (`20260527300000_data_sources_freshness_subsidy_fix.sql`). DROP+CREATE — removeu branch de `anp_subsidy_history` (DROPADA na reforma) e adicionou branches `anp_subsidy_caps` e `anp_subsidy_commercialization` (ambos por `MAX(inserted_at)`). Total: **23 sources** (era 22 pré-fix). |

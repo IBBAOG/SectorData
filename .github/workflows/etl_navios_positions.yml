@@ -28,3 +28,18 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      # Client Alerts hook — these bases are 'digest' cadence, so this only
+      # records new-period events; the daily digest workflow delivers them.
+      - name: Client Alerts — record events (vessel_positions + port_arrivals)
+        continue-on-error: true   # non-critical side-effect — never fail the data pipeline
+        if: success()
+        run: python -m scripts.client_alerts.run_base --source vessel_positions --source port_arrivals
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY:      ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GMAIL_ADDRESS:      ${{ vars.GMAIL_ADDRESS || 'ibbaogproject@gmail.com' }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERTS_SENDER_EMAIL:       ${{ vars.ALERTS_SENDER_EMAIL || 'SectorData Alerts <ibbaogproject@gmail.com>' }}
+          ALERTS_FRONTEND_URL:       ${{ vars.ALERTS_FRONTEND_URL || 'https://oilandgasdata.vercel.app' }}

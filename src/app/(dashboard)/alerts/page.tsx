@@ -1,24 +1,25 @@
 "use client";
 
-// ─── /alerts — page entry point ──────────────────────────────────────────────
+// ─── /alerts — viewport router ──────────────────────────────────────────────
 //
-// /alerts is desktop-only by CTO decision (mobile reform wave 2, § 3.1).
-// MobileExcludedRedirect handles the mobile redirect to /home as a no-op on
-// desktop; DesktopView renders unconditionally for all visitors.
+// Rebuilt logged-in-only email subscription dashboard (Phase 4). Dual-view per
+// CLAUDE.md § Dual-view policy — the shared brain lives in useAlertsData.ts and
+// both Views consume it.
 //
-// Transactional sub-pages are NOT affected:
-//   /alerts/confirm       — double opt-in confirmation (mobile-safe, no redirect)
-//   /alerts/unsubscribe   — one-click unsubscribe (mobile-safe, no redirect)
-// ─────────────────────────────────────────────────────────────────────────────
+// Access tier: clients-only. `module_visibility('alerts')` is
+// clients=true / public=false, so Anon visitors are redirected to /home by
+// useModuleVisibilityGuard("alerts") (called inside each View). The subscriber's
+// email is implicit (their auth email) — no anonymous signup here.
+//
+// useIsMobile is SSR-safe (returns false on the server / first paint, flips
+// after mount via UA + maxTouchPoints — never on resize), so desktop renders
+// for a single frame on a phone, then the mobile View takes over.
 
-import MobileExcludedRedirect from "@/components/dashboard/mobile/MobileExcludedRedirect";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import DesktopView from "./desktop/View";
+import MobileView from "./mobile/View";
 
 export default function AlertsPage(): React.ReactElement {
-  return (
-    <>
-      <MobileExcludedRedirect slug="alerts" displayName="Alerts" />
-      <DesktopView />
-    </>
-  );
+  const isMobile = useIsMobile();
+  return isMobile ? <MobileView /> : <DesktopView />;
 }

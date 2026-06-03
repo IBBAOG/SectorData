@@ -49,6 +49,7 @@ jobs:
       # the other ports' data is in the CSV and should be persisted to Supabase.
       # The job will still fail overall (set in final step).
       - name: Importar dados para Supabase
+        id: import
         if: success() || steps.scrape.conclusion == 'failure'
         run: |
           npm install @supabase/supabase-js
@@ -56,6 +57,22 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      # Client Alerts hook — gated on the IMPORT step (not the job), because the
+      # final watchdog step below intentionally exits 1 when a port scrape failed.
+      # 'navios_diesel' is 'digest' cadence, so this only records new-period events.
+      - name: Client Alerts — record events (navios_diesel)
+        continue-on-error: true   # non-critical side-effect — never fail the data pipeline
+        if: steps.import.conclusion == 'success'
+        run: python -m scripts.client_alerts.run_base --source navios_diesel
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY:      ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GMAIL_ADDRESS:      ${{ vars.GMAIL_ADDRESS || 'ibbaogproject@gmail.com' }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERTS_SENDER_EMAIL:       ${{ vars.ALERTS_SENDER_EMAIL || 'SectorData Alerts <ibbaogproject@gmail.com>' }}
+          ALERTS_FRONTEND_URL:       ${{ vars.ALERTS_FRONTEND_URL || 'https://oilandgasdata.vercel.app' }}
 
       - name: Propagar falha do watchdog
         if: steps.scrape.conclusion == 'failure'

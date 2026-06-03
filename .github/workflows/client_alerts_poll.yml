@@ -1,0 +1,48 @@
+name: Client Alerts — Safety-net Poll
+
+# Every 20 minutes, run the immediate path for EVERY active source. This:
+#   * fires alerts for the hook-less Data Input bases (price_bands, d_g_margins),
+#     which are edited via the admin UI with no link to the alert engine, within
+#     ~20 min of an admin edit; and
+#   * backstops every other base if an ETL hook ever fails to run.
+#
+# Safe to run on a schedule: emit is period-watermarked and every fanout/outbox
+# write is UNIQUE-deduped, so a no-op poll sends nothing and a poll that races an
+# ETL hook never double-sends.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/20 * * * *'   # every 20 minutes
+
+# Never overlap a poll with the previous one (keeps watermark advances serial).
+concurrency:
+  group: client-alerts-poll
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Poll every active source (immediate path)
+        run: python -m scripts.client_alerts.run_base --all-active
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY:      ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GMAIL_ADDRESS:      ${{ vars.GMAIL_ADDRESS || 'ibbaogproject@gmail.com' }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERTS_SENDER_EMAIL: ${{ vars.ALERTS_SENDER_EMAIL || 'SectorData Alerts <ibbaogproject@gmail.com>' }}
+          ALERTS_FRONTEND_URL: ${{ vars.ALERTS_FRONTEND_URL || 'https://oilandgasdata.vercel.app' }}

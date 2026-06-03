@@ -749,6 +749,14 @@ export default function MobileView(): React.ReactElement {
             </div>
           )}
 
+          {/* Gasoline subsidy note — fixed R$ 0.44/L delta from Jun 2026
+              (Petrobras +0.44, Import Parity −0.44); R$ 3.05 fixed May 29–31. */}
+          {filters.product === "Gasoline" && (
+            <div style={{ padding: "2px 16px 8px", fontSize: 11, color: "var(--mobile-text-muted)" }}>
+              Dashed lines = w/ subsidy: fixed R$ 0.44/L delta from Jun 2026
+            </div>
+          )}
+
           {/* ── Petrobras gap (mirrors desktop badges) ─────────────────── */}
           {gapRows.some((g) => g.pct != null) && (
             <>

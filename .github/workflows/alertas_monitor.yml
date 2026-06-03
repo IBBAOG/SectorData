@@ -21,6 +21,8 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       ALERTAS_DEST_EMAIL: ${{ secrets.ALERTAS_DEST_EMAIL }}
+      GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
       WORKFLOW_DISPATCH_PAT: ${{ secrets.WORKFLOW_DISPATCH_PAT }}
       PYTHONIOENCODING: utf-8
 
@@ -51,12 +53,8 @@ jobs:
             echo "::error::Secret SUPABASE_SERVICE_KEY não configurado"
             ok=false
           fi
-          if [ -z "${{ secrets.GMAIL_CREDENTIALS_JSON }}" ]; then
-            echo "::error::Secret GMAIL_CREDENTIALS_JSON não configurado"
-            ok=false
-          fi
-          if [ -z "${{ secrets.GMAIL_TOKEN_JSON }}" ]; then
-            echo "::error::Secret GMAIL_TOKEN_JSON não configurado"
+          if [ -z "$GMAIL_APP_PASSWORD" ]; then
+            echo "::error::Secret GMAIL_APP_PASSWORD não configurado"
             ok=false
           fi
           if [ -z "$WORKFLOW_DISPATCH_PAT" ]; then
@@ -64,14 +62,6 @@ jobs:
           fi
           if [ "$ok" = "false" ]; then exit 1; fi
           echo "Secrets OK."
-
-      - name: Reconstruir credenciais Gmail a partir de secrets
-        run: |
-          # Secrets contêm o conteúdo JSON completo dos arquivos OAuth do Gmail.
-          # Eles são escritos em disco para que notificador.py os encontre no path esperado.
-          # NUNCA commitar credentials.json ou token.json — estão no .gitignore.
-          echo '${{ secrets.GMAIL_CREDENTIALS_JSON }}' > alertas/credentials.json
-          echo '${{ secrets.GMAIL_TOKEN_JSON }}' > alertas/token.json
 
       - name: Rodar monitor
         run: |

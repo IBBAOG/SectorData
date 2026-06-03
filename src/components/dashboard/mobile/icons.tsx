@@ -208,6 +208,25 @@ export const BookmarkIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** Candlestick chart (two candles with high/low wicks). Used by the global
+ *  mobile Stock Guide pill (floating shortcut alongside Home and News Hunter).
+ *  Reads as "equities research" — deliberately distinct from BarChartIcon
+ *  (filled bars, /market-share style) and the /stocks line-chart glyph. Mirrors
+ *  the candlestick added to the shared moduleIcons registry for /stock-guide so
+ *  the pill and the /home tile show the same identity. */
+export const StockGuideIcon = (p: IconProps) => (
+  <Icon {...p}>
+    {/* Left candle — taller body, wicks above and below */}
+    <line x1="8" y1="3" x2="8" y2="6" />
+    <rect x="6" y="6" width="4" height="8" rx="0.5" />
+    <line x1="8" y1="14" x2="8" y2="17" />
+    {/* Right candle — shorter body, sitting lower */}
+    <line x1="16" y1="7" x2="16" y2="10" />
+    <rect x="14" y="10" width="4" height="6" rx="0.5" />
+    <line x1="16" y1="16" x2="16" y2="20" />
+  </Icon>
+);
+
 /** Folded newspaper with masthead + column lines. Used by the global mobile
  *  News Hunter pill (floating shortcut alongside the Home pill) and any
  *  news-related affordances that need an at-a-glance "press / feed" glyph. */
