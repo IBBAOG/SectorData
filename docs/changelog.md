@@ -6,6 +6,14 @@ Entries newest first.
 
 ---
 
+## 2026-06-03 — `/imports-exports` By Origin Country sourced from ComexStat (source split)
+
+- The **By Origin Country** stacked chart and the YoY table `paises` scope were migrated from `anp_desembaracos` (ANP Desembaraços) to `mdic_comex` (ComexStat, `flow='import'`). **Rationale**: ComexStat publishes month M several weeks ahead of ANP Desembaraços, and the user tracks ComexStat — so the origin-country view now reflects the freshest available month.
+- **Source split is intentional and permanent**: the **By Importer (Brazil)** chart and the YoY `importers` scope stay on `anp_desembaracos` — it is the only source carrying CNPJ / importer identity. The Exports tab already read ComexStat.
+- **Affected RPCs** (signatures + return columns kept verbatim): `get_imports_exports_paises_stacked` and `get_imports_exports_yoy_table` (only the `p_scope='paises'` branch). Both flipped to `SECURITY DEFINER` (MDIC scope, no user-aware RLS). `total_kg` now sums `mdic_comex.volume_kg`. Country labels emitted as canonical PT (`mdic_comex.pais` matches the existing frontend pin map — no SQL normalization).
+- **A month not yet published never renders as zero** — the chart omits absent months instead of drawing a false zero line.
+- Migration `20260608400000_imports_exports_paises_from_comexstat.sql`. See `docs/app/imports-exports.md` and `docs/supabase/PRD.md` § Imports & Exports RPCs.
+
 ## 2026-06-01 — Fixed fuel subsidy regime (diesel 1.12 / gasoline 0.44)
 
 - Regulatory change effective **2026-06-01**: the fuel subsidy became a **flat value** for both agents (`importador` and `produtor`). History before 2026-06-01 is untouched.
