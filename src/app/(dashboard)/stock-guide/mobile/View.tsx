@@ -5,16 +5,22 @@
 // Same single brain (useStockGuideData), mobile-first presentation, NO export
 // (§ mobile reform — export is desktop-only).
 //
-//   1. Subtitle + sector filter chip row (opens FilterDrawer).
-//   2. Comps as MobileDataCards: Company + Ticker + Recomm chip header; TP,
-//      live Market cap, Upside KPIs; compact horizontal-scroll mini-table for
-//      the Y1/Y2 multiple pairs. Tap → sensitivity grid in a BottomSheet.
+//   1. Subtitle + sector filter chip row (opens FilterDrawer) + a Y1/Y2 year
+//      toggle for the forward-multiple columns.
+//   2. Comps as a compact SUMMARY TABLE with ALL companies (mirrors the desktop
+//      comps table): a sticky Company column on the left + horizontal scroll for
+//      the rest. Columns: Ticker · TP · Recomm · Upside · Mkt cap · then the six
+//      forward groups (EV/EBITDA, P/E, FCFE Yield, Div Yield, EBITDA, Volumes)
+//      for the SELECTED forward year (toggle Y1/Y2). Tap a row → it highlights
+//      (orange left-border) and the sensitivity tables open in a BottomSheet.
 //   3. Restricted + assumptions footnote card.
 //
 // [mobile-only] divergences vs. desktop:
-//   • Comps render as cards, not one wide sticky table (the desktop table is
-//     unusable on a phone). The Y1/Y2 multiples live in a per-card mini-table.
-//   • Sensitivity opens in a BottomSheet on tap rather than a panel below.
+//   • The forward-multiple pairs show ONE year at a time via a Y1/Y2 toggle (the
+//     desktop shows both years side-by-side; 12 numeric columns won't fit a
+//     phone even with horizontal scroll). The toggle preserves every metric and
+//     both years — it just trades width for a tap.
+//   • Sensitivity opens in a BottomSheet on row tap rather than a panel below.
 //   • No ExportPanel / Refresh-quotes button in the header (quotes still fetch
 //     once on load via the shared hook; manual refresh is a desktop affordance).
 //
@@ -51,6 +57,19 @@ import type {
 
 const MOBILE_ACCENT = "#ff5000";
 
+// Comps-table header band — solid near-black with white text, matching the
+// desktop comps header (and the source Itaú BBA comps sheet).
+const HEADER_BG = "#0a0a0a";
+const HEADER_FG = "#f5f5f5";
+const HEADER_FG_DIM = "rgba(245,245,245,0.62)";
+
+// Sticky Company column width on mobile (narrower than desktop's 176px).
+const STICKY_COL_WIDTH = 132;
+// Fixed width for each scrolling numeric column → predictable horizontal scroll.
+const NUM_COL_WIDTH = 72;
+// Right-edge shadow so the sticky Company column reads as floating above the body.
+const STICKY_SHADOW = "6px 0 8px -6px rgba(0,0,0,0.18)";
+
 const SECTOR_LABEL: Record<StockGuideSector, string> = {
   oil_gas: "Oil & Gas",
   fuel_distribution: "Fuel Distribution",
@@ -58,18 +77,18 @@ const SECTOR_LABEL: Record<StockGuideSector, string> = {
 
 // ─── Recommendation chip (mobile) ─────────────────────────────────────────────
 
-function RecChip({ code }: { code: StockGuideRecommendation | null }): React.ReactElement | null {
-  if (!code) return null;
+function RecChip({ code }: { code: StockGuideRecommendation | null }): React.ReactElement {
+  if (!code) return <span style={{ color: "var(--mobile-text-faint)" }}>—</span>;
   const { bg, fg } = recommendationColors(code);
   return (
     <span
       style={{
         display: "inline-block",
-        padding: "2px 8px",
+        padding: "1px 6px",
         borderRadius: 4,
-        fontSize: 10,
+        fontSize: 9.5,
         fontWeight: 700,
-        letterSpacing: "0.04em",
+        letterSpacing: "0.03em",
         background: bg,
         color: fg,
       }}
@@ -79,240 +98,279 @@ function RecChip({ code }: { code: StockGuideRecommendation | null }): React.Rea
   );
 }
 
-// ─── KPI block ─────────────────────────────────────────────────────────────────
+// ─── Comps summary table ───────────────────────────────────────────────────────
+//
+// Sticky Company column + horizontal scroll. The six forward groups render for
+// the SELECTED year only (Y1/Y2 toggle), so the column count stays phone-sized
+// while every metric/year remains reachable.
 
-function Kpi({
-  label,
-  value,
-  color,
-}: {
+interface YearCol {
+  /** Group label shown in the header. */
   label: string;
-  value: string;
-  color?: string;
-}): React.ReactElement {
-  return (
-    <div style={{ minWidth: 0 }}>
-      <div
-        style={{
-          fontSize: 10,
-          fontWeight: 600,
-          textTransform: "uppercase",
-          letterSpacing: "0.04em",
-          color: "var(--mobile-text-muted)",
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          fontSize: 15,
-          fontWeight: 700,
-          color: color ?? "var(--mobile-text)",
-          fontVariantNumeric: "tabular-nums",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-// ─── Y1/Y2 mini-table (per card) ──────────────────────────────────────────────
-
-interface MiniRow {
-  label: string;
-  y1: number | null;
-  y2: number | null;
+  /** Keys into the computed row for the [Y1, Y2] pair. */
+  y1: keyof StockGuideComputedRow;
+  y2: keyof StockGuideComputedRow;
+  /** Renderer for a single value of this group. */
   fmt: (v: number | null) => string;
   /** True for the 4 live-derived multiples → render "—" while quotes load. */
   live?: boolean;
 }
 
-function MiniMultiples({
-  row,
-  y1Label,
-  y2Label,
+const YEAR_COLS: YearCol[] = [
+  { label: "EV/EBITDA",  y1: "evEbitdaY1",  y2: "evEbitdaY2",  fmt: (v) => fmtNum(v, 1), live: true },
+  { label: "P/E",        y1: "peY1",        y2: "peY2",        fmt: (v) => fmtNum(v, 1), live: true },
+  { label: "FCFE Yld",   y1: "fcfeYieldY1", y2: "fcfeYieldY2", fmt: (v) => fmtPct(v, 1), live: true },
+  { label: "Div Yld",    y1: "divYieldY1",  y2: "divYieldY2",  fmt: (v) => fmtPct(v, 1), live: true },
+  { label: "EBITDA",     y1: "ebitda_y1",   y2: "ebitda_y2",   fmt: (v) => fmtMn(v) },
+  { label: "Volumes",    y1: "volumes_y1",  y2: "volumes_y2",  fmt: (v) => fmtMn(v) },
+];
+
+// Single (non-paired) numeric/text columns, after the sticky Company column.
+const SINGLE_COLS = ["Ticker", "TP", "Rec.", "Upside", "Mkt cap"] as const;
+
+const thBase: React.CSSProperties = {
+  padding: "7px 9px",
+  textAlign: "right",
+  color: HEADER_FG,
+  background: HEADER_BG,
+  fontWeight: 700,
+  fontSize: 10,
+  whiteSpace: "nowrap",
+  borderBottom: "1px solid rgba(255,255,255,0.18)",
+};
+
+function CompsTable({
+  rows,
+  yearLabel,
+  yearKey,
   quotesLoading,
+  selectedTicker,
+  onSelect,
 }: {
-  row: StockGuideComputedRow;
-  y1Label: string;
-  y2Label: string;
+  rows: StockGuideComputedRow[];
+  yearLabel: string;
+  yearKey: "y1" | "y2";
   quotesLoading: boolean;
+  selectedTicker: string | null;
+  onSelect: (ticker: string) => void;
 }): React.ReactElement {
-  const miniRows: MiniRow[] = [
-    { label: "EV/EBITDA",  y1: row.evEbitdaY1,  y2: row.evEbitdaY2,  fmt: (v) => fmtNum(v, 1), live: true },
-    { label: "P/E",        y1: row.peY1,        y2: row.peY2,        fmt: (v) => fmtNum(v, 1), live: true },
-    { label: "FCFE Yield", y1: row.fcfeYieldY1, y2: row.fcfeYieldY2, fmt: (v) => fmtPct(v, 1), live: true },
-    { label: "Div Yield",  y1: row.divYieldY1,  y2: row.divYieldY2,  fmt: (v) => fmtPct(v, 1), live: true },
-    { label: "EBITDA",     y1: row.ebitda_y1,   y2: row.ebitda_y2,   fmt: (v) => fmtMn(v) },
-    { label: "Volumes",    y1: row.volumes_y1,  y2: row.volumes_y2,  fmt: (v) => fmtMn(v) },
-  ];
+  const totalCols = 1 + SINGLE_COLS.length + YEAR_COLS.length + 1; // + chevron col
   return (
-    <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", marginTop: 10 }}>
+    <div
+      className="sg-comps-scroll"
+      style={{
+        overflowX: "auto",
+        WebkitOverflowScrolling: "touch",
+        borderTop: "1px solid var(--mobile-divider)",
+        borderBottom: "1px solid var(--mobile-divider)",
+        background: "var(--mobile-surface)",
+      }}
+    >
+      <style>{`
+        .sg-comps-scroll tbody tr:active td,
+        .sg-comps-scroll tbody tr:active th { background: var(--mobile-row-press) !important; }
+      `}</style>
       <table
         style={{
           borderCollapse: "collapse",
-          fontSize: 11,
           fontFamily: "Arial, Helvetica, sans-serif",
-          minWidth: "100%",
+          fontSize: 11.5,
         }}
       >
         <thead>
           <tr>
-            <th style={{ textAlign: "left", padding: "3px 8px 3px 0", color: "#f5f5f5", fontWeight: 700, fontSize: 10, background: "#0a0a0a", borderTopLeftRadius: 4, borderBottomLeftRadius: 4 }} />
-            {miniRows.map((m, mi) => (
+            {/* Sticky Company header (corner) */}
+            <th
+              style={{
+                ...thBase,
+                position: "sticky",
+                left: 0,
+                zIndex: 3,
+                textAlign: "left",
+                width: STICKY_COL_WIDTH,
+                minWidth: STICKY_COL_WIDTH,
+                letterSpacing: "0.03em",
+                textTransform: "uppercase",
+                borderRight: "1px solid rgba(255,255,255,0.18)",
+                boxShadow: STICKY_SHADOW,
+              }}
+            >
+              Company
+            </th>
+            {SINGLE_COLS.map((c) => (
               <th
-                key={m.label}
+                key={c}
                 style={{
-                  textAlign: "right",
-                  padding: "3px 8px",
-                  color: "#f5f5f5",
-                  fontWeight: 700,
-                  fontSize: 10,
-                  whiteSpace: "nowrap",
-                  background: "#0a0a0a",
-                  borderTopRightRadius: mi === miniRows.length - 1 ? 4 : undefined,
-                  borderBottomRightRadius: mi === miniRows.length - 1 ? 4 : undefined,
+                  ...thBase,
+                  textAlign: c === "Ticker" ? "left" : "right",
+                  width: NUM_COL_WIDTH,
+                  minWidth: NUM_COL_WIDTH,
                 }}
               >
-                {m.label}
+                {c}
               </th>
             ))}
+            {YEAR_COLS.map((g) => (
+              <th
+                key={g.label}
+                style={{
+                  ...thBase,
+                  width: NUM_COL_WIDTH,
+                  minWidth: NUM_COL_WIDTH,
+                  borderLeft: "1px solid rgba(255,255,255,0.14)",
+                }}
+              >
+                <div>{g.label}</div>
+                <div style={{ fontWeight: 600, fontSize: 9, color: HEADER_FG_DIM }}>
+                  {yearLabel}
+                </div>
+              </th>
+            ))}
+            {/* Chevron affordance column */}
+            <th style={{ ...thBase, width: 26, minWidth: 26, padding: "7px 4px" }} aria-hidden="true" />
           </tr>
         </thead>
         <tbody>
-          {([y1Label, y2Label] as const).map((yl, idx) => (
-            <tr key={yl}>
+          {rows.length === 0 ? (
+            <tr>
               <td
+                colSpan={totalCols}
                 style={{
-                  textAlign: "left",
-                  padding: "3px 8px 3px 0",
-                  fontWeight: 700,
-                  color: "var(--mobile-text)",
-                  whiteSpace: "nowrap",
+                  padding: "28px 12px",
+                  textAlign: "center",
+                  color: "var(--mobile-text-muted)",
+                  fontSize: 12.5,
                 }}
               >
-                {yl}
+                No companies to display.
               </td>
-              {miniRows.map((m) => {
-                const v = idx === 0 ? m.y1 : m.y2;
-                // Live-derived multiples show "—" while quotes load.
-                const gate = m.live === true && quotesLoading;
-                return (
-                  <td
-                    key={m.label}
+            </tr>
+          ) : (
+            rows.map((r, i) => {
+              const isSel = r.ticker === selectedTicker;
+              const rowBg = isSel
+                ? "var(--mobile-accent-fill)"
+                : i % 2 === 0
+                  ? "var(--mobile-surface)"
+                  : "var(--mobile-surface-elevated)";
+              const upsideColor =
+                r.upsidePct == null
+                  ? "var(--mobile-text)"
+                  : r.upsidePct > 0
+                    ? "#15803d"
+                    : r.upsidePct < 0
+                      ? "#b91c1c"
+                      : "var(--mobile-text-muted)";
+              return (
+                <tr
+                  key={r.ticker}
+                  onClick={() => onSelect(r.ticker)}
+                  aria-label={`${r.company_name} — tap for sensitivity`}
+                  style={{ cursor: "pointer", borderBottom: "1px solid var(--mobile-divider)" }}
+                >
+                  {/* Sticky Company cell */}
+                  <th
+                    scope="row"
                     style={{
-                      textAlign: "right",
-                      padding: "3px 8px",
-                      fontVariantNumeric: "tabular-nums",
-                      color: "var(--mobile-text)",
-                      whiteSpace: "nowrap",
+                      position: "sticky",
+                      left: 0,
+                      zIndex: 2,
+                      textAlign: "left",
+                      width: STICKY_COL_WIDTH,
+                      minWidth: STICKY_COL_WIDTH,
+                      padding: "8px 10px",
+                      background: rowBg,
+                      borderRight: "1px solid var(--mobile-border)",
+                      borderLeft: isSel
+                        ? `3px solid ${MOBILE_ACCENT}`
+                        : "3px solid transparent",
+                      boxShadow: STICKY_SHADOW,
                     }}
                   >
-                    {gate && v == null ? "—" : m.fmt(v)}
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        color: "var(--mobile-text)",
+                        fontSize: 12,
+                        lineHeight: 1.2,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {r.company_name}
+                    </div>
+                  </th>
+                  {/* Ticker */}
+                  <td
+                    style={{
+                      ...tdBase(rowBg),
+                      textAlign: "left",
+                      color: "var(--mobile-text-muted)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {r.ticker}
                   </td>
-                );
-              })}
-            </tr>
-          ))}
+                  {/* TP */}
+                  <td style={tdBase(rowBg)}>{fmtNum(r.target_price, 2)}</td>
+                  {/* Recommendation chip */}
+                  <td style={{ ...tdBase(rowBg), textAlign: "right" }}>
+                    <RecChip code={r.recommendation} />
+                  </td>
+                  {/* Upside */}
+                  <td style={{ ...tdBase(rowBg), color: upsideColor, fontWeight: 700 }}>
+                    {quotesLoading && r.upsidePct == null ? "—" : fmtSignedPct(r.upsidePct)}
+                  </td>
+                  {/* Market cap */}
+                  <td style={tdBase(rowBg)}>
+                    {quotesLoading && r.marketCapBrlMn == null ? "—" : fmtMn(r.marketCapBrlMn)}
+                  </td>
+                  {/* Forward groups for the selected year */}
+                  {YEAR_COLS.map((g) => {
+                    const v = r[yearKey === "y1" ? g.y1 : g.y2] as number | null;
+                    const gate = g.live === true && quotesLoading;
+                    return (
+                      <td
+                        key={g.label}
+                        style={{ ...tdBase(rowBg), borderLeft: "1px solid var(--mobile-divider)" }}
+                      >
+                        {gate && v == null ? "—" : g.fmt(v)}
+                      </td>
+                    );
+                  })}
+                  {/* Chevron affordance */}
+                  <td
+                    style={{
+                      ...tdBase(rowBg),
+                      padding: "8px 4px",
+                      textAlign: "center",
+                      color: isSel ? MOBILE_ACCENT : "var(--mobile-text-faint)",
+                      fontWeight: 700,
+                    }}
+                    aria-hidden="true"
+                  >
+                    ›
+                  </td>
+                </tr>
+              );
+            })
+          )}
         </tbody>
       </table>
     </div>
   );
 }
 
-// ─── Comps card ────────────────────────────────────────────────────────────────
-
-function CompsCard({
-  row,
-  y1Label,
-  y2Label,
-  quotesLoading,
-  selected,
-  onTap,
-}: {
-  row: StockGuideComputedRow;
-  y1Label: string;
-  y2Label: string;
-  quotesLoading: boolean;
-  selected: boolean;
-  onTap: () => void;
-}): React.ReactElement {
-  const upsideColor =
-    row.upsidePct == null
-      ? "var(--mobile-text)"
-      : row.upsidePct > 0
-        ? "#15803d"
-        : row.upsidePct < 0
-          ? "#b91c1c"
-          : "var(--mobile-text-muted)";
-  return (
-    <div
-      className="sg-comps-card"
-      onClick={onTap}
-      style={{
-        background: selected ? "var(--mobile-accent-fill)" : "var(--mobile-surface)",
-        borderBottom: "1px solid var(--mobile-divider)",
-        borderLeft: selected
-          ? "3px solid var(--mobile-accent)"
-          : "3px solid transparent",
-        padding: "14px 16px",
-        cursor: "pointer",
-        fontFamily: "Arial, Helvetica, sans-serif",
-      }}
-    >
-      {/* Header: company + ticker + recomm chip */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <div style={{ minWidth: 0 }}>
-          <div
-            style={{
-              fontSize: 16,
-              fontWeight: 700,
-              color: "var(--mobile-text)",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {row.company_name}
-          </div>
-          <div style={{ fontSize: 12, color: "var(--mobile-text-muted)", fontWeight: 600 }}>
-            {row.ticker}
-          </div>
-        </div>
-        <RecChip code={row.recommendation} />
-      </div>
-
-      {/* KPIs: TP · Market cap · Upside */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr 1fr",
-          gap: 10,
-          marginTop: 12,
-        }}
-      >
-        <Kpi label="Target" value={fmtNum(row.target_price, 2)} />
-        <Kpi
-          label="Mkt cap (mn)"
-          value={quotesLoading && row.marketCapBrlMn == null ? "—" : fmtMn(row.marketCapBrlMn)}
-        />
-        <Kpi
-          label="Upside"
-          value={quotesLoading && row.upsidePct == null ? "—" : fmtSignedPct(row.upsidePct)}
-          color={upsideColor}
-        />
-      </div>
-
-      {/* Y1/Y2 multiples mini-table */}
-      <MiniMultiples row={row} y1Label={y1Label} y2Label={y2Label} quotesLoading={quotesLoading} />
-
-      <div style={{ marginTop: 8, fontSize: 11, color: "var(--mobile-accent)", fontWeight: 600 }}>
-        Tap for sensitivity →
-      </div>
-    </div>
-  );
+function tdBase(bg: string): React.CSSProperties {
+  return {
+    padding: "8px 9px",
+    textAlign: "right",
+    fontVariantNumeric: "tabular-nums",
+    color: "var(--mobile-text)",
+    whiteSpace: "nowrap",
+    background: bg,
+  };
 }
 
 // ─── Axis resolution (mobile — mirrors desktop semantics) ─────────────────────
@@ -684,6 +742,8 @@ export default function MobileView(): React.ReactElement {
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // Which forward year the comps table shows (the [mobile-only] Y1/Y2 toggle).
+  const [yearKey, setYearKey] = useState<"y1" | "y2">("y1");
 
   const selectedCompanyName =
     computedRows.find((r) => r.ticker === selectedTicker)?.company_name ?? null;
@@ -694,6 +754,8 @@ export default function MobileView(): React.ReactElement {
   }
 
   if (visLoading || !visible) return <></>;
+
+  const yearLabel = yearKey === "y1" ? config.y1_label : config.y2_label;
 
   return (
     <div
@@ -713,7 +775,8 @@ export default function MobileView(): React.ReactElement {
           lineHeight: 1.3,
         }}
       >
-        Equities research — coverage comps and per-company sensitivity.
+        Equities research — coverage comps and per-company sensitivity. Tap a row
+        for its sensitivity tables.
       </div>
 
       {/* ── Filter chip row: sector ──────────────────────────────────────────── */}
@@ -773,42 +836,82 @@ export default function MobileView(): React.ReactElement {
         </button>
       </div>
 
+      {/* ── Forward-year toggle ──────────────────────────────────────────────── */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "12px 16px 0",
+        }}
+      >
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            textTransform: "uppercase",
+            letterSpacing: "0.04em",
+            color: "var(--mobile-text-muted)",
+          }}
+        >
+          Forward year
+        </span>
+        <div
+          role="group"
+          aria-label="Forward year"
+          style={{
+            display: "inline-flex",
+            border: "1px solid var(--mobile-border)",
+            borderRadius: 20,
+            overflow: "hidden",
+            background: "var(--mobile-surface)",
+          }}
+        >
+          {(["y1", "y2"] as const).map((k) => {
+            const on = yearKey === k;
+            const label = k === "y1" ? config.y1_label : config.y2_label;
+            return (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={on}
+                onClick={() => setYearKey(k)}
+                style={{
+                  padding: "6px 16px",
+                  minHeight: 34,
+                  border: "none",
+                  background: on ? "var(--mobile-accent)" : "transparent",
+                  color: on ? "#fff" : "var(--mobile-text-muted)",
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  fontVariantNumeric: "tabular-nums",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {loading ? (
         <div style={{ padding: "40px 0" }}>
           <BarrelLoading bare />
         </div>
       ) : (
         <>
-          {/* ── Comps cards ──────────────────────────────────────────────────── */}
-          <style>{`
-            .sg-comps-card { transition: background 0.12s ease; }
-            .sg-comps-card:active { background: var(--mobile-row-press) !important; }
-          `}</style>
-          <div style={{ marginTop: 16, borderTop: "1px solid var(--mobile-divider)" }}>
-            {computedRows.length === 0 ? (
-              <div
-                style={{
-                  padding: "32px 16px",
-                  textAlign: "center",
-                  color: "var(--mobile-text-muted)",
-                  fontSize: 13,
-                }}
-              >
-                No companies to display.
-              </div>
-            ) : (
-              computedRows.map((row) => (
-                <CompsCard
-                  key={row.ticker}
-                  row={row}
-                  y1Label={config.y1_label}
-                  y2Label={config.y2_label}
-                  quotesLoading={quotesLoading}
-                  selected={row.ticker === selectedTicker}
-                  onTap={() => handleTap(row.ticker)}
-                />
-              ))
-            )}
+          {/* ── Comps summary table ──────────────────────────────────────────── */}
+          <div style={{ marginTop: 14 }}>
+            <CompsTable
+              rows={computedRows}
+              yearLabel={yearLabel}
+              yearKey={yearKey}
+              quotesLoading={quotesLoading}
+              selectedTicker={selectedTicker}
+              onSelect={handleTap}
+            />
           </div>
 
           {/* ── Footnote card ────────────────────────────────────────────────── */}
