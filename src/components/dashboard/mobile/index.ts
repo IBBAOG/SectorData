@@ -64,6 +64,16 @@ export type { MobileHomePillProps } from "./MobileHomePill";
 export { default as MobileNewsHunterPill } from "./MobileNewsHunterPill";
 export type { MobileNewsHunterPillProps } from "./MobileNewsHunterPill";
 
+// 2026-06-02 — third floating shortcut joining the bottom pill dock. Routes to
+// /stock-guide; auto-hides on /stock-guide itself. Dock geometry generalised
+// to N pills in ./pillDock.ts.
+export { default as MobileStockGuidePill } from "./MobileStockGuidePill";
+export type { MobileStockGuidePillProps } from "./MobileStockGuidePill";
+
+// Shared dock geometry (single source of truth for pill offsets / sizes).
+export { PILL_W, PILL_H, GAP, pillOffset } from "./pillDock";
+export type { PillId } from "./pillDock";
+
 export { default as MobileKebabMenu } from "./MobileKebabMenu";
 export type { MobileKebabMenuProps } from "./MobileKebabMenu";
 

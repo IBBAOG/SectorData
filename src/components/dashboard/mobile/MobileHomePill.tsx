@@ -23,24 +23,14 @@
 //   extends the hit area to ≥48px in every direction (effective 64×60 surface
 //   with a 20px outer halo of invisible padding via padding/margin trick).
 //
-// Positioning math (two modes — paired with MobileNewsHunterPill):
-//   Both pills anchor at `left: 50%` and translate by
-//   `translateX(calc(-50% + var(--pill-offset)))`. Each pill writes
-//   `--pill-offset` inline based on the current route:
-//
-//   ┌──────────────────┬─────────────────┬──────────────────────────────────┐
-//   │ Route            │ Visible pills   │ Home pill offset                 │
-//   ├──────────────────┼─────────────────┼──────────────────────────────────┤
-//   │ /home            │ News Hunter     │  hidden    (n/a)                 │
-//   │ /news-hunter     │ Home only       │  0px       (solo, centered)      │
-//   │ everywhere else  │ Home + News     │  −39px     (paired, balanced)    │
-//   └──────────────────┴─────────────────┴──────────────────────────────────┘
-//
-//   "Paired" offset = −(PILL_W + GAP) / 2 = −(64 + 14) / 2 = −39px, mirroring
-//   the News Hunter pill's +39px so the pair as a group is perfectly centered
-//   around the viewport vertical centerline (inner edges GAP px apart). When
-//   the News Hunter pill auto-hides on /news-hunter, the Home pill snaps back
-//   to the viewport center — the natural resting position of any solo FAB.
+// Positioning:
+//   The Home pill is the leftmost member of the bottom pill dock (Home, News
+//   Hunter, Stock Guide as of 2026-06-02). Geometry is owned by `pillDock.ts`
+//   (single source of truth). All pills anchor at `left: 50%` and translate by
+//   `translateX(calc(-50% + var(--pill-offset)))`; the offset comes from
+//   `pillOffset(pathname, "home")`. `null` means "hide on this route" (we are
+//   on /home). See pillDock.ts § "Geometry" for the formula and the per-route
+//   offset table (Home sits at −78 with 3 pills, −39 with 2).
 //
 // Behaviour:
 //   • Hidden on /home (would be redundant). usePathname() drives the gate.
@@ -55,16 +45,7 @@
 import type { CSSProperties } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { HomeIcon } from "./icons";
-
-const PILL_W = 64;
-const PILL_H = 56;
-// Visual gap between the two pills' inner edges in paired layout, in pixels.
-// Must match the constant of the same name in MobileNewsHunterPill.tsx.
-const GAP = 14;
-// Paired-mode offset from the viewport center.
-// Negative because the Home pill sits to the LEFT of center in paired layout
-// (the News Hunter pill mirrors it with +PAIRED_OFFSET).
-const PAIRED_OFFSET = -(PILL_W + GAP) / 2;
+import { PILL_W, PILL_H, pillOffset } from "./pillDock";
 
 export interface MobileHomePillProps {
   /** Override the route target. Defaults to /home. */
@@ -82,21 +63,12 @@ export default function MobileHomePill(
   const pathname = usePathname();
   const router = useRouter();
 
-  // Hide when already on /home — the pill would just be a no-op.
-  // Tolerate trailing slashes and query strings.
-  const onHome =
-    !!pathname && (pathname === "/home" || pathname.startsWith("/home/"));
-  if (onHome && !forceVisible) return null;
-
-  // Mode resolution — solo on /news-hunter (News Hunter pill is hidden there),
-  // paired on every other route. The offset is exposed as a CSS custom
-  // property so the `:active` rule in globals.css can re-use it without
-  // duplicating route logic. See "Positioning math" in the header comment.
-  const onNewsHunter =
-    !!pathname &&
-    (pathname === "/news-hunter" || pathname.startsWith("/news-hunter/"));
-  const offsetPx = onNewsHunter ? 0 : PAIRED_OFFSET;
-  const positionMode = onNewsHunter ? "solo" : "paired";
+  // Geometry comes from pillDock — null means "hide on this route" (we are on
+  // /home). The offset is exposed as the `--pill-offset` CSS custom property so
+  // the `:active` rule in globals.css can re-use it without duplicating route
+  // logic. See pillDock.ts § "Geometry".
+  const offsetPx = pillOffset(pathname, "home", forceVisible);
+  if (offsetPx === null) return null;
 
   return (
     <button
@@ -104,7 +76,6 @@ export default function MobileHomePill(
       onClick={() => router.push(href)}
       aria-label={ariaLabel}
       className="mobile-home-pill"
-      data-position={positionMode}
       style={
         {
           // Positioning — fixed, route-aware offset, sitting above safe-area

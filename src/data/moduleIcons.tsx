@@ -69,6 +69,23 @@ export function IconStocks({ size = 24, strokeWidth = 2 }: SlugIconProps): IconE
   );
 }
 
+export function IconStockGuide({ size = 24, strokeWidth = 2 }: SlugIconProps): IconElement {
+  // Candlestick chart — two candles with high/low wicks. Reads as "equities
+  // research", deliberately distinct from IconStocks (the /stocks line chart)
+  // and IconMarketShare. Mirrored by StockGuideIcon in the mobile icon set so
+  // the /home tile and the floating Stock Guide pill share one identity.
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" width={size} height={size} aria-hidden="true">
+      <line x1="8" y1="3" x2="8" y2="6" />
+      <rect x="6" y="6" width="4" height="8" rx="0.5" />
+      <line x1="8" y1="14" x2="8" y2="17" />
+      <line x1="16" y1="7" x2="16" y2="10" />
+      <rect x="14" y="10" width="4" height="6" rx="0.5" />
+      <line x1="16" y1="16" x2="16" y2="20" />
+    </svg>
+  );
+}
+
 export function IconNewsHunter({ size = 24, strokeWidth = 2 }: SlugIconProps): IconElement {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" width={size} height={size} aria-hidden="true">
@@ -237,6 +254,8 @@ export function getModuleIcon(slug: string, size = 24, strokeWidth = 2): IconEle
       return <IconPriceBands size={size} strokeWidth={strokeWidth} />;
     case "stocks":
       return <IconStocks size={size} strokeWidth={strokeWidth} />;
+    case "stock-guide":
+      return <IconStockGuide size={size} strokeWidth={strokeWidth} />;
     case "news-hunter":
       return <IconNewsHunter size={size} strokeWidth={strokeWidth} />;
     case "anp-cdp":

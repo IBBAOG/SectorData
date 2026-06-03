@@ -77,6 +77,7 @@ const CATEGORY_TINTS: Record<TileCategory, CategoryTint> = {
 const SLUG_CATEGORY: Record<string, TileCategory> = {
   // Markets
   "stocks": "markets",
+  "stock-guide": "markets",
   "news-hunter": "markets",
   // Oil & Gas
   "well-by-well": "oilgas",

@@ -1,70 +1,71 @@
 "use client";
 
-// MobileNewsHunterPill — middle floating shortcut in the bottom pill dock.
-// Routes the visitor to /news-hunter from anywhere in the mobile app.
+// MobileStockGuidePill — rightmost floating shortcut in the bottom pill dock.
+// Routes the visitor to /stock-guide from anywhere in the mobile app.
 //
 // Why this exists:
-//   /news-hunter became mobile-eligible (commit 26fffd40 on main). Eduardo
-//   asked for a persistent shortcut to the news feed — a sibling of the Home
-//   pill rather than a buried tile in /home. It sits on the same floating row
-//   so the primary affordances are equally tappable. As of 2026-06-02 the row
-//   holds three pills: Home, News Hunter, Stock Guide.
+//   /stock-guide is mobile-eligible (it ships a mobile/View.tsx). Eduardo asked
+//   for it to be reachable on mobile as a floating button next to News Hunter,
+//   mirroring how the news feed got its own pill. It joins the dock as the
+//   third pill (Home, News Hunter, Stock Guide) — 2026-06-02.
 //
 // Visual recipe (Liquid Glass v2):
-//   Identical to MobileHomePill / MobileStockGuidePill — same 64×56 capsule,
+//   Identical to MobileHomePill / MobileNewsHunterPill — same 64×56 capsule,
 //   same blur, border and shadow stack. The only divergence is the icon
-//   (NewspaperIcon) and the horizontal offset relative to the viewport center.
+//   (StockGuideIcon — a candlestick chart, the equities-research identity glyph
+//   also used by the /home tile) and the horizontal offset.
 //
 // Positioning:
 //   Geometry is owned by `pillDock.ts` (single source of truth). All pills
 //   anchor at `left: 50%` and translate by
 //   `translateX(calc(-50% + var(--pill-offset)))`. The offset comes from
-//   `pillOffset(pathname, "news")`; `null` means "hide on this route" (we are
-//   on /news-hunter). See pillDock.ts § "Geometry" for the formula and the
-//   per-route offset table.
+//   `pillOffset(pathname, "stock-guide")`; `null` means "hide on this route"
+//   (we are on /stock-guide). See pillDock.ts § "Geometry" for the formula and
+//   the per-route offset table (Stock Guide sits at +78 with 3 pills, +39 with
+//   2).
 //
 // Behaviour:
-//   • Hidden on /news-hunter (would be redundant) — same pattern Home uses
-//     for /home. Trailing slashes / nested children tolerated by pillDock.
+//   • Hidden on /stock-guide (would be redundant) — same pattern Home/News use.
+//     Trailing slashes / nested children tolerated by pillDock.
 //   • Z-index 1000 (matches the other pills, sits below modals/sheets).
 //   • SSR-safe: usePathname/useRouter are client-only; "use client" at top.
 //   • Respects safe-area-inset-bottom on iOS.
-//   • Visibility-by-role is NOT applied here — the module visibility guard
-//     inside /news-hunter itself handles auth gating, and that is the right
-//     layer. If an admin hides news-hunter from anon, the pill still appears
-//     and tapping it routes via the redirect inside the page. Acceptable —
-//     no extra client-side complexity here.
+//   • Visibility-by-role is NOT applied here — parity with MobileNewsHunterPill.
+//     The module visibility guard inside /stock-guide itself handles auth
+//     gating, which is the right layer. If an admin hides stock-guide from anon,
+//     the pill still appears and tapping it routes via the guard inside the
+//     page. Acceptable — no extra client-side complexity here.
 
 import type { CSSProperties } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { NewspaperIcon } from "./icons";
+import { StockGuideIcon } from "./icons";
 import { PILL_W, PILL_H, pillOffset } from "./pillDock";
 
-export interface MobileNewsHunterPillProps {
-  /** Override the route target. Defaults to /news-hunter. */
+export interface MobileStockGuidePillProps {
+  /** Override the route target. Defaults to /stock-guide. */
   href?: string;
-  /** Accessible label. Defaults to "News Hunter". */
+  /** Accessible label. Defaults to "Stock Guide". */
   ariaLabel?: string;
-  /** Force show even on /news-hunter. Mostly for previews. */
+  /** Force show even on /stock-guide. Mostly for previews. */
   forceVisible?: boolean;
 }
 
-export default function MobileNewsHunterPill(
-  props: MobileNewsHunterPillProps = {},
+export default function MobileStockGuidePill(
+  props: MobileStockGuidePillProps = {},
 ): React.ReactElement | null {
   const {
-    href = "/news-hunter",
-    ariaLabel = "News Hunter",
+    href = "/stock-guide",
+    ariaLabel = "Stock Guide",
     forceVisible = false,
   } = props;
   const pathname = usePathname();
   const router = useRouter();
 
   // Geometry comes from pillDock — null means "hide on this route" (we are on
-  // /news-hunter). The offset is exposed as the `--pill-offset` CSS custom
+  // /stock-guide). The offset is exposed as the `--pill-offset` CSS custom
   // property so the `:active` rule in globals.css can re-use it without
   // duplicating route logic. See pillDock.ts § "Geometry".
-  const offsetPx = pillOffset(pathname, "news", forceVisible);
+  const offsetPx = pillOffset(pathname, "stock-guide", forceVisible);
   if (offsetPx === null) return null;
 
   return (
@@ -72,7 +73,7 @@ export default function MobileNewsHunterPill(
       type="button"
       onClick={() => router.push(href)}
       aria-label={ariaLabel}
-      className="mobile-news-hunter-pill"
+      className="mobile-stock-guide-pill"
       style={
         {
           // Positioning — fixed, route-aware offset, sitting above safe-area
@@ -86,7 +87,7 @@ export default function MobileNewsHunterPill(
           transform: "translateX(calc(-50% + var(--pill-offset)))",
           zIndex: 1000,
 
-          // Box model — matches Home pill exactly.
+          // Box model — matches the other pills exactly.
           width: PILL_W,
           height: PILL_H,
           minWidth: PILL_W,
@@ -99,7 +100,7 @@ export default function MobileNewsHunterPill(
           // Shape — full capsule.
           borderRadius: 999,
 
-          // Liquid Glass v2 surface (identical to Home pill).
+          // Liquid Glass v2 surface (identical to the other pills).
           background:
             "linear-gradient(180deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0) 50%), var(--mobile-glass-bg)",
           WebkitBackdropFilter: "var(--mobile-glass-blur)",
@@ -118,7 +119,7 @@ export default function MobileNewsHunterPill(
         } as CSSProperties
       }
     >
-      <NewspaperIcon size={22} aria-hidden />
+      <StockGuideIcon size={22} aria-hidden />
     </button>
   );
 }
