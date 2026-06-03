@@ -83,7 +83,7 @@ scripts/utils/                      # one-shots (não-ETL)
 | `etl_anp_precos.yml` | Semanal — segunda, 12:00 UTC (`0 12 * * 1`) | `pipelines/anp/glp_sync.py` + `precos/02_precos_produtores_sync.py` | `anp_glp` (3.106), `anp_precos_produtores` (54.738 — histórico 2002–2026 após backfill) |
 | `etl_anp_cdp.yml` | Cron interno mensal (5º), 08:00 UTC (`0 8 5 * *`) como fallback + trigger externo via cron-job.org (`workflow_dispatch`) a cada ~2h — pipeline desenhado para rodar incrementalmente com alta frequência | `pipelines/anp/cdp/01_extract_powerbi.py` (Power BI, no CAPTCHA) → `02_upload.py` | `output/anp/` + `anp_cdp_producao` (2.045.515+ rows). Power BI poco-level data aggregated daily→monthly; local derived from DB lookup + basin heuristic. Replaces Selenium/CAPTCHA (01_extract.py) which had an undocumented APEX row cap (~197 offshore wells vs ~937 in Power BI for 04/2026). **Inputs `workflow_dispatch`**: `force_upload=true` passes `--no-incremental` AND implies `--purge` automatically — never re-upload over an already-loaded period without it (prevents the PK-overlap duplicate-`local` bug, Apr/2026). |
 | `etl_mdic_comex.yml` | Diário, 14:00 UTC (`0 14 * * *`) | `pipelines/mdic_comex_sync.py` | `mdic_comex` (10.029 rows — histórico 1997–2026 após backfill) |
-| `etl_navios_lineup.yml` | Cada 6h | `pipelines/navios/01_lineup_scrape.py` → `02_diesel_import.mjs` | `navios_diesel`. **Filtro de direção por porto** — cada scraper só mantém **descarga (importação)**: Paranaguá filtra `Sentido == "IMP"`; Santos esperados filtra operação `DESC`; **Suape** (desde 2026-06-03) filtra por `Tipo da Operação`. **Pegadinha — Suape "Tipo da Operação"**: a aba "Dados Brutos" (Google Sheets, formato wide) repete blocos `Produto`/`Quantidade`/`Unidade`/`Tipo da Operação` (pandas sufixa `.1 … .6` as colunas duplicadas), **posicionalmente alinhados** (`Produto.N` ↔ `Tipo da Operação.N`). Valores: `DG`=Descarga (import), `TB DG`=transbordo descarga, `CG`=Carga/embarque (saída), `TB CG`=transbordo carga. `buscar_suape()` só conta um bloco como diesel-importação se `_diesel_puro(produto)` **E** `Tipo da Operação ∈ {DG, TB DG}` (upper/strip) — pareado por bloco, não "qualquer produto é diesel". Volume (`_qtd_e_unidade`) e `Carga` somam/listam só os blocos diesel-E-descarga. Antes do fix, navios de carga doméstica (ex.: ATLANTIC PRIDE, IMO 9797266 — 3 blocos diesel todos `CG`) entravam como falso-positivo de importação. Não suavizar para "qualquer DIESEL" de novo. |
+| `etl_navios_lineup.yml` | Cada 6h | `pipelines/navios/01_lineup_scrape.py` → `02_diesel_import.mjs` | `navios_diesel`. Portos cobertos: Santos, Itaqui, Paranaguá, São Sebastião, Suape, **Maceió** (`buscar_maceio`, desde 2026-06-03). **Filtro de direção por porto** — cada scraper só mantém **descarga (importação)**: Paranaguá filtra `Sentido == "IMP"`; Santos esperados filtra operação `DESC`; **Suape** (desde 2026-06-03) filtra por `Tipo da Operação`; **Maceió** NÃO publica coluna de direção → captura todo diesel e confia no `04_cabotage_cleanup` para remover tráfego de bandeira brasileira (limitação documentada inline). **Pegadinha — Suape "Tipo da Operação"**: a aba "Dados Brutos" (Google Sheets, formato wide) repete blocos `Produto`/`Quantidade`/`Unidade`/`Tipo da Operação` (pandas sufixa `.1 … .6` as colunas duplicadas), **posicionalmente alinhados** (`Produto.N` ↔ `Tipo da Operação.N`). Valores: `DG`=Descarga (import), `TB DG`=transbordo descarga, `CG`=Carga/embarque (saída), `TB CG`=transbordo carga. `buscar_suape()` só conta um bloco como diesel-importação se `_diesel_puro(produto)` **E** `Tipo da Operação ∈ {DG, TB DG}` (upper/strip) — pareado por bloco, não "qualquer produto é diesel". Volume (`_qtd_e_unidade`) e `Carga` somam/listam só os blocos diesel-E-descarga. Antes do fix, navios de carga doméstica (ex.: ATLANTIC PRIDE, IMO 9797266 — 3 blocos diesel todos `CG`) entravam como falso-positivo de importação. Não suavizar para "qualquer DIESEL" de novo. **Watchdog (hardened 2026-06-03)**: a exceção `FetchError` distingue **fetch quebrado** (encoding/Brotli/WAF/schema break — a falha que zerou Itaqui silenciosamente por 9 dias em maio, Pegadinha #12) de **0-diesel legítimo**. `buscar_itaqui`/`buscar_maceio` levantam `FetchError` quando a página não decodifica numa lineup confiável → o porto vira sentinela `ERRO_COLETA` e o watchdog falha (exit 2) destacando os fetches quebrados. Portos EXPECTED que fetcharam OK mas retornaram 0 diesel emitem `[WARN]` a cada run (silent-zero fica visível). |
 | `manual_dg_margins.yml` | Semanal | `manual/dg_margins_upload.py` | `d_g_margins` (este é Dados Locais, não ETL) |
 | `etl_navios_imo_lookup.yml` | Após `etl_navios_lineup` | `pipelines/navios/03_imo_lookup.py` → `04_cabotage_cleanup.py` | `navios_diesel.imo/mmsi` |
 | `etl_navios_positions.yml` | Após `etl_navios_imo_lookup` | `pipelines/navios/05_positions_sync.py` | `vessel_positions`, `port_arrivals` |
@@ -92,6 +92,82 @@ scripts/utils/                      # one-shots (não-ETL)
 | `etl_anp_cdp_diaria.yml` | 3×/dia — `0 10,15,20 * * *` UTC (7h/12h/17h BRT) | `scripts/extractors/anp_cdp_powerbi.py --level all --upload` (via `_powerbi_common.py`) | `anp_cdp_diaria` (~16.5k rows; upsert `(data, campo, bacia)`), `anp_cdp_diaria_instalacao` (~16.3k rows; upsert `(data, campo, instalacao)`), `anp_cdp_diaria_poco` (~180.7k rows; upsert `(data, campo, bacia, poco)`). Timeout workflow: 25min. **Semântica de upload — append-only** (desde commit `397a108c`, 2026-05-08): usa `ignore_duplicates=True` (PostgREST `Prefer: resolution=ignore-duplicates` → SQL `ON CONFLICT DO NOTHING`). (data, dim) inédito: INSERT. (data, dim) já existe: SKIP — valor original preservado. Aplica-se às 3 tabelas (campo / instalacao / poco) — todas passam pela mesma `upload_to_supabase()`. Base point: `--start` default = `2025-11-09` (primeira data com dados Power BI). Trade-off: revisões retroativas do Power BI ANP não são refletidas (snapshot histórico tem prioridade sobre fidelidade a revisões — decisão explícita do usuário). **Pegadinha 1 — property names**: property names Power BI são case-sensitive e diferem do display name — ex: nível Poço usa `Campo (Poço)` (property) e não `NOME CAMPO` (display name); retorna 0 linhas se property errada. **Pegadinha 2 — atribuição 1:1 vs N:N**: entity `v_poco_instalacao_sigep_ultimo` (páginas 5/6, níveis Installation e Well) faz atribuição "última" — cada poço linka a apenas 1 campo. Entity `v_campos_detalhe` (página 4, nível Field) faz N:N. Resultado: filtro Campo mostra 94 campos em Field mas apenas 76 em Installation/Well (19 campos Field-only com poços 100% compartilhados com outro campo "principal"). Não é bug do ETL. Documentado em [`docs/app/anp-cdp-diaria.md`](../app/anp-cdp-diaria.md). |
 
 > Workflows confirmados ativos em 2026-05-05. Row counts atualizados após backfill histórico de 2026-05-06. README está desatualizado (não os menciona). Quando atualizar README, incluir.
+
+### Navios — backfill de maio/2026 (one-shot, 2026-06-03)
+
+Reparo retroativo de `navios_diesel` para maio/2026. Duas falhas deixaram o mês
+abaixo do que realmente transitou nos lineups (a fonte da verdade — AIS **não** é
+usada em `navios_diesel`):
+
+1. **Apagão de Itaqui, 12–20/05/2026** — o scraper retornou 0 navios por 9 dias
+   (falha silenciosa de Brotli, Pegadinha #12; encoding corrigido em 21/05 no
+   commit `5efe3077`; watchdog endurecido no mesmo commit do backfill). Confirmado
+   no banco: Itaqui tem dados até 11/05, some 12–20, volta 21/05. **MITERA** foi
+   perdido por completo (0 linhas em qualquer porto).
+2. **Maceió nunca foi raspado** antes de 2026-06-03 (porto adicionado no mesmo
+   commit). Seus navios de diesel jamais chegaram a `navios_diesel`.
+
+**Reconciliação (diferença de conjuntos, não "adicionar tudo").** Referência: um
+manifesto de lineup de porto capturado à época por um colega
+(`manifesto_diesel_2026-06-03.xlsx`, aba "Manifesto", 40 navios em 2 seções). Para
+cada navio do manifesto atribuído a maio/2026, checou-se se `navios_diesel` já tinha
+aquele `(porto, navio)` em maio. Tínhamos 24; estes **7** faltavam. Santos/Paranaguá
+carregam **mais** navios que o manifesto (cobrimos melhor) — por isso é diferença de
+conjuntos, só as faltantes entram. Nenhum endpoint retroativo de porto cobre o gap
+(Itaqui só expõe estado-ao-vivo; `/desembarcados` e `/historico` dão 404; Maceió é
+ao-vivo) — Paranaguá expõe `relLineUpRetroativo`, mas a reconciliação achou 0 navios
+de Paranaguá faltando, então nada veio dele.
+
+**Linhas inseridas (7):**
+
+| Porto | Navio | Volume (m³) | ETA | collected_at (último rel.) | Fonte |
+|---|---|---:|---|---|---|
+| Porto de Itaqui | MITERA | 60.218 | — | 2026-05-19T09:32-03 | manifesto (apagão Itaqui) |
+| Porto de Maceió | ELANDRA MAPLE | 23.400 | — | 2026-05-21T09:34-03 | manifesto (Maceió sem cobertura) |
+| Porto de Santos | ISABELLA M II | 35.503 | 2026-05-07 | 2026-05-07T20:52-03 | manifesto (escala Santos 07/05) |
+| Porto de Santos | PACIFIC AZUR | 47.337 | 2026-05-07 | 2026-05-07T20:52-03 | manifesto (escala Santos 07/05) |
+| Porto de Suape | ELANDRA MAPLE | 18.840 | 2026-05-11 | 2026-05-15T09:31-03 | manifesto (escala Suape) |
+| Porto de Suape | SUPER G | 10.150 | 2026-05-16 | 2026-05-19T09:32-03 | manifesto (escala Suape) |
+| Porto de Suape | MERSEY | 50.000 | 2026-05-20 | 2026-05-21T09:34-03 | manifesto (escala Suape) |
+
+**Semântica.** `collected_at` = o timestamp "último rel." do manifesto (meio de maio,
+**não** o anchor 2026-05-31T19:00Z), de modo que `get_nd_volume_mensal_historico`
+conta cada linha como **descarregada** no mês fechado de maio (navio ausente do
+último snapshot do mês mas visto antes = descarregou e partiu). `eta` = ETA do
+manifesto quando presente (meio-dia BRT pra evitar TZ shift), senão NULL. Volume já
+em m³ → `quantidade`/`quantidade_convertida` iguais, `unidade='m³'`. `status='Atracado'`
+(estado de chegada concreto, nunca `ERRO_COLETA`/`Despachado`). `imo`/`mmsi` NULL —
+`03_imo_lookup` preenche no próximo run. `origem` NULL (todas as 7 são importação de
+bandeira estrangeira; passaram pelo `04_cabotage_cleanup` sem serem filtradas). Mesmos
+filtros canônicos da raspagem ao vivo (`_diesel_puro`, só importação) valem.
+
+**Idempotência.** Upsert `ON CONFLICT (collected_at, porto, navio) DO NOTHING` —
+re-rodar nunca duplica nem sobrescreve uma raspagem real que caia na mesma chave.
+
+**Distintos por porto em maio (antes → depois):** Itaqui 9→10 (= manifesto 10, MITERA
+recuperado), Maceió 0→1 (manifesto lista 2 mas STI JARDINS é ao-vivo/junho), Suape
+5→8 (já tínhamos mais que os 6 do manifesto), Santos 17→19, Paranaguá 9→9. Total 40→47.
+
+**Artefatos** (`scripts/pipelines/navios/backfill/`): `backfill_maio2026.py`
+(self-documenting; gera o SQL e aplica via service-role com `--apply`) +
+`backfill_maio2026.sql` (idempotente, versionado). **Query de reversão** (também no
+rodapé do `.sql`):
+
+```sql
+DELETE FROM public.navios_diesel
+WHERE (collected_at, porto, navio) IN (
+  ('2026-05-19T09:32:00-03:00', 'Porto de Itaqui', 'MITERA'),
+  ('2026-05-21T09:34:00-03:00', 'Porto de Maceió', 'ELANDRA MAPLE'),
+  ('2026-05-07T20:52:00-03:00', 'Porto de Santos', 'ISABELLA M II'),
+  ('2026-05-07T20:52:00-03:00', 'Porto de Santos', 'PACIFIC AZUR'),
+  ('2026-05-15T09:31:00-03:00', 'Porto de Suape',  'ELANDRA MAPLE'),
+  ('2026-05-19T09:32:00-03:00', 'Porto de Suape',  'SUPER G'),
+  ('2026-05-21T09:34:00-03:00', 'Porto de Suape',  'MERSEY')
+);
+```
+
+Aplicado via service-role em 2026-06-03 (7 linhas inseridas, 0 duplicatas;
+`04_cabotage_cleanup` rodado em seguida não removeu nenhuma).
 
 ### Client Alerts (logged-in product — hook no fim do ETL, 2026-06-02)
 
