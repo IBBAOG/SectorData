@@ -796,6 +796,8 @@ export default function MobileView(): React.ReactElement {
     paisesLoading,
     importersData,
     importersLoading,
+    importersLatestMonth,
+    importersMonthPending,
     importersTop6Data,
     importersTop6Entities,
     importersTop6ColorMap,
@@ -1082,9 +1084,31 @@ export default function MobileView(): React.ReactElement {
     return out;
   }, [paisesData, prevMonthCursor]);
 
+  // Panel B (importers) anchor — the latest month ANP Desembaraços has
+  // actually published (from the hook), clamped to never exceed period.end.
+  // ANP lags ComexStat (which drives the period selector), so period.end can
+  // point at a month ANP has not yet published. Anchoring the importer YoY
+  // table + its MoM lookup here keeps an unpublished month from rendering as a
+  // zero / −100%. Mirrors desktop/View.tsx.
+  const importerAnchor: MonthCursor = useMemo(
+    () =>
+      importersMonthPending && importersLatestMonth
+        ? importersLatestMonth
+        : { ano: filters.period.end.ano, mes: filters.period.end.mes },
+    [importersMonthPending, importersLatestMonth, filters.period.end.ano, filters.period.end.mes],
+  );
+
+  const importerPrevMonthCursor = useMemo(
+    () =>
+      importerAnchor.mes === 1
+        ? { ano: importerAnchor.ano - 1, mes: 12 }
+        : { ano: importerAnchor.ano, mes: importerAnchor.mes - 1 },
+    [importerAnchor],
+  );
+
   // Importers (Imports) — per-importer lookup, collapsed to top-6 + Others.
   const prevMonthByImporter: Map<string, number | null> = useMemo(() => {
-    const target = `${prevMonthCursor.ano}|${prevMonthCursor.mes}`;
+    const target = `${importerPrevMonthCursor.ano}|${importerPrevMonthCursor.mes}`;
     const topSet = new Set(importersTop6Entities.filter((e) => e !== OTHERS_LABEL));
     const acc = new Map<string, number>();
     let othersAcc = 0;
@@ -1107,7 +1131,7 @@ export default function MobileView(): React.ReactElement {
       }
     }
     return out;
-  }, [importersData, importersTop6Entities, prevMonthCursor]);
+  }, [importersData, importersTop6Entities, importerPrevMonthCursor]);
 
   // Exports — per-destination lookup at prev_month.
   const prevMonthByExportsCountry: Map<string, number | null> = useMemo(() => {
@@ -1333,6 +1357,27 @@ export default function MobileView(): React.ReactElement {
             subtitle="Top 6 importer groups, mil m³"
             loading={importersLoading}
           />
+          {/* Publication-lag notice — ANP Desembaraços (the only importer-level
+              source, since it carries CNPJ) publishes later than ComexStat,
+              which drives the period selector. When the trailing month is not
+              yet in ANP we say so; we never plot the missing month as a zero. */}
+          {importersMonthPending && importersLatestMonth && (
+            <div
+              style={{
+                margin: "0 16px 8px",
+                padding: "8px 12px",
+                background: "#fff7ed",
+                border: "1px solid #ffd9b3",
+                borderRadius: 10,
+                fontSize: 11,
+                color: "#9a4d00",
+                fontFamily: "Arial",
+              }}
+            >
+              Importers data through {formatMonth(importersLatestMonth.ano, importersLatestMonth.mes)} —{" "}
+              {formatMonth(filters.period.end.ano, filters.period.end.mes)} not yet published by ANP Desembaraços.
+            </div>
+          )}
           <div style={{ padding: "0 8px 8px" }}>
             {importersTraces.length > 0 ? (
               <Plot
@@ -1366,9 +1411,9 @@ export default function MobileView(): React.ReactElement {
             <>
               <SectionHeading
                 title="By Importer — YoY"
-                subtitle={`${formatMonth(filters.period.end.ano, filters.period.end.mes)} vs ${formatMonth(
-                  filters.period.end.ano - 1,
-                  filters.period.end.mes,
+                subtitle={`${formatMonth(importerAnchor.ano, importerAnchor.mes)} vs ${formatMonth(
+                  importerAnchor.ano - 1,
+                  importerAnchor.mes,
                 )}`}
                 loading={yoyImportersLoading}
               />
@@ -1376,8 +1421,8 @@ export default function MobileView(): React.ReactElement {
                 rows={yoyImportersTop6Data}
                 loading={yoyImportersLoading}
                 unitLabel="mil m³"
-                anchorAno={filters.period.end.ano}
-                anchorMes={filters.period.end.mes}
+                anchorAno={importerAnchor.ano}
+                anchorMes={importerAnchor.mes}
                 prevMonthByEntity={prevMonthByImporter}
                 orderOverride={importersTop6Entities}
                 colorMap={importersTop6ColorMap}

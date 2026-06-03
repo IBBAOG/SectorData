@@ -59,7 +59,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/anp-cdp-diaria` | Oil & Gas | `get_anp_cdp_diaria_filtros`, `get_anp_cdp_diaria_serie` |
 | `/anp-glp` (LPG Market Share) | Fuel Distribution | `get_anp_glp_ms_filtros`, `get_anp_glp_ms_serie_fast`, `get_anp_glp_ms_serie_others`, `get_anp_glp_ms_others_players`, `get_anp_glp_ms_export_count` (% Share ↔ thousand t toggle; clone of `/market-share` over `anp_glp`) |
 | `/anp-prices` | Fuel Distribution | `get_anp_prices_filtros`, `get_anp_prices_serie`, `get_anp_prices_export_count` (consolidates 3 retired ANP price dashboards) |
-| `/imports-exports` | Fuel Distribution | `get_imports_exports_filtros`, `get_imports_exports_paises_stacked`, `get_imports_exports_importers_stacked`, `get_imports_exports_yoy_table`, `get_imports_exports_exports_*`, `get_imports_exports_imports_unit_price`, `get_imports_exports_exports_unit_price` |
+| `/imports-exports` | Fuel Distribution | `get_imports_exports_filtros`, `get_imports_exports_paises_stacked`, `get_imports_exports_importers_stacked`, `get_imports_exports_yoy_table`, `get_imports_exports_exports_*`, `get_imports_exports_imports_unit_price`, `get_imports_exports_exports_unit_price` (source split: By Origin Country chart + YoY `paises` scope read from `mdic_comex`/ComexStat — published weeks ahead of ANP; By Importer (Brazil) stays on `anp_desembaracos`, the only source with CNPJ/importer) |
 | `/subsidy-tracker` | Fuel Distribution (Proprietary) | `get_subsidy_tracker_diesel` (11 columns, dual-agent `_importador` / `_produtor`, regime-aware NULL fallback; reimbursement is a flat BRL 1.12/L from 2026-06-01, cap/commercialization formula applies only to history before that) |
 
 `template-module/` is a starter template, not a deployed module. RPC wrappers: [`src/lib/rpc.ts`](src/lib/rpc.ts) (by module) and [`src/lib/profileRpc.ts`](src/lib/profileRpc.ts).
@@ -130,11 +130,11 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | `news_hunter_keywords` | (user_id, keyword) | Per-user, RLS-scoped |
 | `news_hunter_default_keywords` | keyword | Single source of truth seed list with `match_type` (`substring` / `exact`) |
 | `profiles` | id (FK auth.users) | role (`Admin` / `Client`), full_name, avatar_url |
-| `mdic_comex` | id | MDIC import/export trade data — feeds `/imports-exports` unit-price RPCs |
+| `mdic_comex` | id | MDIC/ComexStat import/export trade data — feeds `/imports-exports` unit-price RPCs, the By Origin Country stacked chart, and the YoY table `paises` scope (ComexStat publishes month M weeks ahead of ANP Desembaraços) |
 | `anp_precos_produtores`, `anp_precos_distribuicao`, `anp_lpc` | — | 3 source tables joined by `get_anp_prices_serie` (UNION ALL) |
 | `anp_glp` | (ano, mes, distribuidora, categoria) | GLP sales by category (`P13` / `Outros - *`) |
 | `anp_daie` | (ano, mes, produto, operacao) | DAIE imports/exports (operacao: `EXPORTAÇÃO` / `IMPORTAÇÃO`) |
-| `anp_desembaracos` | (ano, mes, ncm_codigo, pais_origem, cnpj) | Enriched with `importador`/`cnpj`/`uf_cnpj` since 2026-05-25 |
+| `anp_desembaracos` | (ano, mes, ncm_codigo, pais_origem, cnpj) | Enriched with `importador`/`cnpj`/`uf_cnpj` since 2026-05-25. Feeds the `/imports-exports` By Importer (Brazil) chart + YoY `importers` scope (only source with CNPJ/importer); the By Origin Country chart migrated to `mdic_comex` on 2026-06-03 |
 | `imports_product_map`, `importer_group_map`, `ncm_densidade_kg_m3` | — | Aux lookups for `/imports-exports` (kg → m³ conversion, NCM → unified_product) |
 | `anp_cdp_producao` | (ano, mes, poco, campo, bacia, local) | Monthly well-level production (PosSal/PreSal/Terra) |
 | `anp_voip` | (ano_publicacao, campo) | Volumes originally in-place / recovered fraction / situacao |

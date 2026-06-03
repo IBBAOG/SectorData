@@ -32,10 +32,39 @@ This dashboard **consolidates** the 4 deprecated dashboards:
 
 | Table | Scope | Key columns |
 |---|---|---|
-| `anp_desembaracos` | Imports source | `ano`, `mes`, `ncm_codigo`, `pais_origem`, `cnpj`, `importador`, `uf_cnpj`, `quantidade_kg` |
-| `anp_daie` | Exports source | `ano`, `mes`, `produto`, `operacao`, `volume_m3`, `valor_usd` |
+| `mdic_comex` | "By Origin Country" + paises YoY source (since 2026-06-08) | `ano`, `mes`, `pais`, `quantidade_kg`, `valor_usd`, density join |
+| `anp_desembaracos` | "By Importer" source (only source with CNPJ) | `ano`, `mes`, `ncm_codigo`, `pais_origem`, `cnpj`, `importador`, `uf_cnpj`, `quantidade_kg` |
+| `anp_daie` | Exports source (legacy; exports now read `mdic_comex`) | `ano`, `mes`, `produto`, `operacao`, `volume_m3`, `valor_usd` |
 
 `anp_desembaracos` enriched by Worktree B ETL: columns `importador`, `cnpj`, `uf_cnpj` added; PK now `(ano, mes, ncm_codigo, pais_origem, cnpj)`. Pre-backfill rows carry `cnpj='__legacy__'` sentinel.
+
+#### Source split — "By Origin Country" vs "By Importer" (2026-06-08)
+
+Migration `20260608400000_imports_exports_paises_from_comexstat.sql` re-pointed the **"By Origin Country"** chart and the **paises YoY table** (`get_imports_exports_yoy_table('paises', …)`) from `anp_desembaracos` to **`mdic_comex` (ComexStat)**. ComexStat publishes **earlier** than ANP Desembaraços, so the country-level view now reflects the most recent month sooner. The RPCs `get_imports_exports_paises_stacked` and the paises-scope YoY kept **identical signatures and return columns**, and still emit `pais_origem` using the same canonical Portuguese strings (`Rússia`, `Estados Unidos`, `Países Baixos (Holanda)`, `Emirados Árabes Unidos`, `Índia`, `Arábia Saudita`) that the hook translates to English via `ORIGIN_COUNTRY_PINS_DATA`.
+
+The **"By Importer (Brazil)"** chart + its YoY table **stay on `anp_desembaracos`** — it is the only source carrying CNPJ / importer identity, which the importer breakdown requires. ANP Desembaraços publishes **later** than ComexStat (monthly XLSX vs daily customs feed).
+
+| Section | Source | Publication cadence |
+|---|---|---|
+| By Origin Country (Panel A) + paises YoY | `mdic_comex` (ComexStat) | Earlier |
+| By Importer (Brazil) (Panel B) + importer YoY | `anp_desembaracos` | Later |
+| Import Unit Price (Panel D) + Imports Price Summary | `mdic_comex` | Earlier |
+| Exports (all panels) | `mdic_comex` | — |
+
+#### Unpublished-month handling (2026-06-08)
+
+Because the period selector and `get_imports_exports_filtros` now derive `mes_max` from `mdic_comex`, `period.end` can point at a month ANP Desembaraços **has not yet published**. Rendering that month as `0 / −100%` in the importer panel would make an upstream publication lag look like data loss.
+
+Firm rule: **a month the underlying source has not yet published is never rendered as `0` or `−100%`.**
+
+Implementation (shared hook `useImportsExportsData.ts`, mirrored in both Views):
+
+- The hook derives `importersLatestMonth` — the max `(ano, mes)` actually present in `importersData` (the `anp_desembaracos`-backed payload) — and a boolean `importersMonthPending` (true when `period.end > importersLatestMonth`).
+- The **importer YoY RPC anchor** is clamped to `importersLatestMonth` (never `period.end`) when the source lags, so the importer YoY table compares the latest **published** month vs the same month a year earlier (e.g. `Apr 2026 vs Apr 2025`), not a zeroed `May 2026`.
+- The importer YoY table's MoM prev-month lookup is derived relative to that same anchor.
+- The **By Importer chart** plots only months present in the data (its x-axis simply ends at the latest published month — no zeroed trailing column is drawn).
+- Both Views render an explicit notice in the "By Importer" section when `importersMonthPending` is true: *"Importers data through `<MMM YYYY>` — `<MMM YYYY>` not yet published by ANP Desembaraços."*
+- A **genuine zero** (an importer/country with truly no imports in a published month) stays distinguishable from "month not yet published": genuine zeros still render as `0` with their real MoM/YoY deltas; the unpublished month is simply not anchored on. The ComexStat-backed "By Origin Country" panel is unaffected and continues to show `period.end`.
 
 ### Auxiliary tables (seeds, read via RPC JOINs)
 
@@ -490,6 +519,10 @@ Source: `useImportsExportsData.ts` § `importsUnitPriceChartDerivation`; `deskto
 6. **CNPJ is stable, razão social is not** — `importer_group_map` keys on CNPJ. When a new subsidiary CNPJ appears, `worker_supabase` adds a row. No code change needed.
 
 7. **Exports tab uses MDIC Comex, not ANP DAIE** — `get_imports_exports_exports_paises_stacked` and `get_imports_exports_exports_yoy_table` source from `mdic_comex` (migration 20260525000110). The old single-line `anp_daie` chart and its RPC (`get_imports_exports_exports_serie`) were dropped. Importer-level breakdown for exports is not available (MDIC does not carry importer identity).
+
+8. **"By Origin Country" reads ComexStat; "By Importer" reads ANP Desembaraços** — since migration `20260608400000` the imports country panel + paises YoY are `mdic_comex`-backed (publishes earlier); the importer panel stays `anp_desembaracos`-backed (only source with CNPJ; publishes later). See § "Source split". The two can therefore disagree on the latest available month.
+
+9. **Never render an unpublished month as 0 / −100% in the importer panel** — `period.end` follows ComexStat's `mes_max`, which can be ahead of ANP. The hook exposes `importersLatestMonth` + `importersMonthPending`; the importer YoY table anchors on the latest **published** ANP month and a notice is shown. A genuine zero (a real published month with no imports) is still rendered as `0` with real deltas — distinguishable from "not yet published". See § "Unpublished-month handling". Do NOT "fix" the importer YoY by anchoring it back on `period.end` — that reintroduces the false −100%.
 
 ---
 

@@ -163,6 +163,26 @@ export interface UseImportsExportsData {
   importersData: ImportersStackedRow[];
   importersLoading: boolean;
 
+  /**
+   * Latest (ano, mes) that the ANP-backed "By Importer" source
+   * (`anp_desembaracos`) has actually published within the selected window —
+   * i.e. the max month with at least one row in `importersData`. `null` while
+   * loading or when the source returns no rows.
+   *
+   * ANP Desembaraços publishes LATER than ComexStat (which feeds the "By
+   * Origin Country" chart + the paises YoY table). The period selector and the
+   * filters RPC are driven by ComexStat's max month, so `period.end` can point
+   * at a month ANP has not yet published. Rendering that month as 0 / −100% in
+   * the importer panel makes an upstream publication lag look like data loss.
+   * The views anchor the "By Importer" YoY table and its "data through" notice
+   * on THIS value instead of `period.end` so an unpublished month is never
+   * shown as a genuine zero.
+   */
+  importersLatestMonth: MonthCursor | null;
+  /** True when `period.end` is strictly later than `importersLatestMonth`
+   *  (the ANP source has not yet published the selected trailing month). */
+  importersMonthPending: boolean;
+
   // Panel B chart-only derivation. Exactly 7 series — top-6 importer groups by
   // SUM(total_mil_m3) in the window + a synthetic "Others" series that sums
   // the remaining importers per (ano, mes). Color palette mirrors the Panel A
@@ -568,8 +588,44 @@ export function useImportsExportsData(): UseImportsExportsData {
   // are preserved as part of the hook contract; they all collapse to period.end.
   const yoyEndAno = periodEndAno;
   const yoyEndMes = periodEndMes;
-  const yoyImportersEndMes = periodEndMes;
   const yoyExportsEndMes = periodEndMes;
+
+  // ── Derived: latest month ANP Desembaraços actually published ───────────────
+  // The "By Importer" section reads from `anp_desembaracos`, which lags
+  // ComexStat (the source of the "By Origin Country" chart + paises YoY).
+  // `period.end` follows ComexStat's max month (via get_imports_exports_filtros),
+  // so it can be a month ANP has not yet published. We derive the max month
+  // actually present in `importersData` and anchor the importer YoY table on
+  // it — never on a month that would render as a zero / −100%.
+  const importersLatestMonth: MonthCursor | null = useMemo(() => {
+    if (!importersData.length) return null;
+    let best: MonthCursor | null = null;
+    for (const r of importersData) {
+      const c = { ano: r.ano, mes: r.mes };
+      if (best === null || cmpMonth(c, best) > 0) best = c;
+    }
+    return best;
+  }, [importersData]);
+
+  // The importer YoY anchor: the latest ANP-published month, clamped to never
+  // exceed period.end. Falls back to period.end while importersData is still
+  // loading (so the first YoY fetch has a sane anchor); once importersData
+  // lands and reveals the source lags period.end, this re-anchors to the
+  // latest published month and the YoY effect re-fetches at the correct month.
+  const importersAnchor: MonthCursor = useMemo(() => {
+    if (importersLatestMonth && cmpMonth(importersLatestMonth, { ano: periodEndAno, mes: periodEndMes }) < 0) {
+      return importersLatestMonth;
+    }
+    return { ano: periodEndAno, mes: periodEndMes };
+  }, [importersLatestMonth, periodEndAno, periodEndMes]);
+
+  const yoyImportersAnchorAno = importersAnchor.ano;
+  const yoyImportersEndMes = importersAnchor.mes;
+
+  // True when the selected trailing month is ahead of what ANP has published.
+  const importersMonthPending =
+    importersLatestMonth != null &&
+    cmpMonth(importersLatestMonth, { ano: periodEndAno, mes: periodEndMes }) < 0;
 
   // ── 2. Imports tab — Panel A (paises stacked) ───────────────────────────────
   const importsAFetchIdRef = useRef(0);
@@ -678,7 +734,7 @@ export function useImportsExportsData(): UseImportsExportsData {
           supabase,
           "importers",
           stableFilters.unifiedProduct,
-          yoyEndAno,
+          yoyImportersAnchorAno,
           yoyImportersEndMes,
           TOP_N,
         );
@@ -691,7 +747,7 @@ export function useImportsExportsData(): UseImportsExportsData {
     }, 400);
     return () => { if (yoyITimerRef.current) clearTimeout(yoyITimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stableFilters.tab, stableFilters.unifiedProduct, yoyEndAno, yoyImportersEndMes]);
+  }, [stableFilters.tab, stableFilters.unifiedProduct, yoyImportersAnchorAno, yoyImportersEndMes]);
 
   // ── 6a. Exports tab — stacked by destination country ───────────────────────
   const exportsPaisesFetchIdRef = useRef(0);
@@ -1416,6 +1472,8 @@ export function useImportsExportsData(): UseImportsExportsData {
     paisesLoading,
     importersData,
     importersLoading,
+    importersLatestMonth,
+    importersMonthPending,
     importersTop6Data,
     importersTop6Entities,
     importersTop6ColorMap,
