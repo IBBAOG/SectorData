@@ -2620,7 +2620,7 @@ export async function rpcGetDefaultNewsKeywords(
 //     Single-month views are supported by passing equal start and end bounds.
 //
 // Unit contract (never drift label from divisor):
-//   Panel A (countries): RPC returns total_kg → UI divides by 1e6 → "kt"
+//   Panel A (countries): RPC returns total_m3 (m³) → UI divides by 1000 → "thousand m³"
 //   Panel B (importers): RPC returns total_mil_m3 (server-side conversion) → "mil m³"
 //   Exports stacked: server returns value already in mil m³ (metric=volume) or raw USD (metric=usd) → UI never divides
 
@@ -2636,7 +2636,10 @@ export type IEPaisesStackedRow = {
   ano: number;
   mes: number;
   pais_origem: string;
-  total_kg: number;
+  // Imports volume in m³ (cubic metres). Server applies per-NCM density
+  // (migration 20260608500000 renamed total_kg → total_m3). UI divides by
+  // 1000 to display thousand m³.
+  total_m3: number;
 };
 
 export type IEImportersStackedRow = {
@@ -2687,8 +2690,10 @@ export async function rpcGetImportsExportsFiltros(
 
 /**
  * Stacked bar data for Panel A — imports by origin country.
- * Server returns top-N countries by total kg; non-top rows are bucketed as
- * 'Others'. UI divides total_kg by 1e6 to get kilotons.
+ * Server returns top-N countries by total volume; non-top rows are bucketed as
+ * 'Others'. Since migration 20260608500000 the server converts kg → m³ via
+ * per-NCM density and returns `total_m3` (cubic metres). UI divides total_m3
+ * by 1000 to get thousand m³.
  *
  * Monthly granularity (migration 20260526800000): bounds are inclusive on
  * both ends — single-month view supported by passing equal start and end.
@@ -2719,7 +2724,7 @@ export async function rpcGetImportsExportsPaisesStacked(
       ano: Number(r.ano),
       mes: Number(r.mes),
       pais_origem: String(r.pais_origem),
-      total_kg: Number(r.total_kg ?? 0),
+      total_m3: Number(r.total_m3 ?? 0),
     }));
   } catch (e) {
     console.error("get_imports_exports_paises_stacked failed", e);

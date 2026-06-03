@@ -7,7 +7,7 @@
 // All RPC calls, filter state, unit derivations, and type definitions live here.
 //
 // Tab: 'imports' | 'exports'
-// Imports tab: Panel A (countries stacked, kt) + Panel B (importers stacked, mil m³)
+// Imports tab: Panel A (countries stacked, thousand m³) + Panel B (importers stacked, mil m³)
 //   + YoY tables for each panel.
 //   + Panel D (unit price by origin country, USD/m³) + price summary table.
 // Exports tab: stacked area by destination country (top-10 + Others) + YoY table.
@@ -32,7 +32,8 @@
 // Debounce: 400ms on all reactive fetches (useDebouncedFetch).
 // Top-N: 10 (server-side aggregation, Others bucket returned from RPC).
 // Units:
-//   Panel A → quantidade_kg / 1e6 = kt. Label "kt".
+//   Panel A → total_m3 / 1000 = thousand m³ (server applies per-NCM density,
+//             migration 20260608500000). Label "thousand m³". IMPORTS ONLY.
 //   Panel B → total_mil_m3 from RPC (server converts kg→m³ via density). Label "mil m³".
 //   Exports (metric=volume) → server returns thousand tonnes (ComexStat net weight)
 //                             directly — DO NOT divide client-side. Label "mil t" (2026-06-03).
@@ -90,12 +91,13 @@ export interface ImportsExportsFilters {
   exportsYAxis: ExportsYAxis;
 }
 
-// Panel A row (countries) — raw from RPC, quantity in kg; UI divides by 1e6 for kt
+// Panel A row (countries) — raw from RPC, volume in m³ (server applies per-NCM
+// density, migration 20260608500000); UI divides by 1000 for thousand m³.
 export interface PaisesStackedRow {
   ano: number;
   mes: number;
   pais_origem: string;
-  total_kg: number;
+  total_m3: number;
 }
 
 // Panel B row (importers) — quantity already in mil m³ from RPC

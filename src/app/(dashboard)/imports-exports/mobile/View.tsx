@@ -110,18 +110,18 @@ const ORIGIN_ORDER: string[] = [
  * "Others" bucket) is collapsed into a single client-side "Others".
  */
 function bucketPaisesByPins(
-  rows: { ano: number; mes: number; pais_origem: string; total_kg: number }[],
-): { ano: number; mes: number; name: string; total_kg: number }[] {
+  rows: { ano: number; mes: number; pais_origem: string; total_m3: number }[],
+): { ano: number; mes: number; name: string; total_m3: number }[] {
   const byKey = new Map<string, number>();
   for (const r of rows) {
     const englishLabel = ORIGIN_LABEL_BY_DB[r.pais_origem] ?? OTHERS_LABEL;
     const k = `${r.ano}|${r.mes}|${englishLabel}`;
-    byKey.set(k, (byKey.get(k) ?? 0) + r.total_kg);
+    byKey.set(k, (byKey.get(k) ?? 0) + r.total_m3);
   }
-  const out: { ano: number; mes: number; name: string; total_kg: number }[] = [];
-  for (const [k, total_kg] of byKey.entries()) {
+  const out: { ano: number; mes: number; name: string; total_m3: number }[] = [];
+  for (const [k, total_m3] of byKey.entries()) {
     const [a, m, name] = k.split("|");
-    out.push({ ano: Number(a), mes: Number(m), name, total_kg });
+    out.push({ ano: Number(a), mes: Number(m), name, total_m3 });
   }
   return out;
 }
@@ -904,14 +904,13 @@ export default function MobileView(): React.ReactElement {
     filters.period.end.mes,
   ]);
 
-  // ── Imports tab — Panel A traces (countries, kt OR USD per V/V toggle) ─────
+  // ── Imports tab — Panel A traces (countries, thousand m³) ──────────────────
   //
-  // The hook always returns kt-derivable rows (Panel A is volume-only). The
-  // mobile Volume/Value toggle on the Imports tab affects unit label only —
-  // we keep the chart in kt for Volume, and would need a different RPC for
-  // USD. Since `anp_desembaracos` has no `valor_usd` column, USD is not
-  // available for Panel A. To keep the toggle meaningful we hide the toggle
-  // entirely on the Imports tab and use Volume (kt) unconditionally.
+  // The hook returns volume rows in m³ (server applies per-NCM density,
+  // migration 20260608500000); we divide by 1000 for thousand m³. Panel A is
+  // volume-only — `anp_desembaracos`/ComexStat volume has no $-revenue column
+  // for this panel, so there is no Volume/USD toggle on the Imports tab; the
+  // chart is always Volume (thousand m³).
   //
   // The Exports tab keeps the Volume/USD toggle because `mdic_comex` carries
   // both columns and the exports RPC honours `metric=volume|usd`.
@@ -922,18 +921,18 @@ export default function MobileView(): React.ReactElement {
       ano: r.ano,
       mes: r.mes,
       name: r.name,
-      value: r.total_kg / 1e6,
+      value: r.total_m3 / 1000,
     }));
     return ensureAllPinsPresent(rawRows);
   }, [paisesData]);
 
   const importsPaisesTraces = useMemo(
-    () => buildStackedTraces(importsPaisesStacked, "kt", ORIGIN_ORDER),
+    () => buildStackedTraces(importsPaisesStacked, "thousand m³", ORIGIN_ORDER),
     [importsPaisesStacked],
   );
 
   const importsPaisesLayout: Partial<Layout> = useMemo(
-    () => mobileAreaLayout("kt", rangeMonths),
+    () => mobileAreaLayout("thousand m³", rangeMonths),
     [rangeMonths],
   );
 
@@ -1066,15 +1065,15 @@ export default function MobileView(): React.ReactElement {
     return m === 1 ? { ano: a - 1, mes: 12 } : { ano: a, mes: m - 1 };
   }, [filters.period.end.ano, filters.period.end.mes]);
 
-  // Countries (Imports) — kt at prev_month, bucketed against pins.
+  // Countries (Imports) — thousand m³ at prev_month, bucketed against pins.
   const prevMonthByCountry: Map<string, number | null> = useMemo(() => {
     const target = `${prevMonthCursor.ano}|${prevMonthCursor.mes}`;
     const acc = new Map<string, number>();
     for (const r of paisesData) {
       if (`${r.ano}|${r.mes}` !== target) continue;
       const englishLabel = ORIGIN_LABEL_BY_DB[r.pais_origem] ?? OTHERS_LABEL;
-      const valueKt = r.total_kg / 1e6;
-      acc.set(englishLabel, (acc.get(englishLabel) ?? 0) + valueKt);
+      const valueK = r.total_m3 / 1000;
+      acc.set(englishLabel, (acc.get(englishLabel) ?? 0) + valueK);
     }
     const out = new Map<string, number | null>();
     for (const pin of ORIGIN_COUNTRY_PINS) {
@@ -1265,7 +1264,7 @@ export default function MobileView(): React.ReactElement {
         </div>
 
         {/* Volume / Value toggle — only shown on Exports tab.
-            Imports has no $-revenue column server-side; Volume (kt) is fixed. */}
+            Imports has no $-revenue column server-side; Volume (thousand m³) is fixed. */}
         {filters.tab === "exports" && (
           <div style={{ display: "flex", gap: 8, padding: "10px 16px 0" }}>
             {(
@@ -1308,7 +1307,7 @@ export default function MobileView(): React.ReactElement {
         <div style={{ paddingTop: 4 }}>
           <SectionHeading
             title="By Origin Country"
-            subtitle="Diesel imports, kt"
+            subtitle="Diesel imports, thousand m³"
             loading={paisesLoading}
           />
           <div style={{ padding: "0 8px 8px" }}>
@@ -1342,7 +1341,7 @@ export default function MobileView(): React.ReactElement {
           <YoYTable
             rows={yoyPaisesPinned}
             loading={yoyPaisesLoading}
-            unitLabel="kt"
+            unitLabel="thousand m³"
             anchorAno={filters.period.end.ano}
             anchorMes={filters.period.end.mes}
             prevMonthByEntity={prevMonthByCountry}
