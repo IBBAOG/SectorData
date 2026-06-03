@@ -6,8 +6,9 @@ Logged-in-only email subscription dashboard. Owner: [`worker_dash-alerts`](../..
 
 ## Status
 
-- **Rebuilt (Phase 4):** dual-view (desktop + mobile) logged-in-only dashboard. Replaces the deprecated Fase 0 double-opt-in product (anonymous signup, email field, confirmation/unsubscribe tokens) — all of which were deleted.
-- **Backend:** new schema + RPCs deployed in `supabase/migrations/20260608100000_alerts_rebuild_new_schema.sql`.
+- **Rebuilt (Phase 4):** dual-view (desktop + mobile) logged-in-only dashboard. Replaces the deprecated double-opt-in cloud product (anonymous signup, email field, confirmation/unsubscribe tokens, 2h polling detectors, `scripts/alerts/`, 6 old `alert_*` tables, `alerts_*.yml` workflows) — all of which were deleted.
+- **Backend:** old product dropped in `supabase/migrations/20260608000000_alerts_rebuild_drop_old_product.sql`; new schema (6 tables) + 14 RPCs + 22-source seed deployed in `supabase/migrations/20260608100000_alerts_rebuild_new_schema.sql`. The frontend consumes 6 of those RPCs (table below); the rest are backend/admin. Detection is event-driven (end-of-ETL hooks via `scripts/client_alerts/`), not polling.
+- **Delivery:** emails are sent via **Gmail SMTP + App Password** (account `ibbaogproject@gmail.com`, secret `GMAIL_APP_PASSWORD`), not Resend — there is no custom sending domain. See [`docs/etl-pipelines/PRD.md`](../etl-pipelines/PRD.md) § "Client Alerts (logged-in product)" for the engine and trigger model.
 - **Visibility:** `module_visibility('alerts')` is `clients=true` / `public=false` — Anon visitors are redirected to `/home` by `useModuleVisibilityGuard("alerts")`.
 
 ## Access tiers
@@ -56,7 +57,7 @@ Desktop = two columns (catalog left; My Subscriptions + Recent Alerts right, sti
 
 ## RPC contract (all SECURITY DEFINER)
 
-Wrappers in `src/lib/rpc.ts` "MODULE: Alerts". Migration: `20260608100000_alerts_rebuild_new_schema.sql`.
+Wrappers in `src/lib/rpc.ts` "MODULE: Alerts". Migration: `20260608100000_alerts_rebuild_new_schema.sql` (14 RPCs total — 6 client + 1 anon-safe below; the rest are service-role `alerts_current_period` / `alerts_active_recipients` and the `admin_alerts_*` family, not called by this dashboard).
 
 | RPC | Grant | Purpose |
 |-----|-------|---------|

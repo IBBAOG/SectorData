@@ -1,5 +1,12 @@
 # PRD — Alerts Product (cloud, multi-recipient)
 
+> ⚠️ **SUPERSEDED (2026-06-02 rebuild).** Everything below describes the FIRST cloud alerts product (anon double-opt-in, confirmation tokens, per-IP rate limiting, 2h polling detectors in `scripts/alerts/`, the 6 old `alert_*` tables, the `alerts_*.yml` workflows, and Resend delivery). **All of that was DELETED.** The product is now **logged-in only**, event-driven by end-of-ETL hooks (`scripts/client_alerts/`), and delivered via **Gmail SMTP + App Password** (not Resend). Current sources of truth:
+> - Engine + ETL hooks + digest + Gmail sender: [`docs/etl-pipelines/PRD.md`](../etl-pipelines/PRD.md) § "Client Alerts".
+> - Schema (6 tables) + 14 RPCs: [`docs/supabase/PRD.md`](../supabase/PRD.md) § "Alerts v2".
+> - Frontend: [`docs/app/alerts.md`](../app/alerts.md).
+>
+> The text below is kept only as historical reference for the deleted design. Do NOT implement against it.
+
 Backend master doc do produto **Alerts Product**. Owner: [`worker_alerts-product`](../../.claude/agents/worker_alerts-product.md).
 
 > **Não confundir com [`docs/alertas/PRD.md`](../alertas/PRD.md)** — esse doc cobre o sistema LOCAL-ONLY (gitignored, single-recipient Eduardo via Gmail API), owned por [`worker_alertas`](../../.claude/agents/worker_alertas.md). Os dois coexistem durante cutover (confirmado pelo CEO 2026-05-25). Eventualmente o local-only será descontinuado.

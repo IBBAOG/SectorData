@@ -799,6 +799,44 @@ A regulatory change effective **2026-06-01** turned the fuel subsidy into a **fl
 
 **Migration**: `20260521130000_anp_cdp_cross_local_guard.sql`. Lookup é O(log n) via prefix do PK `(ano, mes, poco, campo, bacia, local)` — sem índice novo. Defesas Fase A (`20260521120000_fix_anp_cdp_apr2026_triplication.sql`, quarentena) e Fase B1 (pipeline Python, ver `docs/etl-pipelines/PRD.md`).
 
+### Alerts v2 (rebuild 2026-06-02)
+
+> **Supersedes the old cloud alerts product.** The first product (anon double-opt-in, confirmation tokens, per-IP rate limiting, 2h polling detectors) was dropped in `20260608000000_alerts_rebuild_drop_old_product.sql` (6 old `alert_*` tables + ~16 RPCs + the confirmation trigger). The new product is **logged-in only**, event-driven by end-of-ETL hooks. The legacy LOCAL-ONLY `alertas_*` tables (`alertas_session` etc.) are a different subsystem and were **not** touched. Schema created in `20260608100000_alerts_rebuild_new_schema.sql`. Frontend sub-PRD: [`docs/app/alerts.md`](../app/alerts.md); engine: [`docs/etl-pipelines/PRD.md`](../etl-pipelines/PRD.md) § "Client Alerts".
+
+**6 tables** (all RLS-enabled; `(select auth.uid())` wrapped per Hardening A):
+
+| Tabela | PK / UNIQUE | Papel | RLS |
+|---|---|---|---|
+| `alert_sources` | `source_slug` | Catálogo de bases inscritíveis. Cols: `category`, `display_name`, `description`, `cadence` (`immediate`/`digest`), `period_kind` (`month`/`date`/`iso_week`/`window_end`/`year`/`timestamp`), `period_table`, `metadata` (`frontend_route`), `is_active`. **Sem `detection_module`** (não há detectores). | SELECT `authenticated`; ALL `is_admin()` |
+| `alert_subscriptions` | `id`; UNIQUE `(user_id, source_slug)` | 1 linha por (cliente, base). `user_id → auth.users` (CASCADE), `is_active`, `cadence_override` (NULL = herda), `unsubscribe_token`. **Sem email** (resolvido de `auth.users` no envio), sem confirmation/IP. | self (`user_id = auth.uid()`) SELECT/INSERT/UPDATE/DELETE + admin ALL |
+| `alert_events` | `id`; UNIQUE `(source_slug, event_key)` | Log imutável "1 evento por fato". Âncora de idempotência. INSERT via service-role (bypassa RLS). | SELECT `is_admin()` only |
+| `alert_outbox` | `id`; UNIQUE `(subscription_id, event_id)` | Fila de fanout. `status` (`queued`/`sending`/`sent`/`failed`/`skipped`), `send_attempts`, `provider_message_id`. | SELECT admin + self (via join na subscription) |
+| `alert_email_log` | `id` | Auditoria append-only do envio. `outbox_id`, `email`, `subject`, `status`, `provider_message_id`, `provider_response`. | SELECT `is_admin()` only |
+| `alert_source_state` | `source_slug` | **Watermark** "último período alertado": `last_period_key`, `last_event_id`, `last_alerted_at`. Torna o check "período avançou?" O(1) e race-safe. | SELECT `is_admin()` only |
+
+**14 RPCs** (todas SECURITY DEFINER + `SET search_path = public, pg_temp`):
+
+| RPC | Grant | Papel |
+|---|---|---|
+| `alerts_current_period(p_source_slug)` → text | **service_role only** | Deriva o período corrente por `period_kind`/`period_table`, portando as expressões exatas de `get_data_sources_freshness` (`20260527300000`). Anon/authenticated explicitamente revogados (IDOR/least-privilege). |
+| `alerts_active_recipients(p_source_slug)` → (subscription_id, email, unsubscribe_token) | **service_role only** | Join `alert_subscriptions → auth.users` (definer lê `auth.users.email`). Revoke explícito de anon/authenticated (senão qualquer caller faria harvest de emails/tokens). |
+| `list_subscribable_bases()` | authenticated | Catálogo ativo + flags do usuário (`is_subscribed`, `sub_is_active`, `cadence`, `cadence_override`). |
+| `set_my_subscription(p_source_slug, p_active)` | authenticated | Liga/desliga 1 base (upsert `ON CONFLICT (user_id, source_slug)`). |
+| `set_my_subscriptions(p_source_slugs[], p_active)` | authenticated | Bulk (Select all / Clear por categoria). Retorna count. |
+| `set_my_subscription_cadence(p_source_slug, p_cadence)` | authenticated | Override por inscrição (NULL = herda). **Dormante na v1** — não exposto na UI. |
+| `list_my_subscriptions()` | authenticated | Inscrições do usuário + `effective_cadence` (`COALESCE(cadence_override, src.cadence)`). |
+| `list_my_recent_alerts(p_limit=20)` | authenticated | Feed recente; injeta `frontend_route` no payload (fallback do `metadata` da source). |
+| `unsubscribe_by_token(p_token)` | **anon** + authenticated | A ÚNICA escrita anon-callable (link do email). Idempotente. |
+| `admin_alerts_list_subscribers(p_source_slug?, p_limit)` | authenticated (gated `is_admin()`) | Lista subscribers + email resolvido. |
+| `admin_alerts_email_log_recent(p_limit)` | authenticated (gated) | Auditoria de envio. |
+| `admin_alerts_stats()` | authenticated (gated) | Totais, por-source, 7d sent/bounced. |
+| `admin_alerts_toggle_source(p_source_slug, p_is_active)` | authenticated (gated) | Liga/desliga base no catálogo. |
+| `admin_alerts_send_test(p_source_slug, p_email?)` | authenticated (gated) | Injeta evento sintético de teste para validar fanout/delivery E2E. |
+
+**Seed:** 22 rows em `alert_sources` (todas as tabelas de ingestão exceto `news_articles`) — 21 ativas + `anp_subsidy_caps` inativa (admin-edit, sem trigger limpo). Daily/AIS/timestamp = `digest`; o resto = `immediate`.
+
+**`module_visibility('alerts')`** setado para `public=false, clients=true` (preserva o invariante `public ⇒ clients`).
+
 ### Materialized views
 
 | MV | Função de refresh | Índices |
@@ -834,6 +872,7 @@ A regulatory change effective **2026-06-01** turned the fuel subsidy into a **fl
 | Export count (Tier 2) | `get_ms_export_count(p_data_inicio, p_data_fim, p_regioes, p_ufs, p_mercados) → bigint`, `get_anp_cdp_export_count(p_pocos, p_campos, p_bacoes, p_locais, p_estados, p_operadores, p_instalacoes, p_tipos_instalacao, p_ano_inicio, p_ano_fim) → bigint`, `get_anp_lpc_export_count(p_produtos, p_estados, p_data_inicio, p_data_fim) → bigint` | APP (useExportSize) — retornam count filtrado para estimar tamanho do export antes do download. Migration: `20260507000003_export_count_rpcs.sql`. (Nota: `get_mdic_comex_export_count` foi DROPPED em 2026-05-25 com a retirada de `/mdic-comex`.) |
 | Data Sources freshness | `get_data_sources_freshness() → TABLE(source_key text, last_update timestamptz, row_count bigint)` | Consumida pela tabela live "Data Sources" da `/home` (desktop only). UNION ALL sobre 23 tabelas ETL-fed (era 22 — Subsidy Reform `20260527300000` trocou `anp_subsidy_history` por `anp_subsidy_caps` + `anp_subsidy_commercialization`). SECURITY DEFINER + `search_path = public, pg_temp`; `GRANT EXECUTE TO anon, authenticated`. Migrations: `20260526200000_data_sources_freshness.sql` + hotfix `20260527300000_data_sources_freshness_subsidy_fix.sql`. Detalhes em § "Data Sources Freshness". Owner: dash-admin (UI) + worker_supabase (RPC). |
 | Subsidy Tracker | `get_subsidy_tracker_diesel() → TABLE(date, ipp, ipp_adjusted, petrobras, petrobras_adjusted, anp_reference_importador, anp_reference_produtor, anp_commercialization_importador, anp_commercialization_produtor, regions_importador jsonb, regions_produtor jsonb)` + interna `compute_subsidy_reimbursement(date, tipo_agente) → numeric`. RPC rewrite em `20260527200000_subsidy_reform.sql` (era 1 col simples antes; nova signature dual-agent com sufixos PT). SECURITY DEFINER + `search_path = public, pg_temp` + `GRANT EXECUTE TO anon, authenticated`. Detalhes em § "Subsidy Reform". | dash-subsidy-tracker + dash-price-bands (trigger-side: `_pb_populate_w_subsidy` lê via `compute_subsidy_reimbursement` para preencher `price_bands._w_subsidy`) |
+| Alerts v2 (rebuild 2026-06-02) | Client: `list_subscribable_bases`, `set_my_subscription[s]`, `set_my_subscription_cadence` (dormant), `list_my_subscriptions`, `list_my_recent_alerts`. Anon: `unsubscribe_by_token`. Service-role only: `alerts_current_period`, `alerts_active_recipients`. Admin: `admin_alerts_list_subscribers`/`_email_log_recent`/`_stats`/`_toggle_source`/`_send_test`. 14 total — ver § "Alerts v2". Migration `20260608100000` (DROP do produto antigo em `20260608000000`). | dash-alerts (client) + alerts-product/etl-pipelines (backend: `scripts/client_alerts/`) |
 
 ## Usuário compartilhado IBBA
 
