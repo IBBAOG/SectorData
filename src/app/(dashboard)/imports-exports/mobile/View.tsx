@@ -19,7 +19,7 @@
 // Layout (top → bottom):
 //   1. Top sticky tab bar  — Imports / Exports
 //   2. Period preset pills — 1Y / 3Y / 5Y / All (default 3Y)
-//   3. Volume / Value toggle (mil m³ ↔ USD)
+//   3. Volume / Value toggle (exports volume in mil t ↔ USD)
 //   4a. Imports tab:
 //        Hero stacked area by 6 origin countries (pinned palette, no Others
 //          aggregation — the 6 are the legend, full stop)
@@ -979,7 +979,9 @@ export default function MobileView(): React.ReactElement {
   }, [yoyPaisesData]);
 
   // ── Exports tab — traces + unit/label per toggle ──────────────────────────
-  const exportsUnit = filters.exportsYAxis === "volume" ? "mil m³" : "USD";
+  // Volume is reported in thousand tonnes ("mil t") — the RPC returns ComexStat
+  // net weight directly (2026-06-03). USD label unchanged.
+  const exportsUnit = filters.exportsYAxis === "volume" ? "mil t" : "USD";
 
   // Stable alphabetical entity order — mirrors the order buildStackedTraces
   // uses internally when no orderOverride is provided (non-Others sorted
@@ -1019,7 +1021,7 @@ export default function MobileView(): React.ReactElement {
       ano: r.ano,
       mes: r.mes,
       name: r.pais,
-      value: r.value, // already in mil m³ or USD from RPC
+      value: r.value, // already in mil t (volume) or USD from RPC
     }));
     return buildStackedTraces(rows, exportsUnit, exportsEntityOrder, exportsColorMap);
   }, [exportsPaisesData, exportsUnit, exportsEntityOrder, exportsColorMap]);
@@ -1479,7 +1481,8 @@ export default function MobileView(): React.ReactElement {
             }}
           >
             Source: MDIC Comex — monthly customs-declared exports by destination
-            (NCM 27090010; kg→m³ via ANP standard density; 1 m³ = 6.2898 bbl).
+            (NCM 27090010; by-country volume in thousand tonnes as declared to
+            customs; unit price 1 m³ = 6.2898 bbl).
           </div>
         </div>
       )}
