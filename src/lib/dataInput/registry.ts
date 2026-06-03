@@ -32,6 +32,35 @@ export const EDITABLE_TABLES: EditableTableConfig[] = [
     },
     infoNote:
       "Subsidy-adjusted values (Import Parity w/ Subsidy, Petrobras Price w/ Subsidy) are computed automatically from ANP data — no manual input needed.",
+    // Bulk .xlsx upload — mirrors scripts/manual/price_bands_upload.py.
+    // Per-sheet header maps because Diesel uses "BBA -" and Gasoline "IBBA -".
+    // Obsolete "… w/ subsidy" columns are silently ignored (not mapped); the
+    // upsert allowlist further guarantees the `_w_subsidy` columns never ship.
+    bulkUpload: {
+      partitionColumn: "product",
+      sheets: [
+        {
+          sheetName: "Diesel",
+          partitionValue: "Diesel",
+          headerMap: {
+            Date: "date",
+            "BBA - Import Parity": "bba_import_parity",
+            "BBA - Export Parity": "bba_export_parity",
+            "Petrobras Price": "petrobras_price",
+          },
+        },
+        {
+          sheetName: "Gasoline",
+          partitionValue: "Gasoline",
+          headerMap: {
+            Date: "date",
+            "IBBA - Import Parity": "bba_import_parity",
+            "IBBA - Export Parity": "bba_export_parity",
+            "Petrobras Price": "petrobras_price",
+          },
+        },
+      ],
+    },
     columns: [
       {
         key: "date",
@@ -91,6 +120,43 @@ export const EDITABLE_TABLES: EditableTableConfig[] = [
       values: [
         { value: "Diesel B", label: "Diesel" },
         { value: "Gasoline C", label: "Gasoline" },
+      ],
+    },
+    // Bulk .xlsx upload — mirrors scripts/manual/dg_margins_upload.py.
+    // Per-sheet header maps because the biofuel/base-fuel columns differ
+    // (Biodiesel/Diesel A on Diesel B; Anhydrous Ethanol/Gasoline A on
+    // Gasoline C). Note the Excel header is "Distribution and Resale Margin"
+    // ("and") while the registry label is "Distribution & Resale Margin" —
+    // the header map bridges this.
+    bulkUpload: {
+      partitionColumn: "fuel_type",
+      sheets: [
+        {
+          sheetName: "Diesel B",
+          partitionValue: "Diesel B",
+          headerMap: {
+            Week: "week",
+            "Distribution and Resale Margin": "distribution_and_resale_margin",
+            "State Tax": "state_tax",
+            "Federal Tax": "federal_tax",
+            Total: "total",
+            Biodiesel: "biofuel_component",
+            "Diesel A": "base_fuel",
+          },
+        },
+        {
+          sheetName: "Gasoline C",
+          partitionValue: "Gasoline C",
+          headerMap: {
+            Week: "week",
+            "Distribution and Resale Margin": "distribution_and_resale_margin",
+            "State Tax": "state_tax",
+            "Federal Tax": "federal_tax",
+            Total: "total",
+            "Anhydrous Ethanol": "biofuel_component",
+            "Gasoline A": "base_fuel",
+          },
+        },
       ],
     },
     columns: [
