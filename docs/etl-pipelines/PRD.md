@@ -169,6 +169,75 @@ WHERE (collected_at, porto, navio) IN (
 Aplicado via service-role em 2026-06-03 (7 linhas inseridas, 0 duplicatas;
 `04_cabotage_cleanup` rodado em seguida não removeu nenhuma).
 
+#### Reconciliation pass 2 — data-quality cleanup (one-shot, 2026-06-03)
+
+Final May-2026 reconciliation after the 7-row add above. Two surgical fixes,
+both scoped to the May window (`collected_at >= '2026-05-01' AND < '2026-06-01'`),
+applied via service role. Source of truth: port line-ups + the same colleague
+manifest (`manifesto_diesel_2026-06-03.xlsx`).
+
+**Adjustment 1 — remove the ATLANTIC PRIDE / Porto de Suape false-positive (−4 rows).**
+ATLANTIC PRIDE (IMO 9797266) was captured by the OLD Suape scraper before the
+discharge-only fix. All its diesel blocks on Suape's "Dados Brutos" sheet are
+`CG` (Carga/embarque = load-out, an export — not an import discharge), and its
+ETA is 2026-06-01 (not even a May discharge). Absent from the manifest entirely.
+This is exactly the bug fixed forward in `buscar_suape()` (pairs `Produto.N` with
+`Tipo da Operação.N`, keeps only `DG`/`TB DG`); only stale history remained.
+Business rule (Eduardo): keep ONLY discharges (imports); `CG` never enters.
+**Deleted 4 rows** (all `status='Esperado'`, `eta` 2026-06-01, `imo` NULL; ids
+28005 / 28014 / 28023 / 28032 at deletion time).
+
+**Adjustment 2 — Itaqui blackout (12–20 May): 0 new rows.** Recomputed the set
+difference between the manifest's `Desembarcado` rows (any `Terceiros` excluded)
+attributed to May and what `navios_diesel` now holds — **empty**. Every genuine
+May discharge is already present:
+- **MITERA / Itaqui** — the only blackout casualty — already backfilled (pass 1).
+- **MERSEY / Itaqui** (manifest 39 300 m³, último rel. 29/05) is the vessel's
+  LATE-May call (25–29 May, IMO 9865752, ~39 222 m³ `quantidade_convertida`),
+  which landed AFTER the scraper recovered on 21/05 — never lost, already
+  live-scraped (its earlier 01–04 May Itaqui call is in the DB too). The Suape
+  leg (50 000 m³) was already backfilled in pass 1. Multi-port is real (Itaqui
+  AND Suape = two legitimate port-calls, not a duplicate).
+- **ELANDRA MAPLE / Itaqui** (manifest 37 892 m³) is flagged `Terceiros` →
+  excluded from backfill by rule; it is independently present from the live
+  Itaqui feed (01–02 May, status Atracado) and left untouched.
+
+**Not touched (intentional):** Suape / PINE OLIA (uncertain — may be a legit
+discharge the colleague just did not list; not removed on speculation);
+Santos / PACIFIC AZUR & ISABELLA M II (07 May — pending an explicit Eduardo
+decision; kept; these are the manifest's lowest-confidence May entries, marked
+`Status=Esperado` by the colleague); the 5 prior backfill rows.
+
+**Distinct port-calls in May (before → after pass 2):** Suape 8→7 (ATLANTIC
+PRIDE removed), all others unchanged (Itaqui 10, Maceió 1, Paranaguá 9, Santos
+20, São Sebastião 1). Total 49→48.
+
+**Idempotency.** The DELETE matches the natural key (porto + navio + May window)
+and is a no-op once the rows are gone. Adjustment 2 inserts nothing → cabotage
+cleanup has nothing new to evaluate; the manifest was all foreign-flag imports,
+so `04_cabotage_cleanup` had nothing to remove for May either.
+
+**Artifacts** (`scripts/pipelines/navios/backfill/`): `reconcile_maio2026_cleanup.py`
+(self-documenting; dry-run prints the Adjustment-2 manifest-vs-DB report as a
+live regression guard, `--apply` performs the DELETE via service role) +
+`reconcile_maio2026_cleanup.sql` (idempotent DELETE, versioned). **Reversal of
+Adjustment 1** (re-insert the 4 deleted rows exactly as captured — note the old
+scraper's `unidade='c'`):
+
+```sql
+INSERT INTO public.navios_diesel
+  (collected_at, porto, status, navio, produto, quantidade, unidade,
+   quantidade_convertida, eta, berco)
+VALUES
+  ('2026-05-27T13:01:00+00:00','Porto de Suape','Esperado','ATLANTIC PRIDE','Óleo Diesel',16200,'c',16200,'2026-06-01T09:00:00+00:00','PGL-3A'),
+  ('2026-05-27T19:01:00+00:00','Porto de Suape','Esperado','ATLANTIC PRIDE','Óleo Diesel',16200,'c',16200,'2026-06-01T09:00:00+00:00','PGL-3A'),
+  ('2026-05-28T01:00:00+00:00','Porto de Suape','Esperado','ATLANTIC PRIDE','Óleo Diesel',16200,'c',16200,'2026-06-01T09:00:00+00:00','PGL-3A'),
+  ('2026-05-28T07:00:00+00:00','Porto de Suape','Esperado','ATLANTIC PRIDE','Óleo Diesel',16200,'c',16200,'2026-06-01T09:00:00+00:00','PGL-3A')
+ON CONFLICT (collected_at, porto, navio) DO NOTHING;
+```
+
+Applied via service-role on 2026-06-03 (4 rows deleted; Adjustment 2 added 0).
+
 ### Client Alerts (logged-in product — hook no fim do ETL, 2026-06-02)
 
 Produto de alertas por email **só-logado**, event-driven. Substitui o produto cloud antigo (anon double-opt-in, detectores em polling de 2h, `scripts/alerts/`) que foi **deletado**. Engine em `scripts/client_alerts/` (ver árvore acima); schema/RPCs em `docs/supabase/PRD.md` § "Alerts v2"; frontend em `docs/app/alerts.md`.
