@@ -15,7 +15,7 @@
 // SAME commit, or the commit message must declare [desktop-only].
 //
 // Units — CRITICAL: never drift label from divisor.
-//   Panel A: total_kg / 1e6 = kt. Label "kt".
+//   Panel A: total_m3 / 1000 = thousand m³. Label "thousand m³" (IMPORTS only).
 //   Panel B: total_mil_m3 already from RPC. Label "mil m³".
 //   Exports (metric=volume): server returns thousand tonnes (ComexStat net weight)
 //     directly — DO NOT divide. Label "mil t" (2026-06-03).
@@ -141,18 +141,18 @@ const ORIGIN_ORDER: string[] = [
  * Output rows use `name = English label`.
  */
 function bucketPaisesByPins(
-  rows: { ano: number; mes: number; pais_origem: string; total_kg: number }[],
-): { ano: number; mes: number; name: string; total_kg: number }[] {
+  rows: { ano: number; mes: number; pais_origem: string; total_m3: number }[],
+): { ano: number; mes: number; name: string; total_m3: number }[] {
   const byKey = new Map<string, number>();
   for (const r of rows) {
     const englishLabel = ORIGIN_LABEL_BY_DB[r.pais_origem] ?? OTHERS_LABEL;
     const k = `${r.ano}|${r.mes}|${englishLabel}`;
-    byKey.set(k, (byKey.get(k) ?? 0) + r.total_kg);
+    byKey.set(k, (byKey.get(k) ?? 0) + r.total_m3);
   }
-  const out: { ano: number; mes: number; name: string; total_kg: number }[] = [];
-  for (const [k, total_kg] of byKey.entries()) {
+  const out: { ano: number; mes: number; name: string; total_m3: number }[] = [];
+  for (const [k, total_m3] of byKey.entries()) {
     const [a, m, name] = k.split("|");
-    out.push({ ano: Number(a), mes: Number(m), name, total_kg });
+    out.push({ ano: Number(a), mes: Number(m), name, total_m3 });
   }
   return out;
 }
@@ -1291,7 +1291,8 @@ export default function DesktopView(): React.ReactElement {
     return rows;
   }, [yoyPaisesData]);
 
-  // Panel A — kt (divide total_kg by 1e6).
+  // Panel A — thousand m³ (divide total_m3 by 1000). Server converts kg → m³
+  // via per-NCM density (migration 20260608500000); imports only.
   // Pinned-country mode: re-bucket against the 6 fixed origins + Others, then
   // force-inject null rows for any pinned country absent in a given month so
   // the legend stays stable (Russia → Saudi Arabia → Others) and the unified
@@ -1302,12 +1303,12 @@ export default function DesktopView(): React.ReactElement {
       ano: r.ano,
       mes: r.mes,
       name: r.name,
-      value: r.total_kg / 1e6,
+      value: r.total_m3 / 1000,
     }));
     const rows = ensureAllPinsPresent(rawRows);
     return isSingleMonth
-      ? buildHorizontalBarTraces(rows, "kt", ORIGIN_ORDER)
-      : buildStackedTraces(rows, "kt", ORIGIN_ORDER);
+      ? buildHorizontalBarTraces(rows, "thousand m³", ORIGIN_ORDER)
+      : buildStackedTraces(rows, "thousand m³", ORIGIN_ORDER);
   }, [paisesData, isSingleMonth]);
 
   // Panel B — mil m³ (already from RPC). Reduced to top-6 + Others to match
@@ -1534,11 +1535,11 @@ export default function DesktopView(): React.ReactElement {
       const key = `${r.ano}|${r.mes}`;
       if (key !== target) continue;
       const englishLabel = ORIGIN_LABEL_BY_DB[r.pais_origem] ?? OTHERS_LABEL;
-      // Convert kg → kt to match the table's units (last_12m is in kt for
-      // the countries panel — server returns it that way; the chart divides
-      // by 1e6 too).
-      const valueKt = r.total_kg / 1e6;
-      acc.set(englishLabel, (acc.get(englishLabel) ?? 0) + valueKt);
+      // Convert m³ → thousand m³ to match the table's units (last_12m is in
+      // thousand m³ for the countries panel — server returns it that way since
+      // migration 20260608500000; the chart divides total_m3 by 1000 too).
+      const valueK = r.total_m3 / 1000;
+      acc.set(englishLabel, (acc.get(englishLabel) ?? 0) + valueK);
     }
     const out = new Map<string, number | null>();
     for (const pin of ORIGIN_COUNTRY_PINS) {
@@ -1725,8 +1726,8 @@ export default function DesktopView(): React.ReactElement {
                         data={paisesTraces}
                         layout={
                           isSingleMonth
-                            ? horizontalBarLayout("kt", singleMonthLabel, 340)
-                            : areaLayout("kt", rangeMonths)
+                            ? horizontalBarLayout("thousand m³", singleMonthLabel, 340)
+                            : areaLayout("thousand m³", rangeMonths)
                         }
                         config={{ responsive: true, displayModeBar: false }}
                         style={{ width: "100%" }}
@@ -1741,7 +1742,7 @@ export default function DesktopView(): React.ReactElement {
                   <YoYTable
                     rows={yoyPaisesPinned}
                     loading={yoyPaisesLoading}
-                    volumeLabel="kt"
+                    volumeLabel="thousand m³"
                     title="By Origin Country"
                     anchorAno={filters.period.end.ano}
                     anchorMes={filters.period.end.mes}

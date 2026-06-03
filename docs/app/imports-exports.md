@@ -117,10 +117,10 @@ Returns `{ ano_min int, mes_min int, ano_max int, mes_max int, produtos text[] }
 
 ### `get_imports_exports_paises_stacked(p_unified_product, p_ano_inicio, p_mes_inicio, p_ano_fim, p_mes_fim, p_top_n DEFAULT 10)`
 
-Returns `(ano int, mes int, pais_origem text, total_kg numeric)`.
+Returns `(ano int, mes int, pais_origem text, total_m3 numeric)`.
 
-- Server ranks countries by total kg over the period. Rows outside top-N are collapsed into `pais_origem='Others'`.
-- UI converts: `total_kg / 1e6 = kt`. **Label must be "kt".**
+- Server ranks countries by total volume over the period. Rows outside top-N are collapsed into `pais_origem='Others'`.
+- **Imports only — thousand m³ (per-NCM density).** Since migration `20260608500000`, the server converts kg → m³ using per-NCM density (diesel 832 → factor 1.202, gasoline 745 → 1.342, crude 870 → 1.149) and renames the return column `total_kg → total_m3` (value in **m³**). UI converts: `total_m3 / 1000 = thousand m³`. **Label must be "thousand m³".** (Exports-by-country is a different RPC and stays in **thousand tonnes (mil t)** — unaffected.)
 
 ### `get_imports_exports_importers_stacked(p_unified_product, p_ano_inicio, p_mes_inicio, p_ano_fim, p_mes_fim, p_top_n DEFAULT 10)`
 
@@ -134,7 +134,7 @@ Returns `(ano int, mes int, unified_importer text, total_mil_m3 numeric)`.
 
 Returns `(entity text, last_12m numeric, prev_12m numeric, yoy_pct numeric)`.
 
-- `p_scope`: `'paises'` → units kt; `'importers'` → units mil m³.
+- `p_scope`: `'paises'` → units **thousand m³** (since migration `20260608500000` the server divides by per-NCM density then by 1000; `last_12m`/`prev_12m` are already in thousand m³ — **no client-side math**, only the column label changed from `kt`); `'importers'` → units mil m³.
 - **Single-month semantics (since migration `20260527000000_imports_exports_yoy_single_month.sql`):** `last_12m` holds the value of the single anchor month `(p_ano_fim, p_mes_fim)`; `prev_12m` holds the same month one year earlier `(p_ano_fim - 1, p_mes_fim)`. Column names are kept verbatim to preserve the payload contract with `src/lib/rpc.ts` wrappers — only the semantics shifted. UI labels the columns as `"<Month YYYY>"` / `"<Month YYYY-1>"` based on `period.end`.
 - The UI always passes `period.end.ano` as `p_ano_fim` and `period.end.mes` as `p_mes_fim` — anchor is never data-driven (legacy "max month with non-zero data" logic in the hook was removed). User's explicit `TO` choice is honoured even when the trailing month has incomplete data (renders as `"n/a"`).
 - `yoy_pct` is `NULL` when `prev_12m = 0` (no prior-year data). UI renders "n/a" in neutral color.
@@ -201,11 +201,26 @@ Scope of the relabel:
 - The exports-panel source footnote now reads mass-appropriate copy ("net weight in thousand tonnes as declared to customs") instead of the old "kg→m³ via ANP standard densities". The footnote is **per-panel, not shared** with the imports/unit-price panels — each panel renders its own source line. The mobile exports footnote is a single combined line covering both the volume chart and the USD/bbl unit-price panel; only its volume clause was switched to tonnes, the `1 m³ = 6.2898 bbl` clause for the price panel is preserved.
 
 Everything else stays **m³-based**:
-- Imports tab — Panel A (origin countries, `kt`), Panel B (importers, `mil m³`), imports YoY.
+- Imports tab — Panel A (origin countries, `thousand m³` since 2026-06-08 — per-NCM density), Panel B (importers, `mil m³`), imports YoY (`thousand m³`).
 - Unit-price panels (USD/m³ → USD/ton, ¢/gal, USD/bbl) — unchanged per the user's decision.
 - The unified **export library** (`src/lib/export/dashboards/importsExports.ts`) is a **raw-row** dump, not the aggregated panel. Its Exports sheet keeps `Quantity (kg)` (true net weight) + `Volume (m³)` (true `kg / densidade`) columns — these are genuine physical quantities, independent of the panel's display unit, and were intentionally left untouched (relabeling them to tonnes would be factually wrong).
 
 Single source of truth in code: the `exportsUnit` constant (`filters.exportsYAxis === "volume" ? "mil t" : "USD"`) declared identically in `desktop/View.tsx` and `mobile/View.tsx`. It feeds the chart layout (`areaLayout` / `mobileAreaLayout` / `horizontalBarLayout`), the trace builders (hover unit), and the YoY table `volumeLabel`/`unitLabel`, so a single edit flips every artifact in that view.
+
+---
+
+## Imports — By Origin Country: volume unit = thousand m³ (2026-06-08)
+
+As of 2026-06-08 (migration `20260608500000`) the **Imports — By Origin Country** panel (Panel A stacked area / single-month horizontal bar) **and the paises YoY table** report volume in **thousand m³** instead of `kt`. The server converts kg → m³ using per-NCM density (`ncm_densidade_kg_m3`): diesel 832 kg/m³ → factor ~1.202, gasoline 745 → ~1.342, crude 870 → ~1.149. Scope is **IMPORTS-ONLY**.
+
+Two RPC contract changes (imports paths only):
+
+1. `get_imports_exports_paises_stacked(...)` — return column **renamed `total_kg → total_m3`**, value in **m³**. The frontend reads `total_m3` and **divides by 1000** to display **thousand m³** (previously read `total_kg` and divided by `1e6` for kt). Mirrored in `src/lib/rpc.ts` (`IEPaisesStackedRow.total_m3` + wrapper map), the hook (`PaisesStackedRow.total_m3`), and both Views (`bucketPaisesByPins`, `paisesTraces` / `importsPaisesStacked`, and the client-side MoM `prevMonthByCountry`).
+2. `get_imports_exports_yoy_table('paises', ...)` — `last_12m`/`prev_12m` are **already in thousand m³** (server divides by density then by 1000). Column names unchanged; **no frontend math change** — only the label switched from `kt` to `thousand m³` (`yoyPaisesPinned` consumes server values verbatim).
+
+Cross-check: Russia diesel May 2026 ≈ **1,035 thousand m³** (vs ≈ 887 prior year, +16.7%).
+
+Label rendered as **"thousand m³"** (project English convention) on: Panel A y-axis title + hover unit, the paises YoY table `volumeLabel`/`unitLabel`, and the mobile section subtitle ("Diesel imports, thousand m³"). The `importers` YoY branch (`mil m³`) and **all exports RPCs (`mil t`)** are untouched.
 
 ---
 
@@ -223,8 +238,8 @@ Single source of truth in code: the `exportsUnit` constant (`filters.exportsYAxi
 │  Sidebar     │ Imports tab:                                                │
 │  (220px)     │   ChartSection "By Origin Country"                         │
 │              │     Plotly stacked bar — x: YYYY-MM, stack: countries      │
-│  Period      │     Unit: kt (total_kg / 1e6)                              │
-│  select      │   YoY table (entity | last 12m kt | prior 12m kt | YoY%)  │
+│  Period      │     Unit: thousand m³ (total_m3 / 1000, per-NCM density)   │
+│  select      │   YoY table (entity | last 12m | prior 12m | YoY%) — th.m³ │
 │              │                                                             │
 │              │   ChartSection "By Importer (Brazil)"                      │
 │              │     Plotly stacked bar — x: YYYY-MM, stack: importers      │
