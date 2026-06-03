@@ -559,8 +559,10 @@ Arquitetura extensível baseada em registry. Substitui o workflow de editar `dat
 | `src/lib/dataInput/types.ts` | Tipos compartilhados (`EditableTableConfig`, `ColumnConfig`, `EditState`, `SaveResult`, etc.) |
 | `src/lib/dataInput/registry.ts` | `EDITABLE_TABLES: EditableTableConfig[]` — lista de tabelas editáveis |
 | `src/lib/dataInput/validation.ts` | Funções puras de validação (`validateCell`, `validateRow`, `validateAll`) |
-| `src/lib/dataInput/persistence.ts` | `loadRows` + `saveChanges` (upsert + delete via PostgREST anon key) |
-| `src/components/dataInput/EditableTableEditor.tsx` | Editor de tabela inline (client component) |
+| `src/lib/dataInput/persistence.ts` | `loadRows` + `saveChanges` (upsert + delete via PostgREST anon key); exports `coerceValue` helper reused by bulk upload |
+| `src/lib/dataInput/bulkUpload.ts` | Bulk .xlsx parse + diff + upsert (`parseWorkbook`, `computeBulkDiff`, `bulkUpsert`). ExcelJS is dynamic-imported (browser-only, kept out of the initial bundle) |
+| `src/components/dataInput/EditableTableEditor.tsx` | Editor de tabela inline (client component); mounts the bulk-upload button + modal when `config.bulkUpload` is set |
+| `src/components/dataInput/BulkUploadModal.tsx` | Bulk .xlsx upload modal (choose file → preview insert/update diff + validation → confirm) |
 | `src/components/dataInput/TableSelector.tsx` | Seletor de tabela (SegmentedToggle ≤4, select >4) |
 
 ### Tabelas atualmente registradas
@@ -586,6 +588,35 @@ Arquitetura extensível baseada em registry. Substitui o workflow de editar `dat
 As políticas de escrita para `price_bands` e `d_g_margins` são criadas pela migration
 `supabase/migrations/20260512000000_data_input_admin_policies.sql` (worker_supabase, branch paralela).
 Sem a migration, writes retornam 403 — a UI renderiza mas não persiste.
+
+### Bulk .xlsx upload (upsert + preview) — 2026-06-03
+
+The Data Input editor now lets an admin upload the **same multi-sheet `.xlsx`** they used to feed to `scripts/manual/price_bands_upload.py` / `scripts/manual/dg_margins_upload.py`, directly from the browser — no local Python run needed. Excel-only (no CSV, no paste). **Desktop-only** (the whole `/admin-panel` is desktop-only — no dual-view sync).
+
+**Where:** a "Bulk upload (.xlsx)" button appears in the editor toolbar whenever the active table's registry config declares a `bulkUpload` spec. Currently both registered tables have one (`price-bands`, `d-g-margins`).
+
+**Flow (modal):** choose file → parse → **preview** → confirm.
+- **Preview** shows: sheets found (expected sheets highlighted), total rows parsed, **N to insert / M to update** (diff computed against the rows currently loaded in the editor, by the conflict-key tuple), plus a scrollable list of validation errors and warnings (each tagged with sheet + Excel row number). Hard errors disable the Confirm button.
+- **Merge semantics:** upsert on `conflictColumns` (`product+date` for Price Bands, `fuel_type+week` for D&G Margins). Existing keys are updated, new keys inserted; **nothing is deleted**. Written in chunks of 500.
+
+**Per-sheet header maps** (declared in `registry.ts` under `bulkUpload.sheets[].headerMap`, mirroring the Python scripts):
+
+| Table | Sheet | partitionValue | Excel headers → DB columns |
+|---|---|---|---|
+| Price Bands | `Diesel` | `Diesel` | `Date`→`date`, `BBA - Import Parity`→`bba_import_parity`, `BBA - Export Parity`→`bba_export_parity`, `Petrobras Price`→`petrobras_price` |
+| Price Bands | `Gasoline` | `Gasoline` | `Date`→`date`, `IBBA - Import Parity`→`bba_import_parity`, `IBBA - Export Parity`→`bba_export_parity`, `Petrobras Price`→`petrobras_price` |
+| D&G Margins | `Diesel B` | `Diesel B` | `Week`→`week`, `Distribution and Resale Margin`→`distribution_and_resale_margin`, `State Tax`→`state_tax`, `Federal Tax`→`federal_tax`, `Total`→`total`, `Biodiesel`→`biofuel_component`, `Diesel A`→`base_fuel` |
+| D&G Margins | `Gasoline C` | `Gasoline C` | `Week`→`week`, `Distribution and Resale Margin`→`distribution_and_resale_margin`, `State Tax`→`state_tax`, `Federal Tax`→`federal_tax`, `Total`→`total`, `Anhydrous Ethanol`→`biofuel_component`, `Gasoline A`→`base_fuel` |
+
+Notes:
+- The Excel header is `Distribution and Resale Margin` ("and"); the registry column label is `Distribution & Resale Margin` ("&"). The header map bridges this — the file must use "and".
+- `Date` cells (ExcelJS `Date` objects) are converted to ISO `YYYY-MM-DD` (read in UTC to avoid an off-by-one day). Rows with no/invalid Date are skipped. D&G rows with empty/`nan` Week are skipped (same as the Python scripts).
+- **`_w_subsidy` columns are never sent.** They aren't in the registry, and the upsert allowlist (registry columns + conflict columns; `id` excluded so Postgres auto-generates) strips everything else. Obsolete columns like `BBA - Import Parity w/ subsidy` in older templates are simply not mapped and ignored silently.
+- **Validation is lenient for non-key columns:** NULL/empty is allowed (the Python upserts insert NULLs freely and that data already lives in the DB). Hard errors only for malformed type/format (e.g. a non-numeric value in a number column, a Week not matching `WW/YYYY`) or a missing conflict-key column. Missing/empty conflict-key rows are skipped, not errored.
+
+**Implementation files:** `src/lib/dataInput/types.ts` (`BulkUploadConfig`, `BulkSheetMap`, `BulkParseResult`, `BulkRowError`), `src/lib/dataInput/registry.ts` (`bulkUpload` on both tables), `src/lib/dataInput/bulkUpload.ts` (`parseWorkbook` / `computeBulkDiff` / `bulkUpsert`), `src/lib/dataInput/persistence.ts` (exported `coerceValue`), `src/components/dataInput/EditableTableEditor.tsx` (button + modal wiring), `src/components/dataInput/BulkUploadModal.tsx` (modal UI).
+
+**No DB / RLS / migration change** — reuses the existing Admin upsert RLS on both tables (the same policy the single-row editor uses) and the shared `src/lib/supabaseClient` instance.
 
 ## Changelog — Price Bands form simplification + `anp_subsidy_history` cleanup (2026-05-27)
 

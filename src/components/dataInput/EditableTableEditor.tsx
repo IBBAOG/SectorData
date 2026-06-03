@@ -12,6 +12,7 @@ import { getSupabaseClient } from "@/lib/supabaseClient";
 import type { EditableTableConfig, DraftRow, Row } from "@/lib/dataInput/types";
 import { loadRows, saveChanges } from "@/lib/dataInput/persistence";
 import { validateRow } from "@/lib/dataInput/validation";
+import { BulkUploadModal } from "./BulkUploadModal";
 
 interface EditableTableEditorProps {
   config: EditableTableConfig;
@@ -46,6 +47,15 @@ export function EditableTableEditor({ config }: EditableTableEditorProps) {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Bulk upload modal ──────────────────────────────────────────────────────
+  const [bulkOpen, setBulkOpen] = useState(false);
+
+  function showToast(message: string) {
+    setToast(message);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 3000);
+  }
 
   // ── beforeunload guard ────────────────────────────────────────────────────
   const hasPendingChanges =
@@ -321,6 +331,19 @@ export function EditableTableEditor({ config }: EditableTableEditorProps) {
           </button>
         )}
 
+        {config.bulkUpload && (
+          <button
+            type="button"
+            onClick={() => setBulkOpen(true)}
+            disabled={saving}
+            className="btn btn-sm btn-outline-secondary"
+            style={{ fontFamily: "Arial, sans-serif", fontSize: 12, marginLeft: "auto" }}
+            title="Upload a multi-sheet .xlsx and upsert (insert new + update existing)"
+          >
+            Bulk upload (.xlsx)
+          </button>
+        )}
+
         {hasErrors && (
           <span style={{ fontSize: 12, color: "#c0392b" }}>
             Fix validation errors before saving.
@@ -475,6 +498,21 @@ export function EditableTableEditor({ config }: EditableTableEditorProps) {
           </tbody>
         </table>
       </div>
+
+      {/* ── Bulk upload modal ────────────────────────────────────────────── */}
+      {bulkOpen && supabase && config.bulkUpload && (
+        <BulkUploadModal
+          supabase={supabase}
+          config={config}
+          existingRows={rows}
+          onClose={() => setBulkOpen(false)}
+          onSuccess={async (upserted) => {
+            setBulkOpen(false);
+            await fetchRows();
+            showToast(`Upserted ${upserted} row${upserted !== 1 ? "s" : ""}.`);
+          }}
+        />
+      )}
     </div>
   );
 }

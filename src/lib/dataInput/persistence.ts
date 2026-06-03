@@ -15,7 +15,7 @@ import type { EditableTableConfig, EditState, Row, SaveResult } from "./types";
  *
  * Null/undefined passthrough so required-field guards can detect missing values.
  */
-function coerceValue(
+export function coerceValue(
   value: unknown,
   type: import("./types").ColumnType
 ): unknown {

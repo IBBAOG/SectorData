@@ -31,6 +31,32 @@ export interface SortConfig {
   dir: "asc" | "desc";
 }
 
+/**
+ * Maps one Excel worksheet to a partition value + its header→column mapping.
+ * Sheet-specific because the same logical column can have different Excel
+ * headers per sheet (e.g. "BBA - Import Parity" on Diesel vs
+ * "IBBA - Import Parity" on Gasoline).
+ */
+export interface BulkSheetMap {
+  /** Excel worksheet name (must match exactly). */
+  sheetName: string;
+  /** Value stamped on the partitionBy column for every row of this sheet. */
+  partitionValue: string;
+  /** Excel header text → registry column key. Sheet-specific. */
+  headerMap: Record<string, string>;
+}
+
+/**
+ * Declarative bulk-upload spec for a table. When present on an
+ * `EditableTableConfig`, the Data Input editor exposes a "Bulk upload (.xlsx)"
+ * affordance that parses the admin's multi-sheet workbook and upserts it.
+ */
+export interface BulkUploadConfig {
+  /** The conflict/partition column each sheet stamps (e.g. "product", "fuel_type"). */
+  partitionColumn: string;
+  sheets: BulkSheetMap[];
+}
+
 export interface EditableTableConfig {
   slug: string;
   label: string;
@@ -51,6 +77,34 @@ export interface EditableTableConfig {
    * Use for caveats like "this column is computed automatically".
    */
   infoNote?: string;
+  /**
+   * Optional bulk .xlsx upload spec. When present, the editor shows a
+   * "Bulk upload (.xlsx)" button that parses a multi-sheet workbook (one sheet
+   * per partition value) and upserts it. Mirrors the legacy
+   * `scripts/manual/*_upload.py` Excel → DB mapping.
+   */
+  bulkUpload?: BulkUploadConfig;
+}
+
+/** One parse/validation problem flagged during bulk upload. */
+export interface BulkRowError {
+  /** Excel worksheet the problem came from. */
+  sheet: string;
+  /** 1-based Excel row number (header is row 1). */
+  rowNumber: number;
+  message: string;
+}
+
+/** Result of parsing an uploaded workbook against a table config. */
+export interface BulkParseResult {
+  /** Successfully parsed + coerced rows, ready for diff/upsert. */
+  rows: Row[];
+  /** Hard errors — block the upload until the file is fixed. */
+  errors: BulkRowError[];
+  /** Non-blocking warnings (e.g. an expected sheet was missing). */
+  warnings: string[];
+  /** Worksheet names actually present in the workbook. */
+  sheetsFound: string[];
 }
 
 /** A draft (unsaved insert) uses a negative id to distinguish it from DB rows. */
