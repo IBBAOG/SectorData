@@ -12,6 +12,29 @@ from bs4 import BeautifulSoup
 
 warnings.filterwarnings("ignore", message="Unverified HTTPS request")
 
+
+# ---------------------------------------------------------------------------
+# Fetch-failure signalling (watchdog hardening, 2026-06-03)
+# ---------------------------------------------------------------------------
+#
+# `FetchError` marks a BROKEN FETCH — the page did not decode to a structurally
+# valid lineup (encoding/Brotli junk, WAF challenge, empty SPA shell, schema
+# break). This is the failure mode that silently zeroed Porto de Itaqui for
+# 9 days in May 2026 (Pegadinha #12): the scraper returned 0 diesel ships with
+# no exception, so the watchdog stayed green.
+#
+# Contract:
+#   - A scraper raises FetchError when it CANNOT TRUST the page (broken fetch).
+#     The main loop then marks that port ERRO_COLETA (sentinel row) and the
+#     watchdog fails the job if the port is in EXPECTED_PORTS.
+#   - A scraper returns an EMPTY DataFrame only when the page IS valid but holds
+#     no diesel today (a legitimate zero). The main loop logs a WARN for that.
+#
+# Never conflate the two: a broken fetch returning 0 rows is the real bug.
+class FetchError(RuntimeError):
+    """A port page could not be fetched/decoded into a trustworthy lineup."""
+
+
 # ---------------------------------------------------------------------------
 # Debug / artifact dump directory (used by GHA artifact upload)
 # ---------------------------------------------------------------------------
@@ -53,6 +76,7 @@ URL_SANTOS_ATRACADOS = (
 URL_ITAQUI      = "https://www.portodoitaqui.com.br/porto-agora/navios/esperados"
 URL_PARANAGUA   = "https://www.appaweb.appa.pr.gov.br/appaweb/pesquisa.aspx?WCI=relLineUpRetroativo"
 URL_SAO_SEBAST  = "https://sisport.portoss.sp.gov.br/LineUp/ConsultaPublicaProgramacao.aspx"
+URL_MACEIO      = "https://www.portodemaceio.com.br/portal/programacao-navios"
 SUAPE_SHEET_ID  = "1wfmbo5z4iLqDmANEIslnM-G0FYD57e0iruKHrbzniOk"
 SUAPE_SHEET_RAW = "Dados Brutos"
 
@@ -577,7 +601,7 @@ def buscar_itaqui() -> pd.DataFrame:
     # Se nenhuma etapa funcionou, fail loud
     # ---------------------------------------------------------------------
     if html is None:
-        raise RuntimeError(
+        raise FetchError(
             f"buscar_itaqui: todas as etapas falharam. Último motivo: "
             f"{last_failure_reason}. Verifique artifacts em output/debug/ e "
             f"considere configurar SCRAPER_PROXY_URL (ex: ScraperAPI key)."
@@ -614,7 +638,7 @@ def buscar_itaqui() -> pd.DataFrame:
     # (page schema changed). Dump for inspection and raise.
     if not raw_tables:
         dump = _dump_debug_html("itaqui_html_no_tables", html)
-        raise RuntimeError(
+        raise FetchError(
             f"buscar_itaqui: HTML válido mas nenhuma <table> parseável encontrada. "
             f"Schema da página pode ter mudado. Dump: {dump}"
         )
@@ -949,6 +973,155 @@ def buscar_suape() -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Porto de Maceió – Atracados / Esperados
+# ---------------------------------------------------------------------------
+#
+# Coverage gap closed 2026-06-03. Maceió was previously NOT scraped, so its
+# diesel calls (e.g. STI JARDINS, ELANDRA MAPLE) never reached navios_diesel.
+#
+# Page layout (https://www.portodemaceio.com.br/portal/programacao-navios):
+#   Table 0 — "Navios Atracados" : NAVIO | BANDEIRA | AGENTES | MERCADORIA | PESO(TON) | BERÇO
+#   Table 1 — "Navios Esperados" : NAVIO | BANDEIRA | AGENTES | PREVISÃO   | MERCADORIA | BERÇO
+#
+# Direction limitation: Maceió does NOT publish an operation-direction column
+# (descarga vs embarque / import vs export). Unlike Paranaguá (Sentido=IMP),
+# Santos (DESC) and Suape (Tipo da Operação ∈ {DG, TB DG}), we cannot filter to
+# discharge-only at the source. We therefore capture EVERY diesel call here.
+# In practice Maceió is a net diesel-import berth (Terminal de granéis líquidos),
+# so the over-capture risk is low, but BANDEIRA=BRASIL rows are still routed
+# through the cabotage filter (04_cabotage_cleanup) downstream, which removes
+# Brazilian-flag coastal traffic. Document this when revisiting.
+
+
+def _maceio_html_looks_valid(html: str) -> bool:
+    """Distinguish a real Maceió lineup page from a broken fetch / WAF shell.
+
+    POSITIVE (need a table AND lineup markers):
+      - "<table" present, plus at least one of the expected headers
+        ("navio", "mercadoria", "previs", "bandeira").
+    NEGATIVE:
+      - WAF / challenge markers, or payload too small to hold the tables.
+    """
+    if not html or len(html) < 3000:
+        return False
+    low = html.lower()
+    bad_markers = ("just a moment", "access denied", "captcha", "cf-chl")
+    if any(m in low for m in bad_markers):
+        return False
+    has_table = "<table" in low
+    has_markers = ("navio" in low) and (
+        "mercadoria" in low or "previs" in low or "bandeira" in low
+    )
+    return has_table and has_markers
+
+
+def buscar_maceio() -> pd.DataFrame:
+    """Scraper de Porto de Maceió (Atracados + Esperados).
+
+    Raises FetchError when the page does not decode to a structurally valid
+    lineup (Pegadinha #12 — never let a broken fetch masquerade as 0 diesel).
+    Returns an empty DataFrame only when the page IS valid but holds no diesel.
+    """
+    html = _get(URL_MACEIO)
+
+    # Hard fail on a broken fetch (Brotli/junk/WAF) so the watchdog flags it as
+    # a collection error rather than silently reporting "0 diesel ships".
+    if not _maceio_html_looks_valid(html):
+        dump = _dump_debug_html("maceio_invalid", html)
+        raise FetchError(
+            f"buscar_maceio: page did not decode to a valid lineup "
+            f"(len={len(html or '')}, dump={dump}). "
+            f"Likely a broken fetch (encoding/WAF), not a genuine empty lineup."
+        )
+
+    soup = BeautifulSoup(html, "lxml")
+    tables = soup.find_all("table")
+    if not tables:
+        dump = _dump_debug_html("maceio_no_tables", html)
+        raise FetchError(
+            f"buscar_maceio: valid-looking HTML but no <table> parsed "
+            f"(schema may have changed). Dump: {dump}"
+        )
+
+    partes: list[pd.DataFrame] = []
+    total_diesel_rows = 0
+
+    for table in tables:
+        rows = []
+        for tr in table.find_all("tr"):
+            cells = [c.get_text(" ", strip=True) for c in tr.find_all(["th", "td"])]
+            if cells:
+                rows.append(cells)
+        if len(rows) < 2:
+            continue
+
+        header = [h.strip().upper() for h in rows[0]]
+        body = [r for r in rows[1:] if any(c.strip() for c in r)]
+        if not body:
+            continue
+
+        ncols = len(header)
+        padded = [r[:ncols] + [""] * max(0, ncols - len(r)) for r in body]
+        df = pd.DataFrame(padded, columns=header)
+
+        col_navio = _col(df, "NAVIO", required=False)
+        col_merc = _col(df, "MERCAD", required=False)
+        if not col_navio or not col_merc:
+            continue   # not a lineup table (skip the page furniture)
+
+        mask = df[col_merc].str.upper().apply(_diesel_puro)
+        f = df.loc[mask].copy()
+        if f.empty:
+            continue
+        total_diesel_rows += len(f)
+
+        rename_map = {col_navio: "Navio", col_merc: "Carga"}
+
+        # Atracados table → status "Atracado" + PESO(TON) as quantity.
+        # Esperados table → status "Esperado" + PREVISÃO as arrival date.
+        col_peso = _col(df, "PESO", required=False)
+        col_prev = _col(df, "PREVIS", required=False)
+        col_berco = _col(df, "BER", required=False)
+        col_band = _col(df, "BANDEIRA", required=False)
+
+        if col_peso:
+            rename_map[col_peso] = "Quantidade (m³)"   # still tons; converted later
+        if col_prev:
+            rename_map[col_prev] = "Chegada"
+        if col_berco:
+            rename_map[col_berco] = "Terminal"
+
+        status = "Atracado" if col_peso else "Esperado"
+
+        f = f.rename(columns=rename_map)
+
+        # BANDEIRA → Origem so the cabotage filter can flag Brazilian-flag rows.
+        # 04_cabotage_cleanup classifies flag IN ('BRASIL','BRAZIL','BR') and
+        # origem endswith '-BRA'; tagging the Brazilian flag here lets downstream
+        # cabotage cleanup remove coastal traffic Maceió cannot pre-filter.
+        if col_band:
+            f["Origem"] = (
+                f[col_band].astype(str).str.strip().str.upper()
+                .map(lambda b: "BRASIL-BRA" if b in ("BRASIL", "BRAZIL", "BR") else pd.NA)
+            )
+
+        # Maceió PREVISÃO is DD-MM-YYYY (dash); normalise to DD/MM/YYYY so the
+        # downstream importer (02_diesel_import.mjs parseBRDate) parses it.
+        if "Chegada" in f.columns:
+            f["Chegada"] = f["Chegada"].astype(str).str.strip().str.replace(
+                r"^(\d{2})-(\d{2})-(\d{4})$", r"\1/\2/\3", regex=True
+            )
+
+        # Maceió reports PESO in metric tons.
+        f["Unidade Origem"] = "t"
+
+        partes.append(_normalizar(f, porto="Porto de Maceió", status=status))
+
+    print(f"    [Maceió] tabelas: {len(tables)}, linhas diesel: {total_diesel_rows}")
+    return pd.concat(partes, ignore_index=True, sort=False) if partes else pd.DataFrame()
+
+
+# ---------------------------------------------------------------------------
 # Consolidação final + conversão para m³
 # ---------------------------------------------------------------------------
 
@@ -1087,6 +1260,7 @@ if __name__ == "__main__":
         "Porto de Paranaguá":           "Porto de Paranaguá",
         "Porto de São Sebastião":       "Porto de São Sebastião",
         "Porto de Suape":               "Porto de Suape",
+        "Porto de Maceió":              "Porto de Maceió",
     }
 
     # Watchdog: portos que DEVEM ser cobertos por pelo menos uma fonte que rode
@@ -1099,6 +1273,7 @@ if __name__ == "__main__":
         "Porto de Paranaguá",
         "Porto de São Sebastião",
         "Porto de Suape",
+        "Porto de Maceió",
     }
 
     fontes = [
@@ -1108,6 +1283,7 @@ if __name__ == "__main__":
         ("Porto de Paranaguá",           buscar_paranagua),
         ("Porto de São Sebastião",       buscar_sao_sebastiao),
         ("Porto de Suape",               buscar_suape),
+        ("Porto de Maceió",              buscar_maceio),
     ]
 
     tabelas = []
@@ -1115,16 +1291,35 @@ if __name__ == "__main__":
     # Track which canonical portos had at least one source that did NOT raise.
     # An empty DataFrame here is fine — it means "scraper ran but no diesel ships".
     portos_com_fonte_ok: set[str] = set()
+    # FetchError ports — broken fetch (encoding/WAF/schema), NOT a legitimate
+    # empty lineup. These must NOT be allowed to look "green" (the Itaqui-Brotli
+    # blackout failure mode). Tracked separately so the watchdog can distinguish
+    # a hard fetch break from an ordinary scraper exception.
+    portos_fetch_quebrado: set[str] = set()
     erros_detalhados: list[tuple[str, str]] = []
+    # Per-port diesel row count for the source that succeeded — lets us surface
+    # a clear WARN when an EXPECTED port fetched fine but yielded 0 diesel
+    # (a silent zero is the real bug; make it loud in the logs / monitors).
+    diesel_rows_por_porto: dict[str, int] = {}
 
     for nome, fn in fontes:
         print(f"Buscando {nome}...")
         porto_canon = _FONTE_PORTO[nome]
         try:
             t = fn()
-            print(f"  Porto {porto_canon} ({nome}): {len(t)} registro(s).")
-            tabelas.append(t)
+            n = 0 if t is None else len(t)
+            print(f"  Porto {porto_canon} ({nome}): {n} registro(s).")
+            tabelas.append(t if t is not None else pd.DataFrame())
             portos_com_fonte_ok.add(porto_canon)
+            diesel_rows_por_porto[porto_canon] = diesel_rows_por_porto.get(porto_canon, 0) + n
+        except FetchError as e:
+            # BROKEN FETCH — page did not decode to a trustworthy lineup.
+            err_msg = f"{type(e).__name__}: {e}"
+            print(f"  FETCH QUEBRADO em {nome}: {err_msg}")
+            tabelas.append(pd.DataFrame())
+            portos_com_erro.add(porto_canon)
+            portos_fetch_quebrado.add(porto_canon)
+            erros_detalhados.append((nome, err_msg))
         except Exception as e:
             err_msg = f"{type(e).__name__}: {e}"
             print(f"  ERRO em {nome}: {err_msg}")
@@ -1134,7 +1329,11 @@ if __name__ == "__main__":
 
     resultado = consolidar(*tabelas)
 
-    # Adicionar linhas sentinela para portos sem nenhuma fonte bem-sucedida
+    # Adicionar linhas sentinela para portos sem nenhuma fonte bem-sucedida.
+    # ERRO_COLETA = "we could not trust this port's data this run" — both a hard
+    # fetch break (FetchError) and any other unrecovered exception land here.
+    # The monthly-volume RPC treats ERRO_COLETA ports specially so a broken
+    # snapshot never silently zeroes a month.
     portos_sem_fonte_ok = portos_com_erro - portos_com_fonte_ok
     if portos_sem_fonte_ok:
         sentinelas = []
@@ -1171,14 +1370,44 @@ if __name__ == "__main__":
         print("(nenhum dado disponível para exibição)")
 
     # ---------------------------------------------------------------------
+    # Per-port zero-diesel surfacing (watchdog hardening, 2026-06-03).
+    #
+    # A port that fetched OK but returned 0 diesel is logged with a loud WARN.
+    # Most runs this is legitimate (no diesel ship in port right now), but a
+    # PERSISTENT zero on an EXPECTED port is the signature of a degraded-but-
+    # not-erroring scraper (the silent-zero failure mode). Surfacing it every
+    # run lets the freshness/failure monitors and a human notice a multi-day
+    # silent drought instead of it slipping by green. The freshness guardian
+    # (scripts/freshness_monitor.py, 36h threshold on navios_diesel) is the
+    # cross-run backstop that pages when the table stops advancing.
+    # ---------------------------------------------------------------------
+    portos_zero_diesel = sorted(
+        p for p in EXPECTED_PORTS
+        if p in portos_com_fonte_ok and diesel_rows_por_porto.get(p, 0) == 0
+    )
+    if portos_zero_diesel:
+        print(
+            f"\n[WARN] {len(portos_zero_diesel)} porto(s) monitorado(s) fetcharam OK "
+            f"mas retornaram 0 diesel: {portos_zero_diesel}. "
+            f"Provavelmente sem diesel agora; se persistir por dias, suspeite de "
+            f"scraper degradado (silent-zero) — confira o freshness_monitor."
+        )
+
+    # ---------------------------------------------------------------------
     # WATCHDOG (Requisito B): fail loud se algum porto monitorado não teve
-    # nenhuma fonte rodar sem erro.
+    # nenhuma fonte rodar sem erro. Broken fetches (FetchError) são destacadas
+    # explicitamente — é exatamente a falha (Itaqui/Brotli) que ficou 9 dias
+    # passando despercebida.
     # ---------------------------------------------------------------------
     portos_faltando = EXPECTED_PORTS - portos_com_fonte_ok
     if portos_faltando:
+        fetch_quebrado_monitorados = sorted(portos_faltando & portos_fetch_quebrado)
         print(f"\n{'!'*110}")
         print(f"WATCHDOG: {len(portos_faltando)} porto(s) monitorado(s) sem nenhuma "
               f"fonte bem-sucedida: {sorted(portos_faltando)}")
+        if fetch_quebrado_monitorados:
+            print(f"WATCHDOG: fetch QUEBRADO (não é 0-diesel legítimo) em: "
+                  f"{fetch_quebrado_monitorados}")
         if erros_detalhados:
             print("\nErros detalhados:")
             for nome, err in erros_detalhados:
