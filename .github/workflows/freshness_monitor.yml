@@ -1,0 +1,46 @@
+name: Data Freshness Guardian
+
+# OPS safety net against a SILENT ETL stall: a workflow that stays green while
+# its data stops advancing. Compares "days since latest data" per base against an
+# overdue threshold tuned to that source's REAL publication cadence (so a
+# legitimately-slow source — e.g. ANP monthly fuel data publishing month M only
+# in M+1 — does NOT false-positive). Emails an ops digest if any base is overdue.
+#
+# This pages the TEAM and is independent of the client Alerts product (which
+# emails subscribers when a base GETS new data; this fires when a base FAILS to).
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 12 * * *'   # daily at 12:00 UTC
+
+# Own group so a run never collides with the next dispatch.
+concurrency:
+  group: freshness-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check data freshness and email ops if overdue
+        run: python -m scripts.freshness_monitor
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY:      ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GMAIL_ADDRESS:             ${{ vars.GMAIL_ADDRESS || 'ibbaogproject@gmail.com' }}
+          GMAIL_APP_PASSWORD:        ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERTAS_DEST_EMAIL:        ${{ secrets.ALERTAS_DEST_EMAIL }}
