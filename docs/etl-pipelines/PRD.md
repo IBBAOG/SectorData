@@ -46,6 +46,21 @@ scripts/extractors/                 # extratores reutilizáveis (não são scrip
   _powerbi_common.py                Helper compartilhado para requisições à API querydata do Power BI
   anp_cdp_powerbi.py                ANP CDP Power BI público → anp_cdp_diaria / _instalacao / _poco. CLI: --level campo|instalacao|poco|all. 3 levels extraídos por run (pages 4, 5, 6 do Power BI).
 
+scripts/client_alerts/              # Client Alerts engine — invocado como último step de cada ETL + digest (ver § "Client Alerts")
+  _core/                            lógica parametrizada pelo catálogo alert_sources
+    config.py                       lê SUPABASE_SERVICE_KEY OU SUPABASE_SERVICE_ROLE_KEY (workflows divergem) + GMAIL_ADDRESS/GMAIL_APP_PASSWORD
+    supabase_client.py              singleton service-role
+    emit.py                         emit_event_if_new(): watermark + INSERT alert_events + UPDATE alert_source_state
+    fanout.py                       fanout_event(): resolve recipientes via alerts_active_recipients, insere alert_outbox
+    deliver.py                      send_pending_outbox(): lê outbox 'queued' → envia via gmail_client → grava alert_email_log
+    gmail_client.py                 ATIVO — Gmail SMTP (smtp.gmail.com:587 STARTTLS) + App Password
+    resend_client.py                dormente (backend antigo; deliver.py importa gmail_client)
+    render.py                       Jinja2 (immediate + digest)
+    digest.py                       sweep_digests(): roll-up diário das bases 'digest' em 1 email/subscriber
+  templates/                        alert_immediate.{html,txt}, alert_digest.{html,txt}, _layout.html
+  run_base.py                       runner: --source <slug> (repeatable) | --digest [--batch-limit N]
+  vendas.py, navios_diesel.py, ...  1 wrapper fino por base (chamam run_one(slug))
+
 scripts/manual/                     # humano-no-loop (dept Dados Locais)
   dg_margins_upload.py              Excel data/d_g_margins.xlsx → d_g_margins
   price_bands_upload.py             Excel data/price_bands.xlsx → price_bands
@@ -77,6 +92,53 @@ scripts/utils/                      # one-shots (não-ETL)
 | `etl_anp_cdp_diaria.yml` | 3×/dia — `0 10,15,20 * * *` UTC (7h/12h/17h BRT) | `scripts/extractors/anp_cdp_powerbi.py --level all --upload` (via `_powerbi_common.py`) | `anp_cdp_diaria` (~16.5k rows; upsert `(data, campo, bacia)`), `anp_cdp_diaria_instalacao` (~16.3k rows; upsert `(data, campo, instalacao)`), `anp_cdp_diaria_poco` (~180.7k rows; upsert `(data, campo, bacia, poco)`). Timeout workflow: 25min. **Semântica de upload — append-only** (desde commit `397a108c`, 2026-05-08): usa `ignore_duplicates=True` (PostgREST `Prefer: resolution=ignore-duplicates` → SQL `ON CONFLICT DO NOTHING`). (data, dim) inédito: INSERT. (data, dim) já existe: SKIP — valor original preservado. Aplica-se às 3 tabelas (campo / instalacao / poco) — todas passam pela mesma `upload_to_supabase()`. Base point: `--start` default = `2025-11-09` (primeira data com dados Power BI). Trade-off: revisões retroativas do Power BI ANP não são refletidas (snapshot histórico tem prioridade sobre fidelidade a revisões — decisão explícita do usuário). **Pegadinha 1 — property names**: property names Power BI são case-sensitive e diferem do display name — ex: nível Poço usa `Campo (Poço)` (property) e não `NOME CAMPO` (display name); retorna 0 linhas se property errada. **Pegadinha 2 — atribuição 1:1 vs N:N**: entity `v_poco_instalacao_sigep_ultimo` (páginas 5/6, níveis Installation e Well) faz atribuição "última" — cada poço linka a apenas 1 campo. Entity `v_campos_detalhe` (página 4, nível Field) faz N:N. Resultado: filtro Campo mostra 94 campos em Field mas apenas 76 em Installation/Well (19 campos Field-only com poços 100% compartilhados com outro campo "principal"). Não é bug do ETL. Documentado em [`docs/app/anp-cdp-diaria.md`](../app/anp-cdp-diaria.md). |
 
 > Workflows confirmados ativos em 2026-05-05. Row counts atualizados após backfill histórico de 2026-05-06. README está desatualizado (não os menciona). Quando atualizar README, incluir.
+
+### Client Alerts (logged-in product — hook no fim do ETL, 2026-06-02)
+
+Produto de alertas por email **só-logado**, event-driven. Substitui o produto cloud antigo (anon double-opt-in, detectores em polling de 2h, `scripts/alerts/`) que foi **deletado**. Engine em `scripts/client_alerts/` (ver árvore acima); schema/RPCs em `docs/supabase/PRD.md` § "Alerts v2"; frontend em `docs/app/alerts.md`.
+
+**Trigger = último step de cada ETL.** ~15 workflows ganharam um step final `continue-on-error` (gated por `if: success()`) que roda `python -m scripts.client_alerts.run_base --source <slug>`:
+
+```yaml
+      # Client Alerts hook — emit + (immediate) deliver for the bases this ETL updates.
+      - name: Client Alerts — notify subscribers (<slug>)
+        continue-on-error: true   # non-critical side-effect — never fail the data pipeline
+        if: success()
+        run: python -m scripts.client_alerts.run_base --source <slug>
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY:      ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GMAIL_ADDRESS:      ${{ vars.GMAIL_ADDRESS || 'ibbaogproject@gmail.com' }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERTS_SENDER_EMAIL: ${{ vars.ALERTS_SENDER_EMAIL || 'SectorData Alerts <ibbaogproject@gmail.com>' }}
+          ALERTS_FRONTEND_URL: ${{ vars.ALERTS_FRONTEND_URL || 'https://sectordata-dashboard.vercel.app' }}
+```
+
+- **`continue-on-error: true`**: o alerta é side-effect não-crítico — uma falha de envio **nunca** marca o pipeline de dados como vermelho.
+- **`run_one(slug)`**: `emit_event_if_new(slug)` (watermark + UNIQUE `(source_slug, event_key)` = idempotência dupla). Se nada novo → no-op. Se a base é `immediate` → `fanout_event` + `send_pending_outbox` inline (email em segundos). Se é `digest` → só emite; o cron diário entrega.
+- **Secrets divergentes**: a maioria dos workflows passa `SUPABASE_SERVICE_KEY`; `etl_anp_cdp_diaria`/`etl_anp_vendas` passam `SUPABASE_SERVICE_ROLE_KEY`. `_core/config.py` lê os dois.
+- **Bases multi-tabela**: `etl_anp_fase3` chama `--source anp_daie --source anp_desembaracos`; `etl_anp_precos` chama `--source anp_precos_produtores --source anp_glp`. Navios: `import_candidates` em `etl_ais_candidates`; `vessel_positions`/`port_arrivals` em ambos `etl_navios_positions` e `etl_ais_positions` (watermark dedupe); `navios_diesel` em `etl_navios_lineup`.
+- **Sem workflow**: `price_bands` (upload manual via `scripts/manual/price_bands_upload.py`) e `anp_subsidy_caps` (admin-edit, inativa no launch) — rede de segurança via digest diário.
+
+Workflows com o hook: `etl_anp_vendas`, `etl_anp_cdp`, `etl_anp_cdp_diaria`, `etl_anp_voip`, `etl_anp_precos`, `etl_anp_lpc`, `etl_anp_precos_distribuicao`, `etl_anp_subsidy_diesel`, `etl_anp_fase3`, `etl_mdic_comex`, `etl_navios_lineup`, `etl_navios_positions`, `etl_ais_positions`, `etl_ais_candidates`, `manual_dg_margins` (15).
+
+**Digest workflow** — `client_alerts_digest.yml` (`cron: '30 23 * * *'` = 23:30 UTC / 20:30 BRT, após o último ETL do dia):
+
+| Item | Valor |
+|---|---|
+| Comando | `python -m scripts.client_alerts.run_base --digest --batch-limit 200` |
+| O que faz | `sweep_digests()` agrupa os eventos do dia (`DIGEST_TIMEZONE=America/Sao_Paulo`) das bases `digest` (vessels, produção diária, ou qualquer inscrição com `cadence_override='digest'`) em **1 email por subscriber**. Digest vazio → não envia. |
+| Concurrency | grupo `client-alerts-digest`, `cancel-in-progress: false` |
+
+**Sender — Gmail SMTP + App Password** (`_core/gmail_client.py`):
+
+- `smtp.gmail.com:587` + STARTTLS, login com `GMAIL_ADDRESS` (default `ibbaogproject@gmail.com`) + `GMAIL_APP_PASSWORD` (16-char Google App Password — **nunca expira**).
+- **Por que não Resend nem OAuth Gmail API**: não há domínio de envio verificado (Resend sandbox só entrega ao dono da conta); o refresh token OAuth expirava (app Google em modo Testing → `invalid_grant`). App Password sobre SMTP elimina ambos os problemas — zero token plumbing.
+- `From` **deve** ser o dono do App Password (Gmail reescreve um From divergente). Quota free Gmail ~500 emails/dia.
+- `validate_api_key()` faz login probe 1× por processo; falha → `raise SystemExit(1)` para o step falhar visível. SMTP não tem suppression API (`list_suppressions()` → set vazio, fail-open). Idempotência entre runs = estado terminal `sent`/`failed`/`skipped` no `alert_outbox` (SMTP não tem idempotency key).
+
+**Secret obrigatório (GHA):** `GMAIL_APP_PASSWORD`. Vars opcionais (têm default no workflow): `GMAIL_ADDRESS`, `ALERTS_SENDER_EMAIL`, `ALERTS_FRONTEND_URL`.
 
 ### Scripts de backfill histórico (one-shot, rodar localmente)
 
