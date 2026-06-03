@@ -42,10 +42,12 @@ A base **PASSES** only when all 6 links are verified by a controlled test.
 
 ## 4. Test harness to build (Phase A)
 
-1. **`/.github/workflows/client_alerts_test.yml`** — `workflow_dispatch` with inputs:
-   - `source` (slug, required), `reset_watermark` (bool, default true), `deliver_digest` (bool, default false).
-   - Steps: (optional) `DELETE FROM alert_source_state WHERE source_slug=<source>` via a tiny `--reset-watermark` flag on `run_base`; then `python -m scripts.client_alerts.run_base --source <source>`; if `deliver_digest`, also `--digest`. Runs in CI (secrets present). This exercises **emit → fanout → render → SMTP → log** for any base on demand, repeatably, **without a real scrape**.
-   - Add a `--reset-watermark <slug>` option to `scripts/client_alerts/run_base.py` (service-role delete of the watermark row) so the harness needs no separate SQL step.
+1. **`/.github/workflows/client_alerts_test.yml`** — `workflow_dispatch`, inputs: `source` (slug, required), `to` (email, optional override). It runs `python -m scripts.client_alerts.run_base --test --source <source> [--to <email>]`, which **simulates an update so the email fires** — the key requirement for testing every base in production:
+   - Reads the base's **real current period** (`alerts_current_period(source)`), so the email content is realistic ("X updated — new data for period &lt;current&gt;").
+   - Inserts a **synthetic** `alert_events` row keyed `test:<source>:<run-timestamp>` with payload `{test:true, simulated:true, period:<current>}`.
+   - Fans out to the source's active subscribers (and/or the `--to` address) and **delivers immediately** via SMTP.
+   - **Production-safe by construction** — it does **NOT** write to the base's data table and does **NOT** touch `alert_source_state` (the watermark), so real detection/operation is completely unaffected; the synthetic event is `test:`-prefixed and trivially purgeable. Safe to run against ANY live base, anytime. **This is THE "simulate an update" method** — no fake rows in production data tables.
+   - Secondary mode `--reset-watermark <slug>` (also added to `run_base.py`) deletes the watermark row so a plain `run_base --source X` re-emits the *real* current period — use this to additionally exercise the genuine period-**detection** path (not just send).
 2. **SQL verification probe** (one parametrized query) — for a given source + email, returns: latest event, outbox status, email_log status + provider id, watermark. Used as the per-base assertion.
 3. **Test recipient** — a deliverable inbox. `eduardo.mendes@itaubba.com` works (Gmail SMTP is not sandbox-restricted); also test `ibbaogproject@gmail.com`. **Explicitly check the spam folder** (F5).
 
