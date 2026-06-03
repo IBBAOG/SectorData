@@ -204,9 +204,10 @@ May discharge is already present:
 
 **Not touched (intentional):** Suape / PINE OLIA (uncertain — may be a legit
 discharge the colleague just did not list; not removed on speculation);
-Santos / PACIFIC AZUR & ISABELLA M II (07 May — pending an explicit Eduardo
-decision; kept; these are the manifest's lowest-confidence May entries, marked
-`Status=Esperado` by the colleague); the 5 prior backfill rows.
+Santos / PACIFIC AZUR & ISABELLA M II (07 May — the manifest's lowest-confidence
+May entries, marked `Status=Esperado` by the colleague; left in place here
+pending an explicit Eduardo decision, then **removed in pass 3 below**); the 5
+prior backfill rows.
 
 **Distinct port-calls in May (before → after pass 2):** Suape 8→7 (ATLANTIC
 PRIDE removed), all others unchanged (Itaqui 10, Maceió 1, Paranaguá 9, Santos
@@ -237,6 +238,71 @@ ON CONFLICT (collected_at, porto, navio) DO NOTHING;
 ```
 
 Applied via service-role on 2026-06-03 (4 rows deleted; Adjustment 2 added 0).
+
+#### Reconciliation pass 3 — Santos low-confidence removal (one-shot, 2026-06-03)
+
+Resolves the one item pass 2 left open "pending an explicit Eduardo decision".
+Decision made (Eduardo, 2026-06-03): **remove the two lowest-confidence Santos
+entries** that came from the colleague manifest. Scoped to the May window and
+applied via service role.
+
+**Removed (−2 rows, both `imo IS NULL`):**
+
+| Porto | Navio | Volume (m³) | collected_at | status | eta | id (at deletion) |
+|---|---|---:|---|---|---|---|
+| Porto de Santos | PACIFIC AZUR | 47.337 | 2026-05-07T23:52Z (= 20:52-03) | Atracado | 2026-05-07 | 28241 |
+| Porto de Santos | ISABELLA M II | 35.503 | 2026-05-07T23:52Z (= 20:52-03) | Atracado | 2026-05-07 | 28240 |
+
+Both were inserted by `backfill_maio2026` (pass 1). On the manifest they are the
+only Santos vessels flagged `Status=Esperado` (EXPECTED — discharge **not**
+confirmed), i.e. the colleague's lowest-confidence rows. Our own Santos scraper
+ran normally the whole month (**19 distinct vessels live-scraped — already more
+than the colleague's 14 Santos entries**) and never captured either vessel.
+Decision rationale: with our first-party source both healthy and broader than the
+manifest for Santos, prioritise the accuracy of our own feed over inflating the
+count with two unconfirmed `Esperado` rows. This is the **opposite** trade-off
+from the Itaqui blackout (where our feed had a real 9-day hole and the manifest
+was the only record) — here there is no gap to fill, so the manifest's weakest
+rows are dropped.
+
+**Safety — strict natural key.** Both vessels ALSO have legitimate, live-scraped
+rows that carry a real IMO and MUST survive: PACIFIC AZUR has a June Itaqui call
+(IMO 9788540, 3 rows) and ISABELLA M II has April Santos calls (IMO 9836440,
+8 rows). The DELETE is scoped to `porto='Porto de Santos' AND navio IN (…) AND
+May window AND imo IS NULL`, so only the two manifest-backfill rows match.
+Verified in-DB pre-delete: each target had exactly 1 May Santos row and it was
+the imo-NULL one; verified post-delete: the 3 + 8 real-IMO rows all survived.
+
+**Not touched:** the other pass-1 backfill rows stay (MITERA/Itaqui,
+ELANDRA MAPLE/Maceió, ELANDRA MAPLE/Suape, SUPER G/Suape, MERSEY/Suape) and every
+live-scraped Santos vessel.
+
+**Distinct port-calls in May (before → after pass 3):** Santos **20 → 18** (both
+removed vessels had only this single May Santos row), all others unchanged
+(Itaqui 10, Maceió 1, Paranaguá 9, Suape 7, São Sebastião 1). Total 48→46.
+
+**Idempotency.** The DELETE matches the natural key (porto + navio + May window +
+`imo IS NULL`) and is a no-op once the rows are gone — safe to re-run.
+
+**Artifacts** (`scripts/pipelines/navios/backfill/`): `reconcile_maio2026_santos.py`
+(self-documenting; dry-run prints the exact targeted rows + before/after Santos
+distinct and aborts unless exactly 2 rows match, `--apply` performs the DELETE via
+service role) + `reconcile_maio2026_santos.sql` (idempotent DELETE, versioned).
+**Reversal** (re-insert the 2 deleted rows exactly as captured — volume already in
+m³, `unidade='m³'`, `imo` NULL so `03_imo_lookup` re-fills it):
+
+```sql
+INSERT INTO public.navios_diesel
+  (collected_at, porto, status, navio, produto, quantidade, unidade,
+   quantidade_convertida, eta, inicio_descarga, fim_descarga, origem, berco, imo)
+VALUES
+  ('2026-05-07T20:52:00-03:00','Porto de Santos','Atracado','PACIFIC AZUR','Óleo Diesel',47337,'m³',47337,'2026-05-07T12:00:00-03:00',NULL,NULL,NULL,NULL,NULL),
+  ('2026-05-07T20:52:00-03:00','Porto de Santos','Atracado','ISABELLA M II','Óleo Diesel',35503,'m³',35503,'2026-05-07T12:00:00-03:00',NULL,NULL,NULL,NULL,NULL)
+ON CONFLICT (collected_at, porto, navio) DO NOTHING;
+```
+
+Applied via service-role on 2026-06-03 (2 rows deleted, ids 28241 / 28240;
+Santos distinct 20 → 18; the 3 + 8 real-IMO rows preserved).
 
 ### Client Alerts (logged-in product — hook no fim do ETL, 2026-06-02)
 
