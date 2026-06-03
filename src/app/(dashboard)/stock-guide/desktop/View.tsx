@@ -514,8 +514,8 @@ function InterpMarker({
       style={{
         position: "absolute",
         ...(orientation === "horizontal"
-          ? { top: 0, bottom: 0, width: 2, transform: `translateX(${slide - 1}px)` }
-          : { left: 0, right: 0, height: 2, transform: `translateY(${slide - 1}px)` }),
+          ? { left: 0, top: 0, bottom: 0, width: 2, transform: `translateX(${slide - 1}px)` }
+          : { top: 0, left: 0, right: 0, height: 2, transform: `translateY(${slide - 1}px)` }),
         background: BRAND_ORANGE,
         zIndex: 1,
       }}
