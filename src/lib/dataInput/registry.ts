@@ -73,6 +73,19 @@ export const EDITABLE_TABLES: EditableTableConfig[] = [
     tableName: "d_g_margins",
     conflictColumns: ["fuel_type", "week"],
     defaultSort: { key: "id", dir: "desc" },
+    // `week` is text in "WW/YYYY" format, so a SQL .order() sorts lexically
+    // (wrong: "9/2026" > "19/2026", and the year is at the end). Parse into a
+    // comparable (year, week) number and sort descending (newest first).
+    // Malformed/missing values parse to -1 and sort last.
+    clientSort: (a, b) => {
+      const parse = (w: unknown): number => {
+        if (typeof w !== "string") return -1;
+        const [wk, yr] = w.split("/").map((s) => parseInt(s, 10));
+        if (!Number.isFinite(wk) || !Number.isFinite(yr)) return -1;
+        return yr * 100 + wk;
+      };
+      return parse(b.week) - parse(a.week); // newest first
+    },
     partitionBy: {
       column: "fuel_type",
       values: [

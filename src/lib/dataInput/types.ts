@@ -38,6 +38,13 @@ export interface EditableTableConfig {
   conflictColumns: string[];
   columns: ColumnConfig[];
   defaultSort?: SortConfig;
+  /**
+   * Optional client-side sort applied AFTER fetching, for tables whose
+   * natural order can't be expressed as a single SQL column (e.g. a "WW/YYYY"
+   * text week that must sort chronologically, not lexically).
+   * When present, this overrides defaultSort for display ordering.
+   */
+  clientSort?: (a: Row, b: Row) => number;
   partitionBy?: PartitionConfig;
   /**
    * Optional informational banner rendered above the editor for this table.

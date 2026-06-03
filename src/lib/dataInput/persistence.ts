@@ -49,7 +49,11 @@ export async function loadRows(
       console.error(`[dataInput] loadRows(${config.tableName}):`, error);
       return [];
     }
-    return (data ?? []) as Row[];
+    const rows = (data ?? []) as Row[];
+    // Apply optional client-side sort for tables whose natural order can't be
+    // expressed as a single SQL column (the DB .order() above is a fallback).
+    if (config.clientSort) rows.sort(config.clientSort);
+    return rows;
   } catch (e) {
     console.error(`[dataInput] loadRows(${config.tableName}) unexpected:`, e);
     return [];
