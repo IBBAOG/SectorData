@@ -14,8 +14,8 @@ Behaviour:
     * run_one(slug) records a new-period event (idempotent). If the base's
       effective cadence is 'immediate', it fans out and sends right away. If the
       base is 'digest', it only records the event — the daily digest cron sends.
-    * Missing required env (SUPABASE_URL / service key / GMAIL_TOKEN_JSON) prints
-      a clear message and exits non-zero WITHOUT a stack trace.
+    * Missing required env (SUPABASE_URL / service key / GMAIL_APP_PASSWORD)
+      prints a clear message and exits non-zero WITHOUT a stack trace.
     * A failure in one --source never aborts the others (best-effort per source).
 """
 from __future__ import annotations
@@ -121,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
     if missing:
         logger.error(
             "Missing required environment variable(s): %s. "
-            "Set them in the workflow env (SUPABASE_URL, a service key, GMAIL_TOKEN_JSON) "
+            "Set them in the workflow env (SUPABASE_URL, a service key, GMAIL_APP_PASSWORD) "
             "and re-run. Skipping.",
             ", ".join(missing),
         )

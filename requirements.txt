@@ -22,8 +22,11 @@ pdfplumber
 
 # ── Client Alerts (scripts/client_alerts/) ────────────────────────────────────
 jinja2>=3.1          # email template rendering (immediate + digest)
-# Active email backend = Gmail API (gmail_client.py). These reuse the legacy
-# OAuth mechanism from alertas/notificador.py (token self-refreshes in CI).
+# Active email backend = Gmail SMTP + App Password (gmail_client.py), which uses
+# only the Python stdlib (smtplib / ssl / email) — NO new dependency needed.
+# The google-* libs below are now DORMANT for client_alerts (the OAuth Gmail API
+# path was retired because its refresh token kept expiring). Kept harmless because
+# the legacy alertas/notificador.py still imports them; do not remove blindly.
 google-auth-oauthlib
 google-api-python-client
 google-auth-httplib2
