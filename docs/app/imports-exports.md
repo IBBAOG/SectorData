@@ -441,6 +441,12 @@ Out of scope (not pinned — keep current auto-coloring):
 
 If a new top supplier emerges (e.g. China starts shipping diesel directly), it will be absorbed into Others until a code change updates `ORIGIN_COUNTRY_PINS`. This is the intended trade-off — fixed legend stability over auto-discovery.
 
+### "Total" row (Imports By Origin Country YoY table only — 2026-06-03)
+
+The Imports "By Origin Country" YoY table renders a bold **"Total"** footer row (top border `2px solid #888`) summing the three volume columns (current month, prior month, prior year — all in thousand m³) across **all displayed rows** (the 6 pinned countries + Others). Because Others already captures the tail, summing the displayed rows yields the correct grand total with no double-counting. The MoM% / YoY% cells are **recomputed from the summed totals** (`MoM% = (ΣcurrentΣ − ΣprevMonthΣ)/ΣprevMonthΣ × 100`, `YoY% = (Σcurrent − ΣprevYear)/ΣprevYear × 100`) — never summed from the per-row percentages — and use the same divide-by-zero / missing-baseline guard as the per-row cells (`null → —`). The prior-month component is summed only over rows where a prior-month value is present (mirroring `prevMonthByCountry`'s `null` semantics).
+
+Scoped via the optional `showTotalRow` prop on the shared `YoYTable` component (both Views). Passed only on the Imports paises invocation — **not** on the By Importer table, the Exports tables, or the price-summary tables. The total is derived inline in `YoYTable` (desktop + mobile) from the exact `last_12m` / `prev_12m` / `prevMonthByEntity` values the per-row cells display, so it can never drift from the rows above it; it shares the same anchor month (`period.end`) as the rest of the table. Cross-checked: Russia 1,035 + United States 389 (+ zero-pinned + Others) ≈ 1,425 thousand m³ current-month total.
+
 Source: `desktop/View.tsx` § `ORIGIN_COUNTRY_PINS`; `mobile/View.tsx` mirrors the same constant. Both views also share helpers `bucketPaisesByPins` / `ensureAllPinsPresent`. The mobile YoY card list gains an optional `colorMap` prop that renders an 8px dot next to the country name, mirroring the desktop table's dot.
 
 ---

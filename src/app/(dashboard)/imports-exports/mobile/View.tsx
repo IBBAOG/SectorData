@@ -481,6 +481,7 @@ function YoYTable({
   prevMonthByEntity,
   orderOverride,
   colorMap,
+  showTotalRow,
 }: {
   rows: YoyTableRow[];
   loading: boolean;
@@ -490,6 +491,11 @@ function YoYTable({
   prevMonthByEntity: Map<string, number | null>;
   orderOverride?: string[];
   colorMap?: Record<string, string>;
+  /** When true, append a bold "Total" footer row summing the volume columns
+   *  across ALL displayed rows (incl. "Others") and RECOMPUTING MoM% / YoY%
+   *  from the summed totals (never summing per-row percentages). Mirrors the
+   *  desktop table. Used only by the Imports "By Origin Country" table. */
+  showTotalRow?: boolean;
 }) {
   if (loading && rows.length === 0) {
     return (
@@ -514,6 +520,39 @@ function YoYTable({
       .filter((r): r is YoyTableRow => r != null);
   } else {
     orderedRows = [...rows].slice(0, 10).sort((a, b) => b.last_12m - a.last_12m);
+  }
+
+  // Optional "Total" footer row — sum the three volume columns across ALL
+  // displayed rows (incl. "Others", the tail bucket, so no double-counting),
+  // and RECOMPUTE MoM% / YoY% from the summed totals. Same logic as desktop.
+  let totalRow:
+    | { current: number; prevMonth: number | null; momPct: number | null; prevYear: number; yoyPct: number | null }
+    | null = null;
+  if (showTotalRow && orderedRows.length) {
+    let current = 0;
+    let prevYear = 0;
+    let prevMonthSum = 0;
+    let prevMonthSeen = false;
+    for (const row of orderedRows) {
+      current += row.last_12m;
+      prevYear += row.prev_12m;
+      const pm = prevMonthByEntity.get(row.entity) ?? null;
+      if (pm != null) {
+        prevMonthSum += pm;
+        prevMonthSeen = true;
+      }
+    }
+    const prevMonth = prevMonthSeen ? prevMonthSum : null;
+    totalRow = {
+      current,
+      prevMonth,
+      momPct:
+        prevMonth != null && prevMonth !== 0
+          ? ((current - prevMonth) / prevMonth) * 100
+          : null,
+      prevYear,
+      yoyPct: prevYear === 0 ? null : ((current - prevYear) / prevYear) * 100,
+    };
   }
 
   const currentLbl = formatMonth(anchorAno, anchorMes);
@@ -727,6 +766,47 @@ function YoYTable({
               </tr>
             );
           })}
+          {totalRow ? (() => {
+            const totMom = fmtDelta(totalRow.momPct);
+            const totYoy = fmtDelta(totalRow.yoyPct);
+            const numTd = {
+              padding: cellPadding,
+              textAlign: "right" as const,
+              fontVariantNumeric: "tabular-nums" as const,
+              fontWeight: 700 as const,
+              borderTop: "2px solid var(--mobile-divider, #cfcfd6)",
+              whiteSpace: "nowrap" as const,
+            };
+            return (
+              <tr key="__total__">
+                <td
+                  style={{
+                    position: "sticky",
+                    left: 0,
+                    background: stickyBg,
+                    borderTop: "2px solid var(--mobile-divider, #cfcfd6)",
+                    borderRight: "1px solid var(--mobile-divider, #f0f0f4)",
+                    padding: cellPadding,
+                    fontWeight: 700,
+                    color: "var(--mobile-text, #1a1a1a)",
+                    zIndex: 1,
+                    minWidth: 160,
+                  }}
+                >
+                  Total
+                </td>
+                <td style={{ ...numTd, color: "var(--mobile-text, #1a1a1a)" }}>
+                  {fmtValue(totalRow.current, 1)}
+                </td>
+                <td style={{ ...numTd, color: "#777" }}>
+                  {totalRow.prevMonth != null ? fmtValue(totalRow.prevMonth, 1) : "—"}
+                </td>
+                <td style={{ ...numTd, color: totMom.color }}>{totMom.text}</td>
+                <td style={{ ...numTd, color: "#777" }}>{fmtValue(totalRow.prevYear, 1)}</td>
+                <td style={{ ...numTd, color: totYoy.color }}>{totYoy.text}</td>
+              </tr>
+            );
+          })() : null}
         </tbody>
       </table>
     </div>
@@ -1347,6 +1427,7 @@ export default function MobileView(): React.ReactElement {
             prevMonthByEntity={prevMonthByCountry}
             orderOverride={ORIGIN_ORDER}
             colorMap={ORIGIN_COLOR_BY_LABEL}
+            showTotalRow
           />
 
           <div style={{ height: 8 }} />
