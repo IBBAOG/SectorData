@@ -13,7 +13,7 @@ A real client (`eduardo.mendes@itaubba.com`) subscribed to **Price Bands**, upda
 | **Event emitted** | ❌ `alert_events(price_bands)=0`, watermark `null` | **BROKE HERE** |
 | Outbox / email_log | ❌ 0 / 0 | (downstream of the break) |
 
-**Root cause:** `price_bands` has **no CI ETL workflow** (it's a manual Excel upload). Its alert hook lives in the local `scripts/manual/price_bands_upload.py`, guarded to fire only if Supabase + mail creds are present in the **local** environment — and `GMAIL_APP_PASSWORD` is a GitHub secret, not on the operator's machine. So the trigger **never ran**.
+**Root cause:** `price_bands` is edited through the admin panel's **Data Input** framework (`src/lib/dataInput/`), which **upserts directly into the `price_bands` table via PostgREST** (authorised by the admin RLS policy `price_bands_admin_write`, migration `20260512000000`). That write path has **no connection to the Python alert engine** — the row lands (and the `_w_subsidy` SQL trigger fires), but **nothing emits an `alert_event`**. `price_bands` also has no CI ETL workflow, so no other path catches it either. The trigger **never ran**. (The same gap applies to `d_g_margins`, the other Data Input table — see §6/§7.)
 
 **The systemic lesson:** the rebuild validated the **send path** (Gmail SMTP) and the **digest path** (navios), but **never verified, per base, that a real update fires the hook → emits an event → sends an email.** This plan closes that gap for all 22 bases.
 
@@ -32,7 +32,7 @@ A base **PASSES** only when all 6 links are verified by a controlled test.
 
 | ID | Failure | Where | Notes |
 |----|---------|-------|-------|
-| **F1** | Trigger never runs | Link 2 | No workflow (price_bands, anp_subsidy_caps), hook misplaced in a YAML, or local-env guard skips. **← the price_bands bug.** |
+| **F1** | Trigger never runs | Link 2 | No workflow (price_bands, anp_subsidy_caps); **admin Data Input writes (price_bands, d_g_margins) bypass the alert engine entirely** — direct PostgREST upsert, nothing emits; or a hook misplaced/mis-gated in a YAML. **← the price_bands bug.** |
 | **F2** | Period doesn't advance | Link 3 | The "update" edited values for the **same** latest period, so `MAX(period)` is unchanged → `emit` no-ops. **Alerts fire on a NEW period, not on value changes** — an expectation gap to document and test for. |
 | **F3** | `alerts_current_period` wrong/null | Link 3 | Wrong column, smallint cast, empty table, or non-sortable key. |
 | **F4** | Fanout finds no recipient | Link 4 | Email unresolved from `auth.users`, subscription inactive, or `alerts_active_recipients` grant/logic. |
@@ -85,8 +85,8 @@ Legend — Cadence: I = immediate, D = digest. "What advances the period" = what
 | 15 | vessel_positions | D | timestamp | new `MAX(ts)` | etl_navios_positions + etl_ais_positions | ✅ CI |
 | 16 | port_arrivals | D | timestamp | new `MAX(detected_at)` | etl_navios_positions + etl_ais_positions | ✅ CI |
 | 17 | import_candidates | D | timestamp | new `MAX(last_seen_at)` | etl_ais_candidates | ✅ CI |
-| 18 | d_g_margins | I | iso_week | new `MAX(to_date(week))` | manual_dg_margins (weekly cron) | ⚠️ weekly only |
-| 19 | **price_bands** | I | date | new `MAX(date)` | **none (local upload script)** | ❌ **NO reliable trigger — the bug** |
+| 18 | d_g_margins | I | iso_week | new `MAX(to_date(week))` | manual_dg_margins (weekly cron) **+ admin Data Input** | ⚠️ weekly cron only; **admin edits don't alert until the next Monday run** |
+| 19 | **price_bands** | I | date | new `MAX(date)` | **admin Data Input (PostgREST upsert); no CI workflow** | ❌ **NO alert trigger on the write path — the reported bug** |
 | 20 | anp_subsidy_diesel_reference | I | date | new `MAX(data_referencia)` | etl_anp_subsidy_diesel | ✅ CI |
 | 21 | anp_subsidy_commercialization | I | date | new `MAX(data_inicio)` | etl_anp_subsidy_diesel | ✅ CI |
 | 22 | **anp_subsidy_caps** | I (inactive) | timestamp | admin edit | **none (admin-edit)** | ❌ **NO trigger; currently `is_active=false`** |
@@ -96,11 +96,10 @@ Legend — Cadence: I = immediate, D = digest. "What advances the period" = what
 The matrix exposes that **F1** is a design gap for the no-workflow bases. Fix:
 
 - **`/.github/workflows/client_alerts_poll.yml`** — a scheduled **safety-net poll** (e.g. every 2 h) that runs `python -m scripts.client_alerts.run_base --source <every immediate base>`. Because `emit_event_if_new` is idempotent (watermark + `UNIQUE(source_slug,event_key)`), polling is **safe** — it emits only when a NEW period actually landed. Effect:
-  - `price_bands` / `anp_subsidy_caps` (no CI hook) now fire **within the poll interval** of any manual update — reliable, even though not "instant".
+  - `price_bands` / `d_g_margins` (**admin Data Input** writes) and `anp_subsidy_caps` (no CI hook) now fire **within the poll interval** of any admin edit — reliable, even though not "instant". Tune the interval (e.g. 30 min) for responsiveness on the admin-input bases.
   - Every other base gets a **backstop**: if an ETL hook ever fails or is skipped, the poll catches the missed period. The immediate ETL hooks still give instant alerts; the poll only fills gaps.
-- **`d_g_margins`**: covered by `manual_dg_margins.yml` (weekly) + the poll backstop.
+- **Immediate option for the admin Data Input bases (`price_bands`, `d_g_margins`)** — add an `AFTER INSERT/UPDATE` **DB trigger** on those tables that does an SQL-level emit (insert into `alert_events` when the period advances past the watermark). This emits the **instant the admin saves**, independent of the frontend or any cron — most robust because it fires on ANY write path. Delivery still rides the poll/fast cron (the SMTP send needs CI). Optionally, the Data Input layer (`src/lib/dataInput/persistence.ts`) could instead call an `alerts_emit_for_source(slug)` RPC after a successful upsert — simpler but only covers the browser path.
 - **`anp_subsidy_caps`**: decide whether to keep it `is_active=false` (then it needs no trigger) or activate it and rely on the poll.
-- **Optional hardening**: drop the brittle local hook in `price_bands_upload.py` (replaced by the poll), or keep it but make it best-effort only.
 
 > This makes the architecture: **ETL hooks = instant alerts; poll = guaranteed safety net.** It directly prevents the `price_bands` class of silent miss.
 
