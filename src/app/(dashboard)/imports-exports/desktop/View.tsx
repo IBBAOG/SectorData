@@ -1194,6 +1194,8 @@ export default function DesktopView(): React.ReactElement {
     paisesLoading,
     importersData,
     importersLoading,
+    importersLatestMonth,
+    importersMonthPending,
     importersTop6Data,
     importersTop6Entities,
     importersTop6ColorMap,
@@ -1543,11 +1545,32 @@ export default function DesktopView(): React.ReactElement {
     return out;
   }, [paisesData, prevMonthCursor]);
 
+  // Panel B (importers) anchor — the latest month ANP Desembaraços has
+  // actually published (from the hook), clamped to never exceed period.end.
+  // The "By Importer" YoY table, its MoM prev-month lookup, and the section
+  // notice all key on THIS month rather than period.end so a month ANP has not
+  // yet published is never rendered as a zero / −100%.
+  const importerAnchor: MonthCursor = useMemo(
+    () =>
+      importersMonthPending && importersLatestMonth
+        ? importersLatestMonth
+        : { ano: filters.period.end.ano, mes: filters.period.end.mes },
+    [importersMonthPending, importersLatestMonth, filters.period.end.ano, filters.period.end.mes],
+  );
+
+  const importerPrevMonthCursor = useMemo(
+    () =>
+      importerAnchor.mes === 1
+        ? { ano: importerAnchor.ano - 1, mes: 12 }
+        : { ano: importerAnchor.ano, mes: importerAnchor.mes - 1 },
+    [importerAnchor],
+  );
+
   // Panel B (importers) — per-importer lookup at prev_month, aggregated into
   // the same top-6 + Others buckets the YoY table uses. Top-6 keys come from
   // `importersTop6Entities`; everything else collapses into "Others".
   const prevMonthByImporter: Map<string, number | null> = useMemo(() => {
-    const target = `${prevMonthCursor.ano}|${prevMonthCursor.mes}`;
+    const target = `${importerPrevMonthCursor.ano}|${importerPrevMonthCursor.mes}`;
     const topSet = new Set(importersTop6Entities.filter((e) => e !== OTHERS_LABEL));
     const acc = new Map<string, number>();
     let othersAcc = 0;
@@ -1571,7 +1594,7 @@ export default function DesktopView(): React.ReactElement {
       }
     }
     return out;
-  }, [importersData, importersTop6Entities, prevMonthCursor]);
+  }, [importersData, importersTop6Entities, importerPrevMonthCursor]);
 
   // Exports tab — straight per-destination lookup at prev_month.
   const prevMonthByExportsCountry: Map<string, number | null> = useMemo(() => {
@@ -1735,6 +1758,29 @@ export default function DesktopView(): React.ReactElement {
                     loading={importersLoading}
                     height={340}
                   >
+                    {/* Publication-lag notice. ANP Desembaraços (the only
+                        importer-level source, since it carries CNPJ) publishes
+                        later than ComexStat, which drives the period selector.
+                        When the selected trailing month is not yet in ANP we
+                        say so explicitly — we never plot the missing month as a
+                        zero. */}
+                    {importersMonthPending && importersLatestMonth && (
+                      <div
+                        style={{
+                          marginBottom: 10,
+                          padding: "6px 12px",
+                          background: "#fff7ed",
+                          border: "1px solid #ffd9b3",
+                          borderRadius: 6,
+                          fontSize: 11,
+                          color: "#9a4d00",
+                          fontFamily: "Arial",
+                        }}
+                      >
+                        Importers data through {formatMonth(importersLatestMonth.ano, importersLatestMonth.mes)} —{" "}
+                        {formatMonth(filters.period.end.ano, filters.period.end.mes)} not yet published by ANP Desembaraços.
+                      </div>
+                    )}
                     {importersData.length > 0 ? (
                       <Plot
                         data={importersTraces}
@@ -1757,8 +1803,8 @@ export default function DesktopView(): React.ReactElement {
                       loading={yoyImportersLoading}
                       volumeLabel="mil m³"
                       title="By Importer"
-                      anchorAno={filters.period.end.ano}
-                      anchorMes={filters.period.end.mes}
+                      anchorAno={importerAnchor.ano}
+                      anchorMes={importerAnchor.mes}
                       orderOverride={importersTop6Entities}
                       colorMap={importersTop6ColorMap}
                       prevMonthByEntity={prevMonthByImporter}
