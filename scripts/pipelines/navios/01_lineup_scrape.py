@@ -832,21 +832,41 @@ def buscar_suape() -> pd.DataFrame:
     xl  = pd.ExcelFile(BytesIO(resp.content))
     df  = xl.parse(SUAPE_SHEET_RAW, header=0)
 
-    # Grupos de colunas por posição: Produto / Quantidade / Unidade
+    # Grupos de colunas por posição: Produto / Quantidade / Unidade / Tipo da Operação.
+    # A planilha repete cada bloco; o pandas dá sufixos .1 .2 … às colunas duplicadas.
+    # Os blocos estão posicionalmente alinhados (Produto.N ↔ Tipo da Operação.N ↔
+    # Quantidade.N ↔ Unidade.N) — ver pegadinha "Suape — Tipo da Operação" no PRD.
     prod_cols = [c for c in df.columns
                  if str(c).startswith("Produto")
                  and not any(k in str(c) for k in ["Tipo", "Operador", "Qtd", "Unid", "Confirm"])]
     qtd_cols  = [c for c in df.columns if str(c).startswith("Quantidade")]
     uni_cols  = [c for c in df.columns if str(c).startswith("Unidade")]
+    op_cols   = [c for c in df.columns if str(c).startswith("Tipo da Opera")]
 
-    # Alinhar os três grupos pelo mesmo índice (menor comprimento é o limitante)
-    n = min(len(prod_cols), len(qtd_cols), len(uni_cols))
+    # Alinhar os grupos pelo mesmo índice (menor comprimento é o limitante)
+    n = min(len(prod_cols), len(qtd_cols), len(uni_cols), len(op_cols))
     prod_cols = prod_cols[:n]
     qtd_cols  = qtd_cols[:n]
     uni_cols  = uni_cols[:n]
+    op_cols   = op_cols[:n]
 
-    # Máscara: diesel PURO em qualquer coluna de produto
-    mask = df[prod_cols].apply(lambda col: col.map(_diesel_puro)).any(axis=1)
+    # Operação de descarga (= importação). "DG" = Descarga, "TB DG" = transbordo
+    # descarga. "CG" / "TB CG" são carga/embarque (saída) e NÃO contam como import.
+    _DESCARGA = {"DG", "TB DG"}
+
+    def _eh_diesel_descarga(prod, op) -> bool:
+        """Bloco conta como diesel-importação só se for diesel puro E descarga."""
+        return _diesel_puro(str(prod)) and str(op).strip().upper() in _DESCARGA
+
+    # Máscara: algum bloco é diesel puro E descarga (pareado posicionalmente
+    # Produto.N ↔ Tipo da Operação.N). Carga/embarque (CG/TB CG) é descartado
+    # mesmo que o produto seja diesel — evita falso-positivo (ex.: ATLANTIC PRIDE,
+    # todas as linhas de diesel são CG).
+    mask = df.apply(
+        lambda row: any(_eh_diesel_descarga(row[pc], row[oc])
+                        for pc, oc in zip(prod_cols, op_cols)),
+        axis=1,
+    )
     f = df.loc[mask].copy()
     if f.empty:
         return pd.DataFrame()
@@ -865,12 +885,13 @@ def buscar_suape() -> pd.DataFrame:
         (c for c in date_cols if "Desatrac" in str(c) and "Situa" not in str(c)), None
     )
 
-    # Para cada navio: consolidar quantidade e unidade dos produtos diesel puro
+    # Para cada navio: consolidar quantidade e unidade somente dos blocos que
+    # são diesel puro E descarga (não somar volume de blocos CG nem de não-diesel).
     def _qtd_e_unidade(row):
         total   = 0.0
         units   = []
-        for pc, qc, uc in zip(prod_cols, qtd_cols, uni_cols):
-            if _diesel_puro(str(row[pc])):
+        for pc, qc, uc, oc in zip(prod_cols, qtd_cols, uni_cols, op_cols):
+            if _eh_diesel_descarga(row[pc], row[oc]):
                 try:
                     total += float(row[qc])
                     u = str(row[uc]).strip()
@@ -909,10 +930,11 @@ def buscar_suape() -> pd.DataFrame:
             print(f"  Suape: {n_cab} navio(s) de cabotagem removido(s) (origem -BRA)")
         f = f.loc[~cabotagem]
 
-    # Carga: lista de produtos diesel puro por navio
+    # Carga: lista de produtos diesel puro em descarga (importação) por navio
     f["Carga"] = f.apply(
         lambda row: " | ".join(
-            str(row[c]) for c in prod_cols if _diesel_puro(str(row[c]))
+            str(row[pc]) for pc, oc in zip(prod_cols, op_cols)
+            if _eh_diesel_descarga(row[pc], row[oc])
         ), axis=1
     )
 
