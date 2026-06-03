@@ -77,17 +77,27 @@ HOURS_PER_DAY = 24
 # here and document the divergence inline ("dataSources.ts: Nh → widened").
 #
 # Cadence buckets requested for this guardian:
-#   * monthly fuel/trade  ≈ 75 days  (1800 h) — ANP/MDIC publish month M in M+1
-#   * weekly              ≈ 21 days  ( 504 h)
-#   * daily               ≈ 4–5 days (~108 h)
-#   * vessels 6h/4h       ≈ 1.5 days (  36 h)
+#   * monthly fuel/trade  ≈ 75 days   (1800 h) — ANP/MDIC publish month M in M+1
+#   * weekly              ≈ 21 days   ( 504 h)
+#   * daily (cdp_diaria)  ≈ 9 days    ( 216 h) — D-6 production-date lag (D-8 over weekends)
+#   * daily (subsidy)     ≈ 5 days    ( 120 h)
+#   * vessels 6h/4h       ≈ 1.5 days  (  36 h)
+#   * event-driven vessels≈ 10 days   ( 240 h) — port_arrivals / import_candidates (sparse)
 #   * news (~5 min)       ≈ 6 hours
-#   * anp_voip (annual)   ≈ 400 days (9600 h)
+#   * anp_voip (annual)   ≈ 550 days (13200 h)
 #   * price_bands         admin ad-hoc, no defined cadence → EXCLUDED (see below)
 #
 # IMPORTANT: every source_key returned by get_data_sources_freshness() must have
 # an entry here (or be in EXCLUDED_KEYS), otherwise it would be silently
 # unmonitored. _coverage_report() asserts this each run.
+#
+# NOTE (event-driven bases): port_arrivals and import_candidates are imperfectly
+# served by row-recency — a row only appears when a real-world event occurs (a
+# vessel crossing a port polygon / a tanker qualifying as a diesel import), so a
+# long gap is normal silence, not a stall. A future refinement is to gate these
+# on a sync-heartbeat (vessel_positions advancing / a discovery_runs row written)
+# rather than last-row age. Not implemented yet — for now we just give them a
+# generous row-recency threshold (see below).
 DAYS = HOURS_PER_DAY  # readability: <n> * DAYS == n days in hours
 
 OVERDUE_HOURS: dict[str, int] = {
@@ -113,24 +123,40 @@ OVERDUE_HOURS: dict[str, int] = {
     # Daily ETLs; allow a long weekend + a missed day before paging.
     "anp_subsidy_diesel_reference": 5 * DAYS,   # dataSources.ts: 72h(3d) → widened to 5d
     "anp_subsidy_commercialization": 5 * DAYS,  # dataSources.ts: 72h(3d) → widened to 5d
-    "anp_cdp_diaria": 4 * DAYS,                 # dataSources.ts: 24h(1d) → widened to 4d
-    "anp_cdp_diaria_instalacao": 4 * DAYS,      # not in dataSources.ts (umbrella key anp_cdp_diaria) — daily
-    "anp_cdp_diaria_poco": 4 * DAYS,            # not in dataSources.ts (umbrella key anp_cdp_diaria) — daily
+    # anp_cdp_diaria* track MAX(data) (the production-DATE frontier, not the
+    # ingest time). ANP publishes daily production with a STRUCTURAL ~6-day lag
+    # (D-6), and a weekend stall pushes the worst case to D-8 — so the threshold
+    # must exceed the worst-case publication lag, not the cron interval. 9 days
+    # gives a 1-day margin over D-8 while still catching a genuine multi-day
+    # outage (e.g. the Power BI feed truly going dark).
+    "anp_cdp_diaria": 9 * DAYS,                 # dataSources.ts: 24h(1d) → widened to 9d (D-6 lag, weekend worst case D-8)
+    "anp_cdp_diaria_instalacao": 9 * DAYS,      # not in dataSources.ts (umbrella key anp_cdp_diaria) — same D-6 frontier lag → 9d
+    "anp_cdp_diaria_poco": 9 * DAYS,            # not in dataSources.ts (umbrella key anp_cdp_diaria) — same D-6 frontier lag → 9d
 
     # ── Vessels 6h / 4h (~1.5 days = 36 h) ───────────────────────────────────
     "navios_diesel": 36,                    # dataSources.ts: 18h → widened to 36h
     "vessel_positions": 36,                 # dataSources.ts: 18h → widened to 36h
-    "port_arrivals": 36,                    # not in dataSources.ts (umbrella key vessel_positions) — arrivals can be sparse
-    "import_candidates": 36,                # not in dataSources.ts (umbrella key vessel_positions) — every 4h
+    # port_arrivals / import_candidates are EVENT-DRIVEN, not cron-cadence: a row
+    # is written only when a vessel actually crosses a port polygon (arrivals) or
+    # a tanker actually qualifies as a diesel import (candidates). They are sparse
+    # by nature (lifetime ~20 / ~22 rows total), so a multi-day gap is normal
+    # quiet, not a stall — row-recency must be generous. 10 days catches a truly
+    # dead feed without nagging during ordinary lulls. (See the event-driven note
+    # near OVERDUE_HOURS: a heartbeat gate would be the cleaner long-term fix.)
+    "port_arrivals": 10 * DAYS,             # not in dataSources.ts (umbrella key vessel_positions) — event-driven, sparse (~20 rows lifetime) → 10d
+    "import_candidates": 10 * DAYS,         # not in dataSources.ts (umbrella key vessel_positions) — event-driven, sparse (~22 rows lifetime) → 10d
 
     # ── News (~5 min cron) — 6 hours ─────────────────────────────────────────
     # External scanner every ~5 min; 6 h means it's been dead for ~70 cycles.
     "news_articles": 6,                     # dataSources.ts: 3h → widened to 6h
 
-    # ── Annual (~400 days) ───────────────────────────────────────────────────
-    # anp_voip publishes once a year (May). 400 days covers a slightly late
-    # annual release without paging, while still catching a fully skipped year.
-    "anp_voip": 400 * DAYS,                 # dataSources.ts: 8760h(365d) → widened to 400d
+    # ── Annual (~550 days) ───────────────────────────────────────────────────
+    # anp_voip publishes once a year, and its key tracks MAX(ano_publicacao),
+    # whose baseline lags the real publication by ~6 months; the 2026 edition
+    # publishes within an Apr–Jun window. 550 days avoids daily-nagging during the
+    # normal publication window and pages only if a full annual cycle is clearly
+    # missed.
+    "anp_voip": 550 * DAYS,                 # dataSources.ts: 8760h(365d) → widened to 550d (annual + ~6mo baseline lag + Apr–Jun window)
 
     # ── Admin ad-hoc, but cap rarely changes — keep a very generous guard ─────
     # anp_subsidy_caps is admin-seeded (4 rows) and revised only when ANP changes
