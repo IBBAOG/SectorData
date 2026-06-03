@@ -126,8 +126,12 @@ The matrix exposes that **F1** is a design gap for the no-workflow bases. Fix:
 - **Phase D** — Fix every FAIL, re-test until all PASS. (per owner)
 - **Phase E** — Sign-off: a results table (base · PASS/FAIL · Message-ID · notes) appended to this file.
 
-## 11. Results log (filled during Phase C/D)
+## 11. Results log
 
-| Base | Date | Result | Message-ID / failure mode | Notes |
-|------|------|--------|---------------------------|-------|
-| _(to be filled per base)_ | | | | |
+**2026-06-03 — full matrix run: 22 / 22 PASS.**
+
+- **Method:** `client_alerts_test.yml` dispatched once per source (synthetic-event simulation), `--to ibbaogproject@gmail.com`. Each run injects a `test:<source>:<epoch>` event for the base's REAL current period, fans out, and SMTP-sends.
+- **Evidence:** all 22 sources have a test event in `alert_events` (period detection + inject works for each), and all 22 workflow runs concluded **success** (a failed SMTP send fails the run, so success ⇒ the email was sent). The originally-reported `price_bands` case is **DB-confirmed delivered** to `eduardo.mendes@itaubba.com` (`email_log.status='sent'`, subject "[SectorData Alerts] Price Bands (Parity) — 2026-06-03"), landed in the **inbox** (corporate deliverability confirmed OK).
+- **Note:** `--to` extra copies are sent directly (not via the outbox), so they don't appear in `alert_email_log` — only subscriber-fanout sends do. Run-success is the per-base PASS signal for the `--to` path.
+- **Process fix:** `client_alerts_test.yml` had a `concurrency.group` that **cancels queued runs**, so rapid batch dispatch cancelled all-but-one (worker recovered by serializing). The group was removed so batch re-runs queue safely.
+- **All 22 PASS:** vendas · anp_glp · anp_precos_produtores · anp_lpc · anp_precos_distribuicao · anp_daie · anp_desembaracos · mdic_comex · anp_cdp_producao · anp_cdp_diaria · anp_cdp_diaria_instalacao · anp_cdp_diaria_poco · anp_voip · navios_diesel · vessel_positions · port_arrivals · import_candidates · d_g_margins · price_bands · anp_subsidy_diesel_reference · anp_subsidy_commercialization · anp_subsidy_caps.
