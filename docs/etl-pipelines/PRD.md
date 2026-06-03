@@ -112,7 +112,7 @@ Produto de alertas por email **só-logado**, event-driven. Substitui o produto c
           GMAIL_ADDRESS:      ${{ vars.GMAIL_ADDRESS || 'ibbaogproject@gmail.com' }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           ALERTS_SENDER_EMAIL: ${{ vars.ALERTS_SENDER_EMAIL || 'SectorData Alerts <ibbaogproject@gmail.com>' }}
-          ALERTS_FRONTEND_URL: ${{ vars.ALERTS_FRONTEND_URL || 'https://sectordata-dashboard.vercel.app' }}
+          ALERTS_FRONTEND_URL: ${{ vars.ALERTS_FRONTEND_URL || 'https://oilandgasdata.vercel.app' }}
 ```
 
 - **`continue-on-error: true`**: o alerta é side-effect não-crítico — uma falha de envio **nunca** marca o pipeline de dados como vermelho.
@@ -138,7 +138,45 @@ Workflows com o hook: `etl_anp_vendas`, `etl_anp_cdp`, `etl_anp_cdp_diaria`, `et
 - `From` **deve** ser o dono do App Password (Gmail reescreve um From divergente). Quota free Gmail ~500 emails/dia.
 - `validate_api_key()` faz login probe 1× por processo; falha → `raise SystemExit(1)` para o step falhar visível. SMTP não tem suppression API (`list_suppressions()` → set vazio, fail-open). Idempotência entre runs = estado terminal `sent`/`failed`/`skipped` no `alert_outbox` (SMTP não tem idempotency key).
 
-**Secret obrigatório (GHA):** `GMAIL_APP_PASSWORD`. Vars opcionais (têm default no workflow): `GMAIL_ADDRESS`, `ALERTS_SENDER_EMAIL`, `ALERTS_FRONTEND_URL`.
+**Secret obrigatório (GHA):** `GMAIL_APP_PASSWORD`. Vars opcionais (têm default no workflow): `GMAIL_ADDRESS`, `ALERTS_SENDER_EMAIL`, `ALERTS_FRONTEND_URL` (default `https://oilandgasdata.vercel.app`).
+
+### Monitoring & testing (ops coverage + test harness, 2026-06)
+
+Two ops monitors give **full coverage** of the ETL fleet: a **freshness guardian** (catches a *silent* stall — workflow green but data not advancing) and a **failure pager** (catches a *loud* failure — workflow red and staying red). Plus a **safety-net poll** and a **production-safe test harness** for the Client Alerts product. All four email the ops team / send via the same Gmail SMTP sender used by Client Alerts (`scripts/client_alerts/_core/gmail_client.py`). They are ops/admin alerts, **independent of the client Alerts product** (which emails *subscribers* when a base *gets* new data; these fire when a base *fails* to, or a workflow breaks).
+
+| Workflow | Schedule | Script / command | What it does |
+|---|---|---|---|
+| `freshness_monitor.yml` | Daily `0 12 * * *` UTC | `scripts/freshness_monitor.py` | **Freshness guardian.** Reads `get_data_sources_freshness()` (service-role), compares each base's `last_update` vs a per-source `OVERDUE_HOURS` threshold tuned to the source's REAL publication cadence (not its cron). Emails ONE ops digest to `ALERTAS_DEST_EMAIL` only when a base is genuinely overdue; logs the full per-base snapshot every run. Catches silent green-but-stale stalls (source went quiet, scraper returns 0 rows behind a 200, CAPTCHA path degraded). |
+| `workflow_failure_monitor.yml` | Every 6h `0 */6 * * *` UTC | `scripts/workflow_failure_monitor.py` | **Failure pager.** Polls the GitHub Actions API for 16 critical workflows (`CRITICAL_WORKFLOWS`); pages ops on **≥3 consecutive non-cancelled failures**. Debounced via `alertas_estado` (key `workflow_failure_monitor`): pages once `ok→stuck`, recovery note `stuck→ok`, no re-page while still stuck. `cancelled`/`skipped`/in-flight runs are ignored. Needs `actions:read` on `GITHUB_TOKEN`. Re-homes the retired `etl_workflow_stuck` capability. |
+| `client_alerts_poll.yml` | Every 20 min `*/20 * * * *` | `run_base --all-active` | **Safety-net poll.** Runs the immediate path for every active source. Detects new periods for the **hook-less Data Input bases** (`price_bands`, `d_g_margins` — admin-edited, no ETL hook) within ~20 min, and backstops every base if an ETL hook is ever skipped. Idempotent (period-watermark + UNIQUE-deduped outbox) → a no-op poll sends nothing, a poll racing an ETL hook never double-sends. |
+| `client_alerts_test.yml` | `workflow_dispatch` (inputs: `source`, optional `to`) | `run_base --test --source <slug> [--to <email>]` | **Production-safe test harness.** Simulates a base update by inserting a synthetic `test:`-keyed `alert_events` row for the real current period → fanout → SMTP send, **without writing the data table or touching the watermark** (`alert_source_state`). Always delivers immediately (even for digest bases); `--to` mails an extra copy to one address. The method to test any base in production. Per-base test plan: [`docs/alerts/TEST_PLAN.md`](../alerts/TEST_PLAN.md). |
+
+**Threshold tuning (freshness guardian).** `OVERDUE_HOURS` in `scripts/freshness_monitor.py` is keyed by the `source_key` returned by `get_data_sources_freshness()`; every key must have an entry or be in `EXCLUDED_KEYS` (a coverage check warns on any gap each run). Buckets, sized to the source's true upstream lag (generous so a legitimately-slow source never false-positives):
+
+| Bucket | Threshold | Bases |
+|---|---|---|
+| Monthly fuel/trade (publish M+1) | 75d | `vendas`, `anp_glp`, `anp_daie`, `anp_desembaracos`, `mdic_comex`, `anp_precos_distribuicao`, `anp_cdp_producao` |
+| Weekly | 21d | `anp_precos_produtores`, `anp_lpc`, `d_g_margins` |
+| Daily — subsidy | 5d | `anp_subsidy_diesel_reference`, `anp_subsidy_commercialization` |
+| Daily — `anp_cdp_diaria*` | 9d | tracks `MAX(data)` with ANP's structural D-6 production-date lag (D-8 worst case over weekends) |
+| Vessels 6h/4h | 36h | `navios_diesel`, `vessel_positions` |
+| Event-driven vessels (sparse) | 10d | `port_arrivals`, `import_candidates` (a row appears only on a real-world event — a long gap is normal quiet, not a stall) |
+| News (~5 min) | 6h | `news_articles` |
+| Annual | 550d | `anp_voip` (annual + ~6mo baseline lag + Apr–Jun window) |
+| Admin ad-hoc | 120d | `anp_subsidy_caps` |
+| **Excluded** | — | `price_bands` (no defined cadence → never flagged) |
+
+**Together:** `freshness_monitor` (stall) + `workflow_failure_monitor` (failure) = full ops coverage of the data fleet. Both fail-open (a missing env exits non-zero with a clear message and no stack trace; a runtime/SMTP error surfaces as a red run; an overdue/failing condition is a *data* condition and does NOT fail the job itself).
+
+### Legacy `alertas/` monitor retirement (2026-06)
+
+The legacy local-only Gmail monitor (`alertas/`, driven by `.github/workflows/alertas_monitor.yml`) is **retired**. The workflow is **DISABLED** via `gh workflow disable` (reversible — the YAML stays on disk). It was made redundant by the work above:
+
+- Its CDP-replay/session machinery (`alertas/bases/.../_replay.py`, Selenium session re-dispatch) was already unnecessary — `etl_anp_cdp.yml` self-loads via the Power BI public API (no CAPTCHA, no session expiry).
+- Its 48h stale-canary is subsumed by the freshness guardian (per-source cadence-tuned thresholds, not a flat 48h).
+- Its `etl_workflow_stuck` pager was re-homed into `workflow_failure_monitor.yml` (above), against the live `IBBAOG/SectorData` repo with the current SMTP sender.
+
+**Recipient migration.** The 3 internal recipients (`monique.greco`, `eric.mello`, `eduardo.mendes` @itaubba.com) were migrated to the new Client Alerts product — each subscribed to the 7 ANP bases they previously got from the legacy monitor. Their `alert_recipients` rows were set `is_active=false` to stop the legacy path, so there are no more duplicate emails. Ops digests (freshness/failure) still go to `ALERTAS_DEST_EMAIL` (default `eduardo.mendes@itaubba.com`).
 
 ### Scripts de backfill histórico (one-shot, rodar localmente)
 
