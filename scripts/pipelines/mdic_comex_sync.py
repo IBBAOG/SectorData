@@ -31,11 +31,25 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 _API     = "https://api-comexstat.mdic.gov.br/general"
-_HEADERS = {"Content-Type": "application/json", "Accept": "application/json"}
+_HEADERS = {
+    "Content-Type": "application/json",
+    "Accept":       "application/json",
+    # A browser-like UA + Origin/Referer reduces the chance of being throttled
+    # as an anonymous bot; the public ComexStat UI calls the same endpoint.
+    "User-Agent":   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "Origin":       "https://comexstat.mdic.gov.br",
+    "Referer":      "https://comexstat.mdic.gov.br/",
+}
 _NCMS    = ["27090010", "27101259", "27101921"]
 _BATCH   = 500
-_RETRIES = 4
-_BACKOFF = [2, 5, 12, 30]
+# The API enforces a tight per-IP rate limit and replies HTTP 429 with
+# "tente novamente em 10 segundos". Back off generously and honor Retry-After.
+_RETRIES = 6
+_BACKOFF = [10, 15, 25, 40, 60, 90]
+# Pause between every (flow, month) leg to stay under the rate limit even on a
+# successful run — cheap insurance against 429 cascades.
+_INTER_REQUEST_SLEEP = 12
 
 
 # ── Credentials ───────────────────────────────────────────────────────────────
@@ -64,7 +78,18 @@ def _get_creds() -> tuple[str, str]:
 
 # ── MDIC API ──────────────────────────────────────────────────────────────────
 
-def _post_retry(flow: str, pf: str, pt: str) -> list[dict]:
+def _post_retry(flow: str, pf: str, pt: str) -> tuple[list[dict], bool]:
+    """POST to the ComexStat API with retries.
+
+    Returns ``(rows, http_ok)`` where:
+      * ``rows``    is the (possibly empty) ``data.list`` payload, and
+      * ``http_ok`` is True iff at least one attempt returned HTTP 200.
+
+    Distinguishing the two lets the caller tell a *legitimate* empty result
+    (HTTP 200 with an empty list — e.g. a future month with no data yet) from
+    a *masked failure* (every attempt was a non-200 such as 429/5xx, which
+    used to be silently swallowed as ``[]`` — see CLAUDE.md Pegadinha #12).
+    """
     payload = {
         "flow":        flow,
         "monthDetail": True,
@@ -73,18 +98,30 @@ def _post_retry(flow: str, pf: str, pt: str) -> list[dict]:
         "details":     ["ncm", "country"],
         "metrics":     ["metricFOB", "metricKG", "metricStatistic"],
     }
+    http_ok = False
     for attempt in range(_RETRIES):
         try:
             r = requests.post(_API, headers=_HEADERS, json=payload, timeout=60)
             if r.status_code == 200:
+                http_ok = True
                 rows = r.json().get("data", {}).get("list", []) or []
                 if rows:
-                    return rows
+                    return rows, True
+                # HTTP 200 + empty list: legitimate "no data" — stop retrying.
+                return [], True
+            print(f"    [warn] attempt {attempt + 1}: HTTP {r.status_code} "
+                  f"({r.text[:120].strip()})")
+            # Honor an explicit Retry-After (seconds) if the server sends one.
+            retry_after = r.headers.get("Retry-After")
+            wait = _BACKOFF[attempt]
+            if retry_after and retry_after.isdigit():
+                wait = max(wait, int(retry_after))
         except Exception as e:
-            print(f"    [aviso] tentativa {attempt + 1} falhou: {e}")
+            print(f"    [warn] attempt {attempt + 1} failed: {e}")
+            wait = _BACKOFF[attempt]
         if attempt < _RETRIES - 1:
-            time.sleep(_BACKOFF[attempt])
-    return []
+            time.sleep(wait)
+    return [], http_ok
 
 
 def _normalizar(rows: list[dict], flow: str) -> list[dict]:
@@ -187,22 +224,69 @@ def main():
     sb = create_client(url, key)
 
     all_records: list[dict] = []
-    for pf, pt in periodos:
+    # Per-month bookkeeping so we can detect the silent-empty failure mode:
+    #   counts[(pf, flow)]  = number of normalized rows obtained
+    #   http_failed[(pf, flow)] = True if every HTTP attempt was a non-200
+    counts: dict[tuple[str, str], int] = {}
+    http_failed: dict[tuple[str, str], bool] = {}
+    legs = [(pf, flow) for pf, _ in periodos for flow in ("import", "export")]
+    for idx, (pf, flow) in enumerate(legs):
+        print(f"  API {flow} {pf}...", end=" ", flush=True)
+        rows, http_ok = _post_retry(flow, pf, pf)
+        normed = _normalizar(rows, flow)
+        print(f"{len(normed):,} rows" + ("" if http_ok else "  [HTTP FAILED]"))
+        counts[(pf, flow)] = len(normed)
+        http_failed[(pf, flow)] = not http_ok
+        all_records.extend(normed)
+        # Space out requests to stay under the per-IP rate limit.
+        if idx < len(legs) - 1:
+            time.sleep(_INTER_REQUEST_SLEEP)
+
+    # ── Silent-empty / asymmetry detection (CLAUDE.md Pegadinha #12) ──────────
+    # A month that returns rows for one flow but an *empty* result for the other
+    # is the classic silent-empty signal. We also flag any flow whose every HTTP
+    # attempt failed (e.g. sustained 429), which previously looked identical to
+    # a legitimate empty.
+    warnings: list[str] = []
+    for pf, _ in periodos:
+        imp = counts.get((pf, "import"), 0)
+        exp = counts.get((pf, "export"), 0)
         for flow in ("import", "export"):
-            print(f"  API {flow} {pf}...", end=" ", flush=True)
-            rows = _post_retry(flow, pf, pt)
-            normed = _normalizar(rows, flow)
-            print(f"{len(normed):,} linhas")
-            all_records.extend(normed)
+            if http_failed.get((pf, flow)):
+                warnings.append(
+                    f"{pf} {flow}: every HTTP attempt failed (non-200) — "
+                    f"data may exist at source but was not fetched"
+                )
+        if imp == 0 and exp > 0:
+            warnings.append(
+                f"{pf}: export has {exp} rows but import is EMPTY — likely "
+                f"silent-empty (publication lag or fetch failure), not a true zero"
+            )
+        elif exp == 0 and imp > 0:
+            warnings.append(
+                f"{pf}: import has {imp} rows but export is EMPTY — likely "
+                f"silent-empty (publication lag or fetch failure), not a true zero"
+            )
+
+    for w in warnings:
+        print(f"  [WARNING] {w}")
 
     if not all_records:
-        print("Nenhum dado obtido. Encerrando.")
-        sys.exit(0)
+        print("No data obtained. Exiting.")
+        # Empty across the board with HTTP failures is an error, not a no-op.
+        sys.exit(1 if any(http_failed.values()) else 0)
 
-    print(f"\nTotal: {len(all_records):,} registros")
-    print("Upserting no Supabase...")
+    print(f"\nTotal: {len(all_records):,} records")
+    print("Upserting to Supabase...")
     total = _upsert(sb, all_records)
-    print(f"Concluido: {total:,} registros upserted em mdic_comex")
+    print(f"Done: {total:,} records upserted into mdic_comex")
+
+    # Make the asymmetry visible to CI and to alerting: a green job with a
+    # missing flow is the real bug we are guarding against here.
+    if warnings:
+        print(f"\n[ERROR] {len(warnings)} data-completeness warning(s) above "
+              f"— failing the job so the gap is not silently green.")
+        sys.exit(2)
 
 
 if __name__ == "__main__":
