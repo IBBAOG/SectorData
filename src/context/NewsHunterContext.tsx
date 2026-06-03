@@ -94,7 +94,11 @@ const PAGE_SIZE = 1000; // Supabase PostgREST max per request
 const DB_NAME = "nh_cache";
 const DB_VERSION = 1;
 const STORE_NAME = "feed";
-const CACHE_RECORD_KEY = "articles_v2";
+// Bumped v2 → v3 to invalidate caches corrupted by the fetchIncremental
+// snapshot bug (cacheSave was persisting only the current tick's delta because
+// the setArticles functional updater runs asynchronously). Every client does
+// one clean full reload on first load after this bump.
+const CACHE_RECORD_KEY = "articles_v3";
 
 // Legacy localStorage keys (pre-IndexedDB). Removed on first load so the old,
 // quota-overflowing blob stops occupying space. See migration in cacheLoad().
@@ -243,6 +247,12 @@ export function NewsHunterProvider({
     });
   }, []);
 
+  // Synchronous mirror of the `articles` state. The setArticles functional
+  // updater does NOT run synchronously (React applies it on the next render),
+  // so it cannot be used as the source of truth for merging/caching inside the
+  // same async tick. articlesRef is updated alongside every setArticles call
+  // and read by fetchIncremental to build the snapshot persisted to IndexedDB.
+  const articlesRef = useRef<NewsArticle[]>([]);
   const lastFoundAtRef = useRef<string | null>(null);
   const seenUrlsRef = useRef<Set<string>>(new Set());
   const flashTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -356,6 +366,7 @@ export function NewsHunterProvider({
     // 1. Load the local cache immediately — history shows with no request.
     const { articles: cached, watermark: cachedWatermark } = await cacheLoad();
     if (cached.length > 0) {
+      articlesRef.current = cached;
       setArticles(cached);
       seenUrlsRef.current = new Set(cached.map((r) => r.url));
     }
@@ -401,6 +412,7 @@ export function NewsHunterProvider({
       const newWatermark = merged.reduce(
         (max, r) => (r.found_at > max ? r.found_at : max), cachedWatermark,
       );
+      articlesRef.current = merged;
       setArticles(merged);
       seenUrlsRef.current = new Set(merged.map((r) => r.url));
       lastFoundAtRef.current = newWatermark;
@@ -434,6 +446,7 @@ export function NewsHunterProvider({
         ? allRows.reduce((max, r) => (r.found_at > max ? r.found_at : max), allRows[0].found_at)
         : new Date().toISOString();
       lastFoundAtRef.current = watermark;
+      articlesRef.current = allRows;
       seenUrlsRef.current = new Set(allRows.map((r) => r.url));
       await cacheSave(allRows, watermark);
     }
@@ -498,15 +511,15 @@ export function NewsHunterProvider({
       });
     }
 
-    // Merge into state, then persist the merged snapshot. We capture the
-    // merged array out of the (pure) updater and save it afterwards so the
-    // updater has no async side effect and the unhandled promise is awaited.
-    let mergedSnapshot: NewsArticle[] = rows;
-    setArticles((prev) => {
-      mergedSnapshot = mergeArticles(prev, rows);
-      return mergedSnapshot;
-    });
-    await cacheSave(mergedSnapshot, lastFoundAtRef.current!);
+    // Merge against the synchronous articlesRef snapshot (NOT a functional
+    // setArticles updater — that runs on the next render, so reading its result
+    // here would yield only the current tick's delta and overwrite the cache
+    // with a tiny handful of rows on every poll). articlesRef.current always
+    // mirrors the full article set, so the merged snapshot is complete.
+    const merged = mergeArticles(articlesRef.current, rows);
+    articlesRef.current = merged;
+    setArticles(merged);
+    await cacheSave(merged, lastFoundAtRef.current!);
   }, [supabase, mergeArticles]);
 
   useEffect(() => {
