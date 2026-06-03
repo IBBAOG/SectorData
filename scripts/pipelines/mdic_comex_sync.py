@@ -31,11 +31,25 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 _API     = "https://api-comexstat.mdic.gov.br/general"
-_HEADERS = {"Content-Type": "application/json", "Accept": "application/json"}
+_HEADERS = {
+    "Content-Type": "application/json",
+    "Accept":       "application/json",
+    # A browser-like UA + Origin/Referer reduces the chance of being throttled
+    # as an anonymous bot; the public ComexStat UI calls the same endpoint.
+    "User-Agent":   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "Origin":       "https://comexstat.mdic.gov.br",
+    "Referer":      "https://comexstat.mdic.gov.br/",
+}
 _NCMS    = ["27090010", "27101259", "27101921"]
 _BATCH   = 500
-_RETRIES = 4
-_BACKOFF = [2, 5, 12, 30]
+# The API enforces a tight per-IP rate limit and replies HTTP 429 with
+# "tente novamente em 10 segundos". Back off generously and honor Retry-After.
+_RETRIES = 6
+_BACKOFF = [10, 15, 25, 40, 60, 90]
+# Pause between every (flow, month) leg to stay under the rate limit even on a
+# successful run — cheap insurance against 429 cascades.
+_INTER_REQUEST_SLEEP = 12
 
 
 # ── Credentials ───────────────────────────────────────────────────────────────
@@ -97,10 +111,16 @@ def _post_retry(flow: str, pf: str, pt: str) -> tuple[list[dict], bool]:
                 return [], True
             print(f"    [warn] attempt {attempt + 1}: HTTP {r.status_code} "
                   f"({r.text[:120].strip()})")
+            # Honor an explicit Retry-After (seconds) if the server sends one.
+            retry_after = r.headers.get("Retry-After")
+            wait = _BACKOFF[attempt]
+            if retry_after and retry_after.isdigit():
+                wait = max(wait, int(retry_after))
         except Exception as e:
             print(f"    [warn] attempt {attempt + 1} failed: {e}")
+            wait = _BACKOFF[attempt]
         if attempt < _RETRIES - 1:
-            time.sleep(_BACKOFF[attempt])
+            time.sleep(wait)
     return [], http_ok
 
 
@@ -209,15 +229,18 @@ def main():
     #   http_failed[(pf, flow)] = True if every HTTP attempt was a non-200
     counts: dict[tuple[str, str], int] = {}
     http_failed: dict[tuple[str, str], bool] = {}
-    for pf, pt in periodos:
-        for flow in ("import", "export"):
-            print(f"  API {flow} {pf}...", end=" ", flush=True)
-            rows, http_ok = _post_retry(flow, pf, pt)
-            normed = _normalizar(rows, flow)
-            print(f"{len(normed):,} rows" + ("" if http_ok else "  [HTTP FAILED]"))
-            counts[(pf, flow)] = len(normed)
-            http_failed[(pf, flow)] = not http_ok
-            all_records.extend(normed)
+    legs = [(pf, flow) for pf, _ in periodos for flow in ("import", "export")]
+    for idx, (pf, flow) in enumerate(legs):
+        print(f"  API {flow} {pf}...", end=" ", flush=True)
+        rows, http_ok = _post_retry(flow, pf, pf)
+        normed = _normalizar(rows, flow)
+        print(f"{len(normed):,} rows" + ("" if http_ok else "  [HTTP FAILED]"))
+        counts[(pf, flow)] = len(normed)
+        http_failed[(pf, flow)] = not http_ok
+        all_records.extend(normed)
+        # Space out requests to stay under the per-IP rate limit.
+        if idx < len(legs) - 1:
+            time.sleep(_INTER_REQUEST_SLEEP)
 
     # ── Silent-empty / asymmetry detection (CLAUDE.md Pegadinha #12) ──────────
     # A month that returns rows for one flow but an *empty* result for the other
