@@ -1,0 +1,55 @@
+name: Workflow Failure Pager
+
+# OPS pager for a LOUD ETL failure: a critical workflow that goes RED and STAYS
+# red. The Data Freshness Guardian (freshness_monitor.yml) only catches a SILENT
+# stall (green-but-stale); it does NOT page on repeated failures. This re-homes
+# the capability that used to live in the now-disabled alertas_monitor.yml
+# (alertas/bases/etl_workflow_stuck.py).
+#
+# Polls the GitHub Actions API for the recent runs of each critical workflow,
+# flags any with >= 3 consecutive non-cancelled failures, debounces via the
+# Supabase alertas_estado table (pages once ok->stuck, sends a recovery note
+# stuck->ok), and emails the ops team over Gmail SMTP.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6 hours
+
+# Reading other workflows' run history requires the actions:read scope on the
+# GITHUB_TOKEN. contents:read for the checkout.
+permissions:
+  actions: read
+  contents: read
+
+# Own group so a run never collides with the next dispatch.
+concurrency:
+  group: workflow-failure-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Detect repeatedly-failing workflows and email ops
+        run: python -m scripts.workflow_failure_monitor
+        env:
+          GITHUB_TOKEN:              ${{ secrets.GITHUB_TOKEN }}
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY:      ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GMAIL_ADDRESS:             ${{ vars.GMAIL_ADDRESS || 'ibbaogproject@gmail.com' }}
+          GMAIL_APP_PASSWORD:        ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERTAS_DEST_EMAIL:        ${{ secrets.ALERTAS_DEST_EMAIL }}
