@@ -573,12 +573,21 @@ function formatMonthLabel(monthKey: string): string {
  * total bar height = the company's monthly net average. The partial (MtD) month
  * renders with reduced marker opacity and a "(MtD)" tick + hover suffix.
  *
+ * Each bar carries a **total label** on top (a `layout.annotations` entry per
+ * month) — the stack height (= sum of the fields that month) in display kbpd,
+ * pt-BR formatted (e.g. "160,7"). Since the bar IS the total, we annotate the
+ * top rather than adding a duplicate "total" trace. The MtD month is NOT
+ * suffixed in the label (the tick already shows "(MtD)").
+ *
  * `scale` converts bbl/day → display units (kbpd via `bblDiaToKbpd`).
+ * `labelFontSize` lets mobile shrink the on-bar total labels when 7 of them
+ * would crowd a ~260px chart (desktop default 11).
  */
 export function buildCompanyMonthlyOilStacked(
   monthly: CompanyMonthlyOilByField,
   height: number,
   scale: (v: number) => number = (v) => v,
+  labelFontSize = 11,
 ): { data: PlotData[]; layout: Partial<Layout> } {
   const { months, fieldOrder, valueByMonth, partialMonth } = monthly;
   if (!months.length || !fieldOrder.length) return emptyPlot(height);
@@ -602,14 +611,34 @@ export function buildCompanyMonthlyOilStacked(
     } as unknown as PlotData;
   });
 
+  // Per-month total = the stack height (sum of every field that month), in
+  // display units. Rendered as a discreet label just above each bar's top.
+  const monthTotals = months.map(m => {
+    const fields = valueByMonth[m] ?? {};
+    const sum = Object.values(fields).reduce((s, v) => s + v, 0);
+    return scale(sum);
+  });
+  const annotations = months.map((m, i) => ({
+    x: m,
+    y: monthTotals[i],
+    yshift: 8,                       // small gap above the bar top
+    text: fmtNumber(monthTotals[i], 1),
+    showarrow: false,
+    font: { family: "Arial", size: labelFontSize, color: "#1a1a1a" },
+    xanchor: "center" as const,
+    yanchor: "bottom" as const,
+  }));
+
   return {
     data: traces,
     layout: {
       ...COMMON_LAYOUT,
       height,
       barmode: "stack",
-      margin: { t: 10, b: 50, l: 80, r: 30 },
+      // Extra top margin so the on-bar total labels are not clipped.
+      margin: { t: 28, b: 50, l: 80, r: 30 },
       hovermode: "x unified",
+      annotations,
       yaxis: { ...AXIS_LINE, title: { text: "kbpd" } },
       xaxis: {
         ...AXIS_LINE,
@@ -754,10 +783,6 @@ export interface UseAnpCdpDiariaData {
   companyFieldAggregates: CompanyFieldAggregate[];
   /** Stake-held fields not yet in the daily feed (e.g. Wahoo for PRIO). */
   companyFieldsNoData: CompanyFieldNoData[];
-  /** Company total net averages over the visible period (for KPIs). */
-  companyTotalOilNetAvg: number;
-  /** Net Gas (avg) — kept as a reference KPI number only (no gas chart). */
-  companyTotalGasNetAvg: number;
   /** Company net oil line chart (headline total + per-field lines, kbpd). */
   companyPetroleoChart: { data: PlotData[]; layout: Partial<Layout> };
   /** Monthly average net-oil-by-field stacked bar (kbpd, MtD-aware). */
@@ -1161,18 +1186,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
     [empresaCampos],
   );
 
-  // Company total net averages over the period (avg of daily totals).
-  const { companyTotalOilNetAvg, companyTotalGasNetAvg } = useMemo(() => {
-    const oilTotals = buildCompanyTotalSeries(companyUnifiedRows, "petroleo_bbl_dia");
-    const gasTotals = buildCompanyTotalSeries(companyUnifiedRows, "gas_mm3_dia");
-    const avg = (arr: Array<[string, number]>) =>
-      arr.length ? arr.reduce((s, [, v]) => s + v, 0) / arr.length : 0;
-    return {
-      companyTotalOilNetAvg: avg(oilTotals),
-      companyTotalGasNetAvg: avg(gasTotals),
-    };
-  }, [companyUnifiedRows]);
-
   // ── Labels per level ──────────────────────────────────────────────────────
   const dimLabel = useMemo(() => {
     if (granularity === "field")        return { singular: "Campo",       plural: "campo(s)",       en: "Field" };
@@ -1437,8 +1450,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
     companySerieRows,
     companyFieldAggregates,
     companyFieldsNoData,
-    companyTotalOilNetAvg,
-    companyTotalGasNetAvg,
     companyPetroleoChart,
     companyMonthlyOilChart,
 

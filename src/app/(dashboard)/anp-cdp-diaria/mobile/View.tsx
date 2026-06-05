@@ -229,7 +229,6 @@ export default function MobileView(): React.ReactElement | null {
     selectedEmpresa, setSelectedEmpresa,
     companySerieRows,
     companyFieldAggregates, companyFieldsNoData,
-    companyTotalOilNetAvg, companyTotalGasNetAvg,
     companyMonthlyOilChart,
   } = useAnpCdpDiariaData();
 
@@ -445,8 +444,6 @@ export default function MobileView(): React.ReactElement | null {
           companySerieRows={companySerieRows}
           companyFieldAggregates={companyFieldAggregates}
           companyFieldsNoData={companyFieldsNoData}
-          companyTotalOilNetAvg={companyTotalOilNetAvg}
-          companyTotalGasNetAvg={companyTotalGasNetAvg}
           companyOilTrace={companyOilTrace}
           companyMonthlyOilChart={companyMonthlyOilChart}
         />
@@ -1022,64 +1019,17 @@ function RankingCard({
   );
 }
 
-/** One cell inside a summary grid. */
-function SummaryCell({
-  label,
-  value,
-  accent = false,
-}: {
-  label: string;
-  value: string;
-  accent?: boolean;
-}): React.ReactElement {
-  return (
-    <div
-      style={{
-        background:  "var(--mobile-surface, #fff)",
-        padding:     "10px 8px",
-        textAlign:   "center",
-      }}
-    >
-      <div
-        style={{
-          fontSize:      10,
-          fontWeight:    700,
-          color:         "var(--mobile-text-muted, #6b6b73)",
-          letterSpacing: "0.06em",
-          textTransform: "uppercase",
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          marginTop:           4,
-          fontSize:            accent ? 13 : 14,
-          fontWeight:          700,
-          color:               accent ? BRAND_ORANGE : "var(--mobile-text, #1a1a1a)",
-          fontVariantNumeric:  "tabular-nums",
-          lineHeight:          1.1,
-          whiteSpace:          "nowrap",
-          overflow:            "hidden",
-          textOverflow:        "ellipsis",
-        }}
-        title={value}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
 
 // ─── Company-mode content (landing) ───────────────────────────────────────────
 
 /**
- * Company landing on mobile: net-oil monthly stacked bar by field + net-oil
- * total line, the Net Oil/Gas average cells, per-field net ranking cards
- * (stake % + net values), and the coverage note listing stake-held fields
- * without daily data yet. Gas is oil-only here too — the gas chart was removed
- * (2026-06-05); Net Gas (avg) survives only as a reference cell. PRIO is
- * selected on landing.
+ * Company landing on mobile: net-oil monthly stacked bar by field (each bar
+ * carries its monthly total as an on-bar label) + net-oil total line, per-field
+ * net ranking cards (stake % + net values), and the coverage note listing
+ * stake-held fields without daily data yet. Gas is oil-only here too — the gas
+ * chart was removed (2026-06-05). The net-average summary cells were dropped
+ * (2026-06-05); the monthly total now lives as a label on top of each stacked
+ * bar. PRIO is selected on landing.
  */
 function CompanyMobileContent({
   selectedEmpresa,
@@ -1087,8 +1037,6 @@ function CompanyMobileContent({
   companySerieRows,
   companyFieldAggregates,
   companyFieldsNoData,
-  companyTotalOilNetAvg,
-  companyTotalGasNetAvg,
   companyOilTrace,
   companyMonthlyOilChart,
 }: {
@@ -1097,8 +1045,6 @@ function CompanyMobileContent({
   companySerieRows: AnpCdpDiariaEmpresaSeriePonto[];
   companyFieldAggregates: CompanyFieldAggregate[];
   companyFieldsNoData: { campo: string; stakePct: number }[];
-  companyTotalOilNetAvg: number;
-  companyTotalGasNetAvg: number;
   companyOilTrace: PlotData[];
   companyMonthlyOilChart: { data: PlotData[]; layout: Partial<Layout> };
 }): React.ReactElement {
@@ -1112,32 +1058,8 @@ function CompanyMobileContent({
 
   return (
     <>
-      {/* Net total averages */}
-      <section style={{ margin: "12px 16px 0" }}>
-        <div
-          style={{
-            display:             "grid",
-            gridTemplateColumns: "repeat(2, 1fr)",
-            gap:                 1,
-            background:          "var(--mobile-border-soft, #f0f0f5)",
-            borderRadius:        12,
-            overflow:            "hidden",
-            border:              "1px solid var(--mobile-border-soft, #f0f0f5)",
-          }}
-        >
-          <SummaryCell
-            label="Net Oil (avg)"
-            value={fmtNumber(companyTotalOilNetAvg / 1000, 1) + " kbpd"}
-            accent
-          />
-          <SummaryCell
-            label="Net Gas (avg)"
-            value={fmtNumber(companyTotalGasNetAvg, 3) + " Mm³/d"}
-          />
-        </div>
-      </section>
-
-      {/* Monthly average net oil by field (stacked bar, MtD-aware) */}
+      {/* Monthly average net oil by field (stacked bar, MtD-aware) — each bar
+          carries its monthly total on top (replaces the old summary cells). */}
       <section style={{ margin: "12px 16px 0" }}>
         <ChartCard
           title="Net Oil — Monthly Avg by Field"
@@ -1153,6 +1075,14 @@ function CompanyMobileContent({
             height={260}
             layout={{
               barmode: "stack",
+              // Carry the on-bar monthly total labels through from the hook,
+              // shrunk to ~10px so 7 of them fit a ~260px chart. Top margin
+              // widened so the topmost label is not clipped.
+              annotations: (companyMonthlyOilChart.layout.annotations ?? []).map(a => ({
+                ...a,
+                font: { ...(a.font ?? {}), size: 10 },
+              })),
+              margin: { l: 32, r: 8, t: 22, b: 28 },
               xaxis: companyMonthlyOilChart.layout.xaxis,
               yaxis: { nticks: 4 },
               showlegend: companyMonthlyOilChart.data.length > 1,

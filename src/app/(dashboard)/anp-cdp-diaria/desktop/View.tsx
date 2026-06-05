@@ -75,7 +75,6 @@ export default function DesktopView(): React.ReactElement | null {
     selectedEmpresa, setSelectedEmpresa,
     companySerieRows,
     companyFieldAggregates, companyFieldsNoData,
-    companyTotalOilNetAvg, companyTotalGasNetAvg,
     companyPetroleoChart, companyMonthlyOilChart,
   } = useAnpCdpDiariaData();
 
@@ -148,8 +147,6 @@ export default function DesktopView(): React.ReactElement | null {
                   companySerieRows={companySerieRows}
                   companyFieldAggregates={companyFieldAggregates}
                   companyFieldsNoData={companyFieldsNoData}
-                  companyTotalOilNetAvg={companyTotalOilNetAvg}
-                  companyTotalGasNetAvg={companyTotalGasNetAvg}
                   companyPetroleoChart={companyPetroleoChart}
                   companyMonthlyOilChart={companyMonthlyOilChart}
                 />
@@ -593,8 +590,6 @@ function CompanyContent({
   companySerieRows,
   companyFieldAggregates,
   companyFieldsNoData,
-  companyTotalOilNetAvg,
-  companyTotalGasNetAvg,
   companyPetroleoChart,
   companyMonthlyOilChart,
 }: {
@@ -603,8 +598,6 @@ function CompanyContent({
   companySerieRows: unknown[];
   companyFieldAggregates: CompanyFieldAggregate[];
   companyFieldsNoData: CompanyFieldNoData[];
-  companyTotalOilNetAvg: number;
-  companyTotalGasNetAvg: number;
   companyPetroleoChart: { data: PlotData[]; layout: Partial<Layout> };
   companyMonthlyOilChart: { data: PlotData[]; layout: Partial<Layout> };
 }): React.ReactElement {
@@ -624,23 +617,8 @@ function CompanyContent({
 
   return (
     <>
-      {/* KPI strip: net averages over the period */}
-      <div className="row mb-2 g-2">
-        <div className="col-6 col-lg-3">
-          <KpiCard label="Net Oil (avg)" value={`${fmtNumber(companyTotalOilNetAvg / 1000, 1)} kbpd`} />
-        </div>
-        <div className="col-6 col-lg-3">
-          <KpiCard label="Net Gas (avg)" value={`${fmtNumber(companyTotalGasNetAvg, 3)} Mm³/d`} />
-        </div>
-        <div className="col-6 col-lg-3">
-          <KpiCard label="Fields w/ daily data" value={`${companyFieldAggregates.length}`} />
-        </div>
-        <div className="col-6 col-lg-3">
-          <KpiCard label="Fields awaiting data" value={`${companyFieldsNoData.length}`} />
-        </div>
-      </div>
-
-      {/* Monthly average net oil by field (stacked bar, MtD-aware) */}
+      {/* Monthly average net oil by field (stacked bar, MtD-aware) — the
+          per-bar total label (stack height) replaces the old KPI strip. */}
       <div className="row mb-2">
         <div className="col-12">
           <ChartSection
@@ -738,15 +716,3 @@ function CompanyContent({
   );
 }
 
-/** Compact KPI tile for the Company level — canonical `.metric-card`
- *  (border-left orange 4px, value 22px/700) per docs/design/identity.md. */
-function KpiCard({ label, value }: { label: string; value: string }): React.ReactElement {
-  return (
-    <div className="metric-card" style={{ height: "100%", padding: "12px 16px" }}>
-      <div className="metric-label" style={{ textTransform: "uppercase", letterSpacing: "0.04em" }}>
-        {label}
-      </div>
-      <div className="metric-value">{value}</div>
-    </div>
-  );
-}
