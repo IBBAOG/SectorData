@@ -128,6 +128,27 @@ export interface CompanyFieldNoData {
   stakePct: number;
 }
 
+/**
+ * Monthly average net-oil-by-field, bucketed for the stacked bar. The value of
+ * (month, field) is the field's net oil DAILY average over the days it reported
+ * within that month: `sum(net oil that month) / (#reporting days that month)` —
+ * the SAME "average over reporting days" methodology as `companyFieldAggregates`
+ * and the "Net Oil (avg)" KPI, only bucketed per month. Values are in bbl/day
+ * (display divides by 1000 to kbpd). The most recent month is naturally
+ * month-to-date (the average only sees the days that exist so far); `partialMonth`
+ * flags the bucket that should render as MtD (incomplete vs the calendar month).
+ */
+export interface CompanyMonthlyOilByField {
+  /** Sorted "YYYY-MM" month keys (ascending). */
+  months: string[];
+  /** Field labels (stake-decorated), ordered by overall net-oil average desc. */
+  fieldOrder: string[];
+  /** valueByMonth[monthKey][fieldLabel] = avg net oil bbl/day that month. */
+  valueByMonth: Record<string, Record<string, number>>;
+  /** The "YYYY-MM" of the partial (month-to-date) bucket, or null if all complete. */
+  partialMonth: string | null;
+}
+
 // ─── Helpers (exported so Views can format consistently) ──────────────────────
 
 export function metricForProduct(product: Product): Metric {
@@ -239,6 +260,42 @@ export function buildSerieChart(
 }
 
 /**
+ * Order a company's field labels by their NET average (descending) for a given
+ * metric — the canonical legend order used by BOTH the company line chart and
+ * the monthly stacked bar. Sharing this guarantees a field keeps the SAME
+ * PALETTE slot (hence the SAME color) across both charts.
+ */
+export function orderCompanyFieldDims(rows: UnifiedRow[], metric: Metric): string[] {
+  const agg: Record<string, { sum: number; cnt: number }> = {};
+  for (const r of rows) {
+    const v = r[metric];
+    if (v == null) continue;
+    if (!agg[r.dimension]) agg[r.dimension] = { sum: 0, cnt: 0 };
+    agg[r.dimension].sum += v;
+    agg[r.dimension].cnt += 1;
+  }
+  return Object.entries(agg)
+    .map(([dim, v]) => [dim, v.cnt > 0 ? v.sum / v.cnt : 0] as [string, number])
+    .sort((a, b) => b[1] - a[1])
+    .map(([dim]) => dim);
+}
+
+/**
+ * Canonical field → color map for a company's charts. `orderedDims` must come
+ * from `orderCompanyFieldDims` so the i-th field gets `PALETTE[(i+1) % len]`
+ * (position 0 / brand orange is reserved for the "Company total" headline line,
+ * which has no counterpart in the stacked bar). Returned map is reused by both
+ * the line chart and the stacked bar to keep each field's color identical.
+ */
+export function companyFieldColorMap(orderedDims: string[]): Record<string, string> {
+  const map: Record<string, string> = {};
+  orderedDims.forEach((dim, i) => {
+    map[dim] = PALETTE[(i + 1) % PALETTE.length];
+  });
+  return map;
+}
+
+/**
  * Company-level chart: a bold "Company total" net headline line (brand orange)
  * plus one thin net line per field. `rows` carries NET values already; the
  * dimension is the stake-decorated field label. `scale` converts to display
@@ -262,15 +319,10 @@ export function buildCompanyChart(
     agg[r.dimension][r.data] = (agg[r.dimension][r.data] ?? 0) + v;
   }
 
-  // Order fields by average descending so the legend reads top → bottom.
-  const fieldDims = Object.entries(agg)
-    .map(([dim, byDay]) => {
-      const vals = Object.values(byDay);
-      const avg = vals.length ? vals.reduce((s, x) => s + x, 0) / vals.length : 0;
-      return [dim, avg] as [string, number];
-    })
-    .sort((a, b) => b[1] - a[1])
-    .map(([dim]) => dim);
+  // Order fields by average descending so the legend reads top → bottom — the
+  // SAME ordering/coloring the monthly stacked bar uses (shared helper).
+  const fieldDims = orderCompanyFieldDims(rows, metric);
+  const colorMap = companyFieldColorMap(fieldDims);
 
   // Headline total line.
   const total = buildCompanyTotalSeries(rows, metric);
@@ -283,18 +335,20 @@ export function buildCompanyChart(
     hovertemplate: `${COMPANY_TOTAL_LABEL}: %{y:,.1f} ${unitLabel}<extra></extra>`,
   } as PlotData;
 
-  const fieldTraces: PlotData[] = fieldDims.map((dim, i) => {
-    const entries = Object.entries(agg[dim]).sort(([a], [b]) => a.localeCompare(b));
-    return {
-      type: "scatter", mode: "lines",
-      name: dim,
-      x: entries.map(([d]) => d),
-      y: entries.map(([, v]) => scale(v)),
-      // Skip the brand orange (index 0 of PALETTE) for fields — reserved for total.
-      line: { width: 1.3, color: PALETTE[(i + 1) % PALETTE.length] },
-      hovertemplate: `${dim}: %{y:,.1f} ${unitLabel}<extra></extra>`,
-    } as PlotData;
-  });
+  const fieldTraces: PlotData[] = fieldDims
+    .filter(dim => agg[dim])
+    .map((dim) => {
+      const entries = Object.entries(agg[dim]).sort(([a], [b]) => a.localeCompare(b));
+      return {
+        type: "scatter", mode: "lines",
+        name: dim,
+        x: entries.map(([d]) => d),
+        y: entries.map(([, v]) => scale(v)),
+        // Field color comes from the shared map (orange reserved for total).
+        line: { width: 1.3, color: colorMap[dim] },
+        hovertemplate: `${dim}: %{y:,.1f} ${unitLabel}<extra></extra>`,
+      } as PlotData;
+    });
 
   return {
     data: [totalTrace, ...fieldTraces],
@@ -440,6 +494,135 @@ export function buildCompanyFieldAggregates(
     );
 }
 
+/** Last calendar day (1-31) of the given 0-based month/year (UTC-safe). */
+function lastDayOfMonth(year: number, monthIndex0: number): number {
+  // Day 0 of the next month = last day of this month.
+  return new Date(Date.UTC(year, monthIndex0 + 1, 0)).getUTCDate();
+}
+
+/**
+ * Bucket the company net serie into monthly average net-oil-by-field for the
+ * stacked bar. Per (month, field) value = `sum(net oil that month) / (#days the
+ * field reported that month)` — the same "average over reporting days" rule as
+ * the KPI / `companyFieldAggregates`, just per month. Values stay in bbl/day.
+ *
+ * The most recent month is intrinsically month-to-date (the average only sees
+ * the days present so far). `partialMonth` is set to that month's key ONLY when
+ * the latest `data` predates the calendar end of its month — so a fully-loaded
+ * month (e.g. data ending 2026-05-31) yields `partialMonth = null` (no MtD
+ * marker), while the first partial day of the next month flips it on.
+ *
+ * `fieldOrder` mirrors `orderCompanyFieldDims` (avg net oil desc) so the bar's
+ * stack order and per-field color match the company line chart exactly.
+ */
+export function buildCompanyMonthlyOilByField(
+  rows: AnpCdpDiariaEmpresaSeriePonto[],
+): CompanyMonthlyOilByField {
+  // Accumulate per (month, field): running sum + day count.
+  const acc: Record<string, Record<string, { sum: number; cnt: number }>> = {};
+  let maxDate: string | null = null;
+
+  for (const r of rows) {
+    if (r.petroleo_bbl_dia_net == null) continue;
+    const monthKey = r.data.slice(0, 7); // "YYYY-MM"
+    const label    = fieldLabelWithStake(r.campo, r.stake_pct);
+    if (!acc[monthKey]) acc[monthKey] = {};
+    if (!acc[monthKey][label]) acc[monthKey][label] = { sum: 0, cnt: 0 };
+    acc[monthKey][label].sum += r.petroleo_bbl_dia_net;
+    acc[monthKey][label].cnt += 1;
+    if (maxDate == null || r.data > maxDate) maxDate = r.data;
+  }
+
+  const months = Object.keys(acc).sort((a, b) => a.localeCompare(b));
+
+  // Field order / color = the same as the company line chart.
+  const fieldOrder = orderCompanyFieldDims(projectCompany(rows), "petroleo_bbl_dia");
+
+  // Compute daily average per (month, field).
+  const valueByMonth: Record<string, Record<string, number>> = {};
+  for (const m of months) {
+    valueByMonth[m] = {};
+    for (const [label, v] of Object.entries(acc[m])) {
+      valueByMonth[m][label] = v.cnt > 0 ? v.sum / v.cnt : 0;
+    }
+  }
+
+  // Detect the partial (month-to-date) bucket: the month of the max date, IF
+  // that max date is before the calendar end of its month.
+  let partialMonth: string | null = null;
+  if (maxDate) {
+    const [yy, mm, dd] = maxDate.split("-").map(Number);
+    const lastDay = lastDayOfMonth(yy, mm - 1);
+    if (dd < lastDay) partialMonth = maxDate.slice(0, 7);
+  }
+
+  return { months, fieldOrder, valueByMonth, partialMonth };
+}
+
+/** Format a "YYYY-MM" key as "Mon YYYY" (English short month). */
+function formatMonthLabel(monthKey: string): string {
+  const [yy, mm] = monthKey.split("-").map(Number);
+  const d = new Date(Date.UTC(yy, mm - 1, 1));
+  const mon = d.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+  return `${mon} ${yy}`;
+}
+
+/**
+ * Stacked-bar chart of monthly average net oil by field (kbpd). One trace per
+ * field (same color as the company line chart via `companyFieldColorMap`); the
+ * total bar height = the company's monthly net average. The partial (MtD) month
+ * renders with reduced marker opacity and a "(MtD)" tick + hover suffix.
+ *
+ * `scale` converts bbl/day → display units (kbpd via `bblDiaToKbpd`).
+ */
+export function buildCompanyMonthlyOilStacked(
+  monthly: CompanyMonthlyOilByField,
+  height: number,
+  scale: (v: number) => number = (v) => v,
+): { data: PlotData[]; layout: Partial<Layout> } {
+  const { months, fieldOrder, valueByMonth, partialMonth } = monthly;
+  if (!months.length || !fieldOrder.length) return emptyPlot(height);
+
+  const colorMap = companyFieldColorMap(fieldOrder);
+  const tickText = months.map(m => (m === partialMonth ? `${formatMonthLabel(m)} (MtD)` : formatMonthLabel(m)));
+
+  const traces: PlotData[] = fieldOrder.map((label) => {
+    const y = months.map(m => scale(valueByMonth[m]?.[label] ?? 0));
+    // Per-bar marker opacity: fade the partial (MtD) position to signal it.
+    const opacities = months.map(m => (m === partialMonth ? 0.55 : 1));
+    const customdata = months.map(m => (m === partialMonth ? " (month-to-date)" : ""));
+    return {
+      type: "bar",
+      name: label,
+      x: months,
+      y,
+      marker: { color: colorMap[label], opacity: opacities },
+      customdata,
+      hovertemplate: `${label}: %{y:,.1f} kbpd%{customdata}<extra></extra>`,
+    } as unknown as PlotData;
+  });
+
+  return {
+    data: traces,
+    layout: {
+      ...COMMON_LAYOUT,
+      height,
+      barmode: "stack",
+      margin: { t: 10, b: 50, l: 80, r: 30 },
+      hovermode: "x unified",
+      yaxis: { ...AXIS_LINE, title: { text: "kbpd" } },
+      xaxis: {
+        ...AXIS_LINE,
+        type: "category" as const,
+        tickmode: "array" as const,
+        tickvals: months,
+        ticktext: tickText,
+      },
+      legend: { orientation: "h", yanchor: "bottom", y: 1.01, xanchor: "left", x: 0 },
+    },
+  };
+}
+
 /** Build the production ranking for the mobile data card list. */
 export function buildRanking(rows: UnifiedRow[], product: Product): DimensionAggregate[] {
   const metric = metricForProduct(product);
@@ -573,10 +756,12 @@ export interface UseAnpCdpDiariaData {
   companyFieldsNoData: CompanyFieldNoData[];
   /** Company total net averages over the visible period (for KPIs). */
   companyTotalOilNetAvg: number;
+  /** Net Gas (avg) — kept as a reference KPI number only (no gas chart). */
   companyTotalGasNetAvg: number;
-  /** Company total net charts (headline + per-field, NET, both products). */
+  /** Company net oil line chart (headline total + per-field lines, kbpd). */
   companyPetroleoChart: { data: PlotData[]; layout: Partial<Layout> };
-  companyGasChart: { data: PlotData[]; layout: Partial<Layout> };
+  /** Monthly average net-oil-by-field stacked bar (kbpd, MtD-aware). */
+  companyMonthlyOilChart: { data: PlotData[]; layout: Partial<Layout> };
 
   // Labels per level
   dimLabel: { singular: string; plural: string; en: string };
@@ -945,14 +1130,21 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
     [companySerieRows],
   );
 
-  // Net charts: bold headline total + per-field net lines (both products).
+  // Net oil line chart: bold headline total + per-field net lines (kbpd). The
+  // gas chart was removed (2026-06-05) — Net Gas (avg) survives only as a KPI.
   const companyPetroleoChart = useMemo(
     () => buildCompanyChart(companyUnifiedRows, "petroleo_bbl_dia", "kbpd", 320, bblDiaToKbpd),
     [companyUnifiedRows],
   );
-  const companyGasChart = useMemo(
-    () => buildCompanyChart(companyUnifiedRows, "gas_mm3_dia", "Mm³/d", 320),
-    [companyUnifiedRows],
+
+  // Monthly average net-oil-by-field, bucketed for the stacked bar (MtD-aware).
+  const companyMonthlyOil = useMemo(
+    () => buildCompanyMonthlyOilByField(companySerieRows),
+    [companySerieRows],
+  );
+  const companyMonthlyOilChart = useMemo(
+    () => buildCompanyMonthlyOilStacked(companyMonthlyOil, 320, bblDiaToKbpd),
+    [companyMonthlyOil],
   );
 
   // Per-field net aggregates (ranking + desktop table), sorted by active product.
@@ -1248,7 +1440,7 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
     companyTotalOilNetAvg,
     companyTotalGasNetAvg,
     companyPetroleoChart,
-    companyGasChart,
+    companyMonthlyOilChart,
 
     dimLabel,
     datasetKey,

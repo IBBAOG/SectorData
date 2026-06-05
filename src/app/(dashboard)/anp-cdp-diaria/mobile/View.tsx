@@ -25,7 +25,7 @@
 // [mobile-only] with explicit reason.
 
 import { useEffect, useMemo, useState } from "react";
-import type { PlotData } from "plotly.js";
+import type { Layout, PlotData } from "plotly.js";
 
 import {
   MobileChart,
@@ -230,6 +230,7 @@ export default function MobileView(): React.ReactElement | null {
     companySerieRows,
     companyFieldAggregates, companyFieldsNoData,
     companyTotalOilNetAvg, companyTotalGasNetAvg,
+    companyMonthlyOilChart,
   } = useAnpCdpDiariaData();
 
   // ── Explore sheet state (Field / Installation; Well is desktop-only) ───────
@@ -276,13 +277,9 @@ export default function MobileView(): React.ReactElement | null {
   const [allFieldsOpen, setAllFieldsOpen] = useState(false);
   const [fieldSearch,   setFieldSearch]   = useState("");
 
-  // ── Company-mode chart traces (net total line, oil + gas) ──────────────────
+  // ── Company-mode chart trace (net total OIL line; gas chart removed) ────────
   const companyOilTrace = useMemo(
     () => buildCompanyTotalTrace(companySerieRows, "oil"),
-    [companySerieRows],
-  );
-  const companyGasTrace = useMemo(
-    () => buildCompanyTotalTrace(companySerieRows, "gas"),
     [companySerieRows],
   );
 
@@ -451,7 +448,7 @@ export default function MobileView(): React.ReactElement | null {
           companyTotalOilNetAvg={companyTotalOilNetAvg}
           companyTotalGasNetAvg={companyTotalGasNetAvg}
           companyOilTrace={companyOilTrace}
-          companyGasTrace={companyGasTrace}
+          companyMonthlyOilChart={companyMonthlyOilChart}
         />
       )}
 
@@ -1077,9 +1074,12 @@ function SummaryCell({
 // ─── Company-mode content (landing) ───────────────────────────────────────────
 
 /**
- * Company landing on mobile: net total chart (Oil + Gas, stacked), per-field
- * net ranking cards (stake % + net values), and the coverage note listing
- * stake-held fields without daily data yet. PRIO is selected on landing.
+ * Company landing on mobile: net-oil monthly stacked bar by field + net-oil
+ * total line, the Net Oil/Gas average cells, per-field net ranking cards
+ * (stake % + net values), and the coverage note listing stake-held fields
+ * without daily data yet. Gas is oil-only here too — the gas chart was removed
+ * (2026-06-05); Net Gas (avg) survives only as a reference cell. PRIO is
+ * selected on landing.
  */
 function CompanyMobileContent({
   selectedEmpresa,
@@ -1090,7 +1090,7 @@ function CompanyMobileContent({
   companyTotalOilNetAvg,
   companyTotalGasNetAvg,
   companyOilTrace,
-  companyGasTrace,
+  companyMonthlyOilChart,
 }: {
   selectedEmpresa: string | null;
   serieLoading: boolean;
@@ -1100,7 +1100,7 @@ function CompanyMobileContent({
   companyTotalOilNetAvg: number;
   companyTotalGasNetAvg: number;
   companyOilTrace: PlotData[];
-  companyGasTrace: PlotData[];
+  companyMonthlyOilChart: { data: PlotData[]; layout: Partial<Layout> };
 }): React.ReactElement {
   if (companySerieRows.length === 0 && !serieLoading) {
     return (
@@ -1137,7 +1137,39 @@ function CompanyMobileContent({
         </div>
       </section>
 
-      {/* Oil net chart */}
+      {/* Monthly average net oil by field (stacked bar, MtD-aware) */}
+      <section style={{ margin: "12px 16px 0" }}>
+        <ChartCard
+          title="Net Oil — Monthly Avg by Field"
+          unit="kbpd"
+          topN={0}
+          isExplicit
+          explicitCount={companyFieldAggregates.length}
+          updating={serieLoading}
+          companyTotal
+        >
+          <MobileChart
+            data={companyMonthlyOilChart.data}
+            height={260}
+            layout={{
+              barmode: "stack",
+              xaxis: companyMonthlyOilChart.layout.xaxis,
+              yaxis: { nticks: 4 },
+              showlegend: companyMonthlyOilChart.data.length > 1,
+              legend: {
+                orientation: "h",
+                yanchor: "bottom",
+                y: 1.02,
+                xanchor: "left",
+                x: 0,
+                font: { size: 9 },
+              },
+            }}
+          />
+        </ChartCard>
+      </section>
+
+      {/* Oil net total line chart */}
       <section style={{ margin: "12px 16px 0" }}>
         <ChartCard
           title="Net Oil"
@@ -1150,29 +1182,6 @@ function CompanyMobileContent({
         >
           <MobileChart
             data={companyOilTrace}
-            height={240}
-            layout={{
-              xaxis: { type: "date" as const, nticks: 4 },
-              yaxis: { nticks: 4 },
-              showlegend: false,
-            }}
-          />
-        </ChartCard>
-      </section>
-
-      {/* Gas net chart */}
-      <section style={{ margin: "12px 16px 0" }}>
-        <ChartCard
-          title="Net Gas"
-          unit="Mm³/d"
-          topN={0}
-          isExplicit
-          explicitCount={companyFieldAggregates.length}
-          updating={serieLoading}
-          companyTotal
-        >
-          <MobileChart
-            data={companyGasTrace}
             height={240}
             layout={{
               xaxis: { type: "date" as const, nticks: 4 },

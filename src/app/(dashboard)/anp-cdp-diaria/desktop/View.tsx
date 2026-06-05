@@ -76,7 +76,7 @@ export default function DesktopView(): React.ReactElement | null {
     companySerieRows,
     companyFieldAggregates, companyFieldsNoData,
     companyTotalOilNetAvg, companyTotalGasNetAvg,
-    companyPetroleoChart, companyGasChart,
+    companyPetroleoChart, companyMonthlyOilChart,
   } = useAnpCdpDiariaData();
 
   const isCompany = granularity === "company";
@@ -151,7 +151,7 @@ export default function DesktopView(): React.ReactElement | null {
                   companyTotalOilNetAvg={companyTotalOilNetAvg}
                   companyTotalGasNetAvg={companyTotalGasNetAvg}
                   companyPetroleoChart={companyPetroleoChart}
-                  companyGasChart={companyGasChart}
+                  companyMonthlyOilChart={companyMonthlyOilChart}
                 />
               ) : (
                 <ExploreSurface
@@ -596,7 +596,7 @@ function CompanyContent({
   companyTotalOilNetAvg,
   companyTotalGasNetAvg,
   companyPetroleoChart,
-  companyGasChart,
+  companyMonthlyOilChart,
 }: {
   selectedEmpresa: string | null;
   serieLoading: boolean;
@@ -606,7 +606,7 @@ function CompanyContent({
   companyTotalOilNetAvg: number;
   companyTotalGasNetAvg: number;
   companyPetroleoChart: { data: PlotData[]; layout: Partial<Layout> };
-  companyGasChart: { data: PlotData[]; layout: Partial<Layout> };
+  companyMonthlyOilChart: { data: PlotData[]; layout: Partial<Layout> };
 }): React.ReactElement {
   // PRIO is always selected on landing — the only empty state worth handling is
   // "no daily data in the selected period".
@@ -640,13 +640,24 @@ function CompanyContent({
         </div>
       </div>
 
-      {/* Oil net chart */}
+      {/* Monthly average net oil by field (stacked bar, MtD-aware) */}
       <div className="row mb-2">
         <div className="col-12">
-          <ChartSection title={`Net Oil (kbpd) — ${selectedEmpresa} total + by field`} loading={serieLoading} height={320}>
+          <ChartSection
+            title={
+              <span>
+                Net Oil — Monthly Average by Field (kbpd)
+                <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 400, color: "#888" }}>
+                  Stake-weighted · current month is month-to-date
+                </span>
+              </span>
+            }
+            loading={serieLoading}
+            height={320}
+          >
             <PlotlyChart
-              data={companyPetroleoChart.data}
-              layout={companyPetroleoChart.layout}
+              data={companyMonthlyOilChart.data}
+              layout={companyMonthlyOilChart.layout}
               config={{ responsive: true, displayModeBar: false }}
               style={{ width: "100%", height: 320 }}
             />
@@ -654,13 +665,13 @@ function CompanyContent({
         </div>
       </div>
 
-      {/* Gas net chart */}
+      {/* Oil net line chart (daily total + per-field) */}
       <div className="row mb-2">
         <div className="col-12">
-          <ChartSection title={`Net Gas (Mm³/day) — ${selectedEmpresa} total + by field`} loading={serieLoading} height={320}>
+          <ChartSection title={`Net Oil (kbpd) — ${selectedEmpresa} total + by field`} loading={serieLoading} height={320}>
             <PlotlyChart
-              data={companyGasChart.data}
-              layout={companyGasChart.layout}
+              data={companyPetroleoChart.data}
+              layout={companyPetroleoChart.layout}
               config={{ responsive: true, displayModeBar: false }}
               style={{ width: "100%", height: 320 }}
             />
