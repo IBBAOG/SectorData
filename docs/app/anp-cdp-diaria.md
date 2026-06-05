@@ -1,8 +1,36 @@
 # Sub-PRD — `/anp-cdp-diaria`
 
-Dashboard Daily Production — by Field / Installation / Well / **Company** (Oil & Gas). Owner: [`worker_dash-anp-cdp-diaria`](../../.claude/agents/worker_dash-anp-cdp-diaria.md). Source: ANP Power BI (`anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco`) + admin-curated `field_stakes` (Company level).
+Dashboard Daily Production — **company-first** (PRIO / Petrobras net production) with a demoted granular surface (Field / Installation / Well). Oil & Gas. Owner: [`worker_dash-anp-cdp-diaria`](../../.claude/agents/worker_dash-anp-cdp-diaria.md). Source: ANP Power BI (`anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco`) + admin-curated `field_stakes` (company net).
 
-> Item do dropdown "Oil & Gas" da NavBar (irmão de `/anp-cdp`). Distinção crítica: `/anp-cdp` é mensal por **poço** (formulário CDP); `/anp-cdp-diaria` é diário e cobre **quatro níveis de granularidade** (campo, instalação, poço, **empresa**) via Power BI ANP. O nível Company cruza a produção diária do campo com o stake (working interest) curado pelo admin em `/admin-panel → Field Stakes` para produzir **produção líquida no stake** por empresa.
+> Item do dropdown "Oil & Gas" da NavBar (irmão de `/anp-cdp`). Distinção crítica: `/anp-cdp` é mensal por **poço** (formulário CDP); `/anp-cdp-diaria` é diário. O nível Company cruza a produção diária do campo com o stake (working interest) curado pelo admin em `/admin-panel → Field Stakes` para produzir **produção líquida no stake** por empresa.
+
+## Information architecture — Two-Tier Tabs (2026-06-05)
+
+A IA foi redesenhada (escolha consciente do usuário — **Two-Tier Tabs**, não a recomendação do design panel). Uma **barra de abas primárias** no topo da coluna de conteúdo:
+
+```
+[ PRIO ]   [ Petrobras ]   [ Explore raw data ]
+```
+
+- **Default = PRIO**, já renderizada no mount (zero cliques) — é a visão principal "na cara do usuário ao entrar".
+- **PRIO / Petrobras** = visão de empresa (produção líquida no stake): renderiza o `CompanyContent` (KPIs Net Oil/Gas + Fields ok/awaiting → chart Net Oil kbpd total laranja + linhas por campo → chart Net Gas Mm³/d → tabela por campo com Stake% → nota "Not yet in the daily feed: WAHOO (100%)").
+- **Explore raw data** = superfície granular (demovida): sub-abas `[ Field ] [ Installation ]` + um afixo discreto **"Well-level (advanced) ›"** (#888, 12px, dashed underline) que revela o nível Well. Well fica a **3 cliques** (Explore → Field/Installation → "Well-level advanced") e é **desktop-only** (não aparece no mobile). Caption no topo do Explore: **"Unweighted ANP daily feed — all operators"** (sinaliza bruto vs líquido).
+
+A aba ativa **deriva do estado**: se `granularity==='company'` → aba ativa = `selectedEmpresa` (PRIO/Petrobras); se `granularity ∈ {field,installation,well}` → aba ativa = "Explore raw data". Toda a IA nova é **apresentação** sobre `setGranularity` + `setSelectedEmpresa`; o enum `Granularity` (`'field'|'installation'|'well'|'company'`) é preservado intacto.
+
+### `FIXED_COMPANIES` (empresas fixas)
+
+`export const FIXED_COMPANIES = ['PRIO','Petrobras'] as const;` — o universo de empresas é **fixo** a essas duas escolhas proeminentes. O **seletor dinâmico foi cortado**: a RPC `get_anp_cdp_diaria_empresas` (e seu wrapper `rpcGetAnpCdpDiariaEmpresas`) **não é mais consumida** pelo frontend (a função permanece no DB, sem uso). `selectedEmpresa` inicializa em `FIXED_COMPANIES[0]` (PRIO).
+
+### Lazy-mount (regra dura)
+
+A `granularity` inicial é `'company'` e permanece assim enquanto o usuário **não** abrir a aba/sheet Explore. Só ao clicar "Explore raw data" é que `setGranularity('field')` dispara — então os RPCs pesados de nível (especialmente Well, ~180k linhas) **nunca disparam na landing de empresa**. Verificado em smoke test: na landing PRIO só `get_anp_cdp_diaria_filtros` + `get_anp_cdp_diaria_empresa_campos` + `get_anp_cdp_diaria_empresa_serie` disparam; trocar PRIO↔Petrobras não dispara RPC de nível; `get_anp_cdp_diaria_serie` (Field) só dispara ao abrir Explore; `poco_serie` (Well) só ao clicar o afixo "Well-level (advanced)".
+
+> O reset-effect que limpa seleções depende de `[supabase, granularity]` (NÃO de `selectedEmpresa`), então trocar PRIO↔Petrobras (ambos `granularity==='company'`) não dispara reset/flicker. O reset de estado de empresa (`selectedEmpresa`/`empresaCampos`/`companySerieRows`) só ocorre ao **sair** de company (nova granularidade ≠ company) — ao **entrar** em company a View já setou a empresa e o effect a preserva.
+
+### Export sempre visível (decisão do usuário)
+
+`<ExportButton spec={anpCdpDiariaExport} />` fica no `DashboardHeader.rightSlot` em **todas as abas** (company e Explore). O export continua exportando os níveis Field/Installation/Well (nível-editável no modal). **Não é WYSIWYG na aba de empresa** — a produção líquida por empresa **não** é exportável por ora (Company-level export é **P2**, intencional). Documentado abaixo na seção Export.
 
 ## Escopo de código
 
@@ -27,63 +55,56 @@ Both Views consume the shared hook `useAnpCdpDiariaData`. Views are pure present
 `useAnpCdpDiariaData()` returns:
 - All 6 RPCs already wired (`rpcGetAnpCdpDiariaSerie` + Installation + Well wrappers + the 3 Company-level wrappers)
 - Filter state for every dimension (campos, instalacoes, pocos, dateRange) — Basin filter was removed from the UI on 2026-05-28; the per-row `bacia` field is still displayed in tables and badges
-- Granularity toggle (`granularity` + `setGranularity`) — now `"field" | "installation" | "well" | "company"`. Desktop exposes all 4; mobile exposes a `Fields | Companies` switch (Installation/Well stay desktop-only) and drives `granularity` to `"field"` / `"company"`.
+- Granularity (`granularity` + `setGranularity`) — `"field" | "installation" | "well" | "company"`, **initial = `"company"`** (Two-Tier Tabs landing). Presentation maps the primary tabs to it: PRIO/Petrobras → `"company"`; Explore → `"field"` (lazy); Well affordance → `"well"`.
 - Product toggle (`product` + `setProduct`) — `"oil" | "gas"`, drives mobile chart/ranking + the Company per-field ranking sort
 - Derived: `petroleoChart`, `gasChart` (full multi-trace, kbpd / Mm³/d), `defaultPetroleoDims`, `defaultGasDims`, `ranking` (DimensionAggregate[] sorted by avg of current product)
 - `tableRows` (top 500 most recent records)
-- **Company level**: `empresas` (selector), `selectedEmpresa` + `setSelectedEmpresa` (single-select), `empresaCampos` (stake coverage), `companySerieRows` (raw net serie), `companyFieldAggregates` (per-field net avg/latest + stake), `companyFieldsNoData` (stake-held fields without daily data), `companyTotalOilNetAvg` / `companyTotalGasNetAvg`, `companyPetroleoChart` / `companyGasChart` (bold "Company total" headline + per-field net lines). All NET values = gross × stake/100, computed server-side; the hook only sums/aggregates.
+- **Company level**: `selectedEmpresa` + `setSelectedEmpresa` (single-select, fixed to `FIXED_COMPANIES`), `empresaCampos` (stake coverage), `companySerieRows` (raw net serie), `companyFieldAggregates` (per-field net avg/latest + stake), `companyFieldsNoData` (stake-held fields without daily data), `companyTotalOilNetAvg` / `companyTotalGasNetAvg`, `companyPetroleoChart` / `companyGasChart` (bold "Company total" headline + per-field net lines). All NET values = gross × stake/100, computed server-side; the hook only sums/aggregates. **No `empresas` field** — the dynamic list was retired (Two-Tier Tabs IA).
 - Export modal state + handlers (`handleExportExcel`, `handleExportCsv`, `estimateExportRows`) — vestigial, no longer consumed (desktop uses `<ExportButton spec={anpCdpDiariaExport} />`)
 - Visibility guard already applied (`useModuleVisibilityGuard("anp-cdp-diaria")`)
 
 ### Desktop view (`desktop/View.tsx`)
 
-Verbatim move of the previous `page.tsx` body, now reading from the hook. Layout:
-- Sidebar: granularity toggle (Field / Installation / Well / **Company**), Filters section (Field · Installation · Well · Period — visibility per level; Basin filter removed 2026-05-28). In Company mode the dimension filters are hidden and a **Company** section with a single-select picker is shown instead (PRIO/Petrobras as featured pills + a `<select>` dropdown for the rest, each labelled with `n_campos_com_dado/n_campos_stake` coverage).
-- Main (Field/Installation/Well): `DashboardHeader` + 2 line charts (Oil kbpd, Gas Mm³/day) + "Production by Level" table (sticky thead, max 500 rows)
-- Main (Company): `DashboardHeader` ("Daily Net Production — <Company>") + a 4-tile KPI strip (Net Oil avg · Net Gas avg · Fields w/ daily data · Fields awaiting data) + 2 net line charts (bold "Company total" + per-field net lines, labels carry stake e.g. "PEREGRINO (80%)") + a per-field net table (Field · Basin · Stake % · Net Oil avg · Net Gas avg · Latest Net Oil · Latest Net Gas · Latest date) + a coverage note listing stake-held fields without daily data ("Not yet in the daily feed: WAHOO (100%)").
-- `ExportModal` Tier 2 (export stays pinned to Field/Installation/Well — Company-level export is P2, see Export section)
+Two-Tier Tabs (2026-06-05). Layout:
+- **Sidebar**: BrandLogo + **Period slider only** + the note "Net = field daily production × the company's stake". The level multi-selects moved out of the sidebar into the Explore surface; the 4-pill granularity toggle and the `CompanySelector` (featured pills + `<select>`) were **deleted**.
+- **Primary tab bar** (top of content column, below `DashboardHeader`): `[PRIO] [Petrobras]` (left) … `[Explore raw data]` (right, secondary styling). True tabs (orange underline + text on active), not the sliding-pill `SegmentedToggle`.
+- **Company tab (PRIO / Petrobras)**: `CompanyContent` (verbatim) — `DashboardHeader` ("Daily Net Production — <Company>") + 4-tile KPI strip (Net Oil avg · Net Gas avg · Fields w/ daily data · Fields awaiting data) + 2 net line charts (bold "Company total" + per-field net lines, labels carry stake e.g. "PEREGRINO (80%)") + per-field net table (Field · Basin · Stake % · Net Oil avg · Net Gas avg · Latest Net Oil · Latest Net Gas · Latest date) + coverage note ("Not yet in the daily feed: WAHOO (100%)"). The `!selectedEmpresa` empty branch was removed — PRIO is always selected; only the "no daily data in period" branch remains.
+- **Explore tab**: caption "Unweighted ANP daily feed — all operators" + sub-tabs `[Field|Installation]` (`SegmentedToggle`) + advanced affordance "Well-level (advanced) ›" (toggles Well; shows "← Back to Field / Installation" when Well is active) + the relocated level `SearchableMultiSelect` (Field/Installation/Well) + 2 line charts (Oil kbpd, Gas Mm³/day) + "Production by Level" recent-records table (sticky thead, max 500 rows).
+- `<ExportButton spec={anpCdpDiariaExport} />` in `DashboardHeader.rightSlot` on **all tabs**.
 
 ### Mobile view (`mobile/View.tsx`)
 
-Mobile-first redesign v2 (Onda 3, 2026-05-27); **Company mode added 2026-06-05**. A `Fields | Companies` `SegmentedToggle` sits in the page heading (Installation/Well stay desktop-only). Layout:
+Two-Tier Tabs mobile adaptation (2026-06-05). Layout:
 
-**Fields mode** (default):
-- Page heading + period badge (MobileTopBar provided by MobileShell in layout.tsx — NOT imported here)
-- Sticky filter chip row — period preset pills (1M / 3M / 6M / 1Y / All) + Filters trigger chip + active Field chip with × clear.
-- Section 1 — Oil chart: `MobileChart` line chart (~260px), top 5 fields, brand orange leader.
-- Section 2 — Gas chart: same treatment stacked vertically (desktop parity — both charts always visible, no tab).
-- Section 3 — Top 10 ranking: `MobileDataCard` per field (top 10), rank pill (#1 orange), basin badge, avg + 14-point sparkline, latest value + date. "See all N fields" button opens `BottomSheet` (90vh) with full searchable list.
-- Production summary card: 2×3 grid — Leader / Total Oil avg / Total Gas avg / Leader Oil / Leader Gas / Fields count.
-- `FilterDrawer`: Period slider + Field chip cloud (touch-friendly, max-height 240px scroll). Reset clears all selections + restores full date range.
-- `BottomSheet` "All Fields": full `ranking[]` list, searchable input, scrollable.
+**Company landing (default — PRIO, zero clicks):**
+- Page heading "Daily Production" / "Stake-weighted net production by field" (MobileTopBar provided by MobileShell — NOT imported here).
+- **Hero `[PRIO | Petrobras]` `SegmentedToggle`** in the heading (drives `setSelectedEmpresa` + ensures `granularity==='company'`).
+- Sticky period preset pills (1M / 3M / 6M / 1Y / All).
+- `CompanyMobileContent`: 2-cell net averages grid (Net Oil avg kbpd / Net Gas avg Mm³/d) + Net Oil + Net Gas charts (single bold "Company total" net line each, `MobileChart` ~240px) + "By Field — Net" `MobileDataCard` ranking (stake % badge, basin, avg net, latest net + date) + coverage note ("Not yet in the daily feed: WAHOO (100%)").
+- Below the company content: a discreet **full-width dashed button "Explore raw data (Field, Installation) ›"**.
 
-**Companies mode** ("same analysis, adapted UX" — single-select empresa):
-- Sticky chip row: period preset pills (shared) + PRIO/Petrobras featured pills + "More companies" trigger (opens a searchable `BottomSheet` of all empresas with `n_campos_com_dado/n_campos_stake`).
-- Net total averages: 2-cell grid (Net Oil avg kbpd / Net Gas avg Mm³/d).
-- Net Oil + Net Gas charts: each a single bold "Company total" net line (`MobileChart`, ~240px).
-- "By Field — Net" ranking: `MobileDataCard` per field with stake % badge, basin, avg net, latest net + date (sorted by product avg).
-- Coverage note: stake-held fields not yet in the daily feed (e.g. "Not yet in the daily feed: WAHOO (100%)").
+**Explore sheet (BottomSheet 90vh):**
+- Caption "Unweighted ANP daily feed — all operators" + sub-tabs `[Field|Installation]` + Period slider + Field chip cloud (Field level) + Oil/Gas `MobileChart` charts + Top 10 `RankingCard` list + "See all N" (nested BottomSheet). **Well NOT reachable on mobile.** Closing the sheet returns to the company landing (restores `selectedEmpresa` + `granularity='company'`).
 
 NOT on mobile (intentional `[mobile-only]` decisions):
 - No `ExportFAB` / `ExportModal` — export is desktop-only (plan § 3.4)
 - No `MobileTabBar` for Oil/Gas — both charts stacked, always visible
-- No Installation / Well granularity on mobile — only Field and Company are reachable (the desktop 4-way toggle collapses to a 2-way `Fields | Companies` switch)
+- **Well level — NOT reachable on mobile** (desktop-only; the "Well-level advanced" affordance is desktop-only) `[mobile-only]`
+- **Installation only inside the Explore sheet** (desktop has it as a primary sub-tab; mobile gates it behind the sheet) `[mobile-only]`
 - No recent-records HTML table — wrong shape for phones
 
 ### Binding sync
 
-Any new filter / chart / KPI / copy here must land in BOTH Views in the same commit, or the commit must declare `[desktop-only]` / `[mobile-only]` (see `CLAUDE.md` § Dual-view policy). The Company mode (2026-06-05) shipped in **both** Views in the same commit. Aspects intentionally desktop-only:
-- Installation / Well granularity — mobile exposes only `Fields | Companies` per UX brief
+Any new filter / chart / KPI / copy here must land in BOTH Views in the same commit, or the commit must declare `[desktop-only]` / `[mobile-only]` (see `CLAUDE.md` § Dual-view policy). The Two-Tier Tabs IA (2026-06-05) shipped in **both** Views in the same commit. Aspects intentionally desktop-only:
+- **Well level** — not reachable on mobile (hardcore/desktop surface)
 - The recent-records table (500 rows of HTML table — wrong shape for phone)
 - ExportFAB / ExportModal — export is desktop-only per plan § 3.4 (and Company-level export is P2 even on desktop)
 
 Mobile-only:
-- Period preset pills (1M/3M/6M/1Y/All) replacing the PeriodSlider in the chip row
+- Period preset pills (1M/3M/6M/1Y/All) replacing the PeriodSlider in the heading (the slider still appears inside the Explore sheet)
 - Top 10 ranking card list + "See all N" BottomSheet (desktop has the dense table instead)
-- Production summary card (2×3 grid) — desktop conveys this through charts and the table
-- Both Oil + Gas charts always stacked vertically — desktop also stacks them; mobile removed the MobileTabBar product switch that was in v1
-- `Fields | Companies` 2-way switch (desktop has the 4-way Field/Installation/Well/Company toggle); the company picker is a featured-pills + searchable BottomSheet (desktop uses pills + a `<select>`)
 - Company net charts collapse to a single "Company total" line per product (desktop also draws per-field lines); the per-field detail is in the "By Field — Net" `MobileDataCard` list
+- The granular surface lives inside a BottomSheet (desktop has it as a first-class tab); Installation is sheet-gated
 
 ## Produto
 
@@ -112,10 +133,10 @@ Header: título e sub variam por nível ("Daily Production by Field/Installation
 
 O nível **Company** responde à pergunta "como está a produção diária da PRIO (ou Petrobras, etc.)?". O usuário seleciona **uma empresa** (single-select) e vê a **produção líquida no stake**: para cada campo da empresa, `net = produção bruta do campo × stake_pct/100`.
 
-Decisões de produto (travadas pelo CTO):
-- **Seletor dinâmico**: todas as empresas em `field_stakes` que têm ≥1 campo no feed diário (`get_anp_cdp_diaria_empresas`). **PRIO e Petrobras em destaque** (pills); as demais via dropdown (desktop) / BottomSheet pesquisável (mobile).
+Decisões de produto (travadas pelo CTO — atualizado 2026-06-05 com a IA Two-Tier Tabs):
+- **Empresas fixas (`FIXED_COMPANIES`)**: somente **PRIO e Petrobras**, como abas primárias proeminentes. O **seletor dinâmico foi cortado** — a RPC `get_anp_cdp_diaria_empresas` não é mais consumida (fica no DB sem uso). `selectedEmpresa` inicializa em PRIO.
 - **Somente produção líquida** (campo × stake/100). **Sem toggle bruta.** `stake_pct` é usado apenas como rótulo ("PEREGRINO (80%)") / coluna de tabela / badge.
-- **Single-select** — uma empresa por vez.
+- **Single-select** — uma empresa por vez (a aba ativa).
 
 Modelo de dados:
 - **net = bruta × stake** — computado server-side por `get_anp_cdp_diaria_empresa_serie` (`petroleo_bbl_dia_net`, `gas_mm3_dia_net`). O frontend apenas soma/agrega.
@@ -145,14 +166,14 @@ Limitações conhecidas:
 
 Os filtros visíveis na sidebar dependem do `granularity`:
 
-| Nível | Filtros visíveis |
-|---|---|
-| **Field** | Campo (client), Período (server) |
-| **Installation** | Campo (server, push se selecionado), Instalação (client), Período (server) |
-| **Well** | Campo (client), Poço (client), Período (server) |
-| **Company** | Empresa (single-select, server: dispara fetch da série net), Período (server) — sem filtro de campo (o universo é o stake da empresa) |
+| Nível | Onde | Filtros visíveis |
+|---|---|---|
+| **Company** (PRIO/Petrobras tab) | landing | Empresa (aba primária, fixa), Período (sidebar/sticky) — sem filtro de campo (o universo é o stake da empresa) |
+| **Field** | Explore sub-tab | Campo (client, dentro do Explore), Período |
+| **Installation** | Explore sub-tab | Instalação (client), Período (campos push server quando selecionado) |
+| **Well** | Explore advanced (desktop-only) | Poço (client), Período |
 
-A troca de nível (`onChange` do `SegmentedToggle`) **reseta todas as seleções de filtros** para evitar carregar termos estranhos entre vocabulários (ex: poço selecionado quando ainda estava no nível Field). A troca para/de Company também reseta `selectedEmpresa`, `empresaCampos` e `companySerieRows`.
+A troca de nível **reseta as seleções de dimensão** (campos/instalações/poços) para evitar carregar termos estranhos entre vocabulários. O reset de estado de empresa só ocorre ao **sair** de company (nova granularidade ≠ company); ao entrar/trocar entre PRIO↔Petrobras (ambos company) **não** há reset (deps do effect = `[supabase, granularity]`).
 
 > **Basin filter removed (2026-05-28)** — not relevant for the analyst workflow. The backend RPCs `get_anp_cdp_diaria_serie` and `get_anp_cdp_diaria_poco_serie` still accept `p_bacias` for compatibility, but the frontend wrapper now pins it to `NULL`. The per-row `bacia` column remains in chart hovertemplates, the desktop recent-records table, the mobile ranking card badge, and Excel/CSV exports — only the input filter is gone.
 
@@ -166,7 +187,7 @@ A troca de nível (`onChange` do `SegmentedToggle`) **reseta todas as seleções
 | `rpcGetAnpCdpDiariaInstalacaoSerie` | `get_anp_cdp_diaria_instalacao_serie(p_campos, p_instalacoes, p_data_inicio, p_data_fim)` | `Array<{ data, campo, instalacao, petroleo_bbl_dia, gas_mm3_dia }>` |
 | `rpcGetAnpCdpDiariaPocoFiltros` | `get_anp_cdp_diaria_poco_filtros()` | `{ campos[], pocos[], data_min, data_max }` (backend also returns `bacias[]`; dropped by wrapper since 2026-05-28) |
 | `rpcGetAnpCdpDiariaPocoSerie` | `get_anp_cdp_diaria_poco_serie(p_campos, p_bacias, p_pocos, p_data_inicio, p_data_fim)` | `Array<{ data, campo, bacia, poco, petroleo_bbl_dia, gas_mm3_dia }>` — wrapper pins `p_bacias = NULL` since 2026-05-28 |
-| `rpcGetAnpCdpDiariaEmpresas` | `get_anp_cdp_diaria_empresas()` | `Array<{ empresa, n_campos_com_dado, n_campos_stake }>` (ordenado por n_campos_com_dado DESC) — popula o seletor |
+| ~~`rpcGetAnpCdpDiariaEmpresas`~~ | ~~`get_anp_cdp_diaria_empresas()`~~ | **Não consumida desde 2026-06-05** (IA Two-Tier Tabs — empresas fixas em `FIXED_COMPANIES`). Wrapper TS e RPC SQL permanecem definidos mas mortos; podem ser removidos numa limpeza futura. |
 | `rpcGetAnpCdpDiariaEmpresaSerie` | `get_anp_cdp_diaria_empresa_serie(p_empresa, p_data_inicio, p_data_fim)` | `Array<{ data, campo, bacia, stake_pct, petroleo_bbl_dia, gas_mm3_dia, petroleo_bbl_dia_net, gas_mm3_dia_net }>` — 1 linha por (data, campo), INNER JOIN (campos sem dado diário não vêm) |
 | `rpcGetAnpCdpDiariaEmpresaCampos` | `get_anp_cdp_diaria_empresa_campos(p_empresa)` | `Array<{ campo, stake_pct, has_daily_data }>` (ordenado has_daily_data DESC, stake DESC) — cobertura do stake |
 
@@ -381,3 +402,4 @@ Os 19 campos faltantes representam ~0,3% da produção nacional (maioria são bu
 - `2026-05-27` — **Mobile reform v2 (Onda 3)**. `mobile/View.tsx` reescrito: período preset pills (1M/3M/6M/1Y/All) no chip row sticky; dois charts (Oil + Gas) empilhados verticalmente sempre visíveis (sem tab Oil/Gas); ranking Top 10 com `MobileDataCard` + botão "See all N fields" abre `BottomSheet` (90vh) com lista completa pesquisável; production summary card 2×3; `ExportFAB`/`ExportModal` removidos (export é desktop-only); `MobileTabBar` de produto removido. Commit `b29914ff`, branch `worktree-agent-ae3d7c80602ee09fb`.
 - `2026-05-28` — **Export migrado para o unified export library** ([contract](export-library-contract.md)). Novo spec em `src/lib/export/dashboards/anpCdpDiaria.ts`; `desktop/View.tsx` agora consome `<ExportButton spec={anpCdpDiariaExport} />` em `DashboardHeader.rightSlot`. Estado de export modal/handlers removidos do hook do desktop (modal-editable filters: período default last 30d, todos os campos). Novo wrapper TS `rpcGetAnpCdpDiariaExportCount(nivel, filtros)` em `src/lib/rpc.ts` envelopando `get_anp_cdp_diaria_export_count(p_nivel, p_filtros)` (shipped por worker_supabase). Heurística em `exportSizeHeuristics.ts` deprecada para este dashboard.
 - `2026-06-05` — **Nível Company (produção diária líquida no stake por empresa)**. 4º modo no `Granularity` (`"company"`). Seletor dinâmico (PRIO/Petrobras em destaque + dropdown/BottomSheet das demais), single-select, somente net (campo × stake/100). Desktop: KPI strip + 2 charts net (total + por campo, labels com stake) + tabela net por campo + nota "no daily data yet" (ex.: Wahoo). Mobile (binding sync, mesmo commit): switch `Fields | Companies`, pills PRIO/Petrobras + BottomSheet, charts do total net, ranking `MobileDataCard` por campo com stake%, nota de cobertura. 3 wrappers TS novos (`rpcGetAnpCdpDiariaEmpresas`, `rpcGetAnpCdpDiariaEmpresaSerie`, `rpcGetAnpCdpDiariaEmpresaCampos`) com `Number()` das colunas numeric-as-string. Backend: 3 RPCs `SECURITY DEFINER` da migration `20260609000000` (commit `9caefb28`, worker_supabase). Export Company P2 (não tocado). Smoke test (Preview MCP): PRIO → 6 campos net + Wahoo na nota; Petrobras → 37 campos net. `tsc`/`eslint` clean.
+- `2026-06-05` — **Redesign de IA: Two-Tier Tabs** (feedback do usuário; escolha consciente, não a recomendação do design panel). O toggle de 4 pills (Field/Installation/Well/Company) **substituído** por uma barra de abas primárias `[PRIO] [Petrobras] [Explore raw data]` no topo da coluna de conteúdo. **PRIO/Petrobras viram a visão principal** (landing default = PRIO, zero cliques). **Cortado o seletor dinâmico e todas as outras empresas** — novo `FIXED_COMPANIES = ['PRIO','Petrobras']`; `rpcGetAnpCdpDiariaEmpresas`/`get_anp_cdp_diaria_empresas` **não mais consumidas** (mortas no DB). Field/Installation/Well demovidos para a aba "Explore raw data" (sub-abas `[Field|Installation]` + afixo "Well-level (advanced)"; **Well a 3 cliques, desktop-only**; caption "Unweighted ANP daily feed — all operators"). Hook: `granularity` inicial flipado `'field'→'company'`, `selectedEmpresa` inicial `null→'PRIO'`; reset-effect de empresa condicionado a sair de company (deps `[supabase, granularity]`, sem flicker em PRIO↔Petrobras); `empresas` removido do return. Desktop: deletado `SegmentedToggle` de 4 + `CompanySelector` + branch `!selectedEmpresa`; sidebar só logo+period; filtros de nível relocados pro Explore. Mobile (binding sync, mesmo commit): deletado switch `Fields|Companies` + company picker BottomSheet; hero `[PRIO|Petrobras]` na landing + botão dashed "Explore raw data (Field, Installation) ›" abre BottomSheet 90vh com sub-abas `[Field|Installation]` (**Well e Installation-no-sheet são `[mobile-only]`**: Well não acessível, Installation sheet-gated). Export `<ExportButton>` **sempre visível** em todas as abas; export de empresa-líquida segue **P2** (modal exporta níveis Field/Installation/Well, não-WYSIWYG na aba de empresa — intencional). Smoke test (Preview MCP, desktop + mobile via forcemobile): landing cai em PRIO (157,5 kbpd, 6 fields, 1 awaiting) sem clique; Petrobras troca sem reset/RPC de nível (37 fields, 29 awaiting); Explore lazy-mounta Field (`get_anp_cdp_diaria_serie`); Installation OK; Well revelado pelo afixo (`poco_serie`, 1230 wells); back→PRIO restaura; mobile landing PRIO + sheet Field/Installation sem Well + close volta pra PRIO. `tsc`/`eslint` clean. Commit `refactor(anp-cdp-diaria): two-tier tabs IA`.

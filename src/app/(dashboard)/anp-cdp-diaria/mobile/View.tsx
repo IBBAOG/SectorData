@@ -2,46 +2,40 @@
 
 // Mobile View — ANP CDP Daily Production (≤768px).
 //
-// Flagship #2 — v2 reform (Onda 3, 2026-05-27).
+// Two-Tier Tabs IA (2026-06-05) — mobile adaptation of the desktop redesign.
 //
-// Layout (top → bottom):
-//   Sticky filter chip row  — Period preset + Field search trigger
-//   Section 1 — Oil chart   — daily series, top 5 fields, brand orange leader, ~260px
-//   Section 2 — Gas chart   — same treatment stacked vertically (desktop parity, CTO decision)
-//   Section 3 — Top 10 ranking  — MobileDataCard pills + "See all N fields" BottomSheet
-//   Production summary card — Total / Avg / Leader mini-stats
+// Landing = company net production (PRIO by default, zero clicks). A hero
+// [ PRIO | Petrobras ] toggle sits at the top; below it the CompanyMobileContent
+// renders the selected company's stake-weighted net production. Underneath, a
+// discreet full-width dashed button "Explore raw data (Field, Installation) >"
+// opens a 90vh BottomSheet with sub-tabs [Field | Installation] + the existing
+// Fields-mode body (period presets + Field chip filter + Oil/Gas charts +
+// ranking cards + "See all").
 //
-// Intentionally NOT rendered on mobile:
-//   • ExportFAB / ExportModal (plan § 3.4 — export is desktop-only)
-//   • MobileTabBar for Oil/Gas (both charts shown stacked, not tabbed)
-//   • Granularity toggle (Field / Installation / Well) — pinned to Field
-//   • Recent-records HTML table (wrong shape for phones)
-//   • MobileTopBar (provided by MobileShell in layout.tsx since Onda 2)
-//   • NavBar import
-//   • useIsMobile() (this IS the mobile view)
-//   • Dark mode CSS (light-only per plan § 3.2)
+// Intentionally NOT on mobile ([mobile-only] decisions):
+//   • Well level — NOT reachable on mobile (desktop-only; hardcore surface)
+//   • Installation lives ONLY inside the Explore sheet (desktop also has it but
+//     as a primary sub-tab; on mobile it is sheet-gated)
+//   • ExportFAB / ExportModal — export is desktop-only (plan § 3.4)
+//   • Recent-records HTML table — wrong shape for phones
+//   • MobileTopBar / NavBar / useIsMobile() / dark-mode CSS
 //
-// Binding sync rule (CLAUDE.md § Dual-view policy):
-//   This view pins granularity=field and removes ExportFAB — both are
-//   intentional mobile-only decisions. All other meaningful analysis changes
-//   must land in desktop/View.tsx in the SAME commit, or the commit must
-//   declare [mobile-only] with explicit reason.
+// Binding sync rule (CLAUDE.md § Dual-view policy): meaningful analysis changes
+// must land in desktop/View.tsx in the SAME commit, or the commit must declare
+// [mobile-only] with explicit reason.
 
 import { useEffect, useMemo, useState } from "react";
 import type { PlotData } from "plotly.js";
 
 import {
-  FilterDrawer,
   MobileChart,
   MobileDataCard,
   BottomSheet,
-  FilterIcon,
-  CloseIcon,
 } from "../../../../components/dashboard/mobile";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
-
 import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
+
 import {
   useAnpCdpDiariaData,
   metricForProduct,
@@ -52,7 +46,7 @@ import {
   BRAND_ORANGE,
   PALETTE,
   COMPANY_TOTAL_LABEL,
-  FEATURED_COMPANIES,
+  FIXED_COMPANIES,
   type Product,
   type UnifiedRow,
   type DimensionAggregate,
@@ -66,6 +60,9 @@ import { bblDiaToKbpd } from "../../../../lib/units";
 const TOP_CHART_TRACES  = 5;   // chart legibility on 375px screens
 const TOP_RANKING_CARDS = 10;  // cards shown before "See all" sheet
 const SPARKLINE_POINTS  = 14;  // ~2 weeks of daily values
+
+// Sub-tabs inside the Explore sheet (Well is desktop-only — not here).
+type ExploreLevel = "field" | "installation";
 
 // ─── Period preset helpers ─────────────────────────────────────────────────────
 
@@ -229,24 +226,34 @@ export default function MobileView(): React.ReactElement | null {
     ranking,
     product,
     // Company level
-    empresas, selectedEmpresa, setSelectedEmpresa,
+    selectedEmpresa, setSelectedEmpresa,
     companySerieRows,
     companyFieldAggregates, companyFieldsNoData,
     companyTotalOilNetAvg, companyTotalGasNetAvg,
   } = useAnpCdpDiariaData();
 
-  // Mobile-local mode switch: Fields | Companies. Installation/Well stay
-  // desktop-only. The switch drives the shared hook's granularity.
-  const [mobileMode, setMobileMode] = useState<"fields" | "companies">("fields");
+  // ── Explore sheet state (Field / Installation; Well is desktop-only) ───────
+  const [exploreOpen, setExploreOpen] = useState(false);
+  const exploreLevel: ExploreLevel = granularity === "installation" ? "installation" : "field";
 
-  // Keep the shared granularity in sync with the mobile mode. Installation/Well
-  // are not reachable on mobile, so any other value collapses to "field".
-  useEffect(() => {
-    const target = mobileMode === "companies" ? "company" : "field";
-    if (granularity !== target) setGranularity(target);
-  }, [mobileMode, granularity, setGranularity]);
+  // Hero tab dispatch: pick a company AND ensure the company landing is active.
+  function selectCompany(name: string) {
+    setSelectedEmpresa(name);
+    if (granularity !== "company") setGranularity("company");
+  }
 
-  const isCompany = mobileMode === "companies";
+  // Open the Explore sheet → lazy-mount the granular RPCs at Field level.
+  function openExplore() {
+    if (granularity === "company") setGranularity("field");
+    setExploreOpen(true);
+  }
+  // Close the Explore sheet → return to the company landing (PRIO/Petrobras).
+  // Default back to the first fixed company if one wasn't preserved.
+  function closeExplore() {
+    setExploreOpen(false);
+    setSelectedEmpresa(selectedEmpresa ?? FIXED_COMPANIES[0]);
+    setGranularity("company");
+  }
 
   // ── Period preset state (mobile-local) ─────────────────────────────────────
   const [activePreset, setActivePreset] = useState<PeriodPreset>("All");
@@ -266,11 +273,8 @@ export default function MobileView(): React.ReactElement | null {
   }
 
   // ── UI state ───────────────────────────────────────────────────────────────
-  const [filterOpen,   setFilterOpen]   = useState(false);
   const [allFieldsOpen, setAllFieldsOpen] = useState(false);
   const [fieldSearch,   setFieldSearch]   = useState("");
-  const [companyPickerOpen, setCompanyPickerOpen] = useState(false);
-  const [companySearch,     setCompanySearch]     = useState("");
 
   // ── Company-mode chart traces (net total line, oil + gas) ──────────────────
   const companyOilTrace = useMemo(
@@ -282,19 +286,7 @@ export default function MobileView(): React.ReactElement | null {
     [companySerieRows],
   );
 
-  // Companies for the picker (featured first, then alphabetical others).
-  const featuredCompanies = useMemo(
-    () => FEATURED_COMPANIES.filter(f => empresas.some(e => e.empresa === f)),
-    [empresas],
-  );
-  const filteredCompanyList = useMemo(() => {
-    const q = companySearch.trim().toLowerCase();
-    const base = empresas.filter(e => !FEATURED_COMPANIES.includes(e.empresa));
-    if (!q) return base;
-    return base.filter(e => e.empresa.toLowerCase().includes(q));
-  }, [empresas, companySearch]);
-
-  // ── Chart dimensions ───────────────────────────────────────────────────────
+  // ── Chart dimensions (Explore sheet) ───────────────────────────────────────
   const oilChartDims = useMemo(() => {
     const base = explicitDims.length > 0 ? explicitDims : defaultPetroleoDims;
     return base.slice(0, TOP_CHART_TRACES);
@@ -314,45 +306,12 @@ export default function MobileView(): React.ReactElement | null {
     [visibleRows, gasChartDims],
   );
 
-  // ── Active filter count (for chip badge) ──────────────────────────────────
-  const activeFilterCount =
-    (selectedCampos.length > 0 ? 1 : 0) +
-    (allDates.length > 0 && (dateRange[0] !== 0 || dateRange[1] !== allDates.length - 1) ? 1 : 0);
-
-  // ── Production summary stats ───────────────────────────────────────────────
-  const summaryStats = useMemo(() => {
-    if (ranking.length === 0) return null;
-    const leader = ranking[0];
-    const oilLeaderAvg = metricDisplay(leader.avgOil, "petroleo_bbl_dia") ?? 0;
-    const gasLeaderAvg = metricDisplay(leader.avgGas, "gas_mm3_dia")      ?? 0;
-    const totalOilAvg  = ranking.reduce((s, r) => s + (metricDisplay(r.avgOil, "petroleo_bbl_dia") ?? 0), 0);
-    const totalGasAvg  = ranking.reduce((s, r) => s + (metricDisplay(r.avgGas, "gas_mm3_dia") ?? 0), 0);
-    return {
-      leaderName:       leader.dimension,
-      leaderBacia:      leader.bacia,
-      leaderOilAvg:     oilLeaderAvg,
-      leaderGasAvg:     gasLeaderAvg,
-      totalOilAvg,
-      totalGasAvg,
-      fieldCount:       ranking.length,
-    };
-  }, [ranking]);
-
   // ── Filtered field list in "See all" sheet ─────────────────────────────────
   const filteredSheetRanking = useMemo(() => {
     const q = fieldSearch.trim().toLowerCase();
     if (!q) return ranking;
     return ranking.filter(r => r.dimension.toLowerCase().includes(q));
   }, [ranking, fieldSearch]);
-
-  // ── Filter drawer reset ────────────────────────────────────────────────────
-  function handleReset() {
-    setSelectedCampos([]);
-    if (allDates.length > 0) {
-      setDateRange([0, allDates.length - 1]);
-    }
-    setActivePreset("All");
-  }
 
   // ─────────────────────────────────────────────────────────────────────────
   if (visLoading || !visible) return null;
@@ -394,20 +353,15 @@ export default function MobileView(): React.ReactElement | null {
             lineHeight: 1.4,
           }}
         >
-          {isCompany
-            ? "Stake-weighted net production by field"
-            : "Petroleum and gas by field — refreshed 3×/day"}
+          Stake-weighted net production by field
         </div>
 
-        {/* Fields | Companies mode toggle */}
+        {/* Hero PRIO | Petrobras toggle (company landing) */}
         <div style={{ marginTop: 12 }}>
-          <SegmentedToggle<"fields" | "companies">
-            value={mobileMode}
-            onChange={setMobileMode}
-            options={[
-              { value: "fields",    label: "Fields" },
-              { value: "companies", label: "Companies" },
-            ]}
+          <SegmentedToggle<string>
+            value={selectedEmpresa ?? FIXED_COMPANIES[0]}
+            onChange={selectCompany}
+            options={FIXED_COMPANIES.map(c => ({ value: c, label: c }))}
           />
         </div>
 
@@ -442,7 +396,7 @@ export default function MobileView(): React.ReactElement | null {
         )}
       </section>
 
-      {/* ── Sticky filter chip row ─────────────────────────────────────────── */}
+      {/* ── Sticky period preset row ───────────────────────────────────────── */}
       <div
         style={{
           position:    "sticky",
@@ -453,13 +407,12 @@ export default function MobileView(): React.ReactElement | null {
           padding:     "8px 0",
         }}
       >
-        {/* Period preset pills */}
         <div
           style={{
             display:        "flex",
             alignItems:     "center",
             gap:            6,
-            padding:        "0 16px 6px",
+            padding:        "0 16px",
             overflowX:      "auto",
             WebkitOverflowScrolling: "touch",
             scrollbarWidth: "none",
@@ -481,133 +434,14 @@ export default function MobileView(): React.ReactElement | null {
             </button>
           ))}
         </div>
-
-        {/* Field mode: Field + Filters trigger */}
-        {!isCompany && (
-          <div
-            style={{
-              display:        "flex",
-              alignItems:     "center",
-              gap:            6,
-              padding:        "0 16px",
-              overflowX:      "auto",
-              WebkitOverflowScrolling: "touch",
-              scrollbarWidth: "none",
-            }}
-          >
-            {/* Filters button */}
-            <button
-              type="button"
-              onClick={() => setFilterOpen(true)}
-              aria-label="Open filters"
-              style={{
-                ...chipBase,
-                borderStyle: "dashed",
-              }}
-            >
-              <FilterIcon size={13} strokeWidth={2.4} />
-              Filters
-              {activeFilterCount > 0 && (
-                <span
-                  style={{
-                    minWidth:   18,
-                    height:     18,
-                    borderRadius: 999,
-                    background: BRAND_ORANGE,
-                    color:      "#fff",
-                    fontSize:   10,
-                    fontWeight: 700,
-                    display:    "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    padding:    "0 5px",
-                  }}
-                >
-                  {activeFilterCount}
-                </span>
-              )}
-            </button>
-
-            {/* Active field chip */}
-            {selectedCampos.length > 0 && (
-              <span style={chipActive}>
-                {selectedCampos.length === 1
-                  ? selectedCampos[0].length > 16
-                    ? selectedCampos[0].slice(0, 14) + "…"
-                    : selectedCampos[0]
-                  : `Fields: ${selectedCampos.length}`}
-                <button
-                  type="button"
-                  onClick={() => setSelectedCampos([])}
-                  aria-label="Clear field filter"
-                  style={{
-                    width:   18,
-                    height:  18,
-                    border:  0,
-                    background: "transparent",
-                    color:   BRAND_ORANGE,
-                    cursor:  "pointer",
-                    padding: 0,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <CloseIcon size={9} strokeWidth={2.5} />
-                </button>
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Company mode: featured pills + "More" trigger */}
-        {isCompany && (
-          <div
-            style={{
-              display:        "flex",
-              alignItems:     "center",
-              gap:            6,
-              padding:        "0 16px",
-              overflowX:      "auto",
-              WebkitOverflowScrolling: "touch",
-              scrollbarWidth: "none",
-            }}
-          >
-            {featuredCompanies.map(name => {
-              const active = selectedEmpresa === name;
-              return (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={() => setSelectedEmpresa(name)}
-                  style={{
-                    ...(active ? chipActive : chipBase),
-                    minHeight: 30,
-                  }}
-                >
-                  {name}
-                </button>
-              );
-            })}
-            <button
-              type="button"
-              onClick={() => { setCompanySearch(""); setCompanyPickerOpen(true); }}
-              style={{ ...chipBase, borderStyle: "dashed" }}
-            >
-              {selectedEmpresa && !FEATURED_COMPANIES.includes(selectedEmpresa)
-                ? selectedEmpresa
-                : "More companies"}
-            </button>
-          </div>
-        )}
       </div>
 
-      {/* ── Main content ────────────────────────────────────────────────────── */}
+      {/* ── Main content: company landing ──────────────────────────────────── */}
       {loading ? (
         <div style={{ padding: "48px 16px" }}>
           <BarrelLoading bare />
         </div>
-      ) : isCompany ? (
+      ) : (
         <CompanyMobileContent
           selectedEmpresa={selectedEmpresa}
           serieLoading={serieLoading}
@@ -619,364 +453,305 @@ export default function MobileView(): React.ReactElement | null {
           companyOilTrace={companyOilTrace}
           companyGasTrace={companyGasTrace}
         />
-      ) : visibleRows.length === 0 ? (
-        <div
-          style={{
-            margin:      "16px",
-            padding:     "32px 16px",
-            textAlign:   "center",
-            color:       "var(--mobile-text-muted, #6b6b73)",
-            background:  "var(--mobile-surface, #fff)",
-            border:      "1px dashed var(--mobile-border, #e0e0e0)",
-            borderRadius: 12,
-            fontSize:    13,
-            lineHeight:  1.4,
-          }}
-        >
-          No production data for the current filters.
-        </div>
-      ) : (
-        <>
-          {/* ── Section 1: Oil chart ──────────────────────────────────────── */}
-          <ChartSection
-            title="Oil Production"
-            unit="kbpd"
-            topN={oilChartDims.length}
-            isExplicit={explicitDims.length > 0}
-            explicitCount={explicitDims.length}
-            updating={serieLoading}
-          >
-            <MobileChart
-              data={oilTraces}
-              height={260}
-              layout={{
-                xaxis: { type: "date" as const, nticks: 4 },
-                yaxis: { nticks: 4 },
-                showlegend: oilChartDims.length > 1,
-                legend: {
-                  orientation:  "h",
-                  yanchor:      "bottom",
-                  y:            1.01,
-                  xanchor:      "left",
-                  x:            0,
-                  font:         { size: 10 },
-                },
-              }}
-            />
-          </ChartSection>
-
-          {/* ── Section 2: Gas chart ──────────────────────────────────────── */}
-          <ChartSection
-            title="Gas Production"
-            unit="Mm³/d"
-            topN={gasChartDims.length}
-            isExplicit={explicitDims.length > 0}
-            explicitCount={explicitDims.length}
-            updating={serieLoading}
-          >
-            <MobileChart
-              data={gasTraces}
-              height={260}
-              layout={{
-                xaxis: { type: "date" as const, nticks: 4 },
-                yaxis: { nticks: 4 },
-                showlegend: gasChartDims.length > 1,
-                legend: {
-                  orientation:  "h",
-                  yanchor:      "bottom",
-                  y:            1.01,
-                  xanchor:      "left",
-                  x:            0,
-                  font:         { size: 10 },
-                },
-              }}
-            />
-          </ChartSection>
-
-          {/* ── Section 3: Top 10 ranking ─────────────────────────────────── */}
-          <section style={{ marginTop: 4 }}>
-            {/* Section header */}
-            <div
-              style={{
-                padding:         "10px 16px 8px",
-                display:         "flex",
-                alignItems:      "center",
-                justifyContent:  "space-between",
-              }}
-            >
-              <div
-                style={{
-                  fontSize:   16,
-                  fontWeight: 700,
-                  color:      "var(--mobile-text, #1a1a1a)",
-                  display:    "flex",
-                  alignItems: "baseline",
-                  gap:        8,
-                }}
-              >
-                Top {Math.min(ranking.length, TOP_RANKING_CARDS)} Fields
-                <span
-                  style={{
-                    fontSize:  12,
-                    fontWeight: 600,
-                    color:     "var(--mobile-text-muted, #6b6b73)",
-                  }}
-                >
-                  by avg {product === "oil" ? "Oil" : "Gas"}
-                </span>
-              </div>
-              {ranking.length > TOP_RANKING_CARDS && (
-                <button
-                  type="button"
-                  onClick={() => { setFieldSearch(""); setAllFieldsOpen(true); }}
-                  style={{
-                    border:     0,
-                    background: "transparent",
-                    color:      BRAND_ORANGE,
-                    fontFamily: "inherit",
-                    fontSize:   13,
-                    fontWeight: 700,
-                    cursor:     "pointer",
-                    padding:    0,
-                  }}
-                >
-                  See all {ranking.length} →
-                </button>
-              )}
-            </div>
-
-            {/* Top-10 card list */}
-            <div
-              style={{
-                background:   "var(--mobile-surface, #fff)",
-                borderTop:    "1px solid var(--mobile-border-soft, #f0f0f5)",
-                borderBottom: "1px solid var(--mobile-border-soft, #f0f0f5)",
-              }}
-            >
-              {ranking.slice(0, TOP_RANKING_CARDS).map((r, idx) =>
-                <RankingCard
-                  key={r.dimension}
-                  rank={idx + 1}
-                  item={r}
-                  product={product}
-                  rows={visibleRows}
-                />
-              )}
-            </div>
-
-            {/* "See all" trigger (also at bottom of list) */}
-            {ranking.length > TOP_RANKING_CARDS && (
-              <div style={{ padding: "12px 16px" }}>
-                <button
-                  type="button"
-                  onClick={() => { setFieldSearch(""); setAllFieldsOpen(true); }}
-                  style={{
-                    width:        "100%",
-                    minHeight:    44,
-                    borderRadius: 12,
-                    border:       `1.5px solid ${BRAND_ORANGE}`,
-                    background:   "rgba(255, 80, 0, 0.06)",
-                    color:        BRAND_ORANGE,
-                    fontFamily:   "inherit",
-                    fontSize:     14,
-                    fontWeight:   700,
-                    cursor:       "pointer",
-                    display:      "flex",
-                    alignItems:   "center",
-                    justifyContent: "center",
-                    gap:          6,
-                  }}
-                >
-                  See all {ranking.length} fields
-                </button>
-              </div>
-            )}
-          </section>
-
-          {/* ── Production summary card ───────────────────────────────────── */}
-          {summaryStats && (
-            <section style={{ margin: "4px 16px 0" }}>
-              <div
-                style={{
-                  padding:      "14px 16px",
-                  background:   "var(--mobile-surface, #fff)",
-                  borderRadius: 14,
-                  border:       "1px solid var(--mobile-border-soft, #f0f0f5)",
-                  boxShadow:    "0 1px 2px rgba(0,0,0,0.03)",
-                }}
-              >
-                <div
-                  style={{
-                    fontSize:      12,
-                    fontWeight:    700,
-                    color:         "var(--mobile-text-muted, #6b6b73)",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.05em",
-                    marginBottom:  12,
-                  }}
-                >
-                  Production Summary
-                </div>
-                <div
-                  style={{
-                    display:             "grid",
-                    gridTemplateColumns: "repeat(3, 1fr)",
-                    gap:                 1,
-                    background:          "var(--mobile-border-soft, #f0f0f5)",
-                    borderRadius:        10,
-                    overflow:            "hidden",
-                  }}
-                >
-                  <SummaryCell label="Leader" value={summaryStats.leaderName} accent />
-                  <SummaryCell
-                    label="Total Oil (avg)"
-                    value={fmtNumber(summaryStats.totalOilAvg, 1) + " kbpd"}
-                  />
-                  <SummaryCell
-                    label="Total Gas (avg)"
-                    value={fmtNumber(summaryStats.totalGasAvg, 3) + " Mm³/d"}
-                  />
-                  <SummaryCell
-                    label="Leader Oil"
-                    value={fmtNumber(summaryStats.leaderOilAvg, 1) + " kbpd"}
-                  />
-                  <SummaryCell
-                    label="Leader Gas"
-                    value={fmtNumber(summaryStats.leaderGasAvg, 3) + " Mm³/d"}
-                  />
-                  <SummaryCell
-                    label="Fields"
-                    value={summaryStats.fieldCount.toLocaleString("pt-BR")}
-                  />
-                </div>
-              </div>
-            </section>
-          )}
-        </>
       )}
 
-      {/* ── Filter drawer ────────────────────────────────────────────────────── */}
-      <FilterDrawer
-        open={filterOpen}
-        onClose={() => setFilterOpen(false)}
-        title="Filters"
-        onReset={handleReset}
-        onApply={() => setFilterOpen(false)}
-        applyLabel="Apply"
+      {/* ── Explore raw data trigger (discreet, full-width dashed) ──────────── */}
+      {!loading && (
+        <section style={{ margin: "16px 16px 0" }}>
+          <button
+            type="button"
+            onClick={openExplore}
+            style={{
+              width:        "100%",
+              minHeight:    48,
+              borderRadius: 12,
+              border:       "1.5px dashed var(--mobile-border, #c8c8d0)",
+              background:   "transparent",
+              color:        "var(--mobile-text-muted, #6b6b73)",
+              fontFamily:   "inherit",
+              fontSize:     13,
+              fontWeight:   600,
+              cursor:       "pointer",
+              display:      "flex",
+              alignItems:   "center",
+              justifyContent: "center",
+              gap:          6,
+            }}
+          >
+            Explore raw data (Field, Installation) ›
+          </button>
+        </section>
+      )}
+
+      {/* ── Explore raw data BottomSheet (Field / Installation) ────────────── */}
+      <BottomSheet
+        open={exploreOpen}
+        onClose={closeExplore}
+        title="Explore raw data"
+        height="90vh"
       >
-        {/* Period filter */}
+        {/* Caption — signals gross vs net */}
+        <div style={{ fontSize: 12, color: "var(--mobile-text-muted, #6b6b73)", marginBottom: 10 }}>
+          Unweighted ANP daily feed — all operators.
+        </div>
+
+        {/* Sub-tabs [Field | Installation] */}
+        <div style={{ marginBottom: 12 }}>
+          <SegmentedToggle<ExploreLevel>
+            value={exploreLevel}
+            onChange={(v) => setGranularity(v)}
+            options={[
+              { value: "field",        label: "Field" },
+              { value: "installation", label: "Installation" },
+            ]}
+          />
+        </div>
+
+        {/* Period slider (granular surface shares the dateRange) */}
         {hasDates && (
-          <div style={{ marginBottom: 18 }}>
-            <div style={drawerSectionLabel}>
-              Period
-            </div>
-            <PeriodSlider
-              dates={allDates}
-              value={dateRange}
-              onChange={handleSliderChange}
-            />
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ ...drawerSectionLabel }}>Period</div>
+            <PeriodSlider dates={allDates} value={dateRange} onChange={handleSliderChange} />
           </div>
         )}
 
-        {/* Field chip cloud */}
-        <div>
-          <div
-            style={{
-              ...drawerSectionLabel,
-              display:        "flex",
-              alignItems:     "center",
-              justifyContent: "space-between",
-              gap:            8,
-            }}
-          >
-            <span>
-              Field
-              <span style={{ fontWeight: 400, marginLeft: 4, color: "var(--mobile-text-muted, #6b6b73)" }}>
-                ({selectedCampos.length}/{campos.length})
-              </span>
-            </span>
-            {selectedCampos.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setSelectedCampos([])}
-                style={{
-                  border:         0,
-                  background:     "transparent",
-                  color:          BRAND_ORANGE,
-                  fontFamily:     "inherit",
-                  fontSize:       11,
-                  fontWeight:     700,
-                  textTransform:  "uppercase",
-                  letterSpacing:  "0.04em",
-                  cursor:         "pointer",
-                  padding:        0,
-                }}
-              >
-                Clear
-              </button>
-            )}
-          </div>
-          <div
-            style={{
-              maxHeight:             240,
-              overflowY:             "auto",
-              WebkitOverflowScrolling: "touch",
-              display:               "flex",
-              flexWrap:              "wrap",
-              gap:                   6,
-              padding:               2,
-              marginTop:             4,
-            }}
-          >
-            {campos.map(campo => {
-              const active = selectedCampos.includes(campo);
-              return (
-                <button
-                  key={campo}
-                  type="button"
-                  onClick={() => {
-                    setSelectedCampos(
-                      active
-                        ? selectedCampos.filter(c => c !== campo)
-                        : [...selectedCampos, campo],
-                    );
-                  }}
-                  style={{
-                    minHeight:  30,
-                    padding:    "0 10px",
-                    borderRadius: 999,
-                    border:     "1px solid",
-                    borderColor: active ? BRAND_ORANGE : "var(--mobile-border, #e0e0e0)",
-                    background:  active ? "rgba(255,80,0,0.08)" : "transparent",
-                    color:       active ? BRAND_ORANGE : "var(--mobile-text-muted, #6b6b73)",
-                    fontFamily:  "inherit",
-                    fontSize:    11,
-                    fontWeight:  600,
-                    cursor:      "pointer",
-                    whiteSpace:  "nowrap",
-                  }}
-                >
-                  {campo}
-                </button>
-              );
-            })}
-          </div>
-          {selectedCampos.length === 0 && (
+        {/* Field chip filter (Field level only) */}
+        {granularity === "field" && (
+          <div style={{ marginBottom: 14 }}>
             <div
               style={{
-                marginTop: 6,
-                fontSize:  11,
-                color:     "var(--mobile-text-muted, #6b6b73)",
-                lineHeight: 1.4,
+                ...drawerSectionLabel,
+                display:        "flex",
+                alignItems:     "center",
+                justifyContent: "space-between",
+                gap:            8,
               }}
             >
-              No selection: charts show Top {TOP_CHART_TRACES} fields by average.
+              <span>
+                Field
+                <span style={{ fontWeight: 400, marginLeft: 4, color: "var(--mobile-text-muted, #6b6b73)" }}>
+                  ({selectedCampos.length}/{campos.length})
+                </span>
+              </span>
+              {selectedCampos.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedCampos([])}
+                  style={{
+                    border:         0,
+                    background:     "transparent",
+                    color:          BRAND_ORANGE,
+                    fontFamily:     "inherit",
+                    fontSize:       11,
+                    fontWeight:     700,
+                    textTransform:  "uppercase",
+                    letterSpacing:  "0.04em",
+                    cursor:         "pointer",
+                    padding:        0,
+                  }}
+                >
+                  Clear
+                </button>
+              )}
             </div>
-          )}
-        </div>
-      </FilterDrawer>
+            <div
+              style={{
+                maxHeight:             200,
+                overflowY:             "auto",
+                WebkitOverflowScrolling: "touch",
+                display:               "flex",
+                flexWrap:              "wrap",
+                gap:                   6,
+                padding:               2,
+                marginTop:             4,
+              }}
+            >
+              {campos.map(campo => {
+                const active = selectedCampos.includes(campo);
+                return (
+                  <button
+                    key={campo}
+                    type="button"
+                    onClick={() => {
+                      setSelectedCampos(
+                        active
+                          ? selectedCampos.filter(c => c !== campo)
+                          : [...selectedCampos, campo],
+                      );
+                    }}
+                    style={{
+                      minHeight:  30,
+                      padding:    "0 10px",
+                      borderRadius: 999,
+                      border:     "1px solid",
+                      borderColor: active ? BRAND_ORANGE : "var(--mobile-border, #e0e0e0)",
+                      background:  active ? "rgba(255,80,0,0.08)" : "transparent",
+                      color:       active ? BRAND_ORANGE : "var(--mobile-text-muted, #6b6b73)",
+                      fontFamily:  "inherit",
+                      fontSize:    11,
+                      fontWeight:  600,
+                      cursor:      "pointer",
+                      whiteSpace:  "nowrap",
+                    }}
+                  >
+                    {campo}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
-      {/* ── "See all fields" BottomSheet ────────────────────────────────────── */}
+        {/* Charts + ranking body */}
+        {visibleRows.length === 0 ? (
+          <div
+            style={{
+              margin:      "8px 0",
+              padding:     "32px 16px",
+              textAlign:   "center",
+              color:       "var(--mobile-text-muted, #6b6b73)",
+              background:  "var(--mobile-surface, #fff)",
+              border:      "1px dashed var(--mobile-border, #e0e0e0)",
+              borderRadius: 12,
+              fontSize:    13,
+              lineHeight:  1.4,
+            }}
+          >
+            No production data for the current filters.
+          </div>
+        ) : (
+          <>
+            {/* Oil chart */}
+            <ChartCard
+              title="Oil Production"
+              unit="kbpd"
+              topN={oilChartDims.length}
+              isExplicit={explicitDims.length > 0}
+              explicitCount={explicitDims.length}
+              updating={serieLoading}
+            >
+              <MobileChart
+                data={oilTraces}
+                height={240}
+                layout={{
+                  xaxis: { type: "date" as const, nticks: 4 },
+                  yaxis: { nticks: 4 },
+                  showlegend: oilChartDims.length > 1,
+                  legend: {
+                    orientation:  "h",
+                    yanchor:      "bottom",
+                    y:            1.01,
+                    xanchor:      "left",
+                    x:            0,
+                    font:         { size: 10 },
+                  },
+                }}
+              />
+            </ChartCard>
+
+            {/* Gas chart */}
+            <ChartCard
+              title="Gas Production"
+              unit="Mm³/d"
+              topN={gasChartDims.length}
+              isExplicit={explicitDims.length > 0}
+              explicitCount={explicitDims.length}
+              updating={serieLoading}
+            >
+              <MobileChart
+                data={gasTraces}
+                height={240}
+                layout={{
+                  xaxis: { type: "date" as const, nticks: 4 },
+                  yaxis: { nticks: 4 },
+                  showlegend: gasChartDims.length > 1,
+                  legend: {
+                    orientation:  "h",
+                    yanchor:      "bottom",
+                    y:            1.01,
+                    xanchor:      "left",
+                    x:            0,
+                    font:         { size: 10 },
+                  },
+                }}
+              />
+            </ChartCard>
+
+            {/* Top 10 ranking */}
+            <section style={{ marginTop: 8 }}>
+              <div
+                style={{
+                  padding:         "4px 0 8px",
+                  display:         "flex",
+                  alignItems:      "center",
+                  justifyContent:  "space-between",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize:   15,
+                    fontWeight: 700,
+                    color:      "var(--mobile-text, #1a1a1a)",
+                    display:    "flex",
+                    alignItems: "baseline",
+                    gap:        8,
+                  }}
+                >
+                  Top {Math.min(ranking.length, TOP_RANKING_CARDS)}
+                  <span
+                    style={{
+                      fontSize:  12,
+                      fontWeight: 600,
+                      color:     "var(--mobile-text-muted, #6b6b73)",
+                    }}
+                  >
+                    by avg {product === "oil" ? "Oil" : "Gas"}
+                  </span>
+                </div>
+                {ranking.length > TOP_RANKING_CARDS && (
+                  <button
+                    type="button"
+                    onClick={() => { setFieldSearch(""); setAllFieldsOpen(true); }}
+                    style={{
+                      border:     0,
+                      background: "transparent",
+                      color:      BRAND_ORANGE,
+                      fontFamily: "inherit",
+                      fontSize:   13,
+                      fontWeight: 700,
+                      cursor:     "pointer",
+                      padding:    0,
+                    }}
+                  >
+                    See all {ranking.length} →
+                  </button>
+                )}
+              </div>
+
+              <div
+                style={{
+                  margin:       "0 -16px",
+                  background:   "var(--mobile-surface, #fff)",
+                  borderTop:    "1px solid var(--mobile-border-soft, #f0f0f5)",
+                  borderBottom: "1px solid var(--mobile-border-soft, #f0f0f5)",
+                }}
+              >
+                {ranking.slice(0, TOP_RANKING_CARDS).map((r, idx) =>
+                  <RankingCard
+                    key={r.dimension}
+                    rank={idx + 1}
+                    item={r}
+                    product={product}
+                    rows={visibleRows}
+                  />
+                )}
+              </div>
+            </section>
+          </>
+        )}
+      </BottomSheet>
+
+      {/* ── "See all fields" BottomSheet (nested over Explore) ──────────────── */}
       <BottomSheet
         open={allFieldsOpen}
         onClose={() => setAllFieldsOpen(false)}
@@ -1030,86 +805,13 @@ export default function MobileView(): React.ReactElement | null {
           ))}
         </div>
       </BottomSheet>
-
-      {/* ── Company picker BottomSheet ──────────────────────────────────────── */}
-      <BottomSheet
-        open={companyPickerOpen}
-        onClose={() => setCompanyPickerOpen(false)}
-        title={`Companies (${empresas.length})`}
-        height="90vh"
-      >
-        {/* Search input */}
-        <div style={{ marginBottom: 12 }}>
-          <input
-            type="search"
-            placeholder="Search companies..."
-            value={companySearch}
-            onChange={e => setCompanySearch(e.target.value)}
-            style={{
-              width:        "100%",
-              boxSizing:    "border-box",
-              height:       38,
-              padding:      "0 12px",
-              borderRadius: 10,
-              border:       "1px solid var(--mobile-border, #e0e0e0)",
-              background:   "var(--mobile-surface, #fff)",
-              color:        "var(--mobile-text, #1a1a1a)",
-              fontFamily:   "inherit",
-              fontSize:     14,
-              outline:      "none",
-            }}
-          />
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-          {(companySearch ? filteredCompanyList : empresas).map(e => {
-            const active = selectedEmpresa === e.empresa;
-            return (
-              <button
-                key={e.empresa}
-                type="button"
-                onClick={() => { setSelectedEmpresa(e.empresa); setCompanyPickerOpen(false); }}
-                style={{
-                  display:        "flex",
-                  alignItems:     "center",
-                  justifyContent: "space-between",
-                  width:          "100%",
-                  minHeight:      48,
-                  padding:        "10px 4px",
-                  border:         0,
-                  borderBottom:   "1px solid var(--mobile-border-soft, #f0f0f5)",
-                  background:     "transparent",
-                  cursor:         "pointer",
-                  textAlign:      "left",
-                  fontFamily:     "inherit",
-                }}
-              >
-                <span style={{
-                  fontSize: 15, fontWeight: 700,
-                  color: active ? BRAND_ORANGE : "var(--mobile-text, #1a1a1a)",
-                }}>
-                  {e.empresa}
-                </span>
-                <span style={{ fontSize: 12, color: "var(--mobile-text-muted, #6b6b73)", fontWeight: 600 }}>
-                  {e.n_campos_com_dado}/{e.n_campos_stake} fields
-                </span>
-              </button>
-            );
-          })}
-          {companySearch && filteredCompanyList.length === 0 && (
-            <div style={{ marginTop: 8, fontSize: 12, color: "var(--mobile-text-muted, #6b6b73)" }}>
-              No companies matching &quot;{companySearch}&quot;
-            </div>
-          )}
-        </div>
-      </BottomSheet>
     </div>
   );
 }
 
 // ─── Sub-components ────────────────────────────────────────────────────────────
 
-/** Shared section label style for the filter drawer. */
+/** Shared section label style. */
 const drawerSectionLabel: React.CSSProperties = {
   fontSize:      11,
   fontWeight:    700,
@@ -1120,7 +822,7 @@ const drawerSectionLabel: React.CSSProperties = {
 };
 
 /** Chart card wrapper — title + updating indicator + chart slot. */
-function ChartSection({
+function ChartCard({
   title,
   unit,
   topN,
@@ -1143,7 +845,7 @@ function ChartSection({
   return (
     <section
       style={{
-        margin:       "12px 16px 0",
+        margin:       "12px 0 0",
         padding:      "14px 14px 12px",
         background:   "var(--mobile-surface, #fff)",
         borderRadius: 14,
@@ -1323,7 +1025,7 @@ function RankingCard({
   );
 }
 
-/** One cell inside the production summary grid. */
+/** One cell inside a summary grid. */
 function SummaryCell({
   label,
   value,
@@ -1372,12 +1074,12 @@ function SummaryCell({
   );
 }
 
-// ─── Company-mode content ────────────────────────────────────────────────────
+// ─── Company-mode content (landing) ───────────────────────────────────────────
 
 /**
- * Company level on mobile: company net total chart (Oil + Gas, both stacked),
- * per-field net ranking cards (stake % + net values), and the coverage note
- * listing stake-held fields without daily data yet.
+ * Company landing on mobile: net total chart (Oil + Gas, stacked), per-field
+ * net ranking cards (stake % + net values), and the coverage note listing
+ * stake-held fields without daily data yet. PRIO is selected on landing.
  */
 function CompanyMobileContent({
   selectedEmpresa,
@@ -1400,18 +1102,10 @@ function CompanyMobileContent({
   companyOilTrace: PlotData[];
   companyGasTrace: PlotData[];
 }): React.ReactElement {
-  if (!selectedEmpresa) {
-    return (
-      <div style={emptyBoxStyle}>
-        Pick a company (PRIO / Petrobras above, or tap &quot;More companies&quot;)
-        to see its stake-weighted daily net production.
-      </div>
-    );
-  }
   if (companySerieRows.length === 0 && !serieLoading) {
     return (
       <div style={emptyBoxStyle}>
-        No daily data for {selectedEmpresa} in the selected period.
+        No daily data for {selectedEmpresa ?? "this company"} in the selected period.
       </div>
     );
   }
@@ -1444,46 +1138,50 @@ function CompanyMobileContent({
       </section>
 
       {/* Oil net chart */}
-      <ChartSection
-        title="Net Oil"
-        unit="kbpd"
-        topN={0}
-        isExplicit
-        explicitCount={companyFieldAggregates.length}
-        updating={serieLoading}
-        companyTotal
-      >
-        <MobileChart
-          data={companyOilTrace}
-          height={240}
-          layout={{
-            xaxis: { type: "date" as const, nticks: 4 },
-            yaxis: { nticks: 4 },
-            showlegend: false,
-          }}
-        />
-      </ChartSection>
+      <section style={{ margin: "12px 16px 0" }}>
+        <ChartCard
+          title="Net Oil"
+          unit="kbpd"
+          topN={0}
+          isExplicit
+          explicitCount={companyFieldAggregates.length}
+          updating={serieLoading}
+          companyTotal
+        >
+          <MobileChart
+            data={companyOilTrace}
+            height={240}
+            layout={{
+              xaxis: { type: "date" as const, nticks: 4 },
+              yaxis: { nticks: 4 },
+              showlegend: false,
+            }}
+          />
+        </ChartCard>
+      </section>
 
       {/* Gas net chart */}
-      <ChartSection
-        title="Net Gas"
-        unit="Mm³/d"
-        topN={0}
-        isExplicit
-        explicitCount={companyFieldAggregates.length}
-        updating={serieLoading}
-        companyTotal
-      >
-        <MobileChart
-          data={companyGasTrace}
-          height={240}
-          layout={{
-            xaxis: { type: "date" as const, nticks: 4 },
-            yaxis: { nticks: 4 },
-            showlegend: false,
-          }}
-        />
-      </ChartSection>
+      <section style={{ margin: "12px 16px 0" }}>
+        <ChartCard
+          title="Net Gas"
+          unit="Mm³/d"
+          topN={0}
+          isExplicit
+          explicitCount={companyFieldAggregates.length}
+          updating={serieLoading}
+          companyTotal
+        >
+          <MobileChart
+            data={companyGasTrace}
+            height={240}
+            layout={{
+              xaxis: { type: "date" as const, nticks: 4 },
+              yaxis: { nticks: 4 },
+              showlegend: false,
+            }}
+          />
+        </ChartCard>
+      </section>
 
       {/* Per-field net ranking */}
       <section style={{ marginTop: 4 }}>

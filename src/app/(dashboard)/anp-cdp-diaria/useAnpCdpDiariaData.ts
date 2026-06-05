@@ -38,21 +38,20 @@ import {
   rpcGetAnpCdpDiariaInstalacaoSerie,
   rpcGetAnpCdpDiariaPocoFiltros,
   rpcGetAnpCdpDiariaPocoSerie,
-  rpcGetAnpCdpDiariaEmpresas,
   rpcGetAnpCdpDiariaEmpresaSerie,
   rpcGetAnpCdpDiariaEmpresaCampos,
   type AnpCdpDiariaPonto,
   type AnpCdpDiariaInstalacaoPonto,
   type AnpCdpDiariaPocoPonto,
-  type AnpCdpDiariaEmpresa,
   type AnpCdpDiariaEmpresaSeriePonto,
   type AnpCdpDiariaEmpresaCampo,
 } from "../../../lib/rpc";
 
 // Re-export the company RPC types so Views import everything from the hook
-// (single source of truth) rather than reaching into rpc.ts directly.
+// (single source of truth) rather than reaching into rpc.ts directly. The
+// dynamic company-list type (`AnpCdpDiariaEmpresa`) is no longer re-exported —
+// the company universe is fixed to FIXED_COMPANIES (Two-Tier Tabs IA).
 export type {
-  AnpCdpDiariaEmpresa,
   AnpCdpDiariaEmpresaSeriePonto,
   AnpCdpDiariaEmpresaCampo,
 } from "../../../lib/rpc";
@@ -68,8 +67,13 @@ export const TOP_N = 10;
 
 export const BRAND_ORANGE = "#FF5000";
 
-/** Companies pinned as quick-access pills at the top of the Company selector. */
-export const FEATURED_COMPANIES = ["PRIO", "Petrobras"];
+/**
+ * The two fixed, primary companies (Two-Tier Tabs IA, 2026-06-05). The dynamic
+ * company list (`get_anp_cdp_diaria_empresas`) was retired — only PRIO and
+ * Petrobras are reachable, as prominent primary tabs. The order here is the
+ * tab order; index 0 (PRIO) is the landing default.
+ */
+export const FIXED_COMPANIES = ["PRIO", "Petrobras"] as const;
 
 /** Trace name used for the company-wide net production headline line. */
 export const COMPANY_TOTAL_LABEL = "Company total";
@@ -550,7 +554,8 @@ export interface UseAnpCdpDiariaData {
   ranking: DimensionAggregate[];
 
   // ── Company level (stake-weighted net production) ─────────────────────────
-  empresas: AnpCdpDiariaEmpresa[];
+  // The company universe is fixed (FIXED_COMPANIES) — there is no dynamic
+  // `empresas` list any more (Two-Tier Tabs IA, 2026-06-05).
   selectedEmpresa: string | null;
   setSelectedEmpresa: (e: string | null) => void;
   empresaCampos: AnpCdpDiariaEmpresaCampo[];
@@ -604,8 +609,13 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
   const { visible, loading: visLoading } = useModuleVisibilityGuard("anp-cdp-diaria");
   const supabase = getSupabaseClient();
 
-  // ── Granularity (desktop only changes; mobile View keeps "field") ─────────
-  const [granularity, setGranularityState] = useState<Granularity>("field");
+  // ── Granularity (Two-Tier Tabs IA, 2026-06-05) ────────────────────────────
+  // Landing state is the PRIO company view — granularity starts at "company"
+  // and selectedEmpresa at "PRIO" so the net serie fetches on mount with zero
+  // clicks. The granular levels (field/installation/well) are lazily entered
+  // only when the user opens the "Explore raw data" tab, so the heavy level
+  // RPCs (especially the ~180k-row Well one) never fire on the landing.
+  const [granularity, setGranularityState] = useState<Granularity>("company");
 
   // ── Loading ───────────────────────────────────────────────────────────────
   const [loading, setLoading] = useState(true);
@@ -631,8 +641,10 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
   const [product, setProduct] = useState<Product>("oil");
 
   // ── Company level (stake-weighted net) ────────────────────────────────────
-  const [empresas, setEmpresas]                 = useState<AnpCdpDiariaEmpresa[]>([]);
-  const [selectedEmpresa, setSelectedEmpresa]   = useState<string | null>(null);
+  // selectedEmpresa initialises to the first fixed company (PRIO) so the
+  // landing renders its net serie immediately (Two-Tier Tabs IA). The dynamic
+  // `empresas` list is gone — the universe is FIXED_COMPANIES.
+  const [selectedEmpresa, setSelectedEmpresa]   = useState<string | null>(FIXED_COMPANIES[0]);
   const [empresaCampos, setEmpresaCampos]       = useState<AnpCdpDiariaEmpresaCampo[]>([]);
   const [companySerieRows, setCompanySerieRows] = useState<AnpCdpDiariaEmpresaSeriePonto[]>([]);
 
@@ -661,15 +673,23 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
     let cancelled = false;
     setLoading(true);
 
-    // Reset selections when switching levels (vocabularies differ).
+    // Reset selections when switching levels (vocabularies differ). The
+    // granular dimension selections always reset. Company selection only
+    // resets when LEAVING company (new granularity ≠ company) — when entering
+    // company (e.g. clicking the PRIO/Petrobras tab from Explore) the View has
+    // just called setSelectedEmpresa(...) and we must not clobber it. This
+    // effect depends only on [supabase, granularity], NOT selectedEmpresa, so
+    // switching PRIO↔Petrobras (both granularity==="company") never re-runs it.
     if (!initialMountRef.current) {
       setSelectedCampos([]);
       setSelectedInstalacoes([]);
       setSelectedPocos([]);
       setSerieRows([]);
-      setSelectedEmpresa(null);
-      setEmpresaCampos([]);
-      setCompanySerieRows([]);
+      if (granularity !== "company") {
+        setSelectedEmpresa(null);
+        setEmpresaCampos([]);
+        setCompanySerieRows([]);
+      }
     }
 
     (async () => {
@@ -723,16 +743,14 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
           });
           if (!cancelled) setSerieRows(projectWell(rows));
         } else {
-          // Company level — populate the company selector + the date universe.
-          // The actual net serie is fetched once an empresa is selected (see
-          // the company serie effect below). The daily feed shares the same
-          // date range as the Field level, so reuse get_anp_cdp_diaria_filtros.
-          const [emps, f] = await Promise.all([
-            rpcGetAnpCdpDiariaEmpresas(supabase),
-            rpcGetAnpCdpDiariaFiltros(supabase),
-          ]);
+          // Company level — populate only the date universe. The company list
+          // is fixed (FIXED_COMPANIES), so no dynamic empresas fetch. The
+          // actual net serie is fetched once an empresa is selected (see the
+          // company serie effect below; PRIO is selected by default on mount).
+          // The daily feed shares the same date range as the Field level, so
+          // reuse get_anp_cdp_diaria_filtros.
+          const f = await rpcGetAnpCdpDiariaFiltros(supabase);
           if (cancelled) return;
-          setEmpresas(emps);
           setCampos([]);
           setInstalacoes([]);
           setPocos([]);
@@ -1214,7 +1232,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
 
     ranking,
 
-    empresas,
     selectedEmpresa,
     setSelectedEmpresa,
     empresaCampos,
