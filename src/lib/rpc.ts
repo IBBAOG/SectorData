@@ -1866,6 +1866,140 @@ export async function rpcGetAnpCdpDiariaPocoSerie(
   return allRows;
 }
 
+// ─── MODULE: ANP CDP Diária — Company level (stake-weighted net) ─────────────
+//
+// Daily NET production for an operator (company), computed as
+// field daily production × the company's working interest (stake_pct/100) in
+// that field. Joins the Power BI daily feed (`anp_cdp_diaria`) with the
+// admin-curated `field_stakes` table. Backed by migration 20260609000000:
+//   • get_anp_cdp_diaria_empresas()              → selector population
+//   • get_anp_cdp_diaria_empresa_serie(p_empresa, p_data_inicio, p_data_fim)
+//   • get_anp_cdp_diaria_empresa_campos(p_empresa) → stake coverage
+// All three are SECURITY DEFINER + anon-safe.
+//
+// ⚠️ numeric columns (`stake_pct`, `*_net`) arrive as STRINGS from supabase-js;
+// the wrappers coerce them via Number() so callers always get clean numbers.
+
+/** One company in the selector. `petroleo_bbl_dia` etc. not present here. */
+export type AnpCdpDiariaEmpresa = {
+  empresa: string;
+  n_campos_com_dado: number;  // fields with daily data
+  n_campos_stake: number;     // total fields the company holds a stake in
+};
+
+export async function rpcGetAnpCdpDiariaEmpresas(
+  supabase: SupabaseClient,
+): Promise<AnpCdpDiariaEmpresa[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_anp_cdp_diaria_empresas");
+    if (error) throw error;
+    return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+      empresa:           String(r.empresa ?? ""),
+      n_campos_com_dado: Number(r.n_campos_com_dado ?? 0),
+      n_campos_stake:    Number(r.n_campos_stake ?? 0),
+    }));
+  } catch (e) {
+    console.error("get_anp_cdp_diaria_empresas failed", e);
+    return [];
+  }
+}
+
+/**
+ * One row per (data, campo) for the chosen company. `petroleo_bbl_dia` /
+ * `gas_mm3_dia` are the field's GROSS daily production; `*_net` are already
+ * multiplied by the company's stake. `stake_pct` is the working interest %.
+ */
+export type AnpCdpDiariaEmpresaSeriePonto = {
+  data: string;
+  campo: string;
+  bacia: string | null;
+  stake_pct: number;
+  petroleo_bbl_dia: number | null;      // gross (kept for reference)
+  gas_mm3_dia: number | null;           // gross (kept for reference)
+  petroleo_bbl_dia_net: number | null;  // gross × stake/100
+  gas_mm3_dia_net: number | null;       // gross × stake/100
+};
+
+export async function rpcGetAnpCdpDiariaEmpresaSerie(
+  supabase: SupabaseClient,
+  empresa: string,
+  params?: {
+    dataInicio?: string | null;
+    dataFim?: string | null;
+  },
+): Promise<AnpCdpDiariaEmpresaSeriePonto[]> {
+  // INNER JOIN on the SQL side — only fields with daily data come back. A
+  // single company spans a handful of fields × ~daily cadence, so this is
+  // small; no pagination needed, but page defensively anyway.
+  const PAGE = 1000;
+  let offset = 0;
+  const allRows: AnpCdpDiariaEmpresaSeriePonto[] = [];
+  const rpcParams = {
+    p_empresa:     empresa,
+    p_data_inicio: params?.dataInicio ?? null,
+    p_data_fim:    params?.dataFim    ?? null,
+  };
+  const toNum = (v: unknown): number | null => {
+    if (v == null) return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  while (true) {
+    const { data, error } = await supabase
+      .rpc("get_anp_cdp_diaria_empresa_serie", rpcParams)
+      .range(offset, offset + PAGE - 1);
+    if (error) { console.error("get_anp_cdp_diaria_empresa_serie failed", error); break; }
+    const rows = (data ?? []) as Array<Record<string, unknown>>;
+    if (!rows.length) break;
+    for (const r of rows) {
+      allRows.push({
+        data:                 String(r.data ?? ""),
+        campo:                String(r.campo ?? ""),
+        bacia:                r.bacia == null ? null : String(r.bacia),
+        stake_pct:            Number(r.stake_pct ?? 0),
+        petroleo_bbl_dia:     toNum(r.petroleo_bbl_dia),
+        gas_mm3_dia:          toNum(r.gas_mm3_dia),
+        petroleo_bbl_dia_net: toNum(r.petroleo_bbl_dia_net),
+        gas_mm3_dia_net:      toNum(r.gas_mm3_dia_net),
+      });
+    }
+    if (rows.length < PAGE) break;
+    offset += PAGE;
+  }
+  return allRows;
+}
+
+/**
+ * Stake coverage for the chosen company. `has_daily_data=false` fields are
+ * the ones in the company's portfolio that are NOT yet in the daily feed
+ * (e.g. Wahoo for PRIO, onshore Petrobras fields, FPSOs without daily reporting).
+ */
+export type AnpCdpDiariaEmpresaCampo = {
+  campo: string;
+  stake_pct: number;
+  has_daily_data: boolean;
+};
+
+export async function rpcGetAnpCdpDiariaEmpresaCampos(
+  supabase: SupabaseClient,
+  empresa: string,
+): Promise<AnpCdpDiariaEmpresaCampo[]> {
+  try {
+    const { data, error } = await supabase.rpc("get_anp_cdp_diaria_empresa_campos", {
+      p_empresa: empresa,
+    });
+    if (error) throw error;
+    return ((data ?? []) as Array<Record<string, unknown>>).map((r) => ({
+      campo:          String(r.campo ?? ""),
+      stake_pct:      Number(r.stake_pct ?? 0),
+      has_daily_data: Boolean(r.has_daily_data),
+    }));
+  } catch (e) {
+    console.error("get_anp_cdp_diaria_empresa_campos failed", e);
+    return [];
+  }
+}
+
 /**
  * Count helper for /anp-cdp-diaria export modal.
  *

@@ -38,9 +38,23 @@ import {
   rpcGetAnpCdpDiariaInstalacaoSerie,
   rpcGetAnpCdpDiariaPocoFiltros,
   rpcGetAnpCdpDiariaPocoSerie,
+  rpcGetAnpCdpDiariaEmpresas,
+  rpcGetAnpCdpDiariaEmpresaSerie,
+  rpcGetAnpCdpDiariaEmpresaCampos,
   type AnpCdpDiariaPonto,
   type AnpCdpDiariaInstalacaoPonto,
   type AnpCdpDiariaPocoPonto,
+  type AnpCdpDiariaEmpresa,
+  type AnpCdpDiariaEmpresaSeriePonto,
+  type AnpCdpDiariaEmpresaCampo,
+} from "../../../lib/rpc";
+
+// Re-export the company RPC types so Views import everything from the hook
+// (single source of truth) rather than reaching into rpc.ts directly.
+export type {
+  AnpCdpDiariaEmpresa,
+  AnpCdpDiariaEmpresaSeriePonto,
+  AnpCdpDiariaEmpresaCampo,
 } from "../../../lib/rpc";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -54,9 +68,15 @@ export const TOP_N = 10;
 
 export const BRAND_ORANGE = "#FF5000";
 
+/** Companies pinned as quick-access pills at the top of the Company selector. */
+export const FEATURED_COMPANIES = ["PRIO", "Petrobras"];
+
+/** Trace name used for the company-wide net production headline line. */
+export const COMPANY_TOTAL_LABEL = "Company total";
+
 export type Metric = "petroleo_bbl_dia" | "gas_mm3_dia";
 export type Product = "oil" | "gas";
-export type Granularity = "field" | "installation" | "well";
+export type Granularity = "field" | "installation" | "well" | "company";
 
 /** Unified row shape used by chart/table builders — level-agnostic. */
 export interface UnifiedRow {
@@ -79,6 +99,24 @@ export interface DimensionAggregate {
   latestDate: string | null;
 }
 
+/** Per-field net aggregate for the Company level ranking/table. */
+export interface CompanyFieldAggregate {
+  campo: string;
+  bacia: string | null;
+  stakePct: number;
+  avgOilNet: number;   // avg net bbl/day across reporting days
+  avgGasNet: number;   // avg net Mm³/day
+  latestOilNet: number | null;
+  latestGasNet: number | null;
+  latestDate: string | null;
+}
+
+/** A stake-held field with NO daily data yet (e.g. Wahoo for PRIO). */
+export interface CompanyFieldNoData {
+  campo: string;
+  stakePct: number;
+}
+
 // ─── Helpers (exported so Views can format consistently) ──────────────────────
 
 export function metricForProduct(product: Product): Metric {
@@ -99,6 +137,21 @@ export function fmtNumber(n: number | null | undefined, digits = 1): string {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   }).format(n);
+}
+
+/** Format a stake % cleanly: 100.000 → "100%", 90.000 → "90%", 12.5 → "12.5%". */
+export function formatStakePct(pct: number | null | undefined): string {
+  if (pct == null || !Number.isFinite(pct)) return "—";
+  const formatted = new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  }).format(pct);
+  return `${formatted}%`;
+}
+
+/** Field label decorated with the company's stake, e.g. "PEREGRINO (80%)". */
+export function fieldLabelWithStake(campo: string, stakePct: number | null | undefined): string {
+  return `${campo} (${formatStakePct(stakePct)})`;
 }
 
 /** Display value for a metric (bbl/day → kbpd for oil; gas already in Mm³/d). */
@@ -174,6 +227,78 @@ export function buildSerieChart(
   };
 }
 
+/**
+ * Company-level chart: a bold "Company total" net headline line (brand orange)
+ * plus one thin net line per field. `rows` carries NET values already; the
+ * dimension is the stake-decorated field label. `scale` converts to display
+ * units (kbpd for oil, identity for gas).
+ */
+export function buildCompanyChart(
+  rows: UnifiedRow[],
+  metric: Metric,
+  unitLabel: string,
+  height: number,
+  scale: (v: number) => number = (v) => v,
+): { data: PlotData[]; layout: Partial<Layout> } {
+  const filtered = rows.filter(r => r[metric] != null);
+  if (!filtered.length) return emptyPlot(height);
+
+  // Per-field aggregation.
+  const agg: Record<string, Record<string, number>> = {};
+  for (const r of filtered) {
+    if (!agg[r.dimension]) agg[r.dimension] = {};
+    const v = r[metric] ?? 0;
+    agg[r.dimension][r.data] = (agg[r.dimension][r.data] ?? 0) + v;
+  }
+
+  // Order fields by average descending so the legend reads top → bottom.
+  const fieldDims = Object.entries(agg)
+    .map(([dim, byDay]) => {
+      const vals = Object.values(byDay);
+      const avg = vals.length ? vals.reduce((s, x) => s + x, 0) / vals.length : 0;
+      return [dim, avg] as [string, number];
+    })
+    .sort((a, b) => b[1] - a[1])
+    .map(([dim]) => dim);
+
+  // Headline total line.
+  const total = buildCompanyTotalSeries(rows, metric);
+  const totalTrace: PlotData = {
+    type: "scatter", mode: "lines",
+    name: COMPANY_TOTAL_LABEL,
+    x: total.map(([d]) => d),
+    y: total.map(([, v]) => scale(v)),
+    line: { width: 2.6, color: BRAND_ORANGE },
+    hovertemplate: `${COMPANY_TOTAL_LABEL}: %{y:,.1f} ${unitLabel}<extra></extra>`,
+  } as PlotData;
+
+  const fieldTraces: PlotData[] = fieldDims.map((dim, i) => {
+    const entries = Object.entries(agg[dim]).sort(([a], [b]) => a.localeCompare(b));
+    return {
+      type: "scatter", mode: "lines",
+      name: dim,
+      x: entries.map(([d]) => d),
+      y: entries.map(([, v]) => scale(v)),
+      // Skip the brand orange (index 0 of PALETTE) for fields — reserved for total.
+      line: { width: 1.3, color: PALETTE[(i + 1) % PALETTE.length] },
+      hovertemplate: `${dim}: %{y:,.1f} ${unitLabel}<extra></extra>`,
+    } as PlotData;
+  });
+
+  return {
+    data: [totalTrace, ...fieldTraces],
+    layout: {
+      ...COMMON_LAYOUT,
+      height,
+      margin: { t: 10, b: 50, l: 80, r: 30 },
+      hovermode: "x unified",
+      yaxis: { ...AXIS_LINE, title: { text: unitLabel } },
+      xaxis: { ...AXIS_LINE, type: "date" as const },
+      legend: { orientation: "h", yanchor: "bottom", y: 1.01, xanchor: "left", x: 0 },
+    },
+  };
+}
+
 /** Build a daily-date list between data_min/data_max for the slider. */
 export function buildDateRange(min: string, max: string): string[] {
   const out: string[] = [];
@@ -216,6 +341,92 @@ function projectWell(rows: AnpCdpDiariaPocoPonto[]): UnifiedRow[] {
     petroleo_bbl_dia: r.petroleo_bbl_dia,
     gas_mm3_dia: r.gas_mm3_dia,
   }));
+}
+
+/**
+ * Project the company serie into UnifiedRow[] carrying NET values so the
+ * existing chart/table builders work unchanged. `dimension` = field label
+ * with the company's stake (e.g. "PEREGRINO (80%)"), so legend/ranking labels
+ * read naturally. Production is line-agnostic from here on.
+ */
+function projectCompany(rows: AnpCdpDiariaEmpresaSeriePonto[]): UnifiedRow[] {
+  return rows.map(r => ({
+    data: r.data,
+    campo: r.campo,
+    bacia: r.bacia,
+    dimension: fieldLabelWithStake(r.campo, r.stake_pct),
+    petroleo_bbl_dia: r.petroleo_bbl_dia_net,
+    gas_mm3_dia: r.gas_mm3_dia_net,
+  }));
+}
+
+/**
+ * Daily company-wide net total per metric — summed across all fields. Returns
+ * a sorted [date, value] list ready to plot as the headline line.
+ */
+export function buildCompanyTotalSeries(
+  rows: UnifiedRow[],
+  metric: Metric,
+): Array<[string, number]> {
+  const byDay: Record<string, number> = {};
+  for (const r of rows) {
+    const v = r[metric];
+    if (v == null) continue;
+    byDay[r.data] = (byDay[r.data] ?? 0) + v;
+  }
+  return Object.entries(byDay).sort(([a], [b]) => a.localeCompare(b));
+}
+
+/**
+ * Per-field net ranking/table for the Company level: avg + latest net,
+ * carrying the stake %. Sorted by avg of the active product descending.
+ */
+export function buildCompanyFieldAggregates(
+  rows: AnpCdpDiariaEmpresaSeriePonto[],
+  product: Product,
+): CompanyFieldAggregate[] {
+  const byCampo: Record<string, {
+    bacia: string | null;
+    stakePct: number;
+    oilSum: number; oilCnt: number;
+    gasSum: number; gasCnt: number;
+    latestDate: string | null;
+    latestOilNet: number | null;
+    latestGasNet: number | null;
+  }> = {};
+
+  for (const r of rows) {
+    if (!byCampo[r.campo]) {
+      byCampo[r.campo] = {
+        bacia: r.bacia, stakePct: r.stake_pct,
+        oilSum: 0, oilCnt: 0, gasSum: 0, gasCnt: 0,
+        latestDate: null, latestOilNet: null, latestGasNet: null,
+      };
+    }
+    const slot = byCampo[r.campo];
+    if (r.petroleo_bbl_dia_net != null) { slot.oilSum += r.petroleo_bbl_dia_net; slot.oilCnt += 1; }
+    if (r.gas_mm3_dia_net != null)      { slot.gasSum += r.gas_mm3_dia_net;      slot.gasCnt += 1; }
+    if (slot.latestDate == null || r.data > slot.latestDate) {
+      slot.latestDate   = r.data;
+      slot.latestOilNet = r.petroleo_bbl_dia_net;
+      slot.latestGasNet = r.gas_mm3_dia_net;
+    }
+  }
+
+  return Object.entries(byCampo)
+    .map(([campo, v]) => ({
+      campo,
+      bacia:        v.bacia,
+      stakePct:     v.stakePct,
+      avgOilNet:    v.oilCnt > 0 ? v.oilSum / v.oilCnt : 0,
+      avgGasNet:    v.gasCnt > 0 ? v.gasSum / v.gasCnt : 0,
+      latestOilNet: v.latestOilNet,
+      latestGasNet: v.latestGasNet,
+      latestDate:   v.latestDate,
+    }))
+    .sort((a, b) =>
+      product === "oil" ? b.avgOilNet - a.avgOilNet : b.avgGasNet - a.avgGasNet,
+    );
 }
 
 /** Build the production ranking for the mobile data card list. */
@@ -338,6 +549,23 @@ export interface UseAnpCdpDiariaData {
   // Ranking (used by mobile MobileDataCard list)
   ranking: DimensionAggregate[];
 
+  // ── Company level (stake-weighted net production) ─────────────────────────
+  empresas: AnpCdpDiariaEmpresa[];
+  selectedEmpresa: string | null;
+  setSelectedEmpresa: (e: string | null) => void;
+  empresaCampos: AnpCdpDiariaEmpresaCampo[];
+  companySerieRows: AnpCdpDiariaEmpresaSeriePonto[];
+  /** Per-field net aggregates (ranking + desktop table), sorted by active product. */
+  companyFieldAggregates: CompanyFieldAggregate[];
+  /** Stake-held fields not yet in the daily feed (e.g. Wahoo for PRIO). */
+  companyFieldsNoData: CompanyFieldNoData[];
+  /** Company total net averages over the visible period (for KPIs). */
+  companyTotalOilNetAvg: number;
+  companyTotalGasNetAvg: number;
+  /** Company total net charts (headline + per-field, NET, both products). */
+  companyPetroleoChart: { data: PlotData[]; layout: Partial<Layout> };
+  companyGasChart: { data: PlotData[]; layout: Partial<Layout> };
+
   // Labels per level
   dimLabel: { singular: string; plural: string; en: string };
   datasetKey: string;
@@ -402,6 +630,12 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
   // ── Product (Oil / Gas) — both Views read this ────────────────────────────
   const [product, setProduct] = useState<Product>("oil");
 
+  // ── Company level (stake-weighted net) ────────────────────────────────────
+  const [empresas, setEmpresas]                 = useState<AnpCdpDiariaEmpresa[]>([]);
+  const [selectedEmpresa, setSelectedEmpresa]   = useState<string | null>(null);
+  const [empresaCampos, setEmpresaCampos]       = useState<AnpCdpDiariaEmpresaCampo[]>([]);
+  const [companySerieRows, setCompanySerieRows] = useState<AnpCdpDiariaEmpresaSeriePonto[]>([]);
+
   // ── Export modal state (Tier 2) ───────────────────────────────────────────
   const [exportOpen, setExportOpen]               = useState(false);
   const [excelLoading, setExcelLoading]           = useState(false);
@@ -433,6 +667,9 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
       setSelectedInstalacoes([]);
       setSelectedPocos([]);
       setSerieRows([]);
+      setSelectedEmpresa(null);
+      setEmpresaCampos([]);
+      setCompanySerieRows([]);
     }
 
     (async () => {
@@ -469,7 +706,7 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
             dataFim:    f.data_max ?? null,
           });
           if (!cancelled) setSerieRows(projectInstallation(rows));
-        } else {
+        } else if (granularity === "well") {
           const f = await rpcGetAnpCdpDiariaPocoFiltros(supabase);
           if (cancelled) return;
           setCampos(f.campos);
@@ -485,6 +722,26 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
             dataFim:    f.data_max ?? null,
           });
           if (!cancelled) setSerieRows(projectWell(rows));
+        } else {
+          // Company level — populate the company selector + the date universe.
+          // The actual net serie is fetched once an empresa is selected (see
+          // the company serie effect below). The daily feed shares the same
+          // date range as the Field level, so reuse get_anp_cdp_diaria_filtros.
+          const [emps, f] = await Promise.all([
+            rpcGetAnpCdpDiariaEmpresas(supabase),
+            rpcGetAnpCdpDiariaFiltros(supabase),
+          ]);
+          if (cancelled) return;
+          setEmpresas(emps);
+          setCampos([]);
+          setInstalacoes([]);
+          setPocos([]);
+          setSerieRows([]);
+          const dates = (f.data_min && f.data_max) ? buildDateRange(f.data_min, f.data_max) : [];
+          setAllDates(dates);
+          const lastIdx = Math.max(0, dates.length - 1);
+          setDateRange([0, lastIdx]);
+          setExportRange([0, lastIdx]);
         }
       } catch (e) {
         console.error("ANP CDP Diária initial load failed", e);
@@ -524,12 +781,15 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
           dataFim:    dEnd,
         });
         return projectInstallation(rows);
-      } else {
+      } else if (granularity === "well") {
         const rows = await rpcGetAnpCdpDiariaPocoSerie(supabase, {
           dataInicio: dStart,
           dataFim:    dEnd,
         });
         return projectWell(rows);
+      } else {
+        // Company level handled by its own effect (companySerieRows).
+        return null;
       }
     },
     [
@@ -543,6 +803,48 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
   useEffect(() => {
     if (refetched) setSerieRows(refetched);
   }, [refetched]);
+
+  // ── Company coverage fetch (on empresa select) ────────────────────────────
+  // The stake coverage (`empresaCampos`) doesn't depend on the period — fetch
+  // it once per selected company.
+  useEffect(() => {
+    if (!supabase || granularity !== "company" || !selectedEmpresa) {
+      setEmpresaCampos([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const campos = await rpcGetAnpCdpDiariaEmpresaCampos(supabase, selectedEmpresa);
+      if (!cancelled) setEmpresaCampos(campos);
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, granularity, selectedEmpresa]);
+
+  // ── Company net serie fetch (debounced 400ms) ─────────────────────────────
+  // Triggered by selecting an empresa OR changing the period slider. Mirrors
+  // the field/well debounce pattern. Clears the serie when no empresa selected.
+  const { data: companyRefetched, loading: companySerieLoading } =
+    useDebouncedFetch<AnpCdpDiariaEmpresaSeriePonto[] | null>(
+      async (): Promise<AnpCdpDiariaEmpresaSeriePonto[] | null> => {
+        if (!supabase || loading || granularity !== "company") return null;
+        if (!selectedEmpresa) return [];
+        const dStart = allDates[dateRange[0]] ?? null;
+        const dEnd   = allDates[dateRange[1]] ?? null;
+        return rpcGetAnpCdpDiariaEmpresaSerie(supabase, selectedEmpresa, {
+          dataInicio: dStart,
+          dataFim:    dEnd,
+        });
+      },
+      [
+        supabase, loading, granularity, selectedEmpresa,
+        dateRange[0], dateRange[1], allDates,
+      ],
+      { ms: 400, skipInitial: false },
+    );
+
+  useEffect(() => {
+    if (companyRefetched != null) setCompanySerieRows(companyRefetched);
+  }, [companyRefetched]);
 
   // ── Explicit dimensions per level ─────────────────────────────────────────
   const explicitDims = useMemo(() => {
@@ -610,27 +912,76 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
   // ── Ranking (mobile data cards) ───────────────────────────────────────────
   const ranking = useMemo(() => buildRanking(visibleRows, product), [visibleRows, product]);
 
+  // ── Company level derivations ─────────────────────────────────────────────
+  // Project the company net serie into UnifiedRow[] (NET values, field labels
+  // with stake) so the existing chart builders compose cleanly.
+  const companyUnifiedRows = useMemo(
+    () => projectCompany(companySerieRows),
+    [companySerieRows],
+  );
+
+  // Net charts: bold headline total + per-field net lines (both products).
+  const companyPetroleoChart = useMemo(
+    () => buildCompanyChart(companyUnifiedRows, "petroleo_bbl_dia", "kbpd", 320, bblDiaToKbpd),
+    [companyUnifiedRows],
+  );
+  const companyGasChart = useMemo(
+    () => buildCompanyChart(companyUnifiedRows, "gas_mm3_dia", "Mm³/d", 320),
+    [companyUnifiedRows],
+  );
+
+  // Per-field net aggregates (ranking + desktop table), sorted by active product.
+  const companyFieldAggregates = useMemo(
+    () => buildCompanyFieldAggregates(companySerieRows, product),
+    [companySerieRows, product],
+  );
+
+  // Stake-held fields not yet in the daily feed (e.g. Wahoo for PRIO).
+  const companyFieldsNoData = useMemo<CompanyFieldNoData[]>(
+    () => empresaCampos
+      .filter(c => !c.has_daily_data)
+      .map(c => ({ campo: c.campo, stakePct: c.stake_pct })),
+    [empresaCampos],
+  );
+
+  // Company total net averages over the period (avg of daily totals).
+  const { companyTotalOilNetAvg, companyTotalGasNetAvg } = useMemo(() => {
+    const oilTotals = buildCompanyTotalSeries(companyUnifiedRows, "petroleo_bbl_dia");
+    const gasTotals = buildCompanyTotalSeries(companyUnifiedRows, "gas_mm3_dia");
+    const avg = (arr: Array<[string, number]>) =>
+      arr.length ? arr.reduce((s, [, v]) => s + v, 0) / arr.length : 0;
+    return {
+      companyTotalOilNetAvg: avg(oilTotals),
+      companyTotalGasNetAvg: avg(gasTotals),
+    };
+  }, [companyUnifiedRows]);
+
   // ── Labels per level ──────────────────────────────────────────────────────
   const dimLabel = useMemo(() => {
     if (granularity === "field")        return { singular: "Campo",       plural: "campo(s)",       en: "Field" };
     if (granularity === "installation") return { singular: "Instalação",  plural: "instalação(ões)", en: "Installation" };
-    return                                       { singular: "Poço",        plural: "poço(s)",        en: "Well" };
+    if (granularity === "well")         return { singular: "Poço",        plural: "poço(s)",        en: "Well" };
+    return                                       { singular: "Campo",       plural: "campo(s)",       en: "Field" };
   }, [granularity]);
 
   const datasetKey =
     granularity === "field"        ? "anp_cdp_diaria" :
     granularity === "installation" ? "anp_cdp_diaria_instalacao" :
-                                     "anp_cdp_diaria_poco";
+    granularity === "well"         ? "anp_cdp_diaria_poco" :
+                                     "anp_cdp_diaria";
 
   const headerTitle =
     granularity === "field"        ? "Daily Production by Field" :
     granularity === "installation" ? "Daily Production by Installation" :
-                                     "Daily Production by Well";
+    granularity === "well"         ? "Daily Production by Well" :
+    selectedEmpresa                ? `Daily Net Production — ${selectedEmpresa}` :
+                                     "Daily Net Production by Company";
 
   const headerSub =
     granularity === "field"        ? "Petroleum and natural gas by field, refreshed 3×/day (source: ANP Power BI)" :
     granularity === "installation" ? "Petroleum and natural gas by installation, refreshed 3×/day (source: ANP Power BI)" :
-                                     "Petroleum and natural gas by well, refreshed 3×/day (source: ANP Power BI)";
+    granularity === "well"         ? "Petroleum and natural gas by well, refreshed 3×/day (source: ANP Power BI)" :
+                                     "Stake-weighted daily production by field (source: ANP Power BI × Field Stakes)";
 
   // ── Period badge ──────────────────────────────────────────────────────────
   const hasDates = allDates.length > 0;
@@ -816,11 +1167,15 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
     }
   }, [supabase, granularity, exportFilters]);
 
+  // Combine reactive-loading flags so Views show a single "updating" state
+  // regardless of level.
+  const combinedSerieLoading = granularity === "company" ? companySerieLoading : serieLoading;
+
   return {
     visible,
     visLoading,
     loading,
-    serieLoading,
+    serieLoading: combinedSerieLoading,
 
     granularity,
     setGranularity,
@@ -858,6 +1213,18 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
     tableRows,
 
     ranking,
+
+    empresas,
+    selectedEmpresa,
+    setSelectedEmpresa,
+    empresaCampos,
+    companySerieRows,
+    companyFieldAggregates,
+    companyFieldsNoData,
+    companyTotalOilNetAvg,
+    companyTotalGasNetAvg,
+    companyPetroleoChart,
+    companyGasChart,
 
     dimLabel,
     datasetKey,

@@ -41,18 +41,25 @@ import {
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 import PeriodSlider from "../../../../components/dashboard/PeriodSlider";
 
+import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
 import {
   useAnpCdpDiariaData,
   metricForProduct,
   metricDisplay,
   fmtNumber,
+  formatStakePct,
   productUnitLabel,
   BRAND_ORANGE,
   PALETTE,
+  COMPANY_TOTAL_LABEL,
+  FEATURED_COMPANIES,
   type Product,
   type UnifiedRow,
   type DimensionAggregate,
+  type CompanyFieldAggregate,
+  type AnpCdpDiariaEmpresaSeriePonto,
 } from "../useAnpCdpDiariaData";
+import { bblDiaToKbpd } from "../../../../lib/units";
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -134,6 +141,35 @@ function buildMobileChart(
     });
 }
 
+/**
+ * Company-mode net total line (single bold orange trace). Sums the NET column
+ * across all fields per day. Oil is converted to kbpd, gas stays in Mm³/d.
+ */
+function buildCompanyTotalTrace(
+  rows: AnpCdpDiariaEmpresaSeriePonto[],
+  product: Product,
+): PlotData[] {
+  const isOil = product === "oil";
+  const byDay: Record<string, number> = {};
+  for (const r of rows) {
+    const v = isOil ? r.petroleo_bbl_dia_net : r.gas_mm3_dia_net;
+    if (v == null) continue;
+    byDay[r.data] = (byDay[r.data] ?? 0) + v;
+  }
+  const entries = Object.entries(byDay).sort(([a], [b]) => a.localeCompare(b));
+  if (!entries.length) return [];
+  const unit = productUnitLabel(product);
+  return [{
+    type: "scatter",
+    mode: "lines",
+    name: COMPANY_TOTAL_LABEL,
+    x: entries.map(([d]) => d),
+    y: entries.map(([, v]) => (isOil ? bblDiaToKbpd(v) : v)),
+    line: { width: 2.6, color: BRAND_ORANGE },
+    hovertemplate: `${COMPANY_TOTAL_LABEL}: %{y:,.1f} ${unit}<extra></extra>`,
+  } as PlotData];
+}
+
 // ─── Sparkline data helper ─────────────────────────────────────────────────────
 
 function dimensionSparkline(
@@ -192,12 +228,25 @@ export default function MobileView(): React.ReactElement | null {
     defaultPetroleoDims, defaultGasDims,
     ranking,
     product,
+    // Company level
+    empresas, selectedEmpresa, setSelectedEmpresa,
+    companySerieRows,
+    companyFieldAggregates, companyFieldsNoData,
+    companyTotalOilNetAvg, companyTotalGasNetAvg,
   } = useAnpCdpDiariaData();
 
-  // Pin granularity to "field" — desktop-only UX choice.
+  // Mobile-local mode switch: Fields | Companies. Installation/Well stay
+  // desktop-only. The switch drives the shared hook's granularity.
+  const [mobileMode, setMobileMode] = useState<"fields" | "companies">("fields");
+
+  // Keep the shared granularity in sync with the mobile mode. Installation/Well
+  // are not reachable on mobile, so any other value collapses to "field".
   useEffect(() => {
-    if (granularity !== "field") setGranularity("field");
-  }, [granularity, setGranularity]);
+    const target = mobileMode === "companies" ? "company" : "field";
+    if (granularity !== target) setGranularity(target);
+  }, [mobileMode, granularity, setGranularity]);
+
+  const isCompany = mobileMode === "companies";
 
   // ── Period preset state (mobile-local) ─────────────────────────────────────
   const [activePreset, setActivePreset] = useState<PeriodPreset>("All");
@@ -220,6 +269,30 @@ export default function MobileView(): React.ReactElement | null {
   const [filterOpen,   setFilterOpen]   = useState(false);
   const [allFieldsOpen, setAllFieldsOpen] = useState(false);
   const [fieldSearch,   setFieldSearch]   = useState("");
+  const [companyPickerOpen, setCompanyPickerOpen] = useState(false);
+  const [companySearch,     setCompanySearch]     = useState("");
+
+  // ── Company-mode chart traces (net total line, oil + gas) ──────────────────
+  const companyOilTrace = useMemo(
+    () => buildCompanyTotalTrace(companySerieRows, "oil"),
+    [companySerieRows],
+  );
+  const companyGasTrace = useMemo(
+    () => buildCompanyTotalTrace(companySerieRows, "gas"),
+    [companySerieRows],
+  );
+
+  // Companies for the picker (featured first, then alphabetical others).
+  const featuredCompanies = useMemo(
+    () => FEATURED_COMPANIES.filter(f => empresas.some(e => e.empresa === f)),
+    [empresas],
+  );
+  const filteredCompanyList = useMemo(() => {
+    const q = companySearch.trim().toLowerCase();
+    const base = empresas.filter(e => !FEATURED_COMPANIES.includes(e.empresa));
+    if (!q) return base;
+    return base.filter(e => e.empresa.toLowerCase().includes(q));
+  }, [empresas, companySearch]);
 
   // ── Chart dimensions ───────────────────────────────────────────────────────
   const oilChartDims = useMemo(() => {
@@ -321,8 +394,23 @@ export default function MobileView(): React.ReactElement | null {
             lineHeight: 1.4,
           }}
         >
-          Petroleum and gas by field — refreshed 3×/day
+          {isCompany
+            ? "Stake-weighted net production by field"
+            : "Petroleum and gas by field — refreshed 3×/day"}
         </div>
+
+        {/* Fields | Companies mode toggle */}
+        <div style={{ marginTop: 12 }}>
+          <SegmentedToggle<"fields" | "companies">
+            value={mobileMode}
+            onChange={setMobileMode}
+            options={[
+              { value: "fields",    label: "Fields" },
+              { value: "companies", label: "Companies" },
+            ]}
+          />
+        </div>
+
         {periodBadge && (
           <span
             style={{
@@ -394,81 +482,124 @@ export default function MobileView(): React.ReactElement | null {
           ))}
         </div>
 
-        {/* Basin + Field + Filters trigger */}
-        <div
-          style={{
-            display:        "flex",
-            alignItems:     "center",
-            gap:            6,
-            padding:        "0 16px",
-            overflowX:      "auto",
-            WebkitOverflowScrolling: "touch",
-            scrollbarWidth: "none",
-          }}
-        >
-          {/* Filters button */}
-          <button
-            type="button"
-            onClick={() => setFilterOpen(true)}
-            aria-label="Open filters"
+        {/* Field mode: Field + Filters trigger */}
+        {!isCompany && (
+          <div
             style={{
-              ...chipBase,
-              borderStyle: "dashed",
+              display:        "flex",
+              alignItems:     "center",
+              gap:            6,
+              padding:        "0 16px",
+              overflowX:      "auto",
+              WebkitOverflowScrolling: "touch",
+              scrollbarWidth: "none",
             }}
           >
-            <FilterIcon size={13} strokeWidth={2.4} />
-            Filters
-            {activeFilterCount > 0 && (
-              <span
-                style={{
-                  minWidth:   18,
-                  height:     18,
-                  borderRadius: 999,
-                  background: BRAND_ORANGE,
-                  color:      "#fff",
-                  fontSize:   10,
-                  fontWeight: 700,
-                  display:    "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding:    "0 5px",
-                }}
-              >
-                {activeFilterCount}
+            {/* Filters button */}
+            <button
+              type="button"
+              onClick={() => setFilterOpen(true)}
+              aria-label="Open filters"
+              style={{
+                ...chipBase,
+                borderStyle: "dashed",
+              }}
+            >
+              <FilterIcon size={13} strokeWidth={2.4} />
+              Filters
+              {activeFilterCount > 0 && (
+                <span
+                  style={{
+                    minWidth:   18,
+                    height:     18,
+                    borderRadius: 999,
+                    background: BRAND_ORANGE,
+                    color:      "#fff",
+                    fontSize:   10,
+                    fontWeight: 700,
+                    display:    "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding:    "0 5px",
+                  }}
+                >
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+
+            {/* Active field chip */}
+            {selectedCampos.length > 0 && (
+              <span style={chipActive}>
+                {selectedCampos.length === 1
+                  ? selectedCampos[0].length > 16
+                    ? selectedCampos[0].slice(0, 14) + "…"
+                    : selectedCampos[0]
+                  : `Fields: ${selectedCampos.length}`}
+                <button
+                  type="button"
+                  onClick={() => setSelectedCampos([])}
+                  aria-label="Clear field filter"
+                  style={{
+                    width:   18,
+                    height:  18,
+                    border:  0,
+                    background: "transparent",
+                    color:   BRAND_ORANGE,
+                    cursor:  "pointer",
+                    padding: 0,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <CloseIcon size={9} strokeWidth={2.5} />
+                </button>
               </span>
             )}
-          </button>
+          </div>
+        )}
 
-          {/* Active field chip */}
-          {selectedCampos.length > 0 && (
-            <span style={chipActive}>
-              {selectedCampos.length === 1
-                ? selectedCampos[0].length > 16
-                  ? selectedCampos[0].slice(0, 14) + "…"
-                  : selectedCampos[0]
-                : `Fields: ${selectedCampos.length}`}
-              <button
-                type="button"
-                onClick={() => setSelectedCampos([])}
-                aria-label="Clear field filter"
-                style={{
-                  width:   18,
-                  height:  18,
-                  border:  0,
-                  background: "transparent",
-                  color:   BRAND_ORANGE,
-                  cursor:  "pointer",
-                  padding: 0,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <CloseIcon size={9} strokeWidth={2.5} />
-              </button>
-            </span>
-          )}
-        </div>
+        {/* Company mode: featured pills + "More" trigger */}
+        {isCompany && (
+          <div
+            style={{
+              display:        "flex",
+              alignItems:     "center",
+              gap:            6,
+              padding:        "0 16px",
+              overflowX:      "auto",
+              WebkitOverflowScrolling: "touch",
+              scrollbarWidth: "none",
+            }}
+          >
+            {featuredCompanies.map(name => {
+              const active = selectedEmpresa === name;
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => setSelectedEmpresa(name)}
+                  style={{
+                    ...(active ? chipActive : chipBase),
+                    minHeight: 30,
+                  }}
+                >
+                  {name}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => { setCompanySearch(""); setCompanyPickerOpen(true); }}
+              style={{ ...chipBase, borderStyle: "dashed" }}
+            >
+              {selectedEmpresa && !FEATURED_COMPANIES.includes(selectedEmpresa)
+                ? selectedEmpresa
+                : "More companies"}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Main content ────────────────────────────────────────────────────── */}
@@ -476,6 +607,18 @@ export default function MobileView(): React.ReactElement | null {
         <div style={{ padding: "48px 16px" }}>
           <BarrelLoading bare />
         </div>
+      ) : isCompany ? (
+        <CompanyMobileContent
+          selectedEmpresa={selectedEmpresa}
+          serieLoading={serieLoading}
+          companySerieRows={companySerieRows}
+          companyFieldAggregates={companyFieldAggregates}
+          companyFieldsNoData={companyFieldsNoData}
+          companyTotalOilNetAvg={companyTotalOilNetAvg}
+          companyTotalGasNetAvg={companyTotalGasNetAvg}
+          companyOilTrace={companyOilTrace}
+          companyGasTrace={companyGasTrace}
+        />
       ) : visibleRows.length === 0 ? (
         <div
           style={{
@@ -869,7 +1012,7 @@ export default function MobileView(): React.ReactElement | null {
                 color:     "var(--mobile-text-muted, #6b6b73)",
               }}
             >
-              No fields matching "{fieldSearch}"
+              No fields matching &quot;{fieldSearch}&quot;
             </div>
           )}
         </div>
@@ -885,6 +1028,79 @@ export default function MobileView(): React.ReactElement | null {
               rows={visibleRows}
             />
           ))}
+        </div>
+      </BottomSheet>
+
+      {/* ── Company picker BottomSheet ──────────────────────────────────────── */}
+      <BottomSheet
+        open={companyPickerOpen}
+        onClose={() => setCompanyPickerOpen(false)}
+        title={`Companies (${empresas.length})`}
+        height="90vh"
+      >
+        {/* Search input */}
+        <div style={{ marginBottom: 12 }}>
+          <input
+            type="search"
+            placeholder="Search companies..."
+            value={companySearch}
+            onChange={e => setCompanySearch(e.target.value)}
+            style={{
+              width:        "100%",
+              boxSizing:    "border-box",
+              height:       38,
+              padding:      "0 12px",
+              borderRadius: 10,
+              border:       "1px solid var(--mobile-border, #e0e0e0)",
+              background:   "var(--mobile-surface, #fff)",
+              color:        "var(--mobile-text, #1a1a1a)",
+              fontFamily:   "inherit",
+              fontSize:     14,
+              outline:      "none",
+            }}
+          />
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+          {(companySearch ? filteredCompanyList : empresas).map(e => {
+            const active = selectedEmpresa === e.empresa;
+            return (
+              <button
+                key={e.empresa}
+                type="button"
+                onClick={() => { setSelectedEmpresa(e.empresa); setCompanyPickerOpen(false); }}
+                style={{
+                  display:        "flex",
+                  alignItems:     "center",
+                  justifyContent: "space-between",
+                  width:          "100%",
+                  minHeight:      48,
+                  padding:        "10px 4px",
+                  border:         0,
+                  borderBottom:   "1px solid var(--mobile-border-soft, #f0f0f5)",
+                  background:     "transparent",
+                  cursor:         "pointer",
+                  textAlign:      "left",
+                  fontFamily:     "inherit",
+                }}
+              >
+                <span style={{
+                  fontSize: 15, fontWeight: 700,
+                  color: active ? BRAND_ORANGE : "var(--mobile-text, #1a1a1a)",
+                }}>
+                  {e.empresa}
+                </span>
+                <span style={{ fontSize: 12, color: "var(--mobile-text-muted, #6b6b73)", fontWeight: 600 }}>
+                  {e.n_campos_com_dado}/{e.n_campos_stake} fields
+                </span>
+              </button>
+            );
+          })}
+          {companySearch && filteredCompanyList.length === 0 && (
+            <div style={{ marginTop: 8, fontSize: 12, color: "var(--mobile-text-muted, #6b6b73)" }}>
+              No companies matching &quot;{companySearch}&quot;
+            </div>
+          )}
         </div>
       </BottomSheet>
     </div>
@@ -911,6 +1127,7 @@ function ChartSection({
   isExplicit,
   explicitCount,
   updating,
+  companyTotal = false,
   children,
 }: {
   title: string;
@@ -919,6 +1136,8 @@ function ChartSection({
   isExplicit: boolean;
   explicitCount: number;
   updating: boolean;
+  /** Company mode: label reads "total + N fields" instead of "(N selected)". */
+  companyTotal?: boolean;
   children: React.ReactNode;
 }): React.ReactElement {
   return (
@@ -959,9 +1178,11 @@ function ChartSection({
               color:      "var(--mobile-text-muted, #6b6b73)",
             }}
           >
-            {isExplicit
-              ? `(${explicitCount} selected)`
-              : `Top ${topN} fields`}
+            {companyTotal
+              ? `total · ${explicitCount} field${explicitCount === 1 ? "" : "s"}`
+              : isExplicit
+                ? `(${explicitCount} selected)`
+                : `Top ${topN} fields`}
           </span>
           {updating && (
             <span
@@ -1150,3 +1371,252 @@ function SummaryCell({
     </div>
   );
 }
+
+// ─── Company-mode content ────────────────────────────────────────────────────
+
+/**
+ * Company level on mobile: company net total chart (Oil + Gas, both stacked),
+ * per-field net ranking cards (stake % + net values), and the coverage note
+ * listing stake-held fields without daily data yet.
+ */
+function CompanyMobileContent({
+  selectedEmpresa,
+  serieLoading,
+  companySerieRows,
+  companyFieldAggregates,
+  companyFieldsNoData,
+  companyTotalOilNetAvg,
+  companyTotalGasNetAvg,
+  companyOilTrace,
+  companyGasTrace,
+}: {
+  selectedEmpresa: string | null;
+  serieLoading: boolean;
+  companySerieRows: AnpCdpDiariaEmpresaSeriePonto[];
+  companyFieldAggregates: CompanyFieldAggregate[];
+  companyFieldsNoData: { campo: string; stakePct: number }[];
+  companyTotalOilNetAvg: number;
+  companyTotalGasNetAvg: number;
+  companyOilTrace: PlotData[];
+  companyGasTrace: PlotData[];
+}): React.ReactElement {
+  if (!selectedEmpresa) {
+    return (
+      <div style={emptyBoxStyle}>
+        Pick a company (PRIO / Petrobras above, or tap &quot;More companies&quot;)
+        to see its stake-weighted daily net production.
+      </div>
+    );
+  }
+  if (companySerieRows.length === 0 && !serieLoading) {
+    return (
+      <div style={emptyBoxStyle}>
+        No daily data for {selectedEmpresa} in the selected period.
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {/* Net total averages */}
+      <section style={{ margin: "12px 16px 0" }}>
+        <div
+          style={{
+            display:             "grid",
+            gridTemplateColumns: "repeat(2, 1fr)",
+            gap:                 1,
+            background:          "var(--mobile-border-soft, #f0f0f5)",
+            borderRadius:        12,
+            overflow:            "hidden",
+            border:              "1px solid var(--mobile-border-soft, #f0f0f5)",
+          }}
+        >
+          <SummaryCell
+            label="Net Oil (avg)"
+            value={fmtNumber(companyTotalOilNetAvg / 1000, 1) + " kbpd"}
+            accent
+          />
+          <SummaryCell
+            label="Net Gas (avg)"
+            value={fmtNumber(companyTotalGasNetAvg, 3) + " Mm³/d"}
+          />
+        </div>
+      </section>
+
+      {/* Oil net chart */}
+      <ChartSection
+        title="Net Oil"
+        unit="kbpd"
+        topN={0}
+        isExplicit
+        explicitCount={companyFieldAggregates.length}
+        updating={serieLoading}
+        companyTotal
+      >
+        <MobileChart
+          data={companyOilTrace}
+          height={240}
+          layout={{
+            xaxis: { type: "date" as const, nticks: 4 },
+            yaxis: { nticks: 4 },
+            showlegend: false,
+          }}
+        />
+      </ChartSection>
+
+      {/* Gas net chart */}
+      <ChartSection
+        title="Net Gas"
+        unit="Mm³/d"
+        topN={0}
+        isExplicit
+        explicitCount={companyFieldAggregates.length}
+        updating={serieLoading}
+        companyTotal
+      >
+        <MobileChart
+          data={companyGasTrace}
+          height={240}
+          layout={{
+            xaxis: { type: "date" as const, nticks: 4 },
+            yaxis: { nticks: 4 },
+            showlegend: false,
+          }}
+        />
+      </ChartSection>
+
+      {/* Per-field net ranking */}
+      <section style={{ marginTop: 4 }}>
+        <div style={{ padding: "10px 16px 8px" }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "var(--mobile-text, #1a1a1a)" }}>
+            By Field — Net
+          </div>
+        </div>
+        <div
+          style={{
+            background:   "var(--mobile-surface, #fff)",
+            borderTop:    "1px solid var(--mobile-border-soft, #f0f0f5)",
+            borderBottom: "1px solid var(--mobile-border-soft, #f0f0f5)",
+          }}
+        >
+          {companyFieldAggregates.map((f, idx) => (
+            <CompanyFieldCard key={f.campo} rank={idx + 1} item={f} />
+          ))}
+          {companyFieldAggregates.length === 0 && (
+            <div style={{ padding: "16px", color: "var(--mobile-text-muted, #6b6b73)", fontSize: 13 }}>
+              No data for the current period.
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Coverage note */}
+      {companyFieldsNoData.length > 0 && (
+        <section style={{ margin: "12px 16px 0" }}>
+          <div
+            style={{
+              padding:      "12px 14px",
+              background:   "var(--mobile-surface, #fff)",
+              borderRadius: 12,
+              border:       "1px dashed var(--mobile-border, #e0e0e0)",
+              fontSize:     12,
+              color:        "var(--mobile-text-muted, #6b6b73)",
+              lineHeight:   1.5,
+            }}
+          >
+            <strong style={{ color: "var(--mobile-text, #1a1a1a)" }}>Not yet in the daily feed:</strong>{" "}
+            {companyFieldsNoData
+              .map(f => `${f.campo} (${formatStakePct(f.stakePct)})`)
+              .join(", ")}
+            .
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+
+/** One per-field net card (Company level). Shows stake % + net oil/gas latest + avg. */
+function CompanyFieldCard({
+  rank,
+  item,
+}: {
+  rank: number;
+  item: CompanyFieldAggregate;
+}): React.ReactElement {
+  const isLeader = rank === 1;
+  return (
+    <MobileDataCard
+      variant="default"
+      title={
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <span
+            aria-hidden="true"
+            style={{
+              minWidth: 22, height: 22, padding: "0 6px", borderRadius: 999,
+              background: isLeader ? BRAND_ORANGE : "var(--mobile-divider, #f0f0f0)",
+              color: isLeader ? "#fff" : "var(--mobile-text-muted, #6b6b73)",
+              fontSize: 11, fontWeight: 700, display: "inline-flex",
+              alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}
+          >
+            #{rank}
+          </span>
+          <span style={{ fontWeight: 700, color: "var(--mobile-text, #1a1a1a)" }}>
+            {item.campo}
+          </span>
+        </span>
+      }
+      subtitle={
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span
+            style={{
+              display: "inline-flex", alignItems: "center", padding: "2px 8px",
+              borderRadius: 6, background: "var(--mobile-surface-2, #fafafc)",
+              border: "1px solid var(--mobile-border, #e0e0e0)",
+              color: "var(--mobile-text-muted, #6b6b73)", fontSize: 11, fontWeight: 700,
+            }}
+          >
+            {formatStakePct(item.stakePct)}
+          </span>
+          {item.bacia && (
+            <span style={{ fontSize: 11, color: "var(--mobile-text-muted, #6b6b73)" }}>
+              {item.bacia}
+            </span>
+          )}
+          <span style={{ fontSize: 11, color: "var(--mobile-text-muted, #6b6b73)" }}>
+            Avg {fmtNumber(item.avgOilNet / 1000, 1)} kbpd
+          </span>
+        </span>
+      }
+      rightSlot={
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+          <span
+            style={{
+              fontSize: 15, fontWeight: 700, color: "var(--mobile-text, #1a1a1a)",
+              fontVariantNumeric: "tabular-nums", lineHeight: 1.1, whiteSpace: "nowrap",
+            }}
+          >
+            {fmtNumber(item.latestOilNet == null ? null : item.latestOilNet / 1000, 1)} kbpd
+          </span>
+          <span style={{ fontSize: 11, color: "var(--mobile-text-muted, #6b6b73)", fontWeight: 600, whiteSpace: "nowrap" }}>
+            {item.latestDate ?? "—"}
+          </span>
+        </div>
+      }
+    />
+  );
+}
+
+/** Shared empty-state box style for the company content. */
+const emptyBoxStyle: React.CSSProperties = {
+  margin:      "16px",
+  padding:     "32px 16px",
+  textAlign:   "center",
+  color:       "var(--mobile-text-muted, #6b6b73)",
+  background:  "var(--mobile-surface, #fff)",
+  border:      "1px dashed var(--mobile-border, #e0e0e0)",
+  borderRadius: 12,
+  fontSize:    13,
+  lineHeight:  1.4,
+};
