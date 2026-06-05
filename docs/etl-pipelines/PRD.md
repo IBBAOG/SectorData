@@ -389,6 +389,102 @@ and official desembaraço (timing of clearance-vs-discharge + the discharged-vol
 attribution heuristic), **not** a parsing defect — no other vessel breaches a
 physically plausible parcel size.
 
+### ComexStat backtest harness (offline validation, 2026-06)
+
+**Purpose.** `scripts/pipelines/navios/comex_backtest.py` is an **offline** harness
+that validates the `/navios-diesel` monthly diesel-volume methodology (derived from
+the port lineup) against the official **ComexStat-by-URF** ruler, for **closed months
+only**. It is a validation tool, **not** an ingestion pipeline: it READS
+`navios_diesel` (service-role) and READS the ComexStat public API, and writes ONLY a
+local parquet/CSV in `DADOS/` (gitignored). It NEVER writes to Supabase.
+
+**Lag caveat — desembaraço ≠ descarga.** ComexStat counts **customs clearance**
+(desembaraço aduaneiro), which lags **physical discharge** at the berth by days to
+weeks (a cargo discharged at the end of month M is often cleared in M+1). Therefore
+ComexStat is **useless as a live feed** and is used here **only** to backtest closed
+past months, where the lag has washed out. CTO decision (2026-06): ComexStat is the
+backtest ruler, never the dashboard feed. **The harness must not feed the dashboard.**
+
+**What it computes.** A per-port × month bias table:
+
+| field | meaning |
+|---|---|
+| `ours_m3` (a) | our methodology: discharged m³ from the lineup, **per port** |
+| `comex_m3` (b) | ComexStat-URF cleared kg → m³, summed over URFs mapping to that port |
+| `diff_b_minus_a` | absolute gap `b − a` |
+| `ratio_a_over_b` | `a / b` — `>1` over-count, `<1` under-count |
+| `covered` | whether the port is one we scrape into `navios_diesel` |
+
+**Methodology replication.** The per-port `ours_m3` faithfully replicates the
+discharged logic of `supabase/migrations/20260527700000_nd_volume_mensal_historico_past_only_discharged.sql`,
+broken down per port (the RPC returns only the month total): anchor = last snapshot
+whose SP-local month == target month; exclude `error_ports` (ERRO_COLETA at anchor)
+and `anchor_set` (vessels still pending at anchor); sum the last row per
+(navio, porto) ≤ anchor, with the `attribution_month` filter (vessel's last-seen
+SP-month == target). A built-in **sanity check** asserts the per-port sum equals the
+RPC discharged total for each month (the script exits 3 if it drifts). Validated
+2026-06: May 2026 per-port sum = **960,343.02** = RPC, April = RPC, both exact.
+
+**Density (832 vs 835).** ComexStat reports mass; we convert kg → m³ with **832
+kg/m³** — the production-side density in `ncm_densidade_kg_m3` for NCM `27101921`,
+the same density the production/imports pipelines use. The `/navios-diesel` lineup
+itself uses **835 kg/m³** when converting tonnes to m³ during scraping; we align the
+ComexStat side to 832 so both sides of the ratio sit on the same ruler. The 832 vs
+835 spread is `< 0.4 %` and does not move the bias verdict. Our `quantidade_convertida`
+is already stored in m³ and is used as-is.
+
+**URF → canonical port map (15 entries).** ComexStat returns URF as
+`"<code> - <NAME>"` with inconsistent dashes/accents (e.g. `0317903 - IRF SAO LUIS`,
+`0417902 - IRF - PORTO DE SUAPE`, `0217800 - ALF - BELÉM`); a normalizer strips the
+code, drops accents, uppercases and collapses dashes/whitespace before lookup.
+
+| URF (normalized) | Canonical port | Covered |
+|---|---|---|
+| IRF SÃO LUÍS | Porto de Itaqui | yes |
+| PORTO DE SANTOS | Porto de Santos | yes |
+| PORTO DE PARANAGUÁ | Porto de Paranaguá | yes |
+| SÃO SEBASTIÃO | Porto de São Sebastião | yes |
+| IRF PORTO DE SUAPE | Porto de Suape | yes |
+| MACEIÓ | Porto de Maceió | yes |
+| PORTO DE MANAUS | Manaus | no |
+| ALF BELÉM | Belém/Vila do Conde | no |
+| ALF SALVADOR | Salvador | no |
+| ALF FORTALEZA | Fortaleza/Mucuripe | no |
+| IRF CAMPOS DOS GOYTACAZES | Açu-RJ | no |
+| PORTO DE RIO GRANDE | Rio Grande | no |
+| IRF NATAL | Natal | no |
+| PORTO DO RIO DE JANEIRO | Rio de Janeiro | no |
+
+Unmapped URFs are recorded (prefixed `(unmapped)`) for visibility but never gate the
+exit code.
+
+**Bias monitor / thresholds.** Covered ports whose `a/b > 1.5` (over-count, e.g.
+Itaqui) or `< 0.6` (under-count) are flagged; a breach persisting `≥ 2` consecutive
+closed months is the real signal of a scraper/methodology bug. A single covered-port
+breach in the run trips a **non-zero exit (code 4)** so a future workflow/CI can gate
+on it; uncovered ports never affect the exit code. Validated 2026-06: **Itaqui flagged
+as a persistent over-count (a/b 2.33 in Apr, 1.55 in May)** — exactly the known Itaqui
+scraper super-count that the parallel scraper fix addresses (see "Itaqui scraper").
+
+**Output (in-place upsert).** Writes `DADOS/navios_comex_backtest.parquet` (+ sibling
+`.csv`), **appended/upserted by (mes, porto)** — never deleted and rebuilt, preserving
+the running history (project standard). De-duped on `(mes, porto)` before write.
+
+**How to run.**
+
+```bash
+python scripts/pipelines/navios/comex_backtest.py                       # all closed months (baseline 2026-04 ..)
+python scripts/pipelines/navios/comex_backtest.py --from 2026-04 --to 2026-05
+python scripts/pipelines/navios/comex_backtest.py --dry-run             # print + monitor, no file write
+python scripts/pipelines/navios/comex_backtest.py --quiet               # suppress progress chatter
+```
+
+Credentials: `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` (env or a `.env` walked up the
+tree — works from a worktree). The ComexStat API 429s aggressively; the harness reuses
+`mdic_comex_sync.py`'s backoff and spaces month legs ~13 s apart. **No GitHub Actions
+workflow yet** (CTO decides whether to schedule it); the script is written so a future
+job only needs `pip install -r requirements.txt` and one call, gating on the exit code.
+
 ### Client Alerts (logged-in product — hook no fim do ETL, 2026-06-02)
 
 Produto de alertas por email **só-logado**, event-driven. Substitui o produto cloud antigo (anon double-opt-in, detectores em polling de 2h, `scripts/alerts/`) que foi **deletado**. Engine em `scripts/client_alerts/` (ver árvore acima); schema/RPCs em `docs/supabase/PRD.md` § "Alerts v2"; frontend em `docs/app/alerts.md`.
