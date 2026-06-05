@@ -16,6 +16,12 @@ schedule
 websockets
 shapely
 pdfplumber
+# ── CEPEA anhydrous-ethanol scraper (scripts/pipelines/cepea/) ────────────────
+# Back the Cloudflare-Turnstile bypass: undetected-chromedriver drives a real
+# Chrome to mint a cf_clearance cookie; curl-cffi (TLS-impersonation) re-uses it
+# to pull the full-history Excel. Both fail open to the noticiasagricolas fallback.
+undetected-chromedriver
+curl-cffi
 # pdf2image and pytesseract are NOT listed here — they are opt-in for the
 # --enable-ocr-fallback flag in subsidy_diesel_sync.py and require a system
 # Tesseract binary. Install them manually if needed: pip install pdf2image pytesseract
