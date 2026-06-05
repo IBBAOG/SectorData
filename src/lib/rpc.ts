@@ -4242,6 +4242,7 @@ import type {
   SensitivityAxis,
   SensitivityTable,
   SensitivityTableAdmin,
+  SensitivityComposeBlock,
 } from "../types/stockGuide";
 
 /** Coerce a PostgREST numeric (string | number | null | undefined) → number | null. */
@@ -4571,6 +4572,57 @@ function mapSensitivityAxis(raw: unknown): SensitivityAxis {
   return axis;
 }
 
+/** Coerce a jsonb `{ key: number }` map into `Record<string, number>` (drops non-finite). */
+function coerceNumberMap(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (raw && typeof raw === "object") {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      const n = toNumOrNull(v);
+      if (n != null) out[k] = n;
+    }
+  }
+  return out;
+}
+
+/**
+ * Coerce the ELASTIC `definition.compose` jsonb into a typed
+ * `SensitivityComposeBlock`. Returns null when absent / malformed. Numbers are
+ * coerced recursively (PostgREST-safe). The compose block is stored verbatim by
+ * the upsert RPC, so we only normalize numeric types here.
+ */
+function mapComposeBlock(raw: unknown): SensitivityComposeBlock | null {
+  if (!raw || typeof raw !== "object") return null;
+  const c = raw as Record<string, unknown>;
+  const driverKeys = Array.isArray(c.driver_keys)
+    ? (c.driver_keys as unknown[]).map((k) => String(k))
+    : [];
+  const byCompanyRaw =
+    c.by_company && typeof c.by_company === "object"
+      ? (c.by_company as Record<string, unknown>)
+      : {};
+  const by_company: Record<string, Record<string, number>> = {};
+  for (const [ticker, slopes] of Object.entries(byCompanyRaw)) {
+    by_company[ticker] = coerceNumberMap(slopes);
+  }
+  const block: SensitivityComposeBlock = {
+    output: String(c.output ?? "target_price"),
+    driver_keys: driverKeys,
+    anchors: coerceNumberMap(c.anchors),
+    base: coerceNumberMap(c.base),
+    by_company,
+  };
+  if (c.scenarios && typeof c.scenarios === "object") {
+    const scenarios: Record<string, Record<string, number>> = {};
+    for (const [name, levels] of Object.entries(
+      c.scenarios as Record<string, unknown>,
+    )) {
+      scenarios[name] = coerceNumberMap(levels);
+    }
+    block.scenarios = scenarios;
+  }
+  return block;
+}
+
 const SENSITIVITY_VALUE_MODES = [
   "absolute",
   "yield",
@@ -4608,6 +4660,10 @@ function mapSensitivityTable(r: Record<string, unknown>): SensitivityTable {
   if (Array.isArray(def.cells_secondary)) {
     out.definition.cells_secondary = coerceMatrix(def.cells_secondary);
   }
+  // ELASTIC compose block (presence marks the table elastic). Stored verbatim by
+  // the upsert RPC; we only normalize numeric types here.
+  const compose = mapComposeBlock(def.compose);
+  if (compose) out.definition.compose = compose;
   return out;
 }
 

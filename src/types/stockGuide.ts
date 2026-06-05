@@ -208,6 +208,44 @@ export interface SensitivityAxis {
 }
 
 /**
+ * ELASTIC (coefficient) compose block — the optional `definition.compose` that
+ * marks a sensitivity table as "elastic". Instead of a typed 2D matrix, an
+ * elastic table composes an OUTPUT (target price) live in the browser from
+ * analyst-provided slopes against one or more macro drivers, driven by
+ * continuous multi-year sliders (Brent / FX 2026-2028).
+ *
+ * Composition (in the browser), per ticker:
+ *   TP[c] = base[c] + Σ_k by_company[c][k] × (level[k] − anchors[k])
+ * where `level[k]` is the current slider / preset / live value for driver_key
+ * `k`, `anchors[k]` is the driver level at which the base was measured, and
+ * `by_company[c][k]` is the slope Δ(output) per +1 unit of driver `k`.
+ *
+ * HIDE-AWARE: for a non-admin, the read RPC (`_sg_strip_compose`) removes every
+ * ticker key NOT visible from `base` and `by_company`. RULE: if a ticker is
+ * absent from `base`, do NOT render a row for it — never assume every
+ * `companies[]` entry has a base.
+ *
+ * The upsert RPC stores this object VERBATIM inside `definition.compose`.
+ */
+export interface SensitivityComposeBlock {
+  /** The composed output. Currently only `'target_price'` (BRL/share). */
+  output: string;
+  /** Driver keys this table composes against (catalog keys, e.g. avg_brent_2026). */
+  driver_keys: string[];
+  /** Driver level at which the base was measured, per driver_key. */
+  anchors: Record<string, number>;
+  /** Base output (BRL/share) at the anchors, PER TICKER. Hide-stripped server-side. */
+  base: Record<string, number>;
+  /** Slope Δ(output)/Δ(driver) per ticker × driver_key. Hide-stripped server-side. */
+  by_company: Record<string, Record<string, number>>;
+  /**
+   * Optional named presets → driver levels per driver_key (e.g. Base / Bull /
+   * Bear). Selecting a preset sets every slider from these levels.
+   */
+  scenarios?: Record<string, Record<string, number>>;
+}
+
+/**
  * A first-class sensitivity table. `value_mode` tells the browser how to turn a
  * typed cell into a DISPLAY value (most modes are live-derived from the Yahoo
  * price + the company's live market cap):
@@ -238,6 +276,13 @@ export interface SensitivityTable {
     cells: (number | null)[][];
     /** ONLY for value_mode 'ev_ebitda' — the matching net debt per cell. */
     cells_secondary?: (number | null)[][];
+    /**
+     * Present ONLY for ELASTIC tables. Its presence marks the table as elastic:
+     * the dashboard renders a slider panel that composes the output live instead
+     * of the static `cells` matrix (the row/col axes + cells are ignored for an
+     * elastic table). See `SensitivityComposeBlock` + `composeElasticTargetPrice`.
+     */
+    compose?: SensitivityComposeBlock;
   };
   display_order: number;
 }

@@ -39,7 +39,12 @@ import {
   recommendationColors,
   VOLUME_UNIT_NOTE,
 } from "../useStockGuideData";
-import type { UseStockGuideData } from "../useStockGuideData";
+import type {
+  UseStockGuideData,
+  ElasticTableModel,
+  ElasticSlider,
+} from "../useStockGuideData";
+import { fmtSignedPct } from "../useStockGuideData";
 import type {
   StockGuideComputedRow,
   SensitivityTable,
@@ -870,6 +875,313 @@ function SensitivityTableView({
   );
 }
 
+// ─── Elastic (coefficient) panel ──────────────────────────────────────────────
+//
+// Renders when a table has `definition.compose`: continuous sliders for Brent /
+// FX by year (2026-2028) + a preset selector + a Target price / Upside table that
+// re-prices live as the analyst drags. Replaces the static matrix for that table.
+
+function fmtSlider(v: number): string {
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+}
+
+/** A single labelled slider (one driver_key / year). */
+function ElasticSliderRow({
+  slider,
+  onChange,
+}: {
+  slider: ElasticSlider;
+  onChange: (level: number) => void;
+}): React.ReactElement {
+  const atAnchor = slider.level === slider.anchor;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          gap: 8,
+          fontFamily: "Arial, Helvetica, sans-serif",
+        }}
+      >
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#1f2937" }}>
+          {slider.label}
+        </span>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: BRAND_ORANGE, fontVariantNumeric: "tabular-nums" }}>
+          {fmtSlider(slider.level)}
+          {slider.unit ? <span style={{ color: "#9ca3af", fontWeight: 600 }}> {slider.unit}</span> : null}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={slider.min}
+        max={slider.max}
+        step={slider.step}
+        value={slider.level}
+        onChange={(e) => onChange(Number(e.target.value))}
+        aria-label={`${slider.label} (${slider.unit})`}
+        style={{ width: "100%", accentColor: BRAND_ORANGE, cursor: "pointer" }}
+      />
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          fontFamily: "Arial, Helvetica, sans-serif",
+          fontSize: 10,
+          color: "#9ca3af",
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        <span>{fmtSlider(slider.min)}</span>
+        <span style={{ color: atAnchor ? BRAND_ORANGE : "#9ca3af" }}>
+          anchor {fmtSlider(slider.anchor)}
+          {slider.liveValue != null ? ` · live ${fmtSlider(slider.liveValue)}` : ""}
+        </span>
+        <span>{fmtSlider(slider.max)}</span>
+      </div>
+    </div>
+  );
+}
+
+function ElasticPanel({
+  table,
+  model,
+  onSetLevel,
+  onSetPreset,
+  quotesLoading,
+}: {
+  table: SensitivityTable;
+  model: ElasticTableModel;
+  onSetLevel: (tableId: number, key: string, level: number) => void;
+  onSetPreset: (tableId: number, preset: string) => void;
+  quotesLoading: boolean;
+}): React.ReactElement {
+  // Group sliders by family (Brent / FX / other) preserving the model's order.
+  const groups: { type: ElasticSlider["type"]; label: string; sliders: ElasticSlider[] }[] = [];
+  const groupLabel = (t: ElasticSlider["type"]) =>
+    t === "brent" ? "Brent (USD/bbl)" : t === "fx" ? "FX (USD/BRL)" : "Drivers";
+  for (const s of model.sliders) {
+    let g = groups.find((x) => x.type === s.type);
+    if (!g) {
+      g = { type: s.type, label: groupLabel(s.type), sliders: [] };
+      groups.push(g);
+    }
+    g.sliders.push(s);
+  }
+
+  const presetOptions = ["Live", ...model.presetNames];
+
+  return (
+    <div style={{ marginBottom: 28 }}>
+      {/* Title + elastic badge */}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
+        <span style={{ fontFamily: "Arial, Helvetica, sans-serif", fontSize: 14, fontWeight: 700, color: "#1a1a1a" }}>
+          {table.title}
+        </span>
+        <span
+          style={{
+            display: "inline-block",
+            padding: "2px 9px",
+            borderRadius: 4,
+            background: "rgba(255,80,0,0.10)",
+            color: BRAND_ORANGE,
+            fontSize: 10.5,
+            fontWeight: 700,
+            letterSpacing: "0.03em",
+            textTransform: "uppercase",
+            fontFamily: "Arial, Helvetica, sans-serif",
+          }}
+        >
+          Elastic · {model.outputLabel}
+        </span>
+      </div>
+      <div
+        style={{
+          fontFamily: "Arial, Helvetica, sans-serif",
+          fontSize: 11.5,
+          color: "#9ca3af",
+          marginBottom: 14,
+        }}
+      >
+        Drag Brent / FX by year to re-price live. Pick a scenario or reset to Live
+        market values.
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(280px, 1.1fr) minmax(280px, 1fr)",
+          gap: 24,
+          alignItems: "start",
+        }}
+      >
+        {/* ── Sliders + presets ─────────────────────────────────────────────── */}
+        <div
+          style={{
+            border: "1px solid #e6e6e6",
+            borderRadius: 12,
+            background: "#fff",
+            padding: 18,
+            boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+          }}
+        >
+          {/* Scenario selector */}
+          <div style={{ marginBottom: 16 }}>
+            <div
+              style={{
+                fontFamily: "Arial, Helvetica, sans-serif",
+                fontSize: 11,
+                fontWeight: 700,
+                color: "#888",
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+                marginBottom: 6,
+              }}
+            >
+              Scenario
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {presetOptions.map((p) => {
+                const on = model.preset === p;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => onSetPreset(table.id, p)}
+                    style={{
+                      padding: "5px 12px",
+                      borderRadius: 14,
+                      cursor: "pointer",
+                      border: on ? `1px solid ${BRAND_ORANGE}` : "1px solid #e0e0e0",
+                      background: on ? "rgba(255,80,0,0.10)" : "#fff",
+                      color: on ? BRAND_ORANGE : "#666",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      fontFamily: "Arial, Helvetica, sans-serif",
+                    }}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
+              {model.preset === "Custom" && (
+                <span
+                  style={{
+                    padding: "5px 12px",
+                    borderRadius: 14,
+                    border: `1px solid ${BRAND_ORANGE}`,
+                    background: "rgba(255,80,0,0.10)",
+                    color: BRAND_ORANGE,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    fontFamily: "Arial, Helvetica, sans-serif",
+                  }}
+                >
+                  Custom
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Slider groups */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            {groups.map((g) => (
+              <div key={g.type}>
+                <div
+                  style={{
+                    fontFamily: "Arial, Helvetica, sans-serif",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: "#6b7280",
+                    marginBottom: 10,
+                  }}
+                >
+                  {g.label}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  {g.sliders.map((s) => (
+                    <ElasticSliderRow
+                      key={s.key}
+                      slider={s}
+                      onChange={(level) => onSetLevel(table.id, s.key, level)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Output table (Target price / Upside) ──────────────────────────── */}
+        <div
+          style={{
+            border: "1px solid #e0e0e0",
+            borderRadius: 12,
+            background: "#fff",
+            overflow: "hidden",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+          }}
+        >
+          <table style={{ borderCollapse: "collapse", width: "100%", fontFamily: "Arial, Helvetica, sans-serif" }}>
+            <thead>
+              <tr>
+                <th style={{ ...TH_BASE, textAlign: "left" }}>Company</th>
+                <th style={{ ...TH_BASE, textAlign: "right" }}>{model.outputLabel}</th>
+                <th style={{ ...TH_BASE, textAlign: "right" }}>Upside</th>
+                <th style={{ ...TH_BASE, textAlign: "right" }}>vs base</th>
+              </tr>
+            </thead>
+            <tbody>
+              {model.rows.length === 0 ? (
+                <tr>
+                  <td colSpan={4} style={{ ...TD_BASE, textAlign: "center", color: "#9ca3af", padding: "24px 10px" }}>
+                    No companies to re-price.
+                  </td>
+                </tr>
+              ) : (
+                model.rows.map((r, i) => {
+                  const bg = i % 2 === 0 ? "#fff" : "#fbfbfb";
+                  const upsideColor =
+                    r.upside == null
+                      ? "#1a1a1a"
+                      : r.upside > 0
+                        ? "#15803d"
+                        : r.upside < 0
+                          ? "#b91c1c"
+                          : "#6b7280";
+                  const delta =
+                    r.targetPrice != null && r.basePrice != null
+                      ? r.targetPrice - r.basePrice
+                      : null;
+                  const deltaTxt =
+                    delta == null
+                      ? "—"
+                      : `${delta > 0 ? "+" : ""}${fmtSlider(delta)}`;
+                  return (
+                    <tr key={r.ticker} style={{ background: bg }}>
+                      <td style={{ ...TD_BASE, textAlign: "left", fontWeight: 700, color: "#111827" }}>
+                        {r.companyName}
+                      </td>
+                      <td style={{ ...TD_BASE }}>
+                        {r.targetPrice == null ? "—" : fmtSlider(r.targetPrice)}
+                      </td>
+                      <td style={{ ...TD_BASE, color: upsideColor, fontWeight: 700 }}>
+                        {quotesLoading && r.upside == null ? "—" : fmtSignedPct(r.upside)}
+                      </td>
+                      <td style={{ ...TD_BASE, color: "#9ca3af" }}>{deltaTxt}</td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── The whole sensitivity section for the selected company ────────────────────
 
 function SensitivitySection({
@@ -881,6 +1193,10 @@ function SensitivitySection({
   y2Label,
   resolveDriverAxis,
   computeSensitivityCell,
+  isElasticTable,
+  getElasticModel,
+  onSetElasticLevel,
+  onSetElasticPreset,
   quotesLoading,
 }: {
   tables: SensitivityTable[];
@@ -891,6 +1207,10 @@ function SensitivitySection({
   y2Label: string;
   resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
   computeSensitivityCell: UseStockGuideData["computeSensitivityCell"];
+  isElasticTable: UseStockGuideData["isElasticTable"];
+  getElasticModel: UseStockGuideData["getElasticModel"];
+  onSetElasticLevel: UseStockGuideData["setElasticDriverLevel"];
+  onSetElasticPreset: UseStockGuideData["setElasticPreset"];
   quotesLoading: boolean;
 }): React.ReactElement {
   if (loading) {
@@ -930,18 +1250,33 @@ function SensitivitySection({
 
   return (
     <div>
-      {tables.map((t) => (
-        <SensitivityTableView
-          key={t.id}
-          table={t}
-          selectedTicker={selectedTicker}
-          y1Label={y1Label}
-          y2Label={y2Label}
-          resolveDriverAxis={resolveDriverAxis}
-          computeSensitivityCell={computeSensitivityCell}
-          quotesLoading={quotesLoading}
-        />
-      ))}
+      {tables.map((t) => {
+        const model = isElasticTable(t) ? getElasticModel(t) : null;
+        if (model) {
+          return (
+            <ElasticPanel
+              key={t.id}
+              table={t}
+              model={model}
+              onSetLevel={onSetElasticLevel}
+              onSetPreset={onSetElasticPreset}
+              quotesLoading={quotesLoading}
+            />
+          );
+        }
+        return (
+          <SensitivityTableView
+            key={t.id}
+            table={t}
+            selectedTicker={selectedTicker}
+            y1Label={y1Label}
+            y2Label={y2Label}
+            resolveDriverAxis={resolveDriverAxis}
+            computeSensitivityCell={computeSensitivityCell}
+            quotesLoading={quotesLoading}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -990,6 +1325,10 @@ export default function DesktopView(): React.ReactElement {
     selectedTables,
     resolveDriverAxis,
     computeSensitivityCell,
+    isElasticTable,
+    getElasticModel,
+    setElasticDriverLevel,
+    setElasticPreset,
     exportExcel,
     exportCsv,
     excelLoading,
@@ -1108,8 +1447,9 @@ export default function DesktopView(): React.ReactElement {
                   }}
                 >
                   Click a company row above to see the sensitivity tables it
-                  appears in. The row/column matching the driver&rsquo;s current
-                  value is highlighted (orange).
+                  appears in. Static tables highlight the row/column matching the
+                  driver&rsquo;s current value (orange); elastic tables let you
+                  drag Brent / FX by year to re-price the target price live.
                 </div>
                 <SensitivitySection
                   tables={selectedTables}
@@ -1120,6 +1460,10 @@ export default function DesktopView(): React.ReactElement {
                   y2Label={config.y2_label}
                   resolveDriverAxis={resolveDriverAxis}
                   computeSensitivityCell={computeSensitivityCell}
+                  isElasticTable={isElasticTable}
+                  getElasticModel={getElasticModel}
+                  onSetElasticLevel={setElasticDriverLevel}
+                  onSetElasticPreset={setElasticPreset}
                   quotesLoading={quotesLoading}
                 />
               </div>

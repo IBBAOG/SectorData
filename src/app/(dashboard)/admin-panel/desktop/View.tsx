@@ -33,7 +33,10 @@ import type {
   SensitivityTableAdmin,
   StockGuideDriver,
 } from "../../../../types/stockGuide";
-import { isDynamicSource } from "../../../../hooks/useMarketDrivers";
+import {
+  isDynamicSource,
+  type DriverCatalogEntry,
+} from "../../../../hooks/useMarketDrivers";
 import type { BaseInputMeta } from "../../../../lib/stockGuideSensitivity";
 
 const ORANGE = "#FF5000";
@@ -294,6 +297,18 @@ export default function DesktopView(): React.ReactElement | null {
     handleRemoveSgAxisScenario,
     handleChangeSgTableCell,
     handleChangeSgTableCellSecondary,
+    sgElasticDriverCatalog,
+    handleToggleSgElastic,
+    handleChangeSgComposeOutput,
+    handleToggleSgComposeDriverKey,
+    handleToggleSgComposeCompany,
+    handleChangeSgComposeAnchor,
+    handleChangeSgComposeBase,
+    handleChangeSgComposeSlope,
+    handleAddSgComposeScenario,
+    handleRenameSgComposeScenario,
+    handleChangeSgComposeScenarioLevel,
+    handleRemoveSgComposeScenario,
     handleSaveSgTable,
     handleDeleteSgTable,
     handleConfirmDeleteSgTable,
@@ -2682,6 +2697,18 @@ export default function DesktopView(): React.ReactElement | null {
                   onRemoveScenario={handleRemoveSgAxisScenario}
                   onChangeCell={handleChangeSgTableCell}
                   onChangeCellSecondary={handleChangeSgTableCellSecondary}
+                  elasticDriverCatalog={sgElasticDriverCatalog}
+                  onToggleElastic={handleToggleSgElastic}
+                  onChangeComposeOutput={handleChangeSgComposeOutput}
+                  onToggleComposeDriverKey={handleToggleSgComposeDriverKey}
+                  onToggleComposeCompany={handleToggleSgComposeCompany}
+                  onChangeComposeAnchor={handleChangeSgComposeAnchor}
+                  onChangeComposeBase={handleChangeSgComposeBase}
+                  onChangeComposeSlope={handleChangeSgComposeSlope}
+                  onAddComposeScenario={handleAddSgComposeScenario}
+                  onRenameComposeScenario={handleRenameSgComposeScenario}
+                  onChangeComposeScenarioLevel={handleChangeSgComposeScenarioLevel}
+                  onRemoveComposeScenario={handleRemoveSgComposeScenario}
                   onSave={handleSaveSgTable}
                   onDelete={handleDeleteSgTable}
                   onConfirmDelete={handleConfirmDeleteSgTable}
@@ -2753,6 +2780,19 @@ interface SensitivityBuilderProps {
   onRemoveScenario: (axis: "row" | "col", i: number) => void;
   onChangeCell: (r: number, c: number, value: string) => void;
   onChangeCellSecondary: (r: number, c: number, value: string) => void;
+  // ── Elastic (coefficient) builder ───────────────────────────────────────────
+  elasticDriverCatalog: DriverCatalogEntry[];
+  onToggleElastic: (on: boolean) => void;
+  onChangeComposeOutput: (output: string) => void;
+  onToggleComposeDriverKey: (key: string) => void;
+  onToggleComposeCompany: (ticker: string) => void;
+  onChangeComposeAnchor: (key: string, value: string) => void;
+  onChangeComposeBase: (ticker: string, value: string) => void;
+  onChangeComposeSlope: (ticker: string, key: string, value: string) => void;
+  onAddComposeScenario: () => void;
+  onRenameComposeScenario: (idx: number, name: string) => void;
+  onChangeComposeScenarioLevel: (idx: number, key: string, value: string) => void;
+  onRemoveComposeScenario: (idx: number) => void;
   onSave: () => void;
   onDelete: (id: number) => void;
   onConfirmDelete: () => void;
@@ -2767,7 +2807,12 @@ function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement 
     inputStyle, onSelect, onNew, onCancelEdit, onChangeField, onChangeValueMode,
     onChangeSingleCompany, onChangeAxisKind, onChangeAxisDriver, onToggleAxisCompany,
     onAddScenario, onChangeScenario, onRemoveScenario, onChangeCell,
-    onChangeCellSecondary, onSave, onDelete, onConfirmDelete, onCancelDelete,
+    onChangeCellSecondary,
+    elasticDriverCatalog, onToggleElastic, onChangeComposeOutput,
+    onToggleComposeDriverKey, onToggleComposeCompany, onChangeComposeAnchor,
+    onChangeComposeBase, onChangeComposeSlope, onAddComposeScenario,
+    onRenameComposeScenario, onChangeComposeScenarioLevel, onRemoveComposeScenario,
+    onSave, onDelete, onConfirmDelete, onCancelDelete,
   } = props;
 
   const labelSpan: React.CSSProperties = {
@@ -3010,6 +3055,278 @@ function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement 
     );
   };
 
+  // ── Elastic (coefficient) compose editor ────────────────────────────────────
+  // Driver_keys checkboxes (catalog) → anchors row; companies multi-select →
+  // base column + the slope grid companies × driver_keys; optional named
+  // scenarios. Serialized into definition.compose by the hook.
+  const renderElasticEditor = (): React.ReactElement | null => {
+    if (!draft) return null;
+    const c = draft.compose;
+    const selectedKeys = c.driverKeys;
+    const selectedCompanies = Object.keys(c.base);
+    const keyLabel = (k: string) =>
+      elasticDriverCatalog.find((e) => e.key === k)?.label ?? k;
+    const keyUnit = (k: string) =>
+      elasticDriverCatalog.find((e) => e.key === k)?.unit ?? "";
+    const cellInput: React.CSSProperties = {
+      ...inputStyle, textAlign: "right", fontSize: 12, minWidth: 88, padding: "5px 8px",
+    };
+    return (
+      <div style={{ paddingTop: 8, borderTop: "1px solid #ececec" }}>
+        {/* Hint banner */}
+        <div style={{
+          display: "flex", alignItems: "flex-start", gap: 10,
+          margin: "4px 0 16px", padding: "10px 14px", borderRadius: 8,
+          background: "rgba(255,80,0,0.06)", border: `1px solid rgba(255,80,0,0.28)`,
+          borderLeft: `4px solid ${ORANGE}`,
+        }}>
+          <span style={{ fontSize: 14, lineHeight: "18px" }} aria-hidden>💡</span>
+          <span style={{ fontSize: 12, lineHeight: 1.5, color: "#7a3300", fontWeight: 600 }}>
+            Slope = Δ target price per +1 unit of the driver. The dashboard composes
+            TP[c] = base[c] + Σ slope[c][k] × (slider[k] − anchor[k]) live, and the
+            analyst drags the Brent / FX sliders by year to re-price.
+          </span>
+        </div>
+
+        {/* Output */}
+        <label style={{ display: "block", marginBottom: 16, maxWidth: 280 }}>
+          <span style={labelSpan}>Output</span>
+          <select
+            value={c.output}
+            onChange={(e) => onChangeComposeOutput(e.target.value)}
+            style={{ ...inputStyle, cursor: "pointer" }}
+          >
+            <option value="target_price">Target price (BRL/share)</option>
+          </select>
+        </label>
+
+        {/* Driver keys */}
+        <div style={{ marginBottom: 16 }}>
+          <span style={labelSpan}>Drivers (Brent / FX by year)</span>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {elasticDriverCatalog.map((e) => {
+              const on = selectedKeys.includes(e.key);
+              return (
+                <button
+                  key={e.key}
+                  type="button"
+                  onClick={() => onToggleComposeDriverKey(e.key)}
+                  aria-pressed={on}
+                  style={{
+                    padding: "4px 10px", borderRadius: 14, cursor: "pointer",
+                    border: on ? `1px solid ${ORANGE}` : "1px solid #e0e0e0",
+                    background: on ? "rgba(255,80,0,0.10)" : "#fff",
+                    color: on ? ORANGE : "#666", fontSize: 12, fontWeight: 700,
+                    fontFamily: "Arial, sans-serif",
+                  }}
+                >
+                  {e.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Anchors per driver_key */}
+        {selectedKeys.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <span style={labelSpan}>Anchors (driver level where the base was measured)</span>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+              {selectedKeys.map((k) => (
+                <label key={k} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                  <span style={{ fontSize: 11, color: "#888", fontWeight: 600 }}>
+                    {keyLabel(k)}{keyUnit(k) ? ` (${keyUnit(k)})` : ""}
+                  </span>
+                  <input
+                    type="number"
+                    step="any"
+                    value={c.anchors[k] ?? ""}
+                    onChange={(e) => onChangeComposeAnchor(k, e.target.value)}
+                    style={{ ...inputStyle, textAlign: "right", maxWidth: 130 }}
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Companies */}
+        <div style={{ marginBottom: 16 }}>
+          <span style={labelSpan}>Companies (rows that re-price)</span>
+          {companyTickers.length === 0 ? (
+            <div style={{ fontSize: 12, color: "#bbb" }}>No companies available.</div>
+          ) : (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {companyTickers.map((t) => {
+                const on = t in c.base;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => onToggleComposeCompany(t)}
+                    aria-pressed={on}
+                    style={{
+                      padding: "4px 10px", borderRadius: 14, cursor: "pointer",
+                      border: on ? `1px solid ${ORANGE}` : "1px solid #e0e0e0",
+                      background: on ? "rgba(255,80,0,0.10)" : "#fff",
+                      color: on ? ORANGE : "#666", fontSize: 12, fontWeight: 700,
+                      fontFamily: "Arial, sans-serif",
+                    }}
+                  >
+                    {t}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Base + slope grid (companies × driver_keys) */}
+        {selectedCompanies.length > 0 && selectedKeys.length > 0 && (
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#555", marginBottom: 8 }}>
+              Base target price + slopes (Δ TP per +1 unit of driver)
+            </div>
+            <div style={{ overflowX: "auto", paddingBottom: 4 }}>
+              <table style={{ borderCollapse: "separate", borderSpacing: 6 }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: 110, fontSize: 11, fontWeight: 700, color: "#555", textAlign: "left" }}>
+                      Company
+                    </th>
+                    <th style={{ minWidth: 110, fontSize: 11, fontWeight: 700, color: "#1a1a1a", padding: "0 4px" }}>
+                      Base TP
+                    </th>
+                    {selectedKeys.map((k) => (
+                      <th key={k} style={{ minWidth: 100, fontSize: 11, fontWeight: 700, color: "#555", padding: "0 4px" }}>
+                        {keyLabel(k)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedCompanies.map((t) => (
+                    <tr key={t}>
+                      <th style={{ width: 110, textAlign: "left", fontSize: 12, fontWeight: 700, color: "#1a1a1a" }}>
+                        {t}
+                      </th>
+                      <td>
+                        <input
+                          type="number"
+                          step="any"
+                          value={c.base[t] ?? ""}
+                          onChange={(e) => onChangeComposeBase(t, e.target.value)}
+                          style={{ ...cellInput, borderColor: ORANGE }}
+                        />
+                      </td>
+                      {selectedKeys.map((k) => (
+                        <td key={k}>
+                          <input
+                            type="number"
+                            step="any"
+                            value={c.byCompany[t]?.[k] ?? ""}
+                            onChange={(e) => onChangeComposeSlope(t, k, e.target.value)}
+                            style={cellInput}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Named scenarios */}
+        {selectedKeys.length > 0 && (
+          <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px dashed #e0e0e0" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#555" }}>
+                Scenarios (optional presets → driver levels)
+              </span>
+              <button
+                onClick={onAddComposeScenario}
+                style={{
+                  padding: "5px 12px", borderRadius: 7,
+                  border: `1px solid ${ORANGE}`, background: "rgba(255,80,0,0.08)",
+                  color: ORANGE, fontSize: 12, fontWeight: 700, cursor: "pointer",
+                  fontFamily: "Arial, sans-serif",
+                }}
+              >
+                + Scenario
+              </button>
+            </div>
+            {c.scenarios.length === 0 ? (
+              <div style={{ fontSize: 12, color: "#bbb" }}>
+                No scenarios — the dashboard will only offer the “Live” reset.
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto", paddingBottom: 4 }}>
+                <table style={{ borderCollapse: "separate", borderSpacing: 6 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: 130, fontSize: 11, fontWeight: 700, color: "#555", textAlign: "left" }}>
+                        Name
+                      </th>
+                      {selectedKeys.map((k) => (
+                        <th key={k} style={{ minWidth: 100, fontSize: 11, fontWeight: 700, color: "#555", padding: "0 4px" }}>
+                          {keyLabel(k)}
+                        </th>
+                      ))}
+                      <th style={{ width: 32 }} />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {c.scenarios.map((sc, si) => (
+                      <tr key={si}>
+                        <td>
+                          <input
+                            type="text"
+                            value={sc.name}
+                            onChange={(e) => onRenameComposeScenario(si, e.target.value)}
+                            placeholder="e.g. Bull"
+                            style={{ ...inputStyle, fontSize: 12, minWidth: 120 }}
+                          />
+                        </td>
+                        {selectedKeys.map((k) => (
+                          <td key={k}>
+                            <input
+                              type="number"
+                              step="any"
+                              value={sc.levels[k] ?? ""}
+                              onChange={(e) => onChangeComposeScenarioLevel(si, k, e.target.value)}
+                              placeholder={c.anchors[k] ?? ""}
+                              style={cellInput}
+                            />
+                          </td>
+                        ))}
+                        <td>
+                          <button
+                            onClick={() => onRemoveComposeScenario(si)}
+                            aria-label={`Remove scenario ${sc.name || si + 1}`}
+                            title="Remove scenario"
+                            style={{
+                              width: 28, height: 28, borderRadius: 6, border: "1px solid #e0e0e0",
+                              background: "#fff", color: "#e53e3e", cursor: "pointer",
+                              fontSize: 15, lineHeight: 1, padding: 0, fontFamily: "Arial, sans-serif",
+                            }}
+                          >
+                            ×
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="settings-card" style={{ padding: 0, overflow: "hidden" }}>
       <div style={{ display: "flex", minHeight: 560, alignItems: "stretch" }}>
@@ -3064,7 +3381,9 @@ function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement 
                         background: "rgba(255,80,0,0.12)", color: ORANGE, textTransform: "uppercase",
                         letterSpacing: "0.04em",
                       }}>
-                        {VALUE_MODE_OPTIONS.find((m) => m.id === t.value_mode)?.label ?? t.value_mode}
+                        {t.definition?.compose != null
+                          ? "Elastic"
+                          : VALUE_MODE_OPTIONS.find((m) => m.id === t.value_mode)?.label ?? t.value_mode}
                       </span>
                       <span style={{ fontSize: 11, color: "#999", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {t.companies.join(", ") || "—"}
@@ -3115,6 +3434,32 @@ function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement 
                 </button>
               </div>
 
+              {/* Mode toggle: Static matrix vs Elastic (coefficient) */}
+              <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                {[
+                  { on: false, label: "Static matrix" },
+                  { on: true, label: "Elastic (coefficient)" },
+                ].map((m) => {
+                  const active = draft.elastic === m.on;
+                  return (
+                    <button
+                      key={m.label}
+                      type="button"
+                      onClick={() => onToggleElastic(m.on)}
+                      style={{
+                        padding: "7px 16px", borderRadius: 8, cursor: "pointer",
+                        border: active ? `1px solid ${ORANGE}` : "1px solid #e0e0e0",
+                        background: active ? "rgba(255,80,0,0.10)" : "#fff",
+                        color: active ? ORANGE : "#666", fontSize: 12.5, fontWeight: 700,
+                        fontFamily: "Arial, sans-serif",
+                      }}
+                    >
+                      {m.label}
+                    </button>
+                  );
+                })}
+              </div>
+
               {/* Basics */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14, marginBottom: 18 }}>
                 <label style={{ display: "block", gridColumn: "1 / -1" }}>
@@ -3123,22 +3468,24 @@ function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement 
                     type="text"
                     value={draft.title}
                     onChange={(e) => onChangeField("title", e.target.value)}
-                    placeholder="e.g. FCFE yield by Brent scenario"
+                    placeholder={draft.elastic ? "e.g. Target price vs Brent / FX" : "e.g. FCFE yield by Brent scenario"}
                     style={{ ...inputStyle }}
                   />
                 </label>
-                <label style={{ display: "block" }}>
-                  <span style={labelSpan}>Value mode</span>
-                  <select
-                    value={draft.value_mode}
-                    onChange={(e) => onChangeValueMode(e.target.value as SgValueMode)}
-                    style={{ ...inputStyle, cursor: "pointer" }}
-                  >
-                    {VALUE_MODE_OPTIONS.map((o) => (
-                      <option key={o.id} value={o.id}>{o.label}</option>
-                    ))}
-                  </select>
-                </label>
+                {!draft.elastic && (
+                  <label style={{ display: "block" }}>
+                    <span style={labelSpan}>Value mode</span>
+                    <select
+                      value={draft.value_mode}
+                      onChange={(e) => onChangeValueMode(e.target.value as SgValueMode)}
+                      style={{ ...inputStyle, cursor: "pointer" }}
+                    >
+                      {VALUE_MODE_OPTIONS.map((o) => (
+                        <option key={o.id} value={o.id}>{o.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
                 <label style={{ display: "block" }}>
                   <span style={labelSpan}>Display order</span>
                   <input
@@ -3172,60 +3519,67 @@ function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement 
                 </label>
               </div>
 
-              {/* Axis editors */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 16, marginBottom: 18 }}>
-                {renderAxisEditor("row")}
-                {renderAxisEditor("col")}
-              </div>
-
-              {/* Single-company select (only when NEITHER axis is company) */}
-              {neitherAxisCompany && (
-                <label style={{ display: "block", marginBottom: 18, maxWidth: 280 }}>
-                  <span style={labelSpan}>Company (table membership)</span>
-                  <select
-                    value={draft.singleCompany}
-                    onChange={(e) => onChangeSingleCompany(e.target.value)}
-                    style={{ ...inputStyle, cursor: "pointer" }}
-                  >
-                    <option value="">— select a company —</option>
-                    {companyTickers.map((t) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                </label>
-              )}
-
-              {/* Cell matrix / matrices */}
-              <div style={{ paddingTop: 8, borderTop: "1px solid #ececec" }}>
-                {/* Hint banner — makes the derived value_mode transform obvious
-                    at input time (you type the BASE value → dashboard shows …). */}
-                {baseInputMeta && (
-                  <div style={{
-                    display: "flex", alignItems: "flex-start", gap: 10,
-                    margin: "4px 0 14px", padding: "10px 14px", borderRadius: 8,
-                    background: "rgba(255,80,0,0.06)",
-                    border: `1px solid rgba(255,80,0,0.28)`,
-                    borderLeft: `4px solid ${ORANGE}`,
-                  }}>
-                    <span style={{ fontSize: 14, lineHeight: "18px" }} aria-hidden>💡</span>
-                    <span style={{ fontSize: 12, lineHeight: 1.5, color: "#7a3300", fontWeight: 600 }}>
-                      {baseInputMeta.hint}
-                    </span>
+              {draft.elastic ? (
+                /* ── Elastic (coefficient) editor ──────────────────────────── */
+                renderElasticEditor()
+              ) : (
+                <>
+                  {/* Axis editors */}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 16, marginBottom: 18 }}>
+                    {renderAxisEditor("row")}
+                    {renderAxisEditor("col")}
                   </div>
-                )}
-                {renderMatrix(
-                  draft.cells,
-                  onChangeCell,
-                  baseInputMeta?.primaryLabel ?? (draft.metric_label || "Values"),
-                )}
-                {draft.value_mode === "ev_ebitda" &&
-                  renderMatrix(
-                    draft.cellsSecondary,
-                    onChangeCellSecondary,
-                    baseInputMeta?.secondaryLabel ?? "Net Debt (BRL mn)",
+
+                  {/* Single-company select (only when NEITHER axis is company) */}
+                  {neitherAxisCompany && (
+                    <label style={{ display: "block", marginBottom: 18, maxWidth: 280 }}>
+                      <span style={labelSpan}>Company (table membership)</span>
+                      <select
+                        value={draft.singleCompany}
+                        onChange={(e) => onChangeSingleCompany(e.target.value)}
+                        style={{ ...inputStyle, cursor: "pointer" }}
+                      >
+                        <option value="">— select a company —</option>
+                        {companyTickers.map((t) => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                    </label>
                   )}
-                {renderPreviewGrid()}
-              </div>
+
+                  {/* Cell matrix / matrices */}
+                  <div style={{ paddingTop: 8, borderTop: "1px solid #ececec" }}>
+                    {/* Hint banner — makes the derived value_mode transform obvious
+                        at input time (you type the BASE value → dashboard shows …). */}
+                    {baseInputMeta && (
+                      <div style={{
+                        display: "flex", alignItems: "flex-start", gap: 10,
+                        margin: "4px 0 14px", padding: "10px 14px", borderRadius: 8,
+                        background: "rgba(255,80,0,0.06)",
+                        border: `1px solid rgba(255,80,0,0.28)`,
+                        borderLeft: `4px solid ${ORANGE}`,
+                      }}>
+                        <span style={{ fontSize: 14, lineHeight: "18px" }} aria-hidden>💡</span>
+                        <span style={{ fontSize: 12, lineHeight: 1.5, color: "#7a3300", fontWeight: 600 }}>
+                          {baseInputMeta.hint}
+                        </span>
+                      </div>
+                    )}
+                    {renderMatrix(
+                      draft.cells,
+                      onChangeCell,
+                      baseInputMeta?.primaryLabel ?? (draft.metric_label || "Values"),
+                    )}
+                    {draft.value_mode === "ev_ebitda" &&
+                      renderMatrix(
+                        draft.cellsSecondary,
+                        onChangeCellSecondary,
+                        baseInputMeta?.secondaryLabel ?? "Net Debt (BRL mn)",
+                      )}
+                    {renderPreviewGrid()}
+                  </div>
+                </>
+              )}
 
               {/* Validation / save error */}
               {(validationError || saveError) && (

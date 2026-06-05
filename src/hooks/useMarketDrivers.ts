@@ -45,14 +45,19 @@ export interface DriverCatalogEntry {
 }
 
 /**
- * The 4 supported dynamic metrics. Adding a metric here makes it selectable in
- * the admin Source picker and computed below in `computeCatalogValues`.
+ * The 6 supported dynamic metrics (Brent + FX, three forward years each). Adding
+ * a metric here makes it selectable in the admin Source picker and computed below
+ * in `computeCatalogValues`. The 2028 keys were added 2026-06-11 for the elastic
+ * multi-year sensitivity sliders; see `avgBrentForYear` / `avgFxForYear` for how
+ * a year whose forward curve doesn't reach that far falls back to spot-flat.
  */
 export const MARKET_DRIVER_CATALOG: DriverCatalogEntry[] = [
   { key: "avg_brent_2026", label: "Avg Brent 2026", unit: "USD/bbl" },
   { key: "avg_brent_2027", label: "Avg Brent 2027", unit: "USD/bbl" },
+  { key: "avg_brent_2028", label: "Avg Brent 2028", unit: "USD/bbl" },
   { key: "avg_fx_2026", label: "Avg FX (USD/BRL) 2026", unit: "BRL/USD" },
   { key: "avg_fx_2027", label: "Avg FX (USD/BRL) 2027", unit: "BRL/USD" },
+  { key: "avg_fx_2028", label: "Avg FX (USD/BRL) 2028", unit: "BRL/USD" },
 ];
 
 /** Quick lookup: catalog key → entry. */
@@ -168,6 +173,11 @@ function meanNonNull(values: (number | null)[]): number | null {
  *   • current month → month-to-date realized average, else spot;
  *   • future month  → forward-curve price, else spot (the near 1–2 months may not
  *     be in the curve since it starts ~M+2, so they fall back to spot).
+ *
+ * Works for ANY forward year (2026 / 2027 / 2028 …). When the forward curve does
+ * not reach that far out (typical for 2028), every month falls back to `brentSpot`
+ * → the result is a SPOT-FLAT approximation. Null only when there is no spot AND
+ * no realized/forward data at all.
  */
 export function avgBrentForYear(
   year: number,
@@ -199,6 +209,7 @@ export function avgBrentForYear(
  * (SPOT-FLAT approximation — there is no FX forward in the proxy):
  *   • past month            → realized monthly average;
  *   • current/future month  → spot, held flat.
+ * For a fully-future year (2027 / 2028) every month → spot, so the mean = spot.
  */
 export function avgFxForYear(
   year: number,
@@ -237,8 +248,13 @@ export function computeCatalogValues(input: {
   return {
     avg_brent_2026: avgBrentForYear(2026, now, brentHist, curve, brentSpot),
     avg_brent_2027: avgBrentForYear(2027, now, brentHist, curve, brentSpot),
+    // 2028: typically beyond the forward curve → spot-flat fallback inside
+    // avgBrentForYear (every future month resolves to brentSpot).
+    avg_brent_2028: avgBrentForYear(2028, now, brentHist, curve, brentSpot),
     avg_fx_2026: avgFxForYear(2026, now, fxHist, fxSpot),
     avg_fx_2027: avgFxForYear(2027, now, fxHist, fxSpot),
+    // 2028 FX = spot-flat (no FX forward in the proxy), same as 2027.
+    avg_fx_2028: avgFxForYear(2028, now, fxHist, fxSpot),
   };
 }
 
@@ -257,8 +273,10 @@ export interface UseMarketDrivers {
 const EMPTY_VALUES: Record<string, number | null> = {
   avg_brent_2026: null,
   avg_brent_2027: null,
+  avg_brent_2028: null,
   avg_fx_2026: null,
   avg_fx_2027: null,
+  avg_fx_2028: null,
 };
 
 /** Last finite close in a history series (the spot fallback). */

@@ -45,7 +45,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getSupabaseClient } from "@/lib/supabaseClient";
 import { useStockQuote } from "@/hooks/useStockQuote";
-import { useMarketDrivers, resolveDriverValue } from "@/hooks/useMarketDrivers";
+import {
+  useMarketDrivers,
+  resolveDriverValue,
+  MARKET_DRIVER_CATALOG_BY_KEY,
+} from "@/hooks/useMarketDrivers";
 import {
   rpcGetStockGuideComps,
   rpcGetStockGuideConfig,
@@ -58,6 +62,7 @@ import {
   computeSensitivityCellValue,
   formatSensitivityValue,
   unitForValueMode,
+  composeElasticTargetPrice,
 } from "@/lib/stockGuideSensitivity";
 import type {
   StockGuideCompany,
@@ -67,6 +72,7 @@ import type {
   StockGuideDriver,
   SensitivityAxis,
   SensitivityTable,
+  SensitivityComposeBlock,
 } from "@/types/stockGuide";
 
 // ─── Filters ───────────────────────────────────────────────────────────────
@@ -163,6 +169,28 @@ export interface UseStockGuideData {
    */
   resolveDriverAxis: (axis: SensitivityAxis) => ResolvedDriverAxis;
 
+  // ── Elastic (coefficient) sensitivity ──────────────────────────────────────
+  /**
+   * True when a table is ELASTIC (has `definition.compose`). Views switch to the
+   * slider panel for these and keep the static matrix for the rest. Pure.
+   */
+  isElasticTable: (table: SensitivityTable) => boolean;
+  /**
+   * Resolve the FULL live elastic model for a table (sliders with current levels,
+   * available presets, composed rows). Returns null for a non-elastic table or
+   * when no ticker has a base (after the hide-strip). The slider levels come from
+   * the SHARED per-table state, so both Views drag the same sliders. Stable id.
+   */
+  getElasticModel: (table: SensitivityTable) => ElasticTableModel | null;
+  /** Set one slider's level (enters the "Custom" preset). */
+  setElasticDriverLevel: (tableId: number, key: string, level: number) => void;
+  /**
+   * Apply a preset to a table's sliders: "Live" → live market values (fallback
+   * anchor); a scenario name → its `compose.scenarios[name]` levels; "Custom" is
+   * entered implicitly by dragging a slider (callers don't set it directly).
+   */
+  setElasticPreset: (tableId: number, preset: ElasticPreset) => void;
+
   // Desktop-only export — hook owns the busy state.
   exportExcel: () => Promise<void>;
   exportCsv: () => void;
@@ -194,6 +222,66 @@ export interface ResolvedDriverAxis {
    * computed value.
    */
   currentValue: number | null;
+}
+
+// ─── Elastic (coefficient) sensitivity — shared types for the slider panel ─────
+
+/** Driver family in an elastic table (groups the per-year sliders). */
+export type ElasticDriverType = "brent" | "fx" | "other";
+
+/** Selected preset of the elastic panel. */
+export type ElasticPreset = "Live" | "Custom" | string;
+
+/** One slider control (one driver_key) of an elastic table. */
+export interface ElasticSlider {
+  /** Catalog/driver key (e.g. `avg_brent_2026`). Stable id of the slider. */
+  key: string;
+  /** Human label (e.g. "Brent 2026"). */
+  label: string;
+  /** Driver family — Brent / FX / other (for grouping). */
+  type: ElasticDriverType;
+  /** Forward year parsed from the key (e.g. 2026), or null if not year-tagged. */
+  year: number | null;
+  /** Display unit (USD/bbl, BRL/USD …). */
+  unit: string;
+  /** Anchor level the base was measured at. */
+  anchor: number;
+  /** Live market value for this key (catalog), or null. */
+  liveValue: number | null;
+  /** Current slider level (state). */
+  level: number;
+  /** Suggested slider bounds (with slack) + a sane step. */
+  min: number;
+  max: number;
+  step: number;
+}
+
+/** One composed output row of an elastic table (per visible ticker with a base). */
+export interface ElasticCompanyRow {
+  ticker: string;
+  companyName: string;
+  /** Composed target price at the current slider levels (BRL/share). */
+  targetPrice: number | null;
+  /** `targetPrice / livePrice − 1` (ratio). Null unless livePrice > 0. */
+  upside: number | null;
+  /** Base output (BRL/share) at the anchors. */
+  basePrice: number | null;
+  /** Live share price (BRL). */
+  livePrice: number | null;
+}
+
+/** The whole resolved elastic model for one table (sliders + presets + rows). */
+export interface ElasticTableModel {
+  /** Sliders grouped by family in display order (Brent years, then FX years, …). */
+  sliders: ElasticSlider[];
+  /** Available preset names that exist in `compose.scenarios` (+ implicit Live). */
+  presetNames: string[];
+  /** The currently-selected preset (Live | Custom | a scenario name). */
+  preset: ElasticPreset;
+  /** Composed rows for every visible ticker that has a base. */
+  rows: ElasticCompanyRow[];
+  /** The composed output label (e.g. "Target price"). */
+  outputLabel: string;
 }
 
 // ─── Formatting helpers (shared by both Views) ───────────────────────────────
@@ -272,6 +360,77 @@ export function recommendationColors(code: string | null | undefined): {
 /** Footnote describing the volume unit per sector (constant copy). */
 export const VOLUME_UNIT_NOTE =
   "Volumes: oil & gas in kbpd, fuel distribution in thousand m³.";
+
+// ─── Elastic (coefficient) sensitivity helpers (module-level, pure) ────────────
+
+/** A table is ELASTIC when its definition carries a `compose` block. */
+export function tableIsElastic(table: SensitivityTable): boolean {
+  return table.definition?.compose != null;
+}
+
+/** Classify a driver_key into a family + parse its forward year, for grouping. */
+function classifyDriverKey(key: string): {
+  type: ElasticDriverType;
+  year: number | null;
+  label: string;
+  unit: string;
+} {
+  const cat = MARKET_DRIVER_CATALOG_BY_KEY[key];
+  const yearMatch = key.match(/(\d{4})/);
+  const year = yearMatch ? Number(yearMatch[1]) : null;
+  const type: ElasticDriverType = /brent/i.test(key)
+    ? "brent"
+    : /fx|usd|brl/i.test(key)
+      ? "fx"
+      : "other";
+  // Prefer a compact "Brent 2026" / "FX 2026" label over the verbose catalog one.
+  const familyLabel = type === "brent" ? "Brent" : type === "fx" ? "FX" : key;
+  const label =
+    year != null && type !== "other"
+      ? `${familyLabel} ${year}`
+      : cat?.label ?? key;
+  const unit = cat?.unit ?? (type === "brent" ? "USD/bbl" : type === "fx" ? "BRL/USD" : "");
+  return { type, year, label, unit };
+}
+
+/** Stable family order then year-ascending: Brent 2026→2028, then FX, then others. */
+function elasticDriverSortKey(s: { type: ElasticDriverType; year: number | null; key: string }): string {
+  const fam = s.type === "brent" ? "0" : s.type === "fx" ? "1" : "2";
+  const yr = s.year != null ? String(s.year) : "9999";
+  return `${fam}-${yr}-${s.key}`;
+}
+
+/**
+ * Suggested slider bounds for one driver_key: the span of {anchor, live, every
+ * scenario level} padded with ~15% slack (min 1 unit), and a step ≈ span/100
+ * rounded to a tidy value. Guarantees min < max even when everything coincides.
+ */
+function elasticSliderBounds(
+  values: number[],
+): { min: number; max: number; step: number } {
+  const finite = values.filter((v) => Number.isFinite(v));
+  if (finite.length === 0) return { min: 0, max: 100, step: 1 };
+  let lo = Math.min(...finite);
+  let hi = Math.max(...finite);
+  if (lo === hi) {
+    // single point → open a symmetric window around it
+    const pad = Math.max(Math.abs(lo) * 0.2, 1);
+    lo -= pad;
+    hi += pad;
+  } else {
+    const slack = Math.max((hi - lo) * 0.15, 1);
+    lo -= slack;
+    hi += slack;
+  }
+  const span = hi - lo;
+  // tidy step: aim ~100 steps; round to a nice 1/2/5 × 10^n
+  const rawStep = span / 100;
+  const mag = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
+  const norm = rawStep / mag;
+  const niceUnit = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+  const step = Math.max(niceUnit * mag, 0.01);
+  return { min: lo, max: hi, step };
+}
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
@@ -368,6 +527,20 @@ export function useStockGuideData(): UseStockGuideData {
         .map((r) => r.company_name),
     [rows],
   );
+
+  // Ticker → company_name / display_order, over ALL rows the hook can see
+  // (visible to this caller). Used to label + order elastic-table rows.
+  const companyNameByTicker = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of rows) m.set(r.ticker, r.company_name);
+    return m;
+  }, [rows]);
+
+  const displayOrderByTicker = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of rows) m.set(r.ticker, r.display_order);
+    return m;
+  }, [rows]);
 
   const sectorsPresent = useMemo(() => {
     const seen = new Set<StockGuideSector>();
@@ -713,6 +886,205 @@ export function useStockGuideData(): UseStockGuideData {
     [liveByTicker],
   );
 
+  // ── f. Elastic (coefficient) sensitivity — shared slider state ─────────────
+  //
+  // Per-table state: the slider LEVELS (by driver_key) + the selected preset.
+  // Lives in the hook so BOTH Views drag the same sliders. Levels initialize to
+  // the LIVE market value for each driver_key (fallback the anchor) the first
+  // time a table is touched, and re-init from Live once the market values land.
+
+  // Resolve the effective live value for a driver_key from the market catalog.
+  const liveDriverLevel = useCallback(
+    (key: string, anchor: number): number => {
+      const v = marketValues[key];
+      return v != null && Number.isFinite(v) ? v : anchor;
+    },
+    [marketValues],
+  );
+
+  // tableId → { levels: { key: number }, preset }
+  const [elasticState, setElasticState] = useState<
+    Record<number, { levels: Record<string, number>; preset: ElasticPreset }>
+  >({});
+
+  // Build the "Live" levels for a compose block (live value, fallback anchor).
+  const liveLevelsFor = useCallback(
+    (compose: SensitivityComposeBlock): Record<string, number> => {
+      const out: Record<string, number> = {};
+      for (const key of compose.driver_keys ?? []) {
+        const anchor = compose.anchors?.[key] ?? 0;
+        out[key] = liveDriverLevel(key, anchor);
+      }
+      return out;
+    },
+    [liveDriverLevel],
+  );
+
+  // Seed/refresh each elastic table's state once comps + market values are in.
+  // We (re)seed a table to "Live" only while it has no Custom/scenario override
+  // (i.e. it is still tracking Live), so a freshly-arrived market value flows in
+  // without clobbering a user's manual drag.
+  const elasticTables = useMemo(
+    () => sensitivityTables.filter((t) => tableIsElastic(t)),
+    [sensitivityTables],
+  );
+
+  useEffect(() => {
+    if (elasticTables.length === 0) return;
+    setElasticState((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const t of elasticTables) {
+        const compose = t.definition.compose!;
+        const cur = prev[t.id];
+        if (cur == null) {
+          next[t.id] = { levels: liveLevelsFor(compose), preset: "Live" };
+          changed = true;
+        } else if (cur.preset === "Live") {
+          // keep tracking live as market values update
+          const live = liveLevelsFor(compose);
+          // shallow-compare to avoid needless renders
+          const diff = Object.keys(live).some((k) => live[k] !== cur.levels[k]);
+          if (diff) {
+            next[t.id] = { ...cur, levels: live };
+            changed = true;
+          }
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [elasticTables, liveLevelsFor]);
+
+  const isElasticTable = useCallback(
+    (table: SensitivityTable) => tableIsElastic(table),
+    [],
+  );
+
+  const setElasticDriverLevel = useCallback(
+    (tableId: number, key: string, level: number) => {
+      setElasticState((prev) => {
+        const cur = prev[tableId] ?? { levels: {}, preset: "Live" as ElasticPreset };
+        return {
+          ...prev,
+          [tableId]: {
+            levels: { ...cur.levels, [key]: level },
+            preset: "Custom",
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  const setElasticPreset = useCallback(
+    (tableId: number, preset: ElasticPreset) => {
+      const table = elasticTables.find((t) => t.id === tableId);
+      if (!table) return;
+      const compose = table.definition.compose!;
+      setElasticState((prev) => {
+        if (preset === "Live") {
+          return {
+            ...prev,
+            [tableId]: { levels: liveLevelsFor(compose), preset: "Live" },
+          };
+        }
+        // a named scenario → its levels (fallback anchor for any missing key)
+        const scenarioLevels = compose.scenarios?.[preset] ?? {};
+        const levels: Record<string, number> = {};
+        for (const key of compose.driver_keys ?? []) {
+          const anchor = compose.anchors?.[key] ?? 0;
+          const v = scenarioLevels[key];
+          levels[key] = v != null && Number.isFinite(v) ? v : anchor;
+        }
+        return { ...prev, [tableId]: { levels, preset } };
+      });
+    },
+    [elasticTables, liveLevelsFor],
+  );
+
+  const getElasticModel = useCallback(
+    (table: SensitivityTable): ElasticTableModel | null => {
+      const compose = table.definition.compose;
+      if (compose == null) return null;
+
+      const state = elasticState[table.id];
+      // levels: prefer state; fallback to live (handles the first render before
+      // the seeding effect runs).
+      const levels: Record<string, number> =
+        state?.levels ?? liveLevelsFor(compose);
+      const preset: ElasticPreset = state?.preset ?? "Live";
+
+      // Sliders, one per driver_key, sorted Brent→FX→other then year ascending.
+      const sliders: ElasticSlider[] = (compose.driver_keys ?? []).map((key) => {
+        const { type, year, label, unit } = classifyDriverKey(key);
+        const anchor = compose.anchors?.[key] ?? 0;
+        const liveValue = marketValues[key];
+        const live = liveValue != null && Number.isFinite(liveValue) ? liveValue : null;
+        // collect every reference value for the slider bounds
+        const refs: number[] = [anchor];
+        if (live != null) refs.push(live);
+        for (const sc of Object.values(compose.scenarios ?? {})) {
+          const v = sc[key];
+          if (v != null && Number.isFinite(v)) refs.push(v);
+        }
+        const level = levels[key] ?? anchor;
+        refs.push(level);
+        const { min, max, step } = elasticSliderBounds(refs);
+        return { key, label, type, year, unit, anchor, liveValue: live, level, min, max, step };
+      });
+      sliders.sort((a, b) =>
+        elasticDriverSortKey(a).localeCompare(elasticDriverSortKey(b)),
+      );
+
+      const presetNames = Object.keys(compose.scenarios ?? {});
+
+      // Composed rows: ONLY tickers present in compose.base (hide-strip rule).
+      const rows: ElasticCompanyRow[] = [];
+      for (const ticker of Object.keys(compose.base ?? {})) {
+        const targetPrice = composeElasticTargetPrice(ticker, levels, compose);
+        const live = liveByTicker.get(ticker);
+        const livePrice = live?.livePrice ?? null;
+        const basePrice =
+          compose.base[ticker] != null && Number.isFinite(compose.base[ticker])
+            ? compose.base[ticker]
+            : null;
+        const upside =
+          targetPrice != null && livePrice != null && livePrice > 0
+            ? targetPrice / livePrice - 1
+            : null;
+        rows.push({
+          ticker,
+          companyName: companyNameByTicker.get(ticker) ?? ticker,
+          targetPrice,
+          upside,
+          basePrice,
+          livePrice,
+        });
+      }
+      // order rows by the company display order when known
+      rows.sort(
+        (a, b) =>
+          (displayOrderByTicker.get(a.ticker) ?? 0) -
+          (displayOrderByTicker.get(b.ticker) ?? 0),
+      );
+
+      const outputLabel =
+        compose.output === "target_price" || !compose.output
+          ? "Target price"
+          : compose.output;
+
+      return { sliders, presetNames, preset, rows, outputLabel };
+    },
+    [
+      elasticState,
+      marketValues,
+      liveByTicker,
+      liveLevelsFor,
+      companyNameByTicker,
+      displayOrderByTicker,
+    ],
+  );
+
   // ── g. Desktop-only export of the computed visible table ──────────────────
   const exportExcel = useCallback(async () => {
     if (computedRows.length === 0) return;
@@ -824,6 +1196,10 @@ export function useStockGuideData(): UseStockGuideData {
     selectedTables,
     computeSensitivityCell,
     resolveDriverAxis,
+    isElasticTable,
+    getElasticModel,
+    setElasticDriverLevel,
+    setElasticPreset,
     exportExcel,
     exportCsv,
     excelLoading,

@@ -21,7 +21,10 @@
 // Each cell's company resolves its OWN live price + market cap; the caller
 // passes those in. All guards mirror the original dashboard logic exactly.
 
-import type { SensitivityTable } from "@/types/stockGuide";
+import type {
+  SensitivityTable,
+  SensitivityComposeBlock,
+} from "@/types/stockGuide";
 
 export type SensitivityValueMode = SensitivityTable["value_mode"];
 
@@ -186,4 +189,67 @@ export function baseInputMeta(
         hint: "Cells display exactly as typed.",
       };
   }
+}
+
+// ─── Elastic (coefficient) compose ─────────────────────────────────────────────
+//
+// An ELASTIC sensitivity table composes an OUTPUT (target price, BRL/share) live
+// in the browser from analyst-provided slopes against one or more macro drivers.
+// The analyst drives continuous multi-year sliders (Brent / FX 2026-2028) and the
+// target price + upside re-price instantly. The math is a first-order linear
+// composition (a Taylor expansion around the anchors):
+//
+//   TP[c] = base[c] + Σ_k by_company[c][k] × (level[k] − anchors[k])
+//
+// where for each driver_key `k`:
+//   • level[k]   = the current slider / preset / live value,
+//   • anchors[k] = the driver level at which base[c] was measured,
+//   • by_company[c][k] = the slope Δ(output) per +1 unit of driver `k`.
+//
+// This is the single source of truth, reused by BOTH the /stock-guide dashboard
+// brain and the admin builder's live preview.
+
+/**
+ * Compose the elastic OUTPUT (target price, BRL/share) for one ticker at the
+ * given driver levels.
+ *
+ * Returns `null` when the ticker is NOT in `compose.base` — that is the hide-strip
+ * contract: a restricted ticker is removed from `base` (and `by_company`)
+ * server-side for non-admins, and a ticker with no base cannot be composed, so it
+ * must NOT be rendered.
+ *
+ * Driver keys absent from `by_company[ticker]` contribute a zero slope (they
+ * simply don't move the output). A missing `level[k]` falls back to the anchor
+ * (so an unset/unknown slider leaves the output at the base value for that key).
+ * Non-finite values are ignored (treated as no contribution) so the result is
+ * never `NaN` — callers render "—" on `null`.
+ */
+export function composeElasticTargetPrice(
+  ticker: string,
+  driverLevels: Record<string, number | null | undefined>,
+  compose: SensitivityComposeBlock,
+): number | null {
+  const base = compose.base?.[ticker];
+  if (base == null || !Number.isFinite(base)) return null;
+
+  const slopes = compose.by_company?.[ticker] ?? {};
+  const anchors = compose.anchors ?? {};
+  // Iterate the table's declared driver_keys (the slope map may carry extras).
+  const keys =
+    Array.isArray(compose.driver_keys) && compose.driver_keys.length > 0
+      ? compose.driver_keys
+      : Object.keys(slopes);
+
+  let out = base;
+  for (const k of keys) {
+    const slope = slopes[k];
+    if (slope == null || !Number.isFinite(slope)) continue; // no sensitivity to k
+    const anchor = anchors[k];
+    if (anchor == null || !Number.isFinite(anchor)) continue; // can't measure Δ
+    const rawLevel = driverLevels[k];
+    const level =
+      rawLevel != null && Number.isFinite(rawLevel) ? rawLevel : anchor;
+    out += slope * (level - anchor);
+  }
+  return Number.isFinite(out) ? out : null;
 }

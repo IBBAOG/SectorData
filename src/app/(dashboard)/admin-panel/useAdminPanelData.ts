@@ -27,6 +27,7 @@ import { useRoleGuard } from "../../../hooks/useRoleGuard";
 import {
   useMarketDrivers,
   resolveDriverValue,
+  MARKET_DRIVER_CATALOG,
   MARKET_DRIVER_CATALOG_BY_KEY,
   isDynamicSource,
   type DriverCatalogEntry,
@@ -261,10 +262,34 @@ export interface SgAxisDraft {
 }
 
 /**
+ * Editable mirror of the ELASTIC `compose` block. All numeric inputs are held as
+ * strings while typing; coerced at save time. The slope grid is companies ×
+ * driverKeys; `anchors`/`base` are per-key / per-company. Scenarios are named
+ * level maps (preset → driverKey → level). Serialized into `definition.compose`.
+ */
+export interface SgComposeDraft {
+  /** Composed output (currently always 'target_price'). */
+  output: string;
+  /** Selected driver_keys (catalog keys — Brent/FX 2026-2028, etc.). */
+  driverKeys: string[];
+  /** Anchor level per driver_key (string while typing). */
+  anchors: Record<string, string>;
+  /** Base output (BRL/share) per ticker (string while typing). */
+  base: Record<string, string>;
+  /** Slope per ticker × driver_key (string while typing). */
+  byCompany: Record<string, Record<string, string>>;
+  /** Named scenarios → driver_key → level (string while typing). */
+  scenarios: { name: string; levels: Record<string, string> }[];
+}
+
+/**
  * Full builder draft for one sensitivity table. `id === null` → new table.
  * `cells` / `cellsSecondary` are string matrices (one entry per axis item) so
  * inputs can hold partial values; they are coerced to `number | null` only at
  * save time.
+ *
+ * When `elastic === true`, the static matrix/axes are ignored and the table is
+ * an ELASTIC (coefficient) table built from `compose` (see `SgComposeDraft`).
  */
 export interface SgTableDraft {
   id: number | null;
@@ -281,6 +306,10 @@ export interface SgTableDraft {
   cells: string[][];
   /** ONLY for value_mode 'ev_ebitda' — the matching net-debt matrix. */
   cellsSecondary: string[][];
+  /** ELASTIC mode flag — when true, `compose` drives the table (not the matrix). */
+  elastic: boolean;
+  /** ELASTIC compose draft (companies × driver_keys slopes + anchors + base). */
+  compose: SgComposeDraft;
 }
 
 /** A pristine driver "Add" row (id null). Defaults to STATIC (`source=''`). */
@@ -300,6 +329,18 @@ function blankAxisDraft(): SgAxisDraft {
   return { kind: "company", driverId: "", scenarios: [], companies: [], years: [] };
 }
 
+/** A pristine ELASTIC compose draft (target-price output, nothing selected). */
+function blankComposeDraft(): SgComposeDraft {
+  return {
+    output: "target_price",
+    driverKeys: [],
+    anchors: {},
+    base: {},
+    byCompany: {},
+    scenarios: [],
+  };
+}
+
 /** A pristine table builder draft (a brand-new, empty table). */
 function blankTableDraft(): SgTableDraft {
   return {
@@ -314,6 +355,35 @@ function blankTableDraft(): SgTableDraft {
     singleCompany: "",
     cells: [],
     cellsSecondary: [],
+    elastic: false,
+    compose: blankComposeDraft(),
+  };
+}
+
+/** Project a real `SensitivityComposeBlock` into an editable compose draft. */
+function composeToDraft(
+  c: NonNullable<SensitivityTableAdmin["definition"]["compose"]>,
+): SgComposeDraft {
+  const numMapToStr = (m: Record<string, number> | undefined): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(m ?? {})) out[k] = String(v);
+    return out;
+  };
+  const byCompany: Record<string, Record<string, string>> = {};
+  for (const [ticker, slopes] of Object.entries(c.by_company ?? {})) {
+    byCompany[ticker] = numMapToStr(slopes);
+  }
+  const scenarios = Object.entries(c.scenarios ?? {}).map(([name, levels]) => ({
+    name,
+    levels: numMapToStr(levels),
+  }));
+  return {
+    output: c.output || "target_price",
+    driverKeys: Array.isArray(c.driver_keys) ? [...c.driver_keys] : [],
+    anchors: numMapToStr(c.anchors),
+    base: numMapToStr(c.base),
+    byCompany,
+    scenarios,
   };
 }
 
@@ -410,6 +480,7 @@ function tableAdminToDraft(t: SensitivityTableAdmin): SgTableDraft {
     rowAxis.kind !== "company" && colAxis.kind !== "company"
       ? t.companies[0] ?? ""
       : "";
+  const composeBlock = t.definition.compose;
   return {
     id: t.id,
     title: t.title,
@@ -425,14 +496,20 @@ function tableAdminToDraft(t: SensitivityTableAdmin): SgTableDraft {
       t.value_mode === "ev_ebitda"
         ? resizeStrMatrix(numMatrixToStr(t.definition.cells_secondary), rows, cols)
         : [],
+    elastic: composeBlock != null,
+    compose: composeBlock != null ? composeToDraft(composeBlock) : blankComposeDraft(),
   };
 }
 
 /**
- * Derive the table-membership `companies[]` from the draft: the company axis's
- * tickers if either axis is 'company', else the single-company select.
+ * Derive the table-membership `companies[]` from the draft. For an ELASTIC table
+ * it is the set of tickers that have a base (the rows that re-price); for a
+ * static table it is the company axis's tickers (or the single-company select).
  */
 function deriveTableCompanies(d: SgTableDraft): string[] {
+  if (d.elastic) {
+    return Object.keys(d.compose.base).filter((t) => d.compose.base[t]?.trim() !== "");
+  }
   if (d.rowAxis.kind === "company") return [...d.rowAxis.companies];
   if (d.colAxis.kind === "company") return [...d.colAxis.companies];
   return d.singleCompany ? [d.singleCompany] : [];
@@ -805,6 +882,32 @@ export interface UseAdminPanelData {
     value: string,
   ) => void;
   handleChangeSgTableValueMode: (mode: SgValueMode) => void;
+
+  // ── Elastic (coefficient) table builder ─────────────────────────────────────
+  /** The market-driver catalog (Brent/FX 2026-2028) for the driver_key picker. */
+  sgElasticDriverCatalog: DriverCatalogEntry[];
+  /** Toggle ELASTIC mode for the current draft. */
+  handleToggleSgElastic: (on: boolean) => void;
+  /** Set the compose output label/key (currently always 'target_price'). */
+  handleChangeSgComposeOutput: (output: string) => void;
+  /** Add/remove a driver_key from the elastic compose (checkbox). */
+  handleToggleSgComposeDriverKey: (key: string) => void;
+  /** Add/remove a ticker from the elastic table (base + slope rows). */
+  handleToggleSgComposeCompany: (ticker: string) => void;
+  /** Set the anchor for a driver_key. */
+  handleChangeSgComposeAnchor: (key: string, value: string) => void;
+  /** Set a company's base output (BRL/share). */
+  handleChangeSgComposeBase: (ticker: string, value: string) => void;
+  /** Set a slope cell (ticker × driver_key). */
+  handleChangeSgComposeSlope: (ticker: string, key: string, value: string) => void;
+  /** Add a named scenario (Base/Bull/Bear …). */
+  handleAddSgComposeScenario: () => void;
+  /** Rename a scenario. */
+  handleRenameSgComposeScenario: (idx: number, name: string) => void;
+  /** Set a scenario's level for one driver_key. */
+  handleChangeSgComposeScenarioLevel: (idx: number, key: string, value: string) => void;
+  /** Remove a scenario. */
+  handleRemoveSgComposeScenario: (idx: number) => void;
   handleChangeSgTableSingleCompany: (ticker: string) => void;
   handleChangeSgAxisKind: (axis: "row" | "col", kind: SensitivityAxis["kind"]) => void;
   handleChangeSgAxisDriver: (axis: "row" | "col", driverId: string) => void;
@@ -2213,6 +2316,147 @@ export function useAdminPanelData(): UseAdminPanelData {
     [syncDraftMatrices],
   );
 
+  // ── Elastic (coefficient) table handlers ────────────────────────────────────
+  const handleToggleSgElastic = useCallback((on: boolean) => {
+    setSgTableDraft((d) => {
+      if (!d) return d;
+      // Elastic tables compose the target price → force value_mode 'upside' so the
+      // Upside column derives from the live price (the dashboard composes the TP).
+      return { ...d, elastic: on, value_mode: on ? "upside" : d.value_mode };
+    });
+  }, []);
+
+  const handleChangeSgComposeOutput = useCallback((output: string) => {
+    setSgTableDraft((d) =>
+      d ? { ...d, compose: { ...d.compose, output } } : d,
+    );
+  }, []);
+
+  const handleToggleSgComposeDriverKey = useCallback((key: string) => {
+    setSgTableDraft((d) => {
+      if (!d) return d;
+      const has = d.compose.driverKeys.includes(key);
+      const driverKeys = has
+        ? d.compose.driverKeys.filter((k) => k !== key)
+        : [...d.compose.driverKeys, key];
+      // Default the anchor to the catalog metric is not known here, so leave blank;
+      // dropping a key clears its anchor + every slope/scenario entry for it.
+      const anchors = { ...d.compose.anchors };
+      const byCompany: Record<string, Record<string, string>> = {};
+      for (const [t, slopes] of Object.entries(d.compose.byCompany)) {
+        const s = { ...slopes };
+        if (has) delete s[key];
+        byCompany[t] = s;
+      }
+      if (has) delete anchors[key];
+      const scenarios = d.compose.scenarios.map((sc) => {
+        const levels = { ...sc.levels };
+        if (has) delete levels[key];
+        return { ...sc, levels };
+      });
+      return { ...d, compose: { ...d.compose, driverKeys, anchors, byCompany, scenarios } };
+    });
+  }, []);
+
+  const handleToggleSgComposeCompany = useCallback((ticker: string) => {
+    setSgTableDraft((d) => {
+      if (!d) return d;
+      const has = ticker in d.compose.base;
+      const base = { ...d.compose.base };
+      const byCompany = { ...d.compose.byCompany };
+      if (has) {
+        delete base[ticker];
+        delete byCompany[ticker];
+      } else {
+        base[ticker] = "";
+        byCompany[ticker] = {};
+      }
+      return { ...d, compose: { ...d.compose, base, byCompany } };
+    });
+  }, []);
+
+  const handleChangeSgComposeAnchor = useCallback((key: string, value: string) => {
+    setSgTableDraft((d) =>
+      d ? { ...d, compose: { ...d.compose, anchors: { ...d.compose.anchors, [key]: value } } } : d,
+    );
+  }, []);
+
+  const handleChangeSgComposeBase = useCallback((ticker: string, value: string) => {
+    setSgTableDraft((d) =>
+      d ? { ...d, compose: { ...d.compose, base: { ...d.compose.base, [ticker]: value } } } : d,
+    );
+  }, []);
+
+  const handleChangeSgComposeSlope = useCallback(
+    (ticker: string, key: string, value: string) => {
+      setSgTableDraft((d) => {
+        if (!d) return d;
+        const row = { ...(d.compose.byCompany[ticker] ?? {}), [key]: value };
+        return {
+          ...d,
+          compose: { ...d.compose, byCompany: { ...d.compose.byCompany, [ticker]: row } },
+        };
+      });
+    },
+    [],
+  );
+
+  const handleAddSgComposeScenario = useCallback(() => {
+    setSgTableDraft((d) => {
+      if (!d) return d;
+      const n = d.compose.scenarios.length;
+      const name = n === 0 ? "Base" : n === 1 ? "Bull" : n === 2 ? "Bear" : `Scenario ${n + 1}`;
+      return {
+        ...d,
+        compose: { ...d.compose, scenarios: [...d.compose.scenarios, { name, levels: {} }] },
+      };
+    });
+  }, []);
+
+  const handleRenameSgComposeScenario = useCallback((idx: number, name: string) => {
+    setSgTableDraft((d) => {
+      if (!d) return d;
+      return {
+        ...d,
+        compose: {
+          ...d.compose,
+          scenarios: d.compose.scenarios.map((sc, i) => (i === idx ? { ...sc, name } : sc)),
+        },
+      };
+    });
+  }, []);
+
+  const handleChangeSgComposeScenarioLevel = useCallback(
+    (idx: number, key: string, value: string) => {
+      setSgTableDraft((d) => {
+        if (!d) return d;
+        return {
+          ...d,
+          compose: {
+            ...d.compose,
+            scenarios: d.compose.scenarios.map((sc, i) =>
+              i === idx ? { ...sc, levels: { ...sc.levels, [key]: value } } : sc,
+            ),
+          },
+        };
+      });
+    },
+    [],
+  );
+
+  const handleRemoveSgComposeScenario = useCallback((idx: number) => {
+    setSgTableDraft((d) => {
+      if (!d) return d;
+      return {
+        ...d,
+        compose: {
+          ...d.compose,
+          scenarios: d.compose.scenarios.filter((_, i) => i !== idx),
+        },
+      };
+    });
+  }, []);
+
   const handleChangeSgTableSingleCompany = useCallback((ticker: string) => {
     setSgTableDraft((d) => (d ? { ...d, singleCompany: ticker } : d));
   }, []);
@@ -2336,6 +2580,42 @@ export function useAdminPanelData(): UseAdminPanelData {
     const d = sgTableDraft;
     if (!d) return null;
     if (!d.title.trim()) return "Title is required.";
+
+    // ── ELASTIC (coefficient) validation ──────────────────────────────────────
+    if (d.elastic) {
+      const c = d.compose;
+      if (c.driverKeys.length === 0)
+        return "Select at least one driver (Brent / FX year) for the elastic table.";
+      const companies = Object.keys(c.base);
+      if (companies.length === 0)
+        return "Select at least one company to re-price.";
+      // Every selected driver_key needs a numeric anchor.
+      for (const k of c.driverKeys) {
+        if (strToNum(c.anchors[k] ?? "") == null)
+          return `Set a numeric anchor for ${MARKET_DRIVER_CATALOG_BY_KEY[k]?.label ?? k}.`;
+      }
+      // Every selected company needs a numeric base + every slope cell numeric.
+      for (const t of companies) {
+        if (strToNum(c.base[t] ?? "") == null)
+          return `Set a numeric base target price for ${t}.`;
+        const slopes = c.byCompany[t] ?? {};
+        for (const k of c.driverKeys) {
+          if (strToNum(slopes[k] ?? "") == null)
+            return `Set a numeric slope for ${t} × ${MARKET_DRIVER_CATALOG_BY_KEY[k]?.label ?? k}.`;
+        }
+      }
+      // Named scenarios: name required; levels numeric where set.
+      for (const sc of c.scenarios) {
+        if (!sc.name.trim()) return "Every scenario needs a name.";
+        for (const k of c.driverKeys) {
+          const v = sc.levels[k];
+          if (v != null && v.trim() !== "" && strToNum(v) == null)
+            return `Scenario «${sc.name}» has a non-numeric level for ${MARKET_DRIVER_CATALOG_BY_KEY[k]?.label ?? k}.`;
+        }
+      }
+      return null;
+    }
+
     if (d.rowAxis.kind === "company" && d.colAxis.kind === "company")
       return "Both axes cannot be Company — at least one axis must be a Driver or Year.";
     const rows = axisItemCount(d.rowAxis);
@@ -2513,13 +2793,65 @@ export function useAdminPanelData(): UseAdminPanelData {
     setSgTableSaveError(null);
     try {
       const d = sgTableDraft;
-      const definition: Record<string, unknown> = {
-        row_axis: draftToAxis(d.rowAxis),
-        col_axis: draftToAxis(d.colAxis),
-        cells: strMatrixToNum(d.cells),
-      };
-      if (d.value_mode === "ev_ebitda") {
-        definition.cells_secondary = strMatrixToNum(d.cellsSecondary);
+      let definition: Record<string, unknown>;
+      if (d.elastic) {
+        // ELASTIC: serialize the compose block. The row/col axes + cells are
+        // irrelevant for an elastic table, but the server expects an object; we
+        // emit minimal placeholder axes/cells so older readers don't choke.
+        const c = d.compose;
+        const anchors: Record<string, number> = {};
+        for (const k of c.driverKeys) {
+          const n = strToNum(c.anchors[k] ?? "");
+          if (n != null) anchors[k] = n;
+        }
+        const base: Record<string, number> = {};
+        const by_company: Record<string, Record<string, number>> = {};
+        for (const t of Object.keys(c.base)) {
+          const bn = strToNum(c.base[t] ?? "");
+          if (bn == null) continue;
+          base[t] = bn;
+          const slopes: Record<string, number> = {};
+          for (const k of c.driverKeys) {
+            const sn = strToNum(c.byCompany[t]?.[k] ?? "");
+            if (sn != null) slopes[k] = sn;
+          }
+          by_company[t] = slopes;
+        }
+        const compose: Record<string, unknown> = {
+          output: c.output || "target_price",
+          driver_keys: [...c.driverKeys],
+          anchors,
+          base,
+          by_company,
+        };
+        if (c.scenarios.length > 0) {
+          const scenarios: Record<string, Record<string, number>> = {};
+          for (const sc of c.scenarios) {
+            const levels: Record<string, number> = {};
+            for (const k of c.driverKeys) {
+              const ln = strToNum(sc.levels[k] ?? "");
+              if (ln != null) levels[k] = ln;
+            }
+            scenarios[sc.name.trim()] = levels;
+          }
+          compose.scenarios = scenarios;
+        }
+        definition = {
+          // placeholder axes so the row is structurally a valid sensitivity def
+          row_axis: { kind: "company", companies: Object.keys(base) },
+          col_axis: { kind: "year", years: ["y1"] },
+          cells: [],
+          compose,
+        };
+      } else {
+        definition = {
+          row_axis: draftToAxis(d.rowAxis),
+          col_axis: draftToAxis(d.colAxis),
+          cells: strMatrixToNum(d.cells),
+        };
+        if (d.value_mode === "ev_ebitda") {
+          definition.cells_secondary = strMatrixToNum(d.cellsSecondary);
+        }
       }
       const newId = await rpcAdminUpsertStockGuideSensitivityTable(supabase, d.id, {
         title: d.title.trim(),
@@ -2777,6 +3109,19 @@ export function useAdminPanelData(): UseAdminPanelData {
     handleRemoveSgAxisScenario,
     handleChangeSgTableCell,
     handleChangeSgTableCellSecondary,
+    // elastic
+    sgElasticDriverCatalog: MARKET_DRIVER_CATALOG,
+    handleToggleSgElastic,
+    handleChangeSgComposeOutput,
+    handleToggleSgComposeDriverKey,
+    handleToggleSgComposeCompany,
+    handleChangeSgComposeAnchor,
+    handleChangeSgComposeBase,
+    handleChangeSgComposeSlope,
+    handleAddSgComposeScenario,
+    handleRenameSgComposeScenario,
+    handleChangeSgComposeScenarioLevel,
+    handleRemoveSgComposeScenario,
     handleSaveSgTable,
     handleDeleteSgTable,
     handleConfirmDeleteSgTable,
