@@ -1,0 +1,92 @@
+name: Diesel/Gasoline Margins — Sync (CEPEA + ANP production → recompute)
+
+# Weekly automation of /diesel-gasoline-margins. Runs the two source scrapers
+# (CEPEA anhydrous ethanol + ANP refined-product production), then refreshes the
+# d_g_margins table from ALL sources via public.recompute_dg_margins().
+#
+# Scheduled Tuesday 15:00 UTC (12:00 BRT) — AFTER the ANP price ETLs land:
+#   - etl_anp_precos.yml      Mon 12:00 UTC (anp_precos_produtores, anp_glp)
+#   - etl_anp_lpc.yml         Wed 14:30 UTC (anp_lpc)  -- runs after us, but the
+#                             margins recompute reads last-published anp_lpc; the
+#                             weekly pump price changes slowly, so Tue is fine and
+#                             gets the fresh Monday producer prices.
+#   - etl_anp_precos_distribuicao.yml  Tue 14:30 UTC — we run 30 min later.
+#
+# Secrets used (already registered): SUPABASE_URL, SUPABASE_SERVICE_KEY.
+
+on:
+  schedule:
+    - cron: '0 15 * * 2'   # weekly Tuesday 15:00 UTC (12:00 BRT)
+  workflow_dispatch:        # manual trigger from the GitHub UI
+
+concurrency:
+  group: etl-dg-margins
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # ── 1) CEPEA/ESALQ anhydrous-ethanol weekly indicator ──────────────────
+      - name: Sync CEPEA anhydrous ethanol → cepea_etanol_anidro
+        id: cepea
+        if: always()
+        run: python scripts/pipelines/cepea/cepea_etanol_anidro_sync.py
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      # ── 2) ANP refined-product national monthly production ─────────────────
+      - name: Sync ANP refined-product production → anp_producao_derivados
+        id: producao
+        if: always()
+        run: python scripts/pipelines/anp/producao/anp_producao_derivados_sync.py
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      # ── 3) Recompute d_g_margins from all sources ──────────────────────────
+      # SECURITY DEFINER RPC granted to service_role; UPSERTs d_g_margins on
+      # (fuel_type, week). Runs only if at least one source sync succeeded, so a
+      # transient source outage does not skip a margins refresh on the other.
+      - name: Recompute d_g_margins (recompute_dg_margins)
+        id: recompute
+        if: steps.cepea.conclusion == 'success' || steps.producao.conclusion == 'success'
+        run: |
+          python - <<'PY'
+          import os, sys
+          from supabase import create_client
+          sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
+          # No bounds => recompute the full timeline (the function defaults both
+          # params to NULL, which it interprets as "all weeks").
+          res = sb.rpc("recompute_dg_margins", {}).execute()
+          print(f"recompute_dg_margins() -> {res.data!r}")
+          PY
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      # ── Client Alerts hook — d_g_margins gained new data ───────────────────
+      # Non-critical side-effect: never fail the data pipeline on a send error.
+      - name: Client Alerts — notify subscribers (d_g_margins)
+        continue-on-error: true
+        if: steps.recompute.conclusion == 'success'
+        run: python -m scripts.client_alerts.run_base --source d_g_margins
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY:      ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GMAIL_ADDRESS:      ${{ vars.GMAIL_ADDRESS || 'ibbaogproject@gmail.com' }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERTS_SENDER_EMAIL: ${{ vars.ALERTS_SENDER_EMAIL || 'SectorData Alerts <ibbaogproject@gmail.com>' }}
+          ALERTS_FRONTEND_URL: ${{ vars.ALERTS_FRONTEND_URL || 'https://oilandgasdata.vercel.app' }}

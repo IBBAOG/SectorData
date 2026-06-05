@@ -683,6 +683,19 @@ export default function DesktopView(): React.ReactElement {
                       </div>
                     </div>
                   </div>
+
+                  {/* Source attribution — CEPEA/ESALQ credit required (CC BY-NC) */}
+                  <div
+                    style={{
+                      fontFamily: "Arial",
+                      fontSize: 11,
+                      color: "#999",
+                      padding: "2px 4px 12px",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    Sources: ANP · CEPEA/ESALQ · CONFAZ — automated weekly composition
+                  </div>
                 </>
               )}
             </div>

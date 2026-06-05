@@ -6,16 +6,15 @@ Dados que o CEO mantém **manualmente** em arquivos Excel/CSV no disco, e os scr
 
 ```
 data/
-  d_g_margins.xlsx              Margens diesel/gasolina (atualização semanal)
-  d_g_margins_backup.xlsx       Backup anterior do d_g_margins
   price_bands.xlsx              Bandas de preço (paridade import/export, Petrobras)
   field_stakes_brasil.xlsx      Stakes (working interest) por campo × empresa — ANP Anuário 2025 (seed inicial)
   Liquidos_Vendas_Atual.csv     Vendas líquidos (snapshot)
 
-scripts/manual/dg_margins_upload.py     Upload de d_g_margins → Supabase
 scripts/manual/price_bands_upload.py    Upload de price_bands → Supabase
 scripts/manual/field_stakes_upload.py   Upload (seed) de field_stakes → Supabase
 ```
+
+> **`d_g_margins` saiu deste departamento em 2026-06-05.** Deixou de ser Excel manual (`data/d_g_margins.xlsx` + `scripts/manual/dg_margins_upload.py` + `manual_dg_margins.yml`, todos retirados) e passou a ser **computado automaticamente** pelo `etl_dg_margins.yml` (dono `worker_etl-pipelines`). Ver [`docs/app/diesel-gasoline-margins.md`](../app/diesel-gasoline-margins.md) e [`docs/etl-pipelines/PRD.md`](../etl-pipelines/PRD.md).
 
 ## Tabelas-alvo no Supabase
 
@@ -23,7 +22,6 @@ Schema é dono do APP. Aqui só listamos o contrato esperado.
 
 | Arquivo | Tabela | Chave de upsert |
 |---|---|---|
-| `data/d_g_margins.xlsx` | `d_g_margins` | `(fuel_type, week)` |
 | `data/price_bands.xlsx` | `price_bands` | `(date, product)` |
 | `data/field_stakes_brasil.xlsx` | `field_stakes` | `(campo, empresa)` (one-shot seed; edits via Admin Panel) |
 | `data/Liquidos_Vendas_Atual.csv` | (verificar uso atual) | — |
@@ -34,7 +32,7 @@ Schema é dono do APP. Aqui só listamos o contrato esperado.
 1. CEO abre Excel em data/
 2. CEO edita/adiciona linhas
 3. CEO salva
-4. Upload roda (manual local OU GitHub Action manual_dg_margins.yml semanal)
+4. Upload roda manualmente (rodar localmente o script de upload da fonte)
 5. Script lê Excel → valida schema → upsert in Supabase
 ```
 
@@ -62,14 +60,12 @@ O script `price_bands_upload.py` ignora silenciosamente as 2 colunas obsoletas c
 1. **Excel é fonte da verdade enquanto não estiver no Supabase.** Não delete arquivos `data/*.xlsx` mesmo que pareçam obsoletos — pode haver linhas não upadas.
 2. **Schema do Excel deve casar com schema da tabela.** Antes de mudar header de coluna no Excel, atualize o mapeamento no script de upload.
 3. **Upsert por chave de negócio** — sempre `ON CONFLICT (chave) DO UPDATE`, nunca `INSERT` cego.
-4. **Backup antes de upload destrutivo.** Para `d_g_margins`, manter `d_g_margins_backup.xlsx`.
+4. **Backup antes de upload destrutivo.** Manter um backup do Excel antes de sobrescrever (ex.: `price_bands_backup.xlsx`).
 5. **Dry run quando schema mudou.** Antes de upload de produção pós-mudança de coluna, ler Excel e validar (tipos, NULLs, duplicatas na chave).
 
 ## Workflow GitHub Action
 
-| Workflow | Schedule | Script |
-|---|---|---|
-| `.github/workflows/manual_dg_margins.yml` | Semanal (segunda) | `scripts/manual/dg_margins_upload.py` |
+Nenhum workflow de upload manual ativo neste departamento. O `manual_dg_margins.yml` foi **retirado em 2026-06-05** (D&G Margins automation).
 
 `price_bands` hoje é upload manual (rodar `python scripts/manual/price_bands_upload.py` localmente). Verificar se faz sentido criar workflow.
 
@@ -223,5 +219,5 @@ CLIPPING_COOKIES_DIR=C:\caminho\alternativo node scripts/manual/upload_clipping_
 ## Contratos com outros departamentos
 
 - **APP** é dono do schema das tabelas-alvo. Mudança de schema vai via APP. Você só consome.
-- **ETL** não toca em `data/` nem nos scripts de upload manual. (Por design.)
-- **Alertas** podem monitorar `d_g_margins` ou `price_bands`. Verifique antes de remover/renomear coluna.
+- **ETL** não toca em `data/` nem nos scripts de upload manual. (Por design.) Exceção: `d_g_margins` migrou para o ETL em 2026-06-05 e não é mais deste departamento.
+- **Alertas** podem monitorar `price_bands`. Verifique antes de remover/renomear coluna.

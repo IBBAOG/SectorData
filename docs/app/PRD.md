@@ -346,7 +346,7 @@ Schema completo é responsabilidade compartilhada — cada `dash-*` documenta as
 | `mv_ms_serie`, `mv_ms_serie_fast` | dash-market-share (sole consumer since 2026-05-26) | Função `classificar_agentes()` |
 | `navios_diesel` | dash-navios-diesel | ETL (`pipelines/navios/01_lineup_scrape.py` → `02_diesel_import.mjs`) |
 | `vessel_registry`, `vessel_positions`, `port_arrivals`, `import_candidates` | dash-navios-diesel | ETL (`pipelines/ais/*`, `pipelines/navios/03-05`) |
-| `d_g_margins` | dash-margins | Dados Locais (upload manual) |
+| `d_g_margins` | dash-margins | ETL computed via `recompute_dg_margins()` (`etl_dg_margins.yml`) — era upload manual até 2026-06-05 |
 | `price_bands` | dash-price-bands | Dados Locais (upload manual) |
 | `stock_portfolios` | dash-stocks | App (CRUD direto via PostgREST) |
 | `news_articles`, `news_hunter_keywords` | dash-news-hunter | News Hunter scanner (repo separado) + user via UI |
@@ -470,7 +470,7 @@ return (
 
 - **`worker_supabase`** é o dono do schema. Você consome via `supabase-js` + wrappers JS. Mudanças de schema/RPC/RLS solicitadas a ele.
 - **ETL** popula tabelas; quando ETL precisa coluna nova, ETL solicita ao `worker_supabase`.
-- **Dados Locais** popula `d_g_margins` e `price_bands` via upload manual.
+- **Dados Locais** popula `price_bands` via upload manual (`d_g_margins` migrou para ETL computado em 2026-06-05).
 - **Alertas** lê tabelas; mudanças de schema podem quebrar bases.
 - **Designer** é consultado antes de mudanças visuais.
 

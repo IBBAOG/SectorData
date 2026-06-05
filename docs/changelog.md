@@ -6,6 +6,19 @@ Entries newest first.
 
 ---
 
+## 2026-06-05 — Diesel & Gasoline Margins Automation (manual → computed)
+
+- The `/diesel-gasoline-margins` base table `d_g_margins` stopped being filled **manually** (Excel `dg_margins_upload.py` + `manual_dg_margins.yml` + admin Data Input form) and is now **computed automatically** by the SQL function `recompute_dg_margins(p_week_start text, p_week_end text)` (`SECURITY DEFINER`, `EXECUTE` only `service_role`).
+- **New workflow** `etl_dg_margins.yml` (weekly Tue 15:00 UTC + dispatch): runs 2 new scrapers → calls `recompute_dg_margins()`.
+- **New scrapers**: `scripts/pipelines/cepea/cepea_etanol_anidro_sync.py` (CEPEA/ESALQ weekly anhydrous-ethanol price, 2002→present) and `scripts/pipelines/anp/producao/anp_producao_derivados_sync.py` (ANP monthly refined-product production — Gasolina A / Óleo Diesel, 1990→present).
+- **New tables**: `cepea_etanol_anidro` (weekly R$/L anhydrous ethanol), `anp_producao_derivados` (monthly national production m³), `fuel_tax_reference` (federal + ICMS R$/L by period — ANP Síntese + CONFAZ ad-rem), `fuel_blend_ratio` (ethanol/biodiesel mandate % by period).
+- **Decomposition formula** (R$/L, per ISO week): `base_fuel = (import-parity × import% + Petrobras × production%) × (1 − blend)`; `biofuel_component` = anhydrous ethanol (week−1 lag) × ethanol_blend for gasoline / Biodiesel B-100 (same week) × biodiesel_blend for diesel; `federal_tax` + `state_tax` (ICMS) from `fuel_tax_reference`; `distribution_and_resale_margin` = pump − all components (residual); `total` = pump = `anp_lpc` station-weighted national avg (`'GASOLINA COMUM'` / `'DIESEL S10'`). `import%` = imports (`anp_desembaracos`/`mdic_comex`, kg→m³ via density) / (imports + `anp_producao_derivados`).
+- **Tax correction**: replaces the old manual figures with ANP Síntese de Preços (federal) + CONFAZ ad-rem (ICMS).
+- **Cutover**: the ad-rem-ICMS era is computed (gasoline from Jun-2023, diesel from May-2023); pre-ad-rem weeks (2021→mid-2023, ad-valorem ICMS era) are **preserved** from the original manual series. `d_g_margins` is 566 rows; manual archive kept in `d_g_margins_manual_bak`.
+- **Sources** shown on the dashboard: "ANP · CEPEA/ESALQ · CONFAZ" (CEPEA/ESALQ is CC BY-NC, attribution required).
+- **Retired**: `scripts/manual/dg_margins_upload.py` + `.github/workflows/manual_dg_margins.yml` (deleted) + the `d-g-margins` admin Data Input registry entry (removed). The Client Alerts hook for the `d_g_margins` base moved from `manual_dg_margins.yml` to `etl_dg_margins.yml`. Owner shifts from `worker_dados-locais` to `worker_etl-pipelines`.
+- See `docs/app/diesel-gasoline-margins.md`, `docs/etl-pipelines/PRD.md` (workflow `etl_dg_margins.yml`), `docs/supabase/PRD.md` (4 tables + `recompute_dg_margins` RPC).
+
 ## 2026-06-03 — `/imports-exports` By Origin Country sourced from ComexStat (source split)
 
 - The **By Origin Country** stacked chart and the YoY table `paises` scope were migrated from `anp_desembaracos` (ANP Desembaraços) to `mdic_comex` (ComexStat, `flow='import'`). **Rationale**: ComexStat publishes month M several weeks ahead of ANP Desembaraços, and the user tracks ComexStat — so the origin-country view now reflects the freshest available month.

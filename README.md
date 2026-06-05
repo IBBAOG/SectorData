@@ -38,7 +38,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/home` | `get_data_sources_freshness` (desktop-only live Data Sources table) |
 | `/market-share` | `get_ms_opcoes_filtros`, `get_ms_serie_fast`, `get_ms_serie_others`, `get_others_players` (% Share ↔ thousand m³ toggle) |
 | `/navios-diesel` | `get_nd_ultima_coleta`, `get_nd_coletas_distintas`, `get_nd_navios`, `get_nd_resumo_portos` |
-| `/diesel-gasoline-margins` | `get_dg_margins_data`, `get_dg_margins_filters` |
+| `/diesel-gasoline-margins` | `get_dg_margins_data`, `get_dg_margins_filters` (read-only). `d_g_margins` is now **computed** by `recompute_dg_margins(week_start, week_end)` (service_role-only) — formerly a manual Excel upload |
 | `/price-bands` | `get_price_bands_data` (Gasoline-with-subsidy: fixed BRL 0.44/L delta since 2026-06-01 — Petrobras +0.44, import parity −0.44; the BRL 3.05/L flat line is preserved only for the 2026-05-29 → 2026-05-31 historical window) |
 | `/stocks` | `stock_portfolios` (direct PostgREST) + Yahoo Finance proxy |
 | `/news-hunter` | `seed_my_news_hunter_keywords` (default keyword seeding for new users) |
@@ -117,7 +117,11 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | `vendas` | id | ANP fuel sales — Market Share / Sales Volumes (consolidated under `/market-share`) |
 | `navios_diesel` | id | Diesel cargo lineup; `is_cabotagem` generated column filters cabotage from RPCs |
 | `vessel_registry`, `vessel_positions`, `port_arrivals`, `import_candidates` | — | AIS / port-call tracking |
-| `d_g_margins` | id | Weekly diesel/gasoline margins (manual Excel upload) |
+| `d_g_margins` | id | Weekly diesel/gasoline margin decomposition — **computed** by `recompute_dg_margins()` (was manual Excel until 2026-06-05; manual archive in `d_g_margins_manual_bak`) |
+| `cepea_etanol_anidro` | week | CEPEA/ESALQ weekly anhydrous-ethanol price (R$/L, 2002→present); biofuel-component input for `recompute_dg_margins` (CC BY-NC, attribution required) |
+| `anp_producao_derivados` | (ano, mes, produto) | ANP monthly national refined-product production (m³ — Gasolina A / Óleo Diesel, 1990→present); feeds the import% / production% split in `recompute_dg_margins` |
+| `fuel_tax_reference` | (period, agent/fuel) | Federal + ICMS tax (R$/L) by period — ANP Síntese de Preços (federal) + CONFAZ ad-rem (ICMS); supplies `federal_tax` / `state_tax` |
+| `fuel_blend_ratio` | (period, fuel) | Ethanol / biodiesel blend-mandate % by period; supplies the `(1−blend)` and biofuel-blend factors |
 | `price_bands` | id | BBA parity + Petrobras price; `_w_subsidy` columns auto-populated by triggers (since 2026-05-27) |
 | `field_stakes` | (campo, empresa) | Admin-curated working-interest per oil field — feeds `/well-by-well` stake-weighted aggregates |
 | `field_canonical_names` | field_raw | Override map for `canonical_field_name(text)` — consolidates well-name variants |
@@ -162,7 +166,7 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | 9 | `etl_anp_lpc.yml` | Weekly Wed 14:30 UTC | `anp_lpc` |
 | 10 | `etl_anp_precos.yml` | Weekly Mon 12:00 UTC | `anp_precos_produtores`, `anp_glp` |
 | 11 | `etl_mdic_comex.yml` | Daily 14:00 UTC | `mdic_comex` (feeds `/imports-exports` unit-price RPCs) |
-| 12 | `manual_dg_margins.yml` | Weekly Mon | `d_g_margins` (manual Excel) |
+| 12 | `etl_dg_margins.yml` | Weekly Tue 15:00 UTC + dispatch | `d_g_margins` (computed): runs CEPEA + ANP production scrapers → calls `recompute_dg_margins()` |
 | 13 | `supabase_deploy.yml` | On push to main | migrations (`supabase db push`) |
 | 14 | `etl_anp_precos_distribuicao.yml` | Monthly 5th + Weekly Tue | `anp_precos_distribuicao` |
 | 15 | `etl_anp_cdp_diaria.yml` | 3×/day | `anp_cdp_diaria{_instalacao,_poco}` (Power BI public API) |
@@ -177,15 +181,15 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 |----------|----------|------|
 | `freshness_monitor.yml` | Daily 12:00 UTC | **Freshness guardian** — emails ops if any base's data is overdue vs a per-source cadence threshold (catches a *silent* stall: green workflow, stale data) |
 | `workflow_failure_monitor.yml` | Every 6h | **Failure pager** — pages ops on ≥3 consecutive non-cancelled failures of 16 critical workflows (catches a *loud* failure); re-homes the retired `etl_workflow_stuck` |
-| `client_alerts_poll.yml` | Every 20 min | **Safety-net poll** — `run_base --all-active`; fires alerts for hook-less Data Input bases (`price_bands`, `d_g_margins`) and backstops every ETL hook |
+| `client_alerts_poll.yml` | Every 20 min | **Safety-net poll** — `run_base --all-active`; fires alerts for the hook-less Data Input base (`price_bands`) and backstops every ETL hook |
 | `client_alerts_test.yml` | `workflow_dispatch` | **Test harness** — `run_base --test --source <slug>`; simulates a base update → SMTP send without touching the data table or watermark. Per-base plan: [`docs/alerts/TEST_PLAN.md`](docs/alerts/TEST_PLAN.md) |
 | `alertas_monitor.yml` | **DISABLED** | Legacy local-only Gmail monitor — retired (subsumed by the freshness guardian + failure pager); workflow disabled (reversible), 3 internal recipients migrated to Client Alerts |
 
-> **Client Alerts hook:** workflows #1–#12, #14–#17 (the 15 data ETLs incl. `manual_dg_margins`) each end with a `continue-on-error` step `python -m scripts.client_alerts.run_base --source <slug>` that emails subscribers the moment a base gets new data (immediate bases) or queues a digest event. Logged-in-only product; delivery via Gmail SMTP + App Password (`GMAIL_APP_PASSWORD`). Engine: `scripts/client_alerts/`. See [`docs/etl-pipelines/PRD.md`](docs/etl-pipelines/PRD.md) § "Client Alerts" and [`docs/app/alerts.md`](docs/app/alerts.md).
+> **Client Alerts hook:** workflows #1–#12, #14–#17 (the 15 data ETLs incl. `etl_dg_margins` — the `d_g_margins` hook moved here from the retired `manual_dg_margins`) each end with a `continue-on-error` step `python -m scripts.client_alerts.run_base --source <slug>` that emails subscribers the moment a base gets new data (immediate bases) or queues a digest event. Logged-in-only product; delivery via Gmail SMTP + App Password (`GMAIL_APP_PASSWORD`). Engine: `scripts/client_alerts/`. See [`docs/etl-pipelines/PRD.md`](docs/etl-pipelines/PRD.md) § "Client Alerts" and [`docs/app/alerts.md`](docs/app/alerts.md).
 
 Workflow internals (scripts, retries, self-healing, pegadinhas) in [`docs/etl-pipelines/PRD.md`](docs/etl-pipelines/PRD.md).
 
-**Manual data** (`data/`): `data/d_g_margins.xlsx` and `data/price_bands.xlsx` edited by hand and uploaded via `scripts/manual/*.py`. Both gitignored.
+**Manual data** (`data/`): `data/price_bands.xlsx` edited by hand and uploaded via `scripts/manual/price_bands_upload.py` (gitignored). `d_g_margins` is no longer manual — it is computed by `etl_dg_margins.yml` (see Data Pipelines #12).
 
 **Alert subsystem** (`alertas/`): legacy local-only (gitignored), self-contained. 12 detection bases over Supabase tables/parquet, Gmail-based. **Retired** — its `alertas_monitor.yml` workflow is disabled (reversible); the stale-canary is subsumed by `freshness_monitor.yml` and its `etl_workflow_stuck` pager re-homed into `workflow_failure_monitor.yml`. See `alertas/PRD_ALERTAS.md` and [`docs/etl-pipelines/PRD.md`](docs/etl-pipelines/PRD.md) § "Legacy `alertas/` monitor retirement".
 

@@ -88,8 +88,9 @@ Visualização típica: **stacked bar/area chart** ao longo de semanas, com filt
 
 | RPC | Função |
 |---|---|
-| `get_dg_margins_data` | Linhas (filtráveis) |
+| `get_dg_margins_data` | Linhas (filtráveis) — read-only, consumida pela UI |
 | `get_dg_margins_filters` | Opções de filtros |
+| `recompute_dg_margins(p_week_start text, p_week_end text)` | **Recompute job** — `SECURITY DEFINER`, `EXECUTE` only `service_role`. Recalcula `d_g_margins` para o range de semanas ISO informado a partir das tabelas-fonte (preços, produção, ethanol, impostos, blend). Chamada pelo workflow `etl_dg_margins.yml`. Não callable pelo anon/authenticated. |
 
 ## Tabela
 
@@ -97,26 +98,67 @@ Visualização típica: **stacked bar/area chart** ao longo de semanas, com filt
 - PK: `id`
 - Chave de upsert: `(fuel_type, week)`
 - Colunas: `fuel_type, week, base_fuel, biofuel_component, federal_tax, state_tax, distribution_and_resale_margin, total`
+- 566 rows (cutover state). O arquivo manual antigo está arquivado em `d_g_margins_manual_bak`.
+
+### Reference / source tables (lidas pelo `recompute_dg_margins`)
+
+| Tabela | Conteúdo | Origem |
+|---|---|---|
+| `cepea_etanol_anidro` | Preço semanal R$/L do etanol anidro | CEPEA/ESALQ |
+| `anp_producao_derivados` | Produção mensal nacional (m³) de Gasolina A / Óleo Diesel | ANP |
+| `fuel_tax_reference` | Imposto federal + ICMS (R$/L) por período | ANP Síntese de Preços (federal) + CONFAZ (ICMS ad-rem) |
+| `fuel_blend_ratio` | % de mandato de etanol / biodiesel por período | ANP / regulação |
+| `price_bands` | Paridade de importação + preço Petrobras | Dados Locais (`price_bands`) |
+| `anp_lpc` | Preço de bomba (station-weighted national avg) | ANP LPC |
+| `anp_desembaracos` / `mdic_comex` | Volume de importação (kg→m³ via densidade NCM) | ANP / MDIC |
 
 ## Como o dado chega
 
-**Two paths — both use the same upsert conflict key `(fuel_type, week)` and are fully interchangeable.**
+**Fully automated (computed) since 2026-06-05.** A tabela `d_g_margins` deixou de ser preenchida manualmente (Excel + admin Data Input) e passou a ser **calculada** por um job SQL a partir de fontes públicas.
 
-### UI path (preferred for small additions/edits)
-
-Admins open `/admin-panel → Data Input → D&G Margins` and add or update rows directly. The form POSTs via PostgREST upsert on `(fuel_type, week)`. No file required.
-
-See [`docs/app/admin.md`](admin.md) for the full Data Input section spec.
-
-### Bulk path (fallback for large imports)
+### Pipeline
 
 ```
-CEO edits data/d_g_margins.xlsx → scripts/manual/dg_margins_upload.py → upsert into d_g_margins
+etl_dg_margins.yml (weekly Tue 15:00 UTC + workflow_dispatch)
+  ├─ scripts/pipelines/cepea/cepea_etanol_anidro_sync.py    → cepea_etanol_anidro
+  ├─ scripts/pipelines/anp/producao/anp_producao_derivados_sync.py → anp_producao_derivados
+  └─ recompute_dg_margins(week_start, week_end)             → d_g_margins (upsert por (fuel_type, week))
 ```
 
-GitHub Action: `.github/workflows/manual_dg_margins.yml` runs weekly (Monday).
+### Fórmula de decomposição (R$/L, por semana ISO)
 
-**Data owner:** `worker_dados-locais` (not an automated ETL). This dashboard is read-only.
+Cada componente é em R$/L; `total` reconstrói o preço de bomba.
+
+| Componente | Cálculo |
+|---|---|
+| `base_fuel` | `(import_parity × import% + petrobras_price × production%) × (1 − blend)`. `import_parity`/`petrobras_price` vêm de `price_bands`. |
+| `biofuel_component` | **Gasolina:** etanol anidro (lag de 1 semana, `week−1`) × `ethanol_blend`. **Diesel:** Biodiesel B-100 (mesma semana) × `biodiesel_blend`. |
+| `federal_tax` | de `fuel_tax_reference` (ANP Síntese de Preços). |
+| `state_tax` | ICMS de `fuel_tax_reference` (CONFAZ ad-rem). |
+| `distribution_and_resale_margin` | **residual** = `pump − (todos os componentes acima)`. |
+| `total` | = preço de bomba = `anp_lpc` station-weighted national avg (`'GASOLINA COMUM'` / `'DIESEL S10'`). |
+
+- **`import%`** = `imports / (imports + production)`, onde `imports` vem de `anp_desembaracos`/`mdic_comex` (kg→m³ via densidade NCM) e `production` de `anp_producao_derivados`. `production% = 1 − import%`.
+
+### Fontes (exibidas no dashboard)
+
+"Sources: ANP · CEPEA/ESALQ · CONFAZ".
+
+- **ANP** — produção de derivados, preços LPC/produtor, Síntese de Preços (composição de impostos federais).
+- **CEPEA/ESALQ** — preço do etanol anidro (licença **CC BY-NC, atribuição obrigatória**).
+- **CONFAZ** — ICMS ad-rem.
+- **`price_bands`** — paridade de importação / preço Petrobras.
+
+### Escopo do cutover
+
+| Janela | Origem |
+|---|---|
+| Era ad-rem ICMS (Gasolina a partir de Jun/2023; Diesel a partir de Mai/2023) | **Computado** via `recompute_dg_margins`. |
+| Pré-ad-rem (2021 → meados de 2023, era ICMS ad-valorem) | **Preservado** da série manual original. |
+
+A série manual completa fica arquivada em `d_g_margins_manual_bak`.
+
+**Data owner:** `worker_etl-pipelines` (automated ETL). Este dashboard é read-only.
 
 ## Palette
 
@@ -132,8 +174,9 @@ Both views share `MARGIN_LINE_COLORS` via the hook — no per-view color overrid
 
 | Origem | Como depende |
 |---|---|
-| Dados Locais | Excel manual + script de upload |
-| Subgerente APP | Schema/migration de `d_g_margins` |
+| ETL / Pipelines | `etl_dg_margins.yml` + 2 scrapers (CEPEA, ANP produção) + chamada `recompute_dg_margins` |
+| Supabase / DB | Schema/migration de `d_g_margins` + 4 tabelas de referência + RPC `recompute_dg_margins` (grant `service_role`) |
+| Dados Locais | `price_bands` (paridade / Petrobras) é input do cálculo |
 | Designer | Stacked chart pattern, cores dos componentes |
 
 ## Filtros tipicamente usados (UI)
@@ -143,8 +186,9 @@ Both views share `MARGIN_LINE_COLORS` via the hook — no per-view color overrid
 
 ## Anti-padrões
 
-- Tentar editar `data/d_g_margins.xlsx` direto — é manual do CEO.
-- Inferir colunas a partir do Excel — sempre cruze com o schema da tabela.
+- Tentar reativar o upload manual (`scripts/manual/dg_margins_upload.py`) ou o editor admin Data Input — ambos foram **retirados** na reforma de automação. A tabela agora é computada.
+- Sobrescrever as semanas pré-ad-rem (2021→meados de 2023) com o recompute — elas são preservadas da série manual.
+- Esquecer a atribuição CEPEA/ESALQ (CC BY-NC) ao exibir o componente de etanol anidro.
 - Mostrar `fuel_type` em inglês na UI — traduza pra "Diesel" / "Gasolina".
 
 ## Export
