@@ -27,7 +27,13 @@ import type { Layout, PlotData } from "plotly.js";
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
-import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../lib/plotlyDefaults";
+import {
+  COMMON_LAYOUT,
+  AXIS_LINE,
+  emptyPlot,
+  PALETTE,
+  BRAND_ORANGE,
+} from "../../../lib/plotlyDefaults";
 import { bblDiaToKbpd } from "../../../lib/units";
 import { downloadGenericExcel } from "../../../lib/exportExcel";
 import { downloadCsv } from "../../../lib/exportCsv";
@@ -58,14 +64,15 @@ export type {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-export const PALETTE = [
-  "#FF5000", "#2196F3", "#8BC34A", "#FF9800", "#9C27B0",
-  "#E53935", "#00ACC1", "#FF8C42", "#64B5F6", "#7CB342",
-];
+// Chart colors come from the canonical identity palette — never hard-coded hex
+// (docs/design/identity.md). PALETTE position 1 is the brand orange, reserved
+// for the chart leader / "Company total" headline line; per-field lines start
+// at position 2 to keep the orange exclusive to the leader. Re-exported here so
+// both Views import their chart colors from the shared hook (single source of
+// truth) and never invent a hex of their own.
+export { PALETTE, BRAND_ORANGE } from "../../../lib/plotlyDefaults";
 
 export const TOP_N = 10;
-
-export const BRAND_ORANGE = "#FF5000";
 
 /**
  * The two fixed, primary companies (Two-Tier Tabs IA, 2026-06-05). The dynamic

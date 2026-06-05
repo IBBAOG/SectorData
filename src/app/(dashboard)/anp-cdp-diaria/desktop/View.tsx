@@ -727,19 +727,15 @@ function CompanyContent({
   );
 }
 
-/** Compact KPI tile for the Company level. */
+/** Compact KPI tile for the Company level — canonical `.metric-card`
+ *  (border-left orange 4px, value 22px/700) per docs/design/identity.md. */
 function KpiCard({ label, value }: { label: string; value: string }): React.ReactElement {
   return (
-    <div style={{
-      border: "1px solid #eee", borderRadius: 8, padding: "12px 14px",
-      background: "#fff", height: "100%",
-    }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+    <div className="metric-card" style={{ height: "100%", padding: "12px 16px" }}>
+      <div className="metric-label" style={{ textTransform: "uppercase", letterSpacing: "0.04em" }}>
         {label}
       </div>
-      <div style={{ marginTop: 4, fontSize: 18, fontWeight: 700, color: "#1a1a1a", fontFamily: "Arial" }}>
-        {value}
-      </div>
+      <div className="metric-value">{value}</div>
     </div>
   );
 }
