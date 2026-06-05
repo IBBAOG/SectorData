@@ -304,6 +304,91 @@ ON CONFLICT (collected_at, porto, navio) DO NOTHING;
 Applied via service-role on 2026-06-03 (2 rows deleted, ids 28241 / 28240;
 Santos distinct 20 → 18; the 3 + 8 real-IMO rows preserved).
 
+### Itaqui scraper — diesel quantity over-count (root cause + sanity guard, 2026-06-05)
+
+**Symptom.** A ComexStat-URF backtest showed Porto de Itaqui over-counting diesel
+by **2.38×** vs the official São Luís clearance. The smoking gun in `navios_diesel`
+was **HAFNIA LARISSA** (April 2026, Itaqui) with `quantidade = 125,194 t` →
+`quantidade_convertida = 149,933 m³`, `produto = 'Óleo Diesel'`. That single row
+exceeded the entire official monthly diesel clearance of São Luís (~135,250 m³)
+and, combined Apr+May, accounted for **exactly the 2.38× anomaly** (it was 48% of
+the two-month official diesel volume by itself).
+
+**Root cause = corrupt SOURCE value, not a parsing bug.** Investigated live
+against the real Itaqui page (`portodoitaqui.com.br/porto-agora/navios/esperados`,
+fetched via the scraper's own requests-Session path — HTTP 200, 60 KB):
+
+- The Itaqui lineup table carries BOTH a `DWT` column **and** a `Qtd.Carga`
+  column. `buscar_itaqui()` reads `Qtd.Carga` (via `_col("Qtd")`, which matches
+  only that column) — and `Qtd.Carga` IS the correct cargo **parcel**, validated
+  on live rows: `HORIZON THETIS` "DIESEL S500" `Qtd.Carga=15,980 t` with
+  `DWT=49,999`; `VELOS POLARIS` "DIESEL" `Qtd.Carga=34,220 t` with `DWT=50,000`
+  (realistic diesel parcels, well below each ship's deadweight). So the column
+  choice, the BR-thousands parsing (`_parse_numero("125.194") → 125194`), the
+  unit (`t`) and the m³ conversion are all correct.
+- The `produto='Óleo Diesel'` tag is legitimate: the source `Carga` cell for
+  HAFNIA LARISSA said DIESEL; `consolidar()` then normalises the label to
+  "Óleo Diesel". Not a default-tagging artefact.
+- HAFNIA LARISSA is a crude/oil tanker of **109,990 t DWT** (IMO 9800300). A
+  125,194 t cargo is **physically impossible** — it exceeds the ship's own
+  deadweight by ~15 kt. The Itaqui portal simply published a corrupt `Qtd.Carga`
+  value for that vessel (cumulative/throughput or a data-entry error). It flowed
+  straight into the DB because there was **no sanity check** on parcel size.
+
+**Fix — physical sanity guard** (`01_lineup_scrape.py`):
+
+- Constants `_MAX_DIESEL_PARCEL_T = 90_000 t` (≈ `_MAX_DIESEL_PARCEL_M3 ≈ 107,784 m³`).
+  Threshold rationale: across the whole `navios_diesel` history, the **only** row
+  above 90 kt was the HAFNIA LARISSA outlier; the next-highest plausible parcel
+  was 67,972 t. 90 kt cleanly isolates impossible values without false-tripping
+  any legitimate large LR1/LR2 parcel.
+- `_sanity_check_parcel_t(valor_t, navio, porto)` **rejects** (drops the quantity,
+  returns `None`) any parcel above the ceiling and logs a loud `[WARN][sanity]`.
+  Rejection — not capping — is deliberate: a corrupt source value carries no
+  information about the true parcel size, so any cap would be a fabrication. The
+  ship still appears as a lineup row, but contributes **zero** inflated volume.
+- Applied at **two layers**: (1) inside `buscar_itaqui()` right after the
+  `Qtd.Carga` rename (per-ship, with the vessel name); (2) a unit-agnostic
+  backstop in `_aplicar_conversao()` (post-conversion, on m³) that protects
+  **every** tonne/volume-reporting port (Santos, Paranaguá, Maceió, São Sebastião,
+  Suape) — so a future corrupt value above the ceiling can never silently inflate
+  a month again. **Never soften this guard back to "trust any Qtd.Carga".**
+
+**Historical data correction** (service role, idempotent, reversible). Only
+**HAFNIA LARISSA** breached the ceiling — it was the single offending vessel
+across the entire table (19 snapshot rows, all `quantidade=125194`, April 2026,
+ids 5023–8000; no other port affected). Applied via PATCH on 2026-06-05, setting
+`quantidade = NULL` and `quantidade_convertida = NULL` on exactly those rows
+(mirrors the new scraper behaviour: reject → quantity dropped, ship row kept).
+The PATCH filters on `porto='Porto de Itaqui' AND navio='HAFNIA LARISSA' AND
+quantidade=125194`, so it is a **no-op on re-run**. Pre-change snapshot of all 19
+rows saved to `scripts/pipelines/navios/output/itaqui_hafnia_reversal.json` for
+exact reversal. **Reversal:**
+
+```sql
+UPDATE public.navios_diesel
+SET quantidade = 125194, quantidade_convertida = 149932.93
+WHERE porto = 'Porto de Itaqui'
+  AND navio = 'HAFNIA LARISSA'
+  AND quantidade IS NULL
+  AND collected_at >= '2026-04-01' AND collected_at < '2026-04-06';
+```
+
+**Validation (Itaqui diesel volume, RPC `get_nd_volume_mensal_historico`
+last-seen-per-discharged-ship method):**
+
+| Month | Before (m³) | After (m³) | Official ComexStat (m³) | Before/off | After/off |
+|-------|------------:|-----------:|------------------------:|-----------:|----------:|
+| 2026-04 | 465,776 | 315,843 | 135,250 | 3.44× | 2.34× |
+| 2026-05 | 271,587 | 271,587 | 175,000 | 1.55× | 1.55× (HAFNIA not in May) |
+| **Apr+May combined** | **737,363** | **587,430** | **310,250** | **2.38×** | **1.89×** |
+
+The headline **2.38× anomaly is gone** (combined ratio drops to 1.89×). The
+residual ~1.9× is the expected structural gap between a lineup-snapshot estimate
+and official desembaraço (timing of clearance-vs-discharge + the discharged-volume
+attribution heuristic), **not** a parsing defect — no other vessel breaches a
+physically plausible parcel size.
+
 ### Client Alerts (logged-in product — hook no fim do ETL, 2026-06-02)
 
 Produto de alertas por email **só-logado**, event-driven. Substitui o produto cloud antigo (anon double-opt-in, detectores em polling de 2h, `scripts/alerts/`) que foi **deletado**. Engine em `scripts/client_alerts/` (ver árvore acima); schema/RPCs em `docs/supabase/PRD.md` § "Alerts v2"; frontend em `docs/app/alerts.md`.
