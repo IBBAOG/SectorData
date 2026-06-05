@@ -21,10 +21,7 @@
 // Each cell's company resolves its OWN live price + market cap; the caller
 // passes those in. All guards mirror the original dashboard logic exactly.
 
-import type {
-  SensitivityTable,
-  SensitivityComposeBlock,
-} from "@/types/stockGuide";
+import type { SensitivityTable } from "@/types/stockGuide";
 
 export type SensitivityValueMode = SensitivityTable["value_mode"];
 
@@ -191,65 +188,63 @@ export function baseInputMeta(
   }
 }
 
-// ─── Elastic (coefficient) compose ─────────────────────────────────────────────
+// ─── Scenario-grid 1-D interpolation ───────────────────────────────────────────
 //
-// An ELASTIC sensitivity table composes an OUTPUT (target price, BRL/share) live
-// in the browser from analyst-provided slopes against one or more macro drivers.
-// The analyst drives continuous multi-year sliders (Brent / FX 2026-2028) and the
-// target price + upside re-price instantly. The math is a first-order linear
-// composition (a Taylor expansion around the anchors):
+// A SCENARIO-GRID sensitivity table is a 1-D interpolation mesh: the analyst
+// uploads, per company, a dense series of `(x → output)` points along a single
+// driver axis (Brent). The dashboard reads that per-company series and, as the
+// analyst drags ONE Brent slider, INTERPOLATES the output live with a binary
+// search for the bracketing nodes + a linear blend between them.
 //
-//   TP[c] = base[c] + Σ_k by_company[c][k] × (level[k] − anchors[k])
+// This REPLACES the linear `compose` elastic layer (removed 2026-06-12): instead
+// of a first-order slope model the analyst supplies the full non-linear curve and
+// the frontend reads it off directly.
 //
-// where for each driver_key `k`:
-//   • level[k]   = the current slider / preset / live value,
-//   • anchors[k] = the driver level at which base[c] was measured,
-//   • by_company[c][k] = the slope Δ(output) per +1 unit of driver `k`.
-//
-// This is the single source of truth, reused by BOTH the /stock-guide dashboard
-// brain and the admin builder's live preview.
+// Pure + testable, reused by BOTH the /stock-guide dashboard brain and (for the
+// point-count read-out) the admin builder.
+
+/** One node of a per-ticker grid series: `x` = Brent level, `y` = output value. */
+export interface GridPoint {
+  x: number;
+  y: number;
+}
 
 /**
- * Compose the elastic OUTPUT (target price, BRL/share) for one ticker at the
- * given driver levels.
+ * Interpolate a per-ticker scenario-grid series at the Brent level `x`.
  *
- * Returns `null` when the ticker is NOT in `compose.base` — that is the hide-strip
- * contract: a restricted ticker is removed from `base` (and `by_company`)
- * server-side for non-admins, and a ticker with no base cannot be composed, so it
- * must NOT be rendered.
+ * `sortedPoints` MUST be sorted ascending by `x` (the caller builds it from the
+ * RPC, which already orders by x_value). The function:
+ *   • returns `null` for an empty series;
+ *   • CLAMPS at the borders — `x ≤ min` → the first node's `y`, `x ≥ max` → the
+ *     last node's `y` (the analyst's mesh doesn't extrapolate);
+ *   • otherwise BINARY-SEARCHES for the bracketing pair `[lo, hi]` and returns the
+ *     LINEAR blend `lo.y + (hi.y − lo.y) × (x − lo.x) / (hi.x − lo.x)`.
  *
- * Driver keys absent from `by_company[ticker]` contribute a zero slope (they
- * simply don't move the output). A missing `level[k]` falls back to the anchor
- * (so an unset/unknown slider leaves the output at the base value for that key).
- * Non-finite values are ignored (treated as no contribution) so the result is
- * never `NaN` — callers render "—" on `null`.
+ * Degenerate spans (`hi.x === lo.x`) return `lo.y` (no divide-by-zero). The
+ * result is `null` only for an empty series — never `NaN`.
  */
-export function composeElasticTargetPrice(
-  ticker: string,
-  driverLevels: Record<string, number | null | undefined>,
-  compose: SensitivityComposeBlock,
+export function interpolateGrid(
+  sortedPoints: GridPoint[],
+  x: number,
 ): number | null {
-  const base = compose.base?.[ticker];
-  if (base == null || !Number.isFinite(base)) return null;
+  const n = sortedPoints.length;
+  if (n === 0) return null;
+  // Border clamps (and the trivial single-node case).
+  if (x <= sortedPoints[0].x) return sortedPoints[0].y;
+  if (x >= sortedPoints[n - 1].x) return sortedPoints[n - 1].y;
 
-  const slopes = compose.by_company?.[ticker] ?? {};
-  const anchors = compose.anchors ?? {};
-  // Iterate the table's declared driver_keys (the slope map may carry extras).
-  const keys =
-    Array.isArray(compose.driver_keys) && compose.driver_keys.length > 0
-      ? compose.driver_keys
-      : Object.keys(slopes);
-
-  let out = base;
-  for (const k of keys) {
-    const slope = slopes[k];
-    if (slope == null || !Number.isFinite(slope)) continue; // no sensitivity to k
-    const anchor = anchors[k];
-    if (anchor == null || !Number.isFinite(anchor)) continue; // can't measure Δ
-    const rawLevel = driverLevels[k];
-    const level =
-      rawLevel != null && Number.isFinite(rawLevel) ? rawLevel : anchor;
-    out += slope * (level - anchor);
+  // Binary search for the last node whose x is <= x → that's the lower bracket.
+  let lo = 0;
+  let hi = n - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (sortedPoints[mid].x <= x) lo = mid;
+    else hi = mid;
   }
-  return Number.isFinite(out) ? out : null;
+  const a = sortedPoints[lo];
+  const b = sortedPoints[hi];
+  const span = b.x - a.x;
+  if (span === 0) return a.y; // coincident nodes → no blend
+  const frac = (x - a.x) / span;
+  return a.y + (b.y - a.y) * frac;
 }

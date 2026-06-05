@@ -208,41 +208,35 @@ export interface SensitivityAxis {
 }
 
 /**
- * ELASTIC (coefficient) compose block — the optional `definition.compose` that
- * marks a sensitivity table as "elastic". Instead of a typed 2D matrix, an
- * elastic table composes an OUTPUT (target price) live in the browser from
- * analyst-provided slopes against one or more macro drivers, driven by
- * continuous multi-year sliders (Brent / FX 2026-2028).
+ * SCENARIO-GRID block — the optional `definition.grid` that marks a sensitivity
+ * table as a 1-D interpolation mesh. The analyst runs thousands of scenarios in
+ * their own model and uploads, PER COMPANY, a dense series of `(x_value →
+ * target price)` points along a SINGLE driver axis (Brent). The dashboard reads
+ * that mesh (`stock_guide_scenario_grid` → `get_stock_guide_scenario_grid`) and
+ * INTERPOLATES it live (binary-search + linear) as the analyst drags one Brent
+ * slider — see `interpolateGrid` in `src/lib/stockGuideSensitivity.ts`.
  *
- * Composition (in the browser), per ticker:
- *   TP[c] = base[c] + Σ_k by_company[c][k] × (level[k] − anchors[k])
- * where `level[k]` is the current slider / preset / live value for driver_key
- * `k`, `anchors[k]` is the driver level at which the base was measured, and
- * `by_company[c][k]` is the slope Δ(output) per +1 unit of driver `k`.
+ * This block is METADATA only (the axis driver/label/unit + what the output is)
+ * — it names NO company, so it is NOT sensitive and carries no hide-strip. The
+ * SENSITIVE per-company points live in the relational `stock_guide_scenario_grid`
+ * table, read through the hide-aware `get_stock_guide_scenario_grid` RPC.
  *
- * HIDE-AWARE: for a non-admin, the read RPC (`_sg_strip_compose`) removes every
- * ticker key NOT visible from `base` and `by_company`. RULE: if a ticker is
- * absent from `base`, do NOT render a row for it — never assume every
- * `companies[]` entry has a base.
+ * The upsert RPC (`admin_upsert_stock_guide_sensitivity_table`) stores this
+ * object VERBATIM inside `definition.grid`. Points are NOT typed in the admin —
+ * they arrive via the Brent-grid Excel upload (Local Data).
  *
- * The upsert RPC stores this object VERBATIM inside `definition.compose`.
+ * REPLACES the linear `compose` elastic layer (removed 2026-06-12): the analyst
+ * chose an interpolated scenario mesh over a first-order Taylor slope model.
  */
-export interface SensitivityComposeBlock {
-  /** The composed output. Currently only `'target_price'` (BRL/share). */
+export interface SensitivityGridBlock {
+  /** Catalog driver key whose LIVE value is the X position (e.g. `avg_brent_2026`). */
+  x_driver_key: string;
+  /** Axis label for the slider (e.g. "Brent (avg 2026)"). */
+  x_label: string;
+  /** Axis unit (e.g. "USD/bbl"). */
+  x_unit: string;
+  /** What `primary_value` represents — currently `'target_price'` (BRL/share). */
   output: string;
-  /** Driver keys this table composes against (catalog keys, e.g. avg_brent_2026). */
-  driver_keys: string[];
-  /** Driver level at which the base was measured, per driver_key. */
-  anchors: Record<string, number>;
-  /** Base output (BRL/share) at the anchors, PER TICKER. Hide-stripped server-side. */
-  base: Record<string, number>;
-  /** Slope Δ(output)/Δ(driver) per ticker × driver_key. Hide-stripped server-side. */
-  by_company: Record<string, Record<string, number>>;
-  /**
-   * Optional named presets → driver levels per driver_key (e.g. Base / Bull /
-   * Bear). Selecting a preset sets every slider from these levels.
-   */
-  scenarios?: Record<string, Record<string, number>>;
 }
 
 /**
@@ -277,14 +271,28 @@ export interface SensitivityTable {
     /** ONLY for value_mode 'ev_ebitda' — the matching net debt per cell. */
     cells_secondary?: (number | null)[][];
     /**
-     * Present ONLY for ELASTIC tables. Its presence marks the table as elastic:
-     * the dashboard renders a slider panel that composes the output live instead
-     * of the static `cells` matrix (the row/col axes + cells are ignored for an
-     * elastic table). See `SensitivityComposeBlock` + `composeElasticTargetPrice`.
+     * Present ONLY for SCENARIO-GRID tables. Its presence marks the table as a
+     * 1-D interpolation mesh: the dashboard renders ONE Brent slider and a
+     * Target price / Upside table that interpolates the uploaded per-company
+     * points live (the row/col axes + cells are ignored for a grid table). See
+     * `SensitivityGridBlock` + `interpolateGrid` + `get_stock_guide_scenario_grid`.
      */
-    compose?: SensitivityComposeBlock;
+    grid?: SensitivityGridBlock;
   };
   display_order: number;
+}
+
+/**
+ * One point of a scenario-grid mesh — `(ticker, x_value, primary_value)` from
+ * `get_stock_guide_scenario_grid(p_sensitivity_id)`, ordered by ticker, x_value.
+ * `x_value` is the Brent level; `primary_value` is the target price (BRL/share)
+ * at that Brent. Hide-aware: a non-admin only receives visible tickers. Numerics
+ * already coerced to `number` by the rpc.ts wrapper.
+ */
+export interface ScenarioGridPoint {
+  ticker: string;
+  x_value: number;
+  primary_value: number;
 }
 
 /**

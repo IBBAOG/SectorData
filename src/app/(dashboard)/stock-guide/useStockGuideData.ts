@@ -55,6 +55,7 @@ import {
   rpcGetStockGuideConfig,
   rpcGetStockGuideDrivers,
   rpcGetStockGuideSensitivityTables,
+  rpcGetStockGuideScenarioGrid,
 } from "@/lib/rpc";
 import { downloadGenericExcel } from "@/lib/exportExcel";
 import { downloadCsv } from "@/lib/exportCsv";
@@ -62,7 +63,8 @@ import {
   computeSensitivityCellValue,
   formatSensitivityValue,
   unitForValueMode,
-  composeElasticTargetPrice,
+  interpolateGrid,
+  type GridPoint,
 } from "@/lib/stockGuideSensitivity";
 import type {
   StockGuideCompany,
@@ -72,7 +74,6 @@ import type {
   StockGuideDriver,
   SensitivityAxis,
   SensitivityTable,
-  SensitivityComposeBlock,
 } from "@/types/stockGuide";
 
 // ─── Filters ───────────────────────────────────────────────────────────────
@@ -169,27 +170,28 @@ export interface UseStockGuideData {
    */
   resolveDriverAxis: (axis: SensitivityAxis) => ResolvedDriverAxis;
 
-  // ── Elastic (coefficient) sensitivity ──────────────────────────────────────
+  // ── Scenario-grid (1-D Brent interpolation) sensitivity ─────────────────────
   /**
-   * True when a table is ELASTIC (has `definition.compose`). Views switch to the
-   * slider panel for these and keep the static matrix for the rest. Pure.
+   * True when a table is a SCENARIO GRID (has `definition.grid`). Views switch to
+   * the Brent-slider interpolation panel for these and keep the static matrix for
+   * the rest. Pure.
    */
-  isElasticTable: (table: SensitivityTable) => boolean;
+  isGridTable: (table: SensitivityTable) => boolean;
   /**
-   * Resolve the FULL live elastic model for a table (sliders with current levels,
-   * available presets, composed rows). Returns null for a non-elastic table or
-   * when no ticker has a base (after the hide-strip). The slider levels come from
-   * the SHARED per-table state, so both Views drag the same sliders. Stable id.
+   * Resolve the FULL live grid model for a table: the Brent slider (domain from
+   * the uploaded mesh + the live "today" marker) and one interpolated Target
+   * price / Upside row per visible ticker that has points. Returns null for a
+   * non-grid table or while the mesh is still loading / empty. The slider value
+   * lives in SHARED per-table state, so both Views drag the same slider. The mesh
+   * is fetched lazily on first selection and cached by table id. Stable id.
    */
-  getElasticModel: (table: SensitivityTable) => ElasticTableModel | null;
-  /** Set one slider's level (enters the "Custom" preset). */
-  setElasticDriverLevel: (tableId: number, key: string, level: number) => void;
-  /**
-   * Apply a preset to a table's sliders: "Live" → live market values (fallback
-   * anchor); a scenario name → its `compose.scenarios[name]` levels; "Custom" is
-   * entered implicitly by dragging a slider (callers don't set it directly).
-   */
-  setElasticPreset: (tableId: number, preset: ElasticPreset) => void;
+  getGridModel: (table: SensitivityTable) => GridTableModel | null;
+  /** True while a selected grid table's mesh is being fetched. */
+  gridLoading: boolean;
+  /** Set the Brent slider value for a grid table (re-interpolates live). */
+  setGridBrent: (tableId: number, value: number) => void;
+  /** Reset the Brent slider back to the live "today" value for a grid table. */
+  resetGridBrent: (tableId: number) => void;
 
   // Desktop-only export — hook owns the busy state.
   exportExcel: () => Promise<void>;
@@ -224,63 +226,46 @@ export interface ResolvedDriverAxis {
   currentValue: number | null;
 }
 
-// ─── Elastic (coefficient) sensitivity — shared types for the slider panel ─────
+// ─── Scenario-grid (1-D Brent interpolation) — shared types for the panel ──────
 
-/** Driver family in an elastic table (groups the per-year sliders). */
-export type ElasticDriverType = "brent" | "fx" | "other";
-
-/** Selected preset of the elastic panel. */
-export type ElasticPreset = "Live" | "Custom" | string;
-
-/** One slider control (one driver_key) of an elastic table. */
-export interface ElasticSlider {
-  /** Catalog/driver key (e.g. `avg_brent_2026`). Stable id of the slider. */
+/** The single Brent slider of a scenario-grid table. */
+export interface GridSlider {
+  /** Catalog driver key driving the X position (e.g. `avg_brent_2026`). */
   key: string;
-  /** Human label (e.g. "Brent 2026"). */
+  /** Axis label (from `definition.grid.x_label`, fallback the catalog/driver name). */
   label: string;
-  /** Driver family — Brent / FX / other (for grouping). */
-  type: ElasticDriverType;
-  /** Forward year parsed from the key (e.g. 2026), or null if not year-tagged. */
-  year: number | null;
-  /** Display unit (USD/bbl, BRL/USD …). */
+  /** Axis unit (e.g. "USD/bbl"). */
   unit: string;
-  /** Anchor level the base was measured at. */
-  anchor: number;
-  /** Live market value for this key (catalog), or null. */
+  /** Current slider value (state) — the Brent level we interpolate at. */
+  value: number;
+  /** Live "today" Brent value (the marker), or null if the market data is missing. */
   liveValue: number | null;
-  /** Current slider level (state). */
-  level: number;
-  /** Suggested slider bounds (with slack) + a sane step. */
+  /** Slider domain = span of the uploaded mesh (min/max x across all tickers). */
   min: number;
   max: number;
+  /** Suggested step (≈ span/100 rounded to a tidy 1/2/5×10ⁿ). */
   step: number;
 }
 
-/** One composed output row of an elastic table (per visible ticker with a base). */
-export interface ElasticCompanyRow {
+/** One interpolated output row of a scenario-grid table (per visible ticker with points). */
+export interface GridCompanyRow {
   ticker: string;
   companyName: string;
-  /** Composed target price at the current slider levels (BRL/share). */
+  /** Interpolated target price at the current Brent value (BRL/share). */
   targetPrice: number | null;
   /** `targetPrice / livePrice − 1` (ratio). Null unless livePrice > 0. */
   upside: number | null;
-  /** Base output (BRL/share) at the anchors. */
-  basePrice: number | null;
   /** Live share price (BRL). */
   livePrice: number | null;
 }
 
-/** The whole resolved elastic model for one table (sliders + presets + rows). */
-export interface ElasticTableModel {
-  /** Sliders grouped by family in display order (Brent years, then FX years, …). */
-  sliders: ElasticSlider[];
-  /** Available preset names that exist in `compose.scenarios` (+ implicit Live). */
-  presetNames: string[];
-  /** The currently-selected preset (Live | Custom | a scenario name). */
-  preset: ElasticPreset;
-  /** Composed rows for every visible ticker that has a base. */
-  rows: ElasticCompanyRow[];
-  /** The composed output label (e.g. "Target price"). */
+/** The whole resolved scenario-grid model for one table (slider + interpolated rows). */
+export interface GridTableModel {
+  /** The single Brent slider (domain from the mesh, marker at the live value). */
+  slider: GridSlider;
+  /** Interpolated rows for every visible ticker that has points in the mesh. */
+  rows: GridCompanyRow[];
+  /** The output label (e.g. "Target price"). */
   outputLabel: string;
 }
 
@@ -361,75 +346,31 @@ export function recommendationColors(code: string | null | undefined): {
 export const VOLUME_UNIT_NOTE =
   "Volumes: oil & gas in kbpd, fuel distribution in thousand m³.";
 
-// ─── Elastic (coefficient) sensitivity helpers (module-level, pure) ────────────
+// ─── Scenario-grid (1-D Brent interpolation) helpers (module-level, pure) ───────
 
-/** A table is ELASTIC when its definition carries a `compose` block. */
-export function tableIsElastic(table: SensitivityTable): boolean {
-  return table.definition?.compose != null;
-}
-
-/** Classify a driver_key into a family + parse its forward year, for grouping. */
-function classifyDriverKey(key: string): {
-  type: ElasticDriverType;
-  year: number | null;
-  label: string;
-  unit: string;
-} {
-  const cat = MARKET_DRIVER_CATALOG_BY_KEY[key];
-  const yearMatch = key.match(/(\d{4})/);
-  const year = yearMatch ? Number(yearMatch[1]) : null;
-  const type: ElasticDriverType = /brent/i.test(key)
-    ? "brent"
-    : /fx|usd|brl/i.test(key)
-      ? "fx"
-      : "other";
-  // Prefer a compact "Brent 2026" / "FX 2026" label over the verbose catalog one.
-  const familyLabel = type === "brent" ? "Brent" : type === "fx" ? "FX" : key;
-  const label =
-    year != null && type !== "other"
-      ? `${familyLabel} ${year}`
-      : cat?.label ?? key;
-  const unit = cat?.unit ?? (type === "brent" ? "USD/bbl" : type === "fx" ? "BRL/USD" : "");
-  return { type, year, label, unit };
-}
-
-/** Stable family order then year-ascending: Brent 2026→2028, then FX, then others. */
-function elasticDriverSortKey(s: { type: ElasticDriverType; year: number | null; key: string }): string {
-  const fam = s.type === "brent" ? "0" : s.type === "fx" ? "1" : "2";
-  const yr = s.year != null ? String(s.year) : "9999";
-  return `${fam}-${yr}-${s.key}`;
+/** A table is a SCENARIO GRID when its definition carries a `grid` block. */
+export function tableIsGrid(table: SensitivityTable): boolean {
+  return table.definition?.grid != null;
 }
 
 /**
- * Suggested slider bounds for one driver_key: the span of {anchor, live, every
- * scenario level} padded with ~15% slack (min 1 unit), and a step ≈ span/100
- * rounded to a tidy value. Guarantees min < max even when everything coincides.
+ * Suggested slider step for the Brent axis given its [min,max] span: ≈ span/100
+ * rounded to a tidy 1/2/5×10ⁿ value, floored at 0.01. Pure.
  */
-function elasticSliderBounds(
-  values: number[],
-): { min: number; max: number; step: number } {
-  const finite = values.filter((v) => Number.isFinite(v));
-  if (finite.length === 0) return { min: 0, max: 100, step: 1 };
-  let lo = Math.min(...finite);
-  let hi = Math.max(...finite);
-  if (lo === hi) {
-    // single point → open a symmetric window around it
-    const pad = Math.max(Math.abs(lo) * 0.2, 1);
-    lo -= pad;
-    hi += pad;
-  } else {
-    const slack = Math.max((hi - lo) * 0.15, 1);
-    lo -= slack;
-    hi += slack;
-  }
-  const span = hi - lo;
-  // tidy step: aim ~100 steps; round to a nice 1/2/5 × 10^n
+function gridSliderStep(min: number, max: number): number {
+  const span = Math.max(max - min, 0);
+  if (span === 0) return 1;
   const rawStep = span / 100;
   const mag = Math.pow(10, Math.floor(Math.log10(rawStep || 1)));
   const norm = rawStep / mag;
   const niceUnit = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
-  const step = Math.max(niceUnit * mag, 0.01);
-  return { min: lo, max: hi, step };
+  return Math.max(niceUnit * mag, 0.01);
+}
+
+/** Clamp `v` to [min,max] (returns min when the bounds are degenerate). */
+function clampTo(v: number, min: number, max: number): number {
+  if (!Number.isFinite(v)) return min;
+  return v < min ? min : v > max ? max : v;
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -529,7 +470,7 @@ export function useStockGuideData(): UseStockGuideData {
   );
 
   // Ticker → company_name / display_order, over ALL rows the hook can see
-  // (visible to this caller). Used to label + order elastic-table rows.
+  // (visible to this caller). Used to label + order scenario-grid rows.
   const companyNameByTicker = useMemo(() => {
     const m = new Map<string, string>();
     for (const r of rows) m.set(r.ticker, r.company_name);
@@ -886,168 +827,162 @@ export function useStockGuideData(): UseStockGuideData {
     [liveByTicker],
   );
 
-  // ── f. Elastic (coefficient) sensitivity — shared slider state ─────────────
+  // ── f. Scenario-grid (1-D Brent interpolation) — shared slider state ───────
   //
-  // Per-table state: the slider LEVELS (by driver_key) + the selected preset.
-  // Lives in the hook so BOTH Views drag the same sliders. Levels initialize to
-  // the LIVE market value for each driver_key (fallback the anchor) the first
-  // time a table is touched, and re-init from Live once the market values land.
+  // A SCENARIO-GRID table (definition.grid) holds, per company, a dense mesh of
+  // (Brent → target price) points (the SENSITIVE values live in the relational
+  // `stock_guide_scenario_grid`, fetched on demand via the hide-aware RPC). The
+  // dashboard interpolates that mesh live against ONE Brent slider whose value
+  // lives in the hook so BOTH Views drag the same slider.
 
-  // Resolve the effective live value for a driver_key from the market catalog.
-  const liveDriverLevel = useCallback(
-    (key: string, anchor: number): number => {
-      const v = marketValues[key];
-      return v != null && Number.isFinite(v) ? v : anchor;
-    },
-    [marketValues],
+  const isGridTable = useCallback(
+    (table: SensitivityTable) => tableIsGrid(table),
+    [],
   );
 
-  // tableId → { levels: { key: number }, preset }
-  const [elasticState, setElasticState] = useState<
-    Record<number, { levels: Record<string, number>; preset: ElasticPreset }>
+  // Lazy per-table mesh cache: tableId → ScenarioGridPoint[] (ordered by ticker,
+  // x_value). Fetched once on first selection of a grid table, then memoized.
+  const [gridMeshById, setGridMeshById] = useState<
+    Record<number, { ticker: string; x: number; y: number }[]>
   >({});
+  const gridFetchedRef = useRef<Set<number>>(new Set());
+  const [gridLoading, setGridLoading] = useState(false);
 
-  // Build the "Live" levels for a compose block (live value, fallback anchor).
-  const liveLevelsFor = useCallback(
-    (compose: SensitivityComposeBlock): Record<string, number> => {
-      const out: Record<string, number> = {};
-      for (const key of compose.driver_keys ?? []) {
-        const anchor = compose.anchors?.[key] ?? 0;
-        out[key] = liveDriverLevel(key, anchor);
-      }
-      return out;
-    },
-    [liveDriverLevel],
-  );
+  // tableId → the user's Brent slider value (absent until the user drags; until
+  // then the model uses the live "today" value).
+  const [gridBrentById, setGridBrentById] = useState<Record<number, number>>({});
 
-  // Seed/refresh each elastic table's state once comps + market values are in.
-  // We (re)seed a table to "Live" only while it has no Custom/scenario override
-  // (i.e. it is still tracking Live), so a freshly-arrived market value flows in
-  // without clobbering a user's manual drag.
-  const elasticTables = useMemo(
-    () => sensitivityTables.filter((t) => tableIsElastic(t)),
-    [sensitivityTables],
-  );
-
+  // Fetch the mesh for the selected grid tables (lazy, cached by id).
   useEffect(() => {
-    if (elasticTables.length === 0) return;
-    setElasticState((prev) => {
-      let changed = false;
+    if (!supabase) return;
+    const toFetch = selectedTables.filter(
+      (t) => tableIsGrid(t) && !gridFetchedRef.current.has(t.id),
+    );
+    if (toFetch.length === 0) return;
+    for (const t of toFetch) gridFetchedRef.current.add(t.id);
+    setGridLoading(true);
+    Promise.all(
+      toFetch.map((t) =>
+        rpcGetStockGuideScenarioGrid(supabase, t.id)
+          .then((points) => ({ id: t.id, points }))
+          .catch(() => ({ id: t.id, points: [] })),
+      ),
+    ).then((results) => {
+      setGridMeshById((prev) => {
+        const next = { ...prev };
+        for (const { id, points } of results) {
+          next[id] = points.map((p) => ({
+            ticker: p.ticker,
+            x: p.x_value,
+            y: p.primary_value,
+          }));
+        }
+        return next;
+      });
+      setGridLoading(false);
+    });
+    // selectedTables drives which meshes we need; the mesh cache + the
+    // fetched-set ref guard re-fetch, so neither needs to be a dep.
+  }, [supabase, selectedTables]);
+
+  const setGridBrent = useCallback((tableId: number, value: number) => {
+    setGridBrentById((prev) => ({ ...prev, [tableId]: value }));
+  }, []);
+
+  const resetGridBrent = useCallback((tableId: number) => {
+    setGridBrentById((prev) => {
+      if (!(tableId in prev)) return prev;
       const next = { ...prev };
-      for (const t of elasticTables) {
-        const compose = t.definition.compose!;
-        const cur = prev[t.id];
-        if (cur == null) {
-          next[t.id] = { levels: liveLevelsFor(compose), preset: "Live" };
-          changed = true;
-        } else if (cur.preset === "Live") {
-          // keep tracking live as market values update
-          const live = liveLevelsFor(compose);
-          // shallow-compare to avoid needless renders
-          const diff = Object.keys(live).some((k) => live[k] !== cur.levels[k]);
-          if (diff) {
-            next[t.id] = { ...cur, levels: live };
-            changed = true;
-          }
+      delete next[tableId];
+      return next;
+    });
+  }, []);
+
+  // Per-ticker ascending series for a table's mesh (interpolation input).
+  const gridSeriesByTicker = useCallback(
+    (tableId: number): Map<string, GridPoint[]> => {
+      const mesh = gridMeshById[tableId] ?? [];
+      const m = new Map<string, GridPoint[]>();
+      for (const p of mesh) {
+        const arr = m.get(p.ticker) ?? [];
+        arr.push({ x: p.x, y: p.y });
+        m.set(p.ticker, arr);
+      }
+      // The RPC already orders by ticker, x_value; re-sort defensively.
+      for (const arr of m.values()) arr.sort((a, b) => a.x - b.x);
+      return m;
+    },
+    [gridMeshById],
+  );
+
+  const getGridModel = useCallback(
+    (table: SensitivityTable): GridTableModel | null => {
+      const grid = table.definition.grid;
+      if (grid == null) return null;
+
+      const series = gridSeriesByTicker(table.id);
+      if (series.size === 0) return null; // mesh not loaded / empty → caller shows loading/empty
+
+      // Slider domain = span of every x across all tickers in the mesh.
+      let min = Infinity;
+      let max = -Infinity;
+      for (const arr of series.values()) {
+        for (const p of arr) {
+          if (p.x < min) min = p.x;
+          if (p.x > max) max = p.x;
         }
       }
-      return changed ? next : prev;
-    });
-  }, [elasticTables, liveLevelsFor]);
+      if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+      if (min === max) {
+        // single x across the whole mesh → open a tiny window so the slider works
+        const pad = Math.max(Math.abs(min) * 0.1, 1);
+        min -= pad;
+        max += pad;
+      }
+      const step = gridSliderStep(min, max);
 
-  const isElasticTable = useCallback(
-    (table: SensitivityTable) => tableIsElastic(table),
-    [],
-  );
+      // Live "today" Brent value for the X driver (dynamic catalog metric).
+      const rawLive = marketValues[grid.x_driver_key];
+      const liveValue =
+        rawLive != null && Number.isFinite(rawLive) ? rawLive : null;
 
-  const setElasticDriverLevel = useCallback(
-    (tableId: number, key: string, level: number) => {
-      setElasticState((prev) => {
-        const cur = prev[tableId] ?? { levels: {}, preset: "Live" as ElasticPreset };
-        return {
-          ...prev,
-          [tableId]: {
-            levels: { ...cur.levels, [key]: level },
-            preset: "Custom",
-          },
-        };
-      });
-    },
-    [],
-  );
+      // Slider value: the user's drag, else the live value (clamped to domain),
+      // else the domain midpoint when there's no market data yet.
+      const dragged = gridBrentById[table.id];
+      const value =
+        dragged != null && Number.isFinite(dragged)
+          ? clampTo(dragged, min, max)
+          : liveValue != null
+            ? clampTo(liveValue, min, max)
+            : (min + max) / 2;
 
-  const setElasticPreset = useCallback(
-    (tableId: number, preset: ElasticPreset) => {
-      const table = elasticTables.find((t) => t.id === tableId);
-      if (!table) return;
-      const compose = table.definition.compose!;
-      setElasticState((prev) => {
-        if (preset === "Live") {
-          return {
-            ...prev,
-            [tableId]: { levels: liveLevelsFor(compose), preset: "Live" },
-          };
-        }
-        // a named scenario → its levels (fallback anchor for any missing key)
-        const scenarioLevels = compose.scenarios?.[preset] ?? {};
-        const levels: Record<string, number> = {};
-        for (const key of compose.driver_keys ?? []) {
-          const anchor = compose.anchors?.[key] ?? 0;
-          const v = scenarioLevels[key];
-          levels[key] = v != null && Number.isFinite(v) ? v : anchor;
-        }
-        return { ...prev, [tableId]: { levels, preset } };
-      });
-    },
-    [elasticTables, liveLevelsFor],
-  );
+      const label =
+        grid.x_label ||
+        MARKET_DRIVER_CATALOG_BY_KEY[grid.x_driver_key]?.label ||
+        "Brent";
+      const unit =
+        grid.x_unit ||
+        MARKET_DRIVER_CATALOG_BY_KEY[grid.x_driver_key]?.unit ||
+        "USD/bbl";
 
-  const getElasticModel = useCallback(
-    (table: SensitivityTable): ElasticTableModel | null => {
-      const compose = table.definition.compose;
-      if (compose == null) return null;
+      const slider: GridSlider = {
+        key: grid.x_driver_key,
+        label,
+        unit,
+        value,
+        liveValue,
+        min,
+        max,
+        step,
+      };
 
-      const state = elasticState[table.id];
-      // levels: prefer state; fallback to live (handles the first render before
-      // the seeding effect runs).
-      const levels: Record<string, number> =
-        state?.levels ?? liveLevelsFor(compose);
-      const preset: ElasticPreset = state?.preset ?? "Live";
-
-      // Sliders, one per driver_key, sorted Brent→FX→other then year ascending.
-      const sliders: ElasticSlider[] = (compose.driver_keys ?? []).map((key) => {
-        const { type, year, label, unit } = classifyDriverKey(key);
-        const anchor = compose.anchors?.[key] ?? 0;
-        const liveValue = marketValues[key];
-        const live = liveValue != null && Number.isFinite(liveValue) ? liveValue : null;
-        // collect every reference value for the slider bounds
-        const refs: number[] = [anchor];
-        if (live != null) refs.push(live);
-        for (const sc of Object.values(compose.scenarios ?? {})) {
-          const v = sc[key];
-          if (v != null && Number.isFinite(v)) refs.push(v);
-        }
-        const level = levels[key] ?? anchor;
-        refs.push(level);
-        const { min, max, step } = elasticSliderBounds(refs);
-        return { key, label, type, year, unit, anchor, liveValue: live, level, min, max, step };
-      });
-      sliders.sort((a, b) =>
-        elasticDriverSortKey(a).localeCompare(elasticDriverSortKey(b)),
-      );
-
-      const presetNames = Object.keys(compose.scenarios ?? {});
-
-      // Composed rows: ONLY tickers present in compose.base (hide-strip rule).
-      const rows: ElasticCompanyRow[] = [];
-      for (const ticker of Object.keys(compose.base ?? {})) {
-        const targetPrice = composeElasticTargetPrice(ticker, levels, compose);
+      // One interpolated row per VISIBLE ticker that has points (hide-strip: the
+      // RPC only returns visible tickers, so every mesh ticker is renderable).
+      const rows: GridCompanyRow[] = [];
+      for (const [ticker, points] of series.entries()) {
+        const targetPrice = interpolateGrid(points, value);
         const live = liveByTicker.get(ticker);
         const livePrice = live?.livePrice ?? null;
-        const basePrice =
-          compose.base[ticker] != null && Number.isFinite(compose.base[ticker])
-            ? compose.base[ticker]
-            : null;
         const upside =
           targetPrice != null && livePrice != null && livePrice > 0
             ? targetPrice / livePrice - 1
@@ -1057,11 +992,9 @@ export function useStockGuideData(): UseStockGuideData {
           companyName: companyNameByTicker.get(ticker) ?? ticker,
           targetPrice,
           upside,
-          basePrice,
           livePrice,
         });
       }
-      // order rows by the company display order when known
       rows.sort(
         (a, b) =>
           (displayOrderByTicker.get(a.ticker) ?? 0) -
@@ -1069,17 +1002,17 @@ export function useStockGuideData(): UseStockGuideData {
       );
 
       const outputLabel =
-        compose.output === "target_price" || !compose.output
+        grid.output === "target_price" || !grid.output
           ? "Target price"
-          : compose.output;
+          : grid.output;
 
-      return { sliders, presetNames, preset, rows, outputLabel };
+      return { slider, rows, outputLabel };
     },
     [
-      elasticState,
+      gridSeriesByTicker,
+      gridBrentById,
       marketValues,
       liveByTicker,
-      liveLevelsFor,
       companyNameByTicker,
       displayOrderByTicker,
     ],
@@ -1196,10 +1129,11 @@ export function useStockGuideData(): UseStockGuideData {
     selectedTables,
     computeSensitivityCell,
     resolveDriverAxis,
-    isElasticTable,
-    getElasticModel,
-    setElasticDriverLevel,
-    setElasticPreset,
+    isGridTable,
+    getGridModel,
+    gridLoading,
+    setGridBrent,
+    resetGridBrent,
     exportExcel,
     exportCsv,
     excelLoading,

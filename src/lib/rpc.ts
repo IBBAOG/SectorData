@@ -4242,7 +4242,8 @@ import type {
   SensitivityAxis,
   SensitivityTable,
   SensitivityTableAdmin,
-  SensitivityComposeBlock,
+  SensitivityGridBlock,
+  ScenarioGridPoint,
 } from "../types/stockGuide";
 
 /** Coerce a PostgREST numeric (string | number | null | undefined) → number | null. */
@@ -4572,55 +4573,24 @@ function mapSensitivityAxis(raw: unknown): SensitivityAxis {
   return axis;
 }
 
-/** Coerce a jsonb `{ key: number }` map into `Record<string, number>` (drops non-finite). */
-function coerceNumberMap(raw: unknown): Record<string, number> {
-  const out: Record<string, number> = {};
-  if (raw && typeof raw === "object") {
-    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-      const n = toNumOrNull(v);
-      if (n != null) out[k] = n;
-    }
-  }
-  return out;
-}
-
 /**
- * Coerce the ELASTIC `definition.compose` jsonb into a typed
- * `SensitivityComposeBlock`. Returns null when absent / malformed. Numbers are
- * coerced recursively (PostgREST-safe). The compose block is stored verbatim by
- * the upsert RPC, so we only normalize numeric types here.
+ * Coerce the SCENARIO-GRID `definition.grid` jsonb into a typed
+ * `SensitivityGridBlock`. Returns null when absent / malformed. The block is
+ * axis METADATA only (no numerics, no company keys) — stored verbatim by the
+ * upsert RPC — so we just normalize the string fields.
  */
-function mapComposeBlock(raw: unknown): SensitivityComposeBlock | null {
+function mapGridBlock(raw: unknown): SensitivityGridBlock | null {
   if (!raw || typeof raw !== "object") return null;
-  const c = raw as Record<string, unknown>;
-  const driverKeys = Array.isArray(c.driver_keys)
-    ? (c.driver_keys as unknown[]).map((k) => String(k))
-    : [];
-  const byCompanyRaw =
-    c.by_company && typeof c.by_company === "object"
-      ? (c.by_company as Record<string, unknown>)
-      : {};
-  const by_company: Record<string, Record<string, number>> = {};
-  for (const [ticker, slopes] of Object.entries(byCompanyRaw)) {
-    by_company[ticker] = coerceNumberMap(slopes);
-  }
-  const block: SensitivityComposeBlock = {
-    output: String(c.output ?? "target_price"),
-    driver_keys: driverKeys,
-    anchors: coerceNumberMap(c.anchors),
-    base: coerceNumberMap(c.base),
-    by_company,
+  const g = raw as Record<string, unknown>;
+  const xDriverKey = g.x_driver_key != null ? String(g.x_driver_key) : "";
+  // A grid block is only meaningful if it names the live X driver.
+  if (!xDriverKey) return null;
+  return {
+    x_driver_key: xDriverKey,
+    x_label: String(g.x_label ?? ""),
+    x_unit: String(g.x_unit ?? ""),
+    output: String(g.output ?? "target_price"),
   };
-  if (c.scenarios && typeof c.scenarios === "object") {
-    const scenarios: Record<string, Record<string, number>> = {};
-    for (const [name, levels] of Object.entries(
-      c.scenarios as Record<string, unknown>,
-    )) {
-      scenarios[name] = coerceNumberMap(levels);
-    }
-    block.scenarios = scenarios;
-  }
-  return block;
 }
 
 const SENSITIVITY_VALUE_MODES = [
@@ -4660,10 +4630,10 @@ function mapSensitivityTable(r: Record<string, unknown>): SensitivityTable {
   if (Array.isArray(def.cells_secondary)) {
     out.definition.cells_secondary = coerceMatrix(def.cells_secondary);
   }
-  // ELASTIC compose block (presence marks the table elastic). Stored verbatim by
-  // the upsert RPC; we only normalize numeric types here.
-  const compose = mapComposeBlock(def.compose);
-  if (compose) out.definition.compose = compose;
+  // SCENARIO-GRID block (presence marks the table a 1-D interpolation mesh).
+  // Axis metadata only — stored verbatim by the upsert RPC.
+  const grid = mapGridBlock(def.grid);
+  if (grid) out.definition.grid = grid;
   return out;
 }
 
@@ -4710,6 +4680,40 @@ export async function rpcGetStockGuideSensitivityTables(
   if (error) throw error;
   const rows = (data ?? []) as Record<string, unknown>[];
   return rows.map(mapSensitivityTable);
+}
+
+/**
+ * The 1-D scenario-grid mesh for ONE scenario-grid sensitivity table: every
+ * `(ticker, x_value, primary_value)` point, ordered by ticker then x_value.
+ * `x_value` is the Brent level; `primary_value` is the target price (BRL/share)
+ * at that Brent. HIDE-AWARE — a non-admin only receives points for VISIBLE
+ * tickers (a restricted company's per-Brent target prices never reach the
+ * browser). Both numerics are coerced; rows with a non-finite x/y are dropped so
+ * the interpolator never sees `NaN`.
+ *
+ * Lazy / on-demand: the dashboard calls this only when the user selects a
+ * scenario-grid table (and caches by `sensitivityId`).
+ *
+ * Backed by SECURITY DEFINER RPC `get_stock_guide_scenario_grid`.
+ */
+export async function rpcGetStockGuideScenarioGrid(
+  supabase: SupabaseClient,
+  sensitivityId: number,
+): Promise<ScenarioGridPoint[]> {
+  const { data, error } = await supabase.rpc(
+    "get_stock_guide_scenario_grid",
+    { p_sensitivity_id: sensitivityId },
+  );
+  if (error) throw error;
+  const rows = (data ?? []) as Record<string, unknown>[];
+  const out: ScenarioGridPoint[] = [];
+  for (const r of rows) {
+    const x = toNumOrNull(r.x_value);
+    const y = toNumOrNull(r.primary_value);
+    if (x == null || y == null) continue;
+    out.push({ ticker: String(r.ticker), x_value: x, primary_value: y });
+  }
+  return out;
 }
 
 // ── Admin reads (GRANT authenticated; is_admin()-guarded server-side) ─────────

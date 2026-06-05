@@ -50,8 +50,7 @@ import {
 } from "../useStockGuideData";
 import type {
   UseStockGuideData,
-  ElasticTableModel,
-  ElasticSlider,
+  GridTableModel,
 } from "../useStockGuideData";
 import type {
   StockGuideComputedRow,
@@ -712,86 +711,35 @@ function MobileSensitivityTable({
   );
 }
 
-// ─── Elastic (coefficient) panel — mobile ─────────────────────────────────────
+// ─── Scenario-grid (1-D Brent interpolation) panel — mobile ───────────────────
 //
-// Same analysis as desktop, adapted: sliders stacked vertically (Brent / FX
-// grouped by family, 3 years each), a preset chip row, then a stacked Target
-// price / Upside list per company. Same shared brain (slider levels + presets
-// live in the hook), so dragging here mirrors desktop.
+// Same analysis as desktop, adapted: ONE stacked Brent slider (marker at the live
+// "today" value) + a stacked Target price / Upside list per company. Same shared
+// brain (the Brent value lives in the hook), so dragging here mirrors desktop.
 
 function mobileFmtSlider(v: number): string {
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
 
-function MobileElasticSlider({
-  slider,
-  onChange,
-}: {
-  slider: ElasticSlider;
-  onChange: (level: number) => void;
-}): React.ReactElement {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 14 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
-        <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--mobile-text)" }}>
-          {slider.label}
-        </span>
-        <span style={{ fontSize: 13, fontWeight: 700, color: MOBILE_ACCENT, fontVariantNumeric: "tabular-nums" }}>
-          {mobileFmtSlider(slider.level)}
-          {slider.unit ? <span style={{ color: "var(--mobile-text-muted)", fontWeight: 600 }}> {slider.unit}</span> : null}
-        </span>
-      </div>
-      <input
-        type="range"
-        min={slider.min}
-        max={slider.max}
-        step={slider.step}
-        value={slider.level}
-        onChange={(e) => onChange(Number(e.target.value))}
-        aria-label={`${slider.label} (${slider.unit})`}
-        style={{ width: "100%", accentColor: MOBILE_ACCENT, height: 28 }}
-      />
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--mobile-text-faint)", fontVariantNumeric: "tabular-nums" }}>
-        <span>{mobileFmtSlider(slider.min)}</span>
-        <span>
-          anchor {mobileFmtSlider(slider.anchor)}
-          {slider.liveValue != null ? ` · live ${mobileFmtSlider(slider.liveValue)}` : ""}
-        </span>
-        <span>{mobileFmtSlider(slider.max)}</span>
-      </div>
-    </div>
-  );
-}
-
-function MobileElasticPanel({
+function MobileGridPanel({
   table,
   model,
-  onSetLevel,
-  onSetPreset,
+  onSetBrent,
+  onReset,
   quotesLoading,
 }: {
   table: SensitivityTable;
-  model: ElasticTableModel;
-  onSetLevel: (tableId: number, key: string, level: number) => void;
-  onSetPreset: (tableId: number, preset: string) => void;
+  model: GridTableModel;
+  onSetBrent: (tableId: number, value: number) => void;
+  onReset: (tableId: number) => void;
   quotesLoading: boolean;
 }): React.ReactElement {
-  const groups: { type: ElasticSlider["type"]; label: string; sliders: ElasticSlider[] }[] = [];
-  const groupLabel = (t: ElasticSlider["type"]) =>
-    t === "brent" ? "Brent (USD/bbl)" : t === "fx" ? "FX (USD/BRL)" : "Drivers";
-  for (const s of model.sliders) {
-    let g = groups.find((x) => x.type === s.type);
-    if (!g) {
-      g = { type: s.type, label: groupLabel(s.type), sliders: [] };
-      groups.push(g);
-    }
-    g.sliders.push(s);
-  }
-  const presetOptions = ["Live", ...model.presetNames];
+  const s = model.slider;
+  const atLive = s.liveValue != null && Math.abs(s.value - s.liveValue) < s.step / 2;
 
   return (
     <div style={{ marginBottom: 22 }}>
-      {/* Title + elastic badge */}
+      {/* Title + grid badge */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
         <span style={{ fontSize: 14, fontWeight: 700, color: "var(--mobile-text)" }}>{table.title}</span>
         <span
@@ -807,77 +755,63 @@ function MobileElasticPanel({
             textTransform: "uppercase",
           }}
         >
-          Elastic · {model.outputLabel}
+          Scenario grid · {model.outputLabel}
         </span>
       </div>
       <div style={{ fontSize: 11, color: "var(--mobile-text-muted)", marginBottom: 12, lineHeight: 1.4 }}>
-        Drag Brent / FX by year to re-price live.
+        Drag Brent to interpolate live. The marker shows today&rsquo;s Brent.
       </div>
 
-      {/* Scenario chips */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: "var(--mobile-text-muted)", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>
-          Scenario
+      {/* Brent slider */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--mobile-text)" }}>
+            {s.label} ({s.unit})
+          </span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: MOBILE_ACCENT, fontVariantNumeric: "tabular-nums" }}>
+            {mobileFmtSlider(s.value)}
+            <span style={{ color: "var(--mobile-text-muted)", fontWeight: 600, fontSize: 11 }}> {s.unit}</span>
+          </span>
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {presetOptions.map((p) => {
-            const on = model.preset === p;
-            return (
-              <button
-                key={p}
-                type="button"
-                onClick={() => onSetPreset(table.id, p)}
-                style={{
-                  padding: "6px 13px",
-                  borderRadius: 16,
-                  minHeight: 34,
-                  border: on ? `1px solid ${MOBILE_ACCENT}` : "1px solid var(--mobile-divider)",
-                  background: on ? "rgba(255,80,0,0.10)" : "var(--mobile-surface)",
-                  color: on ? MOBILE_ACCENT : "var(--mobile-text-muted)",
-                  fontSize: 12.5,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                }}
-              >
-                {p}
-              </button>
-            );
-          })}
-          {model.preset === "Custom" && (
-            <span
-              style={{
-                padding: "6px 13px",
-                borderRadius: 16,
-                minHeight: 34,
-                border: `1px solid ${MOBILE_ACCENT}`,
-                background: "rgba(255,80,0,0.10)",
-                color: MOBILE_ACCENT,
-                fontSize: 12.5,
-                fontWeight: 700,
-              }}
-            >
-              Custom
-            </span>
-          )}
+        <input
+          type="range"
+          min={s.min}
+          max={s.max}
+          step={s.step}
+          value={s.value}
+          onChange={(e) => onSetBrent(table.id, Number(e.target.value))}
+          aria-label={`${s.label} (${s.unit})`}
+          style={{ width: "100%", accentColor: MOBILE_ACCENT, height: 28 }}
+        />
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--mobile-text-faint)", fontVariantNumeric: "tabular-nums" }}>
+          <span>{mobileFmtSlider(s.min)}</span>
+          <span style={{ color: s.liveValue != null ? MOBILE_ACCENT : "var(--mobile-text-faint)", fontWeight: 600 }}>
+            {s.liveValue != null ? `live ${mobileFmtSlider(s.liveValue)}` : "live —"}
+          </span>
+          <span>{mobileFmtSlider(s.max)}</span>
         </div>
+        {s.liveValue != null && !atLive && (
+          <button
+            type="button"
+            onClick={() => onReset(table.id)}
+            style={{
+              marginTop: 12,
+              padding: "6px 13px",
+              borderRadius: 16,
+              minHeight: 34,
+              border: `1px solid ${MOBILE_ACCENT}`,
+              background: "rgba(255,80,0,0.08)",
+              color: MOBILE_ACCENT,
+              fontSize: 12.5,
+              fontWeight: 700,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            Reset to live Brent
+          </button>
+        )}
       </div>
-
-      {/* Sliders grouped by family */}
-      {groups.map((g) => (
-        <div key={g.type} style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--mobile-text-muted)", marginBottom: 10 }}>
-            {g.label}
-          </div>
-          {g.sliders.map((s) => (
-            <MobileElasticSlider
-              key={s.key}
-              slider={s}
-              onChange={(level) => onSetLevel(table.id, s.key, level)}
-            />
-          ))}
-        </div>
-      ))}
 
       {/* Output list (Target price / Upside per company) */}
       <div
@@ -959,10 +893,11 @@ function MobileSensitivity({
   y2Label,
   resolveDriverAxis,
   computeSensitivityCell,
-  isElasticTable,
-  getElasticModel,
-  onSetElasticLevel,
-  onSetElasticPreset,
+  isGridTable,
+  getGridModel,
+  gridLoading,
+  onSetGridBrent,
+  onResetGridBrent,
   quotesLoading,
 }: {
   tables: SensitivityTable[];
@@ -973,10 +908,11 @@ function MobileSensitivity({
   y2Label: string;
   resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
   computeSensitivityCell: UseStockGuideData["computeSensitivityCell"];
-  isElasticTable: UseStockGuideData["isElasticTable"];
-  getElasticModel: UseStockGuideData["getElasticModel"];
-  onSetElasticLevel: UseStockGuideData["setElasticDriverLevel"];
-  onSetElasticPreset: UseStockGuideData["setElasticPreset"];
+  isGridTable: UseStockGuideData["isGridTable"];
+  getGridModel: UseStockGuideData["getGridModel"];
+  gridLoading: boolean;
+  onSetGridBrent: UseStockGuideData["setGridBrent"];
+  onResetGridBrent: UseStockGuideData["resetGridBrent"];
   quotesLoading: boolean;
 }): React.ReactElement {
   if (loading) {
@@ -1003,17 +939,35 @@ function MobileSensitivity({
   return (
     <div>
       {tables.map((t) => {
-        const model = isElasticTable(t) ? getElasticModel(t) : null;
-        if (model) {
+        if (isGridTable(t)) {
+          const model = getGridModel(t);
+          if (model) {
+            return (
+              <MobileGridPanel
+                key={t.id}
+                table={t}
+                model={model}
+                onSetBrent={onSetGridBrent}
+                onReset={onResetGridBrent}
+                quotesLoading={quotesLoading}
+              />
+            );
+          }
           return (
-            <MobileElasticPanel
-              key={t.id}
-              table={t}
-              model={model}
-              onSetLevel={onSetElasticLevel}
-              onSetPreset={onSetElasticPreset}
-              quotesLoading={quotesLoading}
-            />
+            <div key={t.id} style={{ marginBottom: 22 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--mobile-text)", marginBottom: 8 }}>
+                {t.title}
+              </div>
+              {gridLoading ? (
+                <div style={{ padding: "20px 0" }}>
+                  <BarrelLoading bare />
+                </div>
+              ) : (
+                <div style={{ padding: "14px 4px", color: "var(--mobile-text-muted)", fontSize: 12.5 }}>
+                  No scenario-grid points uploaded for this table yet.
+                </div>
+              )}
+            </div>
           );
         }
         return (
@@ -1053,10 +1007,11 @@ export default function MobileView(): React.ReactElement {
     selectedTables,
     resolveDriverAxis,
     computeSensitivityCell,
-    isElasticTable,
-    getElasticModel,
-    setElasticDriverLevel,
-    setElasticPreset,
+    isGridTable,
+    getGridModel,
+    gridLoading,
+    setGridBrent,
+    resetGridBrent,
   } = useStockGuideData();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -1289,10 +1244,11 @@ export default function MobileView(): React.ReactElement {
           y2Label={config.y2_label}
           resolveDriverAxis={resolveDriverAxis}
           computeSensitivityCell={computeSensitivityCell}
-          isElasticTable={isElasticTable}
-          getElasticModel={getElasticModel}
-          onSetElasticLevel={setElasticDriverLevel}
-          onSetElasticPreset={setElasticPreset}
+          isGridTable={isGridTable}
+          getGridModel={getGridModel}
+          gridLoading={gridLoading}
+          onSetGridBrent={setGridBrent}
+          onResetGridBrent={resetGridBrent}
           quotesLoading={quotesLoading}
         />
       </BottomSheet>
