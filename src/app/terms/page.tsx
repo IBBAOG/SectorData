@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 
 export const metadata: Metadata = {
   title: "Terms of Service — SectorData",
@@ -6,6 +7,11 @@ export const metadata: Metadata = {
 
 // DRAFT — Requires legal review before production use.
 export default function TermsPage() {
+  // Route temporarily disabled until the DRAFT passes legal review.
+  // To re-enable, remove the notFound() call below — the page content
+  // is kept intact (unreachable) for trivial reactivation.
+  notFound();
+
   return (
     <main className="container py-5" style={{ fontFamily: "Arial", maxWidth: 800 }}>
       <h1 style={{ fontWeight: 700, marginBottom: 4 }}>Terms of Service</h1>
