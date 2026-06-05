@@ -46,6 +46,7 @@ import {
   formatStakePct,
   TOP_N,
   BRAND_ORANGE,
+  OTHERS_COLOR,
   FIXED_COMPANIES,
   type Granularity,
   type CompanyDailyOilMatrix,
@@ -666,6 +667,8 @@ function CompanyContent({
                 Daily net oil by field — {selectedEmpresa}
                 <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 400, color: "#888" }}>
                   Net oil (kbpd), stake-weighted · one row per day
+                  {companyDailyOilMatrix.fields.some(f => f.isOthers) &&
+                    " · top 6 fields; rest grouped as Others (full breakdown in Explore raw data)"}
                 </span>
               </span>
             }
@@ -740,10 +743,14 @@ function CompanyDailyOilMatrixTable({
             {fields.map(f => (
               <th
                 key={f.campo}
+                title={f.isOthers && f.othersFieldNames ? f.othersFieldNames.join(", ") : undefined}
                 style={{
                   position: "sticky", top: 0, zIndex: 2,
                   background: "#fff", borderBottom: "2px solid #1a1a1a",
                   padding: "8px 12px", textAlign: "right", whiteSpace: "nowrap",
+                  // Others column reads in the neutral grey it uses in the charts.
+                  color: f.isOthers ? OTHERS_COLOR : undefined,
+                  cursor: f.isOthers ? "help" : undefined,
                 }}
               >
                 {f.label}

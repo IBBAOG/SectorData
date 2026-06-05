@@ -1206,16 +1206,19 @@ function CompanyFieldCard({
       }
       subtitle={
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <span
-            style={{
-              display: "inline-flex", alignItems: "center", padding: "2px 8px",
-              borderRadius: 6, background: "var(--mobile-surface-2, #fafafc)",
-              border: "1px solid var(--mobile-border, #e0e0e0)",
-              color: "var(--mobile-text-muted, #6b6b73)", fontSize: 11, fontWeight: 700,
-            }}
-          >
-            {formatStakePct(item.stakePct)}
-          </span>
+          {/* Others is a mixed-stake aggregate → no stake badge. */}
+          {Number.isFinite(item.stakePct) && (
+            <span
+              style={{
+                display: "inline-flex", alignItems: "center", padding: "2px 8px",
+                borderRadius: 6, background: "var(--mobile-surface-2, #fafafc)",
+                border: "1px solid var(--mobile-border, #e0e0e0)",
+                color: "var(--mobile-text-muted, #6b6b73)", fontSize: 11, fontWeight: 700,
+              }}
+            >
+              {formatStakePct(item.stakePct)}
+            </span>
+          )}
           {item.bacia && (
             <span style={{ fontSize: 11, color: "var(--mobile-text-muted, #6b6b73)" }}>
               {item.bacia}
