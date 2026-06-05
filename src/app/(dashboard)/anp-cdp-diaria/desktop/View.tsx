@@ -1,10 +1,23 @@
 "use client";
 
-// Desktop View — ANP CDP Diaria (≥769px).
+// Desktop View — ANP CDP Daily Production (≥769px).
 //
-// Verbatim move of the previous page.tsx body, except all data state has been
-// lifted into useAnpCdpDiariaData. The View now reads from the hook and only
-// owns presentation concerns (layout, JSX composition, copy).
+// Two-Tier Tabs IA (2026-06-05) — redesign per CTO/user brief:
+//   A primary tab bar at the top of the content column:
+//     [ PRIO ]  [ Petrobras ]  [ Explore raw data ]
+//   • PRIO / Petrobras  → company net production view (CompanyContent, verbatim
+//     from the previous build). PRIO is the landing default (zero clicks).
+//   • Explore raw data  → granular surface with sub-tabs [ Field | Installation ]
+//     plus a discreet "Well-level (advanced) >" affordance that reveals the
+//     Well level (3 clicks deep, desktop-only).
+//
+// The active primary tab derives from hook state:
+//   granularity === "company"  → active tab = selectedEmpresa (PRIO/Petrobras)
+//   granularity ∈ {field,installation,well} → active tab = "Explore raw data"
+//
+// Lazy-mount discipline: clicking a company tab sets granularity="company";
+// clicking "Explore raw data" sets granularity="field". The heavy level RPCs
+// (especially the ~180k-row Well one) only fire once Explore is opened.
 //
 // Binding sync rule (CLAUDE.md § Dual-view policy): meaningful changes here
 // must land in mobile/View.tsx in the SAME commit, OR the commit message must
@@ -33,12 +46,14 @@ import {
   formatStakePct,
   TOP_N,
   BRAND_ORANGE,
-  FEATURED_COMPANIES,
+  FIXED_COMPANIES,
   type Granularity,
-  type CompanyFieldAggregate,
+  type CompanyDailyOilMatrix,
   type CompanyFieldNoData,
-  type AnpCdpDiariaEmpresa,
 } from "../useAnpCdpDiariaData";
+
+// Sub-tabs inside "Explore raw data" that map directly to a granularity.
+type ExploreLevel = "field" | "installation";
 
 export default function DesktopView(): React.ReactElement | null {
   const {
@@ -57,14 +72,23 @@ export default function DesktopView(): React.ReactElement | null {
     dimLabel,
     headerTitle, headerSub,
     // Company level
-    empresas, selectedEmpresa, setSelectedEmpresa,
+    selectedEmpresa, setSelectedEmpresa,
     companySerieRows,
-    companyFieldAggregates, companyFieldsNoData,
-    companyTotalOilNetAvg, companyTotalGasNetAvg,
-    companyPetroleoChart, companyGasChart,
+    companyDailyOilMatrix, companyFieldsNoData,
+    companyPetroleoChart, companyMonthlyOilChart,
   } = useAnpCdpDiariaData();
 
   const isCompany = granularity === "company";
+
+  // Primary-tab dispatch. PRIO / Petrobras select the company; Explore opens
+  // the granular surface at the Field sub-tab (lazy-mount of the level RPCs).
+  function selectCompanyTab(name: string) {
+    setSelectedEmpresa(name);
+    if (granularity !== "company") setGranularity("company");
+  }
+  function selectExploreTab() {
+    if (granularity === "company") setGranularity("field");
+  }
 
   if (visLoading || !visible) return null;
 
@@ -74,7 +98,7 @@ export default function DesktopView(): React.ReactElement | null {
       <div className="container-fluid g-0">
         <div className="row g-0">
 
-          {/* ── Sidebar ───────────────────────────────────────────────── */}
+          {/* ── Sidebar (logo + period only) ──────────────────────────── */}
           <div className="col-xxl-2 col-md-3 p-0">
             <div id="sidebar">
               <div style={{ textAlign: "center" }}>
@@ -82,108 +106,15 @@ export default function DesktopView(): React.ReactElement | null {
               </div>
               <hr style={{ borderTop: "1px solid #f0f0f0", marginBottom: 14 }} />
 
-              {/* Granularity toggle */}
-              <div className="sidebar-filter-section">
-                <div className="sidebar-filter-label">Granularity</div>
-                <SegmentedToggle<Granularity>
-                  value={granularity}
-                  onChange={setGranularity}
-                  options={[
-                    { value: "field",        label: "Field" },
-                    { value: "installation", label: "Installation" },
-                    { value: "well",         label: "Well" },
-                    { value: "company",      label: "Company" },
-                  ]}
-                />
-              </div>
-
-              {/* Company selector (Company only) */}
-              {isCompany && (
-                <>
-                  <div className="sidebar-section-label">Company</div>
-                  <div className="sidebar-filter-section">
-                    <CompanySelector
-                      empresas={empresas}
-                      selected={selectedEmpresa}
-                      onSelect={setSelectedEmpresa}
-                    />
-                  </div>
-                </>
-              )}
-
-              {!isCompany && <div className="sidebar-section-label">Filters</div>}
-
-              {/* Field (Field / Installation / Well) */}
-              {!isCompany && (
-                <div className="sidebar-filter-section">
-                  <div className="sidebar-filter-label">
-                    Field{" "}
-                    <span style={{ color: "#888", fontWeight: 400 }}>
-                      ({selectedCampos.length}/{campos.length})
-                    </span>
-                  </div>
-                  <SearchableMultiSelect
-                    options={campos}
-                    value={selectedCampos}
-                    onChange={setSelectedCampos}
-                  />
-                  {granularity === "field" && selectedCampos.length === 0 && (
-                    <div style={{ fontSize: 11, color: "#888", marginTop: 6, paddingLeft: 2 }}>
-                      No selection: charts show Top {TOP_N} by average in the period.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Installation (Installation only) */}
-              {granularity === "installation" && (
-                <div className="sidebar-filter-section">
-                  <div className="sidebar-filter-label">
-                    Installation{" "}
-                    <span style={{ color: "#888", fontWeight: 400 }}>
-                      ({selectedInstalacoes.length}/{instalacoes.length})
-                    </span>
-                  </div>
-                  <SearchableMultiSelect
-                    options={instalacoes}
-                    value={selectedInstalacoes}
-                    onChange={setSelectedInstalacoes}
-                  />
-                  {selectedInstalacoes.length === 0 && (
-                    <div style={{ fontSize: 11, color: "#888", marginTop: 6, paddingLeft: 2 }}>
-                      No selection: charts show Top {TOP_N} by average in the period.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Well (Well only) */}
-              {granularity === "well" && (
-                <div className="sidebar-filter-section">
-                  <div className="sidebar-filter-label">
-                    Well{" "}
-                    <span style={{ color: "#888", fontWeight: 400 }}>
-                      ({selectedPocos.length}/{pocos.length})
-                    </span>
-                  </div>
-                  <SearchableMultiSelect
-                    options={pocos}
-                    value={selectedPocos}
-                    onChange={setSelectedPocos}
-                  />
-                  {selectedPocos.length === 0 && (
-                    <div style={{ fontSize: 11, color: "#888", marginTop: 6, paddingLeft: 2 }}>
-                      No selection: charts show Top {TOP_N} by average in the period.
-                    </div>
-                  )}
-                </div>
-              )}
-
               <div className="sidebar-filter-section">
                 <div className="sidebar-filter-label">Period</div>
                 {!loading && hasDates && (
                   <PeriodSlider dates={allDates} value={dateRange} onChange={setDateRange} />
                 )}
+              </div>
+
+              <div style={{ fontSize: 11, color: "#888", marginTop: 10, paddingLeft: 2, lineHeight: 1.5 }}>
+                Net = field daily production × the company&apos;s stake.
               </div>
             </div>
           </div>
@@ -198,6 +129,15 @@ export default function DesktopView(): React.ReactElement | null {
                 rightSlot={<ExportButton spec={anpCdpDiariaExport} />}
               />
 
+              {/* Primary tab bar: [PRIO] [Petrobras] [Explore raw data] */}
+              <PrimaryTabBar
+                companies={FIXED_COMPANIES as readonly string[]}
+                activeCompany={isCompany ? selectedEmpresa : null}
+                exploreActive={!isCompany}
+                onSelectCompany={selectCompanyTab}
+                onSelectExplore={selectExploreTab}
+              />
+
               {loading ? (
                 <BarrelLoading />
               ) : isCompany ? (
@@ -205,141 +145,33 @@ export default function DesktopView(): React.ReactElement | null {
                   selectedEmpresa={selectedEmpresa}
                   serieLoading={serieLoading}
                   companySerieRows={companySerieRows}
-                  companyFieldAggregates={companyFieldAggregates}
+                  companyDailyOilMatrix={companyDailyOilMatrix}
                   companyFieldsNoData={companyFieldsNoData}
-                  companyTotalOilNetAvg={companyTotalOilNetAvg}
-                  companyTotalGasNetAvg={companyTotalGasNetAvg}
                   companyPetroleoChart={companyPetroleoChart}
-                  companyGasChart={companyGasChart}
+                  companyMonthlyOilChart={companyMonthlyOilChart}
                 />
-              ) : serieRows.length === 0 ? (
-                <div style={{
-                  padding: "40px 24px", textAlign: "center", color: "#888",
-                  fontFamily: "Arial", fontSize: 14, border: "1px dashed #ddd",
-                  borderRadius: 8, marginTop: 12,
-                }}>
-                  No {dimLabel.en.toLowerCase()} production data yet.
-                  {granularity !== "field" && " This level's ETL runs 3×/day — wait for the first pull post-deploy."}
-                </div>
               ) : (
-                <>
-                  <div className="row mb-2">
-                    <div className="col-12">
-                      <ChartSection
-                        title={
-                          explicitDims.length > 0
-                            ? `Oil (kbpd) — ${explicitDims.length} ${dimLabel.plural} selected`
-                            : `Oil (kbpd) — Top ${TOP_N} ${dimLabel.singular.toLowerCase()}(s) by average in the period`
-                        }
-                        loading={serieLoading}
-                        height={320}
-                      >
-                        <PlotlyChart
-                          data={petroleoChart.data}
-                          layout={petroleoChart.layout}
-                          config={{ responsive: true, displayModeBar: false }}
-                          style={{ width: "100%", height: 320 }}
-                        />
-                      </ChartSection>
-                    </div>
-                  </div>
-
-                  <div className="row mb-2">
-                    <div className="col-12">
-                      <ChartSection
-                        title={
-                          explicitDims.length > 0
-                            ? `Gas (Mm³/day) — ${explicitDims.length} ${dimLabel.plural} selected`
-                            : `Gas (Mm³/day) — Top ${TOP_N} ${dimLabel.singular.toLowerCase()}(s) by average in the period`
-                        }
-                        loading={serieLoading}
-                        height={320}
-                      >
-                        <PlotlyChart
-                          data={gasChart.data}
-                          layout={gasChart.layout}
-                          config={{ responsive: true, displayModeBar: false }}
-                          style={{ width: "100%", height: 320 }}
-                        />
-                      </ChartSection>
-                    </div>
-                  </div>
-
-                  <div className="row mb-2">
-                    <div className="col-12">
-                      <ChartSection
-                        title={`Production by ${dimLabel.en} — most recent records (${tableRows.length.toLocaleString("pt-BR")} of ${visibleRows.length.toLocaleString("pt-BR")})`}
-                        loading={serieLoading}
-                      >
-                        <div style={{ overflowX: "auto", maxHeight: 420, overflowY: "auto", border: "1px solid #eee", borderRadius: 6 }}>
-                          <table className="table table-sm" style={{ fontFamily: "Arial", fontSize: 12, marginBottom: 0 }}>
-                            <thead style={{ position: "sticky", top: 0, background: "#fff", zIndex: 1, borderBottom: "2px solid #1a1a1a" }}>
-                              <tr>
-                                <th style={{ padding: "8px 12px", textAlign: "left" }}>Date</th>
-                                {granularity === "field" && (
-                                  <>
-                                    <th style={{ padding: "8px 12px", textAlign: "left" }}>Basin</th>
-                                    <th style={{ padding: "8px 12px", textAlign: "left" }}>Field</th>
-                                  </>
-                                )}
-                                {granularity === "installation" && (
-                                  <>
-                                    <th style={{ padding: "8px 12px", textAlign: "left" }}>Field</th>
-                                    <th style={{ padding: "8px 12px", textAlign: "left" }}>Installation</th>
-                                  </>
-                                )}
-                                {granularity === "well" && (
-                                  <>
-                                    <th style={{ padding: "8px 12px", textAlign: "left" }}>Basin</th>
-                                    <th style={{ padding: "8px 12px", textAlign: "left" }}>Field</th>
-                                    <th style={{ padding: "8px 12px", textAlign: "left" }}>Well</th>
-                                  </>
-                                )}
-                                <th style={{ padding: "8px 12px", textAlign: "right" }}>Oil (kbpd)</th>
-                                <th style={{ padding: "8px 12px", textAlign: "right" }}>Gas (Mm³/day)</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {tableRows.map((r, i) => (
-                                <tr key={`${r.data}-${r.campo}-${r.dimension}-${i}`}>
-                                  <td style={{ padding: "6px 12px" }}>{r.data}</td>
-                                  {granularity === "field" && (
-                                    <>
-                                      <td style={{ padding: "6px 12px" }}>{r.bacia ?? "—"}</td>
-                                      <td style={{ padding: "6px 12px" }}>{r.campo}</td>
-                                    </>
-                                  )}
-                                  {granularity === "installation" && (
-                                    <>
-                                      <td style={{ padding: "6px 12px" }}>{r.campo}</td>
-                                      <td style={{ padding: "6px 12px" }}>{r.dimension}</td>
-                                    </>
-                                  )}
-                                  {granularity === "well" && (
-                                    <>
-                                      <td style={{ padding: "6px 12px" }}>{r.bacia ?? "—"}</td>
-                                      <td style={{ padding: "6px 12px" }}>{r.campo}</td>
-                                      <td style={{ padding: "6px 12px" }}>{r.dimension}</td>
-                                    </>
-                                  )}
-                                  <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmtNumber(r.petroleo_bbl_dia == null ? null : bblDiaToKbpd(r.petroleo_bbl_dia), 1)}</td>
-                                  <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmtNumber(r.gas_mm3_dia, 3)}</td>
-                                </tr>
-                              ))}
-                              {tableRows.length === 0 && (
-                                <tr>
-                                  <td colSpan={granularity === "well" ? 6 : 5} style={{ padding: "16px 12px", color: "#888", textAlign: "center" }}>
-                                    No data for the current filters.
-                                  </td>
-                                </tr>
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
-                      </ChartSection>
-                    </div>
-                  </div>
-                </>
+                <ExploreSurface
+                  granularity={granularity}
+                  setGranularity={setGranularity}
+                  serieLoading={serieLoading}
+                  campos={campos}
+                  instalacoes={instalacoes}
+                  pocos={pocos}
+                  selectedCampos={selectedCampos}
+                  setSelectedCampos={setSelectedCampos}
+                  selectedInstalacoes={selectedInstalacoes}
+                  setSelectedInstalacoes={setSelectedInstalacoes}
+                  selectedPocos={selectedPocos}
+                  setSelectedPocos={setSelectedPocos}
+                  serieRows={serieRows}
+                  visibleRows={visibleRows}
+                  explicitDims={explicitDims}
+                  petroleoChart={petroleoChart}
+                  gasChart={gasChart}
+                  tableRows={tableRows}
+                  dimLabel={dimLabel}
+                />
               )}
             </div>
           </div>
@@ -350,121 +182,427 @@ export default function DesktopView(): React.ReactElement | null {
   );
 }
 
-// ─── Company-level sub-components ───────────────────────────────────────────
+// ─── Primary tab bar ────────────────────────────────────────────────────────
 
-/** Single-select company picker: PRIO / Petrobras pills + dropdown for the rest. */
-function CompanySelector({
-  empresas,
-  selected,
-  onSelect,
+/**
+ * Top-of-content tab bar. PRIO / Petrobras are company tabs; "Explore raw data"
+ * opens the granular surface. The active tab is brand orange (underline + text)
+ * — true tabs, not the sliding-pill SegmentedToggle.
+ */
+function PrimaryTabBar({
+  companies,
+  activeCompany,
+  exploreActive,
+  onSelectCompany,
+  onSelectExplore,
 }: {
-  empresas: AnpCdpDiariaEmpresa[];
-  selected: string | null;
-  onSelect: (e: string | null) => void;
+  companies: readonly string[];
+  activeCompany: string | null;
+  exploreActive: boolean;
+  onSelectCompany: (name: string) => void;
+  onSelectExplore: () => void;
 }): React.ReactElement {
-  const featured = FEATURED_COMPANIES.filter(f => empresas.some(e => e.empresa === f));
-  const others = empresas.filter(e => !FEATURED_COMPANIES.includes(e.empresa));
-  const coverage = (name: string) => {
-    const e = empresas.find(x => x.empresa === name);
-    return e ? `${e.n_campos_com_dado}/${e.n_campos_stake}` : null;
-  };
-
   return (
-    <div>
-      {/* Featured pills */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-        {featured.map(name => {
-          const active = selected === name;
-          return (
-            <button
-              key={name}
-              type="button"
-              onClick={() => onSelect(name)}
-              style={{
-                minHeight: 30,
-                padding: "0 12px",
-                borderRadius: 999,
-                border: "1px solid",
-                borderColor: active ? BRAND_ORANGE : "#e0e0e0",
-                background: active ? "rgba(255,80,0,0.10)" : "#fff",
-                color: active ? BRAND_ORANGE : "#555",
-                fontFamily: "Arial",
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              {name}
-              {coverage(name) && (
-                <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.8 }}>
-                  {coverage(name)}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Other companies dropdown (single-select) */}
-      <select
-        value={selected && !FEATURED_COMPANIES.includes(selected) ? selected : ""}
-        onChange={e => onSelect(e.target.value || null)}
-        className="form-select form-select-sm"
-        style={{ fontFamily: "Arial", fontSize: 12 }}
-      >
-        <option value="">More companies…</option>
-        {others.map(e => (
-          <option key={e.empresa} value={e.empresa}>
-            {e.empresa} ({e.n_campos_com_dado}/{e.n_campos_stake})
-          </option>
-        ))}
-      </select>
-
-      <div style={{ fontSize: 11, color: "#888", marginTop: 8, paddingLeft: 2, lineHeight: 1.4 }}>
-        Net = field daily production × the company&apos;s stake. Coverage shows
-        fields with daily data / total stake-held fields.
-      </div>
+    <div
+      role="tablist"
+      style={{
+        display: "flex",
+        alignItems: "stretch",
+        gap: 4,
+        borderBottom: "1px solid #e0e0e0",
+        marginBottom: 16,
+      }}
+    >
+      {companies.map(name => (
+        <PrimaryTab
+          key={name}
+          label={name}
+          active={activeCompany === name}
+          onClick={() => onSelectCompany(name)}
+        />
+      ))}
+      {/* Visual separator before the secondary "Explore" entry. */}
+      <div style={{ flex: 1 }} />
+      <PrimaryTab
+        label="Explore raw data"
+        active={exploreActive}
+        onClick={onSelectExplore}
+        secondary
+      />
     </div>
   );
 }
 
-/** Main content for the Company level: net charts + per-field net table + coverage note. */
+function PrimaryTab({
+  label,
+  active,
+  onClick,
+  secondary = false,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  secondary?: boolean;
+}): React.ReactElement {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      style={{
+        position: "relative",
+        background: "transparent",
+        border: "none",
+        borderBottom: active ? `3px solid ${BRAND_ORANGE}` : "3px solid transparent",
+        marginBottom: -1,
+        padding: secondary ? "10px 14px" : "10px 18px",
+        fontFamily: "Arial",
+        fontSize: secondary ? 13 : 15,
+        fontWeight: active ? 700 : secondary ? 500 : 600,
+        color: active ? BRAND_ORANGE : secondary ? "#888" : "#555",
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+        transition: "color 0.15s",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+// ─── Explore raw data surface ───────────────────────────────────────────────
+
+/**
+ * Granular exploration surface: sub-tabs [Field | Installation] + a discreet
+ * "Well-level (advanced) >" affordance. Reuses the relocated level filters,
+ * the Oil/Gas line charts and the recent-records table — same brain, demoted
+ * placement. Caption flags the data as unweighted (gross, all operators).
+ */
+function ExploreSurface({
+  granularity,
+  setGranularity,
+  serieLoading,
+  campos,
+  instalacoes,
+  pocos,
+  selectedCampos,
+  setSelectedCampos,
+  selectedInstalacoes,
+  setSelectedInstalacoes,
+  selectedPocos,
+  setSelectedPocos,
+  serieRows,
+  visibleRows,
+  explicitDims,
+  petroleoChart,
+  gasChart,
+  tableRows,
+  dimLabel,
+}: {
+  granularity: Granularity;
+  setGranularity: (g: Granularity) => void;
+  serieLoading: boolean;
+  campos: string[];
+  instalacoes: string[];
+  pocos: string[];
+  selectedCampos: string[];
+  setSelectedCampos: (v: string[]) => void;
+  selectedInstalacoes: string[];
+  setSelectedInstalacoes: (v: string[]) => void;
+  selectedPocos: string[];
+  setSelectedPocos: (v: string[]) => void;
+  serieRows: ReturnType<typeof useAnpCdpDiariaData>["serieRows"];
+  visibleRows: ReturnType<typeof useAnpCdpDiariaData>["visibleRows"];
+  explicitDims: string[];
+  petroleoChart: { data: PlotData[]; layout: Partial<Layout> };
+  gasChart: { data: PlotData[]; layout: Partial<Layout> };
+  tableRows: ReturnType<typeof useAnpCdpDiariaData>["tableRows"];
+  dimLabel: { singular: string; plural: string; en: string };
+}): React.ReactElement {
+  const isWell = granularity === "well";
+  // The sub-tab control only toggles Field ↔ Installation. Well is reached via
+  // the advanced affordance (and stays out of the SegmentedToggle).
+  const subTabValue: ExploreLevel = granularity === "installation" ? "installation" : "field";
+
+  return (
+    <div>
+      {/* Caption — signals gross vs net */}
+      <div style={{ fontSize: 12, color: "#888", marginBottom: 10, fontFamily: "Arial" }}>
+        Unweighted ANP daily feed — all operators.
+      </div>
+
+      {/* Sub-tabs [Field | Installation] + advanced Well affordance */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          marginBottom: 14,
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ minWidth: 220, maxWidth: 320, flex: "0 1 280px" }}>
+          <SegmentedToggle<ExploreLevel>
+            value={subTabValue}
+            onChange={(v) => setGranularity(v)}
+            options={[
+              { value: "field",        label: "Field" },
+              { value: "installation", label: "Installation" },
+            ]}
+          />
+        </div>
+
+        {/* Well-level (advanced) — the most hidden entry (hardcore only). */}
+        <button
+          type="button"
+          onClick={() => setGranularity(isWell ? "field" : "well")}
+          style={{
+            background: "transparent",
+            border: "none",
+            padding: "4px 2px",
+            fontFamily: "Arial",
+            fontSize: 12,
+            fontWeight: isWell ? 700 : 400,
+            color: isWell ? BRAND_ORANGE : "#888",
+            cursor: "pointer",
+            textDecoration: "underline",
+            textDecorationStyle: "dashed",
+            textUnderlineOffset: 3,
+            whiteSpace: "nowrap",
+          }}
+          title="Well-level production (advanced)"
+        >
+          {isWell ? "← Back to Field / Installation" : "Well-level (advanced) ›"}
+        </button>
+      </div>
+
+      {/* Level filter (relocated from the sidebar) */}
+      <div className="row mb-2">
+        <div className="col-12 col-lg-6 col-xl-4">
+          {granularity === "field" && (
+            <ExploreFilter
+              label="Field"
+              count={selectedCampos.length}
+              total={campos.length}
+              options={campos}
+              value={selectedCampos}
+              onChange={setSelectedCampos}
+            />
+          )}
+          {granularity === "installation" && (
+            <ExploreFilter
+              label="Installation"
+              count={selectedInstalacoes.length}
+              total={instalacoes.length}
+              options={instalacoes}
+              value={selectedInstalacoes}
+              onChange={setSelectedInstalacoes}
+            />
+          )}
+          {granularity === "well" && (
+            <ExploreFilter
+              label="Well"
+              count={selectedPocos.length}
+              total={pocos.length}
+              options={pocos}
+              value={selectedPocos}
+              onChange={setSelectedPocos}
+            />
+          )}
+        </div>
+      </div>
+
+      {serieRows.length === 0 ? (
+        <div style={{
+          padding: "40px 24px", textAlign: "center", color: "#888",
+          fontFamily: "Arial", fontSize: 14, border: "1px dashed #ddd",
+          borderRadius: 8, marginTop: 12,
+        }}>
+          No {dimLabel.en.toLowerCase()} production data yet.
+          {granularity !== "field" && " This level's ETL runs 3×/day — wait for the first pull post-deploy."}
+        </div>
+      ) : (
+        <>
+          <div className="row mb-2">
+            <div className="col-12">
+              <ChartSection
+                title={
+                  explicitDims.length > 0
+                    ? `Oil (kbpd) — ${explicitDims.length} ${dimLabel.plural} selected`
+                    : `Oil (kbpd) — Top ${TOP_N} ${dimLabel.singular.toLowerCase()}(s) by average in the period`
+                }
+                loading={serieLoading}
+                height={320}
+              >
+                <PlotlyChart
+                  data={petroleoChart.data}
+                  layout={petroleoChart.layout}
+                  config={{ responsive: true, displayModeBar: false }}
+                  style={{ width: "100%", height: 320 }}
+                />
+              </ChartSection>
+            </div>
+          </div>
+
+          <div className="row mb-2">
+            <div className="col-12">
+              <ChartSection
+                title={
+                  explicitDims.length > 0
+                    ? `Gas (Mm³/day) — ${explicitDims.length} ${dimLabel.plural} selected`
+                    : `Gas (Mm³/day) — Top ${TOP_N} ${dimLabel.singular.toLowerCase()}(s) by average in the period`
+                }
+                loading={serieLoading}
+                height={320}
+              >
+                <PlotlyChart
+                  data={gasChart.data}
+                  layout={gasChart.layout}
+                  config={{ responsive: true, displayModeBar: false }}
+                  style={{ width: "100%", height: 320 }}
+                />
+              </ChartSection>
+            </div>
+          </div>
+
+          <div className="row mb-2">
+            <div className="col-12">
+              <ChartSection
+                title={`Production by ${dimLabel.en} — most recent records (${tableRows.length.toLocaleString("pt-BR")} of ${visibleRows.length.toLocaleString("pt-BR")})`}
+                loading={serieLoading}
+              >
+                <div style={{ overflowX: "auto", maxHeight: 420, overflowY: "auto", border: "1px solid #eee", borderRadius: 6 }}>
+                  <table className="table table-sm" style={{ fontFamily: "Arial", fontSize: 12, marginBottom: 0 }}>
+                    <thead style={{ position: "sticky", top: 0, background: "#fff", zIndex: 1, borderBottom: "2px solid #1a1a1a" }}>
+                      <tr>
+                        <th style={{ padding: "8px 12px", textAlign: "left" }}>Date</th>
+                        {granularity === "field" && (
+                          <>
+                            <th style={{ padding: "8px 12px", textAlign: "left" }}>Basin</th>
+                            <th style={{ padding: "8px 12px", textAlign: "left" }}>Field</th>
+                          </>
+                        )}
+                        {granularity === "installation" && (
+                          <>
+                            <th style={{ padding: "8px 12px", textAlign: "left" }}>Field</th>
+                            <th style={{ padding: "8px 12px", textAlign: "left" }}>Installation</th>
+                          </>
+                        )}
+                        {granularity === "well" && (
+                          <>
+                            <th style={{ padding: "8px 12px", textAlign: "left" }}>Basin</th>
+                            <th style={{ padding: "8px 12px", textAlign: "left" }}>Field</th>
+                            <th style={{ padding: "8px 12px", textAlign: "left" }}>Well</th>
+                          </>
+                        )}
+                        <th style={{ padding: "8px 12px", textAlign: "right" }}>Oil (kbpd)</th>
+                        <th style={{ padding: "8px 12px", textAlign: "right" }}>Gas (Mm³/day)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tableRows.map((r, i) => (
+                        <tr key={`${r.data}-${r.campo}-${r.dimension}-${i}`}>
+                          <td style={{ padding: "6px 12px" }}>{r.data}</td>
+                          {granularity === "field" && (
+                            <>
+                              <td style={{ padding: "6px 12px" }}>{r.bacia ?? "—"}</td>
+                              <td style={{ padding: "6px 12px" }}>{r.campo}</td>
+                            </>
+                          )}
+                          {granularity === "installation" && (
+                            <>
+                              <td style={{ padding: "6px 12px" }}>{r.campo}</td>
+                              <td style={{ padding: "6px 12px" }}>{r.dimension}</td>
+                            </>
+                          )}
+                          {granularity === "well" && (
+                            <>
+                              <td style={{ padding: "6px 12px" }}>{r.bacia ?? "—"}</td>
+                              <td style={{ padding: "6px 12px" }}>{r.campo}</td>
+                              <td style={{ padding: "6px 12px" }}>{r.dimension}</td>
+                            </>
+                          )}
+                          <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmtNumber(r.petroleo_bbl_dia == null ? null : bblDiaToKbpd(r.petroleo_bbl_dia), 1)}</td>
+                          <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmtNumber(r.gas_mm3_dia, 3)}</td>
+                        </tr>
+                      ))}
+                      {tableRows.length === 0 && (
+                        <tr>
+                          <td colSpan={granularity === "well" ? 6 : 5} style={{ padding: "16px 12px", color: "#888", textAlign: "center" }}>
+                            No data for the current filters.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </ChartSection>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** A single relocated level filter (Field / Installation / Well). */
+function ExploreFilter({
+  label,
+  count,
+  total,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  count: number;
+  total: number;
+  options: string[];
+  value: string[];
+  onChange: (v: string[]) => void;
+}): React.ReactElement {
+  return (
+    <div className="sidebar-filter-section">
+      <div className="sidebar-filter-label">
+        {label}{" "}
+        <span style={{ color: "#888", fontWeight: 400 }}>
+          ({count}/{total})
+        </span>
+      </div>
+      <SearchableMultiSelect options={options} value={value} onChange={onChange} />
+      {count === 0 && (
+        <div style={{ fontSize: 11, color: "#888", marginTop: 6, paddingLeft: 2 }}>
+          No selection: charts show Top {TOP_N} by average in the period.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Company-level content (verbatim from the previous build) ───────────────
+
+/** Main content for the Company level: net charts + daily net-oil matrix + coverage note. */
 function CompanyContent({
   selectedEmpresa,
   serieLoading,
   companySerieRows,
-  companyFieldAggregates,
+  companyDailyOilMatrix,
   companyFieldsNoData,
-  companyTotalOilNetAvg,
-  companyTotalGasNetAvg,
   companyPetroleoChart,
-  companyGasChart,
+  companyMonthlyOilChart,
 }: {
   selectedEmpresa: string | null;
   serieLoading: boolean;
   companySerieRows: unknown[];
-  companyFieldAggregates: CompanyFieldAggregate[];
+  companyDailyOilMatrix: CompanyDailyOilMatrix;
   companyFieldsNoData: CompanyFieldNoData[];
-  companyTotalOilNetAvg: number;
-  companyTotalGasNetAvg: number;
   companyPetroleoChart: { data: PlotData[]; layout: Partial<Layout> };
-  companyGasChart: { data: PlotData[]; layout: Partial<Layout> };
+  companyMonthlyOilChart: { data: PlotData[]; layout: Partial<Layout> };
 }): React.ReactElement {
-  if (!selectedEmpresa) {
-    return (
-      <div style={{
-        padding: "40px 24px", textAlign: "center", color: "#888",
-        fontFamily: "Arial", fontSize: 14, border: "1px dashed #ddd",
-        borderRadius: 8, marginTop: 12,
-      }}>
-        Select a company to see its stake-weighted daily net production.
-      </div>
-    );
-  }
-
+  // PRIO is always selected on landing — the only empty state worth handling is
+  // "no daily data in the selected period".
   if (companySerieRows.length === 0 && !serieLoading) {
     return (
       <div style={{
@@ -472,30 +610,40 @@ function CompanyContent({
         fontFamily: "Arial", fontSize: 14, border: "1px dashed #ddd",
         borderRadius: 8, marginTop: 12,
       }}>
-        No daily data for {selectedEmpresa} in the selected period.
+        No daily data for {selectedEmpresa ?? "this company"} in the selected period.
       </div>
     );
   }
 
   return (
     <>
-      {/* KPI strip: net averages over the period */}
-      <div className="row mb-2 g-2">
-        <div className="col-6 col-lg-3">
-          <KpiCard label="Net Oil (avg)" value={`${fmtNumber(companyTotalOilNetAvg / 1000, 1)} kbpd`} />
-        </div>
-        <div className="col-6 col-lg-3">
-          <KpiCard label="Net Gas (avg)" value={`${fmtNumber(companyTotalGasNetAvg, 3)} Mm³/d`} />
-        </div>
-        <div className="col-6 col-lg-3">
-          <KpiCard label="Fields w/ daily data" value={`${companyFieldAggregates.length}`} />
-        </div>
-        <div className="col-6 col-lg-3">
-          <KpiCard label="Fields awaiting data" value={`${companyFieldsNoData.length}`} />
+      {/* Monthly average net oil by field (stacked bar, MtD-aware) — the
+          per-bar total label (stack height) replaces the old KPI strip. */}
+      <div className="row mb-2">
+        <div className="col-12">
+          <ChartSection
+            title={
+              <span>
+                Net Oil — Monthly Average by Field (kbpd)
+                <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 400, color: "#888" }}>
+                  Stake-weighted · current month is month-to-date
+                </span>
+              </span>
+            }
+            loading={serieLoading}
+            height={320}
+          >
+            <PlotlyChart
+              data={companyMonthlyOilChart.data}
+              layout={companyMonthlyOilChart.layout}
+              config={{ responsive: true, displayModeBar: false }}
+              style={{ width: "100%", height: 320 }}
+            />
+          </ChartSection>
         </div>
       </div>
 
-      {/* Oil net chart */}
+      {/* Oil net line chart (daily total + per-field) */}
       <div className="row mb-2">
         <div className="col-12">
           <ChartSection title={`Net Oil (kbpd) — ${selectedEmpresa} total + by field`} loading={serieLoading} height={320}>
@@ -509,61 +657,21 @@ function CompanyContent({
         </div>
       </div>
 
-      {/* Gas net chart */}
+      {/* Daily net-oil matrix: columns = CAMPO (stake%), rows = one per day desc */}
       <div className="row mb-2">
         <div className="col-12">
-          <ChartSection title={`Net Gas (Mm³/day) — ${selectedEmpresa} total + by field`} loading={serieLoading} height={320}>
-            <PlotlyChart
-              data={companyGasChart.data}
-              layout={companyGasChart.layout}
-              config={{ responsive: true, displayModeBar: false }}
-              style={{ width: "100%", height: 320 }}
-            />
-          </ChartSection>
-        </div>
-      </div>
-
-      {/* Per-field net table */}
-      <div className="row mb-2">
-        <div className="col-12">
-          <ChartSection title={`Net production by field — ${selectedEmpresa}`} loading={serieLoading}>
-            <div style={{ overflowX: "auto", border: "1px solid #eee", borderRadius: 6 }}>
-              <table className="table table-sm" style={{ fontFamily: "Arial", fontSize: 12, marginBottom: 0 }}>
-                <thead style={{ background: "#fff", borderBottom: "2px solid #1a1a1a" }}>
-                  <tr>
-                    <th style={{ padding: "8px 12px", textAlign: "left" }}>Field</th>
-                    <th style={{ padding: "8px 12px", textAlign: "left" }}>Basin</th>
-                    <th style={{ padding: "8px 12px", textAlign: "right" }}>Stake %</th>
-                    <th style={{ padding: "8px 12px", textAlign: "right" }}>Net Oil avg (kbpd)</th>
-                    <th style={{ padding: "8px 12px", textAlign: "right" }}>Net Gas avg (Mm³/d)</th>
-                    <th style={{ padding: "8px 12px", textAlign: "right" }}>Latest Net Oil</th>
-                    <th style={{ padding: "8px 12px", textAlign: "right" }}>Latest Net Gas</th>
-                    <th style={{ padding: "8px 12px", textAlign: "left" }}>Latest date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {companyFieldAggregates.map(f => (
-                    <tr key={f.campo}>
-                      <td style={{ padding: "6px 12px" }}>{f.campo}</td>
-                      <td style={{ padding: "6px 12px" }}>{f.bacia ?? "—"}</td>
-                      <td style={{ padding: "6px 12px", textAlign: "right" }}>{formatStakePct(f.stakePct)}</td>
-                      <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmtNumber(f.avgOilNet / 1000, 1)}</td>
-                      <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmtNumber(f.avgGasNet, 3)}</td>
-                      <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmtNumber(f.latestOilNet == null ? null : f.latestOilNet / 1000, 1)}</td>
-                      <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmtNumber(f.latestGasNet, 3)}</td>
-                      <td style={{ padding: "6px 12px" }}>{f.latestDate ?? "—"}</td>
-                    </tr>
-                  ))}
-                  {companyFieldAggregates.length === 0 && (
-                    <tr>
-                      <td colSpan={8} style={{ padding: "16px 12px", color: "#888", textAlign: "center" }}>
-                        No data for the current period.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+          <ChartSection
+            title={
+              <span>
+                Daily net oil by field — {selectedEmpresa}
+                <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 400, color: "#888" }}>
+                  Net oil (kbpd), stake-weighted · one row per day
+                </span>
+              </span>
+            }
+            loading={serieLoading}
+          >
+            <CompanyDailyOilMatrixTable matrix={companyDailyOilMatrix} />
 
             {/* Coverage note: stake-held fields without daily data */}
             {companyFieldsNoData.length > 0 && (
@@ -582,19 +690,91 @@ function CompanyContent({
   );
 }
 
-/** Compact KPI tile for the Company level. */
-function KpiCard({ label, value }: { label: string; value: string }): React.ReactElement {
+// ─── Daily net-oil matrix table (fields × days) ─────────────────────────────
+
+/**
+ * Wide daily matrix: a sticky-left "Date" column + one column per field
+ * ("CAMPO (stake%)"), one row per day (latest first). Cells are net oil in
+ * kbpd (1 decimal, pt-BR); a field with no datum that day renders "—". The
+ * container scrolls in BOTH axes (Petrobras has ~37 field columns × ~204 days);
+ * the header row is sticky-top and the Date column sticky-left so neither is
+ * lost while scrolling. Desktop-only — too wide for a phone.
+ */
+function CompanyDailyOilMatrixTable({
+  matrix,
+}: {
+  matrix: CompanyDailyOilMatrix;
+}): React.ReactElement {
+  const { fields, rows } = matrix;
+  const dateColWidth = 110;
+
+  if (fields.length === 0 || rows.length === 0) {
+    return (
+      <div style={{
+        padding: "24px 16px", color: "#888", textAlign: "center",
+        fontFamily: "Arial", fontSize: 13, border: "1px dashed #ddd", borderRadius: 6,
+      }}>
+        No daily oil data for the current period.
+      </div>
+    );
+  }
+
   return (
-    <div style={{
-      border: "1px solid #eee", borderRadius: 8, padding: "12px 14px",
-      background: "#fff", height: "100%",
-    }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-        {label}
-      </div>
-      <div style={{ marginTop: 4, fontSize: 18, fontWeight: 700, color: "#1a1a1a", fontFamily: "Arial" }}>
-        {value}
-      </div>
+    <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: 480, border: "1px solid #eee", borderRadius: 6 }}>
+      <table
+        className="table table-sm"
+        style={{ fontFamily: "Arial", fontSize: 12, marginBottom: 0, borderCollapse: "separate", borderSpacing: 0 }}
+      >
+        <thead>
+          <tr>
+            <th
+              style={{
+                position: "sticky", top: 0, left: 0, zIndex: 3,
+                background: "#fff", borderBottom: "2px solid #1a1a1a",
+                padding: "8px 12px", textAlign: "left", whiteSpace: "nowrap",
+                minWidth: dateColWidth,
+              }}
+            >
+              Date
+            </th>
+            {fields.map(f => (
+              <th
+                key={f.campo}
+                style={{
+                  position: "sticky", top: 0, zIndex: 2,
+                  background: "#fff", borderBottom: "2px solid #1a1a1a",
+                  padding: "8px 12px", textAlign: "right", whiteSpace: "nowrap",
+                }}
+              >
+                {f.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(r => (
+            <tr key={r.data}>
+              <th
+                scope="row"
+                style={{
+                  position: "sticky", left: 0, zIndex: 1,
+                  background: "#fff", borderRight: "1px solid #eee",
+                  padding: "6px 12px", textAlign: "left", whiteSpace: "nowrap",
+                  fontWeight: 400, minWidth: dateColWidth,
+                }}
+              >
+                {r.data}
+              </th>
+              {fields.map(f => (
+                <td key={f.campo} style={{ padding: "6px 12px", textAlign: "right", whiteSpace: "nowrap" }}>
+                  {fmtNumber(r.values[f.campo], 1)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
+

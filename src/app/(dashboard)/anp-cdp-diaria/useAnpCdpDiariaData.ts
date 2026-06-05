@@ -27,7 +27,13 @@ import type { Layout, PlotData } from "plotly.js";
 import { useDebouncedFetch } from "../../../hooks/useDebouncedFetch";
 import { useModuleVisibilityGuard } from "../../../hooks/useModuleVisibilityGuard";
 import { getSupabaseClient } from "../../../lib/supabaseClient";
-import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "../../../lib/plotlyDefaults";
+import {
+  COMMON_LAYOUT,
+  AXIS_LINE,
+  emptyPlot,
+  PALETTE,
+  BRAND_ORANGE,
+} from "../../../lib/plotlyDefaults";
 import { bblDiaToKbpd } from "../../../lib/units";
 import { downloadGenericExcel } from "../../../lib/exportExcel";
 import { downloadCsv } from "../../../lib/exportCsv";
@@ -38,38 +44,43 @@ import {
   rpcGetAnpCdpDiariaInstalacaoSerie,
   rpcGetAnpCdpDiariaPocoFiltros,
   rpcGetAnpCdpDiariaPocoSerie,
-  rpcGetAnpCdpDiariaEmpresas,
   rpcGetAnpCdpDiariaEmpresaSerie,
   rpcGetAnpCdpDiariaEmpresaCampos,
   type AnpCdpDiariaPonto,
   type AnpCdpDiariaInstalacaoPonto,
   type AnpCdpDiariaPocoPonto,
-  type AnpCdpDiariaEmpresa,
   type AnpCdpDiariaEmpresaSeriePonto,
   type AnpCdpDiariaEmpresaCampo,
 } from "../../../lib/rpc";
 
 // Re-export the company RPC types so Views import everything from the hook
-// (single source of truth) rather than reaching into rpc.ts directly.
+// (single source of truth) rather than reaching into rpc.ts directly. The
+// dynamic company-list type (`AnpCdpDiariaEmpresa`) is no longer re-exported —
+// the company universe is fixed to FIXED_COMPANIES (Two-Tier Tabs IA).
 export type {
-  AnpCdpDiariaEmpresa,
   AnpCdpDiariaEmpresaSeriePonto,
   AnpCdpDiariaEmpresaCampo,
 } from "../../../lib/rpc";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-export const PALETTE = [
-  "#FF5000", "#2196F3", "#8BC34A", "#FF9800", "#9C27B0",
-  "#E53935", "#00ACC1", "#FF8C42", "#64B5F6", "#7CB342",
-];
+// Chart colors come from the canonical identity palette — never hard-coded hex
+// (docs/design/identity.md). PALETTE position 1 is the brand orange, reserved
+// for the chart leader / "Company total" headline line; per-field lines start
+// at position 2 to keep the orange exclusive to the leader. Re-exported here so
+// both Views import their chart colors from the shared hook (single source of
+// truth) and never invent a hex of their own.
+export { PALETTE, BRAND_ORANGE } from "../../../lib/plotlyDefaults";
 
 export const TOP_N = 10;
 
-export const BRAND_ORANGE = "#FF5000";
-
-/** Companies pinned as quick-access pills at the top of the Company selector. */
-export const FEATURED_COMPANIES = ["PRIO", "Petrobras"];
+/**
+ * The two fixed, primary companies (Two-Tier Tabs IA, 2026-06-05). The dynamic
+ * company list (`get_anp_cdp_diaria_empresas`) was retired — only PRIO and
+ * Petrobras are reachable, as prominent primary tabs. The order here is the
+ * tab order; index 0 (PRIO) is the landing default.
+ */
+export const FIXED_COMPANIES = ["PRIO", "Petrobras"] as const;
 
 /** Trace name used for the company-wide net production headline line. */
 export const COMPANY_TOTAL_LABEL = "Company total";
@@ -115,6 +126,54 @@ export interface CompanyFieldAggregate {
 export interface CompanyFieldNoData {
   campo: string;
   stakePct: number;
+}
+
+/** One stake-labeled field column header in the daily net-oil matrix. */
+export interface CompanyDailyOilField {
+  campo: string;
+  stakePct: number;
+  /** "PEREGRINO (80%)" — what the column header renders. */
+  label: string;
+}
+
+/** One day-row in the daily net-oil matrix. */
+export interface CompanyDailyOilMatrixRow {
+  data: string;
+  /** Net oil in **kbpd** (÷1000) keyed by field name; null = the field had no data that day. */
+  values: Record<string, number | null>;
+}
+
+/**
+ * Daily net-oil matrix for the Company level: fields × days. Columns are the
+ * company's fields (stake-decorated label), ordered by the SAME canonical order
+ * as the company charts (`orderCompanyFieldDims`, avg net oil desc). Rows are
+ * one per calendar day present in the serie, sorted **descending** (most recent
+ * first). Cell = the field's net oil for that day, already converted to kbpd.
+ */
+export interface CompanyDailyOilMatrix {
+  fields: CompanyDailyOilField[];
+  rows: CompanyDailyOilMatrixRow[];
+}
+
+/**
+ * Monthly average net-oil-by-field, bucketed for the stacked bar. The value of
+ * (month, field) is the field's net oil DAILY average over the days it reported
+ * within that month: `sum(net oil that month) / (#reporting days that month)` —
+ * the SAME "average over reporting days" methodology as `companyFieldAggregates`
+ * and the "Net Oil (avg)" KPI, only bucketed per month. Values are in bbl/day
+ * (display divides by 1000 to kbpd). The most recent month is naturally
+ * month-to-date (the average only sees the days that exist so far); `partialMonth`
+ * flags the bucket that should render as MtD (incomplete vs the calendar month).
+ */
+export interface CompanyMonthlyOilByField {
+  /** Sorted "YYYY-MM" month keys (ascending). */
+  months: string[];
+  /** Field labels (stake-decorated), ordered by overall net-oil average desc. */
+  fieldOrder: string[];
+  /** valueByMonth[monthKey][fieldLabel] = avg net oil bbl/day that month. */
+  valueByMonth: Record<string, Record<string, number>>;
+  /** The "YYYY-MM" of the partial (month-to-date) bucket, or null if all complete. */
+  partialMonth: string | null;
 }
 
 // ─── Helpers (exported so Views can format consistently) ──────────────────────
@@ -228,6 +287,42 @@ export function buildSerieChart(
 }
 
 /**
+ * Order a company's field labels by their NET average (descending) for a given
+ * metric — the canonical legend order used by BOTH the company line chart and
+ * the monthly stacked bar. Sharing this guarantees a field keeps the SAME
+ * PALETTE slot (hence the SAME color) across both charts.
+ */
+export function orderCompanyFieldDims(rows: UnifiedRow[], metric: Metric): string[] {
+  const agg: Record<string, { sum: number; cnt: number }> = {};
+  for (const r of rows) {
+    const v = r[metric];
+    if (v == null) continue;
+    if (!agg[r.dimension]) agg[r.dimension] = { sum: 0, cnt: 0 };
+    agg[r.dimension].sum += v;
+    agg[r.dimension].cnt += 1;
+  }
+  return Object.entries(agg)
+    .map(([dim, v]) => [dim, v.cnt > 0 ? v.sum / v.cnt : 0] as [string, number])
+    .sort((a, b) => b[1] - a[1])
+    .map(([dim]) => dim);
+}
+
+/**
+ * Canonical field → color map for a company's charts. `orderedDims` must come
+ * from `orderCompanyFieldDims` so the i-th field gets `PALETTE[(i+1) % len]`
+ * (position 0 / brand orange is reserved for the "Company total" headline line,
+ * which has no counterpart in the stacked bar). Returned map is reused by both
+ * the line chart and the stacked bar to keep each field's color identical.
+ */
+export function companyFieldColorMap(orderedDims: string[]): Record<string, string> {
+  const map: Record<string, string> = {};
+  orderedDims.forEach((dim, i) => {
+    map[dim] = PALETTE[(i + 1) % PALETTE.length];
+  });
+  return map;
+}
+
+/**
  * Company-level chart: a bold "Company total" net headline line (brand orange)
  * plus one thin net line per field. `rows` carries NET values already; the
  * dimension is the stake-decorated field label. `scale` converts to display
@@ -251,15 +346,10 @@ export function buildCompanyChart(
     agg[r.dimension][r.data] = (agg[r.dimension][r.data] ?? 0) + v;
   }
 
-  // Order fields by average descending so the legend reads top → bottom.
-  const fieldDims = Object.entries(agg)
-    .map(([dim, byDay]) => {
-      const vals = Object.values(byDay);
-      const avg = vals.length ? vals.reduce((s, x) => s + x, 0) / vals.length : 0;
-      return [dim, avg] as [string, number];
-    })
-    .sort((a, b) => b[1] - a[1])
-    .map(([dim]) => dim);
+  // Order fields by average descending so the legend reads top → bottom — the
+  // SAME ordering/coloring the monthly stacked bar uses (shared helper).
+  const fieldDims = orderCompanyFieldDims(rows, metric);
+  const colorMap = companyFieldColorMap(fieldDims);
 
   // Headline total line.
   const total = buildCompanyTotalSeries(rows, metric);
@@ -272,18 +362,20 @@ export function buildCompanyChart(
     hovertemplate: `${COMPANY_TOTAL_LABEL}: %{y:,.1f} ${unitLabel}<extra></extra>`,
   } as PlotData;
 
-  const fieldTraces: PlotData[] = fieldDims.map((dim, i) => {
-    const entries = Object.entries(agg[dim]).sort(([a], [b]) => a.localeCompare(b));
-    return {
-      type: "scatter", mode: "lines",
-      name: dim,
-      x: entries.map(([d]) => d),
-      y: entries.map(([, v]) => scale(v)),
-      // Skip the brand orange (index 0 of PALETTE) for fields — reserved for total.
-      line: { width: 1.3, color: PALETTE[(i + 1) % PALETTE.length] },
-      hovertemplate: `${dim}: %{y:,.1f} ${unitLabel}<extra></extra>`,
-    } as PlotData;
-  });
+  const fieldTraces: PlotData[] = fieldDims
+    .filter(dim => agg[dim])
+    .map((dim) => {
+      const entries = Object.entries(agg[dim]).sort(([a], [b]) => a.localeCompare(b));
+      return {
+        type: "scatter", mode: "lines",
+        name: dim,
+        x: entries.map(([d]) => d),
+        y: entries.map(([, v]) => scale(v)),
+        // Field color comes from the shared map (orange reserved for total).
+        line: { width: 1.3, color: colorMap[dim] },
+        hovertemplate: `${dim}: %{y:,.1f} ${unitLabel}<extra></extra>`,
+      } as PlotData;
+    });
 
   return {
     data: [totalTrace, ...fieldTraces],
@@ -429,6 +521,221 @@ export function buildCompanyFieldAggregates(
     );
 }
 
+/**
+ * Daily net-oil matrix (fields × days) for the Company level. Columns are the
+ * company's fields, ordered by `orderCompanyFieldDims` (avg net oil desc) so the
+ * left-to-right column order matches the company charts' legend/stack order.
+ * Each column header carries the stake ("PEREGRINO (80%)"). Rows are one per day
+ * present in the serie, sorted descending (latest first); each cell is the
+ * field's net oil for that day converted to **kbpd** (÷1000), or null when the
+ * field reported nothing that day. Oil only — gas is excluded by design.
+ */
+export function buildCompanyDailyOilMatrix(
+  rows: AnpCdpDiariaEmpresaSeriePonto[],
+): CompanyDailyOilMatrix {
+  // Map each field (campo) to its stake + decorated label. The serie carries a
+  // single stake per field, so first sighting wins.
+  const fieldMeta: Record<string, CompanyDailyOilField> = {};
+  // Net oil (kbpd) keyed by [date][campo].
+  const cells: Record<string, Record<string, number>> = {};
+
+  for (const r of rows) {
+    if (!fieldMeta[r.campo]) {
+      fieldMeta[r.campo] = {
+        campo:    r.campo,
+        stakePct: r.stake_pct,
+        label:    fieldLabelWithStake(r.campo, r.stake_pct),
+      };
+    }
+    if (r.petroleo_bbl_dia_net == null) continue;
+    if (!cells[r.data]) cells[r.data] = {};
+    // Sum defensively (the serie is 1 row per (data, campo), but be safe).
+    cells[r.data][r.campo] =
+      (cells[r.data][r.campo] ?? 0) + bblDiaToKbpd(r.petroleo_bbl_dia_net);
+  }
+
+  // Canonical column order = same as the charts (avg net oil desc). The order
+  // helper works on the stake-decorated dimension, so resolve each ordered
+  // dimension label back to its campo.
+  const orderedDims = orderCompanyFieldDims(projectCompany(rows), "petroleo_bbl_dia");
+  const labelToCampo: Record<string, string> = {};
+  for (const m of Object.values(fieldMeta)) labelToCampo[m.label] = m.campo;
+  const fields: CompanyDailyOilField[] = orderedDims
+    .map(dim => fieldMeta[labelToCampo[dim]])
+    .filter((f): f is CompanyDailyOilField => f != null);
+
+  // One row per day, descending (latest first).
+  const days = Object.keys(cells).sort((a, b) => b.localeCompare(a));
+  const matrixRows: CompanyDailyOilMatrixRow[] = days.map(data => {
+    const values: Record<string, number | null> = {};
+    for (const f of fields) {
+      const v = cells[data]?.[f.campo];
+      values[f.campo] = v == null ? null : v;
+    }
+    return { data, values };
+  });
+
+  return { fields, rows: matrixRows };
+}
+
+/** Last calendar day (1-31) of the given 0-based month/year (UTC-safe). */
+function lastDayOfMonth(year: number, monthIndex0: number): number {
+  // Day 0 of the next month = last day of this month.
+  return new Date(Date.UTC(year, monthIndex0 + 1, 0)).getUTCDate();
+}
+
+/**
+ * Bucket the company net serie into monthly average net-oil-by-field for the
+ * stacked bar. Per (month, field) value = `sum(net oil that month) / (#days the
+ * field reported that month)` — the same "average over reporting days" rule as
+ * the KPI / `companyFieldAggregates`, just per month. Values stay in bbl/day.
+ *
+ * The most recent month is intrinsically month-to-date (the average only sees
+ * the days present so far). `partialMonth` is set to that month's key ONLY when
+ * the latest `data` predates the calendar end of its month — so a fully-loaded
+ * month (e.g. data ending 2026-05-31) yields `partialMonth = null` (no MtD
+ * marker), while the first partial day of the next month flips it on.
+ *
+ * `fieldOrder` mirrors `orderCompanyFieldDims` (avg net oil desc) so the bar's
+ * stack order and per-field color match the company line chart exactly.
+ */
+export function buildCompanyMonthlyOilByField(
+  rows: AnpCdpDiariaEmpresaSeriePonto[],
+): CompanyMonthlyOilByField {
+  // Accumulate per (month, field): running sum + day count.
+  const acc: Record<string, Record<string, { sum: number; cnt: number }>> = {};
+  let maxDate: string | null = null;
+
+  for (const r of rows) {
+    if (r.petroleo_bbl_dia_net == null) continue;
+    const monthKey = r.data.slice(0, 7); // "YYYY-MM"
+    const label    = fieldLabelWithStake(r.campo, r.stake_pct);
+    if (!acc[monthKey]) acc[monthKey] = {};
+    if (!acc[monthKey][label]) acc[monthKey][label] = { sum: 0, cnt: 0 };
+    acc[monthKey][label].sum += r.petroleo_bbl_dia_net;
+    acc[monthKey][label].cnt += 1;
+    if (maxDate == null || r.data > maxDate) maxDate = r.data;
+  }
+
+  const months = Object.keys(acc).sort((a, b) => a.localeCompare(b));
+
+  // Field order / color = the same as the company line chart.
+  const fieldOrder = orderCompanyFieldDims(projectCompany(rows), "petroleo_bbl_dia");
+
+  // Compute daily average per (month, field).
+  const valueByMonth: Record<string, Record<string, number>> = {};
+  for (const m of months) {
+    valueByMonth[m] = {};
+    for (const [label, v] of Object.entries(acc[m])) {
+      valueByMonth[m][label] = v.cnt > 0 ? v.sum / v.cnt : 0;
+    }
+  }
+
+  // Detect the partial (month-to-date) bucket: the month of the max date, IF
+  // that max date is before the calendar end of its month.
+  let partialMonth: string | null = null;
+  if (maxDate) {
+    const [yy, mm, dd] = maxDate.split("-").map(Number);
+    const lastDay = lastDayOfMonth(yy, mm - 1);
+    if (dd < lastDay) partialMonth = maxDate.slice(0, 7);
+  }
+
+  return { months, fieldOrder, valueByMonth, partialMonth };
+}
+
+/** Format a "YYYY-MM" key as "Mon YYYY" (English short month). */
+function formatMonthLabel(monthKey: string): string {
+  const [yy, mm] = monthKey.split("-").map(Number);
+  const d = new Date(Date.UTC(yy, mm - 1, 1));
+  const mon = d.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+  return `${mon} ${yy}`;
+}
+
+/**
+ * Stacked-bar chart of monthly average net oil by field (kbpd). One trace per
+ * field (same color as the company line chart via `companyFieldColorMap`); the
+ * total bar height = the company's monthly net average. The partial (MtD) month
+ * renders with reduced marker opacity and a "(MtD)" tick + hover suffix.
+ *
+ * Each bar carries a **total label** on top (a `layout.annotations` entry per
+ * month) — the stack height (= sum of the fields that month) in display kbpd,
+ * pt-BR formatted (e.g. "160,7"). Since the bar IS the total, we annotate the
+ * top rather than adding a duplicate "total" trace. The MtD month is NOT
+ * suffixed in the label (the tick already shows "(MtD)").
+ *
+ * `scale` converts bbl/day → display units (kbpd via `bblDiaToKbpd`).
+ * `labelFontSize` lets mobile shrink the on-bar total labels when 7 of them
+ * would crowd a ~260px chart (desktop default 11).
+ */
+export function buildCompanyMonthlyOilStacked(
+  monthly: CompanyMonthlyOilByField,
+  height: number,
+  scale: (v: number) => number = (v) => v,
+  labelFontSize = 11,
+): { data: PlotData[]; layout: Partial<Layout> } {
+  const { months, fieldOrder, valueByMonth, partialMonth } = monthly;
+  if (!months.length || !fieldOrder.length) return emptyPlot(height);
+
+  const colorMap = companyFieldColorMap(fieldOrder);
+  const tickText = months.map(m => (m === partialMonth ? `${formatMonthLabel(m)} (MtD)` : formatMonthLabel(m)));
+
+  const traces: PlotData[] = fieldOrder.map((label) => {
+    const y = months.map(m => scale(valueByMonth[m]?.[label] ?? 0));
+    // Per-bar marker opacity: fade the partial (MtD) position to signal it.
+    const opacities = months.map(m => (m === partialMonth ? 0.55 : 1));
+    const customdata = months.map(m => (m === partialMonth ? " (month-to-date)" : ""));
+    return {
+      type: "bar",
+      name: label,
+      x: months,
+      y,
+      marker: { color: colorMap[label], opacity: opacities },
+      customdata,
+      hovertemplate: `${label}: %{y:,.1f} kbpd%{customdata}<extra></extra>`,
+    } as unknown as PlotData;
+  });
+
+  // Per-month total = the stack height (sum of every field that month), in
+  // display units. Rendered as a discreet label just above each bar's top.
+  const monthTotals = months.map(m => {
+    const fields = valueByMonth[m] ?? {};
+    const sum = Object.values(fields).reduce((s, v) => s + v, 0);
+    return scale(sum);
+  });
+  const annotations = months.map((m, i) => ({
+    x: m,
+    y: monthTotals[i],
+    yshift: 8,                       // small gap above the bar top
+    text: fmtNumber(monthTotals[i], 1),
+    showarrow: false,
+    font: { family: "Arial", size: labelFontSize, color: "#1a1a1a" },
+    xanchor: "center" as const,
+    yanchor: "bottom" as const,
+  }));
+
+  return {
+    data: traces,
+    layout: {
+      ...COMMON_LAYOUT,
+      height,
+      barmode: "stack",
+      // Extra top margin so the on-bar total labels are not clipped.
+      margin: { t: 28, b: 50, l: 80, r: 30 },
+      hovermode: "x unified",
+      annotations,
+      yaxis: { ...AXIS_LINE, title: { text: "kbpd" } },
+      xaxis: {
+        ...AXIS_LINE,
+        type: "category" as const,
+        tickmode: "array" as const,
+        tickvals: months,
+        ticktext: tickText,
+      },
+      legend: { orientation: "h", yanchor: "bottom", y: 1.01, xanchor: "left", x: 0 },
+    },
+  };
+}
+
 /** Build the production ranking for the mobile data card list. */
 export function buildRanking(rows: UnifiedRow[], product: Product): DimensionAggregate[] {
   const metric = metricForProduct(product);
@@ -550,21 +857,22 @@ export interface UseAnpCdpDiariaData {
   ranking: DimensionAggregate[];
 
   // ── Company level (stake-weighted net production) ─────────────────────────
-  empresas: AnpCdpDiariaEmpresa[];
+  // The company universe is fixed (FIXED_COMPANIES) — there is no dynamic
+  // `empresas` list any more (Two-Tier Tabs IA, 2026-06-05).
   selectedEmpresa: string | null;
   setSelectedEmpresa: (e: string | null) => void;
   empresaCampos: AnpCdpDiariaEmpresaCampo[];
   companySerieRows: AnpCdpDiariaEmpresaSeriePonto[];
-  /** Per-field net aggregates (ranking + desktop table), sorted by active product. */
+  /** Per-field net aggregates (mobile ranking cards), sorted by active product. */
   companyFieldAggregates: CompanyFieldAggregate[];
+  /** Daily net-oil matrix (fields × days) for the desktop table. */
+  companyDailyOilMatrix: CompanyDailyOilMatrix;
   /** Stake-held fields not yet in the daily feed (e.g. Wahoo for PRIO). */
   companyFieldsNoData: CompanyFieldNoData[];
-  /** Company total net averages over the visible period (for KPIs). */
-  companyTotalOilNetAvg: number;
-  companyTotalGasNetAvg: number;
-  /** Company total net charts (headline + per-field, NET, both products). */
+  /** Company net oil line chart (headline total + per-field lines, kbpd). */
   companyPetroleoChart: { data: PlotData[]; layout: Partial<Layout> };
-  companyGasChart: { data: PlotData[]; layout: Partial<Layout> };
+  /** Monthly average net-oil-by-field stacked bar (kbpd, MtD-aware). */
+  companyMonthlyOilChart: { data: PlotData[]; layout: Partial<Layout> };
 
   // Labels per level
   dimLabel: { singular: string; plural: string; en: string };
@@ -604,8 +912,13 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
   const { visible, loading: visLoading } = useModuleVisibilityGuard("anp-cdp-diaria");
   const supabase = getSupabaseClient();
 
-  // ── Granularity (desktop only changes; mobile View keeps "field") ─────────
-  const [granularity, setGranularityState] = useState<Granularity>("field");
+  // ── Granularity (Two-Tier Tabs IA, 2026-06-05) ────────────────────────────
+  // Landing state is the PRIO company view — granularity starts at "company"
+  // and selectedEmpresa at "PRIO" so the net serie fetches on mount with zero
+  // clicks. The granular levels (field/installation/well) are lazily entered
+  // only when the user opens the "Explore raw data" tab, so the heavy level
+  // RPCs (especially the ~180k-row Well one) never fire on the landing.
+  const [granularity, setGranularityState] = useState<Granularity>("company");
 
   // ── Loading ───────────────────────────────────────────────────────────────
   const [loading, setLoading] = useState(true);
@@ -631,8 +944,10 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
   const [product, setProduct] = useState<Product>("oil");
 
   // ── Company level (stake-weighted net) ────────────────────────────────────
-  const [empresas, setEmpresas]                 = useState<AnpCdpDiariaEmpresa[]>([]);
-  const [selectedEmpresa, setSelectedEmpresa]   = useState<string | null>(null);
+  // selectedEmpresa initialises to the first fixed company (PRIO) so the
+  // landing renders its net serie immediately (Two-Tier Tabs IA). The dynamic
+  // `empresas` list is gone — the universe is FIXED_COMPANIES.
+  const [selectedEmpresa, setSelectedEmpresa]   = useState<string | null>(FIXED_COMPANIES[0]);
   const [empresaCampos, setEmpresaCampos]       = useState<AnpCdpDiariaEmpresaCampo[]>([]);
   const [companySerieRows, setCompanySerieRows] = useState<AnpCdpDiariaEmpresaSeriePonto[]>([]);
 
@@ -661,15 +976,23 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
     let cancelled = false;
     setLoading(true);
 
-    // Reset selections when switching levels (vocabularies differ).
+    // Reset selections when switching levels (vocabularies differ). The
+    // granular dimension selections always reset. Company selection only
+    // resets when LEAVING company (new granularity ≠ company) — when entering
+    // company (e.g. clicking the PRIO/Petrobras tab from Explore) the View has
+    // just called setSelectedEmpresa(...) and we must not clobber it. This
+    // effect depends only on [supabase, granularity], NOT selectedEmpresa, so
+    // switching PRIO↔Petrobras (both granularity==="company") never re-runs it.
     if (!initialMountRef.current) {
       setSelectedCampos([]);
       setSelectedInstalacoes([]);
       setSelectedPocos([]);
       setSerieRows([]);
-      setSelectedEmpresa(null);
-      setEmpresaCampos([]);
-      setCompanySerieRows([]);
+      if (granularity !== "company") {
+        setSelectedEmpresa(null);
+        setEmpresaCampos([]);
+        setCompanySerieRows([]);
+      }
     }
 
     (async () => {
@@ -723,16 +1046,14 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
           });
           if (!cancelled) setSerieRows(projectWell(rows));
         } else {
-          // Company level — populate the company selector + the date universe.
-          // The actual net serie is fetched once an empresa is selected (see
-          // the company serie effect below). The daily feed shares the same
-          // date range as the Field level, so reuse get_anp_cdp_diaria_filtros.
-          const [emps, f] = await Promise.all([
-            rpcGetAnpCdpDiariaEmpresas(supabase),
-            rpcGetAnpCdpDiariaFiltros(supabase),
-          ]);
+          // Company level — populate only the date universe. The company list
+          // is fixed (FIXED_COMPANIES), so no dynamic empresas fetch. The
+          // actual net serie is fetched once an empresa is selected (see the
+          // company serie effect below; PRIO is selected by default on mount).
+          // The daily feed shares the same date range as the Field level, so
+          // reuse get_anp_cdp_diaria_filtros.
+          const f = await rpcGetAnpCdpDiariaFiltros(supabase);
           if (cancelled) return;
-          setEmpresas(emps);
           setCampos([]);
           setInstalacoes([]);
           setPocos([]);
@@ -920,20 +1241,34 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
     [companySerieRows],
   );
 
-  // Net charts: bold headline total + per-field net lines (both products).
+  // Net oil line chart: bold headline total + per-field net lines (kbpd). The
+  // gas chart was removed (2026-06-05) — Net Gas (avg) survives only as a KPI.
   const companyPetroleoChart = useMemo(
     () => buildCompanyChart(companyUnifiedRows, "petroleo_bbl_dia", "kbpd", 320, bblDiaToKbpd),
     [companyUnifiedRows],
   );
-  const companyGasChart = useMemo(
-    () => buildCompanyChart(companyUnifiedRows, "gas_mm3_dia", "Mm³/d", 320),
-    [companyUnifiedRows],
+
+  // Monthly average net-oil-by-field, bucketed for the stacked bar (MtD-aware).
+  const companyMonthlyOil = useMemo(
+    () => buildCompanyMonthlyOilByField(companySerieRows),
+    [companySerieRows],
+  );
+  const companyMonthlyOilChart = useMemo(
+    () => buildCompanyMonthlyOilStacked(companyMonthlyOil, 320, bblDiaToKbpd),
+    [companyMonthlyOil],
   );
 
-  // Per-field net aggregates (ranking + desktop table), sorted by active product.
+  // Per-field net aggregates (mobile ranking cards), sorted by active product.
   const companyFieldAggregates = useMemo(
     () => buildCompanyFieldAggregates(companySerieRows, product),
     [companySerieRows, product],
+  );
+
+  // Daily net-oil matrix (fields × days) — the desktop "Daily net oil by field"
+  // table. Columns ordered like the charts; rows one per day, latest first.
+  const companyDailyOilMatrix = useMemo(
+    () => buildCompanyDailyOilMatrix(companySerieRows),
+    [companySerieRows],
   );
 
   // Stake-held fields not yet in the daily feed (e.g. Wahoo for PRIO).
@@ -943,18 +1278,6 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
       .map(c => ({ campo: c.campo, stakePct: c.stake_pct })),
     [empresaCampos],
   );
-
-  // Company total net averages over the period (avg of daily totals).
-  const { companyTotalOilNetAvg, companyTotalGasNetAvg } = useMemo(() => {
-    const oilTotals = buildCompanyTotalSeries(companyUnifiedRows, "petroleo_bbl_dia");
-    const gasTotals = buildCompanyTotalSeries(companyUnifiedRows, "gas_mm3_dia");
-    const avg = (arr: Array<[string, number]>) =>
-      arr.length ? arr.reduce((s, [, v]) => s + v, 0) / arr.length : 0;
-    return {
-      companyTotalOilNetAvg: avg(oilTotals),
-      companyTotalGasNetAvg: avg(gasTotals),
-    };
-  }, [companyUnifiedRows]);
 
   // ── Labels per level ──────────────────────────────────────────────────────
   const dimLabel = useMemo(() => {
@@ -1214,17 +1537,15 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
 
     ranking,
 
-    empresas,
     selectedEmpresa,
     setSelectedEmpresa,
     empresaCampos,
     companySerieRows,
     companyFieldAggregates,
+    companyDailyOilMatrix,
     companyFieldsNoData,
-    companyTotalOilNetAvg,
-    companyTotalGasNetAvg,
     companyPetroleoChart,
-    companyGasChart,
+    companyMonthlyOilChart,
 
     dimLabel,
     datasetKey,
