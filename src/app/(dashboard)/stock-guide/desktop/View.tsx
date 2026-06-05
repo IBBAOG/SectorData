@@ -32,7 +32,8 @@ import {
   formatSensitivityCell,
   fmtNum,
   fmtPct,
-  fmtSignedPct,
+  fmtSignedPctWhole,
+  fmtInt,
   fmtMn,
   recommendationLabel,
   recommendationColors,
@@ -141,12 +142,41 @@ const PAIR_GROUPS: PairGroup[] = [
   { label: "P/E",        y1: "peY1",        y2: "peY2",        fmt: (v) => fmtNum(v, 1), live: true },
   { label: "FCFE Yield", y1: "fcfeYieldY1", y2: "fcfeYieldY2", fmt: (v) => fmtPct(v, 1), live: true },
   { label: "Div Yield",  y1: "divYieldY1",  y2: "divYieldY2",  fmt: (v) => fmtPct(v, 1), live: true },
+  { label: "Net Income", y1: "net_income_y1", y2: "net_income_y2", fmt: (v) => fmtMn(v) },
   { label: "EBITDA",     y1: "ebitda_y1",   y2: "ebitda_y2",   fmt: (v) => fmtMn(v) },
   { label: "Volumes",    y1: "volumes_y1",  y2: "volumes_y2",  fmt: (v) => fmtMn(v) },
 ];
 
-// Single (non-paired) leading columns, after the sticky Company column.
-const SINGLE_COLS = ["Ticker", "Last update", "TP", "Recomm.", "Upside", "Market cap (BRL mn)"];
+// Single (non-paired) leading columns, after the sticky Company column. Each is
+// rendered with a bespoke cell (chip / centered TP / live current-price / live
+// market cap), so the column model is a typed list rather than plain strings.
+// Order (Eduardo review 2026-06-05): Recommendation moved BEFORE TP & Current
+// Price; a new "Current Price" column sits right after TP.
+type SingleColId =
+  | "ticker"
+  | "last_update"
+  | "recommendation"
+  | "tp"
+  | "current_price"
+  | "upside"
+  | "market_cap";
+
+interface SingleCol {
+  id: SingleColId;
+  /** Header label. Use \n for a forced two-line, centered header. */
+  header: string;
+  align: "left" | "right" | "center";
+}
+
+const SINGLE_COLS: SingleCol[] = [
+  { id: "ticker",         header: "Ticker",            align: "left"   },
+  { id: "last_update",    header: "Last update",       align: "right"  },
+  { id: "recommendation", header: "Recomm.",           align: "right"  },
+  { id: "tp",             header: "TP",                align: "center" },
+  { id: "current_price",  header: "Current Price",     align: "center" },
+  { id: "upside",         header: "Upside",            align: "right"  },
+  { id: "market_cap",     header: "Market cap\n(BRL mn)", align: "center" },
+];
 
 function CompsTable({
   rows,
@@ -207,16 +237,18 @@ function CompsTable({
             </th>
             {SINGLE_COLS.map((c) => (
               <th
-                key={c}
+                key={c.id}
                 rowSpan={2}
                 style={{
                   ...TH_BASE,
-                  textAlign: c === "Ticker" ? "left" : "right",
+                  textAlign: c.align,
                   verticalAlign: "bottom",
                   color: HEADER_FG,
                 }}
               >
-                {c}
+                {c.header.includes("\n")
+                  ? c.header.split("\n").map((line, li) => <div key={li}>{line}</div>)
+                  : c.header}
               </th>
             ))}
             {PAIR_GROUPS.map((g) => (
@@ -320,20 +352,58 @@ function CompsTable({
                   >
                     {r.company_name}
                   </td>
-                  <td style={{ ...TD_BASE, textAlign: "left", color: "#6b7280", fontWeight: 600 }}>
-                    {r.ticker}
-                  </td>
-                  <td style={{ ...TD_BASE, color: "#9ca3af" }}>{r.last_update ?? "—"}</td>
-                  <td style={TD_BASE}>{fmtNum(r.target_price, 2)}</td>
-                  <td style={{ ...TD_BASE, textAlign: "right" }}>
-                    <RecommendationChip code={r.recommendation} />
-                  </td>
-                  <td style={{ ...TD_BASE, color: upsideColor, fontWeight: 700 }}>
-                    {quotesLoading && r.upsidePct == null ? "—" : fmtSignedPct(r.upsidePct)}
-                  </td>
-                  <td style={TD_BASE}>
-                    {quotesLoading && r.marketCapBrlMn == null ? "—" : fmtMn(r.marketCapBrlMn)}
-                  </td>
+                  {SINGLE_COLS.map((c) => {
+                    switch (c.id) {
+                      case "ticker":
+                        return (
+                          <td key={c.id} style={{ ...TD_BASE, textAlign: "left", color: "#6b7280", fontWeight: 600 }}>
+                            {r.ticker}
+                          </td>
+                        );
+                      case "last_update":
+                        return (
+                          <td key={c.id} style={{ ...TD_BASE, color: "#9ca3af" }}>
+                            {r.last_update ?? "—"}
+                          </td>
+                        );
+                      case "recommendation":
+                        return (
+                          <td key={c.id} style={{ ...TD_BASE, textAlign: "right" }}>
+                            <RecommendationChip code={r.recommendation} />
+                          </td>
+                        );
+                      case "tp":
+                        // Centered + whole-number (Eduardo review): 64.00 → 64.
+                        return (
+                          <td key={c.id} style={{ ...TD_BASE, textAlign: "center" }}>
+                            {fmtInt(r.target_price)}
+                          </td>
+                        );
+                      case "current_price":
+                        // Live price from the same Yahoo quote that feeds market
+                        // cap / upside. Kept at 2 decimals (price precision).
+                        return (
+                          <td key={c.id} style={{ ...TD_BASE, textAlign: "center" }}>
+                            {quotesLoading && r.livePrice == null ? "—" : fmtNum(r.livePrice, 2)}
+                          </td>
+                        );
+                      case "upside":
+                        // Whole-percent (Eduardo review): +27.5% → +28%.
+                        return (
+                          <td key={c.id} style={{ ...TD_BASE, color: upsideColor, fontWeight: 700 }}>
+                            {quotesLoading && r.upsidePct == null ? "—" : fmtSignedPctWhole(r.upsidePct)}
+                          </td>
+                        );
+                      case "market_cap":
+                        return (
+                          <td key={c.id} style={{ ...TD_BASE, textAlign: "center" }}>
+                            {quotesLoading && r.marketCapBrlMn == null ? "—" : fmtMn(r.marketCapBrlMn)}
+                          </td>
+                        );
+                      default:
+                        return null;
+                    }
+                  })}
                   {PAIR_GROUPS.map((g) => {
                     // Live-derived multiples show "—" while quotes load (they
                     // depend on the live price); direct-data groups never gate.
@@ -938,7 +1008,7 @@ export default function DesktopView(): React.ReactElement {
       <div className="container-fluid g-0 p-4">
         <DashboardHeader
           title="Stock Guide"
-          sub="Equities research — coverage comps table and per-company sensitivity"
+          sub="Coverage comps table and per-company sensitivity"
           lang="en"
           rightSlot={
             <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
@@ -1003,10 +1073,18 @@ export default function DesktopView(): React.ReactElement {
                 <div>{VOLUME_UNIT_NOTE}</div>
                 <div>
                   Market cap, upside, EV/EBITDA, P/E, FCFE Yield and Div Yield are
-                  computed live from the latest available price (BRL) and the
-                  research fundamentals (net debt, EBITDA, net income, FCFE,
-                  dividends). EBITDA, volumes and the target price are research inputs.
+                  computed live from the latest available price (BRL) and our latest
+                  published estimates (net debt, EBITDA, net income, FCFE, dividends).
                 </div>
+                {/*
+                  Vibra / Ultrapar assumed EBITDA margin (2026E / 2027E) — pending
+                  the analyst's number. We can DERIVE EBITDA ÷ volumes (BRL mn per
+                  thousand m³) but that is a unit margin, not the % EBITDA margin
+                  Eduardo likely means; do NOT render a fabricated value. Once the
+                  number is confirmed, render it here, e.g.:
+                  <div><strong style={{ color: "#6b7280" }}>Distribution margin:</strong>
+                  Vibra {…}% / {…}%, Ultrapar {…}% / {…}% (2026E / 2027E).</div>
+                */}
                 {restrictedNames.length > 0 && (
                   <div style={{ marginTop: 4 }}>
                     <strong style={{ color: "#6b7280" }}>Currently restricted:</strong>{" "}

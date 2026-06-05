@@ -201,6 +201,22 @@ export function fmtSignedPct(v: number | null | undefined, digits = 1): string {
   return `${sign}${pct.toFixed(digits)}%`;
 }
 
+/**
+ * Ratio → signed WHOLE-percent (e.g. 0.275 → "+28%", 0.556 → "+56%"). Used for
+ * the upside column, which is rounded to the nearest integer percentage point.
+ */
+export function fmtSignedPctWhole(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return "—";
+  const pct = Math.round(v * 100);
+  const sign = pct > 0 ? "+" : "";
+  return `${sign}${pct}%`;
+}
+
+/** Whole-number formatter (e.g. 64.00 → "64"). Used for the target price column. */
+export function fmtInt(v: number | null | undefined): string {
+  return v != null && Number.isFinite(v) ? String(Math.round(v)) : "—";
+}
+
 /** Thousands-grouped integer (BRL million market cap). */
 export function fmtMn(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return "—";
@@ -640,10 +656,10 @@ export function useStockGuideData(): UseStockGuideData {
           { header: "Company",            key: "company_name",  width: 20, align: "left"   },
           { header: "Ticker",             key: "ticker",        width: 10, align: "left"   },
           { header: "Last update",        key: "last_update",   width: 13, align: "center" },
-          { header: "Target price",       key: "target_price",  width: 13, format: "0.00", align: "center" },
           { header: "Recommendation",     key: "recommendation",width: 15, align: "center" },
-          { header: "Live price",         key: "livePrice",     width: 12, format: "0.00", align: "center" },
-          { header: "Upside %",           value: (r) => (r.upsidePct as number | null) != null ? (r.upsidePct as number) * 100 : null, width: 11, format: "0.0", align: "center" },
+          { header: "Target price",       key: "target_price",  width: 13, format: "0", align: "center" },
+          { header: "Current price",      key: "livePrice",     width: 13, format: "0.00", align: "center" },
+          { header: "Upside %",           value: (r) => (r.upsidePct as number | null) != null ? Math.round((r.upsidePct as number) * 100) : null, width: 11, format: "0", align: "center" },
           { header: "Market cap (BRL mn)", key: "marketCapBrlMn", width: 18, format: "#,##0", align: "center" },
           { header: `EV/EBITDA ${y1}`,    key: "evEbitdaY1",    width: 14, format: "0.0", align: "center" },
           { header: `EV/EBITDA ${y2}`,    key: "evEbitdaY2",    width: 14, format: "0.0", align: "center" },
@@ -653,6 +669,8 @@ export function useStockGuideData(): UseStockGuideData {
           { header: `FCFE Yield ${y2} %`, key: "fcfeYieldY2",   width: 16, format: "0.0", align: "center" },
           { header: `Div Yield ${y1} %`,  key: "divYieldY1",    width: 15, format: "0.0", align: "center" },
           { header: `Div Yield ${y2} %`,  key: "divYieldY2",    width: 15, format: "0.0", align: "center" },
+          { header: `Net income ${y1} (mn)`, key: "net_income_y1", width: 16, format: "#,##0", align: "center" },
+          { header: `Net income ${y2} (mn)`, key: "net_income_y2", width: 16, format: "#,##0", align: "center" },
           { header: `EBITDA ${y1} (mn)`,  key: "ebitda_y1",     width: 16, format: "#,##0", align: "center" },
           { header: `EBITDA ${y2} (mn)`,  key: "ebitda_y2",     width: 16, format: "#,##0", align: "center" },
           { header: `Volumes ${y1}`,      key: "volumes_y1",    width: 13, format: "#,##0", align: "center" },
@@ -677,10 +695,10 @@ export function useStockGuideData(): UseStockGuideData {
           company: r.company_name,
           ticker: r.ticker,
           last_update: r.last_update,
-          target_price: r.target_price,
           recommendation: r.recommendation,
-          live_price: r.livePrice,
-          upside_pct: r.upsidePct != null ? r.upsidePct * 100 : null,
+          target_price: r.target_price,
+          current_price: r.livePrice,
+          upside_pct: r.upsidePct != null ? Math.round(r.upsidePct * 100) : null,
           market_cap_brl_mn: r.marketCapBrlMn,
           [`ev_brl_mn_${y1}`]: r.evBrlMnY1,
           [`ev_brl_mn_${y2}`]: r.evBrlMnY2,
@@ -692,6 +710,8 @@ export function useStockGuideData(): UseStockGuideData {
           [`fcfe_yield_${y2}`]: r.fcfeYieldY2,
           [`div_yield_${y1}`]: r.divYieldY1,
           [`div_yield_${y2}`]: r.divYieldY2,
+          [`net_income_${y1}`]: r.net_income_y1,
+          [`net_income_${y2}`]: r.net_income_y2,
           [`ebitda_${y1}`]: r.ebitda_y1,
           [`ebitda_${y2}`]: r.ebitda_y2,
           [`volumes_${y1}`]: r.volumes_y1,

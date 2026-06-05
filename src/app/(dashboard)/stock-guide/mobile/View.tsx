@@ -41,7 +41,8 @@ import {
   formatSensitivityCell,
   fmtNum,
   fmtPct,
-  fmtSignedPct,
+  fmtSignedPctWhole,
+  fmtInt,
   fmtMn,
   recommendationColors,
   VOLUME_UNIT_NOTE,
@@ -121,12 +122,36 @@ const YEAR_COLS: YearCol[] = [
   { label: "P/E",        y1: "peY1",        y2: "peY2",        fmt: (v) => fmtNum(v, 1), live: true },
   { label: "FCFE Yld",   y1: "fcfeYieldY1", y2: "fcfeYieldY2", fmt: (v) => fmtPct(v, 1), live: true },
   { label: "Div Yld",    y1: "divYieldY1",  y2: "divYieldY2",  fmt: (v) => fmtPct(v, 1), live: true },
+  { label: "Net Inc.",   y1: "net_income_y1", y2: "net_income_y2", fmt: (v) => fmtMn(v) },
   { label: "EBITDA",     y1: "ebitda_y1",   y2: "ebitda_y2",   fmt: (v) => fmtMn(v) },
   { label: "Volumes",    y1: "volumes_y1",  y2: "volumes_y2",  fmt: (v) => fmtMn(v) },
 ];
 
 // Single (non-paired) numeric/text columns, after the sticky Company column.
-const SINGLE_COLS = ["Ticker", "TP", "Rec.", "Upside", "Mkt cap"] as const;
+// Order (Eduardo review 2026-06-05): Recommendation moved BEFORE TP & Current
+// Price; a new "Current" price column sits right after TP.
+type MobileSingleColId =
+  | "ticker"
+  | "recommendation"
+  | "tp"
+  | "current_price"
+  | "upside"
+  | "market_cap";
+
+interface MobileSingleCol {
+  id: MobileSingleColId;
+  header: string;
+  align: "left" | "right";
+}
+
+const SINGLE_COLS: MobileSingleCol[] = [
+  { id: "ticker",         header: "Ticker",  align: "left"  },
+  { id: "recommendation", header: "Rec.",    align: "right" },
+  { id: "tp",             header: "TP",      align: "right" },
+  { id: "current_price",  header: "Current", align: "right" },
+  { id: "upside",         header: "Upside",  align: "right" },
+  { id: "market_cap",     header: "Mkt cap", align: "right" },
+];
 
 const thBase: React.CSSProperties = {
   padding: "7px 9px",
@@ -199,15 +224,15 @@ function CompsTable({
             </th>
             {SINGLE_COLS.map((c) => (
               <th
-                key={c}
+                key={c.id}
                 style={{
                   ...thBase,
-                  textAlign: c === "Ticker" ? "left" : "right",
+                  textAlign: c.align,
                   width: NUM_COL_WIDTH,
                   minWidth: NUM_COL_WIDTH,
                 }}
               >
-                {c}
+                {c.header}
               </th>
             ))}
             {YEAR_COLS.map((g) => (
@@ -301,31 +326,55 @@ function CompsTable({
                       {r.company_name}
                     </div>
                   </th>
-                  {/* Ticker */}
-                  <td
-                    style={{
-                      ...tdBase(rowBg),
-                      textAlign: "left",
-                      color: "var(--mobile-text-muted)",
-                      fontWeight: 600,
-                    }}
-                  >
-                    {r.ticker}
-                  </td>
-                  {/* TP */}
-                  <td style={tdBase(rowBg)}>{fmtNum(r.target_price, 2)}</td>
-                  {/* Recommendation chip */}
-                  <td style={{ ...tdBase(rowBg), textAlign: "right" }}>
-                    <RecChip code={r.recommendation} />
-                  </td>
-                  {/* Upside */}
-                  <td style={{ ...tdBase(rowBg), color: upsideColor, fontWeight: 700 }}>
-                    {quotesLoading && r.upsidePct == null ? "—" : fmtSignedPct(r.upsidePct)}
-                  </td>
-                  {/* Market cap */}
-                  <td style={tdBase(rowBg)}>
-                    {quotesLoading && r.marketCapBrlMn == null ? "—" : fmtMn(r.marketCapBrlMn)}
-                  </td>
+                  {SINGLE_COLS.map((c) => {
+                    switch (c.id) {
+                      case "ticker":
+                        return (
+                          <td
+                            key={c.id}
+                            style={{
+                              ...tdBase(rowBg),
+                              textAlign: "left",
+                              color: "var(--mobile-text-muted)",
+                              fontWeight: 600,
+                            }}
+                          >
+                            {r.ticker}
+                          </td>
+                        );
+                      case "recommendation":
+                        return (
+                          <td key={c.id} style={{ ...tdBase(rowBg), textAlign: "right" }}>
+                            <RecChip code={r.recommendation} />
+                          </td>
+                        );
+                      case "tp":
+                        // Whole-number (Eduardo review): 64.00 → 64.
+                        return <td key={c.id} style={tdBase(rowBg)}>{fmtInt(r.target_price)}</td>;
+                      case "current_price":
+                        // Live price from the same Yahoo quote (2 decimals).
+                        return (
+                          <td key={c.id} style={tdBase(rowBg)}>
+                            {quotesLoading && r.livePrice == null ? "—" : fmtNum(r.livePrice, 2)}
+                          </td>
+                        );
+                      case "upside":
+                        // Whole-percent (Eduardo review): +27.5% → +28%.
+                        return (
+                          <td key={c.id} style={{ ...tdBase(rowBg), color: upsideColor, fontWeight: 700 }}>
+                            {quotesLoading && r.upsidePct == null ? "—" : fmtSignedPctWhole(r.upsidePct)}
+                          </td>
+                        );
+                      case "market_cap":
+                        return (
+                          <td key={c.id} style={tdBase(rowBg)}>
+                            {quotesLoading && r.marketCapBrlMn == null ? "—" : fmtMn(r.marketCapBrlMn)}
+                          </td>
+                        );
+                      default:
+                        return null;
+                    }
+                  })}
                   {/* Forward groups for the selected year */}
                   {YEAR_COLS.map((g) => {
                     const v = r[yearKey === "y1" ? g.y1 : g.y2] as number | null;
@@ -775,8 +824,8 @@ export default function MobileView(): React.ReactElement {
           lineHeight: 1.3,
         }}
       >
-        Equities research — coverage comps and per-company sensitivity. Tap a row
-        for its sensitivity tables.
+        Coverage comps and per-company sensitivity. Tap a row for its sensitivity
+        tables.
       </div>
 
       {/* ── Filter chip row: sector ──────────────────────────────────────────── */}
@@ -936,9 +985,13 @@ export default function MobileView(): React.ReactElement {
             <div>{VOLUME_UNIT_NOTE}</div>
             <div style={{ marginTop: 4 }}>
               Market cap, upside, EV/EBITDA, P/E, FCFE Yield and Div Yield are
-              computed live from the latest available price (BRL) and the research
-              fundamentals.
+              computed live from the latest available price (BRL) and our latest
+              published estimates.
             </div>
+            {/*
+              Vibra / Ultrapar assumed EBITDA margin (2026E / 2027E) — pending the
+              analyst's number. Do NOT render a fabricated value (see desktop note).
+            */}
             {restrictedNames.length > 0 && (
               <div style={{ marginTop: 6 }}>
                 <strong style={{ color: "var(--mobile-text)" }}>Currently restricted:</strong>{" "}
