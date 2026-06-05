@@ -401,15 +401,17 @@ export const EXTRACTORS: Record<string, string[]> = {
     "div.entry-content",
     "article",
   ],
-  // Times Brasil
+  // Times Brasil (WordPress + custom CNBC theme — moved off the old article-content markup)
   "timesbrasil.com.br": [
-    "div.article-content",
-    "div.entry-content",
+    "div.wp-content",
+    "div.key-points-and-text-article",
+    "section.content-interna-artigo",
     "article",
   ],
   "www.timesbrasil.com.br": [
-    "div.article-content",
-    "div.entry-content",
+    "div.wp-content",
+    "div.key-points-and-text-article",
+    "section.content-interna-artigo",
     "article",
   ],
   // Visão Agro
