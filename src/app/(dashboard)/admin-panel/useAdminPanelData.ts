@@ -150,6 +150,9 @@ export interface SgEditorRow {
   ebitda_y2: string;
   net_income_y1: string;
   net_income_y2: string;
+  /** Optional adjusted net income (BRL mn). Empty = P/E uses reported net income. */
+  net_income_adj_y1: string;
+  net_income_adj_y2: string;
   fcfe_y1: string;
   fcfe_y2: string;
   dividends_y1: string;
@@ -190,6 +193,8 @@ function adminCompanyToEditorRow(c: StockGuideAdminCompany): SgEditorRow {
     ebitda_y2: numToStr(c.ebitda_y2),
     net_income_y1: numToStr(c.net_income_y1),
     net_income_y2: numToStr(c.net_income_y2),
+    net_income_adj_y1: numToStr(c.net_income_adj_y1),
+    net_income_adj_y2: numToStr(c.net_income_adj_y2),
     fcfe_y1: numToStr(c.fcfe_y1),
     fcfe_y2: numToStr(c.fcfe_y2),
     dividends_y1: numToStr(c.dividends_y1),
@@ -1813,6 +1818,8 @@ export function useAdminPanelData(): UseAdminPanelData {
         ebitda_y2: strToNum(r.ebitda_y2),
         net_income_y1: strToNum(r.net_income_y1),
         net_income_y2: strToNum(r.net_income_y2),
+        net_income_adj_y1: strToNum(r.net_income_adj_y1),
+        net_income_adj_y2: strToNum(r.net_income_adj_y2),
         fcfe_y1: strToNum(r.fcfe_y1),
         fcfe_y2: strToNum(r.fcfe_y2),
         dividends_y1: strToNum(r.dividends_y1),

@@ -319,6 +319,7 @@ export default function DesktopView(): React.ReactElement | null {
     | "shares_outstanding" | "target_price" | "display_order"
     | "net_debt_y1" | "net_debt_y2"
     | "ebitda_y1" | "ebitda_y2" | "net_income_y1" | "net_income_y2"
+    | "net_income_adj_y1" | "net_income_adj_y2"
     | "fcfe_y1" | "fcfe_y2" | "dividends_y1" | "dividends_y2"
     | "volumes_y1" | "volumes_y2";
   const renderSgNumField = (
@@ -2265,6 +2266,27 @@ export default function DesktopView(): React.ReactElement | null {
                               </label>
                             </div>
                           ))}
+                        </div>
+
+                        {/* Adjusted net income (optional — overrides the P/E denominator) */}
+                        <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid #ececec" }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#555", marginBottom: 4 }}>
+                            Adjusted net income (optional)
+                          </div>
+                          <div style={{ fontSize: 11, color: "#aaa", marginBottom: 12, lineHeight: 1.5 }}>
+                            Leave empty to use the reported net income in the P/E. Fill in
+                            only when recurring earnings differ (e.g. excluding
+                            non-recurring tax credits). The Net Income column always shows
+                            the reported value.
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 12 }}>
+                            {renderSgNumField("net_income_adj_y1", `Adjusted net income ${sgConfigDraft.y1_label || "Y1"} (BRL mn)`, {
+                              placeholder: "empty = reported",
+                            })}
+                            {renderSgNumField("net_income_adj_y2", `Adjusted net income ${sgConfigDraft.y2_label || "Y2"} (BRL mn)`, {
+                              placeholder: "empty = reported",
+                            })}
+                          </div>
                         </div>
 
                         {/* Comps error banner */}

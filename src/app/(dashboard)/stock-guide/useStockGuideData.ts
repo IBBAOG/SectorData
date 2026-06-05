@@ -103,6 +103,21 @@ export interface UseStockGuideData {
   /** Names of hidden companies (for the "Currently restricted" footnote). */
   restrictedNames: string[];
 
+  /**
+   * Derived unit-margin footnote for the fuel distributors (EBITDA ÷ volumes,
+   * R$/m³, whole number), or null if neither distributor has the data. Built
+   * from `ebitda_yN` (BRL mn) and `volumes_yN` (thousand m³) for VBBR3 + UGPA3.
+   * Rendered in both Views.
+   */
+  unitMarginNote: string | null;
+
+  /**
+   * Footnote flagging the companies whose P/E denominator uses ADJUSTED net
+   * income (e.g. Vibra), or null when none. Rendered in both Views next to the
+   * live-derivation note.
+   */
+  adjustedEarningsNote: string | null;
+
   /** Live-quote state for the batched fetch. */
   quotesLoading: boolean;
   quotesError: string | null;
@@ -365,6 +380,60 @@ export function useStockGuideData(): UseStockGuideData {
     );
   }, [visibleRows]);
 
+  // Derived unit-margin footnote (EBITDA ÷ volumes, R$/m³) for the fuel
+  // distributors. EBITDA is BRL mn, volumes are thousand m³, so the unit margin
+  // = (ebitda × 1e6) / (volumes × 1e3) = (ebitda / volumes) × 1000 R$/m³.
+  // Derived from real data — never hardcoded. Rounded to whole R$/m³.
+  const unitMarginNote = useMemo<string | null>(() => {
+    const byTicker = new Map(rows.map((r) => [r.ticker, r] as const));
+    const unitMargin = (
+      ebitda: number | null | undefined,
+      volumes: number | null | undefined,
+    ): number | null =>
+      ebitda != null && volumes != null && volumes > 0
+        ? Math.round((ebitda / volumes) * 1000)
+        : null;
+
+    const build = (ticker: string) => {
+      const r = byTicker.get(ticker);
+      if (!r) return null;
+      const m1 = unitMargin(r.ebitda_y1, r.volumes_y1);
+      const m2 = unitMargin(r.ebitda_y2, r.volumes_y2);
+      if (m1 == null && m2 == null) return null;
+      return { name: r.company_name, m1, m2 };
+    };
+
+    const vibra = build("VBBR3");
+    const ultra = build("UGPA3");
+    const parts: string[] = [];
+    const fmt = (label: string, e: { m1: number | null; m2: number | null }) => {
+      const seg: string[] = [];
+      if (e.m1 != null) seg.push(`R$ ${e.m1}/m³ (${config.y1_label})`);
+      if (e.m2 != null) seg.push(`R$ ${e.m2}/m³ (${config.y2_label})`);
+      return `${label} ${seg.join(", ")}`;
+    };
+    if (vibra) parts.push(fmt(vibra.name, vibra));
+    if (ultra) parts.push(fmt(ultra.name, ultra));
+    if (parts.length === 0) return null;
+    return `Assumed unit margin (EBITDA ÷ volumes): ${parts.join("; ")}.`;
+  }, [rows, config.y1_label, config.y2_label]);
+
+  // Footnote: which visible companies' P/E uses adjusted earnings (data-driven).
+  const adjustedEarningsNote = useMemo<string | null>(() => {
+    const names = rows
+      .filter(
+        (r) =>
+          r.is_visible &&
+          (r.net_income_adj_y1 != null || r.net_income_adj_y2 != null),
+      )
+      .sort((a, b) => a.display_order - b.display_order)
+      .map((r) => r.company_name);
+    if (names.length === 0) return null;
+    return `P/E for ${names.join(
+      ", ",
+    )} uses adjusted net income (recurring earnings, excluding non-recurring tax credits).`;
+  }, [rows]);
+
   // ── c. Live quotes — ONE batched fetch of visible rows' symbols ───────────
   // Quote symbol = yahoo_symbol (fallback ticker). Hidden rows have a null
   // yahoo_symbol AND are excluded here, so restricted tickers never leave the
@@ -458,14 +527,19 @@ export function useStockGuideData(): UseStockGuideData {
           ? evBrlMnY2 / r.ebitda_y2
           : null;
 
-      // P/E is not meaningful for non-positive earnings → null.
+      // P/E uses the ADJUSTED net income when present (e.g. Vibra, which strips
+      // non-recurring tax credits), else falls back to the reported net income.
+      // The Net Income column always shows the reported value. P/E is not
+      // meaningful for non-positive earnings → null.
+      const peEarningsY1 = r.net_income_adj_y1 ?? r.net_income_y1;
+      const peEarningsY2 = r.net_income_adj_y2 ?? r.net_income_y2;
       const peY1 =
-        marketCapBrlMn != null && r.net_income_y1 != null && r.net_income_y1 > 0
-          ? marketCapBrlMn / r.net_income_y1
+        marketCapBrlMn != null && peEarningsY1 != null && peEarningsY1 > 0
+          ? marketCapBrlMn / peEarningsY1
           : null;
       const peY2 =
-        marketCapBrlMn != null && r.net_income_y2 != null && r.net_income_y2 > 0
-          ? marketCapBrlMn / r.net_income_y2
+        marketCapBrlMn != null && peEarningsY2 != null && peEarningsY2 > 0
+          ? marketCapBrlMn / peEarningsY2
           : null;
 
       // FCFE yield = FCFE / market cap × 100. FCFE may be negative → negative
@@ -736,6 +810,8 @@ export function useStockGuideData(): UseStockGuideData {
     computedRows,
     sectorsPresent,
     restrictedNames,
+    unitMarginNote,
+    adjustedEarningsNote,
     quotesLoading,
     quotesError,
     refreshQuotes,

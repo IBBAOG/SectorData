@@ -981,6 +981,8 @@ export default function DesktopView(): React.ReactElement {
     config,
     computedRows,
     restrictedNames,
+    unitMarginNote,
+    adjustedEarningsNote,
     quotesLoading,
     refreshQuotes,
     selectedTicker,
@@ -1076,15 +1078,8 @@ export default function DesktopView(): React.ReactElement {
                   computed live from the latest available price (BRL) and our latest
                   published estimates (net debt, EBITDA, net income, FCFE, dividends).
                 </div>
-                {/*
-                  Vibra / Ultrapar assumed EBITDA margin (2026E / 2027E) — pending
-                  the analyst's number. We can DERIVE EBITDA ÷ volumes (BRL mn per
-                  thousand m³) but that is a unit margin, not the % EBITDA margin
-                  Eduardo likely means; do NOT render a fabricated value. Once the
-                  number is confirmed, render it here, e.g.:
-                  <div><strong style={{ color: "#6b7280" }}>Distribution margin:</strong>
-                  Vibra {…}% / {…}%, Ultrapar {…}% / {…}% (2026E / 2027E).</div>
-                */}
+                {unitMarginNote && <div>{unitMarginNote}</div>}
+                {adjustedEarningsNote && <div>{adjustedEarningsNote}</div>}
                 {restrictedNames.length > 0 && (
                   <div style={{ marginTop: 4 }}>
                     <strong style={{ color: "#6b7280" }}>Currently restricted:</strong>{" "}

@@ -61,9 +61,17 @@ export interface StockGuideCompany {
   /** Forward EBITDA in BRL million. Denominator of the live EV/EBITDA. */
   ebitda_y1: number | null;
   ebitda_y2: number | null;
-  /** Forward net income in BRL million. Denominator of the live P/E. */
+  /** Forward net income in BRL million (REPORTED). Shown in the Net Income column. */
   net_income_y1: number | null;
   net_income_y2: number | null;
+  /**
+   * Optional ADJUSTED net income in BRL million (e.g. Vibra, which strips
+   * non-recurring tax credits). When non-null it is the P/E denominator instead
+   * of the reported net income; the Net Income column still shows the reported
+   * value. NULL/undefined → the P/E falls back to `net_income_yN` (default).
+   */
+  net_income_adj_y1: number | null;
+  net_income_adj_y2: number | null;
   /** Forward FCFE in BRL million (the VALUE, not a yield). Drives FCFE yield. */
   fcfe_y1: number | null;
   fcfe_y2: number | null;

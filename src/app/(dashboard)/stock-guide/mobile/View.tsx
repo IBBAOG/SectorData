@@ -779,6 +779,8 @@ export default function MobileView(): React.ReactElement {
     computedRows,
     sectorsPresent,
     restrictedNames,
+    unitMarginNote,
+    adjustedEarningsNote,
     filters,
     setFilters,
     quotesLoading,
@@ -988,10 +990,12 @@ export default function MobileView(): React.ReactElement {
               computed live from the latest available price (BRL) and our latest
               published estimates.
             </div>
-            {/*
-              Vibra / Ultrapar assumed EBITDA margin (2026E / 2027E) — pending the
-              analyst's number. Do NOT render a fabricated value (see desktop note).
-            */}
+            {unitMarginNote && (
+              <div style={{ marginTop: 4 }}>{unitMarginNote}</div>
+            )}
+            {adjustedEarningsNote && (
+              <div style={{ marginTop: 4 }}>{adjustedEarningsNote}</div>
+            )}
             {restrictedNames.length > 0 && (
               <div style={{ marginTop: 6 }}>
                 <strong style={{ color: "var(--mobile-text)" }}>Currently restricted:</strong>{" "}
